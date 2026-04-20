@@ -1,0 +1,1580 @@
+layer6x6 — Comprehensive Build Plan
+
+> **Version:** 0.1 — Working draft
+> **Status:** Pre-phase-0 (planning)
+> **Horizon:** 24 months to v1.0
+> **Codename:** OneOS
+> **Tagline:** Write once. Run on everything. Natively.
+
+---
+
+## Table of Contents
+
+0. [How to Use This Document](#0-how-to-use-this-document)
+1. [Executive Summary](#1-executive-summary)
+2. [Vision & First Principles](#2-vision--first-principles)
+3. [Core Concepts](#3-core-concepts)
+4. [Architecture](#4-architecture)
+5. [Technology Stack](#5-technology-stack)
+6. [Phased Roadmap](#6-phased-roadmap)
+7. [Detailed Task Breakdown](#7-detailed-task-breakdown)
+8. [Testing Strategy](#8-testing-strategy)
+9. [Build & CI/CD](#9-build--cicd)
+10. [Security Model (UCap in depth)](#10-security-model-ucap-in-depth)
+11. [Performance Targets](#11-performance-targets)
+12. [Documentation Strategy](#12-documentation-strategy)
+13. [Governance & Open Source](#13-governance--open-source)
+14. [Risk Register](#14-risk-register)
+15. [Go-to-Market](#15-go-to-market)
+16. [Team & Hiring](#16-team--hiring)
+17. [Infrastructure & Tools](#17-infrastructure--tools)
+18. [Glossary](#18-glossary)
+19. [References & Prior Art](#19-references--prior-art)
+20. [Appendices](#20-appendices)
+
+---
+
+## 0. How to Use This Document
+
+This is a **living build plan**. Treat it like a runbook, not a pitch deck.
+
+- **When stuck during development:** jump to the relevant Phase in §6 and §7, find the task ID, follow the linked doc/RFC.
+- **When making a decision:** check §5 (tech stack) for existing calls, §14 (risks) for known tradeoffs. If your decision isn't covered, write an ADR (Architecture Decision Record) following the template in Appendix D and add it to `docs/adr/`.
+- **When onboarding someone new:** have them read §1, §2, §3, §4, §18 in that order. That's ~45 minutes and gives them full context.
+- **When tempted to skip a phase:** don't. Each phase exists because the one after depends on it. If Phase 2 seems slow, the Phase 3 you build without it will be worse.
+
+All task IDs follow the pattern `P{phase}-{area}-{n}` (e.g. `P2-UAPI-05`). Reference them in commits, PRs, and issues.
+
+---
+
+## 1. Executive Summary
+
+### 1.1 What we're building
+
+**OneOS** is a universal application platform: a portable runtime, a universal standard library (UAPI), a capability-based permission system (UCap), a package format, and a distribution layer that together let developers write an app **once** and have it run natively — with access to each platform's hardware and performance — on Windows, macOS, Linux, iOS, Android, and the web.
+
+It is not:
+- A new operating system in the Linux kernel sense
+- An emulator or compatibility layer for existing apps (that's Project B — separate track)
+- A browser or web framework
+
+It is:
+- A meta-platform that sits on top of existing OSes as a runtime
+- The target developers compile to, not the OS users install instead of Windows
+- The place software lives, independent of the device it lives on
+
+### 1.2 Why now
+
+Four forces are converging:
+
+1. **WebAssembly is production-ready.** The bytecode is stable. The Component Model has shipped. WASI Preview 2 exists. Tooling for Rust, Go, C++, JS, and Python is mature.
+2. **Device fragmentation is worse than ever.** Laptops (x86/ARM), phones (iOS/Android), tablets, watches, cars, TVs, XR headsets — each with a different SDK. No dev wants to ship seven codebases.
+3. **Native cross-platform solutions are incomplete.** Flutter is UI-only. React Native is JS-only. Electron is bloated. None of them deliver true native capability + performance + cross-platform in one package.
+4. **Hardware converges on ARM.** When every device runs the same ISA family, the primary reason to target different CPU backends evaporates. Only the OS layer differs, which is exactly what we abstract.
+
+### 1.3 Success criteria (v1.0)
+
+At v1.0 launch (end of month 24), OneOS must be able to:
+
+| # | Criterion | Target |
+|---|-----------|--------|
+| 1 | Run the same `.oneapp` binary on | Windows 11+, macOS 13+, Ubuntu 22.04+, iOS 16+, Android 12+, browsers w/ WASM2 |
+| 2 | Hello-world startup time | < 100 ms cold, < 20 ms warm |
+| 3 | GUI app frame budget | 16.7 ms (60 fps) on M1/Snapdragon 8 Gen 2 |
+| 4 | Binary size overhead vs native | < 3× for a typical productivity app |
+| 5 | Supported source languages | Rust, Go, TypeScript (first-class); C/C++, Python, Swift (compatible) |
+| 6 | Anchor tenant | ParkSure migrated end-to-end |
+| 7 | Developer docs coverage | 100% of UAPI + every phase gate has a walkthrough |
+| 8 | Passing CI on all target hosts | Nightly, zero red ≥7 consecutive days before release |
+
+### 1.4 Timeline at a glance
+
+```mermaid
+gantt
+    title OneOS — 24 Month Roadmap
+    dateFormat  YYYY-MM-DD
+    axisFormat  %b '%y
+
+    section Foundation
+    Phase 0 Setup             :p0, 2026-05-01, 30d
+    section Runtime
+    Phase 1 POC Runtime       :p1, after p0, 60d
+    Phase 2 UAPI v0.1 (CLI)   :p2, after p1, 90d
+    Phase 3 UI + Graphics     :p3, after p2, 120d
+    section Mobile
+    Phase 4 Mobile Hosts      :p4, after p3, 120d
+    section Platform
+    Phase 5 Developer SDK     :p5, after p4, 120d
+    Phase 6 Distribution      :p6, after p5, 120d
+    section Launch
+    Phase 7 v1.0 Hardening    :p7, after p6, 60d
+```
+
+---
+
+## 2. Vision & First Principles
+
+### 2.1 The problem
+
+An application today is coupled to six independent things: its CPU architecture, its kernel's syscall table, its system libraries, its framework APIs, its bundle format, and its security model. Supporting N operating systems requires N implementations of each layer — an O(N²) cost that compounds with every new device category.
+
+The result is the Reddit compatibility chart users see: Android apps don't run on macOS, iOS apps don't run on Android, half the cells are "Not possible." Users pay for it in device lock-in. Developers pay for it in duplicated work. Innovation pays for it because new ideas have to be rewritten six times before they reach users.
+
+### 2.2 The first-principles insight
+
+Every scalable computing abstraction has solved fragmentation the same way: **insert a universal intermediate layer.**
+
+- Multiple CPUs → **LLVM IR** → any backend
+- Multiple OSes (server) → **JVM bytecode / .NET CLR** → any OS
+- Multiple devices (web) → **HTML/JS/CSS** → any browser
+
+Each time, the N² problem became 2N. OneOS applies the same transformation to native apps: **one portable bytecode, one standard library, one permission model** at the center; a thin adapter per host on the outside.
+
+### 2.3 Prior art (what we learn from each)
+
+| System | What it got right | Why it didn't achieve full META-OS |
+|---|---|---|
+| **JVM** | Portable bytecode, rich stdlib, huge ecosystem | Enterprise server focus; desktop stalled (Swing/AWT); no mobile capture |
+| **.NET** | Strong tooling, multi-language | Microsoft-first; late cross-platform (Mono → .NET Core); tied to MS identity |
+| **Flash / AIR** | Ubiquitous deployment, good graphics | Proprietary; Apple killed mobile in 2010; security reputation |
+| **Silverlight** | In-browser + desktop, good MVVM | Killed by MS before maturity; plugin-dependent |
+| **Browser + JS** | Universal reach, huge ecosystem | Sandbox too tight for native apps; perf ceiling; UI "not native" |
+| **Electron** | Actually shipped cross-platform desktop | 100MB+ binaries; one Chromium per app; heavy battery cost |
+| **Flutter** | Beautiful UI, consistent everywhere | Dart-only; doesn't use native controls; no iOS runtime, only compile-time |
+| **React Native** | JS devs ship mobile | Bridge overhead; fights platform conventions; JS-only |
+| **WASM + WASI** | Clean bytecode, emerging component model | **Missing UI, GPU, hardware capabilities — gaps we fill** |
+
+### 2.4 Our wedge
+
+We do not compete with these. We **complete WASM + WASI** for native app scenarios.
+
+Specifically:
+1. **We ship the UI/GPU/hardware UAPIs that WASI doesn't have yet** (upstream what we can, fork what we must).
+2. **We ship a productized runtime + SDK** developers install in five minutes.
+3. **We have an anchor tenant (ParkSure) that forces us to dogfood production-quality from day one.**
+
+---
+
+## 3. Core Concepts
+
+Every concept here has a one-sentence canonical definition. Memorize them — they will appear in every RFC, ADR, and PR description.
+
+### 3.1 Universal IR (UIR)
+
+The portable bytecode and ABI that every OneOS app compiles to. **Base: WebAssembly Core + Component Model.** Extensions we add: structured Unicode strings at ABI level, SIMD 128 mandatory, threads mandatory, exception handling (proposal) required, GC (proposal) required.
+
+### 3.2 Universal API (UAPI)
+
+The standard library every OneOS app calls. **Defined as WIT interfaces** (WebAssembly Interface Types). Implemented by the runtime on each host by calling native OS APIs.
+
+UAPI modules (target set for v1.0):
+
+```
+oneos:
+├── io/         # stdio, files, pipes, stdout, stderr
+├── net/        # TCP, UDP, QUIC, HTTP, WebSocket, DNS
+├── time/       # clocks, timers, scheduling
+├── fs/         # filesystem, paths, file metadata
+├── ui/         # window, widgets, layout, input, text rendering
+├── gfx/        # 2D canvas, 3D GPU (WebGPU-compat), shaders
+├── audio/      # playback, capture, mixing, MIDI
+├── sensors/    # accelerometer, gyro, GPS, camera, mic
+├── storage/    # key-value, SQL (SQLite), object store
+├── crypto/     # hash, symmetric, asymmetric, random, PQ-safe
+├── identity/   # DID-based user identity, signing, attestation
+├── ipc/        # intra-device messaging, cross-app calls
+├── notify/     # system notifications, toasts, badges
+├── locale/     # i18n, l10n, formatting
+├── accessibility/ # screen reader, high-contrast, reduced motion
+├── ai/         # local inference, model loading, embeddings
+└── platform/   # device info, capabilities query, power state
+```
+
+### 3.3 Universal Capabilities (UCap)
+
+The permission model every app uses. **Capability-based** (not role-based, not sandbox-based). An app declares required capabilities in its manifest; the runtime issues unforgeable handles only to granted capabilities; users grant/revoke through a system UI owned by the runtime.
+
+Canonical capability examples:
+- `fs.read:~/Documents`
+- `net.connect:api.parksure.com:443`
+- `ui.window:create`
+- `sensors.camera:frontfacing`
+- `identity.sign:user`
+
+### 3.4 Runtime
+
+The binary installed on each host that loads and executes `.oneapp` bundles. Responsibilities: bytecode JIT/AOT, UAPI dispatch, UCap enforcement, app lifecycle, window/surface management, update delivery.
+
+**One runtime per host OS.** Internal architecture is shared across hosts; only the host-adapter layer differs.
+
+### 3.5 Host Adapter
+
+The per-OS module inside the runtime that translates UAPI calls into native OS calls. Example: `uapi::ui::window::create` on macOS host adapter calls AppKit `NSWindow`; on Windows, `CreateWindowExW`; on Android, `Activity` binder calls.
+
+### 3.6 App Bundle (`.oneapp`)
+
+The distributable package. A zip-structured container:
+
+```
+myapp.oneapp/
+├── manifest.toml        # app id, version, capabilities, entry point, locale, deps
+├── code.wasm            # WASM component (main entry)
+├── modules/             # additional WASM components (lazy-loaded)
+├── assets/              # images, fonts, sounds, shaders
+├── locale/              # translations (TOML or fluent)
+├── schema/              # storage schemas (SQL migrations)
+├── signature.p7s        # developer signature (optional dev-mode skip)
+└── attest.json          # build attestation (reproducible build info)
+```
+
+### 3.7 Marketplace & Identity
+
+Distribution channel and user identity layer. Marketplace serves signed bundles with update deltas. Identity uses DIDs (decentralized identifiers) so users own their account and carry it between devices. Apps authenticate users via `uapi::identity` without knowing the underlying DID method.
+
+---
+
+## 4. Architecture
+
+### 4.1 Layered architecture
+
+```mermaid
+flowchart TB
+    subgraph Dev["Developer Side"]
+        SRC[Source: Rust / Go / TS / etc.]
+        COMP[Compiler + cargo-component]
+        WIT[WIT interfaces]
+        BUNDLE[Bundler]
+        SRC --> COMP
+        WIT --> COMP
+        COMP --> BUNDLE
+        BUNDLE --> APP[myapp.oneapp]
+    end
+
+    subgraph Runtime["OneOS Runtime (per host)"]
+        LOADER[Bundle Loader]
+        VERIFY[Signature + Manifest Verifier]
+        PERM[UCap Enforcer]
+        ENGINE[Wasmtime Engine + JIT]
+        UAPI_DISP[UAPI Dispatcher]
+        ADAPTER[Host Adapter]
+        LOADER --> VERIFY --> PERM --> ENGINE
+        ENGINE <--> UAPI_DISP
+        UAPI_DISP <--> ADAPTER
+    end
+
+    subgraph Host["Host OS"]
+        WIN[Windows API]
+        MAC[Cocoa / AppKit / UIKit]
+        LIN[Linux + Wayland]
+        AND[Android Binder]
+        IOS[iOS frameworks]
+        WEB[Browser APIs]
+    end
+
+    APP -->|install / run| LOADER
+    ADAPTER --> WIN
+    ADAPTER --> MAC
+    ADAPTER --> LIN
+    ADAPTER --> AND
+    ADAPTER --> IOS
+    ADAPTER --> WEB
+```
+
+### 4.2 Developer build pipeline
+
+```mermaid
+flowchart LR
+    A[Source code] --> B[Compile to WASM]
+    B --> C[wit-bindgen stubs]
+    C --> D[cargo component build]
+    D --> E[wasm-tools optimize]
+    E --> F[Merge assets + manifest]
+    F --> G[Sign + attest]
+    G --> H[myapp.oneapp]
+    H --> I{{Marketplace upload}}
+    H --> J{{Side-load / dev install}}
+```
+
+### 4.3 Runtime execution flow
+
+```mermaid
+flowchart TD
+    START([User opens myapp.oneapp]) --> CHECK{Signature valid?}
+    CHECK -- no --> REJECT[Show error, refuse]
+    CHECK -- yes --> MANIFEST[Parse manifest.toml]
+    MANIFEST --> CAPS{New capabilities?}
+    CAPS -- yes --> PROMPT[Show UCap grant UI]
+    PROMPT --> USER{User approves?}
+    USER -- no --> REJECT
+    USER -- yes --> STORE[Store grant in policy db]
+    CAPS -- no --> LOAD[Load WASM component]
+    STORE --> LOAD
+    LOAD --> INST[Instantiate w/ granted caps]
+    INST --> RUN[Call exported 'main']
+    RUN --> LOOP{UAPI call?}
+    LOOP -- yes --> ENFORCE[Enforce UCap]
+    ENFORCE --> DISPATCH[Dispatch to Host Adapter]
+    DISPATCH --> NATIVE[Execute native syscall]
+    NATIVE --> RETURN[Return result to WASM]
+    RETURN --> LOOP
+    LOOP -- exit --> SHUTDOWN([Unload, persist state])
+```
+
+### 4.4 Capability grant sequence
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant App as OneOS App
+    participant Rt as Runtime
+    participant DB as Policy DB
+    participant Host as Host OS
+
+    App->>Rt: request cap "sensors.camera"
+    Rt->>DB: has grant?
+    DB-->>Rt: no
+    Rt->>U: show grant dialog
+    Note over U,Rt: System UI, not app-owned
+    U-->>Rt: approve (one-time / always / deny)
+    Rt->>DB: persist grant
+    Rt->>Host: request native camera permission
+    Host-->>Rt: granted
+    Rt-->>App: opaque capability handle
+    App->>Rt: uapi.sensors.camera.frame(handle)
+    Rt->>Rt: verify handle
+    Rt->>Host: platform-specific camera read
+    Host-->>Rt: frame bytes
+    Rt-->>App: frame bytes
+```
+
+### 4.5 Host adapter internals
+
+```mermaid
+flowchart TB
+    subgraph HA["Host Adapter (Linux example)"]
+        direction LR
+        UI_L[ui → GTK4 / Wayland]
+        GFX_L[gfx → Vulkan / wgpu]
+        NET_L[net → tokio + hyper + quinn]
+        FS_L[fs → libc + io_uring]
+        AUDIO_L[audio → PipeWire]
+        SENS_L[sensors → udev / iio]
+        STOR_L[storage → SQLite + sled]
+        CRYPTO_L[crypto → ring / rustls]
+        NOTIFY_L[notify → freedesktop DBus]
+        AI_L[ai → ORT / candle]
+    end
+
+    UAPI[UAPI dispatch table] --> HA
+```
+
+### 4.6 Trust boundaries
+
+```mermaid
+flowchart LR
+    subgraph T1[Untrusted]
+        APP[App WASM code]
+    end
+    subgraph T2[Semi-trusted]
+        MANIFEST[Manifest]
+        ASSETS[Assets]
+    end
+    subgraph T3[Trusted]
+        RT[Runtime binary]
+        ADAPTER[Host Adapter]
+        DB[Policy DB]
+    end
+    subgraph T4[Platform]
+        HOST[Host OS kernel]
+    end
+    APP --calls UAPI--> RT
+    MANIFEST --declares caps--> RT
+    RT --enforces + translates--> ADAPTER
+    ADAPTER --syscalls--> HOST
+```
+
+---
+
+## 5. Technology Stack
+
+Every choice below is a **decision**, not a suggestion. Departing from it requires an ADR.
+
+### 5.1 Base bytecode: WebAssembly (WASM)
+
+- **Decision:** WASM 2.0 core + Component Model + WASI Preview 2.
+- **Why:** stable, cross-platform, multi-language, has momentum (Bytecode Alliance, Fastly, Shopify).
+- **What we add beyond baseline:** mandatory SIMD128, mandatory threads, EH + GC proposals required, tail calls required.
+
+### 5.2 Interface types: WIT + Component Model
+
+- **Decision:** All UAPI interfaces defined in WIT (`*.wit` files); apps are WASM components, not plain modules.
+- **Why:** structured types cross language boundaries; component-to-component composition; version negotiation built in.
+
+### 5.3 Runtime engine
+
+- **Decision: Wasmtime.**
+- **Why:** Bytecode Alliance stewarded, fastest to track new proposals, clean Rust embedding API, already used in production (Shopify Functions, Fermyon Spin, Microsoft Hyperlight).
+- **Runners-up:** WasmEdge (strong mobile, reconsider for Phase 4), Wasmer (weaker Component Model today).
+- **Embedding:** `wasmtime` crate, API stability pinned to Wasmtime's LTS line.
+
+### 5.4 Source languages (priority order)
+
+| Priority | Language | Toolchain | Notes |
+|---|---|---|---|
+| 1 | Rust | `cargo`, `cargo-component`, `wit-bindgen` | First-class; runtime itself is Rust |
+| 2 | Go | TinyGo | Subset only; no full goroutines yet |
+| 3 | TypeScript | ComponentizeJS / Jco | Smallest dev barrier, widest reach |
+| 4 | C / C++ | clang + wasi-sdk | Legacy ports, game engines |
+| 5 | Python | componentize-py | Data/AI workloads |
+| 6 | Swift | embedded Swift → WASM | Experimental; blocked on Apple tooling |
+
+### 5.5 UI stack
+
+- **Decision:** Hybrid retained-mode with a native-backed widget protocol.
+  - Widget tree defined in WIT (abstract).
+  - Runtime lowers tree to native controls where possible (NSView, UIView, Android View, HTMLElement, GTK widget).
+  - Custom-drawn fallback via our 2D canvas (§5.6) for widgets the host doesn't have.
+- **Rationale:** Flutter rejects native widgets and pays with "not feeling native"; Electron uses web and pays with size/perf. We split the difference — structure abstract, chrome native.
+- **Implementation reference:** Xilem (Rust), SwiftUI's layout engine, React Native's "Fabric" architecture.
+
+### 5.6 GPU / 2D graphics
+
+- **Decision:** WebGPU as the portable GPU API (via `wgpu` on the runtime side). 2D canvas built on top (via `vello` or equivalent tile-based renderer).
+- **Why:** WebGPU is converging across browser and native; `wgpu` already targets Metal, Vulkan, D3D12, and WebGPU itself.
+
+### 5.7 Storage
+
+- **Decision:**
+  - Small structured: SQLite (via `rusqlite` bundled in runtime).
+  - Unstructured blobs: content-addressed object store (initially just filesystem, later plug in S3-compatible remote).
+  - Sync: app's responsibility via `uapi::net`; we provide primitives, not opinion.
+
+### 5.8 Networking
+
+- **Decision:**
+  - HTTP/1.1, HTTP/2: `hyper` + `rustls`.
+  - HTTP/3 / QUIC: `quinn`.
+  - WebSocket: `tokio-tungstenite`.
+  - DNS: `hickory-dns`.
+- All wrapped by `uapi::net` WIT definitions; apps never see these crates directly.
+
+### 5.9 Crypto
+
+- **Decision:**
+  - Symmetric / hash / MAC: `ring`.
+  - TLS: `rustls`.
+  - Post-quantum: `pqcrypto` for Kyber/Dilithium once stabilized; tracked as an app-opt-in capability.
+  - Key storage: OS keychain on each host via adapter.
+
+### 5.10 Package format
+
+- **Decision:** `.oneapp` = zip with deterministic ordering, using `zip` crate.
+- **Signing:** Ed25519 signature over the manifest + content hashes; signature verified before any WASM executes.
+- **Reproducible builds:** deterministic timestamps, sorted file order, locked toolchain versions.
+
+### 5.11 Identity
+
+- **Decision:** DID (Decentralized Identifier) with `did:key` initially, `did:web` as first remote method, optional bridge to OpenID Connect.
+- **Rationale:** user portability (bring identity between hosts), no central auth server dependency, future-proof for Web3/credential ecosystems.
+
+### 5.12 Observability
+
+- Logging: `tracing` crate throughout the runtime; app logs go through `uapi::io::log`.
+- Metrics: OpenTelemetry (OTLP) optional; `uapi::platform::telemetry` for app-level.
+- Crash reporting: Sentry-compatible endpoint; symbolicated via build attestation.
+
+### 5.13 Build & dev tools
+
+| Tool | Use |
+|---|---|
+| `cargo` | Rust build |
+| `cargo-component` | Build WASM components |
+| `wit-bindgen` | Generate language bindings from WIT |
+| `wasm-tools` | Component composition, optimization, validation |
+| `wasmtime` CLI | Local execution for debugging |
+| `oneos` CLI | Our product CLI (built Phase 5) |
+| `just` | Task runner (thin layer over make) |
+| `pre-commit` | Lint + format hooks |
+
+### 5.14 Infra & deployment
+
+| Layer | Choice |
+|---|---|
+| Source hosting | GitHub (public monorepo) |
+| CI | GitHub Actions (matrix: linux-x64, linux-arm64, macos-x64, macos-arm64, windows-x64; later: android, iOS) |
+| Artifact hosting | GitHub Releases + OCI registry (ghcr.io) |
+| Docs hosting | GitHub Pages via mdBook + custom theme |
+| Marketplace backend | Rust + axum; Postgres; S3-compatible blob store |
+| CDN | Cloudflare (free tier → Pro when traffic warrants) |
+
+---
+
+## 6. Phased Roadmap
+
+Eight phases, ~24 months. Each phase has a single sentence that encodes its purpose — if you can't map a task back to the current phase's sentence, it doesn't belong in the current phase.
+
+| # | Phase | Sentence | Duration |
+|---|---|---|---|
+| 0 | Foundation | Get the project bones set up so real work can start. | Weeks 1–4 |
+| 1 | POC Runtime | Prove one binary runs identically on three desktop hosts. | Months 2–3 |
+| 2 | UAPI v0.1 (CLI) | Ship the first useful cross-platform CLI app through our runtime. | Months 4–6 |
+| 3 | UI + Graphics | First GUI app running natively on Win / macOS / Linux. | Months 7–10 |
+| 4 | Mobile Hosts | Same app runs on iOS and Android. | Months 11–14 |
+| 5 | Developer SDK | A dev can `oneos new hello && oneos run` in under 60 seconds. | Months 15–18 |
+| 6 | Distribution & Identity | Users discover, install, update, and sign in across devices. | Months 19–22 |
+| 7 | v1.0 Hardening | ParkSure migrated end-to-end; public launch. | Months 23–24 |
+
+### Phase 0 — Foundation (Weeks 1–4)
+
+**Objective:** Everything a new contributor needs to start writing code on day 1.
+
+**Deliverables:**
+- Monorepo `oneos/oneos` on GitHub (MIT + Apache-2.0 dual license).
+- README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT.
+- Repo skeleton (see §7.0).
+- First ADR (ADR-0001: "We use Rust for the runtime").
+- CI pipeline running on Linux that builds + tests an empty Rust workspace.
+- Issue templates, PR templates, labels.
+- Discord / Matrix server for contributors.
+- Documentation site scaffolded (mdBook).
+
+**Exit criteria:**
+- `git clone && cargo build` succeeds on a fresh laptop in ≤ 10 minutes.
+- CI green on `main`.
+- One external contributor (besides founder) has opened a PR and merged it.
+
+### Phase 1 — POC Runtime (Months 2–3)
+
+**Objective:** "Same `.wasm` file runs via our CLI on Linux, macOS, Windows and prints Hello World. Nothing else."
+
+**Deliverables:**
+- `oneos-runtime` crate wrapping Wasmtime with the beginnings of our API surface.
+- `oneos` CLI v0.0.1 with `oneos run <file.wasm>`.
+- Cross-platform CI matrix green.
+- ADR-0002: "We use Wasmtime." ADR-0003: "We adopt Component Model."
+
+**Exit criteria:**
+- One Rust file → `cargo component build` → `oneos run foo.wasm` prints hello on all three desktop OSes.
+- Startup time < 200 ms cold on mid-range hardware.
+- Runtime binary size < 30 MB.
+
+### Phase 2 — UAPI v0.1 (Months 4–6)
+
+**Objective:** First CLI modules of UAPI defined, implemented on three hosts, and used by a real small app.
+
+**Scope for v0.1:** `io`, `fs`, `net` (HTTP client only), `time`, `locale`.
+
+**Deliverables:**
+- WIT files for each v0.1 module in `wit/oneos/*.wit`.
+- Host adapter implementations for Linux, macOS, Windows.
+- `wit-bindgen` generated Rust, Go, and TypeScript stubs.
+- Sample apps: `oneos-curl` (HTTP client), `oneos-cat` (file reader), `oneos-clock` (time demo).
+- Integration test harness that runs sample apps under `oneos run` on all three hosts and diffs stdout.
+
+**Exit criteria:**
+- All three sample apps pass on all three hosts in CI.
+- A dev who knows Rust but nothing about WASM can write a new CLI app in < 30 minutes using our docs.
+
+### Phase 3 — UI + Graphics (Months 7–10)
+
+**Objective:** First windowed GUI app running natively on three desktop hosts with consistent layout and native-feeling chrome.
+
+**Scope:** `ui` (windowing, widget tree, input), `gfx` (2D canvas).
+
+**Deliverables:**
+- `ui.wit` defining widget protocol (Window, Stack, Button, Text, Input, Image, List).
+- Retained-mode widget lowering:
+  - macOS adapter → AppKit.
+  - Windows adapter → Win32 + XAML Islands or native Win32.
+  - Linux adapter → GTK4.
+- 2D canvas fallback (vello / wgpu) for custom-drawn widgets.
+- Layout engine (flexbox subset based on Taffy).
+- Input (keyboard, mouse, touch surrogate).
+- Sample app: `oneos-notes` — minimal note-taking app with list, editor, save to disk.
+
+**Exit criteria:**
+- `oneos-notes` runs on all three desktop OSes and feels native (no Electron-style "web app in a chrome").
+- 60 fps steady on 2020+ hardware.
+
+### Phase 4 — Mobile Hosts (Months 11–14)
+
+**Objective:** The same `.oneapp` that ran on desktop in Phase 3 runs on iOS and Android without source changes, only with mobile-appropriate layout.
+
+**Deliverables:**
+- Runtime port to iOS (via Embedded Swift bridge + Wasmtime-on-iOS).
+- Runtime port to Android (via JNI + Wasmtime-on-Android).
+- Touch input, gesture recognition (`uapi::ui::input::gesture`).
+- `sensors` UAPI module (accelerometer, GPS, camera — read-only in v0.1).
+- Mobile-specific lifecycle (background, suspend, resume).
+- Mobile CI (GitHub Actions macOS runners for iOS; Linux for Android via AVD).
+
+**Exit criteria:**
+- `oneos-notes` runs on iPhone and Android phone.
+- Battery usage comparable to a native Swift/Kotlin equivalent of the same app (≤ 1.5× acceptable for v0.1).
+
+### Phase 5 — Developer SDK (Months 15–18)
+
+**Objective:** A developer's first 60 seconds.
+
+**Deliverables:**
+- `oneos` CLI: `new`, `build`, `run`, `test`, `deploy`, `doctor`.
+- Project templates (Rust, Go, TypeScript).
+- Hot reload during dev.
+- Debugger integration (DWARF via `wasm-tools component-debug`, VSCode extension).
+- Profiler (wall-clock, heap, UAPI call timing).
+- Language servers / IntelliSense work for WIT-generated bindings in all three first-class languages.
+
+**Exit criteria:**
+- `oneos new hello --lang rust && cd hello && oneos run` produces a running GUI on the dev's machine in under 60 seconds.
+- Stack traces in app crashes point to app source, not WASM offsets.
+
+### Phase 6 — Distribution & Identity (Months 19–22)
+
+**Objective:** Users and developers have a real platform — apps are published, discovered, installed, updated, and sign in with one identity across devices.
+
+**Deliverables:**
+- Marketplace backend (axum + Postgres + S3).
+- Marketplace frontend (itself a OneOS app — deep dogfood).
+- Signing infrastructure (developer keypairs, revocation, transparency log).
+- Delta updates (`.oneapp` diff format).
+- Identity: `did:key` support in runtime, `uapi::identity` module, DID resolution UI.
+- Age-rating, content guidelines, moderation tooling (basic).
+
+**Exit criteria:**
+- A new user can install runtime, sign in, install 3 apps, and each app recognizes them as same user — on two different devices — without manual account setup in each app.
+- Developer can `oneos deploy` and the update reaches users' devices within 24 hours.
+
+### Phase 7 — v1.0 Hardening (Months 23–24)
+
+**Objective:** Ship.
+
+**Deliverables:**
+- ParkSure migrated to OneOS (all 6 client apps → 1 codebase).
+- Security audit by external firm (Trail of Bits or similar).
+- Performance work: meet all §1.3 + §11 targets.
+- Documentation pass: every UAPI function documented with examples.
+- Localization: runtime + marketplace in EN + DE + FR + ES + ZH + HI.
+- Accessibility audit.
+- Marketing site, launch blog post, HN / Product Hunt coordinated launch.
+
+**Exit criteria:** All §1.3 criteria met. Zero P0 bugs open.
+
+---
+
+## 7. Detailed Task Breakdown
+
+Each phase's tasks are listed with an ID. Tasks are independent enough to be assigned to a single engineer-week unless noted.
+
+### 7.0 Repo skeleton (Phase 0)
+
+```
+oneos/
+├── Cargo.toml              # workspace
+├── rust-toolchain.toml     # pinned stable + wasm32 targets
+├── .github/
+│   ├── workflows/
+│   │   ├── ci.yml
+│   │   ├── nightly.yml
+│   │   └── release.yml
+│   ├── ISSUE_TEMPLATE/
+│   └── PULL_REQUEST_TEMPLATE.md
+├── crates/
+│   ├── runtime/            # the host runtime (Phase 1+)
+│   ├── cli/                # `oneos` command (Phase 1+)
+│   ├── bundle/             # .oneapp format (Phase 6)
+│   ├── policy/             # UCap policy engine (Phase 2+)
+│   └── host-adapter/
+│       ├── linux/
+│       ├── macos/
+│       ├── windows/
+│       ├── ios/            # Phase 4
+│       └── android/        # Phase 4
+├── wit/
+│   └── oneos/
+│       ├── io.wit
+│       ├── net.wit
+│       └── ...             # one file per UAPI module
+├── apps/                   # sample & dogfood apps
+│   ├── oneos-curl/
+│   ├── oneos-notes/
+│   └── marketplace/        # Phase 6
+├── docs/
+│   ├── adr/                # decision records
+│   ├── book/               # mdBook source
+│   └── rfc/                # proposals
+├── scripts/
+├── test/
+│   ├── integration/
+│   └── fixtures/
+├── LICENSE-MIT
+├── LICENSE-APACHE
+├── README.md
+├── CONTRIBUTING.md
+├── SECURITY.md
+└── CODE_OF_CONDUCT.md
+```
+
+### 7.1 Phase 0 tasks
+
+| ID | Task | Est |
+|---|---|---|
+| P0-REPO-01 | Initialize monorepo, licenses, README | 0.5d |
+| P0-REPO-02 | Set up rust-toolchain, cargo workspace, cargo-deny | 0.5d |
+| P0-REPO-03 | GitHub Actions: fmt, clippy, test, matrix build | 1d |
+| P0-DOCS-01 | mdBook site with first chapter (Vision) | 1d |
+| P0-DOCS-02 | ADR template + ADR-0001 (Rust choice) | 0.5d |
+| P0-DOCS-03 | CONTRIBUTING.md covering PR flow, DCO, commit style | 0.5d |
+| P0-COMM-01 | Discord server + #general, #dev, #design, #help | 0.5d |
+| P0-COMM-02 | Twitter/X account, first announcement thread draft | 0.5d |
+| P0-LEGAL-01 | Trademark search for "OneOS" (defer filing) | 0.5d |
+| P0-HIRE-01 | Write contributor guide for first external PR | 0.5d |
+
+### 7.2 Phase 1 tasks
+
+| ID | Task | Est |
+|---|---|---|
+| P1-RT-01 | Create `runtime` crate; integrate Wasmtime | 2d |
+| P1-RT-02 | Load + instantiate a WASM component | 1d |
+| P1-RT-03 | Define minimal host import table (print, exit) | 1d |
+| P1-RT-04 | Configurable fuel / memory limits | 1d |
+| P1-CLI-01 | `oneos` binary using `clap` | 1d |
+| P1-CLI-02 | `oneos run <file>` subcommand | 1d |
+| P1-CLI-03 | `oneos version`, `oneos doctor` basic | 0.5d |
+| P1-CI-01 | Cross-platform CI matrix | 2d |
+| P1-CI-02 | Release artifacts (tar.gz, zip, .msi, .pkg) | 2d |
+| P1-TEST-01 | Integration test: hello-world.wasm runs on all hosts | 1d |
+| P1-DOC-01 | Quickstart: "Run your first WASM under oneos" | 1d |
+| P1-DOC-02 | ADR-0002 (Wasmtime), ADR-0003 (Component Model) | 1d |
+| P1-PERF-01 | Baseline startup, memory benchmarks | 2d |
+| P1-SEC-01 | Threat model document v0.1 | 2d |
+
+### 7.3 Phase 2 tasks
+
+| ID | Task | Est |
+|---|---|---|
+| P2-UAPI-01 | Write `wit/oneos/io.wit` (stdio, log) | 1d |
+| P2-UAPI-02 | Write `wit/oneos/fs.wit` (open, read, write, stat) | 2d |
+| P2-UAPI-03 | Write `wit/oneos/net.wit` (HTTP client only) | 2d |
+| P2-UAPI-04 | Write `wit/oneos/time.wit` (clock, sleep, timer) | 1d |
+| P2-UAPI-05 | Write `wit/oneos/locale.wit` (current locale, format) | 1d |
+| P2-ADPT-01 | Implement io/fs/net/time adapters on Linux | 3d |
+| P2-ADPT-02 | Implement same on macOS | 3d |
+| P2-ADPT-03 | Implement same on Windows | 3d |
+| P2-BIND-01 | Rust bindings via wit-bindgen | 1d |
+| P2-BIND-02 | Go bindings via TinyGo | 2d |
+| P2-BIND-03 | TypeScript bindings via jco | 2d |
+| P2-APP-01 | Write `oneos-curl` sample | 2d |
+| P2-APP-02 | Write `oneos-cat` sample | 1d |
+| P2-APP-03 | Write `oneos-clock` sample | 1d |
+| P2-TEST-01 | Harness: run sample, diff stdout across hosts | 2d |
+| P2-SEC-01 | UCap minimum: cap per UAPI module, grant-at-launch | 3d |
+| P2-DOC-01 | WIT style guide | 1d |
+| P2-DOC-02 | UAPI reference (auto-gen from WIT) | 2d |
+
+### 7.4 Phase 3 tasks
+
+| ID | Task | Est |
+|---|---|---|
+| P3-UI-01 | Widget protocol design RFC | 3d |
+| P3-UI-02 | `wit/oneos/ui.wit` | 2d |
+| P3-UI-03 | Layout engine (Taffy integration) | 3d |
+| P3-UI-04 | Window + event loop abstractions | 3d |
+| P3-UI-05 | macOS adapter: NSWindow + NSView widget bridge | 5d |
+| P3-UI-06 | Windows adapter: Win32 + DirectComposition | 5d |
+| P3-UI-07 | Linux adapter: GTK4 bridge | 5d |
+| P3-GFX-01 | `wit/oneos/gfx.wit` (2D canvas) | 2d |
+| P3-GFX-02 | `wgpu` integration in runtime | 3d |
+| P3-GFX-03 | 2D canvas via vello | 5d |
+| P3-GFX-04 | 3D API (WebGPU-compatible subset) | 5d |
+| P3-INPUT-01 | Keyboard + mouse input | 2d |
+| P3-INPUT-02 | Text input + IME | 3d |
+| P3-APP-01 | Design and build `oneos-notes` | 5d |
+| P3-A11Y-01 | Screen reader integration per platform | 5d |
+| P3-TEST-01 | UI snapshot testing harness | 3d |
+| P3-PERF-01 | Frame budget dashboard | 2d |
+| P3-DOC-01 | "Build a GUI app" tutorial | 3d |
+
+### 7.5 Phase 4 tasks
+
+| ID | Task | Est |
+|---|---|---|
+| P4-IOS-01 | Compile Wasmtime for iOS (arm64 + simulator) | 3d |
+| P4-IOS-02 | iOS host app shell (Swift + embedded runtime) | 5d |
+| P4-IOS-03 | UIKit widget bridge | 7d |
+| P4-IOS-04 | iOS lifecycle adapter | 3d |
+| P4-IOS-05 | Metal-backed wgpu | 2d |
+| P4-IOS-06 | Sensors adapter (Core Motion, Core Location) | 3d |
+| P4-IOS-07 | TestFlight-compatible packaging | 2d |
+| P4-AND-01 | Compile Wasmtime for Android (arm64, x86_64) | 3d |
+| P4-AND-02 | Android host app shell (Kotlin + JNI) | 5d |
+| P4-AND-03 | Android View widget bridge | 7d |
+| P4-AND-04 | Android lifecycle adapter | 3d |
+| P4-AND-05 | Vulkan-backed wgpu | 2d |
+| P4-AND-06 | Sensors adapter (SensorManager, FusedLocation) | 3d |
+| P4-AND-07 | APK/AAB packaging | 2d |
+| P4-UI-01 | Touch + gesture UAPI | 3d |
+| P4-UI-02 | Mobile-appropriate default layouts | 3d |
+| P4-APP-01 | `oneos-notes` port verified on both mobile OSes | 3d |
+| P4-CI-01 | iOS CI on GitHub Actions macOS runners | 3d |
+| P4-CI-02 | Android CI via emulator | 3d |
+
+### 7.6 Phase 5 tasks
+
+| ID | Task | Est |
+|---|---|---|
+| P5-CLI-01 | `oneos new <name> --lang <rust\|go\|ts>` scaffolding | 3d |
+| P5-CLI-02 | `oneos build` wrapper around component builds | 2d |
+| P5-CLI-03 | `oneos test` harness integration | 2d |
+| P5-CLI-04 | `oneos doctor` environment check | 2d |
+| P5-HOT-01 | Hot reload architecture RFC | 2d |
+| P5-HOT-02 | Hot reload implementation (re-instantiate w/ state migration) | 7d |
+| P5-DBG-01 | DWARF in component format | 5d |
+| P5-DBG-02 | VSCode extension skeleton | 3d |
+| P5-DBG-03 | Breakpoints + step-through | 7d |
+| P5-PROF-01 | Flamegraph for UAPI calls | 3d |
+| P5-PROF-02 | Heap snapshots | 3d |
+| P5-LSP-01 | WIT language server | 3d |
+| P5-LSP-02 | Integrate WIT LSP with rust-analyzer / gopls / tsserver | 3d |
+| P5-TMPL-01 | Rust GUI template | 1d |
+| P5-TMPL-02 | Go CLI template | 1d |
+| P5-TMPL-03 | TS GUI template | 1d |
+| P5-DOC-01 | "Your first 60 seconds" tutorial | 2d |
+
+### 7.7 Phase 6 tasks
+
+| ID | Task | Est |
+|---|---|---|
+| P6-BUNDLE-01 | `.oneapp` format spec | 3d |
+| P6-BUNDLE-02 | Packer / unpacker in bundle crate | 3d |
+| P6-BUNDLE-03 | Delta update diff format | 5d |
+| P6-SIGN-01 | Developer keypair enrollment flow | 3d |
+| P6-SIGN-02 | Signature verification in runtime | 3d |
+| P6-SIGN-03 | Transparency log (Sigstore-style) | 5d |
+| P6-MP-01 | Marketplace schema (Postgres) | 2d |
+| P6-MP-02 | Upload + storage pipeline | 5d |
+| P6-MP-03 | Search + discovery API | 3d |
+| P6-MP-04 | Reviews + ratings | 3d |
+| P6-MP-05 | Categories + featured content | 2d |
+| P6-MP-06 | Age-rating + moderation tooling | 5d |
+| P6-MP-07 | Marketplace frontend (itself a OneOS app) | 10d |
+| P6-ID-01 | `did:key` implementation | 3d |
+| P6-ID-02 | `did:web` resolver | 3d |
+| P6-ID-03 | `uapi::identity` module | 3d |
+| P6-ID-04 | Key storage in OS keychains | 3d |
+| P6-ID-05 | Cross-device sync flow | 5d |
+| P6-UPD-01 | Background update service per host | 5d |
+| P6-UPD-02 | Rollback mechanism | 3d |
+
+### 7.8 Phase 7 tasks
+
+| ID | Task | Est |
+|---|---|---|
+| P7-PARK-01 | ParkSure architecture review for OneOS port | 3d |
+| P7-PARK-02 | Port driver app | 10d |
+| P7-PARK-03 | Port operator app | 10d |
+| P7-PARK-04 | Port valet ops + lot admin | 10d |
+| P7-PARK-05 | Port public dashboard | 5d |
+| P7-PARK-06 | Cross-device user journey end-to-end | 5d |
+| P7-SEC-01 | External security audit | 20d (elapsed) |
+| P7-SEC-02 | Remediation of findings | 10d |
+| P7-PERF-01 | Meet §1.3 and §11 targets | 20d |
+| P7-DOC-01 | Documentation pass (every UAPI fn) | 15d |
+| P7-DOC-02 | Migration guide "from Electron/Flutter/RN to OneOS" | 5d |
+| P7-I18N-01 | Runtime + marketplace in 6 locales | 10d |
+| P7-A11Y-01 | Full accessibility audit | 5d |
+| P7-LAUNCH-01 | Marketing site | 5d |
+| P7-LAUNCH-02 | Launch blog, HN post, video demo | 3d |
+| P7-LAUNCH-03 | Press outreach | 3d |
+
+---
+
+## 8. Testing Strategy
+
+### 8.1 Test pyramid
+
+| Level | Tool | What it covers | Where it lives |
+|---|---|---|---|
+| Unit | `cargo test`, language-native | Pure functions, parsers, small modules | Inside each crate |
+| Component | `wasmtime`-based harness | Single WASM component calling UAPI | `test/integration/component/` |
+| Integration | Custom harness | Runtime + adapter + real native calls (sandboxed) | `test/integration/` |
+| E2E | Real devices / VMs | Full user flows | `test/e2e/` |
+| Snapshot | `insta` (Rust) | UI layouts, stdout captures | Per-app |
+| Property | `proptest` | WIT ABI invariants, encoding | Runtime crates |
+| Fuzz | `cargo-fuzz` | Bundle parser, manifest parser, UCap enforcer | `fuzz/` |
+
+### 8.2 Cross-platform test matrix
+
+```mermaid
+flowchart LR
+    subgraph Matrix
+        direction TB
+        A[linux-x86_64]
+        B[linux-arm64]
+        C[macos-x86_64]
+        D[macos-arm64]
+        E[windows-x86_64]
+        F[windows-arm64]
+        G[ios-arm64]
+        H[android-arm64]
+        I[android-x86_64 emu]
+    end
+    PR[PR to main] --> Matrix
+    Matrix --> Results[All green required]
+```
+
+### 8.3 Performance benchmarks
+
+Every phase owns a benchmark suite. Results published to a dashboard.
+
+- `bench_startup` — cold start, warm start, first frame.
+- `bench_uapi_hot_path` — UAPI call overhead (measured in ns).
+- `bench_ui_frame` — build + render a 1000-widget tree.
+- `bench_bundle_install` — extract + verify `.oneapp`.
+
+CI fails if benchmarks regress > 5% without an approved ADR.
+
+### 8.4 Security testing
+
+- Static: `cargo-audit`, `cargo-deny`, `semgrep` per PR.
+- Dynamic: `cargo-fuzz` nightly on bundle parser and UCap enforcer (minimum 4h budget).
+- Pen test: external firm in Phase 7.
+- Bug bounty: opens with Phase 6.
+
+---
+
+## 9. Build & CI/CD
+
+### 9.1 CI pipeline
+
+```mermaid
+flowchart TD
+    PR[PR opened/updated] --> LINT[fmt + clippy + wit-lint]
+    LINT --> UNIT[Unit tests per crate]
+    UNIT --> BUILD[Build matrix all hosts]
+    BUILD --> INT[Integration tests]
+    INT --> BENCH{Benchmarks}
+    BENCH -->|regression >5%| FAIL[Fail PR]
+    BENCH -->|ok| SEC[cargo-audit, cargo-deny]
+    SEC --> DOCS[Build docs + ADR check]
+    DOCS --> MERGE{Ready?}
+```
+
+### 9.2 Release pipeline
+
+Triggered by `v*` tag on `main`:
+
+1. Build all host binaries.
+2. Sign each artifact (Sigstore for OSS; OS-specific signing keys for Windows/macOS store).
+3. Run full E2E against the release artifacts.
+4. Publish to GitHub Releases + ghcr.io.
+5. Publish WIT files to a public registry (own implementation or reuse wa.dev).
+6. Generate release notes from conventional-commit log.
+7. Update `docs/` site.
+8. Announce on Discord + Twitter + blog.
+
+---
+
+## 10. Security Model (UCap in depth)
+
+### 10.1 Design principles
+
+1. **Capability = unforgeable reference to an operation on a resource.**
+2. **Apps get capabilities only through the runtime's explicit grant.** No ambient authority.
+3. **Users own the grant decision.** Runtime UI, not app UI, prompts.
+4. **Least privilege by default.** Deny-by-default; manifest declares the maximum set; user grants a subset.
+5. **Revocation is real.** Revoking a cap invalidates all outstanding handles immediately.
+6. **Every grant is audit-logged.** User can see what was granted when, by whom, to which app.
+
+### 10.2 Capability string format
+
+```
+<module>.<action>[:<resource>]
+```
+
+Examples:
+
+- `fs.read:~/Documents/**`
+- `fs.write:~/.config/myapp/**`
+- `net.connect:api.example.com:443`
+- `net.connect:*:443` (any host on 443)
+- `ui.window:create`
+- `sensors.camera:frontfacing`
+- `identity.sign:user`
+- `ai.inference:localmodel:llama-small`
+
+Wildcards `*` allowed only in documented positions (host, path suffix). Never in action or module.
+
+### 10.3 Grant dialog UX rules
+
+- Shown only when a new capability is requested.
+- Categorized: "Always / Just this session / Ask every time / Deny".
+- Shows human-readable explanation (manifest provides `rationale` field per cap).
+- Shows publisher identity with trust signals (new publisher, known good, revoked).
+- Cannot be summoned by app code — runtime-driven only.
+- Sensitive capabilities (camera, microphone, location, identity, background net) require elevated confirmation (biometric / password / OS-native prompt).
+
+### 10.4 Manifest excerpt
+
+```toml
+[app]
+id = "com.parksure.driver"
+name = "ParkSure Driver"
+version = "1.0.0"
+entry = "code.wasm"
+
+[[capabilities]]
+cap = "net.connect:*.parksure.com:443"
+rationale = "Sync bookings and status"
+required = true
+
+[[capabilities]]
+cap = "sensors.camera:rearfacing"
+rationale = "Scan QR codes at parking entrance"
+required = false
+
+[[capabilities]]
+cap = "sensors.location:precise"
+rationale = "Find parking near you"
+required = false
+```
+
+### 10.5 Policy DB
+
+Per-user, per-device SQLite table:
+
+```sql
+CREATE TABLE ucap_grant (
+  app_id       TEXT NOT NULL,
+  capability   TEXT NOT NULL,
+  mode         TEXT NOT NULL CHECK (mode IN ('always','session','once','deny')),
+  granted_at   INTEGER NOT NULL,
+  expires_at   INTEGER,           -- NULL = no expiry
+  granted_by   TEXT,               -- user DID
+  PRIMARY KEY (app_id, capability)
+);
+CREATE INDEX idx_grant_app ON ucap_grant(app_id);
+```
+
+---
+
+## 11. Performance Targets
+
+| Metric | Target | Measured how |
+|---|---|---|
+| Cold start (hello-world CLI) | < 100 ms | `oneos run` wall time, average of 20 |
+| Warm start (same binary) | < 20 ms | As above, after first run |
+| UAPI dispatch overhead | < 500 ns | Microbench inside runtime |
+| First frame (GUI hello-world) | < 300 ms | Timestamp diff from exec to first paint |
+| Steady-state frame | 16.7 ms (60 fps) | Per-frame histogram |
+| Bundle install time (10 MB) | < 2 s | `oneos install` wall time |
+| Bundle delta update (1 MB) | < 500 ms | Download + apply |
+| Memory overhead (runtime + empty app) | < 40 MB RSS | `ps` after hello-world exits |
+| Binary size overhead vs native equivalent | < 3× | Size of `.oneapp` vs hand-written native |
+
+Every phase has a subset of these to hit. §7 tasks link to the relevant target.
+
+---
+
+## 12. Documentation Strategy
+
+Three tiers, lives in `docs/book/` built by mdBook.
+
+### 12.1 Tiers
+
+1. **Tutorials** — guided, complete walkthroughs. Each ends with a working app.
+2. **How-to guides** — recipe style, for people who already know what they're doing.
+3. **Reference** — exhaustive, auto-generated from WIT + Rustdoc.
+4. **Explanation** — why things are the way they are; links to ADRs.
+
+(This is the Divio documentation taxonomy — worth adopting wholesale.)
+
+### 12.2 Documentation quality gate
+
+Every new UAPI function must ship with:
+- WIT comment (appears in reference).
+- At least one example in the module's guide.
+- An entry in the changelog.
+
+A PR that adds a public API without docs is rejected by CI.
+
+### 12.3 ADR workflow
+
+1. Draft ADR in `docs/adr/NNNN-short-title.md` using the template in Appendix D.
+2. Open a PR titled `ADR: <title>`.
+3. Minimum 2 maintainers approve, or 1 approve + 7 days open.
+4. Merged ADRs are immutable; supersede via a new ADR that references the old one.
+
+---
+
+## 13. Governance & Open Source
+
+### 13.1 License
+
+Dual MIT / Apache-2.0, the standard in the Rust ecosystem. Bundle format and WIT interfaces under CC-BY-4.0 for maximum spread.
+
+### 13.2 Ownership model
+
+- **Benevolent dictator → foundation track.**
+  - Months 0–18: Y is BDFL. All calls land with Y.
+  - Months 18–24: establish steering committee (5 seats). BDFL retains veto on bytecode + UAPI compat.
+  - Post-v1.0: transfer trademark + release process to a neutral foundation (Apache, Bytecode Alliance, or standalone).
+
+### 13.3 RFC process
+
+Any change to UIR, UAPI, UCap, or bundle format requires an RFC:
+
+1. Draft in `docs/rfc/NNNN-title.md`.
+2. Open PR.
+3. 14-day comment period minimum.
+4. Core team votes (super-majority).
+5. Merge and implement.
+
+### 13.4 Backward compatibility
+
+- **UIR:** never break. Additive only.
+- **UAPI:** semantic versioning per module. Breaking changes require a new major version; old major maintained for 18 months minimum.
+- **Bundle format:** versioned header; old formats supported indefinitely.
+- **Runtime:** semantic versioning; older bundles run on newer runtime; newer bundles may require minimum runtime version declared in manifest.
+
+---
+
+## 14. Risk Register
+
+### 14.1 Technical risks
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| WASM Component Model instability | Medium | High | Pin to stable subset; contribute upstream; maintain shim layer to absorb churn |
+| GPU API fragmentation (WebGPU not universal yet) | Medium | Medium | Fall back to per-host backend via wgpu; ship wgpu copy we control |
+| Mobile background execution limits | High | Medium | Design UAPI around foreground-first; use host-specific background services via adapter |
+| Binary size too large | Medium | High | Aggressive dead-code elimination; optional lazy-loaded modules; per-platform builds |
+| JIT startup vs AOT tradeoff | Medium | Medium | Ship both: JIT for dev, AOT cache for installed apps |
+| UCap usability (too many prompts) | High | High | Batch initial grants; rationales; remember-my-choice defaults; study with real users in Phase 3 |
+| Font & text rendering parity | High | Medium | Delegate to host text engine via adapter; custom only for logo-style uses |
+| Accessibility parity | Medium | High | Bake a11y into widget protocol from Phase 3, not tacked on |
+
+### 14.2 Ecosystem / market risks
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Developer cold-start problem | High | Critical | Anchor tenant (ParkSure); pay first 10 migrations; flagship app we own |
+| Apple App Store policy blocks us | High | High | Start with developer mode + TestFlight; follow Swift Playgrounds / Pyto precedent; compile-to-native fallback for production |
+| Google Play policy blocks us | Medium | High | APK sideload viable on Android; Play Store is nice-to-have, not critical |
+| Platform vendors build their own | Medium | Medium | Open standards + governance → no one owns it → reduces vendor incentive to kill it |
+| Community fragmentation (hard fork) | Low | High | Clear governance + liberal contribution + trademark held by foundation |
+
+### 14.3 Organizational risks
+
+| Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|
+| Founder-only team cannot ship 24-month plan | High | Critical | Recruit co-founder (systems or DeFi+security background) by end of Phase 1 |
+| Funding runway | Medium | Critical | Build MVP (Phase 2) before fundraising; OSS + sponsorships supplement |
+| Burnout | Medium | High | Hard 40h/wk default; explicit rest weeks between phases |
+| ParkSure time conflict | High | High | Phase OneOS work around ParkSure milestones; use Phase 7 to migrate ParkSure itself — one-stone-two-birds |
+
+### 14.4 Legal (deferred per founder instruction; tracked)
+
+Items to revisit at Phase 6:
+- Trademark "OneOS" + "META-OS".
+- GPL-vs-permissive implications of any linked code.
+- Export controls on crypto (BIS EAR classification).
+- App Store ToS compliance posture.
+- DMA (EU) and similar laws that may *help* us.
+
+---
+
+## 15. Go-to-Market
+
+### 15.1 Three-stage go-to-market
+
+```mermaid
+flowchart LR
+    S1[Stage 1 OSS credibility] --> S2[Stage 2 Developer adoption] --> S3[Stage 3 End-user platform]
+    S1 -.->|months 0-12| S1
+    S2 -.->|months 12-24| S2
+    S3 -.->|months 24+| S3
+```
+
+### 15.2 Stage 1 (months 0–12): OSS credibility
+
+- Open source from day one. Public repo, public roadmap, public Discord.
+- Regular (monthly) blog posts about what we're building.
+- Conference talks: RustConf, Wasm I/O, Web Summit developer track.
+- Establish as a serious project in the WASM/component ecosystem.
+- Target audience: WASM insiders, Rust systems folks, Bytecode Alliance.
+- Goal: 5k GitHub stars, 500 Discord members, 30 external contributors.
+
+### 15.3 Stage 2 (months 12–24): Developer adoption
+
+- Launch Phase 5 SDK publicly with strong DX.
+- Target 5 flagship apps built by external teams (subsidize if needed).
+- Partnership program: startups get free builds + marketing in exchange for case study.
+- Target audience: devs tired of maintaining 3–6 codebases.
+- Goal: 10k installs of the dev toolchain, 100 apps shipped.
+
+### 15.4 Stage 3 (months 24+): End-user platform
+
+- Marketplace launches with ParkSure and 20+ quality apps.
+- Consumer-targeted install flow (one-click installer per host).
+- Content partners for launch-week catalog.
+- Press launch; coordinated reviews.
+- Target: 100k installs of runtime by end of month 30.
+
+---
+
+## 16. Team & Hiring
+
+### 16.1 Team growth
+
+| Phase | Team size | Critical roles |
+|---|---|---|
+| 0 | 1 (founder) | Founder, generalist |
+| 1 | 1–2 | + Rust systems engineer (possibly part-time) |
+| 2 | 2–3 | + 2nd systems engineer or contractor for per-host adapters |
+| 3 | 3–5 | + UI engineer (graphics/UX), + designer (part-time) |
+| 4 | 5–7 | + iOS specialist, + Android specialist |
+| 5 | 6–9 | + DX / devtools engineer, + docs engineer |
+| 6 | 8–12 | + backend engineer (marketplace), + security engineer, + community manager |
+| 7 | 10–15 | + QA lead, + marketing, + support |
+
+### 16.2 First hire priorities
+
+Rank order for the next three hires after founder:
+
+1. **Senior systems engineer (Rust)** — ideally with WASM runtime experience. Look: Wasmtime contributors, Shopify Functions team alumni, Fermyon ex-eng.
+2. **UI engineer** — experience with cross-platform UI systems (Flutter / React Native / Avalonia / Slint). Graphics background is a plus.
+3. **Security engineer** — capability-based security experience (a rare bird). Failing that, someone from macOS kernel team, iOS security, or any sandboxing project. Consulting OK for Phase 0–3.
+
+### 16.3 Co-founder question
+
+Y's existing memory says a technical co-founder with DeFi or security background is the highest-leverage hire for Bouclier. For OneOS the best co-founder profile is different: **systems / compiler / OS kernel background**. Not the same person. If Bouclier and OneOS both need a co-founder, these are two different people and time has to be allocated to recruiting both separately.
+
+---
+
+## 17. Infrastructure & Tools
+
+### 17.1 Core infrastructure
+
+| Need | Tool | Notes |
+|---|---|---|
+| Source | GitHub | Public monorepo + private tooling sub-repos |
+| CI | GitHub Actions | Matrix runners; self-hosted arm64 Linux if needed |
+| Container / OCI registry | ghcr.io | Free for public images |
+| Binary artifact hosting | GitHub Releases + Cloudflare R2 | R2 for large binaries / delta updates |
+| Issue tracking | GitHub Issues | Labels for phase, area, priority |
+| Project boards | GitHub Projects | One per phase |
+| Docs | mdBook + GitHub Pages | Custom theme matching brand |
+| Blog | Astro or Zola | Static, fast, versioned |
+| Chat | Discord (or Matrix for purists) | #general, #dev, #help, #design, #rfc |
+| Forum | GitHub Discussions | For long-form topics |
+| Analytics | Plausible (self-hosted or cloud) | Privacy-respecting |
+| Metrics / monitoring | Grafana Cloud (free tier) → self-host | For marketplace backend |
+| Error tracking | Sentry (open source, self-hosted) | For runtime crashes |
+| Secrets | 1Password / doppler | For team |
+| Project management | Linear or GitHub Projects | Whichever wins after 2 weeks |
+| Design | Figma | Free tier adequate |
+
+### 17.2 Developer machine requirements
+
+- 16 GB RAM minimum, 32 recommended.
+- 200 GB free disk (all host SDKs add up).
+- macOS required for any iOS work.
+- Windows required to test the Windows adapter locally (or Parallels).
+- All three OS VMs recommended for anyone working on the host adapter.
+
+### 17.3 Budget estimate (first 24 months, lean)
+
+| Item | Monthly | Notes |
+|---|---|---|
+| GitHub org (Team) | $4 × team size | Team plan |
+| CI minutes | $0–200 | Free tier + occasional top-ups |
+| Cloud (marketplace Phase 6+) | $50–500 | Scale with users |
+| Cloudflare | $20–200 | Pro → Business |
+| Error + monitoring | $0–100 | Self-host where possible |
+| Domain, certificates | $20 | Multiple domains |
+| Legal (trademark + counsel) | Variable, defer | Phase 6+ |
+| Salaries | Largest line | Depends on hiring model |
+
+Total infra without salaries: < $1k/month for 18 months, < $2k/month after launch.
+
+---
+
+## 18. Glossary
+
+- **ABI** — Application Binary Interface. The contract between caller and callee in compiled code.
+- **ADR** — Architecture Decision Record. A short document capturing a decision and its context.
+- **AOT** — Ahead-Of-Time compilation.
+- **Capability** — An unforgeable token granting the right to perform an operation on a resource.
+- **Component Model** — WebAssembly specification adding typed interfaces and composition to WASM modules.
+- **DID** — Decentralized Identifier. A W3C standard for self-sovereign identity.
+- **Host Adapter** — The per-OS module inside the OneOS runtime that maps UAPI to native calls.
+- **JIT** — Just-In-Time compilation.
+- **Manifest** — `manifest.toml` describing a OneOS app's metadata and required capabilities.
+- **OneOS** — Product name for the META-OS described here.
+- **UAPI** — Universal API. The standard library exposed to every OneOS app.
+- **UCap** — Universal Capabilities. The permission model.
+- **UIR** — Universal Intermediate Representation. The bytecode every app compiles to (= WASM).
+- **WASI** — WebAssembly System Interface. A standard set of host interfaces for WASM.
+- **WASM** — WebAssembly.
+- **WIT** — WebAssembly Interface Types. The IDL for Component Model interfaces.
+
+---
+
+## 19. References & Prior Art
+
+### 19.1 Specifications
+
+- [WebAssembly Core Specification](https://webassembly.github.io/spec/core/)
+- [WebAssembly Component Model](https://github.com/WebAssembly/component-model)
+- [WASI Preview 2](https://github.com/WebAssembly/WASI)
+- [W3C DID Core](https://www.w3.org/TR/did-core/)
+- [WebGPU Specification](https://www.w3.org/TR/webgpu/)
+
+### 19.2 Runtimes
+
+- [Wasmtime](https://wasmtime.dev/)
+- [WasmEdge](https://wasmedge.org/)
+- [Wasmer](https://wasmer.io/)
+
+### 19.3 Languages / Toolchains
+
+- [cargo-component](https://github.com/bytecodealliance/cargo-component)
+- [wit-bindgen](https://github.com/bytecodealliance/wit-bindgen)
+- [TinyGo](https://tinygo.org/)
+- [ComponentizeJS / Jco](https://github.com/bytecodealliance/ComponentizeJS)
+
+### 19.4 UI frameworks worth studying
+
+- Xilem (Rust; reactive architecture)
+- Slint (cross-platform, declarative, tiny)
+- Flutter (architecture doc; not the implementation)
+- SwiftUI (layout system)
+- React Native's Fabric (bridge architecture)
+
+### 19.5 Capability systems worth studying
+
+- seL4 (the canonical capability-kernel)
+- CapROS
+- Fuchsia's Zircon handles
+- Pledge / Unveil (OpenBSD)
+
+### 19.6 Documentation systems
+
+- [Divio documentation system](https://documentation.divio.com/)
+- [Diátaxis](https://diataxis.fr/)
+
+---
+
+## 20. Appendices
+
+### Appendix A — Example WIT file (`wit/oneos/fs.wit`)
+
+```wit
+package oneos:fs@0.1.0;
+
+interface types {
+  record file-stat {
+    size: u64,
+    modified: u64,          // unix millis
+    is-dir: bool,
+  }
+
+  variant open-mode {
+    read,
+    write,
+    read-write,
+    append,
+  }
+
+  variant error {
+    not-found,
+    permission-denied,
+    io(string),
+    invalid-path,
+  }
+}
+
+interface fs {
+  use types.{file-stat, open-mode, error};
+
+  resource file {
+    read: func(n: u32) -> result<list<u8>, error>;
+    write: func(bytes: list<u8>) -> result<u32, error>;
+    seek: func(pos: u64) -> result<u64, error>;
+    close: func();
+  }
+
+  open: func(path: string, mode: open-mode) -> result<file, error>;
+  stat: func(path: string) -> result<file-stat, error>;
+  list: func(path: string) -> result<list<string>, error>;
+  remove: func(path: string) -> result<_, error>;
+  mkdir: func(path: string) -> result<_, error>;
+}
+
+world fs-consumer {
+  import fs;
+}
+```
+
+### Appendix B — Example manifest (`manifest.toml`)
+
+```toml
+[app]
+id          = "com.example.notes"
+name        = "Notes"
+version     = "1.0.0"
+entry       = "code.wasm"
+runtime-min = "0.1.0"
+
+[metadata]
+authors     = ["Jane Dev <jane@example.com>"]
+homepage    = "https://notes.example.com"
+source      = "https://github.com/example/notes"
+license     = "MIT"
+categories  = ["productivity"]
+
+[[capabilities]]
+cap        = "ui.window:create"
+rationale  = "Show the notes UI"
+required   = true
+
+[[capabilities]]
+cap        = "fs.read:~/Documents/Notes/**"
+rationale  = "Read saved notes"
+required   = true
+
+[[capabilities]]
+cap        = "fs.write:~/Documents/Notes/**"
+rationale  = "Save notes"
+required   = true
+
+[[capabilities]]
+cap        = "net.connect:sync.example.com:443"
+rationale  = "Cloud sync (optional)"
+required   = false
+
+[locales]
+default    = "en"
+supported  = ["en", "de", "es", "fr", "hi", "zh"]
+
+[assets]
+icon       = "assets/icon.png"
+splash     = "assets/splash.png"
+```
+
+### Appendix C — Example UAPI use in Rust
+
+```rust
+// myapp/src/main.rs
+use oneos::fs::{self, OpenMode};
+use oneos::ui::{Window, Stack, Text, Button};
+
+fn main() -> oneos::Result<()> {
+    let mut file = fs::open("~/notes.txt", OpenMode::Read)?;
+    let contents = file.read_to_string()?;
+
+    let window = Window::new("My Notes")
+        .size(640, 480)
+        .content(
+            Stack::vertical()
+                .push(Text::new(contents))
+                .push(Button::new("Save").on_click(save))
+        );
+
+    window.show_and_run()
+}
+
+fn save(_ev: oneos::ui::Event) {
+    // ...
+}
+```
+
+### Appendix D — ADR template
+
+```markdown
+# ADR-NNNN: <short title>
+
+**Status:** Proposed | Accepted | Superseded by ADR-XXXX
+**Date:** YYYY-MM-DD
+**Authors:** @handle, @handle
+
+## Context
+
+What is the problem? What forces are at play? What does the current
+state look like?
+
+## Decision
+
+What exactly are we deciding? One short imperative paragraph.
+
+## Consequences
+
+What becomes easier? What becomes harder? What do we give up?
+
+## Alternatives considered
+
+- **Alt A** — why rejected
+- **Alt B** — why rejected
+
+## References
+
+Links, prior art, discussion threads.
+```
+
+### Appendix E — First-week checklist
+
+Day-by-day for Phase 0 week 1, no room for "what do I do next?"
+
+**Monday**
+- [ ] Create GitHub org `oneos`
+- [ ] Create repo `oneos/oneos`
+- [ ] Add MIT + Apache-2.0 LICENSE files
+- [ ] Init Cargo workspace
+- [ ] Push first commit: `chore: init workspace`
+
+**Tuesday**
+- [ ] Write README.md (vision, quickstart placeholder, contribute link)
+- [ ] Write SECURITY.md (disclosure email, PGP key)
+- [ ] Write CONTRIBUTING.md (DCO, commit style, PR flow)
+- [ ] Write CODE_OF_CONDUCT.md (Contributor Covenant 2.1)
+
+**Wednesday**
+- [ ] Add GitHub Actions: `ci.yml` with fmt + clippy + test
+- [ ] Set up branch protection on `main`
+- [ ] Add issue + PR templates
+- [ ] Add labels (phase:0…7, area:runtime, area:uapi, …)
+
+**Thursday**
+- [ ] Create Discord server; write rules and channel descriptions
+- [ ] Cross-link Discord ↔ repo in all files
+- [ ] mdBook skeleton with TOC matching §1–§20 of this plan
+- [ ] Commit this plan as `docs/book/src/BUILD_PLAN.md`
+
+**Friday**
+- [ ] Write ADR-0001 (Rust choice)
+- [ ] First blog post draft: "Why I'm building OneOS"
+- [ ] Twitter/X announcement thread draft
+- [ ] Retrospective: what took longer than expected; update this plan
+
+### Appendix F — Nomenclature cheat sheet
+
+What we call things vs. what the ecosystem calls them. Keep these consistent in docs and code.
+
+| We say | Others say | Difference |
+|---|---|---|
+| UIR | WASM bytecode | Same thing; UIR is our platform-branded name. |
+| UAPI | WASI + our additions | Superset of WASI. |
+| UCap | WASI capabilities + grants + policy | We add the grant UX + policy DB. |
+| OneOS runtime | WASM runtime (Wasmtime) | Ours = Wasmtime + our adapters + loaders + policy. |
+| Host Adapter | (no standard name) | Our term for the OS-specific translation layer. |
+| .oneapp | WASM component + manifest | Packaged form. |
+
+---
+
+## Closing
+
+If you stop after Phase 2, you've built a better curl. If you stop after Phase 3, you've built a better Electron. If you stop after Phase 4, you've built a better Flutter. If you ship Phase 7, you've built the thing the computing industry has needed since the PC stopped being the only device anyone owned.
+
+Every great platform started as a weekend project that refused to die. Make the first commit this week. Revisit this plan in 90 days and again every 90 days after. Update it with reality. Good plans change; bad plans are abandoned. Don't abandon this one.
+
+— end of document —
