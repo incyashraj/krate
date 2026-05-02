@@ -1609,7 +1609,7 @@ Full criteria in [§2 Success Criteria](#2-success-criteria). Check off as each 
 
 | # | Criterion | Status |
 |---|-----------|--------|
-| 1 | `git clone && cargo build` succeeds in ≤ 10 min on a fresh machine | Locally green; fresh-machine test pending |
+| 1 | `git clone && cargo build` succeeds in ≤ 10 min on a fresh machine | Initial workspace pushed to GitHub; fresh-machine clone timing pending |
 | 2 | CI green on `main` for ≥ 5 consecutive days without human intervention | Not done |
 | 3 | README renders cleanly on GitHub; project explained in ≤ 90 seconds | Draft complete; external reader pending |
 | 4 | CONTRIBUTING.md walks a contributor from zero to merged PR | Draft complete |
@@ -1668,6 +1668,7 @@ Full criteria in [§2 Success Criteria](#2-success-criteria). Check off as each 
 - 2026-05-02: `OneOS` was rejected as final project name after preliminary search surfaced exact software/mobile OS conflicts. `Layer36` selected as active name; plans/docs/CLI placeholders/WIT examples/bundle extension renamed accordingly.
 - 2026-05-02: Empty Cargo workspace failed baseline commands, so Phase 0 now uses a root sentinel crate until Phase 1 runtime crates exist.
 - 2026-05-02: mdBook `SUMMARY.md` structure failed local build and was fixed; docs build is now part of CI.
+- 2026-05-02: Initial Layer36 workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4` (`chore: bring Layer36 foundation online`), authored and committed as `incyashraj`.
 
 ---
 

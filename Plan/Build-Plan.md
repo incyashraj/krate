@@ -1672,6 +1672,7 @@ Short time-stamped entries for anything significant — ecosystem developments, 
 | 2026-05-02 | Phase 1 benchmark suite added with Criterion, a print-loop component fixture, warning-only CI regression checks, and an Apple M4 local baseline published in the mdBook. |
 | 2026-05-02 | Phase 1 test harness consolidated in `scripts/test-phase1.sh` so local setup and CI both build the hello component before running fixture-backed tests. |
 | 2026-05-02 | Drafted the Phase 2 kickoff issue under `docs/governance/phase-2-kickoff-issue.md`; actual GitHub issue creation remains pending until Phase 1 exits. |
+| 2026-05-02 | Initial Layer36 workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4`, credited only to `incyashraj`. |
 
 ---
 

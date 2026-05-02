@@ -1548,6 +1548,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 ### Blockers & Open Questions
 
+- Initial workspace is pushed to `incyashraj/layer6x6`; GitHub Actions, Pages, branch protection, release tag, and public settings still need owner-side confirmation.
 - Cross-host CI workflow has been updated, but remote GitHub-hosted Linux/macOS/Windows results are still pending.
 - Wasmtime 44.0.1 requires Rust 1.92.0; Phase 1 currently pins Wasmtime 43.0.2 for Rust 1.91.1 compatibility.
 
@@ -1567,6 +1568,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 - 2026-05-02: Added Phase 1 Criterion benchmarks for engine construction, component compilation, cold run, first host print, and 1,000-print dispatch. Local Apple M4 baseline is published in `docs/book/src/phase1/benchmarks.md`; CI uses `scripts/check-benchmark-regression.sh` for warning-only regression checks.
 - 2026-05-02: Added `scripts/test-phase1.sh` and wired `scripts/setup.sh` plus CI to use it, preventing fixture-backed tests from silently skipping when `LAYER36_HELLO_WASM` is not already set.
 - 2026-05-02: Drafted the Phase 2 kickoff issue in `docs/governance/phase-2-kickoff-issue.md`; the Phase 1 exit checkbox stays open until it is created on GitHub.
+- 2026-05-02: Initial Layer36 workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4`; remote CI/release/Page checks are the next gates.
 - 2026-05-02: Local environment note: `cargo-component` currently needs the rustup-managed Cargo earlier in `PATH` so it can see the installed WASM target. `scripts/build-hello-component.sh` handles this for local development.
 - 2026-05-02: Improved `layer36 doctor` so it can find `cargo-component` in `CARGO_HOME`/`~/.cargo/bin` and reports both `wasm32-wasip1` and `wasm32-wasip2`.
 - 2026-05-02: Added `crates/runtime` and `crates/cli`; `layer36 --help`, `layer36 version`, and `layer36 doctor` run locally.
