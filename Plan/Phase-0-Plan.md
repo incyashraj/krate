@@ -1406,8 +1406,8 @@ this decision: decade-scale.
 
 ### Docs site
 - [x] mdBook scaffolded with SUMMARY, Introduction, Vision, Roadmap chapters.
-- [ ] GitHub Pages deployed from workflow.
-- [ ] Live URL linked from README.
+- [x] GitHub Pages deployed from workflow.
+- [x] Live URL linked from README.
 
 ### Community
 - [ ] Discord server live with all 7 channels.
@@ -1423,11 +1423,11 @@ this decision: decade-scale.
 ### External signals
 - [ ] At least one external contributor has opened a PR.
 - [ ] At least one external contributor's PR has been merged.
-- [ ] First 5 "good first issues" created and labeled.
+- [x] First 5 "good first issues" created and labeled.
 
 ### Governance
 - [x] Retrospective written (`docs/book/src/phase0/retro.md`).
-- [ ] Phase 1 kickoff issue opened referencing `META-OS-Phase-1-Plan.md`.
+- [x] Phase 1 kickoff issue opened referencing `Plan/Phase-1-Plan.md`.
 
 ---
 
@@ -1599,7 +1599,7 @@ Save as `docs/book/src/phase0/retro.md` at the end of Phase 0.
 
 ### Progress Summary
 
-_Phase 0 is underway. Repo scaffolding, CI, documentation, ADR-0001, local verification, and the Layer36 naming pivot are now recorded. The development repository is `incyashraj/layer6x6`; Layer36 is the product name that the 6x6 matrix grows into. Remaining Phase 0 work is mostly external: GitHub settings, Pages publication, Discord, official trademark/domain work, and first external contributor PR._
+_Phase 0 is underway. Repo scaffolding, CI, documentation, ADR-0001, local verification, GitHub bootstrap, Pages publication, and the Layer36 naming pivot are now recorded. The development repository is `incyashraj/layer6x6`; Layer36 is the product name that the 6x6 matrix grows into. Remaining Phase 0 work is mostly external: public visibility/social preview, branch protection after CI is green, Discord, official trademark/domain work, and first external contributor PR._
 
 ---
 
@@ -1614,7 +1614,7 @@ Full criteria in [§2 Success Criteria](#2-success-criteria). Check off as each 
 | 3 | README renders cleanly on GitHub; project explained in ≤ 90 seconds | Draft complete; external reader pending |
 | 4 | CONTRIBUTING.md walks a contributor from zero to merged PR | Draft complete |
 | 5 | ADR-0001 merged; ADR template exists in `docs/adr/` | Done locally; merge pending |
-| 6 | mdBook site live at a public URL (GitHub Pages OK) | Not done |
+| 6 | mdBook site live at a public URL (GitHub Pages OK) | Live at `https://incyashraj.github.io/layer6x6/` |
 | 7 | Discord server active with ≥ 10 members | Not done |
 | 8 | Public Twitter/X announcement thread published | Not done |
 | 9 | Trademark search completed for “Layer36” (no filing, search only) | Preliminary screen done; official searches pending |
@@ -1633,6 +1633,7 @@ Full criteria in [§2 Success Criteria](#2-success-criteria). Check off as each 
 | P0-DOCS-02 | ADR template + ADR-0001 | 2026-05-02 | Present in `docs/adr/`. |
 | P0-DOCS-03 | CONTRIBUTING.md | 2026-05-02 | Draft complete with setup, PR flow, ADRs, and licensing. |
 | P0-LEGAL-01 | Trademark search | 2026-05-02 | OneOS rejected due conflicts; Layer36 selected pending official clearance. |
+| P0-HIRE-01 | First contributor guide and starter issues | 2026-05-02 | Five good-first issues opened as GitHub issues `#2`, `#3`, `#4`, `#5`, and `#7`. |
 
 ---
 
@@ -1657,7 +1658,7 @@ Full criteria in [§2 Success Criteria](#2-success-criteria). Check off as each 
 ### Blockers & Open Questions
 
 - Official trademark searches for Layer36 remain pending.
-- GitHub repository settings, branch protection, and Pages publication require repository owner access.
+- GitHub branch protection, public visibility, and social preview still require deliberate repository owner setup.
 - Discord creation and public launch should wait until official name/domain decisions are comfortable.
 - First external contributor PR cannot be completed locally.
 
@@ -1669,6 +1670,7 @@ Full criteria in [§2 Success Criteria](#2-success-criteria). Check off as each 
 - 2026-05-02: Empty Cargo workspace failed baseline commands, so Phase 0 now uses a root sentinel crate until Phase 1 runtime crates exist.
 - 2026-05-02: mdBook `SUMMARY.md` structure failed local build and was fixed; docs build is now part of CI.
 - 2026-05-02: Initial Layer36 workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4` (`chore: bring Layer36 foundation online`), authored and committed as `incyashraj`.
+- 2026-05-02: GitHub CLI authenticated as `incyashraj`; repo homepage/topics set, labels synced, Pages verified at `https://incyashraj.github.io/layer6x6/`, five good-first issues opened, and Phase 1 kickoff opened as issue `#6`.
 
 ---
 

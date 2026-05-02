@@ -28,19 +28,19 @@ This page tracks the Phase 0 exit checklist from `Plan/Phase-0-Plan.md`.
 
 | Area | Status | Next action |
 |------|--------|-------------|
-| Public repo settings | Pending | Confirm description, topics, social preview, and Pages URL in GitHub. |
+| Public repo settings | Mostly done | Description, homepage, topics, Issues, labels, and initial issues are configured; public visibility and social preview remain. |
 | Branch protection | Pending | Require CI green, one review, and no force-push on `main`. |
-| CI history | Pending | Need five consecutive green days on `main`. |
-| GitHub Pages | Pending | Publish and verify the public docs URL. |
+| CI history | Pending | Latest CI fix is running; need five consecutive green days on `main`. |
+| GitHub Pages | Live | Published at `https://incyashraj.github.io/layer6x6/`. |
 | Discord | Pending | Create channels, welcome/rules post, and invite link. |
 | Announcement | Pending | Publish only after repo, docs, and Discord are ready. |
 | Trademark search | Partially complete | Layer36 lightweight screen found no obvious exact software/runtime conflict; official searches remain. |
 | Domain | Pending | Secure `layer36.dev` or chosen equivalent. |
 | Founder IP note | Pending | Fill `docs/legal/founder-ip.md`. |
-| Good first issues | Pending | Create the five drafts from `docs/community/good-first-issues.md`. |
+| Good first issues | Done | Created issues `#2`, `#3`, `#4`, `#5`, and `#7` from `docs/community/good-first-issues.md`. |
 | External contributor PR | Pending | Needs at least one opened and merged PR. |
 | Retrospective | Drafted | Complete `docs/book/src/phases/phase-0-retro.md` after external work. |
-| Phase 1 kickoff issue | Drafted | Open from `docs/governance/phase-1-kickoff-issue.md` after Phase 0 exit is approved. |
+| Phase 1 kickoff issue | Open | Created as issue `#6` from `docs/governance/phase-1-kickoff-issue.md`. |
 
 ## Current local verification
 

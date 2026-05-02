@@ -5,10 +5,11 @@ file edits.
 
 ## Repository Metadata
 
-- Description: `Layer36: universal app runtime and UAPI for native cross-platform software.`
-- Website: GitHub Pages URL after docs deploy.
+- Description: configured on 2026-05-02.
+- Website: `https://incyashraj.github.io/layer6x6/`.
 - Topics: `webassembly`, `wasm`, `cross-platform`, `runtime`, `rust`.
 - Social preview: simple title card once final naming is resolved.
+- Visibility: currently private; make public when ready for external readers.
 
 ## Branch Protection For `main`
 
@@ -35,6 +36,7 @@ Required checks:
 
 - Source: GitHub Actions.
 - Workflow: `.github/workflows/pages.yml`.
+- Live URL: `https://incyashraj.github.io/layer6x6/`.
 - The Pages workflow is intentionally manual (`workflow_dispatch`) until the
   repository setting above is enabled. Normal pushes still build docs through
   CI, but they do not attempt to deploy Pages before GitHub is ready.
@@ -43,7 +45,21 @@ Required checks:
 
 ## Labels
 
-Apply `.github/labels.yml` manually or with a label-sync tool.
+Applied with GitHub CLI on 2026-05-02 from `.github/labels.yml`.
+
+The default `good first issue` label already existed on GitHub and was updated
+in place with the Layer36 description.
+
+## Issues
+
+Opened with GitHub CLI on 2026-05-02:
+
+- `#2` `ci(p0): verify mdBook build on pull requests`
+- `#3` `docs(p0): review setup on a fresh machine`
+- `#4` `docs(p0): fill out the trademark search log`
+- `#5` `docs(p0): proofread the README for first-time readers`
+- `#6` `phase 1: prove one WASM component runs on three desktop hosts`
+- `#7` `docs(p0): add screenshots to the first-PR guide`
 
 ## Phase 0 Exit Notes
 
