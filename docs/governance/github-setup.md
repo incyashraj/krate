@@ -35,6 +35,9 @@ Required checks:
 
 - Source: GitHub Actions.
 - Workflow: `.github/workflows/pages.yml`.
+- The Pages workflow is intentionally manual (`workflow_dispatch`) until the
+  repository setting above is enabled. Normal pushes still build docs through
+  CI, but they do not attempt to deploy Pages before GitHub is ready.
 - After first deploy, copy the live URL into `README.md`,
   `docs/book/book.toml`, and the repository website field.
 
