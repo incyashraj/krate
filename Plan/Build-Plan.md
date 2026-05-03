@@ -1581,7 +1581,7 @@ What we call things vs. what the ecosystem calls them. Keep these consistent in 
 > **Project Status:** In Progress  
 > **Phase 0 Start:** 2026-05-01  
 > **v1.0 Target:** ~April 2028  
-> **Last Updated:** 2026-05-02
+> **Last Updated:** 2026-05-03
 
 This section is the living status board for all of Layer36. Update it at every phase boundary, major milestone, and architectural pivot. It is the first thing a returning contributor should read.
 
@@ -1592,7 +1592,7 @@ This section is the living status board for all of Layer36. Update it at every p
 | # | Phase | Status | Started | Completed | Notes |
 |---|-------|--------|---------|-----------|-------|
 | 0 | Foundation | In Progress | 2026-05-01 | — | Renamed from OneOS to Layer36 on 2026-05-02; local scaffold, docs, Pages, labels/issues, and CI are green. |
-| 1 | POC Runtime | In Progress | 2026-05-02 | — | Runtime, CLI, WIT host imports, shared hello-world fixture, CI harness, fuel/memory limits, release packaging, quickstart, and threat model are in place; release-tag proof and external timing remain. |
+| 1 | POC Runtime | In Progress | 2026-05-02 | — | Runtime, CLI, WIT host imports, shared hello-world fixture, CI harness, fuel/memory limits, release packaging, quickstart, and threat model are in place; `v0.1.0-rc1` release proof is green; external timing remains. |
 | 2 | UAPI v0.1 (CLI) | Not started | — | — | |
 | 3 | UI + Graphics | Not started | — | — | |
 | 4 | Mobile Hosts | Not started | — | — | |
@@ -1607,7 +1607,7 @@ This section is the living status board for all of Layer36. Update it at every p
 | Milestone | Target Phase | Status | Date | Notes |
 |-----------|-------------|--------|------|-------|
 | First external contributor PR merged | 0 | Pending | — | |
-| `layer36 run hello.wasm` green on 3 desktop OSes | 1 | Done | 2026-05-03 | GitHub CI confirmed Linux, macOS, and Windows; follow-up CI now runs one shared `.wasm` artifact across all three. |
+| `layer36 run hello.wasm` green on 3 desktop OSes | 1 | Done | 2026-05-03 | GitHub CI confirmed Linux, macOS, and Windows with one shared `.wasm` artifact across all three. |
 | `layer36-curl` byte-identical across Linux/macOS/Win | 2 | Pending | — | |
 | `layer36-notes` GUI running on Win/macOS/Linux | 3 | Pending | — | |
 | `layer36-notes` running on iOS + Android | 4 | Pending | — | |
@@ -1675,6 +1675,8 @@ Short time-stamped entries for anything significant — ecosystem developments, 
 | 2026-05-02 | Initial Layer36 workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4`, credited only to `incyashraj`. |
 | 2026-05-02 | First GitHub CI exposed two portability issues: host-dependent hello component hashes and an old cargo-deny action unable to parse CVSS 4.0 advisories. CI now logs fixture hashes and installs `cargo-deny 0.19.4`. |
 | 2026-05-02 | GitHub CLI setup completed for `incyashraj`; repository homepage/topics, labels, five good-first issues, Phase 1 kickoff issue, and Pages URL were configured for `incyashraj/layer6x6`. |
+| 2026-05-03 | Phase 1 shared-fixture CI is green: one uploaded hello `.wasm` artifact is verified by SHA-256 and executed through `layer36` on Linux, macOS, and Windows. |
+| 2026-05-03 | Published `v0.1.0-rc1` as a GitHub prerelease with five platform archives and `SHA256SUMS`: Linux x64, Linux ARM64, macOS Intel, macOS Apple Silicon, and Windows x64. |
 
 ---
 

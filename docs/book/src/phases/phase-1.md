@@ -26,6 +26,9 @@ Phase 1 has started with the runtime and CLI scaffold:
   `LAYER36_HELLO_SHA256`.
 - `.github/workflows/release.yml` packages the five planned Phase 1 release
   artifacts on `v*` tags and publishes a `SHA256SUMS` file.
+- `v0.1.0-rc1` is published as a GitHub prerelease with Linux x64, Linux
+  ARM64, macOS Intel, macOS Apple Silicon, Windows x64, and `SHA256SUMS`
+  assets.
 - The Phase 1 quickstart is published at `docs/book/src/quickstart.md` and
   walks from a fresh checkout to `Hello, Layer36!`.
 - Threat Model v0.1 is published at `docs/book/src/phase1/threat-model.md`.
@@ -34,8 +37,8 @@ Phase 1 has started with the runtime and CLI scaffold:
   regression signals.
 
 The runtime now registers the temporary `layer36:phase1/host` WIT interface for
-`print` and `exit`. The Linux/macOS/Windows CI matrix is green; release-tag
-results, cross-host benchmark runs, and volunteer quickstart timing are still
+`print` and `exit`. The Linux/macOS/Windows CI matrix is green, the first RC
+release artifact proof is green, and volunteer quickstart timing is still
 pending.
 
 See [`Plan/Phase-1-Plan.md`](https://github.com/incyashraj/layer6x6/blob/main/Plan/Phase-1-Plan.md).

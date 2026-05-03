@@ -36,6 +36,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 - Release workflow tag matching for both final and RC-style version tags.
 - Release workflow prerelease marking for RC-style tags.
 - Visible shared-fixture artifact path for GitHub Actions upload/download.
+- `v0.1.0-rc1` prerelease with Linux x64, Linux ARM64, macOS Intel, macOS Apple Silicon, Windows x64, and `SHA256SUMS` assets.
 
 ---
 

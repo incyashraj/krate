@@ -1229,8 +1229,8 @@ Tick every box. No exceptions.
 
 ### CI
 - [ ] `ci.yml` green on `main` for at least 5 consecutive days.
-- [ ] `release.yml` has been triggered at least once (can be an RC tag like `v0.1.0-rc1`).
-- [ ] All five release artifacts exist on GitHub Releases with SHA256SUMS.
+- [x] `release.yml` has been triggered at least once (can be an RC tag like `v0.1.0-rc1`).
+- [x] All five release artifacts exist on GitHub Releases with SHA256SUMS.
 - [x] `cargo-deny` check green.
 
 ### Docs
@@ -1483,11 +1483,11 @@ Save as `docs/book/src/phase1/retro.md` at the end of Phase 1.
 > **Phase Status:** In Progress  
 > **Started:** 2026-05-02  
 > **Completed:** —  
-> **Last Updated:** 2026-05-02
+> **Last Updated:** 2026-05-03
 
 ### Progress Summary
 
-_Phase 1 has started under a local-development waiver for account-bound Phase 0 items. Runtime and CLI crates exist, Wasmtime 43.0.2 is pinned for Rust 1.91.1 compatibility, host `print`/`exit` imports are wired through WIT, the hello-world component runs through `layer36 run`, CI is green across Linux/macOS/Windows, the matrix now consumes one shared hello `.wasm` fixture, fuel/memory limits fail cleanly, release packaging is in place, the first quickstart is published, Threat Model v0.1 is documented, and the first local benchmark baseline is recorded._
+_Phase 1 has started under a local-development waiver for account-bound Phase 0 items. Runtime and CLI crates exist, Wasmtime 43.0.2 is pinned for Rust 1.91.1 compatibility, host `print`/`exit` imports are wired through WIT, the hello-world component runs through `layer36 run`, CI is green across Linux/macOS/Windows, the matrix consumes one shared hello `.wasm` fixture with SHA-256 verification, fuel/memory limits fail cleanly, `v0.1.0-rc1` publishes all five release artifacts plus `SHA256SUMS`, the first quickstart is published, Threat Model v0.1 is documented, and the first local benchmark baseline is recorded._
 
 ---
 
@@ -1499,11 +1499,11 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 |---|-----------|--------|
 | 1 | `cargo build --release` produces `layer36` binary on Linux, macOS, Windows | Green in GitHub CI on 2026-05-03 |
 | 2 | `layer36 run hello.wasm` prints `Hello, Layer36!` on all three hosts | Green in GitHub CI on 2026-05-03 |
-| 3 | `hello.wasm` input is byte-for-byte identical across hosts (SHA-256 verified) | Implemented with a single uploaded CI fixture and `LAYER36_HELLO_SHA256`; remote confirmation pending after this change lands |
+| 3 | `hello.wasm` input is byte-for-byte identical across hosts (SHA-256 verified) | Green in GitHub CI on 2026-05-03 with one uploaded fixture and `LAYER36_HELLO_SHA256` across Linux/macOS/Windows |
 | 4 | Cold start < 200 ms on a 2020+ laptop | Locally green on Apple M4 at ~2.45 ms; cross-host baselines pending |
-| 5 | Release binary size < 30 MB (compressed) | Locally green on macOS at 4.4 MB compressed; CI artifact check pending |
+| 5 | Release binary size < 30 MB (compressed) | Green on `v0.1.0-rc1`; largest archive is ~5.7 MB compressed |
 | 6 | Memory RSS < 40 MB after hello-world exits | Locally green on macOS at ~14.9 MiB; cross-host baselines pending |
-| 7 | Release artifacts build and upload correctly on `v*` tag | Workflow added; tag-triggered GitHub run pending |
+| 7 | Release artifacts build and upload correctly on `v*` tag | Green on `v0.1.0-rc1`; GitHub prerelease has five platform archives and `SHA256SUMS` |
 | 8 | ADR-0002 (Wasmtime) and ADR-0003 (Component Model) merged | Accepted locally; merge pending |
 | 9 | Threat Model v0.1 published in `docs/book/` | Published through mdBook/Pages; redeploy after latest status edits |
 | 10 | Quickstart tutorial exists; new user can run hello-world in ≤ 10 min | Tutorial exists; volunteer timing pending |
@@ -1524,6 +1524,8 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P1-DOC-01 | Quickstart | 2026-05-02 | `docs/book/src/quickstart.md` walks from checkout/tooling to `Hello, Layer36!`; external timing still pending. |
 | P1-SEC-01 | Threat Model v0.1 | 2026-05-02 | STRIDE model published in `docs/book/src/phase1/threat-model.md`; README/SECURITY warning updated. |
 | P1-PERF-01 | Baseline benchmarks | 2026-05-02 | Criterion suite added in `crates/runtime/benches/startup.rs`; local Apple M4 baseline published in `docs/book/src/phase1/benchmarks.md`; CI warns on >10% regression. |
+| P1-TEST-01 | Integration test: hello-world.wasm runs on all hosts | 2026-05-03 | GitHub-hosted Linux/macOS/Windows run the same uploaded hello `.wasm` artifact and assert its SHA-256 before executing through `layer36`. |
+| P1-CI-02 | Release artifacts | 2026-05-03 | `v0.1.0-rc1` prerelease published with Linux x64, Linux ARM64, macOS Intel, macOS Apple Silicon, Windows x64, and `SHA256SUMS`. |
 | P1-ADR-01 | ADR-0002 and ADR-0003 | 2026-05-02 | Accepted locally. |
 
 ---
@@ -1532,8 +1534,6 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
-| P1-TEST-01 | Integration test: hello-world.wasm runs on all hosts | 2026-05-02 | GitHub-hosted Linux/macOS/Windows confirmation is green; shared fixture artifact confirmation is pending for this follow-up CI run. |
-| P1-CI-02 | Release artifacts | 2026-05-02 | `release.yml` and `scripts/package.sh` added; local macOS tarball packaging is green; tag-triggered remote publish still pending. |
 | P1-GOV-01 | Phase 2 kickoff issue draft | 2026-05-02 | Draft exists at `docs/governance/phase-2-kickoff-issue.md`; actual GitHub issue creation waits for Phase 1 exit. |
 
 ---
@@ -1549,8 +1549,9 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 ### Blockers & Open Questions
 
-- Initial workspace is pushed to `incyashraj/layer6x6`; branch protection, release tag, and public settings still need owner-side confirmation.
-- Cross-host CI is green; the current follow-up makes the CI proof stricter by running one uploaded hello `.wasm` fixture on all three hosts.
+- Initial workspace is pushed to `incyashraj/layer6x6`; public settings and remaining Phase 0 account-side items still need owner-side confirmation.
+- Cross-host CI is green with one uploaded hello `.wasm` fixture shared across Linux, macOS, and Windows.
+- `v0.1.0-rc1` is published as a GitHub prerelease with all planned Phase 1 platform archives and `SHA256SUMS`.
 - Wasmtime 44.0.1 requires Rust 1.92.0; Phase 1 currently pins Wasmtime 43.0.2 for Rust 1.91.1 compatibility.
 
 ---
@@ -1575,6 +1576,8 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 - 2026-05-02: Improved `layer36 doctor` so it can find `cargo-component` in `CARGO_HOME`/`~/.cargo/bin` and reports both `wasm32-wasip1` and `wasm32-wasip2`.
 - 2026-05-02: Added `crates/runtime` and `crates/cli`; `layer36 --help`, `layer36 version`, and `layer36 doctor` run locally.
 - 2026-05-03: GitHub CI is green across Linux, macOS, and Windows. Follow-up CI now builds the hello component once on Ubuntu, uploads it as an artifact, and makes every OS assert the same SHA-256 before running it.
+- 2026-05-03: Shared-fixture CI is green on run `25267714585`; Linux, macOS, and Windows all executed the same uploaded hello `.wasm` bytes through `layer36`.
+- 2026-05-03: Cut and pushed `v0.1.0-rc1`. Release run `25268003713` published a prerelease with five platform archives plus `SHA256SUMS`: Linux x64, Linux ARM64, macOS Intel, macOS Apple Silicon, and Windows x64.
 
 ---
 
