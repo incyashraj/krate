@@ -919,6 +919,7 @@ dependencies = [
  "anyhow",
  "clap",
  "layer36-manifest",
+ "layer36-policy",
  "layer36-runtime",
  "sha2",
  "tempfile",
@@ -932,6 +933,14 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "toml",
+]
+
+[[package]]
+name = "layer36-policy"
+version = "0.1.0-dev"
+dependencies = [
+ "layer36-manifest",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

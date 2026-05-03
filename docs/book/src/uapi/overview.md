@@ -83,6 +83,13 @@ You can validate the file today:
 cargo run -p layer36-cli -- manifest check manifest.toml
 ```
 
-This is the first UCap piece. It checks the shape of the request. The next step
-is a session policy that grants or denies those requests when a Phase 2 app
-calls UAPI.
+`layer36 run` also reads `manifest.toml` when it sits next to the `.wasm` file:
+
+```bash
+cargo run -p layer36-cli -- run app.wasm --grant fs.read:~/Documents/notes/**
+cargo run -p layer36-cli -- run app.wasm --auto-grant
+```
+
+For now, this is a preflight check. If a required capability is missing,
+Layer36 exits before the component starts. The next UCap step is checking the
+same policy at every UAPI call once the Phase 2 dispatcher is wired.

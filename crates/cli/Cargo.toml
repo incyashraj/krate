@@ -16,6 +16,7 @@ path = "src/main.rs"
 anyhow.workspace = true
 clap.workspace = true
 layer36-manifest = { path = "../manifest", version = "0.1.0-dev" }
+layer36-policy = { path = "../policy", version = "0.1.0-dev" }
 layer36-runtime = { path = "../runtime", version = "0.1.0-dev" }
 tracing-subscriber.workspace = true
 

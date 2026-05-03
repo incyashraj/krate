@@ -205,6 +205,110 @@ fn memory_limit_exits_with_limit_code() {
     assert!(stderr.contains("limit exceeded: memory limit exceeded"));
 }
 
+#[test]
+fn run_with_manifest_denies_missing_required_capability() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let wasm_path = dir.path().join("app.wasm");
+    let manifest_path = dir.path().join("manifest.toml");
+    std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
+    std::fs::write(
+        &manifest_path,
+        r#"
+            [app]
+            id = "com.example.denied"
+            name = "Denied"
+            version = "1.0.0"
+            entry = "app.wasm"
+            world = "layer36:app/cli@0.1.0"
+
+            [[capabilities]]
+            cap = "fs.read:./data/**"
+            rationale = "Read data"
+            required = true
+        "#,
+    )
+    .expect("write manifest");
+
+    let output = layer36()
+        .arg("run")
+        .arg(&wasm_path)
+        .output()
+        .expect("run layer36 with sidecar manifest");
+
+    assert_eq!(output.status.code(), Some(5));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("permission denied"));
+    assert!(stderr.contains("fs.read:./data/**"));
+}
+
+#[test]
+fn run_with_manifest_and_explicit_grant_reaches_runtime() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let wasm_path = dir.path().join("app.wasm");
+    std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
+    std::fs::write(
+        dir.path().join("manifest.toml"),
+        r#"
+            [app]
+            id = "com.example.granted"
+            name = "Granted"
+            version = "1.0.0"
+            entry = "app.wasm"
+            world = "layer36:app/cli@0.1.0"
+
+            [[capabilities]]
+            cap = "fs.read:./data/**"
+            rationale = "Read data"
+            required = true
+        "#,
+    )
+    .expect("write manifest");
+
+    let output = layer36()
+        .args(["run", "--grant", "fs.read:./data/**"])
+        .arg(&wasm_path)
+        .output()
+        .expect("run layer36 with granted sidecar manifest");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid wasm component"));
+}
+
+#[test]
+fn run_with_manifest_auto_grant_reaches_runtime() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let wasm_path = dir.path().join("app.wasm");
+    std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
+    std::fs::write(
+        dir.path().join("manifest.toml"),
+        r#"
+            [app]
+            id = "com.example.auto"
+            name = "Auto"
+            version = "1.0.0"
+            entry = "app.wasm"
+            world = "layer36:app/cli@0.1.0"
+
+            [[capabilities]]
+            cap = "net.connect:api.example.com:443"
+            rationale = "Sync data"
+            required = true
+        "#,
+    )
+    .expect("write manifest");
+
+    let output = layer36()
+        .args(["run", "--auto-grant"])
+        .arg(&wasm_path)
+        .output()
+        .expect("run layer36 with auto-grant");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid wasm component"));
+}
+
 fn sha256_hex(bytes: &[u8]) -> String {
     let digest = Sha256::digest(bytes);
     let mut hex = String::with_capacity(digest.len() * 2);

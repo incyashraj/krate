@@ -4,6 +4,7 @@ use std::process::{Command as ProcessCommand, ExitCode};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use layer36_manifest::Manifest;
+use layer36_policy::resolve_session_policy;
 use layer36_runtime::{Config, RunOutcome, Runtime, RuntimeError};
 
 #[derive(Debug, Parser)]
@@ -31,6 +32,18 @@ enum Command {
         /// Max memory in MiB.
         #[arg(long, default_value_t = 256)]
         mem_limit: u64,
+
+        /// Path to a Phase 2 manifest.toml. If omitted, Layer36 checks next to the .wasm file.
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+
+        /// Grant a capability for this run session. Repeat for multiple grants.
+        #[arg(long, value_name = "CAP")]
+        grant: Vec<String>,
+
+        /// Grant every capability declared in the manifest for this run session.
+        #[arg(long)]
+        auto_grant: bool,
     },
     /// Print version information.
     Version,
@@ -78,7 +91,10 @@ fn run() -> Result<u8> {
             file,
             fuel,
             mem_limit,
-        } => run_component(file, fuel, mem_limit),
+            manifest,
+            grant,
+            auto_grant,
+        } => run_component(file, fuel, mem_limit, manifest, grant, auto_grant),
         Command::Version => {
             print_version();
             Ok(0)
@@ -90,9 +106,30 @@ fn run() -> Result<u8> {
     }
 }
 
-fn run_component(file: PathBuf, fuel: Option<u64>, mem_limit: u64) -> Result<u8> {
+fn run_component(
+    file: PathBuf,
+    fuel: Option<u64>,
+    mem_limit: u64,
+    manifest_path: Option<PathBuf>,
+    grants: Vec<String>,
+    auto_grant: bool,
+) -> Result<u8> {
     if !file.exists() {
         anyhow::bail!("input file does not exist: {}", file.display());
+    }
+
+    let manifest = load_run_manifest(&file, manifest_path.as_deref())?;
+    let policy = resolve_session_policy(manifest.as_ref(), &grants, auto_grant)?;
+
+    if let Some(manifest) = &manifest {
+        let missing = policy.missing_required_for_manifest(manifest)?;
+        if !missing.is_empty() {
+            eprintln!("permission denied: missing required capabilities");
+            for cap in missing {
+                eprintln!("  - {cap}");
+            }
+            return Ok(5);
+        }
     }
 
     let config = Config {
@@ -118,6 +155,23 @@ fn run_component(file: PathBuf, fuel: Option<u64>, mem_limit: u64) -> Result<u8>
             Ok(3)
         }
         Err(err) => Err(err.into()),
+    }
+}
+
+fn load_run_manifest(file: &Path, manifest_path: Option<&Path>) -> Result<Option<Manifest>> {
+    if let Some(path) = manifest_path {
+        return Ok(Some(Manifest::parse_file(path)?));
+    }
+
+    let Some(parent) = file.parent() else {
+        return Ok(None);
+    };
+
+    let candidate = parent.join("manifest.toml");
+    if candidate.exists() {
+        Ok(Some(Manifest::parse_file(candidate)?))
+    } else {
+        Ok(None)
     }
 }
 

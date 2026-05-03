@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/manifest",
+    "crates/policy",
     "crates/runtime",
     "crates/cli",
 ]

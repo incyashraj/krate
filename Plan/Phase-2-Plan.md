@@ -2022,7 +2022,7 @@ Save as `docs/book/src/phase2/retro.md` at the end of Phase 2.
 
 Phase 2 development has started with the UAPI contract layer. The first draft lives under `wit/layer36/phase2`, uses WIT dependency packages for `io`, `fs`, `net`, `time`, and `locale`, and is parse-checked by `crates/runtime/tests/phase2_wit.rs`.
 
-The first manifest slice also exists now. `crates/manifest` parses the Phase 2 `manifest.toml` shape, validates app identity and capability strings, records default grants, and is exposed through `layer36 manifest check`.
+The first UCap slices also exist now. `crates/manifest` parses the Phase 2 `manifest.toml` shape, validates app identity and capability strings, records default grants, and is exposed through `layer36 manifest check`. `crates/policy` resolves the run-session grants, checks required capabilities, supports simple wildcard resource matching, and is wired into `layer36 run --grant ...` / `--auto-grant` before the component starts.
 
 This does not freeze UAPI v0.1 yet. It gives us a real contract to review, generate bindings from, and wire into host adapters.
 
@@ -2042,7 +2042,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | 6 | `layer36-curl <url>` works identically on all three hosts | Not done |
 | 7 | `layer36-cat <file>` works identically on all three hosts | Not done |
 | 8 | `layer36-clock` prints time in user locale on all three hosts | Not done |
-| 9 | UCap v0.1: manifest-declared caps enforced; unauthorized calls trap cleanly | Not done |
+| 9 | UCap v0.1: manifest-declared caps enforced; unauthorized calls trap cleanly | Started: CLI preflight enforcement exists; UAPI dispatch enforcement remains |
 | 10 | Startup overhead for a UAPI-using app < 150 ms | Not done |
 | 11 | UAPI hot-path dispatch < 1 µs (microbenchmark) | Not done |
 | 12 | Developer who knows Rust but not WASM can write a CLI in < 30 min using docs | Not done |
@@ -2062,6 +2062,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P2-UAPI-04 | Draft `time` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/time`; clock and sleep only. |
 | P2-UAPI-05 | Draft `locale` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/locale`; info and formatting only. |
 | P2-SEC-01A | Manifest parser and capability string validator | 2026-05-03 | Added `crates/manifest` and `layer36 manifest check`; policy matching and runtime enforcement remain open. |
+| P2-SEC-01B | Session policy and CLI grant preflight | 2026-05-03 | Added `crates/policy`; `layer36 run` reads sidecar manifests and enforces required grants before execution. |
 
 ---
 
@@ -2070,7 +2071,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
 | P2-UAPI-REVIEW | Review generated bindings and naming before freeze | 2026-05-03 | Check Rust binding shape next, before implementing adapters. |
-| P2-SEC-01B | UCap session policy and runtime checks | 2026-05-03 | Needs dispatcher wiring after Phase 2 bindings shape is reviewed. |
+| P2-SEC-01C | UAPI dispatcher policy checks | 2026-05-03 | Needs Phase 2 bindings and dispatcher wiring. |
 
 ---
 
