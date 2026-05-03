@@ -1778,7 +1778,7 @@ Additional ADRs as decisions surface. Rule of thumb: if you have to ask "should 
 ### UCap
 - [ ] Manifest parser handles all §10.5 fields.
 - [ ] Policy engine enforces caps at every UAPI entry.
-- [ ] `--grant`, `--auto-grant`, interactive prompt all work.
+- [x] `--grant`, `--auto-grant`, interactive prompt all work.
 - [ ] Attempt to open a file outside granted glob → clear error, exit code 5.
 
 ### CI & Quality
@@ -2031,7 +2031,7 @@ Save as `docs/book/src/phase2/retro.md` at the end of Phase 2.
 
 Phase 2 development has started with the UAPI contract layer. The first draft lives under `wit/layer36/phase2`, uses WIT dependency packages for `io`, `fs`, `net`, `time`, and `locale`, and is parse-checked by `crates/runtime/tests/phase2_wit.rs`.
 
-The first UCap slices also exist now. `crates/manifest` parses the Phase 2 `manifest.toml` shape, validates app identity and capability strings, records default grants, and is exposed through `layer36 manifest check`. `crates/policy` resolves the run-session grants, checks required capabilities, supports simple wildcard resource matching, and is wired into `layer36 run --grant ...` / `--auto-grant` before the component starts. The runtime also carries the session policy and exposes a Phase 2 UAPI guard that maps calls such as `fs.read`, `fs.write`, and `net.connect` to capability checks before host adapters do native work.
+The first UCap slices also exist now. `crates/manifest` parses the Phase 2 `manifest.toml` shape, validates app identity and capability strings, records default grants, and is exposed through `layer36 manifest check`. `crates/policy` resolves the run-session grants, checks required capabilities, supports simple wildcard resource matching, and is wired into `layer36 run --grant ...` / `--auto-grant` before the component starts. The CLI also has the first terminal grant prompt through `layer36 run --prompt`, with automatic prompting in real terminals and clean denial in non-interactive runs. The runtime carries the session policy and exposes a Phase 2 UAPI guard that maps calls such as `fs.read`, `fs.write`, and `net.connect` to capability checks before host adapters do native work.
 
 The dispatcher scaffold is now in the runtime too. `crates/runtime/src/uapi_dispatch.rs` defines the first host-adapter traits for `io`, `fs`, `net`, `time`, and `locale`, plus a `UapiDispatcher` that checks policy before calling an adapter method. Unit tests prove denied file and network calls stop before the adapter runs, while granted calls pass through.
 
@@ -2077,7 +2077,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | 6 | `layer36-curl <url>` works identically on all three hosts | Started: Rust sample builds locally and has granted/denied localhost HTTP tests; full cross-host run remains |
 | 7 | `layer36-cat <file>` works identically on all three hosts | Started: Rust sample builds locally and has granted/denied fixture tests; full cross-host run remains |
 | 8 | `layer36-clock` prints time in user locale on all three hosts | Started: Rust sample builds locally and has fixed-time integration coverage; full cross-host run remains |
-| 9 | UCap v0.1: manifest-declared caps enforced; unauthorized calls trap cleanly | Started: CLI preflight, runtime UAPI guard, dispatcher scaffold, generated WIT type bridge, generated host wiring, resource table, runtime linker install, Phase 2 smoke happy path, missing-grant proof, app args, `layer36-clock`, first `layer36-cat`, first `layer36-curl`, and a plain HTTP adapter slice exist; cross-host and hardening work remain |
+| 9 | UCap v0.1: manifest-declared caps enforced; unauthorized calls trap cleanly | Started: CLI preflight, `--grant`, `--auto-grant`, first terminal prompt, runtime UAPI guard, dispatcher scaffold, generated WIT type bridge, generated host wiring, resource table, runtime linker install, Phase 2 smoke happy path, missing-grant proof, app args, `layer36-clock`, first `layer36-cat`, first `layer36-curl`, and a plain HTTP adapter slice exist; cross-host and hardening work remain |
 | 10 | Startup overhead for a UAPI-using app < 150 ms | Not done |
 | 11 | UAPI hot-path dispatch < 1 µs (microbenchmark) | Not done |
 | 12 | Developer who knows Rust but not WASM can write a CLI in < 30 min using docs | Not done |
@@ -2098,6 +2098,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P2-UAPI-05 | Draft `locale` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/locale`; info and formatting only. |
 | P2-SEC-01A | Manifest parser and capability string validator | 2026-05-03 | Added `crates/manifest` and `layer36 manifest check`; policy matching and runtime enforcement remain open. |
 | P2-SEC-01B | Session policy and CLI grant preflight | 2026-05-03 | Added `crates/policy`; `layer36 run` reads sidecar manifests and enforces required grants before execution. |
+| P2-SEC-01G | Terminal grant prompt | 2026-05-04 | Added `layer36 run --prompt`; it lists missing manifest capabilities, accepts all or numbered grants, and keeps non-interactive missing-grant runs as clear permission denials. |
 | P2-SEC-01C | Runtime UAPI policy guard | 2026-05-03 | Runtime config now carries the session policy; `layer36_runtime::uapi` maps Phase 2 calls to capability checks. |
 | P2-UAPI-REVIEW | Rust host binding checkpoint | 2026-05-03 | Added `phase2-bindings` feature and CI job; confirms Phase 2 WIT generates usable host-side Rust names. |
 | P2-SEC-01D | Runtime UAPI dispatcher scaffold | 2026-05-03 | Added adapter traits and dispatcher methods that map policy denial to module-level errors before adapter calls run. |

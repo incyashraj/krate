@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -505,6 +505,54 @@ fn run_with_manifest_auto_grant_reaches_runtime() {
 
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("invalid wasm component"));
+}
+
+#[test]
+fn run_with_manifest_prompt_can_grant_required_capability() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let wasm_path = dir.path().join("app.wasm");
+    std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
+    std::fs::write(
+        dir.path().join("manifest.toml"),
+        r#"
+            [app]
+            id = "com.example.prompt"
+            name = "Prompt"
+            version = "1.0.0"
+            entry = "app.wasm"
+            world = "layer36:app/cli@0.1.0"
+
+            [[capabilities]]
+            cap = "fs.read:./data/**"
+            rationale = "Read data"
+            required = true
+        "#,
+    )
+    .expect("write manifest");
+
+    let mut child = layer36()
+        .args(["run", "--prompt"])
+        .arg(&wasm_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn layer36 with prompt");
+
+    child
+        .stdin
+        .as_mut()
+        .expect("child stdin")
+        .write_all(b"a\n")
+        .expect("write prompt response");
+
+    let output = child.wait_with_output().expect("wait for prompt run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Requests the following capabilities"));
+    assert!(stderr.contains("fs.read:./data/**"));
     assert!(stderr.contains("invalid wasm component"));
 }
 

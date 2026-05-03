@@ -1,10 +1,11 @@
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use layer36_manifest::Manifest;
-use layer36_policy::resolve_session_policy;
+use layer36_manifest::{Capability, Manifest};
+use layer36_policy::{resolve_session_policy, SessionPolicy};
 use layer36_runtime::{Config, RunOutcome, Runtime, RuntimeError};
 
 #[derive(Debug, Parser)]
@@ -44,6 +45,10 @@ enum Command {
         /// Grant every capability declared in the manifest for this run session.
         #[arg(long)]
         auto_grant: bool,
+
+        /// Ask before granting missing capabilities declared by the manifest.
+        #[arg(long)]
+        prompt: bool,
 
         /// Fixed wall-clock time in milliseconds since Unix epoch. Intended for deterministic tests.
         #[arg(long, hide = true)]
@@ -102,6 +107,7 @@ fn run() -> Result<u8> {
             manifest,
             grant,
             auto_grant,
+            prompt,
             test_time,
             app_args,
         } => run_component(RunRequest {
@@ -111,6 +117,7 @@ fn run() -> Result<u8> {
             manifest_path: manifest,
             grants: grant,
             auto_grant,
+            prompt,
             test_time_millis: test_time,
             app_args,
         }),
@@ -132,6 +139,7 @@ struct RunRequest {
     manifest_path: Option<PathBuf>,
     grants: Vec<String>,
     auto_grant: bool,
+    prompt: bool,
     test_time_millis: Option<u64>,
     app_args: Vec<String>,
 }
@@ -142,9 +150,16 @@ fn run_component(request: RunRequest) -> Result<u8> {
     }
 
     let manifest = load_run_manifest(&request.file, request.manifest_path.as_deref())?;
-    let policy = resolve_session_policy(manifest.as_ref(), &request.grants, request.auto_grant)?;
+    let mut policy =
+        resolve_session_policy(manifest.as_ref(), &request.grants, request.auto_grant)?;
 
     if let Some(manifest) = &manifest {
+        let can_prompt = request.prompt || io::stdin().is_terminal();
+        let missing = policy.missing_required_for_manifest(manifest)?;
+        if !missing.is_empty() && can_prompt && !request.auto_grant {
+            policy = prompt_for_session_grants(manifest, &policy)?;
+        }
+
         let missing = policy.missing_required_for_manifest(manifest)?;
         if !missing.is_empty() {
             eprintln!("permission denied: missing required capabilities");
@@ -183,6 +198,78 @@ fn run_component(request: RunRequest) -> Result<u8> {
         }
         Err(err) => Err(err.into()),
     }
+}
+
+fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Result<SessionPolicy> {
+    let prompt_caps = manifest
+        .declared_capabilities()?
+        .into_iter()
+        .filter(|cap| !policy.allows(cap) && !cap.is_default_granted())
+        .collect::<Vec<_>>();
+
+    if prompt_caps.is_empty() {
+        return Ok(policy.clone());
+    }
+
+    eprintln!("App: {} ({})", manifest.app.name, manifest.app.id);
+    eprintln!("Requests the following capabilities:");
+    for (index, cap) in prompt_caps.iter().enumerate() {
+        eprintln!("  [{}] {cap}", index + 1);
+        if let Some(request) = manifest
+            .capabilities
+            .iter()
+            .find(|request| request.cap == cap.to_string())
+        {
+            eprintln!("      {}", request.rationale);
+        }
+    }
+    eprint!("Grant [A]ll / [N]one / numbers (for example 1,2): ");
+    io::stderr().flush()?;
+
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let selected = parse_grant_response(input.trim(), &prompt_caps)?;
+    let grants = policy.grants().iter().cloned().chain(selected);
+
+    Ok(SessionPolicy::from_grants(grants))
+}
+
+fn parse_grant_response(input: &str, caps: &[Capability]) -> Result<Vec<Capability>> {
+    let normalized = input.trim().to_ascii_lowercase();
+    if normalized.is_empty()
+        || normalized == "n"
+        || normalized == "no"
+        || normalized == "none"
+        || normalized == "s"
+        || normalized == "skip"
+    {
+        return Ok(Vec::new());
+    }
+
+    if normalized == "a" || normalized == "all" || normalized == "y" || normalized == "yes" {
+        return Ok(caps.to_vec());
+    }
+
+    let mut selected = Vec::new();
+    for token in normalized
+        .split([',', ' '])
+        .filter(|token| !token.is_empty())
+    {
+        let index: usize = token
+            .parse()
+            .with_context(|| format!("invalid grant selection `{token}`"))?;
+        if index == 0 {
+            anyhow::bail!("grant selection `0` is out of range");
+        }
+        let cap = caps
+            .get(index - 1)
+            .with_context(|| format!("grant selection `{index}` is out of range"))?;
+        if !selected.contains(cap) {
+            selected.push(cap.clone());
+        }
+    }
+
+    Ok(selected)
 }
 
 fn load_run_manifest(file: &Path, manifest_path: Option<&Path>) -> Result<Option<Manifest>> {

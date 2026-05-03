@@ -88,10 +88,14 @@ cargo run -p layer36-cli -- manifest check manifest.toml
 ```bash
 cargo run -p layer36-cli -- run app.wasm --grant fs.read:~/Documents/notes/**
 cargo run -p layer36-cli -- run app.wasm --auto-grant
+cargo run -p layer36-cli -- run --prompt app.wasm
 ```
 
-For now, this is a preflight check. If a required capability is missing,
-Layer36 exits before the component starts.
+For now, this starts as a launch-time session check. If a required capability is
+missing and no prompt is available, Layer36 exits before the component starts.
+When `--prompt` is passed, or when the command is running in a real terminal,
+Layer36 can ask for the missing manifest capabilities and add them to the
+current run session.
 
 The runtime now also has the next piece: a UAPI guard. It is small, but it is
 the path every future adapter should use before it touches the host OS.

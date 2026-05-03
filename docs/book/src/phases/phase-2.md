@@ -87,6 +87,13 @@ body through UAPI stdout. Its first tests use a local HTTP server: with
 `net.connect:127.0.0.1:PORT` it fetches, without that grant it exits before the
 runtime opens a socket.
 
+The first terminal grant prompt exists too. `layer36 run --prompt app.wasm`
+shows the app identity, lists missing manifest capabilities, accepts all or a
+numbered subset, and stores the approved caps only for that run. In a normal
+terminal the same prompt can appear automatically when required capabilities
+are missing. In non-interactive runs, Layer36 keeps the safer behavior and
+fails with a clear permission message.
+
 The proof apps are:
 
 - `layer36-curl`
