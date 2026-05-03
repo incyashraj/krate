@@ -1,8 +1,8 @@
 //! Generated binding checkpoint for the Phase 2 CLI world.
 //!
-//! This module intentionally does not wire host adapters yet. Its job is to
-//! prove that the Phase 2 WIT world can be consumed by Wasmtime's Component
-//! Model binding generator before we freeze names and implement dispatch.
+//! This module intentionally does not instantiate host adapters yet. Its job is
+//! to prove that the Phase 2 WIT world can be consumed by Wasmtime's Component
+//! Model binding generator before we freeze names and finish dispatch wiring.
 
 wasmtime::component::bindgen!({
     path: "../../wit/layer36/phase2",

@@ -133,8 +133,14 @@ of this step is that the boundary is testable:
 - a granted call reaches the adapter
 - file and network permission failures are mapped to module-level errors
 
-The next step is to connect the generated Wasmtime import bindings to these
-dispatcher methods.
+The bridge between generated WIT types and dispatcher types now exists too.
+It converts things like `open-mode`, HTTP requests, file stats, locale IDs, and
+WIT module errors into the runtime's internal structs and enums. That keeps the
+future import code simple: receive a WIT value, convert it, call the dispatcher,
+convert the result back.
+
+The next step is to implement the generated Wasmtime host traits so real
+component imports call these dispatcher methods.
 
 ## Rust Binding Checkpoint
 

@@ -2028,6 +2028,8 @@ The dispatcher scaffold is now in the runtime too. `crates/runtime/src/uapi_disp
 
 The Rust host-binding checkpoint is in place behind the `phase2-bindings` runtime feature. It confirms the Phase 2 `cli` world generates through Wasmtime, that `run` is exposed as a host-side `i32` result, and that generated names such as `OpenMode::Read` and `HttpMethod::Get` are usable before we wire dispatch.
 
+The generated WIT type bridge is also in place. `crates/runtime/src/phase2_bridge.rs` maps generated WIT records, enums, and module errors into the runtime dispatcher shapes. This is a small step, but it removes guesswork from the next one: the Wasmtime import traits can now call the dispatcher and return the right WIT-shaped values.
+
 This does not freeze UAPI v0.1 yet. It gives us a real contract to review, generate bindings from, and wire into host adapters.
 
 ---
@@ -2040,13 +2042,13 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 |---|-----------|--------|
 | 1 | All five UAPI modules (`io`, `fs`, `net`, `time`, `locale`) frozen as stable v0.1 WIT | Drafted, not frozen |
 | 2 | Each module implemented in Linux, macOS, Windows host adapters; CI green on all | Not done |
-| 3 | Rust bindings generated and usable (`cargo add layer36 && use layer36::fs` works) | Started: host-side Wasmtime binding checkpoint exists; SDK crate remains |
+| 3 | Rust bindings generated and usable (`cargo add layer36 && use layer36::fs` works) | Started: host-side Wasmtime binding checkpoint and generated type bridge exist; SDK crate remains |
 | 4 | Go (TinyGo) bindings generated and usable; sample builds and runs | Not done |
 | 5 | TypeScript (jco) bindings generated and usable; sample builds and runs | Not done |
 | 6 | `layer36-curl <url>` works identically on all three hosts | Not done |
 | 7 | `layer36-cat <file>` works identically on all three hosts | Not done |
 | 8 | `layer36-clock` prints time in user locale on all three hosts | Not done |
-| 9 | UCap v0.1: manifest-declared caps enforced; unauthorized calls trap cleanly | Started: CLI preflight, runtime UAPI guard, and dispatcher scaffold exist; generated WIT import wiring remains |
+| 9 | UCap v0.1: manifest-declared caps enforced; unauthorized calls trap cleanly | Started: CLI preflight, runtime UAPI guard, dispatcher scaffold, and generated WIT type bridge exist; import trait wiring remains |
 | 10 | Startup overhead for a UAPI-using app < 150 ms | Not done |
 | 11 | UAPI hot-path dispatch < 1 µs (microbenchmark) | Not done |
 | 12 | Developer who knows Rust but not WASM can write a CLI in < 30 min using docs | Not done |
@@ -2070,6 +2072,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P2-SEC-01C | Runtime UAPI policy guard | 2026-05-03 | Runtime config now carries the session policy; `layer36_runtime::uapi` maps Phase 2 calls to capability checks. |
 | P2-UAPI-REVIEW | Rust host binding checkpoint | 2026-05-03 | Added `phase2-bindings` feature and CI job; confirms Phase 2 WIT generates usable host-side Rust names. |
 | P2-SEC-01D | Runtime UAPI dispatcher scaffold | 2026-05-03 | Added adapter traits and dispatcher methods that map policy denial to module-level errors before adapter calls run. |
+| P2-SEC-01E-a | Generated WIT type/error bridge | 2026-05-03 | Added `phase2_bridge` to convert generated WIT records, enums, and module errors to and from runtime dispatcher types. |
 
 ---
 
@@ -2077,7 +2080,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
-| P2-SEC-01E | Generated WIT import wiring | 2026-05-03 | Needs generated Wasmtime imports to call `UapiDispatcher` methods and return WIT-shaped errors. |
+| P2-SEC-01E | Generated WIT import wiring | 2026-05-03 | Type/error bridge is done; next step is implementing the generated Wasmtime host traits over `UapiDispatcher`. |
 | P2-BIND-01A | Rust SDK crate skeleton | 2026-05-03 | Host binding shape is known; app-facing wrapper crate still needs design. |
 
 ---

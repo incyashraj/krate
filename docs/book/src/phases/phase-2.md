@@ -32,6 +32,11 @@ Wasmtime to generate bindings for the new `cli` world and checks a few important
 names. So far the shape is usable: `run` returns an `i32`, `OpenMode::Read`
 exists, and `HttpMethod::Get` exists.
 
+The latest runtime piece is the generated type bridge. It maps WIT records and
+errors into the dispatcher's Rust types, then back again. Put simply: the
+runtime now understands the words that generated WIT code will use when it asks
+for files, network, time, locale, and logs.
+
 The proof apps are:
 
 - `layer36-curl`

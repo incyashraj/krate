@@ -16,6 +16,8 @@ pub mod uapi_dispatch;
 
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_bindings;
+#[cfg(feature = "phase2-bindings")]
+pub mod phase2_bridge;
 
 use layer36_policy::SessionPolicy;
 use uapi::UapiGuard;
