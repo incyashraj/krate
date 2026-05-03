@@ -91,5 +91,28 @@ cargo run -p layer36-cli -- run app.wasm --auto-grant
 ```
 
 For now, this is a preflight check. If a required capability is missing,
-Layer36 exits before the component starts. The next UCap step is checking the
-same policy at every UAPI call once the Phase 2 dispatcher is wired.
+Layer36 exits before the component starts.
+
+The runtime now also has the next piece: a UAPI guard. It is small, but it is
+the path every future adapter should use before it touches the host OS.
+
+Simple version:
+
+1. App calls a UAPI function.
+2. Runtime turns that call into a capability string.
+3. The session policy checks whether that capability was granted.
+4. Only then does the host adapter read the file, write the file, or connect to
+   the network.
+
+```mermaid
+flowchart LR
+    APP["WASM app"] --> CALL["UAPI call"]
+    CALL --> MAP["Map call to capability"]
+    MAP --> CHECK{"Granted?"}
+    CHECK -- yes --> ADAPT["Host adapter"]
+    ADAPT --> OS["Host OS"]
+    CHECK -- no --> DENY["Permission denied"]
+```
+
+Today this guard is tested inside the runtime. The generated Phase 2 dispatcher
+still needs to call it for each real WIT import.

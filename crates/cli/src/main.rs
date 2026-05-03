@@ -137,6 +137,7 @@ fn run_component(
         memory_bytes: mem_limit
             .checked_mul(1024 * 1024)
             .context("memory limit is too large")?,
+        session_policy: policy,
     };
     let runtime = Runtime::new(&config)?;
 

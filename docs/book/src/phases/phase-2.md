@@ -16,6 +16,12 @@ The first draft of those WIT contracts now lives at `wit/layer36/phase2`.
 It is not frozen yet, but it is real source code and CI parses it so syntax
 mistakes are caught early.
 
+The capability layer has also started. Layer36 can parse a sidecar
+`manifest.toml`, check launch-time grants, and carry the session policy into the
+runtime. The newest piece is a runtime UAPI guard: it translates calls like
+`fs.read ./data/file.txt` or `net.connect api.example.com:443` into the exact
+capability check that must pass before an adapter talks to the host OS.
+
 The proof apps are:
 
 - `layer36-curl`

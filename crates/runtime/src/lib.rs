@@ -11,6 +11,11 @@ use wasmtime::{
     Engine, ResourceLimiter, Store, Trap,
 };
 
+pub mod uapi;
+
+use layer36_policy::SessionPolicy;
+use uapi::UapiGuard;
+
 wasmtime::component::bindgen!({
     path: "../../wit/layer36",
     world: "app",
@@ -23,6 +28,8 @@ pub struct Config {
     pub fuel: Option<u64>,
     /// Linear-memory cap in bytes.
     pub memory_bytes: u64,
+    /// Session-scoped UCap grants used by Phase 2 UAPI dispatch.
+    pub session_policy: SessionPolicy,
 }
 
 impl Default for Config {
@@ -30,6 +37,7 @@ impl Default for Config {
         Self {
             fuel: None,
             memory_bytes: 256 * 1024 * 1024,
+            session_policy: SessionPolicy::default(),
         }
     }
 }
@@ -168,6 +176,7 @@ struct HostState {
     exit_code: Option<i32>,
     limits: Phase1Limits,
     output: OutputMode,
+    _uapi: UapiGuard,
 }
 
 impl HostState {
@@ -179,7 +188,13 @@ impl HostState {
             exit_code: None,
             limits: Phase1Limits { memory_bytes },
             output,
+            _uapi: UapiGuard::new(config.session_policy.clone()),
         })
+    }
+
+    #[cfg(test)]
+    fn uapi(&self) -> &UapiGuard {
+        &self._uapi
     }
 }
 
@@ -258,6 +273,23 @@ mod tests {
     #[test]
     fn default_config_sets_phase_1_memory_cap() {
         assert_eq!(Config::default().memory_bytes, 256 * 1024 * 1024);
+    }
+
+    #[test]
+    fn host_state_receives_session_policy() {
+        let config = Config {
+            session_policy: SessionPolicy::from_cli_grants(&["fs.read:./notes/**".to_string()])
+                .expect("policy"),
+            ..Config::default()
+        };
+        let state = HostState::new(&config, OutputMode::Sink).expect("host state");
+
+        assert!(state
+            .uapi()
+            .check(&uapi::UapiCall::Fs(uapi::FsCall::Read {
+                path: "./notes/today.txt".to_string(),
+            }))
+            .is_ok());
     }
 
     #[test]
