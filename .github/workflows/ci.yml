@@ -71,10 +71,10 @@ jobs:
         run: cargo test -p layer36-runtime --features phase2-bindings
 
   # ──────────────────────────────────────────────
-  # 4. Shared Phase 1 fixture
+  # 4. Shared component fixtures
   # ──────────────────────────────────────────────
   hello-fixture:
-    name: Build shared hello fixture
+    name: Build shared component fixtures
     runs-on: ubuntu-latest
     outputs:
       sha256: ${{ steps.hash.outputs.sha256 }}
@@ -101,6 +101,11 @@ jobs:
           wasm_path="$(scripts/build-hello-component.sh)"
           mkdir -p layer36-fixture
           cp "$wasm_path" layer36-fixture/hello_world.wasm
+      - name: Build Phase 2 smoke fixture once
+        shell: bash
+        run: |
+          wasm_path="$(scripts/build-phase2-smoke-component.sh)"
+          cp "$wasm_path" layer36-fixture/phase2_smoke.wasm
       - name: Record fixture hash
         id: hash
         shell: bash
@@ -109,10 +114,10 @@ jobs:
           printf '%s\n' "$sha256" > layer36-fixture/hello_world.wasm.sha256
           echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
           echo "hello fixture sha256: $sha256"
-      - name: Upload hello fixture
+      - name: Upload component fixtures
         uses: actions/upload-artifact@v4
         with:
-          name: phase1-hello-fixture
+          name: phase-component-fixtures
           path: layer36-fixture/
           if-no-files-found: error
 
@@ -145,16 +150,17 @@ jobs:
         run: cargo build --workspace
       - name: Build release binary
         run: cargo build --release --workspace
-      - name: Download shared hello fixture
+      - name: Download shared component fixtures
         uses: actions/download-artifact@v4
         with:
-          name: phase1-hello-fixture
+          name: phase-component-fixtures
           path: layer36-fixture
       - name: Run Phase 1 tests
         shell: bash
         env:
           LAYER36_HELLO_WASM: layer36-fixture/hello_world.wasm
           LAYER36_HELLO_SHA256: ${{ needs.hello-fixture.outputs.sha256 }}
+          LAYER36_PHASE2_SMOKE_WASM: layer36-fixture/phase2_smoke.wasm
         run: scripts/test-phase1.sh
 
   # ──────────────────────────────────────────────

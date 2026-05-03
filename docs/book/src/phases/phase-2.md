@@ -49,6 +49,12 @@ and installs the generated UAPI imports. The local adapter currently covers
 stdio, basic filesystem calls, time, and locale. Network is still deliberately
 unsupported until the real HTTP adapter is added.
 
+There is also a first smoke app under `test/integration/phase2-smoke`. It is not
+one of the final sample apps yet. Its job is smaller: prove that a real Phase 2
+component can read a file, call time and locale, and print through the UAPI
+path. CI builds that component and runs it through `layer36 run` on the host
+test matrix.
+
 The proof apps are:
 
 - `layer36-curl`

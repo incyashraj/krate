@@ -172,6 +172,43 @@ fn configured_hello_component_runs_and_matches_expected_fixture_hash() {
 }
 
 #[test]
+fn configured_phase2_smoke_component_runs_through_uapi() {
+    let Some(path) = configured_phase2_smoke_component() else {
+        return;
+    };
+
+    let dir = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(
+        dir.path().join("phase2-smoke-input.txt"),
+        "Layer36 Phase 2 input\n",
+    )
+    .expect("write Phase 2 smoke input");
+
+    let output = layer36()
+        .current_dir(dir.path())
+        .args(["run", "--grant", "fs.read:phase2-smoke-input.txt"])
+        .arg(path)
+        .output()
+        .expect("run layer36 Phase 2 smoke component");
+
+    assert!(
+        output.status.success(),
+        "layer36 run failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("phase2-smoke ok"));
+    assert!(stdout.contains("file=Layer36 Phase 2 input"));
+    assert!(stdout.contains("locale="));
+    assert!(stdout.contains("timezone="));
+    assert!(stdout.contains("number=12.5:Decimal:"));
+    assert!(stdout.contains("time-ok=true"));
+    assert!(stdout.contains("mono-ok=true"));
+}
+
+#[test]
 fn fuel_limit_exits_with_limit_code() {
     let Some(path) = configured_hello_component() else {
         return;
@@ -332,6 +369,15 @@ fn workspace_path(path: PathBuf) -> PathBuf {
 fn configured_hello_component() -> Option<PathBuf> {
     let Some(path) = std::env::var_os("LAYER36_HELLO_WASM") else {
         eprintln!("skipping hello component test: LAYER36_HELLO_WASM is not set");
+        return None;
+    };
+
+    Some(workspace_path(PathBuf::from(path)))
+}
+
+fn configured_phase2_smoke_component() -> Option<PathBuf> {
+    let Some(path) = std::env::var_os("LAYER36_PHASE2_SMOKE_WASM") else {
+        eprintln!("skipping Phase 2 smoke component test: LAYER36_PHASE2_SMOKE_WASM is not set");
         return None;
     };
 

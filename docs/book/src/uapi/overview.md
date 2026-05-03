@@ -164,6 +164,11 @@ The local adapter is still small on purpose. It can handle stdio, basic files,
 time, and locale. HTTP returns a clear unsupported error until we add the real
 network adapter.
 
+The first proof component lives at `test/integration/phase2-smoke`. It reads a
+file, checks time and locale, and writes output through the Phase 2 imports.
+This is the first end-to-end proof that the UAPI path is more than generated
+types.
+
 ## Rust Binding Checkpoint
 
 The runtime has a feature named `phase2-bindings` that asks Wasmtime to generate
