@@ -1,0 +1,46 @@
+package layer36:fs@0.1.0;
+
+interface types {
+  record file-stat {
+    size: u64,
+    modified-millis: u64,
+    is-dir: bool,
+  }
+
+  variant open-mode {
+    read,
+    write,
+    read-write,
+    append,
+  }
+
+  variant fs-error {
+    not-found,
+    permission-denied,
+    already-exists,
+    invalid-path,
+    not-a-directory,
+    is-a-directory,
+    io(string),
+  }
+}
+
+interface files {
+  use types.{file-stat, open-mode, fs-error};
+
+  resource file {
+    read: func(n: u32) -> result<list<u8>, fs-error>;
+    write: func(bytes: list<u8>) -> result<u32, fs-error>;
+    seek-set: func(pos: u64) -> result<u64, fs-error>;
+    seek-end: func() -> result<u64, fs-error>;
+    stat: func() -> result<file-stat, fs-error>;
+  }
+
+  open: func(path: string, mode: open-mode) -> result<file, fs-error>;
+  stat: func(path: string) -> result<file-stat, fs-error>;
+  %list: func(path: string) -> result<list<string>, fs-error>;
+  remove-file: func(path: string) -> result<_, fs-error>;
+  remove-dir: func(path: string) -> result<_, fs-error>;
+  mkdir: func(path: string) -> result<_, fs-error>;
+  rename: func(%from: string, to: string) -> result<_, fs-error>;
+}

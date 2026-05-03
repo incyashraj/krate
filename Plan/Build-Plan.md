@@ -1577,10 +1577,10 @@ What we call things vs. what the ecosystem calls them. Keep these consistent in 
 
 ## 21. Development Status
 
-> **Current Phase:** Phase 1: POC Runtime, with account-bound Phase 0 items still pending
+> **Current Phase:** Phase 2: UAPI v0.1 has started, with formal Phase 0/1 external gates still pending
 > **Project Status:** In Progress
 > **Phase 0 Start:** 2026-05-01
-> **v1.0 Target:** ~April 2028
+> **v1.0 Target:** estimated after Phase 7
 > **Last Updated:** 2026-05-03
 
 This section is the living status board for all of Layer36. Update it at every phase boundary, major milestone, and architectural pivot. It is the first thing a returning contributor should read.
@@ -1593,7 +1593,7 @@ This section is the living status board for all of Layer36. Update it at every p
 |---|-------|--------|---------|-----------|-------|
 | 0 | Foundation | Mostly done | 2026-05-01 | pending external gates | Renamed from OneOS to Layer36 on 2026-05-02; local scaffold, docs, Pages, labels/issues, and CI are green. |
 | 1 | POC Runtime | Engineering done | 2026-05-02 | pending formal exit gates | Runtime, CLI, WIT host imports, shared hello-world fixture, CI harness, fuel/memory limits, release packaging, quickstart, threat model, benchmarks, ADRs, retrospective, and `v0.1.0-rc1` are in place. |
-| 2 | UAPI v0.1 (CLI) | Next | pending | pending | |
+| 2 | UAPI v0.1 (CLI) | Started | 2026-05-03 | pending | Draft WIT package exists at `wit/layer36/phase2` and is parse-checked in CI. |
 | 3 | UI + Graphics | Not started | pending | pending | |
 | 4 | Mobile Hosts | Not started | pending | pending | |
 | 5 | Developer SDK | Not started | pending | pending | |

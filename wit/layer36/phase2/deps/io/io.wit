@@ -1,0 +1,53 @@
+package layer36:io@0.1.0;
+
+interface types {
+  enum log-level {
+    trace,
+    debug,
+    info,
+    warn,
+    error,
+  }
+
+  variant io-error {
+    closed,
+    interrupted,
+    unexpected-eof,
+    invalid-utf8,
+    other(string),
+  }
+}
+
+interface streams {
+  use types.{io-error};
+
+  resource input-stream {
+    read: func(n: u32) -> result<list<u8>, io-error>;
+    read-to-string: func() -> result<string, io-error>;
+  }
+
+  resource output-stream {
+    write: func(bytes: list<u8>) -> result<u32, io-error>;
+    write-all: func(bytes: list<u8>) -> result<_, io-error>;
+    flush: func() -> result<_, io-error>;
+  }
+}
+
+interface stdio {
+  use streams.{input-stream, output-stream};
+
+  stdin: func() -> input-stream;
+  stdout: func() -> output-stream;
+  stderr: func() -> output-stream;
+}
+
+interface log {
+  use types.{log-level};
+
+  record field {
+    key: string,
+    value: string,
+  }
+
+  emit: func(level: log-level, message: string, fields: list<field>);
+}

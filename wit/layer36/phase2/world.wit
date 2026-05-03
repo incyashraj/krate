@@ -1,0 +1,14 @@
+package layer36:app@0.1.0;
+
+world cli {
+  import layer36:io/stdio@0.1.0;
+  import layer36:io/log@0.1.0;
+  import layer36:fs/files@0.1.0;
+  import layer36:net/http-client@0.1.0;
+  import layer36:time/clock@0.1.0;
+  import layer36:time/sleep@0.1.0;
+  import layer36:locale/info@0.1.0;
+  import layer36:locale/format@0.1.0;
+
+  export run: func() -> s32;
+}

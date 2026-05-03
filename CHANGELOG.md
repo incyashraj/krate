@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Phase 2 UAPI v0.1 WIT package draft for CLI apps, covering `io`, `fs`, `net`, `time`, and `locale`.
 - Initial repository scaffold: licenses, README, CI, ADR-0001.
 - Phase Plans (0-7) and Build Plan in `Plan/`.
 - `docs/adr/` with ADR template and ADR-0001.

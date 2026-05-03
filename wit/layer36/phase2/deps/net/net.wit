@@ -1,0 +1,50 @@
+package layer36:net@0.1.0;
+
+interface types {
+  enum http-method {
+    get,
+    post,
+    put,
+    delete,
+    patch,
+    head,
+    options,
+  }
+
+  record header {
+    name: string,
+    value: string,
+  }
+
+  record request {
+    method: http-method,
+    url: string,
+    headers: list<header>,
+    body: list<u8>,
+    timeout-millis: option<u32>,
+  }
+
+  record response {
+    status: u16,
+    headers: list<header>,
+    body: list<u8>,
+  }
+
+  variant net-error {
+    invalid-url,
+    dns-failure(string),
+    connect-failure(string),
+    tls-failure(string),
+    timeout,
+    body-too-large,
+    permission-denied,
+    protocol(string),
+    other(string),
+  }
+}
+
+interface http-client {
+  use types.{request, response, net-error};
+
+  fetch: func(req: request) -> result<response, net-error>;
+}

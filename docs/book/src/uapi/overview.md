@@ -41,3 +41,6 @@ Phase 2 only covers:
 
 That is enough to build the first useful CLI apps without pretending the whole
 platform is ready.
+
+The first Phase 2 draft is checked into `wit/layer36/phase2`. It is a review
+draft, not a frozen compatibility promise yet.

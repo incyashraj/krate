@@ -24,6 +24,7 @@ thiserror = "2.0.18"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 wasmtime = { version = "43.0.2", features = ["component-model"] }
+wit-parser = "0.244.0"
 
 [profile.release]
 lto = "thin"

@@ -1,6 +1,6 @@
 # Phase 2: UAPI v0.1
 
-**Status:** Next
+**Status:** Started
 **Estimate:** est. 4 to 8 weeks
 **Goal:** Make Layer36 useful for small command line apps.
 
@@ -11,6 +11,10 @@ Phase 2 replaces the temporary Phase 1 host interface with real APIs:
 - `net`
 - `time`
 - `locale`
+
+The first draft of those WIT contracts now lives at `wit/layer36/phase2`.
+It is not frozen yet, but it is real source code and CI parses it so syntax
+mistakes are caught early.
 
 The proof apps are:
 

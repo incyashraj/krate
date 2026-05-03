@@ -1,11 +1,12 @@
 # Layer36 — Phase 2 Detailed Plan: UAPI v0.1 (CLI)
 
 > **Phase:** 2 of 8
-> **Duration:** Months 4–6 (90 calendar days, ~40–50 engineering days of work)
+> **Duration:** est. 4 to 8 weeks for the first useful CLI slice
 > **Phase sentence:** *Ship the first useful cross-platform CLI app through our runtime.*
 > **Prerequisite:** Phase 1 complete — runtime + CLI + CI green on three desktop hosts.
 > **Supersedes:** `layer36:phase1/host` WIT interface.
 > **Superseded by:** nothing.
+> **Status:** Started under the Phase 1 engineering-complete waiver; formal external gates still pending.
 
 ---
 
@@ -44,7 +45,7 @@ Phase 2 is where Layer36 becomes useful. Phase 1 proved we could run a WASM bina
 
 - Every task has an ID (`P2-UAPI-01`, etc.) matching §7 of the main Build Plan.
 - The WIT specs in §7 are the most important artifacts of this phase. They will be copied, pasted, generated from, and depended on by every future phase. Get them right, not fast.
-- Phase 2 is ~4× the scope of Phase 1. Resist the urge to compress the calendar. Three months is the right answer.
+- Phase 2 is larger than Phase 1. Keep the first slice tight: WIT contracts first, then one useful app path, then broaden.
 - If a task feels like it belongs to Phase 3 (GUI) or later, it does. Defer it.
 
 ---
@@ -2012,14 +2013,16 @@ Save as `docs/book/src/phase2/retro.md` at the end of Phase 2.
 
 ## Development Log
 
-> **Phase Status:** Not started  
-> **Started:** —  
-> **Completed:** —  
-> **Last Updated:** 2026-05-01
+> **Phase Status:** Started
+> **Started:** 2026-05-03
+> **Completed:** pending
+> **Last Updated:** 2026-05-03
 
 ### Progress Summary
 
-_Not started. Awaiting completion of all [Phase 1 exit criteria](#3-success-criteria)._
+Phase 2 development has started with the UAPI contract layer. The first draft lives under `wit/layer36/phase2`, uses WIT dependency packages for `io`, `fs`, `net`, `time`, and `locale`, and is parse-checked by `crates/runtime/tests/phase2_wit.rs`.
+
+This does not freeze UAPI v0.1 yet. It gives us a real contract to review, generate bindings from, and wire into host adapters.
 
 ---
 
@@ -2029,7 +2032,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 | # | Criterion | Status |
 |---|-----------|--------|
-| 1 | All five UAPI modules (`io`, `fs`, `net`, `time`, `locale`) frozen as stable v0.1 WIT | Not done |
+| 1 | All five UAPI modules (`io`, `fs`, `net`, `time`, `locale`) frozen as stable v0.1 WIT | Drafted, not frozen |
 | 2 | Each module implemented in Linux, macOS, Windows host adapters; CI green on all | Not done |
 | 3 | Rust bindings generated and usable (`cargo add layer36 && use layer36::fs` works) | Not done |
 | 4 | Go (TinyGo) bindings generated and usable; sample builds and runs | Not done |
@@ -2051,7 +2054,11 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 | Task ID | Task | Completed | Notes |
 |---------|------|-----------|-------|
-| — | — | — | — |
+| P2-UAPI-01 | Draft `io` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/io`; parse-checked. |
+| P2-UAPI-02 | Draft `fs` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/fs`; parser catches WIT keyword escapes. |
+| P2-UAPI-03 | Draft `net` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/net`; HTTP client only. |
+| P2-UAPI-04 | Draft `time` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/time`; clock and sleep only. |
+| P2-UAPI-05 | Draft `locale` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/locale`; info and formatting only. |
 
 ---
 
@@ -2059,7 +2066,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
-| — | — | — | — |
+| P2-UAPI-REVIEW | Review generated bindings and naming before freeze | 2026-05-03 | Check Rust binding shape next, before implementing adapters. |
 
 ---
 
@@ -2083,13 +2090,13 @@ _None currently._
 
 ### Notes & Learnings
 
-_Nothing yet. Add time-stamped notes as work progresses: WIT design decisions made during review, per-host adapter surprises, cross-host diff test failures and their causes, lessons for Phase 3._
+- 2026-05-03: Added the first parseable Phase 2 WIT package at `wit/layer36/phase2`. Kept it separate from the Phase 1 runtime WIT so the current `layer36 run` proof stays green while UAPI is reviewed.
 
 ---
 
 Phase 2 is where Layer36 stops being a runtime and starts being a platform. The five WIT files you ship this phase will be cited, copied, and depended on by every Layer36 app ever written. The adapter crates will be forked and ported for every new host. The UCap model will be extended, not replaced, for a decade.
 
-Spend the time. Review the WIT aloud with someone who hasn't seen it. Write the tutorials before you think they're ready. Run the cross-host diff test until you trust it. The cost of getting Phase 2 right is three months. The cost of getting it wrong is every subsequent phase paying interest on that debt.
+Spend the time. Review the WIT aloud with someone who hasn't seen it. Write the tutorials before you think they're ready. Run the cross-host diff test until you trust it. Getting Phase 2 right matters more than hitting a fixed calendar date.
 
 When you ship, `layer36-curl`, `layer36-cat`, and `layer36-clock` running byte-identically on three operating systems is the moment Layer36 stops being a plan and becomes a thing. That moment is worth earning.
 

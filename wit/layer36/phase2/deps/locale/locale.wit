@@ -1,0 +1,47 @@
+package layer36:locale@0.1.0;
+
+interface types {
+  record locale-id {
+    bcp47: string,
+  }
+
+  enum date-style {
+    short,
+    medium,
+    long,
+    full,
+  }
+
+  enum number-style {
+    decimal,
+    percent,
+    currency,
+  }
+}
+
+interface info {
+  use types.{locale-id};
+
+  /// The user's preferred locale as reported by the host.
+  current: func() -> locale-id;
+
+  /// IANA timezone name, for example "Asia/Singapore".
+  timezone: func() -> string;
+}
+
+interface format {
+  use types.{locale-id, date-style, number-style};
+
+  format-date: func(
+    millis: u64,
+    tz: string,
+    style: date-style,
+    loc: locale-id,
+  ) -> string;
+
+  format-number: func(
+    value: f64,
+    style: number-style,
+    loc: locale-id,
+  ) -> string;
+}
