@@ -1234,7 +1234,7 @@ Tick every box. No exceptions.
 
 ### Docs
 - [x] Quickstart merged and published to docs site.
-- [ ] Architecture overview merged.
+- [x] Architecture overview merged.
 - [ ] ADR-0002 merged.
 - [ ] ADR-0003 merged.
 - [x] README updated to reflect Phase 1 reality.

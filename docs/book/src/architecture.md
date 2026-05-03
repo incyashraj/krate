@@ -43,6 +43,16 @@ The current execution path is:
 4. The component's exported `run()` function is invoked.
 5. `print` writes through the host, and `exit` records the requested exit code.
 
+## Cross-Host Proof
+
+Phase 1 CI proves portability with one shared input. A Linux job builds the
+hello-world component once, records its SHA-256, and uploads that exact `.wasm`
+as a workflow artifact. The Linux, macOS, and Windows test jobs download the
+same artifact, assert the same hash, and run it through `layer36`.
+
+That split is intentional: source builds can vary by host, but the runtime proof
+requires the same component bytes on every desktop host.
+
 ## Crates
 
 ```mermaid
