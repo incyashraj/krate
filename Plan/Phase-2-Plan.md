@@ -2036,6 +2036,12 @@ The generated import host exists now as well. `crates/runtime/src/phase2_host.rs
 
 The first real Phase 2 component proof exists under `test/integration/phase2-smoke`. It targets the Phase 2 `cli` world, reads `phase2-smoke-input.txt` through `layer36:fs/files`, calls time and locale imports, and writes its result through `layer36:io/stdio`. CI now builds this component as a shared fixture and runs it through `layer36 run --grant fs.read:phase2-smoke-input.txt` on the cross-host test matrix.
 
+GitHub Actions is now in budget-aware mode. Normal pushes run the cheap checks:
+format, clippy, Linux workspace tests, and docs. The expensive full path builds
+the shared component fixtures, runs Linux/macOS/Windows, benchmarks, cargo-deny,
+and the dedicated Phase 2 binding checkpoint only when manually dispatched with
+`full = true` or when a push commit message contains `[full-ci]`.
+
 This does not freeze UAPI v0.1 yet. It gives us a real contract to review, generate bindings from, and wire into host adapters.
 
 ---
@@ -2083,6 +2089,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P2-SEC-01E-c | Phase 2 host resource table | 2026-05-03 | Added runtime-owned resource IDs for file and stream handles, then routed file read/write/seek/stat and stream read/write/flush calls through dispatcher adapter methods. |
 | P2-SEC-01E-d | Runtime Phase 2 linker install | 2026-05-03 | `layer36 run` can now fall back from the Phase 1 `app` world to the Phase 2 `cli` world and install generated UAPI imports with a local adapter for stdio, basic fs, time, and locale. |
 | P2-SEC-01E-e | Phase 2 smoke component proof | 2026-05-03 | Added `test/integration/phase2-smoke`, a real Phase 2 `cli` component that reads a file, calls time/locale, writes to stdout, and is wired into the cross-host CI fixture path. |
+| P2-CI-01 | Budget-aware CI mode | 2026-05-04 | Normal push CI now runs cheap Linux checks only; full cross-host matrix, benchmarks, cargo-deny, fixtures, and the dedicated Phase 2 binding checkpoint run manually with `full = true` or a `[full-ci]` commit marker. |
 
 ---
 

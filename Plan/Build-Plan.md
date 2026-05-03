@@ -1593,7 +1593,7 @@ This section is the living status board for all of Layer36. Update it at every p
 |---|-------|--------|---------|-----------|-------|
 | 0 | Foundation | Mostly done | 2026-05-01 | pending external gates | Renamed from OneOS to Layer36 on 2026-05-02; local scaffold, docs, Pages, labels/issues, and CI are green. |
 | 1 | POC Runtime | Engineering done | 2026-05-02 | pending formal exit gates | Runtime, CLI, WIT host imports, shared hello-world fixture, CI harness, fuel/memory limits, release packaging, quickstart, threat model, benchmarks, ADRs, retrospective, and `v0.1.0-rc1` are in place. |
-| 2 | UAPI v0.1 (CLI) | Started | 2026-05-03 | pending | Draft WIT package, manifest/policy checks, runtime guard, host-binding checkpoint, dispatcher scaffold, generated type bridge, generated host wiring, resource table, initial Phase 2 `layer36 run` linker path, and first smoke component proof are in place. |
+| 2 | UAPI v0.1 (CLI) | Started | 2026-05-03 | pending | Draft WIT package, manifest/policy checks, runtime guard, host-binding checkpoint, dispatcher scaffold, generated type bridge, generated host wiring, resource table, initial Phase 2 `layer36 run` linker path, first smoke component proof, and budget-aware CI mode are in place. |
 | 3 | UI + Graphics | Not started | pending | pending | |
 | 4 | Mobile Hosts | Not started | pending | pending | |
 | 5 | Developer SDK | Not started | pending | pending | |

@@ -5,6 +5,17 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Run full cross-host CI, benchmarks, and dependency audit
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -54,6 +65,7 @@ jobs:
   # ──────────────────────────────────────────────
   phase2-bindings:
     name: Phase 2 bindings
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,10 +83,34 @@ jobs:
         run: cargo test -p layer36-runtime --features phase2-bindings
 
   # ──────────────────────────────────────────────
-  # 4. Shared component fixtures
+  # 4. Fast Linux workspace test
+  # ──────────────────────────────────────────────
+  quick-test:
+    name: Test (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.91.1
+        with:
+          targets: wasm32-wasip1, wasm32-wasip2, wasm32-unknown-unknown
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run workspace tests
+        run: cargo test --workspace --all-features
+
+  # ──────────────────────────────────────────────
+  # 5. Shared component fixtures
   # ──────────────────────────────────────────────
   hello-fixture:
     name: Build shared component fixtures
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     outputs:
       sha256: ${{ steps.hash.outputs.sha256 }}
@@ -122,10 +158,11 @@ jobs:
           if-no-files-found: error
 
   # ──────────────────────────────────────────────
-  # 5. Test matrix — Linux, macOS, Windows
+  # 6. Full test matrix — Linux, macOS, Windows
   # ──────────────────────────────────────────────
-  test:
-    name: Test (${{ matrix.os }})
+  full-test:
+    name: Full test (${{ matrix.os }})
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ${{ matrix.os }}
     needs: hello-fixture
     strategy:
@@ -164,7 +201,7 @@ jobs:
         run: scripts/test-phase1.sh
 
   # ──────────────────────────────────────────────
-  # 6. Documentation build
+  # 7. Documentation build
   # ──────────────────────────────────────────────
   docs:
     name: Docs (mdBook)
@@ -181,10 +218,11 @@ jobs:
         run: mdbook build docs/book
 
   # ──────────────────────────────────────────────
-  # 7. Benchmark smoke + warning-only regression check
+  # 8. Benchmark smoke + warning-only regression check
   # ──────────────────────────────────────────────
   benchmarks:
     name: Benchmarks (warning only)
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -212,10 +250,11 @@ jobs:
         run: scripts/check-benchmark-regression.sh
 
   # ──────────────────────────────────────────────
-  # 8. Dependency audit (cargo-deny)
+  # 9. Dependency audit (cargo-deny)
   # ──────────────────────────────────────────────
   deny:
     name: Dependency audit (cargo-deny)
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -27,10 +27,24 @@ Required checks:
 - `Format (rustfmt)`
 - `Lint (clippy)`
 - `Test (ubuntu-latest)`
-- `Test (macos-latest)`
-- `Test (windows-latest)`
 - `Docs (mdBook)`
+
+Do not require the expensive full-matrix checks while the repository is using
+the included GitHub Actions minutes. The full matrix is still available, but it
+is intentionally manual.
+
+Full validation checks:
+
+- `Full test (ubuntu-latest)`
+- `Full test (macos-latest)`
+- `Full test (windows-latest)`
+- `Benchmarks (warning only)`
 - `Dependency audit (cargo-deny)`
+
+Run full validation from **Actions -> CI -> Run workflow -> full = true**, or by
+including `[full-ci]` in a push commit message. Use it before releases,
+architecture-changing runtime work, and any change that touches host-specific
+behavior.
 
 ## Pages
 
