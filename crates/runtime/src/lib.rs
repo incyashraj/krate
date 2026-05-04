@@ -9,7 +9,7 @@ use std::{
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
     net::TcpStream,
-    path::Path,
+    path::{Path, PathBuf},
     rc::Rc,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
@@ -66,6 +66,8 @@ pub struct Config {
     pub app_args: Vec<String>,
     /// Maximum full HTTP response size accepted by the local Phase 2 adapter.
     pub max_http_response_bytes: usize,
+    /// Root directory used to resolve relative Phase 2 filesystem paths.
+    pub sandbox_root: PathBuf,
 }
 
 impl Default for Config {
@@ -77,6 +79,7 @@ impl Default for Config {
             test_time_millis: None,
             app_args: Vec::new(),
             max_http_response_bytes: DEFAULT_MAX_HTTP_RESPONSE_BYTES,
+            sandbox_root: PathBuf::from("."),
         }
     }
 }
@@ -281,6 +284,7 @@ impl HostState {
         let memory_bytes = usize::try_from(config.memory_bytes)
             .map_err(|_| RuntimeError::EngineInit("memory limit is too large".to_string()))?;
         let output = Rc::new(RefCell::new(output));
+        std::fs::create_dir_all(&config.sandbox_root)?;
 
         Ok(Self {
             exit_code: None,
@@ -295,6 +299,7 @@ impl HostState {
                     config.test_time_millis,
                     config.app_args.clone(),
                     config.max_http_response_bytes,
+                    config.sandbox_root.clone(),
                 )),
             ),
         })
@@ -389,6 +394,7 @@ struct LocalPhase2Adapter {
     test_time_millis: Option<u64>,
     app_args: Vec<String>,
     max_http_response_bytes: usize,
+    sandbox_root: PathBuf,
 }
 
 #[cfg(feature = "phase2-bindings")]
@@ -398,6 +404,7 @@ impl LocalPhase2Adapter {
         test_time_millis: Option<u64>,
         app_args: Vec<String>,
         max_http_response_bytes: usize,
+        sandbox_root: PathBuf,
     ) -> Self {
         Self {
             output,
@@ -406,6 +413,7 @@ impl LocalPhase2Adapter {
             test_time_millis,
             app_args,
             max_http_response_bytes,
+            sandbox_root,
         }
     }
 
@@ -415,6 +423,16 @@ impl LocalPhase2Adapter {
         state.next_id += 1;
         state.resources.insert(id, resource);
         FileHandle::resource(id)
+    }
+
+    fn resolve_fs_path(&self, path: &str) -> std::result::Result<PathBuf, AdapterError> {
+        let logical = normalize_fs_path(path)?;
+        let path = logical.to_path_buf();
+        if path.is_absolute() {
+            Ok(path)
+        } else {
+            Ok(self.sandbox_root.join(path))
+        }
     }
 }
 
@@ -553,7 +571,7 @@ impl IoAdapter for LocalPhase2Adapter {
 #[cfg(feature = "phase2-bindings")]
 impl FsAdapter for LocalPhase2Adapter {
     fn open(&self, path: &str, mode: OpenMode) -> std::result::Result<FileHandle, AdapterError> {
-        let path = normalize_fs_path(path)?;
+        let path = self.resolve_fs_path(path)?;
         let mut opts = std::fs::OpenOptions::new();
         match mode {
             OpenMode::Read => {
@@ -569,7 +587,7 @@ impl FsAdapter for LocalPhase2Adapter {
                 opts.append(true).create(true);
             }
         }
-        let file = opts.open(path.to_path_buf()).map_err(map_io_error)?;
+        let file = opts.open(path).map_err(map_io_error)?;
         Ok(self.insert_resource(LocalResource::File(file)))
     }
 
@@ -620,16 +638,16 @@ impl FsAdapter for LocalPhase2Adapter {
     }
 
     fn stat(&self, path: &str) -> std::result::Result<FileStat, AdapterError> {
-        let path = normalize_fs_path(path)?;
-        std::fs::metadata(path.to_path_buf())
+        let path = self.resolve_fs_path(path)?;
+        std::fs::metadata(path)
             .map(file_stat_from_metadata)
             .map_err(map_io_error)
     }
 
     fn list(&self, path: &str) -> std::result::Result<Vec<String>, AdapterError> {
-        let path = normalize_fs_path(path)?;
+        let path = self.resolve_fs_path(path)?;
         let mut entries = Vec::new();
-        for entry in std::fs::read_dir(path.to_path_buf()).map_err(map_io_error)? {
+        for entry in std::fs::read_dir(path).map_err(map_io_error)? {
             let entry = entry.map_err(map_io_error)?;
             let name = entry
                 .file_name()
@@ -642,24 +660,24 @@ impl FsAdapter for LocalPhase2Adapter {
     }
 
     fn remove_file(&self, path: &str) -> std::result::Result<(), AdapterError> {
-        let path = normalize_fs_path(path)?;
-        std::fs::remove_file(path.to_path_buf()).map_err(map_io_error)
+        let path = self.resolve_fs_path(path)?;
+        std::fs::remove_file(path).map_err(map_io_error)
     }
 
     fn remove_dir(&self, path: &str) -> std::result::Result<(), AdapterError> {
-        let path = normalize_fs_path(path)?;
-        std::fs::remove_dir(path.to_path_buf()).map_err(map_io_error)
+        let path = self.resolve_fs_path(path)?;
+        std::fs::remove_dir(path).map_err(map_io_error)
     }
 
     fn mkdir(&self, path: &str) -> std::result::Result<(), AdapterError> {
-        let path = normalize_fs_path(path)?;
-        std::fs::create_dir(path.to_path_buf()).map_err(map_io_error)
+        let path = self.resolve_fs_path(path)?;
+        std::fs::create_dir(path).map_err(map_io_error)
     }
 
     fn rename(&self, from: &str, to: &str) -> std::result::Result<(), AdapterError> {
-        let from = normalize_fs_path(from)?;
-        let to = normalize_fs_path(to)?;
-        std::fs::rename(from.to_path_buf(), to.to_path_buf()).map_err(map_io_error)
+        let from = self.resolve_fs_path(from)?;
+        let to = self.resolve_fs_path(to)?;
+        std::fs::rename(from, to).map_err(map_io_error)
     }
 }
 
@@ -985,10 +1003,11 @@ mod tests {
             None,
             Vec::new(),
             1024,
+            temp.clone(),
         );
-        let path = format!("{}/./fixtures\\public//note.txt", temp.display());
+        let path = "./fixtures\\public//note.txt";
         let handle = adapter
-            .open(&path, OpenMode::Read)
+            .open(path, OpenMode::Read)
             .expect("normalized path should open");
         let bytes = adapter.read(&handle, 5).expect("read file");
 
@@ -1097,6 +1116,7 @@ mod tests {
             None,
             Vec::new(),
             1024,
+            PathBuf::from("."),
         );
         let response = adapter
             .fetch(HttpRequest {

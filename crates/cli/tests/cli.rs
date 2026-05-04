@@ -649,6 +649,44 @@ fn configured_layer36_cat_component_reads_granted_files() {
 }
 
 #[test]
+fn configured_layer36_cat_component_reads_from_sandbox_root() {
+    let Some(path) = configured_layer36_cat_component() else {
+        return;
+    };
+
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let fixtures = dir.path().join("fixtures");
+    std::fs::create_dir(&fixtures).expect("create fixtures dir");
+    std::fs::write(fixtures.join("a.txt"), "hello from sandbox\n").expect("write fixture A");
+
+    let output = layer36()
+        .args([
+            "run",
+            "--sandbox-root",
+            dir.path().to_str().expect("sandbox root path"),
+            "--grant",
+            "fs.read:fixtures/**",
+        ])
+        .arg(path)
+        .args(["--", "fixtures/a.txt"])
+        .output()
+        .expect("run layer36-cat component with sandbox root");
+
+    assert!(
+        output.status.success(),
+        "layer36-cat sandbox-root run failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "hello from sandbox\n"
+    );
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn configured_layer36_cat_component_runs_with_sample_manifest_auto_grant() {
     let Some(path) = configured_layer36_cat_component() else {
         return;

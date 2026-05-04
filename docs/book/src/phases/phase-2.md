@@ -63,7 +63,12 @@ The runtime also has an initial Phase 2 execution path now. `layer36 run` keeps
 supporting the Phase 1 proof world, then falls back to the Phase 2 `cli` world
 and installs the generated UAPI imports. The local adapter currently covers
 stdio, basic filesystem calls, time, locale, and a first plain HTTP request
-path. That HTTP path is still small on purpose: it is for localhost and
+path. Relative filesystem paths now resolve through an explicit runtime
+sandbox root. The default is `.`, and `--sandbox-root <dir>` lets a run point
+app-relative file access at a specific directory. Shared path cleanup also keeps
+the filesystem adapter and UCap grant matcher using the same rules.
+
+The HTTP path is still small on purpose: it is for localhost and
 test-server proofs while HTTPS, redirects, streaming, and production hardening
 stay open. It now forwards lower-level `fetch` methods, app headers, and
 buffered bodies, while keeping host-controlled transport headers owned by the

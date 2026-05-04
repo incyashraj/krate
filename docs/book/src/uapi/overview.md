@@ -263,18 +263,25 @@ not match, it tries the Phase 2 `cli` world and installs the generated UAPI
 imports.
 
 The local adapter is still small on purpose. It can handle stdio, basic files,
-time, locale, and plain HTTP request framing. The HTTP path is only a first
-useful slice: good enough for localhost and fixed test servers, not yet a full
-web client. `get(url)` remains the simple body-only path. `fetch(req)` can send
-the selected method, app headers, and a buffered body, while the host controls
-transport headers such as `Host`, `Connection`, and `Content-Length`. Responses
-above 1 MiB are rejected by default so local tests do not accidentally depend on
-unbounded host reads. Use `--max-http-response-bytes` to lower or raise that
-limit for a run. When the response is too large, the app receives
-`net-error.body-too-large`, not a vague network failure. Timeouts and malformed
-responses also cross the WIT boundary as `net-error.timeout` and
-`net-error.protocol`. HTTPS, redirects, streaming, and deeper protocol work are
-still open.
+time, locale, and plain HTTP request framing. Relative filesystem paths now go
+through the runtime sandbox root instead of the process working directory by
+accident. The default root is `.`, and `layer36 run --sandbox-root <dir>` lets a
+run point app-relative paths at a specific directory. Path cleanup and
+filesystem grant matching share the same rules, so simple separator differences
+do not change permission behavior, and `..` traversal is rejected before host
+I/O.
+
+The HTTP path is only a first useful slice: good enough for localhost and fixed
+test servers, not yet a full web client. `get(url)` remains the simple body-only
+path. `fetch(req)` can send the selected method, app headers, and a buffered
+body, while the host controls transport headers such as `Host`, `Connection`,
+and `Content-Length`. Responses above 1 MiB are rejected by default so local
+tests do not accidentally depend on unbounded host reads. Use
+`--max-http-response-bytes` to lower or raise that limit for a run. When the
+response is too large, the app receives `net-error.body-too-large`, not a vague
+network failure. Timeouts and malformed responses also cross the WIT boundary as
+`net-error.timeout` and `net-error.protocol`. HTTPS, redirects, streaming, and
+deeper protocol work are still open.
 
 The first proof component lives at `test/integration/phase2-smoke`. It reads a
 file, checks time and locale, and writes output through the Phase 2 imports.

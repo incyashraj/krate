@@ -42,6 +42,10 @@ enum Command {
         #[arg(long, default_value_t = DEFAULT_MAX_HTTP_RESPONSE_BYTES)]
         max_http_response_bytes: usize,
 
+        /// Root directory used for relative Phase 2 filesystem paths.
+        #[arg(long, default_value = ".")]
+        sandbox_root: PathBuf,
+
         /// Path to a Phase 2 manifest.toml. If omitted, Layer36 checks next to the .wasm file.
         #[arg(long)]
         manifest: Option<PathBuf>,
@@ -190,6 +194,7 @@ fn run() -> Result<u8> {
             fuel,
             mem_limit,
             max_http_response_bytes,
+            sandbox_root,
             manifest,
             grant,
             auto_grant,
@@ -205,6 +210,7 @@ fn run() -> Result<u8> {
             fuel,
             mem_limit,
             max_http_response_bytes,
+            sandbox_root,
             manifest_path: manifest,
             grants: grant,
             auto_grant,
@@ -251,6 +257,7 @@ struct RunRequest {
     fuel: Option<u64>,
     mem_limit: u64,
     max_http_response_bytes: usize,
+    sandbox_root: PathBuf,
     manifest_path: Option<PathBuf>,
     grants: Vec<String>,
     auto_grant: bool,
@@ -335,6 +342,7 @@ fn run_component(request: RunRequest) -> Result<u8> {
         test_time_millis: request.test_time_millis,
         app_args: request.app_args,
         max_http_response_bytes: request.max_http_response_bytes,
+        sandbox_root: request.sandbox_root,
     };
     let runtime = Runtime::new(&config)?;
 

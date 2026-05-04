@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- `layer36 run --sandbox-root <dir>` and runtime sandbox-root resolution for relative Phase 2 filesystem paths.
 - Shared Phase 2 filesystem path normalization in `adapter-common`, with runtime filesystem calls and policy resource matching using the same rules.
 - `crates/adapter-common` as the first shared host-adapter crate, starting with plain HTTP URL parsing and request framing used by the runtime.
 - Phase 2 plain HTTP `fetch(req)` now sends the selected method, app headers, and buffered body while keeping transport headers under host control.
