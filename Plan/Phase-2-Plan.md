@@ -2121,7 +2121,7 @@ formal exit gates.
 
 | Area | Current read | What remains |
 |------|--------------|--------------|
-| Core Phase 2 engineering | About 73-78% through the first useful CLI slice | WIT freeze review, more shared adapter slices, cross-host identity runs, and network hardening. |
+| Core Phase 2 engineering | About 74-79% through the first useful CLI slice | WIT freeze review, more shared adapter slices, cross-host identity runs, and network hardening. |
 | Formal Phase 2 exit | About 45-50% complete | Language runtime proofs, seven-day CI evidence, fuzzing, full benchmark gate, threat model v0.2, ADR-0009 through ADR-0012, and external validation. |
 | UAPI and UCap | Strong shape, not frozen | Review default grants, path normalization, network policy details, and freeze rules before `0.1.0`. |
 | SDKs | Rust is usable; Go and TypeScript are scaffolded | Publish-ready Rust after freeze, TinyGo runtime proof, and jco runtime proof. |
@@ -2174,6 +2174,7 @@ formal exit gates.
 | P2-NET-04 | Typed oversized HTTP response error | 2026-05-04 | Oversized Phase 2 HTTP responses now map through the host bridge as WIT `net-error.body-too-large` instead of a generic connection failure. |
 | P2-NET-05 | Typed HTTP timeout and protocol errors | 2026-05-04 | Phase 2 HTTP timeout and malformed-response paths now map through the host bridge as WIT `net-error.timeout` and `net-error.protocol`. |
 | P2-NET-06 | Plain HTTP request framing | 2026-05-04 | The Phase 2 plain HTTP adapter now builds lower-level `fetch(req)` requests with the selected method, app headers, and buffered body, while rejecting host-controlled transport headers before socket access. |
+| P2-NET-07 | Plain HTTP request-line validation | 2026-05-04 | The shared plain HTTP URL parser now rejects whitespace and control characters before they can enter the request line. Empty ports and port `0` are also rejected before socket access, with adapter-common tests and the existing curl fixture still passing. |
 | P2-ADPT-COMMON-01 | First shared adapter-common crate | 2026-05-04 | Added `crates/adapter-common` and moved plain HTTP URL parsing plus HTTP/1.1 request framing into shared code. The runtime now calls this crate, keeping future Linux, macOS, and Windows adapters on the same network behavior. |
 | P2-ADPT-COMMON-02A | Shared filesystem logical path helper | 2026-05-04 | Added `adapter-common::path::LogicalPath`, wired local filesystem calls through it, and made filesystem policy resource matching use the same normalization. Paths now reject empty strings, control characters, and `..` traversal before host I/O. |
 | P2-ADPT-COMMON-02B | Runtime filesystem sandbox root | 2026-05-04 | Runtime config now carries a sandbox root, local filesystem calls resolve relative paths through that root, and `layer36 run --sandbox-root <dir>` exposes the setting for CLI runs and tests. |

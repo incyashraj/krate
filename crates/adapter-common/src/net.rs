@@ -14,6 +14,10 @@ impl PlainHttpUrl {
     /// HTTPS, auth info, and fragments are intentionally outside this early
     /// helper. HTTPS lands after we choose the shared TLS stack.
     pub fn parse(input: &str) -> Result<Self, PlainHttpError> {
+        if contains_http_unsafe_ascii(input) {
+            return Err(PlainHttpError::InvalidUrl);
+        }
+
         let Some(rest) = input.strip_prefix("http://") else {
             return Err(PlainHttpError::UnsupportedScheme);
         };
@@ -29,10 +33,16 @@ impl PlainHttpUrl {
         let (host, port) = match authority.rsplit_once(':') {
             Some((host, port)) if !host.is_empty() => {
                 let port = port.parse().map_err(|_| PlainHttpError::InvalidUrl)?;
+                if port == 0 {
+                    return Err(PlainHttpError::InvalidUrl);
+                }
                 (host, port)
             }
             _ => (authority, 80),
         };
+        if host.is_empty() {
+            return Err(PlainHttpError::InvalidUrl);
+        }
 
         let path_and_query = if path.starts_with('/') {
             path.to_string()
@@ -157,6 +167,12 @@ fn is_host_controlled_http_header(name: &str) -> bool {
         || name.eq_ignore_ascii_case("content-length")
 }
 
+fn contains_http_unsafe_ascii(input: &str) -> bool {
+    input
+        .bytes()
+        .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+}
+
 /// Errors returned by shared plain HTTP helpers.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PlainHttpError {
@@ -182,6 +198,30 @@ mod tests {
         assert_eq!(parsed.host, "127.0.0.1");
         assert_eq!(parsed.port, 8080);
         assert_eq!(parsed.path_and_query, "/?name=layer36");
+    }
+
+    #[test]
+    fn url_parser_rejects_request_line_injection_characters() {
+        assert_eq!(
+            PlainHttpUrl::parse("http://127.0.0.1:8080/path\r\nX-Bad: yes").unwrap_err(),
+            PlainHttpError::InvalidUrl
+        );
+        assert_eq!(
+            PlainHttpUrl::parse("http://127.0.0.1:8080/path with spaces").unwrap_err(),
+            PlainHttpError::InvalidUrl
+        );
+    }
+
+    #[test]
+    fn url_parser_rejects_empty_or_zero_ports() {
+        assert_eq!(
+            PlainHttpUrl::parse("http://127.0.0.1:/").unwrap_err(),
+            PlainHttpError::InvalidUrl
+        );
+        assert_eq!(
+            PlainHttpUrl::parse("http://127.0.0.1:0/").unwrap_err(),
+            PlainHttpError::InvalidUrl
+        );
     }
 
     #[test]

@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Phase 2 plain HTTP URL validation now rejects request-line whitespace/control characters and empty or zero ports before socket access.
 - Shared Phase 2 filesystem operation intents in `adapter-common`, with runtime guards that reject destructive root-like remove and rename targets before native host I/O.
 - Shared Phase 2 locale helpers in `adapter-common`, covering `LC_ALL`/`LANG` locale detection, `TZ` fallback, BCP 47-ish normalization, and the current deterministic formatting placeholder.
 - Shared Phase 2 host clock helpers in `adapter-common`, including fixed test time, Unix-epoch millisecond conversion, monotonic elapsed time, and sleep.

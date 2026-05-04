@@ -288,8 +288,10 @@ tests do not accidentally depend on unbounded host reads. Use
 `--max-http-response-bytes` to lower or raise that limit for a run. When the
 response is too large, the app receives `net-error.body-too-large`, not a vague
 network failure. Timeouts and malformed responses also cross the WIT boundary as
-`net-error.timeout` and `net-error.protocol`. HTTPS, redirects, streaming, and
-deeper protocol work are still open.
+`net-error.timeout` and `net-error.protocol`. The shared parser now rejects
+whitespace, control characters, empty ports, and port `0` before the host builds
+the request line. HTTPS, redirects, streaming, and deeper protocol work are
+still open.
 
 The time adapter now uses shared host-clock code for the first clock slice:
 fixed test time, wall-clock milliseconds since Unix epoch, monotonic elapsed

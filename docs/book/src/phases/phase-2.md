@@ -82,7 +82,9 @@ stay open. It now forwards lower-level `fetch` methods, app headers, and
 buffered bodies, while keeping host-controlled transport headers owned by the
 adapter. It also has a response-size guard and typed errors for oversized
 responses, timeouts, and malformed HTTP responses, so apps can react to the real
-problem instead of receiving one generic network failure.
+problem instead of receiving one generic network failure. The shared URL parser
+now also rejects whitespace, control characters, empty ports, and port `0`
+before anything reaches the request line or socket layer.
 
 Time is also starting to move into shared adapter code. The local runtime now
 uses a common host clock helper for fixed test time, Unix-epoch milliseconds,
