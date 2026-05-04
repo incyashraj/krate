@@ -272,9 +272,9 @@ do not change permission behavior, and `..` traversal is rejected before host
 I/O. Relative sandbox paths also get a first symlink escape check: existing
 targets must resolve inside the sandbox root, and new files must have a real
 parent inside the sandbox root. That keeps a simple `fixtures/file.txt` style
-path from quietly following a symlink to another part of the host. On Unix
-hosts, file open also refuses a final symlink during the actual open call. That
-shrinks the race between checking a path and opening it.
+path from quietly following a symlink to another part of the host. On Unix and
+Windows hosts, file open now also refuses a final symlink during the actual
+open call. That shrinks the race between checking a path and opening it.
 Remove and rename calls now have a shared operation-intent check as well, so a
 component cannot use `.` or `/` as a destructive target before native filesystem
 I/O begins.

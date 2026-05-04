@@ -777,7 +777,16 @@ fn apply_no_follow_final_symlink(opts: &mut std::fs::OpenOptions) {
     opts.custom_flags(libc::O_NOFOLLOW);
 }
 
-#[cfg(all(feature = "phase2-bindings", not(unix)))]
+#[cfg(all(feature = "phase2-bindings", windows))]
+fn apply_no_follow_final_symlink(opts: &mut std::fs::OpenOptions) {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    // Ask CreateFile to open the reparse point itself so final symlinks are not followed.
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    opts.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+}
+
+#[cfg(all(feature = "phase2-bindings", not(any(unix, windows))))]
 fn apply_no_follow_final_symlink(_opts: &mut std::fs::OpenOptions) {}
 
 #[cfg(feature = "phase2-bindings")]

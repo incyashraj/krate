@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Windows host file opens now apply a no-follow final-symlink flag (`FILE_FLAG_OPEN_REPARSE_POINT`) for Phase 2 sandbox paths.
 - Shared Phase 2 host-clock overflow guards in `adapter-common`: monotonic nanoseconds now saturate at `u64::MAX`, and out-of-range Unix-millis conversion is rejected with explicit error handling.
 - Phase 2 plain HTTP URL validation now rejects request-line whitespace/control characters and empty or zero ports before socket access.
 - Shared Phase 2 filesystem operation intents in `adapter-common`, with runtime guards that reject destructive root-like remove and rename targets before native host I/O.

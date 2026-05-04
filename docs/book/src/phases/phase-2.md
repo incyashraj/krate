@@ -69,9 +69,9 @@ app-relative file access at a specific directory. Shared path cleanup also keeps
 the filesystem adapter and UCap grant matcher using the same rules. For relative
 paths, the local adapter now checks canonical existing targets, or the canonical
 parent for new files, before host I/O. If a symlink would take the path outside
-the sandbox root, the adapter denies the call. On Unix hosts, file open also
-uses a no-follow final-symlink flag, so the final filename cannot be a symlink
-at open time.
+the sandbox root, the adapter denies the call. On Unix and Windows hosts, file
+open also uses a no-follow final-symlink flag, so the final filename cannot be
+a symlink at open time.
 Destructive filesystem operations now go through a shared operation-intent check
 too. That means remove and rename cannot target root-like paths such as `.` or
 `/` before the adapter reaches native host I/O.
