@@ -70,6 +70,9 @@ jobs:
           LAYER36_CURL_WASM: ${{ steps.fixtures.outputs.curl }}
         run: cargo test --workspace --all-features
 
+      - name: Package Rust SDK
+        run: cargo package -p layer36 --offline
+
       - name: Dependency audit
         run: cargo deny check advisories licenses bans sources
 

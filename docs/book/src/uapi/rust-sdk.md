@@ -7,6 +7,10 @@ It is still small. That is intentional. Phase 2 is where the UAPI shape is
 settling, so the SDK gives Rust apps a clean front door without hiding the
 actual platform contract.
 
+The crate now has publish-facing metadata and a crate README. We still do not
+publish it to crates.io while UAPI v0.1 is moving, but `cargo package -p
+layer36` is part of CI so packaging problems show up early.
+
 ## What It Gives You
 
 Instead of importing generated WIT paths directly, app code can use short
@@ -129,7 +133,7 @@ HTTPS, redirects, streaming bodies, and response limits are still Phase 2 work.
 
 This is not a finished SDK yet.
 
-- It is local to this repository, not published to crates.io.
+- It is package-checked, but not published to crates.io.
 - It wraps the generated Phase 2 guest bindings, which are still draft.
 - It has enough helpers for the Rust samples, not a full developer experience.
 - Go and TypeScript SDK work is still pending.

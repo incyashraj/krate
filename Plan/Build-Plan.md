@@ -1692,6 +1692,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-04 | Aligned sample-app UCap denial behavior on exit code 5 and added an outside-granted-glob denial test for `layer36-cat`. |
 | 2026-05-04 | Repo visibility changed to public, so cheap hosted CI is restored on pushes and PRs. Added a manual self-hosted CI path for a local runner labeled `layer36-local`. |
 | 2026-05-04 | Fixed the first self-hosted runner failure by adding Cargo's bin directory to the runner PATH and calling the installed `mdbook` binary directly. |
+| 2026-05-04 | Prepared the Rust guest SDK package surface: crate README, crates.io metadata, package include list, local package proof, and CI package dry-runs. |
 
 ---
 

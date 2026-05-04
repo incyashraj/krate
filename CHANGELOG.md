@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Rust guest SDK package preparation: crate README, crates.io-facing metadata, package include list, local package proof, and CI/self-hosted package dry-runs.
 - Clear exit-code-5 permission-denied behavior for the Rust `layer36-cat` and `layer36-curl` samples, including an outside-granted-glob test for `layer36-cat`.
 - `layer36 run --dump-caps` to print the effective Phase 2 session capabilities without starting the component.
 - Manifest entry hardening for `layer36 run`: when a sidecar manifest is present, its `app.entry` must match the `.wasm` being run.

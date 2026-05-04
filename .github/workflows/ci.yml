@@ -106,7 +106,28 @@ jobs:
         run: cargo test --workspace --all-features
 
   # ──────────────────────────────────────────────
-  # 5. Shared component fixtures
+  # 5. Rust SDK package dry-run
+  # ──────────────────────────────────────────────
+  rust-sdk-package:
+    name: Rust SDK package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.91.1
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-sdk-package-${{ hashFiles('**/Cargo.lock') }}
+      - name: Package Rust SDK
+        run: cargo package -p layer36
+
+  # ──────────────────────────────────────────────
+  # 6. Shared component fixtures
   # ──────────────────────────────────────────────
   hello-fixture:
     name: Build shared component fixtures
@@ -173,7 +194,7 @@ jobs:
           if-no-files-found: error
 
   # ──────────────────────────────────────────────
-  # 6. Full test matrix — Linux, macOS, Windows
+  # 7. Full test matrix — Linux, macOS, Windows
   # ──────────────────────────────────────────────
   full-test:
     name: Full test (${{ matrix.os }})
@@ -219,7 +240,7 @@ jobs:
         run: scripts/test-phase1.sh
 
   # ──────────────────────────────────────────────
-  # 7. Documentation build
+  # 8. Documentation build
   # ──────────────────────────────────────────────
   docs:
     name: Docs (mdBook)
@@ -236,7 +257,7 @@ jobs:
         run: mdbook build docs/book
 
   # ──────────────────────────────────────────────
-  # 8. Benchmark smoke + warning-only regression check
+  # 9. Benchmark smoke + warning-only regression check
   # ──────────────────────────────────────────────
   benchmarks:
     name: Benchmarks (warning only)
@@ -268,7 +289,7 @@ jobs:
         run: scripts/check-benchmark-regression.sh
 
   # ──────────────────────────────────────────────
-  # 9. Dependency audit (cargo-deny)
+  # 10. Dependency audit (cargo-deny)
   # ──────────────────────────────────────────────
   deny:
     name: Dependency audit (cargo-deny)

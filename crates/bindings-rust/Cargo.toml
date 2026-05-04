@@ -6,6 +6,16 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Rust guest SDK for Layer36 UAPI components."
+readme = "README.md"
+homepage = "https://incyashraj.github.io/layer6x6/"
+documentation = "https://docs.rs/layer36"
+keywords = ["layer36", "wasm", "component", "uapi", "sdk"]
+categories = ["api-bindings", "wasm"]
+include = [
+    "Cargo.toml",
+    "README.md",
+    "src/**/*.rs",
+]
 
 [dependencies]
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
