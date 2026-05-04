@@ -53,6 +53,10 @@ use uapi_dispatch::{
 };
 
 pub const DEFAULT_MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
+#[cfg(feature = "phase2-bindings")]
+const MAX_PHASE2_READ_BYTES: usize = 8 * 1024 * 1024;
+#[cfg(feature = "phase2-bindings")]
+const MAX_PHASE2_LIST_ENTRIES: usize = 4096;
 
 wasmtime::component::bindgen!({
     path: "../../wit/layer36",
@@ -508,6 +512,17 @@ fn logical_path_to_sandbox_relative(path: PathBuf) -> std::result::Result<PathBu
 }
 
 #[cfg(feature = "phase2-bindings")]
+fn bounded_read_len(n: u32) -> std::result::Result<usize, AdapterError> {
+    let n = n as usize;
+    if n > MAX_PHASE2_READ_BYTES {
+        return Err(AdapterError::Io(format!(
+            "read request exceeds limit ({MAX_PHASE2_READ_BYTES} bytes)"
+        )));
+    }
+    Ok(n)
+}
+
+#[cfg(feature = "phase2-bindings")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MissingLeaf {
     Deny,
@@ -608,10 +623,11 @@ impl IoAdapter for LocalPhase2Adapter {
         handle: &FileHandle,
         n: u32,
     ) -> std::result::Result<Vec<u8>, AdapterError> {
+        let len = bounded_read_len(n)?;
         let mut state = self.state.borrow_mut();
         match state.resources.get_mut(&handle.id) {
             Some(LocalResource::Stdin) => {
-                let mut buf = vec![0; n as usize];
+                let mut buf = vec![0; len];
                 let len = std::io::stdin().read(&mut buf).map_err(map_io_error)?;
                 buf.truncate(len);
                 Ok(buf)
@@ -708,11 +724,12 @@ impl FsAdapter for LocalPhase2Adapter {
     }
 
     fn read(&self, handle: &FileHandle, n: u32) -> std::result::Result<Vec<u8>, AdapterError> {
+        let len = bounded_read_len(n)?;
         let mut state = self.state.borrow_mut();
         let Some(LocalResource::File(file)) = state.resources.get_mut(&handle.id) else {
             return Err(AdapterError::NotFound);
         };
-        let mut buf = vec![0; n as usize];
+        let mut buf = vec![0; len];
         let len = file.read(&mut buf).map_err(map_io_error)?;
         buf.truncate(len);
         Ok(buf)
@@ -770,6 +787,11 @@ impl FsAdapter for LocalPhase2Adapter {
                 .into_string()
                 .map_err(|_| AdapterError::InvalidPath)?;
             entries.push(name);
+            if entries.len() > MAX_PHASE2_LIST_ENTRIES {
+                return Err(AdapterError::Io(format!(
+                    "directory listing exceeds limit ({MAX_PHASE2_LIST_ENTRIES} entries)"
+                )));
+            }
         }
         entries.sort();
         Ok(entries)
@@ -1227,6 +1249,95 @@ mod tests {
         drop(handle);
         drop(adapter);
         std::fs::remove_file(file).expect("remove fixture file");
+        std::fs::remove_dir_all(temp).expect("remove fixture directory");
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn local_fs_adapter_rejects_oversized_read_request() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!(
+            "layer36-oversized-read-{}-{unique}",
+            std::process::id(),
+        ));
+        std::fs::create_dir_all(&temp).expect("create sandbox");
+        let file = temp.join("note.txt");
+        std::fs::write(&file, b"hello").expect("write fixture file");
+
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            temp.clone(),
+        );
+
+        let handle = adapter
+            .open("note.txt", OpenMode::Read)
+            .expect("open fixture file");
+        let err = adapter
+            .read(&handle, (MAX_PHASE2_READ_BYTES + 1) as u32)
+            .expect_err("oversized read should be rejected");
+
+        match err {
+            AdapterError::Io(message) => assert!(
+                message.contains("read request exceeds limit"),
+                "unexpected message: {message}"
+            ),
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+
+        drop(handle);
+        drop(adapter);
+        std::fs::remove_file(file).expect("remove fixture file");
+        std::fs::remove_dir_all(temp).expect("remove fixture directory");
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn local_fs_adapter_rejects_oversized_directory_listing() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!(
+            "layer36-oversized-list-{}-{unique}",
+            std::process::id(),
+        ));
+        let list_dir = temp.join("many");
+        std::fs::create_dir_all(&list_dir).expect("create fixture directory");
+        for index in 0..=MAX_PHASE2_LIST_ENTRIES {
+            let path = list_dir.join(format!("f{index:04}.txt"));
+            std::fs::write(path, b"x").expect("write fixture entry");
+        }
+
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            temp.clone(),
+        );
+
+        let err = adapter
+            .list("many")
+            .expect_err("oversized directory listing should be rejected");
+        match err {
+            AdapterError::Io(message) => assert!(
+                message.contains("directory listing exceeds limit"),
+                "unexpected message: {message}"
+            ),
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+
+        drop(adapter);
         std::fs::remove_dir_all(temp).expect("remove fixture directory");
     }
 
