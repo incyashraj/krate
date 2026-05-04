@@ -288,6 +288,11 @@ network failure. Timeouts and malformed responses also cross the WIT boundary as
 `net-error.timeout` and `net-error.protocol`. HTTPS, redirects, streaming, and
 deeper protocol work are still open.
 
+The time adapter now uses shared host-clock code for the first clock slice:
+fixed test time, wall-clock milliseconds since Unix epoch, monotonic elapsed
+nanoseconds, and blocking sleep. The API remains small, but the behavior is no
+longer duplicated in the runtime alone.
+
 The first proof component lives at `test/integration/phase2-smoke`. It reads a
 file, checks time and locale, and writes output through the Phase 2 imports.
 This is the first end-to-end proof that the UAPI path is more than generated

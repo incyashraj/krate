@@ -11,7 +11,7 @@ use std::{
     net::TcpStream,
     path::{Path, PathBuf},
     rc::Rc,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::UNIX_EPOCH,
 };
 
 use thiserror::Error;
@@ -37,6 +37,8 @@ use layer36_adapter_common::net::{
 };
 #[cfg(feature = "phase2-bindings")]
 use layer36_adapter_common::path::{LogicalPath, PathError};
+#[cfg(feature = "phase2-bindings")]
+use layer36_adapter_common::time::{HostClock, TimeError};
 use layer36_policy::SessionPolicy;
 use uapi::UapiGuard;
 use uapi_dispatch::{
@@ -390,8 +392,7 @@ impl layer36::phase1::host::Host for HostState {
 struct LocalPhase2Adapter {
     output: Rc<RefCell<OutputMode>>,
     state: RefCell<LocalPhase2AdapterState>,
-    started: Instant,
-    test_time_millis: Option<u64>,
+    clock: HostClock,
     app_args: Vec<String>,
     max_http_response_bytes: usize,
     sandbox_root: PathBuf,
@@ -409,8 +410,7 @@ impl LocalPhase2Adapter {
         Self {
             output,
             state: RefCell::new(LocalPhase2AdapterState::default()),
-            started: Instant::now(),
-            test_time_millis,
+            clock: HostClock::new(test_time_millis),
             app_args,
             max_http_response_bytes,
             sandbox_root,
@@ -841,25 +841,22 @@ fn map_path_error(err: PathError) -> AdapterError {
 }
 
 #[cfg(feature = "phase2-bindings")]
+fn map_time_error(err: TimeError) -> AdapterError {
+    AdapterError::Io(err.to_string())
+}
+
+#[cfg(feature = "phase2-bindings")]
 impl TimeAdapter for LocalPhase2Adapter {
     fn now_millis(&self) -> std::result::Result<u64, AdapterError> {
-        if let Some(millis) = self.test_time_millis {
-            return Ok(millis);
-        }
-
-        let millis = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_err(|err| AdapterError::Io(err.to_string()))?
-            .as_millis();
-        Ok(millis as u64)
+        self.clock.now_millis().map_err(map_time_error)
     }
 
     fn monotonic_nanos(&self) -> std::result::Result<u64, AdapterError> {
-        Ok(self.started.elapsed().as_nanos() as u64)
+        Ok(self.clock.monotonic_nanos())
     }
 
     fn sleep_millis(&self, millis: u32) -> std::result::Result<(), AdapterError> {
-        std::thread::sleep(std::time::Duration::from_millis(millis.into()));
+        HostClock::sleep_millis(millis);
         Ok(())
     }
 }
@@ -1108,7 +1105,7 @@ mod tests {
     fn local_fs_adapter_rejects_relative_symlink_escape_from_sandbox_root() {
         use std::os::unix::fs::symlink;
 
-        let unique = SystemTime::now()
+        let unique = std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("time should move forward")
             .as_nanos();

@@ -81,6 +81,11 @@ adapter. It also has a response-size guard and typed errors for oversized
 responses, timeouts, and malformed HTTP responses, so apps can react to the real
 problem instead of receiving one generic network failure.
 
+Time is also starting to move into shared adapter code. The local runtime now
+uses a common host clock helper for fixed test time, Unix-epoch milliseconds,
+monotonic elapsed time, and sleep. That keeps future desktop adapters from each
+making slightly different clock choices.
+
 There is also a first smoke app under `test/integration/phase2-smoke`. It is not
 one of the final sample apps yet. Its job is smaller: prove that a real Phase 2
 component can read a file, call time and locale, and print through the UAPI
