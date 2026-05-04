@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Shared Phase 2 host-name validation hardening in `adapter-common`: domain labels now reject leading/trailing `-`, label lengths are bounded, and numeric-dot hosts must parse as valid IPv4 literals.
 - Shared Phase 2 plain HTTP response parser hardening in `adapter-common`: runtime fetch parsing now uses one shared parser that validates HTTP/1.0/1.1 version, status-code range, header count limits, header syntax, and safe header values before data is returned to app-facing response types.
 - Shared Phase 2 deterministic locale formatting baseline in `adapter-common`: date styles now format Unix-millis timestamps into stable UTC date/time strings, and number styles now return deterministic decimal/percent/currency text from locale hints.
 - Optional Phase 2 Go/TypeScript runtime fixture assertions in `crates/cli/tests/cli.rs` behind `LAYER36_GO_*` and `LAYER36_TS_*` WASM env vars, plus `scripts/test-phase2-language-variants.sh` and CI/self-hosted workflow hooks that auto-skip until variant components are supplied.

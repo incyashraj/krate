@@ -96,6 +96,8 @@ Response parsing now also goes through shared adapter-common code, with strict
 validation for HTTP version, status range, malformed header lines, header count
 limits, and unsafe header values before data reaches runtime-facing response
 types.
+Shared host parsing now also rejects invalid domain-label forms and invalid
+numeric IPv4 literals so URL and capability-path validation stay aligned.
 The runtime's network capability gate now also uses a shared endpoint parser for
 `http://` and `https://` URLs, so policy checks and adapter-side URL validation
 no longer drift as separate parsers evolve. The plain `http://` URL parser now

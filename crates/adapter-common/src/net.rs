@@ -315,12 +315,43 @@ fn is_valid_plain_http_host(host: &str) -> bool {
         return false;
     }
 
-    host.bytes().all(|byte| {
-        matches!(
-            byte,
-            b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-'
-        )
-    })
+    let is_numeric = host.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'.'));
+    if is_numeric {
+        return is_valid_ipv4_host(host);
+    }
+
+    for label in host.split('.') {
+        if label.is_empty() || label.len() > 63 {
+            return false;
+        }
+        if label.starts_with('-') || label.ends_with('-') {
+            return false;
+        }
+        if !label
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z' | b'-'))
+        {
+            return false;
+        }
+    }
+
+    true
+}
+
+fn is_valid_ipv4_host(host: &str) -> bool {
+    let mut parts = host.split('.');
+    for _ in 0..4 {
+        let Some(part) = parts.next() else {
+            return false;
+        };
+        if part.is_empty() {
+            return false;
+        }
+        if part.parse::<u8>().is_err() {
+            return false;
+        }
+    }
+    parts.next().is_none()
 }
 
 fn contains_http_unsafe_ascii(input: &str) -> bool {
@@ -545,6 +576,18 @@ mod tests {
         );
         assert_eq!(
             parse_url_endpoint("https://example..com/path").unwrap_err(),
+            UrlEndpointError::InvalidUrl
+        );
+        assert_eq!(
+            parse_url_endpoint("https://-example.com/path").unwrap_err(),
+            UrlEndpointError::InvalidUrl
+        );
+        assert_eq!(
+            parse_url_endpoint("https://example-.com/path").unwrap_err(),
+            UrlEndpointError::InvalidUrl
+        );
+        assert_eq!(
+            parse_url_endpoint("https://999.0.0.1/path").unwrap_err(),
             UrlEndpointError::InvalidUrl
         );
     }
