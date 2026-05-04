@@ -258,9 +258,10 @@ imports.
 The local adapter is still small on purpose. It can handle stdio, basic files,
 time, locale, and plain HTTP GET. The HTTP path is only a first useful slice:
 good enough for localhost and fixed test servers, not yet a full web client. It
-now rejects responses above 1 MiB so local tests do not accidentally depend on
-unbounded host reads. HTTPS, redirects, streaming, configurable body limits, and
-deeper protocol work are still open.
+rejects responses above 1 MiB by default so local tests do not accidentally
+depend on unbounded host reads. Use `--max-http-response-bytes` to lower or raise
+that limit for a run. HTTPS, redirects, streaming, and deeper protocol work are
+still open.
 
 The first proof component lives at `test/integration/phase2-smoke`. It reads a
 file, checks time and locale, and writes output through the Phase 2 imports.

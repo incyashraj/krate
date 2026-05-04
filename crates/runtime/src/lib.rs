@@ -37,7 +37,7 @@ use uapi_dispatch::{
     HttpResponse, IoAdapter, LocaleAdapter, LocaleId, NetAdapter, OpenMode, TimeAdapter,
 };
 
-const MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
+pub const DEFAULT_MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
 
 wasmtime::component::bindgen!({
     path: "../../wit/layer36",
@@ -57,6 +57,8 @@ pub struct Config {
     pub test_time_millis: Option<u64>,
     /// Arguments exposed to Phase 2 apps through `layer36:io/args`.
     pub app_args: Vec<String>,
+    /// Maximum full HTTP response size accepted by the local Phase 2 adapter.
+    pub max_http_response_bytes: usize,
 }
 
 impl Default for Config {
@@ -67,6 +69,7 @@ impl Default for Config {
             session_policy: SessionPolicy::default(),
             test_time_millis: None,
             app_args: Vec::new(),
+            max_http_response_bytes: DEFAULT_MAX_HTTP_RESPONSE_BYTES,
         }
     }
 }
@@ -284,6 +287,7 @@ impl HostState {
                     output,
                     config.test_time_millis,
                     config.app_args.clone(),
+                    config.max_http_response_bytes,
                 )),
             ),
         })
@@ -377,6 +381,7 @@ struct LocalPhase2Adapter {
     started: Instant,
     test_time_millis: Option<u64>,
     app_args: Vec<String>,
+    max_http_response_bytes: usize,
 }
 
 #[cfg(feature = "phase2-bindings")]
@@ -385,6 +390,7 @@ impl LocalPhase2Adapter {
         output: Rc<RefCell<OutputMode>>,
         test_time_millis: Option<u64>,
         app_args: Vec<String>,
+        max_http_response_bytes: usize,
     ) -> Self {
         Self {
             output,
@@ -392,6 +398,7 @@ impl LocalPhase2Adapter {
             started: Instant::now(),
             test_time_millis,
             app_args,
+            max_http_response_bytes,
         }
     }
 
@@ -678,7 +685,7 @@ impl NetAdapter for LocalPhase2Adapter {
         request.extend_from_slice(b"\r\n");
 
         stream.write_all(&request).map_err(map_io_error)?;
-        let response = read_http_response_limited(&mut stream)?;
+        let response = read_http_response_limited(&mut stream, self.max_http_response_bytes)?;
         parse_http_response(&response)
     }
 }
@@ -815,6 +822,7 @@ impl ParsedHttpUrl {
 
 fn read_http_response_limited(
     reader: &mut impl Read,
+    max_bytes: usize,
 ) -> std::result::Result<Vec<u8>, AdapterError> {
     let mut response = Vec::new();
     let mut chunk = [0; 8192];
@@ -825,9 +833,9 @@ fn read_http_response_limited(
             return Ok(response);
         }
 
-        if response.len() + read > MAX_HTTP_RESPONSE_BYTES {
+        if response.len() + read > max_bytes {
             return Err(AdapterError::Network(format!(
-                "HTTP response exceeds {MAX_HTTP_RESPONSE_BYTES} byte limit"
+                "HTTP response exceeds {max_bytes} byte limit"
             )));
         }
 
@@ -892,6 +900,10 @@ mod tests {
     #[test]
     fn default_config_sets_phase_1_memory_cap() {
         assert_eq!(Config::default().memory_bytes, 256 * 1024 * 1024);
+        assert_eq!(
+            Config::default().max_http_response_bytes,
+            DEFAULT_MAX_HTTP_RESPONSE_BYTES
+        );
     }
 
     #[test]
@@ -951,25 +963,23 @@ mod tests {
 
     #[test]
     fn plain_http_response_reader_enforces_size_limit() {
-        let mut response = std::io::Cursor::new(vec![b'x'; MAX_HTTP_RESPONSE_BYTES + 1]);
-        let err = read_http_response_limited(&mut response)
+        let mut response = std::io::Cursor::new(vec![b'x'; 5]);
+        let err = read_http_response_limited(&mut response, 4)
             .expect_err("oversized response should be rejected");
 
         assert_eq!(
             err,
-            AdapterError::Network(format!(
-                "HTTP response exceeds {MAX_HTTP_RESPONSE_BYTES} byte limit"
-            ))
+            AdapterError::Network("HTTP response exceeds 4 byte limit".to_string())
         );
     }
 
     #[test]
     fn plain_http_response_reader_allows_exact_size_limit() {
-        let mut response = std::io::Cursor::new(vec![b'x'; MAX_HTTP_RESPONSE_BYTES]);
+        let mut response = std::io::Cursor::new(vec![b'x'; 4]);
         let bytes =
-            read_http_response_limited(&mut response).expect("exact limit should be accepted");
+            read_http_response_limited(&mut response, 4).expect("exact limit should be accepted");
 
-        assert_eq!(bytes.len(), MAX_HTTP_RESPONSE_BYTES);
+        assert_eq!(bytes.len(), 4);
     }
 
     #[cfg(feature = "phase2-bindings")]

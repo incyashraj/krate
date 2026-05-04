@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- `layer36 run --max-http-response-bytes` to tune the Phase 2 plain HTTP adapter response-size guard per run.
 - `layer36 run --log-grants-format jsonl` to append one structured grant audit record per line for scripts and local tooling.
 - `layer36 run --dump-caps-format json` to print effective run grants, app identity, and component path as structured data before starting a component.
 - A 1 MiB response-size guard in the Phase 2 plain HTTP adapter so early network tests have deterministic host-side bounds.

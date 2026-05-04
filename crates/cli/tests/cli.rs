@@ -767,6 +767,36 @@ fn configured_layer36_curl_component_fetches_granted_http_url() {
 }
 
 #[test]
+fn configured_layer36_curl_component_rejects_response_above_cli_limit() {
+    let Some(path) = configured_layer36_curl_component() else {
+        return;
+    };
+
+    let body = b"too large for this run\n";
+    let (addr, server) = spawn_http_fixture(body);
+    let url = format!("http://{addr}/fixture.txt");
+
+    let output = layer36()
+        .args([
+            "run",
+            "--grant",
+            &format!("net.connect:{addr}"),
+            "--max-http-response-bytes",
+            "8",
+        ])
+        .arg(path)
+        .args(["--", &url])
+        .output()
+        .expect("run layer36-curl component with tiny HTTP response limit");
+    server.join().expect("HTTP fixture thread completed");
+
+    assert_eq!(output.status.code(), Some(21));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("layer36-curl: fetch failed"));
+}
+
+#[test]
 fn configured_layer36_curl_component_runs_with_sample_manifest_auto_grant() {
     let Some(path) = configured_layer36_curl_component() else {
         return;
