@@ -90,6 +90,9 @@ before anything reaches the request line or socket layer. It also rejects
 unsupported authority forms in this early plain-HTTP slice and rejects control
 characters in app-provided header values. `Transfer-Encoding` is now treated as
 host-controlled with `Host`, `Connection`, and `Content-Length`.
+The runtime's network capability gate now also uses a shared endpoint parser for
+`http://` and `https://` URLs, so policy checks and adapter-side URL validation
+no longer drift as separate parsers evolve.
 
 Time is also starting to move into shared adapter code. The local runtime now
 uses a common host clock helper for fixed test time, Unix-epoch milliseconds,

@@ -5,6 +5,7 @@
 //! traits are intentionally small while the WIT is still draft-stage.
 
 use crate::uapi::{FsCall, IoCall, LocaleCall, NetCall, TimeCall, UapiCall, UapiError, UapiGuard};
+use layer36_adapter_common::net::parse_url_endpoint;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenMode {
@@ -466,7 +467,7 @@ impl<'a> UapiDispatcher<'a> {
         &self,
         req: HttpRequest,
     ) -> std::result::Result<HttpResponse, NetDispatchError> {
-        let endpoint = endpoint_from_url(&req.url).ok_or(NetDispatchError::InvalidUrl)?;
+        let endpoint = parse_url_endpoint(&req.url).map_err(|_| NetDispatchError::InvalidUrl)?;
         self.guard
             .check(&UapiCall::Net(NetCall::Connect {
                 host: endpoint.host,
@@ -660,38 +661,6 @@ fn map_net_policy(err: UapiError) -> NetDispatchError {
     } else {
         NetDispatchError::Policy(err.to_string())
     }
-}
-
-struct Endpoint {
-    host: String,
-    port: u16,
-}
-
-fn endpoint_from_url(url: &str) -> Option<Endpoint> {
-    let (scheme, rest) = url.split_once("://")?;
-    let default_port = match scheme {
-        "http" => 80,
-        "https" => 443,
-        _ => return None,
-    };
-
-    let authority = rest.split(['/', '?', '#']).next()?;
-    if authority.is_empty() || authority.contains('@') {
-        return None;
-    }
-
-    let (host, port) = match authority.rsplit_once(':') {
-        Some((host, port)) if !host.is_empty() => {
-            let parsed = port.parse::<u16>().ok()?;
-            (host, parsed)
-        }
-        _ => (authority, default_port),
-    };
-
-    Some(Endpoint {
-        host: host.to_string(),
-        port,
-    })
 }
 
 #[cfg(test)]
@@ -1409,7 +1378,7 @@ mod tests {
 
     #[test]
     fn endpoint_parser_applies_default_https_port() {
-        let endpoint = endpoint_from_url("https://example.com/path").expect("endpoint");
+        let endpoint = parse_url_endpoint("https://example.com/path").expect("endpoint");
 
         assert_eq!(endpoint.host, "example.com");
         assert_eq!(endpoint.port, 443);

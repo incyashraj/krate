@@ -293,7 +293,9 @@ whitespace, control characters, empty ports, and port `0` before the host builds
 the request line. It also rejects unsupported authority forms in this early
 slice. App-provided header values now reject control characters, and
 `Transfer-Encoding` is now host-controlled with `Host`, `Connection`, and
-`Content-Length`. HTTPS, redirects, streaming, and deeper protocol work are
+`Content-Length`. Policy-side endpoint extraction now also uses a shared parser
+for `http://` and `https://`, so capability checks and adapter-side URL parsing
+stay aligned. HTTPS, redirects, streaming, and deeper protocol work are
 still open.
 
 The time adapter now uses shared host-clock code for the first clock slice:

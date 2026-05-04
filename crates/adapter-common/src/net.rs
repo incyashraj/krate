@@ -64,6 +64,64 @@ impl PlainHttpUrl {
     }
 }
 
+/// A parsed network endpoint used for capability checks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UrlEndpoint {
+    pub host: String,
+    pub port: u16,
+}
+
+/// Parse a URL into a network endpoint for policy checks.
+///
+/// This helper currently supports `http://` and `https://` endpoint extraction,
+/// with early rejection for auth-info, unsafe ASCII, and unsupported authority
+/// shapes used by the Phase 2 plain-network path.
+pub fn parse_url_endpoint(input: &str) -> Result<UrlEndpoint, UrlEndpointError> {
+    if contains_http_unsafe_ascii(input) {
+        return Err(UrlEndpointError::InvalidUrl);
+    }
+
+    let (scheme, rest) = input
+        .split_once("://")
+        .ok_or(UrlEndpointError::InvalidUrl)?;
+    let default_port = match scheme {
+        "http" => 80,
+        "https" => 443,
+        _ => return Err(UrlEndpointError::UnsupportedScheme),
+    };
+
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.is_empty() || authority.contains('@') {
+        return Err(UrlEndpointError::InvalidUrl);
+    }
+    if authority.starts_with('[') || authority.contains("]:") {
+        return Err(UrlEndpointError::InvalidUrl);
+    }
+    if authority.matches(':').count() > 1 {
+        return Err(UrlEndpointError::InvalidUrl);
+    }
+
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((host, port)) if !host.is_empty() => {
+            let port: u16 = port.parse().map_err(|_| UrlEndpointError::InvalidUrl)?;
+            if port == 0 {
+                return Err(UrlEndpointError::InvalidUrl);
+            }
+            (host, port)
+        }
+        _ => (authority, default_port),
+    };
+
+    if host.is_empty() {
+        return Err(UrlEndpointError::InvalidUrl);
+    }
+
+    Ok(UrlEndpoint {
+        host: host.to_string(),
+        port,
+    })
+}
+
 /// HTTP methods supported by the Phase 2 request-framing helper.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlainHttpMethod {
@@ -201,6 +259,15 @@ pub enum PlainHttpError {
     HostControlledHeader,
 }
 
+/// Errors returned by URL endpoint parsing for policy checks.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum UrlEndpointError {
+    #[error("unsupported URL scheme")]
+    UnsupportedScheme,
+    #[error("invalid URL")]
+    InvalidUrl,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,5 +376,32 @@ mod tests {
             .expect_err("control characters should be rejected in header values");
 
         assert_eq!(err, PlainHttpError::InvalidHeader);
+    }
+
+    #[test]
+    fn endpoint_parser_supports_http_and_https_default_ports() {
+        let http = parse_url_endpoint("http://example.com/path").expect("HTTP endpoint");
+        let https = parse_url_endpoint("https://example.com/path").expect("HTTPS endpoint");
+
+        assert_eq!(http.host, "example.com");
+        assert_eq!(http.port, 80);
+        assert_eq!(https.host, "example.com");
+        assert_eq!(https.port, 443);
+    }
+
+    #[test]
+    fn endpoint_parser_rejects_invalid_or_unsupported_urls() {
+        assert_eq!(
+            parse_url_endpoint("ftp://example.com/file").unwrap_err(),
+            UrlEndpointError::UnsupportedScheme
+        );
+        assert_eq!(
+            parse_url_endpoint("https://example.com:0/path").unwrap_err(),
+            UrlEndpointError::InvalidUrl
+        );
+        assert_eq!(
+            parse_url_endpoint("https://[::1]/path").unwrap_err(),
+            UrlEndpointError::InvalidUrl
+        );
     }
 }
