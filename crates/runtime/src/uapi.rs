@@ -153,6 +153,10 @@ pub type Result<T> = std::result::Result<T, UapiError>;
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
+    use layer36_manifest::supported_capability_specs;
+
     use super::*;
 
     #[test]
@@ -210,5 +214,56 @@ mod tests {
                 port: 80,
             }))
             .is_err());
+    }
+
+    #[test]
+    fn every_supported_capability_has_uapi_call_coverage() {
+        let expected = supported_capability_specs()
+            .iter()
+            .map(|spec| spec.name())
+            .collect::<BTreeSet<_>>();
+        let actual = uapi_call_examples()
+            .into_iter()
+            .map(|call| {
+                let cap = call.required_capability().expect("capability");
+                format!("{}.{}", cap.module(), cap.action())
+            })
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(actual, expected);
+    }
+
+    fn uapi_call_examples() -> Vec<UapiCall> {
+        vec![
+            UapiCall::Io(IoCall::Stdin),
+            UapiCall::Io(IoCall::Stdout),
+            UapiCall::Io(IoCall::Stderr),
+            UapiCall::Io(IoCall::Args),
+            UapiCall::Io(IoCall::Log),
+            UapiCall::Fs(FsCall::Read {
+                path: "./data/input.txt".to_string(),
+            }),
+            UapiCall::Fs(FsCall::Write {
+                path: "./data/output.txt".to_string(),
+            }),
+            UapiCall::Fs(FsCall::List {
+                path: "./data".to_string(),
+            }),
+            UapiCall::Fs(FsCall::Remove {
+                path: "./data/old.txt".to_string(),
+            }),
+            UapiCall::Fs(FsCall::Mkdir {
+                path: "./data/new".to_string(),
+            }),
+            UapiCall::Net(NetCall::Connect {
+                host: "example.com".to_string(),
+                port: 443,
+            }),
+            UapiCall::Time(TimeCall::Clock),
+            UapiCall::Time(TimeCall::Monotonic),
+            UapiCall::Time(TimeCall::Sleep),
+            UapiCall::Locale(LocaleCall::Info),
+            UapiCall::Locale(LocaleCall::Format),
+        ]
     }
 }

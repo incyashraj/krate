@@ -18,6 +18,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 - `layer36-curl` now prints clearer messages for oversized, timed-out, and malformed HTTP responses.
 - Phase 2 HTTP timeout and protocol failures now map to WIT `net-error.timeout` and `net-error.protocol`.
 - Phase 2 HTTP oversized-response errors now map to the WIT `net-error.body-too-large` variant instead of a generic connection failure.
+- Phase 2 policy coverage tests now prove every supported capability name has a UAPI call mapping and every current dispatcher adapter method is reached through the policy gate.
 - `layer36 run --max-http-response-bytes` to tune the Phase 2 plain HTTP adapter response-size guard per run.
 - `layer36 run --log-grants-format jsonl` to append one structured grant audit record per line for scripts and local tooling.
 - `layer36 run --dump-caps-format json` to print effective run grants, app identity, and component path as structured data before starting a component.

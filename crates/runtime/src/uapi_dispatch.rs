@@ -705,6 +705,8 @@ mod tests {
     #[derive(Default)]
     struct Calls {
         args: usize,
+        current_locale: usize,
+        flush_stream: usize,
         fs_list: usize,
         fs_mkdir: usize,
         fs_open: usize,
@@ -712,14 +714,26 @@ mod tests {
         fs_remove_dir: usize,
         fs_remove_file: usize,
         fs_rename: usize,
+        fs_seek_end: usize,
+        fs_seek_set: usize,
         fs_stat: usize,
         fs_stat_handle: usize,
         fs_write: usize,
+        log: usize,
+        monotonic_nanos: usize,
         net_fetch: usize,
+        now_millis: usize,
+        stderr: usize,
+        stdin: usize,
+        stream_read_to_string: usize,
+        stream_write: usize,
         stream_read: usize,
         stream_write_all: usize,
         stdout: usize,
         sleep: usize,
+        timezone: usize,
+        format_date: usize,
+        format_number: usize,
     }
 
     #[derive(Clone, Default)]
@@ -751,6 +765,7 @@ mod tests {
 
     impl IoAdapter for RecordingAdapter {
         fn stdin(&self) -> std::result::Result<FileHandle, AdapterError> {
+            self.calls.borrow_mut().stdin += 1;
             Ok(FileHandle::resource(1))
         }
 
@@ -760,6 +775,7 @@ mod tests {
         }
 
         fn stderr(&self) -> std::result::Result<FileHandle, AdapterError> {
+            self.calls.borrow_mut().stderr += 1;
             Ok(FileHandle::resource(3))
         }
 
@@ -781,6 +797,7 @@ mod tests {
             &self,
             _handle: &FileHandle,
         ) -> std::result::Result<String, AdapterError> {
+            self.calls.borrow_mut().stream_read_to_string += 1;
             Ok("stdin".to_string())
         }
 
@@ -789,6 +806,7 @@ mod tests {
             _handle: &FileHandle,
             bytes: &[u8],
         ) -> std::result::Result<u32, AdapterError> {
+            self.calls.borrow_mut().stream_write += 1;
             Ok(bytes.len() as u32)
         }
 
@@ -802,10 +820,12 @@ mod tests {
         }
 
         fn flush_stream(&self, _handle: &FileHandle) -> std::result::Result<(), AdapterError> {
+            self.calls.borrow_mut().flush_stream += 1;
             Ok(())
         }
 
         fn log(&self, _level: &str, _message: &str) -> std::result::Result<(), AdapterError> {
+            self.calls.borrow_mut().log += 1;
             Ok(())
         }
     }
@@ -843,10 +863,12 @@ mod tests {
             _handle: &FileHandle,
             pos: u64,
         ) -> std::result::Result<u64, AdapterError> {
+            self.calls.borrow_mut().fs_seek_set += 1;
             Ok(pos)
         }
 
         fn seek_end(&self, _handle: &FileHandle) -> std::result::Result<u64, AdapterError> {
+            self.calls.borrow_mut().fs_seek_end += 1;
             Ok(4)
         }
 
@@ -907,10 +929,12 @@ mod tests {
 
     impl TimeAdapter for RecordingAdapter {
         fn now_millis(&self) -> std::result::Result<u64, AdapterError> {
+            self.calls.borrow_mut().now_millis += 1;
             Ok(1)
         }
 
         fn monotonic_nanos(&self) -> std::result::Result<u64, AdapterError> {
+            self.calls.borrow_mut().monotonic_nanos += 1;
             Ok(2)
         }
 
@@ -922,12 +946,14 @@ mod tests {
 
     impl LocaleAdapter for RecordingAdapter {
         fn current(&self) -> std::result::Result<LocaleId, AdapterError> {
+            self.calls.borrow_mut().current_locale += 1;
             Ok(LocaleId {
                 bcp47: "en-US".to_string(),
             })
         }
 
         fn timezone(&self) -> std::result::Result<String, AdapterError> {
+            self.calls.borrow_mut().timezone += 1;
             Ok("UTC".to_string())
         }
 
@@ -938,6 +964,7 @@ mod tests {
             _style: DateStyle,
             _loc: &LocaleId,
         ) -> std::result::Result<String, AdapterError> {
+            self.calls.borrow_mut().format_date += 1;
             Ok("date".to_string())
         }
 
@@ -947,6 +974,7 @@ mod tests {
             _style: NumberStyle,
             _loc: &LocaleId,
         ) -> std::result::Result<String, AdapterError> {
+            self.calls.borrow_mut().format_number += 1;
             Ok("number".to_string())
         }
     }
@@ -972,6 +1000,120 @@ mod tests {
 
         assert_eq!(args, "notes.txt");
         assert_eq!(adapter.calls.borrow().args, 1);
+    }
+
+    #[test]
+    fn dispatcher_policy_coverage_reaches_every_phase2_adapter_method() {
+        let adapter = RecordingAdapter::default();
+        let policy = SessionPolicy::from_cli_grants(&[
+            "fs.read:./notes/**".to_string(),
+            "fs.write:./notes/**".to_string(),
+            "fs.list:./notes".to_string(),
+            "fs.list:./notes/**".to_string(),
+            "fs.remove:./notes/**".to_string(),
+            "fs.mkdir:./notes/**".to_string(),
+            "net.connect:api.example.com:443".to_string(),
+        ])
+        .expect("policy");
+        let guard = UapiGuard::new(policy);
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+
+        let stdin = dispatcher.stdin().expect("stdin");
+        dispatcher.read_stream(&stdin, 16).expect("read stdin");
+        dispatcher
+            .read_stream_to_string(&stdin)
+            .expect("read stdin string");
+
+        let stdout = dispatcher.stdout().expect("stdout");
+        dispatcher
+            .write_stream(&stdout, b"hello")
+            .expect("write stdout");
+        dispatcher
+            .write_all_stream(&stdout, b"world")
+            .expect("write all stdout");
+        dispatcher.flush_stream(&stdout).expect("flush stdout");
+
+        let stderr = dispatcher.stderr().expect("stderr");
+        dispatcher
+            .write_stream(&stderr, b"warn")
+            .expect("write stderr");
+
+        dispatcher.args_raw().expect("args");
+        dispatcher.log("info", "hello").expect("log");
+
+        let file = dispatcher
+            .fs_open("./notes/today.txt", OpenMode::ReadWrite)
+            .expect("open file");
+        dispatcher.fs_read(&file, 32).expect("file read");
+        dispatcher.fs_write(&file, b"changed").expect("file write");
+        dispatcher.fs_seek_set(&file, 0).expect("file seek set");
+        dispatcher.fs_seek_end(&file).expect("file seek end");
+        dispatcher.fs_stat_handle(&file).expect("file stat handle");
+        dispatcher.fs_stat("./notes/today.txt").expect("path stat");
+        dispatcher.fs_list("./notes").expect("list");
+        dispatcher.fs_mkdir("./notes/new").expect("mkdir");
+        dispatcher
+            .fs_rename("./notes/old.txt", "./notes/new.txt")
+            .expect("rename");
+        dispatcher
+            .fs_remove_file("./notes/new.txt")
+            .expect("remove file");
+        dispatcher.fs_remove_dir("./notes/new").expect("remove dir");
+
+        dispatcher
+            .net_fetch(HttpRequest {
+                method: HttpMethod::Get,
+                url: "https://api.example.com/v1/ping".to_string(),
+                headers: Vec::new(),
+                body: Vec::new(),
+                timeout_millis: Some(1000),
+            })
+            .expect("net fetch");
+
+        dispatcher.now_millis().expect("clock");
+        dispatcher.monotonic_nanos().expect("monotonic");
+        dispatcher.sleep_millis(1).expect("sleep");
+
+        let locale = dispatcher.current_locale().expect("locale");
+        dispatcher.timezone().expect("timezone");
+        dispatcher
+            .format_date(0, "UTC", DateStyle::Short, &locale)
+            .expect("format date");
+        dispatcher
+            .format_number(10.0, NumberStyle::Decimal, &locale)
+            .expect("format number");
+
+        let calls = adapter.calls.borrow();
+        assert_eq!(calls.stdin, 1);
+        assert_eq!(calls.stream_read, 1);
+        assert_eq!(calls.stream_read_to_string, 1);
+        assert_eq!(calls.stdout, 1);
+        assert_eq!(calls.stderr, 1);
+        assert_eq!(calls.stream_write, 2);
+        assert_eq!(calls.stream_write_all, 1);
+        assert_eq!(calls.flush_stream, 1);
+        assert_eq!(calls.args, 1);
+        assert_eq!(calls.log, 1);
+        assert_eq!(calls.fs_open, 1);
+        assert_eq!(calls.fs_read, 1);
+        assert_eq!(calls.fs_write, 1);
+        assert_eq!(calls.fs_seek_set, 1);
+        assert_eq!(calls.fs_seek_end, 1);
+        assert_eq!(calls.fs_stat_handle, 1);
+        assert_eq!(calls.fs_stat, 1);
+        assert_eq!(calls.fs_list, 1);
+        assert_eq!(calls.fs_mkdir, 1);
+        assert_eq!(calls.fs_rename, 1);
+        assert_eq!(calls.fs_remove_file, 1);
+        assert_eq!(calls.fs_remove_dir, 1);
+        assert_eq!(calls.net_fetch, 1);
+        assert_eq!(calls.now_millis, 1);
+        assert_eq!(calls.monotonic_nanos, 1);
+        assert_eq!(calls.sleep, 1);
+        assert_eq!(calls.current_locale, 1);
+        assert_eq!(calls.timezone, 1);
+        assert_eq!(calls.format_date, 1);
+        assert_eq!(calls.format_number, 1);
     }
 
     #[test]

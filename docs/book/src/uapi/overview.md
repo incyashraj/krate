@@ -231,6 +231,9 @@ The value of this step is that the boundary is testable:
   and stats re-check the right grant
 - stdio stream handles remember whether they are stdin, stdout, or stderr, so
   later stream reads, writes, and flushes re-check the right grant too
+- policy coverage tests check that every supported capability name has a UAPI
+  call mapping and that the current dispatcher adapter surface is reached
+  through the policy gate
 
 The bridge between generated WIT types and dispatcher types now exists too.
 It converts things like `open-mode`, HTTP requests, file stats, locale IDs, and
