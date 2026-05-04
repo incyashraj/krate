@@ -21,6 +21,6 @@ rationale = "Print usage and network errors"
 required = true
 
 [[capabilities]]
-cap = "net.connect:127.0.0.1:80"
-rationale = "Example localhost HTTP grant; tests override the port"
+cap = "net.connect:127.0.0.1:*"
+rationale = "Allow localhost HTTP test servers on dynamic ports"
 required = true

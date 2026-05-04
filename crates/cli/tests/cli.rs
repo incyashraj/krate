@@ -146,6 +146,30 @@ fn manifest_capabilities_lists_phase_2_cap_table() {
 }
 
 #[test]
+fn sample_manifests_validate() {
+    for manifest in [
+        "apps/layer36-clock/manifest.toml",
+        "apps/layer36-cat/manifest.toml",
+        "apps/layer36-curl/manifest.toml",
+    ] {
+        let manifest = workspace_path(PathBuf::from(manifest));
+        let output = layer36()
+            .args(["manifest", "check"])
+            .arg(&manifest)
+            .output()
+            .expect("check sample manifest");
+
+        assert!(
+            output.status.success(),
+            "manifest check failed for {}\nstdout:\n{}\nstderr:\n{}",
+            manifest.display(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
 fn missing_input_returns_clear_error() {
     let output = layer36()
         .args(["run", "/definitely/not/a/component.wasm"])
@@ -281,6 +305,39 @@ fn configured_layer36_clock_component_uses_fixed_test_time() {
 }
 
 #[test]
+fn configured_layer36_clock_component_runs_with_sample_manifest_auto_grant() {
+    let Some(path) = configured_layer36_clock_component() else {
+        return;
+    };
+
+    let output = layer36()
+        .args([
+            "run",
+            "--auto-grant",
+            "--manifest",
+            sample_manifest("layer36-clock")
+                .to_str()
+                .expect("manifest path"),
+            "--test-time",
+            "1234567890",
+        ])
+        .arg(path)
+        .output()
+        .expect("run layer36-clock with sample manifest");
+
+    assert!(
+        output.status.success(),
+        "layer36-clock manifest run failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("app=layer36-clock"));
+    assert!(stdout.contains("date=1234567890:"));
+}
+
+#[test]
 fn configured_layer36_cat_component_reads_granted_files() {
     let Some(path) = configured_layer36_cat_component() else {
         return;
@@ -310,6 +367,46 @@ fn configured_layer36_cat_component_reads_granted_files() {
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         "hello from A\nhello from B\n"
+    );
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn configured_layer36_cat_component_runs_with_sample_manifest_auto_grant() {
+    let Some(path) = configured_layer36_cat_component() else {
+        return;
+    };
+
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let fixtures = dir.path().join("fixtures");
+    std::fs::create_dir(&fixtures).expect("create fixtures dir");
+    std::fs::write(fixtures.join("a.txt"), "hello from manifest cat\n").expect("write fixture A");
+
+    let output = layer36()
+        .current_dir(dir.path())
+        .args([
+            "run",
+            "--auto-grant",
+            "--manifest",
+            sample_manifest("layer36-cat")
+                .to_str()
+                .expect("manifest path"),
+        ])
+        .arg(path)
+        .args(["--", "./fixtures/a.txt"])
+        .output()
+        .expect("run layer36-cat with sample manifest");
+
+    assert!(
+        output.status.success(),
+        "layer36-cat manifest run failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "hello from manifest cat\n"
     );
     assert!(output.stderr.is_empty());
 }
@@ -385,6 +482,41 @@ fn configured_layer36_curl_component_fetches_granted_http_url() {
     assert!(
         output.status.success(),
         "layer36-curl failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, body);
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn configured_layer36_curl_component_runs_with_sample_manifest_auto_grant() {
+    let Some(path) = configured_layer36_curl_component() else {
+        return;
+    };
+
+    let body = b"hello from manifest curl\n";
+    let (addr, server) = spawn_http_fixture(body);
+    let url = format!("http://{addr}/fixture.txt");
+
+    let output = layer36()
+        .args([
+            "run",
+            "--auto-grant",
+            "--manifest",
+            sample_manifest("layer36-curl")
+                .to_str()
+                .expect("manifest path"),
+        ])
+        .arg(path)
+        .args(["--", &url])
+        .output()
+        .expect("run layer36-curl with sample manifest");
+    server.join().expect("HTTP fixture thread completed");
+
+    assert!(
+        output.status.success(),
+        "layer36-curl manifest run failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -666,6 +798,10 @@ fn workspace_path(path: PathBuf) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .join(path)
+}
+
+fn sample_manifest(app: &str) -> PathBuf {
+    workspace_path(PathBuf::from(format!("apps/{app}/manifest.toml")))
 }
 
 fn configured_hello_component() -> Option<PathBuf> {
