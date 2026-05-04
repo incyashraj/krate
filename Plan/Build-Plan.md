@@ -1702,6 +1702,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-04 | Moved the Phase 2 capability table into the manifest crate and exposed it through `layer36 manifest capabilities`. |
 | 2026-05-04 | Wired the generated UAPI reference to the manifest crate's capability table, so docs, manifest validation, and `layer36 manifest capabilities` describe the same accepted strings. |
 | 2026-05-04 | Hardened Phase 2 file-handle UCap checks so read-write opens require both grants and later file resource methods re-check path capabilities before adapter calls. |
+| 2026-05-04 | Added filesystem denial-before-adapter coverage for Phase 2 `stat`, `list`, `remove`, `mkdir`, and `rename` dispatcher paths. |
 
 ---
 

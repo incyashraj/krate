@@ -1779,6 +1779,7 @@ Additional ADRs as decisions surface. Rule of thumb: if you have to ask "should 
 - [x] Manifest parser handles all §10.5 fields.
 - [ ] Policy engine enforces caps at every UAPI entry.
 - [x] File resource methods re-check opened path capabilities before adapter calls.
+- [x] Filesystem path operations have denial-before-adapter coverage.
 - [x] `--grant`, `--auto-grant`, interactive prompt all work.
 - [x] Attempt to open a file outside granted glob → clear error, exit code 5.
 
@@ -2099,7 +2100,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | 6 | `layer36-curl <url>` works identically on all three hosts | Started: Rust sample builds locally and has granted/denied localhost HTTP tests; full cross-host run remains |
 | 7 | `layer36-cat <file>` works identically on all three hosts | Started: Rust sample builds locally and has granted/denied fixture tests, including outside-granted-glob denial; full cross-host run remains |
 | 8 | `layer36-clock` prints time in user locale on all three hosts | Started: Rust sample builds locally and has fixed-time integration coverage; full cross-host run remains |
-| 9 | UCap v0.1: manifest-declared caps enforced; unauthorized calls trap cleanly | Started: CLI preflight, manifest entry/run-file match check, canonical capability table, `--grant`, `--auto-grant`, first terminal prompt, `--dump-caps`, runtime UAPI guard, dispatcher scaffold, file-handle capability rechecks, generated WIT type bridge, generated host wiring, resource table, runtime linker install, Phase 2 smoke happy path, missing-grant proof, app args, `layer36-clock`, first `layer36-cat`, first `layer36-curl`, and a plain HTTP adapter slice exist; cross-host and remaining hardening work remain |
+| 9 | UCap v0.1: manifest-declared caps enforced; unauthorized calls trap cleanly | Started: CLI preflight, manifest entry/run-file match check, canonical capability table, `--grant`, `--auto-grant`, first terminal prompt, `--dump-caps`, runtime UAPI guard, dispatcher scaffold, file-handle capability rechecks, filesystem denial-before-adapter coverage, generated WIT type bridge, generated host wiring, resource table, runtime linker install, Phase 2 smoke happy path, missing-grant proof, app args, `layer36-clock`, first `layer36-cat`, first `layer36-curl`, and a plain HTTP adapter slice exist; cross-host and remaining hardening work remain |
 | 10 | Startup overhead for a UAPI-using app < 150 ms | Not done |
 | 11 | UAPI hot-path dispatch < 1 µs (microbenchmark) | Not done |
 | 12 | Developer who knows Rust but not WASM can write a CLI in < 30 min using docs | Not done |
@@ -2126,6 +2127,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P2-SEC-01I | Effective capability dump | 2026-05-04 | Added `layer36 run --dump-caps` to print the resolved session grants and exit before runtime execution. |
 | P2-SEC-01J | Sample permission-denied exit code | 2026-05-04 | `layer36-cat` and `layer36-curl` now use exit code `5` for UCap denial; cat has an outside-granted-glob denial test. |
 | P2-SEC-01L | File-handle capability rechecks | 2026-05-04 | File handles now carry opened path/mode metadata. `read-write` opens require both read and write grants, and file read/write/stat/seek methods re-check capabilities before adapter calls. |
+| P2-SEC-01M | Filesystem denial-before-adapter coverage | 2026-05-04 | Dispatcher tests now prove `stat`, `list`, `remove-file`, `remove-dir`, `mkdir`, and `rename` stop before the adapter when the needed filesystem grants are missing. |
 | P2-SEC-01C | Runtime UAPI policy guard | 2026-05-03 | Runtime config now carries the session policy; `layer36_runtime::uapi` maps Phase 2 calls to capability checks. |
 | P2-UAPI-REVIEW | Rust host binding checkpoint | 2026-05-03 | Added `phase2-bindings` feature and CI job; confirms Phase 2 WIT generates usable host-side Rust names. |
 | P2-SEC-01D | Runtime UAPI dispatcher scaffold | 2026-05-03 | Added adapter traits and dispatcher methods that map policy denial to module-level errors before adapter calls run. |

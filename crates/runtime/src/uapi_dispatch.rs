@@ -640,8 +640,14 @@ mod tests {
     #[derive(Default)]
     struct Calls {
         args: usize,
+        fs_list: usize,
+        fs_mkdir: usize,
         fs_open: usize,
         fs_read: usize,
+        fs_remove_dir: usize,
+        fs_remove_file: usize,
+        fs_rename: usize,
+        fs_stat: usize,
         fs_stat_handle: usize,
         fs_write: usize,
         net_fetch: usize,
@@ -785,6 +791,7 @@ mod tests {
         }
 
         fn stat(&self, _path: &str) -> std::result::Result<FileStat, AdapterError> {
+            self.calls.borrow_mut().fs_stat += 1;
             Ok(FileStat {
                 size: 0,
                 modified_millis: 0,
@@ -793,22 +800,27 @@ mod tests {
         }
 
         fn list(&self, _path: &str) -> std::result::Result<Vec<String>, AdapterError> {
+            self.calls.borrow_mut().fs_list += 1;
             Ok(Vec::new())
         }
 
         fn remove_file(&self, _path: &str) -> std::result::Result<(), AdapterError> {
+            self.calls.borrow_mut().fs_remove_file += 1;
             Ok(())
         }
 
         fn remove_dir(&self, _path: &str) -> std::result::Result<(), AdapterError> {
+            self.calls.borrow_mut().fs_remove_dir += 1;
             Ok(())
         }
 
         fn mkdir(&self, _path: &str) -> std::result::Result<(), AdapterError> {
+            self.calls.borrow_mut().fs_mkdir += 1;
             Ok(())
         }
 
         fn rename(&self, _from: &str, _to: &str) -> std::result::Result<(), AdapterError> {
+            self.calls.borrow_mut().fs_rename += 1;
             Ok(())
         }
     }
@@ -992,6 +1004,93 @@ mod tests {
 
         assert!(matches!(err, FsDispatchError::PermissionDenied));
         assert_eq!(adapter.calls.borrow().fs_stat_handle, 0);
+    }
+
+    #[test]
+    fn fs_stat_denies_before_adapter_when_cap_missing() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+        let err = dispatcher
+            .fs_stat("./notes/today.txt")
+            .expect_err("stat should need fs.read");
+
+        assert!(matches!(err, FsDispatchError::PermissionDenied));
+        assert_eq!(adapter.calls.borrow().fs_stat, 0);
+    }
+
+    #[test]
+    fn fs_list_denies_before_adapter_when_cap_missing() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+        let err = dispatcher
+            .fs_list("./notes")
+            .expect_err("list should need fs.list");
+
+        assert!(matches!(err, FsDispatchError::PermissionDenied));
+        assert_eq!(adapter.calls.borrow().fs_list, 0);
+    }
+
+    #[test]
+    fn fs_remove_denies_before_adapter_when_cap_missing() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+
+        let file_err = dispatcher
+            .fs_remove_file("./notes/today.txt")
+            .expect_err("remove-file should need fs.remove");
+        let dir_err = dispatcher
+            .fs_remove_dir("./notes/archive")
+            .expect_err("remove-dir should need fs.remove");
+
+        assert!(matches!(file_err, FsDispatchError::PermissionDenied));
+        assert!(matches!(dir_err, FsDispatchError::PermissionDenied));
+        assert_eq!(adapter.calls.borrow().fs_remove_file, 0);
+        assert_eq!(adapter.calls.borrow().fs_remove_dir, 0);
+    }
+
+    #[test]
+    fn fs_mkdir_denies_before_adapter_when_cap_missing() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+        let err = dispatcher
+            .fs_mkdir("./notes/new")
+            .expect_err("mkdir should need fs.mkdir");
+
+        assert!(matches!(err, FsDispatchError::PermissionDenied));
+        assert_eq!(adapter.calls.borrow().fs_mkdir, 0);
+    }
+
+    #[test]
+    fn fs_rename_requires_remove_and_write_before_adapter() {
+        let adapter = RecordingAdapter::default();
+        let remove_only =
+            SessionPolicy::from_cli_grants(&["fs.remove:./notes/**".to_string()]).expect("policy");
+        let guard = UapiGuard::new(remove_only);
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+        let err = dispatcher
+            .fs_rename("./notes/old.txt", "./notes/new.txt")
+            .expect_err("rename should need remove and write grants");
+
+        assert!(matches!(err, FsDispatchError::PermissionDenied));
+        assert_eq!(adapter.calls.borrow().fs_rename, 0);
+
+        let remove_write = SessionPolicy::from_cli_grants(&[
+            "fs.remove:./notes/**".to_string(),
+            "fs.write:./notes/**".to_string(),
+        ])
+        .expect("policy");
+        let guard = UapiGuard::new(remove_write);
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+
+        dispatcher
+            .fs_rename("./notes/old.txt", "./notes/new.txt")
+            .expect("rename grants should pass");
+
+        assert_eq!(adapter.calls.borrow().fs_rename, 1);
     }
 
     #[test]

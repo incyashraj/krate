@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Phase 2 UCap denial coverage for filesystem `stat`, `list`, `remove`, `mkdir`, and `rename`, proving they stop before adapter calls when grants are missing.
 - Phase 2 file-handle UCap hardening: read-write opens now require both read and write grants, and file resource read/write/stat/seek methods re-check path capabilities before adapter calls.
 - Generated UAPI reference capability tables now come from the same manifest crate table used by validation and `layer36 manifest capabilities`.
 - `layer36 manifest capabilities` to print the canonical Phase 2 capability strings and default-grant status from the manifest crate.
