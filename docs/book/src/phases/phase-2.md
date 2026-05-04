@@ -66,7 +66,9 @@ stdio, basic filesystem calls, time, locale, and a first plain HTTP request
 path. Relative filesystem paths now resolve through an explicit runtime
 sandbox root. The default is `.`, and `--sandbox-root <dir>` lets a run point
 app-relative file access at a specific directory. Shared path cleanup also keeps
-the filesystem adapter and UCap grant matcher using the same rules. For relative
+the filesystem adapter and UCap grant matcher using the same rules. It now also
+rejects colon-based prefix forms up front, so Windows drive-style and alternate
+data stream style paths do not cross host-specific parsing rules. For relative
 paths, the local adapter now checks canonical existing targets, or the canonical
 parent for new files, before host I/O. If a symlink would take the path outside
 the sandbox root, the adapter denies the call. On Unix and Windows hosts, file

@@ -24,6 +24,9 @@ impl LogicalPath {
         if input.chars().any(|ch| ch == '\0' || ch.is_control()) {
             return Err(PathError::ControlCharacter);
         }
+        if input.contains(':') {
+            return Err(PathError::UnsupportedPrefix);
+        }
 
         let portable = input.replace('\\', "/");
         let is_absolute = portable.starts_with('/');
@@ -105,6 +108,8 @@ pub enum PathError {
     ControlCharacter,
     #[error("path contains parent traversal")]
     ParentTraversal,
+    #[error("path uses an unsupported prefix or separator form")]
+    UnsupportedPrefix,
     #[error("operation cannot target the filesystem root")]
     UnsafeRootOperation,
 }
@@ -152,6 +157,18 @@ mod tests {
         assert_eq!(
             LogicalPath::parse("notes/../secret.txt").unwrap_err(),
             PathError::ParentTraversal
+        );
+    }
+
+    #[test]
+    fn rejects_windows_style_prefix_forms() {
+        assert_eq!(
+            LogicalPath::parse("C:/Users/yash/Documents/note.txt").unwrap_err(),
+            PathError::UnsupportedPrefix
+        );
+        assert_eq!(
+            LogicalPath::parse("report.txt:secret").unwrap_err(),
+            PathError::UnsupportedPrefix
         );
     }
 

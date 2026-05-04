@@ -268,8 +268,8 @@ through the runtime sandbox root instead of the process working directory by
 accident. The default root is `.`, and `layer36 run --sandbox-root <dir>` lets a
 run point app-relative paths at a specific directory. Path cleanup and
 filesystem grant matching share the same rules, so simple separator differences
-do not change permission behavior, and `..` traversal is rejected before host
-I/O. Relative sandbox paths also get a first symlink escape check: existing
+do not change permission behavior, `..` traversal is rejected, and colon-based
+prefix forms are denied before host I/O. Relative sandbox paths also get a first symlink escape check: existing
 targets must resolve inside the sandbox root, and new files must have a real
 parent inside the sandbox root. That keeps a simple `fixtures/file.txt` style
 path from quietly following a symlink to another part of the host. On Unix and
@@ -283,7 +283,7 @@ The HTTP path is only a first useful slice: good enough for localhost and fixed
 test servers, not yet a full web client. `get(url)` remains the simple body-only
 path. `fetch(req)` can send the selected method, app headers, and a buffered
 body, while the host controls transport headers such as `Host`, `Connection`,
-and `Content-Length`. Responses above 1 MiB are rejected by default so local
+`Content-Length`, and `Transfer-Encoding`. Responses above 1 MiB are rejected by default so local
 tests do not accidentally depend on unbounded host reads. Use
 `--max-http-response-bytes` to lower or raise that limit for a run. When the
 response is too large, the app receives `net-error.body-too-large`, not a vague
