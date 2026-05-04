@@ -296,7 +296,9 @@ still open.
 The time adapter now uses shared host-clock code for the first clock slice:
 fixed test time, wall-clock milliseconds since Unix epoch, monotonic elapsed
 nanoseconds, and blocking sleep. The API remains small, but the behavior is no
-longer duplicated in the runtime alone.
+longer duplicated in the runtime alone. The shared helper now also protects time
+edge cases by saturating monotonic nanoseconds instead of wrapping and rejecting
+out-of-range Unix-millisecond values.
 
 The locale adapter also uses shared host-locale code for its first slice:
 environment locale detection, timezone fallback, simple BCP 47-style cleanup,

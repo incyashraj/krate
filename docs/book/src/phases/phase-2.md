@@ -89,7 +89,9 @@ before anything reaches the request line or socket layer.
 Time is also starting to move into shared adapter code. The local runtime now
 uses a common host clock helper for fixed test time, Unix-epoch milliseconds,
 monotonic elapsed time, and sleep. That keeps future desktop adapters from each
-making slightly different clock choices.
+making slightly different clock choices. It now also guards edge cases:
+monotonic nanoseconds saturate instead of wrapping, and out-of-range
+Unix-millisecond values fail with a clear conversion error.
 
 Locale has the same first shared path now. The runtime uses common helper code
 for `LC_ALL`/`LANG` locale detection, `TZ` fallback, basic locale normalization,
