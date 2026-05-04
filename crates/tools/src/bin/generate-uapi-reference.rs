@@ -428,7 +428,7 @@ fn capability_notes(interface: &str) -> &'static [&'static str] {
         "layer36:io/log@0.1.0" => &["`io.log` is a low-risk default grant."],
         "layer36:net/http-client@0.1.0" => &[
             "`get` and `fetch` require a matching `net.connect:HOST:PORT` grant before the adapter opens a socket.",
-            "The current host adapter supports the plain HTTP test path first; HTTPS and richer network behavior are still Phase 2 work.",
+            "The current host adapter supports the plain HTTP test path first with a 1 MiB full-response cap; HTTPS and richer network behavior are still Phase 2 work.",
         ],
         "layer36:time/clock@0.1.0" => {
             &["`time.clock` and `time.monotonic` are default grants."]

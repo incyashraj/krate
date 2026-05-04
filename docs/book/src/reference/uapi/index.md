@@ -347,7 +347,7 @@ Accepted capability strings for this module, generated from the runtime manifest
 - `net.connect:<host>:<port>` - manifest or session grant
 
 - `get` and `fetch` require a matching `net.connect:HOST:PORT` grant before the adapter opens a socket.
-- The current host adapter supports the plain HTTP test path first; HTTPS and richer network behavior are still Phase 2 work.
+- The current host adapter supports the plain HTTP test path first with a 1 MiB full-response cap; HTTPS and richer network behavior are still Phase 2 work.
 
 ### Rust SDK Example
 

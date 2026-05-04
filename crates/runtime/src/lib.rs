@@ -37,6 +37,8 @@ use uapi_dispatch::{
     HttpResponse, IoAdapter, LocaleAdapter, LocaleId, NetAdapter, OpenMode, TimeAdapter,
 };
 
+const MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
+
 wasmtime::component::bindgen!({
     path: "../../wit/layer36",
     world: "app",
@@ -676,8 +678,7 @@ impl NetAdapter for LocalPhase2Adapter {
         request.extend_from_slice(b"\r\n");
 
         stream.write_all(&request).map_err(map_io_error)?;
-        let mut response = Vec::new();
-        stream.read_to_end(&mut response).map_err(map_io_error)?;
+        let response = read_http_response_limited(&mut stream)?;
         parse_http_response(&response)
     }
 }
@@ -812,6 +813,28 @@ impl ParsedHttpUrl {
     }
 }
 
+fn read_http_response_limited(
+    reader: &mut impl Read,
+) -> std::result::Result<Vec<u8>, AdapterError> {
+    let mut response = Vec::new();
+    let mut chunk = [0; 8192];
+
+    loop {
+        let read = reader.read(&mut chunk).map_err(map_io_error)?;
+        if read == 0 {
+            return Ok(response);
+        }
+
+        if response.len() + read > MAX_HTTP_RESPONSE_BYTES {
+            return Err(AdapterError::Network(format!(
+                "HTTP response exceeds {MAX_HTTP_RESPONSE_BYTES} byte limit"
+            )));
+        }
+
+        response.extend_from_slice(&chunk[..read]);
+    }
+}
+
 fn parse_http_response(bytes: &[u8]) -> std::result::Result<HttpResponse, AdapterError> {
     let Some(header_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n") else {
         return Err(AdapterError::Network("invalid HTTP response".to_string()));
@@ -924,6 +947,29 @@ mod tests {
             }]
         );
         assert_eq!(response.body, b"hello\n");
+    }
+
+    #[test]
+    fn plain_http_response_reader_enforces_size_limit() {
+        let mut response = std::io::Cursor::new(vec![b'x'; MAX_HTTP_RESPONSE_BYTES + 1]);
+        let err = read_http_response_limited(&mut response)
+            .expect_err("oversized response should be rejected");
+
+        assert_eq!(
+            err,
+            AdapterError::Network(format!(
+                "HTTP response exceeds {MAX_HTTP_RESPONSE_BYTES} byte limit"
+            ))
+        );
+    }
+
+    #[test]
+    fn plain_http_response_reader_allows_exact_size_limit() {
+        let mut response = std::io::Cursor::new(vec![b'x'; MAX_HTTP_RESPONSE_BYTES]);
+        let bytes =
+            read_http_response_limited(&mut response).expect("exact limit should be accepted");
+
+        assert_eq!(bytes.len(), MAX_HTTP_RESPONSE_BYTES);
     }
 
     #[cfg(feature = "phase2-bindings")]

@@ -135,7 +135,9 @@ let body = layer36::net::get("http://127.0.0.1:8080/data.txt")?;
 ```
 
 The runtime checks a `net.connect:HOST:PORT` grant before opening the socket.
-HTTPS, redirects, streaming bodies, and response limits are still Phase 2 work.
+The current plain HTTP adapter caps the full response at 1 MiB. HTTPS,
+redirects, streaming bodies, and configurable response limits are still Phase 2
+work.
 
 ## Current Limits
 
