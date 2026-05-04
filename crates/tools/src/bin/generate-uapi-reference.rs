@@ -3,6 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use layer36_manifest::supported_capability_specs;
 use wit_parser::{
     Function, FunctionKind, Interface, Resolve, Type, TypeDefKind, TypeId, WorldItem,
 };
@@ -119,13 +120,30 @@ fn render_interface(
         writeln!(out)?;
     }
 
-    if let Some(notes) = capability_notes(&name) {
+    let capability_patterns = capability_patterns_for_interface(&name);
+    let notes = capability_notes(&name);
+    if !capability_patterns.is_empty() || !notes.is_empty() {
         writeln!(out, "### Capability Notes")?;
         writeln!(out)?;
+
+        if !capability_patterns.is_empty() {
+            writeln!(
+                out,
+                "Accepted capability strings for this module, generated from the runtime manifest table:"
+            )?;
+            writeln!(out)?;
+            for pattern in capability_patterns {
+                writeln!(out, "- `{}` - {}", pattern.capability, pattern.grant_kind)?;
+            }
+            writeln!(out)?;
+        }
+
         for note in notes {
             writeln!(out, "- {note}")?;
         }
-        writeln!(out)?;
+        if !notes.is_empty() {
+            writeln!(out)?;
+        }
     }
 
     if let Some(example) = rust_example(&name) {
@@ -394,35 +412,72 @@ fn interface_summary(interface: &str) -> Option<&'static str> {
     }
 }
 
-fn capability_notes(interface: &str) -> Option<&'static [&'static str]> {
+fn capability_notes(interface: &str) -> &'static [&'static str] {
     match interface {
-        "layer36:fs/files@0.1.0" => Some(&[
+        "layer36:fs/files@0.1.0" => &[
             "`open`, `stat`, and `list` require a matching `fs.read:PATH` grant for read-style access.",
             "Write, mkdir, remove, and rename operations are part of the Phase 2 shape, but the first runtime slice focuses on read grants.",
-        ]),
-        "layer36:io/args@0.1.0" => Some(&[
+        ],
+        "layer36:io/args@0.1.0" => &[
             "`io.args` is granted by default for CLI apps.",
             "The current draft encodes args as newline-separated text.",
-        ]),
-        "layer36:io/stdio@0.1.0" | "layer36:io/streams@0.1.0" => Some(&[
+        ],
+        "layer36:io/stdio@0.1.0" | "layer36:io/streams@0.1.0" => &[
             "`io.stdin`, `io.stdout`, and `io.stderr` are low-risk default grants for CLI apps.",
-        ]),
-        "layer36:io/log@0.1.0" => Some(&[
-            "`io.log` is a low-risk default grant.",
-        ]),
-        "layer36:net/http-client@0.1.0" => Some(&[
+        ],
+        "layer36:io/log@0.1.0" => &["`io.log` is a low-risk default grant."],
+        "layer36:net/http-client@0.1.0" => &[
             "`get` and `fetch` require a matching `net.connect:HOST:PORT` grant before the adapter opens a socket.",
             "The current host adapter supports the plain HTTP test path first; HTTPS and richer network behavior are still Phase 2 work.",
-        ]),
-        "layer36:time/clock@0.1.0" => Some(&[
-            "`time.now` and `time.monotonic` are default grants.",
-        ]),
-        "layer36:time/sleep@0.1.0" => Some(&[
-            "`sleep-millis` requires `time.sleep`.",
-        ]),
-        "layer36:locale/info@0.1.0" | "layer36:locale/format@0.1.0" => Some(&[
+        ],
+        "layer36:time/clock@0.1.0" => {
+            &["`time.clock` and `time.monotonic` are default grants."]
+        }
+        "layer36:time/sleep@0.1.0" => &["`sleep-millis` requires `time.sleep`."],
+        "layer36:locale/info@0.1.0" | "layer36:locale/format@0.1.0" => &[
             "Locale reads and formatting are default grants for CLI apps.",
-        ]),
+        ],
+        _ => &[],
+    }
+}
+
+struct CapabilityPattern {
+    capability: String,
+    grant_kind: &'static str,
+}
+
+fn capability_patterns_for_interface(interface: &str) -> Vec<CapabilityPattern> {
+    let Some(module) = capability_module_for_interface(interface) else {
+        return Vec::new();
+    };
+
+    supported_capability_specs()
+        .iter()
+        .filter(|spec| spec.module() == module)
+        .map(|spec| {
+            let grant_kind = if spec.default_granted() {
+                "default grant"
+            } else {
+                "manifest or session grant"
+            };
+            CapabilityPattern {
+                capability: spec.display_pattern(),
+                grant_kind,
+            }
+        })
+        .collect()
+}
+
+fn capability_module_for_interface(interface: &str) -> Option<&str> {
+    let (_, rest) = interface.split_once(':')?;
+    let (module, interface_name) = rest.split_once('/')?;
+
+    if interface_name.starts_with("types@") {
+        return None;
+    }
+
+    match module {
+        "io" | "fs" | "net" | "time" | "locale" => Some(module),
         _ => None,
     }
 }
@@ -544,7 +599,8 @@ mod tests {
 
         assert!(reference.contains("### Capability Notes"));
         assert!(reference.contains("### Rust SDK Example"));
-        assert!(reference.contains("`net.connect:HOST:PORT`"));
+        assert!(reference.contains("`net.connect:<host>:<port>`"));
+        assert!(reference.contains("generated from the runtime manifest table"));
         assert!(reference.contains("let text = layer36::fs::read_to_string"));
         assert!(reference.contains("> Milliseconds since Unix epoch."));
     }

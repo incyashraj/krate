@@ -968,6 +968,7 @@ name = "layer36-tools"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
+ "layer36-manifest",
  "wit-parser 0.244.0",
 ]
 

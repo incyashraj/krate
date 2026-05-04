@@ -31,6 +31,14 @@ Filesystem entry points. All host file access should pass through these function
 
 ### Capability Notes
 
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `fs.read:<path-glob>` - manifest or session grant
+- `fs.write:<path-glob>` - manifest or session grant
+- `fs.list:<path-glob>` - manifest or session grant
+- `fs.remove:<path-glob>` - manifest or session grant
+- `fs.mkdir:<path-glob>` - manifest or session grant
+
 - `open`, `stat`, and `list` require a matching `fs.read:PATH` grant for read-style access.
 - Write, mkdir, remove, and rename operations are part of the Phase 2 shape, but the first runtime slice focuses on read grants.
 
@@ -100,6 +108,14 @@ Raw Layer36 app arguments. These are the arguments passed after `--` in `layer36
 
 ### Capability Notes
 
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `io.stdin` - default grant
+- `io.stdout` - default grant
+- `io.stderr` - default grant
+- `io.args` - default grant
+- `io.log` - default grant
+
 - `io.args` is granted by default for CLI apps.
 - The current draft encodes args as newline-separated text.
 
@@ -121,6 +137,14 @@ Structured app logs. Hosts can route these to native logs, developer consoles, o
 
 ### Capability Notes
 
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `io.stdin` - default grant
+- `io.stdout` - default grant
+- `io.stderr` - default grant
+- `io.args` - default grant
+- `io.log` - default grant
+
 - `io.log` is a low-risk default grant.
 
 ### Functions
@@ -140,6 +164,14 @@ Structured app logs. Hosts can route these to native logs, developer consoles, o
 Standard input, output, and error streams for CLI-style apps.
 
 ### Capability Notes
+
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `io.stdin` - default grant
+- `io.stdout` - default grant
+- `io.stderr` - default grant
+- `io.args` - default grant
+- `io.log` - default grant
 
 - `io.stdin`, `io.stdout`, and `io.stderr` are low-risk default grants for CLI apps.
 
@@ -162,6 +194,14 @@ layer36::io::stdio::eprintln("debug line")?;
 Byte streams used by stdio and other UAPI modules.
 
 ### Capability Notes
+
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `io.stdin` - default grant
+- `io.stdout` - default grant
+- `io.stderr` - default grant
+- `io.args` - default grant
+- `io.log` - default grant
 
 - `io.stdin`, `io.stdout`, and `io.stderr` are low-risk default grants for CLI apps.
 
@@ -222,6 +262,11 @@ Host-backed date and number formatting.
 
 ### Capability Notes
 
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `locale.info` - default grant
+- `locale.format` - default grant
+
 - Locale reads and formatting are default grants for CLI apps.
 
 ### Rust SDK Example
@@ -242,6 +287,11 @@ let text = layer36::locale::format_number(42.0, layer36::locale::NumberStyle::De
 The host user's current locale and timezone.
 
 ### Capability Notes
+
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `locale.info` - default grant
+- `locale.format` - default grant
 
 - Locale reads and formatting are default grants for CLI apps.
 
@@ -291,6 +341,10 @@ Locale and formatting type definitions.
 HTTP client calls. Phase 2 starts with simple request and response bodies.
 
 ### Capability Notes
+
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `net.connect:<host>:<port>` - manifest or session grant
 
 - `get` and `fetch` require a matching `net.connect:HOST:PORT` grant before the adapter opens a socket.
 - The current host adapter supports the plain HTTP test path first; HTTPS and richer network behavior are still Phase 2 work.
@@ -362,7 +416,13 @@ Wall-clock and monotonic clock reads.
 
 ### Capability Notes
 
-- `time.now` and `time.monotonic` are default grants.
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `time.clock` - default grant
+- `time.monotonic` - default grant
+- `time.sleep` - default grant
+
+- `time.clock` and `time.monotonic` are default grants.
 
 ### Rust SDK Example
 
@@ -387,6 +447,12 @@ let tick = layer36::time::monotonic_nanos();
 Blocking sleep for CLI-style components.
 
 ### Capability Notes
+
+Accepted capability strings for this module, generated from the runtime manifest table:
+
+- `time.clock` - default grant
+- `time.monotonic` - default grant
+- `time.sleep` - default grant
 
 - `sleep-millis` requires `time.sleep`.
 

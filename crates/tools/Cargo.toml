@@ -9,4 +9,5 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
+layer36-manifest = { path = "../manifest" }
 wit-parser.workspace = true

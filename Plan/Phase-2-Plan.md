@@ -2042,7 +2042,10 @@ The first Rust guest SDK crate exists now too. `crates/bindings-rust` builds as 
 The first generated UAPI reference exists too. `crates/tools` parses
 `wit/layer36/phase2` with `wit-parser`, writes
 `docs/book/src/reference/uapi/index.md`, and CI checks that the generated page
-is current. This is still a reference for a moving draft, not a freeze.
+is current. Its capability lists are generated from the manifest crate's
+canonical Phase 2 capability table, so the docs, manifest validator, and
+`layer36 manifest capabilities` command now share one source. This is still a
+reference for a moving draft, not a freeze.
 
 The generated WIT type bridge is also in place. `crates/runtime/src/phase2_bridge.rs` maps generated WIT records, enums, and module errors into the runtime dispatcher shapes. This is a small step, but it removes guesswork from the next one: the Wasmtime import traits can now call the dispatcher and return the right WIT-shaped values.
 
@@ -2099,7 +2102,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | 10 | Startup overhead for a UAPI-using app < 150 ms | Not done |
 | 11 | UAPI hot-path dispatch < 1 µs (microbenchmark) | Not done |
 | 12 | Developer who knows Rust but not WASM can write a CLI in < 30 min using docs | Not done |
-| 13 | UAPI reference docs auto-generated from WIT and published on docs site | Done for the current draft: generated mdBook page exists under `reference/uapi`, and hosted/self-hosted CI checks it is current |
+| 13 | UAPI reference docs auto-generated from WIT and published on docs site | Done for the current draft: generated mdBook page exists under `reference/uapi`, its capability tables come from the manifest crate, and hosted/self-hosted CI checks it is current |
 | 14 | WIT Style Guide merged into `docs/book/` | Done: `docs/book/src/wit-style.md` is linked from mdBook and `CONTRIBUTING.md` |
 | 15 | ADRs 0006 through at least 0012 merged | Not done |
 
@@ -2144,6 +2147,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P2-DOC-01 | WIT style guide | 2026-05-04 | Published `docs/book/src/wit-style.md` with naming, resources, typed errors, capability mapping, comments, versioning, and review checks; linked it from mdBook and `CONTRIBUTING.md`. |
 | P2-DOC-02A | Generated UAPI reference seed | 2026-05-04 | Added `layer36-tools` reference generator using `wit-parser`; generated `docs/book/src/reference/uapi/index.md`; linked it in mdBook; hosted and self-hosted CI check the generated page is current. |
 | P2-DOC-02B | Generated UAPI reference context | 2026-05-04 | The generated reference now includes interface summaries, capability notes, Rust SDK examples, WIT doc comments, and a generator test that checks those sections stay present. |
+| P2-DOC-02C | Reference capability table derivation | 2026-05-04 | The generated UAPI reference now renders accepted capability strings from `crates/manifest`, keeping docs aligned with manifest validation and `layer36 manifest capabilities`. |
 
 ---
 
@@ -2153,7 +2157,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 |---------|------|---------|----------|
 | P2-APP-01C | Add cross-host fixture assertions and language sample variants | 2026-05-04 | Rust versions of `layer36-clock`, `layer36-cat`, and `layer36-curl` exist locally; full cross-host fixture assertions and language-binding variants still remain. |
 | P2-BIND-01D | Rust SDK publish readiness and external smoke | 2026-05-04 | Package shape and API docs are ready locally; crates.io publication and an external fresh-project smoke test still remain. |
-| P2-DOC-02C | Improve generated UAPI reference depth | 2026-05-04 | The page now has summaries, capability notes, and examples; richer per-function explanations and capability derivation directly from manifests/policy remain. |
+| P2-DOC-02D | Improve generated UAPI reference depth | 2026-05-04 | The page now has summaries, manifest-derived capability tables, capability notes, and examples; richer per-function explanations remain. |
 
 ---
 
