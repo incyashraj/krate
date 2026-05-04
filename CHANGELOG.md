@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Shared Phase 2 plain HTTP request-target size guard in `adapter-common`: oversized path/query targets are now rejected during URL parsing before request framing and socket writes.
 - Runtime network-policy parity test for host-case normalization: mixed-case URL hosts are now explicitly covered in dispatcher tests to confirm lowercase `net.connect` grants still match.
 - Shared Phase 2 host-case normalization in `adapter-common`: accepted URL hosts are now normalized to lowercase during endpoint parsing so policy checks treat `EXAMPLE.com` and `example.com` as the same endpoint.
 - Shared Phase 2 strict buffered `Content-Length` validation: shared plain HTTP response parsing now rejects any truncated body, including empty buffered bodies when a non-zero length is declared.

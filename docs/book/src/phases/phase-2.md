@@ -108,6 +108,8 @@ numeric IPv4 literals so URL and capability-path validation stay aligned.
 Host names are now normalized to lowercase in shared URL parsing, so capability
 checks stay stable across input case differences like `EXAMPLE.com` and
 `example.com`.
+Request targets now also have a shared size limit before request framing so
+this early plain-HTTP path rejects oversized path/query payloads up front.
 The runtime's network capability gate now also uses a shared endpoint parser for
 `http://` and `https://` URLs, so policy checks and adapter-side URL validation
 no longer drift as separate parsers evolve. The plain `http://` URL parser now

@@ -39,6 +39,9 @@ impl PlainHttpUrl {
         } else {
             format!("/{path}")
         };
+        if path_and_query.len() > MAX_HTTP_TARGET_BYTES {
+            return Err(PlainHttpError::InvalidUrl);
+        }
 
         Ok(Self {
             host: endpoint.host,
@@ -53,6 +56,7 @@ const MAX_HTTP_HEADER_NAME_BYTES: usize = 128;
 const MAX_HTTP_HEADER_VALUE_BYTES: usize = 4 * 1024;
 const MAX_HTTP_AUTHORITY_BYTES: usize = 255;
 const MAX_HTTP_BODY_BYTES: usize = 1024 * 1024;
+const MAX_HTTP_TARGET_BYTES: usize = 4096;
 
 /// A parsed network endpoint used for capability checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -499,6 +503,19 @@ mod tests {
         );
         assert_eq!(
             PlainHttpUrl::parse("http://127.0.0.1:8080/path with spaces").unwrap_err(),
+            PlainHttpError::InvalidUrl
+        );
+    }
+
+    #[test]
+    fn url_parser_rejects_oversized_request_target() {
+        let oversized = format!(
+            "http://127.0.0.1:8080/{}",
+            "a".repeat(MAX_HTTP_TARGET_BYTES)
+        );
+
+        assert_eq!(
+            PlainHttpUrl::parse(&oversized).unwrap_err(),
             PlainHttpError::InvalidUrl
         );
     }
