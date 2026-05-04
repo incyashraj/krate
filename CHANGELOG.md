@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Phase 2 component import checker that rejects non-`layer36:*` imports in built sample components, wired into full hosted CI and self-hosted CI.
 - Phase 2 component startup benchmarks for the smoke UAPI app and `layer36-clock`, including a first local runtime-path read in the mdBook benchmark notes.
 - Phase 2 UAPI dispatch benchmark target and docs, with first local sub-microsecond results for default IO, filesystem grants, denial path, and network grant checks.
 - Phase 2 UCap denial coverage for filesystem `stat`, `list`, `remove`, `mkdir`, and `rename`, proving they stop before adapter calls when grants are missing.

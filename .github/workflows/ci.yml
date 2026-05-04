@@ -203,6 +203,14 @@ jobs:
         run: |
           wasm_path="$(scripts/build-layer36-curl-component.sh)"
           cp "$wasm_path" layer36-fixture/layer36_curl.wasm
+      - name: Check Phase 2 fixture imports
+        shell: bash
+        run: |
+          scripts/check-component-imports.sh \
+            layer36-fixture/phase2_smoke.wasm \
+            layer36-fixture/layer36_clock.wasm \
+            layer36-fixture/layer36_cat.wasm \
+            layer36-fixture/layer36_curl.wasm
       - name: Record fixture hash
         id: hash
         shell: bash

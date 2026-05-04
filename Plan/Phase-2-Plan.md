@@ -1786,6 +1786,7 @@ Additional ADRs as decisions surface. Rule of thumb: if you have to ask "should 
 ### CI & Quality
 - [ ] Cross-host CI matrix green for ≥ 7 consecutive days.
 - [ ] Fuzz targets defined; nightly run for ≥ 4 h succeeds without crash.
+- [x] Built Phase 2 sample components checked for pure `layer36:*` imports.
 - [x] First UAPI dispatch microbenchmark target exists.
 - [x] First UAPI component startup benchmark target exists.
 - [ ] Benchmark regressions ≤ 10% vs Phase 1 baseline.
@@ -2150,6 +2151,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P2-NET-01 | Plain HTTP GET adapter slice | 2026-05-04 | Added a minimal `http://` GET adapter for test servers and localhost-style requests, with policy still checked before socket access. |
 | P2-APP-01A | First `layer36-curl` sample path | 2026-05-04 | Added `apps/layer36-curl`, a Rust Phase 2 component that reads a URL from app args, fetches through `net.http-client.get`, writes stdout, and fails cleanly without `net.connect`. |
 | P2-APP-01B | Pure Layer36 imports for cat/curl samples | 2026-05-04 | `layer36-cat` and `layer36-curl` now parse `io.args.raw` directly. Their rebuilt components no longer import `wasi:*`, and the explicit fixture-backed CLI tests pass for hello, smoke, clock, cat, and curl. |
+| P2-CI-03 | Component import purity gate | 2026-05-04 | Added `layer36-tools --bin check-component-imports` and `scripts/check-component-imports.sh` to parse built component imports and reject anything outside `layer36:*`; full hosted CI and self-hosted CI run it after building Phase 2 fixtures. |
 | P2-BIND-01A | Rust SDK crate skeleton | 2026-05-04 | Added `crates/bindings-rust` as package `layer36`, with first wrappers over generated guest bindings and the Rust sample apps migrated to the SDK facade. |
 | P2-BIND-01B | Rust SDK helper layer and guide | 2026-05-04 | Added app-facing helpers for args, stream text output, file read/write, HTTP text, time, and locale; documented them in `docs/book/src/uapi/rust-sdk.md`; verified samples still import only Layer36 UAPI. |
 | P2-BIND-01C | Rust SDK API docs and sample cleanup | 2026-05-04 | Added crate-level SDK docs, rustdoc comments for public helpers, owned argument helpers, sample usage of those helpers, and a self-hosted `cargo doc -p layer36 --no-deps --offline` check. |

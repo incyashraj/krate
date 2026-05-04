@@ -61,6 +61,14 @@ jobs:
           printf 'cat=%s\n' "$cat_path" >> "$GITHUB_OUTPUT"
           printf 'curl=%s\n' "$curl_path" >> "$GITHUB_OUTPUT"
 
+      - name: Check Phase 2 component imports
+        run: |
+          scripts/check-component-imports.sh \
+            "${{ steps.fixtures.outputs.phase2_smoke }}" \
+            "${{ steps.fixtures.outputs.clock }}" \
+            "${{ steps.fixtures.outputs.cat }}" \
+            "${{ steps.fixtures.outputs.curl }}"
+
       - name: Test workspace
         env:
           LAYER36_HELLO_WASM: ${{ steps.fixtures.outputs.hello }}
