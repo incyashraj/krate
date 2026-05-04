@@ -205,3 +205,6 @@ cargo run -p layer36-cli -- run path/to/app.wasm --auto-grant
 
 This is session-only. The runtime also checks granted file and network
 capabilities at UAPI call sites. Persistent permission storage comes later.
+
+For the Phase 2 Rust app flow, see
+[Your First UAPI App In Rust](uapi/first-rust-cli.md).

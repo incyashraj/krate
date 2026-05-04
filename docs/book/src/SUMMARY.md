@@ -16,6 +16,7 @@
 - [Overview](uapi/overview.md)
 - [Generated Reference](reference/uapi/index.md)
 - [Rust SDK](uapi/rust-sdk.md)
+- [First Rust CLI](uapi/first-rust-cli.md)
 - [Go SDK](uapi/go-sdk.md)
 - [TypeScript SDK](uapi/typescript-sdk.md)
 

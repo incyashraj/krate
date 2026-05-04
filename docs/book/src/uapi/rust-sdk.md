@@ -150,3 +150,5 @@ This is not a finished SDK yet.
 That is fine for now. The important part is that app code now points at
 `layer36::fs`, `layer36::net`, and friends. That is the layer we can keep
 improving without making app authors learn the generated binding layout.
+
+For the end-to-end app flow, read [Your First UAPI App In Rust](first-rust-cli.md).
