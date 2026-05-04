@@ -906,6 +906,7 @@ fn map_path_error(err: PathError) -> AdapterError {
         PathError::Empty
         | PathError::ControlCharacter
         | PathError::ParentTraversal
+        | PathError::AmbiguousWindowsSuffix
         | PathError::ReservedName
         | PathError::UnsupportedPrefix
         | PathError::UnsafeRootOperation => AdapterError::InvalidPath,

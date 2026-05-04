@@ -40,6 +40,9 @@ impl LogicalPath {
                     if is_reserved_windows_segment(part) {
                         return Err(PathError::ReservedName);
                     }
+                    if has_windows_ambiguous_suffix(part) {
+                        return Err(PathError::AmbiguousWindowsSuffix);
+                    }
                     parts.push(part)
                 }
             }
@@ -113,6 +116,8 @@ pub enum PathError {
     ControlCharacter,
     #[error("path contains parent traversal")]
     ParentTraversal,
+    #[error("path segment ends with a trailing space or dot")]
+    AmbiguousWindowsSuffix,
     #[error("path targets a reserved device-style name")]
     ReservedName,
     #[error("path uses an unsupported prefix or separator form")]
@@ -139,6 +144,10 @@ fn is_reserved_windows_segment(segment: &str) -> bool {
         }
         _ => false,
     }
+}
+
+fn has_windows_ambiguous_suffix(segment: &str) -> bool {
+    segment.ends_with(' ') || segment.ends_with('.')
 }
 
 #[cfg(test)]
@@ -218,6 +227,23 @@ mod tests {
             PathError::ReservedName
         );
         assert!(LogicalPath::parse("tmp/config.txt").is_ok());
+    }
+
+    #[test]
+    fn rejects_windows_ambiguous_trailing_segment_suffixes() {
+        assert_eq!(
+            LogicalPath::parse("logs/report.").unwrap_err(),
+            PathError::AmbiguousWindowsSuffix
+        );
+        assert_eq!(
+            LogicalPath::parse("logs/report ").unwrap_err(),
+            PathError::AmbiguousWindowsSuffix
+        );
+        assert_eq!(
+            LogicalPath::parse("logs/archive./item").unwrap_err(),
+            PathError::AmbiguousWindowsSuffix
+        );
+        assert!(LogicalPath::parse("logs/report.v1").is_ok());
     }
 
     #[test]
