@@ -425,14 +425,78 @@ impl LocalPhase2Adapter {
         FileHandle::resource(id)
     }
 
-    fn resolve_fs_path(&self, path: &str) -> std::result::Result<PathBuf, AdapterError> {
+    fn resolve_fs_path(
+        &self,
+        path: &str,
+        missing_leaf: MissingLeaf,
+    ) -> std::result::Result<PathBuf, AdapterError> {
         let logical = normalize_fs_path(path)?;
         let path = logical.to_path_buf();
         if path.is_absolute() {
             Ok(path)
         } else {
-            Ok(self.sandbox_root.join(path))
+            self.resolve_sandboxed_fs_path(path, missing_leaf)
         }
+    }
+
+    fn resolve_sandboxed_fs_path(
+        &self,
+        path: PathBuf,
+        missing_leaf: MissingLeaf,
+    ) -> std::result::Result<PathBuf, AdapterError> {
+        let root = self.sandbox_root.canonicalize().map_err(map_io_error)?;
+        let host_path = root.join(path);
+
+        match host_path.canonicalize() {
+            Ok(real_path) => {
+                ensure_path_in_sandbox(&root, &real_path)?;
+                Ok(host_path)
+            }
+            Err(err)
+                if err.kind() == std::io::ErrorKind::NotFound
+                    && missing_leaf == MissingLeaf::Allow =>
+            {
+                if let Some(err) = map_existing_broken_leaf_error(&host_path, err)? {
+                    return Err(err);
+                }
+                let parent = host_path.parent().ok_or(AdapterError::InvalidPath)?;
+                let real_parent = parent.canonicalize().map_err(map_io_error)?;
+                ensure_path_in_sandbox(&root, &real_parent)?;
+                Ok(host_path)
+            }
+            Err(err) => Err(map_io_error(err)),
+        }
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MissingLeaf {
+    Deny,
+    Allow,
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn ensure_path_in_sandbox(root: &Path, path: &Path) -> std::result::Result<(), AdapterError> {
+    if path.starts_with(root) {
+        Ok(())
+    } else {
+        Err(AdapterError::PermissionDenied)
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn map_existing_broken_leaf_error(
+    path: &Path,
+    original: std::io::Error,
+) -> std::result::Result<Option<AdapterError>, AdapterError> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            Ok(Some(AdapterError::PermissionDenied))
+        }
+        Ok(_) => Ok(Some(map_io_error(original))),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(err) => Err(map_io_error(err)),
     }
 }
 
@@ -571,7 +635,11 @@ impl IoAdapter for LocalPhase2Adapter {
 #[cfg(feature = "phase2-bindings")]
 impl FsAdapter for LocalPhase2Adapter {
     fn open(&self, path: &str, mode: OpenMode) -> std::result::Result<FileHandle, AdapterError> {
-        let path = self.resolve_fs_path(path)?;
+        let missing_leaf = match mode {
+            OpenMode::Read => MissingLeaf::Deny,
+            OpenMode::Write | OpenMode::ReadWrite | OpenMode::Append => MissingLeaf::Allow,
+        };
+        let path = self.resolve_fs_path(path, missing_leaf)?;
         let mut opts = std::fs::OpenOptions::new();
         match mode {
             OpenMode::Read => {
@@ -638,14 +706,14 @@ impl FsAdapter for LocalPhase2Adapter {
     }
 
     fn stat(&self, path: &str) -> std::result::Result<FileStat, AdapterError> {
-        let path = self.resolve_fs_path(path)?;
+        let path = self.resolve_fs_path(path, MissingLeaf::Deny)?;
         std::fs::metadata(path)
             .map(file_stat_from_metadata)
             .map_err(map_io_error)
     }
 
     fn list(&self, path: &str) -> std::result::Result<Vec<String>, AdapterError> {
-        let path = self.resolve_fs_path(path)?;
+        let path = self.resolve_fs_path(path, MissingLeaf::Deny)?;
         let mut entries = Vec::new();
         for entry in std::fs::read_dir(path).map_err(map_io_error)? {
             let entry = entry.map_err(map_io_error)?;
@@ -660,23 +728,23 @@ impl FsAdapter for LocalPhase2Adapter {
     }
 
     fn remove_file(&self, path: &str) -> std::result::Result<(), AdapterError> {
-        let path = self.resolve_fs_path(path)?;
+        let path = self.resolve_fs_path(path, MissingLeaf::Deny)?;
         std::fs::remove_file(path).map_err(map_io_error)
     }
 
     fn remove_dir(&self, path: &str) -> std::result::Result<(), AdapterError> {
-        let path = self.resolve_fs_path(path)?;
+        let path = self.resolve_fs_path(path, MissingLeaf::Deny)?;
         std::fs::remove_dir(path).map_err(map_io_error)
     }
 
     fn mkdir(&self, path: &str) -> std::result::Result<(), AdapterError> {
-        let path = self.resolve_fs_path(path)?;
+        let path = self.resolve_fs_path(path, MissingLeaf::Allow)?;
         std::fs::create_dir(path).map_err(map_io_error)
     }
 
     fn rename(&self, from: &str, to: &str) -> std::result::Result<(), AdapterError> {
-        let from = self.resolve_fs_path(from)?;
-        let to = self.resolve_fs_path(to)?;
+        let from = self.resolve_fs_path(from, MissingLeaf::Deny)?;
+        let to = self.resolve_fs_path(to, MissingLeaf::Allow)?;
         std::fs::rename(from, to).map_err(map_io_error)
     }
 }
@@ -1016,6 +1084,57 @@ mod tests {
         drop(handle);
         drop(adapter);
         std::fs::remove_file(file).expect("remove fixture file");
+        std::fs::remove_dir_all(temp).expect("remove fixture directory");
+    }
+
+    #[cfg(all(feature = "phase2-bindings", unix))]
+    #[test]
+    fn local_fs_adapter_rejects_relative_symlink_escape_from_sandbox_root() {
+        use std::os::unix::fs::symlink;
+
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!(
+            "layer36-sandbox-symlink-{}-{unique}",
+            std::process::id()
+        ));
+        let sandbox = temp.join("sandbox");
+        let outside = temp.join("outside");
+        std::fs::create_dir_all(&sandbox).expect("create sandbox");
+        std::fs::create_dir_all(&outside).expect("create outside dir");
+
+        let outside_file = outside.join("secret.txt");
+        std::fs::write(&outside_file, b"secret").expect("write outside file");
+        symlink(&outside_file, sandbox.join("secret-link.txt")).expect("create file symlink");
+        symlink(&outside, sandbox.join("outside-dir")).expect("create directory symlink");
+        symlink(outside.join("missing.txt"), sandbox.join("broken-link.txt"))
+            .expect("create broken file symlink");
+
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            Vec::new(),
+            1024,
+            sandbox,
+        );
+
+        let read_err = adapter
+            .open("secret-link.txt", OpenMode::Read)
+            .expect_err("symlinked read target outside sandbox should be denied");
+        let write_err = adapter
+            .open("outside-dir/new.txt", OpenMode::Write)
+            .expect_err("new file below symlinked outside parent should be denied");
+        let broken_write_err = adapter
+            .open("broken-link.txt", OpenMode::Write)
+            .expect_err("write through broken symlink should be denied");
+
+        assert_eq!(read_err, AdapterError::PermissionDenied);
+        assert_eq!(write_err, AdapterError::PermissionDenied);
+        assert_eq!(broken_write_err, AdapterError::PermissionDenied);
+
+        drop(adapter);
         std::fs::remove_dir_all(temp).expect("remove fixture directory");
     }
 

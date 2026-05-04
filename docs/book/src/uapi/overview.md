@@ -269,7 +269,10 @@ accident. The default root is `.`, and `layer36 run --sandbox-root <dir>` lets a
 run point app-relative paths at a specific directory. Path cleanup and
 filesystem grant matching share the same rules, so simple separator differences
 do not change permission behavior, and `..` traversal is rejected before host
-I/O.
+I/O. Relative sandbox paths also get a first symlink escape check: existing
+targets must resolve inside the sandbox root, and new files must have a real
+parent inside the sandbox root. That keeps a simple `fixtures/file.txt` style
+path from quietly following a symlink to another part of the host.
 
 The HTTP path is only a first useful slice: good enough for localhost and fixed
 test servers, not yet a full web client. `get(url)` remains the simple body-only

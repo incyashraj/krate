@@ -14,8 +14,8 @@ impl LogicalPath {
     ///
     /// This helper keeps Phase 2 intentionally conservative: UTF-8 is already
     /// guaranteed by WIT, `\` is treated as a portable separator, `.` and
-    /// duplicate separators are removed, and `..` is rejected until sandbox-root
-    /// resolution lands.
+    /// duplicate separators are removed, and `..` is rejected before adapter
+    /// code decides how to resolve the path against its sandbox root.
     pub fn parse(input: &str) -> Result<Self, PathError> {
         if input.is_empty() {
             return Err(PathError::Empty);
