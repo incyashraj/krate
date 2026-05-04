@@ -68,7 +68,9 @@ sandbox root. The default is `.`, and `--sandbox-root <dir>` lets a run point
 app-relative file access at a specific directory. Shared path cleanup also keeps
 the filesystem adapter and UCap grant matcher using the same rules. It now also
 rejects colon-based prefix forms up front, so Windows drive-style and alternate
-data stream style paths do not cross host-specific parsing rules. For relative
+data stream style paths do not cross host-specific parsing rules. It also
+rejects reserved Windows device-style names such as `con`, `nul`, `com1`, and
+`lpt1` before host I/O. For relative
 paths, the local adapter now checks canonical existing targets, or the canonical
 parent for new files, before host I/O. If a symlink would take the path outside
 the sandbox root, the adapter denies the call. On Unix and Windows hosts, file

@@ -36,7 +36,12 @@ impl LogicalPath {
             match part {
                 "" | "." => {}
                 ".." => return Err(PathError::ParentTraversal),
-                part => parts.push(part),
+                part => {
+                    if is_reserved_windows_segment(part) {
+                        return Err(PathError::ReservedName);
+                    }
+                    parts.push(part)
+                }
             }
         }
 
@@ -108,10 +113,32 @@ pub enum PathError {
     ControlCharacter,
     #[error("path contains parent traversal")]
     ParentTraversal,
+    #[error("path targets a reserved device-style name")]
+    ReservedName,
     #[error("path uses an unsupported prefix or separator form")]
     UnsupportedPrefix,
     #[error("operation cannot target the filesystem root")]
     UnsafeRootOperation,
+}
+
+fn is_reserved_windows_segment(segment: &str) -> bool {
+    let normalized = segment
+        .trim_end_matches([' ', '.'])
+        .split('.')
+        .next()
+        .unwrap_or(segment);
+    if normalized.is_empty() {
+        return false;
+    }
+
+    match normalized.to_ascii_uppercase().as_str() {
+        "CON" | "PRN" | "AUX" | "NUL" => true,
+        name if name.len() == 4 => {
+            let (prefix, suffix) = name.split_at(3);
+            (prefix == "COM" || prefix == "LPT") && matches!(suffix.as_bytes()[0], b'1'..=b'9')
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -170,6 +197,27 @@ mod tests {
             LogicalPath::parse("report.txt:secret").unwrap_err(),
             PathError::UnsupportedPrefix
         );
+    }
+
+    #[test]
+    fn rejects_windows_reserved_device_names() {
+        assert_eq!(
+            LogicalPath::parse("logs/con.txt").unwrap_err(),
+            PathError::ReservedName
+        );
+        assert_eq!(
+            LogicalPath::parse("tmp/COM1").unwrap_err(),
+            PathError::ReservedName
+        );
+        assert_eq!(
+            LogicalPath::parse("tmp/lpt9.log").unwrap_err(),
+            PathError::ReservedName
+        );
+        assert_eq!(
+            LogicalPath::parse("tmp/nul. ").unwrap_err(),
+            PathError::ReservedName
+        );
+        assert!(LogicalPath::parse("tmp/config.txt").is_ok());
     }
 
     #[test]

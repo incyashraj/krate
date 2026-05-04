@@ -269,7 +269,9 @@ accident. The default root is `.`, and `layer36 run --sandbox-root <dir>` lets a
 run point app-relative paths at a specific directory. Path cleanup and
 filesystem grant matching share the same rules, so simple separator differences
 do not change permission behavior, `..` traversal is rejected, and colon-based
-prefix forms are denied before host I/O. Relative sandbox paths also get a first symlink escape check: existing
+prefix forms are denied before host I/O. Reserved Windows device-style names
+such as `con` and `nul` are also denied at this shared path layer to avoid
+cross-host device-name edge behavior. Relative sandbox paths also get a first symlink escape check: existing
 targets must resolve inside the sandbox root, and new files must have a real
 parent inside the sandbox root. That keeps a simple `fixtures/file.txt` style
 path from quietly following a symlink to another part of the host. On Unix and

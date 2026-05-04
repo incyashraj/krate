@@ -2121,7 +2121,7 @@ formal exit gates.
 
 | Area | Current read | What remains |
 |------|--------------|--------------|
-| Core Phase 2 engineering | About 80-85% through the first useful CLI slice | WIT freeze review, more shared adapter slices, cross-host identity runs, and network hardening. |
+| Core Phase 2 engineering | About 81-86% through the first useful CLI slice | WIT freeze review, more shared adapter slices, cross-host identity runs, and network hardening. |
 | Formal Phase 2 exit | About 45-50% complete | Language runtime proofs, seven-day CI evidence, fuzzing, full benchmark gate, threat model v0.2, ADR-0009 through ADR-0012, and external validation. |
 | UAPI and UCap | Strong shape, not frozen | Review default grants, path normalization, network policy details, and freeze rules before `0.1.0`. |
 | SDKs | Rust is usable; Go and TypeScript are scaffolded | Publish-ready Rust after freeze, TinyGo runtime proof, and jco runtime proof. |
@@ -2189,6 +2189,7 @@ formal exit gates.
 | P2-ADPT-COMMON-02H | Shared time overflow guards | 2026-05-04 | Added shared saturation and bounds helpers in `adapter-common::time`: monotonic nanoseconds now saturate at `u64::MAX` instead of wrapping, and out-of-range Unix-millis conversions now fail with explicit `time.out-of-range` behavior backed by tests. |
 | P2-ADPT-COMMON-02I | Windows final-symlink no-follow open flag | 2026-05-04 | Added a Windows-specific no-follow final-symlink open flag (`FILE_FLAG_OPEN_REPARSE_POINT`) for Phase 2 file opens, mirroring the Unix `O_NOFOLLOW` hardening so final link swaps are blocked at open time on Windows too. |
 | P2-ADPT-COMMON-02J | Shared path prefix hardening | 2026-05-04 | `adapter-common::path::LogicalPath` now rejects colon-based prefix forms before host I/O, including Windows-style drive paths and alternate-data-stream style suffixes. This keeps shared path handling conservative and avoids cross-host prefix ambiguity in the Phase 2 sandbox model. |
+| P2-ADPT-COMMON-02K | Shared Windows reserved-name hardening | 2026-05-04 | `adapter-common::path::LogicalPath` now rejects reserved Windows device-style path segments such as `CON`, `NUL`, `COM1`-`COM9`, and `LPT1`-`LPT9` (including extension-like suffix forms). This keeps sandboxed file paths from falling into host device-name edge behavior. |
 | P2-APP-01A | First `layer36-curl` sample path | 2026-05-04 | Added `apps/layer36-curl`, a Rust Phase 2 component that reads a URL from app args, fetches through `net.http-client.get`, writes stdout, and fails cleanly without `net.connect`. |
 | P2-APP-01E | Clear `layer36-curl` network failures | 2026-05-04 | `layer36-curl` now prints distinct messages for response-too-large, timeout, and protocol errors while keeping its fetch-failure exit behavior stable. |
 | P2-APP-01B | Pure Layer36 imports for cat/curl samples | 2026-05-04 | `layer36-cat` and `layer36-curl` now parse `io.args.raw` directly. Their rebuilt components no longer import `wasi:*`, and the explicit fixture-backed CLI tests pass for hello, smoke, clock, cat, and curl. |
@@ -2221,7 +2222,7 @@ formal exit gates.
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
 | P2-APP-01C | Add cross-host fixture assertions and language sample variants | 2026-05-04 | Rust versions of `layer36-clock`, `layer36-cat`, and `layer36-curl` exist locally; full cross-host fixture assertions and language-binding variants still remain. |
-| P2-ADPT-COMMON-02 | Expand shared adapter-common beyond HTTP framing | 2026-05-04 | Path normalization, prefix hardening, sandbox-root resolution, symlink escape checks, Unix and Windows no-follow final-symlink open hardening, root-like destructive operation guards, first shared clock and time-overflow helpers, and first shared locale helpers now exist. Deeper directory race hardening, remaining Windows parity checks, real ICU4X formatting, OS-specific locale/timezone discovery, and the final per-OS adapter split remain before the adapter-common exit box can be checked. |
+| P2-ADPT-COMMON-02 | Expand shared adapter-common beyond HTTP framing | 2026-05-04 | Path normalization, prefix hardening, Windows reserved-name hardening, sandbox-root resolution, symlink escape checks, Unix and Windows no-follow final-symlink open hardening, root-like destructive operation guards, first shared clock and time-overflow helpers, and first shared locale helpers now exist. Deeper directory race hardening, remaining Windows parity checks, real ICU4X formatting, OS-specific locale/timezone discovery, and the final per-OS adapter split remain before the adapter-common exit box can be checked. |
 | P2-BIND-01E | Rust SDK crates.io publication | 2026-05-04 | Package shape, API docs, and outside-workspace smoke are ready locally; actual crates.io publication remains blocked until UAPI v0.1 is intentionally frozen. |
 
 ---
