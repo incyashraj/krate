@@ -541,15 +541,15 @@ mod tests {
 
     impl IoAdapter for RecordingAdapter {
         fn stdin(&self) -> Result<FileHandle, AdapterError> {
-            Ok(FileHandle { id: 10 })
+            Ok(FileHandle::resource(10))
         }
 
         fn stdout(&self) -> Result<FileHandle, AdapterError> {
-            Ok(FileHandle { id: 11 })
+            Ok(FileHandle::resource(11))
         }
 
         fn stderr(&self) -> Result<FileHandle, AdapterError> {
-            Ok(FileHandle { id: 12 })
+            Ok(FileHandle::resource(12))
         }
 
         fn args_raw(&self) -> Result<String, AdapterError> {
@@ -589,7 +589,7 @@ mod tests {
 
     impl FsAdapter for RecordingAdapter {
         fn open(&self, _path: &str, _mode: OpenMode) -> Result<FileHandle, AdapterError> {
-            Ok(FileHandle { id: 20 })
+            Ok(FileHandle::resource(20))
         }
 
         fn read(&self, handle: &FileHandle, _n: u32) -> Result<Vec<u8>, AdapterError> {

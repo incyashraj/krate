@@ -398,7 +398,7 @@ impl LocalPhase2Adapter {
         let id = state.next_id;
         state.next_id += 1;
         state.resources.insert(id, resource);
-        FileHandle { id }
+        FileHandle::resource(id)
     }
 }
 

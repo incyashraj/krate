@@ -1593,7 +1593,7 @@ This section is the living status board for all of Layer36. Update it at every p
 |---|-------|--------|---------|-----------|-------|
 | 0 | Foundation | Mostly done | 2026-05-01 | pending external gates | Renamed from OneOS to Layer36 on 2026-05-02; local scaffold, docs, Pages, labels/issues, and CI are green. |
 | 1 | POC Runtime | Engineering done | 2026-05-02 | pending formal exit gates | Runtime, CLI, WIT host imports, shared hello-world fixture, CI harness, fuel/memory limits, release packaging, quickstart, threat model, benchmarks, ADRs, retrospective, and `v0.1.0-rc1` are in place. |
-| 2 | UAPI v0.1 (CLI) | Started | 2026-05-03 | pending | Draft WIT package, manifest/policy checks, manifest entry/run-file match check, terminal grant prompt, effective capability dump, runtime guard, host-binding checkpoint, dispatcher scaffold, generated type bridge, generated host wiring, resource table, initial Phase 2 `layer36 run` linker path, smoke happy/denied proofs, first Rust SDK crate and helper layer, `layer36-clock`, first `layer36-cat`, first `layer36-curl`, permission-denied exit-code alignment, Rust SDK docs, manifest-derived UAPI reference capability tables, and budget-aware CI mode are in place. |
+| 2 | UAPI v0.1 (CLI) | Started | 2026-05-03 | pending | Draft WIT package, manifest/policy checks, manifest entry/run-file match check, terminal grant prompt, effective capability dump, runtime guard, host-binding checkpoint, dispatcher scaffold, file-handle capability rechecks, generated type bridge, generated host wiring, resource table, initial Phase 2 `layer36 run` linker path, smoke happy/denied proofs, first Rust SDK crate and helper layer, `layer36-clock`, first `layer36-cat`, first `layer36-curl`, permission-denied exit-code alignment, Rust SDK docs, manifest-derived UAPI reference capability tables, and budget-aware CI mode are in place. |
 | 3 | UI + Graphics | Not started | pending | pending | |
 | 4 | Mobile Hosts | Not started | pending | pending | |
 | 5 | Developer SDK | Not started | pending | pending | |
@@ -1701,6 +1701,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-04 | Added a Phase 2 UAPI contract checker and wired it into hosted and self-hosted CI so WIT package shape changes are caught early. |
 | 2026-05-04 | Moved the Phase 2 capability table into the manifest crate and exposed it through `layer36 manifest capabilities`. |
 | 2026-05-04 | Wired the generated UAPI reference to the manifest crate's capability table, so docs, manifest validation, and `layer36 manifest capabilities` describe the same accepted strings. |
+| 2026-05-04 | Hardened Phase 2 file-handle UCap checks so read-write opens require both grants and later file resource methods re-check path capabilities before adapter calls. |
 
 ---
 

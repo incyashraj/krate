@@ -6,17 +6,61 @@
 
 use crate::uapi::{FsCall, IoCall, LocaleCall, NetCall, TimeCall, UapiCall, UapiError, UapiGuard};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FileHandle {
-    pub id: u64,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenMode {
     Read,
     Write,
     ReadWrite,
     Append,
+}
+
+impl OpenMode {
+    fn allows_read(self) -> bool {
+        matches!(self, Self::Read | Self::ReadWrite)
+    }
+
+    fn allows_write(self) -> bool {
+        matches!(self, Self::Write | Self::ReadWrite | Self::Append)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenedFile {
+    pub path: String,
+    pub mode: OpenMode,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileHandle {
+    pub id: u64,
+    pub opened_file: Option<OpenedFile>,
+}
+
+impl FileHandle {
+    pub fn resource(id: u64) -> Self {
+        Self {
+            id,
+            opened_file: None,
+        }
+    }
+
+    pub fn opened_file(id: u64, path: impl Into<String>, mode: OpenMode) -> Self {
+        Self {
+            id,
+            opened_file: Some(OpenedFile {
+                path: path.into(),
+                mode,
+            }),
+        }
+    }
+
+    fn with_opened_file(mut self, path: impl Into<String>, mode: OpenMode) -> Self {
+        self.opened_file = Some(OpenedFile {
+            path: path.into(),
+            mode,
+        });
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -248,8 +292,14 @@ impl<'a> UapiDispatcher<'a> {
         path: &str,
         mode: OpenMode,
     ) -> std::result::Result<FileHandle, FsDispatchError> {
-        self.check_fs(open_call(path, mode))?;
-        self.adapter.fs().open(path, mode).map_err(Into::into)
+        for call in open_calls(path, mode) {
+            self.check_fs(call)?;
+        }
+        self.adapter
+            .fs()
+            .open(path, mode)
+            .map(|handle| handle.with_opened_file(path, mode))
+            .map_err(Into::into)
     }
 
     pub fn fs_read(
@@ -257,6 +307,7 @@ impl<'a> UapiDispatcher<'a> {
         handle: &FileHandle,
         n: u32,
     ) -> std::result::Result<Vec<u8>, FsDispatchError> {
+        self.check_file_handle(handle, FileAccess::Read)?;
         self.adapter.fs().read(handle, n).map_err(Into::into)
     }
 
@@ -265,6 +316,7 @@ impl<'a> UapiDispatcher<'a> {
         handle: &FileHandle,
         bytes: &[u8],
     ) -> std::result::Result<u32, FsDispatchError> {
+        self.check_file_handle(handle, FileAccess::Write)?;
         self.adapter.fs().write(handle, bytes).map_err(Into::into)
     }
 
@@ -273,10 +325,12 @@ impl<'a> UapiDispatcher<'a> {
         handle: &FileHandle,
         pos: u64,
     ) -> std::result::Result<u64, FsDispatchError> {
+        self.check_file_handle(handle, FileAccess::AnyOpenMode)?;
         self.adapter.fs().seek_set(handle, pos).map_err(Into::into)
     }
 
     pub fn fs_seek_end(&self, handle: &FileHandle) -> std::result::Result<u64, FsDispatchError> {
+        self.check_file_handle(handle, FileAccess::Read)?;
         self.adapter.fs().seek_end(handle).map_err(Into::into)
     }
 
@@ -284,6 +338,7 @@ impl<'a> UapiDispatcher<'a> {
         &self,
         handle: &FileHandle,
     ) -> std::result::Result<FileStat, FsDispatchError> {
+        self.check_file_handle(handle, FileAccess::Read)?;
         self.adapter.fs().stat_handle(handle).map_err(Into::into)
     }
 
@@ -437,16 +492,76 @@ impl<'a> UapiDispatcher<'a> {
     fn check_fs(&self, call: UapiCall) -> std::result::Result<(), FsDispatchError> {
         self.guard.check(&call).map(|_| ()).map_err(map_fs_policy)
     }
-}
 
-fn open_call(path: &str, mode: OpenMode) -> UapiCall {
-    let path = path.to_string();
-    match mode {
-        OpenMode::Read => UapiCall::Fs(FsCall::Read { path }),
-        OpenMode::Write | OpenMode::ReadWrite | OpenMode::Append => {
-            UapiCall::Fs(FsCall::Write { path })
+    fn check_file_handle(
+        &self,
+        handle: &FileHandle,
+        access: FileAccess,
+    ) -> std::result::Result<(), FsDispatchError> {
+        let file = handle.opened_file.as_ref().ok_or_else(|| {
+            FsDispatchError::Policy("file handle is missing its capability metadata".to_string())
+        })?;
+
+        match access {
+            FileAccess::Read => {
+                if !file.mode.allows_read() {
+                    return Err(FsDispatchError::PermissionDenied);
+                }
+                self.check_fs(UapiCall::Fs(FsCall::Read {
+                    path: file.path.clone(),
+                }))
+            }
+            FileAccess::Write => {
+                if !file.mode.allows_write() {
+                    return Err(FsDispatchError::PermissionDenied);
+                }
+                self.check_fs(UapiCall::Fs(FsCall::Write {
+                    path: file.path.clone(),
+                }))
+            }
+            FileAccess::AnyOpenMode => {
+                let call = if file.mode.allows_read() {
+                    FsCall::Read {
+                        path: file.path.clone(),
+                    }
+                } else if file.mode.allows_write() {
+                    FsCall::Write {
+                        path: file.path.clone(),
+                    }
+                } else {
+                    return Err(FsDispatchError::PermissionDenied);
+                };
+                self.check_fs(UapiCall::Fs(call))
+            }
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FileAccess {
+    Read,
+    Write,
+    AnyOpenMode,
+}
+
+fn open_calls(path: &str, mode: OpenMode) -> Vec<UapiCall> {
+    match mode {
+        OpenMode::Read => vec![fs_read_call(path)],
+        OpenMode::Write | OpenMode::Append => vec![fs_write_call(path)],
+        OpenMode::ReadWrite => vec![fs_read_call(path), fs_write_call(path)],
+    }
+}
+
+fn fs_read_call(path: &str) -> UapiCall {
+    UapiCall::Fs(FsCall::Read {
+        path: path.to_string(),
+    })
+}
+
+fn fs_write_call(path: &str) -> UapiCall {
+    UapiCall::Fs(FsCall::Write {
+        path: path.to_string(),
+    })
 }
 
 fn map_dispatch_policy(err: UapiError) -> DispatchError {
@@ -526,6 +641,9 @@ mod tests {
     struct Calls {
         args: usize,
         fs_open: usize,
+        fs_read: usize,
+        fs_stat_handle: usize,
+        fs_write: usize,
         net_fetch: usize,
         stdout: usize,
         sleep: usize,
@@ -560,16 +678,16 @@ mod tests {
 
     impl IoAdapter for RecordingAdapter {
         fn stdin(&self) -> std::result::Result<FileHandle, AdapterError> {
-            Ok(FileHandle { id: 1 })
+            Ok(FileHandle::resource(1))
         }
 
         fn stdout(&self) -> std::result::Result<FileHandle, AdapterError> {
             self.calls.borrow_mut().stdout += 1;
-            Ok(FileHandle { id: 2 })
+            Ok(FileHandle::resource(2))
         }
 
         fn stderr(&self) -> std::result::Result<FileHandle, AdapterError> {
-            Ok(FileHandle { id: 3 })
+            Ok(FileHandle::resource(3))
         }
 
         fn args_raw(&self) -> std::result::Result<String, AdapterError> {
@@ -624,7 +742,7 @@ mod tests {
             _mode: OpenMode,
         ) -> std::result::Result<FileHandle, AdapterError> {
             self.calls.borrow_mut().fs_open += 1;
-            Ok(FileHandle { id: 4 })
+            Ok(FileHandle::resource(4))
         }
 
         fn read(
@@ -632,6 +750,7 @@ mod tests {
             _handle: &FileHandle,
             _n: u32,
         ) -> std::result::Result<Vec<u8>, AdapterError> {
+            self.calls.borrow_mut().fs_read += 1;
             Ok(b"file".to_vec())
         }
 
@@ -640,6 +759,7 @@ mod tests {
             _handle: &FileHandle,
             bytes: &[u8],
         ) -> std::result::Result<u32, AdapterError> {
+            self.calls.borrow_mut().fs_write += 1;
             Ok(bytes.len() as u32)
         }
 
@@ -656,6 +776,7 @@ mod tests {
         }
 
         fn stat_handle(&self, _handle: &FileHandle) -> std::result::Result<FileStat, AdapterError> {
+            self.calls.borrow_mut().fs_stat_handle += 1;
             Ok(FileStat {
                 size: 4,
                 modified_millis: 0,
@@ -798,6 +919,79 @@ mod tests {
             .expect("read grant should pass");
 
         assert_eq!(adapter.calls.borrow().fs_open, 1);
+    }
+
+    #[test]
+    fn fs_read_write_open_requires_both_grants() {
+        let adapter = RecordingAdapter::default();
+        let read_only =
+            SessionPolicy::from_cli_grants(&["fs.read:./notes/**".to_string()]).expect("policy");
+        let guard = UapiGuard::new(read_only);
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+        let err = dispatcher
+            .fs_open("./notes/today.txt", OpenMode::ReadWrite)
+            .expect_err("read-write should need read and write grants");
+
+        assert!(matches!(err, FsDispatchError::PermissionDenied));
+        assert_eq!(adapter.calls.borrow().fs_open, 0);
+
+        let read_write = SessionPolicy::from_cli_grants(&[
+            "fs.read:./notes/**".to_string(),
+            "fs.write:./notes/**".to_string(),
+        ])
+        .expect("policy");
+        let guard = UapiGuard::new(read_write);
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+
+        dispatcher
+            .fs_open("./notes/today.txt", OpenMode::ReadWrite)
+            .expect("read-write grants should pass");
+
+        assert_eq!(adapter.calls.borrow().fs_open, 1);
+    }
+
+    #[test]
+    fn file_handle_read_rechecks_path_grant_before_adapter() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+        let handle = FileHandle::opened_file(44, "./notes/today.txt", OpenMode::Read);
+        let err = dispatcher
+            .fs_read(&handle, 128)
+            .expect_err("handle read should still require fs.read");
+
+        assert!(matches!(err, FsDispatchError::PermissionDenied));
+        assert_eq!(adapter.calls.borrow().fs_read, 0);
+    }
+
+    #[test]
+    fn file_handle_write_rechecks_path_grant_before_adapter() {
+        let adapter = RecordingAdapter::default();
+        let policy =
+            SessionPolicy::from_cli_grants(&["fs.read:./notes/**".to_string()]).expect("policy");
+        let guard = UapiGuard::new(policy);
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+        let handle = FileHandle::opened_file(45, "./notes/today.txt", OpenMode::ReadWrite);
+        let err = dispatcher
+            .fs_write(&handle, b"changed")
+            .expect_err("handle write should still require fs.write");
+
+        assert!(matches!(err, FsDispatchError::PermissionDenied));
+        assert_eq!(adapter.calls.borrow().fs_write, 0);
+    }
+
+    #[test]
+    fn file_handle_stat_rechecks_path_grant_before_adapter() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+        let handle = FileHandle::opened_file(46, "./notes/today.txt", OpenMode::Read);
+        let err = dispatcher
+            .fs_stat_handle(&handle)
+            .expect_err("handle stat should still require fs.read");
+
+        assert!(matches!(err, FsDispatchError::PermissionDenied));
+        assert_eq!(adapter.calls.borrow().fs_stat_handle, 0);
     }
 
     #[test]
