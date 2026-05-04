@@ -1,5 +1,7 @@
 //! Shared network helpers for host adapters.
 
+use std::io::Read;
+
 /// A parsed plain HTTP URL for the current Phase 2 adapter slice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlainHttpUrl {
@@ -277,6 +279,39 @@ pub fn parse_plain_http_response(bytes: &[u8]) -> Result<PlainHttpResponse, Plai
     })
 }
 
+/// Read a full plain HTTP response with a strict byte cap.
+pub fn read_plain_http_response_limited(
+    reader: &mut impl Read,
+    max_bytes: usize,
+) -> Result<Vec<u8>, PlainHttpReadError> {
+    let mut response = Vec::new();
+    let mut chunk = [0; 8192];
+
+    loop {
+        let read = match reader.read(&mut chunk) {
+            Ok(read) => read,
+            Err(err) => {
+                return Err(match err.kind() {
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => {
+                        PlainHttpReadError::Timeout
+                    }
+                    _ => PlainHttpReadError::Io(err),
+                });
+            }
+        };
+
+        if read == 0 {
+            return Ok(response);
+        }
+
+        if response.len() + read > max_bytes {
+            return Err(PlainHttpReadError::BodyTooLarge);
+        }
+
+        response.extend_from_slice(&chunk[..read]);
+    }
+}
+
 fn is_valid_plain_http_header_name(name: &str) -> bool {
     !name.is_empty()
         && name.bytes().all(|byte| {
@@ -388,6 +423,17 @@ pub enum UrlEndpointError {
     UnsupportedScheme,
     #[error("invalid URL")]
     InvalidUrl,
+}
+
+/// Errors returned while reading a full plain HTTP response body.
+#[derive(Debug, thiserror::Error)]
+pub enum PlainHttpReadError {
+    #[error("HTTP read timed out")]
+    Timeout,
+    #[error("HTTP response exceeded byte limit")]
+    BodyTooLarge,
+    #[error("HTTP read failed: {0}")]
+    Io(#[from] std::io::Error),
 }
 
 #[cfg(test)]
@@ -638,5 +684,39 @@ mod tests {
             .unwrap_err(),
             PlainHttpError::InvalidResponse
         );
+    }
+
+    #[test]
+    fn response_reader_enforces_size_limit() {
+        let mut response = std::io::Cursor::new(vec![b'x'; 5]);
+        let err = read_plain_http_response_limited(&mut response, 4)
+            .expect_err("oversized response should be rejected");
+        assert!(matches!(err, PlainHttpReadError::BodyTooLarge));
+    }
+
+    #[test]
+    fn response_reader_allows_exact_size_limit() {
+        let mut response = std::io::Cursor::new(vec![b'x'; 4]);
+        let bytes = read_plain_http_response_limited(&mut response, 4)
+            .expect("exact limit should be accepted");
+        assert_eq!(bytes.len(), 4);
+    }
+
+    #[test]
+    fn response_reader_maps_timeouts() {
+        struct TimeoutReader;
+
+        impl Read for TimeoutReader {
+            fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::WouldBlock,
+                    "timeout",
+                ))
+            }
+        }
+
+        let err = read_plain_http_response_limited(&mut TimeoutReader, 10)
+            .expect_err("would-block should map to timeout");
+        assert!(matches!(err, PlainHttpReadError::Timeout));
     }
 }

@@ -37,8 +37,9 @@ use layer36_adapter_common::locale::{
 };
 #[cfg(feature = "phase2-bindings")]
 use layer36_adapter_common::net::{
-    build_plain_http_request, parse_plain_http_response, PlainHttpError, PlainHttpHeader,
-    PlainHttpMethod, PlainHttpRequest, PlainHttpUrl,
+    build_plain_http_request, parse_plain_http_response, read_plain_http_response_limited,
+    PlainHttpError, PlainHttpHeader, PlainHttpMethod, PlainHttpReadError, PlainHttpRequest,
+    PlainHttpUrl,
 };
 #[cfg(feature = "phase2-bindings")]
 use layer36_adapter_common::path::{FsOperation, LogicalPath, PathError};
@@ -822,7 +823,8 @@ impl NetAdapter for LocalPhase2Adapter {
         }
 
         stream.write_all(&request).map_err(map_net_io_error)?;
-        let response = read_http_response_limited(&mut stream, self.max_http_response_bytes)?;
+        let response = read_plain_http_response_limited(&mut stream, self.max_http_response_bytes)
+            .map_err(map_plain_http_read_error)?;
         let response = parse_plain_http_response(&response).map_err(map_plain_http_error)?;
         Ok(HttpResponse {
             status: response.status,
@@ -880,6 +882,15 @@ fn map_plain_http_error(err: PlainHttpError) -> AdapterError {
         PlainHttpError::HostControlledHeader => {
             AdapterError::Protocol("host-controlled HTTP header".to_string())
         }
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn map_plain_http_read_error(err: PlainHttpReadError) -> AdapterError {
+    match err {
+        PlainHttpReadError::Timeout => AdapterError::Timeout,
+        PlainHttpReadError::BodyTooLarge => AdapterError::BodyTooLarge,
+        PlainHttpReadError::Io(err) => map_io_error(err),
     }
 }
 
@@ -1030,27 +1041,6 @@ fn map_net_io_error(err: std::io::Error) -> AdapterError {
     match err.kind() {
         std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => AdapterError::Timeout,
         _ => map_io_error(err),
-    }
-}
-
-fn read_http_response_limited(
-    reader: &mut impl Read,
-    max_bytes: usize,
-) -> std::result::Result<Vec<u8>, AdapterError> {
-    let mut response = Vec::new();
-    let mut chunk = [0; 8192];
-
-    loop {
-        let read = reader.read(&mut chunk).map_err(map_net_io_error)?;
-        if read == 0 {
-            return Ok(response);
-        }
-
-        if response.len() + read > max_bytes {
-            return Err(AdapterError::BodyTooLarge);
-        }
-
-        response.extend_from_slice(&chunk[..read]);
     }
 }
 
@@ -1441,8 +1431,9 @@ mod tests {
     #[test]
     fn plain_http_response_reader_enforces_size_limit() {
         let mut response = std::io::Cursor::new(vec![b'x'; 5]);
-        let err = read_http_response_limited(&mut response, 4)
+        let err = read_plain_http_response_limited(&mut response, 4)
             .expect_err("oversized response should be rejected");
+        let err = map_plain_http_read_error(err);
 
         assert_eq!(err, AdapterError::BodyTooLarge);
     }
@@ -1450,8 +1441,8 @@ mod tests {
     #[test]
     fn plain_http_response_reader_allows_exact_size_limit() {
         let mut response = std::io::Cursor::new(vec![b'x'; 4]);
-        let bytes =
-            read_http_response_limited(&mut response, 4).expect("exact limit should be accepted");
+        let bytes = read_plain_http_response_limited(&mut response, 4)
+            .expect("exact limit should be accepted");
 
         assert_eq!(bytes.len(), 4);
     }

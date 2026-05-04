@@ -96,6 +96,8 @@ Response parsing now also goes through shared adapter-common code, with strict
 validation for HTTP version, status range, malformed header lines, header count
 limits, and unsafe header values before data reaches runtime-facing response
 types.
+The response read loop is shared too, so timeout mapping and full-response size
+limits use one helper across adapters.
 Shared host parsing now also rejects invalid domain-label forms and invalid
 numeric IPv4 literals so URL and capability-path validation stay aligned.
 The runtime's network capability gate now also uses a shared endpoint parser for
