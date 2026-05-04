@@ -14,7 +14,7 @@ stable front door for the current Phase 2 UAPI draft:
 
 ## Minimal app
 
-```rust
+```rust,ignore
 use layer36::{io::stdio, Guest};
 
 struct Component;
@@ -30,6 +30,16 @@ impl Guest for Component {
 }
 
 layer36::export!(Component);
+```
+
+## Common helpers
+
+```rust,ignore
+let args = layer36::io::args::all();
+let text = layer36::fs::read_to_string("input.txt")?;
+let body = layer36::net::get_text("http://127.0.0.1:8080/data.txt")?;
+let now = layer36::time::now_millis();
+let locale = layer36::locale::current();
 ```
 
 ## Status

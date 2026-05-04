@@ -1696,6 +1696,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-04 | Added the first generated UAPI reference page from Phase 2 WIT, linked it in mdBook, and made hosted/self-hosted CI check it stays current. |
 | 2026-05-04 | Improved the generated UAPI reference with plain summaries, capability notes, Rust SDK examples, WIT doc comments, and a generator test. |
 | 2026-05-04 | Aligned the self-hosted clippy command with hosted CI by checking all targets, after hosted CI caught a generator-test lint. |
+| 2026-05-04 | Polished the Rust SDK surface with crate docs, rustdoc comments, owned argument helpers, sample app cleanup, and a self-hosted SDK doc build check. |
 
 ---
 

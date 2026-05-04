@@ -11,8 +11,7 @@ struct Component;
 
 impl Guest for Component {
     fn run() -> i32 {
-        let raw_args = args::raw();
-        let url = match args::first_raw(&raw_args) {
+        let url = match args::first() {
             Some(url) => url,
             None => {
                 let _ = stdio::eprintln("usage: layer36-curl <url>");
@@ -22,7 +21,7 @@ impl Guest for Component {
 
         let stderr = stdio::stderr();
 
-        let body = match net::get(&url) {
+        let body = match net::get(url.as_str()) {
             Ok(body) => body,
             Err(NetError::PermissionDenied) => {
                 let _ = stderr.write_line("layer36-curl: permission denied");

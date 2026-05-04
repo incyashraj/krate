@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Rust SDK API polish: crate-level docs, rustdoc comments for the helper layer, owned argument helpers, sample app usage of those helpers, and a self-hosted SDK doc build check.
 - Human-facing generated UAPI reference context: interface summaries, capability notes, Rust SDK examples, and WIT doc comments.
 - Generated Phase 2 UAPI reference seed from `wit/layer36/phase2`, linked in mdBook and checked in hosted and self-hosted CI.
 - Rust guest SDK package preparation: crate README, crates.io-facing metadata, package include list, local package proof, and CI/self-hosted package dry-runs.

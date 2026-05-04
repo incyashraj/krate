@@ -1,8 +1,5 @@
-//! Rust guest SDK for Layer36 Phase 2 components.
-//!
-//! This crate is intentionally thin while UAPI v0.1 is still moving. It wraps
-//! the generated WIT bindings with stable module names that sample apps can use
-//! today, then gives us one place to improve ergonomics later.
+#![doc = include_str!("../README.md")]
+#![warn(rustdoc::broken_intra_doc_links)]
 
 #[allow(warnings)]
 #[doc(hidden)]
@@ -38,11 +35,28 @@ macro_rules! export {
     };
 }
 
+/// Standard input, output, arguments, and structured logs.
 pub mod io {
     pub use crate::bindings::layer36::io::types::IoError;
     pub use crate::Guest;
 
+    /// App arguments passed to `layer36 run app.wasm -- ...`.
     pub mod args {
+        /// Return all app arguments as owned strings.
+        ///
+        /// This is the easiest helper for normal apps. It parses the current
+        /// Phase 2 raw argument format and drops empty entries.
+        #[inline]
+        pub fn all() -> Vec<String> {
+            split_raw(&raw()).map(str::to_string).collect()
+        }
+
+        /// Return the first app argument, if one was passed.
+        #[inline]
+        pub fn first() -> Option<String> {
+            first_raw(&raw()).map(str::to_string)
+        }
+
         /// Return raw app arguments passed after `--`.
         ///
         /// The current Phase 2 draft carries arguments as newline-separated
@@ -53,23 +67,33 @@ pub mod io {
             crate::bindings::layer36::io::args::raw()
         }
 
+        /// Split a raw Phase 2 argument string into non-empty arguments.
+        ///
+        /// This accepts a borrowed raw string so tests and parsers can avoid an
+        /// extra host call.
         #[inline]
         pub fn split_raw(raw: &str) -> impl Iterator<Item = &str> {
             raw.split('\n').filter(|arg| !arg.is_empty())
         }
 
+        /// Return the first argument from a borrowed raw argument string.
         #[inline]
         pub fn first_raw(raw: &str) -> Option<&str> {
             split_raw(raw).next()
         }
     }
 
+    /// Resource stream helpers for text and byte I/O.
     pub mod streams {
         pub use crate::bindings::layer36::io::streams::{InputStream, OutputStream};
         pub use crate::bindings::layer36::io::types::IoError;
 
+        /// Convenience methods for generated Layer36 input streams.
         pub trait InputStreamExt {
+            /// Read until EOF and return every byte.
             fn read_to_end(&self) -> Result<Vec<u8>, IoError>;
+
+            /// Read until EOF and decode the bytes as UTF-8 text.
             fn read_text(&self) -> Result<String, IoError>;
         }
 
@@ -93,9 +117,15 @@ pub mod io {
             }
         }
 
+        /// Convenience methods for generated Layer36 output streams.
         pub trait OutputStreamExt {
+            /// Write the complete byte slice.
             fn write_bytes(&self, bytes: &[u8]) -> Result<(), IoError>;
+
+            /// Write text without adding a newline.
             fn write_text(&self, value: &str) -> Result<(), IoError>;
+
+            /// Write text followed by `\n`.
             fn write_line(&self, value: &str) -> Result<(), IoError>;
         }
 
@@ -115,83 +145,111 @@ pub mod io {
         }
     }
 
+    /// Host standard streams.
     pub mod stdio {
         pub use crate::bindings::layer36::io::stdio::{stderr, stdin, stdout};
 
         use super::streams::OutputStreamExt;
         use super::IoError;
 
+        /// Write text to stdout.
         pub fn print(value: &str) -> Result<(), IoError> {
             stdout().write_text(value)
         }
 
+        /// Write text plus a newline to stdout.
         pub fn println(value: &str) -> Result<(), IoError> {
             stdout().write_line(value)
         }
 
+        /// Write text to stderr.
         pub fn eprint(value: &str) -> Result<(), IoError> {
             stderr().write_text(value)
         }
 
+        /// Write text plus a newline to stderr.
         pub fn eprintln(value: &str) -> Result<(), IoError> {
             stderr().write_line(value)
         }
     }
 
+    /// Structured log records emitted through the runtime.
     pub mod log {
         pub use crate::bindings::layer36::io::log::{emit, Field};
         pub use crate::bindings::layer36::io::types::LogLevel;
     }
 }
 
+/// Capability-checked file access.
 pub mod fs {
     pub use crate::bindings::layer36::fs::files::File;
     pub use crate::bindings::layer36::fs::types::{FileStat, FsError, OpenMode};
 
+    /// Open a file through the Layer36 filesystem UAPI.
+    ///
+    /// The runtime checks the active UCap session before the host filesystem is
+    /// touched.
     pub fn open(path: &str, mode: OpenMode) -> Result<File, FsError> {
         crate::bindings::layer36::fs::files::open(path, mode)
     }
 
+    /// Read a whole file as bytes.
     pub fn read(path: &str) -> Result<Vec<u8>, FsError> {
         open(path, OpenMode::Read)?.read_to_end()
     }
 
+    /// Read a whole file as UTF-8 text.
     pub fn read_to_string(path: &str) -> Result<String, FsError> {
         open(path, OpenMode::Read)?.read_text()
     }
 
+    /// Replace or create a file with the supplied bytes.
     pub fn write(path: &str, bytes: &[u8]) -> Result<(), FsError> {
         open(path, OpenMode::Write)?.write_all(bytes)
     }
 
+    /// Return metadata for a path.
     pub fn stat(path: &str) -> Result<FileStat, FsError> {
         crate::bindings::layer36::fs::files::stat(path)
     }
 
+    /// List a directory.
     pub fn list(path: &str) -> Result<Vec<String>, FsError> {
         crate::bindings::layer36::fs::files::list(path)
     }
 
+    /// Remove a file.
     pub fn remove_file(path: &str) -> Result<(), FsError> {
         crate::bindings::layer36::fs::files::remove_file(path)
     }
 
+    /// Remove a directory.
     pub fn remove_dir(path: &str) -> Result<(), FsError> {
         crate::bindings::layer36::fs::files::remove_dir(path)
     }
 
+    /// Create a directory.
     pub fn mkdir(path: &str) -> Result<(), FsError> {
         crate::bindings::layer36::fs::files::mkdir(path)
     }
 
+    /// Rename or move a path.
     pub fn rename(from: &str, to: &str) -> Result<(), FsError> {
         crate::bindings::layer36::fs::files::rename(from, to)
     }
 
+    /// Convenience methods for generated Layer36 file resources.
     pub trait FileExt {
+        /// Read the file from the current cursor position until EOF.
         fn read_to_end(&self) -> Result<Vec<u8>, FsError>;
+
+        /// Read the file from the current cursor position as UTF-8 text.
         fn read_text(&self) -> Result<String, FsError>;
+
+        /// Keep writing until every byte has been accepted by the host.
         fn write_all(&self, bytes: &[u8]) -> Result<(), FsError>;
+
+        /// Write text without adding a newline.
         fn write_text(&self, value: &str) -> Result<(), FsError>;
     }
 
@@ -234,78 +292,98 @@ pub mod fs {
     }
 }
 
+/// Capability-checked HTTP client access.
 pub mod net {
     pub use crate::bindings::layer36::net::types::{
         Header, HttpMethod, NetError, Request, Response,
     };
 
+    /// Fetch a URL with a simple HTTP GET and return the response body.
     pub fn get(url: &str) -> Result<Vec<u8>, NetError> {
         crate::bindings::layer36::net::http_client::get(url)
     }
 
+    /// Fetch a URL with HTTP GET and decode the response body as UTF-8 text.
     pub fn get_text(url: &str) -> Result<String, NetError> {
         String::from_utf8(get(url)?)
             .map_err(|_| NetError::Other("response body is not valid UTF-8".to_string()))
     }
 
+    /// Send a lower-level HTTP request record.
     pub fn fetch(req: Request) -> Result<Response, NetError> {
         crate::bindings::layer36::net::http_client::fetch(&req)
     }
 }
 
+/// Wall-clock, monotonic clock, and sleep helpers.
 pub mod time {
+    /// Return the current wall-clock time in milliseconds since Unix epoch.
     pub fn now_millis() -> u64 {
         clock::now_millis()
     }
 
+    /// Return a monotonic timestamp in nanoseconds.
     pub fn monotonic_nanos() -> u64 {
         clock::monotonic_nanos()
     }
 
+    /// Sleep the current component for at least the requested milliseconds.
     pub fn sleep_millis(millis: u32) {
         sleep::sleep_millis(millis)
     }
 
+    /// Clock functions from `layer36:time/clock`.
     pub mod clock {
+        /// Return the current wall-clock time in milliseconds since Unix epoch.
         pub fn now_millis() -> u64 {
             crate::bindings::layer36::time::clock::now_millis()
         }
 
+        /// Return a monotonic timestamp in nanoseconds.
         pub fn monotonic_nanos() -> u64 {
             crate::bindings::layer36::time::clock::monotonic_nanos()
         }
     }
 
+    /// Sleep functions from `layer36:time/sleep`.
     pub mod sleep {
+        /// Sleep the current component for at least the requested milliseconds.
         pub fn sleep_millis(millis: u32) {
             crate::bindings::layer36::time::sleep::sleep_millis(millis)
         }
     }
 }
 
+/// Locale, timezone, date, and number formatting helpers.
 pub mod locale {
     pub use crate::bindings::layer36::locale::types::{DateStyle, LocaleId, NumberStyle};
 
+    /// Return the user's current locale.
     pub fn current() -> LocaleId {
         info::current()
     }
 
+    /// Return the user's current timezone identifier.
     pub fn timezone() -> String {
         info::timezone()
     }
 
+    /// Format a millisecond timestamp for a locale and timezone.
     pub fn format_date(millis: u64, tz: &str, style: DateStyle, loc: &LocaleId) -> String {
         format::format_date(millis, tz, style, loc)
     }
 
+    /// Format a number for a locale.
     pub fn format_number(value: f64, style: NumberStyle, loc: &LocaleId) -> String {
         format::format_number(value, style, loc)
     }
 
+    /// Locale and timezone discovery.
     pub mod info {
         pub use crate::bindings::layer36::locale::info::{current, timezone};
     }
 
+    /// Date and number formatting.
     pub mod format {
         pub use crate::bindings::layer36::locale::format::{format_date, format_number};
         pub use crate::bindings::layer36::locale::types::{DateStyle, LocaleId, NumberStyle};
@@ -333,5 +411,7 @@ mod tests {
             io::args::split_raw("one\n\nthree\n").collect::<Vec<_>>(),
             vec!["one", "three"]
         );
+
+        assert_eq!(io::args::first_raw("one\nthree\n"), Some("one"));
     }
 }

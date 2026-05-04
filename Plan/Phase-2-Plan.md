@@ -2037,7 +2037,7 @@ The dispatcher scaffold is now in the runtime too. `crates/runtime/src/uapi_disp
 
 The Rust host-binding checkpoint is in place behind the `phase2-bindings` runtime feature. It confirms the Phase 2 `cli` world generates through Wasmtime, that `run` is exposed as a host-side `i32` result, and that generated names such as `OpenMode::Read` and `HttpMethod::Get` are usable before we wire dispatch.
 
-The first Rust guest SDK crate exists now too. `crates/bindings-rust` builds as package `layer36`, wraps the generated guest imports behind simple modules like `layer36::io`, `layer36::fs`, `layer36::net`, `layer36::time`, and `layer36::locale`, and provides the `Guest` trait plus `layer36::export!`. The Rust sample apps now use that SDK facade instead of calling app-local generated binding modules directly. The SDK also has the first ergonomic helper layer: inline app-argument helpers, stdout/stderr text helpers, file read/write helpers, HTTP text helpers, top-level time and locale shortcuts, a crate README, publish-facing package metadata, a package dry-run in CI, and a short public Rust SDK guide.
+The first Rust guest SDK crate exists now too. `crates/bindings-rust` builds as package `layer36`, wraps the generated guest imports behind simple modules like `layer36::io`, `layer36::fs`, `layer36::net`, `layer36::time`, and `layer36::locale`, and provides the `Guest` trait plus `layer36::export!`. The Rust sample apps now use that SDK facade instead of calling app-local generated binding modules directly. The SDK also has the first ergonomic helper layer: owned app-argument helpers, stdout/stderr text helpers, file read/write helpers, HTTP text helpers, top-level time and locale shortcuts, a crate README, crate-level docs, rustdoc comments for public helpers, publish-facing package metadata, a package dry-run in CI, a self-hosted doc build check, and a short public Rust SDK guide.
 
 The first generated UAPI reference exists too. `crates/tools` parses
 `wit/layer36/phase2` with `wit-parser`, writes
@@ -2081,7 +2081,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 |---|-----------|--------|
 | 1 | All five UAPI modules (`io`, `fs`, `net`, `time`, `locale`) frozen as stable v0.1 WIT | Drafted, not frozen |
 | 2 | Each module implemented in Linux, macOS, Windows host adapters; CI green on all | Not done |
-| 3 | Rust bindings generated and usable (`cargo add layer36 && use layer36::fs` works) | Started: host-side Wasmtime binding checkpoint, generated type bridge, import host trait wiring, guest SDK crate, sample-app migration, first helper layer, crate README, package metadata, package dry-run, and Rust SDK guide exist; crates.io publication and broader reference docs remain |
+| 3 | Rust bindings generated and usable (`cargo add layer36 && use layer36::fs` works) | Started: host-side Wasmtime binding checkpoint, generated type bridge, import host trait wiring, guest SDK crate, sample-app migration, helper layer, crate README, crate docs, rustdoc comments, package metadata, package dry-run, SDK doc build check, and Rust SDK guide exist; crates.io publication and external smoke remain |
 | 4 | Go (TinyGo) bindings generated and usable; sample builds and runs | Not done |
 | 5 | TypeScript (jco) bindings generated and usable; sample builds and runs | Not done |
 | 6 | `layer36-curl <url>` works identically on all three hosts | Started: Rust sample builds locally and has granted/denied localhost HTTP tests; full cross-host run remains |
@@ -2130,6 +2130,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P2-APP-01A | First `layer36-curl` sample path | 2026-05-04 | Added `apps/layer36-curl`, a Rust Phase 2 component that reads a URL from app args, fetches through `net.http-client.get`, writes stdout, and fails cleanly without `net.connect`. |
 | P2-BIND-01A | Rust SDK crate skeleton | 2026-05-04 | Added `crates/bindings-rust` as package `layer36`, with first wrappers over generated guest bindings and the Rust sample apps migrated to the SDK facade. |
 | P2-BIND-01B | Rust SDK helper layer and guide | 2026-05-04 | Added app-facing helpers for args, stream text output, file read/write, HTTP text, time, and locale; documented them in `docs/book/src/uapi/rust-sdk.md`; verified samples still import only Layer36 UAPI. |
+| P2-BIND-01C | Rust SDK API docs and sample cleanup | 2026-05-04 | Added crate-level SDK docs, rustdoc comments for public helpers, owned argument helpers, sample usage of those helpers, and a self-hosted `cargo doc -p layer36 --no-deps --offline` check. |
 | P2-DOC-02A | Generated UAPI reference seed | 2026-05-04 | Added `layer36-tools` reference generator using `wit-parser`; generated `docs/book/src/reference/uapi/index.md`; linked it in mdBook; hosted and self-hosted CI check the generated page is current. |
 | P2-DOC-02B | Generated UAPI reference context | 2026-05-04 | The generated reference now includes interface summaries, capability notes, Rust SDK examples, WIT doc comments, and a generator test that checks those sections stay present. |
 
@@ -2140,7 +2141,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
 | P2-APP-01C | Add cross-host fixture assertions and language sample variants | 2026-05-04 | Rust versions of `layer36-clock`, `layer36-cat`, and `layer36-curl` exist locally; full cross-host fixture assertions and language-binding variants still remain. |
-| P2-BIND-01C | Prepare Rust SDK packaging and reference docs | 2026-05-04 | Added crate README, crates.io-facing metadata, package include list, local `cargo package -p layer36 --offline` proof, and CI/self-hosted package dry-runs. Richer Rust SDK API docs still remain. |
+| P2-BIND-01D | Rust SDK publish readiness and external smoke | 2026-05-04 | Package shape and API docs are ready locally; crates.io publication and an external fresh-project smoke test still remain. |
 | P2-DOC-02C | Improve generated UAPI reference depth | 2026-05-04 | The page now has summaries, capability notes, and examples; richer per-function explanations and capability derivation directly from manifests/policy remain. |
 
 ---

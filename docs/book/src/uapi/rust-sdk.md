@@ -75,8 +75,16 @@ let raw = layer36::io::args::raw();
 let first = layer36::io::args::first_raw(&raw);
 ```
 
-The current draft stores arguments as newline separated text. Use `raw` when
-you need exact control, and use `first_raw` or `split_raw` for simple examples.
+For normal apps, use the owned helpers:
+
+```rust
+let args = layer36::io::args::all();
+let first = layer36::io::args::first();
+```
+
+The current draft stores arguments as newline separated text under the hood.
+Use `raw` when you need exact control, `split_raw` when you already have the raw
+string, and `all` or `first` for app code.
 
 The small argument helpers are marked inline on purpose. That keeps guest
 components from pulling in WASI environment imports. Layer36 apps should depend
@@ -134,6 +142,7 @@ HTTPS, redirects, streaming bodies, and response limits are still Phase 2 work.
 This is not a finished SDK yet.
 
 - It is package-checked, but not published to crates.io.
+- Its public helper layer now has rustdoc comments and a local doc build check.
 - It wraps the generated Phase 2 guest bindings, which are still draft.
 - It has enough helpers for the Rust samples, not a full developer experience.
 - Go and TypeScript SDK work is still pending.

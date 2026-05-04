@@ -11,7 +11,7 @@ struct Component;
 
 impl Guest for Component {
     fn run() -> i32 {
-        let app_args = args::raw();
+        let app_args = args::all();
         let stderr = stdio::stderr();
 
         if app_args.is_empty() {
@@ -21,21 +21,21 @@ impl Guest for Component {
         }
 
         let stdout = stdio::stdout();
-        for path in args::split_raw(&app_args) {
-            let file = match fs::open(path, OpenMode::Read) {
+        for path in app_args {
+            let file = match fs::open(path.as_str(), OpenMode::Read) {
                 Ok(file) => file,
                 Err(FsError::PermissionDenied) => {
-                    let _ = write_error(&stderr, "permission denied", &path);
+                    let _ = write_error(&stderr, "permission denied", path.as_str());
                     let _ = stderr.flush();
                     return 5;
                 }
                 Err(FsError::NotFound) => {
-                    let _ = write_error(&stderr, "not found", &path);
+                    let _ = write_error(&stderr, "not found", path.as_str());
                     let _ = stderr.flush();
                     return 20;
                 }
                 Err(_) => {
-                    let _ = write_error(&stderr, "could not open", &path);
+                    let _ = write_error(&stderr, "could not open", path.as_str());
                     let _ = stderr.flush();
                     return 21;
                 }
@@ -45,7 +45,7 @@ impl Guest for Component {
                 let bytes = match file.read(8192) {
                     Ok(bytes) => bytes,
                     Err(_) => {
-                        let _ = write_error(&stderr, "could not read", &path);
+                        let _ = write_error(&stderr, "could not read", path.as_str());
                         let _ = stderr.flush();
                         return 22;
                     }

@@ -73,6 +73,9 @@ jobs:
       - name: Package Rust SDK
         run: cargo package -p layer36 --offline
 
+      - name: Check Rust SDK docs
+        run: cargo doc -p layer36 --no-deps --offline
+
       - name: Check generated UAPI reference
         run: |
           LAYER36_OFFLINE=1 sh scripts/generate-uapi-reference.sh
