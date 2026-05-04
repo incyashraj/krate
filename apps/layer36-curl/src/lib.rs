@@ -31,6 +31,21 @@ impl Guest for Component {
                 let _ = stderr.flush();
                 return 20;
             }
+            Err(NetError::BodyTooLarge) => {
+                let _ = stderr.write_line("layer36-curl: response too large");
+                let _ = stderr.flush();
+                return 21;
+            }
+            Err(NetError::Timeout) => {
+                let _ = stderr.write_line("layer36-curl: request timed out");
+                let _ = stderr.flush();
+                return 21;
+            }
+            Err(NetError::Protocol(_)) => {
+                let _ = stderr.write_line("layer36-curl: protocol error");
+                let _ = stderr.flush();
+                return 21;
+            }
             Err(_) => {
                 let _ = stderr.write_line("layer36-curl: fetch failed");
                 let _ = stderr.flush();

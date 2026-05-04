@@ -303,6 +303,8 @@ layer36 run --grant net.connect:127.0.0.1:8080 layer36_curl.wasm -- http://127.0
 The important part is the grant. Layer36 checks `net.connect:HOST:PORT` before
 the adapter opens a socket. If the grant is missing, the app gets permission
 denied, exits with code `5`, and the host network is never touched.
+If the response is too large, times out, or cannot be parsed as HTTP, the sample
+prints a specific error instead of a generic fetch failure.
 
 ## Rust Binding Checkpoint
 

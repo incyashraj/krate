@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- `layer36-curl` now prints clearer messages for oversized, timed-out, and malformed HTTP responses.
 - Phase 2 HTTP timeout and protocol failures now map to WIT `net-error.timeout` and `net-error.protocol`.
 - Phase 2 HTTP oversized-response errors now map to the WIT `net-error.body-too-large` variant instead of a generic connection failure.
 - `layer36 run --max-http-response-bytes` to tune the Phase 2 plain HTTP adapter response-size guard per run.

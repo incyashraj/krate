@@ -793,7 +793,7 @@ fn configured_layer36_curl_component_rejects_response_above_cli_limit() {
     assert_eq!(output.status.code(), Some(21));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-curl: fetch failed"));
+    assert!(stderr.contains("layer36-curl: response too large"));
 }
 
 #[test]
