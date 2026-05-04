@@ -1593,7 +1593,7 @@ This section is the living status board for all of Layer36. Update it at every p
 |---|-------|--------|---------|-----------|-------|
 | 0 | Foundation | Mostly done | 2026-05-01 | pending external gates | Renamed from OneOS to Layer36 on 2026-05-02; local scaffold, docs, Pages, labels/issues, and CI are green. |
 | 1 | POC Runtime | Engineering done | 2026-05-02 | pending formal exit gates | Runtime, CLI, WIT host imports, shared hello-world fixture, CI harness, fuel/memory limits, release packaging, quickstart, threat model, benchmarks, ADRs, retrospective, and `v0.1.0-rc1` are in place. |
-| 2 | UAPI v0.1 (CLI) | Started | 2026-05-03 | pending | Draft WIT package, manifest/policy checks, manifest entry/run-file match check, terminal grant prompt, effective capability dump, runtime guard, host-binding checkpoint, dispatcher scaffold, file-handle capability rechecks, generated type bridge, generated host wiring, resource table, initial Phase 2 `layer36 run` linker path, smoke happy/denied proofs, first Rust SDK crate and helper layer, `layer36-clock`, first `layer36-cat`, first `layer36-curl`, permission-denied exit-code alignment, Rust SDK docs, manifest-derived UAPI reference capability tables, first UAPI dispatch and component startup benchmarks, and budget-aware CI mode are in place. |
+| 2 | UAPI v0.1 (CLI) | Started | 2026-05-03 | pending | Draft WIT package, manifest/policy checks, manifest entry/run-file match check, terminal grant prompt, effective capability dump, runtime guard, host-binding checkpoint, dispatcher scaffold, file-handle capability rechecks, generated type bridge, generated host wiring, resource table, initial Phase 2 `layer36 run` linker path, smoke happy/denied proofs, first Rust SDK crate and helper layer, `layer36-clock`, first `layer36-cat`, first `layer36-curl`, pure Layer36 imports for the Rust cat/curl samples, permission-denied exit-code alignment, Rust SDK docs, manifest-derived UAPI reference capability tables, first UAPI dispatch and component startup benchmarks, and budget-aware CI mode are in place. |
 | 3 | UI + Graphics | Not started | pending | pending | |
 | 4 | Mobile Hosts | Not started | pending | pending | |
 | 5 | Developer SDK | Not started | pending | pending | |
@@ -1705,6 +1705,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-04 | Added filesystem denial-before-adapter coverage for Phase 2 `stat`, `list`, `remove`, `mkdir`, and `rename` dispatcher paths. |
 | 2026-05-04 | Added Phase 2 UAPI dispatch microbenchmarks and published first local sub-microsecond readings for IO, filesystem, denial, and network grant paths. |
 | 2026-05-04 | Extended the startup benchmark to run real Phase 2 components. The first local read puts the Phase 2 smoke app cold runtime path around 3.47 ms on Apple M4; full CLI and cross-host timing still remain. |
+| 2026-05-04 | Cleaned up `layer36-cat` and `layer36-curl` so their rebuilt components import only Layer36 UAPI, not accidental WASI Preview 2 helpers. Explicit fixture-backed CLI tests now pass locally for hello, smoke, clock, cat, and curl. |
 
 ---
 

@@ -1,8 +1,5 @@
 use layer36::{
-    io::{
-        args, stdio,
-        streams::OutputStreamExt,
-    },
+    io::{args, stdio, streams::OutputStreamExt},
     net::{self, NetError},
     Guest,
 };
@@ -11,7 +8,8 @@ struct Component;
 
 impl Guest for Component {
     fn run() -> i32 {
-        let url = match args::first() {
+        let raw_args = args::raw();
+        let url = match raw_args.split('\n').find(|arg| !arg.is_empty()) {
             Some(url) => url,
             None => {
                 let _ = stdio::eprintln("usage: layer36-curl <url>");
@@ -21,7 +19,7 @@ impl Guest for Component {
 
         let stderr = stdio::stderr();
 
-        let body = match net::get(url.as_str()) {
+        let body = match net::get(url) {
             Ok(body) => body,
             Err(NetError::PermissionDenied) => {
                 let _ = stderr.write_line("layer36-curl: permission denied");
