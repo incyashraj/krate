@@ -66,6 +66,10 @@ enum Command {
         #[arg(long, value_name = "FILE")]
         log_grants: Option<PathBuf>,
 
+        /// Output format used with --log-grants.
+        #[arg(long, value_enum, default_value_t = GrantLogFormat::Text)]
+        log_grants_format: GrantLogFormat,
+
         /// Fixed wall-clock time in milliseconds since Unix epoch. Intended for deterministic tests.
         #[arg(long, hide = true)]
         test_time: Option<u64>,
@@ -149,6 +153,12 @@ enum OutputFormat {
     Json,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum GrantLogFormat {
+    Text,
+    Jsonl,
+}
+
 fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -182,6 +192,7 @@ fn run() -> Result<u8> {
             dump_caps,
             dump_caps_format,
             log_grants,
+            log_grants_format,
             test_time,
             app_args,
         } => run_component(RunRequest {
@@ -195,6 +206,7 @@ fn run() -> Result<u8> {
             dump_caps,
             dump_caps_format,
             log_grants,
+            log_grants_format,
             test_time_millis: test_time,
             app_args,
         }),
@@ -239,6 +251,7 @@ struct RunRequest {
     dump_caps: bool,
     dump_caps_format: OutputFormat,
     log_grants: Option<PathBuf>,
+    log_grants_format: GrantLogFormat,
     test_time_millis: Option<u64>,
     app_args: Vec<String>,
 }
@@ -291,7 +304,13 @@ fn run_component(request: RunRequest) -> Result<u8> {
     }
 
     if let Some(log_path) = &request.log_grants {
-        write_grant_log(log_path, &request.file, manifest, &policy)?;
+        write_grant_log(
+            log_path,
+            &request.file,
+            manifest,
+            &policy,
+            request.log_grants_format,
+        )?;
     }
 
     if request.dump_caps {
@@ -456,12 +475,26 @@ fn write_grant_log(
     wasm_file: &Path,
     manifest: Option<&Manifest>,
     policy: &SessionPolicy,
+    format: GrantLogFormat,
 ) -> Result<()> {
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
         .with_context(|| format!("failed to open grant log {}", path.display()))?;
+
+    if format == GrantLogFormat::Jsonl {
+        let record = GrantLogRecord {
+            format_version: 1,
+            event: "layer36.grants",
+            wasm: wasm_file.display().to_string(),
+            app: manifest.map(RunCapsApp::from_manifest),
+            capabilities: policy.grants().iter().map(ToString::to_string).collect(),
+        };
+        serde_json::to_writer(&mut file, &record)?;
+        writeln!(file)?;
+        return Ok(());
+    }
 
     writeln!(file, "Layer36 grant log")?;
     writeln!(file, "wasm             {}", wasm_file.display())?;
@@ -479,6 +512,15 @@ fn write_grant_log(
     writeln!(file)?;
 
     Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct GrantLogRecord {
+    format_version: u8,
+    event: &'static str,
+    wasm: String,
+    app: Option<RunCapsApp>,
+    capabilities: Vec<String>,
 }
 
 struct LoadedManifest {

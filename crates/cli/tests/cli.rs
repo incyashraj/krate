@@ -1097,6 +1097,70 @@ fn run_log_grants_records_effective_session_policy() {
 }
 
 #[test]
+fn run_log_grants_jsonl_records_effective_session_policy() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let wasm_path = dir.path().join("app.wasm");
+    let manifest_path = dir.path().join("manifest.toml");
+    let log_path = dir.path().join("grants.jsonl");
+    std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
+    std::fs::write(
+        &manifest_path,
+        r#"
+            [app]
+            id = "com.example.audit"
+            name = "Audit"
+            version = "1.0.0"
+            entry = "app.wasm"
+            world = "layer36:app/cli@0.1.0"
+
+            [[capabilities]]
+            cap = "io.stdout"
+            rationale = "Print output"
+            required = true
+
+            [[capabilities]]
+            cap = "fs.read:./data/**"
+            rationale = "Read data"
+            required = true
+        "#,
+    )
+    .expect("write manifest");
+
+    let output = layer36()
+        .args([
+            "run",
+            "--auto-grant",
+            "--dump-caps",
+            "--manifest",
+            manifest_path.to_str().expect("manifest path"),
+            "--log-grants",
+            log_path.to_str().expect("log path"),
+            "--log-grants-format",
+            "jsonl",
+        ])
+        .arg(&wasm_path)
+        .output()
+        .expect("run dump caps with grant jsonl log");
+
+    assert!(
+        output.status.success(),
+        "grant jsonl log run failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let log = std::fs::read_to_string(&log_path).expect("read grant log");
+    let lines = log.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].contains(r#""format_version":1"#));
+    assert!(lines[0].contains(r#""event":"layer36.grants""#));
+    assert!(lines[0].contains(r#""id":"com.example.audit""#));
+    assert!(lines[0].contains(r#""name":"Audit""#));
+    assert!(lines[0].contains(r#""io.stdout""#));
+    assert!(lines[0].contains(r#""fs.read:./data/**""#));
+}
+
+#[test]
 fn run_with_manifest_auto_grant_reaches_runtime() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let wasm_path = dir.path().join("app.wasm");

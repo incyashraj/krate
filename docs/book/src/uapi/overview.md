@@ -176,6 +176,17 @@ cargo run -p layer36-cli -- run \
 
 This appends the app identity and effective session grants to a text log. Full
 signed audit records are later work; this is the Phase 2 developer-facing proof.
+Use `--log-grants-format jsonl` when a script needs one structured audit record
+per line:
+
+```bash
+cargo run -p layer36-cli -- run \
+  --manifest manifest.toml \
+  --auto-grant \
+  --log-grants layer36-grants.jsonl \
+  --log-grants-format jsonl \
+  app.wasm
+```
 
 The runtime now also has the next piece: a UAPI guard. It is small, but it is
 the path every future adapter should use before it touches the host OS.

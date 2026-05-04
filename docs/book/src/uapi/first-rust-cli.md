@@ -157,6 +157,12 @@ If you want a local record of the grants used for a run, add:
 --log-grants layer36-grants.log
 ```
 
+For scripts, use JSON Lines. Layer36 writes one audit record per line:
+
+```bash
+--log-grants layer36-grants.jsonl --log-grants-format jsonl
+```
+
 If you want a script-readable preview before the component starts, use:
 
 ```bash
