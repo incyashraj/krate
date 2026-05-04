@@ -34,6 +34,7 @@ pub struct OpenedFile {
 pub struct FileHandle {
     pub id: u64,
     pub opened_file: Option<OpenedFile>,
+    pub stdio_stream: Option<StdioStream>,
 }
 
 impl FileHandle {
@@ -41,6 +42,7 @@ impl FileHandle {
         Self {
             id,
             opened_file: None,
+            stdio_stream: None,
         }
     }
 
@@ -51,6 +53,7 @@ impl FileHandle {
                 path: path.into(),
                 mode,
             }),
+            stdio_stream: None,
         }
     }
 
@@ -61,6 +64,19 @@ impl FileHandle {
         });
         self
     }
+
+    pub fn stdio(id: u64, stream: StdioStream) -> Self {
+        Self {
+            id,
+            opened_file: None,
+            stdio_stream: Some(stream),
+        }
+    }
+
+    fn with_stdio_stream(mut self, stream: StdioStream) -> Self {
+        self.stdio_stream = Some(stream);
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +84,13 @@ pub struct FileStat {
     pub size: u64,
     pub modified_millis: u64,
     pub is_dir: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StdioStream {
+    Stdin,
+    Stdout,
+    Stderr,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -270,17 +293,29 @@ impl<'a> UapiDispatcher<'a> {
 
     pub fn stdin(&self) -> DispatchResult<FileHandle> {
         self.check(&UapiCall::Io(IoCall::Stdin))?;
-        self.adapter.io().stdin().map_err(Into::into)
+        self.adapter
+            .io()
+            .stdin()
+            .map(|handle| handle.with_stdio_stream(StdioStream::Stdin))
+            .map_err(Into::into)
     }
 
     pub fn stdout(&self) -> DispatchResult<FileHandle> {
         self.check(&UapiCall::Io(IoCall::Stdout))?;
-        self.adapter.io().stdout().map_err(Into::into)
+        self.adapter
+            .io()
+            .stdout()
+            .map(|handle| handle.with_stdio_stream(StdioStream::Stdout))
+            .map_err(Into::into)
     }
 
     pub fn stderr(&self) -> DispatchResult<FileHandle> {
         self.check(&UapiCall::Io(IoCall::Stderr))?;
-        self.adapter.io().stderr().map_err(Into::into)
+        self.adapter
+            .io()
+            .stderr()
+            .map(|handle| handle.with_stdio_stream(StdioStream::Stderr))
+            .map_err(Into::into)
     }
 
     pub fn args_raw(&self) -> DispatchResult<String> {
@@ -394,10 +429,12 @@ impl<'a> UapiDispatcher<'a> {
     }
 
     pub fn read_stream(&self, handle: &FileHandle, n: u32) -> DispatchResult<Vec<u8>> {
+        self.check_stream_handle(handle, StreamAccess::Read)?;
         self.adapter.io().read_stream(handle, n).map_err(Into::into)
     }
 
     pub fn read_stream_to_string(&self, handle: &FileHandle) -> DispatchResult<String> {
+        self.check_stream_handle(handle, StreamAccess::Read)?;
         self.adapter
             .io()
             .read_stream_to_string(handle)
@@ -405,6 +442,7 @@ impl<'a> UapiDispatcher<'a> {
     }
 
     pub fn write_stream(&self, handle: &FileHandle, bytes: &[u8]) -> DispatchResult<u32> {
+        self.check_stream_handle(handle, StreamAccess::Write)?;
         self.adapter
             .io()
             .write_stream(handle, bytes)
@@ -412,6 +450,7 @@ impl<'a> UapiDispatcher<'a> {
     }
 
     pub fn write_all_stream(&self, handle: &FileHandle, bytes: &[u8]) -> DispatchResult<()> {
+        self.check_stream_handle(handle, StreamAccess::Write)?;
         self.adapter
             .io()
             .write_all_stream(handle, bytes)
@@ -419,6 +458,7 @@ impl<'a> UapiDispatcher<'a> {
     }
 
     pub fn flush_stream(&self, handle: &FileHandle) -> DispatchResult<()> {
+        self.check_stream_handle(handle, StreamAccess::Write)?;
         self.adapter.io().flush_stream(handle).map_err(Into::into)
     }
 
@@ -541,6 +581,19 @@ impl<'a> UapiDispatcher<'a> {
             }
         }
     }
+
+    fn check_stream_handle(&self, handle: &FileHandle, access: StreamAccess) -> DispatchResult<()> {
+        let stream = handle.stdio_stream.ok_or_else(|| {
+            DispatchError::Policy("stream handle is missing its capability metadata".to_string())
+        })?;
+
+        match (stream, access) {
+            (StdioStream::Stdin, StreamAccess::Read) => self.check(&UapiCall::Io(IoCall::Stdin)),
+            (StdioStream::Stdout, StreamAccess::Write) => self.check(&UapiCall::Io(IoCall::Stdout)),
+            (StdioStream::Stderr, StreamAccess::Write) => self.check(&UapiCall::Io(IoCall::Stderr)),
+            _ => Err(DispatchError::PermissionDenied),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -548,6 +601,12 @@ enum FileAccess {
     Read,
     Write,
     AnyOpenMode,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamAccess {
+    Read,
+    Write,
 }
 
 fn open_calls(path: &str, mode: OpenMode) -> Vec<UapiCall> {
@@ -657,6 +716,8 @@ mod tests {
         fs_stat_handle: usize,
         fs_write: usize,
         net_fetch: usize,
+        stream_read: usize,
+        stream_write_all: usize,
         stdout: usize,
         sleep: usize,
     }
@@ -712,6 +773,7 @@ mod tests {
             _handle: &FileHandle,
             _n: u32,
         ) -> std::result::Result<Vec<u8>, AdapterError> {
+            self.calls.borrow_mut().stream_read += 1;
             Ok(b"stdin".to_vec())
         }
 
@@ -735,6 +797,7 @@ mod tests {
             _handle: &FileHandle,
             _bytes: &[u8],
         ) -> std::result::Result<(), AdapterError> {
+            self.calls.borrow_mut().stream_write_all += 1;
             Ok(())
         }
 
@@ -909,6 +972,55 @@ mod tests {
 
         assert_eq!(args, "notes.txt");
         assert_eq!(adapter.calls.borrow().args, 1);
+    }
+
+    #[test]
+    fn stdio_stream_methods_recheck_handle_capabilities() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+
+        let stdout = dispatcher.stdout().expect("stdout handle");
+        dispatcher
+            .write_all_stream(&stdout, b"hello")
+            .expect("stdout write should pass");
+
+        assert_eq!(adapter.calls.borrow().stream_write_all, 1);
+
+        let stdin = dispatcher.stdin().expect("stdin handle");
+        dispatcher
+            .read_stream(&stdin, 128)
+            .expect("stdin read should pass");
+
+        assert_eq!(adapter.calls.borrow().stream_read, 1);
+    }
+
+    #[test]
+    fn stdio_stream_methods_deny_wrong_direction_before_adapter() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+        let stdin = dispatcher.stdin().expect("stdin handle");
+        let err = dispatcher
+            .write_all_stream(&stdin, b"hello")
+            .expect_err("stdin is not writable");
+
+        assert!(matches!(err, DispatchError::PermissionDenied));
+        assert_eq!(adapter.calls.borrow().stream_write_all, 0);
+    }
+
+    #[test]
+    fn stdio_stream_methods_require_resource_metadata_before_adapter() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+        let handle = FileHandle::resource(99);
+        let err = dispatcher
+            .read_stream(&handle, 128)
+            .expect_err("stream methods need stdio metadata");
+
+        assert!(matches!(err, DispatchError::Policy(message) if message.contains("stream handle")));
+        assert_eq!(adapter.calls.borrow().stream_read, 0);
     }
 
     #[test]

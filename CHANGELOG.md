@@ -37,6 +37,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 - Phase 2 component startup benchmarks for the smoke UAPI app and `layer36-clock`, including a first local runtime-path read in the mdBook benchmark notes.
 - Phase 2 UAPI dispatch benchmark target and docs, with first local sub-microsecond results for default IO, filesystem grants, denial path, and network grant checks.
 - Phase 2 UCap denial coverage for filesystem `stat`, `list`, `remove`, `mkdir`, and `rename`, proving they stop before adapter calls when grants are missing.
+- Phase 2 stdio stream UCap hardening: stream handles now remember whether they came from stdin, stdout, or stderr, and stream read/write/flush methods re-check that capability before adapter work.
 - Phase 2 file-handle UCap hardening: read-write opens now require both read and write grants, and file resource read/write/stat/seek methods re-check path capabilities before adapter calls.
 - Generated UAPI reference capability tables now come from the same manifest crate table used by validation and `layer36 manifest capabilities`.
 - `layer36 manifest capabilities` to print the canonical Phase 2 capability strings and default-grant status from the manifest crate.

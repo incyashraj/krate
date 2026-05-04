@@ -227,6 +227,10 @@ The value of this step is that the boundary is testable:
 - a denied `net.fetch` does not call the network adapter
 - a granted call reaches the adapter
 - file and network permission failures are mapped to module-level errors
+- file handles carry opened path and mode, so later file reads, writes, seeks,
+  and stats re-check the right grant
+- stdio stream handles remember whether they are stdin, stdout, or stderr, so
+  later stream reads, writes, and flushes re-check the right grant too
 
 The bridge between generated WIT types and dispatcher types now exists too.
 It converts things like `open-mode`, HTTP requests, file stats, locale IDs, and
