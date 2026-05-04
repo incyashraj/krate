@@ -1695,6 +1695,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-04 | Prepared the Rust guest SDK package surface: crate README, crates.io metadata, package include list, local package proof, and CI package dry-runs. |
 | 2026-05-04 | Added the first generated UAPI reference page from Phase 2 WIT, linked it in mdBook, and made hosted/self-hosted CI check it stays current. |
 | 2026-05-04 | Improved the generated UAPI reference with plain summaries, capability notes, Rust SDK examples, WIT doc comments, and a generator test. |
+| 2026-05-04 | Aligned the self-hosted clippy command with hosted CI by checking all targets, after hosted CI caught a generator-test lint. |
 
 ---
 

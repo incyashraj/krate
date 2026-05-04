@@ -534,7 +534,7 @@ mod tests {
         let root = workspace_root();
         let mut resolve = Resolve::default();
         let (app_package, _) = resolve
-            .push_dir(&root.join("wit/layer36/phase2"))
+            .push_dir(root.join("wit/layer36/phase2"))
             .expect("parse Phase 2 WIT");
         let world_id = resolve
             .select_world(&[app_package], Some("cli"))
