@@ -906,6 +906,8 @@ fn map_path_error(err: PathError) -> AdapterError {
         PathError::Empty
         | PathError::ControlCharacter
         | PathError::ParentTraversal
+        | PathError::SegmentTooLong
+        | PathError::PathTooLong
         | PathError::AmbiguousWindowsSuffix
         | PathError::ReservedName
         | PathError::UnsupportedPrefix

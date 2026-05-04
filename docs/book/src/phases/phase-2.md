@@ -71,7 +71,9 @@ rejects colon-based prefix forms up front, so Windows drive-style and alternate
 data stream style paths do not cross host-specific parsing rules. It also
 rejects reserved Windows device-style names such as `con`, `nul`, `com1`, and
 `lpt1` before host I/O, and now rejects path segments ending in `.` or a
-trailing space to avoid Windows filename normalization edge behavior. For relative
+trailing space to avoid Windows filename normalization edge behavior. It now also
+rejects oversized path segments and oversized normalized logical paths before
+host I/O so cross-host path behavior remains predictable in this phase. For relative
 paths, the local adapter now checks canonical existing targets, or the canonical
 parent for new files, before host I/O. If a symlink would take the path outside
 the sandbox root, the adapter denies the call. On Unix and Windows hosts, file

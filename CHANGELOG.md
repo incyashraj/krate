@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Shared Phase 2 path-length hardening in `adapter-common`: logical path parsing now rejects oversized path segments and oversized normalized logical paths before host I/O in the early sandboxed filesystem path.
 - Shared Phase 2 timezone-shape normalization hardening in `adapter-common`: timezone normalization now accepts only conservative ASCII timezone-name characters with a length cap in this phase, and falls back to `UTC` for invalid input.
 - Shared Phase 2 ASCII-only URL input hardening in `adapter-common`: plain-HTTP URL parsing and shared endpoint extraction now reject non-ASCII URL input so early request-line framing and capability checks stay deterministic.
 - Shared Phase 2 locale-tag canonicalization hardening in `adapter-common`: locale normalization now canonicalizes subtag casing (language/script/region), rejects malformed locale-tag shapes, and falls back to `en-US`; timezone normalization now rejects control-character values and falls back to `UTC`.

@@ -2,6 +2,9 @@
 
 use std::path::PathBuf;
 
+const MAX_LOGICAL_PATH_BYTES: usize = 4096;
+const MAX_PATH_SEGMENT_BYTES: usize = 255;
+
 /// A normalized logical path from a Layer36 app.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogicalPath {
@@ -29,6 +32,9 @@ impl LogicalPath {
         }
 
         let portable = input.replace('\\', "/");
+        if portable.len() > MAX_LOGICAL_PATH_BYTES {
+            return Err(PathError::PathTooLong);
+        }
         let is_absolute = portable.starts_with('/');
         let mut parts = Vec::new();
 
@@ -37,6 +43,9 @@ impl LogicalPath {
                 "" | "." => {}
                 ".." => return Err(PathError::ParentTraversal),
                 part => {
+                    if part.len() > MAX_PATH_SEGMENT_BYTES {
+                        return Err(PathError::SegmentTooLong);
+                    }
                     if is_reserved_windows_segment(part) {
                         return Err(PathError::ReservedName);
                     }
@@ -61,6 +70,9 @@ impl LogicalPath {
             }
             normalized
         };
+        if normalized.len() > MAX_LOGICAL_PATH_BYTES {
+            return Err(PathError::PathTooLong);
+        }
 
         Ok(Self { normalized })
     }
@@ -116,6 +128,10 @@ pub enum PathError {
     ControlCharacter,
     #[error("path contains parent traversal")]
     ParentTraversal,
+    #[error("path segment exceeds maximum length")]
+    SegmentTooLong,
+    #[error("path exceeds maximum length")]
+    PathTooLong,
     #[error("path segment ends with a trailing space or dot")]
     AmbiguousWindowsSuffix,
     #[error("path targets a reserved device-style name")]
@@ -205,6 +221,21 @@ mod tests {
         assert_eq!(
             LogicalPath::parse("report.txt:secret").unwrap_err(),
             PathError::UnsupportedPrefix
+        );
+    }
+
+    #[test]
+    fn rejects_oversized_path_segment_and_total_length() {
+        let long_segment = format!("tmp/{}", "a".repeat(MAX_PATH_SEGMENT_BYTES + 1));
+        assert_eq!(
+            LogicalPath::parse(&long_segment).unwrap_err(),
+            PathError::SegmentTooLong
+        );
+
+        let long_path = "a".repeat(MAX_LOGICAL_PATH_BYTES + 1);
+        assert_eq!(
+            LogicalPath::parse(&long_path).unwrap_err(),
+            PathError::PathTooLong
         );
     }
 
