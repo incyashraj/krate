@@ -927,6 +927,216 @@ fn configured_layer36_curl_component_denies_missing_net_grant() {
 }
 
 #[test]
+fn configured_layer36_go_clock_component_matches_deterministic_fixture_snapshot() {
+    let Some(path) =
+        configured_component_from_env("LAYER36_GO_CLOCK_WASM", "layer36-go-clock component test")
+    else {
+        return;
+    };
+
+    let output = layer36()
+        .args([
+            "run",
+            "--test-time",
+            "1234567890",
+            "--test-locale",
+            "en-US",
+            "--test-timezone",
+            "UTC",
+        ])
+        .arg(path)
+        .output()
+        .expect("run layer36-go-clock component with deterministic locale/timezone");
+
+    assert!(
+        output.status.success(),
+        "layer36-go-clock deterministic snapshot failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        concat!(
+            "app=layer36-go-clock\n",
+            "locale=en-US\n",
+            "timezone=UTC\n",
+            "date=1234567890:UTC:Medium:en-US\n"
+        )
+    );
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn configured_layer36_go_cat_component_reads_granted_files() {
+    let Some(path) =
+        configured_component_from_env("LAYER36_GO_CAT_WASM", "layer36-go-cat component test")
+    else {
+        return;
+    };
+
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let fixtures = dir.path().join("fixtures");
+    std::fs::create_dir(&fixtures).expect("create fixtures dir");
+    std::fs::write(fixtures.join("a.txt"), "hello from go A\n").expect("write fixture A");
+    std::fs::write(fixtures.join("b.txt"), "hello from go B\n").expect("write fixture B");
+
+    let output = layer36()
+        .current_dir(dir.path())
+        .args(["run", "--grant", "fs.read:fixtures/**"])
+        .arg(path)
+        .args(["--", "fixtures/a.txt", "fixtures/b.txt"])
+        .output()
+        .expect("run layer36-go-cat component");
+
+    assert!(
+        output.status.success(),
+        "layer36-go-cat failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "hello from go A\nhello from go B\n"
+    );
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn configured_layer36_go_curl_component_fetches_granted_http_url() {
+    let Some(path) =
+        configured_component_from_env("LAYER36_GO_CURL_WASM", "layer36-go-curl component test")
+    else {
+        return;
+    };
+
+    let body = b"hello from go curl\n";
+    let (addr, server) = spawn_http_fixture(body);
+    let url = format!("http://{addr}/fixture.txt");
+
+    let output = layer36()
+        .args(["run", "--grant", &format!("net.connect:{addr}")])
+        .arg(path)
+        .args(["--", &url])
+        .output()
+        .expect("run layer36-go-curl component");
+    server.join().expect("HTTP fixture thread completed");
+
+    assert!(
+        output.status.success(),
+        "layer36-go-curl failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, body);
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn configured_layer36_ts_clock_component_matches_deterministic_fixture_snapshot() {
+    let Some(path) =
+        configured_component_from_env("LAYER36_TS_CLOCK_WASM", "layer36-ts-clock component test")
+    else {
+        return;
+    };
+
+    let output = layer36()
+        .args([
+            "run",
+            "--test-time",
+            "1234567890",
+            "--test-locale",
+            "en-US",
+            "--test-timezone",
+            "UTC",
+        ])
+        .arg(path)
+        .output()
+        .expect("run layer36-ts-clock component with deterministic locale/timezone");
+
+    assert!(
+        output.status.success(),
+        "layer36-ts-clock deterministic snapshot failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        concat!(
+            "app=layer36-ts-clock\n",
+            "locale=en-US\n",
+            "timezone=UTC\n",
+            "date=1234567890:UTC:Medium:en-US\n"
+        )
+    );
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn configured_layer36_ts_cat_component_reads_granted_files() {
+    let Some(path) =
+        configured_component_from_env("LAYER36_TS_CAT_WASM", "layer36-ts-cat component test")
+    else {
+        return;
+    };
+
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let fixtures = dir.path().join("fixtures");
+    std::fs::create_dir(&fixtures).expect("create fixtures dir");
+    std::fs::write(fixtures.join("a.txt"), "hello from ts A\n").expect("write fixture A");
+    std::fs::write(fixtures.join("b.txt"), "hello from ts B\n").expect("write fixture B");
+
+    let output = layer36()
+        .current_dir(dir.path())
+        .args(["run", "--grant", "fs.read:fixtures/**"])
+        .arg(path)
+        .args(["--", "fixtures/a.txt", "fixtures/b.txt"])
+        .output()
+        .expect("run layer36-ts-cat component");
+
+    assert!(
+        output.status.success(),
+        "layer36-ts-cat failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "hello from ts A\nhello from ts B\n"
+    );
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
+fn configured_layer36_ts_curl_component_fetches_granted_http_url() {
+    let Some(path) =
+        configured_component_from_env("LAYER36_TS_CURL_WASM", "layer36-ts-curl component test")
+    else {
+        return;
+    };
+
+    let body = b"hello from ts curl\n";
+    let (addr, server) = spawn_http_fixture(body);
+    let url = format!("http://{addr}/fixture.txt");
+
+    let output = layer36()
+        .args(["run", "--grant", &format!("net.connect:{addr}")])
+        .arg(path)
+        .args(["--", &url])
+        .output()
+        .expect("run layer36-ts-curl component");
+    server.join().expect("HTTP fixture thread completed");
+
+    assert!(
+        output.status.success(),
+        "layer36-ts-curl failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(output.stdout, body);
+    assert!(output.stderr.is_empty());
+}
+
+#[test]
 fn fuel_limit_exits_with_limit_code() {
     let Some(path) = configured_hello_component() else {
         return;
@@ -1373,44 +1583,28 @@ fn sample_manifest(app: &str) -> PathBuf {
 }
 
 fn configured_hello_component() -> Option<PathBuf> {
-    let Some(path) = std::env::var_os("LAYER36_HELLO_WASM") else {
-        eprintln!("skipping hello component test: LAYER36_HELLO_WASM is not set");
-        return None;
-    };
-
-    Some(workspace_path(PathBuf::from(path)))
+    configured_component_from_env("LAYER36_HELLO_WASM", "hello component test")
 }
 
 fn configured_phase2_smoke_component() -> Option<PathBuf> {
-    let Some(path) = std::env::var_os("LAYER36_PHASE2_SMOKE_WASM") else {
-        eprintln!("skipping Phase 2 smoke component test: LAYER36_PHASE2_SMOKE_WASM is not set");
-        return None;
-    };
-
-    Some(workspace_path(PathBuf::from(path)))
+    configured_component_from_env("LAYER36_PHASE2_SMOKE_WASM", "Phase 2 smoke component test")
 }
 
 fn configured_layer36_clock_component() -> Option<PathBuf> {
-    let Some(path) = std::env::var_os("LAYER36_CLOCK_WASM") else {
-        eprintln!("skipping layer36-clock component test: LAYER36_CLOCK_WASM is not set");
-        return None;
-    };
-
-    Some(workspace_path(PathBuf::from(path)))
+    configured_component_from_env("LAYER36_CLOCK_WASM", "layer36-clock component test")
 }
 
 fn configured_layer36_cat_component() -> Option<PathBuf> {
-    let Some(path) = std::env::var_os("LAYER36_CAT_WASM") else {
-        eprintln!("skipping layer36-cat component test: LAYER36_CAT_WASM is not set");
-        return None;
-    };
-
-    Some(workspace_path(PathBuf::from(path)))
+    configured_component_from_env("LAYER36_CAT_WASM", "layer36-cat component test")
 }
 
 fn configured_layer36_curl_component() -> Option<PathBuf> {
-    let Some(path) = std::env::var_os("LAYER36_CURL_WASM") else {
-        eprintln!("skipping layer36-curl component test: LAYER36_CURL_WASM is not set");
+    configured_component_from_env("LAYER36_CURL_WASM", "layer36-curl component test")
+}
+
+fn configured_component_from_env(env: &str, label: &str) -> Option<PathBuf> {
+    let Some(path) = std::env::var_os(env) else {
+        eprintln!("skipping {label}: {env} is not set");
         return None;
     };
 

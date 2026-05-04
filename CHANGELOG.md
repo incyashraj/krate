@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Optional Phase 2 Go/TypeScript runtime fixture assertions in `crates/cli/tests/cli.rs` behind `LAYER36_GO_*` and `LAYER36_TS_*` WASM env vars, plus `scripts/test-phase2-language-variants.sh` and CI/self-hosted workflow hooks that auto-skip until variant components are supplied.
 - Go and TypeScript Phase 2 `layer36-cat` sample variants under `packages/sdk-go/examples` and `packages/sdk-ts/examples`, plus stricter SDK shape checks that assert cat/clock/curl sample behavior contracts.
 - Hidden Phase 2 deterministic clock-fixture controls: `layer36 run --test-locale` and `--test-timezone`, runtime wiring for locale/timezone overrides, and a strict `layer36-clock` snapshot test with fixed time + locale + timezone for cross-host output comparison.
 - Shared Phase 2 Windows reserved-name path hardening in `adapter-common`: path segments that map to device-style names (`CON`, `PRN`, `AUX`, `NUL`, `COM1`-`COM9`, `LPT1`-`LPT9`) are now rejected before sandbox resolution and host I/O.

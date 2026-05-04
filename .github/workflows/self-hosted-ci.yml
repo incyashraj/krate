@@ -78,6 +78,9 @@ jobs:
           LAYER36_CURL_WASM: ${{ steps.fixtures.outputs.curl }}
         run: cargo test --workspace --all-features
 
+      - name: Test Phase 2 language variants
+        run: scripts/test-phase2-language-variants.sh
+
       - name: Package Rust SDK
         run: LAYER36_OFFLINE=1 sh scripts/smoke-rust-sdk.sh
 

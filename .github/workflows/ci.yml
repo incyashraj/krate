@@ -273,6 +273,9 @@ jobs:
           LAYER36_CAT_WASM: layer36-fixture/layer36_cat.wasm
           LAYER36_CURL_WASM: layer36-fixture/layer36_curl.wasm
         run: scripts/test-phase1.sh
+      - name: Run Phase 2 language-variant runtime tests
+        shell: bash
+        run: scripts/test-phase2-language-variants.sh
 
   # ──────────────────────────────────────────────
   # 9. Documentation build
