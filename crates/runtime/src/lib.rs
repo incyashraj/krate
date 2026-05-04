@@ -37,8 +37,8 @@ use layer36_adapter_common::locale::{
 };
 #[cfg(feature = "phase2-bindings")]
 use layer36_adapter_common::net::{
-    build_plain_http_request, PlainHttpError, PlainHttpHeader, PlainHttpMethod, PlainHttpRequest,
-    PlainHttpUrl,
+    build_plain_http_request, parse_plain_http_response, PlainHttpError, PlainHttpHeader,
+    PlainHttpMethod, PlainHttpRequest, PlainHttpUrl,
 };
 #[cfg(feature = "phase2-bindings")]
 use layer36_adapter_common::path::{FsOperation, LogicalPath, PathError};
@@ -823,7 +823,19 @@ impl NetAdapter for LocalPhase2Adapter {
 
         stream.write_all(&request).map_err(map_net_io_error)?;
         let response = read_http_response_limited(&mut stream, self.max_http_response_bytes)?;
-        parse_http_response(&response)
+        let response = parse_plain_http_response(&response).map_err(map_plain_http_error)?;
+        Ok(HttpResponse {
+            status: response.status,
+            headers: response
+                .headers
+                .into_iter()
+                .map(|header| Header {
+                    name: header.name,
+                    value: header.value,
+                })
+                .collect(),
+            body: response.body,
+        })
     }
 }
 
@@ -862,6 +874,9 @@ fn map_plain_http_error(err: PlainHttpError) -> AdapterError {
         PlainHttpError::UnsupportedScheme => AdapterError::Unsupported,
         PlainHttpError::InvalidUrl => AdapterError::InvalidPath,
         PlainHttpError::InvalidHeader => AdapterError::Protocol("invalid HTTP header".to_string()),
+        PlainHttpError::InvalidResponse => {
+            AdapterError::Protocol("invalid HTTP response".to_string())
+        }
         PlainHttpError::HostControlledHeader => {
             AdapterError::Protocol("host-controlled HTTP header".to_string())
         }
@@ -1037,43 +1052,6 @@ fn read_http_response_limited(
 
         response.extend_from_slice(&chunk[..read]);
     }
-}
-
-fn parse_http_response(bytes: &[u8]) -> std::result::Result<HttpResponse, AdapterError> {
-    let Some(header_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n") else {
-        return Err(AdapterError::Protocol("invalid HTTP response".to_string()));
-    };
-    let header_bytes = &bytes[..header_end];
-    let body = bytes[header_end + 4..].to_vec();
-    let headers_text =
-        std::str::from_utf8(header_bytes).map_err(|err| AdapterError::Protocol(err.to_string()))?;
-    let mut lines = headers_text.split("\r\n");
-    let status_line = lines
-        .next()
-        .ok_or_else(|| AdapterError::Protocol("missing HTTP status".to_string()))?;
-    let status = status_line
-        .split_whitespace()
-        .nth(1)
-        .ok_or_else(|| AdapterError::Protocol("missing HTTP status code".to_string()))?
-        .parse()
-        .map_err(|_| AdapterError::Protocol("invalid HTTP status code".to_string()))?;
-
-    let mut headers = Vec::new();
-    for line in lines {
-        let Some((name, value)) = line.split_once(':') else {
-            continue;
-        };
-        headers.push(Header {
-            name: name.trim().to_string(),
-            value: value.trim().to_string(),
-        });
-    }
-
-    Ok(HttpResponse {
-        status,
-        headers,
-        body,
-    })
 }
 
 fn classify_limit_error(err: &wasmtime::Error) -> Option<String> {
@@ -1436,14 +1414,15 @@ mod tests {
 
     #[test]
     fn plain_http_response_parser_splits_headers_and_body() {
-        let response =
-            parse_http_response(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nhello\n")
-                .expect("parse HTTP response");
+        let response = parse_plain_http_response(
+            b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nhello\n",
+        )
+        .expect("parse HTTP response");
 
         assert_eq!(response.status, 200);
         assert_eq!(
             response.headers,
-            vec![Header {
+            vec![PlainHttpHeader {
                 name: "Content-Type".to_string(),
                 value: "text/plain".to_string()
             }]
@@ -1453,12 +1432,10 @@ mod tests {
 
     #[test]
     fn plain_http_response_parser_reports_protocol_errors() {
-        let err =
-            parse_http_response(b"not http").expect_err("malformed response should be rejected");
+        let err = parse_plain_http_response(b"not http")
+            .expect_err("malformed response should be rejected");
 
-        assert!(
-            matches!(err, AdapterError::Protocol(message) if message == "invalid HTTP response")
-        );
+        assert_eq!(err, PlainHttpError::InvalidResponse);
     }
 
     #[test]

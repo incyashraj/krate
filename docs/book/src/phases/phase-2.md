@@ -92,6 +92,10 @@ before anything reaches the request line or socket layer. It also rejects
 unsupported authority forms in this early plain-HTTP slice and rejects control
 characters in app-provided header values. `Transfer-Encoding` is now treated as
 host-controlled with `Host`, `Connection`, and `Content-Length`.
+Response parsing now also goes through shared adapter-common code, with strict
+validation for HTTP version, status range, malformed header lines, header count
+limits, and unsafe header values before data reaches runtime-facing response
+types.
 The runtime's network capability gate now also uses a shared endpoint parser for
 `http://` and `https://` URLs, so policy checks and adapter-side URL validation
 no longer drift as separate parsers evolve. The plain `http://` URL parser now

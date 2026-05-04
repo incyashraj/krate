@@ -46,6 +46,11 @@ impl PlainHttpUrl {
     }
 }
 
+const MAX_HTTP_HEADERS: usize = 64;
+const MAX_HTTP_HEADER_NAME_BYTES: usize = 128;
+const MAX_HTTP_HEADER_VALUE_BYTES: usize = 4 * 1024;
+const MAX_HTTP_AUTHORITY_BYTES: usize = 255;
+
 /// A parsed network endpoint used for capability checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UrlEndpoint {
@@ -80,6 +85,9 @@ fn parse_url_endpoint_with_default(
     default_port: u16,
 ) -> Result<UrlEndpoint, UrlEndpointError> {
     let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    if authority.len() > MAX_HTTP_AUTHORITY_BYTES {
+        return Err(UrlEndpointError::InvalidUrl);
+    }
     if authority.is_empty() || authority.contains('@') {
         return Err(UrlEndpointError::InvalidUrl);
     }
@@ -102,6 +110,9 @@ fn parse_url_endpoint_with_default(
     };
 
     if host.is_empty() {
+        return Err(UrlEndpointError::InvalidUrl);
+    }
+    if !is_valid_plain_http_host(host) {
         return Err(UrlEndpointError::InvalidUrl);
     }
 
@@ -152,6 +163,14 @@ pub struct PlainHttpRequest {
     pub body: Vec<u8>,
 }
 
+/// A parsed plain HTTP response from the current Phase 2 adapter slice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlainHttpResponse {
+    pub status: u16,
+    pub headers: Vec<PlainHttpHeader>,
+    pub body: Vec<u8>,
+}
+
 /// Build an HTTP/1.1 request for the current plain HTTP adapter.
 ///
 /// The host always owns `Host`, `Connection`, and `Content-Length` because
@@ -160,6 +179,10 @@ pub fn build_plain_http_request(
     req: &PlainHttpRequest,
     url: &PlainHttpUrl,
 ) -> Result<Vec<u8>, PlainHttpError> {
+    if req.headers.len() > MAX_HTTP_HEADERS {
+        return Err(PlainHttpError::InvalidHeader);
+    }
+
     let method = req.method.as_str();
     let mut request = format!(
         "{method} {} HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n",
@@ -168,6 +191,11 @@ pub fn build_plain_http_request(
     .into_bytes();
 
     for header in &req.headers {
+        if header.name.len() > MAX_HTTP_HEADER_NAME_BYTES
+            || header.value.len() > MAX_HTTP_HEADER_VALUE_BYTES
+        {
+            return Err(PlainHttpError::InvalidHeader);
+        }
         if !is_valid_plain_http_header_name(&header.name)
             || !is_safe_plain_http_header_value(&header.value)
         {
@@ -188,6 +216,65 @@ pub fn build_plain_http_request(
     request.extend_from_slice(&req.body);
 
     Ok(request)
+}
+
+/// Parse a plain HTTP response for the current Phase 2 adapter slice.
+pub fn parse_plain_http_response(bytes: &[u8]) -> Result<PlainHttpResponse, PlainHttpError> {
+    let Some(header_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n") else {
+        return Err(PlainHttpError::InvalidResponse);
+    };
+
+    let header_bytes = &bytes[..header_end];
+    let body = bytes[header_end + 4..].to_vec();
+    let headers_text =
+        std::str::from_utf8(header_bytes).map_err(|_| PlainHttpError::InvalidResponse)?;
+    let mut lines = headers_text.split("\r\n");
+    let status_line = lines.next().ok_or(PlainHttpError::InvalidResponse)?;
+
+    let mut status_parts = status_line.split_whitespace();
+    let version = status_parts.next().ok_or(PlainHttpError::InvalidResponse)?;
+    let code = status_parts.next().ok_or(PlainHttpError::InvalidResponse)?;
+    if !matches!(version, "HTTP/1.0" | "HTTP/1.1") {
+        return Err(PlainHttpError::InvalidResponse);
+    }
+    if status_parts.next().is_none() {
+        return Err(PlainHttpError::InvalidResponse);
+    }
+    let status = code
+        .parse::<u16>()
+        .map_err(|_| PlainHttpError::InvalidResponse)?;
+    if !(100..=599).contains(&status) {
+        return Err(PlainHttpError::InvalidResponse);
+    }
+
+    let mut headers = Vec::new();
+    for line in lines {
+        let Some((name, value)) = line.split_once(':') else {
+            return Err(PlainHttpError::InvalidResponse);
+        };
+        let name = name.trim();
+        let value = value.trim();
+        if name.len() > MAX_HTTP_HEADER_NAME_BYTES
+            || value.len() > MAX_HTTP_HEADER_VALUE_BYTES
+            || !is_valid_plain_http_header_name(name)
+            || !is_safe_plain_http_header_value(value)
+        {
+            return Err(PlainHttpError::InvalidResponse);
+        }
+        headers.push(PlainHttpHeader {
+            name: name.to_string(),
+            value: value.to_string(),
+        });
+        if headers.len() > MAX_HTTP_HEADERS {
+            return Err(PlainHttpError::InvalidResponse);
+        }
+    }
+
+    Ok(PlainHttpResponse {
+        status,
+        headers,
+        body,
+    })
 }
 
 fn is_valid_plain_http_header_name(name: &str) -> bool {
@@ -223,6 +310,19 @@ fn is_host_controlled_http_header(name: &str) -> bool {
         || name.eq_ignore_ascii_case("transfer-encoding")
 }
 
+fn is_valid_plain_http_host(host: &str) -> bool {
+    if host.is_empty() || host.starts_with('.') || host.ends_with('.') || host.contains("..") {
+        return false;
+    }
+
+    host.bytes().all(|byte| {
+        matches!(
+            byte,
+            b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z' | b'.' | b'-'
+        )
+    })
+}
+
 fn contains_http_unsafe_ascii(input: &str) -> bool {
     input
         .bytes()
@@ -244,6 +344,8 @@ pub enum PlainHttpError {
     InvalidUrl,
     #[error("invalid HTTP header")]
     InvalidHeader,
+    #[error("invalid HTTP response")]
+    InvalidResponse,
     #[error("host-controlled HTTP header")]
     HostControlledHeader,
 }
@@ -368,6 +470,51 @@ mod tests {
     }
 
     #[test]
+    fn request_builder_rejects_header_limits() {
+        let url = PlainHttpUrl::parse("http://127.0.0.1:8080/").expect("parse HTTP URL");
+        let too_many = PlainHttpRequest {
+            method: PlainHttpMethod::Get,
+            headers: (0..(MAX_HTTP_HEADERS + 1))
+                .map(|index| PlainHttpHeader {
+                    name: format!("X-{index}"),
+                    value: "ok".to_string(),
+                })
+                .collect(),
+            body: Vec::new(),
+        };
+        assert_eq!(
+            build_plain_http_request(&too_many, &url).unwrap_err(),
+            PlainHttpError::InvalidHeader
+        );
+
+        let long_name = PlainHttpRequest {
+            method: PlainHttpMethod::Get,
+            headers: vec![PlainHttpHeader {
+                name: "X".repeat(MAX_HTTP_HEADER_NAME_BYTES + 1),
+                value: "ok".to_string(),
+            }],
+            body: Vec::new(),
+        };
+        assert_eq!(
+            build_plain_http_request(&long_name, &url).unwrap_err(),
+            PlainHttpError::InvalidHeader
+        );
+
+        let long_value = PlainHttpRequest {
+            method: PlainHttpMethod::Get,
+            headers: vec![PlainHttpHeader {
+                name: "X-Layer36".to_string(),
+                value: "v".repeat(MAX_HTTP_HEADER_VALUE_BYTES + 1),
+            }],
+            body: Vec::new(),
+        };
+        assert_eq!(
+            build_plain_http_request(&long_value, &url).unwrap_err(),
+            PlainHttpError::InvalidHeader
+        );
+    }
+
+    #[test]
     fn endpoint_parser_supports_http_and_https_default_ports() {
         let http = parse_url_endpoint("http://example.com/path").expect("HTTP endpoint");
         let https = parse_url_endpoint("https://example.com/path").expect("HTTPS endpoint");
@@ -391,6 +538,62 @@ mod tests {
         assert_eq!(
             parse_url_endpoint("https://[::1]/path").unwrap_err(),
             UrlEndpointError::InvalidUrl
+        );
+        assert_eq!(
+            parse_url_endpoint("https://exa_mple.com/path").unwrap_err(),
+            UrlEndpointError::InvalidUrl
+        );
+        assert_eq!(
+            parse_url_endpoint("https://example..com/path").unwrap_err(),
+            UrlEndpointError::InvalidUrl
+        );
+    }
+
+    #[test]
+    fn response_parser_splits_headers_and_body() {
+        let response =
+            parse_plain_http_response(b"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\n\r\nhi")
+                .expect("parse response");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            response.headers,
+            vec![PlainHttpHeader {
+                name: "Content-Type".to_string(),
+                value: "text/plain".to_string(),
+            }]
+        );
+        assert_eq!(response.body, b"hi");
+    }
+
+    #[test]
+    fn response_parser_rejects_malformed_responses() {
+        assert_eq!(
+            parse_plain_http_response(b"HTTP/2 200 OK\r\n\r\nbody").unwrap_err(),
+            PlainHttpError::InvalidResponse
+        );
+        assert_eq!(
+            parse_plain_http_response(b"HTTP/1.1 700 Weird\r\n\r\nbody").unwrap_err(),
+            PlainHttpError::InvalidResponse
+        );
+        assert_eq!(
+            parse_plain_http_response(b"HTTP/1.1 200\r\n\r\nbody").unwrap_err(),
+            PlainHttpError::InvalidResponse
+        );
+        assert_eq!(
+            parse_plain_http_response(b"HTTP/1.1 200 OK\r\nBad Header\r\n\r\nbody").unwrap_err(),
+            PlainHttpError::InvalidResponse
+        );
+        assert_eq!(
+            parse_plain_http_response(
+                format!(
+                    "HTTP/1.1 200 OK\r\nLong: {}\r\n\r\nbody",
+                    "v".repeat(MAX_HTTP_HEADER_VALUE_BYTES + 1)
+                )
+                .as_bytes()
+            )
+            .unwrap_err(),
+            PlainHttpError::InvalidResponse
         );
     }
 }
