@@ -307,7 +307,12 @@ jobs:
       - name: Build Phase 1 benchmark components
         shell: bash
         run: scripts/build-phase1-components.sh
-      - name: Run Phase 1 runtime benchmarks
+      - name: Build Phase 2 benchmark components
+        shell: bash
+        run: |
+          scripts/build-phase2-smoke-component.sh
+          scripts/build-layer36-clock-component.sh
+      - name: Run runtime startup benchmarks
         run: cargo bench -p layer36-runtime --bench startup
       - name: Run Phase 2 UAPI dispatch benchmarks
         run: cargo bench -p layer36-runtime --bench uapi_dispatch
