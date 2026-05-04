@@ -56,6 +56,8 @@ pub const DEFAULT_MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
 #[cfg(feature = "phase2-bindings")]
 const MAX_PHASE2_READ_BYTES: usize = 8 * 1024 * 1024;
 #[cfg(feature = "phase2-bindings")]
+const MAX_PHASE2_WRITE_BYTES: usize = 8 * 1024 * 1024;
+#[cfg(feature = "phase2-bindings")]
 const MAX_PHASE2_LIST_ENTRIES: usize = 4096;
 
 wasmtime::component::bindgen!({
@@ -523,6 +525,16 @@ fn bounded_read_len(n: u32) -> std::result::Result<usize, AdapterError> {
 }
 
 #[cfg(feature = "phase2-bindings")]
+fn bounded_write_len(n: usize) -> std::result::Result<u32, AdapterError> {
+    if n > MAX_PHASE2_WRITE_BYTES {
+        return Err(AdapterError::Io(format!(
+            "write request exceeds limit ({MAX_PHASE2_WRITE_BYTES} bytes)"
+        )));
+    }
+    u32::try_from(n).map_err(|_| AdapterError::Io("write length overflow".to_string()))
+}
+
+#[cfg(feature = "phase2-bindings")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum MissingLeaf {
     Deny,
@@ -650,8 +662,9 @@ impl IoAdapter for LocalPhase2Adapter {
         handle: &FileHandle,
         bytes: &[u8],
     ) -> std::result::Result<u32, AdapterError> {
+        let len = bounded_write_len(bytes.len())?;
         self.write_all_stream(handle, bytes)?;
-        Ok(bytes.len() as u32)
+        Ok(len)
     }
 
     fn write_all_stream(
@@ -736,12 +749,13 @@ impl FsAdapter for LocalPhase2Adapter {
     }
 
     fn write(&self, handle: &FileHandle, bytes: &[u8]) -> std::result::Result<u32, AdapterError> {
+        bounded_write_len(bytes.len())?;
         let mut state = self.state.borrow_mut();
         let Some(LocalResource::File(file)) = state.resources.get_mut(&handle.id) else {
             return Err(AdapterError::NotFound);
         };
         let len = file.write(bytes).map_err(map_io_error)?;
-        Ok(len as u32)
+        u32::try_from(len).map_err(|_| AdapterError::Io("write length overflow".to_string()))
     }
 
     fn seek_set(&self, handle: &FileHandle, pos: u64) -> std::result::Result<u64, AdapterError> {
@@ -1295,6 +1309,76 @@ mod tests {
         drop(handle);
         drop(adapter);
         std::fs::remove_file(file).expect("remove fixture file");
+        std::fs::remove_dir_all(temp).expect("remove fixture directory");
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn local_io_adapter_rejects_oversized_stream_write_request() {
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            PathBuf::from("."),
+        );
+
+        let handle = adapter.stdout().expect("open stdout");
+        let err = adapter
+            .write_stream(&handle, &vec![b'x'; MAX_PHASE2_WRITE_BYTES + 1])
+            .expect_err("oversized stream write should be rejected");
+
+        match err {
+            AdapterError::Io(message) => assert!(
+                message.contains("write request exceeds limit"),
+                "unexpected message: {message}"
+            ),
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn local_fs_adapter_rejects_oversized_write_request() {
+        let unique = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!(
+            "layer36-oversized-write-{}-{unique}",
+            std::process::id(),
+        ));
+        std::fs::create_dir_all(&temp).expect("create sandbox");
+
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            temp.clone(),
+        );
+
+        let handle = adapter
+            .open("note.txt", OpenMode::Write)
+            .expect("open fixture file");
+        let err = adapter
+            .write(&handle, &vec![b'x'; MAX_PHASE2_WRITE_BYTES + 1])
+            .expect_err("oversized file write should be rejected");
+
+        match err {
+            AdapterError::Io(message) => assert!(
+                message.contains("write request exceeds limit"),
+                "unexpected message: {message}"
+            ),
+            other => panic!("unexpected error variant: {other:?}"),
+        }
+
+        drop(handle);
+        drop(adapter);
         std::fs::remove_dir_all(temp).expect("remove fixture directory");
     }
 
