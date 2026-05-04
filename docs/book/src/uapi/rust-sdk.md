@@ -9,7 +9,9 @@ actual platform contract.
 
 The crate now has publish-facing metadata and a crate README. We still do not
 publish it to crates.io while UAPI v0.1 is moving, but `cargo package -p
-layer36` is part of CI so packaging problems show up early.
+layer36` is part of CI so packaging problems show up early. CI also runs
+`scripts/smoke-rust-sdk.sh`, which creates a temporary app outside the
+workspace and checks that the packaged SDK can compile a tiny Layer36 component.
 
 ## What It Gives You
 
@@ -144,6 +146,7 @@ work.
 This is not a finished SDK yet.
 
 - It is package-checked, but not published to crates.io.
+- A fresh outside-workspace smoke app now checks the packaged crate.
 - Its public helper layer now has rustdoc comments and a local doc build check.
 - It wraps the generated Phase 2 guest bindings, which are still draft.
 - It has enough helpers for the Rust samples, not a full developer experience.

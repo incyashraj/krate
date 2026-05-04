@@ -79,7 +79,7 @@ jobs:
         run: cargo test --workspace --all-features
 
       - name: Package Rust SDK
-        run: cargo package -p layer36 --offline
+        run: LAYER36_OFFLINE=1 sh scripts/smoke-rust-sdk.sh
 
       - name: Check Rust SDK docs
         run: cargo doc -p layer36 --no-deps --offline

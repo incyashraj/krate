@@ -115,6 +115,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
+        with:
+          targets: wasm32-wasip1
       - name: Cache cargo registry
         uses: actions/cache@v4
         with:
@@ -124,7 +126,7 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-sdk-package-${{ hashFiles('**/Cargo.lock') }}
       - name: Package Rust SDK
-        run: cargo package -p layer36
+        run: sh scripts/smoke-rust-sdk.sh
 
   # ──────────────────────────────────────────────
   # 6. UAPI contract and generated reference freshness

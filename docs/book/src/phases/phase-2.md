@@ -44,6 +44,9 @@ stderr text helpers, common file helpers, HTTP body helpers, and top-level time
 and locale shortcuts. The important rule is still the same: guest apps should
 import Layer36 UAPI, not host WASI APIs. The current sample components are
 checked for that.
+The Rust SDK also has a packaged-crate smoke now: CI creates a temporary app
+outside the workspace and checks that it can compile a tiny Layer36 component
+against the packaged SDK.
 
 The latest runtime piece is the generated type bridge. It maps WIT records and
 errors into the dispatcher's Rust types, then back again. Put simply: the

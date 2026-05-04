@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- `scripts/smoke-rust-sdk.sh` to package the Rust SDK and check a fresh outside-workspace component against the packaged crate.
 - Generated UAPI reference pages now include function-level behavior notes for the Phase 2 interfaces and resource methods.
 - `layer36-curl` now prints clearer messages for oversized, timed-out, and malformed HTTP responses.
 - Phase 2 HTTP timeout and protocol failures now map to WIT `net-error.timeout` and `net-error.protocol`.
