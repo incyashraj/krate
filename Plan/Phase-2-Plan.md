@@ -2121,7 +2121,7 @@ formal exit gates.
 
 | Area | Current read | What remains |
 |------|--------------|--------------|
-| Core Phase 2 engineering | About 71-76% through the first useful CLI slice | WIT freeze review, more shared adapter slices, cross-host identity runs, and network hardening. |
+| Core Phase 2 engineering | About 72-77% through the first useful CLI slice | WIT freeze review, more shared adapter slices, cross-host identity runs, and network hardening. |
 | Formal Phase 2 exit | About 45-50% complete | Language runtime proofs, seven-day CI evidence, fuzzing, full benchmark gate, threat model v0.2, ADR-0009 through ADR-0012, and external validation. |
 | UAPI and UCap | Strong shape, not frozen | Review default grants, path normalization, network policy details, and freeze rules before `0.1.0`. |
 | SDKs | Rust is usable; Go and TypeScript are scaffolded | Publish-ready Rust after freeze, TinyGo runtime proof, and jco runtime proof. |
@@ -2180,6 +2180,7 @@ formal exit gates.
 | P2-ADPT-COMMON-02C | Sandbox-root symlink escape checks | 2026-05-04 | Relative filesystem paths now canonicalize existing targets, or canonicalize the parent for new files, before local host I/O. If the resolved target leaves the sandbox root through a symlink, the adapter returns permission denied. |
 | P2-ADPT-COMMON-02D | No-follow Unix file opens | 2026-05-04 | Local Phase 2 file opens now set the Unix no-follow final-symlink flag before host I/O. A final symlink is denied even if it points inside the sandbox, reducing the race between path checking and file opening. |
 | P2-ADPT-COMMON-02E | Shared host clock helper | 2026-05-04 | Added `adapter-common::time::HostClock` and moved runtime Phase 2 clock behavior through it. Fixed test time, Unix-epoch millisecond conversion, monotonic elapsed time, and sleep now have shared tests. |
+| P2-ADPT-COMMON-02F | Shared host locale helper | 2026-05-04 | Added `adapter-common::locale::HostLocale` and moved the runtime's first locale behavior through it. Environment locale detection, timezone fallback, basic locale normalization, and the current deterministic formatting placeholder now have shared tests. |
 | P2-APP-01A | First `layer36-curl` sample path | 2026-05-04 | Added `apps/layer36-curl`, a Rust Phase 2 component that reads a URL from app args, fetches through `net.http-client.get`, writes stdout, and fails cleanly without `net.connect`. |
 | P2-APP-01E | Clear `layer36-curl` network failures | 2026-05-04 | `layer36-curl` now prints distinct messages for response-too-large, timeout, and protocol errors while keeping its fetch-failure exit behavior stable. |
 | P2-APP-01B | Pure Layer36 imports for cat/curl samples | 2026-05-04 | `layer36-cat` and `layer36-curl` now parse `io.args.raw` directly. Their rebuilt components no longer import `wasi:*`, and the explicit fixture-backed CLI tests pass for hello, smoke, clock, cat, and curl. |
@@ -2212,7 +2213,7 @@ formal exit gates.
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
 | P2-APP-01C | Add cross-host fixture assertions and language sample variants | 2026-05-04 | Rust versions of `layer36-clock`, `layer36-cat`, and `layer36-curl` exist locally; full cross-host fixture assertions and language-binding variants still remain. |
-| P2-ADPT-COMMON-02 | Expand shared adapter-common beyond HTTP framing | 2026-05-04 | Path normalization, sandbox-root resolution, symlink escape checks, Unix no-follow file opens, and first shared clock helpers now exist. Directory-level race hardening, Windows-specific equivalent behavior, richer time edge cases, ICU/locale helpers, and the final per-OS adapter split remain before the adapter-common exit box can be checked. |
+| P2-ADPT-COMMON-02 | Expand shared adapter-common beyond HTTP framing | 2026-05-04 | Path normalization, sandbox-root resolution, symlink escape checks, Unix no-follow file opens, first shared clock helpers, and first shared locale helpers now exist. Directory-level race hardening, Windows-specific equivalent behavior, richer time edge cases, real ICU4X formatting, OS-specific locale/timezone discovery, and the final per-OS adapter split remain before the adapter-common exit box can be checked. |
 | P2-BIND-01E | Rust SDK crates.io publication | 2026-05-04 | Package shape, API docs, and outside-workspace smoke are ready locally; actual crates.io publication remains blocked until UAPI v0.1 is intentionally frozen. |
 
 ---

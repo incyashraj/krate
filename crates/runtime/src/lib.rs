@@ -31,6 +31,11 @@ pub mod phase2_bridge;
 pub mod phase2_host;
 
 #[cfg(feature = "phase2-bindings")]
+use layer36_adapter_common::locale::{
+    DateStyle as HostDateStyle, HostLocale, LocaleId as HostLocaleId,
+    NumberStyle as HostNumberStyle,
+};
+#[cfg(feature = "phase2-bindings")]
 use layer36_adapter_common::net::{
     build_plain_http_request, PlainHttpError, PlainHttpHeader, PlainHttpMethod, PlainHttpRequest,
     PlainHttpUrl,
@@ -393,6 +398,7 @@ struct LocalPhase2Adapter {
     output: Rc<RefCell<OutputMode>>,
     state: RefCell<LocalPhase2AdapterState>,
     clock: HostClock,
+    locale: HostLocale,
     app_args: Vec<String>,
     max_http_response_bytes: usize,
     sandbox_root: PathBuf,
@@ -411,6 +417,7 @@ impl LocalPhase2Adapter {
             output,
             state: RefCell::new(LocalPhase2AdapterState::default()),
             clock: HostClock::new(test_time_millis),
+            locale: HostLocale::from_env(),
             app_args,
             max_http_response_bytes,
             sandbox_root,
@@ -864,18 +871,11 @@ impl TimeAdapter for LocalPhase2Adapter {
 #[cfg(feature = "phase2-bindings")]
 impl LocaleAdapter for LocalPhase2Adapter {
     fn current(&self) -> std::result::Result<LocaleId, AdapterError> {
-        let bcp47 = std::env::var("LC_ALL")
-            .or_else(|_| std::env::var("LANG"))
-            .unwrap_or_else(|_| "en-US".to_string())
-            .split('.')
-            .next()
-            .unwrap_or("en-US")
-            .replace('_', "-");
-        Ok(LocaleId { bcp47 })
+        Ok(locale_from_host(self.locale.current()))
     }
 
     fn timezone(&self) -> std::result::Result<String, AdapterError> {
-        Ok(std::env::var("TZ").unwrap_or_else(|_| "UTC".to_string()))
+        Ok(self.locale.timezone())
     }
 
     fn format_date(
@@ -885,7 +885,12 @@ impl LocaleAdapter for LocalPhase2Adapter {
         style: DateStyle,
         loc: &LocaleId,
     ) -> std::result::Result<String, AdapterError> {
-        Ok(format!("{millis}:{tz}:{style:?}:{}", loc.bcp47))
+        Ok(HostLocale::format_date(
+            millis,
+            tz,
+            date_style_to_host(style),
+            &locale_to_host(loc),
+        ))
     }
 
     fn format_number(
@@ -894,7 +899,44 @@ impl LocaleAdapter for LocalPhase2Adapter {
         style: uapi_dispatch::NumberStyle,
         loc: &LocaleId,
     ) -> std::result::Result<String, AdapterError> {
-        Ok(format!("{value}:{style:?}:{}", loc.bcp47))
+        Ok(HostLocale::format_number(
+            value,
+            number_style_to_host(style),
+            &locale_to_host(loc),
+        ))
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn locale_from_host(locale: HostLocaleId) -> LocaleId {
+    LocaleId {
+        bcp47: locale.bcp47,
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn locale_to_host(locale: &LocaleId) -> HostLocaleId {
+    HostLocaleId {
+        bcp47: locale.bcp47.clone(),
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn date_style_to_host(style: DateStyle) -> HostDateStyle {
+    match style {
+        DateStyle::Short => HostDateStyle::Short,
+        DateStyle::Medium => HostDateStyle::Medium,
+        DateStyle::Long => HostDateStyle::Long,
+        DateStyle::Full => HostDateStyle::Full,
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn number_style_to_host(style: uapi_dispatch::NumberStyle) -> HostNumberStyle {
+    match style {
+        uapi_dispatch::NumberStyle::Decimal => HostNumberStyle::Decimal,
+        uapi_dispatch::NumberStyle::Percent => HostNumberStyle::Percent,
+        uapi_dispatch::NumberStyle::Currency => HostNumberStyle::Currency,
     }
 }
 

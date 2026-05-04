@@ -293,6 +293,12 @@ fixed test time, wall-clock milliseconds since Unix epoch, monotonic elapsed
 nanoseconds, and blocking sleep. The API remains small, but the behavior is no
 longer duplicated in the runtime alone.
 
+The locale adapter also uses shared host-locale code for its first slice:
+environment locale detection, timezone fallback, simple BCP 47-style cleanup,
+and deterministic placeholder formatting. The placeholder is not the final
+answer. It exists so early tests stay stable while the later ICU4X work lands in
+one shared adapter module.
+
 The first proof component lives at `test/integration/phase2-smoke`. It reads a
 file, checks time and locale, and writes output through the Phase 2 imports.
 This is the first end-to-end proof that the UAPI path is more than generated
