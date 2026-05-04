@@ -107,7 +107,7 @@ Unix-millisecond values fail with a clear conversion error.
 
 Locale has the same first shared path now. The runtime uses common helper code
 for `LC_ALL`/`LANG` locale detection, `TZ` fallback, basic locale normalization,
-and the current deterministic formatting placeholder. Real ICU4X formatting and
+and deterministic baseline date/number formatting. Real ICU4X formatting and
 native per-OS locale discovery are still open, but the early behavior now has
 one home instead of being copied in the runtime.
 

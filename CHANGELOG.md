@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Shared Phase 2 deterministic locale formatting baseline in `adapter-common`: date styles now format Unix-millis timestamps into stable UTC date/time strings, and number styles now return deterministic decimal/percent/currency text from locale hints.
 - Optional Phase 2 Go/TypeScript runtime fixture assertions in `crates/cli/tests/cli.rs` behind `LAYER36_GO_*` and `LAYER36_TS_*` WASM env vars, plus `scripts/test-phase2-language-variants.sh` and CI/self-hosted workflow hooks that auto-skip until variant components are supplied.
 - Go and TypeScript Phase 2 `layer36-cat` sample variants under `packages/sdk-go/examples` and `packages/sdk-ts/examples`, plus stricter SDK shape checks that assert cat/clock/curl sample behavior contracts.
 - Hidden Phase 2 deterministic clock-fixture controls: `layer36 run --test-locale` and `--test-timezone`, runtime wiring for locale/timezone overrides, and a strict `layer36-clock` snapshot test with fixed time + locale + timezone for cross-host output comparison.
@@ -24,7 +25,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 - Shared Phase 2 host-clock overflow guards in `adapter-common`: monotonic nanoseconds now saturate at `u64::MAX`, and out-of-range Unix-millis conversion is rejected with explicit error handling.
 - Phase 2 plain HTTP URL validation now rejects request-line whitespace/control characters and empty or zero ports before socket access.
 - Shared Phase 2 filesystem operation intents in `adapter-common`, with runtime guards that reject destructive root-like remove and rename targets before native host I/O.
-- Shared Phase 2 locale helpers in `adapter-common`, covering `LC_ALL`/`LANG` locale detection, `TZ` fallback, BCP 47-ish normalization, and the current deterministic formatting placeholder.
+- Shared Phase 2 locale helpers in `adapter-common`, covering `LC_ALL`/`LANG` locale detection, `TZ` fallback, and BCP 47-ish normalization.
 - Shared Phase 2 host clock helpers in `adapter-common`, including fixed test time, Unix-epoch millisecond conversion, monotonic elapsed time, and sleep.
 - Unix host file opens now use a no-follow final-symlink flag for Phase 2 sandbox paths, reducing open-time symlink race risk.
 - Symlink escape checks for relative Phase 2 filesystem paths resolved through the runtime sandbox root.

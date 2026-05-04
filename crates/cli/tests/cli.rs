@@ -524,7 +524,7 @@ fn configured_phase2_smoke_component_runs_through_uapi() {
     assert!(stdout.contains("file=Layer36 Phase 2 input"));
     assert!(stdout.contains("locale="));
     assert!(stdout.contains("timezone="));
-    assert!(stdout.contains("number=12.5:Decimal:"));
+    assert!(stdout.contains("number=12.5"));
     assert!(stdout.contains("time-ok=true"));
     assert!(stdout.contains("mono-ok=true"));
 }
@@ -578,7 +578,7 @@ fn configured_layer36_clock_component_uses_fixed_test_time() {
     assert!(stdout.contains("app=layer36-clock"));
     assert!(stdout.contains("timezone="));
     assert!(stdout.contains("locale="));
-    assert!(stdout.contains("date=1234567890:"));
+    assert!(stdout.contains("date=1970-01-15 06:56"));
 }
 
 #[test]
@@ -613,7 +613,7 @@ fn configured_layer36_clock_component_matches_deterministic_fixture_snapshot() {
             "app=layer36-clock\n",
             "timezone=UTC\n",
             "locale=en-US\n",
-            "date=1234567890:UTC:Medium:en-US\n"
+            "date=1970-01-15 06:56\n"
         )
     );
     assert!(output.stderr.is_empty());
@@ -649,7 +649,7 @@ fn configured_layer36_clock_component_runs_with_sample_manifest_auto_grant() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("app=layer36-clock"));
-    assert!(stdout.contains("date=1234567890:"));
+    assert!(stdout.contains("date=1970-01-15 06:56"));
 }
 
 #[test]
@@ -960,7 +960,7 @@ fn configured_layer36_go_clock_component_matches_deterministic_fixture_snapshot(
             "app=layer36-go-clock\n",
             "locale=en-US\n",
             "timezone=UTC\n",
-            "date=1234567890:UTC:Medium:en-US\n"
+            "date=1970-01-15 06:56\n"
         )
     );
     assert!(output.stderr.is_empty());
@@ -1065,7 +1065,7 @@ fn configured_layer36_ts_clock_component_matches_deterministic_fixture_snapshot(
             "app=layer36-ts-clock\n",
             "locale=en-US\n",
             "timezone=UTC\n",
-            "date=1234567890:UTC:Medium:en-US\n"
+            "date=1970-01-15 06:56\n"
         )
     );
     assert!(output.stderr.is_empty());

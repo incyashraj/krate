@@ -90,11 +90,153 @@ impl HostLocale {
     }
 
     pub fn format_date(millis: u64, timezone: &str, style: DateStyle, locale: &LocaleId) -> String {
-        format!("{millis}:{timezone}:{style:?}:{}", locale.bcp47)
+        let parts = utc_parts_from_unix_millis(millis);
+        let timezone = normalize_timezone(Some(timezone));
+        let locale = normalize_locale_tag(Some(&locale.bcp47));
+
+        match style {
+            DateStyle::Short => format!("{:04}-{:02}-{:02}", parts.year, parts.month, parts.day),
+            DateStyle::Medium => format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}",
+                parts.year, parts.month, parts.day, parts.hour, parts.minute
+            ),
+            DateStyle::Long => format!(
+                "{:04}-{:02}-{:02} {:02}:{:02}:{:02} {}",
+                parts.year,
+                parts.month,
+                parts.day,
+                parts.hour,
+                parts.minute,
+                parts.second,
+                timezone
+            ),
+            DateStyle::Full => format!(
+                "{}, {:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03} {} ({})",
+                parts.weekday_name(),
+                parts.year,
+                parts.month,
+                parts.day,
+                parts.hour,
+                parts.minute,
+                parts.second,
+                parts.millis,
+                timezone,
+                locale
+            ),
+        }
     }
 
     pub fn format_number(value: f64, style: NumberStyle, locale: &LocaleId) -> String {
-        format!("{value}:{style:?}:{}", locale.bcp47)
+        match style {
+            NumberStyle::Decimal => decimal_text(value),
+            NumberStyle::Percent => format!("{}%", decimal_text(value * 100.0)),
+            NumberStyle::Currency => {
+                format!("{}{}", currency_symbol(&locale.bcp47), decimal_text(value))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct UtcParts {
+    year: i32,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+    millis: u16,
+    weekday_index: u8,
+}
+
+impl UtcParts {
+    fn weekday_name(self) -> &'static str {
+        const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        WEEKDAYS[self.weekday_index as usize]
+    }
+}
+
+fn utc_parts_from_unix_millis(unix_millis: u64) -> UtcParts {
+    const SECS_PER_DAY: u64 = 86_400;
+    const SECS_PER_HOUR: u64 = 3_600;
+    const SECS_PER_MINUTE: u64 = 60;
+
+    let total_seconds = unix_millis / 1_000;
+    let millis = (unix_millis % 1_000) as u16;
+    let days = (total_seconds / SECS_PER_DAY) as i64;
+    let day_seconds = total_seconds % SECS_PER_DAY;
+
+    let hour = (day_seconds / SECS_PER_HOUR) as u8;
+    let minute = ((day_seconds % SECS_PER_HOUR) / SECS_PER_MINUTE) as u8;
+    let second = (day_seconds % SECS_PER_MINUTE) as u8;
+
+    let (year, month, day) = civil_from_days(days);
+    let weekday_index = (days + 4).rem_euclid(7) as u8;
+
+    UtcParts {
+        year,
+        month,
+        day,
+        hour,
+        minute,
+        second,
+        millis,
+        weekday_index,
+    }
+}
+
+fn civil_from_days(days_since_unix_epoch: i64) -> (i32, u8, u8) {
+    let z = days_since_unix_epoch + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    let year = y + if m <= 2 { 1 } else { 0 };
+
+    (year as i32, m as u8, d as u8)
+}
+
+fn decimal_text(value: f64) -> String {
+    if !value.is_finite() {
+        return value.to_string();
+    }
+
+    let mut text = value.to_string();
+    if text.contains('.') && !text.contains('e') && !text.contains('E') {
+        while text.ends_with('0') {
+            text.pop();
+        }
+        if text.ends_with('.') {
+            text.pop();
+        }
+    }
+    text
+}
+
+fn currency_symbol(locale: &str) -> &'static str {
+    let locale = normalize_locale_tag(Some(locale));
+    let lower = locale.to_ascii_lowercase();
+
+    if lower == "en-gb" {
+        "£"
+    } else if lower.starts_with("en-") {
+        "$"
+    } else if lower.starts_with("ja-") {
+        "¥"
+    } else if lower.starts_with("de-")
+        || lower.starts_with("fr-")
+        || lower.starts_with("es-")
+        || lower.starts_with("it-")
+        || lower.starts_with("pt-")
+        || lower.starts_with("nl-")
+    {
+        "€"
+    } else {
+        "¤"
     }
 }
 
@@ -166,18 +308,26 @@ mod tests {
     }
 
     #[test]
-    fn formatting_placeholder_is_stable_until_icu_slice() {
+    fn deterministic_formatter_is_stable_without_host_bindings() {
         let locale = LocaleId {
             bcp47: "en-US".to_string(),
         };
 
         assert_eq!(
             HostLocale::format_date(1_777, "UTC", DateStyle::Medium, &locale),
-            "1777:UTC:Medium:en-US"
+            "1970-01-01 00:00"
         );
         assert_eq!(
             HostLocale::format_number(42.5, NumberStyle::Decimal, &locale),
-            "42.5:Decimal:en-US"
+            "42.5"
+        );
+        assert_eq!(
+            HostLocale::format_number(0.125, NumberStyle::Percent, &locale),
+            "12.5%"
+        );
+        assert_eq!(
+            HostLocale::format_number(42.5, NumberStyle::Currency, &locale),
+            "$42.5"
         );
     }
 
@@ -191,5 +341,17 @@ mod tests {
 
         assert_eq!(locale.current().bcp47, "en-GB");
         assert_eq!(locale.timezone(), "UTC");
+    }
+
+    #[test]
+    fn full_date_style_includes_weekday_timezone_and_locale() {
+        let locale = LocaleId {
+            bcp47: "de-DE".to_string(),
+        };
+
+        assert_eq!(
+            HostLocale::format_date(1_234_567_890, "UTC", DateStyle::Full, &locale),
+            "Thu, 1970-01-15 06:56:07.890 UTC (de-DE)"
+        );
     }
 }

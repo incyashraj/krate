@@ -311,9 +311,9 @@ out-of-range Unix-millisecond values.
 
 The locale adapter also uses shared host-locale code for its first slice:
 environment locale detection, timezone fallback, simple BCP 47-style cleanup,
-and deterministic placeholder formatting. The placeholder is not the final
-answer. It exists so early tests stay stable while the later ICU4X work lands in
-one shared adapter module.
+and deterministic baseline formatting for date and number styles. This is not
+the final ICU4X-quality behavior, but it gives stable cross-host outputs while
+the deeper locale work lands in one shared adapter module.
 
 The first proof component lives at `test/integration/phase2-smoke`. It reads a
 file, checks time and locale, and writes output through the Phase 2 imports.

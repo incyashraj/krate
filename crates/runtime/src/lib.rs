@@ -1170,7 +1170,7 @@ mod tests {
 
         assert_eq!(locale.bcp47, "en-GB");
         assert_eq!(timezone, "UTC");
-        assert_eq!(date, "1234567890:UTC:Medium:en-GB");
+        assert_eq!(date, "1970-01-15 06:56");
     }
 
     #[cfg(feature = "phase2-bindings")]
