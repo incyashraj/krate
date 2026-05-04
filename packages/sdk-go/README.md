@@ -35,3 +35,9 @@ func main() {
 Until TinyGo is wired, the host-call hooks fail with a clear setup error. That
 keeps this package useful for API review without hiding the missing runtime
 piece.
+
+Current sample sources:
+
+- `examples/layer36-clock/main.go`
+- `examples/layer36-cat/main.go`
+- `examples/layer36-curl/main.go`

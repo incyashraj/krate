@@ -24,3 +24,9 @@ npx jco componentize ./src/main.ts --wit ../../wit/layer36/phase2 --world-name c
 ```
 
 The exact `jco componentize` command may change while Phase 2 bindings settle.
+
+Current sample sources:
+
+- `examples/layer36-clock.ts`
+- `examples/layer36-cat.ts`
+- `examples/layer36-curl.ts`

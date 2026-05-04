@@ -12,7 +12,7 @@ What exists now:
 - Type declarations for the Layer36 WIT import modules.
 - Helpers for arguments, stdout, stderr, file reads and writes, HTTP GET, time,
   and locale calls.
-- Example source files for a TypeScript clock and curl-style CLI.
+- Example source files for TypeScript clock, cat, and curl-style CLI apps.
 - A dependency-free shape check that guards the package layout and import names.
 
 What still needs proof:
@@ -40,6 +40,7 @@ io.print(net.getText(url));
 The longer examples live here:
 
 - `packages/sdk-ts/examples/layer36-clock.ts`
+- `packages/sdk-ts/examples/layer36-cat.ts`
 - `packages/sdk-ts/examples/layer36-curl.ts`
 
 This code is meant to compile into a WebAssembly component with `jco`, then run

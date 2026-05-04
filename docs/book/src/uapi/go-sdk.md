@@ -9,7 +9,7 @@ What exists now:
 
 - A Go module at `packages/sdk-go`.
 - Public packages for `io`, `fs`, `net`, `time`, and `locale`.
-- Example source files for a Go clock and curl-style CLI.
+- Example source files for Go clock, cat, and curl-style CLI apps.
 - A dependency-free shape check that guards the package layout.
 
 What still needs proof:
@@ -50,6 +50,7 @@ func main() {
 The longer examples live here:
 
 - `packages/sdk-go/examples/layer36-clock/main.go`
+- `packages/sdk-go/examples/layer36-cat/main.go`
 - `packages/sdk-go/examples/layer36-curl/main.go`
 
 ## Tooling

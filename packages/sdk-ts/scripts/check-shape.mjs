@@ -46,6 +46,7 @@ for (const relativePath of [
   "src/net.ts",
   "src/time.ts",
   "src/locale.ts",
+  "examples/layer36-cat.ts",
   "examples/layer36-clock.ts",
   "examples/layer36-curl.ts",
 ]) {
@@ -79,6 +80,34 @@ for (const moduleName of [
 
 if (imports.includes("wasi:")) {
   fail("SDK declarations must not depend on direct wasi:* imports");
+}
+
+if (process.exitCode) {
+  process.exit();
+}
+
+for (const [relativePath, tokens] of Object.entries({
+  "examples/layer36-cat.ts": [
+    "usage: layer36-ts-cat <path> [path...]",
+    "io.print(fs.readText(file));",
+  ],
+  "examples/layer36-clock.ts": [
+    "app=layer36-ts-clock",
+    "locale=",
+    "timezone=",
+    "date=",
+  ],
+  "examples/layer36-curl.ts": [
+    "usage: layer36-ts-curl <url>",
+    "io.print(net.getText(url));",
+  ],
+})) {
+  const source = await readText(relativePath);
+  for (const token of tokens) {
+    if (!source.includes(token)) {
+      fail(`${relativePath} is missing ${token}`);
+    }
+  }
 }
 
 if (process.exitCode) {

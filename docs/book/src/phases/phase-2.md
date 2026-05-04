@@ -168,6 +168,10 @@ The proof apps are:
 - `layer36-cat`
 - `layer36-clock`
 
+The Go and TypeScript SDK tracks now also include matching clock/cat/curl sample
+sources with CI shape checks. Runtime execution proofs for TinyGo and jco are
+still pending.
+
 If Phase 2 works, those apps should produce the same output on Linux, macOS, and
 Windows while running through the same Layer36 runtime model.
 

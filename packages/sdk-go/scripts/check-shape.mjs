@@ -31,6 +31,7 @@ for (const relativePath of [
   "layer36/net/net.go",
   "layer36/time/time.go",
   "layer36/locale/locale.go",
+  "examples/layer36-cat/main.go",
   "examples/layer36-clock/main.go",
   "examples/layer36-curl/main.go",
 ]) {
@@ -57,6 +58,36 @@ for (const [relativePath, tokens] of Object.entries({
   }
   if (source.includes("wasi:")) {
     fail(`${relativePath} must not depend on direct wasi:* imports`);
+  }
+}
+
+if (process.exitCode) {
+  process.exit();
+}
+
+for (const [relativePath, tokens] of Object.entries({
+  "examples/layer36-cat/main.go": [
+    "usage: layer36-go-cat <path> [path...]",
+    "l36fs.ReadText(file)",
+    "l36io.Print(body)",
+  ],
+  "examples/layer36-clock/main.go": [
+    "app=layer36-go-clock",
+    "locale=",
+    "timezone=",
+    "date=",
+  ],
+  "examples/layer36-curl/main.go": [
+    "usage: layer36-go-curl <url>",
+    "l36net.GetText(args[0])",
+    "l36io.Print(body)",
+  ],
+})) {
+  const source = await readText(relativePath);
+  for (const token of tokens) {
+    if (!source.includes(token)) {
+      fail(`${relativePath} is missing ${token}`);
+    }
   }
 }
 

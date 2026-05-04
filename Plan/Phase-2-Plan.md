@@ -2121,7 +2121,7 @@ formal exit gates.
 
 | Area | Current read | What remains |
 |------|--------------|--------------|
-| Core Phase 2 engineering | About 82-87% through the first useful CLI slice | WIT freeze review, more shared adapter slices, cross-host identity runs, and network hardening. |
+| Core Phase 2 engineering | About 83-88% through the first useful CLI slice | WIT freeze review, more shared adapter slices, cross-host identity runs, and network hardening. |
 | Formal Phase 2 exit | About 45-50% complete | Language runtime proofs, seven-day CI evidence, fuzzing, full benchmark gate, threat model v0.2, ADR-0009 through ADR-0012, and external validation. |
 | UAPI and UCap | Strong shape, not frozen | Review default grants, path normalization, network policy details, and freeze rules before `0.1.0`. |
 | SDKs | Rust is usable; Go and TypeScript are scaffolded | Publish-ready Rust after freeze, TinyGo runtime proof, and jco runtime proof. |
@@ -2209,6 +2209,8 @@ formal exit gates.
 | P2-BIND-02A | Go and TypeScript tooling probes | 2026-05-04 | `layer36 doctor` now reports TinyGo, Go, Node, npm, and jco so the language-binding tracks can fail early with clear setup guidance before their sample builds are wired into CI. |
 | P2-BIND-02B | Go SDK scaffold | 2026-05-04 | Added `packages/sdk-go` as the first Go/TinyGo SDK shape, with public helper packages for `io`, `fs`, `net`, `time`, and `locale`, example clock/curl sources, README, mdBook guide, and a dependency-free CI shape check. |
 | P2-BIND-03A | TypeScript SDK scaffold | 2026-05-04 | Added `packages/sdk-ts` as the first `@layer36/sdk` shape, with WIT import declarations, helper modules for `io`, `fs`, `net`, `time`, and `locale`, example clock/curl sources, package metadata, README, an mdBook guide, and a dependency-free CI shape check. |
+| P2-BIND-02C | Go cat sample variant + shape contract | 2026-05-05 | Added `packages/sdk-go/examples/layer36-cat/main.go` and extended the Go SDK shape check with required sample tokens for cat/clock/curl behavior contracts. |
+| P2-BIND-03B | TypeScript cat sample variant + shape contract | 2026-05-05 | Added `packages/sdk-ts/examples/layer36-cat.ts` and extended the TypeScript SDK shape check with required sample tokens for cat/clock/curl behavior contracts. |
 | P2-DOC-01 | WIT style guide | 2026-05-04 | Published `docs/book/src/wit-style.md` with naming, resources, typed errors, capability mapping, comments, versioning, and review checks; linked it from mdBook and `CONTRIBUTING.md`. |
 | P2-DOC-02A | Generated UAPI reference seed | 2026-05-04 | Added `layer36-tools` reference generator using `wit-parser`; generated `docs/book/src/reference/uapi/index.md`; linked it in mdBook; hosted and self-hosted CI check the generated page is current. |
 | P2-DOC-02B | Generated UAPI reference context | 2026-05-04 | The generated reference now includes interface summaries, capability notes, Rust SDK examples, WIT doc comments, and a generator test that checks those sections stay present. |
@@ -2222,7 +2224,7 @@ formal exit gates.
 
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
-| P2-APP-01C | Add cross-host fixture assertions and language sample variants | 2026-05-04 | Rust sample coverage now includes deterministic `layer36-clock` snapshot assertions with fixed time/locale/timezone. Remaining work: extend equivalent fixture assertions to language-binding sample variants (Go/TypeScript) once those build/run paths are wired. |
+| P2-APP-01C | Add cross-host fixture assertions and language sample variants | 2026-05-04 | Rust sample coverage includes deterministic `layer36-clock` snapshot assertions with fixed time/locale/timezone, and Go/TypeScript sample sets now include clock/cat/curl variants with CI shape contracts. Remaining work: real TinyGo/jco runtime execution plus fixture-backed output assertions for those language variants. |
 | P2-ADPT-COMMON-02 | Expand shared adapter-common beyond HTTP framing | 2026-05-04 | Path normalization, prefix hardening, Windows reserved-name hardening, sandbox-root resolution, symlink escape checks, Unix and Windows no-follow final-symlink open hardening, root-like destructive operation guards, first shared clock and time-overflow helpers, and first shared locale helpers now exist. Deeper directory race hardening, remaining Windows parity checks, real ICU4X formatting, OS-specific locale/timezone discovery, and the final per-OS adapter split remain before the adapter-common exit box can be checked. |
 | P2-BIND-01E | Rust SDK crates.io publication | 2026-05-04 | Package shape, API docs, and outside-workspace smoke are ready locally; actual crates.io publication remains blocked until UAPI v0.1 is intentionally frozen. |
 
