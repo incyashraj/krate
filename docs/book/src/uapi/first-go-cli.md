@@ -68,7 +68,8 @@ scripts/test-phase2-language-variants.sh
 ```
 
 If those fixtures are not present, the script exits cleanly and explains that
-tests were skipped.
+tests were skipped. If you provide Go fixture env vars, provide all three
+(`clock`, `cat`, and `curl`) so the runtime lane runs as one complete set.
 
 ## 5. Where This Fits In Phase 2
 
