@@ -130,6 +130,8 @@ Response parsing now also goes through shared adapter-common code, with strict
 validation for HTTP version, status range, malformed header lines, header count
 limits, and unsafe header values before data reaches runtime-facing response
 types.
+That shared response parser now also enforces a strict header-block size cap
+(16 KiB), so oversized header sections fail early in a deterministic way.
 The response read loop is shared too, so timeout mapping and full-response size
 limits use one helper across adapters.
 Response integrity checks now reject unsupported response `Transfer-Encoding`

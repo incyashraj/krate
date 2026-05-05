@@ -54,6 +54,7 @@ impl PlainHttpUrl {
 const MAX_HTTP_HEADERS: usize = 64;
 const MAX_HTTP_HEADER_NAME_BYTES: usize = 128;
 const MAX_HTTP_HEADER_VALUE_BYTES: usize = 4 * 1024;
+const MAX_HTTP_HEADER_BLOCK_BYTES: usize = 16 * 1024;
 const MAX_HTTP_AUTHORITY_BYTES: usize = 255;
 const MAX_HTTP_BODY_BYTES: usize = 1024 * 1024;
 const MAX_HTTP_TARGET_BYTES: usize = 4096;
@@ -244,6 +245,9 @@ pub fn parse_plain_http_response(bytes: &[u8]) -> Result<PlainHttpResponse, Plai
     let Some(header_end) = bytes.windows(4).position(|window| window == b"\r\n\r\n") else {
         return Err(PlainHttpError::InvalidResponse);
     };
+    if header_end > MAX_HTTP_HEADER_BLOCK_BYTES {
+        return Err(PlainHttpError::InvalidResponse);
+    }
 
     let header_bytes = &bytes[..header_end];
     let body = bytes[header_end + 4..].to_vec();
@@ -823,6 +827,22 @@ mod tests {
         );
         assert_eq!(
             parse_plain_http_response(b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\n\r\n").unwrap_err(),
+            PlainHttpError::InvalidResponse
+        );
+    }
+
+    #[test]
+    fn response_parser_rejects_oversized_header_block() {
+        let mut response = String::from("HTTP/1.1 200 OK\r\n");
+        while response.len() <= MAX_HTTP_HEADER_BLOCK_BYTES {
+            response.push_str("X-Layer36: ");
+            response.push_str(&"a".repeat(200));
+            response.push_str("\r\n");
+        }
+        response.push_str("\r\nok");
+
+        assert_eq!(
+            parse_plain_http_response(response.as_bytes()).unwrap_err(),
             PlainHttpError::InvalidResponse
         );
     }
