@@ -508,6 +508,7 @@ impl LocalPhase2Adapter {
         let root = self.sandbox_root.canonicalize().map_err(map_io_error)?;
         let sandbox_relative = logical_path_to_sandbox_relative(path)?;
         let host_path = root.join(sandbox_relative);
+        ensure_no_symlink_segments(&root, &host_path, missing_leaf)?;
 
         match host_path.canonicalize() {
             Ok(real_path) => {
@@ -622,6 +623,43 @@ fn ensure_path_in_sandbox(root: &Path, path: &Path) -> std::result::Result<(), A
     } else {
         Err(AdapterError::PermissionDenied)
     }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn ensure_no_symlink_segments(
+    root: &Path,
+    host_path: &Path,
+    missing_leaf: MissingLeaf,
+) -> std::result::Result<(), AdapterError> {
+    let relative = host_path
+        .strip_prefix(root)
+        .map_err(|_| AdapterError::PermissionDenied)?;
+    let segments: Vec<_> = relative.components().collect();
+    if segments.is_empty() {
+        return Ok(());
+    }
+
+    let mut current = root.to_path_buf();
+    for (index, segment) in segments.iter().enumerate() {
+        current.push(segment.as_os_str());
+        match std::fs::symlink_metadata(&current) {
+            Ok(metadata) => {
+                if metadata.file_type().is_symlink() {
+                    return Err(AdapterError::PermissionDenied);
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                let is_leaf = index + 1 == segments.len();
+                if is_leaf && missing_leaf == MissingLeaf::Allow {
+                    return Ok(());
+                }
+                return Err(map_io_error(err));
+            }
+            Err(err) => return Err(map_io_error(err)),
+        }
+    }
+
+    Ok(())
 }
 
 #[cfg(feature = "phase2-bindings")]
@@ -1817,6 +1855,49 @@ mod tests {
         assert_eq!(write_err, AdapterError::PermissionDenied);
         assert_eq!(broken_write_err, AdapterError::PermissionDenied);
         assert_eq!(inside_link_err, AdapterError::PermissionDenied);
+
+        drop(adapter);
+        std::fs::remove_dir_all(temp).expect("remove fixture directory");
+    }
+
+    #[cfg(all(feature = "phase2-bindings", unix))]
+    #[test]
+    fn local_fs_adapter_rejects_symlinked_segments_inside_sandbox() {
+        use std::os::unix::fs::symlink;
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time should move forward")
+            .as_nanos();
+        let temp = std::env::temp_dir().join(format!(
+            "layer36-sandbox-inner-symlink-{}-{unique}",
+            std::process::id()
+        ));
+        let sandbox = temp.join("sandbox");
+        let real = sandbox.join("real");
+        std::fs::create_dir_all(&real).expect("create real directory");
+        std::fs::write(real.join("inside.txt"), b"inside").expect("write fixture");
+        symlink(&real, sandbox.join("alias")).expect("create in-sandbox symlink");
+
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            sandbox,
+        );
+
+        let open_err = adapter
+            .open("alias/inside.txt", OpenMode::Read)
+            .expect_err("symlinked path segment should be denied");
+        let create_err = adapter
+            .open("alias/new.txt", OpenMode::Write)
+            .expect_err("write through symlinked segment should be denied");
+
+        assert_eq!(open_err, AdapterError::PermissionDenied);
+        assert_eq!(create_err, AdapterError::PermissionDenied);
 
         drop(adapter);
         std::fs::remove_dir_all(temp).expect("remove fixture directory");
