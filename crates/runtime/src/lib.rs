@@ -1191,7 +1191,7 @@ fn resolve_plain_http_socket_addrs(
 fn resolve_socket_addrs_on_host(host: &str, port: u16) -> std::io::Result<Vec<SocketAddr>> {
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     {
-        return host_os_adapter::resolve_socket_addrs(host, port);
+        host_os_adapter::resolve_socket_addrs(host, port)
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
@@ -1205,7 +1205,7 @@ fn resolve_socket_addrs_on_host(host: &str, port: u16) -> std::io::Result<Vec<So
 fn connect_tcp_on_host(addr: SocketAddr, timeout: Option<Duration>) -> std::io::Result<TcpStream> {
     #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
     {
-        return host_os_adapter::connect_tcp(addr, timeout);
+        host_os_adapter::connect_tcp(addr, timeout)
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
