@@ -15,6 +15,8 @@ use crate::{
 
 use wasmtime::component::Resource;
 
+const MAX_PHASE2_HOST_RESOURCES: usize = 1024;
+
 pub struct Phase2Host<'a> {
     guard: UapiGuard,
     adapter: Box<dyn HostAdapter + 'a>,
@@ -433,6 +435,7 @@ struct Phase2ResourceTable {
 
 impl Phase2ResourceTable {
     fn insert_file(&mut self, handle: FileHandle) -> wasmtime::Result<Resource<fs::files::File>> {
+        self.ensure_capacity()?;
         let id = self.allocate_id()?;
         self.files.insert(id, handle);
         Ok(Resource::new_own(id))
@@ -442,6 +445,7 @@ impl Phase2ResourceTable {
         &mut self,
         handle: FileHandle,
     ) -> wasmtime::Result<Resource<io::streams::InputStream>> {
+        self.ensure_capacity()?;
         let id = self.allocate_id()?;
         self.inputs.insert(id, handle);
         Ok(Resource::new_own(id))
@@ -451,6 +455,7 @@ impl Phase2ResourceTable {
         &mut self,
         handle: FileHandle,
     ) -> wasmtime::Result<Resource<io::streams::OutputStream>> {
+        self.ensure_capacity()?;
         let id = self.allocate_id()?;
         self.outputs.insert(id, handle);
         Ok(Resource::new_own(id))
@@ -478,6 +483,16 @@ impl Phase2ResourceTable {
 
     fn remove_output(&mut self, id: u32) {
         self.outputs.remove(&id);
+    }
+
+    fn ensure_capacity(&self) -> wasmtime::Result<()> {
+        let total = self.files.len() + self.inputs.len() + self.outputs.len();
+        if total >= MAX_PHASE2_HOST_RESOURCES {
+            return Err(wasmtime::Error::msg(format!(
+                "Phase 2 host resource table exceeds limit ({MAX_PHASE2_HOST_RESOURCES})"
+            )));
+        }
+        Ok(())
     }
 
     fn allocate_id(&mut self) -> wasmtime::Result<u32> {
@@ -965,6 +980,25 @@ mod tests {
         let calls = adapter.calls.borrow();
         assert_eq!(calls.close_file, 1);
         assert_eq!(calls.close_stream, 1);
+    }
+
+    #[test]
+    fn host_resource_table_rejects_overflow() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::from_grants(["io.stdout".parse().unwrap()]));
+        let mut host = Phase2Host::new(guard, Box::new(adapter));
+
+        for _ in 0..MAX_PHASE2_HOST_RESOURCES {
+            io::stdio::Host::stdout(&mut host).expect("allocate output stream within limit");
+        }
+
+        let err = io::stdio::Host::stdout(&mut host)
+            .expect_err("host resource-table overflow should be rejected");
+        assert!(
+            err.to_string()
+                .contains("Phase 2 host resource table exceeds limit"),
+            "unexpected host resource-table overflow error: {err}"
+        );
     }
 
     #[test]

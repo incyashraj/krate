@@ -12,6 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Generated host Phase 2 resource-table guardrail: the host-side file/input/output resource table now enforces an active-resource cap and fails with a clear host-table limit error when exceeded, with runtime tests covering overflow rejection.
 - Runtime Phase 2 resource lifecycle hardening: generated file/stream `drop` callbacks now close underlying local adapter handles before host-side resource-table removal, with tests covering close-on-drop and resource-slot reuse after close.
 - Runtime Phase 2 resource-table guardrail: local adapter now caps the number of open file/stream handles in one run session, and returns a clear runtime I/O error when the cap is exceeded, with runtime tests covering overflow rejection.
 - Phase 2 language-variant fixture auto-discovery: Go/TypeScript CLI integration tests and `scripts/test-phase2-language-variants.sh` now auto-detect `test/integration/language-variants/*.wasm` fixtures when `LAYER36_GO_*` / `LAYER36_TS_*` env vars are not set.

@@ -61,7 +61,9 @@ and flushes can route through the adapter without exposing raw host IDs. The
 local runtime now also caps that open-handle table, so Phase 2 components
 cannot grow stream/file handles without bound. Generated resource `drop`
 callbacks now close underlying local adapter handles too, so released
-resources return slots back to the same local runtime session.
+resources return slots back to the same local runtime session. The generated
+host-side resource table now has its own active-resource cap too, so both host
+and adapter layers have bounded handle growth in this phase.
 
 The runtime also has an initial Phase 2 execution path now. `layer36 run` keeps
 supporting the Phase 1 proof world, then falls back to the Phase 2 `cli` world
