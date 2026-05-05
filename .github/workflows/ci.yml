@@ -309,7 +309,7 @@ jobs:
   # 10. Benchmark smoke + warning-only regression check
   # ──────────────────────────────────────────────
   benchmarks:
-    name: Benchmarks (warning only)
+    name: Benchmarks (Phase 2 baseline, warning only)
     if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     steps:
@@ -342,6 +342,10 @@ jobs:
         run: cargo bench -p layer36-runtime --bench uapi_dispatch
       - name: Check against recorded baseline
         if: always()
+        env:
+          BENCH_BASELINE_FILES: ${{ github.workspace }}/docs/book/src/phase2/benchmark-baseline.json
+          BENCH_REGRESSION_MODE: warn
+          BENCH_REGRESSION_THRESHOLD_PCT: "10"
         run: scripts/check-benchmark-regression.sh
 
   # ──────────────────────────────────────────────

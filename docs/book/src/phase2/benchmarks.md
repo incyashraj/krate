@@ -40,6 +40,11 @@ The checker supports:
 - `BENCH_REGRESSION_THRESHOLD_PCT=<n>` for threshold tuning
 - `BENCH_BASELINE_FILES=<path[:path...]>` for custom baseline sets
 
+Current CI usage:
+
+- Hosted full benchmark job uses `warn` mode against the Phase 2 baseline file.
+- Self-hosted CI can run the same check in `fail` mode for strict local gating.
+
 ## Dispatch Baseline (2026-05-05)
 
 | Path | Local result | Phase 2 target | Notes |
