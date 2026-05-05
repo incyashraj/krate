@@ -1253,6 +1253,14 @@ fn map_io_error(err: std::io::Error) -> AdapterError {
 fn map_net_io_error(err: std::io::Error) -> AdapterError {
     match err.kind() {
         std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock => AdapterError::Timeout,
+        std::io::ErrorKind::ConnectionRefused
+        | std::io::ErrorKind::ConnectionReset
+        | std::io::ErrorKind::ConnectionAborted
+        | std::io::ErrorKind::NotConnected
+        | std::io::ErrorKind::AddrInUse
+        | std::io::ErrorKind::AddrNotAvailable
+        | std::io::ErrorKind::BrokenPipe
+        | std::io::ErrorKind::UnexpectedEof => AdapterError::Network(err.to_string()),
         _ => map_io_error(err),
     }
 }
@@ -2025,6 +2033,22 @@ mod tests {
 
         let err = adapter.fetch(req).expect_err("zero timeout should fail");
         assert_eq!(err, AdapterError::Timeout);
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn map_net_io_error_classifies_connection_refused_as_network() {
+        let err = std::io::Error::from(std::io::ErrorKind::ConnectionRefused);
+        let mapped = map_net_io_error(err);
+        assert!(matches!(mapped, AdapterError::Network(_)));
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn map_net_io_error_keeps_timeout_as_timeout() {
+        let err = std::io::Error::from(std::io::ErrorKind::TimedOut);
+        let mapped = map_net_io_error(err);
+        assert_eq!(mapped, AdapterError::Timeout);
     }
 
     #[cfg(feature = "phase2-bindings")]
