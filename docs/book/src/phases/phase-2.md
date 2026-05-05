@@ -175,7 +175,8 @@ Unix fallback too: when `TZ` is not set and `/etc/localtime` is a zoneinfo
 symlink, Layer36 derives a normalized timezone from that link target. Real
 ICU4X formatting and broader host-native per-OS locale/timezone discovery are
 still open, but the early behavior now has one home instead of being copied in
-the runtime.
+the runtime. This fallback order is captured in
+`docs/adr/0010-locale-timezone-discovery-fallbacks.md`.
 
 There is also a first smoke app under `test/integration/phase2-smoke`. It is not
 one of the final sample apps yet. Its job is smaller: prove that a real Phase 2

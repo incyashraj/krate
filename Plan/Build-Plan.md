@@ -1794,6 +1794,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-05 | Extended sandbox traversal hardening for Windows parity: runtime path checks now treat any reparse-point segment as blocked link semantics during sandbox traversal, closing junction-style path-hop gaps that symlink-only checks could miss on Windows. |
 | 2026-05-05 | Accepted ADR-0009 (`docs/adr/0009-sandbox-link-semantics.md`) to lock cross-host sandbox traversal link semantics for Phase 2: deny symlink traversal on Unix-like hosts, deny reparse-point traversal on Windows, and retain no-follow final-open behavior on both host families. |
 | 2026-05-05 | Improved shared locale/timezone discovery in `adapter-common`: locale fallback now includes `LC_MESSAGES`, `LANGUAGE` first-token preference, and `AppleLocale`; timezone fallback now infers from Unix `/etc/localtime` symlink targets under `.../zoneinfo/...` when `TZ` is not set. Added tests for valid and malformed fallback shapes. |
+| 2026-05-05 | Accepted ADR-0010 (`docs/adr/0010-locale-timezone-discovery-fallbacks.md`) to lock Phase 2 locale/timezone discovery fallback order and keep normalization-driven deterministic behavior while broader host-native discovery remains future work. |
 
 ---
 

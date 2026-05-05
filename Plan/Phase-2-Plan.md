@@ -2113,7 +2113,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | 12 | Developer who knows Rust but not WASM can write a CLI in < 30 min using docs | Started: first Rust walkthrough exists using the current repo-local SDK, component build, manifest init/explain, granted run, and denial path; timed external run remains |
 | 13 | UAPI reference docs auto-generated from WIT and published on docs site | Done for the current draft: generated mdBook page exists under `reference/uapi`, its capability tables come from the manifest crate, it includes function-level behavior notes, and hosted/self-hosted CI checks it is current |
 | 14 | WIT Style Guide merged into `docs/book/` | Done: `docs/book/src/wit-style.md` is linked from mdBook and `CONTRIBUTING.md` |
-| 15 | ADRs 0006 through at least 0012 merged | Started: ADR-0006, ADR-0007, ADR-0008, and ADR-0009 are accepted; ADR-0010 through ADR-0012 remain |
+| 15 | ADRs 0006 through at least 0012 merged | Started: ADR-0006, ADR-0007, ADR-0008, ADR-0009, and ADR-0010 are accepted; ADR-0011 and ADR-0012 remain |
 
 ### Remaining Work Snapshot
 
@@ -2123,7 +2123,7 @@ formal exit gates.
 | Area | Current read | What remains |
 |------|--------------|--------------|
 | Core Phase 2 engineering | About 89-90% through the first useful CLI slice | WIT freeze review, more shared adapter slices, cross-host identity runs, and network hardening. |
-| Formal Phase 2 exit | About 46-51% complete | Language runtime proofs, seven-day CI evidence, fuzzing, full benchmark gate, threat model v0.2, ADR-0010 through ADR-0012, and external validation. |
+| Formal Phase 2 exit | About 47-52% complete | Language runtime proofs, seven-day CI evidence, fuzzing, full benchmark gate, threat model v0.2, ADR-0011 and ADR-0012, and external validation. |
 | UAPI and UCap | Strong shape, not frozen | Review default grants, path normalization, network policy details, and freeze rules before `0.1.0`. |
 | SDKs | Rust is usable; Go and TypeScript are scaffolded | Publish-ready Rust after freeze, TinyGo runtime proof, and jco runtime proof. |
 
@@ -2260,6 +2260,7 @@ formal exit gates.
 | P2-DOC-05 | Non technical progress explainer page | 2026-05-05 | Added `docs/book/src/progress-for-everyone.md` with plain language project context, visual system flow, current timeline state, and glossary level explanations for non technical readers. Linked it from mdBook navigation. |
 | P2-ADR-01 | First Phase 2 ADR batch | 2026-05-04 | Accepted ADR-0006 for WIT versioning, ADR-0007 for UCap v0.1 soft enforcement, and ADR-0008 for host async runtime direction. |
 | P2-ADR-02 | Sandbox link-semantics policy ADR | 2026-05-05 | Accepted ADR-0009 to define cross-host sandbox traversal link semantics: deny symbolic-link traversal on Unix-like hosts and deny reparse-point traversal on Windows, with final-open no-follow behavior retained on both host families. |
+| P2-ADR-03 | Locale/timezone fallback discovery ADR | 2026-05-05 | Accepted ADR-0010 to define strict locale/timezone discovery fallback order for Phase 2 (`LC_ALL`/`LANG`/`LC_MESSAGES`/`LANGUAGE`/`AppleLocale`, and `TZ` plus Unix `/etc/localtime` zoneinfo-link inference), while preserving normalization-driven deterministic behavior. |
 
 ---
 
@@ -2281,8 +2282,9 @@ formal exit gates.
 | ADR-0007 | UCap v0.1 soft enforcement model | Accepted | 2026-05-04 |
 | ADR-0008 | Async runtime choice (tokio) for host adapters | Accepted | 2026-05-04 |
 | ADR-0009 | Sandbox link-semantics guardrails | Accepted | 2026-05-05 |
+| ADR-0010 | Locale and timezone discovery fallbacks (Phase 2) | Accepted | 2026-05-05 |
 
-_ADRs 0010–0012 to be determined during Phase 2 work._
+_ADRs 0011–0012 to be determined during Phase 2 work._
 
 ---
 

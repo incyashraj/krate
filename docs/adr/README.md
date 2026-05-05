@@ -26,6 +26,7 @@ merged into `main`, and then **never modified** — only superseded by a new ADR
 | [0007](0007-ucap-soft-enforcement.md) | UCap v0.1 soft enforcement | Accepted | 2 |
 | [0008](0008-host-async-runtime.md) | Host async runtime | Accepted | 2 |
 | [0009](0009-sandbox-link-semantics.md) | Sandbox link-semantics guardrails | Accepted | 2 |
+| [0010](0010-locale-timezone-discovery-fallbacks.md) | Locale and timezone discovery fallbacks | Accepted | 2 |
 
 ## Process
 
