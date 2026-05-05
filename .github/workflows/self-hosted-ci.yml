@@ -13,6 +13,16 @@ on:
         required: false
         type: string
         default: "30"
+      benchmark_regression_mode:
+        description: Benchmark regression mode (warn or fail)
+        required: false
+        type: string
+        default: fail
+      benchmark_regression_threshold_pct:
+        description: Benchmark regression threshold percentage
+        required: false
+        type: string
+        default: "10"
 
 concurrency:
   group: self-hosted-ci-${{ github.ref }}
@@ -114,6 +124,22 @@ jobs:
 
       - name: Dependency audit
         run: scripts/check-dependencies.sh
+
+      - name: Build benchmark fixtures
+        run: scripts/build-phase1-components.sh
+
+      - name: Run runtime startup benchmarks
+        run: cargo bench -p layer36-runtime --bench startup
+
+      - name: Run Phase 2 UAPI dispatch benchmarks
+        run: cargo bench -p layer36-runtime --bench uapi_dispatch
+
+      - name: Check benchmark regression (Phase 2 baseline)
+        env:
+          BENCH_BASELINE_FILES: ${{ github.workspace }}/docs/book/src/phase2/benchmark-baseline.json
+          BENCH_REGRESSION_MODE: ${{ inputs.benchmark_regression_mode }}
+          BENCH_REGRESSION_THRESHOLD_PCT: ${{ inputs.benchmark_regression_threshold_pct }}
+        run: scripts/check-benchmark-regression.sh
 
       - name: Fuzz smoke
         env:

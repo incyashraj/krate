@@ -1,0 +1,47 @@
+{
+  "recorded_at": "2026-05-05",
+  "machine": "Apple M4, 10 CPU cores, 16 GB RAM, macOS 26.3.1 (25D2128), arm64",
+  "notes": "Initial Phase 2 local baseline for startup and UAPI dispatch paths. Use for regression tracking only, not release guarantees.",
+  "metrics": {
+    "phase2_component_from_binary_smoke": {
+      "criterion_path": "phase2_runtime/component_from_binary_phase2_smoke",
+      "baseline_ns": 2857448
+    },
+    "phase2_cold_start_to_main_smoke": {
+      "criterion_path": "phase2_runtime/cold_start_to_main_phase2_smoke",
+      "baseline_ns": 3161026
+    },
+    "phase2_loaded_run_smoke": {
+      "criterion_path": "phase2_runtime/loaded_run_phase2_smoke",
+      "baseline_ns": 81052
+    },
+    "phase2_loaded_run_clock_fixed_time": {
+      "criterion_path": "phase2_runtime/loaded_run_layer36_clock_fixed_time",
+      "baseline_ns": 49917
+    },
+    "phase2_uapi_default_stdout_grant": {
+      "criterion_path": "phase2_uapi_dispatch/default_stdout_grant",
+      "baseline_ns": 192
+    },
+    "phase2_uapi_fs_open_read_granted": {
+      "criterion_path": "phase2_uapi_dispatch/fs_open_read_granted",
+      "baseline_ns": 1158
+    },
+    "phase2_uapi_fs_handle_read_granted": {
+      "criterion_path": "phase2_uapi_dispatch/fs_handle_read_granted",
+      "baseline_ns": 1195
+    },
+    "phase2_uapi_fs_handle_write_granted": {
+      "criterion_path": "phase2_uapi_dispatch/fs_handle_write_granted",
+      "baseline_ns": 1191
+    },
+    "phase2_uapi_fs_missing_read_denied": {
+      "criterion_path": "phase2_uapi_dispatch/fs_missing_read_denied",
+      "baseline_ns": 579
+    },
+    "phase2_uapi_net_fetch_granted": {
+      "criterion_path": "phase2_uapi_dispatch/net_fetch_granted",
+      "baseline_ns": 954
+    }
+  }
+}

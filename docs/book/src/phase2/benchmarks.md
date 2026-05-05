@@ -7,36 +7,49 @@ network, time, locale, or streams. That check needs to be cheap.
 These numbers are an early local read, not a release promise. They tell us
 whether the current design is in the right range before we freeze UAPI v0.1.
 
-## Reference Machine
+## Reference Machine (Current Baseline)
 
 | Field | Value |
 |---|---|
-| Date | 2026-05-04 |
+| Date | 2026-05-05 |
 | CPU | Apple M4 |
 | OS | macOS |
 | Architecture | arm64 |
 | Rust | rustc 1.91.1 |
 
-## Command
+## Commands
 
 ```bash
 cargo bench -p layer36-runtime --bench uapi_dispatch
+cargo bench -p layer36-runtime --bench startup
+scripts/check-benchmark-regression.sh
 ```
 
 The benchmark uses a no-op host adapter. That means it measures Layer36
 dispatcher and policy overhead, not disk speed, terminal speed, or network
 speed.
 
-## First Local Read
+The current Phase 2 regression baseline is stored in:
+
+- `docs/book/src/phase2/benchmark-baseline.json`
+
+The checker supports:
+
+- `BENCH_REGRESSION_MODE=warn` for warning-only reports
+- `BENCH_REGRESSION_MODE=fail` for hard gate mode
+- `BENCH_REGRESSION_THRESHOLD_PCT=<n>` for threshold tuning
+- `BENCH_BASELINE_FILES=<path[:path...]>` for custom baseline sets
+
+## Dispatch Baseline (2026-05-05)
 
 | Path | Local result | Phase 2 target | Notes |
 |---|---:|---:|---|
-| Default stdout grant | ~186 ns | < 1 us | Default low-risk IO capability. |
-| Filesystem open with read grant | ~611 ns | < 1 us | Path grant check plus adapter call. |
-| File handle read with grant re-check | ~623 ns | < 1 us | Re-checks the opened file path before read. |
-| File handle write with grant re-check | ~560 ns | < 1 us | Re-checks the opened file path before write. |
-| Missing filesystem read grant | ~331 ns | < 1 us | Denial path stops before adapter work. |
-| HTTP fetch grant check | ~484 ns | < 1 us | URL endpoint parsing plus `net.connect` check. |
+| Default stdout grant | ~192 ns | < 1 us | Default low-risk IO capability. |
+| Filesystem open with read grant | ~1.16 us | track | Path grant check plus adapter call. |
+| File handle read with grant re-check | ~1.20 us | track | Re-checks the opened file path before read. |
+| File handle write with grant re-check | ~1.19 us | track | Re-checks the opened file path before write. |
+| Missing filesystem read grant | ~579 ns | < 1 us | Denial path stops before adapter work. |
+| HTTP fetch grant check | ~954 ns | < 1 us | URL endpoint parsing plus `net.connect` check. |
 
 ## What This Means
 
@@ -64,14 +77,14 @@ scripts/build-layer36-clock-component.sh
 cargo bench -p layer36-runtime --bench startup
 ```
 
-## First Phase 2 Startup Read
+## Startup Baseline (2026-05-05)
 
 | Path | Local result | Phase 2 target | Notes |
 |---|---:|---:|---|
-| Compile Phase 2 smoke component from bytes | ~3.16 ms | track | Wasmtime component compile path. |
-| Cold runtime + run Phase 2 smoke app | ~3.47 ms | < 150 ms | Reads a granted file, uses time, locale, and stdout. |
-| Run preloaded Phase 2 smoke app | ~45.97 us | track | UAPI calls with component already loaded. |
-| Run preloaded `layer36-clock` with fixed time | ~32.55 us | track | Time, locale, and stdout path. |
+| Compile Phase 2 smoke component from bytes | ~2.86 ms | track | Wasmtime component compile path. |
+| Cold runtime + run Phase 2 smoke app | ~3.16 ms | < 150 ms | Reads a granted file, uses time, locale, and stdout. |
+| Run preloaded Phase 2 smoke app | ~81.05 us | track | UAPI calls with component already loaded. |
+| Run preloaded `layer36-clock` with fixed time | ~49.92 us | track | Time, locale, and stdout path. |
 
 The first cold runtime number is comfortably below the Phase 2 startup target on
 the reference machine. We still need a full CLI benchmark with `hyperfine`,
