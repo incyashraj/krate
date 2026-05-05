@@ -132,6 +132,8 @@ limits, and unsafe header values before data reaches runtime-facing response
 types.
 That shared response parser now also enforces a strict header-block size cap
 (16 KiB), so oversized header sections fail early in a deterministic way.
+Request framing now also enforces a strict total request-frame size cap, so
+oversized combinations of valid headers and body fail before socket writes.
 The response read loop is shared too, so timeout mapping and full-response size
 limits use one helper across adapters.
 Response integrity checks now reject unsupported response `Transfer-Encoding`

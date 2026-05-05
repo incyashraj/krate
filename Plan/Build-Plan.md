@@ -1797,6 +1797,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-05 | Accepted ADR-0010 (`docs/adr/0010-locale-timezone-discovery-fallbacks.md`) to lock Phase 2 locale/timezone discovery fallback order and keep normalization-driven deterministic behavior while broader host-native discovery remains future work. |
 | 2026-05-05 | Extended Unix timezone fallback discovery to parse `/etc/timezone` when `/etc/localtime` is not a usable zoneinfo symlink. Parser behavior is strict (skip blanks/comments, inline-comment tolerant, first valid candidate only, malformed shapes rejected) and backed by adapter-common tests. |
 | 2026-05-05 | Hardened shared plain-HTTP parsing with a strict response header-block size cap (16 KiB). Oversized header sections are now rejected deterministically in `adapter-common` before runtime response mapping, with dedicated coverage. |
+| 2026-05-05 | Hardened shared plain-HTTP request framing with a strict total request-frame size cap (`MAX_HTTP_REQUEST_BYTES`): oversized combinations of otherwise valid headers and request body now fail as `body-too-large` before socket writes, with dedicated adapter-common coverage. |
 
 ---
 

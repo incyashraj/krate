@@ -58,6 +58,7 @@ const MAX_HTTP_HEADER_BLOCK_BYTES: usize = 16 * 1024;
 const MAX_HTTP_AUTHORITY_BYTES: usize = 255;
 const MAX_HTTP_BODY_BYTES: usize = 1024 * 1024;
 const MAX_HTTP_TARGET_BYTES: usize = 4096;
+const MAX_HTTP_REQUEST_BYTES: usize = MAX_HTTP_BODY_BYTES + MAX_HTTP_HEADER_BLOCK_BYTES + 4096;
 
 /// A parsed network endpoint used for capability checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -236,6 +237,9 @@ pub fn build_plain_http_request(
     }
     request.extend_from_slice(b"\r\n");
     request.extend_from_slice(&req.body);
+    if request.len() > MAX_HTTP_REQUEST_BYTES {
+        return Err(PlainHttpError::BodyTooLarge);
+    }
 
     Ok(request)
 }
@@ -684,6 +688,27 @@ mod tests {
             method: PlainHttpMethod::Post,
             headers: Vec::new(),
             body: vec![b'x'; MAX_HTTP_BODY_BYTES + 1],
+        };
+
+        assert_eq!(
+            build_plain_http_request(&req, &url).unwrap_err(),
+            PlainHttpError::BodyTooLarge
+        );
+    }
+
+    #[test]
+    fn request_builder_rejects_oversized_total_request_frame() {
+        let url = PlainHttpUrl::parse("http://127.0.0.1:8080/").expect("parse HTTP URL");
+        let headers: Vec<PlainHttpHeader> = (0..16)
+            .map(|index| PlainHttpHeader {
+                name: format!("X-Big-{index}"),
+                value: "v".repeat(MAX_HTTP_HEADER_VALUE_BYTES),
+            })
+            .collect();
+        let req = PlainHttpRequest {
+            method: PlainHttpMethod::Post,
+            headers,
+            body: vec![b'x'; MAX_HTTP_BODY_BYTES],
         };
 
         assert_eq!(
