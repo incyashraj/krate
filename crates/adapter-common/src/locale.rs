@@ -172,22 +172,48 @@ fn system_timezone_fallback() -> Option<String> {
 
 #[cfg(unix)]
 fn infer_unix_timezone_from_localtime() -> Option<String> {
-    let target = std::fs::read_link("/etc/localtime").ok()?;
-    timezone_from_localtime_link_target(&target)
+    if let Ok(target) = std::fs::read_link("/etc/localtime") {
+        if let Some(timezone) = timezone_from_localtime_link_target(&target) {
+            return Some(timezone);
+        }
+    }
+
+    let contents = std::fs::read_to_string("/etc/timezone").ok()?;
+    timezone_from_etc_timezone_contents(&contents)
 }
 
 fn timezone_from_localtime_link_target(target: &Path) -> Option<String> {
     let portable = target.to_string_lossy().replace('\\', "/");
     let marker = "/zoneinfo/";
     let (_, suffix) = portable.split_once(marker)?;
-    let candidate = suffix.trim_matches('/');
+    normalize_timezone_candidate(suffix.trim_matches('/'))
+}
+
+fn timezone_from_etc_timezone_contents(contents: &str) -> Option<String> {
+    for raw_line in contents.lines() {
+        let line = raw_line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(timezone) = normalize_timezone_candidate(line) {
+            return Some(timezone);
+        }
+    }
+
+    None
+}
+
+fn normalize_timezone_candidate(candidate: &str) -> Option<String> {
+    let candidate = candidate.trim_matches('/').trim();
     if candidate.is_empty() {
         return None;
     }
+
     let normalized = normalize_timezone(Some(candidate));
     if normalized == "UTC" && !candidate.eq_ignore_ascii_case("UTC") {
         return None;
     }
+
     Some(normalized)
 }
 
@@ -551,5 +577,23 @@ mod tests {
             "/usr/share/zoneinfo/America/New York",
         ))
         .is_none());
+    }
+
+    #[test]
+    fn timezone_can_be_inferred_from_etc_timezone_contents() {
+        let tz = timezone_from_etc_timezone_contents("Asia/Singapore\n")
+            .expect("timezone should be inferred");
+        assert_eq!(tz, "Asia/Singapore");
+
+        let tz = timezone_from_etc_timezone_contents("  # comment\nAmerica/Toronto # tz name\n")
+            .expect("timezone should be inferred");
+        assert_eq!(tz, "America/Toronto");
+    }
+
+    #[test]
+    fn timezone_etc_timezone_parser_rejects_invalid_shapes() {
+        assert!(timezone_from_etc_timezone_contents("America/New York\n").is_none());
+        assert!(timezone_from_etc_timezone_contents("../UTC\n").is_none());
+        assert!(timezone_from_etc_timezone_contents("\n# only comment\n").is_none());
     }
 }

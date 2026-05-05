@@ -172,10 +172,13 @@ falling back to `UTC` on invalid input. Locale discovery now also has practical
 fallbacks for `LC_MESSAGES`, `LANGUAGE` (first preferred token), and
 `AppleLocale` when `LC_ALL`/`LANG` are absent. Timezone discovery now has a
 Unix fallback too: when `TZ` is not set and `/etc/localtime` is a zoneinfo
-symlink, Layer36 derives a normalized timezone from that link target. Real
-ICU4X formatting and broader host-native per-OS locale/timezone discovery are
-still open, but the early behavior now has one home instead of being copied in
-the runtime. This fallback order is captured in
+symlink, Layer36 derives a normalized timezone from that link target. It now
+also falls back to `/etc/timezone` parsing if the localtime symlink path is not
+usable, with strict parsing rules (ignore comments/blank lines, accept first
+valid candidate, reject malformed timezone shapes). Real ICU4X formatting and
+broader host-native per-OS locale/timezone discovery are still open, but the
+early behavior now has one home instead of being copied in the runtime. This
+fallback order is captured in
 `docs/adr/0010-locale-timezone-discovery-fallbacks.md`.
 
 There is also a first smoke app under `test/integration/phase2-smoke`. It is not
