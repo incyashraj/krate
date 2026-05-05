@@ -8,6 +8,42 @@ function writeLine(stream, value) {
   stream.writeAll(encoder.encode(`${value}\n`));
 }
 
+function describeError(err) {
+  if (typeof err === "string") {
+    return err;
+  }
+
+  if (err && typeof err === "object") {
+    const record = err;
+    const tag = typeof record.tag === "string" ? record.tag : null;
+    const payload =
+      typeof record.payload === "string"
+        ? record.payload
+        : typeof record.val === "string"
+          ? record.val
+          : null;
+    if (tag && payload) {
+      return `${tag}: ${payload}`;
+    }
+    if (tag) {
+      return tag;
+    }
+    if (payload) {
+      return payload;
+    }
+    try {
+      const asJson = JSON.stringify(record);
+      if (asJson && asJson !== "{}") {
+        return asJson;
+      }
+    } catch {
+      // Fall back to default string conversion below.
+    }
+  }
+
+  return String(err);
+}
+
 export function run() {
   const url = raw()
     .split("\n")
@@ -23,7 +59,7 @@ export function run() {
     out.flush();
     return 0;
   } catch (err) {
-    writeLine(stderr(), `layer36-ts-curl: ${String(err)}`);
+    writeLine(stderr(), `layer36-ts-curl: ${describeError(err)}`);
     writeLine(stderr(), "layer36-ts-curl: fetch failed");
     return 21;
   }

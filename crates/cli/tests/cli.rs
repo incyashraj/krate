@@ -1457,6 +1457,63 @@ fn configured_layer36_ts_curl_component_fetches_granted_http_url() {
 }
 
 #[test]
+fn configured_layer36_ts_curl_component_denies_missing_grant() {
+    let Some(path) = configured_ts_component(
+        "LAYER36_TS_CURL_WASM",
+        "layer36-ts-curl component test",
+        "layer36_ts_curl.wasm",
+    ) else {
+        return;
+    };
+
+    let output = layer36()
+        .arg("run")
+        .arg(path)
+        .args(["--", "http://example.com/"])
+        .output()
+        .expect("run layer36-ts-curl component without grant");
+
+    assert_eq!(output.status.code(), Some(21));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("layer36-ts-curl: fetch failed"));
+    assert!(
+        stderr.contains("layer36-ts-curl:"),
+        "expected TS curl to print an error line before fetch-failed marker: {stderr}"
+    );
+}
+
+#[test]
+fn configured_layer36_ts_curl_component_reports_unresolved_host() {
+    let Some(path) = configured_ts_component(
+        "LAYER36_TS_CURL_WASM",
+        "layer36-ts-curl component test",
+        "layer36_ts_curl.wasm",
+    ) else {
+        return;
+    };
+
+    let host = "layer36-does-not-exist.invalid";
+    let url = format!("http://{host}/unreachable");
+
+    let output = layer36()
+        .args(["run", "--grant", &format!("net.connect:{host}:80")])
+        .arg(path)
+        .args(["--", &url])
+        .output()
+        .expect("run layer36-ts-curl against unresolved host");
+
+    assert_eq!(output.status.code(), Some(21));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("layer36-ts-curl: fetch failed"));
+    assert!(
+        stderr.contains("layer36-ts-curl:"),
+        "expected TS curl to print an error line before fetch-failed marker: {stderr}"
+    );
+}
+
+#[test]
 fn fuel_limit_exits_with_limit_code() {
     let Some(path) = configured_hello_component() else {
         return;

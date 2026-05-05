@@ -50,6 +50,10 @@ scripts/build-phase2-go-variant-smoke.sh
 This lane checks TinyGo component build health and `wasi:cli/run` export shape.
 It is intentionally separate from the Layer36 runtime fixture gate.
 
+The TypeScript curl variant now has extra runtime assertions that do not depend
+on localhost fixture sockets. Missing-grant and unresolved-host paths are
+checked directly, so restricted runners still provide useful curl evidence.
+
 The runtime tests now include an optional Phase 2 language-variant slice for Go
 and TypeScript sample components. It runs through:
 

@@ -271,6 +271,9 @@ active without manual runner setup. Go lane status remains explicit.
 TypeScript fixture generation now enforces Layer36-only imports and uses the
 real WIT variant shape for filesystem open mode (`{ tag: "read" }`), which made
 the TypeScript cat fixture runtime path stable in local tests.
+TypeScript curl fixture coverage now also includes non-localhost denial and
+unresolved-host error checks, so restricted runners still prove key curl failure
+paths even when localhost fixture sockets are unavailable.
 Self-hosted CI now also runs a TinyGo WASI Preview 2 build-smoke lane for Go
 clock/cat/curl samples, including a component-shape check for `wasi:cli/run`.
 Layer36-runtime fixture proof for Go remains pending.
