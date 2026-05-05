@@ -772,17 +772,29 @@ fn ensure_no_symlink_segments(
 
 #[cfg(feature = "phase2-bindings")]
 fn metadata_has_blocked_link_semantics(metadata: &std::fs::Metadata) -> bool {
-    #[cfg(windows)]
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        host_os_adapter::is_blocked_link_metadata(metadata)
+    }
+
+    #[cfg(all(
+        not(target_os = "linux"),
+        not(target_os = "macos"),
+        not(target_os = "windows"),
+        windows
+    ))]
     {
         use std::os::windows::fs::MetadataExt;
-
-        // Treat any Windows reparse point as blocked during sandbox traversal.
-        // This includes symlinks and junction-style links.
         const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
         (metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT) != 0
     }
 
-    #[cfg(not(windows))]
+    #[cfg(all(
+        not(target_os = "linux"),
+        not(target_os = "macos"),
+        not(target_os = "windows"),
+        not(windows)
+    ))]
     {
         metadata.file_type().is_symlink()
     }

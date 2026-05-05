@@ -53,6 +53,23 @@ pub fn resolve_socket_addrs(host: &str, port: u16) -> std::io::Result<Vec<Socket
     (host, port).to_socket_addrs().map(Iterator::collect)
 }
 
+/// Check blocked-link metadata semantics through the Windows adapter path.
+pub fn is_blocked_link_metadata(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        (metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = metadata;
+        false
+    }
+}
+
 /// Read the current locale through the Windows adapter path.
 pub fn current_locale(locale: &HostLocale) -> LocaleId {
     locale.current()
@@ -132,6 +149,12 @@ mod tests {
     #[test]
     fn resolve_socket_addrs_hook_is_available() {
         let hook: fn(&str, u16) -> std::io::Result<Vec<SocketAddr>> = resolve_socket_addrs;
+        let _ = hook;
+    }
+
+    #[test]
+    fn blocked_link_metadata_hook_is_available() {
+        let hook: fn(&std::fs::Metadata) -> bool = is_blocked_link_metadata;
         let _ = hook;
     }
 
