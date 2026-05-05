@@ -162,6 +162,10 @@ impl IoAdapter for NoopAdapter {
         Ok(())
     }
 
+    fn close_stream(&self, _handle: &FileHandle) -> Result<(), AdapterError> {
+        Ok(())
+    }
+
     fn log(&self, _level: &str, _message: &str) -> Result<(), AdapterError> {
         Ok(())
     }
@@ -221,6 +225,10 @@ impl FsAdapter for NoopAdapter {
     }
 
     fn rename(&self, _from: &str, _to: &str) -> Result<(), AdapterError> {
+        Ok(())
+    }
+
+    fn close_file(&self, _handle: &FileHandle) -> Result<(), AdapterError> {
         Ok(())
     }
 }

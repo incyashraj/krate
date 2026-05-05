@@ -1779,6 +1779,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-05 | Added a local runtime resource-table cap for Phase 2 file/stream handles. Once the open-handle cap is reached, further handle allocation fails with a clear runtime I/O error, and runtime tests cover overflow rejection. |
 | 2026-05-05 | Added close-on-drop wiring for Phase 2 file/stream resources: generated host `drop` callbacks now close underlying local adapter handles before removing host-side resource entries, with tests covering drop-close behavior and resource-slot reuse after close. |
 | 2026-05-05 | Added a generated-host resource-table cap for Phase 2 file/input/output resources, with overflow now failing through a clear host-table limit error and runtime tests proving overflow rejection. |
+| 2026-05-05 | Fixed hosted CI clippy failures after resource-lifecycle trait expansion by updating the runtime benchmark `NoopAdapter` to implement new `close_stream` and `close_file` trait methods. |
 
 ---
 
