@@ -1,7 +1,7 @@
 {
   "recorded_at": "2026-05-05",
-  "machine": "Apple M4, 10 CPU cores, 16 GB RAM, macOS 26.3.1 (25D2128), arm64",
-  "notes": "Initial Phase 2 local baseline for startup and UAPI dispatch paths. Use for regression tracking only, not release guarantees.",
+  "machine": "Darwin 25.4.0 arm64",
+  "notes": "Auto-recorded Phase 2 baseline from local Criterion output; use for regression tracking only.",
   "metrics": {
     "phase2_component_from_binary_smoke": {
       "criterion_path": "phase2_runtime/component_from_binary_phase2_smoke",

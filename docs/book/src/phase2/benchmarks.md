@@ -22,6 +22,7 @@ whether the current design is in the right range before we freeze UAPI v0.1.
 ```bash
 cargo bench -p layer36-runtime --bench uapi_dispatch
 cargo bench -p layer36-runtime --bench startup
+scripts/record-phase2-benchmark-baseline.sh
 scripts/check-benchmark-regression.sh
 ```
 
