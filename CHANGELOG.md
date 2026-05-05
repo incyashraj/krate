@@ -12,6 +12,8 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
+- Docs: added a non technical progress page at `docs/book/src/progress-for-everyone.md` with plain language goals, system flow diagrams, current timeline state, and glossary style explanations.
+- CLI and runtime Phase 2 app-argument count guardrail: `layer36 run` preflight and runtime `io.args.raw` now reject more than 1024 app arguments before guest parsing, with runtime and CLI tests covering this path.
 - Runtime Phase 2 resource-id reuse hardening: local adapter and generated host resource tables now recycle released file/stream resource IDs before allocating new IDs, with runtime tests proving close/drop reuse and free-list-first allocation at ID-counter ceiling edge cases.
 - Generated host Phase 2 resource-table guardrail: the host-side file/input/output resource table now enforces an active-resource cap and fails with a clear host-table limit error when exceeded, with runtime tests covering overflow rejection.
 - Runtime Phase 2 resource lifecycle hardening: generated file/stream `drop` callbacks now close underlying local adapter handles before host-side resource-table removal, with tests covering close-on-drop and resource-slot reuse after close.

@@ -529,6 +529,30 @@ fn run_rejects_oversized_raw_args_payload_before_runtime() {
 }
 
 #[test]
+fn run_rejects_too_many_app_arguments_before_runtime() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let wasm_path = dir.path().join("app.wasm");
+    std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
+
+    let mut cmd = layer36();
+    cmd.arg("run").arg(&wasm_path).arg("--");
+    for _ in 0..1025 {
+        cmd.arg("x");
+    }
+    let output = cmd
+        .output()
+        .expect("run layer36 with too many app arguments");
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("app arguments exceed count limit"));
+    assert!(
+        !stderr.contains("invalid wasm component"),
+        "runtime should not run when app args are invalid"
+    );
+}
+
+#[test]
 fn configured_hello_component_runs_and_matches_expected_fixture_hash() {
     let Some(path) = configured_hello_component() else {
         return;

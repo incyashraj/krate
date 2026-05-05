@@ -8,6 +8,7 @@
 
 - [Vision](vision.md)
 - [Roadmap](roadmap.md)
+- [Layer36 for Everyone](progress-for-everyone.md)
 - [Architecture](architecture.md)
 - [Core Concepts](concepts.md)
 

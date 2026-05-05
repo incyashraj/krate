@@ -60,6 +60,8 @@ const MAX_PHASE2_WRITE_BYTES: usize = 8 * 1024 * 1024;
 #[cfg(feature = "phase2-bindings")]
 const MAX_PHASE2_LIST_ENTRIES: usize = 4096;
 #[cfg(feature = "phase2-bindings")]
+const MAX_PHASE2_ARG_COUNT: usize = 1024;
+#[cfg(feature = "phase2-bindings")]
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
 #[cfg(feature = "phase2-bindings")]
 const MAX_PHASE2_OPEN_RESOURCES: usize = 1024;
@@ -568,6 +570,12 @@ fn bounded_write_len(n: usize) -> std::result::Result<u32, AdapterError> {
 
 #[cfg(feature = "phase2-bindings")]
 fn encode_args_raw(app_args: &[String]) -> std::result::Result<String, AdapterError> {
+    if app_args.len() > MAX_PHASE2_ARG_COUNT {
+        return Err(AdapterError::Io(format!(
+            "app arguments exceed count limit ({MAX_PHASE2_ARG_COUNT} arguments)"
+        )));
+    }
+
     let mut raw = String::new();
     for arg in app_args {
         if arg.is_empty() {
@@ -1407,6 +1415,28 @@ mod tests {
         assert!(
             matches!(err, AdapterError::Io(ref message) if message.contains("raw args limit")),
             "unexpected oversized-args error: {err:?}"
+        );
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn local_io_adapter_rejects_too_many_raw_args() {
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            vec!["x".to_string(); MAX_PHASE2_ARG_COUNT + 1],
+            1024,
+            PathBuf::from("."),
+        );
+
+        let err = adapter
+            .args_raw()
+            .expect_err("too many raw args should be rejected");
+        assert!(
+            matches!(err, AdapterError::Io(ref message) if message.contains("count limit")),
+            "unexpected too-many-args error: {err:?}"
         );
     }
 

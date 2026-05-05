@@ -1775,12 +1775,14 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-05 | Added bounded Phase 2 write operations in the local adapter: per-call stream writes and filesystem writes above 8 MiB now fail with explicit runtime I/O errors, with runtime tests covering both oversized write paths. |
 | 2026-05-05 | Added raw app-argument transport guardrails in the local adapter: `io.args.raw` now rejects empty args, newline/NUL delimiter characters, and oversized raw payloads above 64 KiB, with runtime tests covering valid and invalid argument shapes. |
 | 2026-05-05 | Added CLI preflight checks for Phase 2 app arguments so invalid raw-args shapes fail before runtime execution: empty args, newline/NUL delimiter characters, and oversized raw payloads now return clear CLI errors with dedicated integration coverage. |
+| 2026-05-05 | Extended Phase 2 app-argument guardrails with a count limit: runtime and CLI now reject more than 1024 app arguments before guest parsing, with runtime and CLI tests for this path. |
 | 2026-05-05 | Added language-variant fixture auto-discovery for Go/TypeScript runtime tests: both CLI integration helpers and `scripts/test-phase2-language-variants.sh` now detect `test/integration/language-variants/*.wasm` when `LAYER36_GO_*` / `LAYER36_TS_*` env vars are not set. |
 | 2026-05-05 | Added a local runtime resource-table cap for Phase 2 file/stream handles. Once the open-handle cap is reached, further handle allocation fails with a clear runtime I/O error, and runtime tests cover overflow rejection. |
 | 2026-05-05 | Added close-on-drop wiring for Phase 2 file/stream resources: generated host `drop` callbacks now close underlying local adapter handles before removing host-side resource entries, with tests covering drop-close behavior and resource-slot reuse after close. |
 | 2026-05-05 | Added a generated-host resource-table cap for Phase 2 file/input/output resources, with overflow now failing through a clear host-table limit error and runtime tests proving overflow rejection. |
 | 2026-05-05 | Added Phase 2 resource-ID reuse in both local adapter and generated host resource tables, with runtime tests proving close/drop reuse and free-list-first allocation when ID counters hit their numeric ceiling. |
 | 2026-05-05 | Fixed hosted CI clippy failures after resource-lifecycle trait expansion by updating the runtime benchmark `NoopAdapter` to implement new `close_stream` and `close_file` trait methods. |
+| 2026-05-05 | Added a new docs page for non technical readers, `docs/book/src/progress-for-everyone.md`, with plain language status, system flow diagrams, and current phase progress; linked it in mdBook navigation for GitHub Pages. |
 
 ---
 

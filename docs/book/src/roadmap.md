@@ -8,10 +8,10 @@ The current state is:
 
 - **Phase 0 is mostly done.** The repo, docs, CI, issues, labels, and release
   setup exist. Community and public launch items remain.
-- **Phase 1 engineering is done.** One shared `.wasm` component runs through the
-  Layer36 runtime on Linux, macOS, and Windows in CI.
-- **Phase 2 is the next real build phase.** It turns the runtime proof into a
-  useful app API.
+- **Phase 1 engineering is done.** One shared `.wasm` component runs through
+  the Layer36 runtime on Linux, macOS, and Windows in CI.
+- **Phase 2 is active.** It turns the runtime proof into a useful app API, and
+  the first real app APIs and sample apps are already implemented.
 
 ## System Timeline
 
@@ -36,8 +36,9 @@ flowchart LR
     classDef pending fill:#eeeeee,stroke:#999999,color:#777777,stroke-width:1px;
 
     class P0 done;
-    class P1 current;
-    class P2,P3,P4,P5,P6,P7 pending;
+    class P1 done;
+    class P2 current;
+    class P3,P4,P5,P6,P7 pending;
 ```
 
 ## Phase Table
@@ -46,7 +47,7 @@ flowchart LR
 |---|-------|------|----------|--------|
 | 0 | Foundation | Make the project real enough to work in public. | Done enough for development; external items pending | Mostly done |
 | 1 | Runtime proof | Run one WASM component on Linux, macOS, and Windows. | Done | Engineering done |
-| 2 | UAPI v0.1 | Build useful CLI APIs and sample apps. | est. 4 to 8 weeks | Next |
+| 2 | UAPI v0.1 | Build useful CLI APIs and sample apps. | est. 4 to 8 weeks | Active |
 | 3 | Desktop UI | Run one GUI app on Windows, macOS, and Linux. | est. 6 to 10 weeks | Planned |
 | 4 | Mobile hosts | Run the same app on iOS and Android. | est. 8 to 12 weeks | Planned |
 | 5 | Developer SDK | Make project creation, debug, and packaging smooth. | est. 6 to 10 weeks | Planned |

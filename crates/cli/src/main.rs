@@ -13,6 +13,7 @@ use layer36_runtime::{Config, RunOutcome, Runtime, RuntimeError, DEFAULT_MAX_HTT
 use serde::Serialize;
 
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
+const MAX_PHASE2_ARG_COUNT: usize = 1024;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -385,6 +386,13 @@ fn run_component(request: RunRequest) -> Result<u8> {
 }
 
 fn validate_app_args(app_args: &[String]) -> Result<()> {
+    if app_args.len() > MAX_PHASE2_ARG_COUNT {
+        anyhow::bail!(
+            "app arguments exceed count limit ({} arguments)",
+            MAX_PHASE2_ARG_COUNT
+        );
+    }
+
     let mut encoded_len = 0usize;
     for arg in app_args {
         if arg.is_empty() {
