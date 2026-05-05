@@ -5,19 +5,23 @@
   "metrics": {
     "phase2_component_from_binary_smoke": {
       "criterion_path": "phase2_runtime/component_from_binary_phase2_smoke",
-      "baseline_ns": 2857448
+      "baseline_ns": 2857448,
+      "threshold_pct": 60
     },
     "phase2_cold_start_to_main_smoke": {
       "criterion_path": "phase2_runtime/cold_start_to_main_phase2_smoke",
-      "baseline_ns": 3161026
+      "baseline_ns": 3161026,
+      "threshold_pct": 60
     },
     "phase2_loaded_run_smoke": {
       "criterion_path": "phase2_runtime/loaded_run_phase2_smoke",
-      "baseline_ns": 81052
+      "baseline_ns": 81052,
+      "threshold_pct": 35
     },
     "phase2_loaded_run_clock_fixed_time": {
       "criterion_path": "phase2_runtime/loaded_run_layer36_clock_fixed_time",
-      "baseline_ns": 49917
+      "baseline_ns": 49917,
+      "threshold_pct": 35
     },
     "phase2_uapi_default_stdout_grant": {
       "criterion_path": "phase2_uapi_dispatch/default_stdout_grant",

@@ -66,19 +66,28 @@ baseline_metrics.each do |metric, spec|
   estimates = JSON.parse(File.read(file))
   current = estimates.fetch("mean").fetch("point_estimate")
   baseline_ns = spec.fetch("baseline_ns")
-  allowed = baseline_ns * (1.0 + threshold_pct / 100.0)
+  metric_threshold_pct = spec.fetch("threshold_pct", threshold_pct)
+  begin
+    metric_threshold_pct = Float(metric_threshold_pct)
+  rescue ArgumentError, TypeError
+    puts "::error::invalid threshold_pct for #{metric}: #{metric_threshold_pct.inspect}"
+    regressions += 1
+    checked += 1
+    next
+  end
+  allowed = baseline_ns * (1.0 + metric_threshold_pct / 100.0)
   checked += 1
 
   if current > allowed
     regressions += 1
     pct = ((current - baseline_ns) / baseline_ns.to_f * 100).round(1)
     if mode == "fail"
-      puts "::error::#{metric} regressed by #{pct}% (current #{current.round} ns, baseline #{baseline_ns.round} ns, allowed #{allowed.round} ns)"
+      puts "::error::#{metric} regressed by #{pct}% (current #{current.round} ns, baseline #{baseline_ns.round} ns, allowed #{allowed.round} ns, threshold #{metric_threshold_pct}%)"
     else
-      puts "::warning::#{metric} regressed by #{pct}% (current #{current.round} ns, baseline #{baseline_ns.round} ns, allowed #{allowed.round} ns)"
+      puts "::warning::#{metric} regressed by #{pct}% (current #{current.round} ns, baseline #{baseline_ns.round} ns, allowed #{allowed.round} ns, threshold #{metric_threshold_pct}%)"
     end
   else
-    puts "#{metric}: #{current.round} ns (baseline #{baseline_ns.round} ns, threshold #{threshold_pct}%)"
+    puts "#{metric}: #{current.round} ns (baseline #{baseline_ns.round} ns, threshold #{metric_threshold_pct}%)"
   end
 end
 
