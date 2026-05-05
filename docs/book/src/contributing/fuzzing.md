@@ -16,6 +16,7 @@ Current targets:
 
 ```bash
 cargo install cargo-fuzz --locked
+rustup toolchain install nightly --profile minimal
 ```
 
 ## Run a short smoke

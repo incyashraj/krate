@@ -39,6 +39,9 @@ jobs:
           if ! command -v cargo-fuzz >/dev/null 2>&1; then
             cargo install cargo-fuzz --locked
           fi
+          if ! rustup toolchain list | grep -q "^nightly"; then
+            rustup toolchain install nightly --profile minimal
+          fi
           if ! command -v mdbook >/dev/null 2>&1; then
             cargo install mdbook --locked --version 0.4.40
           fi
