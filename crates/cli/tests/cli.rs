@@ -1065,6 +1065,31 @@ fn configured_layer36_curl_component_reports_dns_failure() {
 }
 
 #[test]
+fn configured_layer36_curl_component_reports_protocol_error() {
+    let Some(path) = configured_layer36_curl_component() else {
+        return;
+    };
+
+    let (addr, server) = spawn_malformed_http_fixture(b"NOT-HTTP\r\n\r\n");
+    let url = format!("http://{addr}/malformed");
+
+    let output = layer36()
+        .args(["run", "--grant", &format!("net.connect:{addr}")])
+        .arg(path)
+        .args(["--", &url])
+        .output()
+        .expect("run layer36-curl against malformed HTTP fixture");
+    server
+        .join()
+        .expect("malformed HTTP fixture thread completed");
+
+    assert_eq!(output.status.code(), Some(21));
+    assert!(output.stdout.is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("layer36-curl: protocol error"));
+}
+
+#[test]
 fn configured_layer36_go_clock_component_matches_deterministic_fixture_snapshot() {
     let Some(path) = configured_go_component(
         "LAYER36_GO_CLOCK_WASM",
@@ -1840,6 +1865,43 @@ fn reserve_unused_local_addr() -> SocketAddr {
         .expect("read local address probe port");
     drop(listener);
     addr
+}
+
+fn spawn_malformed_http_fixture(payload: &'static [u8]) -> (SocketAddr, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind malformed HTTP fixture");
+    listener
+        .set_nonblocking(true)
+        .expect("set malformed HTTP fixture nonblocking");
+    let addr = listener
+        .local_addr()
+        .expect("read malformed HTTP fixture address");
+    let handle = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    assert!(
+                        Instant::now() < deadline,
+                        "timed out waiting for malformed HTTP fixture connection"
+                    );
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(err) => panic!("accept malformed HTTP fixture connection: {err}"),
+            }
+        };
+        stream
+            .set_nonblocking(false)
+            .expect("set malformed HTTP fixture stream blocking");
+        let mut request = [0_u8; 1024];
+        let _ = stream
+            .read(&mut request)
+            .expect("read malformed HTTP fixture request");
+        stream
+            .write_all(payload)
+            .expect("write malformed HTTP fixture response");
+    });
+    (addr, handle)
 }
 
 fn expected_hello_hash() -> Option<String> {

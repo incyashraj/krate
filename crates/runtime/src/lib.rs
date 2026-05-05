@@ -8,7 +8,7 @@ use std::{
     collections::BTreeMap,
     fs::File,
     io::{Read, Seek, SeekFrom, Write},
-    net::{TcpStream, ToSocketAddrs},
+    net::{SocketAddr, TcpStream, ToSocketAddrs},
     path::{Path, PathBuf},
     rc::Rc,
     time::{Duration, UNIX_EPOCH},
@@ -1024,14 +1024,13 @@ fn connect_plain_http_stream(
     url: &PlainHttpUrl,
     timeout_millis: Option<u32>,
 ) -> std::result::Result<TcpStream, AdapterError> {
+    let addrs = resolve_plain_http_socket_addrs(url)?;
+
     if let Some(millis) = timeout_millis {
         if millis == 0 {
             return Err(AdapterError::Timeout);
         }
         let timeout = Duration::from_millis(u64::from(millis));
-        let addrs = (url.host.as_str(), url.port)
-            .to_socket_addrs()
-            .map_err(map_net_resolve_error)?;
         let mut last_err = None;
         for addr in addrs {
             match TcpStream::connect_timeout(&addr, timeout) {
@@ -1045,7 +1044,31 @@ fn connect_plain_http_stream(
         return Err(AdapterError::NotFound);
     }
 
-    TcpStream::connect((url.host.as_str(), url.port)).map_err(map_net_io_error)
+    let mut last_err = None;
+    for addr in addrs {
+        match TcpStream::connect(addr) {
+            Ok(stream) => return Ok(stream),
+            Err(err) => last_err = Some(err),
+        }
+    }
+    if let Some(err) = last_err {
+        return Err(map_net_io_error(err));
+    }
+    Err(AdapterError::NotFound)
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn resolve_plain_http_socket_addrs(
+    url: &PlainHttpUrl,
+) -> std::result::Result<Vec<SocketAddr>, AdapterError> {
+    let addrs: Vec<SocketAddr> = (url.host.as_str(), url.port)
+        .to_socket_addrs()
+        .map_err(map_net_resolve_error)?
+        .collect();
+    if addrs.is_empty() {
+        return Err(AdapterError::NotFound);
+    }
+    Ok(addrs)
 }
 
 #[cfg(feature = "phase2-bindings")]
@@ -2063,6 +2086,18 @@ mod tests {
         let err = std::io::Error::from(std::io::ErrorKind::NotFound);
         let mapped = map_net_resolve_error(err);
         assert_eq!(mapped, AdapterError::NotFound);
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn connect_plain_http_stream_without_timeout_maps_connection_refused_as_network() {
+        let url = PlainHttpUrl {
+            host: "127.0.0.1".to_string(),
+            port: 1,
+            path_and_query: "/".to_string(),
+        };
+        let err = connect_plain_http_stream(&url, None).expect_err("connection should fail");
+        assert!(matches!(err, AdapterError::Network(_)));
     }
 
     #[cfg(feature = "phase2-bindings")]
