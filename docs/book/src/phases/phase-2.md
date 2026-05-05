@@ -21,6 +21,9 @@ The capability layer has also started. Layer36 can parse a sidecar
 runtime. The newest piece is a runtime UAPI guard: it translates calls like
 `fs.read ./data/file.txt` or `net.connect api.example.com:443` into the exact
 capability check that must pass before an adapter talks to the host OS.
+Manifest capability parsing now also validates resource shapes earlier: unsafe
+filesystem resource patterns and malformed `net.connect` endpoint forms fail
+during manifest parsing instead of reaching runtime policy resolution.
 
 There is also a first dispatcher scaffold now. In simple terms: we have the
 place where generated UAPI calls will enter the runtime, get checked by policy,

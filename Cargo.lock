@@ -947,6 +947,7 @@ dependencies = [
 name = "layer36-manifest"
 version = "0.1.0-dev"
 dependencies = [
+ "layer36-adapter-common",
  "serde",
  "thiserror 2.0.18",
  "toml",

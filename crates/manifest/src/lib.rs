@@ -11,6 +11,7 @@ use std::{
     str::FromStr,
 };
 
+use layer36_adapter_common::path::LogicalPath;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -229,6 +230,15 @@ impl Capability {
             _ => {}
         }
 
+        if let Some(resource) = resource.as_deref() {
+            validate_capability_resource(module, action, resource).map_err(|reason| {
+                ManifestError::InvalidCapability {
+                    cap: format!("{cap_name}:{resource}"),
+                    reason,
+                }
+            })?;
+        }
+
         Ok(Self {
             module: module.to_owned(),
             action: action.to_owned(),
@@ -404,6 +414,65 @@ fn capability_resource_required(module: &str, action: &str) -> Option<bool> {
         .map(|spec| spec.resource.is_some())
 }
 
+fn validate_capability_resource(
+    module: &str,
+    action: &str,
+    resource: &str,
+) -> std::result::Result<(), String> {
+    if module == "fs" {
+        LogicalPath::parse(resource)
+            .map(|_| ())
+            .map_err(|err| format!("invalid filesystem resource pattern: {err}"))?;
+        return Ok(());
+    }
+
+    if module == "net" && action == "connect" {
+        validate_connect_resource(resource)?;
+    }
+
+    Ok(())
+}
+
+fn validate_connect_resource(resource: &str) -> std::result::Result<(), String> {
+    if resource
+        .chars()
+        .any(|ch| ch.is_ascii_whitespace() || ch == '\0' || ch.is_control())
+    {
+        return Err("network endpoint cannot contain whitespace or control characters".to_string());
+    }
+    if resource.starts_with('[') || resource.contains("]:") {
+        return Err("IPv6 bracketed endpoint forms are not supported in this phase".to_string());
+    }
+    if resource.matches(':').count() != 1 {
+        return Err("expected <host>:<port> endpoint form".to_string());
+    }
+
+    let (host, port) = resource
+        .split_once(':')
+        .ok_or_else(|| "expected <host>:<port> endpoint form".to_string())?;
+    if host.is_empty() {
+        return Err("network endpoint host cannot be empty".to_string());
+    }
+    if !host
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '-' | '*'))
+    {
+        return Err("network endpoint host contains unsupported characters".to_string());
+    }
+
+    if port == "*" {
+        return Ok(());
+    }
+    let value = port.parse::<u16>().map_err(|_| {
+        "network endpoint port must be `*` or a numeric port in 1..65535".to_string()
+    })?;
+    if value == 0 {
+        return Err("network endpoint port must be in 1..65535".to_string());
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -498,6 +567,53 @@ mod tests {
             .expect_err("reject extra resource");
 
         assert!(matches!(err, ManifestError::InvalidCapability { .. }));
+    }
+
+    #[test]
+    fn validates_fs_resource_patterns_with_shared_path_rules() {
+        let valid = "fs.read:./notes/**"
+            .parse::<Capability>()
+            .expect("valid fs path glob");
+        assert_eq!(valid.resource(), Some("./notes/**"));
+
+        let err = "fs.read:../secret.txt"
+            .parse::<Capability>()
+            .expect_err("reject parent traversal in fs resource");
+        assert!(matches!(err, ManifestError::InvalidCapability { .. }));
+
+        let err = "fs.read:C:/secret.txt"
+            .parse::<Capability>()
+            .expect_err("reject unsupported prefix in fs resource");
+        assert!(matches!(err, ManifestError::InvalidCapability { .. }));
+    }
+
+    #[test]
+    fn validates_net_connect_resource_shape() {
+        "net.connect:127.0.0.1:443"
+            .parse::<Capability>()
+            .expect("accept host and numeric port");
+        "net.connect:*.example.com:*"
+            .parse::<Capability>()
+            .expect("accept wildcard host and wildcard port");
+
+        for input in [
+            "net.connect::443",
+            "net.connect:example.com",
+            "net.connect:example.com:0",
+            "net.connect:example.com:70000",
+            "net.connect:example.com:not-a-port",
+            "net.connect:exa mple.com:443",
+            "net.connect:[::1]:80",
+            "net.connect:one:two:three",
+        ] {
+            let err = input
+                .parse::<Capability>()
+                .expect_err("invalid endpoint should be rejected");
+            assert!(
+                matches!(err, ManifestError::InvalidCapability { .. }),
+                "unexpected error type for `{input}`: {err:?}"
+            );
+        }
     }
 
     #[test]
