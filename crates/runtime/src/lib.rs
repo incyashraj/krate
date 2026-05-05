@@ -644,7 +644,7 @@ fn ensure_no_symlink_segments(
         current.push(segment.as_os_str());
         match std::fs::symlink_metadata(&current) {
             Ok(metadata) => {
-                if metadata.file_type().is_symlink() {
+                if metadata_has_blocked_link_semantics(&metadata) {
                     return Err(AdapterError::PermissionDenied);
                 }
             }
@@ -663,12 +663,30 @@ fn ensure_no_symlink_segments(
 }
 
 #[cfg(feature = "phase2-bindings")]
+fn metadata_has_blocked_link_semantics(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+
+        // Treat any Windows reparse point as blocked during sandbox traversal.
+        // This includes symlinks and junction-style links.
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+        (metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT) != 0
+    }
+
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
 fn map_existing_broken_leaf_error(
     path: &Path,
     original: std::io::Error,
 ) -> std::result::Result<Option<AdapterError>, AdapterError> {
     match std::fs::symlink_metadata(path) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
+        Ok(metadata) if metadata_has_blocked_link_semantics(&metadata) => {
             Ok(Some(AdapterError::PermissionDenied))
         }
         Ok(_) => Ok(Some(map_io_error(original))),

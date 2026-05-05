@@ -105,6 +105,9 @@ a symlink at open time.
 Runtime path resolution now also denies symlinked path segments inside the
 sandbox traversal path itself, for both existing-target and create-path
 operations, so this phase has less directory traversal race exposure.
+For Windows parity, the same traversal guard now treats reparse-point segments
+as blocked link semantics too, so junction-style hops are denied in the same
+sandbox traversal path checks.
 Destructive filesystem operations now go through a shared operation-intent check
 too. That means remove and rename cannot target root-like paths such as `.` or
 `/` before the adapter reaches native host I/O.
