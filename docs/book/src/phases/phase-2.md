@@ -263,6 +263,9 @@ fixture assertions for Go and TypeScript variants behind `LAYER36_GO_*` and
 (`scripts/build-phase2-language-variant-fixtures.sh`) in hosted full CI and
 self-hosted CI. That step can auto-build the TypeScript fixture trio from
 repo-local sources when `jco` is available, while keeping Go lane status explicit.
+TypeScript fixture generation now enforces Layer36-only imports and uses the
+real WIT variant shape for filesystem open mode (`{ tag: "read" }`), which made
+the TypeScript cat fixture runtime path stable in local tests.
 TinyGo runtime fixture build is still pending.
 We now also have three language walkthroughs in the docs: Rust, Go, and
 TypeScript, so contributors can onboard per language without guessing the

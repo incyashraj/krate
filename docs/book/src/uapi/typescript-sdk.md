@@ -14,13 +14,17 @@ What exists now:
   and locale calls.
 - Example source files for TypeScript clock, cat, and curl-style CLI apps.
 - A dependency-free shape check that guards the package layout and import names.
+- Runtime fixture auto-build support through
+  `scripts/build-phase2-language-variant-fixtures.sh`.
+- Local runtime fixture proof for TypeScript clock and cat.
 
 What still needs proof:
 
-- Install `jco`.
-- Build and keep validating real TypeScript components in CI.
-- Run that component through `layer36 run`.
-- Add a fixture-backed test like the Rust samples.
+- Keep full runtime fixture proof stable in hosted CI.
+- Complete and stabilize the TinyGo fixture lane so language-variant checks can
+  move from optional to strict by default.
+- Keep curl fixture evidence stable on restricted runners where local socket
+  bind policy may differ.
 
 ## Example
 
@@ -61,18 +65,24 @@ For this track, these lines should be present:
 ```text
 node            v...
 npm             ...
-jco             ...
+jco             ... (or "... (via npx)")
 ```
 
-If `jco` is missing, install it as a local project dependency when we wire the
-sample build:
+If `jco` is missing, install it as a local project dependency:
 
 ```bash
 npm install -D @bytecodealliance/jco typescript
 ```
 
-We are keeping that install out of the normal CI path for now so push checks stay
-cheap.
+The CLI doctor command now reports `jco` from either the direct binary path or
+`npx --no-install jco`, so local Node-based installs are visible immediately.
+
+## Binding Shape Note
+
+WIT `variant` values are represented as tagged objects in this binding path.
+For example, filesystem open mode is passed as `{ tag: "read" }` instead of the
+plain string `"read"`. The SDK helper exports the correct values so app code
+can stay simple.
 
 ## Current Check
 

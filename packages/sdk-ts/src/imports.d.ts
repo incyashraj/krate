@@ -35,7 +35,11 @@ declare module "layer36:io/log" {
 }
 
 declare module "layer36:fs/files" {
-  export type OpenMode = "read" | "write" | "read-write" | "append";
+  export type OpenMode =
+    | { tag: "read" }
+    | { tag: "write" }
+    | { tag: "read-write" }
+    | { tag: "append" };
 
   export interface FileStat {
     size: bigint;

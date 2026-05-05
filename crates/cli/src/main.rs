@@ -671,7 +671,7 @@ fn doctor() -> Result<u8> {
     print_tool_status("go", &["version"]);
     print_tool_status("node", &["--version"]);
     print_tool_status("npm", &["--version"]);
-    print_tool_status("jco", &["--version"]);
+    print_jco_status();
     println!();
     println!("state dir       {}", layer36_home().display());
     Ok(0)
@@ -916,13 +916,10 @@ fn yes_no(value: bool) -> &'static str {
 }
 
 fn print_tool_status(program: &str, args: &[&str]) {
-    let command = resolve_tool(program).unwrap_or_else(|| PathBuf::from(program));
-    match ProcessCommand::new(command).args(args).output() {
-        Ok(output) if output.status.success() => {
-            let version = String::from_utf8_lossy(&output.stdout);
-            println!("{program:<15} {}", version.trim());
-        }
-        _ => println!("{program:<15} missing"),
+    if let Some(line) = tool_status_line(program, args) {
+        println!("{line}");
+    } else {
+        println!("{program:<15} missing");
     }
 }
 
@@ -945,6 +942,32 @@ fn print_target_status(target: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn print_jco_status() {
+    if let Some(line) = tool_status_line("jco", &["--version"]) {
+        println!("{line}");
+        return;
+    }
+
+    if let Some(line) = tool_status_line("npx", &["--no-install", "jco", "--version"]) {
+        if let Some(version) = line.split_whitespace().nth(1) {
+            println!("jco             {version} (via npx)");
+            return;
+        }
+    }
+
+    println!("jco             missing");
+}
+
+fn tool_status_line(program: &str, args: &[&str]) -> Option<String> {
+    let command = resolve_tool(program).unwrap_or_else(|| PathBuf::from(program));
+    let output = ProcessCommand::new(command).args(args).output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let version = String::from_utf8_lossy(&output.stdout);
+    Some(format!("{program:<15} {}", version.trim()))
 }
 
 fn resolve_tool(program: &str) -> Option<PathBuf> {

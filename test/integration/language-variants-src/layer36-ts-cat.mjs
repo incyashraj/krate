@@ -20,13 +20,23 @@ export function run() {
   try {
     const out = stdout();
     for (const path of args) {
-      const file = open(path, "read");
-      const bytes = file.read(4 * 1024 * 1024);
-      out.writeAll(bytes);
+      const file = open(path, { tag: "read" });
+      try {
+        while (true) {
+          const bytes = file.read(8192);
+          if (bytes.length === 0) {
+            break;
+          }
+          out.writeAll(bytes);
+        }
+      } finally {
+        file[Symbol.dispose]();
+      }
     }
     out.flush();
     return 0;
-  } catch (_err) {
+  } catch (err) {
+    writeLine(stderr(), `layer36-ts-cat: ${String(err)}`);
     writeLine(stderr(), "layer36-ts-cat: read failed");
     return 21;
   }

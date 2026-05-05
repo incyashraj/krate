@@ -43,3 +43,11 @@ ehthumbs.db
 /fuzz/Cargo.lock
 /fuzz/corpus/
 /fuzz/artifacts/
+
+# Node / local JS tooling
+/node_modules/
+/.cache/
+
+# Generated Phase 2 language-variant fixtures
+/test/integration/language-variants/*.wasm
+/test/integration/language-variants/.tmp-ts-build/

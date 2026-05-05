@@ -1,0 +1,6 @@
+{
+  "devDependencies": {
+    "@bytecodealliance/jco": "^1.19.0",
+    "typescript": "^6.0.3"
+  }
+}

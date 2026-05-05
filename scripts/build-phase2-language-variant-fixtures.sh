@@ -5,6 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 MODE="${LAYER36_LANGUAGE_VARIANTS_MODE:-optional}"
 OUT_DIR="$ROOT/test/integration/language-variants"
 SRC_DIR="$ROOT/test/integration/language-variants-src"
+TMP_DIR="$OUT_DIR/.tmp-ts-build"
 
 has_file() {
   [ -f "$1" ]
@@ -17,14 +18,30 @@ has_complete_set() {
     && has_file "$OUT_DIR/${prefix}_curl.wasm"
 }
 
+remove_set() {
+  prefix="$1"
+  rm -f \
+    "$OUT_DIR/${prefix}_clock.wasm" \
+    "$OUT_DIR/${prefix}_cat.wasm" \
+    "$OUT_DIR/${prefix}_curl.wasm"
+}
+
+set_imports_are_pure() {
+  prefix="$1"
+  scripts/check-component-imports.sh \
+    "$OUT_DIR/${prefix}_clock.wasm" \
+    "$OUT_DIR/${prefix}_cat.wasm" \
+    "$OUT_DIR/${prefix}_curl.wasm" >/dev/null 2>&1
+}
+
 jco_runner() {
   if command -v jco >/dev/null 2>&1; then
-    jco "$@"
+    XDG_CACHE_HOME="$ROOT/.cache" jco "$@"
     return
   fi
 
   if command -v npx >/dev/null 2>&1; then
-    npx --no-install jco "$@"
+    XDG_CACHE_HOME="$ROOT/.cache" npx --no-install jco "$@"
     return
   fi
 
@@ -38,25 +55,57 @@ can_build_ts() {
 }
 
 build_ts_fixtures() {
-  mkdir -p "$OUT_DIR"
+  rm -rf "$TMP_DIR"
+  mkdir -p "$TMP_DIR"
 
   jco_runner componentize \
     "$SRC_DIR/layer36-ts-clock.mjs" \
     --wit "$ROOT/wit/layer36/phase2" \
     --world-name cli \
-    --out "$OUT_DIR/layer36_ts_clock.wasm"
+    --disable all \
+    --out "$TMP_DIR/layer36_ts_clock.wasm"
 
   jco_runner componentize \
     "$SRC_DIR/layer36-ts-cat.mjs" \
     --wit "$ROOT/wit/layer36/phase2" \
     --world-name cli \
-    --out "$OUT_DIR/layer36_ts_cat.wasm"
+    --disable all \
+    --out "$TMP_DIR/layer36_ts_cat.wasm"
 
   jco_runner componentize \
     "$SRC_DIR/layer36-ts-curl.mjs" \
     --wit "$ROOT/wit/layer36/phase2" \
     --world-name cli \
-    --out "$OUT_DIR/layer36_ts_curl.wasm"
+    --disable all \
+    --out "$TMP_DIR/layer36_ts_curl.wasm"
+
+  for file in \
+    "$TMP_DIR/layer36_ts_clock.wasm" \
+    "$TMP_DIR/layer36_ts_cat.wasm" \
+    "$TMP_DIR/layer36_ts_curl.wasm"
+  do
+    if [ ! -f "$file" ]; then
+      echo "TypeScript language-variant fixture build failed: expected output was not created: $file" >&2
+      rm -rf "$TMP_DIR"
+      return 1
+    fi
+  done
+
+  if scripts/check-component-imports.sh \
+    "$TMP_DIR/layer36_ts_clock.wasm" \
+    "$TMP_DIR/layer36_ts_cat.wasm" \
+    "$TMP_DIR/layer36_ts_curl.wasm"
+  then
+    mv "$TMP_DIR/layer36_ts_clock.wasm" "$OUT_DIR/layer36_ts_clock.wasm"
+    mv "$TMP_DIR/layer36_ts_cat.wasm" "$OUT_DIR/layer36_ts_cat.wasm"
+    mv "$TMP_DIR/layer36_ts_curl.wasm" "$OUT_DIR/layer36_ts_curl.wasm"
+    rm -rf "$TMP_DIR"
+    return 0
+  fi
+
+  echo "TypeScript language-variant fixtures failed Layer36 import purity checks and were not activated." >&2
+  rm -rf "$TMP_DIR"
+  return 1
 }
 
 case "$MODE" in
@@ -75,17 +124,30 @@ ts_ready=0
 go_ready=0
 
 if has_complete_set "layer36_ts"; then
-  ts_ready=1
+  if set_imports_are_pure "layer36_ts"; then
+    ts_ready=1
+  else
+    echo "Existing TypeScript fixtures failed Layer36 import purity checks; removing stale files."
+    remove_set "layer36_ts"
+  fi
 fi
 if has_complete_set "layer36_go"; then
-  go_ready=1
+  if set_imports_are_pure "layer36_go"; then
+    go_ready=1
+  else
+    echo "Existing Go fixtures failed Layer36 import purity checks; removing stale files."
+    remove_set "layer36_go"
+  fi
 fi
 
 if [ "$ts_ready" -eq 0 ]; then
   if can_build_ts; then
     echo "Building TypeScript language-variant fixtures with jco"
-    build_ts_fixtures
-    ts_ready=1
+    if build_ts_fixtures; then
+      ts_ready=1
+    else
+      ts_ready=0
+    fi
   else
     echo "TypeScript language-variant fixtures not built: jco path is unavailable."
   fi

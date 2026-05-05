@@ -18,10 +18,10 @@ export { list, mkdir, open, removeDir, removeFile, rename, stat };
 export type { File, FileStat, OpenMode };
 
 export const OpenMode = {
-  Read: "read",
-  Write: "write",
-  ReadWrite: "read-write",
-  Append: "append",
+  Read: { tag: "read" },
+  Write: { tag: "write" },
+  ReadWrite: { tag: "read-write" },
+  Append: { tag: "append" },
 } as const satisfies Record<string, OpenMode>;
 
 export function read(path: string): Uint8Array {

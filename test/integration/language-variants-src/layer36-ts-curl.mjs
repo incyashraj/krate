@@ -22,7 +22,8 @@ export function run() {
     out.writeAll(get(url));
     out.flush();
     return 0;
-  } catch (_err) {
+  } catch (err) {
+    writeLine(stderr(), `layer36-ts-curl: ${String(err)}`);
     writeLine(stderr(), "layer36-ts-curl: fetch failed");
     return 21;
   }
