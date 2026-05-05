@@ -3,8 +3,8 @@
 This walkthrough gets you started with the TypeScript Layer36 SDK in the
 current Phase 2 state.
 
-Right now, TypeScript is in scaffold mode: SDK shape is live, while full
-component build and always-on runtime fixture proof are still being finished.
+Right now, TypeScript is in scaffold mode: SDK shape is live, and hosted full
+CI now runs the TypeScript runtime fixture lane by default.
 
 ## What You Build Today
 
@@ -56,7 +56,7 @@ npm --prefix packages/sdk-ts run check:shape
 This confirms package metadata, helper exports, and import declarations still
 match the current UAPI-facing SDK contract.
 
-## 4. Build Runtime Variant Fixtures (When jco Is Available)
+## 4. Build Runtime Variant Fixtures
 
 From repo root:
 
@@ -73,7 +73,8 @@ test/integration/language-variants/
 ```
 
 If `jco` is missing, it exits cleanly in default mode and tells you what is
-missing.
+missing. For hosted full CI, Layer36 now allows `npx`-driven jco installation
+for this step, so the TypeScript lane can stay active by default.
 
 ## 5. Optional Runtime Variant Test Hook
 
@@ -103,8 +104,7 @@ TypeScript is now at "SDK, harness, and first fixture-build path ready" stage.
 
 Still pending:
 
-- always-on fixture generation in the regular hosted CI path
-- always-on runtime fixture gate for TypeScript variants
+- cross-host stability evidence for restricted-runner curl fixture behavior
 
 So this tutorial is intentionally honest: strong SDK structure today, full build
 lane in progress, and no blocker for continuing core runtime work.

@@ -41,6 +41,10 @@ jco_runner() {
   fi
 
   if command -v npx >/dev/null 2>&1; then
+    if [ "${LAYER36_ALLOW_NPX_INSTALL:-0}" = "1" ]; then
+      XDG_CACHE_HOME="$ROOT/.cache" npx --yes @bytecodealliance/jco "$@"
+      return
+    fi
     XDG_CACHE_HOME="$ROOT/.cache" npx --no-install jco "$@"
     return
   fi

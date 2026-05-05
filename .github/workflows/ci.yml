@@ -281,12 +281,13 @@ jobs:
       - name: Build Phase 2 language-variant fixtures
         shell: bash
         env:
-          LAYER36_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'optional' }}
+          LAYER36_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'ts' }}
+          LAYER36_ALLOW_NPX_INSTALL: "1"
         run: scripts/build-phase2-language-variant-fixtures.sh
       - name: Run Phase 2 language-variant runtime tests
         shell: bash
         env:
-          LAYER36_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'optional' }}
+          LAYER36_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'ts' }}
         run: scripts/test-phase2-language-variants.sh
 
   # ──────────────────────────────────────────────
