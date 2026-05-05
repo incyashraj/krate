@@ -103,6 +103,8 @@ jobs:
         run: scripts/check-dependencies.sh
 
       - name: Fuzz smoke
+        env:
+          RUSTUP_TOOLCHAIN: nightly
         run: scripts/run-phase2-fuzz-smoke.sh
 
       - name: Docs

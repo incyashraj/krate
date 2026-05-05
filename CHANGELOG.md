@@ -18,7 +18,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 - Dependency audit config fix: `crates/manifest/Cargo.toml` now pins `layer36-adapter-common` with `version = "0.1.0-dev"` on its path dependency, avoiding wildcard-dependency bans failures.
 - Phase 2 fuzz scaffolding: added `fuzz/` with first `cargo-fuzz` harness targets for manifest parsing, shared logical-path parsing, and policy matching, plus `scripts/run-phase2-fuzz-smoke.sh` for short local and self-hosted smoke runs.
 - Self-hosted CI now installs `cargo-fuzz` and runs the short Phase 2 fuzz smoke as part of `Local full gate`.
-- Fuzz smoke runner now uses `rustup run nightly cargo fuzz ...` with explicit nightly checks, and self-hosted CI now installs nightly automatically before running fuzz smoke.
+- Fuzz smoke runner now pins nightly toolchain binaries explicitly (`CARGO`, `RUSTC`, and `PATH`) before running `cargo fuzz`, so sub-commands that spawn nested cargo/rustc calls stay on nightly in runner environments where `cargo +nightly` and plain cargo proxies differ.
 - Policy `net.connect` matching parity hardening: session grant matching now normalizes host case and numeric ports before wildcard matching, so grants like `API.example.com:0443` match canonical runtime endpoint checks.
 - Manifest capability resource-shape hardening: filesystem capability resources now use shared logical-path validation rules, and `net.connect` resources must match valid endpoint shapes (`<host>:<port>` with wildcard support) so malformed resources fail at manifest parse time.
 - Docs: added a non technical progress page at `docs/book/src/progress-for-everyone.md` with plain language goals, system flow diagrams, current timeline state, and glossary style explanations.
