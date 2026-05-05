@@ -1044,6 +1044,20 @@ mod tests {
     }
 
     #[test]
+    fn host_resource_table_uses_free_id_before_counter_overflow() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(SessionPolicy::from_grants(["io.stdout".parse().unwrap()]));
+        let mut host = Phase2Host::new(guard, Box::new(adapter));
+
+        host.resources.next_id = u32::MAX;
+        host.resources.free_ids.push(11);
+
+        let stdout = io::stdio::Host::stdout(&mut host)
+            .expect("free-list id should be used before fresh id allocation");
+        assert_eq!(stdout.rep(), 11);
+    }
+
+    #[test]
     fn unknown_resources_return_clear_errors() {
         let adapter = RecordingAdapter::default();
         let guard = UapiGuard::new(SessionPolicy::default());

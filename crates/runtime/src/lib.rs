@@ -1580,6 +1580,31 @@ mod tests {
 
     #[cfg(feature = "phase2-bindings")]
     #[test]
+    fn local_io_adapter_allocates_from_free_list_before_id_overflow() {
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            PathBuf::from("."),
+        );
+
+        {
+            let mut state = adapter.state.borrow_mut();
+            state.next_id = u64::MAX;
+            state.free_ids.push(42);
+        }
+
+        let handle = adapter
+            .stdout()
+            .expect("free-list id should be used before fresh id allocation");
+        assert_eq!(handle.id, 42);
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
     fn local_fs_adapter_rejects_oversized_write_request() {
         let unique = std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)

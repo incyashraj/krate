@@ -12,7 +12,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ## [Unreleased]
 
 ### Added
-- Runtime Phase 2 resource-id reuse hardening: local adapter and generated host resource tables now recycle released file/stream resource IDs before allocating new IDs, with runtime tests proving close/drop paths reuse freed slots.
+- Runtime Phase 2 resource-id reuse hardening: local adapter and generated host resource tables now recycle released file/stream resource IDs before allocating new IDs, with runtime tests proving close/drop reuse and free-list-first allocation at ID-counter ceiling edge cases.
 - Generated host Phase 2 resource-table guardrail: the host-side file/input/output resource table now enforces an active-resource cap and fails with a clear host-table limit error when exceeded, with runtime tests covering overflow rejection.
 - Runtime Phase 2 resource lifecycle hardening: generated file/stream `drop` callbacks now close underlying local adapter handles before host-side resource-table removal, with tests covering close-on-drop and resource-slot reuse after close.
 - Runtime Phase 2 resource-table guardrail: local adapter now caps the number of open file/stream handles in one run session, and returns a clear runtime I/O error when the cap is exceeded, with runtime tests covering overflow rejection.
