@@ -1792,6 +1792,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-05 | Self-hosted fuzz smoke exposed a real panic in shared path hardening (`is_reserved_windows_segment`) on non-ASCII four-byte inputs. Fixed by switching to ASCII-byte pattern matching for reserved COM/LPT names, and added a regression test so the same crash input now parses safely without panicking. |
 | 2026-05-05 | Added stricter sandbox traversal hardening in runtime path resolution: any symlinked segment in the resolved sandbox path is now denied for both existing-target and missing-leaf create operations before native host I/O. Added runtime coverage for in-sandbox symlink-segment denial to reduce directory traversal race exposure. |
 | 2026-05-05 | Extended sandbox traversal hardening for Windows parity: runtime path checks now treat any reparse-point segment as blocked link semantics during sandbox traversal, closing junction-style path-hop gaps that symlink-only checks could miss on Windows. |
+| 2026-05-05 | Accepted ADR-0009 (`docs/adr/0009-sandbox-link-semantics.md`) to lock cross-host sandbox traversal link semantics for Phase 2: deny symlink traversal on Unix-like hosts, deny reparse-point traversal on Windows, and retain no-follow final-open behavior on both host families. |
 
 ---
 
