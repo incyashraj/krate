@@ -192,7 +192,7 @@ mod tests {
             }))
             .expect("fs read should pass");
 
-        assert_eq!(cap.to_string(), "fs.read:./notes/today.txt");
+        assert_eq!(cap.to_string(), "fs.read:notes/today.txt");
     }
 
     #[test]
