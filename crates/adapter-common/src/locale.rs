@@ -58,6 +58,8 @@ impl HostLocale {
         let mut lc_all = None;
         let mut lang = None;
         let mut lc_time = None;
+        let mut lc_numeric = None;
+        let mut lc_monetary = None;
         let mut lc_messages = None;
         let mut language = None;
         let mut apple_locale = None;
@@ -68,6 +70,8 @@ impl HostLocale {
                 "LC_ALL" => lc_all = Some(value.as_ref().to_string()),
                 "LANG" => lang = Some(value.as_ref().to_string()),
                 "LC_TIME" => lc_time = Some(value.as_ref().to_string()),
+                "LC_NUMERIC" => lc_numeric = Some(value.as_ref().to_string()),
+                "LC_MONETARY" => lc_monetary = Some(value.as_ref().to_string()),
                 "LC_MESSAGES" => lc_messages = Some(value.as_ref().to_string()),
                 "LANGUAGE" => language = Some(value.as_ref().to_string()),
                 "AppleLocale" => apple_locale = Some(value.as_ref().to_string()),
@@ -84,6 +88,12 @@ impl HostLocale {
             .filter(|value| !value.trim().is_empty())
             .or(lang.as_deref().filter(|value| !value.trim().is_empty()))
             .or(lc_time.as_deref().filter(|value| !value.trim().is_empty()))
+            .or(lc_numeric
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()))
+            .or(lc_monetary
+                .as_deref()
+                .filter(|value| !value.trim().is_empty()))
             .or(lc_messages
                 .as_deref()
                 .filter(|value| !value.trim().is_empty()))
@@ -741,6 +751,34 @@ mod tests {
             ("LANGUAGE", "fr_FR:de_DE"),
         ]);
         assert_eq!(locale.current().bcp47, "it-IT");
+    }
+
+    #[test]
+    fn locale_falls_back_to_lc_numeric_before_lc_messages() {
+        let locale = HostLocale::from_env_pairs([
+            ("LC_ALL", ""),
+            ("LANG", ""),
+            ("LC_TIME", ""),
+            ("LC_NUMERIC", "pt_BR.UTF-8"),
+            ("LC_MONETARY", "ja_JP.UTF-8"),
+            ("LC_MESSAGES", "es_ES.UTF-8"),
+            ("LANGUAGE", "fr_FR:de_DE"),
+        ]);
+        assert_eq!(locale.current().bcp47, "pt-BR");
+    }
+
+    #[test]
+    fn locale_falls_back_to_lc_monetary_when_lc_numeric_is_empty() {
+        let locale = HostLocale::from_env_pairs([
+            ("LC_ALL", ""),
+            ("LANG", ""),
+            ("LC_TIME", ""),
+            ("LC_NUMERIC", ""),
+            ("LC_MONETARY", "ja_JP.UTF-8"),
+            ("LC_MESSAGES", "es_ES.UTF-8"),
+            ("LANGUAGE", "fr_FR:de_DE"),
+        ]);
+        assert_eq!(locale.current().bcp47, "ja-JP");
     }
 
     #[test]
