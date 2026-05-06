@@ -337,7 +337,7 @@ mod tests {
 
         assert_eq!(
             missing.iter().map(ToString::to_string).collect::<Vec<_>>(),
-            ["fs.read:./notes/**"]
+            ["fs.read:notes/**"]
         );
     }
 

@@ -226,10 +226,10 @@ fn manifest_explain_shows_default_and_launch_grants() {
     assert!(stdout.contains("- io.stdout"));
     assert!(stdout.contains("default grant        yes"));
     assert!(stdout.contains("launch grant needed  no"));
-    assert!(stdout.contains("- fs.read:./notes/**"));
+    assert!(stdout.contains("- fs.read:notes/**"));
     assert!(stdout.contains("default grant        no"));
     assert!(stdout.contains("launch grant needed  yes"));
-    assert!(stdout.contains("resource             ./notes/**"));
+    assert!(stdout.contains("resource             notes/**"));
     assert!(stdout.contains("rationale            Read notes"));
 }
 
@@ -279,10 +279,10 @@ fn manifest_explain_json_reports_structured_grants() {
     assert!(stdout.contains(r#""capability": "io.stdout""#));
     assert!(stdout.contains(r#""default_grant": true"#));
     assert!(stdout.contains(r#""launch_grant_needed": false"#));
-    assert!(stdout.contains(r#""capability": "fs.read:./notes/**""#));
+    assert!(stdout.contains(r#""capability": "fs.read:notes/**""#));
     assert!(stdout.contains(r#""module": "fs""#));
     assert!(stdout.contains(r#""action": "read""#));
-    assert!(stdout.contains(r#""resource": "./notes/**""#));
+    assert!(stdout.contains(r#""resource": "notes/**""#));
     assert!(stdout.contains(r#""launch_grant_needed": true"#));
 }
 
@@ -351,7 +351,7 @@ fn manifest_init_prints_valid_phase_2_manifest() {
     assert!(stdout.contains("id = \"com.example.notes\""));
     assert!(stdout.contains("entry = \"notes.wasm\""));
     assert!(stdout.contains("cap = \"io.stdout\""));
-    assert!(stdout.contains("cap = \"fs.read:./notes/**\""));
+    assert!(stdout.contains("cap = \"fs.read:notes/**\""));
     assert!(output.stderr.is_empty());
 
     let dir = tempfile::tempdir().expect("create temp dir");
@@ -1638,7 +1638,7 @@ fn run_with_manifest_denies_missing_required_capability() {
     assert_eq!(output.status.code(), Some(5));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("permission denied"));
-    assert!(stderr.contains("fs.read:./data/**"));
+    assert!(stderr.contains("fs.read:data/**"));
 }
 
 #[test]
@@ -1722,7 +1722,7 @@ fn run_dump_caps_prints_effective_policy_without_running_component() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stdout.contains("Effective capabilities"));
     assert!(stdout.contains("io.stdout"));
-    assert!(stdout.contains("fs.read:./data/**"));
+    assert!(stdout.contains("fs.read:data/**"));
     assert!(!stderr.contains("invalid wasm component"));
 }
 
@@ -1783,7 +1783,7 @@ fn run_dump_caps_json_reports_effective_policy_without_running_component() {
     assert!(stdout.contains(r#""name": "Dump""#));
     assert!(stdout.contains(r#""capabilities":"#));
     assert!(stdout.contains(r#""io.stdout""#));
-    assert!(stdout.contains(r#""fs.read:./data/**""#));
+    assert!(stdout.contains(r#""fs.read:data/**""#));
     assert!(!stderr.contains("invalid wasm component"));
 }
 
@@ -1844,7 +1844,7 @@ fn run_log_grants_records_effective_session_policy() {
     assert!(log.contains("app name         Audit"));
     assert!(log.contains("manifest world   layer36:app/cli@0.1.0"));
     assert!(log.contains("  - io.stdout"));
-    assert!(log.contains("  - fs.read:./data/**"));
+    assert!(log.contains("  - fs.read:data/**"));
 }
 
 #[test]
@@ -1908,7 +1908,7 @@ fn run_log_grants_jsonl_records_effective_session_policy() {
     assert!(lines[0].contains(r#""id":"com.example.audit""#));
     assert!(lines[0].contains(r#""name":"Audit""#));
     assert!(lines[0].contains(r#""io.stdout""#));
-    assert!(lines[0].contains(r#""fs.read:./data/**""#));
+    assert!(lines[0].contains(r#""fs.read:data/**""#));
 }
 
 #[test]
@@ -1989,7 +1989,7 @@ fn run_with_manifest_prompt_can_grant_required_capability() {
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Requests the following capabilities"));
-    assert!(stderr.contains("fs.read:./data/**"));
+    assert!(stderr.contains("fs.read:data/**"));
     assert!(stderr.contains("invalid wasm component"));
 }
 

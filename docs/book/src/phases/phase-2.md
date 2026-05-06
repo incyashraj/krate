@@ -36,6 +36,10 @@ type host names with mixed case or port values like `0443`.
 Manifest capability parsing now stores that same canonical `net.connect`
 resource shape too, so duplicate-capability checks and capability displays stay
 deterministic across host case and numeric port formatting differences.
+Manifest capability parsing now applies the same deterministic storage rule to
+`fs.*` resources through shared logical-path normalization, so formatting
+variants like `./notes/**` and `notes\\**` are stored as one canonical
+`notes/**` shape for duplicate checks and capability output.
 
 There is also a first dispatcher scaffold now. In simple terms: we have the
 place where generated UAPI calls will enter the runtime, get checked by policy,

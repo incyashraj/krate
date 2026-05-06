@@ -446,6 +446,11 @@ fn validate_capability_resource(
 }
 
 fn canonicalize_capability_resource(module: &str, action: &str, resource: &str) -> Option<String> {
+    if module == "fs" {
+        return LogicalPath::parse(resource)
+            .ok()
+            .map(|path| path.as_str().to_string());
+    }
     if module == "net" && action == "connect" {
         return canonicalize_connect_resource(resource);
     }
@@ -677,7 +682,7 @@ mod tests {
         let valid = "fs.read:./notes/**"
             .parse::<Capability>()
             .expect("valid fs path glob");
-        assert_eq!(valid.resource(), Some("./notes/**"));
+        assert_eq!(valid.resource(), Some("notes/**"));
 
         let err = "fs.read:../secret.txt"
             .parse::<Capability>()
@@ -688,6 +693,31 @@ mod tests {
             .parse::<Capability>()
             .expect_err("reject unsupported prefix in fs resource");
         assert!(matches!(err, ManifestError::InvalidCapability { .. }));
+    }
+
+    #[test]
+    fn rejects_duplicate_capabilities_after_fs_resource_canonicalization() {
+        let input = r#"
+        [app]
+        id = "com.example.hello"
+        name = "Hello"
+        version = "1.0.0"
+        entry = "hello.wasm"
+        world = "layer36:app/cli@0.1.0"
+
+        [[capabilities]]
+        cap = "fs.read:./notes/**"
+        rationale = "Read notes"
+        required = true
+
+        [[capabilities]]
+        cap = "fs.read:notes\\**"
+        rationale = "Read notes again"
+        required = true
+    "#;
+
+        let err = Manifest::parse(input).expect_err("reject canonical duplicate fs capability");
+        assert!(matches!(err, ManifestError::DuplicateCapability { .. }));
     }
 
     #[test]
