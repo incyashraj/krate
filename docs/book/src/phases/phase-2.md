@@ -367,6 +367,10 @@ unresolved-host error checks, so restricted runners still prove key curl failure
 paths even when localhost fixture sockets are unavailable.
 Go curl fixture coverage now includes matching non-localhost denial and
 unresolved-host checks with stable stderr markers.
+When both Go and TypeScript fixture sets are available, the CLI harness now
+also runs cross-language parity checks for `layer36-clock` and `layer36-cat`.
+Those checks run Rust, Go, and TypeScript samples with the same inputs and
+assert byte-identical stdout.
 Self-hosted CI now runs a TinyGo WASI Preview 2 build-smoke lane for Go
 clock/cat/curl samples and then tries to promote those outputs into
 `test/integration/language-variants/layer36_go_*.wasm`.

@@ -164,3 +164,8 @@ if [ "$ts_count" -eq 3 ]; then
   echo "Running TypeScript language-variant runtime tests"
   cargo test -p layer36-cli --test cli configured_layer36_ts_
 fi
+
+if [ "$go_count" -eq 3 ] && [ "$ts_count" -eq 3 ]; then
+  echo "Running cross-language parity tests for Rust, Go, and TypeScript fixtures"
+  cargo test -p layer36-cli --test cli language_variants_
+fi

@@ -1572,6 +1572,122 @@ fn configured_layer36_ts_curl_component_reports_unresolved_host() {
 }
 
 #[test]
+fn language_variants_clock_output_matches_across_rust_go_ts() {
+    let Some(rust_path) = configured_layer36_clock_component() else {
+        return;
+    };
+    let Some(go_path) = configured_go_component(
+        "LAYER36_GO_CLOCK_WASM",
+        "layer36-go-clock component test",
+        "layer36_go_clock.wasm",
+    ) else {
+        eprintln!("skipping language variant clock parity: Go fixture is unavailable");
+        return;
+    };
+    let Some(ts_path) = configured_ts_component(
+        "LAYER36_TS_CLOCK_WASM",
+        "layer36-ts-clock component test",
+        "layer36_ts_clock.wasm",
+    ) else {
+        eprintln!("skipping language variant clock parity: TypeScript fixture is unavailable");
+        return;
+    };
+
+    let run_clock = |path: &PathBuf, label: &str| {
+        let output = layer36()
+            .args([
+                "run",
+                "--test-time",
+                "1234567890",
+                "--test-locale",
+                "en-US",
+                "--test-timezone",
+                "UTC",
+            ])
+            .arg(path)
+            .output()
+            .expect("run language variant clock component");
+
+        assert!(
+            output.status.success(),
+            "{label} failed\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stderr.is_empty(), "{label} wrote to stderr");
+        output.stdout
+    };
+
+    let rust_stdout = run_clock(&rust_path, "layer36-clock");
+    let go_stdout = run_clock(&go_path, "layer36-go-clock");
+    let ts_stdout = run_clock(&ts_path, "layer36-ts-clock");
+
+    assert_eq!(go_stdout, rust_stdout, "Go clock output drifted from Rust");
+    assert_eq!(
+        ts_stdout, rust_stdout,
+        "TypeScript clock output drifted from Rust"
+    );
+}
+
+#[test]
+fn language_variants_cat_output_matches_across_rust_go_ts() {
+    let Some(rust_path) = configured_layer36_cat_component() else {
+        return;
+    };
+    let Some(go_path) = configured_go_component(
+        "LAYER36_GO_CAT_WASM",
+        "layer36-go-cat component test",
+        "layer36_go_cat.wasm",
+    ) else {
+        eprintln!("skipping language variant cat parity: Go fixture is unavailable");
+        return;
+    };
+    let Some(ts_path) = configured_ts_component(
+        "LAYER36_TS_CAT_WASM",
+        "layer36-ts-cat component test",
+        "layer36_ts_cat.wasm",
+    ) else {
+        eprintln!("skipping language variant cat parity: TypeScript fixture is unavailable");
+        return;
+    };
+
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let fixtures = dir.path().join("fixtures");
+    std::fs::create_dir(&fixtures).expect("create fixtures dir");
+    std::fs::write(fixtures.join("a.txt"), "hello from parity A\n").expect("write fixture A");
+    std::fs::write(fixtures.join("b.txt"), "hello from parity B\n").expect("write fixture B");
+
+    let run_cat = |path: &PathBuf, label: &str| {
+        let output = layer36()
+            .current_dir(dir.path())
+            .args(["run", "--grant", "fs.read:fixtures/**"])
+            .arg(path)
+            .args(["--", "fixtures/a.txt", "fixtures/b.txt"])
+            .output()
+            .expect("run language variant cat component");
+
+        assert!(
+            output.status.success(),
+            "{label} failed\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(output.stderr.is_empty(), "{label} wrote to stderr");
+        output.stdout
+    };
+
+    let rust_stdout = run_cat(&rust_path, "layer36-cat");
+    let go_stdout = run_cat(&go_path, "layer36-go-cat");
+    let ts_stdout = run_cat(&ts_path, "layer36-ts-cat");
+
+    assert_eq!(go_stdout, rust_stdout, "Go cat output drifted from Rust");
+    assert_eq!(
+        ts_stdout, rust_stdout,
+        "TypeScript cat output drifted from Rust"
+    );
+}
+
+#[test]
 fn fuel_limit_exits_with_limit_code() {
     let Some(path) = configured_hello_component() else {
         return;
