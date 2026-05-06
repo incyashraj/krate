@@ -325,6 +325,11 @@ checks in `layer36-tools --bin check-uapi`. That checker now also fails if
 public Phase 2 WIT items are missing contract docs. Hosted and self-hosted CI
 both run this before UAPI reference regeneration.
 
+The Rust SDK publish-readiness smoke is stricter too. It still packages the
+`layer36` crate and compiles a tiny outside-workspace component against that
+packaged crate, and now it also checks that the packaged crate contains the
+public README, SDK root, and generated bindings files before passing.
+
 The first terminal grant prompt exists too. `layer36 run --prompt app.wasm`
 shows the app identity, lists missing manifest capabilities, accepts all or a
 numbered subset, and stores the approved caps only for that run. In a normal

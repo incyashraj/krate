@@ -72,6 +72,7 @@ Top pending items:
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`
 - Generated UAPI reference now includes those WIT contract comments
+- Rust SDK package smoke now verifies packaged README, SDK root, and generated bindings files
 
 ## 7) Source of truth files
 

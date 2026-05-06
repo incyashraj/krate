@@ -38,6 +38,13 @@ if [ -z "$package_dir" ] || [ ! -f "$package_dir/Cargo.toml" ]; then
   exit 1
 fi
 
+for required in Cargo.toml README.md src/lib.rs src/bindings.rs; do
+  if [ ! -f "$package_dir/$required" ]; then
+    echo "packaged layer36 SDK is missing required file: $required" >&2
+    exit 1
+  fi
+done
+
 smoke_root="${TMPDIR:-/tmp}/layer36-rust-sdk-smoke-$$"
 trap 'rm -rf "$smoke_root"' EXIT INT TERM
 
