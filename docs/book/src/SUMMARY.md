@@ -47,6 +47,7 @@
   - [Dispatch Benchmarks](phase2/benchmarks.md)
   - [Threat Model v0.2](phase2/threat-model-v0-2.md)
   - [Migrating From Phase 1](phase2/migrating-from-phase1.md)
+  - [Adapter Boundary](phase2/adapter-boundary.md)
   - [UAPI Freeze Review](phase2/uapi-freeze-review.md)
   - [UAPI Freeze Evidence](phase2/uapi-freeze-evidence.md)
 - [Phase 3: UI + Graphics](phases/phase-3.md)

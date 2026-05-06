@@ -138,6 +138,7 @@ jobs:
           LAYER36_OFFLINE=1 sh scripts/generate-uapi-freeze-evidence.sh
           git diff --exit-code -- docs/book/src/reference/uapi/index.md
           git diff --exit-code -- docs/book/src/phase2/uapi-freeze-evidence.md
+          LAYER36_OFFLINE=1 sh scripts/check-adapter-boundary.sh
 
       - name: Dependency audit
         run: scripts/check-dependencies.sh

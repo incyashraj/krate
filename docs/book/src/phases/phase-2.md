@@ -339,6 +339,14 @@ shape, and contract checks in one place, so freeze review has a concrete
 snapshot instead of only a checklist. Hosted CI and self-hosted CI now
 regenerate that page and fail if it is stale.
 
+The adapter split now has a guard too. The
+[Adapter Boundary](../phase2/adapter-boundary.md) page explains the rule in
+plain terms: the runtime checks policy, then the OS adapter touches the host.
+`scripts/check-adapter-boundary.sh` checks 34 runtime wrappers and verifies that
+the Linux, macOS, and Windows adapter crates expose the matching functions.
+Hosted CI and the self-hosted full gate run that check so direct host-call
+backsliding is easier to catch.
+
 The first terminal grant prompt exists too. `layer36 run --prompt app.wasm`
 shows the app identity, lists missing manifest capabilities, accepts all or a
 numbered subset, and stores the approved caps only for that run. In a normal

@@ -3,23 +3,23 @@
 Last updated: 2026-05-06
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Head commit at handoff start: `3dde154`
-Working tree at handoff start: clean
+Latest checked completed push before this slice: `d8b81b3`
+Working tree at this status update: adapter-boundary slice in progress
 
 ## 1) Project size today
 
-- Commits: 237
-- Tracked files: 231
-- Total tracked lines: 69,492
-- Rust lines (`.rs`): 34,507
-- Docs lines (`.md`): 25,673
+- Commits after this slice lands: 243
+- Tracked files after this slice lands: about 238
+- Total tracked lines after this slice lands: about 70,752
+- Rust lines (`.rs`) after this slice lands: about 34,986
+- Docs lines (`.md`) after this slice lands: about 26,290
 
 ## 2) Latest CI and Pages state
 
-Latest push (`3dde154`) checks:
+Latest completed push (`d8b81b3`) checks:
 
-- CI: success (run `25432973813`)
-- Deploy docs to GitHub Pages: success (run `25432973788`)
+- CI: success (run `25434570395`)
+- Deploy docs to GitHub Pages: success (run `25434570413`)
 
 Recent pushes before that are also green.
 
@@ -78,6 +78,7 @@ Top pending items:
 - Added a Phase 2 UAPI freeze-review page with checklist and commands
 - Added a repeatable UAPI freeze-evidence snapshot page generated from `check-uapi`
 - Wired hosted and self-hosted CI to fail when that freeze-evidence page is stale
+- Added a runtime adapter-boundary guard for 34 host wrappers across Linux, macOS, and Windows adapter crates
 
 ## 7) Source of truth files
 
@@ -89,4 +90,4 @@ Top pending items:
 
 Use this exact prompt in a new session:
 
-`Continue Layer36 from commit 3dde154 on main. Use Plan/Phase-2-Plan.md (Completed Tasks and In Progress) as source of truth. Keep pushing Phase 2 closure, update plan/docs after each chunk, and keep GitHub Pages docs in sync.`
+`Continue Layer36 on main. Start with STATUS.md and Plan/Phase-2-Plan.md. Keep pushing Phase 2 closure, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`

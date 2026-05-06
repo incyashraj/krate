@@ -163,6 +163,8 @@ jobs:
         run: sh scripts/generate-uapi-freeze-evidence.sh
       - name: Check generated UAPI freeze evidence is current
         run: git diff --exit-code -- docs/book/src/phase2/uapi-freeze-evidence.md
+      - name: Check runtime adapter boundary
+        run: sh scripts/check-adapter-boundary.sh
 
   # ──────────────────────────────────────────────
   # 7. Shared component fixtures
