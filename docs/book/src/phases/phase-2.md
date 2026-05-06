@@ -153,7 +153,8 @@ checks stay stable across input case differences like `EXAMPLE.com` and
 `example.com`. URL scheme checks are now case-insensitive as well, so
 `HTTP://` and `HTTPS://` forms follow the same grant matching path.
 Resolved socket-address lists now also go through shared normalization:
-duplicates are removed, first-seen order is preserved, and connect-attempt
+duplicates are removed, IPv4 addresses are preferred before IPv6 while
+first-seen order is still preserved inside each family, and connect-attempt
 lists are capped to a fixed maximum so DNS result variance cannot create
 unbounded retry loops.
 In this early plain-HTTP slice, URL parsing is also ASCII-only. Non-ASCII URLs

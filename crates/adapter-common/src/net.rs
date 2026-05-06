@@ -98,18 +98,24 @@ pub fn parse_url_endpoint(input: &str) -> Result<UrlEndpoint, UrlEndpointError> 
 /// size for this Phase 2 plain-network slice.
 pub fn normalize_resolved_socket_addrs(addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
     let mut seen = HashSet::new();
-    let mut normalized = Vec::new();
+    let mut v4_addrs = Vec::new();
+    let mut v6_addrs = Vec::new();
 
     for addr in addrs {
         if seen.insert(addr) {
-            normalized.push(addr);
-            if normalized.len() >= MAX_RESOLVED_SOCKET_ADDRS {
-                break;
+            if addr.is_ipv4() {
+                v4_addrs.push(addr);
+            } else {
+                v6_addrs.push(addr);
             }
         }
     }
 
-    normalized
+    v4_addrs
+        .into_iter()
+        .chain(v6_addrs)
+        .take(MAX_RESOLVED_SOCKET_ADDRS)
+        .collect()
 }
 
 fn parse_url_endpoint_with_default(
@@ -827,6 +833,31 @@ mod tests {
         let normalized = normalize_resolved_socket_addrs(input);
 
         assert_eq!(normalized, vec![second, first, third]);
+    }
+
+    #[test]
+    fn normalize_resolved_socket_addrs_prefers_ipv4_then_ipv6() {
+        let v6_first = SocketAddr::from(([0u16, 0, 0, 0, 0, 0, 0, 1], 18080));
+        let v4_first = SocketAddr::from(([127, 0, 0, 1], 18080));
+        let v6_second = SocketAddr::from(([0u16, 0, 0, 0, 0, 0, 0, 2], 18081));
+        let v4_second = SocketAddr::from(([127, 0, 0, 2], 18081));
+
+        let normalized =
+            normalize_resolved_socket_addrs(vec![v6_first, v4_first, v6_second, v4_second]);
+
+        assert_eq!(normalized, vec![v4_first, v4_second, v6_first, v6_second]);
+    }
+
+    #[test]
+    fn normalize_resolved_socket_addrs_keeps_order_within_each_ip_family() {
+        let v6_a = SocketAddr::from(([0u16, 0, 0, 0, 0, 0, 0, 10], 19000));
+        let v4_a = SocketAddr::from(([127, 0, 0, 10], 19000));
+        let v4_b = SocketAddr::from(([127, 0, 0, 11], 19001));
+        let v6_b = SocketAddr::from(([0u16, 0, 0, 0, 0, 0, 0, 11], 19001));
+
+        let normalized = normalize_resolved_socket_addrs(vec![v6_a, v4_a, v4_b, v6_b]);
+
+        assert_eq!(normalized, vec![v4_a, v4_b, v6_a, v6_b]);
     }
 
     #[test]
