@@ -1,24 +1,37 @@
 package layer36:locale@0.1.0;
 
+/// Locale and formatting type definitions.
 interface types {
+  /// Host locale identifier using a BCP 47 language tag.
   record locale-id {
+    /// Canonicalized BCP 47 locale tag, for example `en-US`.
     bcp47: string,
   }
 
+  /// Date rendering style requested from the host.
   enum date-style {
+    /// Compact numeric date form.
     short,
+    /// Medium-length date form.
     medium,
+    /// Long date form.
     long,
+    /// Full date form.
     full,
   }
 
+  /// Number rendering style requested from the host.
   enum number-style {
+    /// Decimal number formatting.
     decimal,
+    /// Percent formatting.
     percent,
+    /// Currency formatting. Currency code selection remains future work.
     currency,
   }
 }
 
+/// Host locale and timezone discovery.
 interface info {
   use types.{locale-id};
 
@@ -29,9 +42,11 @@ interface info {
   timezone: func() -> string;
 }
 
+/// Host-backed date and number formatting.
 interface format {
   use types.{locale-id, date-style, number-style};
 
+  /// Format Unix epoch milliseconds using a timezone, style, and locale.
   format-date: func(
     millis: u64,
     tz: string,
@@ -39,6 +54,7 @@ interface format {
     loc: locale-id,
   ) -> string;
 
+  /// Format a number using a style and locale.
   format-number: func(
     value: f64,
     style: number-style,

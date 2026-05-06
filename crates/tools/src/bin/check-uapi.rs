@@ -72,6 +72,7 @@ fn check_phase2_uapi() -> Result<CheckReport> {
     check_world(&resolve, world_id)?;
     check_naming(&resolve)?;
     check_permission_errors(&resolve)?;
+    check_docs(&resolve, world_id)?;
 
     let world = &resolve.worlds[world_id];
 
@@ -233,6 +234,73 @@ fn check_permission_errors(resolve: &Resolve) -> Result<()> {
     Ok(())
 }
 
+fn check_docs(resolve: &Resolve, world_id: wit_parser::WorldId) -> Result<()> {
+    let world = &resolve.worlds[world_id];
+    ensure_has_docs(&world.docs, format!("world `{}`", world.name))?;
+
+    for (_, interface) in resolve.interfaces.iter() {
+        let interface_label = interface_name(resolve, interface);
+        ensure_has_docs(&interface.docs, format!("interface `{interface_label}`"))?;
+
+        for type_id in interface.types.values() {
+            let ty = &resolve.types[*type_id];
+            if matches!(ty.kind, TypeDefKind::Type(_)) {
+                continue;
+            }
+            let type_name = ty.name.as_deref().unwrap_or("anonymous");
+            ensure_has_docs(&ty.docs, format!("type `{type_name}`"))?;
+
+            match &ty.kind {
+                TypeDefKind::Record(record) => {
+                    for field in &record.fields {
+                        ensure_has_docs(
+                            &field.docs,
+                            format!("field `{type_name}.{}`", field.name),
+                        )?;
+                    }
+                }
+                TypeDefKind::Enum(enum_) => {
+                    for case in &enum_.cases {
+                        ensure_has_docs(
+                            &case.docs,
+                            format!("enum case `{type_name}.{}`", case.name),
+                        )?;
+                    }
+                }
+                TypeDefKind::Variant(variant) => {
+                    for case in &variant.cases {
+                        ensure_has_docs(
+                            &case.docs,
+                            format!("variant case `{type_name}.{}`", case.name),
+                        )?;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        for function in interface.functions.values() {
+            let name = function_note_key(resolve, function);
+            ensure_has_docs(
+                &function.docs,
+                format!("function `{interface_label}.{name}`"),
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
+fn ensure_has_docs(docs: &wit_parser::Docs, label: String) -> Result<()> {
+    ensure(
+        docs.contents
+            .as_deref()
+            .map(|contents| !contents.trim().is_empty())
+            .unwrap_or(false),
+        format!("{label} must have WIT docs before UAPI freeze"),
+    )
+}
+
 fn find_type(resolve: &Resolve, name: &str) -> Option<wit_parser::TypeId> {
     resolve
         .types
@@ -260,6 +328,19 @@ fn render_function_name(resolve: &Resolve, function: &Function) -> String {
     }
 
     function.name.clone()
+}
+
+fn function_note_key(resolve: &Resolve, function: &Function) -> String {
+    let name = render_function_name(resolve, function);
+    if let Some(resource_id) = function.kind.resource() {
+        let resource_name = resolve.types[resource_id]
+            .name
+            .as_deref()
+            .unwrap_or("resource");
+        format!("{resource_name}.{name}")
+    } else {
+        name
+    }
 }
 
 fn interface_name(resolve: &Resolve, interface: &Interface) -> String {

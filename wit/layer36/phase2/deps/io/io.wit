@@ -1,57 +1,92 @@
 package layer36:io@0.1.0;
 
+/// Shared IO records and errors.
 interface types {
+  /// Severity level for app log events.
   enum log-level {
+    /// Very detailed diagnostic data.
     trace,
+    /// Developer-focused diagnostic data.
     debug,
+    /// Normal informational event.
     info,
+    /// Something unexpected happened, but the app can continue.
     warn,
+    /// The app hit an error condition.
     error,
   }
 
+  /// Error shape for byte streams and text stream helpers.
   variant io-error {
+    /// The stream was already closed.
     closed,
+    /// The host interrupted the operation.
     interrupted,
+    /// The stream ended before enough bytes were read.
     unexpected-eof,
+    /// Bytes could not be decoded as UTF-8 text.
     invalid-utf8,
+    /// Host-specific IO error text.
     other(string),
   }
 }
 
+/// Byte stream resources used by stdio and future IO surfaces.
 interface streams {
   use types.{io-error};
 
+  /// Readable byte stream owned by the runtime.
   resource input-stream {
+    /// Read up to `n` bytes from the stream.
     read: func(n: u32) -> result<list<u8>, io-error>;
+    /// Read the stream as UTF-8 text.
     read-to-string: func() -> result<string, io-error>;
   }
 
+  /// Writable byte stream owned by the runtime.
   resource output-stream {
+    /// Write some bytes and return the number accepted by the host.
     write: func(bytes: list<u8>) -> result<u32, io-error>;
+    /// Write the whole byte buffer or return an error.
     write-all: func(bytes: list<u8>) -> result<_, io-error>;
+    /// Flush host-side output buffers.
     flush: func() -> result<_, io-error>;
   }
 }
 
+/// Standard streams for CLI-style apps.
 interface stdio {
   use streams.{input-stream, output-stream};
 
+  /// Host standard input.
   stdin: func() -> input-stream;
+  /// Host standard output for normal app output.
   stdout: func() -> output-stream;
+  /// Host standard error for diagnostics.
   stderr: func() -> output-stream;
 }
 
+/// App arguments passed by the Layer36 launcher.
 interface args {
+  /// Raw argument payload for the current CLI slice.
+  ///
+  /// The Phase 2 host encodes arguments as newline-separated text. SDKs should
+  /// expose friendlier argument helpers over this raw transport.
   raw: func() -> string;
 }
 
+/// Structured app logging.
 interface log {
   use types.{log-level};
 
+  /// One key/value pair attached to a log event.
   record field {
+    /// Field name.
     key: string,
+    /// Field value rendered as text.
     value: string,
   }
 
+  /// Emit one structured log event to the host.
   emit: func(level: log-level, message: string, fields: list<field>);
 }

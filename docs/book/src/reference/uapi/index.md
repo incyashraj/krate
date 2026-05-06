@@ -51,24 +51,38 @@ layer36::io::stdio::println(&text)?;
 
 ### Functions
 
+> Open a path and return a file resource.
+
 - `open(path: string, mode: open-mode) -> result<own<file>, fs-error>`
   - Opens a host file through Layer36 and returns a `file` handle.
   - `read` needs `fs.read:PATH`; `write`, `append`, and `read-write` also need the matching write grant.
+> Read metadata for a path without opening it as a file resource.
+
 - `stat(path: string) -> result<file-stat, fs-error>`
   - Reads file metadata without opening the file body.
   - Requires `fs.read:PATH` for the path being inspected.
+> List directory entry names for a path.
+
 - `list(path: string) -> result<list<string>, fs-error>`
   - Returns directory entry names for a granted directory.
   - Requires `fs.list:PATH` before the adapter reads the directory.
+> Remove one file.
+
 - `remove-file(path: string) -> result<_, fs-error>`
   - Deletes one file.
   - Requires `fs.remove:PATH`; missing grants fail before host deletion is attempted.
+> Remove one directory.
+
 - `remove-dir(path: string) -> result<_, fs-error>`
   - Deletes one directory.
   - Requires `fs.remove:PATH`; hosts can still reject non-empty directories.
+> Create one directory.
+
 - `mkdir(path: string) -> result<_, fs-error>`
   - Creates one directory.
   - Requires `fs.mkdir:PATH` for the directory being created.
+> Rename or move a path.
+
 - `rename(from: string, to: string) -> result<_, fs-error>`
   - Moves or renames a file or directory.
   - Requires grants for both sides: remove/write style access to the source and write style access to the destination.
@@ -77,20 +91,32 @@ layer36::io::stdio::println(&text)?;
 
 #### `file` resource
 
+> Open file resource.
+
 #### `file` methods
+
+> Read up to `n` bytes from the current file cursor.
 
 - `read(n: u32) -> result<list<u8>, fs-error>`
   - Reads up to `n` bytes from an opened file handle.
   - The runtime rechecks the handle path before each adapter read.
+> Write bytes at the current file cursor.
+
 - `write(bytes: list<u8>) -> result<u32, fs-error>`
   - Writes bytes to an opened file handle and returns the number written.
   - The runtime rechecks write permission before each adapter write.
+> Seek to an absolute byte position.
+
 - `seek-set(pos: u64) -> result<u64, fs-error>`
   - Moves the file cursor to an absolute byte position.
   - The handle must still be valid and backed by a granted file.
+> Seek to the end of the file.
+
 - `seek-end() -> result<u64, fs-error>`
   - Moves the file cursor to the end and returns the new position.
   - Useful before append-style writes or size checks.
+> Read metadata for this open file handle.
+
 - `stat() -> result<file-stat, fs-error>`
   - Reads metadata for the opened file handle.
   - The runtime rechecks the handle path before the adapter stat call.
@@ -104,25 +130,59 @@ Shared filesystem records, modes, and error shapes.
 
 #### `file-stat` record
 
+> Metadata returned for files and directories.
+
+> Size in bytes for files. Directory size is host-defined.
+
 - `size`: `u64`
+> Last modified time in Unix epoch milliseconds.
+
 - `modified-millis`: `u64`
+> True when the path is a directory.
+
 - `is-dir`: `bool`
 
 #### `open-mode` variant
 
+> How a file should be opened.
+
+> Open for reads.
+
 - `read`
+> Open for writes, creating or truncating according to host policy.
+
 - `write`
+> Open for both reads and writes.
+
 - `read-write`
+> Open for appending writes.
+
 - `append`
 
 #### `fs-error` variant
 
+> Filesystem error shape used by path and file-handle calls.
+
+> Path does not exist.
+
 - `not-found`
+> Capability policy or sandbox rules denied the operation.
+
 - `permission-denied`
+> The target already exists.
+
 - `already-exists`
+> Path text is not accepted by the Phase 2 path rules.
+
 - `invalid-path`
+> Operation needed a directory but found something else.
+
 - `not-a-directory`
+> Operation needed a file but found a directory.
+
 - `is-a-directory`
+> Host-specific filesystem error text.
+
 - `io`: `string`
 
 
@@ -152,6 +212,11 @@ let first = layer36::io::args::first_raw(&raw);
 
 ### Functions
 
+> Raw argument payload for the current CLI slice.
+> 
+> The Phase 2 host encodes arguments as newline-separated text. SDKs should
+> expose friendlier argument helpers over this raw transport.
+
 - `raw() -> string`
   - Returns the app arguments passed after `--` in `layer36 run`.
   - Current encoding is newline-separated text, so SDK helpers should parse it for app code.
@@ -175,6 +240,8 @@ Accepted capability strings for this module, generated from the runtime manifest
 
 ### Functions
 
+> Emit one structured log event to the host.
+
 - `emit(level: log-level, message: string, fields: list<field>)`
   - Sends one structured log event to the host.
   - Fields are plain key/value strings so native hosts can map them to their own log systems.
@@ -183,7 +250,13 @@ Accepted capability strings for this module, generated from the runtime manifest
 
 #### `field` record
 
+> One key/value pair attached to a log event.
+
+> Field name.
+
 - `key`: `string`
+> Field value rendered as text.
+
 - `value`: `string`
 
 
@@ -212,12 +285,18 @@ layer36::io::stdio::eprintln("debug line")?;
 
 ### Functions
 
+> Host standard input.
+
 - `stdin() -> own<input-stream>`
   - Returns an input stream connected to the host standard input.
   - Granted by default for CLI apps.
+> Host standard output for normal app output.
+
 - `stdout() -> own<output-stream>`
   - Returns an output stream connected to host standard output.
   - Use this for normal command output that other tools may read.
+> Host standard error for diagnostics.
+
 - `stderr() -> own<output-stream>`
   - Returns an output stream connected to host standard error.
   - Use this for diagnostics and permission errors.
@@ -253,25 +332,39 @@ out.flush()?;
 
 #### `input-stream` resource
 
+> Readable byte stream owned by the runtime.
+
 #### `output-stream` resource
 
+> Writable byte stream owned by the runtime.
+
 #### `input-stream` methods
+
+> Read up to `n` bytes from the stream.
 
 - `read(n: u32) -> result<list<u8>, io-error>`
   - Reads up to `n` bytes from an input stream.
   - A short read is valid; an empty read means the stream has no more bytes right now or is closed.
+> Read the stream as UTF-8 text.
+
 - `read-to-string() -> result<string, io-error>`
   - Reads the stream as UTF-8 text.
   - Invalid UTF-8 returns `io-error.invalid-utf8` instead of lossy text.
 
 #### `output-stream` methods
 
+> Write some bytes and return the number accepted by the host.
+
 - `write(bytes: list<u8>) -> result<u32, io-error>`
   - Writes bytes to an output stream and returns the number accepted.
   - Apps that need all bytes written should use `write-all` or an SDK helper.
+> Write the whole byte buffer or return an error.
+
 - `write-all(bytes: list<u8>) -> result<_, io-error>`
   - Writes the full byte buffer or returns an IO error.
   - This is the right primitive for line-oriented CLI output.
+> Flush host-side output buffers.
+
 - `flush() -> result<_, io-error>`
   - Asks the host to push buffered output through.
   - Use it before exiting after important diagnostics or prompts.
@@ -285,18 +378,42 @@ Shared IO log and error types.
 
 #### `log-level` enum
 
+> Severity level for app log events.
+
+> Very detailed diagnostic data.
+
 - `trace`
+> Developer-focused diagnostic data.
+
 - `debug`
+> Normal informational event.
+
 - `info`
+> Something unexpected happened, but the app can continue.
+
 - `warn`
+> The app hit an error condition.
+
 - `error`
 
 #### `io-error` variant
 
+> Error shape for byte streams and text stream helpers.
+
+> The stream was already closed.
+
 - `closed`
+> The host interrupted the operation.
+
 - `interrupted`
+> The stream ended before enough bytes were read.
+
 - `unexpected-eof`
+> Bytes could not be decoded as UTF-8 text.
+
 - `invalid-utf8`
+> Host-specific IO error text.
+
 - `other`: `string`
 
 
@@ -322,9 +439,13 @@ let text = layer36::locale::format_number(42.0, layer36::locale::NumberStyle::De
 
 ### Functions
 
+> Format Unix epoch milliseconds using a timezone, style, and locale.
+
 - `format-date(millis: u64, tz: string, style: date-style, loc: locale-id) -> string`
   - Formats a timestamp using a requested timezone, date style, and locale.
   - The host owns the native formatting behavior so output can match the platform.
+> Format a number using a style and locale.
+
 - `format-number(value: f64, style: number-style, loc: locale-id) -> string`
   - Formats a number using a requested style and locale.
   - Currency style is present in the shape, but richer currency-code handling remains future work.
@@ -372,19 +493,41 @@ Locale and formatting type definitions.
 
 #### `locale-id` record
 
+> Host locale identifier using a BCP 47 language tag.
+
+> Canonicalized BCP 47 locale tag, for example `en-US`.
+
 - `bcp47`: `string`
 
 #### `date-style` enum
 
+> Date rendering style requested from the host.
+
+> Compact numeric date form.
+
 - `short`
+> Medium-length date form.
+
 - `medium`
+> Long date form.
+
 - `long`
+> Full date form.
+
 - `full`
 
 #### `number-style` enum
 
+> Number rendering style requested from the host.
+
+> Decimal number formatting.
+
 - `decimal`
+> Percent formatting.
+
 - `percent`
+> Currency formatting. Currency code selection remains future work.
+
 - `currency`
 
 
@@ -410,9 +553,13 @@ layer36::io::stdio::println(&body)?;
 
 ### Functions
 
+> Perform a simple GET request and return only the response body.
+
 - `get(url: string) -> result<list<u8>, net-error>`
   - Performs a simple HTTP GET and returns only the response body.
   - Requires `net.connect:HOST:PORT`; Phase 2 currently supports the plain HTTP adapter path.
+> Perform a buffered HTTP request and return status, headers, and body.
+
 - `fetch(req: request) -> result<response, net-error>`
   - Performs a lower-level HTTP request and returns status, headers, and body.
   - The plain HTTP adapter now forwards the method, app headers, and buffered body while keeping `Host`, `Connection`, and `Content-Length` under host control.
@@ -427,43 +574,105 @@ Shared network request, response, and error types.
 
 #### `http-method` enum
 
+> HTTP method for Phase 2 client requests.
+
+> HTTP GET.
+
 - `get`
+> HTTP POST.
+
 - `post`
+> HTTP PUT.
+
 - `put`
+> HTTP DELETE.
+
 - `delete`
+> HTTP PATCH.
+
 - `patch`
+> HTTP HEAD.
+
 - `head`
+> HTTP OPTIONS.
+
 - `options`
 
 #### `header` record
 
+> One HTTP header field.
+
+> Header name.
+
 - `name`: `string`
+> Header value.
+
 - `value`: `string`
 
 #### `request` record
 
+> Buffered HTTP request shape.
+
+> Request method.
+
 - `method`: `http-method`
+> Absolute request URL.
+
 - `url`: `string`
+> App-provided headers. Host-controlled transport headers are rejected.
+
 - `headers`: `list<header>`
+> Buffered request body.
+
 - `body`: `list<u8>`
+> Optional timeout in milliseconds for this request.
+
 - `timeout-millis`: `option<u32>`
 
 #### `response` record
 
+> Buffered HTTP response shape.
+
+> Numeric HTTP status code.
+
 - `status`: `u16`
+> Response headers accepted by the host adapter.
+
 - `headers`: `list<header>`
+> Buffered response body.
+
 - `body`: `list<u8>`
 
 #### `net-error` variant
 
+> Network error shape returned by HTTP client calls.
+
+> URL syntax or unsupported Phase 2 URL shape.
+
 - `invalid-url`
+> Hostname resolution failed.
+
 - `dns-failure`: `string`
+> Socket connection failed.
+
 - `connect-failure`: `string`
+> TLS setup failed. HTTPS is not yet implemented in the first Phase 2 adapter slice.
+
 - `tls-failure`: `string`
+> Request timed out.
+
 - `timeout`
+> Response exceeded the configured body-size limit.
+
 - `body-too-large`
+> Capability policy denied the request before socket access.
+
 - `permission-denied`
+> Response framing or protocol parsing failed.
+
 - `protocol`: `string`
+> Host-specific network error text.
+
 - `other`: `string`
 
 

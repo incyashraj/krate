@@ -1,5 +1,9 @@
 package layer36:app@0.1.0;
 
+/// CLI component world for the Phase 2 UAPI.
+///
+/// Apps import Layer36 host APIs and export `run`, returning a process-style
+/// status code to the runtime.
 world cli {
   import layer36:io/stdio@0.1.0;
   import layer36:io/args@0.1.0;

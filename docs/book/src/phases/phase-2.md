@@ -313,12 +313,17 @@ The generated UAPI reference has also grown past a raw signature list. It now
 pulls capability strings from the manifest crate and adds short behavior notes
 under each function and resource method, so the docs explain both the call shape
 and the permission model in one place.
+The WIT files now carry first-pass contract comments for the Phase 2 world,
+interfaces, records, variants, enum cases, resource methods, and functions.
+Those comments flow into the generated reference, so the published API page is
+closer to a real freeze candidate instead of only showing type signatures.
 
 The UAPI gate is stricter now too. `scripts/check-uapi.sh` first runs
 `wasm-tools component wit` across the Phase 2 world and all dependency
 packages (`io`, `fs`, `net`, `time`, `locale`), then runs the contract-shape
-checks in `layer36-tools --bin check-uapi`. Hosted and self-hosted CI both run
-this before UAPI reference regeneration.
+checks in `layer36-tools --bin check-uapi`. That checker now also fails if
+public Phase 2 WIT items are missing contract docs. Hosted and self-hosted CI
+both run this before UAPI reference regeneration.
 
 The first terminal grant prompt exists too. `layer36 run --prompt app.wasm`
 shows the app identity, lists missing manifest capabilities, accepts all or a

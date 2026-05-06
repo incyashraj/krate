@@ -1,46 +1,78 @@
 package layer36:fs@0.1.0;
 
+/// Shared filesystem records, modes, and errors.
 interface types {
+  /// Metadata returned for files and directories.
   record file-stat {
+    /// Size in bytes for files. Directory size is host-defined.
     size: u64,
+    /// Last modified time in Unix epoch milliseconds.
     modified-millis: u64,
+    /// True when the path is a directory.
     is-dir: bool,
   }
 
+  /// How a file should be opened.
   variant open-mode {
+    /// Open for reads.
     read,
+    /// Open for writes, creating or truncating according to host policy.
     write,
+    /// Open for both reads and writes.
     read-write,
+    /// Open for appending writes.
     append,
   }
 
+  /// Filesystem error shape used by path and file-handle calls.
   variant fs-error {
+    /// Path does not exist.
     not-found,
+    /// Capability policy or sandbox rules denied the operation.
     permission-denied,
+    /// The target already exists.
     already-exists,
+    /// Path text is not accepted by the Phase 2 path rules.
     invalid-path,
+    /// Operation needed a directory but found something else.
     not-a-directory,
+    /// Operation needed a file but found a directory.
     is-a-directory,
+    /// Host-specific filesystem error text.
     io(string),
   }
 }
 
+/// Filesystem functions and file resources.
 interface files {
   use types.{file-stat, open-mode, fs-error};
 
+  /// Open file resource.
   resource file {
+    /// Read up to `n` bytes from the current file cursor.
     read: func(n: u32) -> result<list<u8>, fs-error>;
+    /// Write bytes at the current file cursor.
     write: func(bytes: list<u8>) -> result<u32, fs-error>;
+    /// Seek to an absolute byte position.
     seek-set: func(pos: u64) -> result<u64, fs-error>;
+    /// Seek to the end of the file.
     seek-end: func() -> result<u64, fs-error>;
+    /// Read metadata for this open file handle.
     stat: func() -> result<file-stat, fs-error>;
   }
 
+  /// Open a path and return a file resource.
   open: func(path: string, mode: open-mode) -> result<file, fs-error>;
+  /// Read metadata for a path without opening it as a file resource.
   stat: func(path: string) -> result<file-stat, fs-error>;
+  /// List directory entry names for a path.
   %list: func(path: string) -> result<list<string>, fs-error>;
+  /// Remove one file.
   remove-file: func(path: string) -> result<_, fs-error>;
+  /// Remove one directory.
   remove-dir: func(path: string) -> result<_, fs-error>;
+  /// Create one directory.
   mkdir: func(path: string) -> result<_, fs-error>;
+  /// Rename or move a path.
   rename: func(%from: string, to: string) -> result<_, fs-error>;
 }

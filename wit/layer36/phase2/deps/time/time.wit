@@ -1,5 +1,6 @@
 package layer36:time@0.1.0;
 
+/// Host clock reads.
 interface clock {
   /// Milliseconds since Unix epoch. Wall-clock; can jump.
   now-millis: func() -> u64;
@@ -9,6 +10,7 @@ interface clock {
   monotonic-nanos: func() -> u64;
 }
 
+/// Blocking sleep support for CLI components.
 interface sleep {
   /// Block the calling task for at least `millis` milliseconds.
   sleep-millis: func(millis: u32);
