@@ -1990,6 +1990,7 @@ fn run_with_manifest_prompt_can_grant_required_capability() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Requests the following capabilities"));
     assert!(stderr.contains("fs.read:data/**"));
+    assert!(stderr.contains("Read data"));
     assert!(stderr.contains("invalid wasm component"));
 }
 

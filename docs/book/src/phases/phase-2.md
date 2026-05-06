@@ -40,6 +40,9 @@ Manifest capability parsing now applies the same deterministic storage rule to
 `fs.*` resources through shared logical-path normalization, so formatting
 variants like `./notes/**` and `notes\\**` are stored as one canonical
 `notes/**` shape for duplicate checks and capability output.
+Interactive grant prompts now keep rationale text aligned with those canonical
+capability shapes too, so prompts still show the right human reason lines even
+when the manifest used non-canonical resource formatting.
 
 There is also a first dispatcher scaffold now. In simple terms: we have the
 place where generated UAPI calls will enter the runtime, get checked by policy,

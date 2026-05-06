@@ -444,11 +444,14 @@ fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Res
     eprintln!("Requests the following capabilities:");
     for (index, cap) in prompt_caps.iter().enumerate() {
         eprintln!("  [{}] {cap}", index + 1);
-        if let Some(request) = manifest
-            .capabilities
-            .iter()
-            .find(|request| request.cap == cap.to_string())
-        {
+        if let Some(request) = manifest.capabilities.iter().find(|request| {
+            request
+                .cap
+                .parse::<Capability>()
+                .ok()
+                .as_ref()
+                .is_some_and(|parsed| parsed == cap)
+        }) {
             eprintln!("      {}", request.rationale);
         }
     }
