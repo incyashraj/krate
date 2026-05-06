@@ -197,10 +197,7 @@ struct SampleRow {
 }
 
 fn record_sample_evidence(config: &Config) -> Result<EvidenceReport> {
-    let mut rows = Vec::new();
-    rows.push(run_clock(config)?);
-    rows.push(run_cat(config)?);
-    rows.push(run_curl(config)?);
+    let rows = vec![run_clock(config)?, run_cat(config)?, run_curl(config)?];
 
     Ok(EvidenceReport {
         generated_unix_seconds: unix_seconds(),
