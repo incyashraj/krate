@@ -37,9 +37,9 @@ use layer36_adapter_common::locale::{
 };
 #[cfg(feature = "phase2-bindings")]
 use layer36_adapter_common::net::{
-    build_plain_http_request, parse_plain_http_response, read_plain_http_response_limited,
-    PlainHttpError, PlainHttpHeader, PlainHttpMethod, PlainHttpReadError, PlainHttpRequest,
-    PlainHttpUrl,
+    build_plain_http_request, normalize_resolved_socket_addrs, parse_plain_http_response,
+    read_plain_http_response_limited, PlainHttpError, PlainHttpHeader, PlainHttpMethod,
+    PlainHttpReadError, PlainHttpRequest, PlainHttpUrl,
 };
 #[cfg(feature = "phase2-bindings")]
 use layer36_adapter_common::path::{FsOperation, LogicalPath, PathError};
@@ -1495,6 +1495,7 @@ fn resolve_plain_http_socket_addrs(
 ) -> std::result::Result<Vec<SocketAddr>, AdapterError> {
     let addrs =
         resolve_socket_addrs_on_host(url.host.as_str(), url.port).map_err(map_net_resolve_error)?;
+    let addrs = normalize_resolved_socket_addrs(addrs);
     if addrs.is_empty() {
         return Err(AdapterError::NotFound);
     }

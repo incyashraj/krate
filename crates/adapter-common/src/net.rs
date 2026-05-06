@@ -1,6 +1,6 @@
 //! Shared network helpers for host adapters.
 
-use std::io::Read;
+use std::{collections::HashSet, io::Read, net::SocketAddr};
 
 /// A parsed plain HTTP URL for the current Phase 2 adapter slice.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,6 +59,7 @@ const MAX_HTTP_AUTHORITY_BYTES: usize = 255;
 const MAX_HTTP_BODY_BYTES: usize = 1024 * 1024;
 const MAX_HTTP_TARGET_BYTES: usize = 4096;
 const MAX_HTTP_REQUEST_BYTES: usize = MAX_HTTP_BODY_BYTES + MAX_HTTP_HEADER_BLOCK_BYTES + 4096;
+const MAX_RESOLVED_SOCKET_ADDRS: usize = 32;
 
 /// A parsed network endpoint used for capability checks.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,6 +90,26 @@ pub fn parse_url_endpoint(input: &str) -> Result<UrlEndpoint, UrlEndpointError> 
     };
 
     parse_url_endpoint_with_default(rest, default_port)
+}
+
+/// Normalize resolved socket addresses for deterministic, bounded connect loops.
+///
+/// This helper keeps first-seen order, removes duplicates, and caps the result
+/// size for this Phase 2 plain-network slice.
+pub fn normalize_resolved_socket_addrs(addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
+    let mut seen = HashSet::new();
+    let mut normalized = Vec::new();
+
+    for addr in addrs {
+        if seen.insert(addr) {
+            normalized.push(addr);
+            if normalized.len() >= MAX_RESOLVED_SOCKET_ADDRS {
+                break;
+            }
+        }
+    }
+
+    normalized
 }
 
 fn parse_url_endpoint_with_default(
@@ -773,6 +794,39 @@ mod tests {
             parse_url_endpoint("https://example.com/caf\u{e9}").unwrap_err(),
             UrlEndpointError::InvalidUrl
         );
+    }
+
+    #[test]
+    fn normalize_resolved_socket_addrs_deduplicates_and_caps() {
+        let mut input: Vec<SocketAddr> = (0..40)
+            .map(|offset| SocketAddr::from(([127, 0, 0, 1], 12000 + offset)))
+            .collect();
+        input.push(SocketAddr::from(([127, 0, 0, 1], 12005)));
+        input.push(SocketAddr::from(([127, 0, 0, 1], 12010)));
+
+        let normalized = normalize_resolved_socket_addrs(input);
+
+        assert_eq!(normalized.len(), MAX_RESOLVED_SOCKET_ADDRS);
+        assert_eq!(
+            normalized.first().copied(),
+            Some(SocketAddr::from(([127, 0, 0, 1], 12000)))
+        );
+        assert_eq!(
+            normalized.last().copied(),
+            Some(SocketAddr::from(([127, 0, 0, 1], 12031)))
+        );
+    }
+
+    #[test]
+    fn normalize_resolved_socket_addrs_keeps_first_seen_order() {
+        let first = SocketAddr::from(([127, 0, 0, 1], 18080));
+        let second = SocketAddr::from(([127, 0, 0, 1], 18081));
+        let third = SocketAddr::from(([127, 0, 0, 1], 18082));
+        let input = vec![second, first, second, third, first];
+
+        let normalized = normalize_resolved_socket_addrs(input);
+
+        assert_eq!(normalized, vec![second, first, third]);
     }
 
     #[test]

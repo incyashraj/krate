@@ -152,6 +152,10 @@ Host names are now normalized to lowercase in shared URL parsing, so capability
 checks stay stable across input case differences like `EXAMPLE.com` and
 `example.com`. URL scheme checks are now case-insensitive as well, so
 `HTTP://` and `HTTPS://` forms follow the same grant matching path.
+Resolved socket-address lists now also go through shared normalization:
+duplicates are removed, first-seen order is preserved, and connect-attempt
+lists are capped to a fixed maximum so DNS result variance cannot create
+unbounded retry loops.
 In this early plain-HTTP slice, URL parsing is also ASCII-only. Non-ASCII URLs
 are rejected early so request framing and capability endpoint checks stay
 deterministic until broader URL handling lands in a later hardening pass.
