@@ -1,6 +1,6 @@
 # Layer36 for Everyone
 
-Updated on May 5, 2026.
+Updated on May 6, 2026.
 
 This page explains the project in plain language. It is written for people who are not deep in systems programming.
 
@@ -47,6 +47,10 @@ flowchart LR
    - `layer36-cat`
    - `layer36-curl`
 4. Capability checks are in place, so apps only get access they request and are granted.
+5. Language fixture automation is active:
+   - TypeScript fixtures are built automatically in CI
+   - Go fixture promotion is now attempted automatically when TinyGo tools are available
+   - strict Go modes fail clearly if Go fixtures are missing or not import-pure
 
 ## Current Build Timeline
 
@@ -101,7 +105,7 @@ This is a simple status view for non technical readers.
 The main Phase 2 work still open is:
 
 1. Deeper adapter hardening and platform parity checks.
-2. Real Go and TypeScript component build path in CI, not just scaffold and optional fixtures.
+2. Full Go runtime fixture proof with Layer36 import-pure bindings across runners.
 3. Cross host confidence gates staying green over time.
 
 When those are done, we can exit Phase 2 and start Phase 3 desktop UI work.
