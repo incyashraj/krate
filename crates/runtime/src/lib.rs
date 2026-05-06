@@ -1463,9 +1463,11 @@ fn connect_plain_http_stream(
             return Err(AdapterError::Timeout);
         }
         let timeout = Duration::from_millis(u64::from(millis));
+        let deadline = std::time::Instant::now() + timeout;
         let mut last_err = None;
         for addr in addrs {
-            match connect_tcp_on_host(addr, Some(timeout)) {
+            let remaining = remaining_connect_timeout(deadline)?;
+            match connect_tcp_on_host(addr, Some(remaining)) {
                 Ok(stream) => return Ok(stream),
                 Err(err) => last_err = Some(err),
             }
@@ -1487,6 +1489,24 @@ fn connect_plain_http_stream(
         return Err(map_net_io_error(err));
     }
     Err(AdapterError::NotFound)
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn remaining_connect_timeout(
+    deadline: std::time::Instant,
+) -> std::result::Result<Duration, AdapterError> {
+    remaining_connect_timeout_for(std::time::Instant::now(), deadline)
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn remaining_connect_timeout_for(
+    now: std::time::Instant,
+    deadline: std::time::Instant,
+) -> std::result::Result<Duration, AdapterError> {
+    if now >= deadline {
+        return Err(AdapterError::Timeout);
+    }
+    Ok(deadline.duration_since(now))
 }
 
 #[cfg(feature = "phase2-bindings")]
@@ -2648,6 +2668,25 @@ mod tests {
         };
         let err = connect_plain_http_stream(&url, None).expect_err("connection should fail");
         assert!(matches!(err, AdapterError::Network(_)));
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn remaining_connect_timeout_for_returns_timeout_at_deadline() {
+        let now = std::time::Instant::now();
+        let err = remaining_connect_timeout_for(now, now)
+            .expect_err("deadline at current instant should time out");
+        assert_eq!(err, AdapterError::Timeout);
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn remaining_connect_timeout_for_returns_remaining_budget_before_deadline() {
+        let now = std::time::Instant::now();
+        let deadline = now + Duration::from_millis(25);
+        let remaining = remaining_connect_timeout_for(now, deadline)
+            .expect("remaining timeout should be available before deadline");
+        assert_eq!(remaining, Duration::from_millis(25));
     }
 
     #[cfg(feature = "phase2-bindings")]

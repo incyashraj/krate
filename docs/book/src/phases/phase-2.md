@@ -170,7 +170,9 @@ place.
 For helper-style `net.http-client.get` calls, the default request timeout is now
 runtime-configurable through `layer36 run --http-timeout-millis`. The default is
 5000 milliseconds, and `--http-timeout-millis 0` disables that default timeout
-for the helper `get` path.
+for the helper `get` path. For multi-address connect attempts, timed requests
+now spend one shared connect-time budget across all resolved addresses instead
+of applying the full timeout per address.
 
 Time is also starting to move into shared adapter code. The local runtime now
 uses a common host clock helper for fixed test time, Unix-epoch milliseconds,
