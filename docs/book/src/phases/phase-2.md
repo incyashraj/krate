@@ -363,6 +363,11 @@ There is also a companion comparator now:
 be checked in one run. It fails fast when clock/cat/curl stdout hashes drift
 across hosts and supports a temporary `--allow-blocked-curl` exception for
 restricted localhost environments.
+Language-variant evidence now has a recorder as well:
+[Language Variant Evidence](../phase2/language-variant-evidence.md) explains
+how to run `scripts/record-phase2-language-variant-evidence.sh`. That report
+captures fixture readiness plus test outcomes for Rust, Go, and TypeScript in
+one markdown artifact, with fixture hashes and log tails for review.
 
 The first terminal grant prompt exists too. `layer36 run --prompt app.wasm`
 shows the app identity, lists missing manifest capabilities, accepts all or a
