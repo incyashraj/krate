@@ -1375,9 +1375,10 @@ impl NetAdapter for LocalPhase2Adapter {
             apply_tcp_timeouts_on_host(&stream, timeout).map_err(map_io_error)?;
         }
 
-        stream.write_all(&request).map_err(map_net_io_error)?;
-        let response = read_plain_http_response_limited(&mut stream, self.max_http_response_bytes)
-            .map_err(map_plain_http_read_error)?;
+        write_all_tcp_on_host(&mut stream, &request).map_err(map_net_io_error)?;
+        let response =
+            read_plain_http_response_limited_on_host(&mut stream, self.max_http_response_bytes)
+                .map_err(map_plain_http_read_error)?;
         let response = parse_plain_http_response(&response).map_err(map_plain_http_error)?;
         Ok(HttpResponse {
             status: response.status,
@@ -1486,6 +1487,53 @@ fn apply_tcp_timeouts_on_host(stream: &TcpStream, timeout: Duration) -> std::io:
         stream.set_read_timeout(Some(timeout))?;
         stream.set_write_timeout(Some(timeout))
     }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn write_all_tcp_on_host(stream: &mut TcpStream, bytes: &[u8]) -> std::io::Result<()> {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        host_os_adapter::write_all_tcp(stream, bytes)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        std::io::Write::write_all(stream, bytes)
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn read_tcp_on_host(stream: &mut TcpStream, buf: &mut [u8]) -> std::io::Result<usize> {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        host_os_adapter::read_tcp(stream, buf)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        std::io::Read::read(stream, buf)
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+struct HostTcpReader<'a> {
+    stream: &'a mut TcpStream,
+}
+
+#[cfg(feature = "phase2-bindings")]
+impl std::io::Read for HostTcpReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        read_tcp_on_host(self.stream, buf)
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn read_plain_http_response_limited_on_host(
+    stream: &mut TcpStream,
+    max_bytes: usize,
+) -> std::result::Result<Vec<u8>, PlainHttpReadError> {
+    let mut reader = HostTcpReader { stream };
+    read_plain_http_response_limited(&mut reader, max_bytes)
 }
 
 #[cfg(feature = "phase2-bindings")]

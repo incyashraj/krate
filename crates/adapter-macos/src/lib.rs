@@ -66,6 +66,16 @@ pub fn apply_tcp_timeouts(stream: &TcpStream, timeout: Duration) -> std::io::Res
     stream.set_write_timeout(Some(timeout))
 }
 
+/// Write a full request buffer through the macOS adapter TCP path.
+pub fn write_all_tcp(stream: &mut TcpStream, bytes: &[u8]) -> std::io::Result<()> {
+    std::io::Write::write_all(stream, bytes)
+}
+
+/// Read bytes through the macOS adapter TCP path.
+pub fn read_tcp(stream: &mut TcpStream, buf: &mut [u8]) -> std::io::Result<usize> {
+    std::io::Read::read(stream, buf)
+}
+
 /// Resolve socket addresses through the macOS adapter path.
 pub fn resolve_socket_addrs(host: &str, port: u16) -> std::io::Result<Vec<SocketAddr>> {
     (host, port).to_socket_addrs().map(Iterator::collect)
@@ -235,6 +245,18 @@ mod tests {
     #[test]
     fn apply_tcp_timeouts_hook_is_available() {
         let hook: fn(&TcpStream, Duration) -> std::io::Result<()> = apply_tcp_timeouts;
+        let _ = hook;
+    }
+
+    #[test]
+    fn write_all_tcp_hook_is_available() {
+        let hook: fn(&mut TcpStream, &[u8]) -> std::io::Result<()> = write_all_tcp;
+        let _ = hook;
+    }
+
+    #[test]
+    fn read_tcp_hook_is_available() {
+        let hook: fn(&mut TcpStream, &mut [u8]) -> std::io::Result<usize> = read_tcp;
         let _ = hook;
     }
 
