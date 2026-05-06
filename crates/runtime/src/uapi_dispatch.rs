@@ -1408,6 +1408,38 @@ mod tests {
     }
 
     #[test]
+    fn net_fetch_rejects_non_connectable_numeric_ipv4_targets_before_adapter() {
+        let adapter = RecordingAdapter::default();
+        let policy =
+            SessionPolicy::from_cli_grants(&["net.connect:*:443".to_string()]).expect("policy");
+        let guard = UapiGuard::new(policy);
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+
+        for url in [
+            "https://0.0.0.0/v1/ping",
+            "https://255.255.255.255/v1/ping",
+            "https://239.1.2.3/v1/ping",
+        ] {
+            let req = HttpRequest {
+                method: HttpMethod::Get,
+                url: url.to_string(),
+                headers: Vec::new(),
+                body: Vec::new(),
+                timeout_millis: None,
+            };
+            let err = dispatcher
+                .net_fetch(req)
+                .expect_err("invalid endpoint should fail before adapter");
+
+            assert!(
+                matches!(err, NetDispatchError::InvalidUrl),
+                "unexpected error for {url}: {err:?}"
+            );
+        }
+        assert_eq!(adapter.calls.borrow().net_fetch, 0);
+    }
+
+    #[test]
     fn net_fetch_rejects_non_ascii_url_before_adapter() {
         let adapter = RecordingAdapter::default();
         let policy =
