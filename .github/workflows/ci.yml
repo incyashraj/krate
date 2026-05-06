@@ -165,6 +165,8 @@ jobs:
         run: git diff --exit-code -- docs/book/src/phase2/uapi-freeze-evidence.md
       - name: Check runtime adapter boundary
         run: sh scripts/check-adapter-boundary.sh
+      - name: Check Phase 2 exit evidence
+        run: sh scripts/check-phase2-exit-evidence.sh
 
   # ──────────────────────────────────────────────
   # 7. Shared component fixtures

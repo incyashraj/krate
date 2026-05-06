@@ -338,6 +338,9 @@ page now. It records the current package set, imported interface set, world
 shape, and contract checks in one place, so freeze review has a concrete
 snapshot instead of only a checklist. Hosted CI and self-hosted CI now
 regenerate that page and fail if it is stale.
+There is now a [Phase 2 Exit Evidence](../phase2/exit-evidence.md) ledger too.
+It tracks all 15 exit gates with a status, proof source, and next step, and CI
+checks the page shape so the list cannot silently drift from the plan.
 
 The adapter split now has a guard too. The
 [Adapter Boundary](../phase2/adapter-boundary.md) page explains the rule in

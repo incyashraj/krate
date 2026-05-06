@@ -50,6 +50,7 @@
   - [Adapter Boundary](phase2/adapter-boundary.md)
   - [UAPI Freeze Review](phase2/uapi-freeze-review.md)
   - [UAPI Freeze Evidence](phase2/uapi-freeze-evidence.md)
+  - [Exit Evidence](phase2/exit-evidence.md)
 - [Phase 3: UI + Graphics](phases/phase-3.md)
 - [Phase 4: Mobile](phases/phase-4.md)
 - [Phase 5: Developer SDK](phases/phase-5.md)

@@ -2374,6 +2374,7 @@ formal exit gates.
 | P2-CI-07 | Hosted full CI TypeScript fixture default gate | 2026-05-05 | Updated hosted full-test CI to run language-variant fixtures in `ts` mode by default, enabled `npx` jco installation in the fixture build step, and pinned this lane to Node 22 plus a pinned jco package version. This keeps the TypeScript runtime fixture lane active by default in full hosted CI while reducing cross-runner npm drift and preserving manual mode override inputs. |
 | P2-CI-08 | Hosted CI Node 24 core-action readiness | 2026-05-06 | Upgraded hosted workflows to `actions/checkout@v5` and `actions/setup-node@v5` so normal CI and docs lanes run on Node 24-ready action runtimes. Kept self-hosted workflows on `actions/checkout@v4` for local runner compatibility until all local runners are confirmed on the required minimum runner version. |
 | P2-CI-09 | UAPI freeze evidence freshness gate | 2026-05-06 | Hosted `UAPI contract` CI and self-hosted full gate now regenerate `docs/book/src/phase2/uapi-freeze-evidence.md` and fail if the committed page is stale. This keeps the published freeze evidence tied to the checked WIT contract instead of becoming a manual note. |
+| P2-CI-10 | Phase 2 exit evidence ledger guard | 2026-05-06 | Added `docs/book/src/phase2/exit-evidence.md`, `layer36-tools --bin check-phase2-exit-evidence`, and `scripts/check-phase2-exit-evidence.sh`. The page tracks all 15 Phase 2 exit gates with a status, proof source, and next step. Hosted CI and self-hosted CI now check that the ledger keeps every planned gate represented. |
 
 ---
 

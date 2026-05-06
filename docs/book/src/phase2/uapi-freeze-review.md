@@ -19,6 +19,8 @@ What is already in place:
 - the generated reference is published in the book
 - the current contract evidence snapshot is published in
   [UAPI Freeze Evidence](uapi-freeze-evidence.md)
+- the full Phase 2 gate list is tracked in
+  [Phase 2 Exit Evidence](exit-evidence.md)
 - hosted CI and self-hosted CI fail if that evidence page is stale
 - Rust sample apps use the current SDK facade
 - TypeScript fixtures build through jco and pass local runtime checks
