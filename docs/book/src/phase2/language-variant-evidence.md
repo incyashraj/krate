@@ -27,6 +27,15 @@ scripts/record-phase2-language-variant-evidence.sh \
   --output target/phase2-language-variant-evidence/macos-arm64.md
 ```
 
+For three-host comparison after collecting Linux, macOS, and Windows reports:
+
+```bash
+scripts/compare-phase2-language-variant-evidence.sh \
+  target/phase2-language-variant-evidence/linux.md \
+  target/phase2-language-variant-evidence/macos.md \
+  target/phase2-language-variant-evidence/windows.md
+```
+
 ## What It Records
 
 The report includes:

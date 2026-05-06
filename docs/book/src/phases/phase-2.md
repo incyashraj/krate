@@ -368,6 +368,10 @@ Language-variant evidence now has a recorder as well:
 how to run `scripts/record-phase2-language-variant-evidence.sh`. That report
 captures fixture readiness plus test outcomes for Rust, Go, and TypeScript in
 one markdown artifact, with fixture hashes and log tails for review.
+There is now a companion comparator too:
+`scripts/compare-phase2-language-variant-evidence.sh` checks three host reports
+in one run, verifies same commit metadata, enforces passed build/test steps,
+and fails when fixture availability or hashes drift across hosts.
 
 The first terminal grant prompt exists too. `layer36 run --prompt app.wasm`
 shows the app identity, lists missing manifest capabilities, accepts all or a
