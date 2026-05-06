@@ -330,6 +330,10 @@ The Rust SDK publish-readiness smoke is stricter too. It still packages the
 packaged crate, and now it also checks that the packaged crate contains the
 public README, SDK root, and generated bindings files before passing.
 
+There is now a dedicated [UAPI Freeze Review](../phase2/uapi-freeze-review.md)
+page. It turns the remaining freeze work into a clear checklist for contract
+shape, runtime behavior, samples, language tracks, and evidence.
+
 The first terminal grant prompt exists too. `layer36 run --prompt app.wasm`
 shows the app identity, lists missing manifest capabilities, accepts all or a
 numbered subset, and stores the approved caps only for that run. In a normal
