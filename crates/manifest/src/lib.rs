@@ -479,14 +479,33 @@ fn validate_connect_host_pattern(host: &str) -> std::result::Result<(), String> 
         return Err("network endpoint host contains unsupported characters".to_string());
     }
 
+    let labels = host.split('.').collect::<Vec<_>>();
+    let wildcard_labels = labels.iter().filter(|label| **label == "*").count();
+
+    if labels
+        .iter()
+        .any(|label| label.contains('*') && *label != "*")
+    {
+        return Err("network endpoint host wildcard must be a full `*` label".to_string());
+    }
+    if wildcard_labels > 1 {
+        return Err("network endpoint host can contain at most one wildcard label".to_string());
+    }
+    if wildcard_labels == 1 && labels.first().copied() != Some("*") {
+        return Err("network endpoint host wildcard must be the left-most label".to_string());
+    }
+
     let numeric_like = host.bytes().all(|byte| matches!(byte, b'0'..=b'9' | b'.'));
     if numeric_like && !is_valid_ipv4_host(host) {
         return Err("network endpoint host is not a valid IPv4 address".to_string());
     }
 
-    for label in host.split('.') {
+    for label in labels {
         if label.is_empty() || label.len() > 63 {
             return Err("network endpoint host label is empty or too long".to_string());
+        }
+        if label == "*" {
+            continue;
         }
         if label.starts_with('-') || label.ends_with('-') {
             return Err("network endpoint host label cannot start or end with `-`".to_string());
@@ -672,6 +691,10 @@ mod tests {
             "net.connect:0.0.0.0:443",
             "net.connect:255.255.255.255:443",
             "net.connect:239.1.2.3:443",
+            "net.connect:api.*.example.com:443",
+            "net.connect:*.*.example.com:443",
+            "net.connect:exa*mple.com:443",
+            "net.connect:api*.example.com:443",
         ] {
             let err = input
                 .parse::<Capability>()

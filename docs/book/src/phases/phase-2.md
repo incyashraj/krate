@@ -153,6 +153,9 @@ It now also rejects wildcard or non-unicast numeric IPv4 endpoint forms
 so runtime URL checks and manifest `net.connect` validation stay aligned on
 connectable target shapes. Dispatcher tests now also prove these values are
 rejected before any adapter network call runs.
+For manifest host patterns, wildcard is now constrained to explicit shapes only:
+a full left-most `*` label (`*` or `*.example.com`). Partial-label wildcard
+forms (for example `exa*mple.com`) and multiple wildcard labels are rejected.
 Host names are now normalized to lowercase in shared URL parsing, so capability
 checks stay stable across input case differences like `EXAMPLE.com` and
 `example.com`. URL scheme checks are now case-insensitive as well, so
