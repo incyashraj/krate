@@ -156,9 +156,10 @@ Resolved socket-address lists now also go through shared normalization:
 duplicates are removed, IPv4 addresses are preferred before IPv6 while
 first-seen order is still preserved inside each family, unspecified wildcard
 targets (`0.0.0.0` and `::`) are dropped, unusable targets (`port=0` and
-scope-less IPv6 link-local addresses) are filtered, and connect-attempt lists
-are capped to a fixed maximum so DNS result variance cannot create unbounded
-retry loops.
+scope-less IPv6 link-local addresses) are filtered, non-unicast targets
+(IPv4 broadcast, IPv4 multicast, and IPv6 multicast) are filtered, and
+connect-attempt lists are capped to a fixed maximum so DNS result variance
+cannot create unbounded retry loops.
 In this early plain-HTTP slice, URL parsing is also ASCII-only. Non-ASCII URLs
 are rejected early so request framing and capability endpoint checks stay
 deterministic until broader URL handling lands in a later hardening pass.

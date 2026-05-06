@@ -105,6 +105,9 @@ pub fn normalize_resolved_socket_addrs(addrs: Vec<SocketAddr>) -> Vec<SocketAddr
         if addr.port() == 0 {
             continue;
         }
+        if is_non_unicast_resolved_target(addr) {
+            continue;
+        }
         if addr.ip().is_unspecified() {
             continue;
         }
@@ -127,6 +130,16 @@ pub fn normalize_resolved_socket_addrs(addrs: Vec<SocketAddr>) -> Vec<SocketAddr
         .chain(v6_addrs)
         .take(MAX_RESOLVED_SOCKET_ADDRS)
         .collect()
+}
+
+fn is_non_unicast_resolved_target(addr: SocketAddr) -> bool {
+    match addr {
+        SocketAddr::V4(v4) => {
+            let ip = v4.ip();
+            ip.is_multicast() || *ip == std::net::Ipv4Addr::BROADCAST
+        }
+        SocketAddr::V6(v6) => v6.ip().is_multicast(),
+    }
 }
 
 fn parse_url_endpoint_with_default(
@@ -924,6 +937,30 @@ mod tests {
         ]);
 
         assert_eq!(normalized, vec![scoped_link_local, loopback_v6]);
+    }
+
+    #[test]
+    fn normalize_resolved_socket_addrs_filters_non_unicast_targets() {
+        let broadcast_v4 = SocketAddr::from(([255, 255, 255, 255], 8080));
+        let multicast_v4 = SocketAddr::from(([239, 1, 2, 3], 8080));
+        let usable_v4 = SocketAddr::from(([127, 0, 0, 1], 8080));
+        let multicast_v6 = SocketAddr::V6(std::net::SocketAddrV6::new(
+            std::net::Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 1),
+            8080,
+            0,
+            0,
+        ));
+        let usable_v6 = SocketAddr::from(([0u16, 0, 0, 0, 0, 0, 0, 1], 8080));
+
+        let normalized = normalize_resolved_socket_addrs(vec![
+            broadcast_v4,
+            usable_v4,
+            multicast_v4,
+            multicast_v6,
+            usable_v6,
+        ]);
+
+        assert_eq!(normalized, vec![usable_v4, usable_v6]);
     }
 
     #[test]
