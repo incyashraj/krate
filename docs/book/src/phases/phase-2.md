@@ -351,6 +351,8 @@ self-hosted CI. Hosted full CI now runs that step in `ts` mode by default and
 allows `npx` install for jco (with a pinned package version). The full-test
 matrix also pins Node 22 for this lane, so TypeScript runtime fixtures stay
 active without manual runner setup. Go lane status remains explicit.
+Hosted CI now also uses Node 24-ready core actions (`actions/checkout@v5` and
+`actions/setup-node@v5`) to remove Node 20 deprecation warnings in daily runs.
 The same fixture build step now also auto-attempts Go runtime fixture promotion
 when `go`, `tinygo`, and `wasm-tools` are available, so both language tracks
 use one orchestration entry point.

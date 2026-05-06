@@ -2076,6 +2076,10 @@ expensive full path builds the shared component fixtures, runs
 Linux/macOS/Windows, benchmarks, cargo-deny, and the dedicated Phase 2 binding
 checkpoint only when manually dispatched with `full = true` or when a push
 commit message contains `[full-ci]`.
+Hosted workflow core actions now use Node 24-ready versions
+(`actions/checkout@v5` and `actions/setup-node@v5`), which removes the Node 20
+deprecation warnings from daily hosted CI runs. Self-hosted workflows keep
+`actions/checkout@v4` for local runner compatibility.
 
 The language-variant runtime lane now has explicit cross-language parity tests
 for Rust, Go, and TypeScript sample outputs (`clock`, `cat`, and `curl`).
@@ -2356,6 +2360,7 @@ formal exit gates.
 | P2-ADPT-SPLIT-20 | Runtime stdout host-call wiring through per-OS adapter crates | 2026-05-06 | Runtime output paths now route host stdout operations (`print-line`, `write`, `flush`) through target OS adapter crates with fallback behavior for unsupported hosts. This removes remaining runtime-local stdout host calls from shared output paths used by both Phase 1 and Phase 2 execution. |
 | P2-CI-06 | Self-hosted benchmark gate default mode adjustment | 2026-05-05 | Updated `Self-hosted CI` manual workflow to default benchmark regression checks to `warn`, with `fail` still available through the workflow input. This keeps routine local full-gate runs stable under common workstation noise while preserving strict mode when needed. |
 | P2-CI-07 | Hosted full CI TypeScript fixture default gate | 2026-05-05 | Updated hosted full-test CI to run language-variant fixtures in `ts` mode by default, enabled `npx` jco installation in the fixture build step, and pinned this lane to Node 22 plus a pinned jco package version. This keeps the TypeScript runtime fixture lane active by default in full hosted CI while reducing cross-runner npm drift and preserving manual mode override inputs. |
+| P2-CI-08 | Hosted CI Node 24 core-action readiness | 2026-05-06 | Upgraded hosted workflows to `actions/checkout@v5` and `actions/setup-node@v5` so normal CI and docs lanes run on Node 24-ready action runtimes. Kept self-hosted workflows on `actions/checkout@v4` for local runner compatibility until all local runners are confirmed on the required minimum runner version. |
 
 ---
 

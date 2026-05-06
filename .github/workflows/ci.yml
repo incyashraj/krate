@@ -34,7 +34,7 @@ jobs:
     name: Format (rustfmt)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
         with:
@@ -49,7 +49,7 @@ jobs:
     name: Lint (clippy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
         with:
@@ -73,7 +73,7 @@ jobs:
     if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
       - name: Cache cargo registry
@@ -94,7 +94,7 @@ jobs:
     name: Test (ubuntu-latest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
         with:
@@ -117,7 +117,7 @@ jobs:
     name: Rust SDK package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
         with:
@@ -140,7 +140,7 @@ jobs:
     name: UAPI contract
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
       - name: Cache cargo registry
@@ -170,7 +170,7 @@ jobs:
     outputs:
       sha256: ${{ steps.hash.outputs.sha256 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
         with:
@@ -248,7 +248,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
         with:
@@ -281,7 +281,7 @@ jobs:
           LAYER36_CURL_WASM: layer36-fixture/layer36_curl.wasm
         run: scripts/test-phase1.sh
       - name: Set up Node.js for TypeScript fixture lane
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: "22"
       - name: Build Phase 2 language-variant fixtures
@@ -303,7 +303,7 @@ jobs:
     name: Docs (mdBook)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install mdBook
         run: |
           mkdir -p ~/bin
@@ -325,7 +325,7 @@ jobs:
     if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
         with:
@@ -368,7 +368,7 @@ jobs:
     if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
       - name: Install cargo-deny

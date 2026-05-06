@@ -20,6 +20,10 @@ The expensive checks stay opt-in. Run the `CI` workflow manually with
 - benchmarks
 - `cargo-deny`
 
+Hosted workflows now use Node 24-ready core actions (`actions/checkout@v5` and
+`actions/setup-node@v5`). This removes the recurring Node 20 deprecation
+warnings in normal hosted CI runs.
+
 In hosted full CI, the Phase 2 TypeScript language-variant lane now runs in
 `ts` mode by default. The fixture build step can install jco through `npx`
 when needed, and the full-test matrix pins Node 22 for this lane, so TypeScript
@@ -35,6 +39,8 @@ warnings until upstream compatibility catches up.
 There is also a `Self-hosted CI` workflow. It is manual-only and targets a
 runner labeled `layer36-local`. Use it when you want GitHub to run the full
 local gate on your own machine instead of a hosted runner.
+Self-hosted workflows currently keep `actions/checkout@v4` to preserve
+compatibility with older local runner installs.
 That local gate now also runs a short Phase 2 fuzz smoke over the first fuzz
 targets.
 The benchmark regression step is warning-only by default in this manual
@@ -67,6 +73,10 @@ and TypeScript sample components. It runs through:
 ```bash
 scripts/test-phase2-language-variants.sh
 ```
+
+When both Go and TypeScript fixture sets are present, this script now also runs
+cross-language parity checks for Rust, Go, and TypeScript `clock`, `cat`, and
+`curl` samples.
 
 By default it skips unless any of these env vars are set to built component
 paths:
