@@ -17,6 +17,9 @@ What is already in place:
 - `check-uapi` checks package names, world shape, imports, naming, permission
   error variants, and WIT docs
 - the generated reference is published in the book
+- the current contract evidence snapshot is published in
+  [UAPI Freeze Evidence](uapi-freeze-evidence.md)
+- hosted CI and self-hosted CI fail if that evidence page is stale
 - Rust sample apps use the current SDK facade
 - TypeScript fixtures build through jco and pass local runtime checks
 - Go TinyGo artifacts build, but are not runtime fixtures yet because they still
@@ -49,6 +52,8 @@ Before checking the Phase 2 WIT freeze box, all items below should be true.
 ### Contract Shape
 
 - [ ] `scripts/check-uapi.sh` passes on a clean checkout
+- [ ] `scripts/generate-uapi-freeze-evidence.sh` refreshes the published
+      evidence page without manual edits
 - [ ] generated UAPI reference is current
 - [ ] every public WIT item has clear docs
 - [ ] every function has a plain behavior note in the reference or the WIT docs
@@ -95,6 +100,7 @@ Run these from repo root:
 
 ```bash
 scripts/check-uapi.sh
+scripts/generate-uapi-freeze-evidence.sh
 cargo test -p layer36-tools
 env PATH="$HOME/.cargo/bin:$PATH" mdbook build docs/book
 scripts/smoke-rust-sdk.sh
@@ -124,4 +130,3 @@ changes a rule that future phases depend on.
 
 Until that happens, treat the current WIT as a serious draft: stable enough to
 test and document, not stable enough to promise forever.
-

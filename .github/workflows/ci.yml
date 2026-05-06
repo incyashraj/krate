@@ -159,6 +159,10 @@ jobs:
         run: sh scripts/generate-uapi-reference.sh
       - name: Check generated UAPI reference is current
         run: git diff --exit-code -- docs/book/src/reference/uapi/index.md
+      - name: Regenerate UAPI freeze evidence
+        run: sh scripts/generate-uapi-freeze-evidence.sh
+      - name: Check generated UAPI freeze evidence is current
+        run: git diff --exit-code -- docs/book/src/phase2/uapi-freeze-evidence.md
 
   # ──────────────────────────────────────────────
   # 7. Shared component fixtures

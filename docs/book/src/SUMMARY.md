@@ -48,6 +48,7 @@
   - [Threat Model v0.2](phase2/threat-model-v0-2.md)
   - [Migrating From Phase 1](phase2/migrating-from-phase1.md)
   - [UAPI Freeze Review](phase2/uapi-freeze-review.md)
+  - [UAPI Freeze Evidence](phase2/uapi-freeze-evidence.md)
 - [Phase 3: UI + Graphics](phases/phase-3.md)
 - [Phase 4: Mobile](phases/phase-4.md)
 - [Phase 5: Developer SDK](phases/phase-5.md)

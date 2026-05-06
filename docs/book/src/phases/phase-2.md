@@ -333,6 +333,11 @@ public README, SDK root, and generated bindings files before passing.
 There is now a dedicated [UAPI Freeze Review](../phase2/uapi-freeze-review.md)
 page. It turns the remaining freeze work into a clear checklist for contract
 shape, runtime behavior, samples, language tracks, and evidence.
+There is also a generated [UAPI Freeze Evidence](../phase2/uapi-freeze-evidence.md)
+page now. It records the current package set, imported interface set, world
+shape, and contract checks in one place, so freeze review has a concrete
+snapshot instead of only a checklist. Hosted CI and self-hosted CI now
+regenerate that page and fail if it is stale.
 
 The first terminal grant prompt exists too. `layer36 run --prompt app.wasm`
 shows the app identity, lists missing manifest capabilities, accepts all or a

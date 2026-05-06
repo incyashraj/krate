@@ -76,6 +76,8 @@ Top pending items:
 - Go TinyGo smoke artifacts build locally, but promotion correctly blocks them because they still import WASI host APIs
 - Component import checker now reports all failing artifacts in one run, which improves Go runtime-proof triage
 - Added a Phase 2 UAPI freeze-review page with checklist and commands
+- Added a repeatable UAPI freeze-evidence snapshot page generated from `check-uapi`
+- Wired hosted and self-hosted CI to fail when that freeze-evidence page is stale
 
 ## 7) Source of truth files
 
