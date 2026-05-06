@@ -303,6 +303,22 @@ jobs:
         env:
           LAYER36_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'ts' }}
         run: scripts/test-phase2-language-variants.sh
+      - name: Record Phase 2 language-variant evidence
+        shell: bash
+        env:
+          LAYER36_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'ts' }}
+        run: |
+          mkdir -p layer36-evidence
+          scripts/record-phase2-language-variant-evidence.sh \
+            --mode "${LAYER36_LANGUAGE_VARIANTS_MODE}" \
+            --strict \
+            --output "layer36-evidence/language-variant-${{ matrix.os }}.md"
+      - name: Upload language-variant evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: language-variant-evidence-${{ matrix.os }}
+          path: layer36-evidence/language-variant-${{ matrix.os }}.md
+          if-no-files-found: error
 
   # ──────────────────────────────────────────────
   # 9. Documentation build

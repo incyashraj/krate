@@ -74,6 +74,7 @@ Top pending items:
 - Added a language-variant evidence recorder that writes one markdown report with fixture availability, SHA-256 hashes, command results, and log tails
 - Extended the language-variant evidence recorder with `--mode`, `--output`, and `--strict` flags for CI-friendly and local evidence runs
 - Added a language-variant evidence comparator that verifies commit/host metadata, step pass state, and fixture parity across Linux, macOS, and Windows reports
+- Wired hosted full CI to publish per-OS language-variant evidence artifacts for easier cross-host comparison
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`
 - Generated UAPI reference now includes those WIT contract comments

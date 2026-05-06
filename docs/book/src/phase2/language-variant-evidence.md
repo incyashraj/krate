@@ -36,6 +36,10 @@ scripts/compare-phase2-language-variant-evidence.sh \
   target/phase2-language-variant-evidence/windows.md
 ```
 
+In hosted full CI, each OS lane now uploads one language-variant evidence
+artifact (`language-variant-evidence-<os>`). You can download those three files
+and run the comparator locally to check parity.
+
 ## What It Records
 
 The report includes:
