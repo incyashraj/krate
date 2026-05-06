@@ -3,8 +3,8 @@
 Last updated: 2026-05-06
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `fdda72e`
-Working tree at this status update: Phase 2 sample-evidence comparator slice validated locally
+Latest checked completed push before this slice: `73dddb9`
+Working tree at this status update: sample-evidence comparator host-label and same-commit hardening validated locally
 
 ## 1) Project size today
 
@@ -82,6 +82,8 @@ Top pending items:
 - Added a Phase 2 exit-evidence ledger that tracks all 15 exit gates with status, proof source, and next step
 - Added a Phase 2 Rust sample evidence recorder for clock, cat, and curl stdout/hash proof across hosts
 - Added a Phase 2 cross-host sample evidence comparator for Linux/macOS/Windows report parity checks
+- Hardened sample-evidence comparison with host-label validation so `--linux`, `--macos`, and `--windows` cannot silently point to the wrong host report
+- Hardened sample-evidence comparison with same-commit validation so cross-host reports must come from one code revision
 
 ## 7) Source of truth files
 

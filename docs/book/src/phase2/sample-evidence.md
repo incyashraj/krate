@@ -84,3 +84,7 @@ instead of treating it as cross-host proof.
 The recorder does this automatically when localhost binding is blocked: it keeps
 clock and cat evidence, and marks curl as blocked.
 The comparator can then enforce exact hash matches and fail fast on drift.
+It also verifies two safety checks before hash comparison:
+
+- each report matches the flag you pass (`--linux`, `--macos`, `--windows`)
+- all three reports were recorded from the same git commit

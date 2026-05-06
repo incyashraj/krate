@@ -89,7 +89,9 @@ fn next_path(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<Path
 struct HostReport {
     label: &'static str,
     source: PathBuf,
+    git_commit: String,
     host_line: String,
+    host_os: String,
     sample_rows: BTreeMap<String, SampleRow>,
 }
 
@@ -97,7 +99,12 @@ impl HostReport {
     fn parse(label: &'static str, path: &Path) -> Result<Self> {
         let source =
             fs::read_to_string(path).with_context(|| format!("read report {}", path.display()))?;
+        let git_commit_line = find_git_commit_line(&source).context("missing git commit line")?;
+        let git_commit = parse_git_commit(&git_commit_line)
+            .with_context(|| format!("invalid git commit line in report {}", path.display()))?;
         let host_line = find_host_line(&source).context("missing host metadata line")?;
+        let host_os = parse_host_os(&host_line)
+            .with_context(|| format!("invalid host line in report {}", path.display()))?;
         let sample_rows = parse_sample_rows(&source)?;
         for required in REQUIRED_SAMPLES {
             if !sample_rows.contains_key(*required) {
@@ -110,7 +117,9 @@ impl HostReport {
         Ok(Self {
             label,
             source: path.to_path_buf(),
+            git_commit,
             host_line,
+            host_os,
             sample_rows,
         })
     }
@@ -129,6 +138,39 @@ fn find_host_line(source: &str) -> Option<String> {
         .lines()
         .find(|line| line.trim_start().starts_with("- Host:"))
         .map(str::to_string)
+}
+
+fn find_git_commit_line(source: &str) -> Option<String> {
+    source
+        .lines()
+        .find(|line| line.trim_start().starts_with("- Git commit:"))
+        .map(str::to_string)
+}
+
+fn parse_git_commit(git_commit_line: &str) -> Result<String> {
+    let mut parts = git_commit_line.split('`');
+    let _ = parts.next();
+    let Some(commit) = parts.next() else {
+        bail!("git commit line must include markdown code ticks around commit");
+    };
+    let commit = commit.trim();
+    if commit.is_empty() {
+        bail!("git commit value is empty");
+    }
+    Ok(commit.to_string())
+}
+
+fn parse_host_os(host_line: &str) -> Result<String> {
+    let mut parts = host_line.split('`');
+    let _ = parts.next();
+    let Some(os) = parts.next() else {
+        bail!("host line must include markdown code ticks around OS");
+    };
+    let os = os.trim();
+    if os.is_empty() {
+        bail!("host OS value is empty");
+    }
+    Ok(os.to_string())
 }
 
 fn parse_sample_rows(source: &str) -> Result<BTreeMap<String, SampleRow>> {
@@ -197,12 +239,53 @@ fn compare_reports(reports: &[HostReport], allow_blocked_curl: bool) -> Result<(
             report.host_line
         );
     }
+    validate_git_commit_alignment(reports)?;
+    validate_host_assignments(reports)?;
 
     for sample in REQUIRED_SAMPLES {
         compare_sample(reports, sample, allow_blocked_curl)?;
     }
 
     println!("comparison passed: sample stdout hashes are aligned");
+    Ok(())
+}
+
+fn validate_git_commit_alignment(reports: &[HostReport]) -> Result<()> {
+    let Some(first) = reports.first() else {
+        bail!("no reports provided");
+    };
+    let expected = &first.git_commit;
+    for report in reports.iter().skip(1) {
+        if report.git_commit != *expected {
+            bail!(
+                "git commit mismatch: expected `{}` but {} reports `{}`",
+                expected,
+                report.source.display(),
+                report.git_commit
+            );
+        }
+    }
+    println!("- commit: match ({expected})");
+    Ok(())
+}
+
+fn validate_host_assignments(reports: &[HostReport]) -> Result<()> {
+    for report in reports {
+        let expected = match report.label {
+            "linux" => "linux",
+            "macos" => "macos",
+            "windows" => "windows",
+            other => bail!("unsupported report label `{other}`"),
+        };
+        if report.host_os != expected {
+            bail!(
+                "{} was passed as `--{}` but host metadata says `{}`",
+                report.source.display(),
+                report.label,
+                report.host_os
+            );
+        }
+    }
     Ok(())
 }
 
@@ -274,13 +357,14 @@ fn compare_sample(reports: &[HostReport], sample: &str, allow_blocked_curl: bool
 mod tests {
     use super::*;
 
-    fn sample_report(status_curl: &str, hash_suffix: &str) -> String {
+    fn sample_report(host_os: &str, status_curl: &str, hash_suffix: &str) -> String {
         format!(
             r#"# Phase 2 Sample Evidence Run
 
 ## Host
 
-- Host: `macos` / `aarch64`
+- Git commit: `abc1234`
+- Host: `{host_os}` / `aarch64`
 
 ## Results
 
@@ -295,34 +379,60 @@ mod tests {
 
     #[test]
     fn parses_rows_from_markdown_table() {
-        let rows = parse_sample_rows(&sample_report("blocked", "123")).expect("rows");
+        let rows = parse_sample_rows(&sample_report("linux", "blocked", "123")).expect("rows");
         assert_eq!(rows.len(), 3);
         assert_eq!(rows["layer36-clock"].status, "passed");
         assert_eq!(rows["layer36-curl"].status, "blocked");
     }
 
     #[test]
+    fn parses_host_os_from_host_line() {
+        let os = parse_host_os("- Host: `windows` / `x86_64`").expect("host os");
+        assert_eq!(os, "windows");
+    }
+
+    #[test]
+    fn parses_git_commit_from_line() {
+        let commit = parse_git_commit("- Git commit: `deadbee`").expect("git commit");
+        assert_eq!(commit, "deadbee");
+    }
+
+    #[test]
     fn compare_allows_blocked_curl_when_flag_set() {
-        let make = |label: &'static str| HostReport {
+        let make = |label: &'static str, host_os: &'static str| HostReport {
             label,
             source: PathBuf::from(format!("{label}.md")),
-            host_line: "- Host: `x` / `y`".to_string(),
-            sample_rows: parse_sample_rows(&sample_report("blocked", "aaa")).expect("rows"),
+            git_commit: "abc1234".to_string(),
+            host_line: format!("- Host: `{host_os}` / `aarch64`"),
+            host_os: host_os.to_string(),
+            sample_rows: parse_sample_rows(&sample_report(host_os, "blocked", "aaa"))
+                .expect("rows"),
         };
-        compare_reports(&[make("linux"), make("macos"), make("windows")], true)
-            .expect("comparison should pass");
+
+        compare_reports(
+            &[
+                make("linux", "linux"),
+                make("macos", "macos"),
+                make("windows", "windows"),
+            ],
+            true,
+        )
+        .expect("comparison should pass");
     }
 
     #[test]
     fn compare_fails_when_hashes_differ() {
-        let host = |label: &'static str, suffix: &str| HostReport {
+        let host = |label: &'static str, host_os: &'static str, suffix: &str| HostReport {
             label,
             source: PathBuf::from(format!("{label}.md")),
-            host_line: "- Host: `x` / `y`".to_string(),
+            git_commit: "abc1234".to_string(),
+            host_line: format!("- Host: `{host_os}` / `x86_64`"),
+            host_os: host_os.to_string(),
             sample_rows: parse_sample_rows(&format!(
                 r#"# Phase 2 Sample Evidence Run
 ## Host
-- Host: `x` / `y`
+- Git commit: `abc1234`
+- Host: `{host_os}` / `x86_64`
 ## Results
 | Sample | Status | Exit | Stdout SHA-256 | Stderr SHA-256 |
 |---|---|---:|---|---|
@@ -335,8 +445,71 @@ mod tests {
         };
 
         let result = compare_reports(
-            &[host("linux", "1"), host("macos", "2"), host("windows", "1")],
+            &[
+                host("linux", "linux", "1"),
+                host("macos", "macos", "2"),
+                host("windows", "windows", "1"),
+            ],
             false,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn compare_fails_when_report_host_does_not_match_flag() {
+        let host = |label: &'static str, host_os: &'static str| HostReport {
+            label,
+            source: PathBuf::from(format!("{label}.md")),
+            git_commit: "abc1234".to_string(),
+            host_line: format!("- Host: `{host_os}` / `x86_64`"),
+            host_os: host_os.to_string(),
+            sample_rows: parse_sample_rows(&sample_report(host_os, "blocked", "aaa"))
+                .expect("rows"),
+        };
+
+        let result = compare_reports(
+            &[
+                host("linux", "macos"),
+                host("macos", "macos"),
+                host("windows", "windows"),
+            ],
+            true,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn compare_fails_when_git_commits_differ() {
+        let host =
+            |label: &'static str, host_os: &'static str, git_commit: &'static str| HostReport {
+                label,
+                source: PathBuf::from(format!("{label}.md")),
+                git_commit: git_commit.to_string(),
+                host_line: format!("- Host: `{host_os}` / `x86_64`"),
+                host_os: host_os.to_string(),
+                sample_rows: parse_sample_rows(&format!(
+                    r#"# Phase 2 Sample Evidence Run
+## Host
+- Git commit: `{git_commit}`
+- Host: `{host_os}` / `x86_64`
+## Results
+| Sample | Status | Exit | Stdout SHA-256 | Stderr SHA-256 |
+|---|---|---:|---|---|
+| layer36-clock | passed | 0 | `clock1` | `z` |
+| layer36-cat | passed | 0 | `cat1` | `z` |
+| layer36-curl | blocked | n/a | `n/a` | `n/a` |
+"#
+                ))
+                .expect("rows"),
+            };
+
+        let result = compare_reports(
+            &[
+                host("linux", "linux", "abc1234"),
+                host("macos", "macos", "def5678"),
+                host("windows", "windows", "abc1234"),
+            ],
+            true,
         );
         assert!(result.is_err());
     }
