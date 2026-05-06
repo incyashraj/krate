@@ -52,6 +52,23 @@ pub fn flush_stderr() -> std::io::Result<()> {
     std::io::Write::flush(&mut stderr)
 }
 
+/// Print a line to host stdout through the Linux adapter path.
+pub fn print_stdout_line(msg: &str) {
+    println!("{msg}");
+}
+
+/// Write bytes to host stdout through the Linux adapter path.
+pub fn write_stdout(bytes: &[u8]) -> std::io::Result<()> {
+    let mut stdout = std::io::stdout();
+    std::io::Write::write_all(&mut stdout, bytes)
+}
+
+/// Flush host stdout through the Linux adapter path.
+pub fn flush_stdout() -> std::io::Result<()> {
+    let mut stdout = std::io::stdout();
+    std::io::Write::flush(&mut stdout)
+}
+
 /// Open a TCP stream through the Linux adapter path.
 pub fn connect_tcp(addr: SocketAddr, timeout: Option<Duration>) -> std::io::Result<TcpStream> {
     match timeout {
@@ -233,6 +250,24 @@ mod tests {
     #[test]
     fn flush_stderr_hook_is_available() {
         let hook: fn() -> std::io::Result<()> = flush_stderr;
+        let _ = hook;
+    }
+
+    #[test]
+    fn print_stdout_line_hook_is_available() {
+        let hook: fn(&str) = print_stdout_line;
+        let _ = hook;
+    }
+
+    #[test]
+    fn write_stdout_hook_is_available() {
+        let hook: fn(&[u8]) -> std::io::Result<()> = write_stdout;
+        let _ = hook;
+    }
+
+    #[test]
+    fn flush_stdout_hook_is_available() {
+        let hook: fn() -> std::io::Result<()> = flush_stdout;
         let _ = hook;
     }
 

@@ -7,7 +7,7 @@ use std::{
     cell::RefCell,
     collections::BTreeMap,
     fs::File,
-    io::{SeekFrom, Write},
+    io::SeekFrom,
     net::{SocketAddr, TcpStream},
     path::{Path, PathBuf},
     rc::Rc,
@@ -365,21 +365,21 @@ enum OutputMode {
 impl OutputMode {
     fn print_line(&mut self, msg: &str) {
         match self {
-            Self::Stdout => println!("{msg}"),
+            Self::Stdout => print_stdout_line_on_host(msg),
             Self::Sink => {}
         }
     }
 
     fn write_bytes(&mut self, bytes: &[u8]) -> std::io::Result<()> {
         match self {
-            Self::Stdout => std::io::stdout().write_all(bytes),
+            Self::Stdout => write_stdout_on_host(bytes),
             Self::Sink => Ok(()),
         }
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
         match self {
-            Self::Stdout => std::io::stdout().flush(),
+            Self::Stdout => flush_stdout_on_host(),
             Self::Sink => Ok(()),
         }
     }
@@ -1245,6 +1245,62 @@ fn flush_stderr_on_host() -> std::io::Result<()> {
     }
 }
 
+fn print_stdout_line_on_host(msg: &str) {
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "linux", target_os = "macos", target_os = "windows")
+    ))]
+    {
+        host_os_adapter::print_stdout_line(msg);
+    }
+
+    #[cfg(not(all(
+        feature = "phase2-bindings",
+        any(target_os = "linux", target_os = "macos", target_os = "windows")
+    )))]
+    {
+        println!("{msg}");
+    }
+}
+
+fn write_stdout_on_host(bytes: &[u8]) -> std::io::Result<()> {
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "linux", target_os = "macos", target_os = "windows")
+    ))]
+    {
+        host_os_adapter::write_stdout(bytes)
+    }
+
+    #[cfg(not(all(
+        feature = "phase2-bindings",
+        any(target_os = "linux", target_os = "macos", target_os = "windows")
+    )))]
+    {
+        let mut stdout = std::io::stdout();
+        std::io::Write::write_all(&mut stdout, bytes)
+    }
+}
+
+fn flush_stdout_on_host() -> std::io::Result<()> {
+    #[cfg(all(
+        feature = "phase2-bindings",
+        any(target_os = "linux", target_os = "macos", target_os = "windows")
+    ))]
+    {
+        host_os_adapter::flush_stdout()
+    }
+
+    #[cfg(not(all(
+        feature = "phase2-bindings",
+        any(target_os = "linux", target_os = "macos", target_os = "windows")
+    )))]
+    {
+        let mut stdout = std::io::stdout();
+        std::io::Write::flush(&mut stdout)
+    }
+}
+
 fn read_path_on_host(path: &Path) -> std::io::Result<Vec<u8>> {
     #[cfg(all(
         feature = "phase2-bindings",
@@ -1775,7 +1831,7 @@ fn classify_limit_error(err: &wasmtime::Error) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Read;
+    use std::io::{Read, Write};
 
     #[test]
     fn default_config_sets_phase_1_memory_cap() {

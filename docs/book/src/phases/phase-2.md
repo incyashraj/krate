@@ -228,6 +228,8 @@ Stdin reads and stderr write or flush host calls now also route through per-OS
 adapters.
 Plain HTTP request writes and response reads now also route through per-OS
 adapters.
+Shared stdout print, write, and flush paths now also route through per-OS
+adapters.
 
 There is also a first smoke app under `test/integration/phase2-smoke`. It is not
 one of the final sample apps yet. Its job is smaller: prove that a real Phase 2
