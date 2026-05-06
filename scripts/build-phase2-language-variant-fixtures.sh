@@ -60,6 +60,13 @@ can_build_ts() {
   return 0
 }
 
+can_build_go_runtime_fixtures() {
+  command -v go >/dev/null 2>&1 || return 1
+  command -v tinygo >/dev/null 2>&1 || return 1
+  command -v wasm-tools >/dev/null 2>&1 || return 1
+  return 0
+}
+
 build_ts_fixtures() {
   rm -rf "$TMP_DIR"
   mkdir -p "$TMP_DIR"
@@ -160,8 +167,16 @@ if [ "$ts_ready" -eq 0 ]; then
 fi
 
 if [ "$go_ready" -eq 0 ]; then
-  echo "Go language-variant runtime fixtures not built in this script yet."
-  echo "Run scripts/build-phase2-go-variant-smoke.sh for TinyGo WASI Preview 2 build-smoke artifacts."
+  if can_build_go_runtime_fixtures; then
+    echo "Building and promoting Go language-variant runtime fixtures with TinyGo"
+    if LAYER36_GO_RUNTIME_FIXTURE_MODE=optional scripts/promote-phase2-go-runtime-fixtures.sh; then
+      if has_complete_set "layer36_go" && set_imports_are_pure "layer36_go"; then
+        go_ready=1
+      fi
+    fi
+  else
+    echo "Go language-variant runtime fixtures not built: TinyGo toolchain path is unavailable."
+  fi
 fi
 
 case "$MODE" in
