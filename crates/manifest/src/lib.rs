@@ -210,7 +210,7 @@ impl Capability {
             }
         })?;
         let resource_was_present = resource.is_some();
-        let resource = resource
+        let mut resource = resource
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned);
@@ -238,6 +238,17 @@ impl Capability {
                     reason,
                 }
             })?;
+        }
+
+        if let Some(current) = resource.as_deref() {
+            resource = Some(
+                canonicalize_capability_resource(module, action, current).ok_or_else(|| {
+                    ManifestError::InvalidCapability {
+                        cap: format!("{cap_name}:{current}"),
+                        reason: "failed to canonicalize capability resource".to_string(),
+                    }
+                })?,
+            );
         }
 
         Ok(Self {
@@ -434,6 +445,31 @@ fn validate_capability_resource(
     Ok(())
 }
 
+fn canonicalize_capability_resource(module: &str, action: &str, resource: &str) -> Option<String> {
+    if module == "net" && action == "connect" {
+        return canonicalize_connect_resource(resource);
+    }
+    Some(resource.to_string())
+}
+
+fn canonicalize_connect_resource(resource: &str) -> Option<String> {
+    let (host, port) = resource.split_once(':')?;
+    if host.is_empty() || port.is_empty() {
+        return None;
+    }
+    let host = host.to_ascii_lowercase();
+
+    if port == "*" {
+        return Some(format!("{host}:*"));
+    }
+    let port = port.parse::<u16>().ok()?;
+    if port == 0 {
+        return None;
+    }
+
+    Some(format!("{host}:{port}"))
+}
+
 fn validate_connect_resource(resource: &str) -> std::result::Result<(), String> {
     if resource
         .chars()
@@ -589,7 +625,7 @@ mod tests {
 
     #[test]
     fn parses_capability_parts() {
-        let cap: Capability = "net.connect:api.example.com:443"
+        let cap: Capability = "net.connect:API.Example.com:0443"
             .parse()
             .expect("parse cap");
 
@@ -597,6 +633,16 @@ mod tests {
         assert_eq!(cap.action(), "connect");
         assert_eq!(cap.resource(), Some("api.example.com:443"));
         assert_eq!(cap.to_string(), "net.connect:api.example.com:443");
+    }
+
+    #[test]
+    fn rejects_duplicate_capabilities_after_net_resource_canonicalization() {
+        let input = format!(
+            "{EXAMPLE}\n[[capabilities]]\ncap = \"net.connect:API.Example.com:0443\"\nrationale = \"again\"\nrequired = false\n"
+        );
+        let err = Manifest::parse(&input).expect_err("reject canonical duplicate capability");
+
+        assert!(matches!(err, ManifestError::DuplicateCapability { .. }));
     }
 
     #[test]

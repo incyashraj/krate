@@ -33,6 +33,9 @@ host forms are rejected at parse time.
 Session policy matching now also normalizes `net.connect` host casing and
 numeric ports before wildcard matching, so grant checks stay stable when users
 type host names with mixed case or port values like `0443`.
+Manifest capability parsing now stores that same canonical `net.connect`
+resource shape too, so duplicate-capability checks and capability displays stay
+deterministic across host case and numeric port formatting differences.
 
 There is also a first dispatcher scaffold now. In simple terms: we have the
 place where generated UAPI calls will enter the runtime, get checked by policy,
