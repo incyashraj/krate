@@ -86,6 +86,16 @@ pub fn symlink_metadata(path: &Path) -> std::io::Result<std::fs::Metadata> {
     std::fs::symlink_metadata(path)
 }
 
+/// Canonicalize a filesystem path through the Windows adapter path.
+pub fn canonicalize_path(path: &Path) -> std::io::Result<std::path::PathBuf> {
+    path.canonicalize()
+}
+
+/// Open a filesystem path through the Windows adapter path.
+pub fn open_path(path: &Path, opts: &mut OpenOptions) -> std::io::Result<std::fs::File> {
+    opts.open(path)
+}
+
 /// Remove a file through the Windows adapter path.
 pub fn remove_file(path: &Path) -> std::io::Result<()> {
     std::fs::remove_file(path)
@@ -209,6 +219,18 @@ mod tests {
     #[test]
     fn symlink_metadata_hook_is_available() {
         let hook: fn(&Path) -> std::io::Result<std::fs::Metadata> = symlink_metadata;
+        let _ = hook;
+    }
+
+    #[test]
+    fn canonicalize_path_hook_is_available() {
+        let hook: fn(&Path) -> std::io::Result<std::path::PathBuf> = canonicalize_path;
+        let _ = hook;
+    }
+
+    #[test]
+    fn open_path_hook_is_available() {
+        let hook: fn(&Path, &mut OpenOptions) -> std::io::Result<std::fs::File> = open_path;
         let _ = hook;
     }
 

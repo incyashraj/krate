@@ -514,12 +514,12 @@ impl LocalPhase2Adapter {
         path: PathBuf,
         missing_leaf: MissingLeaf,
     ) -> std::result::Result<PathBuf, AdapterError> {
-        let root = self.sandbox_root.canonicalize().map_err(map_io_error)?;
+        let root = canonicalize_path_on_host(self.sandbox_root.as_path()).map_err(map_io_error)?;
         let sandbox_relative = logical_path_to_sandbox_relative(path)?;
         let host_path = root.join(sandbox_relative);
         ensure_no_symlink_segments(&root, &host_path, missing_leaf)?;
 
-        match host_path.canonicalize() {
+        match canonicalize_path_on_host(host_path.as_path()) {
             Ok(real_path) => {
                 ensure_path_in_sandbox(&root, &real_path)?;
                 Ok(host_path)
@@ -532,7 +532,7 @@ impl LocalPhase2Adapter {
                     return Err(err);
                 }
                 let parent = host_path.parent().ok_or(AdapterError::InvalidPath)?;
-                let real_parent = parent.canonicalize().map_err(map_io_error)?;
+                let real_parent = canonicalize_path_on_host(parent).map_err(map_io_error)?;
                 ensure_path_in_sandbox(&root, &real_parent)?;
                 Ok(host_path)
             }
@@ -978,7 +978,7 @@ impl FsAdapter for LocalPhase2Adapter {
                 opts.append(true).create(true);
             }
         }
-        let file = opts.open(path).map_err(map_io_error)?;
+        let file = open_path_on_host(path.as_path(), &mut opts).map_err(map_io_error)?;
         self.insert_resource(LocalResource::File(file))
     }
 
@@ -1200,6 +1200,35 @@ fn symlink_metadata_on_host(path: &Path) -> std::io::Result<std::fs::Metadata> {
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         std::fs::symlink_metadata(path)
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn canonicalize_path_on_host(path: &Path) -> std::io::Result<PathBuf> {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        host_os_adapter::canonicalize_path(path)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        path.canonicalize()
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn open_path_on_host(
+    path: &Path,
+    opts: &mut std::fs::OpenOptions,
+) -> std::io::Result<std::fs::File> {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        host_os_adapter::open_path(path, opts)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        opts.open(path)
     }
 }
 
