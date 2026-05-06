@@ -7,7 +7,7 @@ use std::{
     cell::RefCell,
     collections::BTreeMap,
     fs::File,
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, SeekFrom, Write},
     net::{SocketAddr, TcpStream},
     path::{Path, PathBuf},
     rc::Rc,
@@ -989,7 +989,7 @@ impl FsAdapter for LocalPhase2Adapter {
             return Err(AdapterError::NotFound);
         };
         let mut buf = vec![0; len];
-        let len = file.read(&mut buf).map_err(map_io_error)?;
+        let len = read_file_on_host(file, &mut buf).map_err(map_io_error)?;
         buf.truncate(len);
         Ok(buf)
     }
@@ -1000,7 +1000,7 @@ impl FsAdapter for LocalPhase2Adapter {
         let Some(LocalResource::File(file)) = state.resources.get_mut(&handle.id) else {
             return Err(AdapterError::NotFound);
         };
-        let len = file.write(bytes).map_err(map_io_error)?;
+        let len = write_file_on_host(file, bytes).map_err(map_io_error)?;
         u32::try_from(len).map_err(|_| AdapterError::Io("write length overflow".to_string()))
     }
 
@@ -1009,7 +1009,7 @@ impl FsAdapter for LocalPhase2Adapter {
         let Some(LocalResource::File(file)) = state.resources.get_mut(&handle.id) else {
             return Err(AdapterError::NotFound);
         };
-        file.seek(SeekFrom::Start(pos)).map_err(map_io_error)
+        seek_file_on_host(file, SeekFrom::Start(pos)).map_err(map_io_error)
     }
 
     fn seek_end(&self, handle: &FileHandle) -> std::result::Result<u64, AdapterError> {
@@ -1017,7 +1017,7 @@ impl FsAdapter for LocalPhase2Adapter {
         let Some(LocalResource::File(file)) = state.resources.get_mut(&handle.id) else {
             return Err(AdapterError::NotFound);
         };
-        file.seek(SeekFrom::End(0)).map_err(map_io_error)
+        seek_file_on_host(file, SeekFrom::End(0)).map_err(map_io_error)
     }
 
     fn stat_handle(&self, handle: &FileHandle) -> std::result::Result<FileStat, AdapterError> {
@@ -1025,7 +1025,7 @@ impl FsAdapter for LocalPhase2Adapter {
         let Some(LocalResource::File(file)) = state.resources.get(&handle.id) else {
             return Err(AdapterError::NotFound);
         };
-        file.metadata()
+        file_metadata_on_host(file)
             .map(file_stat_from_metadata)
             .map_err(map_io_error)
     }
@@ -1236,6 +1236,58 @@ fn create_dir_all_on_host(path: &Path) -> std::io::Result<()> {
     )))]
     {
         std::fs::create_dir_all(path)
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn read_file_on_host(file: &mut std::fs::File, buf: &mut [u8]) -> std::io::Result<usize> {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        host_os_adapter::read_file(file, buf)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        std::io::Read::read(file, buf)
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn write_file_on_host(file: &mut std::fs::File, bytes: &[u8]) -> std::io::Result<usize> {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        host_os_adapter::write_file(file, bytes)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        std::io::Write::write(file, bytes)
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn seek_file_on_host(file: &mut std::fs::File, pos: SeekFrom) -> std::io::Result<u64> {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        host_os_adapter::seek_file(file, pos)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        std::io::Seek::seek(file, pos)
+    }
+}
+
+#[cfg(feature = "phase2-bindings")]
+fn file_metadata_on_host(file: &std::fs::File) -> std::io::Result<std::fs::Metadata> {
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    {
+        host_os_adapter::file_metadata(file)
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        file.metadata()
     }
 }
 

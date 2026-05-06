@@ -96,6 +96,26 @@ pub fn open_path(path: &Path, opts: &mut OpenOptions) -> std::io::Result<std::fs
     opts.open(path)
 }
 
+/// Read from an open file through the Windows adapter path.
+pub fn read_file(file: &mut std::fs::File, buf: &mut [u8]) -> std::io::Result<usize> {
+    std::io::Read::read(file, buf)
+}
+
+/// Write to an open file through the Windows adapter path.
+pub fn write_file(file: &mut std::fs::File, bytes: &[u8]) -> std::io::Result<usize> {
+    std::io::Write::write(file, bytes)
+}
+
+/// Seek an open file through the Windows adapter path.
+pub fn seek_file(file: &mut std::fs::File, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+    std::io::Seek::seek(file, pos)
+}
+
+/// Read metadata for an open file through the Windows adapter path.
+pub fn file_metadata(file: &std::fs::File) -> std::io::Result<std::fs::Metadata> {
+    file.metadata()
+}
+
 /// Read a full filesystem path through the Windows adapter path.
 pub fn read_path(path: &Path) -> std::io::Result<Vec<u8>> {
     std::fs::read(path)
@@ -247,6 +267,30 @@ mod tests {
     #[test]
     fn read_path_hook_is_available() {
         let hook: fn(&Path) -> std::io::Result<Vec<u8>> = read_path;
+        let _ = hook;
+    }
+
+    #[test]
+    fn read_file_hook_is_available() {
+        let hook: fn(&mut std::fs::File, &mut [u8]) -> std::io::Result<usize> = read_file;
+        let _ = hook;
+    }
+
+    #[test]
+    fn write_file_hook_is_available() {
+        let hook: fn(&mut std::fs::File, &[u8]) -> std::io::Result<usize> = write_file;
+        let _ = hook;
+    }
+
+    #[test]
+    fn seek_file_hook_is_available() {
+        let hook: fn(&mut std::fs::File, std::io::SeekFrom) -> std::io::Result<u64> = seek_file;
+        let _ = hook;
+    }
+
+    #[test]
+    fn file_metadata_hook_is_available() {
+        let hook: fn(&std::fs::File) -> std::io::Result<std::fs::Metadata> = file_metadata;
         let _ = hook;
     }
 
