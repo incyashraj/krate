@@ -135,6 +135,8 @@ mkdir -p "$OUT_DIR"
 
 ts_ready=0
 go_ready=0
+ts_reason=""
+go_reason=""
 
 if has_complete_set "layer36_ts"; then
   if set_imports_are_pure "layer36_ts"; then
@@ -158,12 +160,17 @@ if [ "$ts_ready" -eq 0 ]; then
     echo "Building TypeScript language-variant fixtures with jco"
     if build_ts_fixtures; then
       ts_ready=1
+      ts_reason="fixtures built and import-pure"
     else
       ts_ready=0
+      ts_reason="fixture build or import-purity check failed"
     fi
   else
     echo "TypeScript language-variant fixtures not built: jco path is unavailable."
+    ts_reason="jco build path unavailable"
   fi
+else
+  ts_reason="existing fixtures are import-pure"
 fi
 
 if [ "$go_ready" -eq 0 ]; then
@@ -179,11 +186,19 @@ if [ "$go_ready" -eq 0 ]; then
     if LAYER36_GO_RUNTIME_FIXTURE_MODE="$go_fixture_mode" scripts/promote-phase2-go-runtime-fixtures.sh; then
       if has_complete_set "layer36_go" && set_imports_are_pure "layer36_go"; then
         go_ready=1
+        go_reason="fixtures built/promoted and import-pure"
+      else
+        go_reason="promotion completed but fixture set was incomplete or not import-pure"
       fi
+    else
+      go_reason="promotion step failed"
     fi
   else
     echo "Go language-variant runtime fixtures not built: TinyGo toolchain path is unavailable (mode: $go_fixture_mode)."
+    go_reason="TinyGo toolchain path unavailable"
   fi
+else
+  go_reason="existing fixtures are import-pure"
 fi
 
 case "$MODE" in
@@ -203,13 +218,13 @@ case "$MODE" in
     ;;
   go)
     if [ "$go_ready" -eq 0 ]; then
-      echo "Phase 2 language-variant build error: mode '$MODE' requires a complete Go fixture set." >&2
+      echo "Phase 2 language-variant build error: mode '$MODE' requires a complete Go fixture set. Reason: ${go_reason:-unknown}." >&2
       exit 1
     fi
     ;;
   ts)
     if [ "$ts_ready" -eq 0 ]; then
-      echo "Phase 2 language-variant build error: mode '$MODE' requires a complete TypeScript fixture set." >&2
+      echo "Phase 2 language-variant build error: mode '$MODE' requires a complete TypeScript fixture set. Reason: ${ts_reason:-unknown}." >&2
       exit 1
     fi
     ;;
@@ -218,3 +233,5 @@ esac
 echo "Language fixture availability after build step:"
 echo "  Go: ${go_ready}"
 echo "  TypeScript: ${ts_ready}"
+echo "  Go reason: ${go_reason:-unknown}"
+echo "  TypeScript reason: ${ts_reason:-unknown}"

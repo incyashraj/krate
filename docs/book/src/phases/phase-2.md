@@ -343,6 +343,9 @@ when `go`, `tinygo`, and `wasm-tools` are available, so both language tracks
 use one orchestration entry point.
 When fixture mode is set to `go` or `both`, that Go promotion path now runs in
 strict required mode so missing or non-pure Go fixtures fail that run clearly.
+The shared fixture build step now also prints per-language readiness reasons
+and includes those reasons in strict mode failures, so CI triage is faster when
+language fixture lanes fail on toolchain or fixture-state issues.
 TypeScript fixture generation now enforces Layer36-only imports and uses the
 real WIT variant shape for filesystem open mode (`{ tag: "read" }`), which made
 the TypeScript cat fixture runtime path stable in local tests.
