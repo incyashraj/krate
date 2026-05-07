@@ -50,6 +50,7 @@
   - [Adapter Boundary](phase2/adapter-boundary.md)
   - [Sample Evidence](phase2/sample-evidence.md)
   - [Language Variant Evidence](phase2/language-variant-evidence.md)
+  - [UCap Enforcement Evidence](phase2/ucap-enforcement-evidence.md)
   - [UAPI Freeze Review](phase2/uapi-freeze-review.md)
   - [UAPI Freeze Evidence](phase2/uapi-freeze-evidence.md)
   - [Exit Evidence](phase2/exit-evidence.md)

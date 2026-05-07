@@ -374,6 +374,13 @@ in one run, verifies same commit metadata, enforces passed build/test steps,
 and fails when fixture availability or hashes drift across hosts.
 Hosted full CI now runs that comparator automatically after Linux, macOS, and
 Windows full-test lanes upload their evidence artifacts.
+UCap deny evidence now follows the same pattern:
+[UCap Enforcement Evidence](../phase2/ucap-enforcement-evidence.md) shows how
+to record one report per host with `scripts/record-phase2-ucap-evidence.sh` and
+compare those reports with `scripts/compare-phase2-ucap-evidence.sh`.
+Hosted full CI now uploads per-host UCap evidence artifacts and runs a compare
+job so deny-path regressions are caught as a cross-host gate, not only in local
+checks.
 
 The first terminal grant prompt exists too. `layer36 run --prompt app.wasm`
 shows the app identity, lists missing manifest capabilities, accepts all or a

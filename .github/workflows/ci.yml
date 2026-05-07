@@ -319,6 +319,19 @@ jobs:
           name: language-variant-evidence-${{ matrix.os }}
           path: layer36-evidence/language-variant-${{ matrix.os }}.md
           if-no-files-found: error
+      - name: Record Phase 2 UCap enforcement evidence
+        shell: bash
+        run: |
+          mkdir -p layer36-evidence
+          scripts/record-phase2-ucap-evidence.sh \
+            --strict \
+            --output "layer36-evidence/ucap-enforcement-${{ matrix.os }}.md"
+      - name: Upload UCap enforcement evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ucap-enforcement-evidence-${{ matrix.os }}
+          path: layer36-evidence/ucap-enforcement-${{ matrix.os }}.md
+          if-no-files-found: error
 
   # ──────────────────────────────────────────────
   # 9. Compare language-variant evidence across hosts
@@ -356,7 +369,42 @@ jobs:
             layer36-evidence/windows/language-variant-windows-latest.md
 
   # ──────────────────────────────────────────────
-  # 10. Documentation build
+  # 10. Compare UCap enforcement evidence across hosts
+  # ──────────────────────────────────────────────
+  ucap-enforcement-evidence-compare:
+    name: UCap enforcement evidence compare
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    runs-on: ubuntu-latest
+    needs: full-test
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.91.1
+      - name: Download Linux UCap evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ucap-enforcement-evidence-ubuntu-latest
+          path: layer36-evidence/linux
+      - name: Download macOS UCap evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ucap-enforcement-evidence-macos-latest
+          path: layer36-evidence/macos
+      - name: Download Windows UCap evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ucap-enforcement-evidence-windows-latest
+          path: layer36-evidence/windows
+      - name: Compare UCap enforcement evidence reports
+        shell: bash
+        run: |
+          scripts/compare-phase2-ucap-evidence.sh \
+            layer36-evidence/linux/ucap-enforcement-ubuntu-latest.md \
+            layer36-evidence/macos/ucap-enforcement-macos-latest.md \
+            layer36-evidence/windows/ucap-enforcement-windows-latest.md
+
+  # ──────────────────────────────────────────────
+  # 11. Documentation build
   # ──────────────────────────────────────────────
   docs:
     name: Docs (mdBook)
@@ -377,7 +425,7 @@ jobs:
         run: node packages/sdk-go/scripts/check-shape.mjs
 
   # ──────────────────────────────────────────────
-  # 11. Benchmark smoke + warning-only regression check
+  # 12. Benchmark smoke + warning-only regression check
   # ──────────────────────────────────────────────
   benchmarks:
     name: Benchmarks (Phase 2 baseline, warning only)
@@ -420,7 +468,7 @@ jobs:
         run: scripts/check-benchmark-regression.sh
 
   # ──────────────────────────────────────────────
-  # 12. Dependency audit (cargo-deny)
+  # 13. Dependency audit (cargo-deny)
   # ──────────────────────────────────────────────
   deny:
     name: Dependency audit (cargo-deny)

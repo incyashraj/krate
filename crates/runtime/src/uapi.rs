@@ -196,6 +196,19 @@ mod tests {
     }
 
     #[test]
+    fn net_calls_are_denied_without_matching_grant() {
+        let guard = UapiGuard::default();
+        let err = guard
+            .check(&UapiCall::Net(NetCall::Connect {
+                host: "api.example.com".to_string(),
+                port: 443,
+            }))
+            .expect_err("net connect should require a grant");
+
+        assert!(matches!(err, UapiError::Policy(PolicyError::Denied { .. })));
+    }
+
+    #[test]
     fn net_connect_uses_host_and_port_scope() {
         let policy =
             SessionPolicy::from_cli_grants(&["net.connect:api.example.com:443".to_string()])
@@ -231,6 +244,28 @@ mod tests {
             .collect::<BTreeSet<_>>();
 
         assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn non_default_capabilities_are_denied_by_default_policy() {
+        let guard = UapiGuard::default();
+
+        for call in uapi_call_examples() {
+            let required = call.required_capability().expect("capability");
+            if required.is_default_granted() {
+                continue;
+            }
+
+            let err = match guard.check(&call) {
+                Ok(_) => panic!("expected deny for {}", required),
+                Err(err) => err,
+            };
+            assert!(
+                matches!(err, UapiError::Policy(PolicyError::Denied { .. })),
+                "expected policy deny for {}",
+                required
+            );
+        }
     }
 
     fn uapi_call_examples() -> Vec<UapiCall> {

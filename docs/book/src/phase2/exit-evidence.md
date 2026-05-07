@@ -31,7 +31,7 @@ Status meanings:
 | P2E-06 | curl cross-host | **Partial** | `scripts/record-phase2-sample-evidence.sh`, `scripts/compare-phase2-sample-evidence.sh`, [Sample Evidence](sample-evidence.md) | Record identical stdout on Linux, macOS, and Windows. |
 | P2E-07 | cat cross-host | **Partial** | `scripts/record-phase2-sample-evidence.sh`, `scripts/compare-phase2-sample-evidence.sh`, [Sample Evidence](sample-evidence.md) | Record identical stdout on Linux, macOS, and Windows. |
 | P2E-08 | clock cross-host | **Partial** | `scripts/record-phase2-sample-evidence.sh`, `scripts/compare-phase2-sample-evidence.sh`, [Sample Evidence](sample-evidence.md) | Record fixed-time output on Linux, macOS, and Windows. |
-| P2E-09 | UCap enforcement | **Partial** | `crates/policy`, `crates/runtime`, `tests/cli.rs` (`language_variants_curl_permission_denied_matches_rust_go_ts`) | Finish cross-host denial evidence at each UAPI boundary. |
+| P2E-09 | UCap enforcement | **Partial** | `crates/policy`, `crates/runtime`, `tests/cli.rs` (`language_variants_curl_permission_denied_matches_rust_go_ts`), `scripts/record-phase2-ucap-evidence.sh`, `scripts/compare-phase2-ucap-evidence.sh`, hosted full CI artifacts `ucap-enforcement-evidence-<os>`, hosted full CI `UCap enforcement evidence compare` job, [UCap Enforcement Evidence](ucap-enforcement-evidence.md) | Keep collecting clean Linux macOS Windows deny evidence and expand from fs and net to every non-default capability boundary. |
 | P2E-10 | Startup performance | **Partial** | `cargo bench -p layer36-runtime --bench startup`, [Dispatch Benchmarks](benchmarks.md) | Add full CLI startup measurements and cross-host baselines. |
 | P2E-11 | Dispatch performance | **Partial** | `cargo bench -p layer36-runtime --bench uapi_dispatch`, `scripts/check-benchmark-regression.sh` | Collect stable cross-host benchmark evidence. |
 | P2E-12 | Timed developer walkthrough | **Pending** | [First Rust CLI](../uapi/first-rust-cli.md) | Ask an outside Rust developer to build a small app and time the run. |
@@ -80,6 +80,8 @@ scripts/record-phase2-sample-evidence.sh
 scripts/compare-phase2-sample-evidence.sh
 scripts/record-phase2-language-variant-evidence.sh
 scripts/compare-phase2-language-variant-evidence.sh
+scripts/record-phase2-ucap-evidence.sh
+scripts/compare-phase2-ucap-evidence.sh
 scripts/smoke-rust-sdk.sh
 scripts/build-phase2-language-variant-fixtures.sh
 scripts/test-phase2-language-variants.sh

@@ -1,9 +1,9 @@
 # Layer36 Status
 
-Last updated: 2026-05-06
+Last updated: 2026-05-08
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `73dddb9`
+Latest checked completed push before this slice: `87e83b0`
 Working tree at this status update: sample-evidence comparator host-label and same-commit hardening validated locally
 
 ## 1) Project size today
@@ -76,6 +76,9 @@ Top pending items:
 - Added a language-variant evidence comparator that verifies commit/host metadata, step pass state, and fixture parity across Linux, macOS, and Windows reports
 - Wired hosted full CI to publish per-OS language-variant evidence artifacts for easier cross-host comparison
 - Added a hosted full CI compare gate that downloads Linux/macOS/Windows language-variant evidence artifacts and enforces cross-host parity
+- Added a runtime deny-matrix test for non-default capabilities and an explicit net-connect deny test under default grants
+- Added a UCap enforcement evidence recorder and cross-host comparator (`record-phase2-ucap-evidence` + `compare-phase2-ucap-evidence`)
+- Wired hosted full CI to upload per-OS UCap evidence artifacts and run a dedicated cross-host compare gate
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`
 - Generated UAPI reference now includes those WIT contract comments
