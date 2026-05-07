@@ -32,8 +32,8 @@ Status meanings:
 | P2E-07 | cat cross-host | **Partial** | `scripts/record-phase2-sample-evidence.sh`, `scripts/compare-phase2-sample-evidence.sh`, [Sample Evidence](sample-evidence.md) | Record identical stdout on Linux, macOS, and Windows. |
 | P2E-08 | clock cross-host | **Partial** | `scripts/record-phase2-sample-evidence.sh`, `scripts/compare-phase2-sample-evidence.sh`, [Sample Evidence](sample-evidence.md) | Record fixed-time output on Linux, macOS, and Windows. |
 | P2E-09 | UCap enforcement | **Partial** | `crates/policy`, `crates/runtime`, `tests/cli.rs` (`language_variants_curl_permission_denied_matches_rust_go_ts`), `scripts/record-phase2-ucap-evidence.sh`, `scripts/compare-phase2-ucap-evidence.sh`, hosted full CI artifacts `ucap-enforcement-evidence-<os>`, hosted full CI `UCap enforcement evidence compare` job, [UCap Enforcement Evidence](ucap-enforcement-evidence.md) | Keep collecting clean Linux macOS Windows deny evidence and expand from fs and net to every non-default capability boundary. |
-| P2E-10 | Startup performance | **Partial** | `cargo bench -p layer36-runtime --bench startup`, [Dispatch Benchmarks](benchmarks.md) | Add full CLI startup measurements and cross-host baselines. |
-| P2E-11 | Dispatch performance | **Partial** | `cargo bench -p layer36-runtime --bench uapi_dispatch`, `scripts/check-benchmark-regression.sh` | Collect stable cross-host benchmark evidence. |
+| P2E-10 | Startup performance | **Partial** | `cargo bench -p layer36-runtime --bench startup`, `scripts/record-phase2-benchmark-evidence.sh`, `scripts/compare-phase2-benchmark-evidence.sh`, [Dispatch Benchmarks](benchmarks.md), [Benchmark Evidence](benchmark-evidence.md) | Add full CLI startup measurements and keep collecting Linux macOS Windows benchmark reports for the same commit. |
+| P2E-11 | Dispatch performance | **Partial** | `cargo bench -p layer36-runtime --bench uapi_dispatch`, `scripts/check-benchmark-regression.sh`, `scripts/record-phase2-benchmark-evidence.sh`, `scripts/compare-phase2-benchmark-evidence.sh`, [Benchmark Evidence](benchmark-evidence.md) | Keep stable regression checks and cross-host benchmark evidence linked to one baseline set. |
 | P2E-12 | Timed developer walkthrough | **Pending** | [First Rust CLI](../uapi/first-rust-cli.md) | Ask an outside Rust developer to build a small app and time the run. |
 | P2E-13 | Generated UAPI reference | **Done** | `scripts/generate-uapi-reference.sh`, [Generated Reference](../reference/uapi/index.md) | Keep CI freshness checks enabled. |
 | P2E-14 | WIT style guide | **Done** | [WIT Style Guide](../wit-style.md) | Keep using it during freeze review. |
@@ -82,6 +82,8 @@ scripts/record-phase2-language-variant-evidence.sh
 scripts/compare-phase2-language-variant-evidence.sh
 scripts/record-phase2-ucap-evidence.sh
 scripts/compare-phase2-ucap-evidence.sh
+scripts/record-phase2-benchmark-evidence.sh
+scripts/compare-phase2-benchmark-evidence.sh
 scripts/smoke-rust-sdk.sh
 scripts/build-phase2-language-variant-fixtures.sh
 scripts/test-phase2-language-variants.sh

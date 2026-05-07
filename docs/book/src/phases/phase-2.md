@@ -381,6 +381,12 @@ compare those reports with `scripts/compare-phase2-ucap-evidence.sh`.
 Hosted full CI now uploads per-host UCap evidence artifacts and runs a compare
 job so deny-path regressions are caught as a cross-host gate, not only in local
 checks.
+Performance evidence now has the same repeatable flow:
+[Benchmark Evidence](../phase2/benchmark-evidence.md) shows how to record
+startup and dispatch benchmark results, run baseline regression checks, and
+compare Linux/macOS/Windows benchmark reports for commit and gate consistency.
+This gives `P2E-10` and `P2E-11` clearer cross-host proof tracking even when
+raw timing numbers differ by hardware.
 
 The first terminal grant prompt exists too. `layer36 run --prompt app.wasm`
 shows the app identity, lists missing manifest capabilities, accepts all or a
