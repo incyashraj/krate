@@ -321,7 +321,42 @@ jobs:
           if-no-files-found: error
 
   # ──────────────────────────────────────────────
-  # 9. Documentation build
+  # 9. Compare language-variant evidence across hosts
+  # ──────────────────────────────────────────────
+  language-variant-evidence-compare:
+    name: Language variant evidence compare
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    runs-on: ubuntu-latest
+    needs: full-test
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.91.1
+      - name: Download Linux language-variant evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: language-variant-evidence-ubuntu-latest
+          path: layer36-evidence/linux
+      - name: Download macOS language-variant evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: language-variant-evidence-macos-latest
+          path: layer36-evidence/macos
+      - name: Download Windows language-variant evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: language-variant-evidence-windows-latest
+          path: layer36-evidence/windows
+      - name: Compare language-variant evidence reports
+        shell: bash
+        run: |
+          scripts/compare-phase2-language-variant-evidence.sh \
+            layer36-evidence/linux/language-variant-ubuntu-latest.md \
+            layer36-evidence/macos/language-variant-macos-latest.md \
+            layer36-evidence/windows/language-variant-windows-latest.md
+
+  # ──────────────────────────────────────────────
+  # 10. Documentation build
   # ──────────────────────────────────────────────
   docs:
     name: Docs (mdBook)
@@ -342,7 +377,7 @@ jobs:
         run: node packages/sdk-go/scripts/check-shape.mjs
 
   # ──────────────────────────────────────────────
-  # 10. Benchmark smoke + warning-only regression check
+  # 11. Benchmark smoke + warning-only regression check
   # ──────────────────────────────────────────────
   benchmarks:
     name: Benchmarks (Phase 2 baseline, warning only)
@@ -385,7 +420,7 @@ jobs:
         run: scripts/check-benchmark-regression.sh
 
   # ──────────────────────────────────────────────
-  # 11. Dependency audit (cargo-deny)
+  # 12. Dependency audit (cargo-deny)
   # ──────────────────────────────────────────────
   deny:
     name: Dependency audit (cargo-deny)

@@ -75,6 +75,7 @@ Top pending items:
 - Extended the language-variant evidence recorder with `--mode`, `--output`, and `--strict` flags for CI-friendly and local evidence runs
 - Added a language-variant evidence comparator that verifies commit/host metadata, step pass state, and fixture parity across Linux, macOS, and Windows reports
 - Wired hosted full CI to publish per-OS language-variant evidence artifacts for easier cross-host comparison
+- Added a hosted full CI compare gate that downloads Linux/macOS/Windows language-variant evidence artifacts and enforces cross-host parity
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`
 - Generated UAPI reference now includes those WIT contract comments

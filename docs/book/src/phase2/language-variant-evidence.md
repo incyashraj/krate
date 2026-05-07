@@ -39,6 +39,8 @@ scripts/compare-phase2-language-variant-evidence.sh \
 In hosted full CI, each OS lane now uploads one language-variant evidence
 artifact (`language-variant-evidence-<os>`). You can download those three files
 and run the comparator locally to check parity.
+Hosted full CI now also runs this comparator automatically after the full
+matrix, so drift is caught in CI as part of the same run.
 
 ## What It Records
 

@@ -372,6 +372,8 @@ There is now a companion comparator too:
 `scripts/compare-phase2-language-variant-evidence.sh` checks three host reports
 in one run, verifies same commit metadata, enforces passed build/test steps,
 and fails when fixture availability or hashes drift across hosts.
+Hosted full CI now runs that comparator automatically after Linux, macOS, and
+Windows full-test lanes upload their evidence artifacts.
 
 The first terminal grant prompt exists too. `layer36 run --prompt app.wasm`
 shows the app identity, lists missing manifest capabilities, accepts all or a
