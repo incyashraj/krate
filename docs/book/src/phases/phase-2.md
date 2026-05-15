@@ -408,6 +408,9 @@ Performance evidence now has the same repeatable flow:
 [Benchmark Evidence](../phase2/benchmark-evidence.md) shows how to record
 startup and dispatch benchmark results, run baseline regression checks, and
 compare Linux/macOS/Windows benchmark reports for commit and gate consistency.
+That report now also includes full external CLI startup evidence for
+`layer36 run layer36-clock`, so `P2E-10` is tracking the command users will
+actually run, not only the in-process runtime path.
 The benchmark comparator also enforces per-host threshold bounds from the
 metric table, so a host can no longer pass this lane with an over-threshold
 metric hidden behind warning-only regression mode.

@@ -9,6 +9,9 @@ const REQUIRED_STEPS: &[&str] = &[
     "Startup benchmark (`cargo bench -p layer36-runtime --bench startup`)",
     "Dispatch benchmark (`cargo bench -p layer36-runtime --bench uapi_dispatch`)",
     "Regression check (`scripts/check-benchmark-regression.sh`)",
+    "CLI release build (`cargo build -p layer36-cli --release`)",
+    "Clock component build (`scripts/build-layer36-clock-component.sh`)",
+    "Full CLI startup (`layer36 run layer36-clock`)",
 ];
 
 const REQUIRED_METRICS: &[&str] = &[
@@ -495,6 +498,9 @@ mod tests {
 | Startup benchmark (`cargo bench -p layer36-runtime --bench startup`) | {step_code} | {step_result} |
 | Dispatch benchmark (`cargo bench -p layer36-runtime --bench uapi_dispatch`) | {step_code} | {step_result} |
 | Regression check (`scripts/check-benchmark-regression.sh`) | {step_code} | {step_result} |
+| CLI release build (`cargo build -p layer36-cli --release`) | {step_code} | {step_result} |
+| Clock component build (`scripts/build-layer36-clock-component.sh`) | {step_code} | {step_result} |
+| Full CLI startup (`layer36 run layer36-clock`) | {step_code} | {step_result} |
 
 ## Metric Snapshot
 

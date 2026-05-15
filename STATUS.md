@@ -3,23 +3,23 @@
 Last updated: 2026-05-15
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `3b0f5c0`
-Working tree at this status update: UAPI freeze candidate lock, checker, docs, CI wiring, and exit-bundle integration validated locally
+Latest checked completed push before this slice: `122774c`
+Working tree at this status update: full external CLI startup evidence recorder, benchmark evidence wiring, plan/docs updates, and local validation complete
 
 ## 1) Project size today
 
-- Commits after this slice lands: 265
-- Tracked files after this slice lands: about 270
-- Total tracked lines after this slice lands: about 76,780
-- Rust lines (`.rs`) after this slice lands: about 38,772
-- Docs lines (`.md`) after this slice lands: about 27,076
+- Commits after this slice lands: 266
+- Tracked files after this slice lands: about 271
+- Total tracked lines after this slice lands: about 77,253
+- Rust lines (`.rs`) after this slice lands: about 39,155
+- Docs lines (`.md`) after this slice lands: about 27,096
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`3b0f5c0`) checks:
+Latest completed push (`122774c`) checks:
 
-- CI: success (run `25899681121`)
-- Deploy docs to GitHub Pages: success (run `25899681122`)
+- CI: success (run `25902103435`)
+- Deploy docs to GitHub Pages: success (run `25902103434`)
 
 Recent pushes before that are also green.
 
@@ -81,6 +81,7 @@ Top pending items:
 - Wired hosted full CI to upload per-OS UCap evidence artifacts and run a dedicated cross-host compare gate
 - Added a benchmark evidence recorder and comparator (`record-phase2-benchmark-evidence` + `compare-phase2-benchmark-evidence`) to track startup and dispatch performance evidence in one per-host report
 - Tightened benchmark evidence comparison so each host report must also stay within per-metric baseline thresholds, not only match report shape and step pass state
+- Added full external CLI startup evidence for `layer36 run layer36-clock`; the benchmark evidence report now checks the real command path, not only the in-process runtime path
 - Added an adapter evidence recorder and comparator (`record-phase2-adapter-evidence` + `compare-phase2-adapter-evidence`) to track adapter-boundary proof per host and compare Linux/macOS/Windows reports for one commit
 - Wired hosted full CI to publish per-OS adapter evidence artifacts and run a dedicated cross-host adapter evidence compare gate
 - Wired hosted full CI to publish per-OS sample evidence artifacts and run a cross-host sample evidence compare gate (with temporary curl-blocked fallback)

@@ -1741,6 +1741,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-15 | Added a Rust SDK evidence recorder and hosted CI artifact so Phase 2 can track SDK package smoke, SDK doc build, and packaged-file proof in one report. |
 | 2026-05-15 | Added a Phase 2 exit bundle recorder so the main local review checks, gate snapshot, working tree state, and log tails can be captured in one handoff report. |
 | 2026-05-15 | Added a UAPI freeze candidate lock with per-WIT SHA-256 hashes, a checker, and hosted CI freshness gate so Phase 2 contract drift is visible and intentional. |
+| 2026-05-15 | Added full external CLI startup evidence for Phase 2 benchmarks, measuring the real `layer36 run` process path for deterministic `layer36-clock`. |
 | 2026-05-04 | Expanded the Phase 2 plain HTTP adapter from GET-only framing to lower-level request framing with method, app headers, buffered body, and host-owned transport headers. |
 | 2026-05-04 | Hardened Phase 2 stdio stream resources so stdin/stdout/stderr handles carry their origin and stream read/write/flush methods re-check capability metadata before adapter calls. |
 | 2026-05-04 | Added Phase 2 UAPI policy coverage tests so every supported capability name maps to a UAPI call and the current dispatcher adapter surface is exercised through the policy gate. |

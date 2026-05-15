@@ -7,25 +7,28 @@ cd "$ROOT"
 OUTPUT="target/phase2-benchmark-evidence/benchmark-evidence.md"
 STRICT="${LAYER36_BENCHMARK_EVIDENCE_STRICT:-0}"
 RUN_BENCH="${LAYER36_BENCHMARK_EVIDENCE_RUN_BENCH:-1}"
+RUN_CLI_STARTUP="${LAYER36_BENCHMARK_EVIDENCE_RUN_CLI_STARTUP:-1}"
 MODE="${BENCH_REGRESSION_MODE:-warn}"
 THRESHOLD_PCT="${BENCH_REGRESSION_THRESHOLD_PCT:-10}"
 BASELINE_FILE="${LAYER36_BENCHMARK_BASELINE_FILE:-$ROOT/docs/book/src/phase2/benchmark-baseline.json}"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/record-phase2-benchmark-evidence.sh [--strict] [--skip-bench] [--mode <warn|fail>] [--threshold <pct>] [--output <path>]
+Usage: scripts/record-phase2-benchmark-evidence.sh [--strict] [--skip-bench] [--skip-cli-startup] [--mode <warn|fail>] [--threshold <pct>] [--output <path>]
 
 Options:
-  --strict         Exit non-zero when any step fails
-  --skip-bench     Reuse existing Criterion output instead of re-running benches
-  --mode <mode>    Regression mode: warn or fail (default: BENCH_REGRESSION_MODE or warn)
-  --threshold <n>  Regression threshold percent (default: BENCH_REGRESSION_THRESHOLD_PCT or 10)
-  --output <path>  Output markdown file path
+  --strict            Exit non-zero when any step fails
+  --skip-bench        Reuse existing Criterion output instead of re-running benches
+  --skip-cli-startup  Skip full external layer36 CLI startup evidence
+  --mode <mode>       Regression mode: warn or fail (default: BENCH_REGRESSION_MODE or warn)
+  --threshold <n>     Regression threshold percent (default: BENCH_REGRESSION_THRESHOLD_PCT or 10)
+  --output <path>     Output markdown file path
 
 Environment:
-  LAYER36_BENCHMARK_EVIDENCE_STRICT     1 to exit non-zero when any step fails
-  LAYER36_BENCHMARK_EVIDENCE_RUN_BENCH  0 to skip benchmark commands
-  LAYER36_BENCHMARK_BASELINE_FILE       Baseline JSON path (default: docs/book/src/phase2/benchmark-baseline.json)
+  LAYER36_BENCHMARK_EVIDENCE_STRICT           1 to exit non-zero when any step fails
+  LAYER36_BENCHMARK_EVIDENCE_RUN_BENCH        0 to skip benchmark commands
+  LAYER36_BENCHMARK_EVIDENCE_RUN_CLI_STARTUP  0 to skip full external CLI startup evidence
+  LAYER36_BENCHMARK_BASELINE_FILE             Baseline JSON path (default: docs/book/src/phase2/benchmark-baseline.json)
 USAGE
 }
 
@@ -37,6 +40,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --skip-bench)
       RUN_BENCH="0"
+      shift
+      ;;
+    --skip-cli-startup)
+      RUN_CLI_STARTUP="0"
       shift
       ;;
     --mode)
@@ -90,6 +97,10 @@ mkdir -p "$TMP_DIR"
 STARTUP_LOG="$TMP_DIR/startup.log"
 DISPATCH_LOG="$TMP_DIR/dispatch.log"
 REGRESSION_LOG="$TMP_DIR/regression.log"
+CLI_BUILD_LOG="$TMP_DIR/cli-build.log"
+CLOCK_BUILD_LOG="$TMP_DIR/clock-build.log"
+CLI_STARTUP_LOG="$TMP_DIR/cli-startup.log"
+CLI_STARTUP_REPORT="$TMP_DIR/cli-startup.md"
 METRICS_TABLE="$TMP_DIR/metrics-table.md"
 
 if [ "$RUN_BENCH" = "1" ]; then
@@ -115,6 +126,36 @@ if BENCH_BASELINE_FILES="$BASELINE_FILE" BENCH_REGRESSION_MODE="$MODE" BENCH_REG
   REGRESSION_CODE=0
 else
   REGRESSION_CODE=$?
+fi
+
+if [ "$RUN_CLI_STARTUP" = "1" ]; then
+  if cargo build -p layer36-cli --release >"$CLI_BUILD_LOG" 2>&1; then
+    CLI_BUILD_CODE=0
+  else
+    CLI_BUILD_CODE=$?
+  fi
+
+  if scripts/build-layer36-clock-component.sh >"$CLOCK_BUILD_LOG" 2>&1; then
+    CLOCK_BUILD_CODE=0
+  else
+    CLOCK_BUILD_CODE=$?
+  fi
+
+  if [ "$CLI_BUILD_CODE" -eq 0 ] && [ "$CLOCK_BUILD_CODE" -eq 0 ] &&
+    cargo run -p layer36-tools --bin record-phase2-cli-startup -- \
+      --output "$CLI_STARTUP_REPORT" >"$CLI_STARTUP_LOG" 2>&1; then
+    CLI_STARTUP_CODE=0
+  else
+    CLI_STARTUP_CODE=$?
+  fi
+else
+  CLI_BUILD_CODE=0
+  CLOCK_BUILD_CODE=0
+  CLI_STARTUP_CODE=0
+  printf 'CLI startup evidence skipped (--skip-cli-startup)\n' >"$CLI_BUILD_LOG"
+  printf 'CLI startup evidence skipped (--skip-cli-startup)\n' >"$CLOCK_BUILD_LOG"
+  printf 'CLI startup evidence skipped (--skip-cli-startup)\n' >"$CLI_STARTUP_LOG"
+  printf '# Phase 2 CLI Startup Evidence\n\nSkipped.\n' >"$CLI_STARTUP_REPORT"
 fi
 
 ruby -rjson -e '
@@ -174,6 +215,7 @@ result_of() {
   echo "- Host: \`$host_os\` / \`$host_arch\`"
   echo "- Generated at (UTC): \`$now_utc\`"
   echo "- Benchmark run mode: \`$( [ "$RUN_BENCH" = "1" ] && printf 'run' || printf 'reuse' )\`"
+  echo "- CLI startup evidence mode: \`$( [ "$RUN_CLI_STARTUP" = "1" ] && printf 'run' || printf 'skipped' )\`"
   echo "- Regression mode: \`$MODE\`"
   echo "- Regression threshold %: \`$THRESHOLD_PCT\`"
   echo "- Baseline file: \`$BASELINE_FILE\`"
@@ -185,10 +227,17 @@ result_of() {
   echo "| Startup benchmark (\`cargo bench -p layer36-runtime --bench startup\`) | $STARTUP_CODE | $(result_of "$STARTUP_CODE") |"
   echo "| Dispatch benchmark (\`cargo bench -p layer36-runtime --bench uapi_dispatch\`) | $DISPATCH_CODE | $(result_of "$DISPATCH_CODE") |"
   echo "| Regression check (\`scripts/check-benchmark-regression.sh\`) | $REGRESSION_CODE | $(result_of "$REGRESSION_CODE") |"
+  echo "| CLI release build (\`cargo build -p layer36-cli --release\`) | $CLI_BUILD_CODE | $(result_of "$CLI_BUILD_CODE") |"
+  echo "| Clock component build (\`scripts/build-layer36-clock-component.sh\`) | $CLOCK_BUILD_CODE | $(result_of "$CLOCK_BUILD_CODE") |"
+  echo "| Full CLI startup (\`layer36 run layer36-clock\`) | $CLI_STARTUP_CODE | $(result_of "$CLI_STARTUP_CODE") |"
   echo
   echo "## Metric Snapshot"
   echo
   cat "$METRICS_TABLE"
+  echo
+  echo "## Full CLI Startup Evidence"
+  echo
+  cat "$CLI_STARTUP_REPORT"
   echo
   echo "## Startup Benchmark Log (tail)"
   echo
@@ -207,6 +256,24 @@ result_of() {
   echo '```text'
   tail -n 120 "$REGRESSION_LOG"
   echo '```'
+  echo
+  echo "## CLI Build Log (tail)"
+  echo
+  echo '```text'
+  tail -n 120 "$CLI_BUILD_LOG"
+  echo '```'
+  echo
+  echo "## Clock Component Build Log (tail)"
+  echo
+  echo '```text'
+  tail -n 120 "$CLOCK_BUILD_LOG"
+  echo '```'
+  echo
+  echo "## CLI Startup Recorder Log (tail)"
+  echo
+  echo '```text'
+  tail -n 120 "$CLI_STARTUP_LOG"
+  echo '```'
 } >"$OUTPUT"
 
 echo "wrote $OUTPUT"
@@ -214,7 +281,10 @@ echo "wrote $OUTPUT"
 if [ "$STRICT" = "1" ] && {
   [ "$STARTUP_CODE" -ne 0 ] ||
   [ "$DISPATCH_CODE" -ne 0 ] ||
-  [ "$REGRESSION_CODE" -ne 0 ];
+  [ "$REGRESSION_CODE" -ne 0 ] ||
+  [ "$CLI_BUILD_CODE" -ne 0 ] ||
+  [ "$CLOCK_BUILD_CODE" -ne 0 ] ||
+  [ "$CLI_STARTUP_CODE" -ne 0 ];
 }; then
   exit 1
 fi
