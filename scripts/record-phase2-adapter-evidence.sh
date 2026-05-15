@@ -56,6 +56,8 @@ mkdir -p "$(dirname "$OUTPUT")"
 TMP_DIR="target/phase2-adapter-evidence/.tmp"
 mkdir -p "$TMP_DIR"
 CHECK_LOG="$TMP_DIR/check.log"
+COMMON_TEST_LOG="$TMP_DIR/adapter-common-tests.log"
+OS_TEST_LOG="$TMP_DIR/adapter-os-tests.log"
 
 if scripts/check-adapter-boundary.sh >"$CHECK_LOG" 2>&1; then
   CHECK_CODE=0
@@ -63,10 +65,42 @@ else
   CHECK_CODE=$?
 fi
 
+if cargo test -p layer36-adapter-common >"$COMMON_TEST_LOG" 2>&1; then
+  COMMON_TEST_CODE=0
+else
+  COMMON_TEST_CODE=$?
+fi
+
 now_utc="$(date -u +%FT%TZ)"
 host_os="$(uname -s 2>/dev/null || printf 'unknown')"
 host_arch="$(uname -m 2>/dev/null || printf 'unknown')"
 git_commit="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
+
+case "$(printf '%s' "$host_os" | tr '[:upper:]' '[:lower:]')" in
+  linux*)
+    adapter_crate="layer36-adapter-linux"
+    ;;
+  darwin*)
+    adapter_crate="layer36-adapter-macos"
+    ;;
+  mingw*|msys*|cygwin*|windows*)
+    adapter_crate="layer36-adapter-windows"
+    ;;
+  *)
+    adapter_crate=""
+    ;;
+esac
+
+if [ -n "$adapter_crate" ]; then
+  if cargo test -p "$adapter_crate" >"$OS_TEST_LOG" 2>&1; then
+    OS_TEST_CODE=0
+  else
+    OS_TEST_CODE=$?
+  fi
+else
+  OS_TEST_CODE=127
+  printf 'No Phase 2 adapter crate is mapped for host OS %s\n' "$host_os" >"$OS_TEST_LOG"
+fi
 
 result_of() {
   code="$1"
@@ -87,23 +121,42 @@ result_of() {
   echo "- Git commit: \`$git_commit\`"
   echo "- Host: \`$host_os\` / \`$host_arch\`"
   echo "- Generated at (UTC): \`$now_utc\`"
+  echo "- Native adapter crate: \`${adapter_crate:-unknown}\`"
   echo
   echo "## Command Results"
   echo
   echo "| Step | Exit code | Result |"
   echo "|---|---:|---|"
   echo "| Adapter boundary check (\`scripts/check-adapter-boundary.sh\`) | $CHECK_CODE | $(result_of "$CHECK_CODE") |"
+  echo "| Shared adapter behavior tests (\`cargo test -p layer36-adapter-common\`) | $COMMON_TEST_CODE | $(result_of "$COMMON_TEST_CODE") |"
+  echo "| Native adapter crate tests (\`cargo test -p ${adapter_crate:-unknown}\`) | $OS_TEST_CODE | $(result_of "$OS_TEST_CODE") |"
   echo
   echo "## Adapter Boundary Check Log (tail)"
   echo
   echo '```text'
   tail -n 120 "$CHECK_LOG"
   echo '```'
+  echo
+  echo "## Shared Adapter Behavior Test Log (tail)"
+  echo
+  echo '```text'
+  tail -n 120 "$COMMON_TEST_LOG"
+  echo '```'
+  echo
+  echo "## Native Adapter Crate Test Log (tail)"
+  echo
+  echo '```text'
+  tail -n 120 "$OS_TEST_LOG"
+  echo '```'
 } >"$OUTPUT"
 
 echo "wrote $OUTPUT"
 
-if [ "$STRICT" = "1" ] && [ "$CHECK_CODE" -ne 0 ]; then
+if [ "$STRICT" = "1" ] && {
+  [ "$CHECK_CODE" -ne 0 ] ||
+  [ "$COMMON_TEST_CODE" -ne 0 ] ||
+  [ "$OS_TEST_CODE" -ne 0 ];
+}; then
   exit 1
 fi
 

@@ -1744,6 +1744,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-15 | Added full external CLI startup evidence for Phase 2 benchmarks, measuring the real `layer36 run` process path for deterministic `layer36-clock`. |
 | 2026-05-15 | Added a Phase 2 dependency evidence recorder so `cargo-deny` signoff is captured with tool versions, advisory status, license/bans/source status, and log tails. |
 | 2026-05-15 | Added a Phase 2 Go readiness evidence recorder so TinyGo smoke builds, artifact hashes, tool versions, and current import-purity blockers are captured in one report. |
+| 2026-05-15 | Expanded Phase 2 adapter evidence so each host report now includes shared adapter behavior tests and the native adapter crate test, not only the boundary-shape check. |
 | 2026-05-04 | Expanded the Phase 2 plain HTTP adapter from GET-only framing to lower-level request framing with method, app headers, buffered body, and host-owned transport headers. |
 | 2026-05-04 | Hardened Phase 2 stdio stream resources so stdin/stdout/stderr handles carry their origin and stream read/write/flush methods re-check capability metadata before adapter calls. |
 | 2026-05-04 | Added Phase 2 UAPI policy coverage tests so every supported capability name maps to a UAPI call and the current dispatcher adapter surface is exercised through the policy gate. |

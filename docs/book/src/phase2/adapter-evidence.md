@@ -7,6 +7,8 @@ The rule is simple:
 
 - runtime policy checks stay in runtime code
 - host-facing calls go through per-OS adapter crates
+- shared adapter behavior is tested before the host report is accepted
+- the native adapter crate for that host is tested in the same report
 
 ## Record One Host Report
 
@@ -39,6 +41,15 @@ The compare step checks:
 - same commit metadata across all reports
 - host labels match expected OS lanes
 - `scripts/check-adapter-boundary.sh` passed on each host
+- `cargo test -p layer36-adapter-common` passed on each host
+- the native adapter crate test passed for that host:
+  - Linux: `layer36-adapter-linux`
+  - macOS: `layer36-adapter-macos`
+  - Windows: `layer36-adapter-windows`
+
+The adapter evidence is still not a full hardware lab. It proves the current
+Phase 2 adapter contract, shared path/net/time/locale behavior, and native
+adapter crate surface on each runner.
 
 ## Hosted CI Evidence
 

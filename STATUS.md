@@ -3,23 +3,23 @@
 Last updated: 2026-05-15
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `c4dce80`
-Working tree at this status update: Phase 2 Go readiness evidence recorder, docs, and plan wiring validated locally
+Latest checked completed push before this slice: `654ab4c`
+Working tree at this status update: Phase 2 adapter evidence behavior-test expansion validated locally
 
 ## 1) Project size today
 
-- Commits after this slice lands: 268
+- Commits after this slice lands: 269
 - Tracked files after this slice lands: about 275
-- Total tracked lines after this slice lands: about 77,856
-- Rust lines (`.rs`) after this slice lands: about 39,155
-- Docs lines (`.md`) after this slice lands: about 27,288
+- Total tracked lines after this slice lands: about 77,960
+- Rust lines (`.rs`) after this slice lands: about 39,188
+- Docs lines (`.md`) after this slice lands: about 27,306
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`c4dce80`) checks:
+Latest completed push (`654ab4c`) checks:
 
-- CI: success (run `25903234678`)
-- Deploy docs to GitHub Pages: success (run `25903234671`)
+- CI: success (run `25903754182`)
+- Deploy docs to GitHub Pages: success (run `25903754160`)
 
 Recent pushes before that are also green.
 
@@ -85,6 +85,7 @@ Top pending items:
 - Added a dependency evidence recorder so Phase 2 `cargo-deny` signoff records tool versions, advisory status, license/bans/source status, and log tails
 - Added a Go readiness evidence recorder so TinyGo smoke builds, artifact hashes, tool versions, and current import-purity blockers are recorded in one report
 - Added an adapter evidence recorder and comparator (`record-phase2-adapter-evidence` + `compare-phase2-adapter-evidence`) to track adapter-boundary proof per host and compare Linux/macOS/Windows reports for one commit
+- Expanded adapter evidence so each host report now records shared adapter behavior tests and the native adapter crate test for that host
 - Wired hosted full CI to publish per-OS adapter evidence artifacts and run a dedicated cross-host adapter evidence compare gate
 - Wired hosted full CI to publish per-OS sample evidence artifacts and run a cross-host sample evidence compare gate (with temporary curl-blocked fallback)
 - Hardened self-hosted fuzz nightly concurrency so scheduled runs no longer cancel older queued runs when the local runner is offline

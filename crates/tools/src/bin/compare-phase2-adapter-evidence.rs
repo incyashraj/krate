@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
-const REQUIRED_STEP: &str = "Adapter boundary check (`scripts/check-adapter-boundary.sh`)";
+const ADAPTER_BOUNDARY_STEP: &str = "Adapter boundary check (`scripts/check-adapter-boundary.sh`)";
+const SHARED_BEHAVIOR_STEP: &str =
+    "Shared adapter behavior tests (`cargo test -p layer36-adapter-common`)";
 
 fn main() -> Result<()> {
     let config = Config::parse(env::args().skip(1))?;
@@ -81,6 +83,15 @@ fn next_path(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<Path
         .with_context(|| format!("{flag} requires a path"))
 }
 
+fn native_adapter_step(label: &str) -> Result<&'static str> {
+    match label {
+        "linux" => Ok("Native adapter crate tests (`cargo test -p layer36-adapter-linux`)"),
+        "macos" => Ok("Native adapter crate tests (`cargo test -p layer36-adapter-macos`)"),
+        "windows" => Ok("Native adapter crate tests (`cargo test -p layer36-adapter-windows`)"),
+        other => bail!("unsupported report label `{other}`"),
+    }
+}
+
 #[derive(Debug, Clone)]
 struct HostReport {
     label: &'static str,
@@ -104,11 +115,17 @@ impl HostReport {
         let host_os = parse_markdown_tick_value(&host_line)
             .context("host metadata line is not in expected markdown-tick format")?;
         let step_rows = parse_step_table(&source)?;
-        if !step_rows.contains_key(REQUIRED_STEP) {
-            bail!(
-                "report {} is missing required step row `{REQUIRED_STEP}`",
-                path.display()
-            );
+        for required in [
+            ADAPTER_BOUNDARY_STEP,
+            SHARED_BEHAVIOR_STEP,
+            native_adapter_step(label)?,
+        ] {
+            if !step_rows.contains_key(required) {
+                bail!(
+                    "report {} is missing required step row `{required}`",
+                    path.display()
+                );
+            }
         }
 
         Ok(Self {
@@ -259,22 +276,28 @@ fn validate_host_assignments(reports: &[HostReport]) -> Result<()> {
 
 fn validate_step_outcomes(reports: &[HostReport]) -> Result<()> {
     for report in reports {
-        let row = report.step_rows.get(REQUIRED_STEP).with_context(|| {
-            format!(
-                "{} is missing required step row `{REQUIRED_STEP}`",
-                report.source.display()
-            )
-        })?;
-        if row.exit_code != 0 || row.result != "passed" {
-            bail!(
-                "{} step `{REQUIRED_STEP}` failed with exit code {} ({})",
-                report.source.display(),
-                row.exit_code,
-                row.result
-            );
+        for required in [
+            ADAPTER_BOUNDARY_STEP,
+            SHARED_BEHAVIOR_STEP,
+            native_adapter_step(report.label)?,
+        ] {
+            let row = report.step_rows.get(required).with_context(|| {
+                format!(
+                    "{} is missing required step row `{required}`",
+                    report.source.display()
+                )
+            })?;
+            if row.exit_code != 0 || row.result != "passed" {
+                bail!(
+                    "{} step `{required}` failed with exit code {} ({})",
+                    report.source.display(),
+                    row.exit_code,
+                    row.result
+                );
+            }
         }
     }
-    println!("- step: {REQUIRED_STEP} (passed on all hosts)");
+    println!("- steps: adapter boundary and native adapter behavior tests passed on all hosts");
     Ok(())
 }
 
@@ -282,7 +305,8 @@ fn validate_step_outcomes(reports: &[HostReport]) -> Result<()> {
 mod tests {
     use super::*;
 
-    fn sample_report(host_os: &str, commit: &str, result: &str, code: i32) -> String {
+    fn sample_report(label: &str, host_os: &str, commit: &str, result: &str, code: i32) -> String {
+        let native_step = native_adapter_step(label).expect("native step");
         format!(
             r#"# Phase 2 Adapter Evidence
 
@@ -297,33 +321,42 @@ mod tests {
 | Step | Exit code | Result |
 |---|---:|---|
 | Adapter boundary check (`scripts/check-adapter-boundary.sh`) | {code} | {result} |
+| Shared adapter behavior tests (`cargo test -p layer36-adapter-common`) | {code} | {result} |
+| {native_step} | {code} | {result} |
 "#
         )
     }
 
     #[test]
     fn parses_step_rows() {
-        let rows = parse_step_table(&sample_report("Linux", "abc123", "passed", 0)).expect("rows");
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[REQUIRED_STEP].result, "passed");
+        let rows = parse_step_table(&sample_report("linux", "Linux", "abc123", "passed", 0))
+            .expect("rows");
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[ADAPTER_BOUNDARY_STEP].result, "passed");
     }
 
     #[test]
     fn rejects_failed_step() {
         let reports = vec![
-            HostReport::parse_report_text("linux", sample_report("Linux", "abc123", "failed", 1))
-                .expect("linux"),
-            HostReport::parse_report_text("macos", sample_report("Darwin", "abc123", "passed", 0))
-                .expect("macos"),
+            HostReport::parse_report_text(
+                "linux",
+                sample_report("linux", "Linux", "abc123", "failed", 1),
+            )
+            .expect("linux"),
+            HostReport::parse_report_text(
+                "macos",
+                sample_report("macos", "Darwin", "abc123", "passed", 0),
+            )
+            .expect("macos"),
             HostReport::parse_report_text(
                 "windows",
-                sample_report("Windows_NT", "abc123", "passed", 0),
+                sample_report("windows", "Windows_NT", "abc123", "passed", 0),
             )
             .expect("windows"),
         ];
 
         let err = compare_reports(&reports).expect_err("should fail");
-        assert!(err.to_string().contains(REQUIRED_STEP));
+        assert!(err.to_string().contains(ADAPTER_BOUNDARY_STEP));
     }
 
     impl HostReport {

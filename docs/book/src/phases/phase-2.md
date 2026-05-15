@@ -368,6 +368,10 @@ There is now an [Adapter Evidence](../phase2/adapter-evidence.md) flow too:
 `scripts/compare-phase2-adapter-evidence.sh` compares Linux/macOS/Windows
 reports for one commit. Hosted full CI now publishes per-OS adapter evidence
 artifacts and runs the compare gate automatically.
+The adapter report now includes more than boundary shape: it also runs shared
+adapter behavior tests and the native adapter crate tests for that host. This
+keeps P2E-02 pointed at real behavior proof instead of only checking that
+function names exist.
 
 Sample evidence has a repeatable recorder now too. The
 [Sample Evidence](../phase2/sample-evidence.md) page explains how to run
