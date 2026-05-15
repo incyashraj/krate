@@ -69,10 +69,12 @@ There is now also a Go TinyGo build-smoke lane:
 
 ```bash
 scripts/build-phase2-go-variant-smoke.sh
+scripts/record-phase2-go-readiness-evidence.sh
 ```
 
-This builds Go clock/cat/curl WASI Preview 2 artifacts and checks their
-component export shape (`wasi:cli/run`).
+The first command builds Go clock/cat/curl WASI Preview 2 artifacts and checks
+their component export shape (`wasi:cli/run`). The second command writes a small
+evidence report with tool versions, artifact hashes, and the import-purity log.
 
 The current TinyGo artifacts do build, but they are not Layer36-import pure yet.
 The promotion step checks all three artifacts together and reports every

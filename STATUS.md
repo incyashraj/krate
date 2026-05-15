@@ -3,23 +3,23 @@
 Last updated: 2026-05-15
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `1ff1e8b`
-Working tree at this status update: Phase 2 dependency evidence recorder, docs, and plan wiring validated locally
+Latest checked completed push before this slice: `c4dce80`
+Working tree at this status update: Phase 2 Go readiness evidence recorder, docs, and plan wiring validated locally
 
 ## 1) Project size today
 
-- Commits after this slice lands: 267
-- Tracked files after this slice lands: about 273
-- Total tracked lines after this slice lands: about 77,516
+- Commits after this slice lands: 268
+- Tracked files after this slice lands: about 275
+- Total tracked lines after this slice lands: about 77,856
 - Rust lines (`.rs`) after this slice lands: about 39,155
-- Docs lines (`.md`) after this slice lands: about 27,190
+- Docs lines (`.md`) after this slice lands: about 27,288
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`1ff1e8b`) checks:
+Latest completed push (`c4dce80`) checks:
 
-- CI: success (run `25902656940`)
-- Deploy docs to GitHub Pages: success (run `25902656923`)
+- CI: success (run `25903234678`)
+- Deploy docs to GitHub Pages: success (run `25903234671`)
 
 Recent pushes before that are also green.
 
@@ -83,6 +83,7 @@ Top pending items:
 - Tightened benchmark evidence comparison so each host report must also stay within per-metric baseline thresholds, not only match report shape and step pass state
 - Added full external CLI startup evidence for `layer36 run layer36-clock`; the benchmark evidence report now checks the real command path, not only the in-process runtime path
 - Added a dependency evidence recorder so Phase 2 `cargo-deny` signoff records tool versions, advisory status, license/bans/source status, and log tails
+- Added a Go readiness evidence recorder so TinyGo smoke builds, artifact hashes, tool versions, and current import-purity blockers are recorded in one report
 - Added an adapter evidence recorder and comparator (`record-phase2-adapter-evidence` + `compare-phase2-adapter-evidence`) to track adapter-boundary proof per host and compare Linux/macOS/Windows reports for one commit
 - Wired hosted full CI to publish per-OS adapter evidence artifacts and run a dedicated cross-host adapter evidence compare gate
 - Wired hosted full CI to publish per-OS sample evidence artifacts and run a cross-host sample evidence compare gate (with temporary curl-blocked fallback)

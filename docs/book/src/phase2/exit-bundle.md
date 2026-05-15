@@ -11,6 +11,7 @@ green before a final exit review:
 - exit ledger coverage
 - docs build
 - dependency evidence
+- Go readiness evidence
 - optional Rust SDK package evidence
 
 This is useful because Phase 2 now has many separate proof files. The bundle
@@ -52,6 +53,11 @@ Dependency evidence is included by default because it is one of the final Phase
 bundle records that warning and still shows whether licenses, bans, and sources
 passed.
 
+Go readiness evidence is also included by default, but it is not treated as a
+completion stamp. It records whether the TinyGo smoke artifacts build and
+whether they are Layer36 import-pure. Today this helps reviewers see the exact
+reason Go runtime fixtures are still blocked.
+
 ## What The Bundle Shows
 
 The report includes:
@@ -60,6 +66,7 @@ The report includes:
 - pass or fail status for each included command
 - the freeze candidate lock check result
 - the dependency audit evidence result
+- the Go readiness result and current import-purity status
 - the current `P2E-*` gate snapshot from the exit ledger
 - the current working tree state
 - short log tails for each check

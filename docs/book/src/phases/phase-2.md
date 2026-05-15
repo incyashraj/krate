@@ -487,6 +487,11 @@ are not Layer36-import pure, the import checker reports every failing Go
 artifact instead of stopping at the first one. Current local smoke artifacts
 build successfully, but still import WASI host APIs, so they are correctly not
 promoted into runtime fixtures yet.
+There is now a Go readiness evidence recorder as well. It builds the TinyGo
+smoke artifacts, records Go, TinyGo, and `wasm-tools` versions, hashes the
+artifacts, and stores the import-purity log in one review file. This does not
+make Go complete. It makes the remaining Go blocker visible enough for a clean
+Phase 2 exit decision.
 When both Go and TypeScript fixture sets are available, the CLI harness now
 also runs cross-language parity checks for `layer36-clock`, `layer36-cat`, and
 `layer36-curl`. Those checks run Rust, Go, and TypeScript samples with the same

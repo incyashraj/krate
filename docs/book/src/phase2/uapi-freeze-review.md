@@ -129,10 +129,12 @@ For Go readiness:
 ```bash
 scripts/build-phase2-go-variant-smoke.sh
 LAYER36_GO_RUNTIME_FIXTURE_MODE=optional scripts/promote-phase2-go-runtime-fixtures.sh
+scripts/record-phase2-go-readiness-evidence.sh
 ```
 
-The second command should only promote fixtures when all Go artifacts import
-`layer36:*` APIs only.
+The promotion command should only copy fixtures when all Go artifacts import
+`layer36:*` APIs only. The recorder keeps the build result and the current
+import-purity log in one review file.
 
 ## Freeze Decision
 

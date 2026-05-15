@@ -70,6 +70,8 @@ EXIT_LEDGER_LOG="$TMP_DIR/check-phase2-exit-evidence.log"
 DOCS_LOG="$TMP_DIR/mdbook.log"
 DEPENDENCY_LOG="$TMP_DIR/dependency-evidence.log"
 DEPENDENCY_REPORT="$TMP_DIR/dependency-evidence.md"
+GO_READINESS_LOG="$TMP_DIR/go-readiness-evidence.log"
+GO_READINESS_REPORT="$TMP_DIR/go-readiness-evidence.md"
 SDK_LOG="$TMP_DIR/rust-sdk-evidence.log"
 SDK_REPORT="$TMP_DIR/rust-sdk-evidence.md"
 
@@ -120,6 +122,12 @@ if scripts/record-phase2-dependency-evidence.sh --strict --output "$DEPENDENCY_R
   DEPENDENCY_CODE=0
 else
   DEPENDENCY_CODE=$?
+fi
+
+if scripts/record-phase2-go-readiness-evidence.sh --output "$GO_READINESS_REPORT" >"$GO_READINESS_LOG" 2>&1; then
+  GO_READINESS_CODE=0
+else
+  GO_READINESS_CODE=$?
 fi
 
 if [ "$INCLUDE_RUST_SDK" = "1" ]; then
@@ -182,6 +190,7 @@ included_of() {
   echo "| Exit ledger check (\`scripts/check-phase2-exit-evidence.sh\`) | $EXIT_LEDGER_CODE | $(result_of "$EXIT_LEDGER_CODE") |"
   echo "| Docs build (\`mdbook build docs/book\`) | $DOCS_CODE | $(result_of "$DOCS_CODE") |"
   echo "| Dependency evidence (\`scripts/record-phase2-dependency-evidence.sh --strict\`) | $DEPENDENCY_CODE | $(result_of "$DEPENDENCY_CODE") |"
+  echo "| Go readiness evidence (\`scripts/record-phase2-go-readiness-evidence.sh\`) | $GO_READINESS_CODE | $(result_of "$GO_READINESS_CODE") |"
   if [ "$INCLUDE_RUST_SDK" = "1" ]; then
     echo "| Rust SDK evidence (\`scripts/record-phase2-rust-sdk-evidence.sh --strict\`) | $SDK_CODE | $(result_of "$SDK_CODE") |"
   else
@@ -254,6 +263,18 @@ included_of() {
     echo "## Dependency Evidence Summary"
     echo
     sed -n '1,42p' "$DEPENDENCY_REPORT"
+  fi
+  echo
+  echo "## Go Readiness Evidence Log (tail)"
+  echo
+  echo '```text'
+  tail -n 120 "$GO_READINESS_LOG"
+  echo '```'
+  if [ -f "$GO_READINESS_REPORT" ]; then
+    echo
+    echo "## Go Readiness Evidence Summary"
+    echo
+    sed -n '1,54p' "$GO_READINESS_REPORT"
   fi
   echo
   echo "## Rust SDK Evidence Log (tail)"

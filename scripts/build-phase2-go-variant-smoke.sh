@@ -3,7 +3,7 @@ set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 MODE="${LAYER36_GO_VARIANT_SMOKE_MODE:-optional}"
-OUT_DIR="$ROOT/test/integration/language-variants-go-smoke"
+OUT_DIR="${LAYER36_GO_VARIANT_SMOKE_OUT_DIR:-$ROOT/test/integration/language-variants-go-smoke}"
 if [ -d "$HOME/.cargo/bin" ]; then
   PATH="$HOME/.cargo/bin:$PATH"
   export PATH

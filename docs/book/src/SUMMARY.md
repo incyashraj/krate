@@ -52,6 +52,7 @@
   - [Sample Evidence](phase2/sample-evidence.md)
   - [Rust SDK Evidence](phase2/rust-sdk-evidence.md)
   - [Language Variant Evidence](phase2/language-variant-evidence.md)
+  - [Go Readiness Evidence](phase2/go-readiness-evidence.md)
   - [UCap Enforcement Evidence](phase2/ucap-enforcement-evidence.md)
   - [Benchmark Evidence](phase2/benchmark-evidence.md)
   - [Dependency Evidence](phase2/dependency-evidence.md)
