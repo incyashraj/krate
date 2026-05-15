@@ -3,23 +3,23 @@
 Last updated: 2026-05-15
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `0bc82b6`
-Working tree at this status update: Rust SDK evidence recorder, docs, plan notes, and hosted artifact wiring validated locally
+Latest checked completed push before this slice: `cf14ab3`
+Working tree at this status update: Phase 2 exit bundle recorder, docs, and plan notes validated locally
 
 ## 1) Project size today
 
-- Commits after this slice lands: 261
-- Tracked files after this slice lands: about 264
-- Total tracked lines after this slice lands: about 76,182
+- Commits after this slice lands: 264
+- Tracked files after this slice lands: about 266
+- Total tracked lines after this slice lands: about 76,504
 - Rust lines (`.rs`) after this slice lands: about 38,586
-- Docs lines (`.md`) after this slice lands: about 26,954
+- Docs lines (`.md`) after this slice lands: about 27,027
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`0bc82b6`) checks:
+Latest completed push (`cf14ab3`) checks:
 
-- CI: success (run `25898180918`)
-- Deploy docs to GitHub Pages: success (run `25898180924`)
+- CI: success (run `25899387906`)
+- Deploy docs to GitHub Pages: success (run `25899387899`)
 
 Recent pushes before that are also green.
 
@@ -87,6 +87,7 @@ Top pending items:
 - Hardened self-hosted fuzz nightly concurrency so scheduled runs no longer cancel older queued runs when the local runner is offline
 - Added a dedicated benchmark evidence docs page and linked it from Phase 2 and the exit ledger for P2E-10 and P2E-11 tracking
 - Added a Rust SDK evidence recorder and hosted artifact path so P2E-03 has one proof file for package smoke, SDK doc build, and packaged-file presence
+- Added a Phase 2 exit bundle recorder so local review can capture UAPI, adapter, exit-ledger, docs, gate snapshot, working tree state, and log tails in one report
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`
 - Generated UAPI reference now includes those WIT contract comments

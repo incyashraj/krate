@@ -56,6 +56,7 @@
   - [Benchmark Evidence](phase2/benchmark-evidence.md)
   - [UAPI Freeze Review](phase2/uapi-freeze-review.md)
   - [UAPI Freeze Evidence](phase2/uapi-freeze-evidence.md)
+  - [Exit Bundle](phase2/exit-bundle.md)
   - [Exit Evidence](phase2/exit-evidence.md)
 - [Phase 3: UI + Graphics](phases/phase-3.md)
 - [Phase 4: Mobile](phases/phase-4.md)

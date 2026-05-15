@@ -72,6 +72,7 @@ The remaining work is mostly proof:
 Run these before a Phase 2 exit review:
 
 ```bash
+scripts/record-phase2-exit-bundle.sh --strict
 scripts/check-uapi.sh
 scripts/generate-uapi-freeze-evidence.sh
 scripts/check-adapter-boundary.sh
@@ -91,6 +92,9 @@ scripts/smoke-rust-sdk.sh
 scripts/build-phase2-language-variant-fixtures.sh
 scripts/test-phase2-language-variants.sh
 ```
+
+The [Exit Bundle](exit-bundle.md) command gives the quick local review report.
+The other commands are still useful when you need the detailed per-area reports.
 
 For performance and soak checks:
 

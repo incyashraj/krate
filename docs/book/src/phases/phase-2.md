@@ -346,6 +346,11 @@ regenerate that page and fail if it is stale.
 There is now a [Phase 2 Exit Evidence](../phase2/exit-evidence.md) ledger too.
 It tracks all 15 exit gates with a status, proof source, and next step, and CI
 checks the page shape so the list cannot silently drift from the plan.
+The quick local review path is now [Exit Bundle](../phase2/exit-bundle.md).
+`scripts/record-phase2-exit-bundle.sh` runs the core local exit checks and
+writes one report with command results, the current gate snapshot, working tree
+state, and log tails. This is not a completion stamp. It is a cleaner handoff
+file for review before the final Phase 2 decision.
 
 The adapter split now has a guard too. The
 [Adapter Boundary](../phase2/adapter-boundary.md) page explains the rule in
