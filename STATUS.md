@@ -3,23 +3,23 @@
 Last updated: 2026-05-17
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `04b42cd`
-Working tree at this status update: closeout-docs gate wired into CI and exit bundle locally validated
+Latest checked completed push before this slice: `7619645`
+Working tree at this status update: UAPI freeze decision packet wired into local proof checks
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 280
-- Tracked files after this slice lands: about 291
-- Total tracked lines after this slice lands: about 80,204
-- Rust lines (`.rs`) after this slice lands: about 40,070
-- Docs lines (`.md`) after this slice lands: about 27,995
+- Commits after this slice lands: about 281
+- Tracked files after this slice lands: about 294
+- Total tracked lines after this slice lands: about 80,472
+- Rust lines (`.rs`) after this slice lands: about 40,174
+- Docs lines (`.md`) after this slice lands: about 28,114
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`04b42cd`) checks:
+Latest completed push (`7619645`) checks:
 
-- CI: success (run `25991056191`)
-- Deploy docs to GitHub Pages: success (run `25991056195`)
+- CI: success (run `25992167669`)
+- Deploy docs to GitHub Pages: success (run `25992167690`)
 
 Recent pushes before that are also green.
 
@@ -103,6 +103,7 @@ Top pending items:
 - Added a timed walkthrough evidence checker so the outside Rust walkthrough packet must have filled metadata, numeric timing, a pass/fail result, and reviewer results before `P2E-12` can be accepted
 - Added the Phase 2 retrospective draft, Phase 3 kickoff issue draft, and a closeout-docs checker so handoff material exists without claiming Phase 2 is complete early
 - Wired the closeout-docs checker into hosted CI, self-hosted CI, and the Phase 2 exit bundle
+- Added a UAPI freeze decision packet and checker so the final freeze decision stays explicit until the remaining proof is ready
 - Expanded UCap evidence with a named dispatcher deny-before-adapter matrix that covers every non-default filesystem and network boundary
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`

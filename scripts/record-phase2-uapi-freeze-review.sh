@@ -64,6 +64,7 @@ FREEZE_EVIDENCE_DIFF_LOG="$TMP_DIR/uapi-freeze-evidence-diff.log"
 FREEZE_LOCK_LOG="$TMP_DIR/generate-uapi-freeze-lock.log"
 FREEZE_LOCK_DIFF_LOG="$TMP_DIR/uapi-freeze-lock-diff.log"
 FREEZE_LOCK_CHECK_LOG="$TMP_DIR/check-uapi-freeze-lock.log"
+FREEZE_DECISION_LOG="$TMP_DIR/check-phase2-freeze-decision.log"
 ADAPTER_LOG="$TMP_DIR/check-adapter-boundary.log"
 EXIT_LEDGER_LOG="$TMP_DIR/check-phase2-exit-evidence.log"
 
@@ -115,6 +116,12 @@ else
   FREEZE_LOCK_CHECK_CODE=$?
 fi
 
+if scripts/check-phase2-freeze-decision.sh >"$FREEZE_DECISION_LOG" 2>&1; then
+  FREEZE_DECISION_CODE=0
+else
+  FREEZE_DECISION_CODE=$?
+fi
+
 if scripts/check-adapter-boundary.sh >"$ADAPTER_LOG" 2>&1; then
   ADAPTER_CODE=0
 else
@@ -151,6 +158,7 @@ if [ "$UAPI_CODE" -ne 0 ] ||
   [ "$FREEZE_LOCK_CODE" -ne 0 ] ||
   [ "$FREEZE_LOCK_DIFF_CODE" -ne 0 ] ||
   [ "$FREEZE_LOCK_CHECK_CODE" -ne 0 ] ||
+  [ "$FREEZE_DECISION_CODE" -ne 0 ] ||
   [ "$ADAPTER_CODE" -ne 0 ] ||
   [ "$EXIT_LEDGER_CODE" -ne 0 ]; then
   overall_result="needs review before freeze"
@@ -183,15 +191,23 @@ fi
   echo "| Regenerate freeze lock | $FREEZE_LOCK_CODE | $(result_of "$FREEZE_LOCK_CODE") |"
   echo "| Freeze lock freshness | $FREEZE_LOCK_DIFF_CODE | $(result_of "$FREEZE_LOCK_DIFF_CODE") |"
   echo "| Freeze lock checker | $FREEZE_LOCK_CHECK_CODE | $(result_of "$FREEZE_LOCK_CHECK_CODE") |"
+  echo "| Freeze decision packet check | $FREEZE_DECISION_CODE | $(result_of "$FREEZE_DECISION_CODE") |"
   echo "| Adapter boundary guard | $ADAPTER_CODE | $(result_of "$ADAPTER_CODE") |"
   echo "| Phase 2 exit ledger guard | $EXIT_LEDGER_CODE | $(result_of "$EXIT_LEDGER_CODE") |"
   echo
   echo "## Reading This Report"
   echo
   echo "A passing report means the current WIT, generated reference, freeze evidence,"
-  echo "freeze lock, adapter-boundary guard, and exit ledger agree with each other."
+  echo "freeze lock, decision packet, adapter-boundary guard, and exit ledger agree"
+  echo "with each other."
   echo "The final Phase 2 freeze still needs the remaining cross-host and language"
   echo "evidence listed in the exit ledger."
+  echo
+  echo "## Freeze Decision Packet Log (tail)"
+  echo
+  echo '```text'
+  tail -n 120 "$FREEZE_DECISION_LOG"
+  echo '```'
   echo
   echo "## Current Freeze Lock Summary"
   echo

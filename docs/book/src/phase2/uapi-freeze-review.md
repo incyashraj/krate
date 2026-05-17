@@ -22,8 +22,10 @@ What is already in place:
 - the current WIT file hash lock is published in
   [UAPI Freeze Lock](uapi-freeze-lock.md)
 - the freeze-review recorder writes one local report that checks the contract,
-  generated reference, freeze evidence, freeze lock, adapter-boundary guard, and
-  exit ledger together
+  generated reference, freeze evidence, freeze lock, freeze decision packet,
+  adapter-boundary guard, and exit ledger together
+- the freeze decision packet keeps the final human decision explicit instead of
+  letting a passing script imply that the UAPI is frozen
 - the full Phase 2 gate list is tracked in
   [Phase 2 Exit Evidence](exit-evidence.md)
 - hosted CI and self-hosted CI fail if that evidence page is stale
@@ -65,6 +67,7 @@ Before checking the Phase 2 WIT freeze box, all items below should be true.
       evidence page without manual edits
 - [ ] `scripts/generate-uapi-freeze-lock.sh` refreshes the published WIT hash
       lock without manual edits
+- [ ] `scripts/check-phase2-freeze-decision.sh` passes
 - [ ] generated UAPI reference is current
 - [ ] every public WIT item has clear docs
 - [ ] every function has a plain behavior note in the reference or the WIT docs
@@ -114,6 +117,7 @@ scripts/check-uapi.sh
 scripts/generate-uapi-freeze-evidence.sh
 scripts/generate-uapi-freeze-lock.sh
 scripts/check-uapi-freeze-lock.sh
+scripts/check-phase2-freeze-decision.sh
 scripts/record-phase2-uapi-freeze-review.sh --strict
 cargo test -p layer36-tools
 env PATH="$HOME/.cargo/bin:$PATH" mdbook build docs/book
@@ -142,8 +146,9 @@ import-purity log in one review file.
 
 The freeze-review recorder writes
 `target/phase2-uapi-freeze-review/uapi-freeze-review.md`. Read it beside the
-[UAPI Freeze Review Evidence](uapi-freeze-review-evidence.md) page before making
-the final freeze decision.
+[UAPI Freeze Review Evidence](uapi-freeze-review-evidence.md) page and the
+[UAPI Freeze Decision Packet](uapi-freeze-decision.md) before making the final
+freeze decision.
 
 ## Freeze Decision
 

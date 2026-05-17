@@ -58,6 +58,9 @@ For deeper review, also run:
 ```bash
 scripts/record-phase2-exit-bundle.sh --strict
 scripts/check-phase2-exit-evidence.sh
+scripts/check-phase2-freeze-decision.sh
 ```
 
 The readiness command is the map. The exit bundle is the evidence packet.
+The freeze decision packet keeps the final human decision separate from the
+automated checks.

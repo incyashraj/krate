@@ -23,7 +23,7 @@ Status meanings:
 
 | Gate | Criterion | Status | Evidence | Next step |
 |---|---|---|---|---|
-| P2E-01 | UAPI modules frozen | **Strong draft** | `scripts/check-uapi.sh`, `scripts/check-uapi-freeze-lock.sh`, `scripts/record-phase2-uapi-freeze-review.sh`, [UAPI Freeze Evidence](uapi-freeze-evidence.md), [UAPI Freeze Lock](uapi-freeze-lock.md), [UAPI Freeze Review Evidence](uapi-freeze-review-evidence.md) | Run the final freeze review and record the decision after cross-host and language evidence are ready. |
+| P2E-01 | UAPI modules frozen | **Strong draft** | `scripts/check-uapi.sh`, `scripts/check-uapi-freeze-lock.sh`, `scripts/check-phase2-freeze-decision.sh`, `scripts/record-phase2-uapi-freeze-review.sh`, [UAPI Freeze Evidence](uapi-freeze-evidence.md), [UAPI Freeze Lock](uapi-freeze-lock.md), [UAPI Freeze Review Evidence](uapi-freeze-review-evidence.md), [UAPI Freeze Decision Packet](uapi-freeze-decision.md) | Run the final freeze review and fill the decision packet after cross-host and language evidence are ready. |
 | P2E-02 | Desktop host adapters | **Partial** | `scripts/check-adapter-boundary.sh`, `scripts/record-phase2-adapter-evidence.sh`, `scripts/compare-phase2-adapter-evidence.sh`, hosted full CI artifacts `adapter-evidence-<os>`, hosted full CI `Adapter evidence compare` job, [Adapter Boundary](adapter-boundary.md), [Adapter Evidence](adapter-evidence.md) | Keep collecting Linux macOS Windows evidence; adapter reports now include boundary, shared adapter behavior tests, and native adapter crate tests. |
 | P2E-03 | Rust bindings usable | **Partial** | `scripts/smoke-rust-sdk.sh`, `scripts/record-phase2-rust-sdk-evidence.sh`, hosted CI artifact `rust-sdk-evidence`, [Rust SDK Evidence](rust-sdk-evidence.md), [First Rust CLI](../uapi/first-rust-cli.md) | Keep package and outside-workspace smoke evidence green; publish only after UAPI v0.1 is frozen. |
 | P2E-04 | Go bindings usable | **Partial** | `scripts/build-phase2-go-variant-smoke.sh`, `scripts/promote-phase2-go-runtime-fixtures.sh`, `scripts/record-phase2-go-readiness-evidence.sh`, [Go Readiness Evidence](go-readiness-evidence.md), [Go Phase 2 Decision](go-phase2-decision.md) | Go is experimental for runtime parity in Phase 2; keep TinyGo smoke and import-purity checks, and revisit promotion when artifacts import only `layer36:*`. |
@@ -89,6 +89,7 @@ scripts/check-uapi.sh
 scripts/generate-uapi-freeze-evidence.sh
 scripts/generate-uapi-freeze-lock.sh
 scripts/check-uapi-freeze-lock.sh
+scripts/check-phase2-freeze-decision.sh
 scripts/check-adapter-boundary.sh
 scripts/record-phase2-adapter-evidence.sh
 scripts/compare-phase2-adapter-evidence.sh

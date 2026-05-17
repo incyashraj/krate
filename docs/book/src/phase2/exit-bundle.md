@@ -7,6 +7,7 @@ green before a final exit review:
 
 - UAPI contract shape
 - UAPI freeze lock
+- UAPI freeze decision packet
 - adapter boundary shape
 - exit ledger coverage
 - closeout docs draft guard
@@ -66,6 +67,7 @@ The report includes:
 - host and commit metadata
 - pass or fail status for each included command
 - the freeze candidate lock check result
+- the UAPI freeze decision packet result
 - the closeout docs draft guard result
 - the dependency audit evidence result
 - the Go readiness result and current import-purity status

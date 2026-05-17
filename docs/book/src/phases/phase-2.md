@@ -25,6 +25,10 @@ do not depend on memory.
 Hosted CI stability can now be recorded too:
 `scripts/record-phase2-ci-stability-evidence.sh` writes recent CI and Pages run
 history into one markdown report for exit review.
+The UAPI freeze decision has its own packet now as well:
+`scripts/check-phase2-freeze-decision.sh` checks that the packet names the
+scope, required evidence, no-go conditions, and pending reviewer signoff before
+we call the contract frozen.
 
 The capability layer has also started. Layer36 can parse a sidecar
 `manifest.toml`, check launch-time grants, and carry the session policy into the

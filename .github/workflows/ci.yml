@@ -182,6 +182,8 @@ jobs:
         run: sh scripts/check-adapter-boundary.sh
       - name: Check Phase 2 exit evidence
         run: sh scripts/check-phase2-exit-evidence.sh
+      - name: Check Phase 2 UAPI freeze decision packet
+        run: sh scripts/check-phase2-freeze-decision.sh
       - name: Check Phase 2 closeout docs
         run: sh scripts/check-phase2-closeout-docs.sh
 

@@ -61,6 +61,8 @@ flowchart LR
    report must include the basics before we count it as Phase 2 evidence.
 10. The Phase 2 retrospective and Phase 3 kickoff issue now exist as drafts, and
     CI checks that they stay in draft form until exit evidence is ready.
+11. The UAPI freeze decision now has its own packet and checker, so we cannot
+    accidentally call the API frozen before the final evidence is reviewed.
 
 ## Current Build Timeline
 
@@ -100,6 +102,7 @@ This is a simple status view for non technical readers.
 | CLI sample apps | Working |
 | Phase 2 proof tracking | Working, with a readiness command and evidence pages |
 | CI and docs stability proof | Working, with a GitHub run-history recorder |
+| UAPI freeze decision path | Working, with a draft packet and CI checker |
 | Outside walkthrough proof | Ready to collect, with a timing packet and checker |
 | Phase 3 handoff | Drafted and checked in CI, waiting for Phase 2 exit evidence |
 | Desktop GUI path | Not started in implementation |
@@ -115,6 +118,7 @@ permission checks before native host code runs.
 The remaining Phase 2 work is mostly proof, not a rewrite:
 
 - freeze the API contract after review
+- fill the UAPI freeze decision packet
 - collect clean Linux, macOS, and Windows evidence
 - decide whether Go is promoted now or marked experimental
 - run longer fuzz and benchmark checks
