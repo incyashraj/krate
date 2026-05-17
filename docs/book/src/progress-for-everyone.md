@@ -55,6 +55,8 @@ flowchart LR
    can produce the same kind of proof file for clock, cat, and curl.
 7. Phase 2 now has a simple readiness command that reads the exit ledger and
    shows what is done, what has proof in progress, and what is still blocked.
+8. Hosted CI and Pages stability can now be recorded as a plain evidence file
+   instead of relying on screenshots or memory.
 
 ## Current Build Timeline
 
@@ -93,6 +95,7 @@ This is a simple status view for non technical readers.
 | Security model (capability checks) | Working in current Phase 2 scope |
 | CLI sample apps | Working |
 | Phase 2 proof tracking | Working, with a readiness command and evidence pages |
+| CI and docs stability proof | Working, with a GitHub run-history recorder |
 | Desktop GUI path | Not started in implementation |
 | Mobile host path | Not started in implementation |
 | Packaging and app store style distribution | Not started in implementation |

@@ -56,6 +56,7 @@
   - [Go Phase 2 Decision](phase2/go-phase2-decision.md)
   - [UCap Enforcement Evidence](phase2/ucap-enforcement-evidence.md)
   - [Timed Walkthrough Evidence](phase2/walkthrough-evidence.md)
+  - [CI Stability Evidence](phase2/ci-stability-evidence.md)
   - [Benchmark Evidence](phase2/benchmark-evidence.md)
   - [Dependency Evidence](phase2/dependency-evidence.md)
   - [UAPI Freeze Review](phase2/uapi-freeze-review.md)

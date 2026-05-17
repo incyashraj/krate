@@ -3,23 +3,23 @@
 Last updated: 2026-05-17
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `e8fc206`
-Working tree at this status update: Go Phase 2 experimental runtime decision validated locally
+Latest checked completed push before this slice: `8ac1be2`
+Working tree at this status update: CI stability evidence recorder validated locally
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 276
-- Tracked files after this slice lands: about 283
-- Total tracked lines after this slice lands: about 79,108
+- Commits after this slice lands: about 277
+- Tracked files after this slice lands: about 285
+- Total tracked lines after this slice lands: about 79,182
 - Rust lines (`.rs`) after this slice lands: about 39,606
-- Docs lines (`.md`) after this slice lands: about 27,617
+- Docs lines (`.md`) after this slice lands: about 27,691
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`e8fc206`) checks:
+Latest completed push (`8ac1be2`) checks:
 
-- CI: success (run `25955719601`)
-- Deploy docs to GitHub Pages: success (run `25955719598`)
+- CI: success (run `25989170143`)
+- Deploy docs to GitHub Pages: success (run `25989170147`)
 
 Recent pushes before that are also green.
 
@@ -99,6 +99,7 @@ Top pending items:
 - Opted GitHub Actions workflows into the Node 24 JavaScript action runtime and moved cache/artifact/Pages upload steps to Node 24 action majors where available
 - Added a Phase 2 exit readiness command so the current gate count and hard blockers can be checked from the ledger without reading the whole page by hand
 - Recorded the Go Phase 2 decision: Go remains in the SDK and TinyGo smoke-build track, but runtime parity is experimental until artifacts import only `layer36:*`
+- Added a hosted CI stability evidence recorder so recent CI and Pages run history can be attached to Phase 2 exit review
 - Expanded UCap evidence with a named dispatcher deny-before-adapter matrix that covers every non-default filesystem and network boundary
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`

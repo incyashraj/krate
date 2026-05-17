@@ -128,6 +128,7 @@ scripts/run-phase2-fuzz-smoke.sh
 For formal exit, save the run links in the Phase 2 plan:
 
 - one recent hosted CI green run
+- one hosted CI stability report from `scripts/record-phase2-ci-stability-evidence.sh`
 - one recent self-hosted full gate green run on macOS ARM64
 - Linux and Windows hosted or trusted runner evidence for the sample outputs
 - one longer self-hosted fuzz run after the final UAPI freeze candidate
@@ -137,3 +138,6 @@ For formal exit, save the run links in the Phase 2 plan:
 
 That is enough to move Phase 2 from strong engineering progress to a clean
 phase exit.
+
+The hosted CI stability recorder is documented in
+[CI Stability Evidence](ci-stability-evidence.md).

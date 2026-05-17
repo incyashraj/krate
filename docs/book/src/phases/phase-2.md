@@ -22,6 +22,9 @@ Phase 2 also has a quick readiness command now:
 `scripts/phase2-exit-readiness.sh`. It reads the exit ledger and prints the
 current count of done, partial, pending, and blocked gates, so progress checks
 do not depend on memory.
+Hosted CI stability can now be recorded too:
+`scripts/record-phase2-ci-stability-evidence.sh` writes recent CI and Pages run
+history into one markdown report for exit review.
 
 The capability layer has also started. Layer36 can parse a sidecar
 `manifest.toml`, check launch-time grants, and carry the session policy into the
