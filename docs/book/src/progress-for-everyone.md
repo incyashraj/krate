@@ -131,7 +131,8 @@ The main Phase 2 work still open is:
 
 1. Final UAPI freeze review.
 2. Cross host evidence for the sample apps and adapters.
-3. Go runtime fixture proof, or a clear experimental label for Go in this phase.
+3. Keep Go experimental for runtime parity until its compiled components stop
+   importing host APIs directly.
 4. Longer fuzz, benchmark, and dependency signoff runs.
 5. One timed outside developer walkthrough.
 

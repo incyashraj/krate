@@ -74,6 +74,12 @@ The Rust SDK also has a packaged-crate smoke now: CI creates a temporary app
 outside the workspace and checks that it can compile a tiny Layer36 component
 against the packaged SDK.
 
+Go now has a clear Phase 2 decision too. The Go examples and TinyGo smoke build
+stay in scope, but Go runtime parity is experimental until the compiled
+components import only `layer36:*` UAPI packages. We are not promoting Go
+fixtures that still import `wasi:*` directly, because that would weaken the
+runtime boundary Phase 2 is meant to prove.
+
 The latest runtime piece is the generated type bridge. It maps WIT records and
 errors into the dispatcher's Rust types, then back again. Put simply: the
 runtime now understands the words that generated WIT code will use when it asks

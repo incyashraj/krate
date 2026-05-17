@@ -65,13 +65,16 @@ The report includes:
 
 Go is still a Phase 2 binding track, but not a promoted runtime fixture track.
 
-The current acceptable Phase 2 decision is:
+The accepted Phase 2 decision is:
 
 - keep Go SDK source, examples, shape checks, and TinyGo build smoke
 - keep Go runtime fixture promotion gated by import purity
 - do not claim Go runtime parity until the compiled artifacts import only
   `layer36:*`
-- if Phase 2 must exit before that work is complete, mark Go as experimental
-  for this phase and carry the import-pure runtime proof into the next phase
+- mark Go runtime parity as experimental for this phase
+- carry the import-pure runtime proof into the next phase if it is not ready
+  before the Phase 2 freeze
 
 That is not a failure of direction. It is the correct boundary doing its job.
+
+The fuller decision note is here: [Go Phase 2 Decision](go-phase2-decision.md).

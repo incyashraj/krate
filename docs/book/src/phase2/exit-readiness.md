@@ -38,8 +38,10 @@ The important split is:
 - Pending and blocked gates are the hard remaining items.
 
 This matches the current state of Phase 2: the runtime and UAPI shape are
-strong, while formal exit still needs proof from more than one machine, one
-outside walkthrough, and an honest Go decision.
+strong, while formal exit still needs proof from more than one machine and one
+outside walkthrough. Go now has an explicit Phase 2 decision: it stays tested,
+but runtime parity is experimental until its compiled components import only
+`layer36:*`.
 
 ## When To Run It
 

@@ -53,6 +53,7 @@
   - [Rust SDK Evidence](phase2/rust-sdk-evidence.md)
   - [Language Variant Evidence](phase2/language-variant-evidence.md)
   - [Go Readiness Evidence](phase2/go-readiness-evidence.md)
+  - [Go Phase 2 Decision](phase2/go-phase2-decision.md)
   - [UCap Enforcement Evidence](phase2/ucap-enforcement-evidence.md)
   - [Timed Walkthrough Evidence](phase2/walkthrough-evidence.md)
   - [Benchmark Evidence](phase2/benchmark-evidence.md)

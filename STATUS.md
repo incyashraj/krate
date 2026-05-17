@@ -1,25 +1,25 @@
 # Layer36 Status
 
-Last updated: 2026-05-16
+Last updated: 2026-05-17
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `94c1cb2`
-Working tree at this status update: Phase 2 exit readiness command validated locally
+Latest checked completed push before this slice: `e8fc206`
+Working tree at this status update: Go Phase 2 experimental runtime decision validated locally
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 275
-- Tracked files after this slice lands: about 282
-- Total tracked lines after this slice lands: about 79,090
+- Commits after this slice lands: about 276
+- Tracked files after this slice lands: about 283
+- Total tracked lines after this slice lands: about 79,108
 - Rust lines (`.rs`) after this slice lands: about 39,606
-- Docs lines (`.md`) after this slice lands: about 27,607
+- Docs lines (`.md`) after this slice lands: about 27,617
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`94c1cb2`) checks:
+Latest completed push (`e8fc206`) checks:
 
-- CI: success (run `25955506226`)
-- Deploy docs to GitHub Pages: success (run `25955506232`)
+- CI: success (run `25955719601`)
+- Deploy docs to GitHub Pages: success (run `25955719598`)
 
 Recent pushes before that are also green.
 
@@ -44,7 +44,7 @@ Current capability set includes:
 Practical engineering progress is strong and close to completion for the first useful slice.
 
 - Core engineering slice: around 90% to 92%
-- Formal Phase 2 exit gates: around 80% to 83%
+- Formal Phase 2 exit gates: around 83% to 86%
 
 Main reason formal completion is lower than engineering completion:
 the remaining work is mostly evidence and gate closure, not missing base architecture.
@@ -54,12 +54,12 @@ the remaining work is mostly evidence and gate closure, not missing base archite
 Top pending items:
 
 1. Final UAPI v0.1 freeze review for WIT contracts
-2. Stronger Go runtime proof path with import pure fixture promotion across runners
-3. Broader cross host evidence for language variant behavior
-4. Formal gate evidence:
+2. Broader cross host evidence for language variant behavior
+3. Formal gate evidence:
    - multi day CI stability window
    - long fuzz soak pass
    - benchmark and dependency audit sign off
+4. One timed outside Rust walkthrough
 5. Phase 2 retrospective and Phase 3 kickoff issue
 
 ## 6) Recent completed development highlights
@@ -98,6 +98,7 @@ Top pending items:
 - Added a timed Rust walkthrough evidence template so the outside developer proof can be recorded against a specific commit
 - Opted GitHub Actions workflows into the Node 24 JavaScript action runtime and moved cache/artifact/Pages upload steps to Node 24 action majors where available
 - Added a Phase 2 exit readiness command so the current gate count and hard blockers can be checked from the ledger without reading the whole page by hand
+- Recorded the Go Phase 2 decision: Go remains in the SDK and TinyGo smoke-build track, but runtime parity is experimental until artifacts import only `layer36:*`
 - Expanded UCap evidence with a named dispatcher deny-before-adapter matrix that covers every non-default filesystem and network boundary
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`
