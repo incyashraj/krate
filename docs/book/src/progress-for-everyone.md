@@ -59,6 +59,8 @@ flowchart LR
    instead of relying on screenshots or memory.
 9. The outside developer walkthrough now has a checker, so a filled timing
    report must include the basics before we count it as Phase 2 evidence.
+10. The Phase 2 retrospective and Phase 3 kickoff issue now exist as drafts, so
+    the handoff can be reviewed without starting Phase 3 early.
 
 ## Current Build Timeline
 
@@ -99,6 +101,7 @@ This is a simple status view for non technical readers.
 | Phase 2 proof tracking | Working, with a readiness command and evidence pages |
 | CI and docs stability proof | Working, with a GitHub run-history recorder |
 | Outside walkthrough proof | Ready to collect, with a timing packet and checker |
+| Phase 3 handoff | Drafted, waiting for Phase 2 exit evidence |
 | Desktop GUI path | Not started in implementation |
 | Mobile host path | Not started in implementation |
 | Packaging and app store style distribution | Not started in implementation |
@@ -141,5 +144,6 @@ The main Phase 2 work still open is:
    importing host APIs directly.
 4. Longer fuzz, benchmark, and dependency signoff runs.
 5. One timed outside developer walkthrough using the packet checker.
+6. Finalize the retrospective and open the Phase 3 kickoff issue.
 
 When those are done, we can exit Phase 2 and start Phase 3 desktop UI work.

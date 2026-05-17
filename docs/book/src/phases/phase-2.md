@@ -553,6 +553,9 @@ real non-ASCII path-parsing panic in shared path handling.
 Timezone fallback coverage also now includes extra Unix timezone file paths
 (`/etc/TIMEZONE` and `/var/db/timezone/timezone`) in addition to `/etc/timezone`,
 which helps hosts that do not expose timezone only through `/etc/localtime`.
+The closeout material is also drafted now. The Phase 2 retrospective draft and
+Phase 3 kickoff issue draft exist, and a small checker keeps both in draft form
+until the final exit review is actually done.
 
 If Phase 2 works, those apps should produce the same output on Linux, macOS, and
 Windows while running through the same Layer36 runtime model.

@@ -51,6 +51,7 @@ Run it before:
 - asking what is left in Phase 2
 - creating a handoff status file
 - opening the Phase 3 kickoff issue
+- updating the Phase 2 retrospective draft after final review
 
 For deeper review, also run:
 

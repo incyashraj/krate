@@ -106,6 +106,7 @@ scripts/compare-phase2-benchmark-evidence.sh
 scripts/record-phase2-dependency-evidence.sh
 scripts/record-phase2-walkthrough-template.sh
 scripts/check-phase2-walkthrough-evidence.sh <filled-walkthrough.md>
+scripts/check-phase2-closeout-docs.sh
 scripts/smoke-rust-sdk.sh
 scripts/build-phase2-language-variant-fixtures.sh
 scripts/test-phase2-language-variants.sh
@@ -137,6 +138,8 @@ For formal exit, save the run links in the Phase 2 plan:
 - one benchmark baseline check after the final sample set is fixed
 - one dependency evidence report for the final commit, with hosted advisory
   proof if local advisory DB locking is unavailable
+- one final pass of `scripts/check-phase2-closeout-docs.sh` after the
+  retrospective and Phase 3 kickoff issue are updated from draft to final
 
 That is enough to move Phase 2 from strong engineering progress to a clean
 phase exit.
