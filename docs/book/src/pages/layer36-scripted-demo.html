@@ -537,6 +537,7 @@
     </div>
     <div class="scene-list" id="sceneList"></div>
   </div>
+  <audio id="voiceover" preload="auto" src="layer36-scripted-demo-voiceover.mp3"></audio>
 </div>
 
 <script>
@@ -779,6 +780,7 @@ const prevBtn = document.getElementById("prevBtn");
 const nextBtn = document.getElementById("nextBtn");
 const restartBtn = document.getElementById("restartBtn");
 const sceneList = document.getElementById("sceneList");
+const voiceover = document.getElementById("voiceover");
 
 function formatTime(seconds) {
   const mins = Math.floor(seconds / 60);
@@ -788,6 +790,41 @@ function formatTime(seconds) {
 
 function elapsedTotal() {
   return scenes.slice(0, current).reduce((sum, scene) => sum + scene.seconds, 0) + elapsedInScene;
+}
+
+function timelineDuration() {
+  return Number.isFinite(voiceover.duration) && voiceover.duration > 0 ? voiceover.duration : totalSeconds;
+}
+
+function timelineScale() {
+  return timelineDuration() / totalSeconds;
+}
+
+function sceneStart(index) {
+  return scenes.slice(0, index).reduce((sum, scene) => sum + scene.seconds, 0) * timelineScale();
+}
+
+function sceneEnd(index) {
+  return sceneStart(index) + scenes[index].seconds * timelineScale();
+}
+
+function sceneForTime(seconds) {
+  for (let index = scenes.length - 1; index >= 0; index -= 1) {
+    if (seconds >= sceneStart(index)) return index;
+  }
+  return 0;
+}
+
+function syncToAudioTime() {
+  if (!Number.isFinite(voiceover.currentTime)) return;
+  const nextScene = sceneForTime(voiceover.currentTime);
+  elapsedInScene = Math.max(0, (voiceover.currentTime - sceneStart(nextScene)) / timelineScale());
+  if (nextScene !== current) {
+    current = nextScene;
+    renderScene();
+  } else {
+    updateProgress();
+  }
 }
 
 function renderScene() {
@@ -804,14 +841,16 @@ function renderScene() {
 }
 
 function updateProgress() {
-  const elapsed = elapsedTotal();
-  timeLabel.textContent = `${formatTime(elapsed)} / ${formatTime(totalSeconds)}`;
-  progressBar.style.width = `${Math.min(100, (elapsed / totalSeconds) * 100)}%`;
+  const elapsed = Number.isFinite(voiceover.currentTime) && voiceover.currentTime > 0 ? voiceover.currentTime : elapsedTotal() * timelineScale();
+  const duration = timelineDuration();
+  timeLabel.textContent = `${formatTime(elapsed)} / ${formatTime(duration)}`;
+  progressBar.style.width = `${Math.min(100, (elapsed / duration) * 100)}%`;
 }
 
 function goTo(index) {
   current = Math.max(0, Math.min(scenes.length - 1, index));
   elapsedInScene = 0;
+  voiceover.currentTime = sceneStart(current);
   sceneEl.classList.add("is-changing");
   setTimeout(() => {
     renderScene();
@@ -824,6 +863,7 @@ function next() {
     goTo(current + 1);
   } else {
     playing = false;
+    voiceover.pause();
     document.body.classList.remove("presentation-active");
     playBtn.textContent = "Play";
   }
@@ -837,6 +877,8 @@ function restart() {
   current = 0;
   elapsedInScene = 0;
   playing = false;
+  voiceover.pause();
+  voiceover.currentTime = 0;
   document.body.classList.remove("presentation-active");
   playBtn.textContent = "Play";
   renderScene();
@@ -847,7 +889,11 @@ function tick(timestamp) {
   const delta = (timestamp - lastTick) / 1000;
   lastTick = timestamp;
   if (playing) {
-    elapsedInScene += delta;
+    if (!voiceover.paused && Number.isFinite(voiceover.duration)) {
+      syncToAudioTime();
+    } else {
+      elapsedInScene += delta;
+    }
     if (elapsedInScene >= scenes[current].seconds) {
       next();
     } else {
@@ -869,6 +915,15 @@ playBtn.addEventListener("click", () => {
   playing = !playing;
   document.body.classList.toggle("presentation-active", playing);
   playBtn.textContent = playing ? "Pause" : "Play";
+  if (playing) {
+    voiceover.play().catch(() => {
+      playing = false;
+      document.body.classList.remove("presentation-active");
+      playBtn.textContent = "Play";
+    });
+  } else {
+    voiceover.pause();
+  }
 });
 prevBtn.addEventListener("click", previous);
 nextBtn.addEventListener("click", next);
@@ -882,6 +937,23 @@ document.addEventListener("keydown", (event) => {
   if (event.code === "ArrowRight") next();
   if (event.code === "ArrowLeft") previous();
   if (event.key.toLowerCase() === "r") restart();
+});
+
+voiceover.addEventListener("loadedmetadata", () => {
+  updateProgress();
+});
+
+voiceover.addEventListener("timeupdate", () => {
+  if (playing) syncToAudioTime();
+});
+
+voiceover.addEventListener("ended", () => {
+  playing = false;
+  current = scenes.length - 1;
+  elapsedInScene = scenes[current].seconds;
+  document.body.classList.remove("presentation-active");
+  playBtn.textContent = "Play";
+  renderScene();
 });
 
 renderScene();
