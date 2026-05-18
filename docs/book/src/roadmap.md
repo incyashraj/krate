@@ -8,10 +8,12 @@ The current state is:
 
 - **Phase 0 is mostly done.** The repo, docs, CI, issues, labels, and release
   setup exist. Community and public launch items remain.
-- **Phase 1 engineering is done.** One shared `.wasm` component runs through
-  the Layer36 runtime on Linux, macOS, and Windows in CI.
-- **Phase 2 is active.** It turns the runtime proof into a useful app API, and
-  the first real app APIs and sample apps are already implemented.
+- **Phase 1 engineering is done.** One shared `.wasm` component proved the base
+  runtime path.
+- **Phase 2 is active and close in engineering terms.** Layer36 now has UAPI
+  slices for CLI-style apps, UCap manifests and launch grants, sample apps, and
+  repeatable evidence scripts. Formal Phase 2 exit still needs final
+  cross-host evidence, UAPI freeze review, and an outside developer walkthrough.
 
 ## System Timeline
 
@@ -47,30 +49,30 @@ flowchart LR
 |---|-------|------|----------|--------|
 | 0 | Foundation | Make the project real enough to work in public. | Done enough for development; external items pending | Mostly done |
 | 1 | Runtime proof | Run one WASM component on Linux, macOS, and Windows. | Done | Engineering done |
-| 2 | UAPI v0.1 | Build useful CLI APIs and sample apps. | est. 4 to 8 weeks | Active |
+| 2 | UAPI v0.1 | Build useful CLI APIs and sample apps. | in progress | Active; exit evidence in progress |
 | 3 | Desktop UI | Run one GUI app on Windows, macOS, and Linux. | est. 6 to 10 weeks | Planned |
 | 4 | Mobile hosts | Run the same app on iOS and Android. | est. 8 to 12 weeks | Planned |
 | 5 | Developer SDK | Make project creation, debug, and packaging smooth. | est. 6 to 10 weeks | Planned |
 | 6 | Distribution | Add bundles, signing, updates, and identity. | est. 8 to 12 weeks | Planned |
 | 7 | v1.0 hardening | Migrate a real app and clean up for public launch. | est. after Phase 6 | Planned |
 
-## What Must Happen Before Phase 2 Is Official
+## What Must Happen Before Phase 2 Exits
 
-The code is ready enough to start Phase 2 design and scaffolding. The formal
-Phase 1 exit still has a few real-world checks:
+The code has moved well past Phase 1. Phase 2 should not be called closed until
+the evidence is crisp:
 
-- Keep `main` green for five consecutive days.
-- Have one external person complete the quickstart in 10 minutes or less.
-- Confirm there are no open P0 issues.
-- Open the Phase 2 kickoff issue from the prepared governance draft.
-
-Those are not code blockers for design work. They are release discipline
-blockers. We should keep them visible.
+- Freeze UAPI v0.1 after final review.
+- Collect clean Linux, macOS, and Windows evidence for the sample apps and UCap
+  denial paths.
+- Keep benchmark, dependency, and fuzz evidence current for the final commit.
+- Complete one timed outside developer walkthrough.
+- Finalize the Phase 2 retrospective.
+- Open the Phase 3 kickoff issue only after the exit review passes.
 
 ## Phase 2 In One Sentence
 
-Phase 2 makes Layer36 useful: a WASM app should be able to read files, make a
-small HTTP request, ask for time and locale, and print stable output on Linux,
-macOS, and Windows.
+Phase 2 makes Layer36 useful: a WebAssembly app can call Layer36 for files,
+network, time, locale, and terminal I/O, and the runtime can enforce explicit
+capability grants before host access.
 
 Full planning details live in the `Plan/` directory.

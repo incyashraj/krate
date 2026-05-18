@@ -22,5 +22,5 @@ Thanks for your interest. Layer36 is young and every contribution compounds.
 - [GitHub Discussions](https://github.com/incyashraj/layer6x6/discussions)
 - [Open issues](https://github.com/incyashraj/layer6x6/issues)
 
-The Discord `#help` channel will be linked here once the Phase 0 community
-server is live.
+The Discord `#help` channel will be linked here once the community server is
+ready for public use.

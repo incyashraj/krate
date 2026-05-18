@@ -51,3 +51,6 @@ ehthumbs.db
 # Generated Phase 2 language-variant fixtures
 /test/integration/language-variants/*.wasm
 /test/integration/language-variants/.tmp-ts-build/
+
+# Private fundraising artifacts
+/Invest/

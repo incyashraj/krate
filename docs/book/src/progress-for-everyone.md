@@ -1,6 +1,6 @@
 # Layer36 for Everyone
 
-Updated on May 17, 2026.
+Updated on May 18, 2026.
 
 This page explains the project in plain language. It is written for people who are not deep in systems programming.
 

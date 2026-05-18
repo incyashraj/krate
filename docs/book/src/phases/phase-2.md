@@ -1,6 +1,6 @@
 # Phase 2: UAPI v0.1
 
-**Status:** Started
+**Status:** Active; exit evidence in progress
 **Estimate:** est. 4 to 8 weeks
 **Goal:** Make Layer36 useful for small command line apps.
 

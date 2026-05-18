@@ -14,7 +14,11 @@ Android, and the web.
 It is built on WebAssembly and its Component Model, with a thin per-OS adapter
 layer that translates UAPI calls to native OS APIs.
 
-**Status:** Pre-alpha. Phase 1 (POC Runtime). Local hello-world execution works.  
+**Status:** Pre-alpha. Phase 2 is active: the CLI can run Phase 2
+WebAssembly components through UAPI, manifest-declared capabilities, launch
+grants, and sample apps for clock, cat, and curl. Formal Phase 2 exit still
+needs final cross-host evidence, UAPI freeze review, and an outside developer
+walkthrough.
 See [the roadmap](https://incyashraj.github.io/layer6x6/roadmap.html).
 
 ---
@@ -30,33 +34,71 @@ Read [the full vision](https://incyashraj.github.io/layer6x6/vision.html).
 
 ## Current phase
 
-**Phase 1 — POC Runtime.** The current slice proves a Rust WebAssembly
-component can run through the Layer36 CLI and temporary WIT host imports.
-Cross-host CI and release artifacts are still being hardened.
+**Phase 2 — UAPI v0.1.** Layer36 is moving from runtime proof to a useful CLI
+app platform slice. Current work covers:
+
+- UAPI modules for `io`, `fs`, `net`, `time`, and `locale`
+- UCap capability parsing, manifests, launch grants, and runtime checks
+- sample apps: `layer36-clock`, `layer36-cat`, and `layer36-curl`
+- Rust SDK direction, TypeScript fixture coverage, and experimental Go tracking
+- evidence scripts for samples, UCap enforcement, adapters, benchmarks, and CI
+
+Phase 1 is still supported for the original hello-world proof, but new app work
+should use the Phase 2 UAPI path.
 
 ## Quickstart
 
-Phase 1 has started. The development CLI can run the Phase 1 hello component
-after the fixture is built:
+Build the CLI and the Phase 2 sample components:
 
 ```bash
-scripts/build-hello-component.sh
-cargo run -p layer36-cli -- run test/integration/hello-world/target/wasm32-wasip1/release/hello_world.wasm
+cargo build -p layer36-cli
+scripts/build-layer36-clock-component.sh
+scripts/build-layer36-cat-component.sh
+scripts/build-layer36-curl-component.sh
 ```
 
-Expected output:
+Explain the permissions for the file-reading sample:
+
+```bash
+target/debug/layer36 manifest explain apps/layer36-cat/manifest.toml
+```
+
+Run a deterministic clock component through the Phase 2 UAPI path:
+
+```bash
+target/debug/layer36 run \
+  --auto-grant \
+  --manifest apps/layer36-clock/manifest.toml \
+  --test-time 1234567890 \
+  --test-locale en-US \
+  --test-timezone UTC \
+  apps/layer36-clock/target/wasm32-wasip1/release/layer36_clock.wasm
+```
+
+Run the file sample with an explicit grant:
+
+```bash
+mkdir -p apps/layer36-cat/fixtures
+printf 'hello from Layer36\n' > apps/layer36-cat/fixtures/hello.txt
+cd apps/layer36-cat
+../../target/debug/layer36 run \
+  --manifest manifest.toml \
+  --auto-grant \
+  target/wasm32-wasip1/release/layer36_cat.wasm \
+  -- ./fixtures/hello.txt
+cd ../..
+```
+
+Expected file sample output:
 
 ```text
-Hello, Layer36!
+hello from Layer36
 ```
 
-Current local runtime benchmarks are recorded in the
-[Phase 1 benchmark page](docs/book/src/phase1/benchmarks.md).
-
-Run the full Phase 1 local test harness with:
+Check the current Phase 2 exit status:
 
 ```bash
-scripts/test-phase1.sh
+scripts/phase2-exit-readiness.sh
 ```
 
 For the full walkthrough, read the
@@ -64,26 +106,26 @@ For the full walkthrough, read the
 
 ## Security
 
-Layer36 is pre-alpha. Do not run untrusted WASM through `layer36` in Phase 1.
-Treat `layer36 run foo.wasm` like running a local developer executable. The
-sandbox is real, but the platform is not adversarially hardened yet.
+Layer36 is pre-alpha. Do not run untrusted WebAssembly through `layer36` yet.
+Phase 2 has real capability checks for the current UAPI slice, but the platform
+is not adversarially hardened and should still be treated as a developer proof.
 
-See the [Phase 1 threat model](docs/book/src/phase1/threat-model.md).
+See the [Phase 2 threat model](docs/book/src/phase2/threat-model-v0-2.md).
 
 ## Project structure
 
 ```
-crates/         # Rust crates (appears in Phase 1)
-wit/            # WebAssembly Interface Types definitions (Phase 1)
-apps/           # Sample and dogfood apps (Phase 2)
+crates/         # Runtime, CLI, policy, manifest, adapters, SDK helpers
+wit/            # WebAssembly Interface Types definitions
+apps/           # Sample and dogfood apps
 docs/           # Documentation, ADRs, mdBook site source
   adr/          # Architecture Decision Records
   book/         # mdBook source
   legal/        # Trademark, legal notes
   rfc/          # Proposals
 Plan/           # Phase-by-phase build plans (living documents)
-src/            # Phase 0 workspace sentinel; runtime crates start in Phase 1
-test/           # Integration tests (Phase 1)
+src/            # Workspace sentinel
+test/           # Integration tests and component fixtures
 scripts/        # Dev tooling scripts
 ```
 

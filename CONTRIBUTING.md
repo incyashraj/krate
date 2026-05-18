@@ -125,7 +125,7 @@ any new source files.
 
 ## Where to ask for help
 
-- **GitHub Discussions** — best place for questions while Phase 0 is underway.
+- **GitHub Discussions** — best place for design questions and early feedback.
 - **Discord** `#help` channel — coming once the community server is live.
 - **Issue comments** — on the specific issue you're working on.
 

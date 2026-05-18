@@ -15,7 +15,7 @@ flowchart LR
     MAN["Manifest<br/>name, version, permissions"]
     BUNDLE[".l36app bundle<br/>component, assets, signature"]
     RT["Layer36 runtime"]
-    UAPI["UAPI<br/>files, net, UI, sensors"]
+    UAPI["UAPI<br/>io, files, net, time, locale"]
     UCAP["UCap<br/>permission grants"]
     ADAPT["Host adapter"]
     OS["Native OS"]
@@ -36,13 +36,13 @@ flowchart LR
     classDef current fill:#fff3bf,stroke:#b7791f,color:#2d2100,stroke-width:2px;
     classDef pending fill:#eeeeee,stroke:#999999,color:#777777,stroke-width:1px;
 
-    class SRC,WASM,RT current;
-    class MAN,BUNDLE,UAPI,UCAP,ADAPT,OS,HW pending;
+    class SRC,WASM,MAN,RT,UAPI,UCAP,ADAPT current;
+    class BUNDLE,OS,HW pending;
 ```
 
-Phase 1 has only the yellow part: a WASM component, the runtime, and a temporary
-host interface. The real UAPI, app bundle, permissions, and host adapters start
-in later phases.
+Phase 2 has the yellow part: WebAssembly components, manifests, the runtime,
+UAPI slices, UCap checks, and early host adapter paths. The `.l36app` bundle,
+GUI APIs, mobile hosts, signing, and distribution are later phases.
 
 ## Runtime Flow Today
 
@@ -50,31 +50,43 @@ in later phases.
 sequenceDiagram
     participant User
     participant CLI as layer36 CLI
+    participant Policy as UCap policy
     participant Runtime
     participant Wasmtime
+    participant Adapter as Host adapter
     participant App as WASM component
 
-    User->>CLI: layer36 run hello.wasm
-    CLI->>Runtime: run_file(path, config)
-    Runtime->>Wasmtime: load component
-    Runtime->>Wasmtime: link print and exit
+    User->>CLI: layer36 run --manifest app.toml --auto-grant app.wasm
+    CLI->>Policy: resolve manifest and launch grants
+    CLI->>Runtime: run_file(path, config, policy)
+    Runtime->>Wasmtime: load component and link Phase 2 UAPI
     Wasmtime->>App: call run()
-    App->>Wasmtime: print("Hello, Layer36!")
-    Wasmtime->>Runtime: host print call
-    Runtime->>CLI: stdout and exit code
+    App->>Wasmtime: fs.read or net.connect through UAPI
+    Wasmtime->>Runtime: generated UAPI host call
+    Runtime->>Policy: check required capability
+    Policy-->>Runtime: grant or deny
+    Runtime->>Adapter: granted host operation
+    Adapter-->>Runtime: normalized result
+    Runtime-->>CLI: stdout/stderr and exit code
 ```
 
-## What Phase 1 Proves
+## What The Current Proof Shows
 
-Phase 1 proves that the loader works. The CI pipeline builds one hello-world
-component, stores its SHA-256 hash, and runs those exact bytes on:
+Phase 1 proved that the loader works: one hello-world component can run through
+the Layer36 runtime. Phase 2 builds on that with useful app calls. The current
+proof shows:
 
-- Linux
-- macOS
-- Windows
+- `layer36-clock` can use time, locale, timezone, and stdout.
+- `layer36-cat` can read granted files and deny missing or out-of-scope file
+  grants.
+- `layer36-curl` can fetch a granted local HTTP endpoint and deny missing
+  network grants.
+- sample and UCap evidence scripts can record repeatable reports for exit
+  review.
 
-That matters because the promise is not """three hosts can build similar source."""
-The promise is """one app artifact can run on different hosts."""
+That matters because the promise is not "three hosts can build similar source."
+The promise is "one app artifact can run under the same runtime model on
+different hosts."
 
 ## Crates Today
 
@@ -82,30 +94,48 @@ The promise is """one app artifact can run on different hosts."""
 flowchart TD
     CLI["crates/cli"]
     RT["crates/runtime"]
+    POL["crates/policy"]
+    MAN["crates/manifest"]
+    ADAPT["crates/adapter-*"]
+    SDK["crates/bindings-rust"]
+    APPS["apps/layer36-*"]
     WIT["wit/layer36"]
     TEST["test/integration"]
 
     CLI --> RT
+    CLI --> POL
+    CLI --> MAN
+    RT --> POL
+    RT --> ADAPT
     RT --> WIT
+    SDK --> WIT
+    APPS --> SDK
     TEST --> WIT
 ```
 
-`crates/runtime` owns loading, Wasmtime setup, host imports, fuel, memory
-limits, and runtime errors.
+`crates/runtime` owns loading, Wasmtime setup, generated UAPI host bindings,
+fuel, memory limits, resource tables, adapter calls, and runtime errors.
 
-`crates/cli` owns arguments, output, exit codes, and developer diagnostics.
+`crates/cli` owns arguments, manifests, launch grants, output, exit codes, and
+developer diagnostics.
+
+`crates/policy` owns UCap session policy and capability matching.
+
+`crates/adapter-*` owns OS-specific host behavior behind the shared runtime
+boundary.
 
 ## Trust Boundary
 
-The WASM component is untrusted. The runtime and host imports are trusted
-project code. The operating system is outside the project boundary.
+The WebAssembly component is untrusted. The runtime, policy, and host adapters
+are trusted project code. The operating system is outside the project boundary.
 
-Phase 1 is not a hardened security sandbox. It avoids filesystem, network, env,
-and process access, but it is still a developer proof. Real permission work
-starts with UCap in Phase 2.
+Phase 2 has real capability checks for the current UAPI slice, but it is not a
+production sandbox. Do not run untrusted third-party components yet. The current
+goal is to prove that host access can be declared, granted, denied, and recorded
+before Layer36 moves into GUI and distribution work.
 
 ## Later Phases
 
-Phase 2 replaces the temporary Phase 1 WIT file with real UAPI modules. Phase 3
-adds desktop UI and graphics. Phase 4 adds mobile hosts. Later phases add the
-SDK, app bundles, signing, identity, updates, and release hardening.
+Phase 3 adds desktop UI and graphics. Phase 4 adds mobile hosts. Later phases
+add SDK polish, app bundles, signing, identity, updates, marketplace behavior,
+and release hardening.

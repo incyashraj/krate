@@ -1,6 +1,6 @@
 # Phase 1: Runtime Proof
 
-**Status:** Engineering done; exit checks still open
+**Status:** Engineering done; historical proof path retained
 **Estimate:** done
 **Goal:** Prove one `.wasm` file runs through Layer36 on Linux, macOS, and
 Windows.
@@ -38,16 +38,11 @@ That is a real milestone. It does not mean Layer36 can run full apps yet. It
 means the engine can load a portable component and execute it consistently on
 three desktop hosts.
 
-## Still Important
+## Current Role
 
-- Keep `main` green for five consecutive days.
-- Ask one external user to run the quickstart and record whether it takes 10
-  minutes or less.
-- Confirm there are no open P0 issues.
-- Open the Phase 2 kickoff issue.
-
-These are governance and validation gates. The engineering base is ready for
-Phase 2.
+Phase 1 is no longer the active development path. It remains in the repository
+as the original proof that one `.wasm` artifact can run through the Layer36
+runtime. The active app model is Phase 2.
 
 For new app work, use the Phase 2 UAPI path. See
 [Migrating From Phase 1 To Phase 2](../phase2/migrating-from-phase1.md).

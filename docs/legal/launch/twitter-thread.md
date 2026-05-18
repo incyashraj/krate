@@ -1,7 +1,7 @@
 # Announcement Thread Draft
 
 **Status:** Draft  
-**Publish target:** Week 4 of Phase 0
+**Publish target:** Refresh before public launch
 
 1. We are starting Layer36: a universal application platform for software that
    runs natively across desktop, mobile, and the web from one portable target.
@@ -14,11 +14,13 @@
    runtime, standard library, permission model, package format, and host adapter
    layer.
 
-4. Phase 0 is boring on purpose: repo, CI, docs, licenses, ADRs, and contributor
-   paths. The foundation has to be trustworthy before the runtime can be.
+4. Phase 1 proved the base runtime path. Phase 2 is where the project becomes
+   useful: UAPI modules, manifests, launch grants, capability checks, and
+   sample apps for clock, cat, and curl.
 
-5. Phase 1 will prove the first milestone: one tiny WASM component running the
-   same way on Linux, macOS, and Windows.
+5. The honest status is pre-alpha. The current milestone is Phase 2 exit:
+   freeze the first UAPI contract, collect cross-host evidence, and complete an
+   outside developer walkthrough.
 
 6. The repo is open from day one:
    https://github.com/incyashraj/layer6x6

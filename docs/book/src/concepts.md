@@ -30,5 +30,7 @@ Example: a Layer36 app wants to read a file.
 3. The host adapter calls the native file API for the current OS.
 4. The app gets a result that looks the same on every host.
 
-Phase 1 only proves the runtime path. Phase 2 begins the real UAPI and UCap
-work.
+Phase 1 proved the base runtime path. Phase 2 is the current working slice:
+real UAPI calls for CLI-style apps, real capability checks, sample apps, and
+evidence tracking. Later phases extend that model to GUI, mobile hosts,
+bundles, signing, and distribution.

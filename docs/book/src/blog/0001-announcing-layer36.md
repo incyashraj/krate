@@ -1,7 +1,7 @@
 # Announcing Layer36
 
 **Status:** Draft
-**Target:** Week 4 of Phase 0
+**Target:** Refresh before public launch
 
 Layer36 is an experiment in making native application development portable again.
 The goal is direct: write an app once, package it once, and run it natively on
@@ -16,13 +16,14 @@ This is not a new kernel and it is not an emulator. It is a meta-platform: a
 runtime, standard library, permission model, bundle format, and distribution
 layer that sit above existing operating systems.
 
-Phase 0 is quiet on purpose. We are setting up the repository, documentation,
-CI, contribution path, licensing, and first architecture decision before writing
-runtime code. A platform that wants trust has to practice it in the repo before
-it asks for it at runtime.
+Layer36 is still pre-alpha, but the repo is now past the original foundation
+work. Phase 1 proved the base runtime path. Phase 2 is building the first
+useful app-platform slice: UAPI modules for files, network, time, locale, and
+I/O, plus manifest-declared capabilities and runtime permission checks.
 
-The next milestone is Phase 1: a proof-of-concept runtime that executes the same
-small WebAssembly component on Linux, macOS, and Windows.
+The current milestone is Phase 2 exit: freeze the first UAPI contract, collect
+clean cross-host evidence, and complete an outside developer walkthrough before
+starting the desktop UI phase.
 
 Follow the roadmap in the docs, read the build plan, and open an issue if there
 is a small piece you want to help with.
