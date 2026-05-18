@@ -504,18 +504,17 @@ impl LocalPhase2Adapter {
         operation
             .validate_target(&logical)
             .map_err(map_path_error)?;
-        let path = logical.to_path_buf();
         let missing_leaf = missing_leaf_for_operation(operation);
-        self.resolve_sandboxed_fs_path(path, missing_leaf)
+        self.resolve_sandboxed_fs_path(&logical, missing_leaf)
     }
 
     fn resolve_sandboxed_fs_path(
         &self,
-        path: PathBuf,
+        path: &LogicalPath,
         missing_leaf: MissingLeaf,
     ) -> std::result::Result<PathBuf, AdapterError> {
         let root = canonicalize_path_on_host(self.sandbox_root.as_path()).map_err(map_io_error)?;
-        let sandbox_relative = logical_path_to_sandbox_relative(path)?;
+        let sandbox_relative = logical_path_to_sandbox_relative(path);
         let host_path = root.join(sandbox_relative);
         ensure_no_symlink_segments(&root, &host_path, missing_leaf)?;
 
@@ -641,18 +640,14 @@ fn format_number_on_host(value: f64, style: HostNumberStyle, locale: &HostLocale
 }
 
 #[cfg(feature = "phase2-bindings")]
-fn logical_path_to_sandbox_relative(path: PathBuf) -> std::result::Result<PathBuf, AdapterError> {
-    if path.is_absolute() {
-        let trimmed = path
-            .strip_prefix("/")
-            .map_err(|_| AdapterError::InvalidPath)?;
-        if trimmed.as_os_str().is_empty() {
-            Ok(PathBuf::from("."))
-        } else {
-            Ok(trimmed.to_path_buf())
-        }
+fn logical_path_to_sandbox_relative(path: &LogicalPath) -> PathBuf {
+    let normalized = path.as_str();
+    let relative = normalized.strip_prefix('/').unwrap_or(normalized);
+
+    if relative.is_empty() || relative == "." {
+        PathBuf::from(".")
     } else {
-        Ok(path)
+        relative.split('/').collect()
     }
 }
 
@@ -2038,6 +2033,19 @@ mod tests {
         drop(adapter);
         std::fs::remove_file(file).expect("remove fixture file");
         std::fs::remove_dir_all(temp).expect("remove fixture directory");
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn absolute_logical_path_becomes_host_relative_segments() {
+        let logical = normalize_fs_path("/fixtures/public/note.txt").expect("valid path");
+        let relative = logical_path_to_sandbox_relative(&logical);
+
+        assert!(!relative.is_absolute());
+        assert_eq!(
+            relative,
+            PathBuf::from("fixtures").join("public").join("note.txt")
+        );
     }
 
     #[cfg(feature = "phase2-bindings")]

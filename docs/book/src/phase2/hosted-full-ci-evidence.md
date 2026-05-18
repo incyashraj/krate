@@ -121,6 +121,17 @@ connection-aborted write. The fixture treats that as an accepted connection and
 lets the test check the real Layer36 result: exit code `21` and a
 `response too large` message.
 
+## Sandboxed Logical Paths
+
+Layer36 filesystem paths are logical paths, not direct host paths. A component
+may ask for `/fixtures/public/note.txt`, but the runtime must resolve that as
+`fixtures/public/note.txt` under the sandbox root.
+
+This matters on Windows because a leading slash can be interpreted as a rooted
+host path before the sandbox root is joined. The runtime now trims the leading
+slash from the normalized Layer36 path string first, then builds host path
+segments. That keeps the same sandbox behavior on Linux, macOS, and Windows.
+
 ## What This Does Not Prove
 
 This is hosted full CI proof only.

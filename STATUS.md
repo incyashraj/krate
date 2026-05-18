@@ -3,31 +3,31 @@
 Last updated: 2026-05-18
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `5043394`
-Working tree at this status update: hosted full CI Windows localhost fixture fix in progress
+Latest checked completed push before this slice: `48416e9`
+Working tree at this status update: Windows sandboxed logical-path fix validated locally and ready to push
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 306
+- Commits after this slice lands: about 307
 - Tracked files after this slice lands: about 305
-- Total tracked lines after this slice lands: about 85,198
-- Rust lines (`.rs`) after this slice lands: about 40,232
-- Docs lines (`.md`) after this slice lands: about 28,723
+- Total tracked lines after this slice lands: about 85,219
+- Rust lines (`.rs`) after this slice lands: about 40,241
+- Docs lines (`.md`) after this slice lands: about 28,735
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`5043394`) checks:
+Latest completed push (`48416e9`) checks:
 
-- CI: success (run `26045159687`)
-- Deploy docs to GitHub Pages: success (run `26045159122`)
+- CI: success (run `26046654522`)
+- Deploy docs to GitHub Pages: success (run `26046654482`)
 
-Manual hosted full CI run `26045334281` confirmed the shared fixture-path fix
-and the Windows raw-args host-limit fix. It then found a Windows-only localhost
-fixture issue in `configured_layer36_curl_component_rejects_response_above_cli_limit`.
-The test intentionally makes Layer36 stop reading an over-limit HTTP response,
-and Windows can report that expected early close as `ConnectionAborted` while
-the fixture thread writes the response. The fix in progress treats that as an
-accepted connection so the test can assert Layer36's exit code and stderr.
+Manual hosted full CI run `26046818564` confirmed the shared fixture-path fix,
+the Windows raw-args host-limit fix, and the localhost response-limit fixture
+fix. It then found a Windows-only sandbox path issue in
+`local_fs_adapter_treats_absolute_logical_paths_as_sandbox_relative`.
+The runtime now converts normalized Layer36 path strings like
+`/fixtures/public/note.txt` into relative sandbox segments before joining the
+host root, so Windows cannot treat the path as host-rooted before sandboxing.
 
 ## 3) What this version can do now
 
@@ -124,6 +124,7 @@ Top pending items:
 - Recorded the Windows command-line limit for the oversized raw-args guard test so full CI can keep proving reachable behavior on each host
 - Fixed the hosted full CI evidence recorder so cancelled or failed full runs are shown accurately in the selected-run summary
 - Hardened the local HTTP fixture used by curl response-limit tests so Windows early client close behavior does not hide the Layer36 assertion
+- Fixed Windows sandbox resolution for absolute Layer36 logical paths by converting normalized logical strings into relative sandbox segments before host path joining
 - Expanded UCap evidence with a named dispatcher deny-before-adapter matrix that covers every non-default filesystem and network boundary
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`
