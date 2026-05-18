@@ -3,12 +3,12 @@
 Last updated: 2026-05-18
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `fd3f15d`
-Working tree at this status update: hosted sample-evidence shared-fixture reuse fix validated locally and ready to push
+Latest checked completed push before this slice: `f929aa4`
+Working tree at this status update: Windows sample-evidence CLI path fix validated locally and ready to push
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 308
+- Commits after this slice lands: about 309
 - Tracked files after this slice lands: about 305
 - Total tracked lines after this slice lands: about 85,219
 - Rust lines (`.rs`) after this slice lands: about 40,241
@@ -16,19 +16,17 @@ Working tree at this status update: hosted sample-evidence shared-fixture reuse 
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`fd3f15d`) checks:
+Latest completed push (`f929aa4`) checks:
 
-- CI: success (run `26048239768`)
-- Deploy docs to GitHub Pages: success (run `26048239781`)
+- CI: success (run `26050021203`)
+- Deploy docs to GitHub Pages: success (run `26050021185`)
 
-Manual hosted full CI run `26048419465` confirmed the shared fixture-path fix,
-the Windows raw-args host-limit fix, the localhost response-limit fixture fix,
-and the Windows sandboxed logical-path fix. It then reached macOS sample
-evidence and found that `scripts/record-phase2-sample-evidence.sh` tried to
-rebuild shared fixtures without `cargo-component` in that full-test lane. The
-fix makes the recorder reuse existing downloaded fixture files first, passes
-absolute paths into the evidence tool, and only builds locally when those files
-are absent.
+Manual hosted full CI run `26050285568` proved the Linux and macOS full-test
+lanes green on the current shared-fixture path. Windows reached sample evidence
+and then failed because the recorder looked for `target/debug/layer36` instead
+of Cargo's Windows binary `target/debug/layer36.exe`. The current fix makes the
+sample evidence recorder resolve the built CLI binary with an optional
+`LAYER36_BIN` override and a Windows `.exe` fallback.
 
 ## 3) What this version can do now
 
@@ -127,6 +125,7 @@ Top pending items:
 - Hardened the local HTTP fixture used by curl response-limit tests so Windows early client close behavior does not hide the Layer36 assertion
 - Fixed Windows sandbox resolution for absolute Layer36 logical paths by converting normalized logical strings into relative sandbox segments before host path joining
 - Hardened sample evidence recording so hosted full CI reuses shared downloaded fixture bytes instead of rebuilding with lane-local `cargo-component`
+- Fixed Windows sample evidence recording so the hosted full-test lane can use `target/debug/layer36.exe` while Linux and macOS continue using `target/debug/layer36`
 - Expanded UCap evidence with a named dispatcher deny-before-adapter matrix that covers every non-default filesystem and network boundary
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`

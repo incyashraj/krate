@@ -106,6 +106,16 @@ the downloaded fixture files already placed at those app target paths. On a
 local machine, if those files are missing, it can still build the fixtures with
 `cargo-component`.
 
+## Windows CLI Binary Path
+
+Cargo writes the Layer36 CLI to `target/debug/layer36` on Linux and macOS, and
+to `target/debug/layer36.exe` on Windows.
+
+The sample evidence recorder now resolves that host difference before it runs.
+It also accepts `LAYER36_BIN` when a caller wants to point at a specific binary.
+This keeps the evidence command portable instead of making each workflow lane
+know the executable suffix by hand.
+
 ## Windows Command-Line Limit
 
 One guard test sends more than 64 KiB of app arguments to prove that Layer36
