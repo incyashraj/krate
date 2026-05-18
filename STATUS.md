@@ -3,33 +3,31 @@
 Last updated: 2026-05-18
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `70e3f32`
-Working tree at this status update: hosted full CI Windows raw-args test fix in progress
+Latest checked completed push before this slice: `5043394`
+Working tree at this status update: hosted full CI Windows localhost fixture fix in progress
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 305
+- Commits after this slice lands: about 306
 - Tracked files after this slice lands: about 305
-- Total tracked lines after this slice lands: about 85,172
-- Rust lines (`.rs`) after this slice lands: about 40,215
-- Docs lines (`.md`) after this slice lands: about 28,714
+- Total tracked lines after this slice lands: about 85,198
+- Rust lines (`.rs`) after this slice lands: about 40,232
+- Docs lines (`.md`) after this slice lands: about 28,723
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`70e3f32`) checks:
+Latest completed push (`5043394`) checks:
 
-- CI: success (run `26043422296`)
-- Deploy docs to GitHub Pages: success (run `26043422111`)
+- CI: success (run `26045159687`)
+- Deploy docs to GitHub Pages: success (run `26045159122`)
 
-Manual hosted full CI run `26043594563` confirmed the shared fixture-path fix:
-Linux, macOS, and Windows sample manifest tests found the expected app target
-paths. It then found a Windows-only test harness issue. The oversized raw-args
-guard test passes a single 65 KiB argument, but Windows rejects that command
-before the Layer36 process starts. The fix in progress records that as a
-Windows host-limit skip while keeping the guard covered on Linux and macOS.
-While checking the evidence report, we also found and fixed a summary-table
-bug where job conclusion checks could overwrite the selected workflow-run
-conclusion.
+Manual hosted full CI run `26045334281` confirmed the shared fixture-path fix
+and the Windows raw-args host-limit fix. It then found a Windows-only localhost
+fixture issue in `configured_layer36_curl_component_rejects_response_above_cli_limit`.
+The test intentionally makes Layer36 stop reading an over-limit HTTP response,
+and Windows can report that expected early close as `ConnectionAborted` while
+the fixture thread writes the response. The fix in progress treats that as an
+accepted connection so the test can assert Layer36's exit code and stderr.
 
 ## 3) What this version can do now
 
@@ -125,6 +123,7 @@ Top pending items:
 - Fixed hosted full CI sample manifest fixture setup so downloaded shared Rust fixtures are copied into the app target paths used by the sample manifests
 - Recorded the Windows command-line limit for the oversized raw-args guard test so full CI can keep proving reachable behavior on each host
 - Fixed the hosted full CI evidence recorder so cancelled or failed full runs are shown accurately in the selected-run summary
+- Hardened the local HTTP fixture used by curl response-limit tests so Windows early client close behavior does not hide the Layer36 assertion
 - Expanded UCap evidence with a named dispatcher deny-before-adapter matrix that covers every non-default filesystem and network boundary
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`

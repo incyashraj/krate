@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -2523,19 +2523,37 @@ fn spawn_http_fixture(body: &'static [u8]) -> Option<(SocketAddr, thread::JoinHa
         let _ = stream
             .read(&mut request)
             .expect("read HTTP fixture request");
-        write!(
+        let headers_result = write!(
             stream,
             "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n",
             body.len()
-        )
-        .expect("write HTTP fixture headers");
-        stream
-            .write_all(body)
-            .expect("write HTTP fixture response body");
+        );
+        if http_fixture_client_closed(headers_result, "headers") {
+            return true;
+        }
+        if http_fixture_client_closed(stream.write_all(body), "response body") {
+            return true;
+        }
         true
     });
 
     Some((addr, handle))
+}
+
+fn http_fixture_client_closed(result: std::io::Result<()>, label: &str) -> bool {
+    match result {
+        Ok(()) => false,
+        Err(err)
+            if matches!(
+                err.kind(),
+                ErrorKind::BrokenPipe | ErrorKind::ConnectionAborted | ErrorKind::ConnectionReset
+            ) =>
+        {
+            eprintln!("HTTP fixture client closed while writing {label}: {err}");
+            true
+        }
+        Err(err) => panic!("write HTTP fixture {label}: {err}"),
+    }
 }
 
 fn reserve_unused_local_addr() -> Option<SocketAddr> {

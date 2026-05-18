@@ -112,6 +112,15 @@ OS rejects the process before Layer36 can run, so the Windows lane records this
 case as a host-limit skip. The related count-limit, empty-argument, newline, and
 NUL checks still run on Windows.
 
+## Local HTTP Fixtures
+
+Some curl tests use a tiny local HTTP server inside the test process. The
+response-limit test asks Layer36 to stop after a very small number of response
+bytes. On Windows, that early close can surface in the fixture thread as a
+connection-aborted write. The fixture treats that as an accepted connection and
+lets the test check the real Layer36 result: exit code `21` and a
+`response too large` message.
+
 ## What This Does Not Prove
 
 This is hosted full CI proof only.
