@@ -15,6 +15,7 @@ green before a final exit review:
 - dependency evidence
 - Go readiness evidence
 - optional hosted CI and Pages stability evidence
+- optional self-hosted full-gate evidence
 - optional Rust SDK package evidence
 
 This is useful because Phase 2 now has many separate proof files. The bundle
@@ -63,6 +64,18 @@ scripts/record-phase2-exit-bundle.sh --strict --include-ci-stability
 This adds the recent hosted CI and GitHub Pages run history from
 `scripts/record-phase2-ci-stability-evidence.sh`.
 
+## Include Self-Hosted Full-Gate Proof
+
+The self-hosted evidence recorder uses GitHub CLI too. Include it when the
+local runner has produced a recent full-gate run:
+
+```bash
+scripts/record-phase2-exit-bundle.sh --strict --include-self-hosted
+```
+
+This adds recent `Self-hosted CI` run history from
+`scripts/record-phase2-self-hosted-evidence.sh`.
+
 Dependency evidence is included by default because it is one of the final Phase
 2 signoff checks. If local advisory lookup is blocked by a cache lock, the
 bundle records that warning and still shows whether licenses, bans, and sources
@@ -85,6 +98,7 @@ The report includes:
 - the dependency audit evidence result
 - the Go readiness result and current import-purity status
 - the hosted CI stability result when included
+- the self-hosted full-gate result when included
 - the current `P2E-*` gate snapshot from the exit ledger
 - the current working tree state
 - short log tails for each check

@@ -58,11 +58,13 @@ flowchart LR
 8. Hosted CI and Pages stability can now be recorded as a plain evidence file
    and optionally included in the exit bundle instead of relying on screenshots
    or memory.
-9. The outside developer walkthrough now has a checker, so a filled timing
+9. Self-hosted full-gate history can now be recorded the same way, so local
+   runner proof has a clear review artifact.
+10. The outside developer walkthrough now has a checker, so a filled timing
    report must include the basics before we count it as Phase 2 evidence.
-10. The Phase 2 retrospective and Phase 3 kickoff issue now exist as drafts, and
+11. The Phase 2 retrospective and Phase 3 kickoff issue now exist as drafts, and
     CI checks that they stay in draft form until exit evidence is ready.
-11. The UAPI freeze decision now has its own packet and checker, so we cannot
+12. The UAPI freeze decision now has its own packet and checker, so we cannot
     accidentally call the API frozen before the final evidence is reviewed.
 
 ## Current Build Timeline
@@ -103,6 +105,7 @@ This is a simple status view for non technical readers.
 | CLI sample apps | Working |
 | Phase 2 proof tracking | Working, with a readiness command and evidence pages |
 | CI and docs stability proof | Working, with a GitHub run-history recorder |
+| Self-hosted full-gate proof | Ready to record through GitHub run history |
 | UAPI freeze decision path | Working, with a draft packet and CI checker |
 | Outside walkthrough proof | Ready to collect, with a timing packet and checker |
 | Phase 3 handoff | Drafted and checked in CI, waiting for Phase 2 exit evidence |

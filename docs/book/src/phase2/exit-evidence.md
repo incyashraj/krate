@@ -107,6 +107,8 @@ scripts/compare-phase2-benchmark-evidence.sh
 scripts/record-phase2-dependency-evidence.sh
 scripts/record-phase2-walkthrough-template.sh
 scripts/check-phase2-walkthrough-evidence.sh <filled-walkthrough.md>
+scripts/record-phase2-ci-stability-evidence.sh
+scripts/record-phase2-self-hosted-evidence.sh
 scripts/check-phase2-closeout-docs.sh
 scripts/smoke-rust-sdk.sh
 scripts/build-phase2-language-variant-fixtures.sh
@@ -117,8 +119,8 @@ scripts/phase2-exit-readiness.sh
 The [Exit Bundle](exit-bundle.md) command gives the quick local review report.
 The other commands are still useful when you need the detailed per-area reports.
 The exit bundle now includes the closeout docs check and can optionally include
-hosted CI stability evidence, so the final review packet can carry current
-GitHub run history beside the local proof.
+hosted CI stability and self-hosted full-gate evidence, so the final review
+packet can carry current GitHub run history beside the local proof.
 
 For performance and soak checks:
 

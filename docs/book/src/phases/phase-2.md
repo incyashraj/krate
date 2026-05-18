@@ -28,6 +28,10 @@ history into one markdown report for exit review.
 The same report can be included in the exit bundle with
 `scripts/record-phase2-exit-bundle.sh --strict --include-ci-stability` when we
 prepare a final review packet.
+Self-hosted full-gate history has its own recorder too:
+`scripts/record-phase2-self-hosted-evidence.sh`. This keeps the local runner
+proof separate from hosted CI while still letting the exit bundle include it
+when needed.
 The UAPI freeze decision has its own packet now as well:
 `scripts/check-phase2-freeze-decision.sh` checks that the packet names the
 scope, required evidence, no-go conditions, and pending reviewer signoff before

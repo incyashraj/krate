@@ -57,6 +57,9 @@ It does not replace:
 Those stay as separate proof tracks because each one answers a different
 question.
 
+Self-hosted run history is recorded with
+`scripts/record-phase2-self-hosted-evidence.sh`.
+
 ## Current Reading
 
 The latest local report showed recent hosted CI and Pages runs green on `main`.

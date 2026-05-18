@@ -8,21 +8,24 @@ OUTPUT="target/phase2-exit-bundle/exit-bundle.md"
 STRICT="${LAYER36_EXIT_BUNDLE_STRICT:-0}"
 INCLUDE_RUST_SDK="${LAYER36_EXIT_BUNDLE_INCLUDE_RUST_SDK:-0}"
 INCLUDE_CI_STABILITY="${LAYER36_EXIT_BUNDLE_INCLUDE_CI_STABILITY:-0}"
+INCLUDE_SELF_HOSTED="${LAYER36_EXIT_BUNDLE_INCLUDE_SELF_HOSTED:-0}"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/record-phase2-exit-bundle.sh [--strict] [--include-rust-sdk] [--include-ci-stability] [--output <path>]
+Usage: scripts/record-phase2-exit-bundle.sh [--strict] [--include-rust-sdk] [--include-ci-stability] [--include-self-hosted] [--output <path>]
 
 Options:
   --strict                Exit non-zero when any included evidence step fails
   --include-rust-sdk      Also run the Rust SDK package evidence recorder
   --include-ci-stability  Also record hosted CI and Pages stability evidence
+  --include-self-hosted   Also record self-hosted full-gate evidence
   --output <path>         Output markdown file path
 
 Environment:
   LAYER36_EXIT_BUNDLE_STRICT                1 to exit non-zero on failed included steps
   LAYER36_EXIT_BUNDLE_INCLUDE_RUST_SDK      1 to include Rust SDK package evidence
   LAYER36_EXIT_BUNDLE_INCLUDE_CI_STABILITY  1 to include hosted CI stability evidence
+  LAYER36_EXIT_BUNDLE_INCLUDE_SELF_HOSTED   1 to include self-hosted evidence
 USAGE
 }
 
@@ -38,6 +41,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --include-ci-stability)
       INCLUDE_CI_STABILITY="1"
+      shift
+      ;;
+    --include-self-hosted)
+      INCLUDE_SELF_HOSTED="1"
       shift
       ;;
     --output)
@@ -83,6 +90,8 @@ GO_READINESS_LOG="$TMP_DIR/go-readiness-evidence.log"
 GO_READINESS_REPORT="$TMP_DIR/go-readiness-evidence.md"
 CI_STABILITY_LOG="$TMP_DIR/ci-stability-evidence.log"
 CI_STABILITY_REPORT="$TMP_DIR/ci-stability-evidence.md"
+SELF_HOSTED_LOG="$TMP_DIR/self-hosted-evidence.log"
+SELF_HOSTED_REPORT="$TMP_DIR/self-hosted-evidence.md"
 SDK_LOG="$TMP_DIR/rust-sdk-evidence.log"
 SDK_REPORT="$TMP_DIR/rust-sdk-evidence.md"
 
@@ -164,6 +173,17 @@ else
   printf 'Hosted CI stability evidence skipped. Run with --include-ci-stability to include it.\n' >"$CI_STABILITY_LOG"
 fi
 
+if [ "$INCLUDE_SELF_HOSTED" = "1" ]; then
+  if scripts/record-phase2-self-hosted-evidence.sh --output "$SELF_HOSTED_REPORT" >"$SELF_HOSTED_LOG" 2>&1; then
+    SELF_HOSTED_CODE=0
+  else
+    SELF_HOSTED_CODE=$?
+  fi
+else
+  SELF_HOSTED_CODE=0
+  printf 'Self-hosted full-gate evidence skipped. Run with --include-self-hosted to include it.\n' >"$SELF_HOSTED_LOG"
+fi
+
 if [ "$INCLUDE_RUST_SDK" = "1" ]; then
   if scripts/record-phase2-rust-sdk-evidence.sh --strict --output "$SDK_REPORT" >"$SDK_LOG" 2>&1; then
     SDK_CODE=0
@@ -214,6 +234,7 @@ included_of() {
   echo "- Generated at (UTC): \`$now_utc\`"
   echo "- Rust SDK package evidence included: \`$(included_of "$INCLUDE_RUST_SDK")\`"
   echo "- Hosted CI stability evidence included: \`$(included_of "$INCLUDE_CI_STABILITY")\`"
+  echo "- Self-hosted full-gate evidence included: \`$(included_of "$INCLUDE_SELF_HOSTED")\`"
   echo
   echo "## Command Results"
   echo
@@ -232,6 +253,11 @@ included_of() {
     echo "| Hosted CI stability evidence (\`scripts/record-phase2-ci-stability-evidence.sh\`) | $CI_STABILITY_CODE | $(result_of "$CI_STABILITY_CODE") |"
   else
     echo "| Hosted CI stability evidence | 0 | skipped |"
+  fi
+  if [ "$INCLUDE_SELF_HOSTED" = "1" ]; then
+    echo "| Self-hosted full-gate evidence (\`scripts/record-phase2-self-hosted-evidence.sh\`) | $SELF_HOSTED_CODE | $(result_of "$SELF_HOSTED_CODE") |"
+  else
+    echo "| Self-hosted full-gate evidence | 0 | skipped |"
   fi
   if [ "$INCLUDE_RUST_SDK" = "1" ]; then
     echo "| Rust SDK evidence (\`scripts/record-phase2-rust-sdk-evidence.sh --strict\`) | $SDK_CODE | $(result_of "$SDK_CODE") |"
@@ -343,6 +369,18 @@ included_of() {
     sed -n '1,44p' "$CI_STABILITY_REPORT"
   fi
   echo
+  echo "## Self-Hosted Full-Gate Evidence Log (tail)"
+  echo
+  echo '```text'
+  tail -n 120 "$SELF_HOSTED_LOG"
+  echo '```'
+  if [ "$INCLUDE_SELF_HOSTED" = "1" ] && [ -f "$SELF_HOSTED_REPORT" ]; then
+    echo
+    echo "## Self-Hosted Full-Gate Evidence Summary"
+    echo
+    sed -n '1,44p' "$SELF_HOSTED_REPORT"
+  fi
+  echo
   echo "## Rust SDK Evidence Log (tail)"
   echo
   echo '```text'
@@ -368,6 +406,7 @@ if [ "$STRICT" = "1" ] && {
   [ "$DOCS_CODE" -ne 0 ] ||
   [ "$DEPENDENCY_CODE" -ne 0 ] ||
   [ "$CI_STABILITY_CODE" -ne 0 ] ||
+  [ "$SELF_HOSTED_CODE" -ne 0 ] ||
   [ "$SDK_CODE" -ne 0 ];
 }; then
   exit 1
