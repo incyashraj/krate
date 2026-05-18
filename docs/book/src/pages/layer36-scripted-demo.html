@@ -26,6 +26,7 @@
   body {
     margin: 0;
     min-height: 100vh;
+    overflow-x: hidden;
     background: var(--page);
     color: var(--ink);
     font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -308,6 +309,132 @@
     font-size: 34px;
     font-weight: 900;
   }
+  .process-flow {
+    position: relative;
+    margin-top: 16px;
+    min-height: 430px;
+    padding: 74px 12px 12px;
+  }
+  .process-rail {
+    position: absolute;
+    left: 9%;
+    right: 9%;
+    top: 108px;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, #a9b9d4 8%, #a9b9d4 92%, transparent);
+  }
+  .moving-file {
+    position: absolute;
+    top: 30px;
+    left: 7%;
+    width: 70px;
+    text-align: center;
+    animation: file-travel 12s ease-in-out infinite;
+    z-index: 5;
+  }
+  .moving-file.clock-file { animation-duration: 13s; }
+  .file-icon {
+    width: 52px;
+    height: 64px;
+    margin: 0 auto 7px;
+    border: 2px solid var(--blue);
+    border-radius: 10px;
+    background: var(--blue-soft);
+    box-shadow: 0 12px 24px rgba(36, 87, 166, 0.18);
+    position: relative;
+  }
+  .file-icon::after {
+    content: "";
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    width: 17px;
+    height: 17px;
+    background: #fff;
+    border-left: 2px solid var(--blue);
+    border-bottom: 2px solid var(--blue);
+    border-bottom-left-radius: 6px;
+  }
+  .moving-file span {
+    display: inline-block;
+    color: var(--blue);
+    background: #fff;
+    border: 1px solid #cad9f5;
+    border-radius: 999px;
+    padding: 4px 7px;
+    font-size: 11px;
+    font-weight: 850;
+    white-space: nowrap;
+  }
+  .process-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+    position: relative;
+    z-index: 2;
+  }
+  .process-grid.six {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+  .process-node {
+    min-height: 248px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: #fbfcff;
+    padding: 18px 14px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 10px;
+    animation: node-glow 12s ease-in-out infinite;
+  }
+  .process-node:nth-child(2) { animation-delay: 2.1s; }
+  .process-node:nth-child(3) { animation-delay: 4.3s; }
+  .process-node:nth-child(4) { animation-delay: 6.5s; }
+  .process-node:nth-child(5) { animation-delay: 8.7s; }
+  .process-grid.six .process-node { animation-duration: 13s; }
+  .process-grid.six .process-node:nth-child(2) { animation-delay: 1.9s; }
+  .process-grid.six .process-node:nth-child(3) { animation-delay: 3.8s; }
+  .process-grid.six .process-node:nth-child(4) { animation-delay: 5.7s; }
+  .process-grid.six .process-node:nth-child(5) { animation-delay: 7.6s; }
+  .process-grid.six .process-node:nth-child(6) { animation-delay: 9.5s; }
+  .process-node small {
+    color: var(--blue);
+    font-size: 11px;
+    font-weight: 850;
+    text-transform: uppercase;
+  }
+  .process-node b {
+    display: block;
+    font-size: 19px;
+    line-height: 1.12;
+  }
+  .process-node span {
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.38;
+  }
+  .output-chip {
+    margin-top: auto;
+    color: #164632;
+    background: var(--green-soft);
+    border: 1px solid #b8dec9;
+    border-radius: 999px;
+    padding: 7px 9px;
+    font-size: 12px;
+    font-weight: 800;
+  }
+  @keyframes file-travel {
+    0%, 8% { left: 7%; transform: translateY(0); }
+    20%, 28% { left: 27%; transform: translateY(8px); }
+    40%, 48% { left: 47%; transform: translateY(0); }
+    60%, 68% { left: 67%; transform: translateY(8px); }
+    82%, 100% { left: 87%; transform: translateY(0); }
+  }
+  @keyframes node-glow {
+    0%, 100% { border-color: var(--line); box-shadow: none; transform: translateY(0); }
+    8%, 18% { border-color: #8fb0e7; box-shadow: 0 14px 28px rgba(36, 87, 166, 0.16); transform: translateY(-4px); }
+  }
   .pdf-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -498,6 +625,9 @@
     .flow, .pdf-row, .window-body, .decision, .metric-row { grid-template-columns: 1fr; }
     .sequence { grid-template-columns: 1fr 1fr; }
     .architecture { grid-template-columns: 1fr; }
+    .process-grid, .process-grid.six { grid-template-columns: 1fr; }
+    .process-flow { min-height: auto; padding-top: 20px; }
+    .process-rail, .moving-file { display: none; }
     .arch-arrow { display: none; }
     .step::after { content: ""; }
     .decision-arrow { display: none; }
@@ -537,7 +667,6 @@
     </div>
     <div class="scene-list" id="sceneList"></div>
   </div>
-  <audio id="voiceover" preload="auto" src="layer36-scripted-demo-voiceover.mp3"></audio>
 </div>
 
 <script>
@@ -576,27 +705,18 @@ const scenes = [
     takeaway: "Technical version: WebAssembly gives the portable artifact; UAPI and UCap define what the app can ask for.",
     visual: `
       <div class="visual-title"><b>Layer36 system path</b><span>One app, explicit permission boundary, native host result</span></div>
-      <div class="architecture">
-        <div class="arch-group">
-          <span class="arch-label">Build</span>
-          <div class="arch-title">App source</div>
-          <p class="arch-copy">Rust, TypeScript, Go, or another language.</p>
-          <div class="mini-card"><b>Output</b><span>Portable WebAssembly app artifact.</span></div>
+      <div class="process-flow">
+        <div class="process-rail"></div>
+        <div class="moving-file">
+          <div class="file-icon"></div>
+          <span>app.wasm</span>
         </div>
-        <div class="arch-arrow">-></div>
-        <div class="arch-group runtime">
-          <span class="arch-label">Layer36 runtime</span>
-          <div class="arch-title">Common app layer</div>
-          <p class="arch-copy">The app asks Layer36 for host-backed powers instead of calling the operating system directly.</p>
-          <div class="mini-card"><b>UAPI</b><span>Files, time, stdout, network, and future UI APIs.</span></div>
-          <div class="mini-card"><b>UCap</b><span>Checks whether the requested host power is allowed.</span></div>
-        </div>
-        <div class="arch-arrow">-></div>
-        <div class="arch-group">
-          <span class="arch-label">Host</span>
-          <div class="arch-title">Native result</div>
-          <p class="arch-copy">The adapter translates approved calls to macOS, Windows, Linux, or another host.</p>
-          <div class="mini-card"><b>Boundary</b><span>No grant means no host access.</span></div>
+        <div class="process-grid">
+          <div class="process-node"><small>1. Source</small><b>Developer app</b><span>Written in Rust, TypeScript, Go, or another language.</span></div>
+          <div class="process-node"><small>2. Artifact</small><b>WebAssembly file</b><span>The app becomes a portable component that Layer36 can load.</span></div>
+          <div class="process-node"><small>3. Runtime</small><b>Layer36</b><span>The app asks Layer36 for files, time, network, output, or future UI.</span></div>
+          <div class="process-node"><small>4. Boundary</small><b>UCap check</b><span>Layer36 verifies whether this host power is allowed.</span></div>
+          <div class="process-node"><small>5. Host</small><b>Native result</b><span>Approved calls reach the host adapter and become real behavior.</span><div class="output-chip">Output only after approval</div></div>
         </div>
       </div>`
   },
@@ -646,13 +766,20 @@ Capabilities
     takeaway: "The clock is intentionally simple, but it travels through the same architecture a larger app would use.",
     visual: `
       <div class="visual-title"><b>layer36-clock execution path</b><span>A small app using the full runtime model</span></div>
-      <div class="sequence">
-        <div class="step"><small>App</small><b>clock source</b><span>Asks for time, locale, timezone, stdout.</span></div>
-        <div class="step"><small>Build</small><b>clock.wasm</b><span>Portable WebAssembly app artifact.</span></div>
-        <div class="step"><small>Run</small><b>layer36 run</b><span>Runtime loads the app and links UAPI.</span></div>
-        <div class="step"><small>Call</small><b>time API</b><span>The app asks Layer36 for host-backed time data.</span></div>
-        <div class="step"><small>Check</small><b>capability</b><span>Permission boundary is enforced first.</span></div>
-        <div class="step"><small>Output</small><b>terminal</b><span>date=1970-01-15 06:56</span></div>
+      <div class="process-flow">
+        <div class="process-rail"></div>
+        <div class="moving-file clock-file">
+          <div class="file-icon"></div>
+          <span>clock.wasm</span>
+        </div>
+        <div class="process-grid six">
+          <div class="process-node"><small>App</small><b>clock source</b><span>Small app asks for time, locale, timezone, and stdout.</span></div>
+          <div class="process-node"><small>Build</small><b>clock.wasm</b><span>A portable WebAssembly artifact is produced.</span></div>
+          <div class="process-node"><small>Run</small><b>layer36 run</b><span>The runtime loads the app and links the UAPI surface.</span></div>
+          <div class="process-node"><small>Ask</small><b>time API</b><span>The app asks Layer36 for host-backed time data.</span></div>
+          <div class="process-node"><small>Check</small><b>permission</b><span>The capability boundary is checked before host access.</span></div>
+          <div class="process-node"><small>Output</small><b>terminal</b><span>The approved path returns a deterministic clock result.</span><div class="output-chip">date=1970-01-15</div></div>
+        </div>
       </div>
       <pre class="terminal compact"><span class="cmd">layer36 run --auto-grant --manifest apps/layer36-clock/manifest.toml layer36_clock.wasm</span>
 
@@ -780,7 +907,6 @@ const prevBtn = document.getElementById("prevBtn");
 const nextBtn = document.getElementById("nextBtn");
 const restartBtn = document.getElementById("restartBtn");
 const sceneList = document.getElementById("sceneList");
-const voiceover = document.getElementById("voiceover");
 
 function formatTime(seconds) {
   const mins = Math.floor(seconds / 60);
@@ -790,41 +916,6 @@ function formatTime(seconds) {
 
 function elapsedTotal() {
   return scenes.slice(0, current).reduce((sum, scene) => sum + scene.seconds, 0) + elapsedInScene;
-}
-
-function timelineDuration() {
-  return Number.isFinite(voiceover.duration) && voiceover.duration > 0 ? voiceover.duration : totalSeconds;
-}
-
-function timelineScale() {
-  return timelineDuration() / totalSeconds;
-}
-
-function sceneStart(index) {
-  return scenes.slice(0, index).reduce((sum, scene) => sum + scene.seconds, 0) * timelineScale();
-}
-
-function sceneEnd(index) {
-  return sceneStart(index) + scenes[index].seconds * timelineScale();
-}
-
-function sceneForTime(seconds) {
-  for (let index = scenes.length - 1; index >= 0; index -= 1) {
-    if (seconds >= sceneStart(index)) return index;
-  }
-  return 0;
-}
-
-function syncToAudioTime() {
-  if (!Number.isFinite(voiceover.currentTime)) return;
-  const nextScene = sceneForTime(voiceover.currentTime);
-  elapsedInScene = Math.max(0, (voiceover.currentTime - sceneStart(nextScene)) / timelineScale());
-  if (nextScene !== current) {
-    current = nextScene;
-    renderScene();
-  } else {
-    updateProgress();
-  }
 }
 
 function renderScene() {
@@ -841,16 +932,14 @@ function renderScene() {
 }
 
 function updateProgress() {
-  const elapsed = Number.isFinite(voiceover.currentTime) && voiceover.currentTime > 0 ? voiceover.currentTime : elapsedTotal() * timelineScale();
-  const duration = timelineDuration();
-  timeLabel.textContent = `${formatTime(elapsed)} / ${formatTime(duration)}`;
-  progressBar.style.width = `${Math.min(100, (elapsed / duration) * 100)}%`;
+  const elapsed = elapsedTotal();
+  timeLabel.textContent = `${formatTime(elapsed)} / ${formatTime(totalSeconds)}`;
+  progressBar.style.width = `${Math.min(100, (elapsed / totalSeconds) * 100)}%`;
 }
 
 function goTo(index) {
   current = Math.max(0, Math.min(scenes.length - 1, index));
   elapsedInScene = 0;
-  voiceover.currentTime = sceneStart(current);
   sceneEl.classList.add("is-changing");
   setTimeout(() => {
     renderScene();
@@ -863,7 +952,6 @@ function next() {
     goTo(current + 1);
   } else {
     playing = false;
-    voiceover.pause();
     document.body.classList.remove("presentation-active");
     playBtn.textContent = "Play";
   }
@@ -877,8 +965,6 @@ function restart() {
   current = 0;
   elapsedInScene = 0;
   playing = false;
-  voiceover.pause();
-  voiceover.currentTime = 0;
   document.body.classList.remove("presentation-active");
   playBtn.textContent = "Play";
   renderScene();
@@ -889,11 +975,7 @@ function tick(timestamp) {
   const delta = (timestamp - lastTick) / 1000;
   lastTick = timestamp;
   if (playing) {
-    if (!voiceover.paused && Number.isFinite(voiceover.duration)) {
-      syncToAudioTime();
-    } else {
-      elapsedInScene += delta;
-    }
+    elapsedInScene += delta;
     if (elapsedInScene >= scenes[current].seconds) {
       next();
     } else {
@@ -915,15 +997,6 @@ playBtn.addEventListener("click", () => {
   playing = !playing;
   document.body.classList.toggle("presentation-active", playing);
   playBtn.textContent = playing ? "Pause" : "Play";
-  if (playing) {
-    voiceover.play().catch(() => {
-      playing = false;
-      document.body.classList.remove("presentation-active");
-      playBtn.textContent = "Play";
-    });
-  } else {
-    voiceover.pause();
-  }
 });
 prevBtn.addEventListener("click", previous);
 nextBtn.addEventListener("click", next);
@@ -937,23 +1010,6 @@ document.addEventListener("keydown", (event) => {
   if (event.code === "ArrowRight") next();
   if (event.code === "ArrowLeft") previous();
   if (event.key.toLowerCase() === "r") restart();
-});
-
-voiceover.addEventListener("loadedmetadata", () => {
-  updateProgress();
-});
-
-voiceover.addEventListener("timeupdate", () => {
-  if (playing) syncToAudioTime();
-});
-
-voiceover.addEventListener("ended", () => {
-  playing = false;
-  current = scenes.length - 1;
-  elapsedInScene = scenes[current].seconds;
-  document.body.classList.remove("presentation-active");
-  playBtn.textContent = "Play";
-  renderScene();
 });
 
 renderScene();

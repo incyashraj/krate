@@ -35,8 +35,6 @@ jobs:
           echo "$HOME/bin" >> $GITHUB_PATH
       - name: Build docs
         run: mdbook build docs/book
-      - name: Copy demo audio assets
-        run: cp docs/book/src/pages/layer36-scripted-demo-voiceover.mp3 docs/book/book/pages/
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
