@@ -399,18 +399,20 @@
     gap: 10px;
   }
   .platform-row {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
   }
   .platform-chip {
+    flex: 1 1 72px;
+    min-width: 0;
     border: 1px solid #b9c9e8;
     border-radius: 12px;
     background: #fff;
-    padding: 10px;
+    padding: 8px 6px;
     text-align: center;
     color: var(--blue);
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 850;
   }
   .output-chip {
@@ -427,13 +429,62 @@
   }
   .clock-demo {
     display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
     gap: 14px;
     align-items: stretch;
   }
+  .clock-path {
+    display: grid;
+    gap: 10px;
+  }
+  .clock-step {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: #fbfcff;
+    padding: 12px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 10px;
+    align-items: start;
+    animation: procedure-focus 14s ease-in-out infinite;
+  }
+  .clock-step.runtime {
+    border-color: #b9c9e8;
+    background: linear-gradient(180deg, #f9fbff 0%, #eef5ff 100%);
+  }
+  .clock-step.output {
+    border-color: #abd9bf;
+    background: linear-gradient(180deg, #fbfffd 0%, #ebf8f1 100%);
+  }
+  .clock-step.delay-1 { animation-delay: 0s; }
+  .clock-step.delay-2 { animation-delay: 2.2s; }
+  .clock-step.delay-3 { animation-delay: 4.4s; }
+  .clock-step.delay-4 { animation-delay: 6.6s; }
+  .clock-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    background: var(--blue);
+    font-size: 12px;
+    font-weight: 850;
+  }
+  .clock-step b {
+    display: block;
+    font-size: 17px;
+    line-height: 1.15;
+    margin-bottom: 3px;
+  }
+  .clock-step span {
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.32;
+  }
   .terminal.fit {
     min-height: 0;
-    max-height: 254px;
+    max-height: 330px;
     overflow: hidden;
     font-size: 12px;
     line-height: 1.45;
@@ -808,15 +859,22 @@ Capabilities
     visual: `
       <div class="visual-title"><b>layer36-clock execution path</b><span>A small app using the full runtime model</span></div>
       <div class="clock-demo">
-        <div class="procedure">
-          <div class="procedure-row clock">
-            <div class="procedure-card compact delay-1"><span class="procedure-label">Code</span><b>clock source</b><span>Uses UAPI for time, locale, timezone, and stdout.</span></div>
-            <div class="procedure-arrow">-></div>
-            <div class="procedure-card compact delay-2"><span class="procedure-label">Build</span><b>clock.wasm</b><span>Compiled into one portable component artifact.</span></div>
-            <div class="procedure-arrow">-></div>
-            <div class="procedure-card runtime compact delay-3"><span class="procedure-label">Run</span><b>Layer36</b><span>Loads the component and links the UAPI surface.</span></div>
-            <div class="procedure-arrow">-></div>
-            <div class="procedure-card output compact delay-4"><span class="procedure-label">Output</span><b>terminal</b><span>The approved host-backed time call returns deterministic output.</span><div class="output-chip">date=1970-01-15</div></div>
+        <div class="clock-path">
+          <div class="clock-step delay-1">
+            <div class="clock-num">1</div>
+            <div><b>Code uses UAPI</b><span>The clock app asks for time, locale, timezone, and stdout through Layer36 APIs.</span></div>
+          </div>
+          <div class="clock-step delay-2">
+            <div class="clock-num">2</div>
+            <div><b>Build creates clock.wasm</b><span>The app becomes one portable component artifact.</span></div>
+          </div>
+          <div class="clock-step runtime delay-3">
+            <div class="clock-num">3</div>
+            <div><b>Layer36 loads and checks</b><span>The runtime links UAPI and enforces the capability boundary before host access.</span></div>
+          </div>
+          <div class="clock-step output delay-4">
+            <div class="clock-num">4</div>
+            <div><b>Approved output returns</b><span>The host-backed time call returns deterministic terminal output.</span></div>
           </div>
         </div>
         <pre class="terminal compact fit"><span class="cmd">layer36 run --auto-grant
