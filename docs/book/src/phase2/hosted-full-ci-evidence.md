@@ -26,6 +26,11 @@ green:
 scripts/record-phase2-hosted-full-ci-evidence.sh --require-success
 ```
 
+If a full run is cancelled or fails, the report can still record it for triage,
+but `--require-success` will reject it. The selected-run summary shows the
+workflow conclusion separately from the required job table, so a cancelled run
+cannot be mistaken for Phase 2 proof.
+
 To limit the report to the final review window:
 
 ```bash
@@ -95,6 +100,17 @@ apps/layer36-curl/target/wasm32-wasip1/release/layer36_curl.wasm
 That keeps two checks true at the same time: each host runs the same shared
 fixture bytes, and the sample manifest tests still use the exact entry paths
 shown in the example apps.
+
+## Windows Command-Line Limit
+
+One guard test sends more than 64 KiB of app arguments to prove that Layer36
+rejects the payload before the runtime starts. Linux and macOS can launch that
+test command and Layer36 rejects it.
+
+Windows has a lower process command-line limit for this shape of argument. The
+OS rejects the process before Layer36 can run, so the Windows lane records this
+case as a host-limit skip. The related count-limit, empty-argument, newline, and
+NUL checks still run on Windows.
 
 ## What This Does Not Prove
 

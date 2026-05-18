@@ -3,29 +3,33 @@
 Last updated: 2026-05-18
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `41e85cf`
-Working tree at this status update: hosted full CI fixture-path fix in progress
+Latest checked completed push before this slice: `70e3f32`
+Working tree at this status update: hosted full CI Windows raw-args test fix in progress
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 304
+- Commits after this slice lands: about 305
 - Tracked files after this slice lands: about 305
-- Total tracked lines after this slice lands: about 85,117
-- Rust lines (`.rs`) after this slice lands: about 40,208
-- Docs lines (`.md`) after this slice lands: about 28,666
+- Total tracked lines after this slice lands: about 85,172
+- Rust lines (`.rs`) after this slice lands: about 40,215
+- Docs lines (`.md`) after this slice lands: about 28,714
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`41e85cf`) checks:
+Latest completed push (`70e3f32`) checks:
 
-- CI: success (run `26042245767`)
-- Deploy docs to GitHub Pages: success (run `26042245799`)
+- CI: success (run `26043422296`)
+- Deploy docs to GitHub Pages: success (run `26043422111`)
 
-Manual hosted full CI run `26042432241` found a real fixture-path issue in the
-Linux and macOS full-test lanes. The shared fixture artifact was downloaded to
-`layer36-fixture`, while the sample manifests point at the normal app target
-paths under `apps/layer36-*`. The fix in progress copies the downloaded
-fixtures into those manifest entry paths before Phase 1 tests run.
+Manual hosted full CI run `26043594563` confirmed the shared fixture-path fix:
+Linux, macOS, and Windows sample manifest tests found the expected app target
+paths. It then found a Windows-only test harness issue. The oversized raw-args
+guard test passes a single 65 KiB argument, but Windows rejects that command
+before the Layer36 process starts. The fix in progress records that as a
+Windows host-limit skip while keeping the guard covered on Linux and macOS.
+While checking the evidence report, we also found and fixed a summary-table
+bug where job conclusion checks could overwrite the selected workflow-run
+conclusion.
 
 ## 3) What this version can do now
 
@@ -118,7 +122,9 @@ Top pending items:
 - Added a full Phase 2 readiness mode and wired it into the exit bundle so review packets list every unfinished gate with its next step
 - Added a Rust walkthrough rehearsal script and exit-bundle row so the reviewer path can be checked locally before the outside walkthrough
 - Added a hosted full CI evidence recorder so normal fast CI is not mistaken for Linux, macOS, Windows cross-host proof
-- Fixed the hosted full-test setup so downloaded shared fixtures are also installed at the app target paths declared by the sample manifests before Phase 1 tests run
+- Fixed hosted full CI sample manifest fixture setup so downloaded shared Rust fixtures are copied into the app target paths used by the sample manifests
+- Recorded the Windows command-line limit for the oversized raw-args guard test so full CI can keep proving reachable behavior on each host
+- Fixed the hosted full CI evidence recorder so cancelled or failed full runs are shown accurately in the selected-run summary
 - Expanded UCap evidence with a named dispatcher deny-before-adapter matrix that covers every non-default filesystem and network boundary
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`

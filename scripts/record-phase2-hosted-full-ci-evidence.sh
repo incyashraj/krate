@@ -165,8 +165,8 @@ job_conclusion() {
 run_has_required_full_jobs() {
   while IFS= read -r job_name; do
     [ -n "$job_name" ] || continue
-    conclusion="$(job_conclusion "$job_name")"
-    if [ "$conclusion" = "missing" ] || [ "$conclusion" = "skipped" ]; then
+    job_result="$(job_conclusion "$job_name")"
+    if [ "$job_result" = "missing" ] || [ "$job_result" = "skipped" ]; then
       return 1
     fi
   done <<EOF_JOBS
@@ -178,8 +178,8 @@ EOF_JOBS
 run_full_jobs_green() {
   while IFS= read -r job_name; do
     [ -n "$job_name" ] || continue
-    conclusion="$(job_conclusion "$job_name")"
-    if [ "$conclusion" != "success" ]; then
+    job_result="$(job_conclusion "$job_name")"
+    if [ "$job_result" != "success" ]; then
       return 1
     fi
   done <<EOF_JOBS

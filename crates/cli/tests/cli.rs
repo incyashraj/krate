@@ -507,6 +507,13 @@ fn run_rejects_newline_app_argument_before_runtime() {
 
 #[test]
 fn run_rejects_oversized_raw_args_payload_before_runtime() {
+    if cfg!(windows) {
+        eprintln!(
+            "skipping oversized raw-args spawn on Windows: the OS command-line limit is lower than Layer36's 64 KiB raw-args guard"
+        );
+        return;
+    }
+
     let dir = tempfile::tempdir().expect("create temp dir");
     let wasm_path = dir.path().join("app.wasm");
     std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
