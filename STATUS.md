@@ -4,7 +4,7 @@ Last updated: 2026-05-18
 Repo: `incyashraj/layer6x6`
 Branch: `main`
 Latest checked completed push before this slice: `f929aa4`
-Working tree at this status update: Windows sample-evidence CLI path fix validated locally and ready to push
+Working tree at this status update: explicit Git Bash Windows sample-evidence CLI path fix validated locally and ready to push
 
 ## 1) Project size today
 
@@ -21,12 +21,13 @@ Latest completed push (`f929aa4`) checks:
 - CI: success (run `26050021203`)
 - Deploy docs to GitHub Pages: success (run `26050021185`)
 
-Manual hosted full CI run `26050285568` proved the Linux and macOS full-test
-lanes green on the current shared-fixture path. Windows reached sample evidence
-and then failed because the recorder looked for `target/debug/layer36` instead
-of Cargo's Windows binary `target/debug/layer36.exe`. The current fix makes the
-sample evidence recorder resolve the built CLI binary with an optional
-`LAYER36_BIN` override and a Windows `.exe` fallback.
+Manual hosted full CI runs `26050285568` and `26053206271` proved the Linux and
+macOS full-test lanes green on the current shared-fixture path. Windows reached
+sample evidence and then failed because the recorder looked for
+`target/debug/layer36` instead of Cargo's Windows binary
+`target/debug/layer36.exe`. The current fix makes the sample evidence recorder
+use the `.exe` path explicitly when running under Git Bash on Windows, while
+still allowing a caller-provided `LAYER36_BIN`.
 
 ## 3) What this version can do now
 
@@ -125,7 +126,7 @@ Top pending items:
 - Hardened the local HTTP fixture used by curl response-limit tests so Windows early client close behavior does not hide the Layer36 assertion
 - Fixed Windows sandbox resolution for absolute Layer36 logical paths by converting normalized logical strings into relative sandbox segments before host path joining
 - Hardened sample evidence recording so hosted full CI reuses shared downloaded fixture bytes instead of rebuilding with lane-local `cargo-component`
-- Fixed Windows sample evidence recording so the hosted full-test lane can use `target/debug/layer36.exe` while Linux and macOS continue using `target/debug/layer36`
+- Fixed Windows sample evidence recording so the hosted full-test lane can use `target/debug/layer36.exe` explicitly under Git Bash while Linux and macOS continue using `target/debug/layer36`
 - Expanded UCap evidence with a named dispatcher deny-before-adapter matrix that covers every non-default filesystem and network boundary
 - Hosted workflows moved to Node 24 ready action versions
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`

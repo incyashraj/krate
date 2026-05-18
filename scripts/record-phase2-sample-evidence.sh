@@ -21,6 +21,13 @@ resolve_layer36_binary() {
     return 0
   fi
 
+  case "$(uname -s 2>/dev/null || printf unknown)" in
+    MINGW*|MSYS*|CYGWIN*)
+      printf '%s\n' "$ROOT/target/debug/layer36.exe"
+      return 0
+      ;;
+  esac
+
   if [ -f "$ROOT/target/debug/layer36" ]; then
     printf '%s\n' "$ROOT/target/debug/layer36"
     return 0
