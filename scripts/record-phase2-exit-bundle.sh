@@ -163,7 +163,7 @@ else
 fi
 
 if [ "$INCLUDE_CI_STABILITY" = "1" ]; then
-  if scripts/record-phase2-ci-stability-evidence.sh --output "$CI_STABILITY_REPORT" >"$CI_STABILITY_LOG" 2>&1; then
+  if scripts/record-phase2-ci-stability-evidence.sh --require-success --output "$CI_STABILITY_REPORT" >"$CI_STABILITY_LOG" 2>&1; then
     CI_STABILITY_CODE=0
   else
     CI_STABILITY_CODE=$?
@@ -250,7 +250,7 @@ included_of() {
   echo "| Dependency evidence (\`scripts/record-phase2-dependency-evidence.sh --strict\`) | $DEPENDENCY_CODE | $(result_of "$DEPENDENCY_CODE") |"
   echo "| Go readiness evidence (\`scripts/record-phase2-go-readiness-evidence.sh\`) | $GO_READINESS_CODE | $(result_of "$GO_READINESS_CODE") |"
   if [ "$INCLUDE_CI_STABILITY" = "1" ]; then
-    echo "| Hosted CI stability evidence (\`scripts/record-phase2-ci-stability-evidence.sh\`) | $CI_STABILITY_CODE | $(result_of "$CI_STABILITY_CODE") |"
+    echo "| Hosted CI stability evidence (\`scripts/record-phase2-ci-stability-evidence.sh --require-success\`) | $CI_STABILITY_CODE | $(result_of "$CI_STABILITY_CODE") |"
   else
     echo "| Hosted CI stability evidence | 0 | skipped |"
   fi

@@ -15,11 +15,28 @@ Default output:
 target/phase2-ci-stability-evidence/ci-stability-evidence.md
 ```
 
+For final exit review, require both hosted workflows to have at least one
+completed green run in the inspected history:
+
+```bash
+scripts/record-phase2-ci-stability-evidence.sh --require-success
+```
+
+When the final candidate commit is ready, narrow the report to the review window
+too:
+
+```bash
+scripts/record-phase2-ci-stability-evidence.sh --created '>=2026-05-18' --require-success
+```
+
 You can also include this report in the Phase 2 exit bundle:
 
 ```bash
 scripts/record-phase2-exit-bundle.sh --strict --include-ci-stability
 ```
+
+The exit bundle uses the stricter success check. If hosted CI or GitHub Pages
+does not show a completed green run, the strict bundle fails.
 
 ## What It Records
 
@@ -27,10 +44,12 @@ The report includes:
 
 - repository and branch
 - git commit at recording time
+- optional GitHub creation-date filter
 - latest hosted CI run
 - latest Pages deploy run
 - recent run history for both workflows
 - completed success streak for each workflow
+- required success streak when strict checking is enabled
 
 It uses GitHub CLI, so it needs a logged-in `gh` session with repository access.
 

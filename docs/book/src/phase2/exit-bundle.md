@@ -62,7 +62,13 @@ scripts/record-phase2-exit-bundle.sh --strict --include-ci-stability
 ```
 
 This adds the recent hosted CI and GitHub Pages run history from
-`scripts/record-phase2-ci-stability-evidence.sh`.
+`scripts/record-phase2-ci-stability-evidence.sh`. The bundle calls that
+recorder with `--require-success`, so a strict review bundle fails if hosted CI
+or GitHub Pages does not show a completed green run.
+
+For the final candidate, set `LAYER36_CI_STABILITY_CREATED` to the review
+window you want, for example `>=2026-05-18`, before running the bundle. That
+keeps older green hosted runs from being mistaken for final proof.
 
 ## Include Self-Hosted Full-Gate Proof
 
