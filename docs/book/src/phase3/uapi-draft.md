@@ -50,6 +50,22 @@ That checker proves the WIT parses, the expected packages are present, the
 names follow the repo style, and the new error types include
 `permission-denied`.
 
+The CLI also recognizes this manifest world now:
+
+```toml
+[app]
+id = "com.example.notes"
+name = "Notes"
+version = "0.1.0"
+entry = "notes.wasm"
+world = "layer36:app/gui@0.2.0"
+```
+
+`layer36 manifest check` accepts that world and labels it as a Phase 3 GUI
+draft. `layer36 run` does not launch it yet. It exits early with a clear message
+that the GUI runtime is not implemented. This is intentional. We want the
+manifest and tooling path to be real before we add windows.
+
 ## What It Does Not Mean Yet
 
 This is not a finished desktop UI layer.
@@ -66,8 +82,8 @@ the app, runtime, SDKs, and host adapters.
 
 The next proof should be small:
 
-1. A runtime path that recognizes the `gui` world.
-2. A host adapter prototype that can create one window.
-3. A simple event loop.
-4. A tiny draw call that paints something visible.
-5. A small notes app skeleton that uses the same path.
+1. A host adapter prototype that can create one window.
+2. A simple event loop.
+3. A tiny draw call that paints something visible.
+4. A small notes app skeleton that uses the same path.
+5. A first pass at GUI capability names.

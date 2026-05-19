@@ -6,7 +6,8 @@ use std::process::{Command as ProcessCommand, ExitCode};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use layer36_manifest::{
-    supported_capability_specs, App, Capability, CapabilityRequest, Manifest, PHASE2_CLI_WORLD,
+    supported_capability_specs, App, AppWorld, Capability, CapabilityRequest, Manifest,
+    PHASE2_CLI_WORLD,
 };
 use layer36_policy::{resolve_session_policy, SessionPolicy};
 use layer36_runtime::{
@@ -17,6 +18,7 @@ use serde::Serialize;
 
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
 const MAX_PHASE2_ARG_COUNT: usize = 1024;
+const PHASE3_GUI_UNIMPLEMENTED_EXIT: u8 = 6;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -361,6 +363,17 @@ fn run_component(request: RunRequest) -> Result<u8> {
         return Ok(0);
     }
 
+    if let Some(manifest) = manifest {
+        let world = manifest.app_world()?;
+        if !world.is_runnable() {
+            eprintln!("unsupported app world for run: {}", world.world_name());
+            eprintln!(
+                "Phase 3 GUI manifests are recognized, but the window runtime is not implemented yet."
+            );
+            return Ok(PHASE3_GUI_UNIMPLEMENTED_EXIT);
+        }
+    }
+
     let config = Config {
         fuel: request.fuel,
         memory_bytes: request
@@ -702,6 +715,7 @@ fn check_manifest(file: &Path, format: OutputFormat) -> Result<u8> {
     println!("app name        {}", manifest.app.name);
     println!("entry           {}", manifest.app.entry.display());
     println!("world           {}", manifest.app.world);
+    println!("world status    {}", app_world_label(manifest.app_world()?));
     println!("capabilities    {}", declared_caps.len());
     println!("required caps   {}", required_caps.len());
 
@@ -724,6 +738,7 @@ fn explain_manifest(file: &Path, format: OutputFormat) -> Result<u8> {
     println!("version         {}", manifest.app.version);
     println!("entry           {}", manifest.app.entry.display());
     println!("world           {}", manifest.app.world);
+    println!("world status    {}", app_world_label(manifest.app_world()?));
     println!();
 
     if declared_caps.is_empty() {
@@ -800,16 +815,19 @@ struct ManifestAppExplanation {
     version: String,
     entry: String,
     world: String,
+    world_kind: String,
 }
 
 impl ManifestAppExplanation {
     fn from_manifest(manifest: &Manifest) -> Self {
+        let world = manifest.app_world().expect("validated manifest world");
         Self {
             id: manifest.app.id.clone(),
             name: manifest.app.name.clone(),
             version: manifest.app.version.clone(),
             entry: manifest.app.entry.display().to_string(),
             world: manifest.app.world.clone(),
+            world_kind: app_world_label(world).to_string(),
         }
     }
 }
@@ -889,7 +907,7 @@ fn print_manifest_capabilities(format: OutputFormat) -> Result<u8> {
         return Ok(0);
     }
 
-    println!("Phase 2 capabilities");
+    println!("Layer36 capabilities");
     println!("capability                         default");
     for spec in supported_capability_specs() {
         println!(
@@ -900,6 +918,13 @@ fn print_manifest_capabilities(format: OutputFormat) -> Result<u8> {
     }
 
     Ok(0)
+}
+
+fn app_world_label(world: AppWorld) -> &'static str {
+    match world {
+        AppWorld::Phase2Cli => "Phase 2 CLI",
+        AppWorld::Phase3Gui => "Phase 3 GUI draft",
+    }
 }
 
 #[derive(Debug, Serialize)]

@@ -2151,6 +2151,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P3-GFX-01 | First `layer36:gfx@0.1.0` WIT draft | 2026-05-19 | Covers simple 2D canvas commands and a minimal future 3D surface. |
 | P3-AUDIO-01 | First `layer36:audio@0.1.0` WIT draft | 2026-05-19 | Covers playback and capture stream shape. |
 | P3-TEST-00 | Phase 3 WIT checker | 2026-05-19 | `scripts/check-phase3-uapi.sh` parses contracts and checks package, world, naming, docs, and permission error shape. |
+| P3-RUN-00 | CLI recognizes Phase 3 GUI manifests | 2026-05-19 | `manifest check` accepts `layer36:app/gui@0.2.0`; `run` exits early with a clear not-implemented message. |
 
 ---
 
@@ -2188,6 +2189,9 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
 - 2026-05-19: Started Phase 3 with contracts first. The `gui` world imports the
   Phase 2 CLI surface plus draft `ui`, `gfx`, and `audio` modules. The checker
   keeps this draft parseable and documented while the host work begins.
+- 2026-05-19: Added the first runtime-facing guardrail. Phase 3 GUI manifests
+  are valid metadata now, but `layer36 run` stops before execution until the
+  window runtime exists.
 
 ---
 

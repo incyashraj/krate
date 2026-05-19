@@ -1,7 +1,7 @@
-//! Phase 2 sidecar manifest parser.
+//! Layer36 sidecar manifest parser.
 //!
-//! A Layer36 Phase 2 app is still a plain `.wasm` component, but it may sit
-//! next to a `manifest.toml` that declares identity, entry world, and requested
+//! A Layer36 app is still a plain `.wasm` component, but it may sit next to a
+//! `manifest.toml` that declares identity, entry world, and requested
 //! capabilities.
 
 use std::{
@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const PHASE2_CLI_WORLD: &str = "layer36:app/cli@0.1.0";
+pub const PHASE3_GUI_WORLD: &str = "layer36:app/gui@0.2.0";
 const MAX_NET_CONNECT_HOST_BYTES: usize = 253;
 
 const PHASE2_CAPABILITY_SPECS: &[CapabilitySpec] = &[
@@ -88,11 +89,7 @@ impl Manifest {
         validate_required("app.version", &self.app.version)?;
         validate_required_path("app.entry", &self.app.entry)?;
 
-        if self.app.world != PHASE2_CLI_WORLD {
-            return Err(ManifestError::UnsupportedWorld {
-                world: self.app.world.clone(),
-            });
-        }
+        self.app_world()?;
 
         let mut seen = BTreeSet::new();
         for request in &self.capabilities {
@@ -106,6 +103,10 @@ impl Manifest {
         }
 
         Ok(())
+    }
+
+    pub fn app_world(&self) -> Result<AppWorld> {
+        AppWorld::from_world_name(&self.app.world)
     }
 }
 
@@ -125,6 +126,35 @@ pub struct CapabilityRequest {
     pub cap: String,
     pub rationale: String,
     pub required: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AppWorld {
+    Phase2Cli,
+    Phase3Gui,
+}
+
+impl AppWorld {
+    pub fn from_world_name(world: &str) -> Result<Self> {
+        match world {
+            PHASE2_CLI_WORLD => Ok(Self::Phase2Cli),
+            PHASE3_GUI_WORLD => Ok(Self::Phase3Gui),
+            _ => Err(ManifestError::UnsupportedWorld {
+                world: world.to_string(),
+            }),
+        }
+    }
+
+    pub fn world_name(self) -> &'static str {
+        match self {
+            Self::Phase2Cli => PHASE2_CLI_WORLD,
+            Self::Phase3Gui => PHASE3_GUI_WORLD,
+        }
+    }
+
+    pub fn is_runnable(self) -> bool {
+        matches!(self, Self::Phase2Cli)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -611,7 +641,18 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_worlds() {
+    fn accepts_phase3_gui_world_as_draft_manifest_target() {
+        let input = EXAMPLE.replace(PHASE2_CLI_WORLD, PHASE3_GUI_WORLD);
+        let manifest = Manifest::parse(&input).expect("parse Phase 3 gui manifest");
+
+        assert_eq!(
+            manifest.app_world().expect("app world"),
+            AppWorld::Phase3Gui
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_worlds() {
         let input = EXAMPLE.replace(PHASE2_CLI_WORLD, "layer36:app/gui@0.1.0");
         let err = Manifest::parse(&input).expect_err("reject unsupported world");
 

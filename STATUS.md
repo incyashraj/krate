@@ -64,6 +64,9 @@ Current Phase 3 slice:
 - `layer36:gfx@0.1.0` WIT draft for 2D canvas and a small future 3D surface
 - `layer36:audio@0.1.0` WIT draft for playback and capture shape
 - `scripts/check-phase3-uapi.sh` to keep the draft parseable and documented
+- manifest tooling now accepts `layer36:app/gui@0.2.0`
+- `layer36 run` recognizes GUI manifests and exits clearly until the window
+  runtime exists
 
 This does not mean desktop UI is implemented yet. It means the first public
 contract for desktop UI work is now in the repo and checked locally.
@@ -146,6 +149,8 @@ Top pending items:
 - Hosted workflows moved to Node 24 ready action versions
 - Started Phase 3 at the contract layer with parseable WIT for the GUI world,
   `ui`, `gfx`, and `audio`, plus a checker and docs page
+- Added Phase 3 GUI manifest recognition so tooling can validate the `gui`
+  world before the window runtime exists
 - WIT contract comments added across Phase 2 UAPI and enforced by `check-uapi`
 - Generated UAPI reference now includes those WIT contract comments
 - Rust SDK package smoke now verifies packaged README, SDK root, and generated bindings files

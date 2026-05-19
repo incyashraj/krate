@@ -144,6 +144,48 @@ fn manifest_check_json_reports_summary() {
     assert!(stdout.contains(r#""id": "com.example.hello""#));
     assert!(stdout.contains(r#""capabilities": 1"#));
     assert!(stdout.contains(r#""required_capabilities": 1"#));
+    assert!(stdout.contains(r#""world_kind": "Phase 2 CLI""#));
+}
+
+#[test]
+fn manifest_check_accepts_phase_3_gui_draft_world() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let manifest_path = dir.path().join("manifest.toml");
+    std::fs::write(
+        &manifest_path,
+        r#"
+            [app]
+            id = "com.example.notes"
+            name = "Notes"
+            version = "1.0.0"
+            entry = "notes.wasm"
+            world = "layer36:app/gui@0.2.0"
+
+            [[capabilities]]
+            cap = "io.stdout"
+            rationale = "Debug output while the GUI runtime is in draft"
+            required = true
+        "#,
+    )
+    .expect("write manifest");
+
+    let output = layer36()
+        .args(["manifest", "check"])
+        .arg(&manifest_path)
+        .output()
+        .expect("run Phase 3 manifest check");
+
+    assert!(
+        output.status.success(),
+        "manifest check failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Manifest OK"));
+    assert!(stdout.contains("world           layer36:app/gui@0.2.0"));
+    assert!(stdout.contains("world status    Phase 3 GUI draft"));
 }
 
 #[test]
@@ -276,6 +318,7 @@ fn manifest_explain_json_reports_structured_grants() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains(r#""id": "com.example.notes""#));
     assert!(stdout.contains(r#""entry": "notes.wasm""#));
+    assert!(stdout.contains(r#""world_kind": "Phase 2 CLI""#));
     assert!(stdout.contains(r#""capability": "io.stdout""#));
     assert!(stdout.contains(r#""default_grant": true"#));
     assert!(stdout.contains(r#""launch_grant_needed": false"#));
@@ -295,11 +338,44 @@ fn manifest_capabilities_lists_phase_2_cap_table() {
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Phase 2 capabilities"));
+    assert!(stdout.contains("Layer36 capabilities"));
     assert!(stdout.contains("io.args"));
     assert!(stdout.contains("fs.read:<path-glob>"));
     assert!(stdout.contains("net.connect:<host>:<port>"));
     assert!(stdout.contains("locale.format"));
+}
+
+#[test]
+fn run_recognizes_phase_3_gui_manifest_but_does_not_launch_it_yet() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let wasm_path = dir.path().join("notes.wasm");
+    let manifest_path = dir.path().join("manifest.toml");
+    std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
+    std::fs::write(
+        &manifest_path,
+        r#"
+            [app]
+            id = "com.example.notes"
+            name = "Notes"
+            version = "1.0.0"
+            entry = "notes.wasm"
+            world = "layer36:app/gui@0.2.0"
+        "#,
+    )
+    .expect("write manifest");
+
+    let output = layer36()
+        .args(["run", "--manifest"])
+        .arg(&manifest_path)
+        .arg(&wasm_path)
+        .output()
+        .expect("run Phase 3 GUI draft manifest");
+
+    assert_eq!(output.status.code(), Some(6));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unsupported app world for run: layer36:app/gui@0.2.0"));
+    assert!(stderr.contains("Phase 3 GUI manifests are recognized"));
+    assert!(!stderr.contains("invalid wasm component"));
 }
 
 #[test]

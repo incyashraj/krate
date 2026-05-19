@@ -138,6 +138,20 @@ cargo run -p layer36-cli -- manifest capabilities --format json
 That JSON includes the app identity, capability counts, each requested
 capability, whether it is a default grant, and whether a launch grant is needed.
 
+Phase 3 GUI manifests are also recognized as a draft target:
+
+```toml
+[app]
+id = "com.example.notes"
+name = "Notes"
+version = "0.1.0"
+entry = "notes.wasm"
+world = "layer36:app/gui@0.2.0"
+```
+
+Manifest tools can check and explain this world today. `layer36 run` still exits
+early for it because the window runtime has not been implemented yet.
+
 `layer36 run` also reads `manifest.toml` when it sits next to the `.wasm` file:
 
 ```bash
