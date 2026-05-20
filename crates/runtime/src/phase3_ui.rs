@@ -5,7 +5,8 @@
 //! GTK windows come later.
 
 use layer36_adapter_common::ui::{
-    UiAdapter, UiAdapterError, UiEvent, WindowId, WindowOptions, WindowRecord, WindowSize,
+    UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, WindowId, WindowOptions, WindowRecord,
+    WindowSize,
 };
 use thiserror::Error;
 
@@ -30,9 +31,41 @@ pub struct Phase3UiDispatcher<'a> {
     adapter: &'a dyn UiAdapter,
 }
 
+/// Owns the Phase 3 UI guard and host adapter for one runtime session.
+pub struct Phase3UiRuntime {
+    guard: UapiGuard,
+    adapter: Box<dyn UiAdapter>,
+}
+
+impl Phase3UiRuntime {
+    /// Build a UI runtime with an explicit adapter, mainly for tests.
+    pub fn new(guard: UapiGuard, adapter: Box<dyn UiAdapter>) -> Self {
+        Self { guard, adapter }
+    }
+
+    /// Build a UI runtime using the current host adapter entry point.
+    pub fn with_host_adapter(guard: UapiGuard) -> Self {
+        Self::new(guard, discover_host_ui_adapter())
+    }
+
+    /// Return a dispatcher that checks policy before each adapter call.
+    pub fn dispatcher(&self) -> Phase3UiDispatcher<'_> {
+        Phase3UiDispatcher::new(&self.guard, self.adapter.as_ref())
+    }
+
+    /// Return the selected adapter information.
+    pub fn adapter_info(&self) -> UiAdapterInfo {
+        self.adapter.info()
+    }
+}
+
 impl<'a> Phase3UiDispatcher<'a> {
     pub fn new(guard: &'a UapiGuard, adapter: &'a dyn UiAdapter) -> Self {
         Self { guard, adapter }
+    }
+
+    pub fn adapter_info(&self) -> UiAdapterInfo {
+        self.adapter.info()
     }
 
     pub fn create_window(&self, options: WindowOptions) -> UiDispatchResult<WindowId> {
@@ -97,6 +130,28 @@ impl<'a> Phase3UiDispatcher<'a> {
     }
 }
 
+fn discover_host_ui_adapter() -> Box<dyn UiAdapter> {
+    #[cfg(target_os = "linux")]
+    {
+        Box::new(layer36_adapter_linux::discover_ui_adapter())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        Box::new(layer36_adapter_macos::discover_ui_adapter())
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Box::new(layer36_adapter_windows::discover_ui_adapter())
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    {
+        Box::new(layer36_adapter_common::ui::DraftUiAdapter::new())
+    }
+}
+
 fn map_ui_policy(err: UapiError) -> UiDispatchError {
     if matches!(
         err,
@@ -145,6 +200,31 @@ mod tests {
                 UiEvent::RedrawRequested(id),
                 UiEvent::WindowClosed(id),
             ]
+        );
+    }
+
+    #[test]
+    fn runtime_discovers_current_host_ui_adapter() {
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let runtime = Phase3UiRuntime::with_host_adapter(guard);
+        let info = runtime.adapter_info();
+        let dispatcher = runtime.dispatcher();
+        let size = WindowSize::new(480, 320).expect("size");
+
+        assert!(info.backend.ends_with("headless-draft"));
+        assert!(!info.native_windows);
+        assert!(!info.native_event_loop);
+
+        let id = dispatcher
+            .create_window(WindowOptions::new("Layer36 host adapter", size).expect("options"))
+            .expect("create window through discovered adapter");
+        dispatcher.show_window(id).expect("show");
+
+        let window = dispatcher.window(id).expect("adapter").expect("window");
+        assert_eq!(window.title, "Layer36 host adapter");
+        assert_eq!(
+            dispatcher.drain_events().expect("events"),
+            vec![UiEvent::WindowCreated(id), UiEvent::WindowShown(id)]
         );
     }
 

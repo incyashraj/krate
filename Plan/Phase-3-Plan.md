@@ -2115,9 +2115,10 @@ Save as `docs/book/src/phase3/retro.md` at the end of Phase 3.
 
 Phase 3 has started with the first WIT draft, checker, GUI manifest path,
 capability names, shared in-memory UI adapter scaffold, a shared `UiAdapter`
-trait, host-crate UI adapter entry points, and a runtime-facing UI dispatcher.
-This is not a frozen API and not a working desktop GUI yet. It is the contract
-and runtime boundary foundation for the next host adapter work.
+trait, host-crate UI adapter entry points, runtime host-adapter discovery, and
+a runtime-facing UI dispatcher. This is not a frozen API and not a working
+desktop GUI yet. It is the contract and runtime boundary foundation for the
+next host adapter work.
 
 ### Current Slice Checklist
 
@@ -2131,6 +2132,7 @@ and runtime boundary foundation for the next host adapter work.
 | P3-RUNTIME-00 | Add runtime UI dispatcher scaffold | 2026-05-21 | `runtime::phase3_ui` checks UCap before draft window operations and proves clipboard grants fail before unsupported host code. |
 | P3-UI-04A | Add shared `UiAdapter` trait | 2026-05-21 | `adapter-common::ui::UiAdapter` is now the runtime boundary for window lifecycle, redraw, event drain, and draft clipboard behavior. |
 | P3-UI-04B | Start host UI adapter entry points | 2026-05-21 | macOS, Linux, and Windows adapter crates expose headless draft UI adapters with blank-window smoke tests. |
+| P3-RUNTIME-01 | Discover host UI adapter from runtime | 2026-05-21 | `Phase3UiRuntime` owns the UCap guard and selected host UI adapter so the dispatcher can run through the current OS entry point. |
 
 ---
 
@@ -2172,6 +2174,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P3-RUNTIME-00 | Runtime UI dispatcher scaffold | 2026-05-21 | `runtime::phase3_ui` gates draft window work through UCap and keeps unsupported clipboard paths permission-checked. |
 | P3-UI-04A | Shared UI adapter trait | 2026-05-21 | `runtime::phase3_ui` now talks to `UiAdapter`, with `DraftUiAdapter` as the current in-memory implementation. |
 | P3-UI-04B | Host UI adapter entry points | 2026-05-21 | `adapter-{macos,linux,windows}` each expose a headless draft UI adapter and a blank-window smoke test. |
+| P3-RUNTIME-01 | Runtime host UI adapter discovery | 2026-05-21 | `Phase3UiRuntime::with_host_adapter` selects the current host adapter and exposes adapter capability info. |
 
 ---
 
@@ -2180,7 +2183,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
 | P3-UI-01 | Widget protocol design RFC | 2026-05-19 | Needs ADR-0013 written and reviewed. |
-| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Shared trait and host entry points exist; next step is one real native window backend. |
+| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Shared trait, host entry points, and runtime discovery exist; next step is one real native window backend. |
 
 ---
 

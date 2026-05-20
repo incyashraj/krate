@@ -104,12 +104,41 @@ pub enum UiEvent {
     TitleChanged { id: WindowId, title: String },
 }
 
+/// Static capability summary for one UI adapter build.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiAdapterInfo {
+    pub host_family: String,
+    pub backend: String,
+    pub native_windows: bool,
+    pub native_event_loop: bool,
+}
+
+impl UiAdapterInfo {
+    /// Create a UI adapter capability summary.
+    pub fn new(
+        host_family: impl Into<String>,
+        backend: impl Into<String>,
+        native_windows: bool,
+        native_event_loop: bool,
+    ) -> Self {
+        Self {
+            host_family: host_family.into(),
+            backend: backend.into(),
+            native_windows,
+            native_event_loop,
+        }
+    }
+}
+
 /// Shared host UI adapter contract.
 ///
 /// Native adapters on macOS, Windows, and Linux will implement this trait. The
 /// draft adapter below implements the same contract with in-memory state, so
 /// runtime code can be tested before OS windows exist.
 pub trait UiAdapter: Send + Sync {
+    /// Return host and backend capability information for this adapter.
+    fn info(&self) -> UiAdapterInfo;
+
     /// Create a host window and return its stable session id.
     fn create_window(&self, options: WindowOptions) -> Result<WindowId, UiAdapterError>;
 
@@ -169,6 +198,10 @@ impl DraftUiAdapter {
 }
 
 impl UiAdapter for DraftUiAdapter {
+    fn info(&self) -> UiAdapterInfo {
+        UiAdapterInfo::new("generic", "headless-draft", false, false)
+    }
+
     fn create_window(&self, options: WindowOptions) -> Result<WindowId, UiAdapterError> {
         Ok(self.registry()?.create_window(options))
     }
@@ -450,6 +483,17 @@ mod tests {
                 UiEvent::RedrawRequested(id),
             ]
         );
+    }
+
+    #[test]
+    fn draft_adapter_reports_headless_info() {
+        let adapter = DraftUiAdapter::new();
+        let info = adapter.info();
+
+        assert_eq!(info.host_family, "generic");
+        assert_eq!(info.backend, "headless-draft");
+        assert!(!info.native_windows);
+        assert!(!info.native_event_loop);
     }
 
     #[test]

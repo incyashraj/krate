@@ -158,7 +158,9 @@ early for it because the window runtime has not been implemented yet.
 Internally, Phase 3 now has a small runtime UI dispatcher scaffold that checks
 window and clipboard permissions before calling a shared UI adapter trait. The
 current macOS, Linux, and Windows adapter entry points still use a headless
-draft backend, not a real native window backend yet.
+draft backend, not a real native window backend yet. The runtime can select
+that current host adapter and report whether the backend is still headless or
+native.
 
 `layer36 run` also reads `manifest.toml` when it sits next to the `.wasm` file:
 
@@ -266,6 +268,8 @@ The value of this step is that the boundary is testable:
   while draft clipboard calls still return unsupported after permission checks
 - macOS, Linux, and Windows adapter crates expose headless UI adapter entry
   points, each with a blank-window smoke test
+- `Phase3UiRuntime::with_host_adapter` selects the current host UI adapter and
+  exposes capability info for that backend
 
 The bridge between generated WIT types and dispatcher types now exists too.
 It converts things like `open-mode`, HTTP requests, file stats, locale IDs, and

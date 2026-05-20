@@ -93,6 +93,9 @@ flowchart LR
 20. The macOS, Linux, and Windows adapter crates now each expose that UI plug
     point. Today it is still headless, but each host crate can run the same
     blank-window smoke path.
+21. The runtime can now select the current host UI adapter. In simple terms,
+    the runtime can ask macOS, Linux, or Windows for the UI adapter path instead
+    of only using a test object.
 
 ## Current Build Timeline
 
@@ -139,7 +142,7 @@ This is a simple status view for non technical readers.
 | UAPI freeze decision path | Working, with a draft packet and CI checker |
 | Outside walkthrough proof | Ready to collect, with a timing packet, checker, and local rehearsal |
 | Phase 3 handoff | Started at contract level, still waiting on Phase 2 outside review for formal phase close |
-| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, shared UI adapter trait, runtime UI dispatcher, and host adapter entry points are in place. Real windows are not implemented yet |
+| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, and runtime host adapter discovery are in place. Real windows are not implemented yet |
 | Mobile host path | Not started in implementation |
 | Packaging and app store style distribution | Not started in implementation |
 

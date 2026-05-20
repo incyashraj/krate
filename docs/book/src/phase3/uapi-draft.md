@@ -104,6 +104,12 @@ entry points now. Each one currently uses the same headless draft backend and
 has a blank-window smoke test. That means the host crates are wired into the UI
 contract, but they still do not open real OS windows.
 
+The runtime can now discover the current host UI adapter too. `Phase3UiRuntime`
+owns the session guard and the selected adapter, then hands out a dispatcher
+that checks permissions before calling that adapter. It also reports adapter
+capability info such as host family, backend name, and whether native windows
+or a native event loop are enabled. Today those values still say headless draft.
+
 ## What It Does Not Mean Yet
 
 This is not a finished desktop UI layer.

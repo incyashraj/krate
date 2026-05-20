@@ -7,8 +7,8 @@ use layer36_adapter_common::{
     locale::{DateStyle, HostLocale, LocaleId, NumberStyle},
     time::HostClock,
     ui::{
-        DraftUiAdapter, UiAdapter, UiAdapterError, UiEvent, WindowId, WindowOptions, WindowRecord,
-        WindowSize,
+        DraftUiAdapter, UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, WindowId, WindowOptions,
+        WindowRecord, WindowSize,
     },
 };
 use std::fs::OpenOptions;
@@ -47,6 +47,15 @@ impl MacosUiAdapter {
 }
 
 impl UiAdapter for MacosUiAdapter {
+    fn info(&self) -> UiAdapterInfo {
+        UiAdapterInfo::new(
+            HOST_FAMILY,
+            self.backend_name(),
+            self.native_windows_enabled(),
+            false,
+        )
+    }
+
     fn create_window(&self, options: WindowOptions) -> Result<WindowId, UiAdapterError> {
         self.draft.create_window(options)
     }
@@ -316,6 +325,11 @@ mod tests {
         adapter.request_redraw(id).expect("redraw");
 
         let window = adapter.window(id).expect("lookup").expect("window");
+        let info = adapter.info();
+        assert_eq!(info.host_family, HOST_FAMILY);
+        assert_eq!(info.backend, "macos-headless-draft");
+        assert!(!info.native_windows);
+        assert!(!info.native_event_loop);
         assert_eq!(adapter.backend_name(), "macos-headless-draft");
         assert!(!adapter.native_windows_enabled());
         assert_eq!(window.title, "Layer36 blank window");

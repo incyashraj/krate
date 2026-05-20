@@ -253,6 +253,10 @@ fn check_adapter_boundary() -> Result<BoundaryReport> {
             ),
         )?;
         ensure(
+            source.contains("fn info(&self) -> UiAdapterInfo"),
+            format!("{} must report Phase 3 UI adapter info", adapter.crate_path),
+        )?;
+        ensure(
             source.contains("pub fn discover_ui_adapter()"),
             format!(
                 "{} must expose `discover_ui_adapter` for Phase 3 UI startup",
