@@ -3,23 +3,23 @@
 Last updated: 2026-05-21
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `213f3f2`
+Latest checked completed push before this slice: `41d9829`
 Working tree at this status update: Phase 3 runtime UI dispatcher slice in progress
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 311
+- Commits after this slice lands: about 318
 - Tracked files after this slice lands: about 320
-- Total tracked lines after this slice lands: about 86,000
-- Rust lines (`.rs`) after this slice lands: about 40,700
-- Docs lines (`.md`) after this slice lands: about 28,900
+- Total tracked lines after this slice lands: about 88,000
+- Rust lines (`.rs`) after this slice lands: about 41,700
+- Docs lines (`.md`) after this slice lands: about 29,100
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`213f3f2`) checks:
+Latest completed push (`41d9829`) checks:
 
-- CI: success (run `26073709663`)
-- Deploy docs to GitHub Pages: success (run `26073709677`)
+- CI: success (run `26089710726`)
+- Deploy docs to GitHub Pages: success (run `26089710759`)
 
 Manual hosted full CI run `26069665276` passed on commit `3f1a219`.
 Linux, macOS, and Windows full-test lanes all passed. The language-variant,
@@ -188,7 +188,9 @@ Top pending items:
 ## 7) Source of truth files
 
 - Plan: `Plan/Phase-2-Plan.md`
+- Current phase plan: `Plan/Phase-3-Plan.md`
 - Phase docs page: `docs/book/src/phases/phase-2.md`
+- Phase 3 docs page: `docs/book/src/phases/phase-3.md`
 - Progress page for non technical readers: `docs/book/src/progress-for-everyone.md`
 
 ## 8) Resume prompt for a new GPT session
