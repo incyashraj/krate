@@ -2109,16 +2109,16 @@ Save as `docs/book/src/phase3/retro.md` at the end of Phase 3.
 > **Phase Status:** Started at contract layer
 > **Started:** 2026-05-19
 > **Completed:** —
-> **Last Updated:** 2026-05-19
+> **Last Updated:** 2026-05-21
 
 ### Progress Summary
 
 Phase 3 has started with the first WIT draft, checker, GUI manifest path,
-capability names, and shared in-memory UI adapter scaffold. This is not a
-frozen API and not a working desktop GUI yet. It is the contract foundation for
-the next runtime and host adapter work.
+capability names, shared in-memory UI adapter scaffold, and a runtime-facing UI
+dispatcher. This is not a frozen API and not a working desktop GUI yet. It is
+the contract and runtime boundary foundation for the next host adapter work.
 
-### Completed Tasks
+### Current Slice Checklist
 
 | Task ID | Task | Completed | Notes |
 |---|---|---|---|
@@ -2127,6 +2127,7 @@ the next runtime and host adapter work.
 | P3-MANIFEST-00 | Recognize GUI manifests | 2026-05-19 | `manifest check` accepts `layer36:app/gui@0.2.0`; `run` exits clearly until GUI runtime exists. |
 | P3-UCAP-00 | Add first Phase 3 capability names | 2026-05-19 | `ui`, `gfx`, and `audio` capability strings now parse through the manifest and policy layer. |
 | P3-UI-00 | Add shared draft UI adapter model | 2026-05-19 | `adapter-common::ui` tracks draft window IDs, lifecycle, title, size, visibility, redraw events, and validation. |
+| P3-RUNTIME-00 | Add runtime UI dispatcher scaffold | 2026-05-21 | `runtime::phase3_ui` checks UCap before draft window operations and proves clipboard grants fail before unsupported host code. |
 
 ---
 
@@ -2163,6 +2164,9 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P3-AUDIO-01 | First `layer36:audio@0.1.0` WIT draft | 2026-05-19 | Covers playback and capture stream shape. |
 | P3-TEST-00 | Phase 3 WIT checker | 2026-05-19 | `scripts/check-phase3-uapi.sh` parses contracts and checks package, world, naming, docs, and permission error shape. |
 | P3-RUN-00 | CLI recognizes Phase 3 GUI manifests | 2026-05-19 | `manifest check` accepts `layer36:app/gui@0.2.0`; `run` exits early with a clear not-implemented message. |
+| P3-UCAP-00 | Phase 3 capability names | 2026-05-19 | Manifest and policy now understand the first `ui`, `gfx`, and `audio` capability strings. |
+| P3-UI-00 | Shared draft UI adapter model | 2026-05-19 | `adapter-common::ui` tracks draft windows and events without native OS windows yet. |
+| P3-RUNTIME-00 | Runtime UI dispatcher scaffold | 2026-05-21 | `runtime::phase3_ui` gates draft window work through UCap and keeps unsupported clipboard paths permission-checked. |
 
 ---
 

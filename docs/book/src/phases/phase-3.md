@@ -35,6 +35,7 @@ The first Phase 3 slice is now in the repo:
 - `scripts/check-phase3-uapi.sh` so CI can reject broken WIT before runtime code depends on it
 - manifest and policy support for the first Phase 3 permission names
 - `adapter-common::ui`, an in-memory draft window registry for IDs, title and size validation, lifecycle state, redraw requests, and events
+- `runtime::phase3_ui`, a runtime dispatcher scaffold that checks UCap before draft window work
 
 This is a draft contract, not a frozen API. The next work is to add a tiny host
 side prototype that connects this shared model to one real native window,

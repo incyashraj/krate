@@ -20,6 +20,7 @@ use wasmtime::{
     Engine, ResourceLimiter, Store, Trap,
 };
 
+pub mod phase3_ui;
 pub mod uapi;
 pub mod uapi_dispatch;
 
@@ -2676,9 +2677,19 @@ mod tests {
     #[cfg(feature = "phase2-bindings")]
     #[test]
     fn connect_plain_http_stream_without_timeout_maps_connection_refused_as_network() {
+        let listener = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping local connect-refused test: bind is not permitted");
+                return;
+            }
+            Err(err) => panic!("bind local connect-refused fixture: {err}"),
+        };
+        let port = listener.local_addr().expect("fixture address").port();
+        drop(listener);
         let url = PlainHttpUrl {
             host: "127.0.0.1".to_string(),
-            port: 1,
+            port,
             path_and_query: "/".to_string(),
         };
         let err = connect_plain_http_stream(&url, None).expect_err("connection should fail");

@@ -1,6 +1,6 @@
 # Layer36 for Everyone
 
-Updated on May 19, 2026.
+Updated on May 21, 2026.
 
 This page explains the project in plain language. It is written for people who are not deep in systems programming.
 
@@ -84,6 +84,9 @@ flowchart LR
 17. Phase 3 now has the first permission names for desktop UI, graphics, and
     audio. It also has a small in-memory window model that lets us test window
     IDs, sizes, titles, and events before we connect real native windows.
+18. The runtime now has a first UI dispatcher scaffold. In simple terms, a
+    future window request now has a checked path inside the runtime before any
+    native window code is called.
 
 ## Current Build Timeline
 
@@ -130,7 +133,7 @@ This is a simple status view for non technical readers.
 | UAPI freeze decision path | Working, with a draft packet and CI checker |
 | Outside walkthrough proof | Ready to collect, with a timing packet, checker, and local rehearsal |
 | Phase 3 handoff | Started at contract level, still waiting on Phase 2 outside review for formal phase close |
-| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, and draft window model are in place. Real windows are not implemented yet |
+| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, and runtime UI dispatcher are in place. Real windows are not implemented yet |
 | Mobile host path | Not started in implementation |
 | Packaging and app store style distribution | Not started in implementation |
 
@@ -175,6 +178,6 @@ The main Phase 2 work still open is:
 5. One timed outside developer walkthrough using the packet checker.
 6. Finalize the retrospective and external Phase 2 review packet.
 
-Phase 3 has started carefully with contracts and a shared draft window model.
-The next useful step is to connect that model to the runtime path, then create
-one real native window on one desktop host before expanding sideways.
+Phase 3 has started carefully with contracts, a shared draft window model, and a
+runtime dispatcher path. The next useful step is one real native window on one
+desktop host before expanding sideways.

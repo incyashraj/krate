@@ -155,6 +155,9 @@ world = "layer36:app/gui@0.2.0"
 
 Manifest tools can check and explain this world today. `layer36 run` still exits
 early for it because the window runtime has not been implemented yet.
+Internally, Phase 3 now has a small runtime UI dispatcher scaffold that checks
+window and clipboard permissions before draft UI work. It is not connected to
+real native windows yet.
 
 `layer36 run` also reads `manifest.toml` when it sits next to the `.wasm` file:
 

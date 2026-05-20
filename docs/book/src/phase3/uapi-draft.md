@@ -11,7 +11,8 @@ those requests.
 ```mermaid
 flowchart LR
     APP["Portable app component"] --> GUI["layer36:app gui world"]
-    GUI --> UI["UI<br/>window, tree, events"]
+    GUI --> UDISP["Runtime UI dispatcher"]
+    UDISP --> UI["UI<br/>window, tree, events"]
     GUI --> GFX["Graphics<br/>2D canvas, GPU surface"]
     GUI --> AUD["Audio<br/>playback, capture"]
     UI --> HOST["Host adapter"]
@@ -23,7 +24,7 @@ flowchart LR
     classDef draft fill:#fff3bf,stroke:#b7791f,color:#2d2100,stroke-width:2px;
     classDef pending fill:#eeeeee,stroke:#999999,color:#777777,stroke-width:1px;
 
-    class APP,GUI draft;
+    class APP,GUI,UDISP draft;
     class UI,GFX,AUD draft;
     class HOST,OS pending;
 ```
@@ -88,6 +89,13 @@ create draft window records, validate titles and sizes, track show or close
 state, and collect window events. This is an in-memory model for tests and
 adapter design. It is not AppKit, Win32, GTK, or a real event loop yet.
 
+The runtime now has a first UI dispatcher scaffold too: `runtime::phase3_ui`.
+It checks the same capability policy before it touches the draft window model.
+Window create, show, resize, redraw, and close all pass through that boundary.
+Clipboard read and write are shaped, but still return unsupported after the
+permission check. That lets us test the security path before native clipboard
+integration exists.
+
 ## What It Does Not Mean Yet
 
 This is not a finished desktop UI layer.
@@ -104,8 +112,8 @@ the app, runtime, SDKs, and host adapters.
 
 The next proof should be small:
 
-1. Connect the draft UI model to a runtime-facing dispatcher path.
-2. Add a host adapter prototype that can create one real window.
-3. Add a simple event loop.
-4. Add a tiny draw call that paints something visible.
-5. Add a small notes app skeleton that uses the same path.
+1. Add a host adapter prototype that can create one real window.
+2. Add a simple event loop.
+3. Add a tiny draw call that paints something visible.
+4. Add a small notes app skeleton that uses the same path.
+5. Keep capability checks at the dispatcher boundary as native code is added.

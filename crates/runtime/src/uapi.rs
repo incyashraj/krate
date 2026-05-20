@@ -17,6 +17,7 @@ pub enum UapiCall {
     Net(NetCall),
     Time(TimeCall),
     Locale(LocaleCall),
+    Ui(UiCall),
 }
 
 impl UapiCall {
@@ -31,6 +32,7 @@ impl UapiCall {
             Self::Net(NetCall::Connect { host, port }) => format!("net.connect:{host}:{port}"),
             Self::Time(call) => format!("time.{call}"),
             Self::Locale(call) => format!("locale.{call}"),
+            Self::Ui(call) => call.to_capability_string(),
         }
     }
 }
@@ -110,6 +112,42 @@ impl fmt::Display for LocaleCall {
         f.write_str(match self {
             Self::Info => "info",
             Self::Format => "format",
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UiCall {
+    WindowCreate,
+    ClipboardRead,
+    ClipboardWrite,
+    Dialog { resource: UiDialogResource },
+}
+
+impl UiCall {
+    fn to_capability_string(&self) -> String {
+        match self {
+            Self::WindowCreate => "ui.window:create".to_string(),
+            Self::ClipboardRead => "ui.clipboard:read".to_string(),
+            Self::ClipboardWrite => "ui.clipboard:write".to_string(),
+            Self::Dialog { resource } => format!("ui.dialog:{resource}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UiDialogResource {
+    Any,
+    FileOpen,
+    FileSave,
+}
+
+impl fmt::Display for UiDialogResource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Any => "*",
+            Self::FileOpen => "file-open",
+            Self::FileSave => "file-save",
         })
     }
 }
@@ -227,6 +265,26 @@ mod tests {
                 port: 80,
             }))
             .is_err());
+    }
+
+    #[test]
+    fn phase3_window_create_is_default_granted() {
+        let guard = UapiGuard::default();
+        let cap = guard
+            .check(&UapiCall::Ui(UiCall::WindowCreate))
+            .expect("window create should be default-granted");
+
+        assert_eq!(cap.to_string(), "ui.window:create");
+    }
+
+    #[test]
+    fn phase3_clipboard_read_is_denied_by_default() {
+        let guard = UapiGuard::default();
+        let err = guard
+            .check(&UapiCall::Ui(UiCall::ClipboardRead))
+            .expect_err("clipboard read should need an explicit grant");
+
+        assert!(matches!(err, UapiError::Policy(PolicyError::Denied { .. })));
     }
 
     #[test]
