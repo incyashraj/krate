@@ -3,23 +3,23 @@
 Last updated: 2026-05-21
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `f726bcb`
-Working tree at this status update: Phase 3 prepared layout path slice in progress
+Latest checked completed push before this slice: `afc42a4`
+Working tree at this status update: Phase 3 draft pointer routing slice in progress
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 326
+- Commits after this slice lands: about 327
 - Tracked files after this slice lands: about 331
-- Total tracked lines after this slice lands: about 90,100
-- Rust lines (`.rs`) after this slice lands: about 44,150
-- Docs lines (`.md`) after this slice lands: about 29,860
+- Total tracked lines after this slice lands: about 91,730
+- Rust lines (`.rs`) after this slice lands: about 44,460
+- Docs lines (`.md`) after this slice lands: about 30,000
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`f726bcb`) checks:
+Latest completed push (`afc42a4`) checks:
 
-- CI: success (run `26204766324`)
-- Deploy docs to GitHub Pages: success (run `26204766328`)
+- CI: success (run `26213621727`)
+- Deploy docs to GitHub Pages: success (run `26213621729`)
 
 Manual hosted full CI run `26069665276` passed on commit `3f1a219`.
 Linux, macOS, and Windows full-test lanes all passed. The language-variant,
@@ -108,6 +108,10 @@ Current Phase 3 slice:
 - `PreparedLayoutTree` now lets the runtime prepare a Taffy tree once and
   recompute layout for repeated viewport changes. The local prepared 10k
   benchmark is under the Phase 3 budget, while cold rebuild remains above it.
+- The runtime now has the first draft pointer route. It computes layout for the
+  window, hit-tests the logical pointer point to the deepest widget, then queues
+  a portable `UiEvent::Pointer` with a window ID and optional widget ID. Native
+  mouse, touch, hover, wheel, and keyboard event sources are still pending.
 
 This does not mean desktop UI is implemented yet. It means the first public
 contract for desktop UI work is now in the repo and checked locally. The new UI
@@ -153,6 +157,7 @@ Top pending items:
 - Expanded Phase 3 layout proof with generated 100-shape tests, a 1k/10k-node benchmark target, absolute rectangle helpers, and a first layout hit-test helper for future input routing.
 - Recorded that the first local 10k layout measurement is not an exit pass yet, so the next layout work should focus on optimization and formal benchmark evidence rather than claiming the 60 fps tree budget is done.
 - Added `PreparedLayoutTree`, prepared 1k/10k benchmark lanes, and `Phase3UiDispatcher::prepare_layout` so future event loops can reuse the layout tree between widget mutations.
+- Added the first runtime-side pointer event route so logical pointer coordinates can be hit-tested against layout and queued as portable UI events before real native event loops land.
 - Added a UCap enforcement evidence recorder and cross-host comparator (`record-phase2-ucap-evidence` + `compare-phase2-ucap-evidence`)
 - Wired hosted full CI to upload per-OS UCap evidence artifacts and run a dedicated cross-host compare gate
 - Added a benchmark evidence recorder and comparator (`record-phase2-benchmark-evidence` + `compare-phase2-benchmark-evidence`) to track startup and dispatch performance evidence in one per-host report

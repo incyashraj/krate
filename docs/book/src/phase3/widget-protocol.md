@@ -94,8 +94,10 @@ sequenceDiagram
     App->>Runtime: next widget tree
 ```
 
-The first code path already handles draft window lifecycle events. The next
-steps are a larger layout surface, a real native window, then a tiny widget
+The first code path already handles draft window lifecycle events. It also has
+a routed pointer event path now: the runtime can take a logical pointer
+position, run layout hit testing, and queue an event with the target widget ID.
+The next steps are a real native window, a host event loop, then a tiny widget
 tree with text and a button.
 
 ## Current Status
@@ -116,8 +118,10 @@ Done now:
 - The runtime dispatcher can also prepare a layout tree for repeated passes,
   which is the path future event loops should use between widget mutations.
 - The layout crate has a first hit-test helper. It can use the layout snapshot
-  to find the deepest widget under a point. Real input events are not wired to
-  it yet.
+  to find the deepest widget under a point.
+- The runtime can queue a routed pointer event after hit testing, so a future
+  native mouse or touch event can already become a stable Layer36 event with a
+  window ID and optional widget ID.
 - The runtime has a UI dispatcher scaffold.
 - macOS, Linux, and Windows adapters expose headless draft UI entry points.
 - The runtime can choose the current host adapter.
@@ -126,6 +130,7 @@ Done now:
 Pending:
 
 - real native window backend
+- host event loop that feeds real pointer events into the route
 - widget tree lowering
 - larger layout style coverage and recorded large-tree benchmark results on all target hosts
 - text input and IME

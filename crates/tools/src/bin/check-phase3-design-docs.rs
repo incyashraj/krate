@@ -35,6 +35,7 @@ fn main() -> Result<()> {
             "Native widget",
             "Drawn fallback",
             "Current Status",
+            "routed pointer event",
             "real native window backend",
             "layer36-notes",
         ],

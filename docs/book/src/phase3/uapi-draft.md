@@ -140,8 +140,10 @@ should use between widget mutations.
 
 Layout has its first input-facing helper too. The layout crate can hit-test a
 point against the computed rectangles and return the deepest widget under that
-point. That is not connected to native mouse or touch events yet, but it proves
-the geometry path that event routing will use.
+point. The runtime now has a draft pointer route that uses that helper. It
+takes a window, viewport, logical x and y, button state, and modifiers, then
+queues a pointer event with the widget ID if a hit was found. This is still not
+a native mouse or touch event loop, but the routing shape is now in code.
 
 ## What It Does Not Mean Yet
 
@@ -162,7 +164,7 @@ The next proof should be small and visible:
 1. Record prepared and cold layout benchmark numbers on the target hosts.
 2. Add a host adapter prototype that can create one real window.
 3. Add a simple event loop.
-4. Connect real input events to layout hit testing.
+4. Connect real host input events to the draft pointer route.
 5. Add a tiny draw call that paints something visible.
 6. Add a small notes app skeleton that uses the same path.
 7. Keep capability checks at the dispatcher boundary as native code is added.

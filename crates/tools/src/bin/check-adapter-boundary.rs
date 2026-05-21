@@ -262,6 +262,7 @@ fn check_adapter_boundary() -> Result<BoundaryReport> {
             "fn remove_node(&self, window: WindowId, widget: WidgetId)",
             "fn focus_node(&self, window: WindowId, widget: WidgetId)",
             "fn widget_tree(&self, window: WindowId)",
+            "fn queue_pointer_event(&self, event: PointerEvent)",
         ] {
             ensure(
                 source.contains(method),

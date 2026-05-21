@@ -119,6 +119,10 @@ flowchart LR
     The local prepared 10,000-widget path is under the Phase 3 budget now, but
     we still need formal Linux, macOS, and Windows evidence before calling that
     exit item done.
+28. Pointer routing has started. In simple terms, Layer36 can now take a
+    pointer position, ask layout which widget is under it, and queue an event
+    with that widget ID. Real native mouse and touch events are still pending,
+    but the runtime route they will use now exists.
 
 ## Current Build Timeline
 

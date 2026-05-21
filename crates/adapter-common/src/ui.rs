@@ -80,6 +80,36 @@ pub enum Theme {
     Unknown,
 }
 
+/// Mouse or touch button in the portable UI event stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerButton {
+    Primary,
+    Secondary,
+    Middle,
+    Other,
+}
+
+/// Keyboard modifier state attached to input events.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Modifiers {
+    pub shift: bool,
+    pub control: bool,
+    pub alt: bool,
+    pub meta: bool,
+}
+
+/// Pointer input event after runtime routing.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PointerEvent {
+    pub window: WindowId,
+    pub widget: Option<WidgetId>,
+    pub x: f32,
+    pub y: f32,
+    pub button: Option<PointerButton>,
+    pub pressed: bool,
+    pub modifiers: Modifiers,
+}
+
 /// Options used when creating a window.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowOptions {
@@ -321,7 +351,7 @@ impl WidgetTree {
 }
 
 /// Small host-neutral event shape for the first Phase 3 prototype.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum UiEvent {
     WindowCreated(WindowId),
     WindowShown(WindowId),
@@ -333,6 +363,7 @@ pub enum UiEvent {
     WidgetUpdated { window: WindowId, widget: WidgetId },
     WidgetRemoved { window: WindowId, widget: WidgetId },
     FocusChanged { window: WindowId, widget: WidgetId },
+    Pointer(PointerEvent),
 }
 
 /// Static capability summary for one UI adapter build.
@@ -411,6 +442,9 @@ pub trait UiAdapter: Send + Sync {
 
     /// Drain queued adapter events.
     fn drain_events(&self) -> Result<Vec<UiEvent>, UiAdapterError>;
+
+    /// Queue a routed pointer event.
+    fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError>;
 
     /// Read host clipboard text.
     fn read_clipboard_text(&self) -> Result<String, UiAdapterError> {
@@ -505,6 +539,10 @@ impl UiAdapter for DraftUiAdapter {
 
     fn drain_events(&self) -> Result<Vec<UiEvent>, UiAdapterError> {
         Ok(self.registry()?.drain_events())
+    }
+
+    fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError> {
+        self.registry()?.queue_pointer_event(event)
     }
 }
 
@@ -676,6 +714,25 @@ impl DraftWindowRegistry {
     /// Drain queued draft events.
     pub fn drain_events(&mut self) -> Vec<UiEvent> {
         std::mem::take(&mut self.events)
+    }
+
+    /// Queue a pointer event after runtime hit testing has assigned a target.
+    pub fn queue_pointer_event(&mut self, event: PointerEvent) -> Result<(), UiAdapterError> {
+        self.open_window(event.window)?;
+        if let Some(widget) = event.widget {
+            let tree =
+                self.widget_trees
+                    .get(&event.window)
+                    .ok_or(UiAdapterError::MissingWidgetTree {
+                        window: event.window.get(),
+                    })?;
+            if !tree.nodes.contains_key(&widget) {
+                return Err(UiAdapterError::InvalidWidgetId { id: widget.get() });
+            }
+        }
+
+        self.events.push(UiEvent::Pointer(event));
+        Ok(())
     }
 
     fn open_window(&self, id: WindowId) -> Result<&WindowRecord, UiAdapterError> {
@@ -981,6 +1038,78 @@ mod tests {
                     widget: WidgetId::new(2).expect("button"),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn draft_registry_queues_routed_pointer_events() {
+        let mut registry = DraftWindowRegistry::default();
+        let size = WindowSize::new(800, 600).expect("size");
+        let window = registry.create_window(WindowOptions::new("Notes", size).expect("options"));
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let button = WidgetNode::new(WidgetId::new(2).expect("button"), WidgetKind::Button)
+            .with_parent(root.id)
+            .with_label("Save")
+            .expect("label");
+
+        registry.set_root(window, root).expect("root");
+        registry.upsert_node(window, button).expect("button");
+        registry
+            .queue_pointer_event(PointerEvent {
+                window,
+                widget: Some(WidgetId::new(2).expect("button")),
+                x: 8.0,
+                y: 10.0,
+                button: Some(PointerButton::Primary),
+                pressed: true,
+                modifiers: Modifiers::default(),
+            })
+            .expect("pointer");
+
+        assert_eq!(
+            registry.drain_events(),
+            vec![
+                UiEvent::WindowCreated(window),
+                UiEvent::WidgetRootSet {
+                    window,
+                    root: WidgetId::new(1).expect("root"),
+                },
+                UiEvent::WidgetUpdated {
+                    window,
+                    widget: WidgetId::new(2).expect("button"),
+                },
+                UiEvent::Pointer(PointerEvent {
+                    window,
+                    widget: Some(WidgetId::new(2).expect("button")),
+                    x: 8.0,
+                    y: 10.0,
+                    button: Some(PointerButton::Primary),
+                    pressed: true,
+                    modifiers: Modifiers::default(),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn draft_registry_rejects_pointer_events_for_missing_widgets() {
+        let mut registry = DraftWindowRegistry::default();
+        let size = WindowSize::new(800, 600).expect("size");
+        let window = registry.create_window(WindowOptions::new("Notes", size).expect("options"));
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        registry.set_root(window, root).expect("root");
+
+        assert_eq!(
+            registry.queue_pointer_event(PointerEvent {
+                window,
+                widget: Some(WidgetId::new(99).expect("missing")),
+                x: 8.0,
+                y: 10.0,
+                button: Some(PointerButton::Primary),
+                pressed: true,
+                modifiers: Modifiers::default(),
+            }),
+            Err(UiAdapterError::InvalidWidgetId { id: 99 })
         );
     }
 

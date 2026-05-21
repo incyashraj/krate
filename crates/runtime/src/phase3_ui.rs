@@ -5,10 +5,12 @@
 //! GTK windows come later.
 
 use layer36_adapter_common::ui::{
-    UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, WidgetId, WidgetNode, WidgetTree, WindowId,
-    WindowOptions, WindowRecord, WindowSize,
+    Modifiers, PointerButton, PointerEvent, UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent,
+    WidgetId, WidgetNode, WidgetTree, WindowId, WindowOptions, WindowRecord, WindowSize,
 };
-use layer36_layout::{compute_layout, LayoutSnapshot, LayoutViewport, PreparedLayoutTree};
+use layer36_layout::{
+    compute_layout, hit_test, LayoutPoint, LayoutSnapshot, LayoutViewport, PreparedLayoutTree,
+};
 use thiserror::Error;
 
 use crate::uapi::{UapiCall, UapiError, UapiGuard, UiCall};
@@ -32,6 +34,17 @@ pub enum UiDispatchError {
 pub struct Phase3UiDispatcher<'a> {
     guard: &'a UapiGuard,
     adapter: &'a dyn UiAdapter,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PointerRouteRequest {
+    pub window: WindowId,
+    pub viewport: LayoutViewport,
+    pub x: f32,
+    pub y: f32,
+    pub button: Option<PointerButton>,
+    pub pressed: bool,
+    pub modifiers: Modifiers,
 }
 
 /// Owns the Phase 3 UI guard and host adapter for one runtime session.
@@ -178,6 +191,36 @@ impl<'a> Phase3UiDispatcher<'a> {
             })?;
 
         PreparedLayoutTree::new(&tree).map_err(|err| UiDispatchError::Layout(err.to_string()))
+    }
+
+    pub fn route_pointer_event(
+        &self,
+        request: PointerRouteRequest,
+    ) -> UiDispatchResult<Option<WidgetId>> {
+        self.check_window_access()?;
+        let point = LayoutPoint::new(request.x, request.y)
+            .map_err(|err| UiDispatchError::Layout(err.to_string()))?;
+        let tree =
+            self.adapter
+                .widget_tree(request.window)?
+                .ok_or(UiAdapterError::MissingWidgetTree {
+                    window: request.window.get(),
+                })?;
+        let layout = compute_layout(&tree, request.viewport)
+            .map_err(|err| UiDispatchError::Layout(err.to_string()))?;
+        let widget = hit_test(&tree, &layout, point).map(|hit| hit.widget);
+
+        self.adapter.queue_pointer_event(PointerEvent {
+            window: request.window,
+            widget,
+            x: request.x,
+            y: request.y,
+            button: request.button,
+            pressed: request.pressed,
+            modifiers: request.modifiers,
+        })?;
+
+        Ok(widget)
     }
 
     pub fn drain_events(&self) -> UiDispatchResult<Vec<UiEvent>> {
@@ -481,6 +524,127 @@ mod tests {
                 width: 600.0,
                 height: 400.0,
             })
+        );
+    }
+
+    #[test]
+    fn routes_pointer_events_to_deepest_layout_hit() {
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let adapter = DraftUiAdapter::default();
+        let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+        let window = dispatcher
+            .create_window(
+                WindowOptions::new("Notes", WindowSize::new(300, 200).expect("window size"))
+                    .expect("options"),
+            )
+            .expect("create window");
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let button = WidgetNode::new(WidgetId::new(2).expect("button"), WidgetKind::Button)
+            .with_parent(root.id)
+            .with_style(WidgetStyle {
+                width: Some(120.0),
+                height: Some(40.0),
+                ..WidgetStyle::default()
+            })
+            .expect("style");
+        let label = WidgetNode::new(WidgetId::new(3).expect("label"), WidgetKind::Text)
+            .with_parent(button.id)
+            .with_style(WidgetStyle {
+                width: Some(80.0),
+                height: Some(20.0),
+                ..WidgetStyle::default()
+            })
+            .expect("style");
+
+        dispatcher.set_root(window, root).expect("root");
+        dispatcher.upsert_node(window, button).expect("button");
+        dispatcher.upsert_node(window, label).expect("label");
+        let target = dispatcher
+            .route_pointer_event(PointerRouteRequest {
+                window,
+                viewport: LayoutViewport::new(300.0, 200.0).expect("viewport"),
+                x: 10.0,
+                y: 10.0,
+                button: Some(PointerButton::Primary),
+                pressed: true,
+                modifiers: Modifiers::default(),
+            })
+            .expect("pointer");
+
+        assert_eq!(target, Some(WidgetId::new(3).expect("label")));
+        assert_eq!(
+            dispatcher.drain_events().expect("events"),
+            vec![
+                UiEvent::WindowCreated(window),
+                UiEvent::WidgetRootSet {
+                    window,
+                    root: WidgetId::new(1).expect("root"),
+                },
+                UiEvent::WidgetUpdated {
+                    window,
+                    widget: WidgetId::new(2).expect("button"),
+                },
+                UiEvent::WidgetUpdated {
+                    window,
+                    widget: WidgetId::new(3).expect("label"),
+                },
+                UiEvent::Pointer(PointerEvent {
+                    window,
+                    widget: Some(WidgetId::new(3).expect("label")),
+                    x: 10.0,
+                    y: 10.0,
+                    button: Some(PointerButton::Primary),
+                    pressed: true,
+                    modifiers: Modifiers::default(),
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn routes_pointer_events_without_widget_when_outside_layout() {
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let adapter = DraftUiAdapter::default();
+        let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+        let window = dispatcher
+            .create_window(
+                WindowOptions::new("Notes", WindowSize::new(100, 100).expect("window size"))
+                    .expect("options"),
+            )
+            .expect("create window");
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+
+        dispatcher.set_root(window, root).expect("root");
+        let target = dispatcher
+            .route_pointer_event(PointerRouteRequest {
+                window,
+                viewport: LayoutViewport::new(100.0, 100.0).expect("viewport"),
+                x: 120.0,
+                y: 10.0,
+                button: None,
+                pressed: false,
+                modifiers: Modifiers {
+                    shift: true,
+                    ..Modifiers::default()
+                },
+            })
+            .expect("pointer");
+
+        assert_eq!(target, None);
+        assert_eq!(
+            dispatcher.drain_events().expect("events").last(),
+            Some(&UiEvent::Pointer(PointerEvent {
+                window,
+                widget: None,
+                x: 120.0,
+                y: 10.0,
+                button: None,
+                pressed: false,
+                modifiers: Modifiers {
+                    shift: true,
+                    ..Modifiers::default()
+                },
+            }))
         );
     }
 

@@ -44,6 +44,7 @@ The first Phase 3 slice is now in the repo:
 - generated layout tests across 100 tree shapes, plus a 1k/10k-node Criterion benchmark target
 - a prepared repeated-layout path, so future event loops can reuse the same layout tree instead of rebuilding it each frame
 - first layout-based hit-test helper for finding the deepest widget under a point
+- draft pointer event routing, so the runtime can turn a logical pointer position into a queued event with the hit widget ID
 - headless draft UI adapter entry points in the macOS, Linux, and Windows adapter crates, each with a blank-window smoke test
 - `Phase3UiRuntime::with_host_adapter`, which selects the current host UI adapter and reports whether it is still headless or native
 - ADR-0013 and RFC-0003 now record the widget lowering strategy: native controls where the host has a semantic match, drawn fallback where it does not
@@ -51,7 +52,7 @@ The first Phase 3 slice is now in the repo:
 
 This is a draft contract, not a frozen API. The next work is to add a tiny host
 side prototype that connects this shared model to one real native window,
-receives events, and draws a simple surface.
+feeds real host input into the pointer route, and draws a simple surface.
 
 See [Widget Protocol](../phase3/widget-protocol.md) for the plain-language
 version of this Phase 3 direction. See [Layout](../phase3/layout.md) for the
