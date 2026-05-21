@@ -118,6 +118,18 @@ impl UiAdapter for WindowsUiAdapter {
         self.draft.poll_event()
     }
 
+    fn queue_close_requested(&self, id: WindowId) -> Result<(), UiAdapterError> {
+        self.draft.queue_close_requested(id)
+    }
+
+    fn queue_host_resize(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {
+        self.draft.queue_host_resize(id, size)
+    }
+
+    fn queue_window_focused(&self, id: WindowId, focused: bool) -> Result<(), UiAdapterError> {
+        self.draft.queue_window_focused(id, focused)
+    }
+
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError> {
         self.draft.queue_pointer_event(event)
     }

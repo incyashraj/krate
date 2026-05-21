@@ -156,6 +156,10 @@ That matters because the planned UI API exposes `events.poll()`. Native host
 event loops can feed the queue first, then app code can consume events one by
 one in stable FIFO order.
 
+Basic host window events have draft routes now too. A future native backend can
+queue "close requested", "window resized", and "window focus changed" without
+closing the app window by itself. The app still decides how to respond.
+
 ## What It Does Not Mean Yet
 
 This is not a finished desktop UI layer.

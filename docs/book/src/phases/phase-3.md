@@ -47,6 +47,7 @@ The first Phase 3 slice is now in the repo:
 - draft pointer event routing, so the runtime can turn a logical pointer position into a queued event with the hit widget ID
 - draft key and text input routing, so focused widgets can receive portable key events and committed text before native IME work starts
 - FIFO event polling, so future `events.poll()` calls can consume one queued UI event at a time
+- draft host window event routing for close requests, resize, and focus changes
 - headless draft UI adapter entry points in the macOS, Linux, and Windows adapter crates, each with a blank-window smoke test
 - `Phase3UiRuntime::with_host_adapter`, which selects the current host UI adapter and reports whether it is still headless or native
 - ADR-0013 and RFC-0003 now record the widget lowering strategy: native controls where the host has a semantic match, drawn fallback where it does not
@@ -54,7 +55,7 @@ The first Phase 3 slice is now in the repo:
 
 This is a draft contract, not a frozen API. The next work is to add a tiny host
 side prototype that connects this shared model to one real native window,
-feeds real host input into the draft event queue, and draws a simple surface.
+feeds real host window and input events into the draft event queue, and draws a simple surface.
 
 See [Widget Protocol](../phase3/widget-protocol.md) for the plain-language
 version of this Phase 3 direction. See [Layout](../phase3/layout.md) for the

@@ -130,6 +130,9 @@ flowchart LR
 30. Event polling has started. In simple terms, the runtime can now hand one UI
     event at a time to the future app-facing `events.poll()` path. Real native
     event loops still need to feed this queue.
+31. Basic host window events have routes now. In simple terms, a future native
+    window can tell Layer36 that the user tried to close it, resized it, or
+    moved focus, and the app can decide what to do next.
 
 ## Current Build Timeline
 
@@ -176,7 +179,7 @@ This is a simple status view for non technical readers.
 | UAPI freeze decision path | Working, with a draft packet and CI checker |
 | Outside walkthrough proof | Ready to collect, with a timing packet, checker, and local rehearsal |
 | Phase 3 handoff | Started at contract level, still waiting on Phase 2 outside review for formal phase close |
-| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, shared widget tree model, draft widget-tree dispatch, first Taffy-backed layout wrapper, 100 generated layout-shape tests, 1k/10k layout benchmark target, prepared repeated-layout path, first layout hit-test helper, draft pointer, key, text, and FIFO event polling routes, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, and the widget lowering rule are in place. Real windows are not implemented yet |
+| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, shared widget tree model, draft widget-tree dispatch, first Taffy-backed layout wrapper, 100 generated layout-shape tests, 1k/10k layout benchmark target, prepared repeated-layout path, first layout hit-test helper, draft window, pointer, key, text, and FIFO event polling routes, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, and the widget lowering rule are in place. Real windows are not implemented yet |
 | Mobile host path | Not started in implementation |
 | Packaging and app store style distribution | Not started in implementation |
 

@@ -196,6 +196,7 @@ pub struct WindowRecord {
     pub size: WindowSize,
     pub state: WindowState,
     pub visible: bool,
+    pub focused: bool,
     pub closed: bool,
 }
 
@@ -412,6 +413,8 @@ pub enum UiEvent {
     WindowCreated(WindowId),
     WindowShown(WindowId),
     WindowClosed(WindowId),
+    WindowCloseRequested(WindowId),
+    WindowFocused { id: WindowId, focused: bool },
     RedrawRequested(WindowId),
     Resized { id: WindowId, size: WindowSize },
     TitleChanged { id: WindowId, title: String },
@@ -503,6 +506,15 @@ pub trait UiAdapter: Send + Sync {
 
     /// Poll one queued adapter event in FIFO order.
     fn poll_event(&self) -> Result<Option<UiEvent>, UiAdapterError>;
+
+    /// Queue a host close request without closing the window yet.
+    fn queue_close_requested(&self, id: WindowId) -> Result<(), UiAdapterError>;
+
+    /// Queue a host resize event and update the tracked window size.
+    fn queue_host_resize(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError>;
+
+    /// Queue a host window focus change.
+    fn queue_window_focused(&self, id: WindowId, focused: bool) -> Result<(), UiAdapterError>;
 
     /// Queue a routed pointer event.
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError>;
@@ -612,6 +624,18 @@ impl UiAdapter for DraftUiAdapter {
         Ok(self.registry()?.poll_event())
     }
 
+    fn queue_close_requested(&self, id: WindowId) -> Result<(), UiAdapterError> {
+        self.registry()?.queue_close_requested(id)
+    }
+
+    fn queue_host_resize(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {
+        self.registry()?.queue_host_resize(id, size)
+    }
+
+    fn queue_window_focused(&self, id: WindowId, focused: bool) -> Result<(), UiAdapterError> {
+        self.registry()?.queue_window_focused(id, focused)
+    }
+
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError> {
         self.registry()?.queue_pointer_event(event)
     }
@@ -646,6 +670,7 @@ impl DraftWindowRegistry {
             size: options.size,
             state: options.state,
             visible: false,
+            focused: false,
             closed: false,
         };
         self.windows.insert(id, record);
@@ -802,6 +827,38 @@ impl DraftWindowRegistry {
     /// Poll one queued draft event in FIFO order.
     pub fn poll_event(&mut self) -> Option<UiEvent> {
         self.events.pop_front()
+    }
+
+    /// Queue a host close request without closing the window yet.
+    pub fn queue_close_requested(&mut self, id: WindowId) -> Result<(), UiAdapterError> {
+        self.open_window(id)?;
+        self.events.push_back(UiEvent::WindowCloseRequested(id));
+        Ok(())
+    }
+
+    /// Queue a host resize event and update the tracked logical size.
+    pub fn queue_host_resize(
+        &mut self,
+        id: WindowId,
+        size: WindowSize,
+    ) -> Result<(), UiAdapterError> {
+        let window = self.open_window_mut(id)?;
+        window.size = size;
+        self.events.push_back(UiEvent::Resized { id, size });
+        Ok(())
+    }
+
+    /// Queue a host window focus change.
+    pub fn queue_window_focused(
+        &mut self,
+        id: WindowId,
+        focused: bool,
+    ) -> Result<(), UiAdapterError> {
+        let window = self.open_window_mut(id)?;
+        window.focused = focused;
+        self.events
+            .push_back(UiEvent::WindowFocused { id, focused });
+        Ok(())
     }
 
     /// Queue a pointer event after runtime hit testing has assigned a target.
@@ -1019,6 +1076,7 @@ mod tests {
         let window = registry.window(id).expect("window");
         assert_eq!(window.size, resized);
         assert!(!window.visible);
+        assert!(!window.focused);
         assert!(window.closed);
         assert_eq!(
             registry.drain_events(),
@@ -1042,6 +1100,32 @@ mod tests {
         assert_eq!(registry.poll_event(), Some(UiEvent::WindowCreated(id)));
         assert_eq!(registry.poll_event(), Some(UiEvent::WindowShown(id)));
         assert_eq!(registry.poll_event(), None);
+    }
+
+    #[test]
+    fn draft_registry_queues_host_window_events_without_closing() {
+        let mut registry = DraftWindowRegistry::default();
+        let size = WindowSize::new(800, 600).expect("size");
+        let id = registry.create_window(WindowOptions::new("Notes", size).expect("options"));
+        let resized = WindowSize::new(900, 700).expect("resized");
+
+        registry.queue_window_focused(id, true).expect("focus");
+        registry.queue_host_resize(id, resized).expect("resize");
+        registry.queue_close_requested(id).expect("close request");
+
+        let window = registry.window(id).expect("window");
+        assert_eq!(window.size, resized);
+        assert!(window.focused);
+        assert!(!window.closed);
+        assert_eq!(
+            registry.drain_events(),
+            vec![
+                UiEvent::WindowCreated(id),
+                UiEvent::WindowFocused { id, focused: true },
+                UiEvent::Resized { id, size: resized },
+                UiEvent::WindowCloseRequested(id),
+            ]
+        );
     }
 
     #[test]

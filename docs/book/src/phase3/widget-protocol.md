@@ -128,6 +128,8 @@ Done now:
   place to land later.
 - The adapter and runtime can poll one queued UI event at a time in FIFO order,
   which matches the planned `events.poll()` app-facing shape.
+- Host window events for close request, resize, and focus change have draft
+  routes through the same queue.
 - The runtime has a UI dispatcher scaffold.
 - macOS, Linux, and Windows adapters expose headless draft UI entry points.
 - The runtime can choose the current host adapter.
@@ -136,7 +138,7 @@ Done now:
 Pending:
 
 - real native window backend
-- host event loop that feeds real pointer, key, and text events into the queue
+- host event loop that feeds real close, resize, focus, pointer, key, and text events into the queue
 - widget tree lowering
 - larger layout style coverage and recorded large-tree benchmark results on all target hosts
 - IME composition events

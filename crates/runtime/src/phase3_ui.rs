@@ -263,6 +263,24 @@ impl<'a> Phase3UiDispatcher<'a> {
         Ok(widget)
     }
 
+    pub fn route_close_requested(&self, window: WindowId) -> UiDispatchResult<()> {
+        self.check_window_access()?;
+        self.adapter.queue_close_requested(window)?;
+        Ok(())
+    }
+
+    pub fn route_host_resize(&self, window: WindowId, size: WindowSize) -> UiDispatchResult<()> {
+        self.check_window_access()?;
+        self.adapter.queue_host_resize(window, size)?;
+        Ok(())
+    }
+
+    pub fn route_window_focused(&self, window: WindowId, focused: bool) -> UiDispatchResult<()> {
+        self.check_window_access()?;
+        self.adapter.queue_window_focused(window, focused)?;
+        Ok(())
+    }
+
     pub fn drain_events(&self) -> UiDispatchResult<Vec<UiEvent>> {
         Ok(self.adapter.drain_events()?)
     }
@@ -377,6 +395,43 @@ mod tests {
             Some(UiEvent::WindowShown(id))
         );
         assert_eq!(dispatcher.poll_event().expect("poll"), None);
+    }
+
+    #[test]
+    fn routes_host_window_events_into_queue() {
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let adapter = DraftUiAdapter::default();
+        let size = WindowSize::new(800, 600).expect("size");
+        let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+
+        let id = dispatcher
+            .create_window(WindowOptions::new("Layer36 Notes", size).expect("options"))
+            .expect("create window");
+        let resized = WindowSize::new(900, 700).expect("resized");
+
+        dispatcher
+            .route_window_focused(id, true)
+            .expect("window focus");
+        dispatcher
+            .route_host_resize(id, resized)
+            .expect("host resize");
+        dispatcher
+            .route_close_requested(id)
+            .expect("close requested");
+
+        let window = dispatcher.window(id).expect("adapter").expect("window");
+        assert_eq!(window.size, resized);
+        assert!(window.focused);
+        assert!(!window.closed);
+        assert_eq!(
+            dispatcher.drain_events().expect("events"),
+            vec![
+                UiEvent::WindowCreated(id),
+                UiEvent::WindowFocused { id, focused: true },
+                UiEvent::Resized { id, size: resized },
+                UiEvent::WindowCloseRequested(id),
+            ]
+        );
     }
 
     #[test]
