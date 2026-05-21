@@ -113,6 +113,8 @@ Done now:
   tree and return them by stable widget ID.
 - The runtime dispatcher can ask for a layout snapshot for the widget tree
   stored on a draft window.
+- The runtime dispatcher can also prepare a layout tree for repeated passes,
+  which is the path future event loops should use between widget mutations.
 - The layout crate has a first hit-test helper. It can use the layout snapshot
   to find the deepest widget under a point. Real input events are not wired to
   it yet.
@@ -125,7 +127,7 @@ Pending:
 
 - real native window backend
 - widget tree lowering
-- larger layout style coverage and recorded large-tree benchmark results
+- larger layout style coverage and recorded large-tree benchmark results on all target hosts
 - text input and IME
 - accessibility tree
 - `layer36-notes`

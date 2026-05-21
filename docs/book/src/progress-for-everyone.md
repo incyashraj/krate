@@ -114,6 +114,11 @@ flowchart LR
     generated screen shapes, has a large-tree benchmark target, and can answer
     "which widget is under this point?" before real mouse or touch events are
     connected.
+27. Layout now has a faster repeated-frame path. In simple terms, Layer36 can
+    prepare the layout tree once and reuse it when only the window size changes.
+    The local prepared 10,000-widget path is under the Phase 3 budget now, but
+    we still need formal Linux, macOS, and Windows evidence before calling that
+    exit item done.
 
 ## Current Build Timeline
 
@@ -160,7 +165,7 @@ This is a simple status view for non technical readers.
 | UAPI freeze decision path | Working, with a draft packet and CI checker |
 | Outside walkthrough proof | Ready to collect, with a timing packet, checker, and local rehearsal |
 | Phase 3 handoff | Started at contract level, still waiting on Phase 2 outside review for formal phase close |
-| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, shared widget tree model, draft widget-tree dispatch, first Taffy-backed layout wrapper, 100 generated layout-shape tests, 1k/10k layout benchmark target, first layout hit-test helper, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, and the widget lowering rule are in place. Real windows are not implemented yet |
+| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, shared widget tree model, draft widget-tree dispatch, first Taffy-backed layout wrapper, 100 generated layout-shape tests, 1k/10k layout benchmark target, prepared repeated-layout path, first layout hit-test helper, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, and the widget lowering rule are in place. Real windows are not implemented yet |
 | Mobile host path | Not started in implementation |
 | Packaging and app store style distribution | Not started in implementation |
 

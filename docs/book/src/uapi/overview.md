@@ -274,6 +274,8 @@ The value of this step is that the boundary is testable:
   boundary for set root, upsert node, remove node, and focus node
 - draft layout calls can now turn the stored widget tree into a
   `LayoutSnapshot`, with one logical rectangle per stable widget ID
+- draft layout can also be prepared for repeated passes, which avoids rebuilding
+  the layout engine tree for every frame when the widget tree has not changed
 - the layout crate can also convert those local rectangles into root-window
   coordinates and hit-test a point against them, ready for future input routing
 

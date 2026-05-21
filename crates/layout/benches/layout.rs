@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use layer36_adapter_common::ui::{WidgetId, WidgetKind, WidgetNode, WidgetStyle, WidgetTree};
-use layer36_layout::{compute_layout, LayoutViewport};
+use layer36_layout::{compute_layout_cold, LayoutViewport, PreparedLayoutTree};
 
 fn phase3_layout_benches(c: &mut Criterion) {
     let viewport = LayoutViewport::new(1440.0, 900.0).expect("viewport");
@@ -11,11 +11,20 @@ fn phase3_layout_benches(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("phase3_layout");
     group.sample_size(10);
-    group.bench_function("stack_1k_nodes", |b| {
-        b.iter(|| compute_layout(black_box(&stack_1k), black_box(viewport)).expect("layout"))
+    group.bench_function("cold_stack_1k_nodes", |b| {
+        b.iter(|| compute_layout_cold(black_box(&stack_1k), black_box(viewport)).expect("layout"))
     });
-    group.bench_function("stack_10k_nodes", |b| {
-        b.iter(|| compute_layout(black_box(&stack_10k), black_box(viewport)).expect("layout"))
+    group.bench_function("cold_stack_10k_nodes", |b| {
+        b.iter(|| compute_layout_cold(black_box(&stack_10k), black_box(viewport)).expect("layout"))
+    });
+
+    let mut prepared_1k = PreparedLayoutTree::new(&stack_1k).expect("prepared 1k");
+    let mut prepared_10k = PreparedLayoutTree::new(&stack_10k).expect("prepared 10k");
+    group.bench_function("prepared_stack_1k_nodes", |b| {
+        b.iter(|| prepared_1k.compute(black_box(viewport)).expect("layout"))
+    });
+    group.bench_function("prepared_stack_10k_nodes", |b| {
+        b.iter(|| prepared_10k.compute(black_box(viewport)).expect("layout"))
     });
     group.finish();
 }

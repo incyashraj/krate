@@ -42,6 +42,7 @@ The first Phase 3 slice is now in the repo:
 - `layer36-layout`, the first Taffy-backed layout wrapper, which turns the shared widget tree into stable rectangles by widget ID
 - runtime layout dispatch, so the Phase 3 dispatcher can compute layout for a stored draft widget tree after the same UI capability check
 - generated layout tests across 100 tree shapes, plus a 1k/10k-node Criterion benchmark target
+- a prepared repeated-layout path, so future event loops can reuse the same layout tree instead of rebuilding it each frame
 - first layout-based hit-test helper for finding the deepest widget under a point
 - headless draft UI adapter entry points in the macOS, Linux, and Windows adapter crates, each with a blank-window smoke test
 - `Phase3UiRuntime::with_host_adapter`, which selects the current host UI adapter and reports whether it is still headless or native

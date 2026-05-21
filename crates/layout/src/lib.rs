@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use layer36_adapter_common::ui::{WidgetId, WidgetKind, WidgetNode, WidgetTree};
+use layer36_adapter_common::ui::{WidgetId, WidgetKind, WidgetNode, WidgetStyle, WidgetTree};
 use taffy::prelude::*;
 use taffy::TaffyError;
 use thiserror::Error;
@@ -107,6 +107,100 @@ pub enum LayoutError {
 
 /// Compute layout for one window widget tree.
 pub fn compute_layout(
+    tree: &WidgetTree,
+    viewport: LayoutViewport,
+) -> Result<LayoutSnapshot, LayoutError> {
+    let mut prepared = PreparedLayoutTree::new(tree)?;
+    prepared.compute(viewport)
+}
+
+/// Prepared Taffy tree for repeated layout passes of the same widget tree.
+pub struct PreparedLayoutTree {
+    root_widget: WidgetId,
+    root_node: NodeId,
+    root_kind: WidgetKind,
+    root_style: WidgetStyle,
+    taffy: TaffyTree<()>,
+    node_map: BTreeMap<WidgetId, NodeId>,
+}
+
+impl PreparedLayoutTree {
+    /// Build a reusable layout tree from the shared widget tree model.
+    pub fn new(tree: &WidgetTree) -> Result<Self, LayoutError> {
+        let root_widget = tree.root();
+        let root = tree.node(root_widget).ok_or(LayoutError::MissingWidget {
+            id: root_widget.get(),
+        })?;
+        let root_kind = root.kind;
+        let root_style = root.style;
+        let prepared_viewport = LayoutViewport {
+            width: 1.0,
+            height: 1.0,
+        };
+        let mut taffy = TaffyTree::<()>::new();
+        let mut node_map = BTreeMap::new();
+        let child_index = child_index(tree);
+        let root_node = build_taffy_node(
+            tree,
+            root_widget,
+            prepared_viewport,
+            &child_index,
+            &mut taffy,
+            &mut node_map,
+        )?;
+
+        Ok(Self {
+            root_widget,
+            root_node,
+            root_kind,
+            root_style,
+            taffy,
+            node_map,
+        })
+    }
+
+    /// Compute layout using the prepared tree.
+    pub fn compute(&mut self, viewport: LayoutViewport) -> Result<LayoutSnapshot, LayoutError> {
+        let root_style = taffy_style_from_parts(self.root_kind, self.root_style, true, viewport);
+        self.taffy
+            .set_style(self.root_node, root_style)
+            .map_err(map_taffy)?;
+        self.taffy
+            .compute_layout(
+                self.root_node,
+                Size {
+                    width: AvailableSpace::Definite(viewport.width),
+                    height: AvailableSpace::Definite(viewport.height),
+                },
+            )
+            .map_err(map_taffy)?;
+
+        let mut rects = BTreeMap::new();
+        for (&widget, &node) in &self.node_map {
+            let layout = self.taffy.layout(node).map_err(map_taffy)?;
+            rects.insert(
+                widget,
+                ComputedRect {
+                    x: layout.location.x,
+                    y: layout.location.y,
+                    width: layout.size.width,
+                    height: layout.size.height,
+                },
+            );
+        }
+
+        Ok(LayoutSnapshot {
+            root: self.root_widget,
+            rects,
+        })
+    }
+}
+
+/// Compute layout by rebuilding the engine tree for one pass.
+///
+/// This is useful for smoke paths and cold benchmarks. Repeated layout should
+/// use [`PreparedLayoutTree`] instead.
+pub fn compute_layout_cold(
     tree: &WidgetTree,
     viewport: LayoutViewport,
 ) -> Result<LayoutSnapshot, LayoutError> {
@@ -236,9 +330,18 @@ fn build_taffy_node(
 }
 
 fn taffy_style_for(node: &WidgetNode, is_root: bool, viewport: LayoutViewport) -> Style {
+    taffy_style_from_parts(node.kind, node.style, is_root, viewport)
+}
+
+fn taffy_style_from_parts(
+    kind: WidgetKind,
+    widget_style: WidgetStyle,
+    is_root: bool,
+    viewport: LayoutViewport,
+) -> Style {
     let mut size = Size {
-        width: dimension_from_option(node.style.width),
-        height: dimension_from_option(node.style.height),
+        width: dimension_from_option(widget_style.width),
+        height: dimension_from_option(widget_style.height),
     };
     if is_root {
         size = Size {
@@ -249,14 +352,14 @@ fn taffy_style_for(node: &WidgetNode, is_root: bool, viewport: LayoutViewport) -
 
     Style {
         display: Display::Flex,
-        flex_direction: flex_direction_for(node.kind),
-        flex_grow: node.style.grow,
+        flex_direction: flex_direction_for(kind),
+        flex_grow: widget_style.grow,
         size,
         padding: Rect {
-            left: LengthPercentage::length(node.style.padding),
-            right: LengthPercentage::length(node.style.padding),
-            top: LengthPercentage::length(node.style.padding),
-            bottom: LengthPercentage::length(node.style.padding),
+            left: LengthPercentage::length(widget_style.padding),
+            right: LengthPercentage::length(widget_style.padding),
+            top: LengthPercentage::length(widget_style.padding),
+            bottom: LengthPercentage::length(widget_style.padding),
         },
         ..Default::default()
     }
@@ -547,6 +650,40 @@ mod tests {
             assert_eq!(root_rect.width, viewport.width, "shape {shape}");
             assert_eq!(root_rect.height, viewport.height, "shape {shape}");
         }
+    }
+
+    #[test]
+    fn prepared_tree_recomputes_with_new_viewport() {
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        tree.upsert(growing_child(2, tree.root())).expect("child");
+        let mut prepared = PreparedLayoutTree::new(&tree).expect("prepared");
+
+        let first = prepared
+            .compute(LayoutViewport::new(100.0, 120.0).expect("viewport"))
+            .expect("first layout");
+        let second = prepared
+            .compute(LayoutViewport::new(240.0, 300.0).expect("viewport"))
+            .expect("second layout");
+
+        assert_eq!(
+            first.rect(tree.root()).expect("first root"),
+            ComputedRect {
+                x: 0.0,
+                y: 0.0,
+                width: 100.0,
+                height: 120.0,
+            }
+        );
+        assert_eq!(
+            second.rect(tree.root()).expect("second root"),
+            ComputedRect {
+                x: 0.0,
+                y: 0.0,
+                width: 240.0,
+                height: 300.0,
+            }
+        );
     }
 
     fn fixed_child(id: u64, parent: WidgetId, width: f32, height: f32) -> WidgetNode {

@@ -56,6 +56,7 @@ fn main() -> Result<()> {
             "crates/layout/",
             "Taffy",
             "LayoutSnapshot",
+            "PreparedLayoutTree",
             "hit-test",
             "10,000-node",
             "accessibility bounds",

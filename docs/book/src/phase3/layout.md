@@ -48,10 +48,15 @@ It does these things today:
 - returns absolute rectangles when code needs root-window coordinates
 - can hit-test a point and return the deepest widget under that point
 - has generated tests for 100 different layout shapes
+- can prepare a layout tree once and reuse it for repeated layout passes
 
 The runtime can now ask for a layout snapshot for a stored draft widget tree.
 That means the path is already connected to the Phase 3 dispatcher, not only a
 standalone library.
+
+The runtime can also ask for a `PreparedLayoutTree`. That is the path future
+event loops should use when a widget tree stays mostly the same across many
+frames.
 
 ## What This Does Not Mean Yet
 
@@ -100,9 +105,15 @@ recorded numbers on the target hosts and a pass or fail decision against the
 Phase 3 budget. The first local run shows optimization is still needed before
 the 10,000-node target can be treated as ready.
 
+The prepared layout path is the first optimization step. Locally, repeated
+10,000-node layout passes are now under the Phase 3 budget, while cold rebuilds
+are still above it. That fits the planned reconciler model: build or update the
+engine tree when widgets change, then reuse it for frame layout.
+
 ## Next Steps
 
 - add more style fields only when the notes app needs them
+- record prepared and cold layout benchmark numbers on Linux, macOS, and Windows
 - connect hit testing to real input events
 - connect layout rectangles to accessibility bounds
 - use the same rectangles when native window work starts

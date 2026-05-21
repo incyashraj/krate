@@ -133,6 +133,11 @@ after the same UI capability check. This does not draw anything yet. It gives
 native widgets, drawn fallback, hit testing, and accessibility one geometry
 answer to share.
 
+There is also a prepared layout path now. The runtime can prepare the window's
+widget tree once, then recompute layout for repeated viewport changes without
+rebuilding the engine tree each time. That is the shape the future event loop
+should use between widget mutations.
+
 Layout has its first input-facing helper too. The layout crate can hit-test a
 point against the computed rectangles and return the deepest widget under that
 point. That is not connected to native mouse or touch events yet, but it proves
@@ -154,7 +159,7 @@ the app, runtime, SDKs, and host adapters.
 
 The next proof should be small and visible:
 
-1. Record layout benchmark numbers on the target hosts.
+1. Record prepared and cold layout benchmark numbers on the target hosts.
 2. Add a host adapter prototype that can create one real window.
 3. Add a simple event loop.
 4. Connect real input events to layout hit testing.

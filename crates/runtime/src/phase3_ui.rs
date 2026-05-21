@@ -8,7 +8,7 @@ use layer36_adapter_common::ui::{
     UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, WidgetId, WidgetNode, WidgetTree, WindowId,
     WindowOptions, WindowRecord, WindowSize,
 };
-use layer36_layout::{compute_layout, LayoutSnapshot, LayoutViewport};
+use layer36_layout::{compute_layout, LayoutSnapshot, LayoutViewport, PreparedLayoutTree};
 use thiserror::Error;
 
 use crate::uapi::{UapiCall, UapiError, UapiGuard, UiCall};
@@ -166,6 +166,18 @@ impl<'a> Phase3UiDispatcher<'a> {
             })?;
 
         compute_layout(&tree, viewport).map_err(|err| UiDispatchError::Layout(err.to_string()))
+    }
+
+    pub fn prepare_layout(&self, window: WindowId) -> UiDispatchResult<PreparedLayoutTree> {
+        self.check_window_access()?;
+        let tree = self
+            .adapter
+            .widget_tree(window)?
+            .ok_or(UiAdapterError::MissingWidgetTree {
+                window: window.get(),
+            })?;
+
+        PreparedLayoutTree::new(&tree).map_err(|err| UiDispatchError::Layout(err.to_string()))
     }
 
     pub fn drain_events(&self) -> UiDispatchResult<Vec<UiEvent>> {
@@ -418,6 +430,56 @@ mod tests {
                 y: 0.0,
                 width: 120.0,
                 height: 32.0,
+            })
+        );
+    }
+
+    #[test]
+    fn prepares_layout_for_repeated_window_layout_passes() {
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let adapter = DraftUiAdapter::default();
+        let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+        let window = dispatcher
+            .create_window(
+                WindowOptions::new("Notes", WindowSize::new(300, 200).expect("window size"))
+                    .expect("options"),
+            )
+            .expect("create window");
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let row = WidgetNode::new(WidgetId::new(2).expect("row"), WidgetKind::Text)
+            .with_parent(root.id)
+            .with_style(WidgetStyle {
+                grow: 1.0,
+                ..WidgetStyle::default()
+            })
+            .expect("style");
+
+        dispatcher.set_root(window, root).expect("root");
+        dispatcher.upsert_node(window, row).expect("row");
+        let mut prepared = dispatcher.prepare_layout(window).expect("prepared");
+        let first = prepared
+            .compute(LayoutViewport::new(300.0, 200.0).expect("viewport"))
+            .expect("first layout");
+        let second = prepared
+            .compute(LayoutViewport::new(600.0, 400.0).expect("viewport"))
+            .expect("second layout");
+
+        assert_eq!(
+            first.rect(WidgetId::new(1).expect("root")),
+            Some(layer36_layout::ComputedRect {
+                x: 0.0,
+                y: 0.0,
+                width: 300.0,
+                height: 200.0,
+            })
+        );
+        assert_eq!(
+            second.rect(WidgetId::new(1).expect("root")),
+            Some(layer36_layout::ComputedRect {
+                x: 0.0,
+                y: 0.0,
+                width: 600.0,
+                height: 400.0,
             })
         );
     }

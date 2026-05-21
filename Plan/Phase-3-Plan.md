@@ -2118,12 +2118,13 @@ capability names, shared in-memory UI adapter scaffold, a shared `UiAdapter`
 trait, host-crate UI adapter entry points, runtime host-adapter discovery, a
 runtime-facing UI dispatcher, the first shared widget tree model, draft
 runtime/widget-tree dispatch, the first Taffy-backed layout wrapper, generated
-layout-shape coverage, a 1k/10k-node layout benchmark target, and a first
-layout hit-test helper. ADR-0013 and RFC-0003 record the widget lowering rule
-before native widget work depends on it. ADR-0014 records the layout engine
-choice. This is not a frozen API and not a working desktop GUI yet. It is the
-contract, runtime boundary, widget model, geometry foundation, and first
-input-routing geometry proof for the next host adapter work.
+layout-shape coverage, a 1k/10k-node layout benchmark target, a prepared layout
+path for repeated passes, and a first layout hit-test helper. ADR-0013 and
+RFC-0003 record the widget lowering rule before native widget work depends on
+it. ADR-0014 records the layout engine choice. This is not a frozen API and not
+a working desktop GUI yet. It is the contract, runtime boundary, widget model,
+geometry foundation, and first input-routing geometry proof for the next host
+adapter work.
 
 ### Current Slice Checklist
 
@@ -2143,6 +2144,7 @@ input-routing geometry proof for the next host adapter work.
 | P3-RUNTIME-02 | Add draft widget-tree dispatcher path | 2026-05-21 | `UiAdapter` and `Phase3UiDispatcher` now support set root, upsert, remove, focus, tree lookup, and focused-widget lookup through the same UCap boundary. |
 | P3-UI-03A | Add first Taffy-backed layout wrapper | 2026-05-21 | `crates/layout` maps the shared `WidgetTree` into Taffy and returns stable `WidgetId` keyed rectangles through the runtime dispatcher. |
 | P3-UI-03B | Add layout coverage, benchmark target, and hit-test helper | 2026-05-21 | `layer36-layout` now tests 100 generated tree shapes, compiles a Criterion 1k/10k-node benchmark target, exposes absolute rectangles, and can hit-test a point to the deepest widget. |
+| P3-UI-03C | Add prepared repeated-layout path | 2026-05-21 | `PreparedLayoutTree` builds the Taffy tree once, recomputes layout for new viewports, and is reachable through `Phase3UiDispatcher::prepare_layout`. |
 
 ---
 
@@ -2190,6 +2192,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P3-RUNTIME-02 | Draft widget-tree dispatch path | 2026-05-21 | Added draft widget-tree operations to `UiAdapter`, the headless host adapters, and `Phase3UiDispatcher`, with adapter-boundary checks. |
 | P3-UI-03A | First layout wrapper | 2026-05-21 | Added `layer36-layout`, Taffy integration, viewport validation, layout snapshots, runtime dispatch, ADR-0014, and mdBook layout docs. |
 | P3-UI-03B | Layout proof expansion | 2026-05-21 | Added generated 100-shape layout tests, optimized child indexing, absolute rectangle helpers, hit testing, a compile-checked Criterion benchmark target, and a Phase 3 layout check script. |
+| P3-UI-03C | Prepared repeated-layout path | 2026-05-21 | Added `PreparedLayoutTree`, prepared 1k/10k benchmark lanes, runtime dispatcher access, and repeated-viewport tests. |
 
 ---
 
@@ -2198,7 +2201,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
 | P3-UI-01 | Widget protocol design RFC | 2026-05-19 | Draft written; needs review before the rule is treated as accepted. |
-| P3-UI-03 | Layout engine (Taffy integration) | 2026-05-21 | First wrapper, 100-shape tests, and benchmark target exist; local 10k measurement is still above the exit budget, so optimization, recorded cross-host benchmark results, and wider style coverage are pending. |
+| P3-UI-03 | Layout engine (Taffy integration) | 2026-05-21 | First wrapper, 100-shape tests, benchmark target, and prepared repeated-layout path exist; local prepared 10k layout is below the exit budget, but cold rebuild is not, so recorded cross-host benchmark results and wider style coverage are pending. |
 | P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Shared trait, widget-tree dispatch, host entry points, and runtime discovery exist; next step is one real native window backend. |
 
 ---
@@ -2250,6 +2253,10 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
 - 2026-05-21: First local layout benchmark run shows the 10k-node path is not
   ready for the Phase 3 exit budget yet. This is useful signal: the benchmark
   is now in place, and optimization remains planned before exit.
+- 2026-05-21: Added the prepared layout path. Reusing the same Taffy tree brings
+  the local 10k repeated-layout benchmark under the Phase 3 budget, while cold
+  tree rebuild remains above budget. This matches the planned reconciler model,
+  but still needs cross-host evidence before exit.
 
 ---
 

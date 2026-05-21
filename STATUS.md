@@ -3,23 +3,23 @@
 Last updated: 2026-05-21
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `1926e04`
-Working tree at this status update: Phase 3 layout coverage and hit-test slice in progress
+Latest checked completed push before this slice: `f726bcb`
+Working tree at this status update: Phase 3 prepared layout path slice in progress
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 325
+- Commits after this slice lands: about 326
 - Tracked files after this slice lands: about 331
-- Total tracked lines after this slice lands: about 89,900
-- Rust lines (`.rs`) after this slice lands: about 43,900
-- Docs lines (`.md`) after this slice lands: about 29,850
+- Total tracked lines after this slice lands: about 90,100
+- Rust lines (`.rs`) after this slice lands: about 44,150
+- Docs lines (`.md`) after this slice lands: about 29,860
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`1926e04`) checks:
+Latest completed push (`f726bcb`) checks:
 
-- CI: success (run `26204147798`)
-- Deploy docs to GitHub Pages: success (run `26204147799`)
+- CI: success (run `26204766324`)
+- Deploy docs to GitHub Pages: success (run `26204766328`)
 
 Manual hosted full CI run `26069665276` passed on commit `3f1a219`.
 Linux, macOS, and Windows full-test lanes all passed. The language-variant,
@@ -105,6 +105,9 @@ Current Phase 3 slice:
 - The first local 10,000-node layout benchmark run is still above the Phase 3
   exit budget. That means the benchmark path exists, but optimization and
   recorded cross-host numbers are still pending.
+- `PreparedLayoutTree` now lets the runtime prepare a Taffy tree once and
+  recompute layout for repeated viewport changes. The local prepared 10k
+  benchmark is under the Phase 3 budget, while cold rebuild remains above it.
 
 This does not mean desktop UI is implemented yet. It means the first public
 contract for desktop UI work is now in the repo and checked locally. The new UI
@@ -149,6 +152,7 @@ Top pending items:
 - Added the first Taffy-backed layout crate and runtime layout dispatch path so the shared widget tree can now produce stable widget rectangles before native widgets or drawn fallback rendering exist.
 - Expanded Phase 3 layout proof with generated 100-shape tests, a 1k/10k-node benchmark target, absolute rectangle helpers, and a first layout hit-test helper for future input routing.
 - Recorded that the first local 10k layout measurement is not an exit pass yet, so the next layout work should focus on optimization and formal benchmark evidence rather than claiming the 60 fps tree budget is done.
+- Added `PreparedLayoutTree`, prepared 1k/10k benchmark lanes, and `Phase3UiDispatcher::prepare_layout` so future event loops can reuse the layout tree between widget mutations.
 - Added a UCap enforcement evidence recorder and cross-host comparator (`record-phase2-ucap-evidence` + `compare-phase2-ucap-evidence`)
 - Wired hosted full CI to upload per-OS UCap evidence artifacts and run a dedicated cross-host compare gate
 - Added a benchmark evidence recorder and comparator (`record-phase2-benchmark-evidence` + `compare-phase2-benchmark-evidence`) to track startup and dispatch performance evidence in one per-host report
@@ -239,4 +243,4 @@ Top pending items:
 
 Use this exact prompt in a new session:
 
-`Continue Layer36 on main. Start with STATUS.md, Plan/Phase-2-Plan.md, and Plan/Phase-3-Plan.md. Phase 3 has started with WIT, GUI manifest recognition, Phase 3 capability names, an adapter-common draft window registry, a shared widget tree model, a shared UiAdapter trait, runtime::phase3_ui dispatcher scaffolding, draft widget-tree dispatch, a first Taffy-backed layer36-layout crate, runtime layout snapshots, generated 100-shape layout tests, a 1k/10k-node layout benchmark target, layout absolute-rectangle helpers, a first layout hit-test helper, headless UI adapter entry points in the macOS, Linux, and Windows crates, runtime host UI adapter discovery, and ADR/RFC/docs for the native-widget plus drawn-fallback widget lowering rule. Keep Phase 2 closeout evidence separate, keep Phase 3 narrow, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`
+`Continue Layer36 on main. Start with STATUS.md, Plan/Phase-2-Plan.md, and Plan/Phase-3-Plan.md. Phase 3 has started with WIT, GUI manifest recognition, Phase 3 capability names, an adapter-common draft window registry, a shared widget tree model, a shared UiAdapter trait, runtime::phase3_ui dispatcher scaffolding, draft widget-tree dispatch, a first Taffy-backed layer36-layout crate, runtime layout snapshots, generated 100-shape layout tests, a 1k/10k-node layout benchmark target, PreparedLayoutTree for repeated layout passes, layout absolute-rectangle helpers, a first layout hit-test helper, headless UI adapter entry points in the macOS, Linux, and Windows crates, runtime host UI adapter discovery, and ADR/RFC/docs for the native-widget plus drawn-fallback widget lowering rule. Prepared 10k layout is locally under budget, but cold rebuild and formal cross-host evidence remain pending. Keep Phase 2 closeout evidence separate, keep Phase 3 narrow, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`
