@@ -272,6 +272,8 @@ The value of this step is that the boundary is testable:
   exposes capability info for that backend
 - draft widget-tree calls now pass through the same dispatcher and adapter
   boundary for set root, upsert node, remove node, and focus node
+- draft layout calls can now turn the stored widget tree into a
+  `LayoutSnapshot`, with one logical rectangle per stable widget ID
 
 The bridge between generated WIT types and dispatcher types now exists too.
 It converts things like `open-mode`, HTTP requests, file stats, locale IDs, and

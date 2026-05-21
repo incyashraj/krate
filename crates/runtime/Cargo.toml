@@ -13,6 +13,7 @@ phase2-bindings = []
 
 [dependencies]
 layer36-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
+layer36-layout = { path = "../layout", version = "0.1.0-dev" }
 layer36-manifest = { path = "../manifest", version = "0.1.0-dev" }
 layer36-policy = { path = "../policy", version = "0.1.0-dev" }
 libc.workspace = true

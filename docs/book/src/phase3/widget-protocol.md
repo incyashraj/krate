@@ -95,7 +95,8 @@ sequenceDiagram
 ```
 
 The first code path already handles draft window lifecycle events. The next
-steps are a real native window, then a tiny widget tree with text and a button.
+steps are a larger layout surface, a real native window, then a tiny widget
+tree with text and a button.
 
 ## Current Status
 
@@ -108,6 +109,10 @@ Done now:
   `WidgetId`, `WidgetKind`, `WidgetNode`, `WidgetStyle`, and `WidgetTree`.
 - The shared UI adapter and runtime dispatcher can now set a root widget,
   update child nodes, remove nodes, move focus, and inspect draft widget state.
+- `layer36-layout` can compute Taffy-backed rectangles for the shared widget
+  tree and return them by stable widget ID.
+- The runtime dispatcher can ask for a layout snapshot for the widget tree
+  stored on a draft window.
 - The runtime has a UI dispatcher scaffold.
 - macOS, Linux, and Windows adapters expose headless draft UI entry points.
 - The runtime can choose the current host adapter.
@@ -117,7 +122,7 @@ Pending:
 
 - real native window backend
 - widget tree lowering
-- layout engine
+- larger layout style coverage and a large-tree layout benchmark
 - text input and IME
 - accessibility tree
 - `layer36-notes`

@@ -106,6 +106,10 @@ flowchart LR
     boundary. In simple terms, Layer36 can set a root widget, add or update
     child widgets, remove widgets, and track focus before real native controls
     exist.
+25. The first layout layer now exists. In simple terms, Layer36 can take the
+    draft widget tree and calculate rectangles for each widget. Nothing is
+    drawn yet, but native controls, drawn fallback, hit testing, and
+    accessibility can now share the same position and size answer.
 
 ## Current Build Timeline
 
@@ -152,7 +156,7 @@ This is a simple status view for non technical readers.
 | UAPI freeze decision path | Working, with a draft packet and CI checker |
 | Outside walkthrough proof | Ready to collect, with a timing packet, checker, and local rehearsal |
 | Phase 3 handoff | Started at contract level, still waiting on Phase 2 outside review for formal phase close |
-| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, shared widget tree model, draft widget-tree dispatch, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, and the widget lowering rule are in place. Real windows are not implemented yet |
+| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, shared widget tree model, draft widget-tree dispatch, first Taffy-backed layout wrapper, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, and the widget lowering rule are in place. Real windows are not implemented yet |
 | Mobile host path | Not started in implementation |
 | Packaging and app store style distribution | Not started in implementation |
 

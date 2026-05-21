@@ -39,6 +39,26 @@ fn main() -> Result<()> {
             "layer36-notes",
         ],
     )?;
+    check_doc(
+        &root.join("docs/adr/0014-layout-engine-taffy.md"),
+        &[
+            "ADR-0014: Layout Engine Uses Taffy",
+            "Status:** Proposed",
+            "layer36-layout",
+            "Taffy",
+            "stable widget IDs",
+        ],
+    )?;
+    check_doc(
+        &root.join("docs/book/src/phase3/layout.md"),
+        &[
+            "Layout",
+            "crates/layout/",
+            "Taffy",
+            "LayoutSnapshot",
+            "accessibility bounds",
+        ],
+    )?;
 
     println!("Phase 3 design docs check passed");
     Ok(())

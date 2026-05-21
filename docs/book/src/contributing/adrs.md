@@ -47,3 +47,4 @@ Examples that do **not** need an ADR:
 | [ADR-0011](../../../adr/0011-phase2-benchmark-regression-policy.md) | Phase 2 benchmark regression policy | Accepted |
 | [ADR-0012](../../../adr/0012-adapter-crate-split-per-os.md) | Adapter crate split per host OS | Accepted |
 | [ADR-0013](../../../adr/0013-widget-lowering-strategy.md) | Widget lowering strategy | Proposed |
+| [ADR-0014](../../../adr/0014-layout-engine-taffy.md) | Layout engine uses Taffy | Proposed |

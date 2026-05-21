@@ -795,7 +795,7 @@ Each widget carries a `widget-id` that is stable across frames. Identity rules:
 
 ### 10.1 Choice recap
 
-Taffy (ADR-0015). Flexbox-compatible.
+Taffy (ADR-0014). Flexbox-compatible.
 
 ### 10.2 Layout model
 
@@ -1187,7 +1187,7 @@ Sized for 16 weeks calendar, ~60–80 engineering days of active work. A full-ti
 
 ### Weeks 1–2: Foundational decisions + WIT draft
 
-- Write ADR-0013 (Answer D), ADR-0014 (winit + AppKit split), ADR-0015 (Taffy), ADR-0016 (vello), ADR-0017 (WebGPU subset), ADR-0018 (harfbuzz + IME), ADR-0019 (accesskit), ADR-0020 (cpal).
+- Write ADR-0013 (widget lowering), ADR-0014 (Taffy layout), ADR-0015 (vello), ADR-0016 (WebGPU subset), ADR-0017 (harfbuzz + IME), ADR-0018 (accesskit), ADR-0019 (cpal), and the windowing ADR when the first native backend starts.
 - Draft `ui.wit`, `gfx.wit`, `audio.wit`.
 - Internal review; iterate.
 
@@ -2116,12 +2116,12 @@ Save as `docs/book/src/phase3/retro.md` at the end of Phase 3.
 Phase 3 has started with the first WIT draft, checker, GUI manifest path,
 capability names, shared in-memory UI adapter scaffold, a shared `UiAdapter`
 trait, host-crate UI adapter entry points, runtime host-adapter discovery, a
-runtime-facing UI dispatcher, the first shared widget tree model, and draft
-runtime/widget-tree dispatch. ADR-0013 and RFC-0003 now record the widget
-lowering rule before native widget work depends on it. This is not a frozen API
-and not a working
-desktop GUI yet. It is the contract and runtime boundary foundation for the
-next host adapter work.
+runtime-facing UI dispatcher, the first shared widget tree model, draft
+runtime/widget-tree dispatch, and the first Taffy-backed layout wrapper.
+ADR-0013 and RFC-0003 record the widget lowering rule before native widget work
+depends on it. ADR-0014 records the layout engine choice. This is not a frozen
+API and not a working desktop GUI yet. It is the contract, runtime boundary,
+widget model, and geometry foundation for the next host adapter work.
 
 ### Current Slice Checklist
 
@@ -2139,6 +2139,7 @@ next host adapter work.
 | P3-UI-01A | Draft widget protocol decision docs | 2026-05-21 | ADR-0013, RFC-0003, and the mdBook widget protocol page record native widget lowering plus drawn fallback rules. |
 | P3-UI-01B | Add shared widget tree model | 2026-05-21 | `adapter-common::ui` now has `WidgetId`, `WidgetKind`, `WidgetNode`, `WidgetStyle`, and `WidgetTree` with parent-link and style validation. |
 | P3-RUNTIME-02 | Add draft widget-tree dispatcher path | 2026-05-21 | `UiAdapter` and `Phase3UiDispatcher` now support set root, upsert, remove, focus, tree lookup, and focused-widget lookup through the same UCap boundary. |
+| P3-UI-03A | Add first Taffy-backed layout wrapper | 2026-05-21 | `crates/layout` maps the shared `WidgetTree` into Taffy and returns stable `WidgetId` keyed rectangles through the runtime dispatcher. |
 
 ---
 
@@ -2184,6 +2185,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P3-UI-01A | Widget protocol decision docs | 2026-05-21 | Added ADR-0013, RFC-0003, an mdBook widget protocol page, and a design-doc checker. |
 | P3-UI-01B | Shared widget tree model | 2026-05-21 | Added stable widget IDs, first widget kind enum, style hints, labels, role hints, and parent validation in `adapter-common::ui`. |
 | P3-RUNTIME-02 | Draft widget-tree dispatch path | 2026-05-21 | Added draft widget-tree operations to `UiAdapter`, the headless host adapters, and `Phase3UiDispatcher`, with adapter-boundary checks. |
+| P3-UI-03A | First layout wrapper | 2026-05-21 | Added `layer36-layout`, Taffy integration, viewport validation, layout snapshots, runtime dispatch, ADR-0014, and mdBook layout docs. |
 
 ---
 
@@ -2192,6 +2194,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
 | P3-UI-01 | Widget protocol design RFC | 2026-05-19 | Draft written; needs review before the rule is treated as accepted. |
+| P3-UI-03 | Layout engine (Taffy integration) | 2026-05-21 | First wrapper exists; 100-shape tests, large-tree benchmark, and wider style coverage are still pending. |
 | P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Shared trait, widget-tree dispatch, host entry points, and runtime discovery exist; next step is one real native window backend. |
 
 ---
@@ -2201,7 +2204,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | ADR | Title | Status | Merged |
 |-----|-------|--------|--------|
 | ADR-0013 | Widget lowering strategy — “native three of five” rule (Answer D) | Proposed | — |
-| ADR-0014 | Layout engine: Taffy (flexbox subset) | Pending | — |
+| ADR-0014 | Layout engine: Taffy (flexbox subset) | Proposed | — |
 | ADR-0015 | 2D canvas: vello on wgpu | Pending | — |
 | ADR-0016 | GPU API: WebGPU-compatible subset via wgpu | Pending | — |
 
@@ -2233,6 +2236,9 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
 - 2026-05-21: Extended the runtime and headless host adapters with draft
   widget-tree operations. The UI path can now set a root node, update child
   nodes, remove nodes, and move focus before native widgets exist.
+- 2026-05-21: Added the first shared layout wrapper. `layer36-layout` computes
+  logical rectangles from the shared widget tree through Taffy, and the runtime
+  can request a layout snapshot for a stored draft widget tree.
 
 ---
 

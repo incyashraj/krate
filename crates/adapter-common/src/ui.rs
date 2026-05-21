@@ -260,6 +260,13 @@ impl WidgetTree {
         if parent == node.id {
             return Err(UiAdapterError::WidgetParentCycle { id: node.id.get() });
         }
+        let mut cursor = Some(parent);
+        while let Some(ancestor) = cursor {
+            if ancestor == node.id {
+                return Err(UiAdapterError::WidgetParentCycle { id: node.id.get() });
+            }
+            cursor = self.nodes.get(&ancestor).and_then(|node| node.parent);
+        }
         if !self.nodes.contains_key(&parent) {
             return Err(UiAdapterError::MissingWidgetParent {
                 id: node.id.get(),
@@ -900,6 +907,25 @@ mod tests {
             .with_style(bad_style);
 
         assert!(matches!(styled, Err(UiAdapterError::InvalidWidgetStyle(_))));
+    }
+
+    #[test]
+    fn widget_tree_rejects_reparenting_that_would_create_cycle() {
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        let parent = WidgetNode::new(WidgetId::new(2).expect("parent"), WidgetKind::Stack)
+            .with_parent(tree.root());
+        let child = WidgetNode::new(WidgetId::new(3).expect("child"), WidgetKind::Text)
+            .with_parent(parent.id);
+        tree.upsert(parent.clone()).expect("parent");
+        tree.upsert(child).expect("child");
+
+        let cyclic_parent = parent.with_parent(WidgetId::new(3).expect("child"));
+
+        assert_eq!(
+            tree.upsert(cyclic_parent),
+            Err(UiAdapterError::WidgetParentCycle { id: 2 })
+        );
     }
 
     #[test]

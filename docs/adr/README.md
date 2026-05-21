@@ -30,6 +30,7 @@ merged into `main`, and then **never modified** — only superseded by a new ADR
 | [0011](0011-phase2-benchmark-regression-policy.md) | Phase 2 benchmark regression policy | Accepted | 2 |
 | [0012](0012-adapter-crate-split-per-os.md) | Adapter crate split per host OS | Accepted | 2 |
 | [0013](0013-widget-lowering-strategy.md) | Widget lowering strategy | Proposed | 3 |
+| [0014](0014-layout-engine-taffy.md) | Layout engine uses Taffy | Proposed | 3 |
 
 ## Process
 

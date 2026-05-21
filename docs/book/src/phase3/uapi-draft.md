@@ -126,6 +126,13 @@ a root widget, upsert child nodes, remove nodes, move focus, and inspect draft
 widget state. This is still headless, but it proves the runtime path that later
 native widgets will use.
 
+The first layout path is wired too. `crates/layout` maps that shared widget
+tree into Taffy and returns a `LayoutSnapshot`: one logical rectangle per stable
+`WidgetId`. The Phase 3 dispatcher can request that snapshot for a draft window
+after the same UI capability check. This does not draw anything yet. It gives
+native widgets, drawn fallback, hit testing, and accessibility one geometry
+answer to share.
+
 ## What It Does Not Mean Yet
 
 This is not a finished desktop UI layer.
@@ -142,8 +149,9 @@ the app, runtime, SDKs, and host adapters.
 
 The next proof should be small and visible:
 
-1. Add a host adapter prototype that can create one real window.
-2. Add a simple event loop.
-3. Add a tiny draw call that paints something visible.
-4. Add a small notes app skeleton that uses the same path.
-5. Keep capability checks at the dispatcher boundary as native code is added.
+1. Add more layout coverage and a large-tree benchmark.
+2. Add a host adapter prototype that can create one real window.
+3. Add a simple event loop.
+4. Add a tiny draw call that paints something visible.
+5. Add a small notes app skeleton that uses the same path.
+6. Keep capability checks at the dispatcher boundary as native code is added.

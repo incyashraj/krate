@@ -8,6 +8,7 @@ use layer36_adapter_common::ui::{
     UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, WidgetId, WidgetNode, WidgetTree, WindowId,
     WindowOptions, WindowRecord, WindowSize,
 };
+use layer36_layout::{compute_layout, LayoutSnapshot, LayoutViewport};
 use thiserror::Error;
 
 use crate::uapi::{UapiCall, UapiError, UapiGuard, UiCall};
@@ -20,6 +21,8 @@ pub enum UiDispatchError {
     PermissionDenied,
     #[error("UI adapter error: {0}")]
     Adapter(#[from] UiAdapterError),
+    #[error("layout error: {0}")]
+    Layout(String),
     #[error("policy error: {0}")]
     Policy(String),
     #[error("operation is not implemented in the Phase 3 draft UI dispatcher yet")]
@@ -149,6 +152,22 @@ impl<'a> Phase3UiDispatcher<'a> {
         Ok(self.adapter.focused_widget(window)?)
     }
 
+    pub fn compute_layout(
+        &self,
+        window: WindowId,
+        viewport: LayoutViewport,
+    ) -> UiDispatchResult<LayoutSnapshot> {
+        self.check_window_access()?;
+        let tree = self
+            .adapter
+            .widget_tree(window)?
+            .ok_or(UiAdapterError::MissingWidgetTree {
+                window: window.get(),
+            })?;
+
+        compute_layout(&tree, viewport).map_err(|err| UiDispatchError::Layout(err.to_string()))
+    }
+
     pub fn drain_events(&self) -> UiDispatchResult<Vec<UiEvent>> {
         Ok(self.adapter.drain_events()?)
     }
@@ -198,7 +217,8 @@ fn map_ui_policy(err: UapiError) -> UiDispatchError {
 #[cfg(test)]
 mod tests {
     use layer36_adapter_common::ui::{
-        DraftUiAdapter, UiEvent, WidgetId, WidgetKind, WidgetNode, WindowOptions, WindowSize,
+        DraftUiAdapter, UiEvent, WidgetId, WidgetKind, WidgetNode, WidgetStyle, WindowOptions,
+        WindowSize,
     };
     use layer36_policy::SessionPolicy;
 
@@ -353,6 +373,53 @@ mod tests {
             err,
             UiDispatchError::Adapter(UiAdapterError::MissingWidgetTree { .. })
         ));
+    }
+
+    #[test]
+    fn computes_layout_for_stored_widget_tree() {
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let adapter = DraftUiAdapter::default();
+        let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+        let window = dispatcher
+            .create_window(
+                WindowOptions::new("Notes", WindowSize::new(300, 200).expect("window size"))
+                    .expect("options"),
+            )
+            .expect("create window");
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let row = WidgetNode::new(WidgetId::new(2).expect("row"), WidgetKind::Text)
+            .with_parent(root.id)
+            .with_style(WidgetStyle {
+                width: Some(120.0),
+                height: Some(32.0),
+                ..WidgetStyle::default()
+            })
+            .expect("style");
+
+        dispatcher.set_root(window, root).expect("root");
+        dispatcher.upsert_node(window, row).expect("row");
+        let layout = dispatcher
+            .compute_layout(window, LayoutViewport::new(300.0, 200.0).expect("viewport"))
+            .expect("layout");
+
+        assert_eq!(
+            layout.rect(WidgetId::new(1).expect("root")),
+            Some(layer36_layout::ComputedRect {
+                x: 0.0,
+                y: 0.0,
+                width: 300.0,
+                height: 200.0,
+            })
+        );
+        assert_eq!(
+            layout.rect(WidgetId::new(2).expect("row")),
+            Some(layer36_layout::ComputedRect {
+                x: 0.0,
+                y: 0.0,
+                width: 120.0,
+                height: 32.0,
+            })
+        );
     }
 
     #[test]
