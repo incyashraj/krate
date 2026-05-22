@@ -5,9 +5,9 @@
 //! GTK windows come later.
 
 use layer36_adapter_common::ui::{
-    KeyEvent, Modifiers, PointerButton, PointerEvent, TextInputEvent, UiAdapter, UiAdapterError,
-    UiAdapterInfo, UiEvent, WidgetId, WidgetNode, WidgetTree, WindowId, WindowOptions,
-    WindowRecord, WindowSize,
+    KeyEvent, Modifiers, PointerButton, PointerEvent, TextInputEvent, Theme, UiAdapter,
+    UiAdapterError, UiAdapterInfo, UiEvent, WidgetId, WidgetNode, WidgetTree, WindowId,
+    WindowOptions, WindowRecord, WindowSize,
 };
 use layer36_layout::{
     compute_layout, hit_test, LayoutPoint, LayoutSnapshot, LayoutViewport, PreparedLayoutTree,
@@ -281,6 +281,18 @@ impl<'a> Phase3UiDispatcher<'a> {
         Ok(())
     }
 
+    pub fn route_theme_changed(&self, theme: Theme) -> UiDispatchResult<()> {
+        self.check_window_access()?;
+        self.adapter.queue_theme_changed(theme)?;
+        Ok(())
+    }
+
+    pub fn route_scale_changed(&self, window: WindowId, scale: f32) -> UiDispatchResult<()> {
+        self.check_window_access()?;
+        self.adapter.queue_scale_changed(window, scale)?;
+        Ok(())
+    }
+
     pub fn drain_events(&self) -> UiDispatchResult<Vec<UiEvent>> {
         Ok(self.adapter.drain_events()?)
     }
@@ -430,6 +442,34 @@ mod tests {
                 UiEvent::WindowFocused { id, focused: true },
                 UiEvent::Resized { id, size: resized },
                 UiEvent::WindowCloseRequested(id),
+            ]
+        );
+    }
+
+    #[test]
+    fn routes_theme_and_scale_events_into_queue() {
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let adapter = DraftUiAdapter::default();
+        let size = WindowSize::new(800, 600).expect("size");
+        let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+
+        let id = dispatcher
+            .create_window(WindowOptions::new("Layer36 Notes", size).expect("options"))
+            .expect("create window");
+
+        dispatcher
+            .route_theme_changed(Theme::Dark)
+            .expect("theme changed");
+        dispatcher
+            .route_scale_changed(id, 2.0)
+            .expect("scale changed");
+
+        assert_eq!(
+            dispatcher.drain_events().expect("events"),
+            vec![
+                UiEvent::WindowCreated(id),
+                UiEvent::ThemeChanged { theme: Theme::Dark },
+                UiEvent::ScaleChanged { id, scale: 2.0 },
             ]
         );
     }

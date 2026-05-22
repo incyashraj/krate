@@ -151,6 +151,11 @@ portable key event. It can also queue committed text input for that same focused
 widget. This is not IME support yet. It is the route that native keyboard and
 IME commit events will use.
 
+Theme and scale changes have draft routes too. A native host can later tell the
+runtime that the system moved between light and dark mode, or that a window
+changed scale because it moved between displays. Scale values are checked before
+they enter the queue, so a bad host value cannot silently reach app code.
+
 The event queue now has a single-event poll path as well as a batch drain path.
 That matters because the planned UI API exposes `events.poll()`. Native host
 event loops can feed the queue first, then app code can consume events one by

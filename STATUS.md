@@ -1,25 +1,25 @@
 # Layer36 Status
 
-Last updated: 2026-05-21
+Last updated: 2026-05-22
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `d571c64`
-Working tree at this status update: Phase 3 draft host window event routes slice in progress
+Latest checked completed push before this slice: `6f6ebe3`
+Working tree at this status update: Phase 3 draft theme and scale event routes slice in progress
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 330
+- Commits after this slice lands: about 331
 - Tracked files after this slice lands: about 331
-- Total tracked lines after this slice lands: about 92,490
-- Rust lines (`.rs`) after this slice lands: about 45,150
-- Docs lines (`.md`) after this slice lands: about 30,075
+- Total tracked lines after this slice lands: about 92,700
+- Rust lines (`.rs`) after this slice lands: about 45,300
+- Docs lines (`.md`) after this slice lands: about 30,125
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`d571c64`) checks:
+Latest completed push (`6f6ebe3`) checks:
 
-- CI: success (run `26216660197`)
-- Deploy docs to GitHub Pages: success (run `26216660047`)
+- CI: success (run `26227722196`)
+- Deploy docs to GitHub Pages: success (run `26227722195`)
 
 Manual hosted full CI run `26069665276` passed on commit `3f1a219`.
 Linux, macOS, and Windows full-test lanes all passed. The language-variant,
@@ -124,6 +124,9 @@ Current Phase 3 slice:
   host resized, and window focus changed. These routes queue events without
   closing the window early, so future native backends can report user intent
   while the app still decides what happens next.
+- Draft theme and scale events now have shared routes too. A future native
+  backend can report dark mode changes and per-window DPI scale changes through
+  the same event queue before real drawing code depends on those values.
 
 This does not mean desktop UI is implemented yet. It means the first public
 contract for desktop UI work is now in the repo and checked locally. The new UI
@@ -173,6 +176,7 @@ Top pending items:
 - Added draft key and text input routing so focused widgets can receive portable key events and committed typed text before real native keyboard and IME event loops land.
 - Added FIFO UI event polling through the shared adapter and runtime dispatcher so future app-facing `events.poll()` calls can consume one event at a time.
 - Added draft host window event routes for close requests, resize, and focus changes so the first native event loop has stable queue targets.
+- Added draft theme and scale event routes so dark mode and DPI changes have stable queue targets before real native windows land.
 - Added a UCap enforcement evidence recorder and cross-host comparator (`record-phase2-ucap-evidence` + `compare-phase2-ucap-evidence`)
 - Wired hosted full CI to upload per-OS UCap evidence artifacts and run a dedicated cross-host compare gate
 - Added a benchmark evidence recorder and comparator (`record-phase2-benchmark-evidence` + `compare-phase2-benchmark-evidence`) to track startup and dispatch performance evidence in one per-host report
@@ -263,4 +267,4 @@ Top pending items:
 
 Use this exact prompt in a new session:
 
-`Continue Layer36 on main. Start with STATUS.md, Plan/Phase-2-Plan.md, and Plan/Phase-3-Plan.md. Phase 3 has started with WIT, GUI manifest recognition, Phase 3 capability names, an adapter-common draft window registry, a shared widget tree model, a shared UiAdapter trait, runtime::phase3_ui dispatcher scaffolding, draft widget-tree dispatch, a first Taffy-backed layer36-layout crate, runtime layout snapshots, generated 100-shape layout tests, a 1k/10k-node layout benchmark target, PreparedLayoutTree for repeated layout passes, layout absolute-rectangle helpers, a first layout hit-test helper, headless UI adapter entry points in the macOS, Linux, and Windows crates, runtime host UI adapter discovery, and ADR/RFC/docs for the native-widget plus drawn-fallback widget lowering rule. Prepared 10k layout is locally under budget, but cold rebuild and formal cross-host evidence remain pending. Keep Phase 2 closeout evidence separate, keep Phase 3 narrow, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`
+`Continue Layer36 on main. Start with STATUS.md, Plan/Phase-2-Plan.md, and Plan/Phase-3-Plan.md. Phase 3 has started with WIT, GUI manifest recognition, Phase 3 capability names, an adapter-common draft window registry, a shared widget tree model, a shared UiAdapter trait, runtime::phase3_ui dispatcher scaffolding, draft widget-tree dispatch, a first Taffy-backed layer36-layout crate, runtime layout snapshots, generated 100-shape layout tests, a 1k/10k-node layout benchmark target, PreparedLayoutTree for repeated layout passes, layout absolute-rectangle helpers, a first layout hit-test helper, headless UI adapter entry points in the macOS, Linux, and Windows crates, runtime host UI adapter discovery, draft pointer, key, text, FIFO polling, host window, theme, and scale event routes, and ADR/RFC/docs for the native-widget plus drawn-fallback widget lowering rule. Prepared 10k layout is locally under budget, but cold rebuild and formal cross-host evidence remain pending. Keep Phase 2 closeout evidence separate, keep Phase 3 narrow, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`

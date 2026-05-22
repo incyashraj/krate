@@ -415,6 +415,8 @@ pub enum UiEvent {
     WindowClosed(WindowId),
     WindowCloseRequested(WindowId),
     WindowFocused { id: WindowId, focused: bool },
+    ThemeChanged { theme: Theme },
+    ScaleChanged { id: WindowId, scale: f32 },
     RedrawRequested(WindowId),
     Resized { id: WindowId, size: WindowSize },
     TitleChanged { id: WindowId, title: String },
@@ -515,6 +517,12 @@ pub trait UiAdapter: Send + Sync {
 
     /// Queue a host window focus change.
     fn queue_window_focused(&self, id: WindowId, focused: bool) -> Result<(), UiAdapterError>;
+
+    /// Queue a host theme preference change.
+    fn queue_theme_changed(&self, theme: Theme) -> Result<(), UiAdapterError>;
+
+    /// Queue a host scale factor change for a window.
+    fn queue_scale_changed(&self, id: WindowId, scale: f32) -> Result<(), UiAdapterError>;
 
     /// Queue a routed pointer event.
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError>;
@@ -634,6 +642,14 @@ impl UiAdapter for DraftUiAdapter {
 
     fn queue_window_focused(&self, id: WindowId, focused: bool) -> Result<(), UiAdapterError> {
         self.registry()?.queue_window_focused(id, focused)
+    }
+
+    fn queue_theme_changed(&self, theme: Theme) -> Result<(), UiAdapterError> {
+        self.registry()?.queue_theme_changed(theme)
+    }
+
+    fn queue_scale_changed(&self, id: WindowId, scale: f32) -> Result<(), UiAdapterError> {
+        self.registry()?.queue_scale_changed(id, scale)
     }
 
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError> {
@@ -861,6 +877,20 @@ impl DraftWindowRegistry {
         Ok(())
     }
 
+    /// Queue a host theme preference change.
+    pub fn queue_theme_changed(&mut self, theme: Theme) -> Result<(), UiAdapterError> {
+        self.events.push_back(UiEvent::ThemeChanged { theme });
+        Ok(())
+    }
+
+    /// Queue a host scale factor change for a window.
+    pub fn queue_scale_changed(&mut self, id: WindowId, scale: f32) -> Result<(), UiAdapterError> {
+        self.open_window(id)?;
+        validate_scale_factor(scale)?;
+        self.events.push_back(UiEvent::ScaleChanged { id, scale });
+        Ok(())
+    }
+
     /// Queue a pointer event after runtime hit testing has assigned a target.
     pub fn queue_pointer_event(&mut self, event: PointerEvent) -> Result<(), UiAdapterError> {
         self.validate_event_target(event.window, event.widget)?;
@@ -949,6 +979,8 @@ pub enum UiAdapterError {
     InvalidWidgetStyle(String),
     #[error("invalid input event: {0}")]
     InvalidInputEvent(String),
+    #[error("invalid scale factor: {0}")]
+    InvalidScaleFactor(String),
     #[error("window {id} is closed")]
     WindowClosed { id: u64 },
     #[error("invalid window size {width}x{height}")]
@@ -968,6 +1000,7 @@ const MAX_TITLE_CHARS: usize = 512;
 const MAX_WIDGET_TEXT_CHARS: usize = 1_024;
 const MAX_KEY_NAME_CHARS: usize = 128;
 const MAX_TEXT_INPUT_CHARS: usize = 4_096;
+const MAX_SCALE_FACTOR: f32 = 8.0;
 
 fn validate_title(title: &str) -> Result<(), UiAdapterError> {
     if title.trim().is_empty() {
@@ -1019,6 +1052,16 @@ fn validate_text_input(value: &str) -> Result<(), UiAdapterError> {
         return Err(UiAdapterError::InvalidInputEvent(
             "text input is too long".to_string(),
         ));
+    }
+
+    Ok(())
+}
+
+fn validate_scale_factor(value: f32) -> Result<(), UiAdapterError> {
+    if !value.is_finite() || value <= 0.0 || value > MAX_SCALE_FACTOR {
+        return Err(UiAdapterError::InvalidScaleFactor(format!(
+            "{value} must be finite and between 0 and {MAX_SCALE_FACTOR}"
+        )));
     }
 
     Ok(())
@@ -1126,6 +1169,45 @@ mod tests {
                 UiEvent::WindowCloseRequested(id),
             ]
         );
+    }
+
+    #[test]
+    fn draft_registry_queues_theme_and_scale_events() {
+        let mut registry = DraftWindowRegistry::default();
+        let size = WindowSize::new(800, 600).expect("size");
+        let id = registry.create_window(WindowOptions::new("Notes", size).expect("options"));
+
+        registry
+            .queue_theme_changed(Theme::Dark)
+            .expect("theme changed");
+        registry
+            .queue_scale_changed(id, 2.0)
+            .expect("scale changed");
+
+        assert_eq!(
+            registry.drain_events(),
+            vec![
+                UiEvent::WindowCreated(id),
+                UiEvent::ThemeChanged { theme: Theme::Dark },
+                UiEvent::ScaleChanged { id, scale: 2.0 },
+            ]
+        );
+    }
+
+    #[test]
+    fn draft_registry_rejects_invalid_scale_events() {
+        let mut registry = DraftWindowRegistry::default();
+        let size = WindowSize::new(800, 600).expect("size");
+        let id = registry.create_window(WindowOptions::new("Notes", size).expect("options"));
+
+        assert!(matches!(
+            registry.queue_scale_changed(id, 0.0),
+            Err(UiAdapterError::InvalidScaleFactor(_))
+        ));
+        assert!(matches!(
+            registry.queue_scale_changed(id, f32::INFINITY),
+            Err(UiAdapterError::InvalidScaleFactor(_))
+        ));
     }
 
     #[test]

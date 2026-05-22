@@ -8,7 +8,7 @@ use layer36_adapter_common::{
     locale::{DateStyle, HostLocale, LocaleId, NumberStyle},
     time::HostClock,
     ui::{
-        DraftUiAdapter, KeyEvent, PointerEvent, TextInputEvent, UiAdapter, UiAdapterError,
+        DraftUiAdapter, KeyEvent, PointerEvent, TextInputEvent, Theme, UiAdapter, UiAdapterError,
         UiAdapterInfo, UiEvent, WidgetId, WidgetNode, WidgetTree, WindowId, WindowOptions,
         WindowRecord, WindowSize,
     },
@@ -128,6 +128,14 @@ impl UiAdapter for WindowsUiAdapter {
 
     fn queue_window_focused(&self, id: WindowId, focused: bool) -> Result<(), UiAdapterError> {
         self.draft.queue_window_focused(id, focused)
+    }
+
+    fn queue_theme_changed(&self, theme: Theme) -> Result<(), UiAdapterError> {
+        self.draft.queue_theme_changed(theme)
+    }
+
+    fn queue_scale_changed(&self, id: WindowId, scale: f32) -> Result<(), UiAdapterError> {
+        self.draft.queue_scale_changed(id, scale)
     }
 
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError> {

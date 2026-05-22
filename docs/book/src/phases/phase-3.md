@@ -48,6 +48,7 @@ The first Phase 3 slice is now in the repo:
 - draft key and text input routing, so focused widgets can receive portable key events and committed text before native IME work starts
 - FIFO event polling, so future `events.poll()` calls can consume one queued UI event at a time
 - draft host window event routing for close requests, resize, and focus changes
+- draft theme and scale event routing, so dark mode and DPI changes have a stable path before native windows land
 - headless draft UI adapter entry points in the macOS, Linux, and Windows adapter crates, each with a blank-window smoke test
 - `Phase3UiRuntime::with_host_adapter`, which selects the current host UI adapter and reports whether it is still headless or native
 - ADR-0013 and RFC-0003 now record the widget lowering strategy: native controls where the host has a semantic match, drawn fallback where it does not

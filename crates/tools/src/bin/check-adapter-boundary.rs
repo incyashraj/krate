@@ -266,6 +266,8 @@ fn check_adapter_boundary() -> Result<BoundaryReport> {
             "fn queue_close_requested(&self, id: WindowId)",
             "fn queue_host_resize(&self, id: WindowId, size: WindowSize)",
             "fn queue_window_focused(&self, id: WindowId, focused: bool)",
+            "fn queue_theme_changed(&self, theme: Theme)",
+            "fn queue_scale_changed(&self, id: WindowId, scale: f32)",
             "fn queue_pointer_event(&self, event: PointerEvent)",
             "fn queue_key_event(&self, event: KeyEvent)",
             "fn queue_text_input(&self, event: TextInputEvent)",
