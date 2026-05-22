@@ -8,8 +8,8 @@ use layer36_adapter_common::{
     time::HostClock,
     ui::{
         DraftUiAdapter, KeyEvent, PointerEvent, TextInputEvent, Theme, UiAdapter, UiAdapterError,
-        UiAdapterInfo, UiEvent, WidgetId, WidgetNode, WidgetTree, WindowId, WindowOptions,
-        WindowRecord, WindowSize,
+        UiAdapterInfo, UiEvent, WidgetId, WidgetNode, WidgetTree, WindowAdapter, WindowBackendKind,
+        WindowId, WindowOptions, WindowRecord, WindowSize,
     },
 };
 use std::fs::OpenOptions;
@@ -45,42 +45,80 @@ impl LinuxUiAdapter {
     pub fn native_windows_enabled(&self) -> bool {
         false
     }
+
+    /// Return the native backend planned for this host.
+    pub fn planned_native_window_backend(&self) -> WindowBackendKind {
+        WindowBackendKind::Winit
+    }
 }
 
-impl UiAdapter for LinuxUiAdapter {
+impl WindowAdapter for LinuxUiAdapter {
     fn info(&self) -> UiAdapterInfo {
-        UiAdapterInfo::new(
+        UiAdapterInfo::headless_draft(
             HOST_FAMILY,
             self.backend_name(),
-            self.native_windows_enabled(),
-            false,
+            self.planned_native_window_backend(),
         )
     }
 
     fn create_window(&self, options: WindowOptions) -> Result<WindowId, UiAdapterError> {
-        self.draft.create_window(options)
+        WindowAdapter::create_window(&self.draft, options)
     }
 
     fn show_window(&self, id: WindowId) -> Result<(), UiAdapterError> {
-        self.draft.show_window(id)
+        WindowAdapter::show_window(&self.draft, id)
     }
 
     fn close_window(&self, id: WindowId) -> Result<(), UiAdapterError> {
-        self.draft.close_window(id)
+        WindowAdapter::close_window(&self.draft, id)
     }
 
     fn set_title(&self, id: WindowId, title: String) -> Result<(), UiAdapterError> {
-        self.draft.set_title(id, title)
+        WindowAdapter::set_title(&self.draft, id, title)
     }
 
     fn set_size(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {
-        self.draft.set_size(id, size)
+        WindowAdapter::set_size(&self.draft, id, size)
     }
 
     fn request_redraw(&self, id: WindowId) -> Result<(), UiAdapterError> {
-        self.draft.request_redraw(id)
+        WindowAdapter::request_redraw(&self.draft, id)
     }
 
+    fn window(&self, id: WindowId) -> Result<Option<WindowRecord>, UiAdapterError> {
+        WindowAdapter::window(&self.draft, id)
+    }
+
+    fn drain_events(&self) -> Result<Vec<UiEvent>, UiAdapterError> {
+        WindowAdapter::drain_events(&self.draft)
+    }
+
+    fn poll_event(&self) -> Result<Option<UiEvent>, UiAdapterError> {
+        WindowAdapter::poll_event(&self.draft)
+    }
+
+    fn queue_close_requested(&self, id: WindowId) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_close_requested(&self.draft, id)
+    }
+
+    fn queue_host_resize(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_host_resize(&self.draft, id, size)
+    }
+
+    fn queue_window_focused(&self, id: WindowId, focused: bool) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_window_focused(&self.draft, id, focused)
+    }
+
+    fn queue_theme_changed(&self, theme: Theme) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_theme_changed(&self.draft, theme)
+    }
+
+    fn queue_scale_changed(&self, id: WindowId, scale: f32) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_scale_changed(&self.draft, id, scale)
+    }
+}
+
+impl UiAdapter for LinuxUiAdapter {
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
         self.draft.set_root(window, root)
     }
@@ -97,44 +135,12 @@ impl UiAdapter for LinuxUiAdapter {
         self.draft.focus_node(window, widget)
     }
 
-    fn window(&self, id: WindowId) -> Result<Option<WindowRecord>, UiAdapterError> {
-        self.draft.window(id)
-    }
-
     fn widget_tree(&self, window: WindowId) -> Result<Option<WidgetTree>, UiAdapterError> {
         self.draft.widget_tree(window)
     }
 
     fn focused_widget(&self, window: WindowId) -> Result<Option<WidgetId>, UiAdapterError> {
         self.draft.focused_widget(window)
-    }
-
-    fn drain_events(&self) -> Result<Vec<UiEvent>, UiAdapterError> {
-        self.draft.drain_events()
-    }
-
-    fn poll_event(&self) -> Result<Option<UiEvent>, UiAdapterError> {
-        self.draft.poll_event()
-    }
-
-    fn queue_close_requested(&self, id: WindowId) -> Result<(), UiAdapterError> {
-        self.draft.queue_close_requested(id)
-    }
-
-    fn queue_host_resize(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {
-        self.draft.queue_host_resize(id, size)
-    }
-
-    fn queue_window_focused(&self, id: WindowId, focused: bool) -> Result<(), UiAdapterError> {
-        self.draft.queue_window_focused(id, focused)
-    }
-
-    fn queue_theme_changed(&self, theme: Theme) -> Result<(), UiAdapterError> {
-        self.draft.queue_theme_changed(theme)
-    }
-
-    fn queue_scale_changed(&self, id: WindowId, scale: f32) -> Result<(), UiAdapterError> {
-        self.draft.queue_scale_changed(id, scale)
     }
 
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError> {
@@ -387,12 +393,21 @@ mod tests {
 
         let window = adapter.window(id).expect("lookup").expect("window");
         let info = adapter.info();
+        let window_adapter: &dyn WindowAdapter = &adapter;
+        let window_info = window_adapter.info();
         assert_eq!(info.host_family, HOST_FAMILY);
         assert_eq!(info.backend, "linux-headless-draft");
+        assert_eq!(info.window_backend, WindowBackendKind::HeadlessDraft);
+        assert_eq!(info.planned_window_backend, WindowBackendKind::Winit);
         assert!(!info.native_windows);
         assert!(!info.native_event_loop);
+        assert_eq!(window_info, info);
         assert_eq!(adapter.backend_name(), "linux-headless-draft");
         assert!(!adapter.native_windows_enabled());
+        assert_eq!(
+            adapter.planned_native_window_backend(),
+            WindowBackendKind::Winit
+        );
         assert_eq!(window.title, "Layer36 blank window");
         assert_eq!(window.size, size);
         assert!(window.visible);

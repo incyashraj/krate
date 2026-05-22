@@ -204,6 +204,22 @@ fn check_adapter_boundary() -> Result<BoundaryReport> {
     let runtime_path = root.join("crates/runtime/src/lib.rs");
     let runtime = fs::read_to_string(&runtime_path)
         .with_context(|| format!("read {}", runtime_path.display()))?;
+    let adapter_common_path = root.join("crates/adapter-common/src/ui.rs");
+    let adapter_common = fs::read_to_string(&adapter_common_path)
+        .with_context(|| format!("read {}", adapter_common_path.display()))?;
+
+    ensure(
+        adapter_common.contains("pub trait WindowAdapter"),
+        "adapter-common must expose the Phase 3 WindowAdapter trait".to_string(),
+    )?;
+    ensure(
+        adapter_common.contains("pub trait UiAdapter: WindowAdapter"),
+        "UiAdapter must build on the Phase 3 WindowAdapter trait".to_string(),
+    )?;
+    ensure(
+        adapter_common.contains("planned_window_backend: WindowBackendKind"),
+        "UI adapter info must record the planned native window backend".to_string(),
+    )?;
 
     for call in RUNTIME_BOUNDARY_CALLS {
         let body = function_body(&runtime, call.wrapper_fn)
@@ -253,8 +269,22 @@ fn check_adapter_boundary() -> Result<BoundaryReport> {
             ),
         )?;
         ensure(
+            source.contains(&format!("impl WindowAdapter for {}", adapter.adapter_type)),
+            format!(
+                "{} must implement WindowAdapter for `{}`",
+                adapter.crate_path, adapter.adapter_type
+            ),
+        )?;
+        ensure(
             source.contains("fn info(&self) -> UiAdapterInfo"),
             format!("{} must report Phase 3 UI adapter info", adapter.crate_path),
+        )?;
+        ensure(
+            source.contains("fn planned_native_window_backend(&self) -> WindowBackendKind"),
+            format!(
+                "{} must state its planned native window backend",
+                adapter.crate_path
+            ),
         )?;
         for method in [
             "fn set_root(&self, window: WindowId, root: WidgetNode)",

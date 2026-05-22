@@ -99,9 +99,11 @@ Clipboard read and write are shaped through the adapter too, but the draft
 implementation still returns unsupported after the permission check. That lets
 us test the security path before native clipboard integration exists.
 
-The macOS, Linux, and Windows adapter crates also expose Phase 3 UI adapter
-entry points now. Each one currently uses the same headless draft backend and
-has a blank-window smoke test. That means the host crates are wired into the UI
+The macOS, Linux, and Windows adapter crates also expose Phase 3 window and UI
+adapter entry points now. Each one currently uses the same headless draft
+backend and has a blank-window smoke test. The adapter info says that clearly.
+It also records the native backend each host is aiming at: AppKit on macOS, and
+winit on Linux and Windows. That means the host crates are wired into the UI
 contract, but they still do not open real OS windows.
 
 The runtime can now discover the current host UI adapter too. `Phase3UiRuntime`
@@ -109,6 +111,12 @@ owns the session guard and the selected adapter, then hands out a dispatcher
 that checks permissions before calling that adapter. It also reports adapter
 capability info such as host family, backend name, and whether native windows
 or a native event loop are enabled. Today those values still say headless draft.
+
+The Rust side now has a named `WindowAdapter` boundary too. Window lifecycle,
+redraw, event polling, close requests, resize, focus, theme, and scale changes
+sit in that lower layer. `UiAdapter` builds on it with widget trees, input, and
+clipboard. This keeps the first native window backend smaller than the full
+widget bridge.
 
 ADR-0013 and RFC-0003 now define how widgets lower once a native backend exists.
 A widget should become a native control when the host has a semantic match. If

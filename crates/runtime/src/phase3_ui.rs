@@ -346,8 +346,8 @@ fn map_ui_policy(err: UapiError) -> UiDispatchError {
 #[cfg(test)]
 mod tests {
     use layer36_adapter_common::ui::{
-        DraftUiAdapter, UiEvent, WidgetId, WidgetKind, WidgetNode, WidgetStyle, WindowOptions,
-        WindowSize,
+        DraftUiAdapter, UiEvent, WidgetId, WidgetKind, WidgetNode, WidgetStyle, WindowBackendKind,
+        WindowOptions, WindowSize,
     };
     use layer36_policy::SessionPolicy;
 
@@ -483,6 +483,8 @@ mod tests {
         let size = WindowSize::new(480, 320).expect("size");
 
         assert!(info.backend.ends_with("headless-draft"));
+        assert_eq!(info.window_backend, WindowBackendKind::HeadlessDraft);
+        assert_ne!(info.planned_window_backend, WindowBackendKind::Unknown);
         assert!(!info.native_windows);
         assert!(!info.native_event_loop);
 

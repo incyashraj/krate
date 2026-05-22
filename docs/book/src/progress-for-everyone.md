@@ -137,6 +137,11 @@ flowchart LR
     native window can tell Layer36 that dark mode changed or that the window
     moved to a screen with a different scale. This is needed for correct DPI
     behavior before we draw real pixels.
+33. The window layer has a clearer name now. In simple terms, `WindowAdapter`
+    is the lower layer for creating windows and reading host window events.
+    `UiAdapter` sits above it for widgets, input, and clipboard. The host
+    adapters also say which real backend they are aiming at next: AppKit on
+    macOS, winit on Linux and Windows.
 
 ## Current Build Timeline
 
@@ -183,7 +188,7 @@ This is a simple status view for non technical readers.
 | UAPI freeze decision path | Working, with a draft packet and CI checker |
 | Outside walkthrough proof | Ready to collect, with a timing packet, checker, and local rehearsal |
 | Phase 3 handoff | Started at contract level, still waiting on Phase 2 outside review for formal phase close |
-| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, shared widget tree model, draft widget-tree dispatch, first Taffy-backed layout wrapper, 100 generated layout-shape tests, 1k/10k layout benchmark target, prepared repeated-layout path, first layout hit-test helper, draft window, pointer, key, text, FIFO polling, host window, theme, and scale event routes, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, and the widget lowering rule are in place. Real windows are not implemented yet |
+| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, explicit `WindowAdapter`, shared widget tree model, draft widget-tree dispatch, first Taffy-backed layout wrapper, 100 generated layout-shape tests, 1k/10k layout benchmark target, prepared repeated-layout path, first layout hit-test helper, draft window, pointer, key, text, FIFO polling, host window, theme, and scale event routes, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, planned native backend reporting, and the widget lowering rule are in place. Real windows are not implemented yet |
 | Mobile host path | Not started in implementation |
 | Packaging and app store style distribution | Not started in implementation |
 

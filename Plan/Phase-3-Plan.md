@@ -2115,8 +2115,8 @@ Save as `docs/book/src/phase3/retro.md` at the end of Phase 3.
 
 Phase 3 has started with the first WIT draft, checker, GUI manifest path,
 capability names, shared in-memory UI adapter scaffold, a shared `UiAdapter`
-trait, host-crate UI adapter entry points, runtime host-adapter discovery, a
-runtime-facing UI dispatcher, the first shared widget tree model, draft
+trait, an explicit `WindowAdapter` trait, host-crate UI adapter entry points,
+runtime host-adapter discovery, a runtime-facing UI dispatcher, the first shared widget tree model, draft
 runtime/widget-tree dispatch, the first Taffy-backed layout wrapper, generated
 layout-shape coverage, a 1k/10k-node layout benchmark target, a prepared layout
 path for repeated passes, a first layout hit-test helper, and a draft pointer
@@ -2126,7 +2126,9 @@ the focused widget, plus FIFO event polling for the first app-facing event-loop
 primitive. Draft host window events for close request, resize, and focus now
 have shared routes too. Theme and scale change events now have the same draft
 route, so native backends can later report dark mode and DPI changes without
-adding a second event path. ADR-0013 and RFC-0003 record the widget lowering rule
+adding a second event path. Adapter info now records both the active headless
+window backend and the planned native backend for each host: AppKit on macOS,
+and winit on Linux and Windows. ADR-0013 and RFC-0003 record the widget lowering rule
 before native widget work depends on it. ADR-0014 records the layout engine
 choice. This is not a frozen API and not a working desktop GUI yet. It is the
 contract, runtime boundary, widget model, geometry foundation, and first
@@ -2156,6 +2158,7 @@ input-routing proof for the next host adapter work.
 | P3-UI-04C | Add FIFO event polling | 2026-05-21 | `UiAdapter::poll_event` and `Phase3UiDispatcher::poll_event` return one queued event at a time in insertion order, matching the planned `events.poll()` shape. |
 | P3-UI-04D | Add draft host window event routes | 2026-05-21 | Close-requested, host-resized, and window-focused events can now be queued through the shared adapter and runtime dispatcher without closing the window early. |
 | P3-UI-04E | Add draft theme and scale event routes | 2026-05-22 | System theme changes and per-window scale-factor changes now queue through the shared adapter and runtime dispatcher, with scale validation before native DPI work starts. |
+| P3-UI-04F | Split explicit `WindowAdapter` boundary | 2026-05-22 | Window lifecycle and host-window events now live under `WindowAdapter`; `UiAdapter` builds on it for widgets, input, and clipboard. Host adapters report the active headless backend plus planned native backend. |
 
 ---
 
@@ -2209,6 +2212,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P3-UI-04C | FIFO event polling | 2026-05-21 | Added shared adapter, headless host adapter, and runtime dispatcher polling so future `events.poll()` calls can consume one queued event at a time. |
 | P3-UI-04D | Draft host window event routes | 2026-05-21 | Added close-requested, host-resized, and window-focused queue paths so native event loops can report window events before real windows land. |
 | P3-UI-04E | Draft theme and scale event routes | 2026-05-22 | Added theme-change and scale-factor queue paths through the shared adapter, host adapter shims, and runtime dispatcher. |
+| P3-UI-04F | Explicit `WindowAdapter` boundary | 2026-05-22 | Added a named window trait under `adapter-common`, split window lifecycle from widget/input operations, and recorded planned native backends in adapter info. |
 
 ---
 
@@ -2218,7 +2222,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 |---------|------|---------|----------|
 | P3-UI-01 | Widget protocol design RFC | 2026-05-19 | Draft written; needs review before the rule is treated as accepted. |
 | P3-UI-03 | Layout engine (Taffy integration) | 2026-05-21 | First wrapper, 100-shape tests, benchmark target, and prepared repeated-layout path exist; local prepared 10k layout is below the exit budget, but cold rebuild is not, so recorded cross-host benchmark results and wider style coverage are pending. |
-| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Shared trait, widget-tree dispatch, host entry points, runtime discovery, routed input events, FIFO event polling, host window events, and theme/scale events exist; next step is one real native window backend with host events feeding these routes. |
+| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Explicit `WindowAdapter`, shared `UiAdapter`, widget-tree dispatch, host entry points, runtime discovery, routed input events, FIFO event polling, host window events, and theme/scale events exist; next step is one real native window backend with host events feeding these routes. |
 | P3-INPUT-01 | Keyboard + mouse input | 2026-05-21 | First runtime-side pointer, key, and committed-text routes exist; real host pointer, hover, wheel, keyboard, shortcut, IME composition, and cross-host normalization are pending. |
 
 ---
@@ -2291,6 +2295,11 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
 - 2026-05-22: Added draft theme and scale event routes. Native backends now
   have a shared place to report system dark-mode changes and DPI scale changes,
   which matters before we make the first real window draw pixels.
+- 2026-05-22: Split the named `WindowAdapter` boundary from the larger
+  `UiAdapter` path. Window lifecycle and host-window events are now the lower
+  layer; widgets, input, and clipboard sit on top. The host adapters also
+  report their planned native window backend, so the next AppKit and winit work
+  has a checked target.
 
 ---
 

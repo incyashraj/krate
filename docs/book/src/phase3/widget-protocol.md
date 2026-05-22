@@ -132,8 +132,11 @@ Done now:
   routes through the same queue.
 - Theme and scale change events have draft routes too, so dark mode and DPI
   changes can use the same queue once real native windows exist.
+- `WindowAdapter` now names the lower window/event-loop boundary. `UiAdapter`
+  builds on it for widget trees, input, and clipboard.
 - The runtime has a UI dispatcher scaffold.
-- macOS, Linux, and Windows adapters expose headless draft UI entry points.
+- macOS, Linux, and Windows adapters expose headless draft window and UI entry
+  points, plus the planned native backend for each host.
 - The runtime can choose the current host adapter.
 - ADR-0013 and RFC-0003 now describe the widget lowering rule.
 

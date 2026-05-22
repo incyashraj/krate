@@ -80,6 +80,16 @@ pub enum Theme {
     Unknown,
 }
 
+/// Window backend family used by a host adapter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowBackendKind {
+    HeadlessDraft,
+    AppKit,
+    Winit,
+    Win32,
+    Unknown,
+}
+
 /// Mouse or touch button in the portable UI event stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PointerButton {
@@ -434,6 +444,8 @@ pub enum UiEvent {
 pub struct UiAdapterInfo {
     pub host_family: String,
     pub backend: String,
+    pub window_backend: WindowBackendKind,
+    pub planned_window_backend: WindowBackendKind,
     pub native_windows: bool,
     pub native_event_loop: bool,
 }
@@ -443,24 +455,44 @@ impl UiAdapterInfo {
     pub fn new(
         host_family: impl Into<String>,
         backend: impl Into<String>,
+        window_backend: WindowBackendKind,
+        planned_window_backend: WindowBackendKind,
         native_windows: bool,
         native_event_loop: bool,
     ) -> Self {
         Self {
             host_family: host_family.into(),
             backend: backend.into(),
+            window_backend,
+            planned_window_backend,
             native_windows,
             native_event_loop,
         }
     }
+
+    /// Create an adapter summary for a headless draft backend.
+    pub fn headless_draft(
+        host_family: impl Into<String>,
+        backend: impl Into<String>,
+        planned_window_backend: WindowBackendKind,
+    ) -> Self {
+        Self::new(
+            host_family,
+            backend,
+            WindowBackendKind::HeadlessDraft,
+            planned_window_backend,
+            false,
+            false,
+        )
+    }
 }
 
-/// Shared host UI adapter contract.
+/// Shared host window contract for Phase 3.
 ///
-/// Native adapters on macOS, Windows, and Linux will implement this trait. The
-/// draft adapter below implements the same contract with in-memory state, so
-/// runtime code can be tested before OS windows exist.
-pub trait UiAdapter: Send + Sync {
+/// `UiAdapter` builds on this. Keeping the named window boundary visible lets
+/// the first AppKit and winit backends land without coupling them to widget
+/// lowering work too early.
+pub trait WindowAdapter: Send + Sync {
     /// Return host and backend capability information for this adapter.
     fn info(&self) -> UiAdapterInfo;
 
@@ -482,31 +514,13 @@ pub trait UiAdapter: Send + Sync {
     /// Ask the host to redraw a window.
     fn request_redraw(&self, id: WindowId) -> Result<(), UiAdapterError>;
 
-    /// Set or replace the root widget tree for a window.
-    fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError>;
-
-    /// Insert or update a widget node for a window.
-    fn upsert_node(&self, window: WindowId, node: WidgetNode) -> Result<(), UiAdapterError>;
-
-    /// Remove a widget node and its descendants.
-    fn remove_node(&self, window: WindowId, widget: WidgetId) -> Result<(), UiAdapterError>;
-
-    /// Move focus to a widget node.
-    fn focus_node(&self, window: WindowId, widget: WidgetId) -> Result<(), UiAdapterError>;
-
     /// Return a snapshot of a tracked window.
     fn window(&self, id: WindowId) -> Result<Option<WindowRecord>, UiAdapterError>;
 
-    /// Return a snapshot of a window's widget tree.
-    fn widget_tree(&self, window: WindowId) -> Result<Option<WidgetTree>, UiAdapterError>;
-
-    /// Return the focused widget for a window.
-    fn focused_widget(&self, window: WindowId) -> Result<Option<WidgetId>, UiAdapterError>;
-
-    /// Drain queued adapter events.
+    /// Drain queued window and UI events.
     fn drain_events(&self) -> Result<Vec<UiEvent>, UiAdapterError>;
 
-    /// Poll one queued adapter event in FIFO order.
+    /// Poll one queued window or UI event in FIFO order.
     fn poll_event(&self) -> Result<Option<UiEvent>, UiAdapterError>;
 
     /// Queue a host close request without closing the window yet.
@@ -523,6 +537,31 @@ pub trait UiAdapter: Send + Sync {
 
     /// Queue a host scale factor change for a window.
     fn queue_scale_changed(&self, id: WindowId, scale: f32) -> Result<(), UiAdapterError>;
+}
+
+/// Shared host UI adapter contract.
+///
+/// Native adapters on macOS, Windows, and Linux will implement this trait. The
+/// draft adapter below implements the same contract with in-memory state, so
+/// runtime code can be tested before OS windows exist.
+pub trait UiAdapter: WindowAdapter {
+    /// Set or replace the root widget tree for a window.
+    fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError>;
+
+    /// Insert or update a widget node for a window.
+    fn upsert_node(&self, window: WindowId, node: WidgetNode) -> Result<(), UiAdapterError>;
+
+    /// Remove a widget node and its descendants.
+    fn remove_node(&self, window: WindowId, widget: WidgetId) -> Result<(), UiAdapterError>;
+
+    /// Move focus to a widget node.
+    fn focus_node(&self, window: WindowId, widget: WidgetId) -> Result<(), UiAdapterError>;
+
+    /// Return a snapshot of a window's widget tree.
+    fn widget_tree(&self, window: WindowId) -> Result<Option<WidgetTree>, UiAdapterError>;
+
+    /// Return the focused widget for a window.
+    fn focused_widget(&self, window: WindowId) -> Result<Option<WidgetId>, UiAdapterError>;
 
     /// Queue a routed pointer event.
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError>;
@@ -567,9 +606,13 @@ impl DraftUiAdapter {
     }
 }
 
-impl UiAdapter for DraftUiAdapter {
+impl WindowAdapter for DraftUiAdapter {
     fn info(&self) -> UiAdapterInfo {
-        UiAdapterInfo::new("generic", "headless-draft", false, false)
+        UiAdapterInfo::headless_draft(
+            "generic",
+            "headless-draft",
+            WindowBackendKind::HeadlessDraft,
+        )
     }
 
     fn create_window(&self, options: WindowOptions) -> Result<WindowId, UiAdapterError> {
@@ -596,32 +639,8 @@ impl UiAdapter for DraftUiAdapter {
         self.registry()?.request_redraw(id)
     }
 
-    fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
-        self.registry()?.set_root(window, root)
-    }
-
-    fn upsert_node(&self, window: WindowId, node: WidgetNode) -> Result<(), UiAdapterError> {
-        self.registry()?.upsert_node(window, node)
-    }
-
-    fn remove_node(&self, window: WindowId, widget: WidgetId) -> Result<(), UiAdapterError> {
-        self.registry()?.remove_node(window, widget)
-    }
-
-    fn focus_node(&self, window: WindowId, widget: WidgetId) -> Result<(), UiAdapterError> {
-        self.registry()?.focus_node(window, widget)
-    }
-
     fn window(&self, id: WindowId) -> Result<Option<WindowRecord>, UiAdapterError> {
         Ok(self.registry()?.window(id).cloned())
-    }
-
-    fn widget_tree(&self, window: WindowId) -> Result<Option<WidgetTree>, UiAdapterError> {
-        Ok(self.registry()?.widget_tree(window).cloned())
-    }
-
-    fn focused_widget(&self, window: WindowId) -> Result<Option<WidgetId>, UiAdapterError> {
-        self.registry()?.focused_widget(window)
     }
 
     fn drain_events(&self) -> Result<Vec<UiEvent>, UiAdapterError> {
@@ -650,6 +669,32 @@ impl UiAdapter for DraftUiAdapter {
 
     fn queue_scale_changed(&self, id: WindowId, scale: f32) -> Result<(), UiAdapterError> {
         self.registry()?.queue_scale_changed(id, scale)
+    }
+}
+
+impl UiAdapter for DraftUiAdapter {
+    fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
+        self.registry()?.set_root(window, root)
+    }
+
+    fn upsert_node(&self, window: WindowId, node: WidgetNode) -> Result<(), UiAdapterError> {
+        self.registry()?.upsert_node(window, node)
+    }
+
+    fn remove_node(&self, window: WindowId, widget: WidgetId) -> Result<(), UiAdapterError> {
+        self.registry()?.remove_node(window, widget)
+    }
+
+    fn focus_node(&self, window: WindowId, widget: WidgetId) -> Result<(), UiAdapterError> {
+        self.registry()?.focus_node(window, widget)
+    }
+
+    fn widget_tree(&self, window: WindowId) -> Result<Option<WidgetTree>, UiAdapterError> {
+        Ok(self.registry()?.widget_tree(window).cloned())
+    }
+
+    fn focused_widget(&self, window: WindowId) -> Result<Option<WidgetId>, UiAdapterError> {
+        self.registry()?.focused_widget(window)
     }
 
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError> {
@@ -1578,11 +1623,19 @@ mod tests {
     fn draft_adapter_reports_headless_info() {
         let adapter = DraftUiAdapter::new();
         let info = adapter.info();
+        let window_adapter: &dyn WindowAdapter = &adapter;
+        let window_info = window_adapter.info();
 
         assert_eq!(info.host_family, "generic");
         assert_eq!(info.backend, "headless-draft");
+        assert_eq!(info.window_backend, WindowBackendKind::HeadlessDraft);
+        assert_eq!(
+            info.planned_window_backend,
+            WindowBackendKind::HeadlessDraft
+        );
         assert!(!info.native_windows);
         assert!(!info.native_event_loop);
+        assert_eq!(window_info, info);
     }
 
     #[test]
