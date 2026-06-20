@@ -168,6 +168,12 @@ request from that surface goes through the same delegate bridge as a future
 native AppKit view. This still does not paint pixels. It is the small state
 object the next `NSView` painter will use.
 
+The first AppKit draw view surface is in place now. It attaches an owned
+`NSView` to the opt-in prototype window, sets the window background from the
+surface clear color, marks the view as needing display, and records the first
+frame snapshot. This is a local native smoke path. The normal runtime still
+uses the headless draft adapter until native event-loop wiring is ready.
+
 ADR-0013 and RFC-0003 now define how widgets lower once a native backend exists.
 A widget should become a native control when the host has a semantic match. If
 it does not, Layer36 uses a drawn fallback with the same layout, input,
@@ -228,9 +234,10 @@ closing the app window by itself. The app still decides how to respond.
 This is not a finished desktop UI layer.
 
 There is an opt-in AppKit window prototype on macOS, but the default runtime is
-still headless. It does not draw a real frame yet. It does not mean the API is
-frozen. It is the first contract and adapter shape that lets us build the
-runtime and host work in the right direction.
+still headless. The AppKit view path is available only through the native
+prototype and ignored local smoke tests. It does not mean the API is frozen. It
+is the first contract and adapter shape that lets us build the runtime and host
+work in the right direction.
 
 ## Why Start Here
 
@@ -242,7 +249,8 @@ The next proof should be small and visible:
 
 1. Record prepared and cold layout benchmark numbers on the target hosts.
 2. Connect the real Objective-C delegate object to the tested Rust delegate bridge.
-3. Attach an AppKit `NSView` to the draw-surface state and paint one visible frame.
+3. Wire the AppKit native event loop into the default runtime path when it can
+   feed events without breaking headless CI.
 4. Add the first Linux and Windows native window prototypes.
 5. Connect real host input events to the draft pointer, key, and text routes.
 6. Add a small notes app skeleton that uses the same path.

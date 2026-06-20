@@ -68,6 +68,15 @@ pub struct AppKitDrawFrame {
     pub frame_index: u64,
 }
 
+/// State returned after an AppKit draw view is attached to a window.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AppKitDrawViewSurfaceSnapshot {
+    pub window: WindowId,
+    pub native_view_handle: u64,
+    pub frame: AppKitDrawFrame,
+    pub needs_display: bool,
+}
+
 /// Small AppKit drawing-surface state used before real pixels are painted.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AppKitDrawSurfaceState {
@@ -432,6 +441,14 @@ impl AppKitWindowSession {
         })?;
         AppKitDrawSurfaceState::from_snapshot(self.id(), snapshot, clear_color)
     }
+
+    /// Attach a first AppKit draw view to this native window session.
+    pub fn attach_draw_view_surface(
+        &self,
+        state: &mut AppKitDrawSurfaceState,
+    ) -> Result<AppKitDrawViewSurface, UiAdapterError> {
+        self.window.attach_draw_view_surface(state)
+    }
 }
 
 impl AppKitWindowBackend {
@@ -593,7 +610,9 @@ mod platform {
     use super::*;
     use objc2::rc::Retained;
     use objc2::{MainThreadMarker, MainThreadOnly};
-    use objc2_app_kit::{NSApplication, NSBackingStoreType, NSWindow, NSWindowStyleMask};
+    use objc2_app_kit::{
+        NSApplication, NSBackingStoreType, NSColor, NSView, NSWindow, NSWindowStyleMask,
+    };
     use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 
     /// Owned AppKit window bound to one Layer36 window id.
@@ -601,6 +620,12 @@ mod platform {
         id: WindowId,
         native_handle: NativeWindowHandle,
         window: Retained<NSWindow>,
+    }
+
+    /// Owned AppKit view used by the first visible draw-surface smoke path.
+    pub struct AppKitDrawViewSurface {
+        view: Retained<NSView>,
+        snapshot: AppKitDrawViewSurfaceSnapshot,
     }
 
     impl AppKitWindowPrototype {
@@ -624,6 +649,71 @@ mod platform {
                 size: size_from_rect(content_rect)?,
                 scale: self.window.backingScaleFactor() as f32,
             })
+        }
+
+        /// Attach a simple AppKit content view for the first visible frame path.
+        pub fn attach_draw_view_surface(
+            &self,
+            state: &mut AppKitDrawSurfaceState,
+        ) -> Result<AppKitDrawViewSurface, UiAdapterError> {
+            let mtm = main_thread_marker()?;
+            let content_rect = self.window.contentLayoutRect();
+            let size = size_from_rect(content_rect)?;
+            state.resize(size);
+            state.scale_changed(self.window.backingScaleFactor() as f32)?;
+
+            let view = create_draw_view(mtm, content_rect);
+            let color = ns_color_from_appkit_color(state.clear_color());
+            self.window.setBackgroundColor(Some(&color));
+            self.window.setContentView(Some(&view));
+            view.setNeedsDisplay(true);
+
+            let frame = state.record_frame();
+            let snapshot = AppKitDrawViewSurfaceSnapshot {
+                window: self.id,
+                native_view_handle: Retained::as_ptr(&view) as usize as u64,
+                frame,
+                needs_display: true,
+            };
+
+            Ok(AppKitDrawViewSurface { view, snapshot })
+        }
+    }
+
+    impl AppKitDrawViewSurface {
+        /// Return the stable Layer36 window id this view belongs to.
+        pub fn window(&self) -> WindowId {
+            self.snapshot.window
+        }
+
+        /// Return the opaque AppKit `NSView` pointer for diagnostics.
+        pub fn native_view_handle(&self) -> u64 {
+            self.snapshot.native_view_handle
+        }
+
+        /// Return the first frame recorded when the view was attached.
+        pub fn frame(&self) -> AppKitDrawFrame {
+            self.snapshot.frame
+        }
+
+        /// Return the latest view-surface snapshot.
+        pub fn snapshot(&self) -> AppKitDrawViewSurfaceSnapshot {
+            self.snapshot
+        }
+
+        /// Mark the AppKit view dirty and record another draw frame.
+        pub fn request_display(
+            &mut self,
+            state: &mut AppKitDrawSurfaceState,
+        ) -> AppKitDrawViewSurfaceSnapshot {
+            self.view.setNeedsDisplay(true);
+            self.snapshot = AppKitDrawViewSurfaceSnapshot {
+                window: state.window(),
+                native_view_handle: self.native_view_handle(),
+                frame: state.record_frame(),
+                needs_display: true,
+            };
+            self.snapshot
         }
     }
 
@@ -696,6 +786,21 @@ mod platform {
         window.setTitle(&title);
         window.center();
         window
+    }
+
+    fn create_draw_view(mtm: MainThreadMarker, rect: NSRect) -> Retained<NSView> {
+        let view = NSView::initWithFrame(NSView::alloc(mtm), rect);
+        view.setWantsLayer(true);
+        view
+    }
+
+    fn ns_color_from_appkit_color(color: AppKitColor) -> Retained<NSColor> {
+        NSColor::colorWithSRGBRed_green_blue_alpha(
+            color.red as f64,
+            color.green as f64,
+            color.blue as f64,
+            color.alpha as f64,
+        )
     }
 
     fn size_from_rect(rect: NSRect) -> Result<WindowSize, UiAdapterError> {
@@ -800,6 +905,38 @@ mod platform {
             assert_eq!(session.last_snapshot(), Some(snapshot));
             assert!(snapshot.scale > 0.0);
         }
+
+        #[test]
+        #[ignore = "opens a real AppKit window on the local macOS desktop"]
+        fn ignored_smoke_can_attach_appkit_draw_view_surface() {
+            let adapter = MacosUiAdapter::new();
+            let backend = AppKitWindowBackend;
+            let options = WindowOptions::new(
+                "Layer36 AppKit draw view",
+                WindowSize::new(640, 480).unwrap(),
+            )
+            .unwrap();
+            let mut session = backend
+                .create_session(&adapter, options)
+                .expect("create appkit session");
+            session
+                .refresh(&backend, &adapter)
+                .expect("refresh appkit session");
+            let mut state = session
+                .create_draw_surface_state(AppKitColor::LAYER36_BLUE)
+                .expect("draw surface state");
+            let mut view = session
+                .attach_draw_view_surface(&mut state)
+                .expect("attach draw view");
+
+            assert_eq!(view.window(), session.id());
+            assert_ne!(view.native_view_handle(), 0);
+            assert_eq!(view.frame().frame_index, 1);
+
+            let updated = view.request_display(&mut state);
+            assert_eq!(updated.frame.frame_index, 2);
+            assert!(updated.needs_display);
+        }
     }
 }
 
@@ -812,6 +949,12 @@ mod platform {
     pub struct AppKitWindowPrototype {
         id: WindowId,
         native_handle: NativeWindowHandle,
+    }
+
+    /// Placeholder returned only on macOS builds.
+    #[derive(Debug, Clone, Copy, PartialEq)]
+    pub struct AppKitDrawViewSurface {
+        snapshot: AppKitDrawViewSurfaceSnapshot,
     }
 
     impl AppKitWindowPrototype {
@@ -830,6 +973,46 @@ mod platform {
             Err(UiAdapterError::Unsupported(
                 "AppKit window snapshots are only available on macOS".to_string(),
             ))
+        }
+
+        /// AppKit draw views are only available in macOS builds.
+        pub fn attach_draw_view_surface(
+            &self,
+            _state: &mut AppKitDrawSurfaceState,
+        ) -> Result<AppKitDrawViewSurface, UiAdapterError> {
+            Err(UiAdapterError::Unsupported(
+                "AppKit draw views are only available on macOS".to_string(),
+            ))
+        }
+    }
+
+    impl AppKitDrawViewSurface {
+        /// Return the stable Layer36 window id this view belongs to.
+        pub fn window(&self) -> WindowId {
+            self.snapshot.window
+        }
+
+        /// Return the opaque native view handle.
+        pub fn native_view_handle(&self) -> u64 {
+            self.snapshot.native_view_handle
+        }
+
+        /// Return the last frame snapshot.
+        pub fn frame(&self) -> AppKitDrawFrame {
+            self.snapshot.frame
+        }
+
+        /// Return the latest view-surface snapshot.
+        pub fn snapshot(&self) -> AppKitDrawViewSurfaceSnapshot {
+            self.snapshot
+        }
+
+        /// Marking an AppKit view dirty is only available in macOS builds.
+        pub fn request_display(
+            &mut self,
+            _state: &mut AppKitDrawSurfaceState,
+        ) -> AppKitDrawViewSurfaceSnapshot {
+            self.snapshot
         }
     }
 
@@ -858,6 +1041,7 @@ mod platform {
     }
 }
 
+pub use platform::AppKitDrawViewSurface;
 pub use platform::AppKitWindowPrototype;
 
 fn validate_color_channel(name: &str, value: f32) -> Result<(), UiAdapterError> {

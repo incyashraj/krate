@@ -1,6 +1,6 @@
 # Layer36 for Everyone
 
-Updated on June 7, 2026.
+Updated on June 20, 2026.
 
 This page explains the project in plain language. It is written for people who are not deep in systems programming.
 
@@ -172,6 +172,10 @@ flowchart LR
     can now remember the size, scale, clear color, redraw count, and frame
     number for an AppKit-backed surface. It still does not paint pixels, but the
     next native AppKit view has a small state object ready to use.
+42. The macOS prototype can now attach a first draw view. In simple terms, the
+    opt-in AppKit path can put an `NSView` inside the real window, set a visible
+    clear color, mark the view as needing display, and record the first frame.
+    This is still a prototype path, not the normal runtime path.
 
 ## Current Build Timeline
 
@@ -218,7 +222,7 @@ This is a simple status view for non technical readers.
 | UAPI freeze decision path | Working, with a draft packet and CI checker |
 | Outside walkthrough proof | Ready to collect, with a timing packet, checker, and local rehearsal |
 | Phase 3 handoff | Started at contract level, still waiting on Phase 2 outside review for formal phase close |
-| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, explicit `WindowAdapter`, native window handle handoff, shared widget tree model, draft widget-tree dispatch, first Taffy-backed layout wrapper, 100 generated layout-shape tests, 1k/10k layout benchmark target, prepared repeated-layout path, first layout hit-test helper, draft window, pointer, key, text, FIFO polling, host window, theme, and scale event routes, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, planned native backend reporting, the widget lowering rule, an opt-in macOS AppKit window prototype, AppKit event bridge targets, AppKit window session state, AppKit native event state, AppKit redraw bridge, AppKit delegate callback bridge, and AppKit draw-surface state are in place. Real Objective-C delegate wiring, visible AppKit painting, Linux windows, and Windows windows are still pending |
+| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, explicit `WindowAdapter`, native window handle handoff, shared widget tree model, draft widget-tree dispatch, first Taffy-backed layout wrapper, 100 generated layout-shape tests, 1k/10k layout benchmark target, prepared repeated-layout path, first layout hit-test helper, draft window, pointer, key, text, FIFO polling, host window, theme, and scale event routes, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, planned native backend reporting, the widget lowering rule, an opt-in macOS AppKit window prototype, AppKit event bridge targets, AppKit window session state, AppKit native event state, AppKit redraw bridge, AppKit delegate callback bridge, AppKit draw-surface state, and AppKit draw view surface are in place. Real Objective-C delegate wiring, default-runtime AppKit event-loop wiring, Linux windows, and Windows windows are still pending |
 | Mobile host path | Not started in implementation |
 | Packaging and app store style distribution | Not started in implementation |
 
