@@ -63,6 +63,7 @@ The first Phase 3 slice is now in the repo:
 - `AppKitDrawSurfaceState`, which tracks size, scale, clear color, redraw requests, and frame metadata before the real AppKit view paints pixels
 - `AppKitDrawViewSurface`, an opt-in AppKit `NSView` attachment path that sets a visible clear color, marks the view dirty, and records the first frame snapshot
 - `AppKitWindowNativeDelegate`, a retained AppKit `NSWindowDelegate` object that records native close, resize, focus, and backing-scale callbacks for the Rust session to drain
+- `AppKitWindowEventLoopDriver`, a non-blocking AppKit tick proof that refreshes native state, drains delegate callbacks, and queues redraw requests through the shared event stream
 - `Phase3UiRuntime::with_host_adapter`, which selects the current host UI adapter and reports whether it is still headless or native
 - ADR-0013 and RFC-0003 now record the widget lowering strategy: native controls where the host has a semantic match, drawn fallback where it does not
 - ADR-0014 records the layout engine choice: Taffy, with a small flexbox-style subset first
@@ -76,8 +77,10 @@ too. AppKit now also has draw-surface state and an opt-in AppKit draw view
 surface. The view path can attach an `NSView`, set a visible clear color, mark
 the view dirty, and record the first frame snapshot. The real AppKit delegate
 object now exists too. It records native window callbacks into a small queue
-that the Rust session drains through the same bridge. The next work is to wire
-that native event path into the default runtime without breaking headless CI.
+that the Rust session drains through the same bridge. There is now a small
+event-loop driver that can process one native tick without blocking. The next
+work is to make that native path selectable from the runtime without breaking
+headless CI.
 
 See [Widget Protocol](../phase3/widget-protocol.md) for the plain-language
 version of this Phase 3 direction. See [Layout](../phase3/layout.md) for the

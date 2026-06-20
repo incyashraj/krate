@@ -2189,6 +2189,7 @@ input-routing proof, plus the handle mapping needed by the next host adapter wor
 | P3-UI-04N | Add AppKit draw-surface state | 2026-06-07 | AppKit now has a small draw-surface state object for size, scale, clear color, redraw count, and frame metadata. It routes redraw requests through the delegate bridge, but it does not paint real pixels yet. |
 | P3-UI-04O | Add AppKit draw view surface | 2026-06-20 | AppKit can now attach an owned `NSView` to the prototype window, set a visible clear color, mark it dirty, and record a first frame snapshot. The path is still opt-in and covered by an ignored local smoke. |
 | P3-UI-04P | Add AppKit native delegate object | 2026-06-20 | AppKit now has a retained `NSWindowDelegate` object that records close, resize, focus, and backing-scale callbacks into a FIFO queue. `AppKitWindowSession` can drain those callbacks through the existing Rust delegate bridge. |
+| P3-UI-04Q | Add AppKit event-loop step driver | 2026-06-20 | AppKit can now process one non-blocking native tick: refresh native state, drain delegate callbacks, and queue redraw through the shared event stream. |
 
 ---
 
@@ -2253,6 +2254,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P3-UI-04N | AppKit draw-surface state | 2026-06-07 | Added `AppKitColor`, `AppKitDrawFrame`, and `AppKitDrawSurfaceState`, exported them from the macOS adapter crate, and covered redraw routing plus frame metadata. |
 | P3-UI-04O | AppKit draw view surface | 2026-06-20 | Added `AppKitDrawViewSurface` and `AppKitDrawViewSurfaceSnapshot`, exported them from the macOS adapter crate, enabled the needed AppKit `NSView`/`NSColor` bindings, and added an ignored local smoke for attaching a real AppKit content view. |
 | P3-UI-04P | AppKit native delegate object | 2026-06-20 | Added `AppKitWindowNativeDelegate` and `AppKitWindowDelegateQueue`, exported both from the macOS adapter crate, implemented the first `NSWindowDelegate` methods, and wired session draining into the existing bridge. |
+| P3-UI-04Q | AppKit event-loop step driver | 2026-06-20 | Added `AppKitWindowEventLoopDriver`, `AppKitWindowEventLoopStep`, and `AppKitWindowEventLoopStepReport`, exported them from the macOS adapter crate, and covered one non-blocking tick that refreshes state, drains callbacks, and queues redraw. |
 
 ---
 
@@ -2262,7 +2264,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 |---------|------|---------|----------|
 | P3-UI-01 | Widget protocol design RFC | 2026-05-19 | Draft written; needs review before the rule is treated as accepted. |
 | P3-UI-03 | Layout engine (Taffy integration) | 2026-05-21 | First wrapper, 100-shape tests, benchmark target, and prepared repeated-layout path exist; local prepared 10k layout is below the exit budget, but cold rebuild is not, so recorded cross-host benchmark results and wider style coverage are pending. |
-| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Explicit `WindowAdapter`, native handle handoff, shared `UiAdapter`, widget-tree dispatch, host entry points, runtime discovery, routed input events, FIFO event polling, host window events, theme/scale events, and an opt-in macOS AppKit window prototype exist. AppKit now has event bridge targets, a snapshot helper, session state, a delegate-shaped native event state object, redraw bridge, delegate callback bridge, draw-surface state, an opt-in draw view surface, and a retained native window delegate. Next step is default-runtime event-loop wiring, then Linux and Windows native windows. |
+| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Explicit `WindowAdapter`, native handle handoff, shared `UiAdapter`, widget-tree dispatch, host entry points, runtime discovery, routed input events, FIFO event polling, host window events, theme/scale events, and an opt-in macOS AppKit window prototype exist. AppKit now has event bridge targets, a snapshot helper, session state, a delegate-shaped native event state object, redraw bridge, delegate callback bridge, draw-surface state, an opt-in draw view surface, a retained native window delegate, and a non-blocking event-loop step driver. Next step is selectable runtime AppKit wiring, then Linux and Windows native windows. |
 | P3-INPUT-01 | Keyboard + mouse input | 2026-05-21 | First runtime-side pointer, key, and committed-text routes exist; real host pointer, hover, wheel, keyboard, shortcut, IME composition, and cross-host normalization are pending. |
 
 ---
@@ -2371,6 +2373,11 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
   callbacks into a small FIFO queue, and lets `AppKitWindowSession` drain them
   through the tested Rust bridge. This still does not make AppKit the default
   runtime path.
+- 2026-06-20: Added the first AppKit event-loop step driver. It can process one
+  non-blocking native tick by refreshing the session snapshot, draining queued
+  delegate callbacks, and queueing redraw through the shared event stream. This
+  still stays opt-in; the next step is runtime selection without breaking
+  headless CI.
 
 ---
 

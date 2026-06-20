@@ -168,6 +168,12 @@ close, resize, focus, and backing-scale callbacks into a FIFO queue, then lets
 the Rust session drain those callbacks through the tested bridge. This is still
 an opt-in prototype path, not the default runtime event loop.
 
+There is also a small AppKit event-loop driver now. It does one non-blocking
+tick: refresh the native snapshot, drain delegate callbacks, and optionally
+queue a redraw request. That is enough to prove the native path can feed the
+same event stream as the headless draft adapter. It is not yet the default
+runtime path.
+
 AppKit now has draw-surface state too. It records the Layer36 window id, logical
 size, display scale, clear color, redraw count, and frame number. A redraw
 request from that surface goes through the same delegate bridge as a future
@@ -254,8 +260,8 @@ the app, runtime, SDKs, and host adapters.
 The next proof should be small and visible:
 
 1. Record prepared and cold layout benchmark numbers on the target hosts.
-2. Wire the AppKit native event loop into the default runtime path when it can
-   feed events without breaking headless CI.
+2. Make the AppKit event-loop driver selectable from the runtime while keeping
+   the default headless path stable for CI.
 3. Add the first Linux and Windows native window prototypes.
 4. Connect real host input events to the draft pointer, key, and text routes.
 5. Add a small notes app skeleton that uses the same path.

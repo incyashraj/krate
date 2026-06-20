@@ -166,6 +166,9 @@ Done now:
   `NSWindowDelegate`, keeps the delegate retained for the window session, and
   records close, resize, focus, and backing-scale callbacks into a FIFO queue.
   The Rust session drains that queue through the same tested bridge.
+- AppKit now has a first event-loop step driver. It can refresh native state,
+  drain delegate callbacks, and queue a redraw request without blocking the
+  process.
 - The runtime has a UI dispatcher scaffold.
 - macOS, Linux, and Windows adapters expose headless draft window and UI entry
   points, plus the planned native backend for each host. macOS also exposes the
@@ -175,7 +178,7 @@ Done now:
 
 Pending:
 
-- default-runtime AppKit event-loop wiring
+- selectable runtime wiring for the AppKit event-loop driver
 - Linux and Windows native window prototypes
 - host event loop that feeds real close, resize, focus, theme, scale, pointer, key, and text events into the queue
 - widget tree lowering

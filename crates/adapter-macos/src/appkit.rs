@@ -291,6 +291,127 @@ impl AppKitWindowDelegateBridge {
     }
 }
 
+/// One non-blocking unit of AppKit event-loop work.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct AppKitWindowEventLoopStep {
+    snapshot: Option<AppKitWindowSnapshot>,
+    callbacks: Vec<AppKitWindowDelegateCallback>,
+    request_redraw: bool,
+}
+
+impl AppKitWindowEventLoopStep {
+    /// Create an empty AppKit event-loop step.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Include a fresh native window snapshot in this event-loop step.
+    pub fn with_snapshot(mut self, snapshot: AppKitWindowSnapshot) -> Self {
+        self.snapshot = Some(snapshot);
+        self
+    }
+
+    /// Include delegate callbacks collected by AppKit in this event-loop step.
+    pub fn with_callbacks(
+        mut self,
+        callbacks: impl IntoIterator<Item = AppKitWindowDelegateCallback>,
+    ) -> Self {
+        self.callbacks.extend(callbacks);
+        self
+    }
+
+    /// Ask the shared event queue for a redraw during this event-loop step.
+    pub fn with_redraw_request(mut self) -> Self {
+        self.request_redraw = true;
+        self
+    }
+
+    /// Apply this step to one AppKit event-state object.
+    pub fn apply_to_event_state(
+        &self,
+        bridge: &AppKitWindowDelegateBridge,
+        backend: &AppKitWindowBackend,
+        adapter: &MacosUiAdapter,
+        state: &mut AppKitWindowEventState,
+    ) -> Result<AppKitWindowEventLoopStepReport, UiAdapterError> {
+        if let Some(snapshot) = self.snapshot {
+            state.sync_snapshot(backend, adapter, snapshot)?;
+        }
+
+        let mut callbacks_handled = 0;
+        for callback in self.callbacks.iter().copied() {
+            bridge.handle_callback(backend, adapter, state, callback)?;
+            callbacks_handled += 1;
+        }
+
+        if self.request_redraw {
+            state.handle_native_event(
+                backend,
+                adapter,
+                AppKitWindowNativeEvent::RedrawRequested,
+            )?;
+        }
+
+        Ok(AppKitWindowEventLoopStepReport {
+            callbacks_handled,
+            snapshot: state.last_snapshot(),
+            redraw_requested: self.request_redraw,
+        })
+    }
+}
+
+/// Result from one non-blocking AppKit event-loop step.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AppKitWindowEventLoopStepReport {
+    pub callbacks_handled: usize,
+    pub snapshot: Option<AppKitWindowSnapshot>,
+    pub redraw_requested: bool,
+}
+
+/// Small driver for the opt-in AppKit event-loop prototype.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct AppKitWindowEventLoopDriver {
+    bridge: AppKitWindowDelegateBridge,
+}
+
+impl AppKitWindowEventLoopDriver {
+    /// Create a driver that translates AppKit callbacks through the Rust bridge.
+    pub fn new() -> Self {
+        Self {
+            bridge: AppKitWindowDelegateBridge,
+        }
+    }
+
+    /// Run one explicit event-loop step against a testable event-state object.
+    pub fn run_step_for_state(
+        &self,
+        backend: &AppKitWindowBackend,
+        adapter: &MacosUiAdapter,
+        state: &mut AppKitWindowEventState,
+        step: &AppKitWindowEventLoopStep,
+    ) -> Result<AppKitWindowEventLoopStepReport, UiAdapterError> {
+        step.apply_to_event_state(&self.bridge, backend, adapter, state)
+    }
+
+    /// Poll one owned AppKit session without blocking.
+    pub fn pump_session_once(
+        &self,
+        session: &mut AppKitWindowSession,
+        backend: &AppKitWindowBackend,
+        adapter: &MacosUiAdapter,
+    ) -> Result<AppKitWindowEventLoopStepReport, UiAdapterError> {
+        session.refresh(backend, adapter)?;
+        let callbacks_handled =
+            session.drain_native_delegate_callbacks(&self.bridge, backend, adapter)?;
+
+        Ok(AppKitWindowEventLoopStepReport {
+            callbacks_handled,
+            snapshot: session.last_snapshot(),
+            redraw_requested: false,
+        })
+    }
+}
+
 /// Mutable native event-loop state for one AppKit-backed Layer36 window.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AppKitWindowEventState {
@@ -485,6 +606,16 @@ impl AppKitWindowSession {
         };
         let callbacks = delegate.drain_callbacks();
         self.handle_delegate_callbacks(bridge, backend, adapter, callbacks)
+    }
+
+    /// Poll this AppKit session once without blocking.
+    pub fn pump_event_loop_once(
+        &mut self,
+        driver: &AppKitWindowEventLoopDriver,
+        backend: &AppKitWindowBackend,
+        adapter: &MacosUiAdapter,
+    ) -> Result<AppKitWindowEventLoopStepReport, UiAdapterError> {
+        driver.pump_session_once(self, backend, adapter)
     }
 
     /// Report a close request from native AppKit into the shared queue.
@@ -1683,6 +1814,111 @@ mod tests {
             Err(UiAdapterError::InvalidScaleFactor(_))
         ));
         assert_eq!(state.last_snapshot(), Some(first));
+    }
+
+    #[test]
+    fn appkit_event_loop_step_feeds_snapshot_callbacks_and_redraw() {
+        let adapter = MacosUiAdapter::new();
+        let backend = AppKitWindowBackend;
+        let driver = AppKitWindowEventLoopDriver::new();
+        let id = WindowAdapter::create_window(
+            &adapter,
+            WindowOptions::new(
+                "Layer36 AppKit event-loop step",
+                WindowSize::new(640, 480).unwrap(),
+            )
+            .unwrap(),
+        )
+        .expect("create window");
+        WindowAdapter::drain_events(&adapter).expect("drain creation");
+        let mut state = AppKitWindowEventState::new(id);
+        let first = AppKitWindowSnapshot {
+            visible: true,
+            focused: false,
+            size: WindowSize::new(640, 480).unwrap(),
+            scale: 1.0,
+        };
+        let resized = WindowSize::new(900, 700).unwrap();
+        let step = AppKitWindowEventLoopStep::new()
+            .with_snapshot(first)
+            .with_callbacks([
+                AppKitWindowDelegateCallback::WindowDidBecomeKey,
+                AppKitWindowDelegateCallback::WindowDidResize(resized),
+                AppKitWindowDelegateCallback::WindowDidChangeBackingScale(2.0),
+            ])
+            .with_redraw_request();
+
+        let report = driver
+            .run_step_for_state(&backend, &adapter, &mut state, &step)
+            .expect("event-loop step");
+
+        assert_eq!(
+            report,
+            AppKitWindowEventLoopStepReport {
+                callbacks_handled: 3,
+                snapshot: Some(AppKitWindowSnapshot {
+                    visible: true,
+                    focused: true,
+                    size: resized,
+                    scale: 2.0,
+                }),
+                redraw_requested: true,
+            }
+        );
+        assert_eq!(
+            WindowAdapter::drain_events(&adapter).expect("events"),
+            vec![
+                UiEvent::Resized {
+                    id,
+                    size: first.size
+                },
+                UiEvent::WindowFocused { id, focused: false },
+                UiEvent::ScaleChanged {
+                    id,
+                    scale: first.scale
+                },
+                UiEvent::WindowFocused { id, focused: true },
+                UiEvent::Resized { id, size: resized },
+                UiEvent::ScaleChanged { id, scale: 2.0 },
+                UiEvent::RedrawRequested(id),
+            ]
+        );
+    }
+
+    #[test]
+    fn appkit_event_loop_empty_step_is_noop() {
+        let adapter = MacosUiAdapter::new();
+        let backend = AppKitWindowBackend;
+        let driver = AppKitWindowEventLoopDriver::new();
+        let id = WindowAdapter::create_window(
+            &adapter,
+            WindowOptions::new(
+                "Layer36 AppKit empty event-loop step",
+                WindowSize::new(640, 480).unwrap(),
+            )
+            .unwrap(),
+        )
+        .expect("create window");
+        WindowAdapter::drain_events(&adapter).expect("drain creation");
+        let mut state = AppKitWindowEventState::new(id);
+        let step = AppKitWindowEventLoopStep::new();
+
+        let report = driver
+            .run_step_for_state(&backend, &adapter, &mut state, &step)
+            .expect("event-loop step");
+
+        assert_eq!(
+            report,
+            AppKitWindowEventLoopStepReport {
+                callbacks_handled: 0,
+                snapshot: None,
+                redraw_requested: false,
+            }
+        );
+        assert_eq!(
+            WindowAdapter::drain_events(&adapter).expect("events"),
+            vec![]
+        );
     }
 
     #[test]

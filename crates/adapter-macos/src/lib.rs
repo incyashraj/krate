@@ -23,7 +23,8 @@ use std::time::Duration;
 pub use appkit::{
     AppKitColor, AppKitDrawFrame, AppKitDrawSurfaceState, AppKitDrawViewSurface,
     AppKitDrawViewSurfaceSnapshot, AppKitWindowBackend, AppKitWindowDelegateBridge,
-    AppKitWindowDelegateCallback, AppKitWindowDelegateQueue, AppKitWindowEventState,
+    AppKitWindowDelegateCallback, AppKitWindowDelegateQueue, AppKitWindowEventLoopDriver,
+    AppKitWindowEventLoopStep, AppKitWindowEventLoopStepReport, AppKitWindowEventState,
     AppKitWindowNativeDelegate, AppKitWindowNativeEvent, AppKitWindowPrototype,
     AppKitWindowSession, AppKitWindowSnapshot,
 };

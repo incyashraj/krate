@@ -519,6 +519,7 @@
       </div>
     </div>
     <p class="flow-caption">In simple terms: Phase 3 should move Layer36 from "a safe portable CLI app can run" to "a safe portable desktop app can open a real window and respond to users."</p>
+    <p class="flow-caption">Current progress: the macOS prototype can create an opt-in AppKit window, attach a first draw view, collect native window callbacks, and process one non-blocking event-loop tick. The normal runtime still uses the headless path until native AppKit wiring is safe to turn on.</p>
   </section>
 
   <section class="section split">
