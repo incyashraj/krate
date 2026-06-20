@@ -66,6 +66,7 @@ The first Phase 3 slice is now in the repo:
 - `AppKitWindowEventLoopDriver`, a non-blocking AppKit tick proof that refreshes native state, drains delegate callbacks, and queues redraw requests through the shared event stream
 - `Phase3UiRuntime::with_host_adapter`, which selects the current host UI adapter and reports whether it is still headless or native
 - `Phase3UiRuntime::try_with_host_adapter_mode`, which keeps the default headless path stable while allowing macOS to explicitly request the AppKit prototype adapter
+- `UiEventLoopTick` and `Phase3UiDispatcher::pump_event_loop_once`, so every host adapter has the same non-blocking event-loop pump shape
 - ADR-0013 and RFC-0003 now record the widget lowering strategy: native controls where the host has a semantic match, drawn fallback where it does not
 - ADR-0014 records the layout engine choice: Taffy, with a small flexbox-style subset first
 
@@ -81,7 +82,9 @@ object now exists too. It records native window callbacks into a small queue
 that the Rust session drains through the same bridge. There is now a small
 event-loop driver that can process one native tick without blocking. The next
 runtime work has started too: the AppKit prototype can be selected explicitly,
-while the normal runtime path still stays headless for CI.
+while the normal runtime path still stays headless for CI. The runtime can now
+ask any adapter to process one non-blocking UI tick. Headless adapters return
+no native work; AppKit maps its prototype tick into the shared report.
 
 See [Widget Protocol](../phase3/widget-protocol.md) for the plain-language
 version of this Phase 3 direction. See [Layout](../phase3/layout.md) for the

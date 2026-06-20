@@ -508,6 +508,15 @@ pub enum UiEvent {
     TextInput(TextInputEvent),
 }
 
+/// Summary from one non-blocking host event-loop tick.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UiEventLoopTick {
+    pub window: WindowId,
+    pub callbacks_handled: usize,
+    pub snapshot_refreshed: bool,
+    pub redraw_requested: bool,
+}
+
 /// Static capability summary for one UI adapter build.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UiAdapterInfo {
@@ -669,6 +678,14 @@ pub trait UiAdapter: WindowAdapter {
         Err(UiAdapterError::Unsupported(
             "clipboard write is not implemented by this UI adapter".to_string(),
         ))
+    }
+
+    /// Pump one non-blocking native event-loop tick if this adapter has one.
+    fn pump_event_loop_once(
+        &self,
+        _window: WindowId,
+    ) -> Result<Option<UiEventLoopTick>, UiAdapterError> {
+        Ok(None)
     }
 }
 
@@ -1840,6 +1857,19 @@ mod tests {
             vec![UiEvent::WindowShown(id)]
         );
         assert_eq!(adapter.poll_event().expect("poll"), None);
+    }
+
+    #[test]
+    fn draft_adapter_event_loop_pump_is_noop() {
+        let adapter = DraftUiAdapter::new();
+        let id = adapter
+            .create_window(
+                WindowOptions::new("Layer36 no native loop", WindowSize::new(640, 480).unwrap())
+                    .unwrap(),
+            )
+            .expect("create");
+
+        assert_eq!(adapter.pump_event_loop_once(id).expect("pump"), None);
     }
 
     #[test]

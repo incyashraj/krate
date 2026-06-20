@@ -10,8 +10,9 @@ use layer36_adapter_common::{
     time::HostClock,
     ui::{
         DraftUiAdapter, KeyEvent, NativeWindowHandle, PointerEvent, TextInputEvent, Theme,
-        UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, WidgetId, WidgetNode, WidgetTree,
-        WindowAdapter, WindowBackendKind, WindowId, WindowOptions, WindowRecord, WindowSize,
+        UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick, WidgetId, WidgetNode,
+        WidgetTree, WindowAdapter, WindowBackendKind, WindowId, WindowOptions, WindowRecord,
+        WindowSize,
     },
 };
 use std::cell::RefCell;
@@ -413,6 +414,22 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
 
     fn write_clipboard_text(&self, text: &str) -> Result<(), UiAdapterError> {
         self.headless.write_clipboard_text(text)
+    }
+
+    fn pump_event_loop_once(
+        &self,
+        window: WindowId,
+    ) -> Result<Option<UiEventLoopTick>, UiAdapterError> {
+        Ok(
+            MacosAppKitPrototypeUiAdapter::pump_event_loop_once(self, window)?.map(|report| {
+                UiEventLoopTick {
+                    window,
+                    callbacks_handled: report.callbacks_handled,
+                    snapshot_refreshed: report.snapshot.is_some(),
+                    redraw_requested: report.redraw_requested,
+                }
+            }),
+        )
     }
 }
 

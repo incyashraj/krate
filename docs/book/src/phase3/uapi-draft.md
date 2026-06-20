@@ -180,6 +180,13 @@ ready for native macOS rules can ask for `Phase3HostUiMode::NativePrototype`,
 which selects the AppKit prototype adapter and reports native window plus
 native event-loop support.
 
+The event-loop step has a shared runtime boundary now too. `UiAdapter` exposes
+one non-blocking pump method, and `Phase3UiDispatcher` checks the same UI grant
+before it calls that method. Headless adapters return no native tick. The
+AppKit prototype maps its native step report into a small common
+`UiEventLoopTick` report. This keeps the next Linux and Windows window work on
+the same shape instead of making macOS a one-off path.
+
 AppKit now has draw-surface state too. It records the Layer36 window id, logical
 size, display scale, clear color, redraw count, and frame number. A redraw
 request from that surface goes through the same delegate bridge as a future
@@ -253,9 +260,10 @@ This is not a finished desktop UI layer.
 
 There is an opt-in AppKit window prototype on macOS, but the default runtime is
 still headless. The AppKit view path is available only through the native
-prototype and ignored local smoke tests. It does not mean the API is frozen. It
-is the first contract and adapter shape that lets us build the runtime and host
-work in the right direction.
+prototype and ignored local smoke tests. The shared event-loop pump gives that
+prototype a real runtime handoff point, but it does not mean the API is frozen.
+It is the first contract and adapter shape that lets us build the runtime and
+host work in the right direction.
 
 ## Why Start Here
 
@@ -266,7 +274,8 @@ the app, runtime, SDKs, and host adapters.
 The next proof should be small and visible:
 
 1. Record prepared and cold layout benchmark numbers on the target hosts.
-2. Add an ignored local smoke for the selectable AppKit runtime path.
+2. Add an ignored local smoke for the selectable AppKit runtime path and its
+   shared event-loop pump.
 3. Add the first Linux and Windows native window prototypes.
 4. Connect real host input events to the draft pointer, key, and text routes.
 5. Add a small notes app skeleton that uses the same path.

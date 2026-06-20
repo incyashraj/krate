@@ -228,6 +228,14 @@ fn check_adapter_boundary() -> Result<BoundaryReport> {
         "adapter-common must expose an opaque native window handle token".to_string(),
     )?;
     ensure(
+        adapter_common.contains("pub struct UiEventLoopTick"),
+        "adapter-common must expose a host-neutral event-loop tick report".to_string(),
+    )?;
+    ensure(
+        adapter_common.contains("fn pump_event_loop_once("),
+        "UiAdapter must expose a host-neutral event-loop pump method".to_string(),
+    )?;
+    ensure(
         adapter_common.contains("fn attach_native_window(")
             && adapter_common.contains("fn native_window(&self, id: WindowId)")
             && adapter_common.contains("fn detach_native_window("),
@@ -239,6 +247,7 @@ fn check_adapter_boundary() -> Result<BoundaryReport> {
         "try_with_host_adapter_mode",
         "discover_host_ui_adapter_for_mode",
         "discover_native_prototype_ui_adapter",
+        "pump_event_loop_once",
     ] {
         ensure(
             phase3_runtime.contains(needle),

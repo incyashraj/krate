@@ -2191,6 +2191,7 @@ input-routing proof, plus the handle mapping needed by the next host adapter wor
 | P3-UI-04P | Add AppKit native delegate object | 2026-06-20 | AppKit now has a retained `NSWindowDelegate` object that records close, resize, focus, and backing-scale callbacks into a FIFO queue. `AppKitWindowSession` can drain those callbacks through the existing Rust delegate bridge. |
 | P3-UI-04Q | Add AppKit event-loop step driver | 2026-06-20 | AppKit can now process one non-blocking native tick: refresh native state, drain delegate callbacks, and queue redraw through the shared event stream. |
 | P3-RUNTIME-03 | Add selectable AppKit prototype runtime mode | 2026-06-20 | `Phase3UiRuntime` can now explicitly request a native prototype host mode. The normal runtime remains headless, while macOS can select the AppKit prototype adapter and report native window plus event-loop capability. |
+| P3-RUNTIME-04 | Add shared event-loop pump boundary | 2026-06-20 | `UiAdapter` and `Phase3UiDispatcher` now expose a host-neutral non-blocking event-loop pump. Headless adapters return no native tick, while the AppKit prototype maps its native tick report into the shared shape. |
 
 ---
 
@@ -2257,6 +2258,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P3-UI-04P | AppKit native delegate object | 2026-06-20 | Added `AppKitWindowNativeDelegate` and `AppKitWindowDelegateQueue`, exported both from the macOS adapter crate, implemented the first `NSWindowDelegate` methods, and wired session draining into the existing bridge. |
 | P3-UI-04Q | AppKit event-loop step driver | 2026-06-20 | Added `AppKitWindowEventLoopDriver`, `AppKitWindowEventLoopStep`, and `AppKitWindowEventLoopStepReport`, exported them from the macOS adapter crate, and covered one non-blocking tick that refreshes state, drains callbacks, and queues redraw. |
 | P3-RUNTIME-03 | Selectable AppKit prototype runtime mode | 2026-06-20 | Added `Phase3HostUiMode`, `Phase3UiRuntime::try_with_host_adapter_mode`, and `MacosAppKitPrototypeUiAdapter`, with tests proving the default stays headless and native prototype mode is explicit. |
+| P3-RUNTIME-04 | Shared event-loop pump boundary | 2026-06-20 | Added `UiEventLoopTick`, `UiAdapter::pump_event_loop_once`, and `Phase3UiDispatcher::pump_event_loop_once`, with tests proving the headless path is a no-op and AppKit maps native ticks into the common report. |
 
 ---
 
@@ -2266,7 +2268,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 |---------|------|---------|----------|
 | P3-UI-01 | Widget protocol design RFC | 2026-05-19 | Draft written; needs review before the rule is treated as accepted. |
 | P3-UI-03 | Layout engine (Taffy integration) | 2026-05-21 | First wrapper, 100-shape tests, benchmark target, and prepared repeated-layout path exist; local prepared 10k layout is below the exit budget, but cold rebuild is not, so recorded cross-host benchmark results and wider style coverage are pending. |
-| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Explicit `WindowAdapter`, native handle handoff, shared `UiAdapter`, widget-tree dispatch, host entry points, runtime discovery, routed input events, FIFO event polling, host window events, theme/scale events, and an opt-in macOS AppKit window prototype exist. AppKit now has event bridge targets, a snapshot helper, session state, a delegate-shaped native event state object, redraw bridge, delegate callback bridge, draw-surface state, an opt-in draw view surface, a retained native window delegate, a non-blocking event-loop step driver, and an explicit native prototype runtime selector. Next step is an ignored local smoke for the selectable path, then Linux and Windows native windows. |
+| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Explicit `WindowAdapter`, native handle handoff, shared `UiAdapter`, widget-tree dispatch, host entry points, runtime discovery, routed input events, FIFO event polling, host window events, theme/scale events, and an opt-in macOS AppKit window prototype exist. AppKit now has event bridge targets, a snapshot helper, session state, a delegate-shaped native event state object, redraw bridge, delegate callback bridge, draw-surface state, an opt-in draw view surface, a retained native window delegate, a non-blocking event-loop step driver, an explicit native prototype runtime selector, and a shared runtime event-loop pump boundary. Next step is an ignored local smoke for the selectable path, then Linux and Windows native windows. |
 | P3-INPUT-01 | Keyboard + mouse input | 2026-05-21 | First runtime-side pointer, key, and committed-text routes exist; real host pointer, hover, wheel, keyboard, shortcut, IME composition, and cross-host normalization are pending. |
 
 ---
@@ -2384,6 +2386,10 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
   `Phase3UiRuntime::with_host_adapter` path still uses the headless adapter,
   while `Phase3HostUiMode::NativePrototype` can select the macOS AppKit
   prototype adapter and report native window plus native event-loop support.
+- 2026-06-20: Added the shared event-loop pump boundary. `UiAdapter` and
+  `Phase3UiDispatcher` can now ask a host adapter to process one non-blocking
+  UI tick. Headless adapters return no native work; AppKit maps its prototype
+  tick into a common report.
 
 ---
 

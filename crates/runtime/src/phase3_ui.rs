@@ -6,8 +6,8 @@
 
 use layer36_adapter_common::ui::{
     KeyEvent, Modifiers, PointerButton, PointerEvent, TextInputEvent, Theme, UiAdapter,
-    UiAdapterError, UiAdapterInfo, UiEvent, WidgetId, WidgetNode, WidgetTree, WindowId,
-    WindowOptions, WindowRecord, WindowSize,
+    UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick, WidgetId, WidgetNode, WidgetTree,
+    WindowId, WindowOptions, WindowRecord, WindowSize,
 };
 use layer36_layout::{
     compute_layout, hit_test, LayoutPoint, LayoutSnapshot, LayoutViewport, PreparedLayoutTree,
@@ -349,6 +349,14 @@ impl<'a> Phase3UiDispatcher<'a> {
         Ok(self.adapter.poll_event()?)
     }
 
+    pub fn pump_event_loop_once(
+        &self,
+        window: WindowId,
+    ) -> UiDispatchResult<Option<UiEventLoopTick>> {
+        self.check_window_access()?;
+        Ok(self.adapter.pump_event_loop_once(window)?)
+    }
+
     fn check_window_access(&self) -> UiDispatchResult<()> {
         self.check(&UapiCall::Ui(UiCall::WindowCreate))
     }
@@ -478,6 +486,24 @@ mod tests {
             Some(UiEvent::WindowShown(id))
         );
         assert_eq!(dispatcher.poll_event().expect("poll"), None);
+    }
+
+    #[test]
+    fn headless_runtime_event_loop_pump_is_noop() {
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let adapter = DraftUiAdapter::default();
+        let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+        let id = dispatcher
+            .create_window(
+                WindowOptions::new(
+                    "Layer36 headless pump",
+                    WindowSize::new(640, 480).expect("size"),
+                )
+                .expect("options"),
+            )
+            .expect("create window");
+
+        assert_eq!(dispatcher.pump_event_loop_once(id).expect("pump"), None);
     }
 
     #[test]

@@ -171,6 +171,9 @@ Done now:
   process.
 - The runtime can now select the AppKit prototype mode explicitly on macOS.
   The default runtime path still stays headless.
+- The runtime and shared `UiAdapter` now have one common event-loop pump method.
+  Headless adapters return no native tick, and the AppKit prototype maps its
+  native step into the shared `UiEventLoopTick` report.
 - The runtime has a UI dispatcher scaffold.
 - macOS, Linux, and Windows adapters expose headless draft window and UI entry
   points, plus the planned native backend for each host. macOS also exposes the
@@ -180,7 +183,7 @@ Done now:
 
 Pending:
 
-- ignored local smoke for the selectable AppKit runtime path
+- ignored local smoke for the selectable AppKit runtime path and shared pump
 - Linux and Windows native window prototypes
 - host event loop that feeds real close, resize, focus, theme, scale, pointer, key, and text events into the queue
 - widget tree lowering
