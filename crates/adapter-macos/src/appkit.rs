@@ -12,6 +12,42 @@ use layer36_adapter_common::ui::{
 
 use crate::MacosUiAdapter;
 
+/// FIFO callback queue used by the real AppKit delegate object.
+///
+/// AppKit owns the timing of native callbacks. Layer36 drains this queue from
+/// the Rust session object and then feeds the existing delegate bridge.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct AppKitWindowDelegateQueue {
+    callbacks: Vec<AppKitWindowDelegateCallback>,
+}
+
+impl AppKitWindowDelegateQueue {
+    /// Create an empty delegate callback queue.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Queue one callback reported by AppKit.
+    pub fn push(&mut self, callback: AppKitWindowDelegateCallback) {
+        self.callbacks.push(callback);
+    }
+
+    /// Return the number of callbacks waiting to be drained.
+    pub fn len(&self) -> usize {
+        self.callbacks.len()
+    }
+
+    /// Return whether the queue has no pending callbacks.
+    pub fn is_empty(&self) -> bool {
+        self.callbacks.is_empty()
+    }
+
+    /// Drain queued callbacks in AppKit delivery order.
+    pub fn drain(&mut self) -> Vec<AppKitWindowDelegateCallback> {
+        self.callbacks.drain(..).collect()
+    }
+}
+
 /// Small native AppKit backend used by the first Phase 3 macOS prototype.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct AppKitWindowBackend;
@@ -345,6 +381,7 @@ impl AppKitWindowEventState {
 pub struct AppKitWindowSession {
     window: AppKitWindowPrototype,
     event_state: AppKitWindowEventState,
+    native_delegate: Option<AppKitWindowNativeDelegate>,
 }
 
 impl AppKitWindowSession {
@@ -366,6 +403,17 @@ impl AppKitWindowSession {
     /// Return the owned AppKit window prototype.
     pub fn window(&self) -> &AppKitWindowPrototype {
         &self.window
+    }
+
+    /// Return whether this session has a real AppKit delegate installed.
+    pub fn has_native_delegate(&self) -> bool {
+        self.native_delegate.is_some()
+    }
+
+    /// Install the real AppKit window delegate for this session.
+    pub fn install_native_delegate(&mut self) -> Result<(), UiAdapterError> {
+        self.native_delegate = Some(self.window.install_native_delegate()?);
+        Ok(())
     }
 
     /// Show the native window through AppKit and the shared Layer36 adapter.
@@ -407,6 +455,36 @@ impl AppKitWindowSession {
         callback: AppKitWindowDelegateCallback,
     ) -> Result<Option<AppKitWindowSnapshot>, UiAdapterError> {
         bridge.handle_callback(backend, adapter, &mut self.event_state, callback)
+    }
+
+    /// Queue callbacks already collected from a native AppKit delegate.
+    pub fn handle_delegate_callbacks(
+        &mut self,
+        bridge: &AppKitWindowDelegateBridge,
+        backend: &AppKitWindowBackend,
+        adapter: &MacosUiAdapter,
+        callbacks: impl IntoIterator<Item = AppKitWindowDelegateCallback>,
+    ) -> Result<usize, UiAdapterError> {
+        let mut handled = 0;
+        for callback in callbacks {
+            self.handle_delegate_callback(bridge, backend, adapter, callback)?;
+            handled += 1;
+        }
+        Ok(handled)
+    }
+
+    /// Drain callbacks from the installed native AppKit delegate.
+    pub fn drain_native_delegate_callbacks(
+        &mut self,
+        bridge: &AppKitWindowDelegateBridge,
+        backend: &AppKitWindowBackend,
+        adapter: &MacosUiAdapter,
+    ) -> Result<usize, UiAdapterError> {
+        let Some(delegate) = &self.native_delegate else {
+            return Ok(0);
+        };
+        let callbacks = delegate.drain_callbacks();
+        self.handle_delegate_callbacks(bridge, backend, adapter, callbacks)
     }
 
     /// Report a close request from native AppKit into the shared queue.
@@ -473,6 +551,7 @@ impl AppKitWindowBackend {
         Ok(AppKitWindowSession {
             window,
             event_state,
+            native_delegate: None,
         })
     }
 
@@ -609,11 +688,87 @@ impl AppKitWindowBackend {
 mod platform {
     use super::*;
     use objc2::rc::Retained;
-    use objc2::{MainThreadMarker, MainThreadOnly};
+    use objc2::runtime::ProtocolObject;
+    use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
-        NSApplication, NSBackingStoreType, NSColor, NSView, NSWindow, NSWindowStyleMask,
+        NSApplication, NSBackingStoreType, NSColor, NSView, NSWindow, NSWindowDelegate,
+        NSWindowStyleMask,
     };
-    use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+    use objc2_foundation::{
+        NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+    };
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    type SharedDelegateQueue = Rc<RefCell<AppKitWindowDelegateQueue>>;
+
+    #[derive(Debug, Default)]
+    struct Layer36WindowDelegateIvars {
+        callbacks: SharedDelegateQueue,
+    }
+
+    define_class!(
+        // SAFETY:
+        // - NSObject has no extra subclassing requirements for a passive delegate.
+        // - The delegate is main-thread-only because AppKit delivers these callbacks
+        //   on the main thread.
+        #[unsafe(super = NSObject)]
+        #[thread_kind = MainThreadOnly]
+        #[ivars = Layer36WindowDelegateIvars]
+        struct Layer36WindowDelegate;
+
+        // SAFETY: NSObjectProtocol has no additional safety requirements.
+        unsafe impl NSObjectProtocol for Layer36WindowDelegate {}
+
+        // SAFETY: Method signatures match the generated NSWindowDelegate protocol.
+        unsafe impl NSWindowDelegate for Layer36WindowDelegate {
+            #[unsafe(method(windowShouldClose:))]
+            fn window_should_close(&self, _sender: &NSWindow) -> bool {
+                self.push_callback(AppKitWindowDelegateCallback::WindowShouldClose);
+                false
+            }
+
+            #[unsafe(method(windowDidResize:))]
+            fn window_did_resize(&self, notification: &NSNotification) {
+                if let Some(window) = notification_window(notification) {
+                    if let Ok(size) = size_from_rect(window.contentLayoutRect()) {
+                        self.push_callback(AppKitWindowDelegateCallback::WindowDidResize(size));
+                    }
+                }
+            }
+
+            #[unsafe(method(windowDidBecomeKey:))]
+            fn window_did_become_key(&self, _notification: &NSNotification) {
+                self.push_callback(AppKitWindowDelegateCallback::WindowDidBecomeKey);
+            }
+
+            #[unsafe(method(windowDidResignKey:))]
+            fn window_did_resign_key(&self, _notification: &NSNotification) {
+                self.push_callback(AppKitWindowDelegateCallback::WindowDidResignKey);
+            }
+
+            #[unsafe(method(windowDidChangeBackingProperties:))]
+            fn window_did_change_backing_properties(&self, notification: &NSNotification) {
+                if let Some(window) = notification_window(notification) {
+                    self.push_callback(AppKitWindowDelegateCallback::WindowDidChangeBackingScale(
+                        window.backingScaleFactor() as f32,
+                    ));
+                }
+            }
+        }
+    );
+
+    impl Layer36WindowDelegate {
+        fn new(mtm: MainThreadMarker, callbacks: SharedDelegateQueue) -> Retained<Self> {
+            let this = Self::alloc(mtm).set_ivars(Layer36WindowDelegateIvars { callbacks });
+            // SAFETY: NSObject's `init` signature is correct for a fresh allocation.
+            unsafe { msg_send![super(this), init] }
+        }
+
+        fn push_callback(&self, callback: AppKitWindowDelegateCallback) {
+            self.ivars().callbacks.borrow_mut().push(callback);
+        }
+    }
 
     /// Owned AppKit window bound to one Layer36 window id.
     pub struct AppKitWindowPrototype {
@@ -626,6 +781,12 @@ mod platform {
     pub struct AppKitDrawViewSurface {
         view: Retained<NSView>,
         snapshot: AppKitDrawViewSurfaceSnapshot,
+    }
+
+    /// Retained AppKit window delegate plus the queue it writes into.
+    pub struct AppKitWindowNativeDelegate {
+        delegate: Retained<Layer36WindowDelegate>,
+        callbacks: SharedDelegateQueue,
     }
 
     impl AppKitWindowPrototype {
@@ -677,6 +838,43 @@ mod platform {
             };
 
             Ok(AppKitDrawViewSurface { view, snapshot })
+        }
+
+        /// Install a real AppKit delegate on this native window.
+        pub fn install_native_delegate(
+            &self,
+        ) -> Result<AppKitWindowNativeDelegate, UiAdapterError> {
+            let mtm = main_thread_marker()?;
+            let native_delegate = AppKitWindowNativeDelegate::new(mtm);
+            self.window
+                .setDelegate(Some(ProtocolObject::from_ref(&*native_delegate.delegate)));
+            Ok(native_delegate)
+        }
+    }
+
+    impl AppKitWindowNativeDelegate {
+        fn new(mtm: MainThreadMarker) -> Self {
+            let callbacks = Rc::new(RefCell::new(AppKitWindowDelegateQueue::new()));
+            let delegate = Layer36WindowDelegate::new(mtm, Rc::clone(&callbacks));
+            Self {
+                delegate,
+                callbacks,
+            }
+        }
+
+        /// Return the number of queued AppKit callbacks.
+        pub fn pending_callbacks(&self) -> usize {
+            self.callbacks.borrow().len()
+        }
+
+        /// Return whether no AppKit callbacks are waiting.
+        pub fn is_empty(&self) -> bool {
+            self.callbacks.borrow().is_empty()
+        }
+
+        /// Drain queued AppKit callbacks in delivery order.
+        pub fn drain_callbacks(&self) -> Vec<AppKitWindowDelegateCallback> {
+            self.callbacks.borrow_mut().drain()
         }
     }
 
@@ -801,6 +999,10 @@ mod platform {
             color.blue as f64,
             color.alpha as f64,
         )
+    }
+
+    fn notification_window(notification: &NSNotification) -> Option<Retained<NSWindow>> {
+        notification.object()?.downcast::<NSWindow>().ok()
     }
 
     fn size_from_rect(rect: NSRect) -> Result<WindowSize, UiAdapterError> {
@@ -957,6 +1159,10 @@ mod platform {
         snapshot: AppKitDrawViewSurfaceSnapshot,
     }
 
+    /// Placeholder returned only on macOS builds.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct AppKitWindowNativeDelegate;
+
     impl AppKitWindowPrototype {
         /// Return the stable Layer36 window id.
         pub fn id(&self) -> WindowId {
@@ -982,6 +1188,15 @@ mod platform {
         ) -> Result<AppKitDrawViewSurface, UiAdapterError> {
             Err(UiAdapterError::Unsupported(
                 "AppKit draw views are only available on macOS".to_string(),
+            ))
+        }
+
+        /// AppKit delegates are only available in macOS builds.
+        pub fn install_native_delegate(
+            &self,
+        ) -> Result<AppKitWindowNativeDelegate, UiAdapterError> {
+            Err(UiAdapterError::Unsupported(
+                "AppKit window delegates are only available on macOS".to_string(),
             ))
         }
     }
@@ -1016,6 +1231,23 @@ mod platform {
         }
     }
 
+    impl AppKitWindowNativeDelegate {
+        /// Return the number of queued AppKit callbacks.
+        pub fn pending_callbacks(&self) -> usize {
+            0
+        }
+
+        /// Return whether no AppKit callbacks are waiting.
+        pub fn is_empty(&self) -> bool {
+            true
+        }
+
+        /// Drain queued AppKit callbacks in delivery order.
+        pub fn drain_callbacks(&self) -> Vec<AppKitWindowDelegateCallback> {
+            Vec::new()
+        }
+    }
+
     impl AppKitWindowBackend {
         /// AppKit is only available in macOS builds.
         pub fn create_window(
@@ -1042,6 +1274,7 @@ mod platform {
 }
 
 pub use platform::AppKitDrawViewSurface;
+pub use platform::AppKitWindowNativeDelegate;
 pub use platform::AppKitWindowPrototype;
 
 fn validate_color_channel(name: &str, value: f32) -> Result<(), UiAdapterError> {
@@ -1450,6 +1683,28 @@ mod tests {
             Err(UiAdapterError::InvalidScaleFactor(_))
         ));
         assert_eq!(state.last_snapshot(), Some(first));
+    }
+
+    #[test]
+    fn appkit_delegate_queue_drains_callbacks_in_order() {
+        let mut queue = AppKitWindowDelegateQueue::new();
+        let size = WindowSize::new(900, 700).unwrap();
+
+        queue.push(AppKitWindowDelegateCallback::WindowDidBecomeKey);
+        queue.push(AppKitWindowDelegateCallback::WindowDidResize(size));
+        queue.push(AppKitWindowDelegateCallback::WindowShouldClose);
+
+        assert_eq!(queue.len(), 3);
+        assert!(!queue.is_empty());
+        assert_eq!(
+            queue.drain(),
+            vec![
+                AppKitWindowDelegateCallback::WindowDidBecomeKey,
+                AppKitWindowDelegateCallback::WindowDidResize(size),
+                AppKitWindowDelegateCallback::WindowShouldClose,
+            ]
+        );
+        assert!(queue.is_empty());
     }
 
     #[test]

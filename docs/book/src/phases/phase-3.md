@@ -62,6 +62,7 @@ The first Phase 3 slice is now in the repo:
 - `AppKitWindowDelegateCallback` and `AppKitWindowDelegateBridge`, so the coming Objective-C delegate can stay thin and hand event translation to tested Rust code
 - `AppKitDrawSurfaceState`, which tracks size, scale, clear color, redraw requests, and frame metadata before the real AppKit view paints pixels
 - `AppKitDrawViewSurface`, an opt-in AppKit `NSView` attachment path that sets a visible clear color, marks the view dirty, and records the first frame snapshot
+- `AppKitWindowNativeDelegate`, a retained AppKit `NSWindowDelegate` object that records native close, resize, focus, and backing-scale callbacks for the Rust session to drain
 - `Phase3UiRuntime::with_host_adapter`, which selects the current host UI adapter and reports whether it is still headless or native
 - ADR-0013 and RFC-0003 now record the widget lowering strategy: native controls where the host has a semantic match, drawn fallback where it does not
 - ADR-0014 records the layout engine choice: Taffy, with a small flexbox-style subset first
@@ -73,9 +74,10 @@ Rust event state is now in place too, including redraw requests for the first
 paint path. AppKit-style delegate callbacks now have a tested Rust translator
 too. AppKit now also has draw-surface state and an opt-in AppKit draw view
 surface. The view path can attach an `NSView`, set a visible clear color, mark
-the view dirty, and record the first frame snapshot. The next work is to connect
-the real Objective-C delegate object to that bridge, then wire the native event
-loop into the default runtime path.
+the view dirty, and record the first frame snapshot. The real AppKit delegate
+object now exists too. It records native window callbacks into a small queue
+that the Rust session drains through the same bridge. The next work is to wire
+that native event path into the default runtime without breaking headless CI.
 
 See [Widget Protocol](../phase3/widget-protocol.md) for the plain-language
 version of this Phase 3 direction. See [Layout](../phase3/layout.md) for the

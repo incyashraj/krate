@@ -23,8 +23,9 @@ use std::time::Duration;
 pub use appkit::{
     AppKitColor, AppKitDrawFrame, AppKitDrawSurfaceState, AppKitDrawViewSurface,
     AppKitDrawViewSurfaceSnapshot, AppKitWindowBackend, AppKitWindowDelegateBridge,
-    AppKitWindowDelegateCallback, AppKitWindowEventState, AppKitWindowNativeEvent,
-    AppKitWindowPrototype, AppKitWindowSession, AppKitWindowSnapshot,
+    AppKitWindowDelegateCallback, AppKitWindowDelegateQueue, AppKitWindowEventState,
+    AppKitWindowNativeDelegate, AppKitWindowNativeEvent, AppKitWindowPrototype,
+    AppKitWindowSession, AppKitWindowSnapshot,
 };
 
 /// Host family handled by this adapter crate.

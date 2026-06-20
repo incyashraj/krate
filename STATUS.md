@@ -3,23 +3,23 @@
 Last updated: 2026-06-20
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `c5a5c33`
-Working tree at this status update: Phase 3 AppKit draw view surface slice in progress
+Latest checked completed push before this slice: `d71e836`
+Working tree at this status update: Phase 3 AppKit native delegate slice in progress
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 342
+- Commits after this slice lands: about 343
 - Tracked files after this slice lands: about 332
-- Total tracked lines after this slice lands: about 95,192
-- Rust lines (`.rs`) after this slice lands: about 47,468
-- Docs lines (`.md`) after this slice lands: about 30,389
+- Total tracked lines after this slice lands: about 95,499
+- Rust lines (`.rs`) after this slice lands: about 47,735
+- Docs lines (`.md`) after this slice lands: about 30,429
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`c5a5c33`) checks:
+Latest completed push (`d71e836`) checks:
 
-- CI: success (run `27097871972`)
-- Deploy docs to GitHub Pages: success (run `27097871969`)
+- CI: success (run `27859495120`)
+- Deploy docs to GitHub Pages: success (run `27859495104`)
 
 Manual hosted full CI run `26069665276` passed on commit `3f1a219`.
 Linux, macOS, and Windows full-test lanes all passed. The language-variant,
@@ -168,6 +168,11 @@ Current Phase 3 slice:
   to the native prototype window, set a visible clear color through AppKit, mark
   the view as needing display, and record a first frame snapshot. The default
   runtime still uses the headless draft adapter.
+- AppKit now has a first real native window delegate object. It implements
+  `NSWindowDelegate`, stays retained by the AppKit session, records close,
+  resize, focus, and backing-scale callbacks into a FIFO queue, and lets
+  `AppKitWindowSession` drain those callbacks through the existing Rust bridge.
+  The default runtime still uses the headless draft adapter.
 
 This does not mean desktop UI is implemented yet. It means the first public
 contract for desktop UI work is now in the repo and checked locally. The window
@@ -229,6 +234,9 @@ Top pending items:
 - Added the AppKit delegate callback bridge so Objective-C delegate methods can translate into one tested Rust event path.
 - Added AppKit draw-surface state so the coming native `NSView` painter has a checked place for size, scale, clear color, redraw count, and frame metadata.
 - Added AppKit draw view surface so the opt-in native prototype can attach an `NSView`, set a visible clear color, mark it dirty, and record a first frame snapshot.
+- Added AppKit native window delegate object so native close, resize, focus,
+  and backing-scale callbacks can be recorded in order and drained through the
+  tested Rust event bridge.
 - Added a UCap enforcement evidence recorder and cross-host comparator (`record-phase2-ucap-evidence` + `compare-phase2-ucap-evidence`)
 - Wired hosted full CI to upload per-OS UCap evidence artifacts and run a dedicated cross-host compare gate
 - Added a benchmark evidence recorder and comparator (`record-phase2-benchmark-evidence` + `compare-phase2-benchmark-evidence`) to track startup and dispatch performance evidence in one per-host report
@@ -319,4 +327,4 @@ Top pending items:
 
 Use this exact prompt in a new session:
 
-`Continue Layer36 on main. Start with STATUS.md, Plan/Phase-2-Plan.md, and Plan/Phase-3-Plan.md. Phase 3 has started with WIT, GUI manifest recognition, Phase 3 capability names, an adapter-common draft window registry, explicit WindowAdapter boundary, native window handle handoff, shared widget tree model, shared UiAdapter trait, runtime::phase3_ui dispatcher scaffolding, draft widget-tree dispatch, a first Taffy-backed layer36-layout crate, runtime layout snapshots, generated 100-shape layout tests, a 1k/10k-node layout benchmark target, PreparedLayoutTree for repeated layout passes, layout absolute-rectangle helpers, a first layout hit-test helper, headless UI adapter entry points in the macOS, Linux, and Windows crates, runtime host UI adapter discovery, active/planned window backend reporting, draft pointer, key, text, FIFO polling, host window, theme, and scale event routes, an opt-in macOS AppKit window prototype, AppKit event bridge targets, AppKit window session state, AppKit native event state, AppKit redraw bridge, AppKit delegate callback bridge, AppKit draw-surface state, AppKit draw view surface, and ADR/RFC/docs for the native-widget plus drawn-fallback widget lowering rule. Prepared 10k layout is locally under budget, but cold rebuild and formal cross-host evidence remain pending. Keep Phase 2 closeout evidence separate, keep Phase 3 narrow, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`
+`Continue Layer36 on main. Start with STATUS.md, Plan/Phase-2-Plan.md, and Plan/Phase-3-Plan.md. Phase 3 has started with WIT, GUI manifest recognition, Phase 3 capability names, an adapter-common draft window registry, explicit WindowAdapter boundary, native window handle handoff, shared widget tree model, shared UiAdapter trait, runtime::phase3_ui dispatcher scaffolding, draft widget-tree dispatch, a first Taffy-backed layer36-layout crate, runtime layout snapshots, generated 100-shape layout tests, a 1k/10k-node layout benchmark target, PreparedLayoutTree for repeated layout passes, layout absolute-rectangle helpers, a first layout hit-test helper, headless UI adapter entry points in the macOS, Linux, and Windows crates, runtime host UI adapter discovery, active/planned window backend reporting, draft pointer, key, text, FIFO polling, host window, theme, and scale event routes, an opt-in macOS AppKit window prototype, AppKit event bridge targets, AppKit window session state, AppKit native event state, AppKit redraw bridge, AppKit delegate callback bridge, AppKit draw-surface state, AppKit draw view surface, AppKit native window delegate object, and ADR/RFC/docs for the native-widget plus drawn-fallback widget lowering rule. Prepared 10k layout is locally under budget, but cold rebuild and formal cross-host evidence remain pending. Keep Phase 2 closeout evidence separate, keep Phase 3 narrow, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`

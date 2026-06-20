@@ -162,6 +162,10 @@ Done now:
   `NSView` to the prototype window, set a visible clear color, mark the view
   dirty, and record the first frame snapshot. This is still opt-in and not the
   default runtime path.
+- AppKit now has a first real window delegate object. It implements
+  `NSWindowDelegate`, keeps the delegate retained for the window session, and
+  records close, resize, focus, and backing-scale callbacks into a FIFO queue.
+  The Rust session drains that queue through the same tested bridge.
 - The runtime has a UI dispatcher scaffold.
 - macOS, Linux, and Windows adapters expose headless draft window and UI entry
   points, plus the planned native backend for each host. macOS also exposes the
@@ -171,7 +175,6 @@ Done now:
 
 Pending:
 
-- real Objective-C AppKit delegate object wired into the Rust delegate bridge
 - default-runtime AppKit event-loop wiring
 - Linux and Windows native window prototypes
 - host event loop that feeds real close, resize, focus, theme, scale, pointer, key, and text events into the queue

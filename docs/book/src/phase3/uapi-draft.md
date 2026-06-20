@@ -162,6 +162,12 @@ needed, and should close. The bridge translates those callbacks into the tested
 native event state. That means the real Objective-C delegate can stay small:
 call into Rust and let Rust handle the event rules.
 
+The first real AppKit delegate object is now in place. It implements
+`NSWindowDelegate`, stays retained by the AppKit window session, records native
+close, resize, focus, and backing-scale callbacks into a FIFO queue, then lets
+the Rust session drain those callbacks through the tested bridge. This is still
+an opt-in prototype path, not the default runtime event loop.
+
 AppKit now has draw-surface state too. It records the Layer36 window id, logical
 size, display scale, clear color, redraw count, and frame number. A redraw
 request from that surface goes through the same delegate bridge as a future
@@ -248,10 +254,9 @@ the app, runtime, SDKs, and host adapters.
 The next proof should be small and visible:
 
 1. Record prepared and cold layout benchmark numbers on the target hosts.
-2. Connect the real Objective-C delegate object to the tested Rust delegate bridge.
-3. Wire the AppKit native event loop into the default runtime path when it can
+2. Wire the AppKit native event loop into the default runtime path when it can
    feed events without breaking headless CI.
-4. Add the first Linux and Windows native window prototypes.
-5. Connect real host input events to the draft pointer, key, and text routes.
-6. Add a small notes app skeleton that uses the same path.
-7. Keep capability checks at the dispatcher boundary as native code is added.
+3. Add the first Linux and Windows native window prototypes.
+4. Connect real host input events to the draft pointer, key, and text routes.
+5. Add a small notes app skeleton that uses the same path.
+6. Keep capability checks at the dispatcher boundary as native code is added.

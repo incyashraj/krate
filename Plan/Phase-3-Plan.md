@@ -2144,7 +2144,10 @@ requests, and frame metadata. It does not paint pixels yet, but it gives the
 coming `NSView` painter a checked state object to call. The first AppKit draw
 view surface now attaches an owned `NSView` to the prototype window, sets a
 visible clear color through AppKit, marks the view dirty, and records the first
-frame snapshot for local smoke proof.
+frame snapshot for local smoke proof. The real AppKit window delegate object
+now exists too: it implements `NSWindowDelegate`, records close, resize, focus,
+and backing-scale callbacks, and lets `AppKitWindowSession` drain them through
+the same tested Rust bridge.
 ADR-0013 and RFC-0003 record the widget lowering rule
 before native widget work depends on it. ADR-0014 records the layout engine
 choice. This is not a frozen API and not a working desktop GUI yet. It is the
@@ -2185,6 +2188,7 @@ input-routing proof, plus the handle mapping needed by the next host adapter wor
 | P3-UI-04M | Add AppKit delegate callback bridge | 2026-05-23 | AppKit-style callback names now translate through a tested Rust bridge into the native event state, keeping the coming Objective-C delegate thin. |
 | P3-UI-04N | Add AppKit draw-surface state | 2026-06-07 | AppKit now has a small draw-surface state object for size, scale, clear color, redraw count, and frame metadata. It routes redraw requests through the delegate bridge, but it does not paint real pixels yet. |
 | P3-UI-04O | Add AppKit draw view surface | 2026-06-20 | AppKit can now attach an owned `NSView` to the prototype window, set a visible clear color, mark it dirty, and record a first frame snapshot. The path is still opt-in and covered by an ignored local smoke. |
+| P3-UI-04P | Add AppKit native delegate object | 2026-06-20 | AppKit now has a retained `NSWindowDelegate` object that records close, resize, focus, and backing-scale callbacks into a FIFO queue. `AppKitWindowSession` can drain those callbacks through the existing Rust delegate bridge. |
 
 ---
 
@@ -2248,6 +2252,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P3-UI-04M | AppKit delegate callback bridge | 2026-05-23 | Added `AppKitWindowDelegateCallback` and `AppKitWindowDelegateBridge`, exported both, and covered resize, focus, scale, redraw, close, snapshot, and failed scale callback behavior. |
 | P3-UI-04N | AppKit draw-surface state | 2026-06-07 | Added `AppKitColor`, `AppKitDrawFrame`, and `AppKitDrawSurfaceState`, exported them from the macOS adapter crate, and covered redraw routing plus frame metadata. |
 | P3-UI-04O | AppKit draw view surface | 2026-06-20 | Added `AppKitDrawViewSurface` and `AppKitDrawViewSurfaceSnapshot`, exported them from the macOS adapter crate, enabled the needed AppKit `NSView`/`NSColor` bindings, and added an ignored local smoke for attaching a real AppKit content view. |
+| P3-UI-04P | AppKit native delegate object | 2026-06-20 | Added `AppKitWindowNativeDelegate` and `AppKitWindowDelegateQueue`, exported both from the macOS adapter crate, implemented the first `NSWindowDelegate` methods, and wired session draining into the existing bridge. |
 
 ---
 
@@ -2257,7 +2262,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 |---------|------|---------|----------|
 | P3-UI-01 | Widget protocol design RFC | 2026-05-19 | Draft written; needs review before the rule is treated as accepted. |
 | P3-UI-03 | Layout engine (Taffy integration) | 2026-05-21 | First wrapper, 100-shape tests, benchmark target, and prepared repeated-layout path exist; local prepared 10k layout is below the exit budget, but cold rebuild is not, so recorded cross-host benchmark results and wider style coverage are pending. |
-| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Explicit `WindowAdapter`, native handle handoff, shared `UiAdapter`, widget-tree dispatch, host entry points, runtime discovery, routed input events, FIFO event polling, host window events, theme/scale events, and an opt-in macOS AppKit window prototype exist. AppKit now has event bridge targets, a snapshot helper, session state, a delegate-shaped native event state object, redraw bridge, delegate callback bridge, draw-surface state, and an opt-in draw view surface. Next step is the real Objective-C delegate object, default-runtime event-loop wiring, and Linux and Windows native windows. |
+| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Explicit `WindowAdapter`, native handle handoff, shared `UiAdapter`, widget-tree dispatch, host entry points, runtime discovery, routed input events, FIFO event polling, host window events, theme/scale events, and an opt-in macOS AppKit window prototype exist. AppKit now has event bridge targets, a snapshot helper, session state, a delegate-shaped native event state object, redraw bridge, delegate callback bridge, draw-surface state, an opt-in draw view surface, and a retained native window delegate. Next step is default-runtime event-loop wiring, then Linux and Windows native windows. |
 | P3-INPUT-01 | Keyboard + mouse input | 2026-05-21 | First runtime-side pointer, key, and committed-text routes exist; real host pointer, hover, wheel, keyboard, shortcut, IME composition, and cross-host normalization are pending. |
 
 ---
@@ -2361,6 +2366,11 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
   can now attach an owned `NSView`, set a visible clear color, mark the view as
   needing display, and record a first frame snapshot. This is still an opt-in
   native smoke path, not the default runtime.
+- 2026-06-20: Added the first real AppKit window delegate object. It implements
+  `NSWindowDelegate`, records native close, resize, focus, and backing-scale
+  callbacks into a small FIFO queue, and lets `AppKitWindowSession` drain them
+  through the tested Rust bridge. This still does not make AppKit the default
+  runtime path.
 
 ---
 
