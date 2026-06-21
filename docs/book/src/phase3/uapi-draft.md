@@ -281,7 +281,8 @@ the app, runtime, SDKs, and host adapters.
 The next proof should stay small and visible:
 
 1. Record prepared and cold layout benchmark numbers on the target hosts.
-2. Add the first Linux and Windows native window prototypes.
+2. Turn the guarded Linux and Windows Winit prototype boundaries into real
+   native window sessions.
 3. Connect real host input events to the draft pointer, key, and text routes.
 4. Add a small notes app skeleton that uses the same path.
 5. Keep capability checks at the dispatcher boundary as native code is added.

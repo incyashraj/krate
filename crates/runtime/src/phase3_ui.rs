@@ -398,6 +398,13 @@ fn discover_host_ui_adapter_for_mode(
 }
 
 fn discover_native_prototype_ui_adapter() -> UiDispatchResult<Box<dyn UiAdapter>> {
+    #[cfg(target_os = "linux")]
+    {
+        Ok(Box::new(
+            layer36_adapter_linux::discover_winit_prototype_ui_adapter()?,
+        ))
+    }
+
     #[cfg(target_os = "macos")]
     {
         Ok(Box::new(
@@ -405,7 +412,14 @@ fn discover_native_prototype_ui_adapter() -> UiDispatchResult<Box<dyn UiAdapter>
         ))
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        Ok(Box::new(
+            layer36_adapter_windows::discover_winit_prototype_ui_adapter()?,
+        ))
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         Err(UiDispatchError::Unsupported)
     }
@@ -618,7 +632,15 @@ mod tests {
             assert!(info.native_event_loop);
         }
 
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        {
+            assert!(matches!(
+                runtime,
+                Err(UiDispatchError::Adapter(UiAdapterError::Unsupported(_)))
+            ));
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         {
             assert!(matches!(runtime, Err(UiDispatchError::Unsupported)));
         }

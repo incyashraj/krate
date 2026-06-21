@@ -371,6 +371,30 @@ fn check_adapter_boundary() -> Result<BoundaryReport> {
             ),
         )?;
     }
+    let linux_lib = fs::read_to_string(root.join("crates/adapter-linux/src/lib.rs"))?;
+    for needle in [
+        "pub fn attach_winit_window_handle(",
+        "pub struct LinuxWinitPrototypeUiAdapter",
+        "pub fn discover_winit_prototype_ui_adapter(",
+        "linux-winit-prototype",
+    ] {
+        ensure(
+            linux_lib.contains(needle),
+            format!("Linux adapter lib must expose Winit prototype boundary `{needle}`"),
+        )?;
+    }
+    let windows_lib = fs::read_to_string(root.join("crates/adapter-windows/src/lib.rs"))?;
+    for needle in [
+        "pub fn attach_winit_window_handle(",
+        "pub struct WindowsWinitPrototypeUiAdapter",
+        "pub fn discover_winit_prototype_ui_adapter(",
+        "windows-winit-prototype",
+    ] {
+        ensure(
+            windows_lib.contains(needle),
+            format!("Windows adapter lib must expose Winit prototype boundary `{needle}`"),
+        )?;
+    }
     let macos_lib = fs::read_to_string(root.join("crates/adapter-macos/src/lib.rs"))?;
     ensure(
         macos_lib.contains("pub fn attach_appkit_window_handle("),

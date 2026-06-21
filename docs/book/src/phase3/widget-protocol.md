@@ -181,12 +181,15 @@ Done now:
 - macOS, Linux, and Windows adapters expose headless draft window and UI entry
   points, plus the planned native backend for each host. macOS also exposes the
   first AppKit handle handoff method.
+- Linux and Windows now expose explicit Winit prototype adapter boundaries and
+  tested handle handoff helpers. They are still guarded because they do not own
+  real native windows yet.
 - The runtime can choose the current host adapter.
 - ADR-0013 and RFC-0003 now describe the widget lowering rule.
 
 Pending:
 
-- Linux and Windows native window prototypes
+- real Linux and Windows native window sessions
 - host event loop that feeds real close, resize, focus, theme, scale, pointer, key, and text events into the queue
 - widget tree lowering
 - larger layout style coverage and recorded large-tree benchmark results on all target hosts

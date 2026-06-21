@@ -3,23 +3,23 @@
 Last updated: 2026-06-21
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `a1cb482`
-Working tree at this status update: Phase 3 selectable AppKit runtime smoke slice in progress
+Latest checked completed push before this slice: `86c8de4`
+Working tree at this status update: Phase 3 Linux and Windows Winit prototype boundary slice in progress
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 347
-- Tracked files after this slice lands: about 332
-- Total tracked lines after this slice lands: about 96,378
-- Rust lines (`.rs`) after this slice lands: about 48,496
-- Docs lines (`.md`) after this slice lands: about 30,546
+- Commits after this slice lands: about 348
+- Tracked files after this slice lands: about 334
+- Total tracked lines after this slice lands: about 96,970
+- Rust lines (`.rs`) after this slice lands: about 49,047
+- Docs lines (`.md`) after this slice lands: about 29,749
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`a1cb482`) checks:
+Latest completed push (`86c8de4`) checks:
 
-- CI: success (run `27878054443`)
-- Deploy docs to GitHub Pages: success (run `27878054446`)
+- CI: success (run `27893299302`)
+- Deploy docs to GitHub Pages: success (run `27893299307`)
 
 Manual hosted full CI run `26069665276` passed on commit `3f1a219`.
 Linux, macOS, and Windows full-test lanes all passed. The language-variant,
@@ -80,6 +80,10 @@ Current Phase 3 slice:
 - `adapter-macos`, `adapter-linux`, and `adapter-windows` now expose Phase 3 UI
   adapter entry points. These are headless draft adapters today, with
   blank-window smoke tests, not native OS windows yet.
+- `adapter-linux` and `adapter-windows` now expose guarded Winit prototype
+  adapter boundaries, native-handle handoff helpers, and discovery entry
+  points. They are wired into the runtime selector but still report unsupported
+  until real native sessions exist.
 - `runtime::phase3_ui` now has `Phase3UiRuntime::with_host_adapter`, which
   selects the current OS adapter entry point and reports adapter capability info
   such as host family, backend name, and whether native windows are enabled.
@@ -128,6 +132,12 @@ Current Phase 3 slice:
 - Draft theme and scale events now have shared routes too. A future native
   backend can report dark mode changes and per-window DPI scale changes through
   the same event queue before real drawing code depends on those values.
+- Added the selectable AppKit runtime smoke command, which creates, shows,
+  pumps, inspects, and closes the macOS native prototype path through
+  `Phase3UiRuntime` and `Phase3UiDispatcher`.
+- Added Linux and Windows Winit prototype boundaries with tested handle
+  handoff, guarded discovery functions, runtime selector wiring, and adapter
+  boundary checks. Real Linux and Windows windows are still the next step.
 - The host adapter info now records both the active window backend and the
   planned native window backend. Today the active backend is still headless
   draft. The planned targets are AppKit for macOS and winit for Linux and
@@ -352,4 +362,4 @@ Top pending items:
 
 Use this exact prompt in a new session:
 
-`Continue Layer36 on main. Start with STATUS.md, Plan/Phase-2-Plan.md, and Plan/Phase-3-Plan.md. Phase 3 has started with WIT, GUI manifest recognition, Phase 3 capability names, an adapter-common draft window registry, explicit WindowAdapter boundary, native window handle handoff, shared widget tree model, shared UiAdapter trait, runtime::phase3_ui dispatcher scaffolding, draft widget-tree dispatch, a first Taffy-backed layer36-layout crate, runtime layout snapshots, generated 100-shape layout tests, a 1k/10k-node layout benchmark target, PreparedLayoutTree for repeated layout passes, layout absolute-rectangle helpers, a first layout hit-test helper, headless UI adapter entry points in the macOS, Linux, and Windows crates, runtime host UI adapter discovery, active/planned window backend reporting, draft pointer, key, text, FIFO polling, host window, theme, and scale event routes, an opt-in macOS AppKit window prototype, AppKit event bridge targets, AppKit window session state, AppKit native event state, AppKit redraw bridge, AppKit delegate callback bridge, AppKit draw-surface state, AppKit draw view surface, AppKit native window delegate object, AppKit event-loop step driver, selectable AppKit prototype runtime mode, shared runtime event-loop pump boundary, selectable AppKit runtime smoke command, and ADR/RFC/docs for the native-widget plus drawn-fallback widget lowering rule. Prepared 10k layout is locally under budget, but cold rebuild and formal cross-host evidence remain pending. Keep Phase 2 closeout evidence separate, keep Phase 3 narrow, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`
+`Continue Layer36 on main. Start with STATUS.md, Plan/Phase-2-Plan.md, and Plan/Phase-3-Plan.md. Phase 3 has started with WIT, GUI manifest recognition, Phase 3 capability names, an adapter-common draft window registry, explicit WindowAdapter boundary, native window handle handoff, shared widget tree model, shared UiAdapter trait, runtime::phase3_ui dispatcher scaffolding, draft widget-tree dispatch, a first Taffy-backed layer36-layout crate, runtime layout snapshots, generated 100-shape layout tests, a 1k/10k-node layout benchmark target, PreparedLayoutTree for repeated layout passes, layout absolute-rectangle helpers, a first layout hit-test helper, headless UI adapter entry points in the macOS, Linux, and Windows crates, runtime host UI adapter discovery, active/planned window backend reporting, draft pointer, key, text, FIFO polling, host window, theme, and scale event routes, an opt-in macOS AppKit window prototype, AppKit event bridge targets, AppKit window session state, AppKit native event state, AppKit redraw bridge, AppKit delegate callback bridge, AppKit draw-surface state, AppKit draw view surface, AppKit native window delegate object, AppKit event-loop step driver, selectable AppKit prototype runtime mode, shared runtime event-loop pump boundary, selectable AppKit runtime smoke command, guarded Linux and Windows Winit prototype boundaries, and ADR/RFC/docs for the native-widget plus drawn-fallback widget lowering rule. Prepared 10k layout is locally under budget, but cold rebuild and formal cross-host evidence remain pending. Next Phase 3 work should turn the guarded Linux/Windows Winit boundaries into real native window sessions, then connect real host input. Keep Phase 2 closeout evidence separate, keep Phase 3 narrow, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`

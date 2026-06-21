@@ -275,6 +275,9 @@ The value of this step is that the boundary is testable:
   the AppKit prototype maps its native step into the common report.
 - a local runtime smoke command now proves the selectable AppKit prototype can
   create, show, pump, inspect, and close through that dispatcher path
+- Linux and Windows now expose guarded Winit prototype boundaries with tested
+  native-handle handoff helpers. They are ready for the real session owner, but
+  they do not open native windows yet.
 - draft widget-tree calls now pass through the same dispatcher and adapter
   boundary for set root, upsert node, remove node, and focus node
 - draft layout calls can now turn the stored widget tree into a

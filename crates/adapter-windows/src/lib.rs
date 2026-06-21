@@ -51,6 +51,53 @@ impl WindowsUiAdapter {
     pub fn planned_native_window_backend(&self) -> WindowBackendKind {
         WindowBackendKind::Winit
     }
+
+    /// Attach a future winit or Win32-owned window handle to a Layer36 window id.
+    ///
+    /// Windows still uses the headless draft path by default. This method is
+    /// the stable handoff point the first real native backend will use once it
+    /// owns an OS window.
+    pub fn attach_winit_window_handle(
+        &self,
+        id: WindowId,
+        raw_handle: u64,
+    ) -> Result<NativeWindowHandle, UiAdapterError> {
+        let handle = NativeWindowHandle::new(WindowBackendKind::Winit, raw_handle)?;
+        WindowAdapter::attach_native_window(self, id, handle)?;
+        Ok(handle)
+    }
+}
+
+/// Opt-in Windows adapter boundary for the coming winit prototype.
+///
+/// It is separate from the default adapter on purpose. Until the real native
+/// window owner lands, it reports the planned backend without claiming native
+/// window support.
+#[derive(Debug, Default)]
+pub struct WindowsWinitPrototypeUiAdapter {
+    headless: WindowsUiAdapter,
+}
+
+impl WindowsWinitPrototypeUiAdapter {
+    /// Create the opt-in Windows winit prototype adapter boundary.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Name the prototype backend path.
+    pub fn backend_name(&self) -> &'static str {
+        "windows-winit-prototype"
+    }
+
+    /// Return whether this build can create native Windows windows.
+    pub fn native_windows_enabled(&self) -> bool {
+        false
+    }
+
+    /// Return whether this build has a native event-loop driver.
+    pub fn native_event_loop_enabled(&self) -> bool {
+        false
+    }
 }
 
 impl WindowAdapter for WindowsUiAdapter {
@@ -176,9 +223,147 @@ impl UiAdapter for WindowsUiAdapter {
     }
 }
 
+impl WindowAdapter for WindowsWinitPrototypeUiAdapter {
+    fn info(&self) -> UiAdapterInfo {
+        UiAdapterInfo::new(
+            HOST_FAMILY,
+            self.backend_name(),
+            WindowBackendKind::HeadlessDraft,
+            WindowBackendKind::Winit,
+            self.native_windows_enabled(),
+            self.native_event_loop_enabled(),
+        )
+    }
+
+    fn create_window(&self, options: WindowOptions) -> Result<WindowId, UiAdapterError> {
+        WindowAdapter::create_window(&self.headless, options)
+    }
+
+    fn show_window(&self, id: WindowId) -> Result<(), UiAdapterError> {
+        WindowAdapter::show_window(&self.headless, id)
+    }
+
+    fn close_window(&self, id: WindowId) -> Result<(), UiAdapterError> {
+        WindowAdapter::close_window(&self.headless, id)
+    }
+
+    fn set_title(&self, id: WindowId, title: String) -> Result<(), UiAdapterError> {
+        WindowAdapter::set_title(&self.headless, id, title)
+    }
+
+    fn set_size(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {
+        WindowAdapter::set_size(&self.headless, id, size)
+    }
+
+    fn request_redraw(&self, id: WindowId) -> Result<(), UiAdapterError> {
+        WindowAdapter::request_redraw(&self.headless, id)
+    }
+
+    fn window(&self, id: WindowId) -> Result<Option<WindowRecord>, UiAdapterError> {
+        WindowAdapter::window(&self.headless, id)
+    }
+
+    fn attach_native_window(
+        &self,
+        id: WindowId,
+        handle: NativeWindowHandle,
+    ) -> Result<(), UiAdapterError> {
+        WindowAdapter::attach_native_window(&self.headless, id, handle)
+    }
+
+    fn native_window(&self, id: WindowId) -> Result<Option<NativeWindowHandle>, UiAdapterError> {
+        WindowAdapter::native_window(&self.headless, id)
+    }
+
+    fn detach_native_window(
+        &self,
+        id: WindowId,
+    ) -> Result<Option<NativeWindowHandle>, UiAdapterError> {
+        WindowAdapter::detach_native_window(&self.headless, id)
+    }
+
+    fn drain_events(&self) -> Result<Vec<UiEvent>, UiAdapterError> {
+        WindowAdapter::drain_events(&self.headless)
+    }
+
+    fn poll_event(&self) -> Result<Option<UiEvent>, UiAdapterError> {
+        WindowAdapter::poll_event(&self.headless)
+    }
+
+    fn queue_close_requested(&self, id: WindowId) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_close_requested(&self.headless, id)
+    }
+
+    fn queue_host_resize(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_host_resize(&self.headless, id, size)
+    }
+
+    fn queue_window_focused(&self, id: WindowId, focused: bool) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_window_focused(&self.headless, id, focused)
+    }
+
+    fn queue_theme_changed(&self, theme: Theme) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_theme_changed(&self.headless, theme)
+    }
+
+    fn queue_scale_changed(&self, id: WindowId, scale: f32) -> Result<(), UiAdapterError> {
+        WindowAdapter::queue_scale_changed(&self.headless, id, scale)
+    }
+}
+
+impl UiAdapter for WindowsWinitPrototypeUiAdapter {
+    fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
+        self.headless.set_root(window, root)
+    }
+
+    fn upsert_node(&self, window: WindowId, node: WidgetNode) -> Result<(), UiAdapterError> {
+        self.headless.upsert_node(window, node)
+    }
+
+    fn remove_node(&self, window: WindowId, widget: WidgetId) -> Result<(), UiAdapterError> {
+        self.headless.remove_node(window, widget)
+    }
+
+    fn focus_node(&self, window: WindowId, widget: WidgetId) -> Result<(), UiAdapterError> {
+        self.headless.focus_node(window, widget)
+    }
+
+    fn widget_tree(&self, window: WindowId) -> Result<Option<WidgetTree>, UiAdapterError> {
+        self.headless.widget_tree(window)
+    }
+
+    fn focused_widget(&self, window: WindowId) -> Result<Option<WidgetId>, UiAdapterError> {
+        self.headless.focused_widget(window)
+    }
+
+    fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError> {
+        self.headless.queue_pointer_event(event)
+    }
+
+    fn queue_key_event(&self, event: KeyEvent) -> Result<(), UiAdapterError> {
+        self.headless.queue_key_event(event)
+    }
+
+    fn queue_text_input(&self, event: TextInputEvent) -> Result<(), UiAdapterError> {
+        self.headless.queue_text_input(event)
+    }
+}
+
 /// Build the current Windows UI adapter.
 pub fn discover_ui_adapter() -> WindowsUiAdapter {
     WindowsUiAdapter::new()
+}
+
+/// Build the opt-in Windows winit prototype UI adapter when it is ready.
+pub fn discover_winit_prototype_ui_adapter(
+) -> Result<WindowsWinitPrototypeUiAdapter, UiAdapterError> {
+    let adapter = WindowsWinitPrototypeUiAdapter::new();
+    if !adapter.native_windows_enabled() {
+        return Err(UiAdapterError::Unsupported(
+            "Windows winit prototype UI adapter is not enabled yet".to_string(),
+        ));
+    }
+    Ok(adapter)
 }
 
 /// Resolve locale and timezone for Windows host runs.
@@ -458,6 +643,64 @@ mod tests {
                 UiEvent::RedrawRequested(id),
             ]
         );
+    }
+
+    #[test]
+    fn ui_adapter_can_bind_future_winit_handle_to_window_id() {
+        let adapter = discover_ui_adapter();
+        let size = WindowSize::new(640, 480).expect("size");
+        let id = adapter
+            .create_window(WindowOptions::new("Layer36 native host", size).expect("options"))
+            .expect("create window");
+        let handle = adapter
+            .attach_winit_window_handle(id, 0xB17E)
+            .expect("attach winit handle");
+
+        assert_eq!(handle.backend, WindowBackendKind::Winit);
+        assert_eq!(handle.raw_handle, 0xB17E);
+        assert_eq!(adapter.native_window(id).expect("lookup"), Some(handle));
+        assert_eq!(
+            adapter.drain_events().expect("events"),
+            vec![
+                UiEvent::WindowCreated(id),
+                UiEvent::NativeWindowAttached {
+                    id,
+                    backend: WindowBackendKind::Winit,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn winit_prototype_adapter_is_separate_from_default_adapter() {
+        let default_adapter = discover_ui_adapter();
+        let prototype_adapter = WindowsWinitPrototypeUiAdapter::new();
+        let default_info = default_adapter.info();
+        let prototype_info = prototype_adapter.info();
+
+        assert_eq!(default_info.backend, "windows-headless-draft");
+        assert_eq!(
+            default_info.window_backend,
+            WindowBackendKind::HeadlessDraft
+        );
+        assert!(!default_info.native_windows);
+        assert!(!default_info.native_event_loop);
+
+        assert_eq!(prototype_info.backend, "windows-winit-prototype");
+        assert_eq!(
+            prototype_info.window_backend,
+            WindowBackendKind::HeadlessDraft
+        );
+        assert_eq!(
+            prototype_info.planned_window_backend,
+            WindowBackendKind::Winit
+        );
+        assert!(!prototype_info.native_windows);
+        assert!(!prototype_info.native_event_loop);
+        assert!(matches!(
+            discover_winit_prototype_ui_adapter(),
+            Err(UiAdapterError::Unsupported(_))
+        ));
     }
 
     #[test]
