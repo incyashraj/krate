@@ -585,6 +585,58 @@ impl WinitWindowEventLoopStep {
     }
 }
 
+/// FIFO queue used by Linux and Windows winit callback bridges.
+#[derive(Debug, Clone, PartialEq)]
+pub struct WinitWindowEventCollector {
+    window: WindowId,
+    callbacks: VecDeque<WinitWindowNativeEvent>,
+}
+
+impl WinitWindowEventCollector {
+    /// Create an empty callback collector for one Layer36 window.
+    pub fn new(window: WindowId) -> Self {
+        Self {
+            window,
+            callbacks: VecDeque::new(),
+        }
+    }
+
+    /// Return the stable Layer36 window id this collector feeds.
+    pub fn window(&self) -> WindowId {
+        self.window
+    }
+
+    /// Return the number of callbacks waiting to be pumped.
+    pub fn pending_callbacks(&self) -> usize {
+        self.callbacks.len()
+    }
+
+    /// Return whether no native callbacks are waiting.
+    pub fn is_empty(&self) -> bool {
+        self.callbacks.is_empty()
+    }
+
+    /// Record one native callback in delivery order.
+    pub fn push_event(&mut self, event: WinitWindowNativeEvent) -> Result<(), UiAdapterError> {
+        if let WinitWindowNativeEvent::Snapshot(snapshot) = &event {
+            if snapshot.window != self.window {
+                return Err(UiAdapterError::InvalidWindow {
+                    id: snapshot.window.get(),
+                });
+            }
+        }
+
+        self.callbacks.push_back(event);
+        Ok(())
+    }
+
+    /// Drain all pending callbacks into one event-loop step.
+    pub fn drain_step(&mut self) -> WinitWindowEventLoopStep {
+        let callbacks = self.callbacks.drain(..).collect::<Vec<_>>();
+        WinitWindowEventLoopStep::new().with_callbacks(callbacks)
+    }
+}
+
 /// Result from one non-blocking winit event-loop step.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WinitWindowEventLoopStepReport {
@@ -2187,6 +2239,83 @@ mod tests {
                 UiEvent::WindowCloseRequested(id),
             ]
         );
+    }
+
+    #[test]
+    fn winit_event_collector_drains_callbacks_in_order() {
+        let adapter = DraftUiAdapter::new();
+        let size = WindowSize::new(640, 480).expect("size");
+        let id = adapter
+            .create_window(WindowOptions::new("Layer36 winit", size).expect("options"))
+            .expect("create");
+        let handle = NativeWindowHandle::new(WindowBackendKind::Winit, 0xD06).expect("handle");
+        adapter
+            .attach_native_window(id, handle)
+            .expect("attach native");
+        let initial =
+            WinitWindowSnapshot::new(id, size, false, false, 1.0).expect("initial snapshot");
+        let mut session = WinitWindowSession::new(id, handle, initial).expect("session");
+        let resized = WindowSize::new(760, 540).expect("resized");
+        let mut collector = WinitWindowEventCollector::new(id);
+
+        collector
+            .push_event(WinitWindowNativeEvent::Focused(true))
+            .expect("focus");
+        collector
+            .push_event(WinitWindowNativeEvent::Resized(resized))
+            .expect("resize");
+        collector
+            .push_event(WinitWindowNativeEvent::RedrawRequested)
+            .expect("redraw");
+        assert_eq!(collector.window(), id);
+        assert_eq!(collector.pending_callbacks(), 3);
+        assert!(!collector.is_empty());
+
+        let step = collector.drain_step();
+        let report = session
+            .pump_event_loop_once(&adapter, &step)
+            .expect("pump event loop");
+
+        assert!(collector.is_empty());
+        assert_eq!(report.callbacks_handled, 3);
+        assert_eq!(
+            report.snapshot,
+            Some(WinitWindowSnapshot::new(id, resized, false, true, 1.0).expect("snapshot"))
+        );
+        assert!(report.redraw_requested);
+        assert_eq!(
+            adapter.drain_events().expect("events"),
+            vec![
+                UiEvent::WindowCreated(id),
+                UiEvent::NativeWindowAttached {
+                    id,
+                    backend: WindowBackendKind::Winit,
+                },
+                UiEvent::WindowFocused { id, focused: true },
+                UiEvent::Resized { id, size: resized },
+                UiEvent::RedrawRequested(id),
+            ]
+        );
+    }
+
+    #[test]
+    fn winit_event_collector_rejects_foreign_snapshots() {
+        let adapter = DraftUiAdapter::new();
+        let size = WindowSize::new(640, 480).expect("size");
+        let first = adapter
+            .create_window(WindowOptions::new("Layer36 first", size).expect("options"))
+            .expect("first");
+        let second = adapter
+            .create_window(WindowOptions::new("Layer36 second", size).expect("options"))
+            .expect("second");
+        let mut collector = WinitWindowEventCollector::new(first);
+        let foreign = WinitWindowSnapshot::new(second, size, false, false, 1.0).expect("snapshot");
+
+        assert!(matches!(
+            collector.push_event(WinitWindowNativeEvent::Snapshot(foreign)),
+            Err(UiAdapterError::InvalidWindow { id }) if id == second.get()
+        ));
+        assert!(collector.is_empty());
     }
 
     #[test]

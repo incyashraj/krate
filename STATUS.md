@@ -1,25 +1,25 @@
 # Layer36 Status
 
-Last updated: 2026-06-21
+Last updated: 2026-06-23
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `cd23743`
-Working tree at this status update: Phase 3 shared Winit session owner scaffold slice in progress
+Latest checked completed push before this slice: `02f28bf`
+Working tree at this status update: Phase 3 Winit callback collector bridge implemented and locally verified
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 349
+- Commits after this slice lands: about 350
 - Tracked files after this slice lands: about 334
-- Total tracked lines after this slice lands: about 97,593
-- Rust lines (`.rs`) after this slice lands: about 49,640
-- Docs lines (`.md`) after this slice lands: about 29,779
+- Total tracked lines after this slice lands: about 98,012
+- Rust lines (`.rs`) after this slice lands: about 50,020
+- Docs lines (`.md`) after this slice lands: about 30,644
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`cd23743`) checks:
+Latest completed push (`02f28bf`) checks:
 
-- CI: success (run `27893648168`)
-- Deploy docs to GitHub Pages: success (run `27893648172`)
+- CI: success (run `27895755338`)
+- Deploy docs to GitHub Pages: success (run `27895755345`)
 
 Manual hosted full CI run `26069665276` passed on commit `3f1a219`.
 Linux, macOS, and Windows full-test lanes all passed. The language-variant,
@@ -90,6 +90,11 @@ Current Phase 3 slice:
 - `adapter-linux` and `adapter-windows` now track Winit prototype sessions,
   attach the handle token, pump prepared native events through the shared
   queue, and remove the tracked session on close.
+- `adapter-common::ui` now has `WinitWindowEventCollector`, a shared FIFO
+  callback bridge for future Linux and Windows Winit event handlers.
+- `adapter-linux` and `adapter-windows` can now record Winit-shaped callbacks,
+  count pending callbacks, drain them through the normal event-loop pump, and
+  keep the callback collector tied to the tracked session.
 - `runtime::phase3_ui` now has `Phase3UiRuntime::with_host_adapter`, which
   selects the current OS adapter entry point and reports adapter capability info
   such as host family, backend name, and whether native windows are enabled.
@@ -148,6 +153,10 @@ Current Phase 3 slice:
   a tracked Winit session, route prepared resize/focus/scale/redraw/close
   events through the shared queue, and clean up the session on close. Real
   Winit OS window creation and event collection are still the next step.
+- Added the Winit callback collector bridge. Linux and Windows can now record
+  Winit-shaped callbacks in FIFO order and let the shared event-loop pump drain
+  them into the same UI event stream. Real Winit OS window creation is still
+  the next step.
 - The host adapter info now records both the active window backend and the
   planned native window backend. Today the active backend is still headless
   draft. The planned targets are AppKit for macOS and winit for Linux and
@@ -372,4 +381,4 @@ Top pending items:
 
 Use this exact prompt in a new session:
 
-`Continue Layer36 on main. Start with STATUS.md, Plan/Phase-2-Plan.md, and Plan/Phase-3-Plan.md. Phase 3 has started with WIT, GUI manifest recognition, Phase 3 capability names, an adapter-common draft window registry, explicit WindowAdapter boundary, native window handle handoff, shared widget tree model, shared UiAdapter trait, runtime::phase3_ui dispatcher scaffolding, draft widget-tree dispatch, a first Taffy-backed layer36-layout crate, runtime layout snapshots, generated 100-shape layout tests, a 1k/10k-node layout benchmark target, PreparedLayoutTree for repeated layout passes, layout absolute-rectangle helpers, a first layout hit-test helper, headless UI adapter entry points in the macOS, Linux, and Windows crates, runtime host UI adapter discovery, active/planned window backend reporting, draft pointer, key, text, FIFO polling, host window, theme, and scale event routes, an opt-in macOS AppKit window prototype, AppKit event bridge targets, AppKit window session state, AppKit native event state, AppKit redraw bridge, AppKit delegate callback bridge, AppKit draw-surface state, AppKit draw view surface, AppKit native window delegate object, AppKit event-loop step driver, selectable AppKit prototype runtime mode, shared runtime event-loop pump boundary, selectable AppKit runtime smoke command, guarded Linux and Windows Winit prototype boundaries, shared Winit session owner scaffolding, and ADR/RFC/docs for the native-widget plus drawn-fallback widget lowering rule. Prepared 10k layout is locally under budget, but cold rebuild and formal cross-host evidence remain pending. Next Phase 3 work should connect the Linux/Windows Winit session owner to real Winit OS window creation and event collection, then connect real host input. Keep Phase 2 closeout evidence separate, keep Phase 3 narrow, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`
+`Continue Layer36 on main. Start with STATUS.md, Plan/Phase-2-Plan.md, and Plan/Phase-3-Plan.md. Phase 3 has started with WIT, GUI manifest recognition, Phase 3 capability names, an adapter-common draft window registry, explicit WindowAdapter boundary, native window handle handoff, shared widget tree model, shared UiAdapter trait, runtime::phase3_ui dispatcher scaffolding, draft widget-tree dispatch, a first Taffy-backed layer36-layout crate, runtime layout snapshots, generated 100-shape layout tests, a 1k/10k-node layout benchmark target, PreparedLayoutTree for repeated layout passes, layout absolute-rectangle helpers, a first layout hit-test helper, headless UI adapter entry points in the macOS, Linux, and Windows crates, runtime host UI adapter discovery, active/planned window backend reporting, draft pointer, key, text, FIFO polling, host window, theme, and scale event routes, an opt-in macOS AppKit window prototype, AppKit event bridge targets, AppKit window session state, AppKit native event state, AppKit redraw bridge, AppKit delegate callback bridge, AppKit draw-surface state, AppKit draw view surface, AppKit native window delegate object, AppKit event-loop step driver, selectable AppKit prototype runtime mode, shared runtime event-loop pump boundary, selectable AppKit runtime smoke command, guarded Linux and Windows Winit prototype boundaries, shared Winit session owner scaffolding, a Winit callback collector bridge for Linux and Windows, and ADR/RFC/docs for the native-widget plus drawn-fallback widget lowering rule. Prepared 10k layout is locally under budget, but cold rebuild and formal cross-host evidence remain pending. Next Phase 3 work should create the first real Linux/Windows Winit window and feed actual Winit callbacks into the collector, then connect real host input. Keep Phase 2 closeout evidence separate, keep Phase 3 narrow, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`

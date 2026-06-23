@@ -203,6 +203,10 @@ flowchart LR
     terms, Layer36 can track a future native window session and route prepared
     resize, focus, scale, redraw, and close events through the same UI queue.
     The missing piece is connecting this to real Winit OS windows.
+50. Linux and Windows now have a Winit callback collector bridge. In simple
+    terms, future native Winit event handlers have a small inbox where they can
+    place resize, focus, scale, redraw, and close callbacks. The normal
+    Layer36 event-loop pump can drain that inbox in order.
 
 ## Current Build Timeline
 
@@ -249,7 +253,7 @@ This is a simple status view for non technical readers.
 | UAPI freeze decision path | Working, with a draft packet and CI checker |
 | Outside walkthrough proof | Ready to collect, with a timing packet, checker, and local rehearsal |
 | Phase 3 handoff | Started at contract level, still waiting on Phase 2 outside review for formal phase close |
-| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, explicit `WindowAdapter`, native window handle handoff, shared widget tree model, draft widget-tree dispatch, first Taffy-backed layout wrapper, 100 generated layout-shape tests, 1k/10k layout benchmark target, prepared repeated-layout path, first layout hit-test helper, draft window, pointer, key, text, FIFO polling, host window, theme, and scale event routes, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, planned native backend reporting, the widget lowering rule, an opt-in macOS AppKit window prototype, AppKit event bridge targets, AppKit window session state, AppKit native event state, AppKit redraw bridge, AppKit delegate callback bridge, AppKit draw-surface state, AppKit draw view surface, AppKit native window delegate, AppKit event-loop step driver, selectable AppKit runtime mode, shared runtime event-loop pump, a local runtime smoke command for the AppKit path, guarded Linux/Windows Winit prototype boundaries, and a shared Winit session owner scaffold are in place. Real Winit OS window creation is still pending |
+| Desktop GUI path | WIT draft, GUI manifest recognition, first capability names, draft window model, explicit `WindowAdapter`, native window handle handoff, shared widget tree model, draft widget-tree dispatch, first Taffy-backed layout wrapper, 100 generated layout-shape tests, 1k/10k layout benchmark target, prepared repeated-layout path, first layout hit-test helper, draft window, pointer, key, text, FIFO polling, host window, theme, and scale event routes, shared UI adapter trait, runtime UI dispatcher, host adapter entry points, runtime host adapter discovery, planned native backend reporting, the widget lowering rule, an opt-in macOS AppKit window prototype, AppKit event bridge targets, AppKit window session state, AppKit native event state, AppKit redraw bridge, AppKit delegate callback bridge, AppKit draw-surface state, AppKit draw view surface, AppKit native window delegate, AppKit event-loop step driver, selectable AppKit runtime mode, shared runtime event-loop pump, a local runtime smoke command for the AppKit path, guarded Linux/Windows Winit prototype boundaries, a shared Winit session owner scaffold, and a Winit callback collector bridge are in place. Real Winit OS window creation is still pending |
 | Mobile host path | Not started in implementation |
 | Packaging and app store style distribution | Not started in implementation |
 
@@ -307,6 +311,6 @@ tick now has a common runtime report, so Linux and Windows can plug into the
 same pump method later. The selectable AppKit runtime path now also has a local
 smoke command that proves create, show, pump, inspect, and close through the
 runtime dispatcher. Linux and Windows now have guarded Winit prototype
-boundaries and a first shared Winit session owner scaffold too. The next useful
-step is connecting that scaffold to real Winit OS window creation and event
-collection.
+boundaries, a shared Winit session owner scaffold, and a callback collector
+bridge too. The next useful step is creating a real Winit window and feeding
+actual Winit callbacks into that collector.

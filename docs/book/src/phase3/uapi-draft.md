@@ -187,6 +187,13 @@ AppKit prototype maps its native step report into a small common
 `UiEventLoopTick` report. This keeps the next Linux and Windows window work on
 the same shape instead of making macOS a one-off path.
 
+Linux and Windows now have the first Winit callback collector bridge. The
+prototype adapters can record Winit-shaped callbacks in FIFO order, count what
+is waiting, and let the normal event-loop pump drain those callbacks through
+the shared UI event queue. This still does not create a real Linux or Windows
+window. It gives the coming real Winit event handlers a small tested place to
+send resize, focus, scale, redraw, and close callbacks.
+
 There is also a local smoke command for the full selectable AppKit runtime
 path. On macOS, a developer can run it to ask the runtime for
 `Phase3HostUiMode::NativePrototype`, create and show the AppKit window, pump
@@ -281,8 +288,8 @@ the app, runtime, SDKs, and host adapters.
 The next proof should stay small and visible:
 
 1. Record prepared and cold layout benchmark numbers on the target hosts.
-2. Connect the Linux and Windows Winit session owner scaffold to real `winit`
-   window creation and event collection.
+2. Create the first real Linux and Windows `winit` window and feed its actual
+   callbacks into the Winit collector.
 3. Connect real host input events to the draft pointer, key, and text routes.
 4. Add a small notes app skeleton that uses the same path.
 5. Keep capability checks at the dispatcher boundary as native code is added.

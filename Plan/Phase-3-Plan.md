@@ -2195,6 +2195,7 @@ input-routing proof, plus the handle mapping needed by the next host adapter wor
 | P3-RUNTIME-05 | Add selectable AppKit runtime smoke | 2026-06-21 | Added a macOS local smoke command that requests `Phase3HostUiMode::NativePrototype`, creates and shows an AppKit window, pumps one shared event-loop tick, checks the native adapter report, and closes the window. |
 | P3-UI-04R | Add Linux and Windows Winit prototype boundaries | 2026-06-21 | Linux and Windows now expose explicit Winit prototype adapter boundaries, tested native-handle handoff methods, and guarded discovery paths. They do not claim real native windows yet; this was the step before the shared session owner scaffold. |
 | P3-UI-04S | Add shared Winit session owner scaffold | 2026-06-21 | Added shared Winit snapshot, native-event, event-loop-step, report, and session types. Linux and Windows prototype adapters now own tracked Winit sessions, can attach a handle, pump a prepared event step, and remove the session on close. |
+| P3-UI-04T | Add Winit callback collector bridge | 2026-06-23 | Added a shared FIFO callback collector for future Winit event handlers. Linux and Windows prototype adapters can now record Winit-shaped callbacks, drain them through the normal event-loop pump, and keep the collector bound to the tracked session. |
 
 ---
 
@@ -2265,6 +2266,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P3-RUNTIME-05 | Selectable AppKit runtime smoke | 2026-06-21 | Added `scripts/smoke-phase3-appkit-runtime.sh` and `phase3_appkit_runtime_smoke`, a main-thread local proof for the full native prototype selector path: create, show, pump, inspect, and close through `Phase3UiDispatcher`. |
 | P3-UI-04R | Linux and Windows Winit prototype boundaries | 2026-06-21 | Added `LinuxWinitPrototypeUiAdapter`, `WindowsWinitPrototypeUiAdapter`, `attach_winit_window_handle`, guarded `discover_winit_prototype_ui_adapter` entry points, runtime selector wiring, and adapter-boundary checks. |
 | P3-UI-04S | Shared Winit session owner scaffold | 2026-06-21 | Added `WinitWindowSession`, `WinitWindowSnapshot`, `WinitWindowNativeEvent`, `WinitWindowEventLoopStep`, and `WinitWindowEventLoopStepReport`, then wired Linux and Windows prototype adapters to track sessions and pump prepared native events through the shared queue. |
+| P3-UI-04T | Winit callback collector bridge | 2026-06-23 | Added `WinitWindowEventCollector` plus Linux and Windows prototype adapter methods to record callbacks, count pending callbacks, drain them into a Winit event-loop step, and pump them through the shared UI queue. |
 
 ---
 
@@ -2274,7 +2276,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 |---------|------|---------|----------|
 | P3-UI-01 | Widget protocol design RFC | 2026-05-19 | Draft written; needs review before the rule is treated as accepted. |
 | P3-UI-03 | Layout engine (Taffy integration) | 2026-05-21 | First wrapper, 100-shape tests, benchmark target, and prepared repeated-layout path exist; local prepared 10k layout is below the exit budget, but cold rebuild is not, so recorded cross-host benchmark results and wider style coverage are pending. |
-| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Explicit `WindowAdapter`, native handle handoff, shared `UiAdapter`, widget-tree dispatch, host entry points, runtime discovery, routed input events, FIFO event polling, host window events, theme/scale events, and an opt-in macOS AppKit window prototype exist. AppKit now has event bridge targets, a snapshot helper, session state, a delegate-shaped native event state object, redraw bridge, delegate callback bridge, draw-surface state, an opt-in draw view surface, a retained native window delegate, a non-blocking event-loop step driver, an explicit native prototype runtime selector, a shared runtime event-loop pump boundary, and a local smoke command for that runtime path. Linux and Windows now have Winit prototype boundaries, handle handoff tests, and a shared session owner scaffold that can pump prepared native events. Next step is replacing the prepared steps with real `winit` window creation and event collection. |
+| P3-UI-04 | Window + event loop abstractions | 2026-05-19 | Explicit `WindowAdapter`, native handle handoff, shared `UiAdapter`, widget-tree dispatch, host entry points, runtime discovery, routed input events, FIFO event polling, host window events, theme/scale events, and an opt-in macOS AppKit window prototype exist. AppKit now has event bridge targets, a snapshot helper, session state, a delegate-shaped native event state object, redraw bridge, delegate callback bridge, draw-surface state, an opt-in draw view surface, a retained native window delegate, a non-blocking event-loop step driver, an explicit native prototype runtime selector, a shared runtime event-loop pump boundary, and a local smoke command for that runtime path. Linux and Windows now have Winit prototype boundaries, handle handoff tests, a shared session owner scaffold, and a FIFO callback collector bridge that the normal event-loop pump can drain. Next step is connecting real `winit` window creation and feeding actual `winit` callbacks into this collector. |
 | P3-INPUT-01 | Keyboard + mouse input | 2026-05-21 | First runtime-side pointer, key, and committed-text routes exist; real host pointer, hover, wheel, keyboard, shortcut, IME composition, and cross-host normalization are pending. |
 
 ---
@@ -2410,6 +2412,11 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
   apply prepared native event-loop steps, route resize/focus/scale/redraw/close
   events through the shared queue, and remove the session on close. Real winit
   OS window creation is still pending.
+- 2026-06-23: Added the Winit callback collector bridge. Linux and Windows
+  prototype adapters can now record Winit-shaped callbacks in FIFO order, count
+  pending callbacks, drain them through the normal event-loop pump, and keep
+  that callback queue tied to the tracked Winit session. Real Winit OS window
+  creation is still pending, but the callback handoff point is now tested.
 
 ---
 

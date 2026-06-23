@@ -70,6 +70,7 @@ The first Phase 3 slice is now in the repo:
 - a local runtime smoke command that asks for the AppKit prototype path, opens the native window, pumps one shared tick, checks the report, and closes the window
 - Linux and Windows Winit prototype boundaries, with tested native-handle handoff helpers and guarded discovery paths that stay off until real native windows land
 - a shared Winit session owner scaffold, so Linux and Windows can track a native session, refresh snapshot state, pump prepared native events, and remove that session on close before real OS windows are connected
+- a Winit callback collector bridge, so Linux and Windows can record future native callbacks in order and let the normal event-loop pump drain them into the shared UI queue
 - ADR-0013 and RFC-0003 now record the widget lowering strategy: native controls where the host has a semantic match, drawn fallback where it does not
 - ADR-0014 records the layout engine choice: Taffy, with a small flexbox-style subset first
 
@@ -90,7 +91,10 @@ ask any adapter to process one non-blocking UI tick. Headless adapters return
 no native work; AppKit maps its prototype tick into the shared report. There is
 also a local smoke command for that full runtime path, so a macOS developer can
 prove create, show, pump, inspect, and close on the main process thread without
-making normal CI open a window.
+making normal CI open a window. Linux and Windows now have a Winit session
+scaffold and a callback collector bridge. That means the future real Winit
+event handlers have a small tested place to record resize, focus, scale,
+redraw, and close callbacks before the shared pump forwards them to the app.
 
 See [Widget Protocol](../phase3/widget-protocol.md) for the plain-language
 version of this Phase 3 direction. See [Layout](../phase3/layout.md) for the

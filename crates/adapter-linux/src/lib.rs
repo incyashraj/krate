@@ -10,7 +10,8 @@ use layer36_adapter_common::{
         DraftUiAdapter, KeyEvent, NativeWindowHandle, PointerEvent, TextInputEvent, Theme,
         UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick, WidgetId, WidgetNode,
         WidgetTree, WindowAdapter, WindowBackendKind, WindowId, WindowOptions, WindowRecord,
-        WindowSize, WinitWindowEventLoopStep, WinitWindowEventLoopStepReport, WinitWindowSession,
+        WindowSize, WinitWindowEventCollector, WinitWindowEventLoopStep,
+        WinitWindowEventLoopStepReport, WinitWindowNativeEvent, WinitWindowSession,
         WinitWindowSnapshot,
     },
 };
@@ -80,6 +81,7 @@ impl LinuxUiAdapter {
 pub struct LinuxWinitPrototypeUiAdapter {
     headless: LinuxUiAdapter,
     sessions: Mutex<BTreeMap<WindowId, WinitWindowSession>>,
+    collectors: Mutex<BTreeMap<WindowId, WinitWindowEventCollector>>,
 }
 
 impl LinuxWinitPrototypeUiAdapter {
@@ -116,6 +118,8 @@ impl LinuxWinitPrototypeUiAdapter {
         let handle = self.headless.attach_winit_window_handle(id, raw_handle)?;
         let session = WinitWindowSession::new(id, handle, initial_snapshot)?;
         self.sessions()?.insert(id, session);
+        self.collectors()?
+            .insert(id, WinitWindowEventCollector::new(id));
         Ok(handle)
     }
 
@@ -125,6 +129,32 @@ impl LinuxWinitPrototypeUiAdapter {
         id: WindowId,
     ) -> Result<Option<WinitWindowSession>, UiAdapterError> {
         Ok(self.sessions()?.get(&id).cloned())
+    }
+
+    /// Record one future winit callback for a tracked session.
+    pub fn record_winit_native_event(
+        &self,
+        id: WindowId,
+        event: WinitWindowNativeEvent,
+    ) -> Result<bool, UiAdapterError> {
+        if !self.sessions()?.contains_key(&id) {
+            return Ok(false);
+        }
+
+        let mut collectors = self.collectors()?;
+        let collector = collectors
+            .entry(id)
+            .or_insert_with(|| WinitWindowEventCollector::new(id));
+        collector.push_event(event)?;
+        Ok(true)
+    }
+
+    /// Return the number of collected callbacks waiting for this session.
+    pub fn pending_winit_callbacks(&self, id: WindowId) -> Result<Option<usize>, UiAdapterError> {
+        Ok(self
+            .collectors()?
+            .get(&id)
+            .map(WinitWindowEventCollector::pending_callbacks))
     }
 
     /// Pump one prepared winit event-loop step through the shared event queue.
@@ -141,9 +171,28 @@ impl LinuxWinitPrototypeUiAdapter {
         session.pump_event_loop_once(&self.headless, step).map(Some)
     }
 
+    /// Drain collected future winit callbacks and pump them through Layer36.
+    pub fn pump_collected_winit_events(
+        &self,
+        id: WindowId,
+    ) -> Result<Option<WinitWindowEventLoopStepReport>, UiAdapterError> {
+        let step = {
+            let mut collectors = self.collectors()?;
+            let Some(collector) = collectors.get_mut(&id) else {
+                return Ok(None);
+            };
+            collector.drain_step()
+        };
+
+        self.pump_winit_event_loop_step(id, &step)
+    }
+
     fn remove_session(&self, id: WindowId) {
         if let Ok(mut sessions) = self.sessions() {
             sessions.remove(&id);
+        }
+        if let Ok(mut collectors) = self.collectors() {
+            collectors.remove(&id);
         }
     }
 
@@ -152,6 +201,14 @@ impl LinuxWinitPrototypeUiAdapter {
     ) -> Result<MutexGuard<'_, BTreeMap<WindowId, WinitWindowSession>>, UiAdapterError> {
         self.sessions.lock().map_err(|_| {
             UiAdapterError::Internal("linux winit session lock is poisoned".to_string())
+        })
+    }
+
+    fn collectors(
+        &self,
+    ) -> Result<MutexGuard<'_, BTreeMap<WindowId, WinitWindowEventCollector>>, UiAdapterError> {
+        self.collectors.lock().map_err(|_| {
+            UiAdapterError::Internal("linux winit callback lock is poisoned".to_string())
         })
     }
 }
@@ -410,7 +467,7 @@ impl UiAdapter for LinuxWinitPrototypeUiAdapter {
         window: WindowId,
     ) -> Result<Option<UiEventLoopTick>, UiAdapterError> {
         Ok(self
-            .pump_winit_event_loop_step(window, &WinitWindowEventLoopStep::new())?
+            .pump_collected_winit_events(window)?
             .map(|report| UiEventLoopTick {
                 window,
                 callbacks_handled: report.callbacks_handled,
@@ -811,6 +868,72 @@ mod tests {
 
         adapter.close_window(id).expect("close");
         assert!(adapter.winit_session(id).expect("session").is_none());
+    }
+
+    #[test]
+    fn winit_prototype_collects_callbacks_for_event_loop_pump() {
+        let adapter = LinuxWinitPrototypeUiAdapter::new();
+        let size = WindowSize::new(640, 480).expect("size");
+        let id = adapter
+            .create_window(WindowOptions::new("Layer36 winit collected", size).expect("options"))
+            .expect("create window");
+        let snapshot =
+            WinitWindowSnapshot::new(id, size, false, false, 1.0).expect("initial snapshot");
+        adapter
+            .attach_winit_session(id, 0xC011EC7, snapshot)
+            .expect("attach session");
+        let resized = WindowSize::new(1000, 720).expect("resized");
+
+        assert_eq!(
+            adapter.pending_winit_callbacks(id).expect("pending"),
+            Some(0)
+        );
+        assert!(adapter
+            .record_winit_native_event(id, WinitWindowNativeEvent::Focused(true))
+            .expect("record focus"));
+        assert!(adapter
+            .record_winit_native_event(id, WinitWindowNativeEvent::Resized(resized))
+            .expect("record resize"));
+        assert!(adapter
+            .record_winit_native_event(id, WinitWindowNativeEvent::RedrawRequested)
+            .expect("record redraw"));
+        assert_eq!(
+            adapter.pending_winit_callbacks(id).expect("pending"),
+            Some(3)
+        );
+
+        let tick = adapter
+            .pump_event_loop_once(id)
+            .expect("pump")
+            .expect("native tick");
+
+        assert_eq!(tick.window, id);
+        assert_eq!(tick.callbacks_handled, 3);
+        assert!(tick.snapshot_refreshed);
+        assert!(tick.redraw_requested);
+        assert_eq!(
+            adapter.pending_winit_callbacks(id).expect("pending"),
+            Some(0)
+        );
+        assert_eq!(
+            adapter.drain_events().expect("events"),
+            vec![
+                UiEvent::WindowCreated(id),
+                UiEvent::NativeWindowAttached {
+                    id,
+                    backend: WindowBackendKind::Winit,
+                },
+                UiEvent::WindowFocused { id, focused: true },
+                UiEvent::Resized { id, size: resized },
+                UiEvent::RedrawRequested(id),
+            ]
+        );
+
+        adapter.close_window(id).expect("close");
+        assert_eq!(adapter.pending_winit_callbacks(id).expect("pending"), None);
+        assert!(!adapter
+            .record_winit_native_event(id, WinitWindowNativeEvent::RedrawRequested)
+            .expect("closed session"));
     }
 
     #[test]

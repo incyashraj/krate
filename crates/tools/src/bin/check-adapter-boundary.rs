@@ -235,6 +235,7 @@ fn check_adapter_boundary() -> Result<BoundaryReport> {
         "pub struct WinitWindowSnapshot",
         "pub enum WinitWindowNativeEvent",
         "pub struct WinitWindowEventLoopStep",
+        "pub struct WinitWindowEventCollector",
         "pub struct WinitWindowEventLoopStepReport",
         "pub struct WinitWindowSession",
     ] {
@@ -387,6 +388,8 @@ fn check_adapter_boundary() -> Result<BoundaryReport> {
     for needle in [
         "pub fn attach_winit_window_handle(",
         "pub fn attach_winit_session(",
+        "pub fn record_winit_native_event(",
+        "pub fn pump_collected_winit_events(",
         "pub fn pump_winit_event_loop_step(",
         "pub struct LinuxWinitPrototypeUiAdapter",
         "pub fn discover_winit_prototype_ui_adapter(",
@@ -401,6 +404,8 @@ fn check_adapter_boundary() -> Result<BoundaryReport> {
     for needle in [
         "pub fn attach_winit_window_handle(",
         "pub fn attach_winit_session(",
+        "pub fn record_winit_native_event(",
+        "pub fn pump_collected_winit_events(",
         "pub fn pump_winit_event_loop_step(",
         "pub struct WindowsWinitPrototypeUiAdapter",
         "pub fn discover_winit_prototype_ui_adapter(",

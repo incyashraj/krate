@@ -187,12 +187,16 @@ Done now:
 - Linux and Windows also have a shared Winit session owner scaffold. It can
   hold a tracked session, apply prepared resize, focus, scale, redraw, and close
   events, and remove the session on close.
+- Linux and Windows now have a Winit callback collector bridge. Future native
+  Winit event handlers can record callbacks into a small FIFO queue, and the
+  normal event-loop pump drains that queue through the shared UI event stream.
 - The runtime can choose the current host adapter.
 - ADR-0013 and RFC-0003 now describe the widget lowering rule.
 
 Pending:
 
-- real Linux and Windows `winit` window creation and event collection
+- real Linux and Windows `winit` window creation, with actual Winit callbacks
+  feeding the collector
 - host event loop that feeds real close, resize, focus, theme, scale, pointer, key, and text events into the queue
 - widget tree lowering
 - larger layout style coverage and recorded large-tree benchmark results on all target hosts

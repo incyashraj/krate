@@ -519,7 +519,7 @@
       </div>
     </div>
     <p class="flow-caption">In simple terms: Phase 3 should move Layer36 from "a safe portable CLI app can run" to "a safe portable desktop app can open a real window and respond to users."</p>
-    <p class="flow-caption">Current progress: the macOS prototype can create an opt-in AppKit window, attach a first draw view, collect native window callbacks, and process one non-blocking event-loop tick. The runtime can request that AppKit path by name, and there is a local smoke command that opens the native path, pumps one tick, checks the report, and closes it. Linux and Windows now have guarded Winit prototype boundaries and a first session owner scaffold, which means Layer36 can track a future native window session and route prepared native events. Real Linux and Windows windows are still next. The normal path still stays headless for safety.</p>
+    <p class="flow-caption">Current progress: the macOS prototype can create an opt-in AppKit window, attach a first draw view, collect native window callbacks, and process one non-blocking event-loop tick. The runtime can request that AppKit path by name, and there is a local smoke command that opens the native path, pumps one tick, checks the report, and closes it. Linux and Windows now have guarded Winit prototype boundaries, a session owner scaffold, and a callback collector bridge, which means future Winit handlers have a tested inbox for resize, focus, scale, redraw, and close callbacks. Real Linux and Windows windows are still next. The normal path still stays headless for safety.</p>
   </section>
 
   <section class="section split">

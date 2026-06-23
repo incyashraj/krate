@@ -280,6 +280,9 @@ The value of this step is that the boundary is testable:
 - Linux and Windows now have that first shared session owner scaffold too. It
   can track a Winit session and route prepared native events through the shared
   UI queue. Real `winit` window creation is still pending.
+- Linux and Windows now have a Winit callback collector bridge as well. Future
+  real Winit handlers can record callbacks into that collector, and the shared
+  event-loop pump can drain them in order.
 - draft widget-tree calls now pass through the same dispatcher and adapter
   boundary for set root, upsert node, remove node, and focus node
 - draft layout calls can now turn the stored widget tree into a
