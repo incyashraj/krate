@@ -1,50 +1,54 @@
 # Layer36 (from layer6x6)
 
-> Write once. Run on everything. Natively.
+> Software should run like a PDF opens: exactly the same on any device — and
+> never touch anything without permission.
+
+Layer36 is a safe runtime for portable software. A program compiles once to a
+WebAssembly component; the Layer36 runtime runs that same file natively on
+Linux, macOS, and Windows through one standard library (UAPI), and a
+capability system (UCap) means the program touches nothing — not a file, not
+the network — without an explicit grant.
+
+**Why now:** software is being generated faster than it can be ported, audited,
+or sandboxed. Machine-generated tools need one safe, universal place to run.
+Layer36 is being built to be that place — starting with developer tools and
+local utilities, growing toward the full platform.
+
+**The long-term arc** is a universal application platform: the same portable
+file running natively on desktop, mobile, and the web, with distribution and
+identity built in. See [the full vision](https://incyashraj.github.io/layer6x6/vision.html),
+[the roadmap](https://incyashraj.github.io/layer6x6/roadmap.html), and
+[follow the build](https://incyashraj.github.io/layer6x6/build-log.html).
 
 **Naming note:** This repository lives at `incyashraj/layer6x6` while the
 project is still proving the 6x6 portability matrix. The product name is
 **Layer36**: layer6x6 becomes Layer36 once the matrix is solved.
 
-Layer36 is a universal application platform — a portable runtime, a universal
-standard library (UAPI), and a capability-based permission model (UCap) — that
-lets you ship one binary and run it natively on Windows, macOS, Linux, iOS,
-Android, and the web.
-
-It is built on WebAssembly and its Component Model, with a thin per-OS adapter
-layer that translates UAPI calls to native OS APIs.
-
-**Status:** Pre-alpha. Phase 2 is active: the CLI can run Phase 2
-WebAssembly components through UAPI, manifest-declared capabilities, launch
-grants, and sample apps for clock, cat, and curl. Formal Phase 2 exit still
-needs final cross-host evidence, UAPI freeze review, and an outside developer
-walkthrough.
-See [the roadmap](https://incyashraj.github.io/layer6x6/roadmap.html).
+**Status:** Pre-alpha. The runtime already runs real CLI components — clock,
+cat, curl — from a single `.wasm` on Linux, macOS, and Windows, with
+manifest-declared capabilities, launch grants, and runtime permission checks,
+proven by cross-host CI. Formal Phase 2 exit still needs final cross-host
+evidence, a UAPI freeze review, and an outside developer walkthrough.
 
 ---
 
-## Why
-
-Every app today is written six times: once for each operating system it runs
-on. That is a tax on every developer and a ceiling on every idea. Layer36 removes
-the tax by making the developer's target a portable runtime, not any particular
-OS.
-
-Read [the full vision](https://incyashraj.github.io/layer6x6/vision.html).
-
 ## Current phase
 
-**Phase 2 — UAPI v0.1.** Layer36 is moving from runtime proof to a useful CLI
-app platform slice. Current work covers:
+**Phase 3 — desktop UI foundation** (with Phase 2 closeout tracked separately).
+Current work covers:
 
-- UAPI modules for `io`, `fs`, `net`, `time`, and `locale`
-- UCap capability parsing, manifests, launch grants, and runtime checks
-- sample apps: `layer36-clock`, `layer36-cat`, and `layer36-curl`
-- Rust SDK direction, TypeScript fixture coverage, and experimental Go tracking
-- evidence scripts for samples, UCap enforcement, adapters, benchmarks, and CI
+- the Phase 3 `ui`/`gfx`/`audio` WIT drafts, shared widget tree, and
+  Taffy-backed layout engine
+- a UCap-gated runtime UI dispatcher with pointer, key, text, and host-window
+  event routes
+- an opt-in macOS AppKit native window prototype (real `NSWindow`, native
+  delegate, draw view, event-loop step driver)
+- next milestone: `P3-VS-01`, the macOS vertical slice — one WASM component
+  drives a real native button end-to-end
+  (see `Plan/Plan-Amendments-2026-07.md`)
 
-Phase 1 is still supported for the original hello-world proof, but new app work
-should use the Phase 2 UAPI path.
+Phase 2's CLI path stays fully supported: UAPI modules for `io`, `fs`, `net`,
+`time`, and `locale`, the sample apps, and the evidence harness are unchanged.
 
 ## Quickstart
 
