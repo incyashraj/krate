@@ -1,8 +1,12 @@
 name: Self-hosted Fuzz Nightly
 
 on:
-  schedule:
-    - cron: "0 2 * * *"
+  # Nightly schedule paused 2026-07-02 while the layer36-local runner is offline;
+  # scheduled runs had queued 24h and cancelled every night since 2026-06-24.
+  # Re-enable when the runner is back by restoring:
+  #   schedule:
+  #     - cron: "0 2 * * *"
+  # See Plan/Plan-Amendments-2026-07.md amendment A7.
   workflow_dispatch:
     inputs:
       fuzz_max_total_time:

@@ -56,3 +56,6 @@ ehthumbs.db
 
 # Private fundraising artifacts
 /Invest/
+
+# Founder-personal artifacts kept out of the public repo
+/Layer36-book.pdf
