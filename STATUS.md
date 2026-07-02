@@ -31,11 +31,13 @@ Linux, macOS, and Windows full-test lanes all passed. The language-variant,
 UCap, adapter, and sample evidence compare jobs all passed too. This closes the
 immediate hosted full CI blocker that was left after run `26064573902`.
 
-The self-hosted fuzz nightly schedule is paused as of 2026-07-02: the
-`layer36-local` runner has been offline since 2026-06-24, and every scheduled
-run queued for 24 hours and cancelled. Manual dispatch still works. Re-enable
-the cron in `.github/workflows/self-hosted-fuzz-nightly.yml` when the runner
-returns.
+The self-hosted `layer36-local` runner is back online as of 2026-07-02 and the
+fuzz nightly schedule is restored. Root cause of the outage: the runner had
+only ever run in a foreground terminal, died when that terminal closed
+(2026-06-24), and GitHub then deleted the stale registration. It is now
+re-registered and installed as a LaunchAgent service
+(`~/runner/actions-runner/svc.sh`), so it survives reboots. If it ever drops
+again: `cd ~/runner/actions-runner && ./svc.sh status && ./svc.sh start`.
 
 ## 3) What this version can do now
 

@@ -1,12 +1,12 @@
 name: Self-hosted Fuzz Nightly
 
 on:
-  # Nightly schedule paused 2026-07-02 while the layer36-local runner is offline;
-  # scheduled runs had queued 24h and cancelled every night since 2026-06-24.
-  # Re-enable when the runner is back by restoring:
-  #   schedule:
-  #     - cron: "0 2 * * *"
-  # See Plan/Plan-Amendments-2026-07.md amendment A7.
+  # Schedule restored 2026-07-02: the layer36-local runner is re-registered and
+  # now runs as a LaunchAgent service, so it survives reboots.
+  # (It had been offline since 2026-06-24 because it only ran in a foreground
+  # terminal; GitHub then deleted the stale registration.)
+  schedule:
+    - cron: "0 2 * * *"
   workflow_dispatch:
     inputs:
       fuzz_max_total_time:
