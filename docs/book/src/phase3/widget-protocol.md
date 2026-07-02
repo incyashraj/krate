@@ -41,6 +41,24 @@ There are three common ways to build cross platform desktop UI:
 Layer36 uses a mixed path. Native where the host has the right control. Drawn
 where the app needs its own surface.
 
+## Per-Host Lowering In v0.1
+
+The mixed path is a rule about the protocol, not a promise that every host
+lowers every widget natively. For v0.1 (ADR-0015):
+
+| Host | Windowing | Widget lowering |
+|---|---|---|
+| macOS | AppKit (own bridge) | Native AppKit controls, drawn fallback for the long tail |
+| Windows | winit | Native Win32 common controls as child windows, drawn fallback for the long tail |
+| Linux | winit | Drawn fallback for every widget, styled with theme tokens |
+
+Linux uses the drawn path everywhere in v0.1 because GTK4 widgets cannot be
+embedded inside winit-owned windows — GTK4 removed foreign-window embedding, so
+its widgets only live in GTK-owned windows with GTK's own event loop. Rather
+than fork the window model for one host, Linux v0.1 exercises the drawn
+fallback that every host needs anyway. Native GTK lowering can return later as
+a separate GTK-owned-window backend if demand justifies it.
+
 ## The Native Three Of Five Rule
 
 A widget belongs in the core protocol only when at least three of these hosts
@@ -192,6 +210,8 @@ Done now:
   normal event-loop pump drains that queue through the shared UI event stream.
 - The runtime can choose the current host adapter.
 - ADR-0013 and RFC-0003 now describe the widget lowering rule.
+- ADR-0015 now records the v0.1 per-host lowering decision: Linux draws every
+  widget inside winit windows because GTK4 cannot embed in foreign windows.
 
 Pending:
 

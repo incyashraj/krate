@@ -589,8 +589,8 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 - `ui.wit` defining widget protocol (Window, Stack, Button, Text, Input, Image, List).
 - Retained-mode widget lowering:
   - macOS adapter -> AppKit.
-  - Windows adapter -> Win32 + XAML Islands or native Win32.
-  - Linux adapter -> GTK4.
+  - Windows adapter -> native Win32 common controls (XAML Islands deferred past v0.1).
+  - Linux adapter -> drawn fallback via vello in v0.1 (ADR-0015; GTK4 cannot embed in winit windows).
 - 2D canvas fallback (vello / wgpu) for custom-drawn widgets.
 - Layout engine (flexbox subset based on Taffy).
 - Input (keyboard, mouse, touch surrogate).
@@ -785,7 +785,7 @@ layer36/
 | P3-UI-04 | Window + event loop abstractions | 3d |
 | P3-UI-05 | macOS adapter: NSWindow + NSView widget bridge | 5d |
 | P3-UI-06 | Windows adapter: Win32 + DirectComposition | 5d |
-| P3-UI-07 | Linux adapter: GTK4 bridge | 5d |
+| P3-UI-07 | Linux adapter: drawn-widget backend (ADR-0015; was GTK4 bridge) | 5d |
 | P3-GFX-01 | `wit/layer36/gfx.wit` (2D canvas) | 2d |
 | P3-GFX-02 | `wgpu` integration in runtime | 3d |
 | P3-GFX-03 | 2D canvas via vello | 5d |
@@ -1155,6 +1155,7 @@ Any change to UIR, UAPI, UCap, or bundle format requires an RFC:
 | JIT startup vs AOT tradeoff | Medium | Medium | Ship both: JIT for dev, AOT cache for installed apps |
 | UCap usability (too many prompts) | High | High | Batch initial grants; rationales; remember-my-choice defaults; study with real users in Phase 3 |
 | Font & text rendering parity | High | Medium | Delegate to host text engine via adapter; custom only for logo-style uses |
+| GTK4-in-winit embedding conflict (Linux native widgets) | Closed | High | Resolved 2026-07 by ADR-0015 before implementation: Linux v0.1 uses drawn-fallback widgets inside winit windows; GTK lowering deferred |
 | Accessibility parity | Medium | High | Bake a11y into widget protocol from Phase 3, not tacked on |
 
 ### 14.2 Ecosystem / market risks
@@ -1634,8 +1635,15 @@ Append as each ADR is drafted and merged. Full ADR files live in `docs/adr/`.
 | ADR-0006 | WIT versioning strategy | 2 | Accepted | 2026-05-04 |
 | ADR-0007 | UCap v0.1 soft enforcement | 2 | Accepted | 2026-05-04 |
 | ADR-0008 | Host async runtime | 2 | Accepted | 2026-05-04 |
+| ADR-0009 | Sandbox link semantics | 2 | Accepted | 2026-05-05 |
+| ADR-0010 | Locale/timezone discovery fallbacks | 2 | Accepted | 2026-05-05 |
+| ADR-0011 | Phase 2 benchmark regression policy | 2 | Accepted | 2026-05-05 |
+| ADR-0012 | Adapter crate split per OS | 2 | Accepted | 2026-05-05 |
+| ADR-0013 | Widget lowering strategy (native + drawn fallback) | 3 | Proposed | 2026-05-21 |
+| ADR-0014 | Layout engine uses Taffy | 3 | Proposed | 2026-05-21 |
+| ADR-0015 | Linux widget strategy: drawn fallback in v0.1 | 3 | Proposed | 2026-07-02 |
 
-_ADRs 0009 onward will be added here as they are drafted and merged across phases._
+_Later ADRs will be added here as they are drafted and merged across phases._
 
 ---
 

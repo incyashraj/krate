@@ -107,7 +107,7 @@ Phase 3 is **done** when, and only when, every row below is true.
 | 1 | `ui`, `gfx`, `audio` WIT modules frozen at v0.1.0 | `wit/layer36/*.wit` |
 | 2 | Each module implemented in Linux, macOS, Windows adapters | CI green on all hosts |
 | 3 | `layer36-notes` runs on all three desktop OSes | Integration test |
-| 4 | `layer36-notes` UI feels native on each host (not Electron-style) | Qualitative test, documented rubric |
+| 4 | `layer36-notes` UI feels native on each host (not Electron-style). On Linux this is measured against the drawn-widget rubric (scroll physics, focus, shortcuts, dark mode, DPI) per ADR-0015, not GTK widget identity | Qualitative test, documented rubric |
 | 5 | Steady-state frame time ≤ 16.7 ms on 2020+ hardware | Frame-time histogram |
 | 6 | Cold start for GUI app < 300 ms to first paint | Timestamp diff |
 | 7 | IME (CJK input) works on all three hosts | Manual test + automated event capture |
@@ -215,6 +215,8 @@ The abstract layer is the same everywhere. The concrete rendering differs. Our j
 Every widget we add to the protocol must pass the **"native three of five"** test: at least three of { Windows, macOS, Linux, iOS, Android } have a native control that can render it. If fewer, we draw it ourselves and document why.
 
 This rule keeps the protocol honest. It is checked in ADR review and in the WIT style guide.
+
+Clarification (2026-07, ADR-0015): the "native three of five" test governs *protocol inclusion* — which widgets exist in the WIT. Per-host *lowering* may still be drawn where the host backend cannot support native embedding: in v0.1 Linux lowers every widget through the drawn fallback because GTK4 widgets cannot live inside winit windows.
 
 ### 5.6 Recorded in
 
@@ -353,8 +355,8 @@ See §5. Recorded in ADR-0013. Frozen.
 | Host | Library | Notes |
 |---|---|---|
 | macOS | `objc2` + `objc2-app-kit` | Modern, maintained Rust Objective-C bridge |
-| Windows | `windows-rs` + optional `webview2` for edge cases | First-party Microsoft crate |
-| Linux | `gtk4-rs` | De facto Rust GTK binding |
+| Windows | `windows-rs` (Win32 common controls as child HWNDs) | First-party Microsoft crate. XAML Islands deferred past v0.1. |
+| Linux | `vello` drawn fallback — no native GTK lowering in v0.1 | GTK4 widgets cannot embed in winit windows (no foreign-window embedding). See ADR-0015. |
 
 ### 7.4 Layout: **Taffy**
 
@@ -1013,7 +1015,7 @@ Pass = screen reader announces all widgets correctly and can navigate the tree.
 ### 15.1 Linux
 
 - Windowing: `winit`.
-- Native widgets: `gtk4-rs`.
+- Widgets: drawn fallback via vello, styled with per-host theme tokens (ADR-0015 — GTK4 widgets cannot embed in winit windows; native GTK lowering is out of v0.1 scope).
 - Canvas backend: `wgpu` on Vulkan.
 - Audio: `cpal` on PipeWire or PulseAudio.
 - Text: harfbuzz.
@@ -1023,7 +1025,7 @@ Pass = screen reader announces all widgets correctly and can navigate the tree.
 Known pain:
 - Wayland vs X11 behavior differences.
 - Font configuration varies by distro.
-- GTK theme mismatch if distro doesn't match.
+- Drawn widgets carry full responsibility for focus, keyboard, and a11y behavior — nothing is inherited from a native toolkit.
 
 ### 15.2 macOS
 
@@ -1316,13 +1318,16 @@ Matches Build Plan §7.4 task IDs.
 - Drawn-fallback path working.
 - Manual test on Windows 11.
 
-### P3-UI-07 — Linux widget bridge
+### P3-UI-07 — Linux drawn-widget backend
+
+*(Redefined 2026-07 per ADR-0015 — GTK4 widgets cannot embed in winit windows, so Linux v0.1 uses the drawn fallback for every widget.)*
 
 **Estimate:** 5 days.
 **Branch:** `p3-ui-07-linux-widgets`.
 **Acceptance:**
-- Same widget set rendered via `gtk4-rs`.
-- Drawn-fallback path working.
+- Same widget set rendered through the vello drawn-fallback path inside winit windows.
+- Per-host theme tokens applied for visual fit.
+- Focus, keyboard, and accessibility metadata working without a native toolkit underneath.
 - Manual test on Ubuntu 22.04 + Fedora.
 
 ### P3-GFX-01 — `wit/layer36/gfx.wit`

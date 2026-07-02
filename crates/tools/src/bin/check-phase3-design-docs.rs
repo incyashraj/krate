@@ -52,6 +52,16 @@ fn main() -> Result<()> {
         ],
     )?;
     check_doc(
+        &root.join("docs/adr/0015-linux-widget-strategy.md"),
+        &[
+            "ADR-0015: Linux Widget Strategy For Phase 3",
+            "Status:** Proposed",
+            "foreign-window embedding",
+            "drawn fallback",
+            "winit",
+        ],
+    )?;
+    check_doc(
         &root.join("docs/book/src/phase3/layout.md"),
         &[
             "Layout",
