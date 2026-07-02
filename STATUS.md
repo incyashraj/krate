@@ -238,6 +238,13 @@ Top pending items:
 4. One timed outside Rust walkthrough
 5. Phase 2 retrospective and Phase 3 kickoff issue
 
+Timebox rule (2026-07-02, per `Plan/Plan-Amendments-2026-07.md` A4): closeout
+gets one focused week; whatever is not closed stays tracked in the exit ledger
+without blocking Phase 3. No new evidence recorder/comparator/checker scripts
+until a second engineer joins — reuse existing harnesses. The long fuzz soak
+additionally waits on the `layer36-local` runner returning (nightly schedule
+paused 2026-07-02 while it is offline).
+
 ## 6) Recent completed development highlights
 
 - TypeScript curl error behavior aligned with Rust:

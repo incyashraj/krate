@@ -1583,7 +1583,8 @@ What we call things vs. what the ecosystem calls them. Keep these consistent in 
 > **Project Status:** In Progress
 > **Phase 0 Start:** 2026-05-01
 > **v1.0 Target:** estimated after Phase 7
-> **Last Updated:** 2026-06-20
+> **Last Updated:** 2026-07-02
+> **Process rule (2026-07-02):** Phase 2 closeout is timeboxed and evidence tooling is frozen — no new evidence recorder/comparator/checker scripts until a second engineer joins; reuse existing harnesses. See `Plan/Plan-Amendments-2026-07.md` A4.
 
 This section is the living status board for all of Layer36. Update it at every phase boundary, major milestone, and architectural pivot. It is the first thing a returning contributor should read.
 
@@ -1832,6 +1833,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-06-21 | Added Linux and Windows Winit prototype boundaries. Both host adapter crates now have explicit prototype adapter types, native-handle handoff helpers, guarded discovery entry points, runtime selector wiring, and boundary checks. Real Linux and Windows native windows are still the next implementation step. |
 | 2026-06-21 | Added the shared Winit session owner scaffold. Linux and Windows prototype adapters can now track Winit sessions, attach a native handle token, pump prepared native events through the shared queue, and clean up session state on close. Real Winit OS window creation is still pending. |
 | 2026-06-23 | Added the Winit callback collector bridge. Linux and Windows prototype adapters can now record Winit-shaped callbacks in FIFO order, count what is waiting, drain the callbacks through the shared event-loop pump, and clean the collector up with the tracked session. |
+| 2026-07-02 | Adopted the July 2026 plan amendments (`Plan/Plan-Amendments-2026-07.md`): Linux v0.1 widgets move to the drawn fallback (ADR-0015, resolving the GTK4-in-winit embedding conflict), Phase 3 re-sequenced around the P3-VS-01 macOS vertical slice, agent-embedding tasks P3-EMB-01..03 added as a parallel track, Phase 2 closeout timeboxed with an evidence-tooling freeze, GTM Stage 1 activated, a hiring lane added to STATUS.md, and the self-hosted fuzz nightly paused while the `layer36-local` runner is offline. |
 
 ---
 

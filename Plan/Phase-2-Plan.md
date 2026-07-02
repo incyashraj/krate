@@ -7,6 +7,7 @@
 > **Supersedes:** `layer36:phase1/host` WIT interface.
 > **Superseded by:** nothing.
 > **Status:** Started under the Phase 1 engineering-complete waiver; formal external gates still pending.
+> **Closeout note (2026-07-02):** Closeout is timeboxed per `Plan/Plan-Amendments-2026-07.md` A4 — one focused week for the freeze review, decision packet, final bundle, and scheduling the outside walkthrough. Unfinished formal gates stay tracked in the exit ledger without blocking or interleaving with Phase 3 work.
 
 ---
 
