@@ -596,6 +596,8 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 - Input (keyboard, mouse, touch surrogate).
 - Sample app: `layer36-notes`: minimal note-taking app with list, editor, save to disk.
 
+**Parallel track (added 2026-07, `Plan/Plan-Amendments-2026-07.md` A3):** the agent-embedding surface — a stable library embedding API on `crates/runtime`, `layer36 run --json` machine-readable output, and a thin MCP server wrapper (tasks P3-EMB-01..03). This is the Phase-3-era expression of the "safe execution of AI-generated software" wedge: agent frameworks can execute generated components inside UCap sandboxes long before the Phase 5–6 hosted and marketplace expressions exist. It is additive and does not gate Phase 3 exit.
+
 **Exit criteria:**
 - `layer36-notes` runs on all three desktop OSes and feels native (no Electron-style "web app in a chrome").
 - 60 fps steady on 2020+ hardware.
@@ -1201,6 +1203,8 @@ flowchart LR
 ```
 
 ### 15.2 Stage 1 (months 0-12): OSS credibility
+
+> **Activated 2026-07** (`Plan/Plan-Amendments-2026-07.md` A5): the minimum loop starts now — one public build-log post per milestone on the docs site (source material: the STATUS.md updates already written each slice), a "follow the build" link in the README, and the README opening realigned to the safe-execution wedge. Discord waits until the first native-window demo exists.
 
 - Open source from day one. Public repo, public roadmap, public Discord.
 - Regular (monthly) blog posts about what we're building.

@@ -1,10 +1,15 @@
 # Layer36 Status
 
-Last updated: 2026-06-23
+Last updated: 2026-07-02
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `02f28bf`
-Working tree at this status update: Phase 3 Winit callback collector bridge implemented and locally verified
+Latest checked completed push before this slice: `8bc9a15`
+Working tree at this status update: July 2026 plan amendments applied (see
+`Plan/Plan-Amendments-2026-07.md`): ADR-0015 Linux drawn-fallback widget
+strategy, Phase 3 re-sequenced around the P3-VS-01 macOS vertical slice,
+agent-embedding tasks P3-EMB-01..03 added, Phase 2 closeout timeboxed with an
+evidence-tooling freeze, and the self-hosted fuzz nightly paused while the
+`layer36-local` runner is offline.
 
 ## 1) Project size today
 
@@ -25,6 +30,12 @@ Manual hosted full CI run `26069665276` passed on commit `3f1a219`.
 Linux, macOS, and Windows full-test lanes all passed. The language-variant,
 UCap, adapter, and sample evidence compare jobs all passed too. This closes the
 immediate hosted full CI blocker that was left after run `26064573902`.
+
+The self-hosted fuzz nightly schedule is paused as of 2026-07-02: the
+`layer36-local` runner has been offline since 2026-06-24, and every scheduled
+run queued for 24 hours and cancelled. Manual dispatch still works. Re-enable
+the cron in `.github/workflows/self-hosted-fuzz-nightly.yml` when the runner
+returns.
 
 ## 3) What this version can do now
 
@@ -218,12 +229,38 @@ Current Phase 3 slice:
   and closes the window through the runtime dispatcher on the main process
   thread.
 
+- The July 2026 plan amendments are now in effect
+  (`Plan/Plan-Amendments-2026-07.md`). The three that change Phase 3 work:
+  ADR-0015 moves Linux v0.1 widgets to the vello drawn fallback inside winit
+  windows (GTK4 cannot embed in foreign windows, so the original gtk4-rs
+  native-widget plan could not compose with winit); the next implementation
+  milestone is re-sequenced to `P3-VS-01`, the macOS vertical slice that
+  proves native widget lowering end-to-end before Winit broadening; and the
+  agent-embedding tasks `P3-EMB-01..03` (runtime embedding API,
+  `layer36 run --json`, MCP server wrapper) are added as a parallel,
+  non-exit-blocking track after the slice.
+
 This does not mean desktop UI is implemented yet. It means the first public
 contract for desktop UI work is now in the repo and checked locally. The window
 adapter trait, UI adapter trait, registry, dispatcher, host entry points, and
 runtime discovery path are shared models for host adapters to follow before we
-wire real AppKit, winit, Win32 widgets, or GTK widgets. The native handle
-handoff is now the checked bridge those real windows can use.
+wire real AppKit, winit, or Win32 widgets (Linux widgets are drawn per
+ADR-0015). The native handle handoff is now the checked bridge those real
+windows can use.
+
+## 4B) Hiring lane
+
+Tracked per `Plan/Plan-Amendments-2026-07.md` A6 (Build Plan §14.3 marks this
+risk Critical). Update this section with every status refresh.
+
+- First-hire profile: systems engineer who owns the Windows and Linux adapter
+  lanes (winit windowing, Win32 widget lowering, the Linux drawn-widget
+  backend), freeing the founder for macOS, the runtime boundary, and the
+  app-facing contract.
+- Pipeline: not started — no candidates contacted yet.
+- Outside-ready answer: "The first hire owns the Windows/Linux adapter lanes;
+  the profile is defined and the search runs alongside Phase 3's vertical
+  slice."
 
 ## 5) What remains to close Phase 2 fully
 
@@ -384,8 +421,8 @@ paused 2026-07-02 while it is offline).
 - Phase 3 layout page: `docs/book/src/phase3/layout.md`
 - Progress page for non technical readers: `docs/book/src/progress-for-everyone.md`
 
-## 8) Resume prompt for a new GPT session
+## 8) Resume prompt for a new session
 
 Use this exact prompt in a new session:
 
-`Continue Layer36 on main. Start with STATUS.md, Plan/Phase-2-Plan.md, and Plan/Phase-3-Plan.md. Phase 3 has started with WIT, GUI manifest recognition, Phase 3 capability names, an adapter-common draft window registry, explicit WindowAdapter boundary, native window handle handoff, shared widget tree model, shared UiAdapter trait, runtime::phase3_ui dispatcher scaffolding, draft widget-tree dispatch, a first Taffy-backed layer36-layout crate, runtime layout snapshots, generated 100-shape layout tests, a 1k/10k-node layout benchmark target, PreparedLayoutTree for repeated layout passes, layout absolute-rectangle helpers, a first layout hit-test helper, headless UI adapter entry points in the macOS, Linux, and Windows crates, runtime host UI adapter discovery, active/planned window backend reporting, draft pointer, key, text, FIFO polling, host window, theme, and scale event routes, an opt-in macOS AppKit window prototype, AppKit event bridge targets, AppKit window session state, AppKit native event state, AppKit redraw bridge, AppKit delegate callback bridge, AppKit draw-surface state, AppKit draw view surface, AppKit native window delegate object, AppKit event-loop step driver, selectable AppKit prototype runtime mode, shared runtime event-loop pump boundary, selectable AppKit runtime smoke command, guarded Linux and Windows Winit prototype boundaries, shared Winit session owner scaffolding, a Winit callback collector bridge for Linux and Windows, and ADR/RFC/docs for the native-widget plus drawn-fallback widget lowering rule. Prepared 10k layout is locally under budget, but cold rebuild and formal cross-host evidence remain pending. Next Phase 3 work should create the first real Linux/Windows Winit window and feed actual Winit callbacks into the collector, then connect real host input. Keep Phase 2 closeout evidence separate, keep Phase 3 narrow, update plan/docs after each chunk, keep GitHub Pages in sync, and check CI after every push.`
+`Continue Layer36 on main. Read Plan/Plan-Amendments-2026-07.md FIRST — it supersedes conflicting instructions in older plan text — then STATUS.md and Plan/Phase-3-Plan.md. Phase 3 has the full contract-and-prototype layer landed: WIT drafts, GUI manifests, capability names, shared widget tree, Taffy-backed layer36-layout with PreparedLayoutTree and hit testing, runtime::phase3_ui dispatcher with UCap gating, draft pointer/key/text/host-window/theme/scale event routes with FIFO polling, headless adapters on all three OSes, an opt-in macOS AppKit window prototype (owned NSWindow, native delegate, draw view, event-loop step driver, selectable runtime mode, local smoke command), and guarded Linux/Windows Winit scaffolding (session owner, callback collector — no real Winit windows yet). Next Phase 3 work is P3-VS-01, the macOS vertical slice: one WASM component drives a real AppKit window containing a native NSButton and NSTextField and receives the click event back end-to-end through UCap and the Phase 3 dispatcher (task spec in Plan/Phase-3-Plan.md section 19). Linux widget lowering is drawn-fallback-only per docs/adr/0015-linux-widget-strategy.md; Winit window broadening resumes only after P3-VS-01 passes; evidence tooling is frozen per amendment A4 (no new recorder/comparator/checker scripts); the agent-embedding tasks P3-EMB-01..03 follow the slice. Prepared 10k layout is locally under budget, but cold rebuild and formal cross-host evidence remain pending. Keep Phase 2 closeout separate and timeboxed, keep Phase 3 narrow, update STATUS.md and plan docs after each chunk, update the STATUS hiring lane, keep GitHub Pages in sync, check CI after every push, and never add AI co-author credits to commits.`

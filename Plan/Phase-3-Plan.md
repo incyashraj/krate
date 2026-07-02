@@ -1187,6 +1187,8 @@ If all ten boxes check, Phase 3 shipped.
 
 Sized for 16 weeks calendar, ~60–80 engineering days of active work. A full-time engineer compresses to 10–12 weeks; a founder splitting time with ParkSure uses the full 16.
 
+> **Amended 2026-07** (`Plan/Plan-Amendments-2026-07.md` A2): the next implementation milestone is **P3-VS-01** — the macOS vertical slice (one WASM component drives a real AppKit window with a native `NSButton` and `NSTextField` and receives the click back). It executes *before* Linux/Windows Winit window broadening, because it validates the core native-lowering bet end-to-end first. Winit work resumes after P3-VS-01 passes, following ADR-0015 for Linux widgets. The agent-embedding tasks P3-EMB-01..03 follow the slice as a parallel, non-exit-blocking track.
+
 ### Weeks 1–2: Foundational decisions + WIT draft
 
 - Write ADR-0013 (widget lowering), ADR-0014 (Taffy layout), ADR-0015 (vello), ADR-0016 (WebGPU subset), ADR-0017 (harfbuzz + IME), ADR-0018 (accesskit), ADR-0019 (cpal), and the windowing ADR when the first native backend starts.
@@ -1262,6 +1264,43 @@ Sized for 16 weeks calendar, ~60–80 engineering days of active work. A full-ti
 ## 19. Task Details
 
 Matches Build Plan §7.4 task IDs.
+
+### P3-VS-01 — macOS vertical slice (native widget end-to-end) *(added 2026-07, amendment A2)*
+
+**Estimate:** 8–10 days.
+**Branch:** `p3-vs-01-macos-vertical-slice`.
+**What:** A demo WASM component (new `apps/` or `examples/` entry) that opens a window through the Phase 3 dispatcher → the AppKit prototype creates the real `NSWindow` → the component submits a widget tree containing one `Button` and one `TextField` → the macOS adapter lowers them to a real `NSButton`/`NSTextField` placed by the Taffy layout → a physical click on the `NSButton` flows back through the delegate/event bridge → the component dequeues it via the event path and updates the label text.
+**Builds on:** `AppKitWindowSession`, the delegate bridge, the draw view surface, the shared widget tree, and the `Phase3UiDispatcher` layout + event routes — all already landed.
+**Out of scope:** reconciler diffing beyond naive re-submit; drawn-fallback rendering; any Linux/Windows work; styling beyond defaults.
+**Acceptance:**
+- A recorded local run (extend the `smoke-phase3-appkit-runtime.sh` pattern) shows the click round-trip.
+- STATUS.md updated; this recorded run is the centerpiece of the public demo.
+**Failure escalation:** if native lowering hits a structural wall (event routing, layout-to-AppKit coordinates, ownership), STOP and write the findings into an ADR draft before writing workaround code — this milestone exists to validate the bet, so discovering a flaw is a success condition of the task.
+
+### P3-EMB-01 — Runtime embedding API *(added 2026-07, amendment A3; parallel track, non-blocking for Phase 3 exit)*
+
+**Estimate:** 4 days.
+**Branch:** `p3-emb-01-embedding-api`.
+**Acceptance:**
+- A documented public API on `crates/runtime`: load component + manifest, supply grants programmatically (no interactive prompt), run, receive a structured result (exit class, stdout/stderr handles, per-capability grant/deny log).
+- An external Rust program (doc-tested example) embeds Layer36 in under 30 lines with no interactive TTY.
+
+### P3-EMB-02 — `layer36 run --json` *(added 2026-07, amendment A3)*
+
+**Estimate:** 3 days.
+**Branch:** `p3-emb-02-run-json`.
+**Acceptance:**
+- Machine-readable run output: run status, exit code + classification, capabilities requested/granted/denied (names + boundaries), timing.
+- Output parses against a schema documented in the book for the success, permission-denied, and invalid-input paths of the three sample apps.
+
+### P3-EMB-03 — MCP server wrapper *(added 2026-07, amendment A3)*
+
+**Estimate:** 4 days.
+**Branch:** `p3-emb-03-mcp-server`.
+**Acceptance:**
+- A minimal MCP server (a `tools/` binary) exposing `run_component` (artifact path/bytes, manifest, grants) backed by P3-EMB-01, returning P3-EMB-02-shaped results.
+- An MCP-capable agent client can execute `layer36-cat` with and without grants and observe the deny/allow difference.
+- Scope bound: no agent orchestration, no model calls, no tool registry — Layer36 executes artifacts safely; the agent ecosystem does the rest.
 
 ### P3-UI-01 — Widget protocol design RFC
 
