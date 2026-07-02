@@ -4,12 +4,16 @@ Last updated: 2026-07-02
 Repo: `incyashraj/layer6x6`
 Branch: `main`
 Latest checked completed push before this slice: `8bc9a15`
-Working tree at this status update: July 2026 plan amendments applied (see
-`Plan/Plan-Amendments-2026-07.md`): ADR-0015 Linux drawn-fallback widget
-strategy, Phase 3 re-sequenced around the P3-VS-01 macOS vertical slice,
-agent-embedding tasks P3-EMB-01..03 added, Phase 2 closeout timeboxed with an
-evidence-tooling freeze, and the self-hosted fuzz nightly paused while the
-`layer36-local` runner is offline.
+Working tree at this status update: P3-VS-01 sub-slice 1 implemented and
+locally verified — the first real native AppKit widget lowering. A Layer36
+widget tree now lowers to a real `NSButton` and `NSTextField` positioned by
+the Taffy layout, a native click flows back through the delegate queue and
+event-loop pump into the shared stream as a routed pointer event with the
+correct widget id, and native text updates round-trip. Proven by the extended
+`phase3_appkit_runtime_smoke` example on a real window. Earlier this same day
+the July 2026 plan amendments were applied (`Plan/Plan-Amendments-2026-07.md`)
+and the `layer36-local` runner was restored as a LaunchAgent service with a
+green verification fuzz run.
 
 ## 1) Project size today
 
@@ -231,6 +235,18 @@ Current Phase 3 slice:
   and closes the window through the runtime dispatcher on the main process
   thread.
 
+- P3-VS-01 sub-slice 1 landed: `adapter-macos` now lowers `Button`,
+  `TextField`, and `Text` widget placements to real AppKit controls
+  (`AppKitWidgetPlacement`, `AppKitWidgetSurface`) inside the prototype
+  window's content view, with top-left-to-AppKit Y-flip from layout rects. A
+  new `Layer36WidgetTarget` Objective-C object receives NSButton
+  target-action callbacks and pushes `WidgetActivated` into the same FIFO the
+  window delegate uses, so the normal event-loop pump drains native clicks
+  into the shared stream as routed pointer events carrying the widget id.
+  `performClick` drives the identical path a physical click uses, so the
+  round trip is provable without a human. Remaining for P3-VS-01: the WASM
+  component wiring (minimal `layer36:ui` host imports for the `gui` world)
+  and the demo component under `apps/`.
 - The July 2026 plan amendments are now in effect
   (`Plan/Plan-Amendments-2026-07.md`). The three that change Phase 3 work:
   ADR-0015 moves Linux v0.1 widgets to the vello drawn fallback inside winit

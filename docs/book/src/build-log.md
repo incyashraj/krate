@@ -6,6 +6,20 @@ pages.
 
 ---
 
+## 2026-07-02 — A real native button, driven by a Layer36 widget tree
+
+The first native widget lowering landed, hours after the amendments that
+ordered it. A Layer36 widget tree now becomes a real AppKit `NSButton` and
+`NSTextField`, positioned by our layout engine inside the prototype window. A
+native click travels AppKit's own target-action path into Layer36's shared
+event stream as a routed event carrying the widget id — the same shape drawn
+widgets use. The smoke run proves the loop end to end without a human: lower
+the widgets, click the real button programmatically, observe the routed
+event, update the native text field. This is the core Phase 3 bet (native
+lowering, ADR-0013) working for the first time. Also today: the self-hosted
+fuzz runner is back online as a proper service, with a green verification
+run.
+
 ## 2026-07-02 — Direction check: plan amendments adopted
 
 Nine weeks in, we stopped and audited the whole project against its own plans

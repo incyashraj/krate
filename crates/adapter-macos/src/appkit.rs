@@ -6,11 +6,110 @@
 //! stable Layer36 `WindowId`.
 
 use layer36_adapter_common::ui::{
-    NativeWindowHandle, UiAdapterError, WindowAdapter, WindowBackendKind, WindowId, WindowOptions,
-    WindowSize,
+    Modifiers, NativeWindowHandle, PointerButton, PointerEvent, UiAdapter, UiAdapterError,
+    WidgetId, WidgetKind, WindowAdapter, WindowBackendKind, WindowId, WindowOptions, WindowSize,
 };
 
 use crate::MacosUiAdapter;
+
+/// Placement of one widget inside an AppKit content view.
+///
+/// Coordinates are logical Layer36 layout units with a top-left origin, exactly
+/// as `LayoutSnapshot` reports them. AppKit uses a bottom-left origin, so the
+/// lowering path flips Y with [`AppKitWidgetPlacement::appkit_origin_y`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppKitWidgetPlacement {
+    widget: WidgetId,
+    kind: WidgetKind,
+    label: Option<String>,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
+impl AppKitWidgetPlacement {
+    /// Widget kinds the first AppKit lowering pass supports natively.
+    pub fn kind_supported(kind: WidgetKind) -> bool {
+        matches!(
+            kind,
+            WidgetKind::Button | WidgetKind::TextField | WidgetKind::Text
+        )
+    }
+
+    /// Create a validated widget placement for native AppKit lowering.
+    pub fn new(
+        widget: WidgetId,
+        kind: WidgetKind,
+        label: Option<String>,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    ) -> Result<Self, UiAdapterError> {
+        if !Self::kind_supported(kind) {
+            return Err(UiAdapterError::Unsupported(format!(
+                "AppKit lowering does not support {kind:?} yet"
+            )));
+        }
+        for (name, value) in [("x", x), ("y", y), ("width", width), ("height", height)] {
+            if !value.is_finite() || value < 0.0 {
+                return Err(UiAdapterError::Unsupported(format!(
+                    "AppKit widget placement {name} must be finite and non-negative, got {value}"
+                )));
+            }
+        }
+        if width == 0.0 || height == 0.0 {
+            return Err(UiAdapterError::Unsupported(
+                "AppKit widget placement needs a non-zero size".to_string(),
+            ));
+        }
+
+        Ok(Self {
+            widget,
+            kind,
+            label,
+            x,
+            y,
+            width,
+            height,
+        })
+    }
+
+    /// Return the stable widget id this placement lowers.
+    pub fn widget(&self) -> WidgetId {
+        self.widget
+    }
+
+    /// Return the widget kind this placement lowers.
+    pub fn kind(&self) -> WidgetKind {
+        self.kind
+    }
+
+    /// Return the label or text content for the native control.
+    pub fn label(&self) -> Option<&str> {
+        self.label.as_deref()
+    }
+
+    /// Return the logical top-left rectangle as `(x, y, width, height)`.
+    pub fn rect(&self) -> (f32, f32, f32, f32) {
+        (self.x, self.y, self.width, self.height)
+    }
+
+    /// Convert the top-left logical Y into an AppKit bottom-left frame origin.
+    pub fn appkit_origin_y(&self, content_height: f32) -> f32 {
+        content_height - (self.y + self.height)
+    }
+}
+
+/// Result of one native AppKit widget lowering pass.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AppKitWidgetSurfaceSnapshot {
+    /// Layer36 window that owns the lowered widgets.
+    pub window: WindowId,
+    /// Widgets lowered to native AppKit controls, in placement order.
+    pub lowered: Vec<WidgetId>,
+}
 
 /// FIFO callback queue used by the real AppKit delegate object.
 ///
@@ -236,6 +335,7 @@ pub enum AppKitWindowNativeEvent {
     ScaleChanged(f32),
     RedrawRequested,
     Snapshot(AppKitWindowSnapshot),
+    WidgetActivated(WidgetId),
 }
 
 /// Delegate callback shape the real AppKit object will translate into Rust.
@@ -248,6 +348,7 @@ pub enum AppKitWindowDelegateCallback {
     WindowDidChangeBackingScale(f32),
     ViewNeedsDisplay,
     Snapshot(AppKitWindowSnapshot),
+    WidgetActivated(WidgetId),
 }
 
 /// Small Rust bridge that keeps Objective-C delegate methods thin.
@@ -284,6 +385,9 @@ impl AppKitWindowDelegateBridge {
             }
             AppKitWindowDelegateCallback::Snapshot(snapshot) => {
                 AppKitWindowNativeEvent::Snapshot(snapshot)
+            }
+            AppKitWindowDelegateCallback::WidgetActivated(widget) => {
+                AppKitWindowNativeEvent::WidgetActivated(widget)
             }
         };
 
@@ -494,6 +598,10 @@ impl AppKitWindowEventState {
             AppKitWindowNativeEvent::Snapshot(snapshot) => {
                 self.sync_snapshot(backend, adapter, snapshot).map(Some)
             }
+            AppKitWindowNativeEvent::WidgetActivated(widget) => {
+                backend.report_widget_activated_for_id(adapter, self.id, widget)?;
+                Ok(self.last_snapshot)
+            }
         }
     }
 }
@@ -503,6 +611,7 @@ pub struct AppKitWindowSession {
     window: AppKitWindowPrototype,
     event_state: AppKitWindowEventState,
     native_delegate: Option<AppKitWindowNativeDelegate>,
+    widget_surface: Option<AppKitWidgetSurface>,
 }
 
 impl AppKitWindowSession {
@@ -535,6 +644,55 @@ impl AppKitWindowSession {
     pub fn install_native_delegate(&mut self) -> Result<(), UiAdapterError> {
         self.native_delegate = Some(self.window.install_native_delegate()?);
         Ok(())
+    }
+
+    /// Lower validated widget placements into native AppKit controls.
+    ///
+    /// Requires the native delegate first, because button activations reuse
+    /// the same callback queue the delegate writes to.
+    pub fn lower_widget_placements(
+        &mut self,
+        placements: &[AppKitWidgetPlacement],
+    ) -> Result<AppKitWidgetSurfaceSnapshot, UiAdapterError> {
+        let delegate = self.native_delegate.as_ref().ok_or_else(|| {
+            UiAdapterError::Unsupported(
+                "AppKit widget lowering needs the native delegate installed first".to_string(),
+            )
+        })?;
+        let surface = self.window.lower_widget_placements(placements, delegate)?;
+        let snapshot = surface.snapshot();
+        self.widget_surface = Some(surface);
+        Ok(snapshot)
+    }
+
+    /// Return the last widget lowering result, if any.
+    pub fn widget_surface_snapshot(&self) -> Option<AppKitWidgetSurfaceSnapshot> {
+        self.widget_surface
+            .as_ref()
+            .map(AppKitWidgetSurface::snapshot)
+    }
+
+    fn widget_surface(&self) -> Result<&AppKitWidgetSurface, UiAdapterError> {
+        self.widget_surface.as_ref().ok_or_else(|| {
+            UiAdapterError::Unsupported(
+                "this AppKit session has no lowered widget surface".to_string(),
+            )
+        })
+    }
+
+    /// Trigger a lowered native button exactly as a physical click would.
+    pub fn perform_widget_click(&self, widget: WidgetId) -> Result<(), UiAdapterError> {
+        self.widget_surface()?.perform_click(widget)
+    }
+
+    /// Set the text content of a lowered native text field or label.
+    pub fn set_widget_text(&self, widget: WidgetId, text: &str) -> Result<(), UiAdapterError> {
+        self.widget_surface()?.set_text(widget, text)
+    }
+
+    /// Read the current text content of a lowered native control.
+    pub fn widget_text(&self, widget: WidgetId) -> Result<String, UiAdapterError> {
+        self.widget_surface()?.text(widget)
     }
 
     /// Show the native window through AppKit and the shared Layer36 adapter.
@@ -683,6 +841,7 @@ impl AppKitWindowBackend {
             window,
             event_state,
             native_delegate: None,
+            widget_surface: None,
         })
     }
 
@@ -732,6 +891,31 @@ impl AppKitWindowBackend {
         id: WindowId,
     ) -> Result<(), UiAdapterError> {
         WindowAdapter::request_redraw(adapter, id)
+    }
+
+    /// Queue a native widget activation (for example an `NSButton` click).
+    ///
+    /// The activation enters the shared stream as a routed pointer event that
+    /// already carries the target widget id, matching the shape the runtime's
+    /// hit-test route produces for drawn widgets.
+    pub fn report_widget_activated_for_id(
+        &self,
+        adapter: &MacosUiAdapter,
+        id: WindowId,
+        widget: WidgetId,
+    ) -> Result<(), UiAdapterError> {
+        UiAdapter::queue_pointer_event(
+            adapter,
+            PointerEvent {
+                window: id,
+                widget: Some(widget),
+                x: 0.0,
+                y: 0.0,
+                button: Some(PointerButton::Primary),
+                pressed: true,
+                modifiers: Modifiers::default(),
+            },
+        )
     }
 
     /// Queue changed native state for a Layer36 window id.
@@ -819,19 +1003,150 @@ impl AppKitWindowBackend {
 mod platform {
     use super::*;
     use objc2::rc::Retained;
-    use objc2::runtime::ProtocolObject;
-    use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
+    use objc2::runtime::{AnyObject, ProtocolObject};
+    use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
-        NSApplication, NSBackingStoreType, NSColor, NSView, NSWindow, NSWindowDelegate,
-        NSWindowStyleMask,
+        NSApplication, NSBackingStoreType, NSButton, NSColor, NSControl, NSTextField, NSView,
+        NSWindow, NSWindowDelegate, NSWindowStyleMask,
     };
     use objc2_foundation::{
         NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
     };
     use std::cell::RefCell;
+    use std::collections::BTreeMap;
     use std::rc::Rc;
 
     type SharedDelegateQueue = Rc<RefCell<AppKitWindowDelegateQueue>>;
+
+    #[derive(Debug, Default)]
+    struct Layer36WidgetTargetIvars {
+        callbacks: SharedDelegateQueue,
+    }
+
+    define_class!(
+        // SAFETY:
+        // - NSObject has no extra subclassing requirements for a passive
+        //   target-action receiver.
+        // - The target is main-thread-only because AppKit delivers control
+        //   actions on the main thread.
+        #[unsafe(super = NSObject)]
+        #[thread_kind = MainThreadOnly]
+        #[ivars = Layer36WidgetTargetIvars]
+        struct Layer36WidgetTarget;
+
+        // SAFETY: NSObjectProtocol has no additional safety requirements.
+        unsafe impl NSObjectProtocol for Layer36WidgetTarget {}
+
+        impl Layer36WidgetTarget {
+            // SAFETY: The action signature matches AppKit's target-action
+            // convention (`-(void)action:(id)sender`), and every control that
+            // uses this selector is an NSControl created by the lowering path.
+            #[unsafe(method(layer36WidgetActivated:))]
+            fn layer36_widget_activated(&self, sender: &NSControl) {
+                let tag = sender.tag();
+                if tag <= 0 {
+                    return;
+                }
+                if let Ok(widget) = WidgetId::new(tag as u64) {
+                    self.ivars()
+                        .callbacks
+                        .borrow_mut()
+                        .push(AppKitWindowDelegateCallback::WidgetActivated(widget));
+                }
+            }
+        }
+    );
+
+    impl Layer36WidgetTarget {
+        fn new(mtm: MainThreadMarker, callbacks: SharedDelegateQueue) -> Retained<Self> {
+            let this = Self::alloc(mtm).set_ivars(Layer36WidgetTargetIvars { callbacks });
+            // SAFETY: NSObject's `init` signature is correct for a fresh allocation.
+            unsafe { msg_send![super(this), init] }
+        }
+    }
+
+    /// Native AppKit controls lowered from Layer36 widget placements.
+    pub struct AppKitWidgetSurface {
+        window: WindowId,
+        _target: Retained<Layer36WidgetTarget>,
+        controls: BTreeMap<WidgetId, Retained<NSControl>>,
+        kinds: BTreeMap<WidgetId, WidgetKind>,
+        lowered: Vec<WidgetId>,
+    }
+
+    impl AppKitWidgetSurface {
+        /// Return the lowering result snapshot for this surface.
+        pub fn snapshot(&self) -> AppKitWidgetSurfaceSnapshot {
+            AppKitWidgetSurfaceSnapshot {
+                window: self.window,
+                lowered: self.lowered.clone(),
+            }
+        }
+
+        /// Return how many native controls this surface owns.
+        pub fn widget_count(&self) -> usize {
+            self.controls.len()
+        }
+
+        /// Return the opaque native control pointer for diagnostics.
+        pub fn native_control_handle(&self, widget: WidgetId) -> Option<u64> {
+            self.controls
+                .get(&widget)
+                .map(|control| Retained::as_ptr(control) as usize as u64)
+        }
+
+        fn control(&self, widget: WidgetId) -> Result<&Retained<NSControl>, UiAdapterError> {
+            self.controls.get(&widget).ok_or_else(|| {
+                UiAdapterError::Unsupported(format!(
+                    "widget {} has no lowered AppKit control",
+                    widget.get()
+                ))
+            })
+        }
+
+        /// Set the text content of a lowered text field or label.
+        pub fn set_text(&self, widget: WidgetId, text: &str) -> Result<(), UiAdapterError> {
+            match self.kinds.get(&widget) {
+                Some(WidgetKind::TextField) | Some(WidgetKind::Text) => {
+                    let control = self.control(widget)?;
+                    control.setStringValue(&NSString::from_str(text));
+                    Ok(())
+                }
+                _ => Err(UiAdapterError::Unsupported(format!(
+                    "widget {} does not accept text updates",
+                    widget.get()
+                ))),
+            }
+        }
+
+        /// Read the current text content of a lowered control.
+        pub fn text(&self, widget: WidgetId) -> Result<String, UiAdapterError> {
+            let control = self.control(widget)?;
+            Ok(control.stringValue().to_string())
+        }
+
+        /// Trigger a lowered button exactly as a physical click would.
+        ///
+        /// AppKit's `performClick:` drives the same target-action path a real
+        /// mouse click uses, so this proves the native round trip end to end
+        /// without needing a human in the loop.
+        pub fn perform_click(&self, widget: WidgetId) -> Result<(), UiAdapterError> {
+            match self.kinds.get(&widget) {
+                Some(WidgetKind::Button) => {
+                    let control = self.control(widget)?;
+                    // SAFETY: The control is a retained NSButton created by the
+                    // lowering path on the main thread, and performClick takes
+                    // an optional sender.
+                    unsafe { control.performClick(None) };
+                    Ok(())
+                }
+                _ => Err(UiAdapterError::Unsupported(format!(
+                    "widget {} is not a clickable AppKit control",
+                    widget.get()
+                ))),
+            }
+        }
+    }
 
     #[derive(Debug, Default)]
     struct Layer36WindowDelegateIvars {
@@ -980,6 +1295,96 @@ mod platform {
             self.window
                 .setDelegate(Some(ProtocolObject::from_ref(&*native_delegate.delegate)));
             Ok(native_delegate)
+        }
+
+        /// Lower validated widget placements into real AppKit controls.
+        ///
+        /// Buttons become `NSButton`, text fields become editable
+        /// `NSTextField`, and text labels become non-editable `NSTextField`
+        /// labels. Button activations flow into the same callback queue the
+        /// installed window delegate writes to, so the normal event-loop pump
+        /// drains them into the shared Layer36 event stream.
+        pub fn lower_widget_placements(
+            &self,
+            placements: &[AppKitWidgetPlacement],
+            delegate: &AppKitWindowNativeDelegate,
+        ) -> Result<AppKitWidgetSurface, UiAdapterError> {
+            let mtm = main_thread_marker()?;
+            let content_view = self.window.contentView().ok_or_else(|| {
+                UiAdapterError::Unsupported(
+                    "AppKit widget lowering needs a window content view".to_string(),
+                )
+            })?;
+            let content_height = self.window.contentLayoutRect().size.height as f32;
+
+            let target = Layer36WidgetTarget::new(mtm, Rc::clone(&delegate.callbacks));
+            let mut controls = BTreeMap::new();
+            let mut kinds = BTreeMap::new();
+            let mut lowered = Vec::with_capacity(placements.len());
+
+            for placement in placements {
+                let (x, _, width, height) = placement.rect();
+                let frame = NSRect::new(
+                    NSPoint::new(
+                        f64::from(x),
+                        f64::from(placement.appkit_origin_y(content_height)),
+                    ),
+                    NSSize::new(f64::from(width), f64::from(height)),
+                );
+
+                let control: Retained<NSControl> = match placement.kind() {
+                    WidgetKind::Button => {
+                        let title = NSString::from_str(placement.label().unwrap_or("Button"));
+                        let target_object: &AnyObject = &target;
+                        // SAFETY: The target outlives the button (both are
+                        // owned by the returned surface), and the selector is
+                        // implemented by Layer36WidgetTarget above.
+                        let button = unsafe {
+                            NSButton::buttonWithTitle_target_action(
+                                &title,
+                                Some(target_object),
+                                Some(sel!(layer36WidgetActivated:)),
+                                mtm,
+                            )
+                        };
+                        button.setFrame(frame);
+                        button.setTag(placement.widget().get() as isize);
+                        Retained::into_super(button)
+                    }
+                    WidgetKind::TextField => {
+                        let value = NSString::from_str(placement.label().unwrap_or(""));
+                        let field = NSTextField::textFieldWithString(&value, mtm);
+                        field.setFrame(frame);
+                        field.setTag(placement.widget().get() as isize);
+                        Retained::into_super(field)
+                    }
+                    WidgetKind::Text => {
+                        let value = NSString::from_str(placement.label().unwrap_or(""));
+                        let label = NSTextField::labelWithString(&value, mtm);
+                        label.setFrame(frame);
+                        label.setTag(placement.widget().get() as isize);
+                        Retained::into_super(label)
+                    }
+                    other => {
+                        return Err(UiAdapterError::Unsupported(format!(
+                            "AppKit lowering does not support {other:?} yet"
+                        )));
+                    }
+                };
+
+                content_view.addSubview(&control);
+                controls.insert(placement.widget(), control);
+                kinds.insert(placement.widget(), placement.kind());
+                lowered.push(placement.widget());
+            }
+
+            Ok(AppKitWidgetSurface {
+                window: self.id,
+                _target: target,
+                controls,
+                kinds,
+                lowered,
+            })
         }
     }
 
@@ -1294,7 +1699,61 @@ mod platform {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct AppKitWindowNativeDelegate;
 
+    /// Placeholder returned only on macOS builds.
+    #[derive(Debug, Clone, PartialEq)]
+    pub struct AppKitWidgetSurface {
+        snapshot: AppKitWidgetSurfaceSnapshot,
+    }
+
+    impl AppKitWidgetSurface {
+        /// Return the lowering result snapshot for this surface.
+        pub fn snapshot(&self) -> AppKitWidgetSurfaceSnapshot {
+            self.snapshot.clone()
+        }
+
+        /// Return how many native controls this surface owns.
+        pub fn widget_count(&self) -> usize {
+            0
+        }
+
+        /// Native control handles are only available on macOS.
+        pub fn native_control_handle(&self, _widget: WidgetId) -> Option<u64> {
+            None
+        }
+
+        /// AppKit text updates are only available on macOS.
+        pub fn set_text(&self, _widget: WidgetId, _text: &str) -> Result<(), UiAdapterError> {
+            Err(UiAdapterError::Unsupported(
+                "AppKit widget text is only available on macOS".to_string(),
+            ))
+        }
+
+        /// AppKit text reads are only available on macOS.
+        pub fn text(&self, _widget: WidgetId) -> Result<String, UiAdapterError> {
+            Err(UiAdapterError::Unsupported(
+                "AppKit widget text is only available on macOS".to_string(),
+            ))
+        }
+
+        /// AppKit clicks are only available on macOS.
+        pub fn perform_click(&self, _widget: WidgetId) -> Result<(), UiAdapterError> {
+            Err(UiAdapterError::Unsupported(
+                "AppKit widget clicks are only available on macOS".to_string(),
+            ))
+        }
+    }
+
     impl AppKitWindowPrototype {
+        /// AppKit widget lowering is only available in macOS builds.
+        pub fn lower_widget_placements(
+            &self,
+            _placements: &[AppKitWidgetPlacement],
+            _delegate: &AppKitWindowNativeDelegate,
+        ) -> Result<AppKitWidgetSurface, UiAdapterError> {
+            Err(UiAdapterError::Unsupported(
+                "AppKit widget lowering is only available on macOS".to_string(),
+            ))
+        }
         /// Return the stable Layer36 window id.
         pub fn id(&self) -> WindowId {
             self.id
@@ -1405,6 +1864,7 @@ mod platform {
 }
 
 pub use platform::AppKitDrawViewSurface;
+pub use platform::AppKitWidgetSurface;
 pub use platform::AppKitWindowNativeDelegate;
 pub use platform::AppKitWindowPrototype;
 
@@ -1432,6 +1892,113 @@ fn validate_scale_factor(value: f32) -> Result<(), UiAdapterError> {
 mod tests {
     use super::*;
     use layer36_adapter_common::ui::UiEvent;
+
+    #[test]
+    fn appkit_widget_placement_validates_kind_and_geometry() {
+        let widget = WidgetId::new(7).unwrap();
+
+        assert!(AppKitWidgetPlacement::new(
+            widget,
+            WidgetKind::Button,
+            Some("Save".to_string()),
+            10.0,
+            20.0,
+            120.0,
+            32.0,
+        )
+        .is_ok());
+
+        assert!(matches!(
+            AppKitWidgetPlacement::new(widget, WidgetKind::Slider, None, 0.0, 0.0, 10.0, 10.0),
+            Err(UiAdapterError::Unsupported(_))
+        ));
+        assert!(matches!(
+            AppKitWidgetPlacement::new(widget, WidgetKind::Button, None, -1.0, 0.0, 10.0, 10.0),
+            Err(UiAdapterError::Unsupported(_))
+        ));
+        assert!(matches!(
+            AppKitWidgetPlacement::new(widget, WidgetKind::Button, None, 0.0, 0.0, 0.0, 10.0),
+            Err(UiAdapterError::Unsupported(_))
+        ));
+        assert!(matches!(
+            AppKitWidgetPlacement::new(widget, WidgetKind::Button, None, f32::NAN, 0.0, 10.0, 10.0),
+            Err(UiAdapterError::Unsupported(_))
+        ));
+    }
+
+    #[test]
+    fn appkit_widget_placement_flips_y_for_appkit_origin() {
+        let widget = WidgetId::new(3).unwrap();
+        let placement = AppKitWidgetPlacement::new(
+            widget,
+            WidgetKind::TextField,
+            None,
+            16.0,
+            24.0,
+            200.0,
+            28.0,
+        )
+        .unwrap();
+
+        // Top-left logical y=24 with height 28 inside a 480-tall content view
+        // must land at AppKit bottom-left origin y = 480 - (24 + 28) = 428.
+        assert_eq!(placement.appkit_origin_y(480.0), 428.0);
+        assert_eq!(placement.rect(), (16.0, 24.0, 200.0, 28.0));
+    }
+
+    #[test]
+    fn appkit_widget_activation_queues_routed_pointer_event() {
+        let adapter = MacosUiAdapter::new();
+        let backend = AppKitWindowBackend;
+        let id = WindowAdapter::create_window(
+            &adapter,
+            WindowOptions::new(
+                "Layer36 AppKit activation",
+                WindowSize::new(640, 480).unwrap(),
+            )
+            .unwrap(),
+        )
+        .expect("create window");
+        let widget = WidgetId::new(42).unwrap();
+        UiAdapter::set_root(
+            &adapter,
+            id,
+            layer36_adapter_common::ui::WidgetNode {
+                id: widget,
+                parent: None,
+                kind: WidgetKind::Button,
+                label: Some("Save".to_string()),
+                role: None,
+                style: layer36_adapter_common::ui::WidgetStyle::default(),
+            },
+        )
+        .expect("set root widget");
+        let mut state = AppKitWindowEventState::new(id);
+        let bridge = AppKitWindowDelegateBridge;
+
+        bridge
+            .handle_callback(
+                &backend,
+                &adapter,
+                &mut state,
+                AppKitWindowDelegateCallback::WidgetActivated(widget),
+            )
+            .expect("widget activation");
+
+        let events = WindowAdapter::drain_events(&adapter).expect("events");
+        assert_eq!(
+            events.last(),
+            Some(&UiEvent::Pointer(PointerEvent {
+                window: id,
+                widget: Some(widget),
+                x: 0.0,
+                y: 0.0,
+                button: Some(PointerButton::Primary),
+                pressed: true,
+                modifiers: Modifiers::default(),
+            }))
+        );
+    }
 
     #[test]
     fn appkit_event_bridge_queues_shared_window_events_by_id() {

@@ -25,7 +25,8 @@ use std::time::Duration;
 
 pub use appkit::{
     AppKitColor, AppKitDrawFrame, AppKitDrawSurfaceState, AppKitDrawViewSurface,
-    AppKitDrawViewSurfaceSnapshot, AppKitWindowBackend, AppKitWindowDelegateBridge,
+    AppKitDrawViewSurfaceSnapshot, AppKitWidgetPlacement, AppKitWidgetSurface,
+    AppKitWidgetSurfaceSnapshot, AppKitWindowBackend, AppKitWindowDelegateBridge,
     AppKitWindowDelegateCallback, AppKitWindowDelegateQueue, AppKitWindowEventLoopDriver,
     AppKitWindowEventLoopStep, AppKitWindowEventLoopStepReport, AppKitWindowEventState,
     AppKitWindowNativeDelegate, AppKitWindowNativeEvent, AppKitWindowPrototype,
@@ -131,6 +132,71 @@ impl MacosAppKitPrototypeUiAdapter {
             session
                 .pump_event_loop_once(&self.driver, &self.backend, &self.headless)
                 .map(Some)
+        })
+    }
+
+    /// Lower widget placements into native AppKit controls for a tracked window.
+    ///
+    /// Returns `Ok(None)` when the window has no tracked native session.
+    pub fn lower_widget_placements(
+        &self,
+        id: WindowId,
+        placements: &[AppKitWidgetPlacement],
+    ) -> Result<Option<AppKitWidgetSurfaceSnapshot>, UiAdapterError> {
+        APPKIT_PROTOTYPE_SESSIONS.with(|sessions| {
+            let mut sessions = sessions.borrow_mut();
+            let Some(session) = sessions.get_mut(&id) else {
+                return Ok(None);
+            };
+            session.lower_widget_placements(placements).map(Some)
+        })
+    }
+
+    /// Trigger a lowered native button exactly as a physical click would.
+    pub fn perform_widget_click(
+        &self,
+        id: WindowId,
+        widget: WidgetId,
+    ) -> Result<bool, UiAdapterError> {
+        APPKIT_PROTOTYPE_SESSIONS.with(|sessions| {
+            let sessions = sessions.borrow();
+            let Some(session) = sessions.get(&id) else {
+                return Ok(false);
+            };
+            session.perform_widget_click(widget)?;
+            Ok(true)
+        })
+    }
+
+    /// Set the text of a lowered native text field or label.
+    pub fn set_widget_text(
+        &self,
+        id: WindowId,
+        widget: WidgetId,
+        text: &str,
+    ) -> Result<bool, UiAdapterError> {
+        APPKIT_PROTOTYPE_SESSIONS.with(|sessions| {
+            let sessions = sessions.borrow();
+            let Some(session) = sessions.get(&id) else {
+                return Ok(false);
+            };
+            session.set_widget_text(widget, text)?;
+            Ok(true)
+        })
+    }
+
+    /// Read the text of a lowered native control.
+    pub fn widget_text(
+        &self,
+        id: WindowId,
+        widget: WidgetId,
+    ) -> Result<Option<String>, UiAdapterError> {
+        APPKIT_PROTOTYPE_SESSIONS.with(|sessions| {
+            let sessions = sessions.borrow();
+            let Some(session) = sessions.get(&id) else {
+                return Ok(None);
+            };
+            session.widget_text(widget).map(Some)
         })
     }
 
