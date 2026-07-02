@@ -1277,6 +1277,12 @@ Matches Build Plan §7.4 task IDs.
 - STATUS.md updated; this recorded run is the centerpiece of the public demo.
 **Failure escalation:** if native lowering hits a structural wall (event routing, layout-to-AppKit coordinates, ownership), STOP and write the findings into an ADR draft before writing workaround code — this milestone exists to validate the bet, so discovering a flaw is a success condition of the task.
 
+**Implementation map (scoped 2026-07-02 against the current code):**
+1. *Native lowering* — extend `crates/adapter-macos/src/appkit.rs`: given the window's `WidgetTree` (from `UiAdapter::widget_tree`) and a `LayoutSnapshot` (from `Phase3UiDispatcher::compute_layout`), create `NSButton`/`NSTextField` subviews on the prototype window's content view. AppKit's origin is bottom-left — flip Y from the layout's top-left rects using the content view height. Store created views keyed by `WidgetId` on `AppKitWindowSession`.
+2. *Click round-trip* — declare an Objective-C target object with an action selector using the same `declare_class!` pattern as the existing `AppKitWindowDelegate`; the action pushes into the existing `AppKitWindowDelegateQueue`-style FIFO, drained by `AppKitWindowEventLoopDriver::pump_session_once` into the shared event stream as a pointer/activation event carrying the `WidgetId`.
+3. *Sub-slice order* — prove 1+2 Rust-side first via an extension of the `smoke-phase3-appkit-runtime.sh` opt-in pattern (this validates the whole bet without touching WASM); only then wire the WASM component path: minimal `layer36:ui` host imports (window create/show, tree submit subset, events.poll) into the `layer36 run` linker for the `gui` world, and the demo component under `apps/`.
+4. *Main-thread rule* — all AppKit widget creation stays on the main process thread, matching the existing `NSWindow` prototype gating.
+
 ### P3-EMB-01 — Runtime embedding API *(added 2026-07, amendment A3; parallel track, non-blocking for Phase 3 exit)*
 
 **Estimate:** 4 days.
