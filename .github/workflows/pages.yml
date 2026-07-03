@@ -53,3 +53,15 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        continue-on-error: true
+      # GitHub's Pages backend intermittently fails deployments server-side
+      # ("Deployment failed, try again later") — observed three times on
+      # 2026-07-03 with an identical artifact succeeding in between. Wait and
+      # retry once before failing the workflow.
+      - name: Wait before retrying a flaky Pages deployment
+        if: ${{ steps.deployment.outcome == 'failure' }}
+        run: sleep 90
+      - name: Retry Pages deployment
+        id: deployment_retry
+        if: ${{ steps.deployment.outcome == 'failure' }}
+        uses: actions/deploy-pages@v4
