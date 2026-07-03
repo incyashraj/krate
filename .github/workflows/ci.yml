@@ -351,7 +351,7 @@ jobs:
           sudo apt-get update -q
           sudo apt-get install -y -q xvfb
           # 1. Adapter-level native smoke: real winit window round trip.
-          LAYER36_WINIT_NATIVE_SMOKE=1 xvfb-run -a \
+          LAYER36_WINIT_NATIVE_SMOKE=1 LAYER36_WINIT_ANY_THREAD=1 xvfb-run -a \
             cargo test -p layer36-adapter-linux --lib -- --ignored \
             winit_prototype_native_window_smoke
           # 2. The slice's definition of done: the portable hello-gui

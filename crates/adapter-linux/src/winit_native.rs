@@ -145,7 +145,15 @@ mod real {
                         "no display server: DISPLAY and WAYLAND_DISPLAY are unset".to_string(),
                     ));
                 }
-                let event_loop = EventLoop::new().map_err(|err| {
+                let mut builder = EventLoop::builder();
+                // Tests run on worker threads, where winit refuses to build
+                // an event loop by default. The opt-in keeps production on
+                // the safe main-thread default.
+                if std::env::var("LAYER36_WINIT_ANY_THREAD").as_deref() == Ok("1") {
+                    use winit::platform::x11::EventLoopBuilderExtX11;
+                    builder.with_any_thread(true);
+                }
+                let event_loop = builder.build().map_err(|err| {
                     UiAdapterError::Unsupported(format!(
                         "winit event loop unavailable (no display server?): {err}"
                     ))
