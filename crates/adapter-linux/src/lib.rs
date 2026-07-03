@@ -824,8 +824,8 @@ mod tests {
             prototype_info.planned_window_backend,
             WindowBackendKind::Winit
         );
-        assert!(!prototype_info.native_windows);
-        assert!(!prototype_info.native_event_loop);
+        assert_eq!(prototype_info.native_windows, cfg!(target_os = "linux"));
+        assert_eq!(prototype_info.native_event_loop, cfg!(target_os = "linux"));
         assert!(matches!(
             discover_winit_prototype_ui_adapter(),
             Err(UiAdapterError::Unsupported(_))

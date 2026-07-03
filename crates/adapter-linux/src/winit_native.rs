@@ -136,6 +136,15 @@ mod real {
         WINIT_HOST.with(|slot| {
             let mut slot = slot.borrow_mut();
             if slot.is_none() {
+                // winit's Linux backend panics (rather than erring) when no
+                // display server exists, so guard on the environment first.
+                if std::env::var_os("DISPLAY").is_none()
+                    && std::env::var_os("WAYLAND_DISPLAY").is_none()
+                {
+                    return Err(UiAdapterError::Unsupported(
+                        "no display server: DISPLAY and WAYLAND_DISPLAY are unset".to_string(),
+                    ));
+                }
                 let event_loop = EventLoop::new().map_err(|err| {
                     UiAdapterError::Unsupported(format!(
                         "winit event loop unavailable (no display server?): {err}"
