@@ -504,6 +504,9 @@ impl AppKitWindowEventLoopDriver {
         backend: &AppKitWindowBackend,
         adapter: &MacosUiAdapter,
     ) -> Result<AppKitWindowEventLoopStepReport, UiAdapterError> {
+        // Dispatch pending NSApplication events first so real mouse and
+        // keyboard input reaches the native views before state is read.
+        session.window().pump_app_events()?;
         session.refresh(backend, adapter)?;
         let callbacks_handled =
             session.drain_native_delegate_callbacks(&self.bridge, backend, adapter)?;
@@ -1006,11 +1009,12 @@ mod platform {
     use objc2::runtime::{AnyObject, ProtocolObject};
     use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
-        NSApplication, NSBackingStoreType, NSButton, NSColor, NSControl, NSTextField, NSView,
-        NSWindow, NSWindowDelegate, NSWindowStyleMask,
+        NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSButton, NSColor,
+        NSControl, NSEventMask, NSTextField, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
     };
     use objc2_foundation::{
-        NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+        NSDefaultRunLoopMode, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
+        NSString,
     };
     use std::cell::RefCell;
     use std::collections::BTreeMap;
@@ -1475,14 +1479,58 @@ mod platform {
         }
 
         /// Show the AppKit window and mark the Layer36 window visible.
+        ///
+        /// An unbundled process defaults to a background activation policy,
+        /// under which the WindowServer never displays its windows. Promote
+        /// the process to a regular app and activate it so the window really
+        /// appears in front of the user.
         pub fn show_window(
             &self,
             adapter: &MacosUiAdapter,
             window: &AppKitWindowPrototype,
         ) -> Result<(), UiAdapterError> {
-            let _mtm = main_thread_marker()?;
+            let mtm = main_thread_marker()?;
+            let app = NSApplication::sharedApplication(mtm);
+            app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
             window.window.makeKeyAndOrderFront(None);
+            #[allow(deprecated)]
+            app.activateIgnoringOtherApps(true);
             WindowAdapter::show_window(adapter, window.id)
+        }
+    }
+
+    impl AppKitWindowPrototype {
+        /// Drain and dispatch pending NSApplication events without blocking.
+        ///
+        /// Real mouse and keyboard input only reaches AppKit views when the
+        /// process pumps the application event queue. This is the manual,
+        /// non-blocking equivalent of one `NSApplication::run` turn, called
+        /// from the shared event-loop pump each tick.
+        pub fn pump_app_events(&self) -> Result<usize, UiAdapterError> {
+            let mtm = main_thread_marker()?;
+            let app = NSApplication::sharedApplication(mtm);
+            let mut dispatched = 0usize;
+
+            loop {
+                // SAFETY: Called on the main thread; a nil date means "do not
+                // wait", so this never blocks the runtime.
+                let event = unsafe {
+                    app.nextEventMatchingMask_untilDate_inMode_dequeue(
+                        NSEventMask::Any,
+                        None,
+                        NSDefaultRunLoopMode,
+                        true,
+                    )
+                };
+                let Some(event) = event else {
+                    break;
+                };
+                app.sendEvent(&event);
+                dispatched += 1;
+            }
+            app.updateWindows();
+
+            Ok(dispatched)
         }
     }
 
@@ -1788,6 +1836,11 @@ mod platform {
             Err(UiAdapterError::Unsupported(
                 "AppKit window delegates are only available on macOS".to_string(),
             ))
+        }
+
+        /// AppKit event pumping is only available in macOS builds.
+        pub fn pump_app_events(&self) -> Result<usize, UiAdapterError> {
+            Ok(0)
         }
     }
 
