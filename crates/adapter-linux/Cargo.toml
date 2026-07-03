@@ -10,3 +10,6 @@ publish = false
 [dependencies]
 layer36-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
 libc.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+winit = { version = "0.30", default-features = false, features = ["x11", "wayland", "rwh_06"] }

@@ -645,7 +645,20 @@ mod tests {
             assert!(info.native_event_loop);
         }
 
-        #[cfg(any(target_os = "linux", target_os = "windows"))]
+        #[cfg(target_os = "linux")]
+        {
+            let runtime = runtime.expect("Linux winit prototype runtime");
+            let info = runtime.adapter_info();
+
+            assert_eq!(runtime.host_mode(), Phase3HostUiMode::NativePrototype);
+            assert_eq!(info.host_family, "linux");
+            assert_eq!(info.backend, "linux-winit-prototype");
+            assert_eq!(info.planned_window_backend, WindowBackendKind::Winit);
+            assert!(info.native_windows);
+            assert!(info.native_event_loop);
+        }
+
+        #[cfg(target_os = "windows")]
         {
             assert!(matches!(
                 runtime,

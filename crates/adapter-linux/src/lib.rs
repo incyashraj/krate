@@ -30,6 +30,8 @@ pub const HOST_FAMILY: &str = "linux";
 ///
 /// This is still a headless draft adapter. It proves the Linux crate exposes
 /// the same UI contract as macOS and Windows before the winit bridge lands.
+pub mod winit_native;
+
 #[derive(Debug, Default)]
 pub struct LinuxUiAdapter {
     draft: DraftUiAdapter,
@@ -96,13 +98,17 @@ impl LinuxWinitPrototypeUiAdapter {
     }
 
     /// Return whether this build can create native Linux windows.
+    ///
+    /// True in Linux builds: the winit backend is compiled in. Creating the
+    /// event loop still needs a display server at call time; headless hosts
+    /// get a clean `Unsupported` error from the first native call.
     pub fn native_windows_enabled(&self) -> bool {
-        false
+        cfg!(target_os = "linux")
     }
 
     /// Return whether this build has a native event-loop driver.
     pub fn native_event_loop_enabled(&self) -> bool {
-        false
+        cfg!(target_os = "linux")
     }
 
     /// Attach a tracked winit session to a Layer36 window id.
@@ -349,19 +355,28 @@ impl WindowAdapter for LinuxWinitPrototypeUiAdapter {
     }
 
     fn create_window(&self, options: WindowOptions) -> Result<WindowId, UiAdapterError> {
-        WindowAdapter::create_window(&self.headless, options)
+        let id = WindowAdapter::create_window(&self.headless, options.clone())?;
+        let (raw_handle, snapshot) =
+            winit_native::create_native_window(id, &options.title, options.size)?;
+        self.attach_winit_session(id, raw_handle, snapshot)?;
+        Ok(id)
     }
 
     fn show_window(&self, id: WindowId) -> Result<(), UiAdapterError> {
+        winit_native::show_native_window(id)?;
         WindowAdapter::show_window(&self.headless, id)
     }
 
     fn close_window(&self, id: WindowId) -> Result<(), UiAdapterError> {
+        let _ = winit_native::close_native_window(id);
         self.remove_session(id);
         WindowAdapter::close_window(&self.headless, id)
     }
 
     fn set_title(&self, id: WindowId, title: String) -> Result<(), UiAdapterError> {
+        if winit_native::has_native_window(id).unwrap_or(false) {
+            winit_native::set_native_window_title(id, &title)?;
+        }
         WindowAdapter::set_title(&self.headless, id, title)
     }
 
@@ -466,6 +481,11 @@ impl UiAdapter for LinuxWinitPrototypeUiAdapter {
         &self,
         window: WindowId,
     ) -> Result<Option<UiEventLoopTick>, UiAdapterError> {
+        if winit_native::has_native_window(window).unwrap_or(false) {
+            for (target, event) in winit_native::pump_native_events()? {
+                self.record_winit_native_event(target, event)?;
+            }
+        }
         Ok(self
             .pump_collected_winit_events(window)?
             .map(|report| UiEventLoopTick {
@@ -816,7 +836,11 @@ mod tests {
     fn winit_prototype_tracks_session_and_pumps_step() {
         let adapter = LinuxWinitPrototypeUiAdapter::new();
         let size = WindowSize::new(640, 480).expect("size");
+        // Allocate the id headless: this test exercises the session and pump
+        // plumbing with a fake handle, not real winit window creation (which
+        // needs a display server and is covered by the ignored native smoke).
         let id = adapter
+            .headless
             .create_window(WindowOptions::new("Layer36 winit host", size).expect("options"))
             .expect("create window");
         let snapshot =
@@ -870,11 +894,37 @@ mod tests {
         assert!(adapter.winit_session(id).expect("session").is_none());
     }
 
+    /// Real winit window round trip. Needs a display server; run with
+    /// `LAYER36_WINIT_NATIVE_SMOKE=1 cargo test -p layer36-adapter-linux -- --ignored`
+    /// (under `xvfb-run` on headless hosts).
+    #[test]
+    #[ignore = "needs a display server; opt-in native smoke"]
+    fn winit_prototype_native_window_smoke() {
+        if std::env::var("LAYER36_WINIT_NATIVE_SMOKE").as_deref() != Ok("1") {
+            eprintln!("skipping: LAYER36_WINIT_NATIVE_SMOKE not set");
+            return;
+        }
+        let adapter = LinuxWinitPrototypeUiAdapter::new();
+        let size = WindowSize::new(640, 480).expect("size");
+        let id = adapter
+            .create_window(WindowOptions::new("Layer36 winit native smoke", size).expect("options"))
+            .expect("create native window");
+        assert!(winit_native::has_native_window(id).expect("native window tracked"));
+        adapter.show_window(id).expect("show native window");
+        let tick = adapter
+            .pump_event_loop_once(id)
+            .expect("pump native events");
+        assert!(tick.is_some());
+        adapter.close_window(id).expect("close native window");
+        assert!(!winit_native::has_native_window(id).unwrap_or(true));
+    }
+
     #[test]
     fn winit_prototype_collects_callbacks_for_event_loop_pump() {
         let adapter = LinuxWinitPrototypeUiAdapter::new();
         let size = WindowSize::new(640, 480).expect("size");
         let id = adapter
+            .headless
             .create_window(WindowOptions::new("Layer36 winit collected", size).expect("options"))
             .expect("create window");
         let snapshot =
