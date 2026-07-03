@@ -12,4 +12,9 @@ layer36-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
 libc.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-winit = { version = "0.30", default-features = false, features = ["x11", "wayland", "rwh_06"] }
+# X11-only for the first native window slice: the x11 backend is pure
+# Rust/dlopen and compiles without system packages, while the wayland
+# feature's wayland-sys needs libwayland-dev at build time. Wayland desktops
+# still get windows through XWayland; native Wayland is a later, deliberate
+# step (system deps in CI or a pure-Rust client).
+winit = { version = "0.30", default-features = false, features = ["x11", "rwh_06"] }
