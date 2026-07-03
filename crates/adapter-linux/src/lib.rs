@@ -344,12 +344,17 @@ impl UiAdapter for LinuxUiAdapter {
 
 impl WindowAdapter for LinuxWinitPrototypeUiAdapter {
     fn info(&self) -> UiAdapterInfo {
+        let native = self.native_windows_enabled();
         UiAdapterInfo::new(
             HOST_FAMILY,
             self.backend_name(),
-            WindowBackendKind::HeadlessDraft,
+            if native {
+                WindowBackendKind::Winit
+            } else {
+                WindowBackendKind::HeadlessDraft
+            },
             WindowBackendKind::Winit,
-            self.native_windows_enabled(),
+            native,
             self.native_event_loop_enabled(),
         )
     }
@@ -816,20 +821,28 @@ mod tests {
         assert!(!default_info.native_event_loop);
 
         assert_eq!(prototype_info.backend, "linux-winit-prototype");
-        assert_eq!(
-            prototype_info.window_backend,
-            WindowBackendKind::HeadlessDraft
-        );
+        if cfg!(target_os = "linux") {
+            assert_eq!(prototype_info.window_backend, WindowBackendKind::Winit);
+        } else {
+            assert_eq!(
+                prototype_info.window_backend,
+                WindowBackendKind::HeadlessDraft
+            );
+        }
         assert_eq!(
             prototype_info.planned_window_backend,
             WindowBackendKind::Winit
         );
         assert_eq!(prototype_info.native_windows, cfg!(target_os = "linux"));
         assert_eq!(prototype_info.native_event_loop, cfg!(target_os = "linux"));
-        assert!(matches!(
-            discover_winit_prototype_ui_adapter(),
-            Err(UiAdapterError::Unsupported(_))
-        ));
+        if cfg!(target_os = "linux") {
+            assert!(discover_winit_prototype_ui_adapter().is_ok());
+        } else {
+            assert!(matches!(
+                discover_winit_prototype_ui_adapter(),
+                Err(UiAdapterError::Unsupported(_))
+            ));
+        }
     }
 
     #[test]
