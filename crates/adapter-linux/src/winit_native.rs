@@ -35,6 +35,7 @@ mod real {
     use winit::dpi::LogicalSize;
     use winit::event::WindowEvent;
     use winit::event_loop::{ActiveEventLoop, EventLoop};
+    use winit::platform::pump_events::EventLoopExtPumpEvents;
     use winit::window::{Window, WindowAttributes, WindowId as NativeWindowId};
 
     thread_local! {
