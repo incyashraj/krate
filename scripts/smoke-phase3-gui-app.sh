@@ -28,7 +28,8 @@ set +e
 target/debug/layer36 run \
   --auto-grant \
   --manifest apps/layer36-hello-gui/manifest.toml \
-  "$WASM"
+  "$WASM" \
+  -- quick
 CODE=$?
 set -e
 

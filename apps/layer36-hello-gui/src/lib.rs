@@ -12,16 +12,22 @@
 #[allow(warnings)]
 mod bindings;
 
+use bindings::layer36::io::args;
 use bindings::layer36::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
 const BUTTON_ID: u64 = 2;
 const FIELD_ID: u64 = 3;
 
-/// How many wait rounds the app runs before exiting on its own.
-const MAX_WAIT_ROUNDS: u32 = 40;
+/// Interactive wait budget: 600 rounds of 50ms is a 30-second demo window.
+const MAX_WAIT_ROUNDS: u32 = 600;
+/// Automation wait budget used when the app is launched with a `quick` arg.
+const QUICK_WAIT_ROUNDS: u32 = 40;
 /// How long one wait round blocks, in milliseconds.
 const WAIT_ROUND_MILLIS: u32 = 50;
+/// How many rounds the window stays open after a click, so the text change
+/// is visible before the app exits.
+const LINGER_ROUNDS_AFTER_CLICK: u32 = 20;
 
 struct Component;
 
@@ -94,14 +100,24 @@ impl bindings::Guest for Component {
             return 32;
         }
 
+        // Byte equality, not str::contains: pattern-search machinery pulls
+        // std panic paths (and with them WASI imports) into the component.
+        let rounds = if args::raw().as_bytes() == b"quick" {
+            QUICK_WAIT_ROUNDS
+        } else {
+            MAX_WAIT_ROUNDS
+        };
+
         let mut clicked = false;
         let mut close_requested = false;
-        for _ in 0..MAX_WAIT_ROUNDS {
+        let mut linger = 0u32;
+        for _ in 0..rounds {
             match events::wait(Some(WAIT_ROUND_MILLIS)) {
                 Some(types::Event::Pointer(pointer))
                     if pointer.widget == Some(BUTTON_ID) && pointer.pressed =>
                 {
                     clicked = true;
+                    linger = LINGER_ROUNDS_AFTER_CLICK;
                     let _ = tree::upsert_node(win, &text_field("clicked!"));
                 }
                 Some(types::Event::CloseRequested(id)) if id == win => {
@@ -109,6 +125,12 @@ impl bindings::Guest for Component {
                     break;
                 }
                 _ => {}
+            }
+            if clicked {
+                if linger == 0 {
+                    break;
+                }
+                linger -= 1;
             }
         }
 
