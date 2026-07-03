@@ -1045,6 +1045,10 @@ version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "layer36-manifest",
+ "layer36-policy",
+ "layer36-runtime",
+ "serde",
+ "serde_json",
  "sha2",
  "wasmparser 0.244.0",
  "wit-parser 0.244.0",

@@ -99,9 +99,27 @@ Done now:
 - `layer36 run --json` emitting `layer36.run.v1`, covered by CLI integration
   tests for the success, denied-before-run, and invalid-component paths.
 
-Pending (P3-EMB-03):
+## The MCP server
 
-- the MCP server wrapper, so agent frameworks can call `run_component`
-  without linking Rust.
+`layer36-mcp-server` (a `crates/tools` binary) exposes one MCP tool,
+`run_component`, over newline-delimited JSON-RPC on stdio. Any MCP-capable
+agent framework can execute components inside the sandbox without linking
+Rust:
+
+```bash
+cargo build -p layer36-tools --bin layer36-mcp-server
+claude mcp add layer36 -- target/debug/layer36-mcp-server
+```
+
+The tool takes `component_path`, optional `manifest_path`, `grants`,
+`auto_grant`, `app_args`, and `sandbox_root`, and returns the
+`layer36.run.v1` report as the tool result (with `isError` set for anything
+but `success`). Denials surface as data: calling without grants returns
+`permission-denied` plus the exact missing capabilities, and the same call
+with `auto_grant` succeeds — the agent observes the capability wall
+directly.
+
+Still pending on this track:
+
 - richer per-call deny logs inside a run (today the denial signal is the
   app's own exit code plus the refusal-before-run path).

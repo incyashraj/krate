@@ -245,6 +245,13 @@ Current Phase 3 slice:
   and closes the window through the runtime dispatcher on the main process
   thread.
 
+- P3-EMB-03 landed: `layer36-mcp-server`, a minimal MCP server binary in
+  `crates/tools` exposing one `run_component` tool over stdio JSON-RPC. An
+  MCP client executing `layer36-cat` without grants observes
+  `permission-denied` with the exact missing capability; the same call with
+  `auto_grant` succeeds with captured stdout — verified end to end over the
+  real stdio transport. Scope stays bounded per the task spec: no
+  orchestration, no model calls, no tool registry.
 - P3-EMB-01 and P3-EMB-02 landed: the agent-embedding surface.
   `layer36_runtime::embed::run_component` executes a component with
   programmatic grants (no terminal, no prompts), captured stdout, a

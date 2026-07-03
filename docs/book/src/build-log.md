@@ -6,6 +6,17 @@ pages.
 
 ---
 
+## 2026-07-03 — Layer36 speaks MCP
+
+The agent-embedding track is complete. `layer36-mcp-server` is a small
+binary any MCP-capable agent framework can attach to: one `run_component`
+tool, executing portable components inside the capability sandbox and
+returning the full machine-readable report. In the first end-to-end run an
+agent asked to read a file without permission and was told exactly which
+capability was missing; asked again with grants, it got the file. The
+permission wall is now something agents can see and reason about, not just
+hit.
+
 ## 2026-07-03 — Agents can now call Layer36
 
 The embedding surface landed the same day as the native window. Any program
