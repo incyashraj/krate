@@ -243,6 +243,11 @@ jobs:
         run: |
           wasm_path="$(scripts/build-layer36-curl-component.sh)"
           cp "$wasm_path" layer36-fixture/layer36_curl.wasm
+      - name: Build layer36-hello-gui fixture once
+        shell: bash
+        run: |
+          wasm_path="$(scripts/build-layer36-hello-gui-component.sh)"
+          cp "$wasm_path" layer36-fixture/layer36_hello_gui.wasm
       - name: Check Phase 2 fixture imports
         shell: bash
         run: |
@@ -250,7 +255,8 @@ jobs:
             layer36-fixture/phase2_smoke.wasm \
             layer36-fixture/layer36_clock.wasm \
             layer36-fixture/layer36_cat.wasm \
-            layer36-fixture/layer36_curl.wasm
+            layer36-fixture/layer36_curl.wasm \
+            layer36-fixture/layer36_hello_gui.wasm
       - name: Record fixture hash
         id: hash
         shell: bash
@@ -314,6 +320,30 @@ jobs:
             apps/layer36-cat/target/wasm32-wasip1/release/layer36_cat.wasm
           cp layer36-fixture/layer36_curl.wasm \
             apps/layer36-curl/target/wasm32-wasip1/release/layer36_curl.wasm
+          mkdir -p apps/layer36-hello-gui/target/wasm32-wasip1/release
+          cp layer36-fixture/layer36_hello_gui.wasm \
+            apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm
+      - name: Run Phase 3 GUI component headless on this host
+        shell: bash
+        run: |
+          cargo build -p layer36-cli
+          bin=target/debug/layer36
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            bin=target/debug/layer36.exe
+          fi
+          set +e
+          "$bin" run \
+            --auto-grant \
+            --manifest apps/layer36-hello-gui/manifest.toml \
+            apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm \
+            -- quick
+          code=$?
+          set -e
+          if [ "$code" != "1" ]; then
+            echo "expected headless clean exit 1 from the GUI component on $RUNNER_OS, got $code" >&2
+            exit 1
+          fi
+          echo "same GUI artifact ran headless on $RUNNER_OS (clean bounded exit)"
       - name: Run Phase 1 tests
         shell: bash
         env:
