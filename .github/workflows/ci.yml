@@ -344,6 +344,32 @@ jobs:
             exit 1
           fi
           echo "same GUI artifact ran headless on $RUNNER_OS (clean bounded exit)"
+      - name: Run Linux winit native window proof (Xvfb)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q xvfb
+          # 1. Adapter-level native smoke: real winit window round trip.
+          LAYER36_WINIT_NATIVE_SMOKE=1 xvfb-run -a \
+            cargo test -p layer36-adapter-linux --lib -- --ignored \
+            winit_prototype_native_window_smoke
+          # 2. The slice's definition of done: the portable hello-gui
+          #    component opens a real window on a Linux host.
+          set +e
+          xvfb-run -a target/debug/layer36 run \
+            --auto-grant \
+            --native-window \
+            --manifest apps/layer36-hello-gui/manifest.toml \
+            apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm \
+            -- quick
+          code=$?
+          set -e
+          if [ "$code" != "1" ]; then
+            echo "expected clean bounded exit 1 from the native Linux window run, got $code" >&2
+            exit 1
+          fi
+          echo "hello-gui opened a real winit window on Linux (Xvfb) and exited cleanly"
       - name: Run Phase 1 tests
         shell: bash
         env:
