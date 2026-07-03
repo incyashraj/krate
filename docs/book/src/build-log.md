@@ -6,6 +6,20 @@ pages.
 
 ---
 
+## 2026-07-03 — One portable file opens a native window
+
+The vertical slice is complete. `layer36 run --native-window hello-gui.wasm`
+now takes a single portable WebAssembly component — the same bytes on any
+OS — and opens a real native macOS window containing a real native button
+and text field, laid out by our engine, permission-checked by our capability
+layer. Click the native button and the component receives a portable event
+and updates the native text. Headless, the same file runs everywhere in CI.
+The component imports only `layer36:*` interfaces — no WASI, no host
+specifics — which required teaching the events contract to deliver one event
+at a time and the guest to allocate strings the way generated bindings do.
+This is the platform's core promise, demonstrated end to end for the first
+time.
+
 ## 2026-07-02 — A real native button, driven by a Layer36 widget tree
 
 The first native widget lowering landed, hours after the amendments that

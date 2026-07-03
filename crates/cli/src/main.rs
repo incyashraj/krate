@@ -74,6 +74,11 @@ enum Command {
         #[arg(long)]
         prompt: bool,
 
+        /// Use the opt-in native window prototype for Phase 3 GUI apps
+        /// (macOS AppKit today). The default GUI path stays headless.
+        #[arg(long)]
+        native_window: bool,
+
         /// Print the effective session capabilities and exit before running the component.
         #[arg(long)]
         dump_caps: bool,
@@ -220,6 +225,7 @@ fn run() -> Result<u8> {
             grant,
             auto_grant,
             prompt,
+            native_window,
             dump_caps,
             dump_caps_format,
             log_grants,
@@ -239,6 +245,7 @@ fn run() -> Result<u8> {
             grants: grant,
             auto_grant,
             prompt,
+            native_window,
             dump_caps,
             dump_caps_format,
             log_grants,
@@ -289,6 +296,7 @@ struct RunRequest {
     grants: Vec<String>,
     auto_grant: bool,
     prompt: bool,
+    native_window: bool,
     dump_caps: bool,
     dump_caps_format: OutputFormat,
     log_grants: Option<PathBuf>,
@@ -365,11 +373,8 @@ fn run_component(request: RunRequest) -> Result<u8> {
 
     if let Some(manifest) = manifest {
         let world = manifest.app_world()?;
-        if !world.is_runnable() {
+        if !world.is_runnable() && !matches!(world, AppWorld::Phase3Gui) {
             eprintln!("unsupported app world for run: {}", world.world_name());
-            eprintln!(
-                "Phase 3 GUI manifests are recognized, but the window runtime is not implemented yet."
-            );
             return Ok(PHASE3_GUI_UNIMPLEMENTED_EXIT);
         }
     }
@@ -391,6 +396,11 @@ fn run_component(request: RunRequest) -> Result<u8> {
             millis => Some(millis),
         },
         sandbox_root: request.sandbox_root,
+        phase3_ui_mode: if request.native_window {
+            layer36_runtime::phase3_ui::Phase3HostUiMode::NativePrototype
+        } else {
+            layer36_runtime::phase3_ui::Phase3HostUiMode::HeadlessDraft
+        },
     };
     let runtime = Runtime::new(&config)?;
 

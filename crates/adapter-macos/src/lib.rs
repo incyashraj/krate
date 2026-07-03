@@ -11,8 +11,8 @@ use layer36_adapter_common::{
     ui::{
         DraftUiAdapter, KeyEvent, NativeWindowHandle, PointerEvent, TextInputEvent, Theme,
         UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick, WidgetId, WidgetNode,
-        WidgetTree, WindowAdapter, WindowBackendKind, WindowId, WindowOptions, WindowRecord,
-        WindowSize,
+        WidgetPlacement, WidgetTree, WindowAdapter, WindowBackendKind, WindowId, WindowOptions,
+        WindowRecord, WindowSize,
     },
 };
 use std::cell::RefCell;
@@ -440,6 +440,30 @@ impl UiAdapter for MacosUiAdapter {
 impl UiAdapter for MacosAppKitPrototypeUiAdapter {
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
         self.headless.set_root(window, root)
+    }
+
+    fn lower_widget_placements(
+        &self,
+        window: WindowId,
+        placements: &[WidgetPlacement],
+    ) -> Result<usize, UiAdapterError> {
+        let mut native = Vec::with_capacity(placements.len());
+        for placement in placements {
+            native.push(AppKitWidgetPlacement::new(
+                placement.widget,
+                placement.kind,
+                placement.label.clone(),
+                placement.x,
+                placement.y,
+                placement.width,
+                placement.height,
+            )?);
+        }
+
+        match self.lower_widget_placements(window, &native)? {
+            Some(snapshot) => Ok(snapshot.lowered.len()),
+            None => Ok(0),
+        }
     }
 
     fn upsert_node(&self, window: WindowId, node: WidgetNode) -> Result<(), UiAdapterError> {

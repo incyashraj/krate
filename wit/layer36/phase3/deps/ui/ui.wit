@@ -250,13 +250,19 @@ interface tree {
 }
 
 /// Host event delivery calls.
+///
+/// Events are delivered one at a time in FIFO order. The single-event shape
+/// matches the runtime dispatcher's `poll_event` path, and it keeps guest
+/// bindings free of list-of-variant lifting, which current guest toolchains
+/// cannot compile without dragging WASI panic machinery into otherwise pure
+/// components.
 interface events {
   use types.{event};
 
-  /// Return all currently queued events without blocking.
-  poll: func() -> list<event>;
-  /// Wait for events until one arrives or the timeout expires.
-  wait: func(timeout-millis: option<u32>) -> list<event>;
+  /// Return the next queued event without blocking, if one is waiting.
+  poll: func() -> option<event>;
+  /// Wait until the next event arrives or the timeout expires.
+  wait: func(timeout-millis: option<u32>) -> option<event>;
 }
 
 /// System dialog calls.

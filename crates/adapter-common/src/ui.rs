@@ -918,6 +918,29 @@ pub trait WindowAdapter: Send + Sync {
 /// Native adapters on macOS, Windows, and Linux will implement this trait. The
 /// draft adapter below implements the same contract with in-memory state, so
 /// runtime code can be tested before OS windows exist.
+/// Host-neutral placement of one widget for native lowering.
+///
+/// Coordinates are absolute logical layout units with a top-left origin,
+/// exactly as the layout snapshot reports them. Host backends convert to
+/// their own coordinate systems (AppKit flips Y).
+#[derive(Debug, Clone, PartialEq)]
+pub struct WidgetPlacement {
+    /// Stable widget id being lowered.
+    pub widget: WidgetId,
+    /// Widget kind being lowered.
+    pub kind: WidgetKind,
+    /// Label or text content for the native control.
+    pub label: Option<String>,
+    /// Left edge in logical pixels.
+    pub x: f32,
+    /// Top edge in logical pixels.
+    pub y: f32,
+    /// Width in logical pixels.
+    pub width: f32,
+    /// Height in logical pixels.
+    pub height: f32,
+}
+
 pub trait UiAdapter: WindowAdapter {
     /// Set or replace the root widget tree for a window.
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError>;
@@ -966,6 +989,21 @@ pub trait UiAdapter: WindowAdapter {
         _window: WindowId,
     ) -> Result<Option<UiEventLoopTick>, UiAdapterError> {
         Ok(None)
+    }
+
+    /// Lower widget placements to native host controls, replacing any
+    /// previously lowered set for the window.
+    ///
+    /// Returns how many widgets were lowered natively. Headless and
+    /// drawn-only backends return `Ok(0)`, which means "no native lowering
+    /// available" — that is a valid state, not an error, because the portable
+    /// widget tree and event routes keep working without it.
+    fn lower_widget_placements(
+        &self,
+        _window: WindowId,
+        _placements: &[WidgetPlacement],
+    ) -> Result<usize, UiAdapterError> {
+        Ok(0)
     }
 }
 

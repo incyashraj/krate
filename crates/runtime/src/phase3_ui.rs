@@ -188,6 +188,19 @@ impl<'a> Phase3UiDispatcher<'a> {
         Ok(())
     }
 
+    /// Lower widget placements to native host controls after the UI check.
+    ///
+    /// Returns how many widgets the host lowered natively; headless and
+    /// drawn-only adapters return zero, which is a valid state.
+    pub fn lower_widget_placements(
+        &self,
+        window: WindowId,
+        placements: &[layer36_adapter_common::ui::WidgetPlacement],
+    ) -> UiDispatchResult<usize> {
+        self.check_window_access()?;
+        Ok(self.adapter.lower_widget_placements(window, placements)?)
+    }
+
     pub fn upsert_node(&self, window: WindowId, node: WidgetNode) -> UiDispatchResult<()> {
         self.check_window_access()?;
         self.adapter.upsert_node(window, node)?;

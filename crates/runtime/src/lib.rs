@@ -30,6 +30,10 @@ pub mod phase2_bindings;
 pub mod phase2_bridge;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_host;
+#[cfg(feature = "phase2-bindings")]
+pub mod phase3_gui_bindings;
+#[cfg(feature = "phase2-bindings")]
+pub mod phase3_gui_host;
 
 #[cfg(feature = "phase2-bindings")]
 use layer36_adapter_common::locale::{
@@ -103,6 +107,8 @@ pub struct Config {
     pub default_http_timeout_millis: Option<u32>,
     /// Root directory used to resolve relative Phase 2 filesystem paths.
     pub sandbox_root: PathBuf,
+    /// Host UI backend mode for Phase 3 `gui` world runs.
+    pub phase3_ui_mode: phase3_ui::Phase3HostUiMode,
 }
 
 impl Default for Config {
@@ -118,6 +124,7 @@ impl Default for Config {
             max_http_response_bytes: DEFAULT_MAX_HTTP_RESPONSE_BYTES,
             default_http_timeout_millis: Some(DEFAULT_HTTP_TIMEOUT_MILLIS),
             sandbox_root: PathBuf::from("."),
+            phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
         }
     }
 }
@@ -217,7 +224,16 @@ impl Runtime {
             Err(err) => {
                 #[cfg(feature = "phase2-bindings")]
                 if matches!(err, RuntimeError::Instantiate(_)) {
-                    return self.run_phase2_component(component, config, output);
+                    return match self.run_phase2_component(component, config, output.clone()) {
+                        Ok(outcome) => Ok(outcome),
+                        // A Phase 3 GUI component imports layer36:ui, which the
+                        // CLI world linker cannot satisfy — fall through to the
+                        // gui world path before giving up.
+                        Err(RuntimeError::Instantiate(_)) => {
+                            self.run_phase3_gui_component(component, config, output)
+                        }
+                        Err(err) => Err(err),
+                    };
                 }
 
                 Err(err)
@@ -302,6 +318,98 @@ impl Runtime {
 
         Ok(RunOutcome::Exited(code))
     }
+
+    /// Run a Phase 3 `gui` world component.
+    ///
+    /// The Phase 2 import surface is served by the same `Phase2Host` the CLI
+    /// world uses; the new `ui`/`gfx`/`audio` imports are served by
+    /// [`phase3_gui_host::Phase3GuiHost`] over the UCap-gated Phase 3 UI
+    /// dispatcher. The host UI mode comes from [`Config::phase3_ui_mode`]:
+    /// headless draft by default, the opt-in native prototype on request.
+    #[cfg(feature = "phase2-bindings")]
+    pub fn run_phase3_gui_component(
+        &self,
+        component: &LoadedComponent,
+        config: &Config,
+        output: OutputMode,
+    ) -> Result<RunOutcome> {
+        use phase2_bindings::layer36::{fs, io, locale, net, time};
+        use phase3_gui_bindings::layer36::{audio, gfx, ui};
+
+        let mut store = self.new_store(config, output)?;
+        let gui_host = phase3_gui_host::Phase3GuiHost::new(
+            UapiGuard::new(config.session_policy.clone()),
+            config.phase3_ui_mode,
+        )
+        .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+        store.data_mut().phase3_gui = Some(gui_host);
+
+        let mut linker = wasmtime::component::Linker::new(&self.engine);
+
+        macro_rules! link_phase2 {
+            ($module:path) => {{
+                use $module as interface;
+                interface::add_to_linker::<_, HasSelf<_>>(&mut linker, |state: &mut HostState| {
+                    state.phase2()
+                })
+                .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+            }};
+        }
+        macro_rules! link_gui {
+            ($module:path) => {{
+                use $module as interface;
+                interface::add_to_linker::<_, HasSelf<_>>(&mut linker, |state: &mut HostState| {
+                    state.phase3_gui()
+                })
+                .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+            }};
+        }
+
+        link_phase2!(io::types);
+        link_phase2!(io::streams);
+        link_phase2!(io::stdio);
+        link_phase2!(io::args);
+        link_phase2!(io::log);
+        link_phase2!(fs::types);
+        link_phase2!(fs::files);
+        link_phase2!(net::types);
+        link_phase2!(net::http_client);
+        link_phase2!(time::clock);
+        link_phase2!(time::sleep);
+        link_phase2!(locale::info);
+        link_phase2!(locale::format);
+
+        link_gui!(ui::types);
+        link_gui!(ui::window);
+        link_gui!(ui::tree);
+        link_gui!(ui::events);
+        link_gui!(ui::dialog);
+        link_gui!(ui::clipboard);
+        link_gui!(ui::menu);
+        link_gui!(gfx::types);
+        link_gui!(gfx::canvas2d);
+        link_gui!(gfx::gpu3d);
+        link_gui!(audio::types);
+        link_gui!(audio::playback);
+        link_gui!(audio::capture);
+
+        let bindings =
+            phase3_gui_bindings::Gui::instantiate(&mut store, &component.component, &linker)
+                .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+
+        let code = match bindings.call_run(&mut store) {
+            Ok(code) => code,
+            Err(err) => {
+                if let Some(message) = classify_limit_error(&err) {
+                    return Ok(RunOutcome::LimitExceeded(message));
+                }
+
+                return Err(RuntimeError::Trap(err.to_string()));
+            }
+        };
+
+        Ok(RunOutcome::Exited(code))
+    }
 }
 
 pub struct LoadedComponent {
@@ -315,6 +423,8 @@ struct HostState {
     _uapi: UapiGuard,
     #[cfg(feature = "phase2-bindings")]
     phase2: phase2_host::Phase2Host<'static>,
+    #[cfg(feature = "phase2-bindings")]
+    phase3_gui: Option<phase3_gui_host::Phase3GuiHost>,
 }
 
 impl HostState {
@@ -343,12 +453,21 @@ impl HostState {
                 )),
                 config.default_http_timeout_millis,
             ),
+            #[cfg(feature = "phase2-bindings")]
+            phase3_gui: None,
         })
     }
 
     #[cfg(feature = "phase2-bindings")]
     fn phase2(&mut self) -> &mut phase2_host::Phase2Host<'static> {
         &mut self.phase2
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    fn phase3_gui(&mut self) -> &mut phase3_gui_host::Phase3GuiHost {
+        self.phase3_gui
+            .as_mut()
+            .expect("phase3 gui host is only used by the gui world run path")
     }
 
     #[cfg(test)]

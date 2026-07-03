@@ -1,11 +1,21 @@
 # Layer36 Status
 
-Last updated: 2026-07-02
+Last updated: 2026-07-03
 Repo: `incyashraj/layer6x6`
 Branch: `main`
 Latest checked completed push before this slice: `8bc9a15`
-Working tree at this status update: P3-VS-01 sub-slice 1 implemented and
-locally verified — the first real native AppKit widget lowering. A Layer36
+Working tree at this status update: P3-VS-01 complete through the WASM path.
+`layer36 run` now executes Phase 3 `gui` world components: the hello-gui
+sample creates a window, submits a widget tree, and polls events through real
+`layer36:ui` host imports backed by the UCap-gated dispatcher. With
+`--native-window` on macOS the same portable component opens a real AppKit
+window with real native controls; a click on the native button reaches the
+component as a portable pointer event and updates the native text field. The
+component imports only `layer36:*` interfaces (the events contract moved to
+single-event `option<event>` polling to keep guest bindings free of
+list-of-variant lifting, which current guest toolchains cannot compile
+without dragging WASI panic machinery into the component). Sub-slice 1
+(native AppKit lowering) was verified earlier the same slice — the first real native AppKit widget lowering. A Layer36
 widget tree now lowers to a real `NSButton` and `NSTextField` positioned by
 the Taffy layout, a native click flows back through the delegate queue and
 event-loop pump into the shared stream as a routed pointer event with the
@@ -235,6 +245,24 @@ Current Phase 3 slice:
   and closes the window through the runtime dispatcher on the main process
   thread.
 
+- P3-VS-01 sub-slice 2 landed: the WASM path. `runtime` gained
+  `phase3_gui_bindings` (the `gui` world generated against the Phase 3 WIT,
+  reusing the Phase 2 generated modules via `with:` mappings) and
+  `phase3_gui_host::Phase3GuiHost`, which serves `layer36:ui` window, tree,
+  and events imports through the Phase 3 dispatcher, re-lowers supported
+  widgets natively after every tree change (naive re-submit, per the slice
+  spec), and returns honest `unsupported` errors for dialog, menu, gfx, and
+  audio. `layer36 run` reaches the gui world through the existing fallback
+  chain, and the new `--native-window` flag selects the AppKit prototype.
+  `apps/layer36-hello-gui` is the first GUI component: import-pure
+  (`layer36:*` only), runs headless everywhere (clean bounded exit 1), and
+  opens a real native window on macOS. The `layer36:ui` events interface
+  changed from `list<event>` to `option<event>` polling — it matches the
+  dispatcher's FIFO `poll_event` design and keeps guest components pure; the
+  guest-side lesson (std string constructors and list-of-variant lifting pull
+  WASI panic machinery; use lifting-style raw allocation) is recorded in the
+  hello-gui source. `scripts/smoke-phase3-gui-app.sh` builds the component,
+  enforces import purity, and asserts the headless run.
 - P3-VS-01 sub-slice 1 landed: `adapter-macos` now lowers `Button`,
   `TextField`, and `Text` widget placements to real AppKit controls
   (`AppKitWidgetPlacement`, `AppKitWidgetSurface`) inside the prototype
