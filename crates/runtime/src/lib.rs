@@ -327,7 +327,7 @@ impl Runtime {
     /// dispatcher. The host UI mode comes from [`Config::phase3_ui_mode`]:
     /// headless draft by default, the opt-in native prototype on request.
     #[cfg(feature = "phase2-bindings")]
-    pub fn run_phase3_gui_component(
+    fn run_phase3_gui_component(
         &self,
         component: &LoadedComponent,
         config: &Config,

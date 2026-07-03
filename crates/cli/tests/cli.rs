@@ -350,7 +350,7 @@ fn manifest_capabilities_lists_phase_2_cap_table() {
 }
 
 #[test]
-fn run_recognizes_phase_3_gui_manifest_but_does_not_launch_it_yet() {
+fn run_accepts_phase_3_gui_manifest_and_reaches_the_runtime() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let wasm_path = dir.path().join("notes.wasm");
     let manifest_path = dir.path().join("manifest.toml");
@@ -375,11 +375,13 @@ fn run_recognizes_phase_3_gui_manifest_but_does_not_launch_it_yet() {
         .output()
         .expect("run Phase 3 GUI draft manifest");
 
-    assert_eq!(output.status.code(), Some(6));
+    // The gui world is now runnable: the manifest gate lets the run proceed,
+    // so the placeholder bytes reach the runtime and fail as an invalid
+    // component instead of being rejected at the world gate.
+    assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("unsupported app world for run: layer36:app/gui@0.2.0"));
-    assert!(stderr.contains("Phase 3 GUI manifests are recognized"));
-    assert!(!stderr.contains("invalid wasm component"));
+    assert!(!stderr.contains("unsupported app world"));
+    assert!(stderr.contains("invalid wasm component"));
 }
 
 #[test]
