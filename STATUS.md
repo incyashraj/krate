@@ -3,8 +3,15 @@
 Last updated: 2026-07-03
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `8bc9a15`
-Working tree at this status update: P3-VS-01 complete through the WASM path.
+Latest checked completed push before this slice: `b7d28d7` (verified by the
+dispatched full CI matrix; fast CI on that push was superseded by the full
+run)
+Working tree at this status update: the P3-VS-01 vertical slice and the
+whole P3-EMB agent-embedding track are complete, the hello-gui demo is
+human-verified on a real screen, and the full CI matrix now runs the
+byte-identical GUI artifact headless on Linux, macOS, and Windows (all three
+lanes green on run `28654507550`). Older detail below: P3-VS-01 through the
+WASM path.
 `layer36 run` now executes Phase 3 `gui` world components: the hello-gui
 sample creates a window, submits a widget tree, and polls events through real
 `layer36:ui` host imports backed by the UCap-gated dispatcher. With
@@ -61,11 +68,20 @@ Layer36 already runs real Phase 2 CLI components through the runtime:
 - `layer36-cat`
 - `layer36-curl`
 
+It also runs the first Phase 3 GUI component, `layer36-hello-gui`: headless
+on every OS (proven byte-identical across Linux, macOS, and Windows in the
+full CI matrix), and with a real native window on macOS
+(`sh scripts/demo-hello-gui.sh`).
+
 Current capability set includes:
 
 - Manifest parsing and capability checks
 - Launch grant flow (`--grant`, `--auto-grant`, prompt flow)
 - Runtime UAPI policy checks before host calls
+- Native macOS windows with native widget lowering for the GUI world
+  (`--native-window`), headless GUI execution everywhere
+- Agent-facing execution: `layer36_runtime::embed`, `layer36 run --json`
+  (schema `layer36.run.v1`), and the `layer36-mcp-server` MCP tool
 - Cross language fixture and parity coverage for Rust, TypeScript, and available Go paths
 - Published docs on GitHub Pages with Phase tracking
 
@@ -79,10 +95,12 @@ Practical engineering progress is strong and close to completion for the first u
 Main reason formal completion is lower than engineering completion:
 the remaining work is mostly evidence and gate closure, not missing base architecture.
 
-## 4A) Phase 3 start
+## 4A) Phase 3 progress
 
-Phase 3 is now starting at the contract layer, while Phase 2 still waits for the
-outside developer review before formal closeout.
+Phase 3 has moved well past the contract layer: the vertical slice (native
+window + native widgets from one portable component) and the agent-embedding
+track are complete. Phase 2 still waits for the outside developer review
+before formal closeout.
 
 Current Phase 3 slice:
 

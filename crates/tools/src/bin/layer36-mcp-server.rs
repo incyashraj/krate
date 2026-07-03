@@ -64,10 +64,7 @@ fn handle_message(raw: &str) -> Option<Value> {
     let params = message.get("params").cloned().unwrap_or(Value::Null);
 
     // Notifications carry no id and get no response.
-    let id = match id {
-        Some(id) => id,
-        None => return None,
-    };
+    let id = id?;
 
     let result = match method.as_str() {
         "initialize" => json!({
@@ -254,10 +251,12 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
     let component = std::fs::read(component_path)
         .with_context(|| format!("read component {component_path}"))?;
 
-    let mut config = Config::default();
-    config.session_policy = policy;
-    config.app_args = app_args;
-    config.sandbox_root = sandbox_root;
+    let config = Config {
+        session_policy: policy,
+        app_args,
+        sandbox_root,
+        ..Config::default()
+    };
 
     let report = match embed::run_component(&component, &config) {
         Ok(outcome) => json!({

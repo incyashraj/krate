@@ -24,11 +24,17 @@ identity built in. See [the full vision](https://incyashraj.github.io/layer6x6/v
 project is still proving the 6x6 portability matrix. The product name is
 **Layer36**: layer6x6 becomes Layer36 once the matrix is solved.
 
-**Status:** Pre-alpha. The runtime already runs real CLI components — clock,
-cat, curl — from a single `.wasm` on Linux, macOS, and Windows, with
+**Status:** Pre-alpha. The runtime runs real CLI components — clock, cat,
+curl — from a single `.wasm` on Linux, macOS, and Windows, with
 manifest-declared capabilities, launch grants, and runtime permission checks,
-proven by cross-host CI. Formal Phase 2 exit still needs final cross-host
-evidence, a UAPI freeze review, and an outside developer walkthrough.
+proven by cross-host CI. The first GUI component works too: one portable file
+opens a real native window (real `NSButton`, real `NSTextField`) on macOS and
+runs headless on the other hosts — the full CI matrix executes the
+byte-identical GUI artifact on all three OSes. Agents can drive all of it:
+an embedding API, `layer36 run --json`, and an MCP server
+(`layer36-mcp-server`) expose sandboxed execution with permission decisions
+returned as data. Formal Phase 2 exit still needs final cross-host evidence,
+a UAPI freeze review, and an outside developer walkthrough.
 
 ---
 
@@ -37,15 +43,17 @@ evidence, a UAPI freeze review, and an outside developer walkthrough.
 **Phase 3 — desktop UI foundation** (with Phase 2 closeout tracked separately).
 Current work covers:
 
-- the Phase 3 `ui`/`gfx`/`audio` WIT drafts, shared widget tree, and
-  Taffy-backed layout engine
-- a UCap-gated runtime UI dispatcher with pointer, key, text, and host-window
-  event routes
-- an opt-in macOS AppKit native window prototype (real `NSWindow`, native
-  delegate, draw view, event-loop step driver)
-- next milestone: `P3-VS-01`, the macOS vertical slice — one WASM component
-  drives a real native button end-to-end
-  (see `Plan/Plan-Amendments-2026-07.md`)
+- **done:** the P3-VS-01 vertical slice — one portable WASM component opens
+  a real native macOS window with native controls, and a human click flows
+  back into the component as a portable event
+  (`sh scripts/demo-hello-gui.sh` to see it)
+- **done:** the agent-embedding track — `layer36_runtime::embed`,
+  `layer36 run --json` (schema `layer36.run.v1`), and the `layer36-mcp-server`
+  MCP tool for agent frameworks
+- **done:** cross-OS artifact proof — full CI runs the byte-identical GUI
+  component headless on Linux, macOS, and Windows
+- next milestone: real winit windows on Linux and Windows, so the same file
+  becomes *visible* everywhere (widgets drawn per ADR-0015 on Linux)
 
 Phase 2's CLI path stays fully supported: UAPI modules for `io`, `fs`, `net`,
 `time`, and `locale`, the sample apps, and the evidence harness are unchanged.
