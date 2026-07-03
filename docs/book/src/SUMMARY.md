@@ -76,6 +76,7 @@
   - [Phase 3 UAPI Draft](phase3/uapi-draft.md)
   - [Widget Protocol](phase3/widget-protocol.md)
   - [Layout](phase3/layout.md)
+  - [Embedding & JSON Runs](phase3/embedding.md)
 - [Phase 4: Mobile](phases/phase-4.md)
 - [Phase 5: Developer SDK](phases/phase-5.md)
 - [Phase 6: Distribution](phases/phase-6.md)

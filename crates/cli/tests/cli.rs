@@ -385,6 +385,69 @@ fn run_accepts_phase_3_gui_manifest_and_reaches_the_runtime() {
 }
 
 #[test]
+fn run_json_reports_denied_capabilities_before_running() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let wasm_path = dir.path().join("app.wasm");
+    let manifest_path = dir.path().join("manifest.toml");
+    std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
+    std::fs::write(
+        &manifest_path,
+        r#"
+            [app]
+            id = "com.example.jsonapp"
+            name = "JsonApp"
+            version = "1.0.0"
+            entry = "app.wasm"
+            world = "layer36:app/cli@0.1.0"
+
+            [[capabilities]]
+            cap = "fs.read:data/**"
+            rationale = "read data"
+            required = true
+        "#,
+    )
+    .expect("write manifest");
+
+    let output = layer36()
+        .args(["run", "--json", "--manifest"])
+        .arg(&manifest_path)
+        .arg(&wasm_path)
+        .env_remove("LAYER36_TEST_PROMPT")
+        .output()
+        .expect("run json denied");
+
+    assert_eq!(output.status.code(), Some(5));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let payload: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse run json");
+    assert_eq!(payload["schema"], "layer36.run.v1");
+    assert_eq!(payload["exit"]["class"], "permission-denied");
+    assert_eq!(payload["exit"]["code"], 5);
+    assert_eq!(payload["capabilities"]["denied"][0], "fs.read:data/**");
+    assert_eq!(payload["app"]["id"], "com.example.jsonapp");
+}
+
+#[test]
+fn run_json_reports_invalid_components_as_machine_readable_failure() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let wasm_path = dir.path().join("app.wasm");
+    std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
+
+    let output = layer36()
+        .args(["run", "--json"])
+        .arg(&wasm_path)
+        .output()
+        .expect("run json invalid");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let payload: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse run json");
+    assert_eq!(payload["schema"], "layer36.run.v1");
+    assert_eq!(payload["exit"]["class"], "invalid-component");
+    assert!(payload["exit"]["message"].as_str().is_some());
+    assert_eq!(payload["stdout"], "");
+}
+
+#[test]
 fn manifest_capabilities_json_lists_phase_2_cap_table() {
     let output = layer36()
         .args(["manifest", "capabilities", "--format", "json"])

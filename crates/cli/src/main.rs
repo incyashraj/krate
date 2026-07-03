@@ -79,6 +79,11 @@ enum Command {
         #[arg(long)]
         native_window: bool,
 
+        /// Print one machine-readable JSON object describing the run instead
+        /// of streaming the app's stdout. Schema: layer36.run.v1.
+        #[arg(long)]
+        json: bool,
+
         /// Print the effective session capabilities and exit before running the component.
         #[arg(long)]
         dump_caps: bool,
@@ -226,6 +231,7 @@ fn run() -> Result<u8> {
             auto_grant,
             prompt,
             native_window,
+            json,
             dump_caps,
             dump_caps_format,
             log_grants,
@@ -246,6 +252,7 @@ fn run() -> Result<u8> {
             auto_grant,
             prompt,
             native_window,
+            json,
             dump_caps,
             dump_caps_format,
             log_grants,
@@ -297,6 +304,7 @@ struct RunRequest {
     auto_grant: bool,
     prompt: bool,
     native_window: bool,
+    json: bool,
     dump_caps: bool,
     dump_caps_format: OutputFormat,
     log_grants: Option<PathBuf>,
@@ -348,9 +356,19 @@ fn run_component(request: RunRequest) -> Result<u8> {
 
         let missing = policy.missing_required_for_manifest(manifest)?;
         if !missing.is_empty() {
-            eprintln!("permission denied: missing required capabilities");
-            for cap in missing {
-                eprintln!("  - {cap}");
+            if request.json {
+                print_run_json(
+                    Some(manifest),
+                    &policy,
+                    RunJsonExit::denied_before_run(&missing),
+                    None,
+                    "",
+                );
+            } else {
+                eprintln!("permission denied: missing required capabilities");
+                for cap in &missing {
+                    eprintln!("  - {cap}");
+                }
             }
             return Ok(5);
         }
@@ -404,6 +422,37 @@ fn run_component(request: RunRequest) -> Result<u8> {
     };
     let runtime = Runtime::new(&config)?;
 
+    if request.json {
+        let started = std::time::Instant::now();
+        let (exit, stdout, cli_code) = match runtime.run_file_captured(&request.file, &config) {
+            Ok((RunOutcome::Exited(code), stdout)) => {
+                let cli_code = code.clamp(0, 255) as u8;
+                (RunJsonExit::exited(code), stdout, cli_code)
+            }
+            Ok((RunOutcome::LimitExceeded(message), stdout)) => {
+                (RunJsonExit::failure("limit-exceeded", &message), stdout, 4)
+            }
+            Err(RuntimeError::InvalidComponent(message)) => (
+                RunJsonExit::failure("invalid-component", &message),
+                Vec::new(),
+                2,
+            ),
+            Err(RuntimeError::Trap(message)) => {
+                (RunJsonExit::failure("trap", &message), Vec::new(), 3)
+            }
+            Err(err) => return Err(err.into()),
+        };
+        let duration_ms = started.elapsed().as_millis();
+        print_run_json(
+            manifest,
+            &config.session_policy,
+            exit,
+            Some(duration_ms),
+            &String::from_utf8_lossy(&stdout),
+        );
+        return Ok(cli_code);
+    }
+
     match runtime.run_file(&request.file, &config) {
         Ok(RunOutcome::Exited(code)) => Ok(code.clamp(0, 255) as u8),
         Ok(RunOutcome::LimitExceeded(message)) => {
@@ -420,6 +469,85 @@ fn run_component(request: RunRequest) -> Result<u8> {
         }
         Err(err) => Err(err.into()),
     }
+}
+
+/// Exit portion of the `layer36 run --json` payload (schema layer36.run.v1).
+struct RunJsonExit {
+    code: Option<i32>,
+    class: &'static str,
+    message: Option<String>,
+    denied: Vec<String>,
+}
+
+impl RunJsonExit {
+    fn exited(code: i32) -> Self {
+        let class = match code {
+            0 => "success",
+            5 => "permission-denied",
+            _ => "app-error",
+        };
+        Self {
+            code: Some(code),
+            class,
+            message: None,
+            denied: Vec::new(),
+        }
+    }
+
+    fn failure(class: &'static str, message: &str) -> Self {
+        Self {
+            code: None,
+            class,
+            message: Some(message.to_string()),
+            denied: Vec::new(),
+        }
+    }
+
+    fn denied_before_run(missing: &[Capability]) -> Self {
+        Self {
+            code: Some(5),
+            class: "permission-denied",
+            message: Some("missing required capabilities".to_string()),
+            denied: missing.iter().map(|cap| cap.to_string()).collect(),
+        }
+    }
+}
+
+/// Print the layer36.run.v1 JSON object describing one run.
+fn print_run_json(
+    manifest: Option<&Manifest>,
+    policy: &SessionPolicy,
+    exit: RunJsonExit,
+    duration_ms: Option<u128>,
+    stdout: &str,
+) {
+    let app = manifest.map(|manifest| {
+        serde_json::json!({
+            "id": manifest.app.id,
+            "name": manifest.app.name,
+            "version": manifest.app.version,
+            "world": manifest.app.world,
+        })
+    });
+    let granted: Vec<String> = policy.grants().iter().map(|cap| cap.to_string()).collect();
+
+    let payload = serde_json::json!({
+        "schema": "layer36.run.v1",
+        "app": app,
+        "capabilities": {
+            "granted": granted,
+            "denied": exit.denied,
+        },
+        "exit": {
+            "code": exit.code,
+            "class": exit.class,
+            "message": exit.message,
+        },
+        "duration_ms": duration_ms,
+        "stdout": stdout,
+    });
+
+    println!("{payload}");
 }
 
 fn validate_app_args(app_args: &[String]) -> Result<()> {

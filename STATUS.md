@@ -245,6 +245,18 @@ Current Phase 3 slice:
   and closes the window through the runtime dispatcher on the main process
   thread.
 
+- P3-EMB-01 and P3-EMB-02 landed: the agent-embedding surface.
+  `layer36_runtime::embed::run_component` executes a component with
+  programmatic grants (no terminal, no prompts), captured stdout, a
+  classified exit (`success`/`permission-denied`/`app-error`/
+  `limit-exceeded`), and run duration — doc-tested at under 30 lines for an
+  external caller. `layer36 run --json` emits one `layer36.run.v1` object
+  per run (app identity, granted capabilities with boundaries, denied
+  required capabilities on refusal, exit class, duration, captured stdout)
+  while keeping process exit codes identical to the interactive mode.
+  Documented in the book (`phase3/embedding.md`); covered by CLI integration
+  tests for the success, denied-before-run, and invalid-component paths.
+  P3-EMB-03 (the MCP server wrapper) is next on this track.
 - P3-VS-01 sub-slice 2 landed: the WASM path. `runtime` gained
   `phase3_gui_bindings` (the `gui` world generated against the Phase 3 WIT,
   reusing the Phase 2 generated modules via `with:` mappings) and

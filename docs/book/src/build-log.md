@@ -6,6 +6,17 @@ pages.
 
 ---
 
+## 2026-07-03 — Agents can now call Layer36
+
+The embedding surface landed the same day as the native window. Any program
+— including an AI-agent framework — can now execute a component inside
+Layer36's capability sandbox in under 30 lines of Rust: grants supplied as
+data, no prompts, stdout captured, exit classified. And `layer36 run --json`
+turns every run into one machine-readable object: which app, which
+capabilities were granted (with exact boundaries), what was denied, how it
+exited, how long it took, what it printed. The wedge — safe execution of
+generated software — now has a socket for the machines that need it.
+
 ## 2026-07-03 — One portable file opens a native window
 
 The vertical slice is complete. `layer36 run --native-window hello-gui.wasm`

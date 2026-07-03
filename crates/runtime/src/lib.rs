@@ -24,6 +24,7 @@ pub mod phase3_ui;
 pub mod uapi;
 pub mod uapi_dispatch;
 
+pub mod embed;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_bindings;
 #[cfg(feature = "phase2-bindings")]
@@ -186,6 +187,32 @@ impl Runtime {
 
     pub fn run_bytes_silent(&self, bytes: &[u8], config: &Config) -> Result<RunOutcome> {
         self.run_bytes_with_output(bytes, config, OutputMode::Sink)
+    }
+
+    /// Run a component while capturing everything it writes to stdout.
+    ///
+    /// This is the embedding entry point: no terminal is touched, and the
+    /// caller receives the app's stdout bytes next to the run outcome.
+    pub fn run_bytes_captured(
+        &self,
+        bytes: &[u8],
+        config: &Config,
+    ) -> Result<(RunOutcome, Vec<u8>)> {
+        let buffer = Rc::new(RefCell::new(Vec::new()));
+        let outcome =
+            self.run_bytes_with_output(bytes, config, OutputMode::Capture(buffer.clone()))?;
+        let captured = buffer.borrow().clone();
+        Ok((outcome, captured))
+    }
+
+    /// Run a component file while capturing its stdout. See [`Self::run_bytes_captured`].
+    pub fn run_file_captured(
+        &self,
+        path: impl AsRef<Path>,
+        config: &Config,
+    ) -> Result<(RunOutcome, Vec<u8>)> {
+        let bytes = read_path_on_host(path.as_ref())?;
+        self.run_bytes_captured(&bytes, config)
     }
 
     pub fn load_component(&self, bytes: &[u8]) -> Result<LoadedComponent> {
@@ -480,6 +507,8 @@ impl HostState {
 enum OutputMode {
     Stdout,
     Sink,
+    /// Collect app stdout into a shared buffer for embedding callers.
+    Capture(Rc<RefCell<Vec<u8>>>),
 }
 
 impl OutputMode {
@@ -487,6 +516,11 @@ impl OutputMode {
         match self {
             Self::Stdout => print_stdout_line_on_host(msg),
             Self::Sink => {}
+            Self::Capture(buffer) => {
+                let mut buffer = buffer.borrow_mut();
+                buffer.extend_from_slice(msg.as_bytes());
+                buffer.push(b'\n');
+            }
         }
     }
 
@@ -494,6 +528,10 @@ impl OutputMode {
         match self {
             Self::Stdout => write_stdout_on_host(bytes),
             Self::Sink => Ok(()),
+            Self::Capture(buffer) => {
+                buffer.borrow_mut().extend_from_slice(bytes);
+                Ok(())
+            }
         }
     }
 
@@ -501,6 +539,7 @@ impl OutputMode {
         match self {
             Self::Stdout => flush_stdout_on_host(),
             Self::Sink => Ok(()),
+            Self::Capture(_) => Ok(()),
         }
     }
 }
