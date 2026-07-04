@@ -33,7 +33,7 @@ cargo install cargo-component --locked --version 0.21.1
 ## Get The Source
 
 ```bash
-git clone https://github.com/incyashraj/layer6x6.git
+git clone https://github.com/incyashraj/krate.git
 cd layer6x6
 ```
 

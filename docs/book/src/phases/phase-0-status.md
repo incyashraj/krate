@@ -12,7 +12,7 @@ lives in `Plan/Phase-0-Plan.md`.
 | Toolchain | Rust `1.91.1` is pinned. |
 | Dependency policy | `cargo-deny` passes. |
 | CI | Format, lint, tests, docs, and dependency audit run on GitHub Actions. |
-| Docs site | mdBook is live at `https://incyashraj.github.io/layer6x6/`. |
+| Docs site | mdBook is live at `https://incyashraj.github.io/krate/`. |
 | Project docs | README, CONTRIBUTING, SECURITY, code of conduct, ADR template, and first-PR guide exist. |
 | Issues and labels | First five good-first issues were created and labeled. |
 | Phase 1 kickoff | GitHub issue `#6` exists. |

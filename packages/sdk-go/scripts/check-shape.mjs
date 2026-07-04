@@ -39,7 +39,7 @@ for (const relativePath of [
 }
 
 const moduleFile = await readText("go.mod");
-if (!moduleFile.includes("module github.com/incyashraj/layer6x6/packages/sdk-go")) {
+if (!moduleFile.includes("module github.com/incyashraj/krate/packages/sdk-go")) {
   fail("go.mod has the wrong module path");
 }
 

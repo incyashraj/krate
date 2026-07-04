@@ -13,7 +13,7 @@
 - Issues, labels, templates, contributor docs, and security docs exist.
 - ADR-0001 records the Rust runtime decision.
 - The project name moved to Krate after the first naming screen.
-- The repo has been pushed to `incyashraj/layer6x6`.
+- The repo has been pushed to `incyashraj/krate`.
 
 ## Still Important
 

@@ -4,8 +4,8 @@ import (
 	"os"
 	"strings"
 
-	l36io "github.com/incyashraj/layer6x6/packages/sdk-go/layer36/io"
-	l36net "github.com/incyashraj/layer6x6/packages/sdk-go/layer36/net"
+	l36io "github.com/incyashraj/krate/packages/sdk-go/layer36/io"
+	l36net "github.com/incyashraj/krate/packages/sdk-go/layer36/net"
 )
 
 func main() {

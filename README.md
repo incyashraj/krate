@@ -18,9 +18,9 @@ local utilities, growing toward the full platform.
 
 **The long-term arc** is a universal application platform: the same portable
 file running natively on desktop, mobile, and the web, with distribution and
-identity built in. See [the full vision](https://incyashraj.github.io/layer6x6/vision.html),
-[the roadmap](https://incyashraj.github.io/layer6x6/roadmap.html), and
-[follow the build](https://incyashraj.github.io/layer6x6/build-log.html).
+identity built in. See [the full vision](https://incyashraj.github.io/krate/vision.html),
+[the roadmap](https://incyashraj.github.io/krate/roadmap.html), and
+[follow the build](https://incyashraj.github.io/krate/build-log.html).
 
 **Naming note:** The project was renamed from **Krate** to **Krate** in
 July 2026 (company: Krate Labs). During the transition, the repository,
@@ -127,7 +127,7 @@ sh scripts/demo-hello-gui.sh
 
 Exit codes are the assertions: `0` you clicked the native button, `1` clean
 run without a click, `2` window closed early. Full test manual:
-[Hello GUI Demo & Testing](https://incyashraj.github.io/layer6x6/phase3/hello-gui-demo.html).
+[Hello GUI Demo & Testing](https://incyashraj.github.io/krate/phase3/hello-gui-demo.html).
 
 Get a machine-readable run report (what agents consume):
 
@@ -138,7 +138,7 @@ target/debug/krate run --json --auto-grant \
 ```
 
 For the full walkthrough, read the
-[Quickstart](https://incyashraj.github.io/layer6x6/quickstart.html).
+[Quickstart](https://incyashraj.github.io/krate/quickstart.html).
 
 ## Security
 
@@ -168,11 +168,11 @@ scripts/        # Dev tooling scripts
 ## Contributing
 
 We want you. Read [CONTRIBUTING.md](CONTRIBUTING.md) and start with
-[GitHub Discussions](https://github.com/incyashraj/layer6x6/discussions).
+[GitHub Discussions](https://github.com/incyashraj/krate/discussions).
 The Discord invite will be added once the Phase 0 community server is live.
 
 Good first issues are labeled
-[`good first issue`](https://github.com/incyashraj/layer6x6/labels/good%20first%20issue).
+[`good first issue`](https://github.com/incyashraj/krate/labels/good%20first%20issue).
 
 ## License
 

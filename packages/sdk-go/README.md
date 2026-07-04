@@ -11,8 +11,8 @@ TinyGo component build still needs the Go toolchain and generated WIT bindings.
 package main
 
 import (
-    l36io "github.com/incyashraj/layer6x6/packages/sdk-go/krate/io"
-    l36net "github.com/incyashraj/layer6x6/packages/sdk-go/krate/net"
+    l36io "github.com/incyashraj/krate/packages/sdk-go/krate/io"
+    l36net "github.com/incyashraj/krate/packages/sdk-go/krate/net"
 )
 
 func main() {

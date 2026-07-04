@@ -1,9 +1,9 @@
 package main
 
 import (
-	l36io "github.com/incyashraj/layer6x6/packages/sdk-go/layer36/io"
-	l36locale "github.com/incyashraj/layer6x6/packages/sdk-go/layer36/locale"
-	l36time "github.com/incyashraj/layer6x6/packages/sdk-go/layer36/time"
+	l36io "github.com/incyashraj/krate/packages/sdk-go/layer36/io"
+	l36locale "github.com/incyashraj/krate/packages/sdk-go/layer36/locale"
+	l36time "github.com/incyashraj/krate/packages/sdk-go/layer36/time"
 )
 
 func main() {

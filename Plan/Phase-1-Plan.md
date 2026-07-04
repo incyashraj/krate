@@ -74,7 +74,7 @@ Because the *dispatcher* — the thing that takes a WASM file, finds the right h
 
 Before touching a single line of Phase 1 code, verify:
 
-- [ ] `incyashraj/layer6x6` monorepo exists on GitHub, public, dual MIT/Apache-2.0.
+- [ ] `incyashraj/krate` monorepo exists on GitHub, public, dual MIT/Apache-2.0.
 - [x] `cargo build` succeeds on Linux, macOS, and Windows.
 - [x] GitHub Actions runs `fmt`, `clippy`, and `test` on every PR.
 - [ ] Branch protection on `main` requires green CI.
@@ -1549,7 +1549,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 ### Blockers & Open Questions
 
-- Initial workspace is pushed to `incyashraj/layer6x6`; public settings and remaining Phase 0 account-side items still need owner-side confirmation.
+- Initial workspace is pushed to `incyashraj/krate`; public settings and remaining Phase 0 account-side items still need owner-side confirmation.
 - Cross-host CI is green with one uploaded hello `.wasm` fixture shared across Linux, macOS, and Windows.
 - `v0.1.0-rc1` is published as a GitHub prerelease with all planned Phase 1 platform archives and `SHA256SUMS`.
 - Wasmtime 44.0.1 requires Rust 1.92.0; Phase 1 currently pins Wasmtime 43.0.2 for Rust 1.91.1 compatibility.
@@ -1571,7 +1571,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 - 2026-05-02: Added Phase 1 Criterion benchmarks for engine construction, component compilation, cold run, first host print, and 1,000-print dispatch. Local Apple M4 baseline is published in `docs/book/src/phase1/benchmarks.md`; CI uses `scripts/check-benchmark-regression.sh` for warning-only regression checks.
 - 2026-05-02: Added `scripts/test-phase1.sh` and wired `scripts/setup.sh` plus CI to use it, preventing fixture-backed tests from silently skipping when `KRATE_HELLO_WASM` is not already set.
 - 2026-05-02: Drafted the Phase 2 kickoff issue in `docs/governance/phase-2-kickoff-issue.md`; the Phase 1 exit checkbox stays open until it is created on GitHub.
-- 2026-05-02: Initial Krate workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4`; remote CI/release/Page checks are the next gates.
+- 2026-05-02: Initial Krate workspace pushed to GitHub at `incyashraj/krate` with commit `fe41db4`; remote CI/release/Page checks are the next gates.
 - 2026-05-02: Local environment note: `cargo-component` currently needs the rustup-managed Cargo earlier in `PATH` so it can see the installed WASM target. `scripts/build-hello-component.sh` handles this for local development.
 - 2026-05-02: Improved `krate doctor` so it can find `cargo-component` in `CARGO_HOME`/`~/.cargo/bin` and reports both `wasm32-wasip1` and `wasm32-wasip2`.
 - 2026-05-02: Added `crates/runtime` and `crates/cli`; `krate --help`, `krate version`, and `krate doctor` run locally.

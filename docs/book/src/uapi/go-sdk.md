@@ -26,8 +26,8 @@ What still needs proof:
 package main
 
 import (
-    l36io "github.com/incyashraj/layer6x6/packages/sdk-go/krate/io"
-    l36net "github.com/incyashraj/layer6x6/packages/sdk-go/krate/net"
+    l36io "github.com/incyashraj/krate/packages/sdk-go/krate/io"
+    l36net "github.com/incyashraj/krate/packages/sdk-go/krate/net"
 )
 
 func main() {

@@ -5,7 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-ci-stability-evidence/ci-stability-evidence.md"
-REPO="${KRATE_CI_STABILITY_REPO:-incyashraj/layer6x6}"
+REPO="${KRATE_CI_STABILITY_REPO:-incyashraj/krate}"
 BRANCH="${KRATE_CI_STABILITY_BRANCH:-main}"
 LIMIT="${KRATE_CI_STABILITY_LIMIT:-20}"
 CREATED_FILTER="${KRATE_CI_STABILITY_CREATED:-}"
@@ -17,7 +17,7 @@ usage() {
 Usage: scripts/record-phase2-ci-stability-evidence.sh [--repo <owner/name>] [--branch <branch>] [--limit <n>] [--created <date-filter>] [--require-success] [--min-success-streak <n>] [--output <path>]
 
 Options:
-  --repo <owner/name>  GitHub repository to inspect (default: incyashraj/layer6x6)
+  --repo <owner/name>  GitHub repository to inspect (default: incyashraj/krate)
   --branch <branch>   Branch to inspect (default: main)
   --limit <n>         Number of recent runs per workflow (default: 20)
   --created <date-filter>

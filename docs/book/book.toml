@@ -6,10 +6,10 @@ multilingual = false
 src = "src"
 
 [output.html]
-site-url = "/layer6x6/"
-git-repository-url = "https://github.com/incyashraj/layer6x6"
+site-url = "/krate/"
+git-repository-url = "https://github.com/incyashraj/krate"
 git-repository-icon = "fa-github"
-edit-url-template = "https://github.com/incyashraj/layer6x6/edit/main/docs/book/{path}"
+edit-url-template = "https://github.com/incyashraj/krate/edit/main/docs/book/{path}"
 no-section-label = false
 additional-css = []
 additional-js = ["mermaid-render.js"]

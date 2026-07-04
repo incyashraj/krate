@@ -3,7 +3,7 @@ name = "phase2-smoke"
 version = "0.1.0-dev"
 edition = "2021"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/incyashraj/layer6x6"
+repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]

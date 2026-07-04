@@ -1,8 +1,8 @@
 package main
 
 import (
-	l36fs "github.com/incyashraj/layer6x6/packages/sdk-go/layer36/fs"
-	l36io "github.com/incyashraj/layer6x6/packages/sdk-go/layer36/io"
+	l36fs "github.com/incyashraj/krate/packages/sdk-go/layer36/fs"
+	l36io "github.com/incyashraj/krate/packages/sdk-go/layer36/io"
 )
 
 func main() {

@@ -1599,7 +1599,7 @@ Save as `docs/book/src/phase0/retro.md` at the end of Phase 0.
 
 ### Progress Summary
 
-_Phase 0 is underway. Repo scaffolding, CI, documentation, ADR-0001, local verification, GitHub bootstrap, Pages publication, and the Krate naming pivot are now recorded. The development repository is `incyashraj/layer6x6`; Krate is the product name that the 6x6 matrix grows into. Remaining Phase 0 work is mostly external: public visibility/social preview, branch protection setup now that CI is green, Discord, official trademark/domain work, and first external contributor PR._
+_Phase 0 is underway. Repo scaffolding, CI, documentation, ADR-0001, local verification, GitHub bootstrap, Pages publication, and the Krate naming pivot are now recorded. The development repository is `incyashraj/krate`; Krate is the product name that the 6x6 matrix grows into. Remaining Phase 0 work is mostly external: public visibility/social preview, branch protection setup now that CI is green, Discord, official trademark/domain work, and first external contributor PR._
 
 ---
 
@@ -1614,7 +1614,7 @@ Full criteria in [§2 Success Criteria](#2-success-criteria). Check off as each 
 | 3 | README renders cleanly on GitHub; project explained in ≤ 90 seconds | Draft complete; external reader pending |
 | 4 | CONTRIBUTING.md walks a contributor from zero to merged PR | Draft complete |
 | 5 | ADR-0001 merged; ADR template exists in `docs/adr/` | Present on `main` |
-| 6 | mdBook site live at a public URL (GitHub Pages OK) | Live at `https://incyashraj.github.io/layer6x6/` |
+| 6 | mdBook site live at a public URL (GitHub Pages OK) | Live at `https://incyashraj.github.io/krate/` |
 | 7 | Discord server active with ≥ 10 members | Not done |
 | 8 | Public Twitter/X announcement thread published | Not done |
 | 9 | Trademark search completed for “Krate” (no filing, search only) | Preliminary screen done; official searches pending |
@@ -1669,8 +1669,8 @@ Full criteria in [§2 Success Criteria](#2-success-criteria). Check off as each 
 - 2026-05-02: `OneOS` was rejected as final project name after preliminary search surfaced exact software/mobile OS conflicts. `Krate` selected as active name; plans/docs/CLI placeholders/WIT examples/bundle extension renamed accordingly.
 - 2026-05-02: Empty Cargo workspace failed baseline commands, so Phase 0 now uses a root sentinel crate until Phase 1 runtime crates exist.
 - 2026-05-02: mdBook `SUMMARY.md` structure failed local build and was fixed; docs build is now part of CI.
-- 2026-05-02: Initial Krate workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4` (`chore: bring Krate foundation online`), authored and committed as `incyashraj`.
-- 2026-05-02: GitHub CLI authenticated as `incyashraj`; repo homepage/topics set, labels synced, Pages verified at `https://incyashraj.github.io/layer6x6/`, five good-first issues opened, and Phase 1 kickoff opened as issue `#6`.
+- 2026-05-02: Initial Krate workspace pushed to GitHub at `incyashraj/krate` with commit `fe41db4` (`chore: bring Krate foundation online`), authored and committed as `incyashraj`.
+- 2026-05-02: GitHub CLI authenticated as `incyashraj`; repo homepage/topics set, labels synced, Pages verified at `https://incyashraj.github.io/krate/`, five good-first issues opened, and Phase 1 kickoff opened as issue `#6`.
 - 2026-05-03: GitHub CI is green on `main` after the cargo-deny and cross-host Phase 1 fixes. The 5-day Phase 0 stability window starts from this point, subject to future pushes staying green.
 
 ---

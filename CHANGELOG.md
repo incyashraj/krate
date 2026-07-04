@@ -176,7 +176,7 @@ Pre-1.0: breaking changes may occur in any minor release.
 ### Fixed
 - …
 
-[0.1.0]: https://github.com/incyashraj/layer6x6/releases/tag/v0.1.0
+[0.1.0]: https://github.com/incyashraj/krate/releases/tag/v0.1.0
 -->
 
-[Unreleased]: https://github.com/incyashraj/layer6x6/compare/HEAD...HEAD
+[Unreleased]: https://github.com/incyashraj/krate/compare/HEAD...HEAD

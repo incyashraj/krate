@@ -4,7 +4,7 @@ Last updated: 2026-07-04
 Naming: the project is now Krate (company: Krate Labs); code, commands, and
 `krate:*` namespaces keep the legacy name until the scheduled rename slice
 lands (before the UAPI freeze).
-Repo: `incyashraj/layer6x6`
+Repo: `incyashraj/krate`
 Branch: `main`
 Latest checked completed push before this slice: `884dce8` (full matrix run `28672835046`-successor green: all three OS lanes) (verified by the
 dispatched full CI matrix; fast CI on that push was superseded by the full

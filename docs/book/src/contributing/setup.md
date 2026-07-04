@@ -32,14 +32,14 @@ work, but the Go and TypeScript sample builds will need those tools.
 ## Clone and build
 
 ```bash
-git clone https://github.com/incyashraj/layer6x6.git
-cd layer6x6
+git clone https://github.com/incyashraj/krate.git
+cd krate
 cargo build --workspace
 scripts/test-phase1.sh
 ```
 
 This should work in under 10 minutes on a fresh machine. If it doesn't,
-[open an issue](https://github.com/incyashraj/layer6x6/issues/new?template=bug_report.md): that's a bug.
+[open an issue](https://github.com/incyashraj/krate/issues/new?template=bug_report.md): that's a bug.
 
 ## Run the docs site locally
 

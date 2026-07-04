@@ -1,6 +1,6 @@
 package net
 
-import layer36 "github.com/incyashraj/layer6x6/packages/sdk-go/layer36"
+import layer36 "github.com/incyashraj/krate/packages/sdk-go/layer36"
 
 type HTTPMethod string
 

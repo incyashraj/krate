@@ -6,7 +6,7 @@ file edits.
 ## Repository Metadata
 
 - Description: configured on 2026-05-02.
-- Website: `https://incyashraj.github.io/layer6x6/`.
+- Website: `https://incyashraj.github.io/krate/`.
 - Topics: `webassembly`, `wasm`, `cross-platform`, `runtime`, `rust`.
 - Social preview: simple title card once final naming is resolved.
 - Visibility: currently private; make public when ready for external readers.
@@ -50,7 +50,7 @@ behavior.
 
 - Source: GitHub Actions.
 - Workflow: `.github/workflows/pages.yml`.
-- Live URL: `https://incyashraj.github.io/layer6x6/`.
+- Live URL: `https://incyashraj.github.io/krate/`.
 - The Pages workflow is intentionally manual (`workflow_dispatch`) until the
   repository setting above is enabled. Normal pushes still build docs through
   CI, but they do not attempt to deploy Pages before GitHub is ready.

@@ -24,7 +24,7 @@ We want it to be rigorous, welcoming, and worth people's time.
 
 ## Reporting
 
-Report concerns to `conduct@layer6x6.dev`.
+Report concerns to `conduct@kratelabs.dev`.
 
 If that address is not yet active during Phase 0, contact the repository owner
 privately through GitHub. We will acknowledge reports within 72 hours whenever

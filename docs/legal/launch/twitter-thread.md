@@ -23,7 +23,7 @@
    outside developer walkthrough.
 
 6. The repo is open from day one:
-   https://github.com/incyashraj/layer6x6
+   https://github.com/incyashraj/krate
 
 7. If you care about WebAssembly, runtimes, app platforms, native UI, capability
    security, or ambitious infrastructure, come help shape it early.

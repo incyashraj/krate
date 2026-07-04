@@ -6,7 +6,7 @@ This guide walks from a fresh clone to a small merged pull request.
 
 Start with the `good first issue` label:
 
-<https://github.com/incyashraj/layer6x6/labels/good%20first%20issue>
+<https://github.com/incyashraj/krate/labels/good%20first%20issue>
 
 Good Phase 0 starter tasks are documentation fixes, broken-link fixes, CI
 polish, and small scaffolding improvements. If an issue looks bigger than two
@@ -17,9 +17,9 @@ hours, leave a comment and ask for help trimming the scope.
 Use GitHub's **Fork** button, then clone your fork:
 
 ```bash
-git clone https://github.com/<your-handle>/layer6x6.git
-cd layer6x6
-git remote add upstream https://github.com/incyashraj/layer6x6.git
+git clone https://github.com/<your-handle>/krate.git
+cd krate
+git remote add upstream https://github.com/incyashraj/krate.git
 ```
 
 ## 3. Create a branch

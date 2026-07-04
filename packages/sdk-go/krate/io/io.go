@@ -3,7 +3,7 @@ package io
 import (
 	"strings"
 
-	layer36 "github.com/incyashraj/layer6x6/packages/sdk-go/layer36"
+	layer36 "github.com/incyashraj/krate/packages/sdk-go/layer36"
 )
 
 var (

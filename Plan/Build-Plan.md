@@ -4,7 +4,7 @@
 > **Status:** Phase 1 engineering proof complete; Phase 0 external launch items still pending.
 > **Horizon:** estimated. The plan is phase based, not a fixed 24 month promise.
 > **Name:** Krate (formerly Krate; company Krate Labs)
-> **Development repo:** `incyashraj/layer6x6` while the 6x6 portability matrix is being built.
+> **Development repo:** `incyashraj/krate` while the 6x6 portability matrix is being built.
 > **Tagline:** Write once. Run on everything. Natively.
 > **Current focus:** Phase 3 desktop UI adapter foundation, while Phase 2 waits
 > for outside review before formal closeout.
@@ -1690,9 +1690,9 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-02 | Phase 1 benchmark suite added with Criterion, a print-loop component fixture, warning-only CI regression checks, and an Apple M4 local baseline published in the mdBook. |
 | 2026-05-02 | Phase 1 test harness consolidated in `scripts/test-phase1.sh` so local setup and CI both build the hello component before running fixture-backed tests. |
 | 2026-05-02 | Drafted the Phase 2 kickoff issue under `docs/governance/phase-2-kickoff-issue.md`; actual GitHub issue creation remains pending until Phase 1 exits. |
-| 2026-05-02 | Initial Krate workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4`, credited only to `incyashraj`. |
+| 2026-05-02 | Initial Krate workspace pushed to GitHub at `incyashraj/krate` with commit `fe41db4`, credited only to `incyashraj`. |
 | 2026-05-02 | First GitHub CI exposed two portability issues: host-dependent hello component hashes and an old cargo-deny action unable to parse CVSS 4.0 advisories. CI now logs fixture hashes and installs `cargo-deny 0.19.4`. |
-| 2026-05-02 | GitHub CLI setup completed for `incyashraj`; repository homepage/topics, labels, five good-first issues, Phase 1 kickoff issue, and Pages URL were configured for `incyashraj/layer6x6`. |
+| 2026-05-02 | GitHub CLI setup completed for `incyashraj`; repository homepage/topics, labels, five good-first issues, Phase 1 kickoff issue, and Pages URL were configured for `incyashraj/krate`. |
 | 2026-05-03 | Phase 1 shared-fixture CI is green: one uploaded hello `.wasm` artifact is verified by SHA-256 and executed through `krate` on Linux, macOS, and Windows. |
 | 2026-05-03 | Published `v0.1.0-rc1` as a GitHub prerelease with five platform archives and `SHA256SUMS`: Linux x64, Linux ARM64, macOS Intel, macOS Apple Silicon, and Windows x64. |
 | 2026-05-03 | Verified ADR-0002 and ADR-0003 are on `main`; Phase 1 ADR gate is closed. |

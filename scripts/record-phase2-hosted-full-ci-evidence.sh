@@ -5,7 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-hosted-full-ci-evidence/hosted-full-ci-evidence.md"
-REPO="${KRATE_HOSTED_FULL_CI_REPO:-incyashraj/layer6x6}"
+REPO="${KRATE_HOSTED_FULL_CI_REPO:-incyashraj/krate}"
 BRANCH="${KRATE_HOSTED_FULL_CI_BRANCH:-main}"
 LIMIT="${KRATE_HOSTED_FULL_CI_LIMIT:-20}"
 CREATED_FILTER="${KRATE_HOSTED_FULL_CI_CREATED:-}"
@@ -16,7 +16,7 @@ usage() {
 Usage: scripts/record-phase2-hosted-full-ci-evidence.sh [--repo <owner/name>] [--branch <branch>] [--limit <n>] [--created <date-filter>] [--require-success] [--output <path>]
 
 Options:
-  --repo <owner/name>  GitHub repository to inspect (default: incyashraj/layer6x6)
+  --repo <owner/name>  GitHub repository to inspect (default: incyashraj/krate)
   --branch <branch>   Branch to inspect (default: main)
   --limit <n>         Number of recent CI runs to inspect (default: 20)
   --created <filter>  GitHub run creation filter, such as >=2026-05-18

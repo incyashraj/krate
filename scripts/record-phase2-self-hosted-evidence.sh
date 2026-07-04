@@ -5,7 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-self-hosted-evidence/self-hosted-evidence.md"
-REPO="${KRATE_SELF_HOSTED_REPO:-incyashraj/layer6x6}"
+REPO="${KRATE_SELF_HOSTED_REPO:-incyashraj/krate}"
 BRANCH="${KRATE_SELF_HOSTED_BRANCH:-main}"
 LIMIT="${KRATE_SELF_HOSTED_LIMIT:-20}"
 WORKFLOW="${KRATE_SELF_HOSTED_WORKFLOW:-self-hosted-ci.yml}"
@@ -18,7 +18,7 @@ usage() {
 Usage: scripts/record-phase2-self-hosted-evidence.sh [--repo <owner/name>] [--branch <branch>] [--workflow <file-or-name>] [--limit <n>] [--created <date-filter>] [--require-success] [--min-success-streak <n>] [--output <path>]
 
 Options:
-  --repo <owner/name>     GitHub repository to inspect (default: incyashraj/layer6x6)
+  --repo <owner/name>     GitHub repository to inspect (default: incyashraj/krate)
   --branch <branch>      Branch to inspect (default: main)
   --workflow <file/name>  Self-hosted workflow to inspect (default: self-hosted-ci.yml)
   --limit <n>            Number of recent runs to inspect (default: 20)
