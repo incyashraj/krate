@@ -185,7 +185,6 @@ mod real {
     const COLOR_BUTTON: u32 = 0xFF3B82F6;
     const COLOR_FIELD_FILL: u32 = 0xFFFFFFFF;
     const COLOR_FIELD_BORDER: u32 = 0xFF9CA3AF;
-    const COLOR_TEXT_BLOCK: u32 = 0xFF6B7280;
 
     fn fill_rect(
         buffer: &mut [u32],
