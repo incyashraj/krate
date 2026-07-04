@@ -6,6 +6,17 @@ pages.
 
 ---
 
+## 2026-07-04 — All three desktops, one file, three real windows
+
+Hours after Linux, Windows followed — and the winit backend cloned from the
+CI-proven Linux implementation compiled and worked on its first attempt. The
+full test matrix is green with both proofs inside it: the portable hello-gui
+component, the same bytes that opened the clicked native macOS window,
+opened a real winit window on a Linux host and a real winit window on a
+Windows host, exiting cleanly on both. The platform's founding claim —
+write once, run on every desktop, natively — is now a machine-checked fact
+on every full CI run. Next: drawing widgets inside those windows.
+
 ## 2026-07-04 — The same file opens a real window on Linux
 
 Eight CI iterations after the slice began — driven entirely from a Mac that

@@ -71,9 +71,11 @@ Layer36 already runs real Phase 2 CLI components through the runtime:
 It also runs the first Phase 3 GUI component, `layer36-hello-gui`: headless
 on every OS (proven byte-identical across Linux, macOS, and Windows in the
 full CI matrix), with a real native window on macOS
-(`sh scripts/demo-hello-gui.sh`), and — as of 2026-07-04 — with a real winit
-X11 window on Linux, proven in CI under Xvfb. Two of three desktop OSes open
-real windows from the same portable file; Windows winit is next.
+(`sh scripts/demo-hello-gui.sh`), and — as of 2026-07-04 — with real winit
+windows on Linux (proven in CI under Xvfb) and Windows (proven on the
+windows-latest lane). ALL THREE desktop OSes open real windows from the
+same portable file, machine-certified in one green full-matrix run. Next:
+drawn-widget rendering inside the winit windows (vello, per ADR-0015).
 
 Current capability set includes:
 
