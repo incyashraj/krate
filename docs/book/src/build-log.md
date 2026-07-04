@@ -6,6 +6,16 @@ pages.
 
 ---
 
+## 2026-07-04 — The Linux window shows its first pixels
+
+The drawn-widget pass landed the same day: the Krate window on Linux now
+paints its UI — background, a filled button block, a bordered text field —
+from the same lowered placements macOS turns into native controls. It is
+deliberately humble rendering (solid rectangles through a CPU framebuffer,
+every system library loaded at runtime) because the pipeline was the point;
+the vello GPU renderer replaces the painter behind the same contract. All
+three OS lanes green with it aboard.
+
 ## 2026-07-04 — Layer36 becomes Krate
 
 The project has a new name: **Krate**, by **Krate Labs**. A crate ships

@@ -77,8 +77,11 @@ full CI matrix), with a real native window on macOS
 (`sh scripts/demo-hello-gui.sh`), and — as of 2026-07-04 — with real winit
 windows on Linux (proven in CI under Xvfb) and Windows (proven on the
 windows-latest lane). ALL THREE desktop OSes open real windows from the
-same portable file, machine-certified in one green full-matrix run. Next:
-drawn-widget rendering inside the winit windows (vello, per ADR-0015).
+same portable file, machine-certified in one green full-matrix run. The
+first drawn-widget pass is in too: the Linux window paints button and
+field rectangles from lowered placements through a CPU framebuffer
+(softbuffer, everything dlopened), verified in the green matrix. Next:
+the Windows drawing clone, then the real renderer (vello, per ADR-0015).
 
 Current capability set includes:
 
