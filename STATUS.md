@@ -120,8 +120,8 @@ Current Phase 3 slice:
 - `layer36:audio@0.1.0` WIT draft for playback and capture shape
 - `scripts/check-phase3-uapi.sh` to keep the draft parseable and documented
 - manifest tooling now accepts `layer36:app/gui@0.2.0`
-- `layer36 run` recognizes GUI manifests and exits clearly until the window
-  runtime exists
+- `layer36 run` executes GUI manifests end to end (historical note: it
+  originally exited cleanly until the window runtime existed)
 - first Phase 3 capability names now parse through the existing manifest and
   policy layer: `ui`, `gfx`, and `audio`
 - `adapter-common::ui` now has an in-memory draft window registry, an explicit
@@ -133,8 +133,8 @@ Current Phase 3 slice:
   shared adapter trait, and clipboard checks fail at the permission boundary
   before unsupported host code is reached
 - `adapter-macos`, `adapter-linux`, and `adapter-windows` now expose Phase 3 UI
-  adapter entry points. These are headless draft adapters today, with
-  blank-window smoke tests, not native OS windows yet.
+  adapter entry points. (Historical note — superseded: all three hosts now
+  own real native windows; see the newest bullets above.)
 - `adapter-linux` and `adapter-windows` now expose guarded Winit prototype
   adapter boundaries, native-handle handoff helpers, and discovery entry
   points. They are wired into the runtime selector but still report unsupported
@@ -207,7 +207,8 @@ Current Phase 3 slice:
 - Added the shared Winit session owner scaffold. Linux and Windows can now hold
   a tracked Winit session, route prepared resize/focus/scale/redraw/close
   events through the shared queue, and clean up the session on close. Real
-  Winit OS window creation and event collection are still the next step.
+  Winit OS window creation and event collection landed on 2026-07-04 (see
+  the newest bullets above).
 - Added the Winit callback collector bridge. Linux and Windows can now record
   Winit-shaped callbacks in FIFO order and let the shared event-loop pump drain
   them into the same UI event stream. Real Winit OS window creation is still

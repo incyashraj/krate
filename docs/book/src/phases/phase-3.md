@@ -1,6 +1,6 @@
 # Phase 3: UI + Graphics
 
-**Status:** Started
+**Status:** About half done — real windows open from one portable artifact on all three desktop OSes (human-verified native widgets and click round trip on macOS; CI-proven winit windows with the first drawn-widget pass on Linux and Windows); the agent-embedding track (embed API, `layer36 run --json`, MCP server) is complete. Remaining: the vello renderer, richer widgets, text input, accessibility, and `layer36-notes`.
 **Estimate:** est. 6 to 10 weeks
 **Goal:** Run one windowed app on Windows, macOS, and Linux.
 

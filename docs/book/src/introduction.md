@@ -37,10 +37,16 @@ flowchart LR
     class F pending;
 ```
 
-What exists today is a pre-alpha Phase 2 runtime slice. Layer36 can run
-WebAssembly components through the CLI, route app calls through UAPI modules,
-check manifest-declared capabilities, and exercise sample apps for clock, file
-reads, and local HTTP. The wider platform APIs, GUI, mobile hosts, bundles, and
+What exists today is a pre-alpha runtime that already delivers the founding
+claim on desktop. Krate runs WebAssembly components through the CLI on Linux,
+macOS, and Windows from byte-identical artifacts, routes app calls through
+UAPI modules, and enforces manifest-declared capabilities before any host
+access. The first GUI component opens a real native window on macOS (native
+button and text field, human-verified click round trip) and real winit
+windows on Linux and Windows — proven in CI — with the first drawn-widget
+pass painting the UI in those windows. AI agents can execute components in
+the sandbox through an embedding API, `layer36 run --json`, and an MCP
+server, receiving permission decisions as data. Mobile hosts, bundles, and
 distribution are still later work.
 
 ## What We Have Built So Far
@@ -53,13 +59,25 @@ distribution are still later work.
 - Sample apps for `layer36-clock`, `layer36-cat`, and `layer36-curl`.
 - CI and evidence scripts for samples, UCap enforcement, language variants,
   adapter boundaries, benchmarks, and exit readiness.
+- The Phase 3 GUI path: `ui`/`gfx`/`audio` WIT drafts, a widget tree with
+  Taffy layout, a UCap-gated UI dispatcher, native AppKit windows and
+  widgets on macOS, winit windows on Linux and Windows, the first drawn
+  widget pass, and the `layer36-hello-gui` sample (import-pure, runs on all
+  three OSes, `sh scripts/demo-hello-gui.sh`).
+- The agent surface: `layer36_runtime::embed`, `layer36 run --json`
+  (schema `layer36.run.v1`), and `layer36-mcp-server`.
 - A prerelease, `v0.1.0-rc1`, with platform archives and checksums.
 - Docs, threat models, benchmarks, architecture records, and Phase 2 exit
   evidence pages.
 
 ## What We Have Not Built Yet
 
-- GUI APIs, graphics, sensors, identity, and production app lifecycle APIs.
+- The full GUI surface: the vello renderer, richer widgets, text input and
+  IME, accessibility trees, dialogs, menus, and the `layer36-notes`
+  flagship (windows and first widgets exist; the rest of the surface does
+  not yet).
+- Graphics (`gfx`) and audio beyond honest `unsupported` stubs; sensors,
+  identity, and production app lifecycle APIs.
 - A `.l36app` bundle format.
 - Mobile hosts.
 - Security strong enough for untrusted third party apps.
@@ -67,8 +85,8 @@ distribution are still later work.
 - A formally frozen Phase 2 UAPI.
 - External developer validation.
 
-So the honest status is: **the Phase 2 runtime proof is real, but the platform
-is not done**.
+So the honest status is: **the runtime proof is real on all three desktop
+OSes — windows included — but the platform is not done**.
 
 ## Why WebAssembly?
 

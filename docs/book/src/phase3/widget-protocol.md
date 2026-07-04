@@ -199,9 +199,15 @@ Done now:
 - macOS, Linux, and Windows adapters expose headless draft window and UI entry
   points, plus the planned native backend for each host. macOS also exposes the
   first AppKit handle handoff method.
-- Linux and Windows now expose explicit Winit prototype adapter boundaries and
-  tested handle handoff helpers. They are still guarded because they do not own
-  real native windows yet.
+- Linux and Windows own real winit windows now: thread-locally pumped event
+  loops feed native close, resize, focus, and scale events into the shared
+  stream, and the full CI matrix proves the hello-gui component opens real
+  windows on both hosts.
+- macOS lowers `Button` and `TextField` to real native controls; a
+  human-verified click round trip flows from `NSButton` back into the
+  component. Linux and Windows paint lowered placements through the first
+  drawn-widget pass (CPU framebuffer; vello replaces the painter behind the
+  same contract).
 - Linux and Windows also have a shared Winit session owner scaffold. It can
   hold a tracked session, apply prepared resize, focus, scale, redraw, and close
   events, and remove the session on close.
@@ -215,10 +221,11 @@ Done now:
 
 Pending:
 
-- real Linux and Windows `winit` window creation, with actual Winit callbacks
-  feeding the collector
-- host event loop that feeds real close, resize, focus, theme, scale, pointer, key, and text events into the queue
-- widget tree lowering
+- the real drawn renderer (vello/wgpu) with labels, styling, and text
+- pointer, key, and text events from the winit backends (window-level events
+  flow today; input routing into widgets is next)
+- richer widget lowering beyond Button/TextField on macOS and drawn
+  rectangles elsewhere
 - larger layout style coverage and recorded large-tree benchmark results on all target hosts
 - IME composition events
 - accessibility tree

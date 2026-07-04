@@ -14,7 +14,11 @@ The current state is:
   slices for CLI-style apps, UCap manifests and launch grants, sample apps, and
   repeatable evidence scripts. Formal Phase 2 exit still needs final
   cross-host evidence, UAPI freeze review, and an outside developer walkthrough.
-- **Phase 3 has started at the contract layer.** The first `gui` world and the
+- **Phase 3 is about half done.** One portable component opens real windows
+  on all three desktop OSes (native AppKit widgets on macOS; winit windows
+  with the first drawn-widget pass on Linux and Windows), and the agent
+  surface (embedding API, `--json` reports, MCP server) is complete. The
+  original contract-layer note follows: the first `gui` world and the
   `ui`, `gfx`, and `audio` WIT drafts now parse and have a CI checker. This does
   not freeze the API and does not replace Phase 2's remaining outside review.
 
@@ -54,7 +58,7 @@ flowchart LR
 | 0 | Foundation | Make the project real enough to work in public. | Done enough for development; external items pending | Mostly done |
 | 1 | Runtime proof | Run one WASM component on Linux, macOS, and Windows. | Done | Engineering done |
 | 2 | UAPI v0.1 | Build useful CLI APIs and sample apps. | in progress | Active; exit evidence in progress |
-| 3 | Desktop UI | Run one GUI app on Windows, macOS, and Linux. | est. 6 to 10 weeks | Started with WIT draft |
+| 3 | Desktop UI | Run one GUI app on Windows, macOS, and Linux. | est. 6 to 10 weeks | About half done: real windows on all three OSes, native macOS widgets, first drawn pass, agent surface complete |
 | 4 | Mobile hosts | Run the same app on iOS and Android. | est. 8 to 12 weeks | Planned |
 | 5 | Developer SDK | Make project creation, debug, and packaging smooth. | est. 6 to 10 weeks | Planned |
 | 6 | Distribution | Add bundles, signing, updates, and identity. | est. 8 to 12 weeks | Planned |
