@@ -3,7 +3,7 @@
 Last updated: 2026-07-03
 Repo: `incyashraj/layer6x6`
 Branch: `main`
-Latest checked completed push before this slice: `b7d28d7` (verified by the
+Latest checked completed push before this slice: `884dce8` (full matrix run `28672835046`-successor green: all three OS lanes) (verified by the
 dispatched full CI matrix; fast CI on that push was superseded by the full
 run)
 Working tree at this status update: the P3-VS-01 vertical slice and the
@@ -70,8 +70,10 @@ Layer36 already runs real Phase 2 CLI components through the runtime:
 
 It also runs the first Phase 3 GUI component, `layer36-hello-gui`: headless
 on every OS (proven byte-identical across Linux, macOS, and Windows in the
-full CI matrix), and with a real native window on macOS
-(`sh scripts/demo-hello-gui.sh`).
+full CI matrix), with a real native window on macOS
+(`sh scripts/demo-hello-gui.sh`), and — as of 2026-07-04 — with a real winit
+X11 window on Linux, proven in CI under Xvfb. Two of three desktop OSes open
+real windows from the same portable file; Windows winit is next.
 
 Current capability set includes:
 

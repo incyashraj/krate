@@ -6,6 +6,18 @@ pages.
 
 ---
 
+## 2026-07-04 — The same file opens a real window on Linux
+
+Eight CI iterations after the slice began — driven entirely from a Mac that
+can't run the code — the Linux winit backend went green: a thread-locally
+owned, non-blockingly pumped X11 event loop feeding the same shared event
+stream the macOS window uses. The proof is in the CI log itself: the
+portable hello-gui component, byte-identical to the one that opened the
+clicked AppKit window, opened a real winit window on a Linux host under
+Xvfb and exited cleanly, with the adapter's window round-trip smoke passing
+beside it. Two of three desktops now open real windows from one file;
+Windows is next, and the component still will not change.
+
 ## 2026-07-03 — Layer36 speaks MCP
 
 The agent-embedding track is complete. `layer36-mcp-server` is a small
