@@ -19,7 +19,7 @@
       "threshold_pct": 35
     },
     "phase2_loaded_run_clock_fixed_time": {
-      "criterion_path": "phase2_runtime/loaded_run_layer36_clock_fixed_time",
+      "criterion_path": "phase2_runtime/loaded_run_krate_clock_fixed_time",
       "baseline_ns": 49917,
       "threshold_pct": 35
     },

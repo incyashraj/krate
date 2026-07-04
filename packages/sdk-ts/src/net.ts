@@ -1,4 +1,4 @@
-import { fetch, get, type Request, type Response } from "layer36:net/http-client";
+import { fetch, get, type Request, type Response } from "krate:net/http-client";
 
 const decoder = new TextDecoder();
 

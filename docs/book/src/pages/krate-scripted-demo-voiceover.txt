@@ -1,5 +1,5 @@
-Layer36 scripted demo voiceover
-Synced to: docs/book/src/pages/layer36-scripted-demo.html
+Krate scripted demo voiceover
+Synced to: docs/book/src/pages/krate-scripted-demo.html
 Total runtime: 3:54
 
 Recording setup
@@ -35,9 +35,9 @@ Duration: 20 seconds
 Target finish: around 0:17, then pause
 
 Voiceover:
-Layer36 makes software portable by default.
+Krate makes software portable by default.
 A PDF can move between machines because every machine understands the same file format.
-Layer36 brings that idea to apps: one portable artifact, one runtime model, and explicit host permissions.
+Krate brings that idea to apps: one portable artifact, one runtime model, and explicit host permissions.
 
 ============================================================
 SCENE 2
@@ -46,9 +46,9 @@ Duration: 24 seconds
 Target finish: around 0:41, then pause
 
 Voiceover:
-A Layer36 app compiles to WebAssembly.
-Instead of calling macOS, Windows, or Linux directly, the app calls Layer36.
-Layer36 becomes the common layer in the middle: it exposes UAPI for app capabilities, checks UCap permissions, and only then lets approved calls reach the host adapter.
+A Krate app compiles to WebAssembly.
+Instead of calling macOS, Windows, or Linux directly, the app calls Krate.
+Krate becomes the common layer in the middle: it exposes UAPI for app capabilities, checks UCap permissions, and only then lets approved calls reach the host adapter.
 
 ============================================================
 SCENE 3
@@ -58,9 +58,9 @@ Target finish: around 1:02, then pause
 
 Voiceover:
 This is not just a design mockup.
-Layer36 already builds real runnable artifacts.
-Here we build the Layer36 CLI, then compile three sample apps: clock, cat, and curl.
-Each one becomes a WebAssembly artifact that Layer36 can run.
+Krate already builds real runnable artifacts.
+Here we build the Krate CLI, then compile three sample apps: clock, cat, and curl.
+Each one becomes a WebAssembly artifact that Krate can run.
 
 ============================================================
 SCENE 4
@@ -69,7 +69,7 @@ Duration: 24 seconds
 Target finish: around 1:26, then pause
 
 Voiceover:
-Before an app runs, Layer36 can explain what it wants.
+Before an app runs, Krate can explain what it wants.
 Basic plumbing like command-line arguments, stdout, and stderr can be allowed by default.
 But file access is different.
 Reading fixtures requires an explicit grant, so the host power is visible before the app receives it.
@@ -82,7 +82,7 @@ Target finish: around 1:52, then pause
 
 Voiceover:
 The clock app is intentionally small, but it exercises the complete path.
-It starts as source code, becomes a portable WebAssembly artifact, runs through Layer36, calls the time API, passes the permission boundary, and produces deterministic terminal output.
+It starts as source code, becomes a portable WebAssembly artifact, runs through Krate, calls the time API, passes the permission boundary, and produces deterministic terminal output.
 Small demo, real architecture.
 
 ============================================================
@@ -94,7 +94,7 @@ Target finish: around 2:16, then pause
 Voiceover:
 This is the safety proof.
 The file-reading app is real, and the file exists, but this launch does not grant file access.
-Layer36 denies the run before the app can read from the host.
+Krate denies the run before the app can read from the host.
 No grant means no host access.
 
 ============================================================
@@ -117,8 +117,8 @@ Target finish: around 2:58, then pause
 
 Voiceover:
 Network access follows the same rule.
-Files and network are different host powers, but Layer36 treats both through the same model.
-The app declares what it needs, the launch grants what is allowed, and Layer36 denies the rest.
+Files and network are different host powers, but Krate treats both through the same model.
+The app declares what it needs, the launch grants what is allowed, and Krate denies the rest.
 
 ============================================================
 SCENE 9
@@ -129,7 +129,7 @@ Target finish: around 3:27, then pause
 Voiceover:
 The next visible product proof is a desktop developer preview.
 The goal is to show the same portable artifact model opening a native desktop window.
-The app still calls Layer36.
+The app still calls Krate.
 The host adapter still translates approved behavior.
 And permissions stay explicit as the product moves from command-line proof toward a developer preview.
 
@@ -140,7 +140,7 @@ Duration: 24 seconds
 Target finish: around 3:51, then pause
 
 Voiceover:
-The honest status is this: Layer36 is real proof, but still pre-alpha.
+The honest status is this: Krate is real proof, but still pre-alpha.
 Today we have runtime execution, visible permissions, sample apps, and evidence tracking.
 The investment case is to turn this speed into developer pull: ship the desktop preview, validate it with outside developers, and pull mobile feasibility, SDK packaging, and distribution groundwork forward as funding and proof allow.
 

@@ -24,8 +24,8 @@ const requireFile = (relativePath) => {
 
 const pkg = JSON.parse(await readText("package.json"));
 
-if (pkg.name !== "@layer36/sdk") {
-  fail(`package name is ${pkg.name}, expected @layer36/sdk`);
+if (pkg.name !== "@krate/sdk") {
+  fail(`package name is ${pkg.name}, expected @krate/sdk`);
 }
 
 if (pkg.type !== "module") {
@@ -46,9 +46,9 @@ for (const relativePath of [
   "src/net.ts",
   "src/time.ts",
   "src/locale.ts",
-  "examples/layer36-cat.ts",
-  "examples/layer36-clock.ts",
-  "examples/layer36-curl.ts",
+  "examples/krate-cat.ts",
+  "examples/krate-clock.ts",
+  "examples/krate-curl.ts",
 ]) {
   requireFile(relativePath);
 }
@@ -62,16 +62,16 @@ for (const moduleName of ["fs", "io", "locale", "net", "time"]) {
 
 const imports = await readText("src/imports.d.ts");
 for (const moduleName of [
-  "layer36:io/streams",
-  "layer36:io/stdio",
-  "layer36:io/args",
-  "layer36:io/log",
-  "layer36:fs/files",
-  "layer36:net/http-client",
-  "layer36:time/clock",
-  "layer36:time/sleep",
-  "layer36:locale/info",
-  "layer36:locale/format",
+  "krate:io/streams",
+  "krate:io/stdio",
+  "krate:io/args",
+  "krate:io/log",
+  "krate:fs/files",
+  "krate:net/http-client",
+  "krate:time/clock",
+  "krate:time/sleep",
+  "krate:locale/info",
+  "krate:locale/format",
 ]) {
   if (!imports.includes(`declare module "${moduleName}"`)) {
     fail(`src/imports.d.ts is missing ${moduleName}`);
@@ -87,18 +87,18 @@ if (process.exitCode) {
 }
 
 for (const [relativePath, tokens] of Object.entries({
-  "examples/layer36-cat.ts": [
-    "usage: layer36-ts-cat <path> [path...]",
+  "examples/krate-cat.ts": [
+    "usage: krate-ts-cat <path> [path...]",
     "io.print(fs.readText(file));",
   ],
-  "examples/layer36-clock.ts": [
-    "app=layer36-ts-clock",
+  "examples/krate-clock.ts": [
+    "app=krate-ts-clock",
     "locale=",
     "timezone=",
     "date=",
   ],
-  "examples/layer36-curl.ts": [
-    "usage: layer36-ts-curl <url>",
+  "examples/krate-curl.ts": [
+    "usage: krate-ts-curl <url>",
     "io.print(net.getText(url));",
   ],
 })) {

@@ -3,7 +3,7 @@ package fs
 import (
 	"errors"
 
-	layer36 "github.com/incyashraj/krate/packages/sdk-go/layer36"
+	krate "github.com/incyashraj/krate/packages/sdk-go/krate"
 )
 
 type OpenMode string
@@ -30,13 +30,13 @@ type File interface {
 }
 
 var (
-	OpenHook       = func(string, OpenMode) (File, error) { return nil, layer36.ErrGeneratedBindingsMissing }
-	StatHook       = func(string) (FileStat, error) { return FileStat{}, layer36.ErrGeneratedBindingsMissing }
-	ListHook       = func(string) ([]string, error) { return nil, layer36.ErrGeneratedBindingsMissing }
-	RemoveFileHook = func(string) error { return layer36.ErrGeneratedBindingsMissing }
-	RemoveDirHook  = func(string) error { return layer36.ErrGeneratedBindingsMissing }
-	MkdirHook      = func(string) error { return layer36.ErrGeneratedBindingsMissing }
-	RenameHook     = func(string, string) error { return layer36.ErrGeneratedBindingsMissing }
+	OpenHook       = func(string, OpenMode) (File, error) { return nil, krate.ErrGeneratedBindingsMissing }
+	StatHook       = func(string) (FileStat, error) { return FileStat{}, krate.ErrGeneratedBindingsMissing }
+	ListHook       = func(string) ([]string, error) { return nil, krate.ErrGeneratedBindingsMissing }
+	RemoveFileHook = func(string) error { return krate.ErrGeneratedBindingsMissing }
+	RemoveDirHook  = func(string) error { return krate.ErrGeneratedBindingsMissing }
+	MkdirHook      = func(string) error { return krate.ErrGeneratedBindingsMissing }
+	RenameHook     = func(string, string) error { return krate.ErrGeneratedBindingsMissing }
 )
 
 func Open(path string, mode OpenMode) (File, error) {
@@ -73,7 +73,7 @@ func Read(path string) ([]byte, error) {
 		return nil, err
 	}
 	if file == nil {
-		return nil, errors.New("layer36 fs: open returned nil file")
+		return nil, errors.New("krate fs: open returned nil file")
 	}
 
 	return file.Read(4 * 1024 * 1024)
@@ -94,7 +94,7 @@ func WriteText(path string, value string) (uint32, error) {
 		return 0, err
 	}
 	if file == nil {
-		return 0, errors.New("layer36 fs: open returned nil file")
+		return 0, errors.New("krate fs: open returned nil file")
 	}
 
 	return file.Write([]byte(value))

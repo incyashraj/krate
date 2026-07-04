@@ -1,6 +1,6 @@
-import { raw } from "layer36:io/args@0.1.0";
-import { stderr, stdout } from "layer36:io/stdio@0.1.0";
-import { open } from "layer36:fs/files@0.1.0";
+import { raw } from "krate:io/args@0.1.0";
+import { stderr, stdout } from "krate:io/stdio@0.1.0";
+import { open } from "krate:fs/files@0.1.0";
 
 const encoder = new TextEncoder();
 
@@ -13,7 +13,7 @@ export function run() {
     .split("\n")
     .filter((value) => value.length > 0);
   if (args.length === 0) {
-    writeLine(stderr(), "usage: layer36-ts-cat <path> [path...]");
+    writeLine(stderr(), "usage: krate-ts-cat <path> [path...]");
     return 2;
   }
 
@@ -36,8 +36,8 @@ export function run() {
     out.flush();
     return 0;
   } catch (err) {
-    writeLine(stderr(), `layer36-ts-cat: ${String(err)}`);
-    writeLine(stderr(), "layer36-ts-cat: read failed");
+    writeLine(stderr(), `krate-ts-cat: ${String(err)}`);
+    writeLine(stderr(), "krate-ts-cat: read failed");
     return 21;
   }
 }

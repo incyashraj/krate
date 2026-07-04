@@ -1,6 +1,6 @@
-import { raw } from "layer36:io/args@0.1.0";
-import { stderr, stdout } from "layer36:io/stdio@0.1.0";
-import { get } from "layer36:net/http-client@0.1.0";
+import { raw } from "krate:io/args@0.1.0";
+import { stderr, stdout } from "krate:io/stdio@0.1.0";
+import { get } from "krate:net/http-client@0.1.0";
 
 const encoder = new TextEncoder();
 
@@ -50,50 +50,50 @@ function classifyError(err) {
   const { tag, payload } = parseTaggedError(err);
 
   if (tag === "permission-denied") {
-    return { message: "layer36-ts-curl: permission denied", code: 5 };
+    return { message: "krate-ts-curl: permission denied", code: 5 };
   }
   if (tag === "invalid-url") {
-    return { message: "layer36-ts-curl: invalid url", code: 20 };
+    return { message: "krate-ts-curl: invalid url", code: 20 };
   }
   if (tag === "body-too-large") {
-    return { message: "layer36-ts-curl: response too large", code: 21 };
+    return { message: "krate-ts-curl: response too large", code: 21 };
   }
   if (tag === "timeout") {
-    return { message: "layer36-ts-curl: request timed out", code: 21 };
+    return { message: "krate-ts-curl: request timed out", code: 21 };
   }
   if (tag === "protocol") {
-    return { message: "layer36-ts-curl: protocol error", code: 21 };
+    return { message: "krate-ts-curl: protocol error", code: 21 };
   }
   if (tag === "tls-failure") {
-    return { message: "layer36-ts-curl: tls handshake failed", code: 21 };
+    return { message: "krate-ts-curl: tls handshake failed", code: 21 };
   }
   if (tag === "dns-failure") {
-    return { message: "layer36-ts-curl: dns lookup failed", code: 21 };
+    return { message: "krate-ts-curl: dns lookup failed", code: 21 };
   }
   if (tag === "connect-failure") {
-    return { message: "layer36-ts-curl: connection failed", code: 21 };
+    return { message: "krate-ts-curl: connection failed", code: 21 };
   }
   if (tag === "other") {
-    return { message: "layer36-ts-curl: fetch failed", code: 21 };
+    return { message: "krate-ts-curl: fetch failed", code: 21 };
   }
 
   if (typeof err === "string") {
-    return { message: `layer36-ts-curl: ${err}`, code: 21 };
+    return { message: `krate-ts-curl: ${err}`, code: 21 };
   }
   if (payload) {
-    return { message: `layer36-ts-curl: ${payload}`, code: 21 };
+    return { message: `krate-ts-curl: ${payload}`, code: 21 };
   }
 
   try {
     const asJson = JSON.stringify(err);
     if (asJson && asJson !== "{}") {
-      return { message: `layer36-ts-curl: ${asJson}`, code: 21 };
+      return { message: `krate-ts-curl: ${asJson}`, code: 21 };
     }
   } catch {
     // Fall back to default conversion below.
   }
 
-  return { message: `layer36-ts-curl: ${String(err)}`, code: 21 };
+  return { message: `krate-ts-curl: ${String(err)}`, code: 21 };
 }
 
 export function run() {
@@ -101,7 +101,7 @@ export function run() {
     .split("\n")
     .find((value) => value.length > 0);
   if (!url) {
-    writeLine(stderr(), "usage: layer36-ts-curl <url>");
+    writeLine(stderr(), "usage: krate-ts-curl <url>");
     return 2;
   }
 

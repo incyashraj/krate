@@ -406,8 +406,7 @@ mod real {
 
     /// Make a created native window visible.
     pub fn show_native_window(krate: WindowId) -> Result<bool, UiAdapterError> {
-        with_tracked(krate, |tracked| tracked.window.set_visible(true))
-            .map(|shown| shown.is_some())
+        with_tracked(krate, |tracked| tracked.window.set_visible(true)).map(|shown| shown.is_some())
     }
 
     /// Update the native window title.
@@ -497,10 +496,7 @@ mod stub {
     }
 
     /// Winit windows are only available in Windows builds.
-    pub fn set_native_window_title(
-        _krate: WindowId,
-        _title: &str,
-    ) -> Result<bool, UiAdapterError> {
+    pub fn set_native_window_title(_krate: WindowId, _title: &str) -> Result<bool, UiAdapterError> {
         unsupported()
     }
 

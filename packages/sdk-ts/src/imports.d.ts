@@ -1,4 +1,4 @@
-declare module "layer36:io/streams" {
+declare module "krate:io/streams" {
   export interface InputStream {
     read(n: number): Uint8Array;
     readToString(): string;
@@ -11,19 +11,19 @@ declare module "layer36:io/streams" {
   }
 }
 
-declare module "layer36:io/stdio" {
-  import type { InputStream, OutputStream } from "layer36:io/streams";
+declare module "krate:io/stdio" {
+  import type { InputStream, OutputStream } from "krate:io/streams";
 
   export function stdin(): InputStream;
   export function stdout(): OutputStream;
   export function stderr(): OutputStream;
 }
 
-declare module "layer36:io/args" {
+declare module "krate:io/args" {
   export function raw(): string;
 }
 
-declare module "layer36:io/log" {
+declare module "krate:io/log" {
   export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
   export interface Field {
@@ -34,7 +34,7 @@ declare module "layer36:io/log" {
   export function emit(level: LogLevel, message: string, fields: Field[]): void;
 }
 
-declare module "layer36:fs/files" {
+declare module "krate:fs/files" {
   export type OpenMode =
     | { tag: "read" }
     | { tag: "write" }
@@ -64,7 +64,7 @@ declare module "layer36:fs/files" {
   export function rename(from: string, to: string): void;
 }
 
-declare module "layer36:net/http-client" {
+declare module "krate:net/http-client" {
   export type HttpMethod =
     | "get"
     | "post"
@@ -97,16 +97,16 @@ declare module "layer36:net/http-client" {
   export function fetch(req: Request): Response;
 }
 
-declare module "layer36:time/clock" {
+declare module "krate:time/clock" {
   export function nowMillis(): bigint;
   export function monotonicNanos(): bigint;
 }
 
-declare module "layer36:time/sleep" {
+declare module "krate:time/sleep" {
   export function sleepMillis(millis: number): void;
 }
 
-declare module "layer36:locale/info" {
+declare module "krate:locale/info" {
   export interface LocaleId {
     bcp47: string;
   }
@@ -115,8 +115,8 @@ declare module "layer36:locale/info" {
   export function timezone(): string;
 }
 
-declare module "layer36:locale/format" {
-  import type { LocaleId } from "layer36:locale/info";
+declare module "krate:locale/format" {
+  import type { LocaleId } from "krate:locale/info";
 
   export type DateStyle = "short" | "medium" | "long" | "full";
   export type NumberStyle = "decimal" | "percent" | "currency";

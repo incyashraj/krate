@@ -1,5 +1,5 @@
-import { raw } from "layer36:io/args";
-import { stderr, stdout } from "layer36:io/stdio";
+import { raw } from "krate:io/args";
+import { stderr, stdout } from "krate:io/stdio";
 
 const encoder = new TextEncoder();
 

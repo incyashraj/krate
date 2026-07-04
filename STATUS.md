@@ -1,4 +1,4 @@
-# Krate Status (formerly Krate)
+# Krate Status (formerly Layer36)
 
 Last updated: 2026-07-04
 Naming: the project is now Krate (company: Krate Labs); code, commands, and

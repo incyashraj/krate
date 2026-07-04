@@ -1,6 +1,6 @@
 package net
 
-import layer36 "github.com/incyashraj/krate/packages/sdk-go/layer36"
+import krate "github.com/incyashraj/krate/packages/sdk-go/krate"
 
 type HTTPMethod string
 
@@ -34,8 +34,8 @@ type Response struct {
 }
 
 var (
-	GetHook   = func(string) ([]byte, error) { return nil, layer36.ErrGeneratedBindingsMissing }
-	FetchHook = func(Request) (Response, error) { return Response{}, layer36.ErrGeneratedBindingsMissing }
+	GetHook   = func(string) ([]byte, error) { return nil, krate.ErrGeneratedBindingsMissing }
+	FetchHook = func(Request) (Response, error) { return Response{}, krate.ErrGeneratedBindingsMissing }
 )
 
 func Get(url string) ([]byte, error) {

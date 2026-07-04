@@ -9,7 +9,7 @@ import {
   type File,
   type FileStat,
   type OpenMode,
-} from "layer36:fs/files";
+} from "krate:fs/files";
 
 const decoder = new TextDecoder();
 const encoder = new TextEncoder();

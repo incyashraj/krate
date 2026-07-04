@@ -1,7 +1,7 @@
 {
-  "name": "@layer36/sdk",
+  "name": "@krate/sdk",
   "version": "0.1.0-dev",
-  "description": "Experimental TypeScript helpers for Layer36 Phase 2 UAPI components.",
+  "description": "Experimental TypeScript helpers for Krate Phase 2 UAPI components.",
   "type": "module",
   "private": true,
   "sideEffects": false,

@@ -3,7 +3,7 @@
 > **Version:** 0.1: Working draft
 > **Status:** Phase 1 engineering proof complete; Phase 0 external launch items still pending.
 > **Horizon:** estimated. The plan is phase based, not a fixed 24 month promise.
-> **Name:** Krate (formerly Krate; company Krate Labs)
+> **Name:** Krate (formerly Layer36; company Krate Labs)
 > **Development repo:** `incyashraj/krate` while the 6x6 portability matrix is being built.
 > **Tagline:** Write once. Run on everything. Natively.
 > **Current focus:** Phase 3 desktop UI adapter foundation, while Phase 2 waits

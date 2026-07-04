@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Layer36, Explained Simply</title>
-<meta name="description" content="A plain-English visual explanation of Layer36: portable software, WebAssembly, UAPI, UCap, and the current Phase 2 proof." />
+<title>Krate, Explained Simply</title>
+<meta name="description" content="A plain-English visual explanation of Krate: portable software, WebAssembly, UAPI, UCap, and the current Phase 2 proof." />
 <style>
   :root {
     --paper: #f7efe1;
@@ -394,14 +394,14 @@
 </head>
 <body>
 <div class="topbar">
-  <span class="badge">Layer36</span>
+  <span class="badge">Krate</span>
   <span>portable software, explained simply</span>
 </div>
 
 <header>
   <div class="eyebrow">Plain English explainer</div>
   <h1>What if software travelled like a <span class="highlight">PDF?</span></h1>
-  <p class="lede">You do not download a different PDF for Mac, Windows, Linux, Android, and iPhone. You just open the file. Layer36 is trying to make apps feel more like that: one portable app artifact, with clear permissions, running through the right host adapter for each machine.</p>
+  <p class="lede">You do not download a different PDF for Mac, Windows, Linux, Android, and iPhone. You just open the file. Krate is trying to make apps feel more like that: one portable app artifact, with clear permissions, running through the right host adapter for each machine.</p>
 </header>
 
 <main>
@@ -410,7 +410,7 @@
       <h2>The normal problem</h2>
       <p>Today, an app is usually married to the operating system it was built for. A Windows app expects Windows APIs. A macOS app expects macOS APIs. A mobile app expects a completely different world.</p>
       <p>That means developers often rewrite the same idea several times, or carry a complicated build matrix forever.</p>
-      <p><strong>Layer36 asks a different question:</strong> what if the app talked to one common layer, and that layer translated to the host underneath?</p>
+      <p><strong>Krate asks a different question:</strong> what if the app talked to one common layer, and that layer translated to the host underneath?</p>
     </div>
     <div class="panel">
       <div class="mini-title">Files already work this way</div>
@@ -424,18 +424,18 @@
           <span>Different builds. Different APIs. Different permission behavior.</span>
         </div>
       </div>
-      <p class="note">Layer36 is not saying apps are as simple as PDFs. It is saying software should have a portability layer that makes the app less tied to one host.</p>
+      <p class="note">Krate is not saying apps are as simple as PDFs. It is saying software should have a portability layer that makes the app less tied to one host.</p>
     </div>
   </section>
 
   <section class="section">
-    <h2>The Layer36 idea in one picture</h2>
+    <h2>The Krate idea in one picture</h2>
     <div class="diagram">
       <div class="node"><b>App source</b><span>The developer writes the app in Rust, TypeScript, Go, or another language.</span></div>
       <div class="arrow">down</div>
-      <div class="node"><b>WebAssembly component</b><span>The app becomes one portable artifact. This is the file Layer36 runs.</span></div>
+      <div class="node"><b>WebAssembly component</b><span>The app becomes one portable artifact. This is the file Krate runs.</span></div>
       <div class="arrow">down</div>
-      <div class="node"><b>Layer36 runtime</b><span>The local engine loads the component and connects it to Layer36 APIs.</span></div>
+      <div class="node"><b>Krate runtime</b><span>The local engine loads the component and connects it to Krate APIs.</span></div>
       <div class="arrow">down</div>
       <div class="node"><b>UAPI + UCap</b><span>UAPI is the common app API. UCap checks what the app is allowed to do.</span></div>
       <div class="arrow">down</div>
@@ -444,42 +444,42 @@
   </section>
 
   <section class="section">
-    <h2>Example: how `layer36-clock` becomes terminal output</h2>
+    <h2>Example: how `krate-clock` becomes terminal output</h2>
     <div class="flow-wrap">
       <div class="system-flow">
         <div class="flow-step">
           <small>App code</small>
-          <b>`layer36-clock` source</b>
+          <b>`krate-clock` source</b>
           <span>The sample app asks for time, locale, timezone, and stdout. In simple terms: "What time should I show, and where do I print it?"</span>
         </div>
         <div class="flow-step">
           <small>Portable file</small>
           <b>WebAssembly component</b>
-          <span>The app is compiled into `layer36_clock.wasm`, a portable artifact that the Layer36 runtime can load.</span>
+          <span>The app is compiled into `krate_clock.wasm`, a portable artifact that the Krate runtime can load.</span>
         </div>
         <div class="flow-step">
           <small>Runtime</small>
-          <b>`layer36 run`</b>
+          <b>`krate run`</b>
           <span>The CLI starts a runtime session, loads the component, applies test time/locale flags, and connects the app to UAPI.</span>
         </div>
         <div class="flow-step">
           <small>UAPI</small>
           <b>Time, locale, stdout</b>
-          <span>The app calls Layer36 APIs instead of directly calling macOS, Windows, or Linux APIs.</span>
+          <span>The app calls Krate APIs instead of directly calling macOS, Windows, or Linux APIs.</span>
         </div>
         <div class="flow-step">
           <small>UCap + adapter</small>
           <b>Check then translate</b>
-          <span>Layer36 checks allowed capabilities, then the host adapter provides normalized time, locale, and output behavior.</span>
+          <span>Krate checks allowed capabilities, then the host adapter provides normalized time, locale, and output behavior.</span>
         </div>
         <div class="flow-step output">
           <small>Output</small>
           <b>Terminal result</b>
-          <span>`app=layer36-clock`, `timezone=UTC`, `locale=en-US`, `date=1970-01-15 06:56`.</span>
+          <span>`app=krate-clock`, `timezone=UTC`, `locale=en-US`, `date=1970-01-15 06:56`.</span>
         </div>
       </div>
     </div>
-    <p class="flow-caption">This is a small example, but it shows the complete shape: portable app artifact, Layer36 runtime, common APIs, capability checks, host adapter, and final output.</p>
+    <p class="flow-caption">This is a small example, but it shows the complete shape: portable app artifact, Krate runtime, common APIs, capability checks, host adapter, and final output.</p>
   </section>
 
   <section class="section">
@@ -489,15 +489,15 @@
       <div class="phase3-lane">
         <h3>From CLI proof</h3>
         <div class="phase3-stack">
-          <div class="phase3-step"><div class="phase3-num">1</div><div><b>Terminal output</b><span>Today, `layer36-clock` prints a stable result to the terminal.</span></div></div>
+          <div class="phase3-step"><div class="phase3-num">1</div><div><b>Terminal output</b><span>Today, `krate-clock` prints a stable result to the terminal.</span></div></div>
           <div class="phase3-step"><div class="phase3-num">2</div><div><b>Small UAPI surface</b><span>Time, locale, files, network, and I/O are the first useful host capabilities.</span></div></div>
-          <div class="phase3-step"><div class="phase3-num">3</div><div><b>Permission proof</b><span>Layer36 can show, grant, deny, and record host access.</span></div></div>
+          <div class="phase3-step"><div class="phase3-num">3</div><div><b>Permission proof</b><span>Krate can show, grant, deny, and record host access.</span></div></div>
         </div>
       </div>
       <div class="phase3-lane">
         <h3>To desktop app proof</h3>
         <div class="phase3-stack">
-          <div class="phase3-step"><div class="phase3-num">1</div><div><b>Window UAPI</b><span>The app asks Layer36 for a window, layout surface, events, and drawing.</span></div></div>
+          <div class="phase3-step"><div class="phase3-num">1</div><div><b>Window UAPI</b><span>The app asks Krate for a window, layout surface, events, and drawing.</span></div></div>
           <div class="phase3-step"><div class="phase3-num">2</div><div><b>Desktop adapter</b><span>macOS, Windows, and Linux adapters translate that into native windows.</span></div></div>
           <div class="phase3-step"><div class="phase3-num">3</div><div><b>Same app model</b><span>The app still uses one artifact and explicit capabilities instead of becoming three separate desktop apps.</span></div></div>
         </div>
@@ -512,32 +512,32 @@
             <div class="window-main">
               <div class="window-line"></div>
               <div class="window-line short"></div>
-              <div class="window-card"><strong>Layer36 desktop preview</strong><br><span style="color: var(--muted);">One WebAssembly app, native host window, explicit permissions.</span></div>
+              <div class="window-card"><strong>Krate desktop preview</strong><br><span style="color: var(--muted);">One WebAssembly app, native host window, explicit permissions.</span></div>
             </div>
           </div>
         </div>
       </div>
     </div>
-    <p class="flow-caption">In simple terms: Phase 3 should move Layer36 from "a safe portable CLI app can run" to "a safe portable desktop app can open a real window and respond to users."</p>
+    <p class="flow-caption">In simple terms: Phase 3 should move Krate from "a safe portable CLI app can run" to "a safe portable desktop app can open a real window and respond to users."</p>
     <p class="flow-caption">Current progress: the macOS prototype can create an opt-in AppKit window, attach a first draw view, collect native window callbacks, and process one non-blocking event-loop tick. The runtime can request that AppKit path by name, and there is a local smoke command that opens the native path, pumps one tick, checks the report, and closes it. Linux and Windows now have guarded Winit prototype boundaries, a session owner scaffold, and a callback collector bridge, which means future Winit handlers have a tested inbox for resize, focus, scale, redraw, and close callbacks. Real Linux and Windows windows are still next. The normal path still stays headless for safety.</p>
   </section>
 
   <section class="section split">
     <div class="plain">
-      <h2>What is Layer36 able to do today?</h2>
-      <p>Layer36 is pre-alpha, but the current Phase 2 proof is real. The CLI can run WebAssembly components that call Layer36 for time, locale, files, terminal output, and a first local HTTP path.</p>
+      <h2>What is Krate able to do today?</h2>
+      <p>Krate is pre-alpha, but the current Phase 2 proof is real. The CLI can run WebAssembly components that call Krate for time, locale, files, terminal output, and a first local HTTP path.</p>
       <p>The most important proof is not just "it runs." The important proof is that host access can be <strong>declared, granted, denied, and tested</strong>.</p>
     </div>
     <div class="panel">
       <div class="mini-title">Current proof moments</div>
-      <div class="terminal"><span class="cmd">manifest explain layer36-cat</span>
+      <div class="terminal"><span class="cmd">manifest explain krate-cat</span>
 fs.read:fixtures/** requires a launch grant
 
 <span class="cmd">run without file grant</span>
 <span class="deny">permission denied: fs.read:fixtures/**</span>
 
 <span class="cmd">run with file grant</span>
-<span class="good">hello from Layer36</span>
+<span class="good">hello from Krate</span>
 
 <span class="cmd">run curl with network grant</span>
 <span class="good">portable runtime response</span></div>
@@ -548,10 +548,10 @@ fs.read:fixtures/** requires a launch grant
     <h2>Technical terms, translated</h2>
     <div class="panel">
       <div class="term"><b>WebAssembly</b><span>A portable program format. In simple words: the app becomes a file that a runtime can execute on different machines.</span></div>
-      <div class="term"><b>Runtime</b><span>The local engine that opens and runs the app artifact. For Layer36, this is the `layer36` CLI/runtime.</span></div>
-      <div class="term"><b>UAPI</b><span>Universal API. Instead of asking macOS, Windows, or Linux directly for files or network, the app asks Layer36.</span></div>
+      <div class="term"><b>Runtime</b><span>The local engine that opens and runs the app artifact. For Krate, this is the `krate` CLI/runtime.</span></div>
+      <div class="term"><b>UAPI</b><span>Universal API. Instead of asking macOS, Windows, or Linux directly for files or network, the app asks Krate.</span></div>
       <div class="term"><b>UCap</b><span>Universal Capabilities. The permission layer. It checks whether the app was granted file, network, time, or other host access.</span></div>
-      <div class="term"><b>Host adapter</b><span>The translator. It turns approved Layer36 calls into native operating system calls.</span></div>
+      <div class="term"><b>Host adapter</b><span>The translator. It turns approved Krate calls into native operating system calls.</span></div>
       <div class="term"><b>Manifest</b><span>A small file that says what the app is and what permissions it needs.</span></div>
     </div>
   </section>
@@ -559,8 +559,8 @@ fs.read:fixtures/** requires a launch grant
   <section class="section">
     <h2>What happens when an app reads a file?</h2>
     <div class="cards">
-      <div class="card"><span class="pill">1</span><h3>The app asks</h3><p>The WebAssembly component calls the Layer36 file API.</p></div>
-      <div class="card"><span class="pill">2</span><h3>Layer36 checks</h3><p>UCap checks whether this run granted `fs.read` for that path.</p></div>
+      <div class="card"><span class="pill">1</span><h3>The app asks</h3><p>The WebAssembly component calls the Krate file API.</p></div>
+      <div class="card"><span class="pill">2</span><h3>Krate checks</h3><p>UCap checks whether this run granted `fs.read` for that path.</p></div>
       <div class="card"><span class="pill">3</span><h3>The host acts</h3><p>If allowed, the adapter reads the file through the native OS. If not, the app gets permission denied.</p></div>
     </div>
   </section>
@@ -580,18 +580,18 @@ fs.read:fixtures/** requires a launch grant
   <section class="section split">
     <div class="plain">
       <h2>The honest status</h2>
-      <p>Layer36 is not a finished universal app platform yet. It does not have production GUI, mobile, app bundles, marketplace, or hardened third-party sandboxing.</p>
+      <p>Krate is not a finished universal app platform yet. It does not have production GUI, mobile, app bundles, marketplace, or hardened third-party sandboxing.</p>
       <p>What it does have is a credible pre-alpha runtime proof: portable components, a real UAPI slice, explicit permissions, denial behavior, sample apps, and evidence tracking.</p>
     </div>
     <div class="panel">
       <div class="mini-title">One sentence</div>
-      <p><strong>Layer36 is building the runtime layer that lets software run more like portable files: one artifact, explicit permissions, host adapters underneath.</strong></p>
+      <p><strong>Krate is building the runtime layer that lets software run more like portable files: one artifact, explicit permissions, host adapters underneath.</strong></p>
     </div>
   </section>
 </main>
 
 <footer>
-  <p>Layer36 is pre-alpha. This page explains the current proof and the direction, not a finished production platform.</p>
+  <p>Krate is pre-alpha. This page explains the current proof and the direction, not a finished production platform.</p>
 </footer>
 </body>
 </html>

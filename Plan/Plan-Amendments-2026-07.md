@@ -272,7 +272,7 @@ A fresh session following STATUS.md §8 lands on P3-VS-01, not on Winit windows.
 ---
 
 <a name="a9"></a>
-## Amendment A9 — Rename: Krate becomes Krate (added 2026-07-04)
+## Amendment A9 — Rename: Layer36 becomes Krate (added 2026-07-04)
 
 **Decision**: the product is **Krate**; the company is **Krate Labs**. The
 `.ai` naming neighborhood is crowded (krater.ai, krateo.ai, krates.ai), the
@@ -282,7 +282,7 @@ crate and Rust-crate meanings natively.
 **Phase A (done with this amendment)**: outward surfaces — README, docs
 title, introduction naming note, build log, STATUS, Build Plan name field,
 the product book, and founder-private materials — carry the new name with a
-"formerly Krate" transition note. Code, commands, crate names, and WIT
+"formerly Layer36" transition note. Code, commands, crate names, and WIT
 namespaces intentionally keep `krate`.
 
 **Phase B (scheduled slice — land BEFORE the UAPI v0.1 freeze decision)**:

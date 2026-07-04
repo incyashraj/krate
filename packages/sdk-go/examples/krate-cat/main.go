@@ -1,14 +1,14 @@
 package main
 
 import (
-	l36fs "github.com/incyashraj/krate/packages/sdk-go/layer36/fs"
-	l36io "github.com/incyashraj/krate/packages/sdk-go/layer36/io"
+	l36fs "github.com/incyashraj/krate/packages/sdk-go/krate/fs"
+	l36io "github.com/incyashraj/krate/packages/sdk-go/krate/io"
 )
 
 func main() {
 	args := l36io.Args()
 	if len(args) == 0 {
-		_ = l36io.Eprintln("usage: layer36-go-cat <path> [path...]")
+		_ = l36io.Eprintln("usage: krate-go-cat <path> [path...]")
 		return
 	}
 

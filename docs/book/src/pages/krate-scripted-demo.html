@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Layer36 Scripted Demo Video Asset</title>
-<meta name="description" content="A timed, recordable browser demo asset for explaining Layer36 runtime proof and desktop developer-preview direction." />
+<title>Krate Scripted Demo Video Asset</title>
+<meta name="description" content="A timed, recordable browser demo asset for explaining Krate runtime proof and desktop developer-preview direction." />
 <style>
   :root {
     --page: #eef2f6;
@@ -1058,7 +1058,7 @@
 <body>
 <div class="stage">
   <div class="topbar">
-    <span class="badge">Layer36</span>
+    <span class="badge">Krate</span>
     <span class="asset-name">Portable runtime proof</span>
     <span class="timer"><span class="time-text" id="timeLabel">0:00 / 3:20</span><span class="progress"><span id="progressBar"></span></span></span>
   </div>
@@ -1068,8 +1068,8 @@
       <div>
         <span class="chapter" id="chapter">Scene 1</span>
         <h1 id="title">Software should travel like files.</h1>
-        <p class="script" id="script">A PDF opens on every machine. You do not ship a Mac PDF and a Windows PDF. Layer36 asks: what if apps had a portability layer like that too?</p>
-        <p class="takeaway" id="takeaway">Layer36 is a portable runtime layer for software that needs explicit host permissions.</p>
+        <p class="script" id="script">A PDF opens on every machine. You do not ship a Mac PDF and a Windows PDF. Krate asks: what if apps had a portability layer like that too?</p>
+        <p class="takeaway" id="takeaway">Krate is a portable runtime layer for software that needs explicit host permissions.</p>
       </div>
     </section>
 
@@ -1092,9 +1092,9 @@ const scenes = [
   {
     seconds: 20,
     chapter: "Scene 1",
-    title: "Layer36 makes software portable by default.",
-    script: "A PDF can move between machines because the reader understands one common file format. Layer36 brings that idea to apps: one portable artifact, one runtime model, and explicit host permissions.",
-    takeaway: "Simple version: build the app once, run it through Layer36, and only grant the host powers it actually needs.",
+    title: "Krate makes software portable by default.",
+    script: "A PDF can move between machines because the reader understands one common file format. Krate brings that idea to apps: one portable artifact, one runtime model, and explicit host permissions.",
+    takeaway: "Simple version: build the app once, run it through Krate, and only grant the host powers it actually needs.",
     visual: `
       <div class="visual-title"><b>The plain-English model</b><span>From familiar file portability to app portability</span></div>
       <div class="pdf-row">
@@ -1127,7 +1127,7 @@ const scenes = [
         </div>
         <div class="contrast-arrow">-></div>
         <div class="contrast-panel target">
-          <b>Layer36</b>
+          <b>Krate</b>
           <div class="contrast-item"><span class="contrast-dot">1</span><span>One portable component becomes the app artifact.</span></div>
           <div class="contrast-item"><span class="contrast-dot">2</span><span>Permissions are declared before launch.</span></div>
           <div class="contrast-item"><span class="contrast-dot">3</span><span>Host adapters keep native behavior controlled.</span></div>
@@ -1137,17 +1137,17 @@ const scenes = [
   {
     seconds: 24,
     chapter: "Scene 2",
-    title: "The app talks to Layer36 before it touches the host.",
-    script: "The app compiles to WebAssembly. It calls Layer36's universal API instead of calling macOS, Windows, or Linux directly. Layer36 checks the capability rules before any host access happens.",
+    title: "The app talks to Krate before it touches the host.",
+    script: "The app compiles to WebAssembly. It calls Krate's universal API instead of calling macOS, Windows, or Linux directly. Krate checks the capability rules before any host access happens.",
     takeaway: "Technical version: WebAssembly gives the portable artifact; UAPI and UCap define what the app can ask for.",
     visual: `
-      <div class="visual-title"><b>Layer36 system path</b><span>One app, explicit permission boundary, native host result</span></div>
+      <div class="visual-title"><b>Krate system path</b><span>One app, explicit permission boundary, native host result</span></div>
       <div class="procedure">
         <div class="procedure-row">
           <div class="procedure-card delay-1">
             <span class="procedure-label">1. App code</span>
             <b>Developer imports UAPI</b>
-            <pre class="code-lite">use layer36::uapi;
+            <pre class="code-lite">use krate::uapi;
 
 uapi::time.now();
 uapi::fs.read(path);</pre>
@@ -1161,9 +1161,9 @@ uapi::fs.read(path);</pre>
           </div>
           <div class="procedure-arrow">-></div>
           <div class="procedure-card runtime delay-3">
-            <span class="procedure-label">3. Layer36 runtime</span>
+            <span class="procedure-label">3. Krate runtime</span>
             <b>UAPI routes through UCap</b>
-            <span>Layer36 receives the app request and checks whether that host capability is allowed.</span>
+            <span>Krate receives the app request and checks whether that host capability is allowed.</span>
           </div>
         </div>
         <div class="procedure-row">
@@ -1196,38 +1196,38 @@ uapi::fs.read(path);</pre>
     seconds: 21,
     chapter: "Scene 3",
     title: "Runnable artifacts already exist.",
-    script: "The demo is not a mockup. These commands build the Layer36 CLI and three small apps into WebAssembly artifacts: clock, cat, and curl.",
+    script: "The demo is not a mockup. These commands build the Krate CLI and three small apps into WebAssembly artifacts: clock, cat, and curl.",
     takeaway: "Proof point: there are real artifacts on disk, not just a diagram.",
     visual: `
       <div class="visual-title"><b>Build proof</b><span>CLI + sample apps compile locally</span></div>
       <div class="artifact-grid">
-        <div class="artifact-card"><div class="artifact-mark">CLI</div><b>layer36</b><span>The runtime command that launches components.</span></div>
+        <div class="artifact-card"><div class="artifact-mark">CLI</div><b>krate</b><span>The runtime command that launches components.</span></div>
         <div class="artifact-card"><div class="artifact-mark wasm">WASM</div><b>clock</b><span>Time and locale through UAPI.</span></div>
         <div class="artifact-card"><div class="artifact-mark wasm">WASM</div><b>cat</b><span>File read through explicit grants.</span></div>
         <div class="artifact-card"><div class="artifact-mark wasm">WASM</div><b>curl</b><span>Network connect through explicit grants.</span></div>
       </div>
-      <pre class="terminal compact"><span class="cmd">cargo build -p layer36-cli</span>
-<span class="cmd">scripts/build-layer36-clock-component.sh</span>
-<span class="cmd">scripts/build-layer36-cat-component.sh</span>
-<span class="cmd">scripts/build-layer36-curl-component.sh</span>
+      <pre class="terminal compact"><span class="cmd">cargo build -p krate-cli</span>
+<span class="cmd">scripts/build-krate-clock-component.sh</span>
+<span class="cmd">scripts/build-krate-cat-component.sh</span>
+<span class="cmd">scripts/build-krate-curl-component.sh</span>
 
-<span class="ok">layer36_clock.wasm</span>
-<span class="ok">layer36_cat.wasm</span>
-<span class="ok">layer36_curl.wasm</span></pre>`
+<span class="ok">krate_clock.wasm</span>
+<span class="ok">krate_cat.wasm</span>
+<span class="ok">krate_curl.wasm</span></pre>`
   },
   {
     seconds: 24,
     chapter: "Scene 4",
     title: "The manifest makes app powers visible.",
-    script: "Before running an app, Layer36 can explain what it wants. Standard plumbing like arguments and stdout can be default-granted. Reading files is different: it needs an explicit grant.",
-    takeaway: "Simple version: Layer36 shows the permission request before the app gets the power.",
+    script: "Before running an app, Krate can explain what it wants. Standard plumbing like arguments and stdout can be default-granted. Reading files is different: it needs an explicit grant.",
+    takeaway: "Simple version: Krate shows the permission request before the app gets the power.",
     visual: `
       <div class="visual-title"><b>Permission label</b><span>The app declares what host access it needs</span></div>
       <div class="permission-board">
         <div class="permission-row"><b>io.args / io.stdout / io.stderr</b><span>basic app plumbing</span><div class="cap-chip default">default grant</div></div>
         <div class="permission-row restricted"><b>fs.read:fixtures/**</b><span>host file system power</span><div class="cap-chip grant">launch grant needed</div></div>
       </div>
-      <pre class="terminal compact"><span class="cmd">target/debug/layer36 manifest explain apps/layer36-cat/manifest.toml</span>
+      <pre class="terminal compact"><span class="cmd">target/debug/krate manifest explain apps/krate-cat/manifest.toml</span>
 
 Capabilities
   - io.args
@@ -1247,12 +1247,12 @@ Capabilities
     script: "Even a tiny clock app proves the full system path: portable app artifact, runtime loading, UAPI call, permission shape, host adapter, and deterministic output.",
     takeaway: "The clock is intentionally simple, but it travels through the same architecture a larger app would use.",
     visual: `
-      <div class="visual-title"><b>layer36-clock execution path</b><span>A small app using the full runtime model</span></div>
+      <div class="visual-title"><b>krate-clock execution path</b><span>A small app using the full runtime model</span></div>
       <div class="clock-demo">
         <div class="clock-path">
           <div class="clock-step delay-1">
             <div class="clock-num">1</div>
-            <div><b>Code uses UAPI</b><span>The clock app asks for time, locale, timezone, and stdout through Layer36 APIs.</span></div>
+            <div><b>Code uses UAPI</b><span>The clock app asks for time, locale, timezone, and stdout through Krate APIs.</span></div>
           </div>
           <div class="clock-step delay-2">
             <div class="clock-num">2</div>
@@ -1260,18 +1260,18 @@ Capabilities
           </div>
           <div class="clock-step runtime delay-3">
             <div class="clock-num">3</div>
-            <div><b>Layer36 loads and checks</b><span>The runtime links UAPI and enforces the capability boundary before host access.</span></div>
+            <div><b>Krate loads and checks</b><span>The runtime links UAPI and enforces the capability boundary before host access.</span></div>
           </div>
           <div class="clock-step output delay-4">
             <div class="clock-num">4</div>
             <div><b>Approved output returns</b><span>The host-backed time call returns deterministic terminal output.</span></div>
           </div>
         </div>
-        <pre class="terminal compact fit"><span class="cmd">layer36 run --auto-grant
-  --manifest apps/layer36-clock/manifest.toml
-  layer36_clock.wasm</span>
+        <pre class="terminal compact fit"><span class="cmd">krate run --auto-grant
+  --manifest apps/krate-clock/manifest.toml
+  krate_clock.wasm</span>
 
-<span class="ok">app=layer36-clock
+<span class="ok">app=krate-clock
 timezone=UTC
 locale=en-US
 date=1970-01-15 06:56</span></pre>
@@ -1282,18 +1282,18 @@ date=1970-01-15 06:56</span></pre>
     seconds: 24,
     chapter: "Scene 6",
     title: "When permission is missing, the app is blocked.",
-    script: "This is the safety proof. The file-reading app is real, but this launch does not grant file access. Layer36 denies the run before the app can read from the host.",
+    script: "This is the safety proof. The file-reading app is real, but this launch does not grant file access. Krate denies the run before the app can read from the host.",
     takeaway: "Important investor point: portability and safety are the same system, not two separate stories.",
     visual: `
       <div class="visual-title"><b>Permission boundary</b><span>Access is denied unless the grant is present</span></div>
       <div class="gate-flow">
         <div class="gate-card"><small>App request</small><b>Read ./fixtures/hello.txt</b><span>The component asks through its declared manifest.</span></div>
         <div class="gate-arrow">-></div>
-        <div class="gate-card denied"><small>UCap gate</small><b>No fs grant</b><span>Layer36 refuses before host file access happens.</span></div>
+        <div class="gate-card denied"><small>UCap gate</small><b>No fs grant</b><span>Krate refuses before host file access happens.</span></div>
         <div class="gate-arrow">-></div>
         <div class="gate-card denied"><small>Result</small><b>Denied</b><span>The host file system stays closed.</span></div>
       </div>
-      <pre class="terminal compact"><span class="cmd">layer36 run --manifest manifest.toml layer36_cat.wasm -- ./fixtures/hello.txt</span>
+      <pre class="terminal compact"><span class="cmd">krate run --manifest manifest.toml krate_cat.wasm -- ./fixtures/hello.txt</span>
 
 <span class="deny">permission denied: missing required capabilities
   - fs.read:fixtures/**</span></pre>`
@@ -1307,21 +1307,21 @@ date=1970-01-15 06:56</span></pre>
     visual: `
       <div class="visual-title"><b>Approved launch</b><span>Same artifact, explicit permission granted</span></div>
       <div class="gate-flow">
-        <div class="gate-card"><small>Same app</small><b>layer36_cat.wasm</b><span>The component and file path do not change.</span></div>
+        <div class="gate-card"><small>Same app</small><b>krate_cat.wasm</b><span>The component and file path do not change.</span></div>
         <div class="gate-arrow">-></div>
         <div class="gate-card allowed"><small>UCap gate</small><b>fs grant present</b><span>The declared capability is approved for this launch.</span></div>
         <div class="gate-arrow">-></div>
         <div class="gate-card allowed"><small>Result</small><b>File output</b><span>The app reads only the approved fixture path.</span></div>
       </div>
-      <pre class="terminal compact"><span class="cmd">layer36 run --manifest manifest.toml --auto-grant layer36_cat.wasm -- ./fixtures/hello.txt</span>
+      <pre class="terminal compact"><span class="cmd">krate run --manifest manifest.toml --auto-grant krate_cat.wasm -- ./fixtures/hello.txt</span>
 
-<span class="ok">hello from Layer36</span></pre>`
+<span class="ok">hello from Krate</span></pre>`
   },
   {
     seconds: 21,
     chapter: "Scene 8",
     title: "Network access follows the same rule.",
-    script: "File access and network access are different host powers, but Layer36 treats them the same way: declare what is needed, grant what is allowed, deny the rest.",
+    script: "File access and network access are different host powers, but Krate treats them the same way: declare what is needed, grant what is allowed, deny the rest.",
     takeaway: "The permission model generalizes beyond one file demo.",
     visual: `
       <div class="visual-title"><b>Network proof</b><span>Host powers are granted explicitly</span></div>
@@ -1332,7 +1332,7 @@ date=1970-01-15 06:56</span></pre>
         <div class="gate-arrow">-></div>
         <div class="network-card grant"><b>Response</b><span>Only the granted endpoint returns data.</span></div>
       </div>
-      <pre class="terminal compact"><span class="cmd">layer36 run --grant net.connect:127.0.0.1:8765 layer36_curl.wasm -- http://127.0.0.1:8765/demo.txt</span>
+      <pre class="terminal compact"><span class="cmd">krate run --grant net.connect:127.0.0.1:8765 krate_curl.wasm -- http://127.0.0.1:8765/demo.txt</span>
 
 <span class="ok">portable runtime response</span></pre>`
   },
@@ -1340,7 +1340,7 @@ date=1970-01-15 06:56</span></pre>
     seconds: 29,
     chapter: "Scene 9",
     title: "The next visible product proof is a desktop preview.",
-    script: "The next milestone is simple to understand: take the same portable artifact model and open a native desktop window. The app still calls Layer36. The host adapter still translates. Permissions stay explicit.",
+    script: "The next milestone is simple to understand: take the same portable artifact model and open a native desktop window. The app still calls Krate. The host adapter still translates. Permissions stay explicit.",
     takeaway: "This is the step from command-line proof to a developer-preview product surface.",
     visual: `
       <div class="visual-title"><b>Next product target</b><span>From CLI proof to native window proof</span></div>
@@ -1357,7 +1357,7 @@ date=1970-01-15 06:56</span></pre>
       </div>
       <div class="phase-bridge">
         <div class="phase-node"><small>Artifact</small><b>app.wasm</b><span>Same portable app package.</span></div>
-        <div class="phase-node runtime"><small>Runtime</small><b>Layer36</b><span>Loads the app and owns host decisions.</span></div>
+        <div class="phase-node runtime"><small>Runtime</small><b>Krate</b><span>Loads the app and owns host decisions.</span></div>
         <div class="phase-node runtime"><small>UAPI</small><b>Window, input, storage</b><span>Desktop asks go through one API surface.</span></div>
         <div class="phase-node"><small>Adapters</small><b>macOS / Windows / Linux</b><span>Translate approved calls into host behavior.</span></div>
         <div class="phase-node output"><small>Proof</small><b>Native preview app</b><span>A developer can run and inspect it.</span></div>
@@ -1367,7 +1367,7 @@ date=1970-01-15 06:56</span></pre>
     seconds: 24,
     chapter: "Scene 10",
     title: "The honest status: real proof, still pre-alpha.",
-    script: "Layer36 is not claiming a finished universal platform yet. It has runtime proof, visible permissions, sample apps, and evidence tracking. The investment case is to turn this into a validated developer platform: first a desktop developer preview, then mobile feasibility, SDK and packaging workflow, and distribution foundations as funding and validation allow.",
+    script: "Krate is not claiming a finished universal platform yet. It has runtime proof, visible permissions, sample apps, and evidence tracking. The investment case is to turn this into a validated developer platform: first a desktop developer preview, then mobile feasibility, SDK and packaging workflow, and distribution foundations as funding and validation allow.",
     takeaway: "Credibility comes from showing what works, naming what still needs proof, and using capital to turn speed into developer pull.",
     visual: `
       <div class="visual-title"><b>Current evidence posture</b><span>Strong enough to demo, honest about remaining proof</span></div>
@@ -1384,7 +1384,7 @@ date=1970-01-15 06:56</span></pre>
       </div>
       <pre class="terminal compact"><span class="cmd">scripts/phase2-exit-readiness.sh</span>
 
-Layer36 Phase 2 exit readiness
+Krate Phase 2 exit readiness
 - gates tracked: 15
 - fully done: 3
 - strong draft: 1

@@ -1,4 +1,4 @@
-import { monotonicNanos, nowMillis } from "layer36:time/clock";
-import { sleepMillis } from "layer36:time/sleep";
+import { monotonicNanos, nowMillis } from "krate:time/clock";
+import { sleepMillis } from "krate:time/sleep";
 
 export { monotonicNanos, nowMillis, sleepMillis };

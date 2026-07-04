@@ -21,7 +21,7 @@ macro_rules! __export_world_app_cabi {
 pub(crate) use __export_world_app_cabi;
 #[rustfmt::skip]
 #[allow(dead_code, clippy::all)]
-pub mod layer36 {
+pub mod krate {
     pub mod phase1 {
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod host {
@@ -36,7 +36,7 @@ pub mod layer36 {
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:phase1/host@0.0.1")]
+                    #[link(wasm_import_module = "krate:phase1/host@0.0.1")]
                     unsafe extern "C" {
                         #[link_name = "print"]
                         fn wit_import1(_: *mut u8, _: usize);
@@ -52,7 +52,7 @@ pub mod layer36 {
             pub fn exit(code: i32) -> () {
                 unsafe {
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:phase1/host@0.0.1")]
+                    #[link(wasm_import_module = "krate:phase1/host@0.0.1")]
                     unsafe extern "C" {
                         #[link_name = "exit"]
                         fn wit_import0(_: i32);
@@ -165,15 +165,15 @@ macro_rules! __export_app_impl {
 pub(crate) use __export_app_impl as export;
 #[cfg(target_arch = "wasm32")]
 #[unsafe(
-    link_section = "component-type:wit-bindgen:0.41.0:layer36:phase1@0.0.1:app:encoded world"
+    link_section = "component-type:wit-bindgen:0.41.0:krate:phase1@0.0.1:app:encoded world"
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
 pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 242] = *b"\
 \0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07y\x01A\x02\x01A\x04\x01\
 B\x04\x01@\x01\x03msgs\x01\0\x04\0\x05print\x01\0\x01@\x01\x04codez\x01\0\x04\0\x04\
-exit\x01\x01\x03\0\x19layer36:phase1/host@0.0.1\x05\0\x01@\0\x01\0\x04\0\x03run\x01\
-\x01\x04\0\x18layer36:phase1/app@0.0.1\x04\0\x0b\x09\x01\0\x03app\x03\0\0\0G\x09\
+exit\x01\x01\x03\0\x19krate:phase1/host@0.0.1\x05\0\x01@\0\x01\0\x04\0\x03run\x01\
+\x01\x04\0\x18krate:phase1/app@0.0.1\x04\0\x0b\x09\x01\0\x03app\x03\0\0\0G\x09\
 producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rus\
 t\x060.41.0";
 #[inline(never)]

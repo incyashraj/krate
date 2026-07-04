@@ -23,7 +23,7 @@ macro_rules! __export_world_cli_cabi {
 pub(crate) use __export_world_cli_cabi;
 #[rustfmt::skip]
 #[allow(dead_code, clippy::all)]
-pub mod layer36 {
+pub mod krate {
     pub mod fs {
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod types {
@@ -124,9 +124,9 @@ pub mod layer36 {
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
-            pub type FileStat = super::super::super::layer36::fs::types::FileStat;
-            pub type OpenMode = super::super::super::layer36::fs::types::OpenMode;
-            pub type FsError = super::super::super::layer36::fs::types::FsError;
+            pub type FileStat = super::super::super::krate::fs::types::FileStat;
+            pub type OpenMode = super::super::super::krate::fs::types::OpenMode;
+            pub type FsError = super::super::super::krate::fs::types::FsError;
             #[derive(Debug)]
             #[repr(transparent)]
             pub struct File {
@@ -155,7 +155,7 @@ pub mod layer36 {
                     unreachable!();
                     #[cfg(target_arch = "wasm32")]
                     {
-                        #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[resource-drop]file"]
                             fn drop(_: u32);
@@ -181,7 +181,7 @@ pub mod layer36 {
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]file.read"]
                             fn wit_import1(_: i32, _: i32, _: *mut u8);
@@ -213,7 +213,7 @@ pub mod layer36 {
                                     let l6 = i32::from(
                                         *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                     );
-                                    use super::super::super::layer36::fs::types::FsError as V10;
+                                    use super::super::super::krate::fs::types::FsError as V10;
                                     let v10 = match l6 {
                                         0 => V10::NotFound,
                                         1 => V10::PermissionDenied,
@@ -271,7 +271,7 @@ pub mod layer36 {
                         let len0 = vec0.len();
                         let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]file.write"]
                             fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8);
@@ -309,7 +309,7 @@ pub mod layer36 {
                                     let l5 = i32::from(
                                         *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                     );
-                                    use super::super::super::layer36::fs::types::FsError as V9;
+                                    use super::super::super::krate::fs::types::FsError as V9;
                                     let v9 = match l5 {
                                         0 => V9::NotFound,
                                         1 => V9::PermissionDenied,
@@ -363,7 +363,7 @@ pub mod layer36 {
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]file.seek-set"]
                             fn wit_import1(_: i32, _: i64, _: *mut u8);
@@ -387,7 +387,7 @@ pub mod layer36 {
                             1 => {
                                 let e = {
                                     let l4 = i32::from(*ptr0.add(8).cast::<u8>());
-                                    use super::super::super::layer36::fs::types::FsError as V8;
+                                    use super::super::super::krate::fs::types::FsError as V8;
                                     let v8 = match l4 {
                                         0 => V8::NotFound,
                                         1 => V8::PermissionDenied,
@@ -441,7 +441,7 @@ pub mod layer36 {
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]file.seek-end"]
                             fn wit_import1(_: i32, _: *mut u8);
@@ -463,7 +463,7 @@ pub mod layer36 {
                             1 => {
                                 let e = {
                                     let l4 = i32::from(*ptr0.add(8).cast::<u8>());
-                                    use super::super::super::layer36::fs::types::FsError as V8;
+                                    use super::super::super::krate::fs::types::FsError as V8;
                                     let v8 = match l4 {
                                         0 => V8::NotFound,
                                         1 => V8::PermissionDenied,
@@ -512,7 +512,7 @@ pub mod layer36 {
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                        #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]file.stat"]
                             fn wit_import1(_: i32, _: *mut u8);
@@ -529,7 +529,7 @@ pub mod layer36 {
                                     let l3 = *ptr0.add(8).cast::<i64>();
                                     let l4 = *ptr0.add(16).cast::<i64>();
                                     let l5 = i32::from(*ptr0.add(24).cast::<u8>());
-                                    super::super::super::layer36::fs::types::FileStat {
+                                    super::super::super::krate::fs::types::FileStat {
                                         size: l3 as u64,
                                         modified_millis: l4 as u64,
                                         is_dir: _rt::bool_lift(l5 as u8),
@@ -540,7 +540,7 @@ pub mod layer36 {
                             1 => {
                                 let e = {
                                     let l6 = i32::from(*ptr0.add(8).cast::<u8>());
-                                    use super::super::super::layer36::fs::types::FsError as V10;
+                                    use super::super::super::krate::fs::types::FsError as V10;
                                     let v10 = match l6 {
                                         0 => V10::NotFound,
                                         1 => V10::PermissionDenied,
@@ -595,7 +595,7 @@ pub mod layer36 {
                     let vec0 = path;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
-                    use super::super::super::layer36::fs::types::OpenMode as V1;
+                    use super::super::super::krate::fs::types::OpenMode as V1;
                     let result2 = match mode {
                         V1::Read => 0i32,
                         V1::Write => 1i32,
@@ -604,7 +604,7 @@ pub mod layer36 {
                     };
                     let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "open"]
                         fn wit_import4(_: *mut u8, _: usize, _: i32, _: *mut u8);
@@ -635,7 +635,7 @@ pub mod layer36 {
                                 let l7 = i32::from(
                                     *ptr3.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::layer36::fs::types::FsError as V11;
+                                use super::super::super::krate::fs::types::FsError as V11;
                                 let v11 = match l7 {
                                     0 => V11::NotFound,
                                     1 => V11::PermissionDenied,
@@ -683,7 +683,7 @@ pub mod layer36 {
                     let len0 = vec0.len();
                     let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "stat"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
@@ -700,7 +700,7 @@ pub mod layer36 {
                                 let l4 = *ptr1.add(8).cast::<i64>();
                                 let l5 = *ptr1.add(16).cast::<i64>();
                                 let l6 = i32::from(*ptr1.add(24).cast::<u8>());
-                                super::super::super::layer36::fs::types::FileStat {
+                                super::super::super::krate::fs::types::FileStat {
                                     size: l4 as u64,
                                     modified_millis: l5 as u64,
                                     is_dir: _rt::bool_lift(l6 as u8),
@@ -711,7 +711,7 @@ pub mod layer36 {
                         1 => {
                             let e = {
                                 let l7 = i32::from(*ptr1.add(8).cast::<u8>());
-                                use super::super::super::layer36::fs::types::FsError as V11;
+                                use super::super::super::krate::fs::types::FsError as V11;
                                 let v11 = match l7 {
                                     0 => V11::NotFound,
                                     1 => V11::PermissionDenied,
@@ -767,7 +767,7 @@ pub mod layer36 {
                     let len0 = vec0.len();
                     let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "list"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
@@ -822,7 +822,7 @@ pub mod layer36 {
                                 let l10 = i32::from(
                                     *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::layer36::fs::types::FsError as V14;
+                                use super::super::super::krate::fs::types::FsError as V14;
                                 let v14 = match l10 {
                                     0 => V14::NotFound,
                                     1 => V14::PermissionDenied,
@@ -878,7 +878,7 @@ pub mod layer36 {
                     let len0 = vec0.len();
                     let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "remove-file"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
@@ -899,7 +899,7 @@ pub mod layer36 {
                                 let l4 = i32::from(
                                     *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::layer36::fs::types::FsError as V8;
+                                use super::super::super::krate::fs::types::FsError as V8;
                                 let v8 = match l4 {
                                     0 => V8::NotFound,
                                     1 => V8::PermissionDenied,
@@ -955,7 +955,7 @@ pub mod layer36 {
                     let len0 = vec0.len();
                     let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "remove-dir"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
@@ -976,7 +976,7 @@ pub mod layer36 {
                                 let l4 = i32::from(
                                     *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::layer36::fs::types::FsError as V8;
+                                use super::super::super::krate::fs::types::FsError as V8;
                                 let v8 = match l4 {
                                     0 => V8::NotFound,
                                     1 => V8::PermissionDenied,
@@ -1032,7 +1032,7 @@ pub mod layer36 {
                     let len0 = vec0.len();
                     let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "mkdir"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
@@ -1053,7 +1053,7 @@ pub mod layer36 {
                                 let l4 = i32::from(
                                     *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::layer36::fs::types::FsError as V8;
+                                use super::super::super::krate::fs::types::FsError as V8;
                                 let v8 = match l4 {
                                     0 => V8::NotFound,
                                     1 => V8::PermissionDenied,
@@ -1112,7 +1112,7 @@ pub mod layer36 {
                     let len1 = vec1.len();
                     let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:fs/files@0.1.0")]
+                    #[link(wasm_import_module = "krate:fs/files@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "rename"]
                         fn wit_import3(
@@ -1147,7 +1147,7 @@ pub mod layer36 {
                                 let l5 = i32::from(
                                     *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::layer36::fs::types::FsError as V9;
+                                use super::super::super::krate::fs::types::FsError as V9;
                                 let v9 = match l5 {
                                     0 => V9::NotFound,
                                     1 => V9::PermissionDenied,
@@ -1278,7 +1278,7 @@ pub mod layer36 {
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
-            pub type IoError = super::super::super::layer36::io::types::IoError;
+            pub type IoError = super::super::super::krate::io::types::IoError;
             #[derive(Debug)]
             #[repr(transparent)]
             pub struct InputStream {
@@ -1307,7 +1307,7 @@ pub mod layer36 {
                     unreachable!();
                     #[cfg(target_arch = "wasm32")]
                     {
-                        #[link(wasm_import_module = "layer36:io/streams@0.1.0")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[resource-drop]input-stream"]
                             fn drop(_: u32);
@@ -1344,7 +1344,7 @@ pub mod layer36 {
                     unreachable!();
                     #[cfg(target_arch = "wasm32")]
                     {
-                        #[link(wasm_import_module = "layer36:io/streams@0.1.0")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[resource-drop]output-stream"]
                             fn drop(_: u32);
@@ -1370,7 +1370,7 @@ pub mod layer36 {
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "layer36:io/streams@0.1.0")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]input-stream.read"]
                             fn wit_import1(_: i32, _: i32, _: *mut u8);
@@ -1402,7 +1402,7 @@ pub mod layer36 {
                                     let l6 = i32::from(
                                         *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                     );
-                                    use super::super::super::layer36::io::types::IoError as V10;
+                                    use super::super::super::krate::io::types::IoError as V10;
                                     let v10 = match l6 {
                                         0 => V10::Closed,
                                         1 => V10::Interrupted,
@@ -1455,7 +1455,7 @@ pub mod layer36 {
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "layer36:io/streams@0.1.0")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]input-stream.read-to-string"]
                             fn wit_import1(_: i32, _: *mut u8);
@@ -1490,7 +1490,7 @@ pub mod layer36 {
                                     let l6 = i32::from(
                                         *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                     );
-                                    use super::super::super::layer36::io::types::IoError as V10;
+                                    use super::super::super::krate::io::types::IoError as V10;
                                     let v10 = match l6 {
                                         0 => V10::Closed,
                                         1 => V10::Interrupted,
@@ -1546,7 +1546,7 @@ pub mod layer36 {
                         let len0 = vec0.len();
                         let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "layer36:io/streams@0.1.0")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]output-stream.write"]
                             fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8);
@@ -1584,7 +1584,7 @@ pub mod layer36 {
                                     let l5 = i32::from(
                                         *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                     );
-                                    use super::super::super::layer36::io::types::IoError as V9;
+                                    use super::super::super::krate::io::types::IoError as V9;
                                     let v9 = match l5 {
                                         0 => V9::Closed,
                                         1 => V9::Interrupted,
@@ -1640,7 +1640,7 @@ pub mod layer36 {
                         let len0 = vec0.len();
                         let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "layer36:io/streams@0.1.0")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]output-stream.write-all"]
                             fn wit_import2(_: i32, _: *mut u8, _: usize, _: *mut u8);
@@ -1673,7 +1673,7 @@ pub mod layer36 {
                                     let l4 = i32::from(
                                         *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                     );
-                                    use super::super::super::layer36::io::types::IoError as V8;
+                                    use super::super::super::krate::io::types::IoError as V8;
                                     let v8 = match l4 {
                                         0 => V8::Closed,
                                         1 => V8::Interrupted,
@@ -1726,7 +1726,7 @@ pub mod layer36 {
                         );
                         let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                         #[cfg(target_arch = "wasm32")]
-                        #[link(wasm_import_module = "layer36:io/streams@0.1.0")]
+                        #[link(wasm_import_module = "krate:io/streams@0.1.0")]
                         unsafe extern "C" {
                             #[link_name = "[method]output-stream.flush"]
                             fn wit_import1(_: i32, _: *mut u8);
@@ -1747,7 +1747,7 @@ pub mod layer36 {
                                     let l3 = i32::from(
                                         *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                     );
-                                    use super::super::super::layer36::io::types::IoError as V7;
+                                    use super::super::super::krate::io::types::IoError as V7;
                                     let v7 = match l3 {
                                         0 => V7::Closed,
                                         1 => V7::Interrupted,
@@ -1789,13 +1789,13 @@ pub mod layer36 {
             #[used]
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
-            pub type InputStream = super::super::super::layer36::io::streams::InputStream;
-            pub type OutputStream = super::super::super::layer36::io::streams::OutputStream;
+            pub type InputStream = super::super::super::krate::io::streams::InputStream;
+            pub type OutputStream = super::super::super::krate::io::streams::OutputStream;
             #[allow(unused_unsafe, clippy::all)]
             pub fn stdin() -> InputStream {
                 unsafe {
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:io/stdio@0.1.0")]
+                    #[link(wasm_import_module = "krate:io/stdio@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "stdin"]
                         fn wit_import0() -> i32;
@@ -1806,7 +1806,7 @@ pub mod layer36 {
                     }
                     let ret = unsafe { wit_import0() };
                     unsafe {
-                        super::super::super::layer36::io::streams::InputStream::from_handle(
+                        super::super::super::krate::io::streams::InputStream::from_handle(
                             ret as u32,
                         )
                     }
@@ -1816,7 +1816,7 @@ pub mod layer36 {
             pub fn stdout() -> OutputStream {
                 unsafe {
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:io/stdio@0.1.0")]
+                    #[link(wasm_import_module = "krate:io/stdio@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "stdout"]
                         fn wit_import0() -> i32;
@@ -1827,7 +1827,7 @@ pub mod layer36 {
                     }
                     let ret = unsafe { wit_import0() };
                     unsafe {
-                        super::super::super::layer36::io::streams::OutputStream::from_handle(
+                        super::super::super::krate::io::streams::OutputStream::from_handle(
                             ret as u32,
                         )
                     }
@@ -1837,7 +1837,7 @@ pub mod layer36 {
             pub fn stderr() -> OutputStream {
                 unsafe {
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:io/stdio@0.1.0")]
+                    #[link(wasm_import_module = "krate:io/stdio@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "stderr"]
                         fn wit_import0() -> i32;
@@ -1848,7 +1848,7 @@ pub mod layer36 {
                     }
                     let ret = unsafe { wit_import0() };
                     unsafe {
-                        super::super::super::layer36::io::streams::OutputStream::from_handle(
+                        super::super::super::krate::io::streams::OutputStream::from_handle(
                             ret as u32,
                         )
                     }
@@ -1877,7 +1877,7 @@ pub mod layer36 {
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:io/args@0.1.0")]
+                    #[link(wasm_import_module = "krate:io/args@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "raw"]
                         fn wit_import1(_: *mut u8);
@@ -1904,7 +1904,7 @@ pub mod layer36 {
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
-            pub type LogLevel = super::super::super::layer36::io::types::LogLevel;
+            pub type LogLevel = super::super::super::krate::io::types::LogLevel;
             #[derive(Clone)]
             pub struct Field {
                 pub key: _rt::String,
@@ -1966,7 +1966,7 @@ pub mod layer36 {
                         }
                     }
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:io/log@0.1.0")]
+                    #[link(wasm_import_module = "krate:io/log@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "emit"]
                         fn wit_import5(
@@ -2104,7 +2104,7 @@ pub mod layer36 {
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
-            pub type LocaleId = super::super::super::layer36::locale::types::LocaleId;
+            pub type LocaleId = super::super::super::krate::locale::types::LocaleId;
             #[allow(unused_unsafe, clippy::all)]
             /// The user's preferred locale as reported by the host.
             pub fn current() -> LocaleId {
@@ -2122,7 +2122,7 @@ pub mod layer36 {
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:locale/info@0.1.0")]
+                    #[link(wasm_import_module = "krate:locale/info@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "current"]
                         fn wit_import1(_: *mut u8);
@@ -2138,7 +2138,7 @@ pub mod layer36 {
                         .cast::<usize>();
                     let len4 = l3;
                     let bytes4 = _rt::Vec::from_raw_parts(l2.cast(), len4, len4);
-                    let result5 = super::super::super::layer36::locale::types::LocaleId {
+                    let result5 = super::super::super::krate::locale::types::LocaleId {
                         bcp47: _rt::string_lift(bytes4),
                     };
                     result5
@@ -2161,7 +2161,7 @@ pub mod layer36 {
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:locale/info@0.1.0")]
+                    #[link(wasm_import_module = "krate:locale/info@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "timezone"]
                         fn wit_import1(_: *mut u8);
@@ -2188,9 +2188,9 @@ pub mod layer36 {
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
-            pub type LocaleId = super::super::super::layer36::locale::types::LocaleId;
-            pub type DateStyle = super::super::super::layer36::locale::types::DateStyle;
-            pub type NumberStyle = super::super::super::layer36::locale::types::NumberStyle;
+            pub type LocaleId = super::super::super::krate::locale::types::LocaleId;
+            pub type DateStyle = super::super::super::krate::locale::types::DateStyle;
+            pub type NumberStyle = super::super::super::krate::locale::types::NumberStyle;
             #[allow(unused_unsafe, clippy::all)]
             pub fn format_date(
                 millis: u64,
@@ -2213,7 +2213,7 @@ pub mod layer36 {
                     let vec0 = tz;
                     let ptr0 = vec0.as_ptr().cast::<u8>();
                     let len0 = vec0.len();
-                    let super::super::super::layer36::locale::types::LocaleId {
+                    let super::super::super::krate::locale::types::LocaleId {
                         bcp47: bcp471,
                     } = loc;
                     let vec2 = bcp471;
@@ -2221,7 +2221,7 @@ pub mod layer36 {
                     let len2 = vec2.len();
                     let ptr3 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:locale/format@0.1.0")]
+                    #[link(wasm_import_module = "krate:locale/format@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "format-date"]
                         fn wit_import4(
@@ -2285,7 +2285,7 @@ pub mod layer36 {
                         [::core::mem::MaybeUninit::uninit(); 2
                             * ::core::mem::size_of::<*const u8>()],
                     );
-                    let super::super::super::layer36::locale::types::LocaleId {
+                    let super::super::super::krate::locale::types::LocaleId {
                         bcp47: bcp470,
                     } = loc;
                     let vec1 = bcp470;
@@ -2293,7 +2293,7 @@ pub mod layer36 {
                     let len1 = vec1.len();
                     let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:locale/format@0.1.0")]
+                    #[link(wasm_import_module = "krate:locale/format@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "format-number"]
                         fn wit_import3(_: f64, _: i32, _: *mut u8, _: usize, _: *mut u8);
@@ -2503,9 +2503,9 @@ pub mod layer36 {
             #[doc(hidden)]
             static __FORCE_SECTION_REF: fn() = super::super::super::__link_custom_section_describing_imports;
             use super::super::super::_rt;
-            pub type Request = super::super::super::layer36::net::types::Request;
-            pub type Response = super::super::super::layer36::net::types::Response;
-            pub type NetError = super::super::super::layer36::net::types::NetError;
+            pub type Request = super::super::super::krate::net::types::Request;
+            pub type Response = super::super::super::krate::net::types::Response;
+            pub type NetError = super::super::super::krate::net::types::NetError;
             #[allow(unused_unsafe, clippy::all)]
             pub fn get(url: &str) -> Result<_rt::Vec<u8>, NetError> {
                 unsafe {
@@ -2525,7 +2525,7 @@ pub mod layer36 {
                     let len0 = vec0.len();
                     let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:net/http-client@0.1.0")]
+                    #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "get"]
                         fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
@@ -2555,7 +2555,7 @@ pub mod layer36 {
                                 let l7 = i32::from(
                                     *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::layer36::net::types::NetError as V23;
+                                use super::super::super::krate::net::types::NetError as V23;
                                 let v23 = match l7 {
                                     0 => V23::InvalidUrl,
                                     1 => {
@@ -2676,7 +2676,7 @@ pub mod layer36 {
                         [::core::mem::MaybeUninit::uninit(); 6
                             * ::core::mem::size_of::<*const u8>()],
                     );
-                    let super::super::super::layer36::net::types::Request {
+                    let super::super::super::krate::net::types::Request {
                         method: method0,
                         url: url0,
                         headers: headers0,
@@ -2705,7 +2705,7 @@ pub mod layer36 {
                         let base = result5
                             .add(i * (4 * ::core::mem::size_of::<*const u8>()));
                         {
-                            let super::super::super::layer36::net::types::Header {
+                            let super::super::super::krate::net::types::Header {
                                 name: name2,
                                 value: value2,
                             } = e;
@@ -2736,7 +2736,7 @@ pub mod layer36 {
                     };
                     let ptr8 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:net/http-client@0.1.0")]
+                    #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "fetch"]
                         fn wit_import9(
@@ -2823,7 +2823,7 @@ pub mod layer36 {
                                             len19,
                                             len19,
                                         );
-                                        super::super::super::layer36::net::types::Header {
+                                        super::super::super::krate::net::types::Header {
                                             name: _rt::string_lift(bytes16),
                                             value: _rt::string_lift(bytes19),
                                         }
@@ -2842,7 +2842,7 @@ pub mod layer36 {
                                     .add(5 * ::core::mem::size_of::<*const u8>())
                                     .cast::<usize>();
                                 let len23 = l22;
-                                super::super::super::layer36::net::types::Response {
+                                super::super::super::krate::net::types::Response {
                                     status: l11 as u16,
                                     headers: result20,
                                     body: _rt::Vec::from_raw_parts(l21.cast(), len23, len23),
@@ -2855,7 +2855,7 @@ pub mod layer36 {
                                 let l24 = i32::from(
                                     *ptr8.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::layer36::net::types::NetError as V40;
+                                use super::super::super::krate::net::types::NetError as V40;
                                 let v40 = match l24 {
                                     0 => V40::InvalidUrl,
                                     1 => {
@@ -2978,7 +2978,7 @@ pub mod layer36 {
             pub fn now_millis() -> u64 {
                 unsafe {
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:time/clock@0.1.0")]
+                    #[link(wasm_import_module = "krate:time/clock@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "now-millis"]
                         fn wit_import0() -> i64;
@@ -2997,7 +2997,7 @@ pub mod layer36 {
             pub fn monotonic_nanos() -> u64 {
                 unsafe {
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:time/clock@0.1.0")]
+                    #[link(wasm_import_module = "krate:time/clock@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "monotonic-nanos"]
                         fn wit_import0() -> i64;
@@ -3022,7 +3022,7 @@ pub mod layer36 {
             pub fn sleep_millis(millis: u32) -> () {
                 unsafe {
                     #[cfg(target_arch = "wasm32")]
-                    #[link(wasm_import_module = "layer36:time/sleep@0.1.0")]
+                    #[link(wasm_import_module = "krate:time/sleep@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "sleep-millis"]
                         fn wit_import0(_: i32);
@@ -3285,7 +3285,7 @@ macro_rules! __export_cli_impl {
 pub(crate) use __export_cli_impl as export;
 #[cfg(target_arch = "wasm32")]
 #[unsafe(
-    link_section = "component-type:wit-bindgen:0.41.0:layer36:app@0.1.0:cli:encoded world"
+    link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.1.0:cli:encoded world"
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
@@ -3293,7 +3293,7 @@ pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 2972] = *b"\
 \0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa2\x16\x01A\x02\x01\
 A+\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-lev\
 el\x03\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cin\
-valid-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x16layer36:io/t\
+valid-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x16krate:io/t\
 ypes@0.1.0\x05\0\x02\x03\0\0\x08io-error\x01B\x15\x02\x03\x02\x01\x01\x04\0\x08i\
 o-error\x03\0\0\x04\0\x0cinput-stream\x03\x01\x04\0\x0doutput-stream\x03\x01\x01\
 h\x02\x01p}\x01j\x01\x05\x01\x01\x01@\x02\x04self\x04\x01ny\0\x06\x04\0\x19[meth\
@@ -3302,20 +3302,20 @@ od]input-stream.read\x01\x07\x01j\x01s\x01\x01\x01@\x01\x04self\x04\0\x08\x04\0#
 self\x0a\x05bytes\x05\0\x0b\x04\0\x1b[method]output-stream.write\x01\x0c\x01j\0\x01\
 \x01\x01@\x02\x04self\x0a\x05bytes\x05\0\x0d\x04\0\x1f[method]output-stream.writ\
 e-all\x01\x0e\x01@\x01\x04self\x0a\0\x0d\x04\0\x1b[method]output-stream.flush\x01\
-\x0f\x03\0\x18layer36:io/streams@0.1.0\x05\x02\x02\x03\0\x01\x0cinput-stream\x02\
+\x0f\x03\0\x18krate:io/streams@0.1.0\x05\x02\x02\x03\0\x01\x0cinput-stream\x02\
 \x03\0\x01\x0doutput-stream\x01B\x0b\x02\x03\x02\x01\x03\x04\0\x0cinput-stream\x03\
 \0\0\x02\x03\x02\x01\x04\x04\0\x0doutput-stream\x03\0\x02\x01i\x01\x01@\0\0\x04\x04\
 \0\x05stdin\x01\x05\x01i\x03\x01@\0\0\x06\x04\0\x06stdout\x01\x07\x04\0\x06stder\
-r\x01\x07\x03\0\x16layer36:io/stdio@0.1.0\x05\x05\x01B\x02\x01@\0\0s\x04\0\x03ra\
-w\x01\0\x03\0\x15layer36:io/args@0.1.0\x05\x06\x02\x03\0\0\x09log-level\x01B\x07\
+r\x01\x07\x03\0\x16krate:io/stdio@0.1.0\x05\x05\x01B\x02\x01@\0\0s\x04\0\x03ra\
+w\x01\0\x03\0\x15krate:io/args@0.1.0\x05\x06\x02\x03\0\0\x09log-level\x01B\x07\
 \x02\x03\x02\x01\x07\x04\0\x09log-level\x03\0\0\x01r\x02\x03keys\x05values\x04\0\
 \x05field\x03\0\x02\x01p\x03\x01@\x03\x05level\x01\x07messages\x06fields\x04\x01\
-\0\x04\0\x04emit\x01\x05\x03\0\x14layer36:io/log@0.1.0\x05\x08\x01B\x06\x01r\x03\
+\0\x04\0\x04emit\x01\x05\x03\0\x14krate:io/log@0.1.0\x05\x08\x01B\x06\x01r\x03\
 \x04sizew\x0fmodified-millisw\x06is-dir\x7f\x04\0\x09file-stat\x03\0\0\x01q\x04\x04\
 read\0\0\x05write\0\0\x0aread-write\0\0\x06append\0\0\x04\0\x09open-mode\x03\0\x02\
 \x01q\x07\x09not-found\0\0\x11permission-denied\0\0\x0ealready-exists\0\0\x0cinv\
 alid-path\0\0\x0fnot-a-directory\0\0\x0eis-a-directory\0\0\x02io\x01s\0\x04\0\x08\
-fs-error\x03\0\x04\x03\0\x16layer36:fs/types@0.1.0\x05\x09\x02\x03\0\x05\x09file\
+fs-error\x03\0\x04\x03\0\x16krate:fs/types@0.1.0\x05\x09\x02\x03\0\x05\x09file\
 -stat\x02\x03\0\x05\x09open-mode\x02\x03\0\x05\x08fs-error\x01B(\x02\x03\x02\x01\
 \x0a\x04\0\x09file-stat\x03\0\0\x02\x03\x02\x01\x0b\x04\0\x09open-mode\x03\0\x02\
 \x02\x03\x02\x01\x0c\x04\0\x08fs-error\x03\0\x04\x04\0\x04file\x03\x01\x01h\x06\x01\
@@ -3329,7 +3329,7 @@ method]file.stat\x01\x11\x01i\x06\x01j\x01\x12\x01\x05\x01@\x02\x04paths\x04mode
 ps\x01j\x01\x16\x01\x05\x01@\x01\x04paths\0\x17\x04\0\x04list\x01\x18\x01j\0\x01\
 \x05\x01@\x01\x04paths\0\x19\x04\0\x0bremove-file\x01\x1a\x04\0\x0aremove-dir\x01\
 \x1a\x04\0\x05mkdir\x01\x1a\x01@\x02\x04froms\x02tos\0\x19\x04\0\x06rename\x01\x1b\
-\x03\0\x16layer36:fs/files@0.1.0\x05\x0d\x01B\x0d\x01m\x07\x03get\x04post\x03put\
+\x03\0\x16krate:fs/files@0.1.0\x05\x0d\x01B\x0d\x01m\x07\x03get\x04post\x03put\
 \x06delete\x05patch\x04head\x07options\x04\0\x0bhttp-method\x03\0\0\x01r\x02\x04\
 names\x05values\x04\0\x06header\x03\0\x02\x01p\x03\x01p}\x01ky\x01r\x05\x06metho\
 d\x01\x03urls\x07headers\x04\x04body\x05\x0etimeout-millis\x06\x04\0\x07request\x03\
@@ -3342,21 +3342,21 @@ tls-failure\x01s\0\x07timeout\0\0\x0ebody-too-large\0\0\x11permission-denied\0\0
 \x03\x02\x01\x10\x04\0\x08response\x03\0\x02\x02\x03\x02\x01\x11\x04\0\x09net-er\
 ror\x03\0\x04\x01p}\x01j\x01\x06\x01\x05\x01@\x01\x03urls\0\x07\x04\0\x03get\x01\
 \x08\x01j\x01\x03\x01\x05\x01@\x01\x03req\x01\0\x09\x04\0\x05fetch\x01\x0a\x03\0\
-\x1dlayer36:net/http-client@0.1.0\x05\x12\x01B\x03\x01@\0\0w\x04\0\x0anow-millis\
-\x01\0\x04\0\x0fmonotonic-nanos\x01\0\x03\0\x18layer36:time/clock@0.1.0\x05\x13\x01\
-B\x02\x01@\x01\x06millisy\x01\0\x04\0\x0csleep-millis\x01\0\x03\0\x18layer36:tim\
+\x1dkrate:net/http-client@0.1.0\x05\x12\x01B\x03\x01@\0\0w\x04\0\x0anow-millis\
+\x01\0\x04\0\x0fmonotonic-nanos\x01\0\x03\0\x18krate:time/clock@0.1.0\x05\x13\x01\
+B\x02\x01@\x01\x06millisy\x01\0\x04\0\x0csleep-millis\x01\0\x03\0\x18krate:tim\
 e/sleep@0.1.0\x05\x14\x01B\x06\x01r\x01\x05bcp47s\x04\0\x09locale-id\x03\0\0\x01\
 m\x04\x05short\x06medium\x04long\x04full\x04\0\x0adate-style\x03\0\x02\x01m\x03\x07\
-decimal\x07percent\x08currency\x04\0\x0cnumber-style\x03\0\x04\x03\0\x1alayer36:\
+decimal\x07percent\x08currency\x04\0\x0cnumber-style\x03\0\x04\x03\0\x1akrate:\
 locale/types@0.1.0\x05\x15\x02\x03\0\x0b\x09locale-id\x01B\x06\x02\x03\x02\x01\x16\
 \x04\0\x09locale-id\x03\0\0\x01@\0\0\x01\x04\0\x07current\x01\x02\x01@\0\0s\x04\0\
-\x08timezone\x01\x03\x03\0\x19layer36:locale/info@0.1.0\x05\x17\x02\x03\0\x0b\x0a\
+\x08timezone\x01\x03\x03\0\x19krate:locale/info@0.1.0\x05\x17\x02\x03\0\x0b\x0a\
 date-style\x02\x03\0\x0b\x0cnumber-style\x01B\x0a\x02\x03\x02\x01\x16\x04\0\x09l\
 ocale-id\x03\0\0\x02\x03\x02\x01\x18\x04\0\x0adate-style\x03\0\x02\x02\x03\x02\x01\
 \x19\x04\0\x0cnumber-style\x03\0\x04\x01@\x04\x06millisw\x02tzs\x05style\x03\x03\
 loc\x01\0s\x04\0\x0bformat-date\x01\x06\x01@\x03\x05valueu\x05style\x05\x03loc\x01\
-\0s\x04\0\x0dformat-number\x01\x07\x03\0\x1blayer36:locale/format@0.1.0\x05\x1a\x01\
-@\0\0z\x04\0\x03run\x01\x1b\x04\0\x15layer36:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03\
+\0s\x04\0\x0dformat-number\x01\x07\x03\0\x1bkrate:locale/format@0.1.0\x05\x1a\x01\
+@\0\0z\x04\0\x03run\x01\x1b\x04\0\x15krate:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03\
 cli\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10\
 wit-bindgen-rust\x060.41.0";
 #[inline(never)]

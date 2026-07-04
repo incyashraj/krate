@@ -3,13 +3,13 @@ package io
 import (
 	"strings"
 
-	layer36 "github.com/incyashraj/krate/packages/sdk-go/layer36"
+	krate "github.com/incyashraj/krate/packages/sdk-go/krate"
 )
 
 var (
 	ArgsRawHook     = func() string { return "" }
-	StdoutWriteHook = func([]byte) error { return layer36.ErrGeneratedBindingsMissing }
-	StderrWriteHook = func([]byte) error { return layer36.ErrGeneratedBindingsMissing }
+	StdoutWriteHook = func([]byte) error { return krate.ErrGeneratedBindingsMissing }
+	StderrWriteHook = func([]byte) error { return krate.ErrGeneratedBindingsMissing }
 )
 
 func Args() []string {

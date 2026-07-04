@@ -1619,11 +1619,9 @@ mod platform {
         fn appkit_main_thread_gate_is_explicit() {
             let backend = AppKitWindowBackend;
             assert!(backend.is_available());
-            let options = WindowOptions::new(
-                "Krate AppKit prototype",
-                WindowSize::new(640, 480).unwrap(),
-            )
-            .unwrap();
+            let options =
+                WindowOptions::new("Krate AppKit prototype", WindowSize::new(640, 480).unwrap())
+                    .unwrap();
             assert_eq!(options.title, "Krate AppKit prototype");
         }
 
@@ -1632,11 +1630,9 @@ mod platform {
         fn ignored_smoke_can_create_and_show_appkit_window() {
             let adapter = MacosUiAdapter::new();
             let backend = AppKitWindowBackend;
-            let options = WindowOptions::new(
-                "Krate AppKit prototype",
-                WindowSize::new(640, 480).unwrap(),
-            )
-            .unwrap();
+            let options =
+                WindowOptions::new("Krate AppKit prototype", WindowSize::new(640, 480).unwrap())
+                    .unwrap();
             let window = backend
                 .create_window(&adapter, options)
                 .expect("create appkit window");
@@ -1697,11 +1693,9 @@ mod platform {
         fn ignored_smoke_can_attach_appkit_draw_view_surface() {
             let adapter = MacosUiAdapter::new();
             let backend = AppKitWindowBackend;
-            let options = WindowOptions::new(
-                "Krate AppKit draw view",
-                WindowSize::new(640, 480).unwrap(),
-            )
-            .unwrap();
+            let options =
+                WindowOptions::new("Krate AppKit draw view", WindowSize::new(640, 480).unwrap())
+                    .unwrap();
             let mut session = backend
                 .create_session(&adapter, options)
                 .expect("create appkit session");
@@ -2059,8 +2053,7 @@ mod tests {
         let backend = AppKitWindowBackend;
         let id = WindowAdapter::create_window(
             &adapter,
-            WindowOptions::new("Krate AppKit events", WindowSize::new(640, 480).unwrap())
-                .unwrap(),
+            WindowOptions::new("Krate AppKit events", WindowSize::new(640, 480).unwrap()).unwrap(),
         )
         .expect("create window");
         let resized = WindowSize::new(800, 600).unwrap();
@@ -2112,11 +2105,8 @@ mod tests {
         let backend = AppKitWindowBackend;
         let id = WindowAdapter::create_window(
             &adapter,
-            WindowOptions::new(
-                "Krate AppKit snapshot",
-                WindowSize::new(640, 480).unwrap(),
-            )
-            .unwrap(),
+            WindowOptions::new("Krate AppKit snapshot", WindowSize::new(640, 480).unwrap())
+                .unwrap(),
         )
         .expect("create window");
         let first = AppKitWindowSnapshot {
@@ -2181,11 +2171,8 @@ mod tests {
         let backend = AppKitWindowBackend;
         let id = WindowAdapter::create_window(
             &adapter,
-            WindowOptions::new(
-                "Krate AppKit delegate",
-                WindowSize::new(640, 480).unwrap(),
-            )
-            .unwrap(),
+            WindowOptions::new("Krate AppKit delegate", WindowSize::new(640, 480).unwrap())
+                .unwrap(),
         )
         .expect("create window");
         let mut state = AppKitWindowEventState::new(id);
@@ -2255,11 +2242,8 @@ mod tests {
         let backend = AppKitWindowBackend;
         let id = WindowAdapter::create_window(
             &adapter,
-            WindowOptions::new(
-                "Krate AppKit bad scale",
-                WindowSize::new(640, 480).unwrap(),
-            )
-            .unwrap(),
+            WindowOptions::new("Krate AppKit bad scale", WindowSize::new(640, 480).unwrap())
+                .unwrap(),
         )
         .expect("create window");
         let mut state = AppKitWindowEventState::new(id);
@@ -2569,8 +2553,7 @@ mod tests {
         let backend = AppKitWindowBackend;
         let id = WindowAdapter::create_window(
             &adapter,
-            WindowOptions::new("Krate AppKit redraw", WindowSize::new(640, 480).unwrap())
-                .unwrap(),
+            WindowOptions::new("Krate AppKit redraw", WindowSize::new(640, 480).unwrap()).unwrap(),
         )
         .expect("create window");
 

@@ -547,8 +547,8 @@ mod tests {
 
     #[test]
     fn url_parser_normalizes_query_only_paths() {
-        let parsed = PlainHttpUrl::parse("http://127.0.0.1:8080?name=krate#local")
-            .expect("parse HTTP URL");
+        let parsed =
+            PlainHttpUrl::parse("http://127.0.0.1:8080?name=krate#local").expect("parse HTTP URL");
 
         assert_eq!(parsed.host, "127.0.0.1");
         assert_eq!(parsed.port, 8080);
@@ -628,8 +628,8 @@ mod tests {
 
     #[test]
     fn request_builder_forwards_method_headers_and_body() {
-        let url = PlainHttpUrl::parse("http://127.0.0.1:8080/submit?name=krate")
-            .expect("parse HTTP URL");
+        let url =
+            PlainHttpUrl::parse("http://127.0.0.1:8080/submit?name=krate").expect("parse HTTP URL");
         let req = PlainHttpRequest {
             method: PlainHttpMethod::Post,
             headers: vec![PlainHttpHeader {

@@ -1,1 +1,1 @@
-hello from Layer36 via MCP
+hello from Krate via MCP

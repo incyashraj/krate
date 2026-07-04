@@ -34,7 +34,7 @@ ehthumbs.db
 
 # Test artifacts
 /test/fixtures/generated/
-/apps/layer36-cat/fixtures/
+/apps/krate-cat/fixtures/
 
 # Build scripts output
 /dist/
@@ -59,4 +59,6 @@ ehthumbs.db
 
 # Founder-personal artifacts kept out of the public repo
 /Layer36-book.pdf
+/Krate-book.pdf
+/Krate-Book/
 /Layer36-Book/

@@ -1,4 +1,4 @@
-# Krate (formerly Krate)
+# Krate (formerly Layer36)
 
 > Software should run like a PDF opens: exactly the same on any device — and
 > never touch anything without permission.
@@ -22,7 +22,7 @@ identity built in. See [the full vision](https://incyashraj.github.io/krate/visi
 [the roadmap](https://incyashraj.github.io/krate/roadmap.html), and
 [follow the build](https://incyashraj.github.io/krate/build-log.html).
 
-**Naming note:** The project was renamed from **Krate** to **Krate** in
+**Naming note:** The project was renamed from **Layer36** to **Krate** in
 July 2026 (company: Krate Labs). During the transition, the repository,
 code, commands, crate names, and `krate:*` API namespaces keep the legacy
 name — the code-level rename is a scheduled slice that lands before the

@@ -4,7 +4,8 @@
 #[doc(hidden)]
 #[allow(non_snake_case)]
 pub unsafe fn _export_run_cabi<T: Guest>() -> i32 {
-    #[cfg(target_arch = "wasm32")] _rt::run_ctors_once();
+    #[cfg(target_arch = "wasm32")]
+    _rt::run_ctors_once();
     let result0 = T::run();
     _rt::as_i32(result0)
 }
@@ -3404,9 +3405,7 @@ macro_rules! __export_cli_impl {
 #[doc(inline)]
 pub(crate) use __export_cli_impl as export;
 #[cfg(target_arch = "wasm32")]
-#[unsafe(
-    link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.1.0:cli:encoded world"
-)]
+#[unsafe(link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.1.0:cli:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
 pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 2942] = *b"\

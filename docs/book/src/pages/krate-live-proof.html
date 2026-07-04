@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Layer36 Live Proof Companion</title>
-<meta name="description" content="A demo companion page explaining what Layer36 terminal commands prove in plain English." />
+<title>Krate Live Proof Companion</title>
+<meta name="description" content="A demo companion page explaining what Krate terminal commands prove in plain English." />
 <style>
   :root {
     --paper: #f6efe4;
@@ -246,14 +246,14 @@
 </head>
 <body>
 <div class="topbar">
-  <span class="badge">Layer36</span>
+  <span class="badge">Krate</span>
   <span>Live proof companion</span>
 </div>
 
 <header>
   <h1>What the terminal demo proves</h1>
   <p class="lede">Keep this page open while showing the commands. The terminal proves the system is real; this page translates each proof moment into simple language.</p>
-  <p><a href="layer36-scripted-demo.html">Open the scripted demo video asset</a></p>
+  <p><a href="krate-scripted-demo.html">Open the scripted demo video asset</a></p>
 </header>
 
 <main>
@@ -262,41 +262,41 @@
     <div class="map">
       <div><b>Build app artifacts</b><span>Three apps become portable WebAssembly components.</span></div>
       <div><b>Inspect permissions</b><span>The manifest says what the app wants before it runs.</span></div>
-      <div><b>Deny missing access</b><span>Layer36 refuses file access without a grant.</span></div>
+      <div><b>Deny missing access</b><span>Krate refuses file access without a grant.</span></div>
       <div><b>Grant and run</b><span>The same app succeeds when permission is explicit.</span></div>
       <div><b>Show evidence status</b><span>The repo tracks what is proven and what is still open.</span></div>
     </div>
   </section>
 
   <section class="section">
-    <h2>The complete `layer36-clock` path</h2>
+    <h2>The complete `krate-clock` path</h2>
     <p class="lede">Use this diagram before the terminal command. It shows what happens between the sample app and the final printed date.</p>
     <div class="flow-wrap">
       <div class="system-flow">
         <div class="flow-step">
           <small>1 app</small>
-          <b>`layer36-clock` source</b>
+          <b>`krate-clock` source</b>
           <span>The app asks for time, locale, timezone, and stdout.</span>
         </div>
         <div class="flow-step">
           <small>2 build</small>
-          <b>`layer36_clock.wasm`</b>
+          <b>`krate_clock.wasm`</b>
           <span>The source becomes a portable WebAssembly component.</span>
         </div>
         <div class="flow-step">
           <small>3 runtime</small>
-          <b>`layer36 run`</b>
+          <b>`krate run`</b>
           <span>The CLI starts the runtime session and loads the component.</span>
         </div>
         <div class="flow-step">
           <small>4 UAPI</small>
           <b>time + locale + stdout</b>
-          <span>The app talks to Layer36 APIs instead of host-specific APIs.</span>
+          <span>The app talks to Krate APIs instead of host-specific APIs.</span>
         </div>
         <div class="flow-step">
           <small>5 host</small>
           <b>UCap + adapter</b>
-          <span>Layer36 checks permission shape, then the adapter supplies host behavior.</span>
+          <span>Krate checks permission shape, then the adapter supplies host behavior.</span>
         </div>
         <div class="flow-step output">
           <small>6 result</small>
@@ -315,13 +315,13 @@
       <div class="phase3-card">
         <h3>What stays the same</h3>
         <div class="phase3-step"><div class="phase3-num">1</div><div><b>Portable artifact</b><span>The app still compiles to a WebAssembly component.</span></div></div>
-        <div class="phase3-step"><div class="phase3-num">2</div><div><b>UAPI boundary</b><span>The app still asks Layer36 for host services instead of calling each OS directly.</span></div></div>
+        <div class="phase3-step"><div class="phase3-num">2</div><div><b>UAPI boundary</b><span>The app still asks Krate for host services instead of calling each OS directly.</span></div></div>
         <div class="phase3-step"><div class="phase3-num">3</div><div><b>Capability checks</b><span>Windowing, files, network, and other host powers still need explicit permission shape.</span></div></div>
       </div>
       <div class="phase3-card">
         <h3>What gets added</h3>
         <div class="phase3-step"><div class="phase3-num">1</div><div><b>Window + events</b><span>A UAPI slice for opening a native window and receiving user input.</span></div></div>
-        <div class="phase3-step"><div class="phase3-num">2</div><div><b>Drawing surface</b><span>A way for the app to render UI through Layer36 without becoming OS-specific.</span></div></div>
+        <div class="phase3-step"><div class="phase3-num">2</div><div><b>Drawing surface</b><span>A way for the app to render UI through Krate without becoming OS-specific.</span></div></div>
         <div class="phase3-step"><div class="phase3-num">3</div><div><b>Desktop adapters</b><span>macOS, Windows, and Linux adapters translate the same app calls into native desktop behavior.</span></div></div>
         <div class="desktop-mock" aria-label="Phase 3 desktop app mockup">
           <div class="desktop-titlebar"><span class="dot red"></span><span class="dot yellow"></span><span class="dot green"></span></div>
@@ -339,17 +339,17 @@
     <div class="explain">
       <span class="tag">Step 1</span>
       <h2>Build three portable app artifacts</h2>
-      <p>These commands compile small Layer36 sample apps into WebAssembly. In simple terms, this is where the app becomes a portable file that the Layer36 runtime can open.</p>
-      <div class="takeaway"><strong>Plain-English takeaway:</strong> Layer36 is not just a document. The demo starts by producing real runnable app artifacts.</div>
+      <p>These commands compile small Krate sample apps into WebAssembly. In simple terms, this is where the app becomes a portable file that the Krate runtime can open.</p>
+      <div class="takeaway"><strong>Plain-English takeaway:</strong> Krate is not just a document. The demo starts by producing real runnable app artifacts.</div>
     </div>
-    <pre class="terminal"><span class="cmd">cargo build -p layer36-cli</span>
-<span class="cmd">scripts/build-layer36-clock-component.sh</span>
-<span class="cmd">scripts/build-layer36-cat-component.sh</span>
-<span class="cmd">scripts/build-layer36-curl-component.sh</span>
+    <pre class="terminal"><span class="cmd">cargo build -p krate-cli</span>
+<span class="cmd">scripts/build-krate-clock-component.sh</span>
+<span class="cmd">scripts/build-krate-cat-component.sh</span>
+<span class="cmd">scripts/build-krate-curl-component.sh</span>
 
-<span class="ok">layer36_clock.wasm</span>
-<span class="ok">layer36_cat.wasm</span>
-<span class="ok">layer36_curl.wasm</span></pre>
+<span class="ok">krate_clock.wasm</span>
+<span class="ok">krate_cat.wasm</span>
+<span class="ok">krate_curl.wasm</span></pre>
   </section>
 
   <section class="section grid">
@@ -358,9 +358,9 @@
       <h2>Show that permissions are visible</h2>
       <p>The manifest is the app's permission label. It says the app wants command-line arguments, output, error output, and file read access.</p>
       <p>The key line is <strong>launch grant needed: yes</strong> for file reading. That means file access is not assumed.</p>
-      <div class="takeaway"><strong>Plain-English takeaway:</strong> before an app runs, Layer36 can show what it wants from the computer.</div>
+      <div class="takeaway"><strong>Plain-English takeaway:</strong> before an app runs, Krate can show what it wants from the computer.</div>
     </div>
-    <pre class="terminal"><span class="cmd">target/debug/layer36 manifest explain apps/layer36-cat/manifest.toml</span>
+    <pre class="terminal"><span class="cmd">target/debug/krate manifest explain apps/krate-cat/manifest.toml</span>
 
 Capabilities
   - io.args
@@ -376,16 +376,16 @@ Capabilities
     <div class="explain">
       <span class="tag">Step 3</span>
       <h2>Run a harmless capability path</h2>
-      <p>The clock app uses Layer36 for time, locale, timezone, and output. It proves the component is executing through Layer36's UAPI instead of being a fake screenshot.</p>
-      <div class="takeaway"><strong>Plain-English takeaway:</strong> a WebAssembly app can ask Layer36 for normal host services and get a stable result.</div>
+      <p>The clock app uses Krate for time, locale, timezone, and output. It proves the component is executing through Krate's UAPI instead of being a fake screenshot.</p>
+      <div class="takeaway"><strong>Plain-English takeaway:</strong> a WebAssembly app can ask Krate for normal host services and get a stable result.</div>
     </div>
-    <pre class="terminal"><span class="cmd">target/debug/layer36 run \
+    <pre class="terminal"><span class="cmd">target/debug/krate run \
   --auto-grant \
-  --manifest apps/layer36-clock/manifest.toml \
+  --manifest apps/krate-clock/manifest.toml \
   --test-time 1234567890 \
-  apps/layer36-clock/.../layer36_clock.wasm</span>
+  apps/krate-clock/.../krate_clock.wasm</span>
 
-<span class="ok">app=layer36-clock
+<span class="ok">app=krate-clock
 timezone=UTC
 locale=en-US
 date=1970-01-15 06:56</span></pre>
@@ -395,12 +395,12 @@ date=1970-01-15 06:56</span></pre>
     <div class="explain">
       <span class="tag">Step 4</span>
       <h2>Deny file access without permission</h2>
-      <p>This is the most important moment. The file app asks to read a file, but this run has not granted file access. Layer36 stops it before native file access happens.</p>
+      <p>This is the most important moment. The file app asks to read a file, but this run has not granted file access. Krate stops it before native file access happens.</p>
       <div class="takeaway"><strong>Plain-English takeaway:</strong> the runtime can say no. That is the foundation for running generated or third-party tools safely.</div>
     </div>
-    <pre class="terminal"><span class="cmd">layer36 run \
+    <pre class="terminal"><span class="cmd">krate run \
   --manifest manifest.toml \
-  layer36_cat.wasm \
+  krate_cat.wasm \
   -- ./fixtures/hello.txt</span>
 
 <span class="deny">permission denied: missing required capabilities
@@ -412,27 +412,27 @@ date=1970-01-15 06:56</span></pre>
       <span class="tag">Step 5</span>
       <h2>Grant access and rerun the same app</h2>
       <p>Now the same app succeeds because the host approved the declared file permission. Same app path, different permission decision.</p>
-      <div class="takeaway"><strong>Plain-English takeaway:</strong> Layer36 makes host access explicit instead of ambient. The app does not just inherit everything the machine can do.</div>
+      <div class="takeaway"><strong>Plain-English takeaway:</strong> Krate makes host access explicit instead of ambient. The app does not just inherit everything the machine can do.</div>
     </div>
-    <pre class="terminal"><span class="cmd">layer36 run \
+    <pre class="terminal"><span class="cmd">krate run \
   --manifest manifest.toml \
   --auto-grant \
-  layer36_cat.wasm \
+  krate_cat.wasm \
   -- ./fixtures/hello.txt</span>
 
-<span class="ok">hello from Layer36</span></pre>
+<span class="ok">hello from Krate</span></pre>
   </section>
 
   <section class="section grid">
     <div class="explain">
       <span class="tag">Step 6</span>
       <h2>Show that network follows the same model</h2>
-      <p>The curl sample is allowed to connect only because this run grants the local endpoint. File and network are different host powers, but the Layer36 model is the same: declare, grant, check, execute.</p>
+      <p>The curl sample is allowed to connect only because this run grants the local endpoint. File and network are different host powers, but the Krate model is the same: declare, grant, check, execute.</p>
       <div class="takeaway"><strong>Plain-English takeaway:</strong> UCap is not a one-off file demo. It is the permission pattern for host capabilities.</div>
     </div>
-    <pre class="terminal"><span class="cmd">layer36 run \
+    <pre class="terminal"><span class="cmd">krate run \
   --grant net.connect:127.0.0.1:8765 \
-  layer36_curl.wasm \
+  krate_curl.wasm \
   -- http://127.0.0.1:8765/demo.txt</span>
 
 <span class="ok">portable runtime response</span></pre>
@@ -442,12 +442,12 @@ date=1970-01-15 06:56</span></pre>
     <div class="explain">
       <span class="tag">Step 7</span>
       <h2>Close with honest evidence status</h2>
-      <p>This output is useful because it shows discipline. Layer36 is not claiming the platform is finished. It tracks what is done, what is partial, and what still needs proof.</p>
+      <p>This output is useful because it shows discipline. Krate is not claiming the platform is finished. It tracks what is done, what is partial, and what still needs proof.</p>
       <div class="takeaway"><strong>Plain-English takeaway:</strong> the current state is credible pre-alpha proof, not production readiness.</div>
     </div>
     <pre class="terminal"><span class="cmd">scripts/phase2-exit-readiness.sh</span>
 
-Layer36 Phase 2 exit readiness
+Krate Phase 2 exit readiness
 - gates tracked: 15
 - fully done: 3
 - strong draft: 1
@@ -464,11 +464,11 @@ Hard blocker:
     <div class="grid">
       <div class="explain">
         <h3>Short voiceover</h3>
-        <p>Layer36 is trying to make software travel more like files. The app becomes a portable WebAssembly artifact. Instead of talking directly to macOS, Windows, or Linux, it talks to Layer36. Layer36 checks what the app is allowed to do, then the host adapter performs approved work on the local machine.</p>
+        <p>Krate is trying to make software travel more like files. The app becomes a portable WebAssembly artifact. Instead of talking directly to macOS, Windows, or Linux, it talks to Krate. Krate checks what the app is allowed to do, then the host adapter performs approved work on the local machine.</p>
       </div>
       <div class="explain">
         <h3>Final sentence</h3>
-        <p>Layer36 already runs portable WebAssembly apps through explicit host permissions; the next milestone is proving this with outside developers, cross-host evidence, and the Phase 3 desktop UI layer.</p>
+        <p>Krate already runs portable WebAssembly apps through explicit host permissions; the next milestone is proving this with outside developers, cross-host evidence, and the Phase 3 desktop UI layer.</p>
       </div>
     </div>
   </section>

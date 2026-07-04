@@ -2059,8 +2059,8 @@ mod tests {
     #[cfg(feature = "phase2-bindings")]
     #[test]
     fn plain_http_url_parser_normalizes_query_only_paths() {
-        let parsed = PlainHttpUrl::parse("http://127.0.0.1:8080?name=krate#local")
-            .expect("parse HTTP URL");
+        let parsed =
+            PlainHttpUrl::parse("http://127.0.0.1:8080?name=krate#local").expect("parse HTTP URL");
 
         assert_eq!(parsed.host, "127.0.0.1");
         assert_eq!(parsed.port, 8080);
@@ -2593,10 +2593,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("time should move forward")
             .as_nanos();
-        let temp = std::env::temp_dir().join(format!(
-            "krate-root-target-{}-{unique}",
-            std::process::id()
-        ));
+        let temp =
+            std::env::temp_dir().join(format!("krate-root-target-{}-{unique}", std::process::id()));
         std::fs::create_dir_all(&temp).expect("create sandbox");
         std::fs::write(temp.join("source.txt"), b"source").expect("write source file");
 
@@ -2735,8 +2733,8 @@ mod tests {
     #[cfg(feature = "phase2-bindings")]
     #[test]
     fn plain_http_request_builder_forwards_method_headers_and_body() {
-        let url = PlainHttpUrl::parse("http://127.0.0.1:8080/submit?name=krate")
-            .expect("parse HTTP URL");
+        let url =
+            PlainHttpUrl::parse("http://127.0.0.1:8080/submit?name=krate").expect("parse HTTP URL");
         let req = HttpRequest {
             method: uapi_dispatch::HttpMethod::Post,
             url: "http://127.0.0.1:8080/submit?name=krate".to_string(),

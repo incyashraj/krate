@@ -15,31 +15,31 @@ func TestClassifyNetError(t *testing.T) {
 		{
 			name:     "permission denied",
 			err:      "permission-denied",
-			wantLine: "layer36-go-curl: permission denied",
+			wantLine: "krate-go-curl: permission denied",
 			wantCode: 5,
 		},
 		{
 			name:     "invalid url",
 			err:      "invalid-url",
-			wantLine: "layer36-go-curl: invalid url",
+			wantLine: "krate-go-curl: invalid url",
 			wantCode: 20,
 		},
 		{
 			name:     "dns failure",
 			err:      "dns-failure: not found",
-			wantLine: "layer36-go-curl: dns lookup failed",
+			wantLine: "krate-go-curl: dns lookup failed",
 			wantCode: 21,
 		},
 		{
 			name:     "fallback",
 			err:      "some-unknown-error",
-			wantLine: "layer36-go-curl: fetch failed",
+			wantLine: "krate-go-curl: fetch failed",
 			wantCode: 21,
 		},
 		{
 			name:     "uppercase variant token",
 			err:      "TIMEOUT",
-			wantLine: "layer36-go-curl: request timed out",
+			wantLine: "krate-go-curl: request timed out",
 			wantCode: 21,
 		},
 	}

@@ -1,6 +1,6 @@
 # Introduction
 
-> **Naming:** The project was renamed from **Krate** to **Krate** (by Krate Labs) in July 2026. Code, commands, and `krate:*` API namespaces keep the legacy name until the scheduled code-level rename lands. Docs may use both names during the transition.
+> **Naming:** The project was renamed from **Layer36** to **Krate** (by Krate Labs) in July 2026. Code, commands, and `krate:*` API namespaces keep the legacy name until the scheduled code-level rename lands. Docs may use both names during the transition.
 
 
 Krate is an attempt to make apps portable in the way files are portable.

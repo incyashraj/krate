@@ -16,7 +16,7 @@ every system library loaded at runtime) because the pipeline was the point;
 the vello GPU renderer replaces the painter behind the same contract. All
 three OS lanes green with it aboard.
 
-## 2026-07-04 — Krate becomes Krate
+## 2026-07-04 — Layer36 becomes Krate
 
 The project has a new name: **Krate**, by **Krate Labs**. A crate ships
 goods anywhere unchanged; a Rust crate ships code. Both are exactly what

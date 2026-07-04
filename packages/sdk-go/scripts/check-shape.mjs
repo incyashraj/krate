@@ -25,15 +25,15 @@ const requireFile = (relativePath) => {
 for (const relativePath of [
   "go.mod",
   "README.md",
-  "layer36/internal_missing.go",
-  "layer36/io/io.go",
-  "layer36/fs/fs.go",
-  "layer36/net/net.go",
-  "layer36/time/time.go",
-  "layer36/locale/locale.go",
-  "examples/layer36-cat/main.go",
-  "examples/layer36-clock/main.go",
-  "examples/layer36-curl/main.go",
+  "krate/internal_missing.go",
+  "krate/io/io.go",
+  "krate/fs/fs.go",
+  "krate/net/net.go",
+  "krate/time/time.go",
+  "krate/locale/locale.go",
+  "examples/krate-cat/main.go",
+  "examples/krate-clock/main.go",
+  "examples/krate-curl/main.go",
 ]) {
   requireFile(relativePath);
 }
@@ -44,11 +44,11 @@ if (!moduleFile.includes("module github.com/incyashraj/krate/packages/sdk-go")) 
 }
 
 for (const [relativePath, tokens] of Object.entries({
-  "layer36/io/io.go": ["func Args()", "func Print(", "func Eprintln("],
-  "layer36/fs/fs.go": ["type OpenMode string", "func ReadText(", "func WriteText("],
-  "layer36/net/net.go": ["type Request struct", "func GetText(", "func Fetch("],
-  "layer36/time/time.go": ["func NowMillis()", "func SleepMillis("],
-  "layer36/locale/locale.go": ["type LocaleID struct", "func FormatDate(", "func FormatNumber("],
+  "krate/io/io.go": ["func Args()", "func Print(", "func Eprintln("],
+  "krate/fs/fs.go": ["type OpenMode string", "func ReadText(", "func WriteText("],
+  "krate/net/net.go": ["type Request struct", "func GetText(", "func Fetch("],
+  "krate/time/time.go": ["func NowMillis()", "func SleepMillis("],
+  "krate/locale/locale.go": ["type LocaleID struct", "func FormatDate(", "func FormatNumber("],
 })) {
   const source = await readText(relativePath);
   for (const token of tokens) {
@@ -66,19 +66,19 @@ if (process.exitCode) {
 }
 
 for (const [relativePath, tokens] of Object.entries({
-  "examples/layer36-cat/main.go": [
-    "usage: layer36-go-cat <path> [path...]",
+  "examples/krate-cat/main.go": [
+    "usage: krate-go-cat <path> [path...]",
     "l36fs.ReadText(file)",
     "l36io.Print(body)",
   ],
-  "examples/layer36-clock/main.go": [
-    "app=layer36-go-clock",
+  "examples/krate-clock/main.go": [
+    "app=krate-go-clock",
     "locale=",
     "timezone=",
     "date=",
   ],
-  "examples/layer36-curl/main.go": [
-    "usage: layer36-go-curl <url>",
+  "examples/krate-curl/main.go": [
+    "usage: krate-go-curl <url>",
     "l36net.GetText(args[0])",
     "l36io.Print(body)",
   ],

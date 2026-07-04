@@ -294,9 +294,7 @@ pub mod fs {
 
 /// Capability-checked HTTP client access.
 pub mod net {
-    pub use crate::bindings::krate::net::types::{
-        Header, HttpMethod, NetError, Request, Response,
-    };
+    pub use crate::bindings::krate::net::types::{Header, HttpMethod, NetError, Request, Response};
 
     /// Fetch a URL with a simple HTTP GET and return the response body.
     pub fn get(url: &str) -> Result<Vec<u8>, NetError> {

@@ -26,10 +26,7 @@ fn help_lists_phase_1_commands() {
 
 #[test]
 fn version_prints_runtime_metadata() {
-    let output = krate()
-        .arg("version")
-        .output()
-        .expect("run krate version");
+    let output = krate().arg("version").output().expect("run krate version");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -41,10 +38,7 @@ fn version_prints_runtime_metadata() {
 
 #[test]
 fn doctor_lists_phase_1_tooling() {
-    let output = krate()
-        .arg("doctor")
-        .output()
-        .expect("run krate doctor");
+    let output = krate().arg("doctor").output().expect("run krate doctor");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -695,9 +689,7 @@ fn run_rejects_too_many_app_arguments_before_runtime() {
     for _ in 0..1025 {
         cmd.arg("x");
     }
-    let output = cmd
-        .output()
-        .expect("run krate with too many app arguments");
+    let output = cmd.output().expect("run krate with too many app arguments");
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);

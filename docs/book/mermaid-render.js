@@ -9,7 +9,7 @@
     script.src = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js";
     script.onload = callback;
     script.onerror = function () {
-      console.warn("Layer36 docs could not load Mermaid diagrams.");
+      console.warn("Krate docs could not load Mermaid diagrams.");
     };
     document.head.appendChild(script);
   }
