@@ -6,6 +6,7 @@
 pub mod drawtext;
 pub mod locale;
 pub mod net;
+pub mod painter;
 pub mod path;
 pub mod time;
 pub mod ui;

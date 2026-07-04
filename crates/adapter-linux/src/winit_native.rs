@@ -180,33 +180,6 @@ mod real {
         }
     }
 
-    /// Colors for the first drawn pass (0xAARRGGBB).
-    const COLOR_BACKGROUND: u32 = 0xFFF2F2F2;
-    const COLOR_BUTTON: u32 = 0xFF3B82F6;
-    const COLOR_FIELD_FILL: u32 = 0xFFFFFFFF;
-    const COLOR_FIELD_BORDER: u32 = 0xFF9CA3AF;
-
-    fn fill_rect(
-        buffer: &mut [u32],
-        width: u32,
-        height: u32,
-        rect: (f32, f32, f32, f32),
-        color: u32,
-    ) {
-        let (x, y, w, h) = rect;
-        let x0 = x.max(0.0) as u32;
-        let y0 = y.max(0.0) as u32;
-        let x1 = ((x + w).max(0.0) as u32).min(width);
-        let y1 = ((y + h).max(0.0) as u32).min(height);
-        for row in y0..y1 {
-            let start = (row * width + x0) as usize;
-            let end = (row * width + x1) as usize;
-            for pixel in &mut buffer[start..end] {
-                *pixel = color;
-            }
-        }
-    }
-
     fn draw_placements(tracked: &mut TrackedWindow) {
         let size = tracked.window.inner_size();
         let (Some(width), Some(height)) =
@@ -230,78 +203,21 @@ mod real {
         let Ok(mut buffer) = surface.buffer_mut() else {
             return;
         };
-
-        let scale = tracked.window.scale_factor() as f32;
-        let (w, h) = (width.get(), height.get());
-        buffer.fill(COLOR_BACKGROUND);
-        for placement in &tracked.placements {
-            let (px, py) = (placement.x * scale, placement.y * scale);
-            let (pw, ph) = (placement.width * scale, placement.height * scale);
-            let text_scale = (scale.round() as u32).max(1);
-            let label = placement.label.as_deref().unwrap_or("");
-            match placement.kind {
-                WidgetKind::Button => {
-                    fill_rect(&mut buffer, w, h, (px, py, pw, ph), COLOR_BUTTON);
-                    let tw = krate_adapter_common::drawtext::text_width(label, text_scale) as f32;
-                    let th = krate_adapter_common::drawtext::text_height(text_scale) as f32;
-                    krate_adapter_common::drawtext::draw_text(
-                        &mut buffer,
-                        w,
-                        h,
-                        ((px + (pw - tw) / 2.0) as i32, (py + (ph - th) / 2.0) as i32),
-                        text_scale,
-                        0xFFFFFFFF,
-                        label,
-                    );
-                }
-                WidgetKind::TextField | WidgetKind::TextArea => {
-                    fill_rect(&mut buffer, w, h, (px, py, pw, ph), COLOR_FIELD_BORDER);
-                    fill_rect(
-                        &mut buffer,
-                        w,
-                        h,
-                        (
-                            px + 1.0 * scale,
-                            py + 1.0 * scale,
-                            (pw - 2.0 * scale).max(0.0),
-                            (ph - 2.0 * scale).max(0.0),
-                        ),
-                        COLOR_FIELD_FILL,
-                    );
-                    let th = krate_adapter_common::drawtext::text_height(text_scale) as f32;
-                    krate_adapter_common::drawtext::draw_text(
-                        &mut buffer,
-                        w,
-                        h,
-                        ((px + 4.0 * scale) as i32, (py + (ph - th) / 2.0) as i32),
-                        text_scale,
-                        0xFF1F2937,
-                        label,
-                    );
-                }
-                WidgetKind::Text => {
-                    let th = krate_adapter_common::drawtext::text_height(text_scale) as f32;
-                    krate_adapter_common::drawtext::draw_text(
-                        &mut buffer,
-                        w,
-                        h,
-                        (px as i32, (py + (ph - th) / 2.0) as i32),
-                        text_scale,
-                        0xFF111827,
-                        label,
-                    );
-                }
-                _ => {}
-            }
-        }
+        krate_adapter_common::painter::paint_placements(
+            &mut buffer,
+            width.get(),
+            height.get(),
+            tracked.window.scale_factor() as f32,
+            &tracked.placements,
+        );
         let _ = buffer.present();
     }
 
     /// Store drawn-widget placements for a window and repaint it.
     ///
-    /// This is the first drawn-fallback pass: solid rectangles presented
-    /// through a CPU framebuffer. Labels and real styling arrive with the
-    /// vello renderer; the placement contract stays the same.
+    /// Pixels come from the shared CPU painter in `adapter-common`
+    /// (rectangles plus bitmap-font labels); the vello renderer replaces
+    /// that painter behind the same placement contract.
     pub fn set_drawn_placements(
         krate: WindowId,
         placements: &[WidgetPlacement],
