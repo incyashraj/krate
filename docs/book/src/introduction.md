@@ -1,5 +1,8 @@
 # Introduction
 
+> **Naming:** The project was renamed from **Layer36** to **Krate** (by Krate Labs) in July 2026. Code, commands, and `layer36:*` API namespaces keep the legacy name until the scheduled code-level rename lands. Docs may use both names during the transition.
+
+
 Layer36 is an attempt to make apps portable in the way files are portable.
 
 The goal is simple to say and hard to build:

@@ -271,6 +271,34 @@ A fresh session following STATUS.md §8 lands on P3-VS-01, not on Winit windows.
 
 ---
 
+<a name="a9"></a>
+## Amendment A9 — Rename: Layer36 becomes Krate (added 2026-07-04)
+
+**Decision**: the product is **Krate**; the company is **Krate Labs**. The
+`.ai` naming neighborhood is crowded (krater.ai, krateo.ai, krates.ai), the
+product is a runtime rather than a model, and "Krate" carries the shipping-
+crate and Rust-crate meanings natively.
+
+**Phase A (done with this amendment)**: outward surfaces — README, docs
+title, introduction naming note, build log, STATUS, Build Plan name field,
+the product book, and founder-private materials — carry the new name with a
+"formerly Layer36" transition note. Code, commands, crate names, and WIT
+namespaces intentionally keep `layer36`.
+
+**Phase B (scheduled slice — land BEFORE the UAPI v0.1 freeze decision)**:
+1. WIT namespaces `layer36:*` to `krate:*` across phase1/phase2/phase3
+   packages, with freeze-lock regeneration, generated-binding regeneration,
+   import-purity checker updates, fixture rebuilds, and manifest world
+   strings.
+2. Crate renames (`layer36-*` to `krate-*`), CLI binary `layer36` to
+   `krate`, script names, env var prefixes (`LAYER36_` to `KRATE_`), JSON
+   schema id (`layer36.run.v1` to `krate.run.v1` with the old id accepted
+   during transition), MCP server name.
+3. Repository rename and docs URL migration; GitHub redirects cover old
+   links.
+Rationale for the pre-freeze deadline: renaming a frozen namespace later
+would be a breaking version bump; renaming a draft namespace now is cheap.
+
 ## 12. Order of application
 
 Apply in this order (dependencies flow downward):

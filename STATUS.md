@@ -1,6 +1,9 @@
-# Layer36 Status
+# Krate Status (formerly Layer36)
 
-Last updated: 2026-07-03
+Last updated: 2026-07-04
+Naming: the project is now Krate (company: Krate Labs); code, commands, and
+`layer36:*` namespaces keep the legacy name until the scheduled rename slice
+lands (before the UAPI freeze).
 Repo: `incyashraj/layer6x6`
 Branch: `main`
 Latest checked completed push before this slice: `884dce8` (full matrix run `28672835046`-successor green: all three OS lanes) (verified by the

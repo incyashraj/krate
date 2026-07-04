@@ -1,9 +1,11 @@
-# Layer36 (from layer6x6)
+# Krate (formerly Layer36)
 
 > Software should run like a PDF opens: exactly the same on any device — and
 > never touch anything without permission.
 
-Layer36 is a safe runtime for portable software. A program compiles once to a
+**Krate** — by Krate Labs — is a safe runtime for portable software. Like a
+shipping crate (and like a Rust crate), an app is packed once and travels
+anywhere. A program compiles once to a
 WebAssembly component; the Layer36 runtime runs that same file natively on
 Linux, macOS, and Windows through one standard library (UAPI), and a
 capability system (UCap) means the program touches nothing — not a file, not
@@ -11,7 +13,7 @@ the network — without an explicit grant.
 
 **Why now:** software is being generated faster than it can be ported, audited,
 or sandboxed. Machine-generated tools need one safe, universal place to run.
-Layer36 is being built to be that place — starting with developer tools and
+Krate is being built to be that place — starting with developer tools and
 local utilities, growing toward the full platform.
 
 **The long-term arc** is a universal application platform: the same portable
@@ -20,11 +22,14 @@ identity built in. See [the full vision](https://incyashraj.github.io/layer6x6/v
 [the roadmap](https://incyashraj.github.io/layer6x6/roadmap.html), and
 [follow the build](https://incyashraj.github.io/layer6x6/build-log.html).
 
-**Naming note:** This repository lives at `incyashraj/layer6x6` while the
-project is still proving the 6x6 portability matrix. The product name is
-**Layer36**: layer6x6 becomes Layer36 once the matrix is solved.
+**Naming note:** The project was renamed from **Layer36** to **Krate** in
+July 2026 (company: Krate Labs). During the transition, the repository,
+code, commands, crate names, and `layer36:*` API namespaces keep the legacy
+name — the code-level rename is a scheduled slice that lands before the
+UAPI freeze. Everything you run below therefore still says `layer36`; the
+behavior is Krate.
 
-**Status:** Pre-alpha. The runtime runs real CLI components — clock, cat,
+**Status:** Pre-alpha. The Krate runtime runs real CLI components — clock, cat,
 curl — from a single `.wasm` on Linux, macOS, and Windows, with
 manifest-declared capabilities, launch grants, and runtime permission checks,
 proven by cross-host CI. The first GUI component works too: one portable file

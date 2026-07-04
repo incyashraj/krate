@@ -6,6 +6,15 @@ pages.
 
 ---
 
+## 2026-07-04 — Layer36 becomes Krate
+
+The project has a new name: **Krate**, by **Krate Labs**. A crate ships
+goods anywhere unchanged; a Rust crate ships code. Both are exactly what
+this runtime does to applications. The code, commands, and `layer36:*` API
+namespaces keep the legacy name for a short transition — the code-level
+rename is scheduled to land before the UAPI freeze, so early adopters never
+face a breaking rename after stability is promised.
+
 ## 2026-07-04 — All three desktops, one file, three real windows
 
 Hours after Linux, Windows followed — and the winit backend cloned from the
