@@ -5,7 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-ucap-evidence/ucap-enforcement-evidence.md"
-STRICT="${LAYER36_UCAP_EVIDENCE_STRICT:-0}"
+STRICT="${KRATE_UCAP_EVIDENCE_STRICT:-0}"
 
 usage() {
   cat <<'USAGE'
@@ -16,7 +16,7 @@ Options:
   --output <path>  Output markdown file path
 
 Environment:
-  LAYER36_UCAP_EVIDENCE_STRICT   1 to exit non-zero when any step fails
+  KRATE_UCAP_EVIDENCE_STRICT   1 to exit non-zero when any step fails
 USAGE
 }
 
@@ -63,37 +63,37 @@ CURL_LOG="$TMP_DIR/curl.log"
 MANIFEST_LOG="$TMP_DIR/manifest.log"
 LANGUAGE_LOG="$TMP_DIR/language.log"
 
-if cargo test -p layer36-runtime uapi::tests::non_default_capabilities_are_denied_by_default_policy -- --exact >"$RUNTIME_LOG" 2>&1; then
+if cargo test -p krate-runtime uapi::tests::non_default_capabilities_are_denied_by_default_policy -- --exact >"$RUNTIME_LOG" 2>&1; then
   RUNTIME_CODE=0
 else
   RUNTIME_CODE=$?
 fi
 
-if cargo test -p layer36-runtime uapi_dispatch::tests::dispatcher_denies_all_non_default_boundaries_before_adapter -- --exact >"$DISPATCHER_LOG" 2>&1; then
+if cargo test -p krate-runtime uapi_dispatch::tests::dispatcher_denies_all_non_default_boundaries_before_adapter -- --exact >"$DISPATCHER_LOG" 2>&1; then
   DISPATCHER_CODE=0
 else
   DISPATCHER_CODE=$?
 fi
 
-if cargo test -p layer36-cli --test cli configured_layer36_cat_component_denies_missing_file_grant -- --exact >"$CAT_LOG" 2>&1; then
+if cargo test -p krate-cli --test cli configured_krate_cat_component_denies_missing_file_grant -- --exact >"$CAT_LOG" 2>&1; then
   CAT_CODE=0
 else
   CAT_CODE=$?
 fi
 
-if cargo test -p layer36-cli --test cli configured_layer36_curl_component_denies_missing_net_grant -- --exact >"$CURL_LOG" 2>&1; then
+if cargo test -p krate-cli --test cli configured_krate_curl_component_denies_missing_net_grant -- --exact >"$CURL_LOG" 2>&1; then
   CURL_CODE=0
 else
   CURL_CODE=$?
 fi
 
-if cargo test -p layer36-cli --test cli run_with_manifest_denies_missing_required_capability -- --exact >"$MANIFEST_LOG" 2>&1; then
+if cargo test -p krate-cli --test cli run_with_manifest_denies_missing_required_capability -- --exact >"$MANIFEST_LOG" 2>&1; then
   MANIFEST_CODE=0
 else
   MANIFEST_CODE=$?
 fi
 
-if cargo test -p layer36-cli --test cli language_variants_curl_permission_denied_matches_rust_go_ts -- --exact >"$LANGUAGE_LOG" 2>&1; then
+if cargo test -p krate-cli --test cli language_variants_curl_permission_denied_matches_rust_go_ts -- --exact >"$LANGUAGE_LOG" 2>&1; then
   LANGUAGE_CODE=0
 else
   LANGUAGE_CODE=$?
@@ -128,12 +128,12 @@ result_of() {
   echo
   echo "| Step | Exit code | Result |"
   echo "|---|---:|---|"
-  echo "| Runtime UCap deny matrix (\`cargo test -p layer36-runtime uapi::tests::non_default_capabilities_are_denied_by_default_policy -- --exact\`) | $RUNTIME_CODE | $(result_of "$RUNTIME_CODE") |"
-  echo "| Dispatcher deny-before-adapter matrix (\`cargo test -p layer36-runtime uapi_dispatch::tests::dispatcher_denies_all_non_default_boundaries_before_adapter -- --exact\`) | $DISPATCHER_CODE | $(result_of "$DISPATCHER_CODE") |"
-  echo "| Cat denies missing fs grant (\`cargo test -p layer36-cli --test cli configured_layer36_cat_component_denies_missing_file_grant -- --exact\`) | $CAT_CODE | $(result_of "$CAT_CODE") |"
-  echo "| Curl denies missing net grant (\`cargo test -p layer36-cli --test cli configured_layer36_curl_component_denies_missing_net_grant -- --exact\`) | $CURL_CODE | $(result_of "$CURL_CODE") |"
-  echo "| Manifest denies missing required cap (\`cargo test -p layer36-cli --test cli run_with_manifest_denies_missing_required_capability -- --exact\`) | $MANIFEST_CODE | $(result_of "$MANIFEST_CODE") |"
-  echo "| Curl denial parity across Rust Go TS (\`cargo test -p layer36-cli --test cli language_variants_curl_permission_denied_matches_rust_go_ts -- --exact\`) | $LANGUAGE_CODE | $(result_of "$LANGUAGE_CODE") |"
+  echo "| Runtime UCap deny matrix (\`cargo test -p krate-runtime uapi::tests::non_default_capabilities_are_denied_by_default_policy -- --exact\`) | $RUNTIME_CODE | $(result_of "$RUNTIME_CODE") |"
+  echo "| Dispatcher deny-before-adapter matrix (\`cargo test -p krate-runtime uapi_dispatch::tests::dispatcher_denies_all_non_default_boundaries_before_adapter -- --exact\`) | $DISPATCHER_CODE | $(result_of "$DISPATCHER_CODE") |"
+  echo "| Cat denies missing fs grant (\`cargo test -p krate-cli --test cli configured_krate_cat_component_denies_missing_file_grant -- --exact\`) | $CAT_CODE | $(result_of "$CAT_CODE") |"
+  echo "| Curl denies missing net grant (\`cargo test -p krate-cli --test cli configured_krate_curl_component_denies_missing_net_grant -- --exact\`) | $CURL_CODE | $(result_of "$CURL_CODE") |"
+  echo "| Manifest denies missing required cap (\`cargo test -p krate-cli --test cli run_with_manifest_denies_missing_required_capability -- --exact\`) | $MANIFEST_CODE | $(result_of "$MANIFEST_CODE") |"
+  echo "| Curl denial parity across Rust Go TS (\`cargo test -p krate-cli --test cli language_variants_curl_permission_denied_matches_rust_go_ts -- --exact\`) | $LANGUAGE_CODE | $(result_of "$LANGUAGE_CODE") |"
   echo
   echo "## Runtime UCap deny matrix log (tail)"
   echo

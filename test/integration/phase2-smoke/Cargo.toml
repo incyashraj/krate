@@ -13,18 +13,18 @@ wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 crate-type = ["cdylib"]
 
 [package.metadata.component]
-package = "layer36:phase2-smoke"
+package = "krate:phase2-smoke"
 
 [package.metadata.component.target]
-path = "../../../wit/layer36/phase2"
+path = "../../../wit/krate/phase2"
 world = "cli"
 
 [package.metadata.component.target.dependencies]
-"layer36:io" = { path = "../../../wit/layer36/phase2/deps/io" }
-"layer36:fs" = { path = "../../../wit/layer36/phase2/deps/fs" }
-"layer36:net" = { path = "../../../wit/layer36/phase2/deps/net" }
-"layer36:time" = { path = "../../../wit/layer36/phase2/deps/time" }
-"layer36:locale" = { path = "../../../wit/layer36/phase2/deps/locale" }
+"krate:io" = { path = "../../../wit/krate/phase2/deps/io" }
+"krate:fs" = { path = "../../../wit/krate/phase2/deps/fs" }
+"krate:net" = { path = "../../../wit/krate/phase2/deps/net" }
+"krate:time" = { path = "../../../wit/krate/phase2/deps/time" }
+"krate:locale" = { path = "../../../wit/krate/phase2/deps/locale" }
 
 [profile.release]
 panic = "abort"

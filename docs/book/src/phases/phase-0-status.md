@@ -27,7 +27,7 @@ lives in `Plan/Phase-0-Plan.md`.
 | README review | Ask one outside reader to follow the README and mark what confused them. |
 | Discord or community home | Create channels, rules, and an invite link before public launch. |
 | Announcement | Publish only after docs, repo settings, and community home are ready. |
-| Domain | Secure `layer36.dev` or a chosen equivalent. |
+| Domain | Secure `krate.dev` or a chosen equivalent. |
 | Naming | Finish official trademark and registry checks. |
 | External PR | Get one outside contributor PR opened and merged. |
 | Retrospective | Finish the Phase 0 retro after the external work is done. |

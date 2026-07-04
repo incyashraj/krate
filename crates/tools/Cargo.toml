@@ -1,5 +1,5 @@
 [package]
-name = "layer36-tools"
+name = "krate-tools"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,9 +9,9 @@ publish = false
 
 [dependencies]
 anyhow.workspace = true
-layer36-manifest = { path = "../manifest", version = "0.1.0-dev" }
-layer36-policy = { path = "../policy", version = "0.1.0-dev" }
-layer36-runtime = { path = "../runtime", version = "0.1.0-dev" }
+krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
+krate-policy = { path = "../policy", version = "0.1.0-dev" }
+krate-runtime = { path = "../runtime", version = "0.1.0-dev" }
 serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10.9"

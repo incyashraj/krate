@@ -5,7 +5,7 @@
 //! traits are intentionally small while the WIT is still draft-stage.
 
 use crate::uapi::{FsCall, IoCall, LocaleCall, NetCall, TimeCall, UapiCall, UapiError, UapiGuard};
-use layer36_adapter_common::net::parse_url_endpoint;
+use krate_adapter_common::net::parse_url_endpoint;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenMode {
@@ -646,7 +646,7 @@ fn fs_write_call(path: &str) -> UapiCall {
 fn map_dispatch_policy(err: UapiError) -> DispatchError {
     if matches!(
         err,
-        UapiError::Policy(layer36_policy::PolicyError::Denied { .. })
+        UapiError::Policy(krate_policy::PolicyError::Denied { .. })
     ) {
         DispatchError::PermissionDenied
     } else {
@@ -657,7 +657,7 @@ fn map_dispatch_policy(err: UapiError) -> DispatchError {
 fn map_fs_policy(err: UapiError) -> FsDispatchError {
     if matches!(
         err,
-        UapiError::Policy(layer36_policy::PolicyError::Denied { .. })
+        UapiError::Policy(krate_policy::PolicyError::Denied { .. })
     ) {
         FsDispatchError::PermissionDenied
     } else {
@@ -668,7 +668,7 @@ fn map_fs_policy(err: UapiError) -> FsDispatchError {
 fn map_net_policy(err: UapiError) -> NetDispatchError {
     if matches!(
         err,
-        UapiError::Policy(layer36_policy::PolicyError::Denied { .. })
+        UapiError::Policy(krate_policy::PolicyError::Denied { .. })
     ) {
         NetDispatchError::PermissionDenied
     } else {
@@ -680,7 +680,7 @@ fn map_net_policy(err: UapiError) -> NetDispatchError {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use layer36_policy::SessionPolicy;
+    use krate_policy::SessionPolicy;
 
     use super::*;
 

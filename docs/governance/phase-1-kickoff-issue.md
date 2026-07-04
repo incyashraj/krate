@@ -24,7 +24,7 @@ The Phase 1 sentence is:
 - Add ADR-0002 for Wasmtime as runtime engine.
 - Add ADR-0003 for Component Model from day one.
 - Add the first hello-world WASM component fixture.
-- Make `layer36 run hello.wasm` print identical output on Linux, macOS, and
+- Make `krate run hello.wasm` print identical output on Linux, macOS, and
   Windows.
 
 ## References

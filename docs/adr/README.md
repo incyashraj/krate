@@ -1,6 +1,6 @@
 # Architecture Decision Records
 
-This directory contains all Architecture Decision Records for Layer36.
+This directory contains all Architecture Decision Records for Krate.
 
 ## What is an ADR?
 
@@ -19,7 +19,7 @@ merged into `main`, and then **never modified** — only superseded by a new ADR
 
 | ADR | Title | Status | Phase |
 |-----|-------|--------|-------|
-| [0001](0001-rust-for-runtime.md) | Rust for the Layer36 runtime | Accepted | 0 |
+| [0001](0001-rust-for-runtime.md) | Rust for the Krate runtime | Accepted | 0 |
 | [0002](0002-wasmtime-runtime-engine.md) | Wasmtime as runtime engine | Accepted | 1 |
 | [0003](0003-component-model-from-day-one.md) | Component Model from day one | Accepted | 1 |
 | [0006](0006-wit-versioning-strategy.md) | WIT versioning strategy | Accepted | 2 |

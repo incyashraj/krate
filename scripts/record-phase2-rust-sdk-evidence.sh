@@ -5,8 +5,8 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-rust-sdk-evidence/rust-sdk-evidence.md"
-STRICT="${LAYER36_RUST_SDK_EVIDENCE_STRICT:-0}"
-CHECK_DOCS="${LAYER36_RUST_SDK_EVIDENCE_CHECK_DOCS:-1}"
+STRICT="${KRATE_RUST_SDK_EVIDENCE_STRICT:-0}"
+CHECK_DOCS="${KRATE_RUST_SDK_EVIDENCE_CHECK_DOCS:-1}"
 
 usage() {
   cat <<'USAGE'
@@ -18,8 +18,8 @@ Options:
   --output <path>  Output markdown file path
 
 Environment:
-  LAYER36_RUST_SDK_EVIDENCE_STRICT      1 to exit non-zero when any step fails
-  LAYER36_RUST_SDK_EVIDENCE_CHECK_DOCS  0 to skip cargo doc check
+  KRATE_RUST_SDK_EVIDENCE_STRICT      1 to exit non-zero when any step fails
+  KRATE_RUST_SDK_EVIDENCE_CHECK_DOCS  0 to skip cargo doc check
 USAGE
 }
 
@@ -72,7 +72,7 @@ else
 fi
 
 if [ "$CHECK_DOCS" = "1" ]; then
-  if cargo doc -p layer36 --no-deps >"$DOCS_LOG" 2>&1; then
+  if cargo doc -p krate --no-deps >"$DOCS_LOG" 2>&1; then
     DOCS_CODE=0
   else
     DOCS_CODE=$?
@@ -87,7 +87,7 @@ host_os="$(uname -s 2>/dev/null || printf 'unknown')"
 host_arch="$(uname -m 2>/dev/null || printf 'unknown')"
 git_commit="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
 package_dir="$(
-  find "$ROOT/target/package" -maxdepth 1 -type d -name 'layer36-*' 2>/dev/null \
+  find "$ROOT/target/package" -maxdepth 1 -type d -name 'krate-*' 2>/dev/null \
     | sort \
     | tail -n 1
 )"
@@ -127,7 +127,7 @@ exists_of() {
   echo "| Step | Exit code | Result |"
   echo "|---|---:|---|"
   echo "| Rust SDK package smoke (\`scripts/smoke-rust-sdk.sh\`) | $SMOKE_CODE | $(result_of "$SMOKE_CODE") |"
-  echo "| Rust SDK docs (\`cargo doc -p layer36 --no-deps\`) | $DOCS_CODE | $(result_of "$DOCS_CODE") |"
+  echo "| Rust SDK docs (\`cargo doc -p krate --no-deps\`) | $DOCS_CODE | $(result_of "$DOCS_CODE") |"
   echo
   echo "## Packaged Files"
   echo

@@ -1,0 +1,294 @@
+package krate:ui@0.1.0;
+
+/// Shared records and errors for Phase 3 UI calls.
+interface types {
+  /// Window state requested by an app or reported by the host.
+  enum window-state {
+    /// Normal restored window.
+    normal,
+    /// Minimized window.
+    minimized,
+    /// Maximized window.
+    maximized,
+    /// Borderless fullscreen window.
+    fullscreen,
+  }
+
+  /// Logical window size in device-independent pixels.
+  record window-size {
+    /// Width in logical pixels.
+    width: u32,
+    /// Height in logical pixels.
+    height: u32,
+  }
+
+  /// Rectangle in logical pixels.
+  record rect {
+    /// Left edge.
+    x: f32,
+    /// Top edge.
+    y: f32,
+    /// Width.
+    width: f32,
+    /// Height.
+    height: f32,
+  }
+
+  /// Current host color preference.
+  enum theme {
+    /// Light system appearance.
+    light,
+    /// Dark system appearance.
+    dark,
+    /// Host did not report a stable preference.
+    unknown,
+  }
+
+  /// Mouse or touch button.
+  enum pointer-button {
+    /// Primary button.
+    primary,
+    /// Secondary button.
+    secondary,
+    /// Middle button.
+    middle,
+    /// Host-specific extra button.
+    other,
+  }
+
+  /// Keyboard modifier state.
+  record modifiers {
+    /// Shift key is down.
+    shift: bool,
+    /// Control key is down.
+    control: bool,
+    /// Alt or Option key is down.
+    alt: bool,
+    /// Command key on macOS or Windows key on Windows.
+    meta: bool,
+  }
+
+  /// Pointer input event delivered by the host.
+  record pointer-event {
+    /// Target window id.
+    window: u64,
+    /// Target widget id if hit testing found one.
+    widget: option<u64>,
+    /// X position in logical pixels.
+    x: f32,
+    /// Y position in logical pixels.
+    y: f32,
+    /// Button that changed, when a button changed.
+    button: option<pointer-button>,
+    /// True when this is a press, false when it is a release.
+    pressed: bool,
+    /// Modifier state at the time of the event.
+    modifiers: modifiers,
+  }
+
+  /// Keyboard input event delivered by the host.
+  record key-event {
+    /// Target window id.
+    window: u64,
+    /// Focused widget id if one exists.
+    widget: option<u64>,
+    /// Host-normalized key name.
+    key: string,
+    /// True when this is a key press, false when it is a release.
+    pressed: bool,
+    /// Modifier state at the time of the event.
+    modifiers: modifiers,
+  }
+
+  /// Error shape returned by UI calls.
+  variant ui-error {
+    /// Capability policy or sandbox rules denied the operation.
+    permission-denied,
+    /// The window id is unknown or closed.
+    invalid-window,
+    /// The widget id is unknown or belongs to another window.
+    invalid-widget,
+    /// The host cannot support this UI feature yet.
+    unsupported(string),
+    /// Host-specific UI error text.
+    platform(string),
+  }
+
+  /// Widget type in the portable tree.
+  enum widget-kind {
+    /// Flex-style stack container.
+    stack,
+    /// Grid container.
+    grid,
+    /// Scroll container.
+    scroll,
+    /// Tab container.
+    tabs,
+    /// Push button.
+    button,
+    /// Checkbox.
+    checkbox,
+    /// Radio button.
+    radio,
+    /// On/off switch.
+    switch,
+    /// Numeric slider.
+    slider,
+    /// Progress indicator.
+    progress,
+    /// Static text.
+    text,
+    /// Single-line text field.
+    text-field,
+    /// Multi-line text area.
+    text-area,
+    /// List view.
+    list-view,
+    /// Tree view.
+    tree-view,
+    /// Image view.
+    image,
+    /// Custom drawing canvas.
+    canvas,
+  }
+
+  /// Minimal style block for the first widget protocol draft.
+  record style {
+    /// Optional width in logical pixels.
+    width: option<f32>,
+    /// Optional height in logical pixels.
+    height: option<f32>,
+    /// Flex grow factor.
+    grow: f32,
+    /// Padding in logical pixels.
+    padding: f32,
+  }
+
+  /// One node in the portable widget tree.
+  record widget-node {
+    /// Stable app-owned widget id.
+    id: u64,
+    /// Optional parent widget id.
+    parent: option<u64>,
+    /// Widget kind.
+    kind: widget-kind,
+    /// User-visible label or text.
+    label: option<string>,
+    /// Accessibility role hint.
+    role: option<string>,
+    /// Small layout and sizing block.
+    style: style,
+  }
+
+  /// Top-level menu item.
+  record menu-item {
+    /// Stable command id returned in action events.
+    id: u64,
+    /// Menu label.
+    label: string,
+    /// Whether the item can be chosen.
+    enabled: bool,
+  }
+
+  /// Host event sent to the app.
+  variant event {
+    /// The user requested that a window close.
+    close-requested(u64),
+    /// A window was resized.
+    resized(window-size),
+    /// A window needs redraw.
+    redraw-requested(u64),
+    /// Pointer input changed.
+    pointer(pointer-event),
+    /// Keyboard input changed.
+    key(key-event),
+    /// Text input after keyboard layout or IME processing.
+    text-input(string),
+    /// A widget or menu command fired.
+    action(u64),
+    /// Focus moved to another widget.
+    focus-changed(option<u64>),
+    /// Host theme changed.
+    theme-changed(theme),
+  }
+}
+
+/// Window lifecycle calls.
+interface window {
+  use types.{ui-error, window-size, window-state};
+
+  /// Create a host window and return its id.
+  create: func(title: string, size: window-size) -> result<u64, ui-error>;
+  /// Show a created window.
+  show: func(window: u64) -> result<_, ui-error>;
+  /// Close a window.
+  close: func(window: u64) -> result<_, ui-error>;
+  /// Change the title of a window.
+  set-title: func(window: u64, title: string) -> result<_, ui-error>;
+  /// Change the size of a window.
+  set-size: func(window: u64, size: window-size) -> result<_, ui-error>;
+  /// Change the state of a window.
+  set-state: func(window: u64, state: window-state) -> result<_, ui-error>;
+  /// Ask the host to schedule a redraw event.
+  request-redraw: func(window: u64) -> result<_, ui-error>;
+}
+
+/// Portable widget tree calls.
+interface tree {
+  use types.{ui-error, widget-node};
+
+  /// Set or replace the root widget for a window.
+  set-root: func(window: u64, root: widget-node) -> result<_, ui-error>;
+  /// Insert or update one widget node.
+  upsert-node: func(window: u64, node: widget-node) -> result<_, ui-error>;
+  /// Remove one widget node and its children.
+  remove-node: func(window: u64, widget: u64) -> result<_, ui-error>;
+  /// Move keyboard focus to a widget.
+  focus-node: func(window: u64, widget: u64) -> result<_, ui-error>;
+  /// Enable or disable a widget.
+  set-enabled: func(window: u64, widget: u64, enabled: bool) -> result<_, ui-error>;
+}
+
+/// Host event delivery calls.
+///
+/// Events are delivered one at a time in FIFO order. The single-event shape
+/// matches the runtime dispatcher's `poll_event` path, and it keeps guest
+/// bindings free of list-of-variant lifting, which current guest toolchains
+/// cannot compile without dragging WASI panic machinery into otherwise pure
+/// components.
+interface events {
+  use types.{event};
+
+  /// Return the next queued event without blocking, if one is waiting.
+  poll: func() -> option<event>;
+  /// Wait until the next event arrives or the timeout expires.
+  wait: func(timeout-millis: option<u32>) -> option<event>;
+}
+
+/// System dialog calls.
+interface dialog {
+  use types.{ui-error};
+
+  /// Show a simple message dialog.
+  message: func(window: u64, title: string, body: string) -> result<_, ui-error>;
+  /// Ask a yes/no question and return true for yes.
+  confirm: func(window: u64, title: string, body: string) -> result<bool, ui-error>;
+}
+
+/// Clipboard calls.
+interface clipboard {
+  use types.{ui-error};
+
+  /// Read UTF-8 text from the host clipboard.
+  read-text: func() -> result<string, ui-error>;
+  /// Write UTF-8 text to the host clipboard.
+  write-text: func(text: string) -> result<_, ui-error>;
+}
+
+/// Menu calls.
+interface menu {
+  use types.{menu-item, ui-error};
+
+  /// Set the simple top-level menu for a window.
+  set-items: func(window: u64, items: list<menu-item>) -> result<_, ui-error>;
+}

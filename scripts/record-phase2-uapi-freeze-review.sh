@@ -5,7 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-uapi-freeze-review/uapi-freeze-review.md"
-STRICT="${LAYER36_UAPI_FREEZE_REVIEW_STRICT:-0}"
+STRICT="${KRATE_UAPI_FREEZE_REVIEW_STRICT:-0}"
 
 usage() {
   cat <<'USAGE'
@@ -16,7 +16,7 @@ Options:
   --output <md>   Output markdown file path
 
 Environment:
-  LAYER36_UAPI_FREEZE_REVIEW_STRICT  1 to exit non-zero when any review step fails
+  KRATE_UAPI_FREEZE_REVIEW_STRICT  1 to exit non-zero when any review step fails
 USAGE
 }
 

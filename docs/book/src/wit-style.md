@@ -1,6 +1,6 @@
 # WIT Style Guide
 
-Layer36 UAPI is written in WIT because WIT is the contract between an app and
+Krate UAPI is written in WIT because WIT is the contract between an app and
 every host we support. Once a module is frozen, app authors build against it and
 host adapters must keep honoring it. This guide keeps that contract boring,
 small, and portable.
@@ -22,13 +22,13 @@ an adapter detail, defer it, or write an ADR.
 Use one package per UAPI module:
 
 ```wit
-package layer36:fs@0.1.0;
-package layer36:net@0.1.0;
+package krate:fs@0.1.0;
+package krate:net@0.1.0;
 ```
 
 Rules:
 
-- Use `layer36:<module>@<semver>`.
+- Use `krate:<module>@<semver>`.
 - Use short nouns for modules: `fs`, `net`, `time`, `locale`.
 - Do not put host names in package names.
 - Do not use marketing names in WIT. WIT is an ABI, not a product page.
@@ -36,11 +36,11 @@ Rules:
 The app world imports versioned module interfaces:
 
 ```wit
-package layer36:app@0.1.0;
+package krate:app@0.1.0;
 
 world cli {
-  import layer36:io/stdio@0.1.0;
-  import layer36:fs/files@0.1.0;
+  import krate:io/stdio@0.1.0;
+  import krate:fs/files@0.1.0;
 
   export run: func() -> s32;
 }

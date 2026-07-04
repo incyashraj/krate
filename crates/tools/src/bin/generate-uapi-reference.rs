@@ -3,14 +3,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use layer36_manifest::supported_phase2_capability_specs;
+use krate_manifest::supported_phase2_capability_specs;
 use wit_parser::{
     Function, FunctionKind, Interface, Resolve, Type, TypeDefKind, TypeId, WorldItem,
 };
 
 fn main() -> Result<()> {
     let root = workspace_root();
-    let wit_dir = root.join("wit/layer36/phase2");
+    let wit_dir = root.join("wit/krate/phase2");
     let output = root.join("docs/book/src/reference/uapi/index.md");
 
     let mut resolve = Resolve::default();
@@ -20,7 +20,7 @@ fn main() -> Result<()> {
 
     let world_id = resolve
         .select_world(&[app_package], Some("cli"))
-        .context("select layer36:app/cli world")?;
+        .context("select krate:app/cli world")?;
 
     let markdown = render_reference(&resolve, world_id)?;
 
@@ -52,12 +52,12 @@ fn render_reference(resolve: &Resolve, world_id: wit_parser::WorldId) -> Result<
     writeln!(out)?;
     writeln!(
         out,
-        "> Generated from `wit/layer36/phase2`. Do not edit this page by hand."
+        "> Generated from `wit/krate/phase2`. Do not edit this page by hand."
     )?;
     writeln!(out)?;
     writeln!(
         out,
-        "Layer36 Phase 2 exposes the `{}` world from `{}`.",
+        "Krate Phase 2 exposes the `{}` world from `{}`.",
         world.name, package
     )?;
     writeln!(out)?;
@@ -402,67 +402,67 @@ fn write_docs(docs: &wit_parser::Docs, out: &mut String) -> Result<()> {
 
 fn interface_summary(interface: &str) -> Option<&'static str> {
     match interface {
-        "layer36:fs/files@0.1.0" => Some(
+        "krate:fs/files@0.1.0" => Some(
             "Filesystem entry points. All host file access should pass through these functions and resource methods.",
         ),
-        "layer36:fs/types@0.1.0" => {
+        "krate:fs/types@0.1.0" => {
             Some("Shared filesystem records, modes, and error shapes.")
         }
-        "layer36:io/args@0.1.0" => Some(
-            "Raw Layer36 app arguments. These are the arguments passed after `--` in `layer36 run`.",
+        "krate:io/args@0.1.0" => Some(
+            "Raw Krate app arguments. These are the arguments passed after `--` in `krate run`.",
         ),
-        "layer36:io/log@0.1.0" => Some(
+        "krate:io/log@0.1.0" => Some(
             "Structured app logs. Hosts can route these to native logs, developer consoles, or test captures.",
         ),
-        "layer36:io/stdio@0.1.0" => {
+        "krate:io/stdio@0.1.0" => {
             Some("Standard input, output, and error streams for CLI-style apps.")
         }
-        "layer36:io/streams@0.1.0" => {
+        "krate:io/streams@0.1.0" => {
             Some("Byte streams used by stdio and other UAPI modules.")
         }
-        "layer36:io/types@0.1.0" => Some("Shared IO log and error types."),
-        "layer36:locale/format@0.1.0" => {
+        "krate:io/types@0.1.0" => Some("Shared IO log and error types."),
+        "krate:locale/format@0.1.0" => {
             Some("Host-backed date and number formatting.")
         }
-        "layer36:locale/info@0.1.0" => {
+        "krate:locale/info@0.1.0" => {
             Some("The host user's current locale and timezone.")
         }
-        "layer36:locale/types@0.1.0" => Some("Locale and formatting type definitions."),
-        "layer36:net/http-client@0.1.0" => {
+        "krate:locale/types@0.1.0" => Some("Locale and formatting type definitions."),
+        "krate:net/http-client@0.1.0" => {
             Some("HTTP client calls. Phase 2 starts with simple request and response bodies.")
         }
-        "layer36:net/types@0.1.0" => Some("Shared network request, response, and error types."),
-        "layer36:time/clock@0.1.0" => {
+        "krate:net/types@0.1.0" => Some("Shared network request, response, and error types."),
+        "krate:time/clock@0.1.0" => {
             Some("Wall-clock and monotonic clock reads.")
         }
-        "layer36:time/sleep@0.1.0" => Some("Blocking sleep for CLI-style components."),
+        "krate:time/sleep@0.1.0" => Some("Blocking sleep for CLI-style components."),
         _ => None,
     }
 }
 
 fn capability_notes(interface: &str) -> &'static [&'static str] {
     match interface {
-        "layer36:fs/files@0.1.0" => &[
+        "krate:fs/files@0.1.0" => &[
             "`open`, `stat`, and `list` require a matching `fs.read:PATH` grant for read-style access.",
             "Write, mkdir, remove, and rename operations are part of the Phase 2 shape, but the first runtime slice focuses on read grants.",
         ],
-        "layer36:io/args@0.1.0" => &[
+        "krate:io/args@0.1.0" => &[
             "`io.args` is granted by default for CLI apps.",
             "The current draft encodes args as newline-separated text.",
         ],
-        "layer36:io/stdio@0.1.0" | "layer36:io/streams@0.1.0" => &[
+        "krate:io/stdio@0.1.0" | "krate:io/streams@0.1.0" => &[
             "`io.stdin`, `io.stdout`, and `io.stderr` are low-risk default grants for CLI apps.",
         ],
-        "layer36:io/log@0.1.0" => &["`io.log` is a low-risk default grant."],
-        "layer36:net/http-client@0.1.0" => &[
+        "krate:io/log@0.1.0" => &["`io.log` is a low-risk default grant."],
+        "krate:net/http-client@0.1.0" => &[
             "`get` and `fetch` require a matching `net.connect:HOST:PORT` grant before the adapter opens a socket.",
             "The current host adapter supports plain HTTP request framing first, with a 1 MiB full-response cap; HTTPS, redirects, streaming, and richer network behavior are still Phase 2 work.",
         ],
-        "layer36:time/clock@0.1.0" => {
+        "krate:time/clock@0.1.0" => {
             &["`time.clock` and `time.monotonic` are default grants."]
         }
-        "layer36:time/sleep@0.1.0" => &["`sleep-millis` requires `time.sleep`."],
-        "layer36:locale/info@0.1.0" | "layer36:locale/format@0.1.0" => &[
+        "krate:time/sleep@0.1.0" => &["`sleep-millis` requires `time.sleep`."],
+        "krate:locale/info@0.1.0" | "krate:locale/format@0.1.0" => &[
             "Locale reads and formatting are default grants for CLI apps.",
         ],
         _ => &[],
@@ -511,30 +511,30 @@ fn capability_module_for_interface(interface: &str) -> Option<&str> {
 
 fn rust_example(interface: &str) -> Option<&'static str> {
     match interface {
-        "layer36:fs/files@0.1.0" => Some(
-            "let text = layer36::fs::read_to_string(\"notes.txt\")?;\nlayer36::io::stdio::println(&text)?;\n",
+        "krate:fs/files@0.1.0" => Some(
+            "let text = krate::fs::read_to_string(\"notes.txt\")?;\nkrate::io::stdio::println(&text)?;\n",
         ),
-        "layer36:io/args@0.1.0" => Some(
-            "let raw = layer36::io::args::raw();\nlet first = layer36::io::args::first_raw(&raw);\n",
+        "krate:io/args@0.1.0" => Some(
+            "let raw = krate::io::args::raw();\nlet first = krate::io::args::first_raw(&raw);\n",
         ),
-        "layer36:io/stdio@0.1.0" => Some(
-            "layer36::io::stdio::println(\"Hello from Layer36\")?;\nlayer36::io::stdio::eprintln(\"debug line\")?;\n",
+        "krate:io/stdio@0.1.0" => Some(
+            "krate::io::stdio::println(\"Hello from Krate\")?;\nkrate::io::stdio::eprintln(\"debug line\")?;\n",
         ),
-        "layer36:io/streams@0.1.0" => Some(
-            "use layer36::io::streams::OutputStreamExt;\n\nlet out = layer36::io::stdio::stdout();\nout.write_line(\"ok\")?;\nout.flush()?;\n",
+        "krate:io/streams@0.1.0" => Some(
+            "use krate::io::streams::OutputStreamExt;\n\nlet out = krate::io::stdio::stdout();\nout.write_line(\"ok\")?;\nout.flush()?;\n",
         ),
-        "layer36:net/http-client@0.1.0" => Some(
-            "let body = layer36::net::get_text(\"http://127.0.0.1:8080/data.txt\")?;\nlayer36::io::stdio::println(&body)?;\n",
+        "krate:net/http-client@0.1.0" => Some(
+            "let body = krate::net::get_text(\"http://127.0.0.1:8080/data.txt\")?;\nkrate::io::stdio::println(&body)?;\n",
         ),
-        "layer36:time/clock@0.1.0" => Some(
-            "let now = layer36::time::now_millis();\nlet tick = layer36::time::monotonic_nanos();\n",
+        "krate:time/clock@0.1.0" => Some(
+            "let now = krate::time::now_millis();\nlet tick = krate::time::monotonic_nanos();\n",
         ),
-        "layer36:time/sleep@0.1.0" => Some("layer36::time::sleep_millis(100);\n"),
-        "layer36:locale/info@0.1.0" => Some(
-            "let locale = layer36::locale::current();\nlet timezone = layer36::locale::timezone();\n",
+        "krate:time/sleep@0.1.0" => Some("krate::time::sleep_millis(100);\n"),
+        "krate:locale/info@0.1.0" => Some(
+            "let locale = krate::locale::current();\nlet timezone = krate::locale::timezone();\n",
         ),
-        "layer36:locale/format@0.1.0" => Some(
-            "let locale = layer36::locale::current();\nlet text = layer36::locale::format_number(42.0, layer36::locale::NumberStyle::Decimal, &locale);\n",
+        "krate:locale/format@0.1.0" => Some(
+            "let locale = krate::locale::current();\nlet text = krate::locale::format_number(42.0, krate::locale::NumberStyle::Decimal, &locale);\n",
         ),
         _ => None,
     }
@@ -542,128 +542,128 @@ fn rust_example(interface: &str) -> Option<&'static str> {
 
 fn function_notes(interface: &str, function: &str) -> &'static [&'static str] {
     match (interface, function) {
-        ("layer36:fs/files@0.1.0", "open") => &[
-            "Opens a host file through Layer36 and returns a `file` handle.",
+        ("krate:fs/files@0.1.0", "open") => &[
+            "Opens a host file through Krate and returns a `file` handle.",
             "`read` needs `fs.read:PATH`; `write`, `append`, and `read-write` also need the matching write grant.",
         ],
-        ("layer36:fs/files@0.1.0", "stat") => &[
+        ("krate:fs/files@0.1.0", "stat") => &[
             "Reads file metadata without opening the file body.",
             "Requires `fs.read:PATH` for the path being inspected.",
         ],
-        ("layer36:fs/files@0.1.0", "list") => &[
+        ("krate:fs/files@0.1.0", "list") => &[
             "Returns directory entry names for a granted directory.",
             "Requires `fs.list:PATH` before the adapter reads the directory.",
         ],
-        ("layer36:fs/files@0.1.0", "remove-file") => &[
+        ("krate:fs/files@0.1.0", "remove-file") => &[
             "Deletes one file.",
             "Requires `fs.remove:PATH`; missing grants fail before host deletion is attempted.",
         ],
-        ("layer36:fs/files@0.1.0", "remove-dir") => &[
+        ("krate:fs/files@0.1.0", "remove-dir") => &[
             "Deletes one directory.",
             "Requires `fs.remove:PATH`; hosts can still reject non-empty directories.",
         ],
-        ("layer36:fs/files@0.1.0", "mkdir") => &[
+        ("krate:fs/files@0.1.0", "mkdir") => &[
             "Creates one directory.",
             "Requires `fs.mkdir:PATH` for the directory being created.",
         ],
-        ("layer36:fs/files@0.1.0", "rename") => &[
+        ("krate:fs/files@0.1.0", "rename") => &[
             "Moves or renames a file or directory.",
             "Requires grants for both sides: remove/write style access to the source and write style access to the destination.",
         ],
-        ("layer36:fs/files@0.1.0", "file.read") => &[
+        ("krate:fs/files@0.1.0", "file.read") => &[
             "Reads up to `n` bytes from an opened file handle.",
             "The runtime rechecks the handle path before each adapter read.",
         ],
-        ("layer36:fs/files@0.1.0", "file.write") => &[
+        ("krate:fs/files@0.1.0", "file.write") => &[
             "Writes bytes to an opened file handle and returns the number written.",
             "The runtime rechecks write permission before each adapter write.",
         ],
-        ("layer36:fs/files@0.1.0", "file.seek-set") => &[
+        ("krate:fs/files@0.1.0", "file.seek-set") => &[
             "Moves the file cursor to an absolute byte position.",
             "The handle must still be valid and backed by a granted file.",
         ],
-        ("layer36:fs/files@0.1.0", "file.seek-end") => &[
+        ("krate:fs/files@0.1.0", "file.seek-end") => &[
             "Moves the file cursor to the end and returns the new position.",
             "Useful before append-style writes or size checks.",
         ],
-        ("layer36:fs/files@0.1.0", "file.stat") => &[
+        ("krate:fs/files@0.1.0", "file.stat") => &[
             "Reads metadata for the opened file handle.",
             "The runtime rechecks the handle path before the adapter stat call.",
         ],
-        ("layer36:io/args@0.1.0", "raw") => &[
-            "Returns the app arguments passed after `--` in `layer36 run`.",
+        ("krate:io/args@0.1.0", "raw") => &[
+            "Returns the app arguments passed after `--` in `krate run`.",
             "Current encoding is newline-separated text, so SDK helpers should parse it for app code.",
         ],
-        ("layer36:io/log@0.1.0", "emit") => &[
+        ("krate:io/log@0.1.0", "emit") => &[
             "Sends one structured log event to the host.",
             "Fields are plain key/value strings so native hosts can map them to their own log systems.",
         ],
-        ("layer36:io/stdio@0.1.0", "stdin") => &[
+        ("krate:io/stdio@0.1.0", "stdin") => &[
             "Returns an input stream connected to the host standard input.",
             "Granted by default for CLI apps.",
         ],
-        ("layer36:io/stdio@0.1.0", "stdout") => &[
+        ("krate:io/stdio@0.1.0", "stdout") => &[
             "Returns an output stream connected to host standard output.",
             "Use this for normal command output that other tools may read.",
         ],
-        ("layer36:io/stdio@0.1.0", "stderr") => &[
+        ("krate:io/stdio@0.1.0", "stderr") => &[
             "Returns an output stream connected to host standard error.",
             "Use this for diagnostics and permission errors.",
         ],
-        ("layer36:io/streams@0.1.0", "input-stream.read") => &[
+        ("krate:io/streams@0.1.0", "input-stream.read") => &[
             "Reads up to `n` bytes from an input stream.",
             "A short read is valid; an empty read means the stream has no more bytes right now or is closed.",
         ],
-        ("layer36:io/streams@0.1.0", "input-stream.read-to-string") => &[
+        ("krate:io/streams@0.1.0", "input-stream.read-to-string") => &[
             "Reads the stream as UTF-8 text.",
             "Invalid UTF-8 returns `io-error.invalid-utf8` instead of lossy text.",
         ],
-        ("layer36:io/streams@0.1.0", "output-stream.write") => &[
+        ("krate:io/streams@0.1.0", "output-stream.write") => &[
             "Writes bytes to an output stream and returns the number accepted.",
             "Apps that need all bytes written should use `write-all` or an SDK helper.",
         ],
-        ("layer36:io/streams@0.1.0", "output-stream.write-all") => &[
+        ("krate:io/streams@0.1.0", "output-stream.write-all") => &[
             "Writes the full byte buffer or returns an IO error.",
             "This is the right primitive for line-oriented CLI output.",
         ],
-        ("layer36:io/streams@0.1.0", "output-stream.flush") => &[
+        ("krate:io/streams@0.1.0", "output-stream.flush") => &[
             "Asks the host to push buffered output through.",
             "Use it before exiting after important diagnostics or prompts.",
         ],
-        ("layer36:net/http-client@0.1.0", "get") => &[
+        ("krate:net/http-client@0.1.0", "get") => &[
             "Performs a simple HTTP GET and returns only the response body.",
             "Requires `net.connect:HOST:PORT`; Phase 2 currently supports the plain HTTP adapter path.",
         ],
-        ("layer36:net/http-client@0.1.0", "fetch") => &[
+        ("krate:net/http-client@0.1.0", "fetch") => &[
             "Performs a lower-level HTTP request and returns status, headers, and body.",
             "The plain HTTP adapter now forwards the method, app headers, and buffered body while keeping `Host`, `Connection`, and `Content-Length` under host control.",
             "Timeouts, oversized bodies, malformed responses, and missing grants are typed as `net-error` cases.",
         ],
-        ("layer36:time/clock@0.1.0", "now-millis") => &[
+        ("krate:time/clock@0.1.0", "now-millis") => &[
             "Reads host wall-clock time in milliseconds since Unix epoch.",
             "This value can move backward or forward if the host clock changes.",
         ],
-        ("layer36:time/clock@0.1.0", "monotonic-nanos") => &[
+        ("krate:time/clock@0.1.0", "monotonic-nanos") => &[
             "Reads a non-decreasing timer in nanoseconds.",
             "Use this for durations instead of wall-clock time.",
         ],
-        ("layer36:time/sleep@0.1.0", "sleep-millis") => &[
+        ("krate:time/sleep@0.1.0", "sleep-millis") => &[
             "Blocks the calling component task for at least the requested milliseconds.",
             "Requires `time.sleep`; hosts may wake slightly later than requested.",
         ],
-        ("layer36:locale/info@0.1.0", "current") => &[
+        ("krate:locale/info@0.1.0", "current") => &[
             "Returns the host user's preferred locale as a BCP 47 string.",
             "Good for display choices, not for security decisions.",
         ],
-        ("layer36:locale/info@0.1.0", "timezone") => &[
+        ("krate:locale/info@0.1.0", "timezone") => &[
             "Returns the host timezone name.",
             "Expected form is an IANA name such as `Asia/Singapore` when the host can provide one.",
         ],
-        ("layer36:locale/format@0.1.0", "format-date") => &[
+        ("krate:locale/format@0.1.0", "format-date") => &[
             "Formats a timestamp using a requested timezone, date style, and locale.",
             "The host owns the native formatting behavior so output can match the platform.",
         ],
-        ("layer36:locale/format@0.1.0", "format-number") => &[
+        ("krate:locale/format@0.1.0", "format-number") => &[
             "Formats a number using a requested style and locale.",
             "Currency style is present in the shape, but richer currency-code handling remains future work.",
         ],
@@ -747,7 +747,7 @@ mod tests {
         let root = workspace_root();
         let mut resolve = Resolve::default();
         let (app_package, _) = resolve
-            .push_dir(root.join("wit/layer36/phase2"))
+            .push_dir(root.join("wit/krate/phase2"))
             .expect("parse Phase 2 WIT");
         let world_id = resolve
             .select_world(&[app_package], Some("cli"))
@@ -759,8 +759,8 @@ mod tests {
         assert!(reference.contains("### Rust SDK Example"));
         assert!(reference.contains("`net.connect:<host>:<port>`"));
         assert!(reference.contains("generated from the runtime manifest table"));
-        assert!(reference.contains("let text = layer36::fs::read_to_string"));
-        assert!(reference.contains("Opens a host file through Layer36"));
+        assert!(reference.contains("let text = krate::fs::read_to_string"));
+        assert!(reference.contains("Opens a host file through Krate"));
         assert!(reference.contains("Timeouts, oversized bodies, malformed responses"));
         assert!(reference.contains("> Milliseconds since Unix epoch."));
     }

@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an addition or improvement to Layer36
+about: Suggest an addition or improvement to Krate
 title: "feat: "
 labels: ["type:enhancement", "needs-triage"]
 assignees: []
@@ -8,7 +8,7 @@ assignees: []
 
 ## Problem / motivation
 
-What problem does this solve? Why does it belong in Layer36? Be specific.
+What problem does this solve? Why does it belong in Krate? Be specific.
 
 ## Proposed solution
 

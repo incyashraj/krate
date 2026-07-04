@@ -1222,34 +1222,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "layer36"
+name = "krate"
 version = "0.1.0-dev"
 dependencies = [
  "wit-bindgen-rt",
 ]
 
 [[package]]
-name = "layer36-adapter-common"
+name = "krate-adapter-common"
 version = "0.1.0-dev"
 dependencies = [
  "thiserror 2.0.18",
 ]
 
 [[package]]
-name = "layer36-adapter-linux"
+name = "krate-adapter-linux"
 version = "0.1.0-dev"
 dependencies = [
- "layer36-adapter-common",
+ "krate-adapter-common",
  "libc",
  "softbuffer",
  "winit",
 ]
 
 [[package]]
-name = "layer36-adapter-macos"
+name = "krate-adapter-macos"
 version = "0.1.0-dev"
 dependencies = [
- "layer36-adapter-common",
+ "krate-adapter-common",
  "libc",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
@@ -1257,23 +1257,23 @@ dependencies = [
 ]
 
 [[package]]
-name = "layer36-adapter-windows"
+name = "krate-adapter-windows"
 version = "0.1.0-dev"
 dependencies = [
- "layer36-adapter-common",
+ "krate-adapter-common",
  "softbuffer",
  "winit",
 ]
 
 [[package]]
-name = "layer36-cli"
+name = "krate-cli"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "clap",
- "layer36-manifest",
- "layer36-policy",
- "layer36-runtime",
+ "krate-manifest",
+ "krate-policy",
+ "krate-runtime",
  "serde",
  "serde_json",
  "sha2",
@@ -1282,46 +1282,46 @@ dependencies = [
 ]
 
 [[package]]
-name = "layer36-layout"
+name = "krate-layout"
 version = "0.1.0-dev"
 dependencies = [
  "criterion",
- "layer36-adapter-common",
+ "krate-adapter-common",
  "taffy",
  "thiserror 2.0.18",
 ]
 
 [[package]]
-name = "layer36-manifest"
+name = "krate-manifest"
 version = "0.1.0-dev"
 dependencies = [
- "layer36-adapter-common",
+ "krate-adapter-common",
  "serde",
  "thiserror 2.0.18",
  "toml",
 ]
 
 [[package]]
-name = "layer36-policy"
+name = "krate-policy"
 version = "0.1.0-dev"
 dependencies = [
- "layer36-adapter-common",
- "layer36-manifest",
+ "krate-adapter-common",
+ "krate-manifest",
  "thiserror 2.0.18",
 ]
 
 [[package]]
-name = "layer36-runtime"
+name = "krate-runtime"
 version = "0.1.0-dev"
 dependencies = [
  "criterion",
- "layer36-adapter-common",
- "layer36-adapter-linux",
- "layer36-adapter-macos",
- "layer36-adapter-windows",
- "layer36-layout",
- "layer36-manifest",
- "layer36-policy",
+ "krate-adapter-common",
+ "krate-adapter-linux",
+ "krate-adapter-macos",
+ "krate-adapter-windows",
+ "krate-layout",
+ "krate-manifest",
+ "krate-policy",
  "libc",
  "thiserror 2.0.18",
  "tracing",
@@ -1330,13 +1330,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "layer36-tools"
+name = "krate-tools"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
- "layer36-manifest",
- "layer36-policy",
- "layer36-runtime",
+ "krate-manifest",
+ "krate-policy",
+ "krate-runtime",
  "serde",
  "serde_json",
  "sha2",

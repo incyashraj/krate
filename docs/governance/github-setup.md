@@ -62,7 +62,7 @@ behavior.
 Applied with GitHub CLI on 2026-05-02 from `.github/labels.yml`.
 
 The default `good first issue` label already existed on GitHub and was updated
-in place with the Layer36 description.
+in place with the Krate description.
 
 ## Issues
 

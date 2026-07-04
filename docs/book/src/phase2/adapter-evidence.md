@@ -41,11 +41,11 @@ The compare step checks:
 - same commit metadata across all reports
 - host labels match expected OS lanes
 - `scripts/check-adapter-boundary.sh` passed on each host
-- `cargo test -p layer36-adapter-common` passed on each host
+- `cargo test -p krate-adapter-common` passed on each host
 - the native adapter crate test passed for that host:
-  - Linux: `layer36-adapter-linux`
-  - macOS: `layer36-adapter-macos`
-  - Windows: `layer36-adapter-windows`
+  - Linux: `krate-adapter-linux`
+  - macOS: `krate-adapter-macos`
+  - Windows: `krate-adapter-windows`
 
 The adapter evidence is still not a full hardware lab. It proves the current
 Phase 2 adapter contract, shared path/net/time/locale behavior, and native

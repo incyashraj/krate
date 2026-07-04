@@ -5,12 +5,12 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-benchmark-evidence/benchmark-evidence.md"
-STRICT="${LAYER36_BENCHMARK_EVIDENCE_STRICT:-0}"
-RUN_BENCH="${LAYER36_BENCHMARK_EVIDENCE_RUN_BENCH:-1}"
-RUN_CLI_STARTUP="${LAYER36_BENCHMARK_EVIDENCE_RUN_CLI_STARTUP:-1}"
+STRICT="${KRATE_BENCHMARK_EVIDENCE_STRICT:-0}"
+RUN_BENCH="${KRATE_BENCHMARK_EVIDENCE_RUN_BENCH:-1}"
+RUN_CLI_STARTUP="${KRATE_BENCHMARK_EVIDENCE_RUN_CLI_STARTUP:-1}"
 MODE="${BENCH_REGRESSION_MODE:-warn}"
 THRESHOLD_PCT="${BENCH_REGRESSION_THRESHOLD_PCT:-10}"
-BASELINE_FILE="${LAYER36_BENCHMARK_BASELINE_FILE:-$ROOT/docs/book/src/phase2/benchmark-baseline.json}"
+BASELINE_FILE="${KRATE_BENCHMARK_BASELINE_FILE:-$ROOT/docs/book/src/phase2/benchmark-baseline.json}"
 
 usage() {
   cat <<'USAGE'
@@ -19,16 +19,16 @@ Usage: scripts/record-phase2-benchmark-evidence.sh [--strict] [--skip-bench] [--
 Options:
   --strict            Exit non-zero when any step fails
   --skip-bench        Reuse existing Criterion output instead of re-running benches
-  --skip-cli-startup  Skip full external layer36 CLI startup evidence
+  --skip-cli-startup  Skip full external krate CLI startup evidence
   --mode <mode>       Regression mode: warn or fail (default: BENCH_REGRESSION_MODE or warn)
   --threshold <n>     Regression threshold percent (default: BENCH_REGRESSION_THRESHOLD_PCT or 10)
   --output <path>     Output markdown file path
 
 Environment:
-  LAYER36_BENCHMARK_EVIDENCE_STRICT           1 to exit non-zero when any step fails
-  LAYER36_BENCHMARK_EVIDENCE_RUN_BENCH        0 to skip benchmark commands
-  LAYER36_BENCHMARK_EVIDENCE_RUN_CLI_STARTUP  0 to skip full external CLI startup evidence
-  LAYER36_BENCHMARK_BASELINE_FILE             Baseline JSON path (default: docs/book/src/phase2/benchmark-baseline.json)
+  KRATE_BENCHMARK_EVIDENCE_STRICT           1 to exit non-zero when any step fails
+  KRATE_BENCHMARK_EVIDENCE_RUN_BENCH        0 to skip benchmark commands
+  KRATE_BENCHMARK_EVIDENCE_RUN_CLI_STARTUP  0 to skip full external CLI startup evidence
+  KRATE_BENCHMARK_BASELINE_FILE             Baseline JSON path (default: docs/book/src/phase2/benchmark-baseline.json)
 USAGE
 }
 
@@ -104,13 +104,13 @@ CLI_STARTUP_REPORT="$TMP_DIR/cli-startup.md"
 METRICS_TABLE="$TMP_DIR/metrics-table.md"
 
 if [ "$RUN_BENCH" = "1" ]; then
-  if cargo bench -p layer36-runtime --bench startup >"$STARTUP_LOG" 2>&1; then
+  if cargo bench -p krate-runtime --bench startup >"$STARTUP_LOG" 2>&1; then
     STARTUP_CODE=0
   else
     STARTUP_CODE=$?
   fi
 
-  if cargo bench -p layer36-runtime --bench uapi_dispatch >"$DISPATCH_LOG" 2>&1; then
+  if cargo bench -p krate-runtime --bench uapi_dispatch >"$DISPATCH_LOG" 2>&1; then
     DISPATCH_CODE=0
   else
     DISPATCH_CODE=$?
@@ -129,20 +129,20 @@ else
 fi
 
 if [ "$RUN_CLI_STARTUP" = "1" ]; then
-  if cargo build -p layer36-cli --release >"$CLI_BUILD_LOG" 2>&1; then
+  if cargo build -p krate-cli --release >"$CLI_BUILD_LOG" 2>&1; then
     CLI_BUILD_CODE=0
   else
     CLI_BUILD_CODE=$?
   fi
 
-  if scripts/build-layer36-clock-component.sh >"$CLOCK_BUILD_LOG" 2>&1; then
+  if scripts/build-krate-clock-component.sh >"$CLOCK_BUILD_LOG" 2>&1; then
     CLOCK_BUILD_CODE=0
   else
     CLOCK_BUILD_CODE=$?
   fi
 
   if [ "$CLI_BUILD_CODE" -eq 0 ] && [ "$CLOCK_BUILD_CODE" -eq 0 ] &&
-    cargo run -p layer36-tools --bin record-phase2-cli-startup -- \
+    cargo run -p krate-tools --bin record-phase2-cli-startup -- \
       --output "$CLI_STARTUP_REPORT" >"$CLI_STARTUP_LOG" 2>&1; then
     CLI_STARTUP_CODE=0
   else
@@ -224,12 +224,12 @@ result_of() {
   echo
   echo "| Step | Exit code | Result |"
   echo "|---|---:|---|"
-  echo "| Startup benchmark (\`cargo bench -p layer36-runtime --bench startup\`) | $STARTUP_CODE | $(result_of "$STARTUP_CODE") |"
-  echo "| Dispatch benchmark (\`cargo bench -p layer36-runtime --bench uapi_dispatch\`) | $DISPATCH_CODE | $(result_of "$DISPATCH_CODE") |"
+  echo "| Startup benchmark (\`cargo bench -p krate-runtime --bench startup\`) | $STARTUP_CODE | $(result_of "$STARTUP_CODE") |"
+  echo "| Dispatch benchmark (\`cargo bench -p krate-runtime --bench uapi_dispatch\`) | $DISPATCH_CODE | $(result_of "$DISPATCH_CODE") |"
   echo "| Regression check (\`scripts/check-benchmark-regression.sh\`) | $REGRESSION_CODE | $(result_of "$REGRESSION_CODE") |"
-  echo "| CLI release build (\`cargo build -p layer36-cli --release\`) | $CLI_BUILD_CODE | $(result_of "$CLI_BUILD_CODE") |"
-  echo "| Clock component build (\`scripts/build-layer36-clock-component.sh\`) | $CLOCK_BUILD_CODE | $(result_of "$CLOCK_BUILD_CODE") |"
-  echo "| Full CLI startup (\`layer36 run layer36-clock\`) | $CLI_STARTUP_CODE | $(result_of "$CLI_STARTUP_CODE") |"
+  echo "| CLI release build (\`cargo build -p krate-cli --release\`) | $CLI_BUILD_CODE | $(result_of "$CLI_BUILD_CODE") |"
+  echo "| Clock component build (\`scripts/build-krate-clock-component.sh\`) | $CLOCK_BUILD_CODE | $(result_of "$CLOCK_BUILD_CODE") |"
+  echo "| Full CLI startup (\`krate run krate-clock\`) | $CLI_STARTUP_CODE | $(result_of "$CLI_STARTUP_CODE") |"
   echo
   echo "## Metric Snapshot"
   echo

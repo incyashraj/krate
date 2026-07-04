@@ -51,10 +51,10 @@ SANDBOX="$RUN_DIR/sandbox"
 MANIFEST="$RUN_DIR/manifest.toml"
 mkdir -p "$LOG_DIR" "$SANDBOX/fixtures"
 
-WASM_PATH="$ROOT/apps/layer36-cat/target/wasm32-wasip1/release/layer36_cat.wasm"
-LAYER36="$ROOT/target/debug/layer36"
+WASM_PATH="$ROOT/apps/krate-cat/target/wasm32-wasip1/release/krate_cat.wasm"
+KRATE="$ROOT/target/debug/krate"
 HELLO_FILE="$SANDBOX/fixtures/hello.txt"
-printf 'hello from Layer36\n' >"$HELLO_FILE"
+printf 'hello from Krate\n' >"$HELLO_FILE"
 
 now_utc="$(date -u +%FT%TZ)"
 host_os="$(uname -s 2>/dev/null || printf 'unknown')"
@@ -84,13 +84,13 @@ run_step() {
 }
 
 run_step "Tool check" "doctor exits 0" "$LOG_DIR/doctor.log" \
-  cargo run -p layer36-cli -- doctor
+  cargo run -p krate-cli -- doctor
 
 run_step "Build CLI" "debug CLI exists" "$LOG_DIR/build-cli.log" \
-  cargo build -p layer36-cli
+  cargo build -p krate-cli
 
 run_step "Build cat component" "wasm component exists" "$LOG_DIR/build-cat-component.log" \
-  scripts/build-layer36-cat-component.sh
+  scripts/build-krate-cat-component.sh
 
 if [ ! -f "$WASM_PATH" ]; then
   printf 'expected wasm not found: %s\n' "$WASM_PATH" >"$LOG_DIR/build-cat-component-missing.log"
@@ -103,9 +103,9 @@ else
 fi
 
 run_step "Generate manifest" "manifest init exits 0" "$LOG_DIR/manifest-init.log" \
-  cargo run -p layer36-cli -- manifest init \
-    --id dev.layer36.walkthrough-rehearsal \
-    --name layer36-walkthrough-rehearsal \
+  cargo run -p krate-cli -- manifest init \
+    --id dev.krate.walkthrough-rehearsal \
+    --name krate-walkthrough-rehearsal \
     --entry "$WASM_PATH" \
     --cap io.args \
     --cap io.stdout \
@@ -115,11 +115,11 @@ run_step "Generate manifest" "manifest init exits 0" "$LOG_DIR/manifest-init.log
     --force
 
 run_step "Explain manifest" "manifest explain exits 0" "$LOG_DIR/manifest-explain.log" \
-  cargo run -p layer36-cli -- manifest explain "$MANIFEST"
+  cargo run -p krate-cli -- manifest explain "$MANIFEST"
 
 GRANTED_STDOUT="$LOG_DIR/granted.stdout"
 GRANTED_STDERR="$LOG_DIR/granted.stderr"
-if "$LAYER36" run \
+if "$KRATE" run \
   --manifest "$MANIFEST" \
   --sandbox-root "$SANDBOX" \
   --auto-grant \
@@ -142,7 +142,7 @@ fi
 
 DENIED_STDOUT="$LOG_DIR/denied.stdout"
 DENIED_STDERR="$LOG_DIR/denied.stderr"
-if printf '' | "$LAYER36" run \
+if printf '' | "$KRATE" run \
   --manifest "$MANIFEST" \
   --sandbox-root "$SANDBOX" \
   "$WASM_PATH" \

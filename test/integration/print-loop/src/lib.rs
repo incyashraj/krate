@@ -8,10 +8,10 @@ struct Component;
 impl Guest for Component {
     fn run() {
         for _ in 0..1_000 {
-            bindings::layer36::phase1::host::print("bench");
+            bindings::krate::phase1::host::print("bench");
         }
 
-        bindings::layer36::phase1::host::exit(0);
+        bindings::krate::phase1::host::exit(0);
     }
 }
 

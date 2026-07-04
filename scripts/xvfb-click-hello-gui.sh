@@ -6,11 +6,11 @@
 # expects the component to observe the press and exit 0.
 set -u
 
-target/debug/layer36 run \
+target/debug/krate run \
   --auto-grant \
   --native-window \
-  --manifest apps/layer36-hello-gui/manifest.toml \
-  apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm &
+  --manifest apps/krate-hello-gui/manifest.toml \
+  apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm &
 APP=$!
 
 # Give the window and the first draw a moment, then click twice for

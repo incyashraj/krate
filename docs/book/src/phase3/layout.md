@@ -12,7 +12,7 @@ The layout engine decides where each part sits and how much space it gets.
 
 ## Why It Matters
 
-Layer36 has two UI paths:
+Krate has two UI paths:
 
 - native widgets, when the host has a real matching control
 - drawn fallback widgets, when it does not
@@ -23,7 +23,7 @@ will drift.
 
 ```mermaid
 flowchart LR
-    A["Widget tree"] --> B["Layer36 layout"]
+    A["Widget tree"] --> B["Krate layout"]
     B --> C["Rectangles by widget id"]
     C --> D["Native widgets"]
     C --> E["Drawn fallback"]
@@ -96,7 +96,7 @@ rectangles as native widgets and drawn fallback rendering.
 The repo now has a Criterion benchmark target for layout:
 
 ```bash
-cargo bench -p layer36-layout --bench layout
+cargo bench -p krate-layout --bench layout
 ```
 
 It includes 1,000-node and 10,000-node stack-like trees. The benchmark is a

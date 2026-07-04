@@ -1,7 +1,7 @@
 # ADR process
 
 Architecture Decision Records (ADRs) capture the significant technical
-decisions made in Layer36: what was decided, why, and what the consequences are.
+decisions made in Krate: what was decided, why, and what the consequences are.
 
 ## When to write an ADR
 
@@ -36,7 +36,7 @@ Examples that do **not** need an ADR:
 
 | ADR | Title | Status |
 |-----|-------|--------|
-| [ADR-0001](../../../adr/0001-rust-for-runtime.md) | Rust for the Layer36 runtime | Accepted |
+| [ADR-0001](../../../adr/0001-rust-for-runtime.md) | Rust for the Krate runtime | Accepted |
 | [ADR-0002](../../../adr/0002-wasmtime-runtime-engine.md) | Wasmtime as runtime engine | Accepted |
 | [ADR-0003](../../../adr/0003-component-model-from-day-one.md) | Component Model from day one | Accepted |
 | [ADR-0006](../../../adr/0006-wit-versioning-strategy.md) | WIT versioning strategy | Accepted |

@@ -1,8 +1,8 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use layer36_adapter_common::ui::{WidgetId, WidgetKind, WidgetNode, WidgetStyle, WidgetTree};
-use layer36_layout::{compute_layout_cold, LayoutViewport, PreparedLayoutTree};
+use krate_adapter_common::ui::{WidgetId, WidgetKind, WidgetNode, WidgetStyle, WidgetTree};
+use krate_layout::{compute_layout_cold, LayoutViewport, PreparedLayoutTree};
 
 fn phase3_layout_benches(c: &mut Criterion) {
     let viewport = LayoutViewport::new(1440.0, 900.0).expect("viewport");

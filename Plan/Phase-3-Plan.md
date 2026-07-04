@@ -1,4 +1,4 @@
-# Layer36 — Phase 3 Detailed Plan: UI + Graphics
+# Krate — Phase 3 Detailed Plan: UI + Graphics
 
 > **Phase:** 3 of 8
 > **Duration:** est. 6–10 weeks for the first desktop UI proof; later hardening depends on host findings.
@@ -28,7 +28,7 @@
 14. [Accessibility](#14-accessibility)
 15. [Per-Host Adapters](#15-per-host-adapters)
 16. [UCap v0.2 (System-UI Grants)](#16-ucap-v02-system-ui-grants)
-17. [The `layer36-notes` Flagship Sample](#17-the-layer36-notes-flagship-sample)
+17. [The `krate-notes` Flagship Sample](#17-the-krate-notes-flagship-sample)
 18. [Week-by-Week Breakdown](#18-week-by-week-breakdown)
 19. [Task Details](#19-task-details)
 20. [Code Skeletons](#20-code-skeletons)
@@ -61,11 +61,11 @@ Phase 3 is the riskiest and most ambitious phase before v1.0. Every previous pha
 
 ### 1.1 One-sentence objective
 
-**A developer writes a note-taking app in Rust, Go, or TypeScript using UAPI v0.2, compiles to a `.wasm` component, and runs it via `layer36 run` on Windows, macOS, and Linux — where it opens a real window with native-feeling controls, handles keyboard/mouse/text input, persists files, renders 60 fps steady-state, and passes basic accessibility checks.**
+**A developer writes a note-taking app in Rust, Go, or TypeScript using UAPI v0.2, compiles to a `.wasm` component, and runs it via `krate run` on Windows, macOS, and Linux — where it opens a real window with native-feeling controls, handles keyboard/mouse/text input, persists files, renders 60 fps steady-state, and passes basic accessibility checks.**
 
 ### 1.2 Why this matters
 
-Phase 2 proved the UAPI abstraction works for batch-style programs. Phase 3 proves it works for *interactive* programs — which is where the hard cross-platform problems live. Window management, text input (IME), accessibility trees, keyboard shortcuts, menu conventions, scroll physics, DPI scaling, color spaces: every single one differs between Windows, macOS, and Linux, and every single one has to feel correct to the user. Ship Phase 3 and the rest of Layer36 is largely implementation. Ship it wrong and Layer36 inherits "doesn't feel native" as a reputation that will take years to shake.
+Phase 2 proved the UAPI abstraction works for batch-style programs. Phase 3 proves it works for *interactive* programs — which is where the hard cross-platform problems live. Window management, text input (IME), accessibility trees, keyboard shortcuts, menu conventions, scroll physics, DPI scaling, color spaces: every single one differs between Windows, macOS, and Linux, and every single one has to feel correct to the user. Ship Phase 3 and the rest of Krate is largely implementation. Ship it wrong and Krate inherits "doesn't feel native" as a reputation that will take years to shake.
 
 ### 1.3 The six deliverables of Phase 3
 
@@ -73,7 +73,7 @@ Phase 2 proved the UAPI abstraction works for batch-style programs. Phase 3 prov
 2. **Widget protocol** that supports both native-backed widgets and custom-drawn fallbacks in one tree.
 3. **Layout engine** (Taffy-based) with flexbox semantics.
 4. **2D canvas** (vello on wgpu) and **3D GPU** (WebGPU-compatible subset via wgpu).
-5. **`layer36-notes` flagship** — a small but real note-taking app that demonstrates the entire UI stack.
+5. **`krate-notes` flagship** — a small but real note-taking app that demonstrates the entire UI stack.
 6. **UCap v0.2** — system-UI grant dialogs replacing terminal prompts for GUI apps.
 
 ---
@@ -88,7 +88,7 @@ Before touching Phase 3 implementation code, verify:
 - [x] Three language tracks (Rust/Go/TS) tracked by sample or fixture evidence, with Go runtime parity still marked experimental where needed.
 - [x] UCap v0.1 enforcing grants at UAPI boundary for the current Phase 2 surface.
 - [x] Cross-host sample and evidence compare harness green in the hosted full CI proof.
-- [x] `layer36-curl`, `layer36-cat`, `layer36-clock` covered by sample evidence.
+- [x] `krate-curl`, `krate-cat`, `krate-clock` covered by sample evidence.
 - [ ] ADRs 0001 through 0012 merged.
 
 Phase 3 is starting under a narrow waiver: WIT drafts and prototypes may begin
@@ -104,20 +104,20 @@ Phase 3 is **done** when, and only when, every row below is true.
 
 | # | Criterion | Measured How |
 |---|-----------|--------------|
-| 1 | `ui`, `gfx`, `audio` WIT modules frozen at v0.1.0 | `wit/layer36/*.wit` |
+| 1 | `ui`, `gfx`, `audio` WIT modules frozen at v0.1.0 | `wit/krate/*.wit` |
 | 2 | Each module implemented in Linux, macOS, Windows adapters | CI green on all hosts |
-| 3 | `layer36-notes` runs on all three desktop OSes | Integration test |
-| 4 | `layer36-notes` UI feels native on each host (not Electron-style). On Linux this is measured against the drawn-widget rubric (scroll physics, focus, shortcuts, dark mode, DPI) per ADR-0015, not GTK widget identity | Qualitative test, documented rubric |
+| 3 | `krate-notes` runs on all three desktop OSes | Integration test |
+| 4 | `krate-notes` UI feels native on each host (not Electron-style). On Linux this is measured against the drawn-widget rubric (scroll physics, focus, shortcuts, dark mode, DPI) per ADR-0015, not GTK widget identity | Qualitative test, documented rubric |
 | 5 | Steady-state frame time ≤ 16.7 ms on 2020+ hardware | Frame-time histogram |
 | 6 | Cold start for GUI app < 300 ms to first paint | Timestamp diff |
 | 7 | IME (CJK input) works on all three hosts | Manual test + automated event capture |
-| 8 | Screen reader reads `layer36-notes` correctly on all three hosts | VoiceOver / Narrator / Orca |
+| 8 | Screen reader reads `krate-notes` correctly on all three hosts | VoiceOver / Narrator / Orca |
 | 9 | UCap v0.2: system-UI grant dialog fires for GUI apps | Manual walkthrough |
 | 10 | 60 fps 10,000-node widget tree benchmark passes | Frame-time benchmark |
 | 11 | DPI scaling: 100%, 125%, 150%, 200% all render correctly | Snapshot test |
 | 12 | Dark mode: follows system preference, switches live | Manual + snapshot |
 | 13 | Runtime binary size < 80 MB (up from 50 MB in Phase 2) | Artifact size |
-| 14 | Per-app RSS < 120 MB for `layer36-notes` | Process monitor |
+| 14 | Per-app RSS < 120 MB for `krate-notes` | Process monitor |
 | 15 | ADRs 0013 through at least 0020 merged | Git log |
 
 Rows 4, 7, 8 are the **hardest to measure and most likely to be skipped**. They have explicit sub-criteria in §26.
@@ -158,7 +158,7 @@ Rows 4, 7, 8 are the **hardest to measure and most likely to be skipped**. They 
 
 ### 4.3 The discipline
 
-Phase 3 is a tire-fire of temptations. "Can we also add tray icons? Themes? Plugins? A component library?" Every yes adds a week. The answer is "Phase N" — except for the rare case where the primitive in question is genuinely prerequisite to `layer36-notes` working. If you can build `layer36-notes` without it, defer it.
+Phase 3 is a tire-fire of temptations. "Can we also add tray icons? Themes? Plugins? A component library?" Every yes adds a week. The answer is "Phase N" — except for the rare case where the primitive in question is genuinely prerequisite to `krate-notes` working. If you can build `krate-notes` without it, defer it.
 
 ---
 
@@ -166,7 +166,7 @@ Phase 3 is a tire-fire of temptations. "Can we also add tray icons? Themes? Plug
 
 ### 5.1 The question
 
-When a developer's Layer36 app says "I want a button," what does that button actually become on the user's screen?
+When a developer's Krate app says "I want a button," what does that button actually become on the user's screen?
 
 ### 5.2 Four possible answers
 
@@ -237,7 +237,7 @@ flowchart TB
         A1 --> A2 --> A3
     end
 
-    subgraph RT["Layer36 Runtime"]
+    subgraph RT["Krate Runtime"]
         DISP["UAPI dispatcher"]
         UI["ui subsystem"]
         GFX["gfx subsystem"]
@@ -309,13 +309,13 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    CLI[layer36-cli] --> RT[layer36-runtime]
-    RT --> UI[layer36-ui]
-    RT --> GFX[layer36-gfx]
-    RT --> AUDIO[layer36-audio]
-    UI --> LAY[layer36-layout]
-    UI --> RECON[layer36-reconcile]
-    UI --> A11Y[layer36-a11y]
+    CLI[krate-cli] --> RT[krate-runtime]
+    RT --> UI[krate-ui]
+    RT --> GFX[krate-gfx]
+    RT --> AUDIO[krate-audio]
+    UI --> LAY[krate-layout]
+    UI --> RECON[krate-reconcile]
+    UI --> A11Y[krate-a11y]
     GFX --> WGPU[wgpu]
     GFX --> VELLO[vello]
     RT --> AD_L[adapter-linux]
@@ -374,7 +374,7 @@ See §5. Recorded in ADR-0013. Frozen.
 
 ### 7.6 3D: **wgpu / WebGPU subset**
 
-- Expose a WebGPU-compatible subset in `layer36:gfx/3d`.
+- Expose a WebGPU-compatible subset in `krate:gfx/3d`.
 - Shader language: **WGSL** (WebGPU Shading Language) only.
 - No raw Vulkan / D3D12 / Metal API exposed to apps.
 - **Recorded:** ADR-0017.
@@ -397,7 +397,7 @@ See §5. Recorded in ADR-0013. Frozen.
 ### 7.9 Audio
 
 - Playback / capture: **`cpal`** (cross-platform audio).
-- Mixing: simple floating-point mixer in `layer36-audio`.
+- Mixing: simple floating-point mixer in `krate-audio`.
 - Decoder: **`symphonia`** for MP3/AAC/OGG/FLAC.
 - No MIDI, no DAW features in v0.1.
 - **Recorded:** ADR-0020.
@@ -438,15 +438,15 @@ See §5. Recorded in ADR-0013. Frozen.
 
 ## 8. UAPI v0.2 Module Specifications
 
-Phase 3 ships three new modules under `layer36:` package. All three are versioned `@0.1.0` at module level (first release). They do not affect Phase 2's `@0.1.0` modules.
+Phase 3 ships three new modules under `krate:` package. All three are versioned `@0.1.0` at module level (first release). They do not affect Phase 2's `@0.1.0` modules.
 
-### 8.1 `layer36:ui@0.1.0`
+### 8.1 `krate:ui@0.1.0`
 
 The widget protocol and windowing. Presented in full in §9. Here is the top-level structure:
 
 ```wit
-// wit/layer36/ui.wit
-package layer36:ui@0.1.0;
+// wit/krate/ui.wit
+package krate:ui@0.1.0;
 
 interface types {
     // see §9.1 and §9.2 for widget node enum, event types
@@ -500,13 +500,13 @@ world consumer {
 }
 ```
 
-### 8.2 `layer36:gfx@0.1.0`
+### 8.2 `krate:gfx@0.1.0`
 
 2D canvas + 3D GPU (WebGPU-compatible subset).
 
 ```wit
-// wit/layer36/gfx.wit
-package layer36:gfx@0.1.0;
+// wit/krate/gfx.wit
+package krate:gfx@0.1.0;
 
 interface canvas2d {
     use types.{color, rect, path, paint, gfx-error};
@@ -541,13 +541,13 @@ world consumer {
 }
 ```
 
-### 8.3 `layer36:audio@0.1.0`
+### 8.3 `krate:audio@0.1.0`
 
 Local playback + capture. Intentionally minimal; richer audio work is Phase 5+.
 
 ```wit
-// wit/layer36/audio.wit
-package layer36:audio@0.1.0;
+// wit/krate/audio.wit
+package krate:audio@0.1.0;
 
 interface playback {
     use types.{audio-buffer, playback-error};
@@ -585,31 +585,31 @@ world consumer {
 ### 8.4 Updated consolidated `world`
 
 ```wit
-// wit/layer36/app.wit
-package layer36:app@0.2.0;
+// wit/krate/app.wit
+package krate:app@0.2.0;
 
 world gui {
     // Phase 2 modules
-    import layer36:io/stdio@0.1.0;
-    import layer36:io/log@0.1.0;
-    import layer36:fs/files@0.1.0;
-    import layer36:net/http-client@0.1.0;
-    import layer36:time/clock@0.1.0;
-    import layer36:time/sleep@0.1.0;
-    import layer36:locale/info@0.1.0;
-    import layer36:locale/format@0.1.0;
+    import krate:io/stdio@0.1.0;
+    import krate:io/log@0.1.0;
+    import krate:fs/files@0.1.0;
+    import krate:net/http-client@0.1.0;
+    import krate:time/clock@0.1.0;
+    import krate:time/sleep@0.1.0;
+    import krate:locale/info@0.1.0;
+    import krate:locale/format@0.1.0;
 
     // Phase 3 modules
-    import layer36:ui/window@0.1.0;
-    import layer36:ui/tree@0.1.0;
-    import layer36:ui/events@0.1.0;
-    import layer36:ui/dialog@0.1.0;
-    import layer36:ui/clipboard@0.1.0;
-    import layer36:ui/menu@0.1.0;
-    import layer36:gfx/canvas2d@0.1.0;
-    import layer36:gfx/gpu3d@0.1.0;
-    import layer36:audio/playback@0.1.0;
-    import layer36:audio/capture@0.1.0;
+    import krate:ui/window@0.1.0;
+    import krate:ui/tree@0.1.0;
+    import krate:ui/events@0.1.0;
+    import krate:ui/dialog@0.1.0;
+    import krate:ui/clipboard@0.1.0;
+    import krate:ui/menu@0.1.0;
+    import krate:gfx/canvas2d@0.1.0;
+    import krate:gfx/gpu3d@0.1.0;
+    import krate:audio/playback@0.1.0;
+    import krate:audio/capture@0.1.0;
 
     export run: func() -> s32;
 }
@@ -659,7 +659,7 @@ Fifteen widgets pass the "native three of five" test (§5.5). Others are custom-
 ### 9.2 Widget node WIT
 
 ```wit
-// within wit/layer36/ui.wit, in interface types
+// within wit/krate/ui.wit, in interface types
 
 variant widget-node {
     stack(stack-props),
@@ -783,7 +783,7 @@ Each widget carries a `widget-id` that is stable across frames. Identity rules:
 
 1. Apps MUST use stable IDs. The reconciler does not attempt content-based diffing; it uses ID-based match.
 2. ID collision is a runtime error, logged as a warning in dev builds.
-3. IDs are opaque `u64`; developers use binding helpers (`layer36::ui::id("save-button")`) to derive them.
+3. IDs are opaque `u64`; developers use binding helpers (`krate::ui::id("save-button")`) to derive them.
 
 ### 9.7 Hit testing and event routing
 
@@ -920,11 +920,11 @@ Apps using `Canvas` widget get a `canvas` resource they draw to. Drawing is GPU-
 - WGSL is validated by wgpu's validator before compilation.
 - Buffer bindings are type-checked.
 - No raw SPIR-V / DXIL / MSL is exposed — developers can't side-step WGSL.
-- GPU driver bugs remain a theoretical concern — the ecosystem-wide problem, not Layer36-specific.
+- GPU driver bugs remain a theoretical concern — the ecosystem-wide problem, not Krate-specific.
 
 ### 12.4 Scope discipline
 
-`layer36-notes` uses 2D only. The 3D surface exists to prove it *can* be done by Phase 3 exit and to unblock game-adjacent experiments. We do not ship 3D samples this phase.
+`krate-notes` uses 2D only. The 3D surface exists to prove it *can* be done by Phase 3 exit and to unblock game-adjacent experiments. We do not ship 3D samples this phase.
 
 ---
 
@@ -995,7 +995,7 @@ For each widget in §9.1, define:
 
 ### 14.4 Reduced-motion, high-contrast, large-text
 
-- System preferences queried via `layer36:ui/preferences` (sub-interface to add in Phase 3 or 4; Phase 3 adds minimum).
+- System preferences queried via `krate:ui/preferences` (sub-interface to add in Phase 3 or 4; Phase 3 adds minimum).
 - Runtime honours `prefers-reduced-motion` by suppressing animation.
 - Apps query user preferences directly; runtime does not force.
 
@@ -1123,7 +1123,7 @@ flowchart TD
     B -- no --> C[Runtime shows system dialog]
     C --> D{User choice}
     D -- "Allow Once" --> E[Grant for this call only]
-    D -- "Allow for Session" --> F[Grant until layer36 exits]
+    D -- "Allow for Session" --> F[Grant until krate exits]
     D -- "Never for this app" --> G[Record deny; suppress future prompts]
     D -- "Deny" --> DENY[Return error]
     E --> ALLOW
@@ -1137,11 +1137,11 @@ Apps cannot summon grant dialogs at will. They can only trigger them by calling 
 
 ---
 
-## 17. The `layer36-notes` Flagship Sample
+## 17. The `krate-notes` Flagship Sample
 
 ### 17.1 Why build a flagship
 
-A flagship app is the project's best argument. If `layer36-notes` feels good, developers believe the platform. If it feels weird, no amount of documentation convinces them.
+A flagship app is the project's best argument. If `krate-notes` feels good, developers believe the platform. If it feels weird, no amount of documentation convinces them.
 
 ### 17.2 Scope
 
@@ -1149,7 +1149,7 @@ A minimal note-taking app:
 - Sidebar: list of notes with titles and preview text.
 - Main area: editor for the selected note.
 - Top bar: app menu (File/Edit/View).
-- Saves to `~/Documents/Layer36Notes/` (requires `fs.write` cap).
+- Saves to `~/Documents/KrateNotes/` (requires `fs.write` cap).
 - Searchable by title.
 - Keyboard shortcuts (`Cmd/Ctrl+N` new, `Cmd/Ctrl+S` save, `Cmd/Ctrl+F` find).
 - Dark mode follows system.
@@ -1176,7 +1176,7 @@ Rust. First-class for the flagship; we eat our own canonical bindings.
 - Dark mode switches live.
 - Screen readers navigate correctly.
 - UCap grant flow fires on first launch.
-- Save/load works via `layer36:fs`.
+- Save/load works via `krate:fs`.
 - 60 fps in typical editing sessions.
 
 If all ten boxes check, Phase 3 shipped.
@@ -1189,7 +1189,7 @@ Sized for 16 weeks calendar, ~60–80 engineering days of active work. A full-ti
 
 > **Winit input-routing map (scoped 2026-07-04, next implementation work):** make the drawn widgets interactive on Linux and Windows. (1) In both `winit_native` modules, handle `WindowEvent::CursorMoved` (track the last logical cursor position per window, dividing physical by `scale_factor`) and `WindowEvent::MouseInput` (left button press/release). (2) Extend the shared `WinitWindowNativeEvent` in `adapter-common` with a `Pointer { x, y, pressed }` variant; the collector, session apply path, and pump already forward variants — the new arm queues `queue_pointer_event` with `widget: None` (adapters do not hit-test; layout lives runtime-side). (3) In `Phase3GuiHost::poll_one_event`, intercept `UiEvent::Pointer` events whose `widget` is `None`: re-route them through `dispatcher.route_pointer_event` with the window's record size as the viewport so hit testing assigns the widget id, then deliver the routed event and drop the raw one. hello-gui already reacts to `pointer.widget == Some(BUTTON_ID)`, so no guest change. (4) CI proof: in the Linux Xvfb step, after launching hello-gui with `--native-window` in the background, use `xdotool` (apt-install alongside xvfb, run under the same `xvfb-run` server via a wrapper script) to click the button's known coordinates (placements are deterministic: root padding 16 logical, button 160x32 at the top of the stack), then assert exit code 0 — the first fully machine-verified click round trip on Linux. Windows lane keeps exit-1 (no synthetic input tooling there yet). (5) Definition of done: hello-gui exits 0 under Xvfb from a synthetic click on the drawn button.
 
-> **Winit slice map (scoped 2026-07-03, next implementation work):** real Linux/Windows winit windows behind the existing prototype boundaries. (1) Add `winit 0.30` as a target-gated dependency of `adapter-linux` (features `x11`,`wayland`) and `adapter-windows`; macOS builds stay untouched. (2) Own the `EventLoop` thread-locally per process (mirror `APPKIT_PROTOTYPE_SESSIONS` in `adapter-macos`), created with `EventLoop::new()` + `EventLoopExtPumpEvents::pump_app_events(Some(Duration::ZERO), ..)` for the non-blocking tick — winit 0.30 drives an `ApplicationHandler`; implement it to push `WindowEvent`s (CloseRequested, Resized, Focused, ScaleFactorChanged, RedrawRequested) into the existing `WinitWindowEventCollector` as `WinitWindowNativeEvent`s, which the shared pump already drains. (3) Window creation via `event_loop.create_window(WindowAttributes)` inside the first pump; attach the handle through the existing `attach_winit_session` path. (4) Linux widgets: drawn fallback only per ADR-0015 — window + events first, drawing later; Windows native Win32 lowering comes after windows exist. (5) Verification loop: unit-shape tests headless; fast CI's ubuntu lane compiles the Linux path on every push; the full matrix compiles Windows; real window smokes run under `xvfb-run` on ubuntu (install in the full-test lane) and natively on the windows runner, both behind an env-gated ignored test like the AppKit smoke. (6) Definition of done for the slice: `layer36 run --native-window` opens a real window for hello-gui on a Linux host with events flowing (drawn widgets may still be absent — window + close/resize/focus round trip is the slice).
+> **Winit slice map (scoped 2026-07-03, next implementation work):** real Linux/Windows winit windows behind the existing prototype boundaries. (1) Add `winit 0.30` as a target-gated dependency of `adapter-linux` (features `x11`,`wayland`) and `adapter-windows`; macOS builds stay untouched. (2) Own the `EventLoop` thread-locally per process (mirror `APPKIT_PROTOTYPE_SESSIONS` in `adapter-macos`), created with `EventLoop::new()` + `EventLoopExtPumpEvents::pump_app_events(Some(Duration::ZERO), ..)` for the non-blocking tick — winit 0.30 drives an `ApplicationHandler`; implement it to push `WindowEvent`s (CloseRequested, Resized, Focused, ScaleFactorChanged, RedrawRequested) into the existing `WinitWindowEventCollector` as `WinitWindowNativeEvent`s, which the shared pump already drains. (3) Window creation via `event_loop.create_window(WindowAttributes)` inside the first pump; attach the handle through the existing `attach_winit_session` path. (4) Linux widgets: drawn fallback only per ADR-0015 — window + events first, drawing later; Windows native Win32 lowering comes after windows exist. (5) Verification loop: unit-shape tests headless; fast CI's ubuntu lane compiles the Linux path on every push; the full matrix compiles Windows; real window smokes run under `xvfb-run` on ubuntu (install in the full-test lane) and natively on the windows runner, both behind an env-gated ignored test like the AppKit smoke. (6) Definition of done for the slice: `krate run --native-window` opens a real window for hello-gui on a Linux host with events flowing (drawn widgets may still be absent — window + close/resize/focus round trip is the slice).
 
 > **Amended 2026-07** (`Plan/Plan-Amendments-2026-07.md` A2): the next implementation milestone is **P3-VS-01** — the macOS vertical slice (one WASM component drives a real AppKit window with a native `NSButton` and `NSTextField` and receives the click back). It executes *before* Linux/Windows Winit window broadening, because it validates the core native-lowering bet end-to-end first. Winit work resumes after P3-VS-01 passes, following ADR-0015 for Linux widgets. The agent-embedding tasks P3-EMB-01..03 follow the slice as a parallel, non-exit-blocking track.
 
@@ -1203,7 +1203,7 @@ Sized for 16 weeks calendar, ~60–80 engineering days of active work. A full-ti
 
 - Windowing trait + per-host implementations.
 - Basic event loop: open window, receive close event, close.
-- Smoke test: `layer36 run blank-window.wasm` opens a blank window on all three hosts.
+- Smoke test: `krate run blank-window.wasm` opens a blank window on all three hosts.
 
 ### Weeks 5–6: Widget tree + reconciler
 
@@ -1249,7 +1249,7 @@ Sized for 16 weeks calendar, ~60–80 engineering days of active work. A full-ti
 - Clipboard read/write.
 - App + window menus.
 
-### Week 15: `layer36-notes`
+### Week 15: `krate-notes`
 
 - Build the flagship.
 - This is where the UAPI gets stress-tested. Expect gaps — each gap is a lesson, not a failure.
@@ -1284,7 +1284,7 @@ Matches Build Plan §7.4 task IDs.
 **Implementation map (scoped 2026-07-02 against the current code):**
 1. *Native lowering* — extend `crates/adapter-macos/src/appkit.rs`: given the window's `WidgetTree` (from `UiAdapter::widget_tree`) and a `LayoutSnapshot` (from `Phase3UiDispatcher::compute_layout`), create `NSButton`/`NSTextField` subviews on the prototype window's content view. AppKit's origin is bottom-left — flip Y from the layout's top-left rects using the content view height. Store created views keyed by `WidgetId` on `AppKitWindowSession`.
 2. *Click round-trip* — declare an Objective-C target object with an action selector using the same `declare_class!` pattern as the existing `AppKitWindowDelegate`; the action pushes into the existing `AppKitWindowDelegateQueue`-style FIFO, drained by `AppKitWindowEventLoopDriver::pump_session_once` into the shared event stream as a pointer/activation event carrying the `WidgetId`.
-3. *Sub-slice order* — prove 1+2 Rust-side first via an extension of the `smoke-phase3-appkit-runtime.sh` opt-in pattern (this validates the whole bet without touching WASM); only then wire the WASM component path: minimal `layer36:ui` host imports (window create/show, tree submit subset, events.poll) into the `layer36 run` linker for the `gui` world, and the demo component under `apps/`.
+3. *Sub-slice order* — prove 1+2 Rust-side first via an extension of the `smoke-phase3-appkit-runtime.sh` opt-in pattern (this validates the whole bet without touching WASM); only then wire the WASM component path: minimal `krate:ui` host imports (window create/show, tree submit subset, events.poll) into the `krate run` linker for the `gui` world, and the demo component under `apps/`.
 4. *Main-thread rule* — all AppKit widget creation stays on the main process thread, matching the existing `NSWindow` prototype gating.
 
 ### P3-EMB-01 — Runtime embedding API *(added 2026-07, amendment A3; parallel track, non-blocking for Phase 3 exit)*
@@ -1293,9 +1293,9 @@ Matches Build Plan §7.4 task IDs.
 **Branch:** `p3-emb-01-embedding-api`.
 **Acceptance:**
 - A documented public API on `crates/runtime`: load component + manifest, supply grants programmatically (no interactive prompt), run, receive a structured result (exit class, stdout/stderr handles, per-capability grant/deny log).
-- An external Rust program (doc-tested example) embeds Layer36 in under 30 lines with no interactive TTY.
+- An external Rust program (doc-tested example) embeds Krate in under 30 lines with no interactive TTY.
 
-### P3-EMB-02 — `layer36 run --json` *(added 2026-07, amendment A3)*
+### P3-EMB-02 — `krate run --json` *(added 2026-07, amendment A3)*
 
 **Estimate:** 3 days.
 **Branch:** `p3-emb-02-run-json`.
@@ -1309,8 +1309,8 @@ Matches Build Plan §7.4 task IDs.
 **Branch:** `p3-emb-03-mcp-server`.
 **Acceptance:**
 - A minimal MCP server (a `tools/` binary) exposing `run_component` (artifact path/bytes, manifest, grants) backed by P3-EMB-01, returning P3-EMB-02-shaped results.
-- An MCP-capable agent client can execute `layer36-cat` with and without grants and observe the deny/allow difference.
-- Scope bound: no agent orchestration, no model calls, no tool registry — Layer36 executes artifacts safely; the agent ecosystem does the rest.
+- An MCP-capable agent client can execute `krate-cat` with and without grants and observe the deny/allow difference.
+- Scope bound: no agent orchestration, no model calls, no tool registry — Krate executes artifacts safely; the agent ecosystem does the rest.
 
 ### P3-UI-01 — Widget protocol design RFC
 
@@ -1322,7 +1322,7 @@ Matches Build Plan §7.4 task IDs.
 - §9 of this doc as starting point.
 - Merged into `docs/adr/` as ADR-0013 + ADR-0014 where decisions are final.
 
-### P3-UI-02 — `wit/layer36/ui.wit`
+### P3-UI-02 — `wit/krate/ui.wit`
 
 **Estimate:** 2 days.
 **Branch:** `p3-ui-02-ui-wit`.
@@ -1379,7 +1379,7 @@ Matches Build Plan §7.4 task IDs.
 - Focus, keyboard, and accessibility metadata working without a native toolkit underneath.
 - Manual test on Ubuntu 22.04 + Fedora.
 
-### P3-GFX-01 — `wit/layer36/gfx.wit`
+### P3-GFX-01 — `wit/krate/gfx.wit`
 
 **Estimate:** 2 days.
 **Branch:** `p3-gfx-01-wit`.
@@ -1432,12 +1432,12 @@ Matches Build Plan §7.4 task IDs.
 - CJK manual test pass on all three hosts.
 - Test plan in `docs/book/src/phase3/ime-testing.md`.
 
-### P3-APP-01 — `layer36-notes`
+### P3-APP-01 — `krate-notes`
 
 **Estimate:** 5 days.
 **Branch:** `p3-app-01-notes`.
 **Acceptance:**
-- App in `apps/layer36-notes/` (Rust).
+- App in `apps/krate-notes/` (Rust).
 - Implements scope per §17.2.
 - Runs on all three hosts in CI.
 
@@ -1448,7 +1448,7 @@ Matches Build Plan §7.4 task IDs.
 **Acceptance:**
 - accesskit tree built from widget tree.
 - Per-host bridges into UIAutomation / NSAccessibility / AT-SPI.
-- `layer36-notes` reads correctly on all three screen readers.
+- `krate-notes` reads correctly on all three screen readers.
 
 ### P3-TEST-01 — UI snapshot testing
 
@@ -1474,7 +1474,7 @@ Matches Build Plan §7.4 task IDs.
 **Branch:** `p3-doc-01-tutorial`.
 **Acceptance:**
 - Step-by-step in `docs/book/src/tutorial/build-gui.md`.
-- Ends with a working mini-app (smaller than `layer36-notes`).
+- Ends with a working mini-app (smaller than `krate-notes`).
 - External reader test: < 45 min to working app.
 
 ---
@@ -1529,7 +1529,7 @@ pub enum Widget {
 
 ```rust
 // in an app
-use layer36::ui::{Widget, Event, window, tree, events};
+use krate::ui::{Widget, Event, window, tree, events};
 
 fn main() -> i32 {
     let win = window::create(WindowConfig {
@@ -1547,10 +1547,10 @@ fn main() -> i32 {
 
         match events::wait() {
             Event::WindowClosed(_) => break,
-            Event::ButtonClick(id) if id == layer36::ui::id("save-btn") => {
+            Event::ButtonClick(id) if id == krate::ui::id("save-btn") => {
                 state.save();
             }
-            Event::TextFieldChange(id, value) if id == layer36::ui::id("editor") => {
+            Event::TextFieldChange(id, value) if id == krate::ui::id("editor") => {
                 state.editor_value = value;
             }
             _ => {}
@@ -1561,19 +1561,19 @@ fn main() -> i32 {
 
 fn build_ui(state: &AppState) -> Widget {
     Widget::Stack {
-        id: layer36::ui::id("root"),
+        id: krate::ui::id("root"),
         direction: Direction::Vertical,
         spacing: 8.0,
         padding: EdgeInsets::all(16.0),
         children: vec![
             Widget::TextField {
-                id: layer36::ui::id("editor"),
+                id: krate::ui::id("editor"),
                 value: state.editor_value.clone(),
                 placeholder: "Type here".into(),
                 ..Default::default()
             },
             Widget::Button {
-                id: layer36::ui::id("save-btn"),
+                id: krate::ui::id("save-btn"),
                 label: "Save".into(),
                 disabled: false,
                 style: Style::default(),
@@ -1715,7 +1715,7 @@ pub fn widget_to_a11y(widget: &Widget) -> Node {
 | Level | Addition |
 |---|---|
 | Snapshot | Per-host widget renders compared against reference PNGs |
-| E2E | Drive `layer36-notes` via scripted input; assert UI state |
+| E2E | Drive `krate-notes` via scripted input; assert UI state |
 | Accessibility | Automated screen-reader simulation via accesskit trees |
 | Performance | Frame-time histogram, layout time, reconcile time |
 | IME | Manual test matrix per host with CJK inputs |
@@ -1757,7 +1757,7 @@ Ten-minute manual test per host per input method. Documented in `docs/book/src/p
 - 10k-node layout: < 4 ms.
 - Reconcile a 1k-node tree with 10% changed: < 1 ms.
 - First paint after window creation: < 200 ms.
-- `layer36-notes` typing: 60 fps sustained.
+- `krate-notes` typing: 60 fps sustained.
 
 ---
 
@@ -1772,9 +1772,9 @@ Ten-minute manual test per host per input method. Documented in `docs/book/src/p
 | 10k-node layout | < 4 ms | Criterion bench |
 | Reconcile 1k nodes, 10% changed | < 1 ms | Criterion bench |
 | UAPI dispatch (UI) | < 1 µs | Microbench |
-| `layer36-notes` typing 60 fps sustained | 60 fps | Frame histogram |
+| `krate-notes` typing 60 fps sustained | 60 fps | Frame histogram |
 | Runtime binary size | < 80 MB | Artifact size |
-| `layer36-notes` RSS | < 120 MB | Process monitor |
+| `krate-notes` RSS | < 120 MB | Process monitor |
 | First-open file dialog | < 150 ms | Manual timing |
 
 Miss > 10% = issue blocking exit criteria.
@@ -1832,7 +1832,7 @@ Auto-generated from WIT. Now includes `ui`, `gfx`, `audio`.
 
 ### 24.2 "Build a GUI app" tutorial
 
-Step-by-step construction of a mini-app (counter + text field) — smaller than `layer36-notes`. Language: Rust. Reader should finish in < 45 min.
+Step-by-step construction of a mini-app (counter + text field) — smaller than `krate-notes`. Language: Rust. Reader should finish in < 45 min.
 
 ### 24.3 Widget catalog
 
@@ -1900,14 +1900,14 @@ Further ADRs as specific decisions surface (grant dialog design, theme token lay
 - [ ] 10,000-node layout bench: < 4 ms.
 
 ### Accessibility
-- [ ] accesskit tree built for `layer36-notes`.
+- [ ] accesskit tree built for `krate-notes`.
 - [ ] VoiceOver (macOS) announces all widgets correctly.
 - [ ] Narrator (Windows) announces all widgets correctly.
 - [ ] Orca (Linux) announces all widgets correctly.
-- [ ] Keyboard-only navigation works end-to-end in `layer36-notes`.
+- [ ] Keyboard-only navigation works end-to-end in `krate-notes`.
 
 ### Audio
-- [ ] `layer36-audio` playback of 44.1 kHz WAV, MP3, AAC works on all three hosts.
+- [ ] `krate-audio` playback of 44.1 kHz WAV, MP3, AAC works on all three hosts.
 - [ ] Microphone capture fires UCap prompt; works when granted.
 
 ### UCap v0.2
@@ -1917,7 +1917,7 @@ Further ADRs as specific decisions surface (grant dialog design, theme token lay
 - [ ] OS-native privacy prompts integrate (macOS TCC, Windows privacy).
 
 ### Flagship
-- [ ] `layer36-notes` runs on Windows, macOS, Linux.
+- [ ] `krate-notes` runs on Windows, macOS, Linux.
 - [ ] Passes native-feel rubric (see §29 Appendix C).
 - [ ] 60 fps sustained while typing.
 - [ ] Screen readers pass on all three hosts.
@@ -1945,7 +1945,7 @@ Further ADRs as specific decisions surface (grant dialog design, theme token lay
 
 ### External validation
 - [ ] One external developer builds and runs a GUI app via tutorial in < 45 min.
-- [ ] One external user runs `layer36-notes` and describes it as "feels native."
+- [ ] One external user runs `krate-notes` and describes it as "feels native."
 - [ ] Retrospective written.
 - [ ] Phase 4 kickoff issue opened with link to Phase 4 plan doc.
 
@@ -1957,7 +1957,7 @@ Further ADRs as specific decisions surface (grant dialog design, theme token lay
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| Widget lowering produces subtle per-host inconsistencies | Very high | High | Snapshot tests per host; native-feel rubric; dogfood `layer36-notes` on each host weekly |
+| Widget lowering produces subtle per-host inconsistencies | Very high | High | Snapshot tests per host; native-feel rubric; dogfood `krate-notes` on each host weekly |
 | IME edge cases (surrogate pairs, pre-edit in list widgets) | High | High | Manual test matrix early; catch in Week 11, not Week 16 |
 | Accessibility retrofits found to be incomplete | Medium | High | Bake a11y at Week 6, not Week 12; screen-reader review per widget, not end of phase |
 | vello maturity not yet production-ready | Medium | Medium | Pinned version; fallback to simpler CPU rasterizer for edge cases; monitor upstream |
@@ -1974,7 +1974,7 @@ Further ADRs as specific decisions surface (grant dialog design, theme token lay
 |---|---|---|---|
 | Scope creep: "let's add tray icons / notifications / themes" | Very high | High | Deferred list is a live doc; every new ask lands there first |
 | WIT churn as widgets are implemented | High | Medium | Week 1–2 is WIT-locked after review; changes post-Week-4 need ADR |
-| `layer36-notes` ambition scope | High | Medium | LOC cap (2000); features frozen Week 14 |
+| `krate-notes` ambition scope | High | Medium | LOC cap (2000); features frozen Week 14 |
 | Perf tuning eats all buffer | Medium | Medium | Performance targets set Week 1; accept trailing regressions within 10% |
 | Founder time pressure | Very high | Critical | Phase 3 is the longest so far. Phase 3 cannot be compressed without sacrificing quality. Extend calendar, do not drop scope. |
 
@@ -1983,7 +1983,7 @@ Further ADRs as specific decisions surface (grant dialog design, theme token lay
 Stop and reassess if:
 - Week 8 and any one host doesn't have widgets rendering.
 - Week 12 and screen reader test fails on any host.
-- Week 14 and frame time is > 25 ms for `layer36-notes`.
+- Week 14 and frame time is > 25 ms for `krate-notes`.
 - Any critical widget (Button, TextField, List) lacks native rendering on any host by Week 10.
 - IME matrix has > 3 red cells at Week 13.
 
@@ -2002,12 +2002,12 @@ Stop and reassess if:
 
 ### 28.2 What Phase 4 extends
 
-- Add `layer36:ui/touch`, `layer36:ui/gesture`, `layer36:ui/haptics`.
+- Add `krate:ui/touch`, `krate:ui/gesture`, `krate:ui/haptics`.
 - Mobile lifecycle events: background, foreground, memory pressure.
 - Mobile-appropriate default layouts (bottom sheets, tab bars).
 - iOS-specific adapter using UIKit.
 - Android-specific adapter using View system.
-- Sensor UAPI module (`layer36:sensors`).
+- Sensor UAPI module (`krate:sensors`).
 
 ### 28.3 What Phase 4 must NOT touch
 
@@ -2065,7 +2065,7 @@ Full table checked in as `crates/adapter-common/src/input/keymap.rs`.
 
 ### Appendix C — "Feels native" rubric
 
-Passing rubric for `layer36-notes` on each host. 10 checks per host, need ≥ 9/10:
+Passing rubric for `krate-notes` on each host. 10 checks per host, need ≥ 9/10:
 
 1. Window chrome matches host convention (traffic lights / min-max-close / Wayland client-side).
 2. Menu bar semantics correct (macOS app menu; Windows/Linux per-window).
@@ -2084,30 +2084,30 @@ Documented in `docs/book/src/phase3/native-feel-rubric.md`.
 
 ```bash
 # Run GUI app with auto-grant
-layer36 run --auto-grant --gui apps/layer36-notes/notes.wasm
+krate run --auto-grant --gui apps/krate-notes/notes.wasm
 
 # Force software rendering (for low-spec debug)
-LAYER36_GPU_BACKEND=cpu layer36 run app.wasm
+KRATE_GPU_BACKEND=cpu krate run app.wasm
 
 # Enable frame-time tracing
-LAYER36_LOG=layer36_runtime::ui::frame=trace layer36 run app.wasm
+KRATE_LOG=krate_runtime::ui::frame=trace krate run app.wasm
 
 # Dump a11y tree
-layer36 run --dump-a11y-tree app.wasm
+krate run --dump-a11y-tree app.wasm
 
 # Run IME test manually
-layer36 run --ime-debug apps/layer36-notes/notes.wasm
+krate run --ime-debug apps/krate-notes/notes.wasm
 ```
 
 ### Appendix E — Debugging a stuck frame
 
 1. Enable frame trace:
    ```
-   LAYER36_LOG=layer36_runtime::ui::frame=trace,layer36_gfx=debug layer36 run app.wasm
+   KRATE_LOG=krate_runtime::ui::frame=trace,krate_gfx=debug krate run app.wasm
    ```
 2. Check reconciler time in trace output.
 3. Check layout time.
-4. If GPU-bound: `LAYER36_GPU_CAPTURE=1` produces a RenderDoc-compatible capture.
+4. If GPU-bound: `KRATE_GPU_CAPTURE=1` produces a RenderDoc-compatible capture.
 5. If WASM-bound: `--profile wall` produces a flame graph.
 
 ### Appendix F — Retrospective template
@@ -2181,7 +2181,7 @@ primitive. Draft host window events for close request, resize, focus, theme,
 and scale have shared routes too. Adapter info now records both the active
 headless window backend and the planned native backend for each host: AppKit on
 macOS, and winit on Linux and Windows. The shared window layer can now bind an
-opaque native host handle to a stable Layer36 `WindowId`, and the macOS adapter
+opaque native host handle to a stable Krate `WindowId`, and the macOS adapter
 exposes the first AppKit handle handoff point. The opt-in AppKit prototype can
 create and show a real `NSWindow`; it now also has explicit bridge targets for
 native close, resize, focus, and display-scale events, plus a snapshot helper
@@ -2212,9 +2212,9 @@ input-routing proof, plus the handle mapping needed by the next host adapter wor
 
 | Task ID | Task | Completed | Notes |
 |---|---|---|---|
-| P3-UAPI-00 | Draft `gui` world for Phase 3 | 2026-05-19 | `layer36:app@0.2.0` parses with `ui`, `gfx`, and `audio` imports. |
+| P3-UAPI-00 | Draft `gui` world for Phase 3 | 2026-05-19 | `krate:app@0.2.0` parses with `ui`, `gfx`, and `audio` imports. |
 | P3-TOOL-00 | Add Phase 3 UAPI checker | 2026-05-19 | `scripts/check-phase3-uapi.sh` keeps the draft WIT parseable and shaped. |
-| P3-MANIFEST-00 | Recognize GUI manifests | 2026-05-19 | `manifest check` accepts `layer36:app/gui@0.2.0`; `run` exits clearly until GUI runtime exists. |
+| P3-MANIFEST-00 | Recognize GUI manifests | 2026-05-19 | `manifest check` accepts `krate:app/gui@0.2.0`; `run` exits clearly until GUI runtime exists. |
 | P3-UCAP-00 | Add first Phase 3 capability names | 2026-05-19 | `ui`, `gfx`, and `audio` capability strings now parse through the manifest and policy layer. |
 | P3-UI-00 | Add shared draft UI adapter model | 2026-05-19 | `adapter-common::ui` tracks draft window IDs, lifecycle, title, size, visibility, redraw events, and validation. |
 | P3-RUNTIME-00 | Add runtime UI dispatcher scaffold | 2026-05-21 | `runtime::phase3_ui` checks UCap before draft window operations and proves clipboard grants fail before unsupported host code. |
@@ -2225,7 +2225,7 @@ input-routing proof, plus the handle mapping needed by the next host adapter wor
 | P3-UI-01B | Add shared widget tree model | 2026-05-21 | `adapter-common::ui` now has `WidgetId`, `WidgetKind`, `WidgetNode`, `WidgetStyle`, and `WidgetTree` with parent-link and style validation. |
 | P3-RUNTIME-02 | Add draft widget-tree dispatcher path | 2026-05-21 | `UiAdapter` and `Phase3UiDispatcher` now support set root, upsert, remove, focus, tree lookup, and focused-widget lookup through the same UCap boundary. |
 | P3-UI-03A | Add first Taffy-backed layout wrapper | 2026-05-21 | `crates/layout` maps the shared `WidgetTree` into Taffy and returns stable `WidgetId` keyed rectangles through the runtime dispatcher. |
-| P3-UI-03B | Add layout coverage, benchmark target, and hit-test helper | 2026-05-21 | `layer36-layout` now tests 100 generated tree shapes, compiles a Criterion 1k/10k-node benchmark target, exposes absolute rectangles, and can hit-test a point to the deepest widget. |
+| P3-UI-03B | Add layout coverage, benchmark target, and hit-test helper | 2026-05-21 | `krate-layout` now tests 100 generated tree shapes, compiles a Criterion 1k/10k-node benchmark target, exposes absolute rectangles, and can hit-test a point to the deepest widget. |
 | P3-UI-03C | Add prepared repeated-layout path | 2026-05-21 | `PreparedLayoutTree` builds the Taffy tree once, recomputes layout for new viewports, and is reachable through `Phase3UiDispatcher::prepare_layout`. |
 | P3-INPUT-01A | Add draft pointer event routing | 2026-05-21 | `Phase3UiDispatcher::route_pointer_event` computes layout, hit-tests the logical point, and queues a `UiEvent::Pointer` with the target widget ID when one is found. |
 | P3-INPUT-01B | Add draft key and text input routing | 2026-05-21 | `Phase3UiDispatcher::route_key_event` and `route_text_input` look up the focused widget and queue portable key/text events through the shared adapter boundary. |
@@ -2233,8 +2233,8 @@ input-routing proof, plus the handle mapping needed by the next host adapter wor
 | P3-UI-04D | Add draft host window event routes | 2026-05-21 | Close-requested, host-resized, and window-focused events can now be queued through the shared adapter and runtime dispatcher without closing the window early. |
 | P3-UI-04E | Add draft theme and scale event routes | 2026-05-22 | System theme changes and per-window scale-factor changes now queue through the shared adapter and runtime dispatcher, with scale validation before native DPI work starts. |
 | P3-UI-04F | Split explicit `WindowAdapter` boundary | 2026-05-22 | Window lifecycle and host-window events now live under `WindowAdapter`; `UiAdapter` builds on it for widgets, input, and clipboard. Host adapters report the active headless backend plus planned native backend. |
-| P3-UI-04G | Add native window handle handoff | 2026-05-22 | `WindowAdapter` can now attach, inspect, and detach an opaque native handle for a Layer36 window id. macOS exposes the first AppKit handoff method while the default backend remains headless draft. |
-| P3-UI-04H | Add opt-in AppKit window prototype | 2026-05-22 | macOS now has an `AppKitWindowBackend` that can create an owned `NSWindow` on the main thread, attach its handle to a Layer36 window id, and show it through the shared window path. The default adapter still stays headless draft. |
+| P3-UI-04G | Add native window handle handoff | 2026-05-22 | `WindowAdapter` can now attach, inspect, and detach an opaque native handle for a Krate window id. macOS exposes the first AppKit handoff method while the default backend remains headless draft. |
+| P3-UI-04H | Add opt-in AppKit window prototype | 2026-05-22 | macOS now has an `AppKitWindowBackend` that can create an owned `NSWindow` on the main thread, attach its handle to a Krate window id, and show it through the shared window path. The default adapter still stays headless draft. |
 | P3-UI-04I | Add AppKit event bridge targets | 2026-05-22 | The AppKit prototype now has explicit bridge methods for close, resize, focus, and display-scale events, plus a snapshot helper that reads content size, focus, visibility, and backing scale from the native window. |
 | P3-UI-04J | Add AppKit window session state | 2026-05-22 | `AppKitWindowSession` now owns the prototype window, remembers the last native snapshot, refreshes changed state into the shared queue, and gives future delegates one place to report close requests. |
 | P3-UI-04K | Add AppKit native event state | 2026-05-23 | `AppKitWindowNativeEvent` and `AppKitWindowEventState` now provide the tested Rust callback surface for resize, focus, scale, close, redraw, and full snapshot events before the Objective-C delegate lands. |
@@ -2250,10 +2250,10 @@ input-routing proof, plus the handle mapping needed by the next host adapter wor
 | P3-UI-04R | Add Linux and Windows Winit prototype boundaries | 2026-06-21 | Linux and Windows now expose explicit Winit prototype adapter boundaries, tested native-handle handoff methods, and guarded discovery paths. They do not claim real native windows yet; this was the step before the shared session owner scaffold. |
 | P3-UI-04S | Add shared Winit session owner scaffold | 2026-06-21 | Added shared Winit snapshot, native-event, event-loop-step, report, and session types. Linux and Windows prototype adapters now own tracked Winit sessions, can attach a handle, pump a prepared event step, and remove the session on close. |
 | P3-UI-04T | Add Winit callback collector bridge | 2026-06-23 | Added a shared FIFO callback collector for future Winit event handlers. Linux and Windows prototype adapters can now record Winit-shaped callbacks, drain them through the normal event-loop pump, and keep the collector bound to the tracked session. |
-| P3-VS-01A | First native AppKit widget lowering (vertical slice, Rust side) | 2026-07-02 | `adapter-macos` lowers `Button`/`TextField`/`Text` placements (`AppKitWidgetPlacement`) to real `NSButton`/`NSTextField` controls positioned from Taffy layout rects with AppKit Y-flip. `Layer36WidgetTarget` receives target-action callbacks and pushes `WidgetActivated` through the delegate FIFO, so pumped native clicks reach the shared stream as routed pointer events with widget ids. Verified end to end by the extended `phase3_appkit_runtime_smoke` example (real window, `performClick`, routed event observed, native text updated). Remaining for P3-VS-01: WASM `gui`-world host imports and the demo component. |
-| P3-VS-01B | GUI world WASM path (vertical slice complete) | 2026-07-03 | Added `phase3_gui_bindings` (gui world, `with:` reuse of Phase 2 modules), `Phase3GuiHost` serving `layer36:ui` window/tree/events over the UCap-gated dispatcher with naive native re-lowering per tree change, the `layer36 run` gui fallback path, the `--native-window` flag, and the import-pure `apps/layer36-hello-gui` sample. The `layer36:ui` events interface moved to single-event `option<event>` polling to match the dispatcher FIFO design and keep guest components free of WASI imports. Verified by `scripts/smoke-phase3-gui-app.sh` (headless) and a local native run. |
-| P3-EMB-01/02 | Embedding API + `layer36 run --json` | 2026-07-03 | Added `Runtime::run_bytes_captured`/`run_file_captured`, the `embed` module (`run_component`, `EmbedOutcome`, `EmbedExitClass`, doc-tested sub-30-line example), and the `--json` flag emitting schema `layer36.run.v1` with app identity, granted/denied capabilities, exit classification, duration, and captured stdout. Book page `phase3/embedding.md`; CLI integration tests cover success, denied-before-run, and invalid-component paths. P3-EMB-03 (MCP wrapper) remains. |
-| P3-EMB-03 | MCP server wrapper | 2026-07-03 | Added `layer36-mcp-server` (crates/tools binary): newline-delimited JSON-RPC over stdio, one `run_component` tool backed by the embedding API, returning `layer36.run.v1` reports with denials as data. Acceptance verified end to end: `layer36-cat` without grants → permission-denied naming `fs.read:fixtures/**`; with auto_grant → success with captured stdout. The agent-embedding track (A3) is complete. |
+| P3-VS-01A | First native AppKit widget lowering (vertical slice, Rust side) | 2026-07-02 | `adapter-macos` lowers `Button`/`TextField`/`Text` placements (`AppKitWidgetPlacement`) to real `NSButton`/`NSTextField` controls positioned from Taffy layout rects with AppKit Y-flip. `KrateWidgetTarget` receives target-action callbacks and pushes `WidgetActivated` through the delegate FIFO, so pumped native clicks reach the shared stream as routed pointer events with widget ids. Verified end to end by the extended `phase3_appkit_runtime_smoke` example (real window, `performClick`, routed event observed, native text updated). Remaining for P3-VS-01: WASM `gui`-world host imports and the demo component. |
+| P3-VS-01B | GUI world WASM path (vertical slice complete) | 2026-07-03 | Added `phase3_gui_bindings` (gui world, `with:` reuse of Phase 2 modules), `Phase3GuiHost` serving `krate:ui` window/tree/events over the UCap-gated dispatcher with naive native re-lowering per tree change, the `krate run` gui fallback path, the `--native-window` flag, and the import-pure `apps/krate-hello-gui` sample. The `krate:ui` events interface moved to single-event `option<event>` polling to match the dispatcher FIFO design and keep guest components free of WASI imports. Verified by `scripts/smoke-phase3-gui-app.sh` (headless) and a local native run. |
+| P3-EMB-01/02 | Embedding API + `krate run --json` | 2026-07-03 | Added `Runtime::run_bytes_captured`/`run_file_captured`, the `embed` module (`run_component`, `EmbedOutcome`, `EmbedExitClass`, doc-tested sub-30-line example), and the `--json` flag emitting schema `krate.run.v1` with app identity, granted/denied capabilities, exit classification, duration, and captured stdout. Book page `phase3/embedding.md`; CLI integration tests cover success, denied-before-run, and invalid-component paths. P3-EMB-03 (MCP wrapper) remains. |
+| P3-EMB-03 | MCP server wrapper | 2026-07-03 | Added `krate-mcp-server` (crates/tools binary): newline-delimited JSON-RPC over stdio, one `run_component` tool backed by the embedding API, returning `krate.run.v1` reports with denials as data. Acceptance verified end to end: `krate-cat` without grants → permission-denied naming `fs.read:fixtures/**`; with auto_grant → success with captured stdout. The agent-embedding track (A3) is complete. |
 | P3-WIN-01 | Real Linux winit windows | 2026-07-04 | `adapter-linux::winit_native`: thread-local winit 0.30 event loop pumped with `pump_app_events`, ApplicationHandler feeding the shared `WinitWindowEventCollector`, X11-first (ADR note: wayland-sys needs system libs; XWayland covers Wayland desktops), display-server guard for headless hosts, env-gated any-thread opt-in for tests. Prototype adapter creates/shows/closes real windows and reports the Winit backend truthfully. Definition of done met in CI: hello-gui opened a real winit window on a Linux host under Xvfb and exited cleanly (full matrix run green, all three OS lanes). Windows winit remains. |
 | P3-WIN-02 | Real Windows winit windows | 2026-07-04 | `adapter-windows::winit_native`, cloned from the CI-proven Linux implementation (no display guard needed; `EventLoopBuilderExtWindows` for the test opt-in). Compiled and passed on the first Windows lane attempt. Query/pump paths on both platforms no longer lazily create the event loop (winit panics off the main thread). Full matrix green with both native window proofs: hello-gui opened real winit windows on Linux (Xvfb) and Windows and exited cleanly. One portable artifact now opens real windows on all three desktop OSes. |
 | P3-DRAW-01 | First drawn-widget pass (Linux) | 2026-07-04 | `winit_native` stores lowered placements and paints them per pump through softbuffer (x11-dlopen): background fill, button block, bordered field, text block, DPI-scaled. Verified in the green full matrix with the Xvfb window run. Lessons: tiny-xlib needs headers unless dlopened; clippy on Linux-only code needs the CI lane. Next: Windows drawing clone, then vello behind the same placement contract. |
@@ -2268,18 +2268,18 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 |---|-----------|--------|
 | 1 | `ui`, `gfx`, `audio` WIT modules frozen at v0.1.0 | Draft started; not frozen |
 | 2 | All three modules implemented in Linux, macOS, Windows adapters; CI green | Not done |
-| 3 | `layer36-notes` runs on all three desktop OSes | Not done |
-| 4 | `layer36-notes` UI feels native on each host (documented rubric passed) | Not done |
+| 3 | `krate-notes` runs on all three desktop OSes | Not done |
+| 4 | `krate-notes` UI feels native on each host (documented rubric passed) | Not done |
 | 5 | Steady-state frame time ≤ 16.7 ms on 2020+ hardware | Not done |
 | 6 | Cold start for GUI app < 300 ms to first paint | Not done |
 | 7 | IME (CJK input) works correctly on all three hosts | Not done |
-| 8 | Screen reader reads `layer36-notes` on Win/macOS/Linux (Narrator/VoiceOver/Orca) | Not done |
+| 8 | Screen reader reads `krate-notes` on Win/macOS/Linux (Narrator/VoiceOver/Orca) | Not done |
 | 9 | UCap v0.2: system-UI grant dialog fires for GUI apps | Not done |
 | 10 | 60 fps sustained with a 10,000-node widget tree benchmark | Not done |
 | 11 | DPI scaling at 100%, 125%, 150%, 200% renders correctly (snapshot tests) | Not done |
 | 12 | Dark mode follows system preference and switches live | Not done |
 | 13 | Runtime binary size < 80 MB | Not done |
-| 14 | Per-app RSS < 120 MB for `layer36-notes` | Not done |
+| 14 | Per-app RSS < 120 MB for `krate-notes` | Not done |
 | 15 | ADRs 0013 through at least 0020 merged | Not done |
 
 ---
@@ -2288,11 +2288,11 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 | Task ID | Task | Completed | Notes |
 |---------|------|-----------|-------|
-| P3-UI-02 | First `layer36:ui@0.1.0` WIT draft | 2026-05-19 | Covers window, tree, events, dialog, clipboard, and menu shape. |
-| P3-GFX-01 | First `layer36:gfx@0.1.0` WIT draft | 2026-05-19 | Covers simple 2D canvas commands and a minimal future 3D surface. |
-| P3-AUDIO-01 | First `layer36:audio@0.1.0` WIT draft | 2026-05-19 | Covers playback and capture stream shape. |
+| P3-UI-02 | First `krate:ui@0.1.0` WIT draft | 2026-05-19 | Covers window, tree, events, dialog, clipboard, and menu shape. |
+| P3-GFX-01 | First `krate:gfx@0.1.0` WIT draft | 2026-05-19 | Covers simple 2D canvas commands and a minimal future 3D surface. |
+| P3-AUDIO-01 | First `krate:audio@0.1.0` WIT draft | 2026-05-19 | Covers playback and capture stream shape. |
 | P3-TEST-00 | Phase 3 WIT checker | 2026-05-19 | `scripts/check-phase3-uapi.sh` parses contracts and checks package, world, naming, docs, and permission error shape. |
-| P3-RUN-00 | CLI recognizes Phase 3 GUI manifests | 2026-05-19 | `manifest check` accepts `layer36:app/gui@0.2.0`; `run` exits early with a clear not-implemented message. |
+| P3-RUN-00 | CLI recognizes Phase 3 GUI manifests | 2026-05-19 | `manifest check` accepts `krate:app/gui@0.2.0`; `run` exits early with a clear not-implemented message. |
 | P3-UCAP-00 | Phase 3 capability names | 2026-05-19 | Manifest and policy now understand the first `ui`, `gfx`, and `audio` capability strings. |
 | P3-UI-00 | Shared draft UI adapter model | 2026-05-19 | `adapter-common::ui` tracks draft windows and events without native OS windows yet. |
 | P3-RUNTIME-00 | Runtime UI dispatcher scaffold | 2026-05-21 | `runtime::phase3_ui` gates draft window work through UCap and keeps unsupported clipboard paths permission-checked. |
@@ -2302,7 +2302,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | P3-UI-01A | Widget protocol decision docs | 2026-05-21 | Added ADR-0013, RFC-0003, an mdBook widget protocol page, and a design-doc checker. |
 | P3-UI-01B | Shared widget tree model | 2026-05-21 | Added stable widget IDs, first widget kind enum, style hints, labels, role hints, and parent validation in `adapter-common::ui`. |
 | P3-RUNTIME-02 | Draft widget-tree dispatch path | 2026-05-21 | Added draft widget-tree operations to `UiAdapter`, the headless host adapters, and `Phase3UiDispatcher`, with adapter-boundary checks. |
-| P3-UI-03A | First layout wrapper | 2026-05-21 | Added `layer36-layout`, Taffy integration, viewport validation, layout snapshots, runtime dispatch, ADR-0014, and mdBook layout docs. |
+| P3-UI-03A | First layout wrapper | 2026-05-21 | Added `krate-layout`, Taffy integration, viewport validation, layout snapshots, runtime dispatch, ADR-0014, and mdBook layout docs. |
 | P3-UI-03B | Layout proof expansion | 2026-05-21 | Added generated 100-shape layout tests, optimized child indexing, absolute rectangle helpers, hit testing, a compile-checked Criterion benchmark target, and a Phase 3 layout check script. |
 | P3-UI-03C | Prepared repeated-layout path | 2026-05-21 | Added `PreparedLayoutTree`, prepared 1k/10k benchmark lanes, runtime dispatcher access, and repeated-viewport tests. |
 | P3-INPUT-01A | Draft pointer event routing | 2026-05-21 | Added shared pointer event types, adapter queue support, host adapter forwarding, and runtime hit-test routing from logical coordinates to optional widget IDs. |
@@ -2368,7 +2368,7 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
   Phase 2 CLI surface plus draft `ui`, `gfx`, and `audio` modules. The checker
   keeps this draft parseable and documented while the host work begins.
 - 2026-05-19: Added the first runtime-facing guardrail. Phase 3 GUI manifests
-  are valid metadata now, but `layer36 run` stops before execution until the
+  are valid metadata now, but `krate run` stops before execution until the
   window runtime exists.
 - 2026-05-21: Drafted ADR-0013 and RFC-0003 for the widget protocol. The rule
   is native controls where the host has a semantic match, with drawn fallback
@@ -2379,7 +2379,7 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
 - 2026-05-21: Extended the runtime and headless host adapters with draft
   widget-tree operations. The UI path can now set a root node, update child
   nodes, remove nodes, and move focus before native widgets exist.
-- 2026-05-21: Added the first shared layout wrapper. `layer36-layout` computes
+- 2026-05-21: Added the first shared layout wrapper. `krate-layout` computes
   logical rectangles from the shared widget tree through Taffy, and the runtime
   can request a layout snapshot for a stored draft widget tree.
 - 2026-05-21: Expanded layout proof without jumping ahead to native windows.
@@ -2416,13 +2416,13 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
   report their planned native window backend, so the next AppKit and winit work
   has a checked target.
 - 2026-05-22: Added the native handle handoff path. A native backend can now
-  attach an opaque AppKit, winit, or Win32 handle to the stable Layer36
+  attach an opaque AppKit, winit, or Win32 handle to the stable Krate
   `WindowId`, look it up later, and detach it. macOS has the first AppKit
   handoff method. This is still not a visible native window, but it removes the
   awkward part before the real AppKit window code lands.
 - 2026-05-22: Added the first opt-in AppKit window prototype. The macOS adapter
   can now create an owned `NSWindow` on the main thread, bind its raw handle to
-  the Layer36 window id, and show it through the same shared window path. This
+  the Krate window id, and show it through the same shared window path. This
   is not the default runtime yet, because native event capture and drawing are
   still next.
 - 2026-05-23: Added the AppKit redraw bridge. Redraw requests now travel
@@ -2483,10 +2483,10 @@ _ADRs 0017–0020 to be determined during Phase 3 work._
 
 ## Closing
 
-Phase 3 is the phase where Layer36 either becomes a real platform or becomes another also-ran cross-platform framework. Every prior phase was infrastructure; this one is the first user-visible surface, and users judge platforms in the first thirty seconds. A button that feels slightly wrong, a scroll that lags, a menu that doesn't open where expected — these are not papercuts, they are the reasons platforms die.
+Phase 3 is the phase where Krate either becomes a real platform or becomes another also-ran cross-platform framework. Every prior phase was infrastructure; this one is the first user-visible surface, and users judge platforms in the first thirty seconds. A button that feels slightly wrong, a scroll that lags, a menu that doesn't open where expected — these are not papercuts, they are the reasons platforms die.
 
-Take the sixteen weeks. Build the widget protocol twice if the first draft feels off. Run the screen reader on `layer36-notes` every Friday. Test IME on real hardware with real users. Measure frame times. Fix what's slow. When a native widget fights the abstract widget, side with the native widget — our abstract layer exists to serve users, not developers.
+Take the sixteen weeks. Build the widget protocol twice if the first draft feels off. Run the screen reader on `krate-notes` every Friday. Test IME on real hardware with real users. Measure frame times. Fix what's slow. When a native widget fights the abstract widget, side with the native widget — our abstract layer exists to serve users, not developers.
 
-When Phase 3 ships, someone who has never heard of Layer36 will open `layer36-notes` on their MacBook and then on their Windows work machine and think "oh, nice, is this made by Apple? Microsoft?" That confusion is the highest compliment this phase can earn. Earn it.
+When Phase 3 ships, someone who has never heard of Krate will open `krate-notes` on their MacBook and then on their Windows work machine and think "oh, nice, is this made by Apple? Microsoft?" That confusion is the highest compliment this phase can earn. Earn it.
 
 — end of document —

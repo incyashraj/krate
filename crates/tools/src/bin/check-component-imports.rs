@@ -28,18 +28,18 @@ fn main() -> Result<()> {
     if !failures.is_empty() {
         for report in &failures {
             eprintln!(
-                "- {} imports non-Layer36 host APIs: {}",
+                "- {} imports non-Krate host APIs: {}",
                 report.path.display(),
                 report.bad_imports.join(", ")
             );
         }
         bail!(
-            "Layer36 component import check failed for {} component(s)",
+            "Krate component import check failed for {} component(s)",
             failures.len()
         );
     }
 
-    println!("Layer36 component import check passed");
+    println!("Krate component import check passed");
     for report in reports {
         println!(
             "- {}: {} imports",
@@ -63,7 +63,7 @@ fn check_component_imports(path: &Path) -> Result<ImportReport> {
 
     let bad_imports = imports
         .iter()
-        .filter(|import| !is_layer36_import(import))
+        .filter(|import| !is_krate_import(import))
         .cloned()
         .collect::<Vec<_>>();
 
@@ -88,18 +88,18 @@ fn component_imports(bytes: &[u8]) -> Result<BTreeSet<String>> {
     Ok(imports)
 }
 
-fn is_layer36_import(import: &str) -> bool {
-    import.starts_with("layer36:")
+fn is_krate_import(import: &str) -> bool {
+    import.starts_with("krate:")
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_layer36_import;
+    use super::is_krate_import;
 
     #[test]
-    fn import_prefix_check_allows_only_layer36_names() {
-        assert!(is_layer36_import("layer36:io/stdio@0.1.0"));
-        assert!(!is_layer36_import("wasi:cli/environment@0.2.3"));
-        assert!(!is_layer36_import("example:host/api@0.1.0"));
+    fn import_prefix_check_allows_only_krate_names() {
+        assert!(is_krate_import("krate:io/stdio@0.1.0"));
+        assert!(!is_krate_import("wasi:cli/environment@0.2.3"));
+        assert!(!is_krate_import("example:host/api@0.1.0"));
     }
 }

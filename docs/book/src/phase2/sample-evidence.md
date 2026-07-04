@@ -5,9 +5,9 @@ This page explains how to record Phase 2 sample evidence.
 The goal is simple: run the same three Rust sample apps on each desktop host and
 compare the stdout hashes.
 
-- `layer36-clock`
-- `layer36-cat`
-- `layer36-curl`
+- `krate-clock`
+- `krate-cat`
+- `krate-curl`
 
 If Linux, macOS, and Windows produce the same stdout for these fixed fixtures,
 we have much better evidence that the UAPI behaves the same across hosts.
@@ -57,9 +57,9 @@ scripts/compare-phase2-sample-evidence.sh \
 The recorder builds the local CLI and the three Rust sample components. Then it
 runs:
 
-1. `layer36-clock` with fixed time, locale, and timezone
-2. `layer36-cat` against two small fixture files
-3. `layer36-curl` against a local HTTP fixture server
+1. `krate-clock` with fixed time, locale, and timezone
+2. `krate-cat` against two small fixture files
+3. `krate-curl` against a local HTTP fixture server
 
 The output file records:
 

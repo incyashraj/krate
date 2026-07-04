@@ -52,7 +52,7 @@ This matches the current state of Phase 2: the runtime and UAPI shape are
 strong, while formal exit still needs proof from more than one machine and one
 outside walkthrough. Go now has an explicit Phase 2 decision: it stays tested,
 but runtime parity is experimental until its compiled components import only
-`layer36:*`.
+`krate:*`.
 
 ## When To Run It
 

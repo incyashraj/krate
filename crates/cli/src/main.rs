@@ -5,12 +5,12 @@ use std::process::{Command as ProcessCommand, ExitCode};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
-use layer36_manifest::{
+use krate_manifest::{
     supported_capability_specs, App, AppWorld, Capability, CapabilityRequest, Manifest,
     PHASE2_CLI_WORLD,
 };
-use layer36_policy::{resolve_session_policy, SessionPolicy};
-use layer36_runtime::{
+use krate_policy::{resolve_session_policy, SessionPolicy};
+use krate_runtime::{
     Config, RunOutcome, Runtime, RuntimeError, DEFAULT_HTTP_TIMEOUT_MILLIS,
     DEFAULT_MAX_HTTP_RESPONSE_BYTES,
 };
@@ -22,9 +22,9 @@ const PHASE3_GUI_UNIMPLEMENTED_EXIT: u8 = 6;
 
 #[derive(Debug, Parser)]
 #[command(
-    name = "layer36",
+    name = "krate",
     version,
-    about = "Layer36: write once, run on everything."
+    about = "Krate: write once, run on everything."
 )]
 struct Cli {
     #[command(subcommand)]
@@ -33,7 +33,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Run a WebAssembly component through the Layer36 runtime.
+    /// Run a WebAssembly component through the Krate runtime.
     Run {
         /// Path to the .wasm component.
         file: PathBuf,
@@ -58,7 +58,7 @@ enum Command {
         #[arg(long, default_value = ".")]
         sandbox_root: PathBuf,
 
-        /// Path to a Phase 2 manifest.toml. If omitted, Layer36 checks next to the .wasm file.
+        /// Path to a Phase 2 manifest.toml. If omitted, Krate checks next to the .wasm file.
         #[arg(long)]
         manifest: Option<PathBuf>,
 
@@ -80,7 +80,7 @@ enum Command {
         native_window: bool,
 
         /// Print one machine-readable JSON object describing the run instead
-        /// of streaming the app's stdout. Schema: layer36.run.v1.
+        /// of streaming the app's stdout. Schema: krate.run.v1.
         #[arg(long)]
         json: bool,
 
@@ -112,7 +112,7 @@ enum Command {
         #[arg(long, hide = true)]
         test_timezone: Option<String>,
 
-        /// Arguments passed to the Layer36 app. Put them after `--`.
+        /// Arguments passed to the Krate app. Put them after `--`.
         #[arg(last = true, value_name = "ARG")]
         app_args: Vec<String>,
     },
@@ -200,7 +200,7 @@ enum GrantLogFormat {
 fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env("LAYER36_LOG")
+            tracing_subscriber::EnvFilter::try_from_env("KRATE_LOG")
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn")),
         )
         .without_time()
@@ -415,9 +415,9 @@ fn run_component(request: RunRequest) -> Result<u8> {
         },
         sandbox_root: request.sandbox_root,
         phase3_ui_mode: if request.native_window {
-            layer36_runtime::phase3_ui::Phase3HostUiMode::NativePrototype
+            krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype
         } else {
-            layer36_runtime::phase3_ui::Phase3HostUiMode::HeadlessDraft
+            krate_runtime::phase3_ui::Phase3HostUiMode::HeadlessDraft
         },
     };
     let runtime = Runtime::new(&config)?;
@@ -471,7 +471,7 @@ fn run_component(request: RunRequest) -> Result<u8> {
     }
 }
 
-/// Exit portion of the `layer36 run --json` payload (schema layer36.run.v1).
+/// Exit portion of the `krate run --json` payload (schema krate.run.v1).
 struct RunJsonExit {
     code: Option<i32>,
     class: &'static str,
@@ -513,7 +513,7 @@ impl RunJsonExit {
     }
 }
 
-/// Print the layer36.run.v1 JSON object describing one run.
+/// Print the krate.run.v1 JSON object describing one run.
 fn print_run_json(
     manifest: Option<&Manifest>,
     policy: &SessionPolicy,
@@ -532,7 +532,7 @@ fn print_run_json(
     let granted: Vec<String> = policy.grants().iter().map(|cap| cap.to_string()).collect();
 
     let payload = serde_json::json!({
-        "schema": "layer36.run.v1",
+        "schema": "krate.run.v1",
         "app": app,
         "capabilities": {
             "granted": granted,
@@ -721,7 +721,7 @@ fn write_grant_log(
     if format == GrantLogFormat::Jsonl {
         let record = GrantLogRecord {
             format_version: 1,
-            event: "layer36.grants",
+            event: "krate.grants",
             wasm: wasm_file.display().to_string(),
             app: manifest.map(RunCapsApp::from_manifest),
             capabilities: policy.grants().iter().map(ToString::to_string).collect(),
@@ -731,7 +731,7 @@ fn write_grant_log(
         return Ok(());
     }
 
-    writeln!(file, "Layer36 grant log")?;
+    writeln!(file, "Krate grant log")?;
     writeln!(file, "wasm             {}", wasm_file.display())?;
     if let Some(manifest) = manifest {
         writeln!(file, "app id           {}", manifest.app.id)?;
@@ -806,14 +806,14 @@ fn manifest_entry_matches(file: &Path, loaded: &LoadedManifest) -> Result<bool> 
 }
 
 fn print_version() {
-    println!("layer36   {}", env!("CARGO_PKG_VERSION"));
+    println!("krate   {}", env!("CARGO_PKG_VERSION"));
     println!("wasmtime  43.0.2");
-    println!("rustc     {}", env!("LAYER36_RUSTC_VERSION"));
-    println!("commit    {}", env!("LAYER36_GIT_SHA"));
+    println!("rustc     {}", env!("KRATE_RUSTC_VERSION"));
+    println!("commit    {}", env!("KRATE_GIT_SHA"));
 }
 
 fn doctor() -> Result<u8> {
-    println!("Layer36 doctor");
+    println!("Krate doctor");
     println!("--------------");
     println!("Core tools");
     print_tool_status("cargo-component", &["--version"]);
@@ -828,7 +828,7 @@ fn doctor() -> Result<u8> {
     print_tool_status("npm", &["--version"]);
     print_jco_status();
     println!();
-    println!("state dir       {}", layer36_home().display());
+    println!("state dir       {}", krate_home().display());
     Ok(0)
 }
 
@@ -998,7 +998,7 @@ fn init_manifest(request: ManifestInitRequest) -> Result<u8> {
                 required: true,
             })
         })
-        .collect::<layer36_manifest::Result<Vec<_>>>()?;
+        .collect::<krate_manifest::Result<Vec<_>>>()?;
 
     let manifest = Manifest {
         app: App {
@@ -1045,7 +1045,7 @@ fn print_manifest_capabilities(format: OutputFormat) -> Result<u8> {
         return Ok(0);
     }
 
-    println!("Layer36 capabilities");
+    println!("Krate capabilities");
     println!("capability                         default");
     for spec in supported_capability_specs() {
         println!(
@@ -1175,10 +1175,10 @@ fn cargo_home() -> Option<PathBuf> {
     home_dir().map(|home| home.join(".cargo"))
 }
 
-fn layer36_home() -> PathBuf {
+fn krate_home() -> PathBuf {
     home_dir()
-        .map(|home| home.join(".layer36"))
-        .unwrap_or_else(|| PathBuf::from(".layer36"))
+        .map(|home| home.join(".krate"))
+        .unwrap_or_else(|| PathBuf::from(".krate"))
 }
 
 fn home_dir() -> Option<PathBuf> {

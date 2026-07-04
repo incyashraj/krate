@@ -1,0 +1,11 @@
+[app]
+id = "dev.krate.hello-gui"
+name = "krate-hello-gui"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_hello_gui.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the hello-gui demo window"
+required = true

@@ -2,8 +2,8 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-MODE="${LAYER36_GO_VARIANT_SMOKE_MODE:-optional}"
-OUT_DIR="${LAYER36_GO_VARIANT_SMOKE_OUT_DIR:-$ROOT/test/integration/language-variants-go-smoke}"
+MODE="${KRATE_GO_VARIANT_SMOKE_MODE:-optional}"
+OUT_DIR="${KRATE_GO_VARIANT_SMOKE_OUT_DIR:-$ROOT/test/integration/language-variants-go-smoke}"
 if [ -d "$HOME/.cargo/bin" ]; then
   PATH="$HOME/.cargo/bin:$PATH"
   export PATH
@@ -13,7 +13,7 @@ case "$MODE" in
   optional|required)
     ;;
   *)
-    echo "Go variant smoke error: unknown LAYER36_GO_VARIANT_SMOKE_MODE='$MODE'." >&2
+    echo "Go variant smoke error: unknown KRATE_GO_VARIANT_SMOKE_MODE='$MODE'." >&2
     echo "Allowed values: optional, required" >&2
     exit 1
     ;;
@@ -54,11 +54,11 @@ build_one() {
 }
 
 cd "$ROOT/packages/sdk-go"
-build_one "layer36_go_clock_wasip2" "./examples/layer36-clock"
-build_one "layer36_go_cat_wasip2" "./examples/layer36-cat"
-build_one "layer36_go_curl_wasip2" "./examples/layer36-curl"
+build_one "krate_go_clock_wasip2" "./examples/krate-clock"
+build_one "krate_go_cat_wasip2" "./examples/krate-cat"
+build_one "krate_go_curl_wasip2" "./examples/krate-curl"
 
 echo "Built Go variant smoke components:"
-echo "  $OUT_DIR/layer36_go_clock_wasip2.wasm"
-echo "  $OUT_DIR/layer36_go_cat_wasip2.wasm"
-echo "  $OUT_DIR/layer36_go_curl_wasip2.wasm"
+echo "  $OUT_DIR/krate_go_clock_wasip2.wasm"
+echo "  $OUT_DIR/krate_go_cat_wasip2.wasm"
+echo "  $OUT_DIR/krate_go_curl_wasip2.wasm"

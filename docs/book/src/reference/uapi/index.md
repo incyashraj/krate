@@ -1,31 +1,31 @@
 # UAPI Reference
 
-> Generated from `wit/layer36/phase2`. Do not edit this page by hand.
+> Generated from `wit/krate/phase2`. Do not edit this page by hand.
 
-Layer36 Phase 2 exposes the `cli` world from `layer36:app@0.1.0`.
+Krate Phase 2 exposes the `cli` world from `krate:app@0.1.0`.
 
 The current world imports these interfaces:
 
-- `layer36:io/types@0.1.0`
-- `layer36:io/streams@0.1.0`
-- `layer36:io/stdio@0.1.0`
-- `layer36:io/args@0.1.0`
-- `layer36:io/log@0.1.0`
-- `layer36:fs/types@0.1.0`
-- `layer36:fs/files@0.1.0`
-- `layer36:net/types@0.1.0`
-- `layer36:net/http-client@0.1.0`
-- `layer36:time/clock@0.1.0`
-- `layer36:time/sleep@0.1.0`
-- `layer36:locale/types@0.1.0`
-- `layer36:locale/info@0.1.0`
-- `layer36:locale/format@0.1.0`
+- `krate:io/types@0.1.0`
+- `krate:io/streams@0.1.0`
+- `krate:io/stdio@0.1.0`
+- `krate:io/args@0.1.0`
+- `krate:io/log@0.1.0`
+- `krate:fs/types@0.1.0`
+- `krate:fs/files@0.1.0`
+- `krate:net/types@0.1.0`
+- `krate:net/http-client@0.1.0`
+- `krate:time/clock@0.1.0`
+- `krate:time/sleep@0.1.0`
+- `krate:locale/types@0.1.0`
+- `krate:locale/info@0.1.0`
+- `krate:locale/format@0.1.0`
 
 The app exports:
 
 - `run() -> s32`
 
-## `layer36:fs/files@0.1.0`
+## `krate:fs/files@0.1.0`
 
 Filesystem entry points. All host file access should pass through these functions and resource methods.
 
@@ -45,8 +45,8 @@ Accepted capability strings for this module, generated from the runtime manifest
 ### Rust SDK Example
 
 ```rust
-let text = layer36::fs::read_to_string("notes.txt")?;
-layer36::io::stdio::println(&text)?;
+let text = krate::fs::read_to_string("notes.txt")?;
+krate::io::stdio::println(&text)?;
 ```
 
 ### Functions
@@ -54,7 +54,7 @@ layer36::io::stdio::println(&text)?;
 > Open a path and return a file resource.
 
 - `open(path: string, mode: open-mode) -> result<own<file>, fs-error>`
-  - Opens a host file through Layer36 and returns a `file` handle.
+  - Opens a host file through Krate and returns a `file` handle.
   - `read` needs `fs.read:PATH`; `write`, `append`, and `read-write` also need the matching write grant.
 > Read metadata for a path without opening it as a file resource.
 
@@ -122,7 +122,7 @@ layer36::io::stdio::println(&text)?;
   - The runtime rechecks the handle path before the adapter stat call.
 
 
-## `layer36:fs/types@0.1.0`
+## `krate:fs/types@0.1.0`
 
 Shared filesystem records, modes, and error shapes.
 
@@ -186,9 +186,9 @@ Shared filesystem records, modes, and error shapes.
 - `io`: `string`
 
 
-## `layer36:io/args@0.1.0`
+## `krate:io/args@0.1.0`
 
-Raw Layer36 app arguments. These are the arguments passed after `--` in `layer36 run`.
+Raw Krate app arguments. These are the arguments passed after `--` in `krate run`.
 
 ### Capability Notes
 
@@ -206,8 +206,8 @@ Accepted capability strings for this module, generated from the runtime manifest
 ### Rust SDK Example
 
 ```rust
-let raw = layer36::io::args::raw();
-let first = layer36::io::args::first_raw(&raw);
+let raw = krate::io::args::raw();
+let first = krate::io::args::first_raw(&raw);
 ```
 
 ### Functions
@@ -218,11 +218,11 @@ let first = layer36::io::args::first_raw(&raw);
 > expose friendlier argument helpers over this raw transport.
 
 - `raw() -> string`
-  - Returns the app arguments passed after `--` in `layer36 run`.
+  - Returns the app arguments passed after `--` in `krate run`.
   - Current encoding is newline-separated text, so SDK helpers should parse it for app code.
 
 
-## `layer36:io/log@0.1.0`
+## `krate:io/log@0.1.0`
 
 Structured app logs. Hosts can route these to native logs, developer consoles, or test captures.
 
@@ -260,7 +260,7 @@ Accepted capability strings for this module, generated from the runtime manifest
 - `value`: `string`
 
 
-## `layer36:io/stdio@0.1.0`
+## `krate:io/stdio@0.1.0`
 
 Standard input, output, and error streams for CLI-style apps.
 
@@ -279,8 +279,8 @@ Accepted capability strings for this module, generated from the runtime manifest
 ### Rust SDK Example
 
 ```rust
-layer36::io::stdio::println("Hello from Layer36")?;
-layer36::io::stdio::eprintln("debug line")?;
+krate::io::stdio::println("Hello from Krate")?;
+krate::io::stdio::eprintln("debug line")?;
 ```
 
 ### Functions
@@ -302,7 +302,7 @@ layer36::io::stdio::eprintln("debug line")?;
   - Use this for diagnostics and permission errors.
 
 
-## `layer36:io/streams@0.1.0`
+## `krate:io/streams@0.1.0`
 
 Byte streams used by stdio and other UAPI modules.
 
@@ -321,9 +321,9 @@ Accepted capability strings for this module, generated from the runtime manifest
 ### Rust SDK Example
 
 ```rust
-use layer36::io::streams::OutputStreamExt;
+use krate::io::streams::OutputStreamExt;
 
-let out = layer36::io::stdio::stdout();
+let out = krate::io::stdio::stdout();
 out.write_line("ok")?;
 out.flush()?;
 ```
@@ -370,7 +370,7 @@ out.flush()?;
   - Use it before exiting after important diagnostics or prompts.
 
 
-## `layer36:io/types@0.1.0`
+## `krate:io/types@0.1.0`
 
 Shared IO log and error types.
 
@@ -417,7 +417,7 @@ Shared IO log and error types.
 - `other`: `string`
 
 
-## `layer36:locale/format@0.1.0`
+## `krate:locale/format@0.1.0`
 
 Host-backed date and number formatting.
 
@@ -433,8 +433,8 @@ Accepted capability strings for this module, generated from the runtime manifest
 ### Rust SDK Example
 
 ```rust
-let locale = layer36::locale::current();
-let text = layer36::locale::format_number(42.0, layer36::locale::NumberStyle::Decimal, &locale);
+let locale = krate::locale::current();
+let text = krate::locale::format_number(42.0, krate::locale::NumberStyle::Decimal, &locale);
 ```
 
 ### Functions
@@ -451,7 +451,7 @@ let text = layer36::locale::format_number(42.0, layer36::locale::NumberStyle::De
   - Currency style is present in the shape, but richer currency-code handling remains future work.
 
 
-## `layer36:locale/info@0.1.0`
+## `krate:locale/info@0.1.0`
 
 The host user's current locale and timezone.
 
@@ -467,8 +467,8 @@ Accepted capability strings for this module, generated from the runtime manifest
 ### Rust SDK Example
 
 ```rust
-let locale = layer36::locale::current();
-let timezone = layer36::locale::timezone();
+let locale = krate::locale::current();
+let timezone = krate::locale::timezone();
 ```
 
 ### Functions
@@ -485,7 +485,7 @@ let timezone = layer36::locale::timezone();
   - Expected form is an IANA name such as `Asia/Singapore` when the host can provide one.
 
 
-## `layer36:locale/types@0.1.0`
+## `krate:locale/types@0.1.0`
 
 Locale and formatting type definitions.
 
@@ -531,7 +531,7 @@ Locale and formatting type definitions.
 - `currency`
 
 
-## `layer36:net/http-client@0.1.0`
+## `krate:net/http-client@0.1.0`
 
 HTTP client calls. Phase 2 starts with simple request and response bodies.
 
@@ -547,8 +547,8 @@ Accepted capability strings for this module, generated from the runtime manifest
 ### Rust SDK Example
 
 ```rust
-let body = layer36::net::get_text("http://127.0.0.1:8080/data.txt")?;
-layer36::io::stdio::println(&body)?;
+let body = krate::net::get_text("http://127.0.0.1:8080/data.txt")?;
+krate::io::stdio::println(&body)?;
 ```
 
 ### Functions
@@ -566,7 +566,7 @@ layer36::io::stdio::println(&body)?;
   - Timeouts, oversized bodies, malformed responses, and missing grants are typed as `net-error` cases.
 
 
-## `layer36:net/types@0.1.0`
+## `krate:net/types@0.1.0`
 
 Shared network request, response, and error types.
 
@@ -676,7 +676,7 @@ Shared network request, response, and error types.
 - `other`: `string`
 
 
-## `layer36:time/clock@0.1.0`
+## `krate:time/clock@0.1.0`
 
 Wall-clock and monotonic clock reads.
 
@@ -693,8 +693,8 @@ Accepted capability strings for this module, generated from the runtime manifest
 ### Rust SDK Example
 
 ```rust
-let now = layer36::time::now_millis();
-let tick = layer36::time::monotonic_nanos();
+let now = krate::time::now_millis();
+let tick = krate::time::monotonic_nanos();
 ```
 
 ### Functions
@@ -712,7 +712,7 @@ let tick = layer36::time::monotonic_nanos();
   - Use this for durations instead of wall-clock time.
 
 
-## `layer36:time/sleep@0.1.0`
+## `krate:time/sleep@0.1.0`
 
 Blocking sleep for CLI-style components.
 
@@ -729,7 +729,7 @@ Accepted capability strings for this module, generated from the runtime manifest
 ### Rust SDK Example
 
 ```rust
-layer36::time::sleep_millis(100);
+krate::time::sleep_millis(100);
 ```
 
 ### Functions

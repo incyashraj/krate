@@ -1,20 +1,20 @@
 # Embedding and Machine-Readable Runs
 
-Layer36's wedge is safe execution of software that programs — including AI
+Krate's wedge is safe execution of software that programs — including AI
 agents — produce and run on a user's behalf. That needs two surfaces beyond
 the interactive CLI: a library API other programs can embed, and a
-machine-readable form of `layer36 run`.
+machine-readable form of `krate run`.
 
 ## The embedding API
 
-`layer36_runtime::embed` runs a component inside the capability sandbox with
+`krate_runtime::embed` runs a component inside the capability sandbox with
 no terminal: grants are supplied programmatically through `SessionPolicy`,
 nothing prompts, and the app's stdout comes back captured next to a
 classified exit.
 
 ```rust,no_run
-use layer36_policy::SessionPolicy;
-use layer36_runtime::{embed, Config};
+use krate_policy::SessionPolicy;
+use krate_runtime::{embed, Config};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let component = std::fs::read("app.wasm")?;
@@ -42,7 +42,7 @@ explicit capability strings, and `SessionPolicy::allow_all_declared` grants
 everything a manifest declares — the embedding caller owns that decision the
 way a human owns the terminal prompt.
 
-## `layer36 run --json` (schema `layer36.run.v1`)
+## `krate run --json` (schema `krate.run.v1`)
 
 With `--json`, the CLI prints exactly one JSON object on stdout describing
 the run, and the app's own stdout is captured into that object instead of
@@ -51,12 +51,12 @@ scripts keep working.
 
 ```json
 {
-  "schema": "layer36.run.v1",
+  "schema": "krate.run.v1",
   "app": {
-    "id": "dev.layer36.clock",
-    "name": "layer36-clock",
+    "id": "dev.krate.clock",
+    "name": "krate-clock",
     "version": "0.1.0-dev",
-    "world": "layer36:app/cli@0.1.0"
+    "world": "krate:app/cli@0.1.0"
   },
   "capabilities": {
     "granted": ["io.stdout", "time.clock"],
@@ -68,7 +68,7 @@ scripts keep working.
     "message": null
   },
   "duration_ms": 87,
-  "stdout": "app=layer36-clock\n..."
+  "stdout": "app=krate-clock\n..."
 }
 ```
 
@@ -81,7 +81,7 @@ Field notes:
   missing and the run was refused before the component started; the process
   exits `5` in that case, matching the interactive flow.
 - `exit.class` is one of `success`, `permission-denied` (app exit code 5 by
-  Layer36 convention, or a refusal before the run), `app-error`,
+  Krate convention, or a refusal before the run), `app-error`,
   `limit-exceeded`, `invalid-component`, or `trap`. `exit.code` is `null`
   when the runtime stopped the component (`limit-exceeded`,
   `invalid-component`, `trap`).
@@ -94,26 +94,26 @@ Done now:
 
 - `Runtime::run_bytes_captured` / `run_file_captured` capture app stdout for
   embedding callers.
-- `layer36_runtime::embed::run_component` with `EmbedOutcome` and
+- `krate_runtime::embed::run_component` with `EmbedOutcome` and
   `EmbedExitClass`, doc-tested.
-- `layer36 run --json` emitting `layer36.run.v1`, covered by CLI integration
+- `krate run --json` emitting `krate.run.v1`, covered by CLI integration
   tests for the success, denied-before-run, and invalid-component paths.
 
 ## The MCP server
 
-`layer36-mcp-server` (a `crates/tools` binary) exposes one MCP tool,
+`krate-mcp-server` (a `crates/tools` binary) exposes one MCP tool,
 `run_component`, over newline-delimited JSON-RPC on stdio. Any MCP-capable
 agent framework can execute components inside the sandbox without linking
 Rust:
 
 ```bash
-cargo build -p layer36-tools --bin layer36-mcp-server
-claude mcp add layer36 -- target/debug/layer36-mcp-server
+cargo build -p krate-tools --bin krate-mcp-server
+claude mcp add krate -- target/debug/krate-mcp-server
 ```
 
 The tool takes `component_path`, optional `manifest_path`, `grants`,
 `auto_grant`, `app_args`, and `sandbox_root`, and returns the
-`layer36.run.v1` report as the tool result (with `isError` set for anything
+`krate.run.v1` report as the tool result (with `isError` set for anything
 but `success`). Denials surface as data: calling without grants returns
 `permission-denied` plus the exact missing capabilities, and the same call
 with `auto_grant` succeeds — the agent observes the capability wall

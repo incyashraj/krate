@@ -4,6 +4,6 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
     if let Ok(input) = std::str::from_utf8(data) {
-        let _ = layer36_manifest::Manifest::parse(input);
+        let _ = krate_manifest::Manifest::parse(input);
     }
 });

@@ -1,5 +1,5 @@
 [package]
-name = "layer36-runtime"
+name = "krate-runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,23 +12,23 @@ default = ["phase2-bindings"]
 phase2-bindings = []
 
 [dependencies]
-layer36-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
-layer36-layout = { path = "../layout", version = "0.1.0-dev" }
-layer36-manifest = { path = "../manifest", version = "0.1.0-dev" }
-layer36-policy = { path = "../policy", version = "0.1.0-dev" }
+krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
+krate-layout = { path = "../layout", version = "0.1.0-dev" }
+krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
+krate-policy = { path = "../policy", version = "0.1.0-dev" }
 libc.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 wasmtime.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-layer36-adapter-linux = { path = "../adapter-linux", version = "0.1.0-dev" }
+krate-adapter-linux = { path = "../adapter-linux", version = "0.1.0-dev" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-layer36-adapter-macos = { path = "../adapter-macos", version = "0.1.0-dev" }
+krate-adapter-macos = { path = "../adapter-macos", version = "0.1.0-dev" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-layer36-adapter-windows = { path = "../adapter-windows", version = "0.1.0-dev" }
+krate-adapter-windows = { path = "../adapter-windows", version = "0.1.0-dev" }
 
 [dev-dependencies]
 criterion.workspace = true

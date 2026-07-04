@@ -31,7 +31,7 @@ fn main() -> Result<()> {
 
 #[derive(Debug, Clone)]
 struct Config {
-    layer36: PathBuf,
+    krate: PathBuf,
     clock: PathBuf,
     cat: PathBuf,
     curl: PathBuf,
@@ -40,7 +40,7 @@ struct Config {
 
 impl Config {
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Self> {
-        let mut layer36 = None;
+        let mut krate = None;
         let mut clock = None;
         let mut cat = None;
         let mut curl = None;
@@ -49,14 +49,14 @@ impl Config {
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "--layer36" => layer36 = Some(next_path(&mut args, "--layer36")?),
+                "--krate" => krate = Some(next_path(&mut args, "--krate")?),
                 "--clock" => clock = Some(next_path(&mut args, "--clock")?),
                 "--cat" => cat = Some(next_path(&mut args, "--cat")?),
                 "--curl" => curl = Some(next_path(&mut args, "--curl")?),
                 "--output" => output = Some(next_path(&mut args, "--output")?),
                 "--help" | "-h" => {
                     println!(
-                        "Usage: record-phase2-sample-evidence --layer36 <path> --clock <wasm> --cat <wasm> --curl <wasm> [--output <md>]"
+                        "Usage: record-phase2-sample-evidence --krate <path> --clock <wasm> --cat <wasm> --curl <wasm> [--output <md>]"
                     );
                     std::process::exit(0);
                 }
@@ -65,7 +65,7 @@ impl Config {
         }
 
         let config = Self {
-            layer36: layer36.context("--layer36 is required")?,
+            krate: krate.context("--krate is required")?,
             clock: clock.context("--clock is required")?,
             cat: cat.context("--cat is required")?,
             curl: curl.context("--curl is required")?,
@@ -77,7 +77,7 @@ impl Config {
 
     fn validate_paths(&self) -> Result<()> {
         for (name, path) in [
-            ("layer36", &self.layer36),
+            ("krate", &self.krate),
             ("clock", &self.clock),
             ("cat", &self.cat),
             ("curl", &self.curl),
@@ -177,7 +177,7 @@ impl EvidenceReport {
 
         out.push_str("## Reading The Result\n\n");
         out.push_str(
-            "For Phase 2 exit, Linux, macOS, and Windows runs should show the same stdout hashes for `layer36-clock`, `layer36-cat`, and `layer36-curl`.\n",
+            "For Phase 2 exit, Linux, macOS, and Windows runs should show the same stdout hashes for `krate-clock`, `krate-cat`, and `krate-curl`.\n",
         );
         out
     }
@@ -218,83 +218,83 @@ fn run_clock(config: &Config) -> Result<SampleRow> {
         "--test-timezone",
         "UTC",
     ];
-    let output = Command::new(&config.layer36)
+    let output = Command::new(&config.krate)
         .args(args)
         .arg(&config.clock)
         .output()
-        .context("run layer36-clock evidence")?;
+        .context("run krate-clock evidence")?;
 
     row_from_output(
-        "layer36-clock",
-        command_text(&config.layer36, args, [&config.clock]),
+        "krate-clock",
+        command_text(&config.krate, args, [&config.clock]),
         output,
-        "app=layer36-clock\ntimezone=UTC\nlocale=en-US\ndate=1970-01-15 06:56\n",
+        "app=krate-clock\ntimezone=UTC\nlocale=en-US\ndate=1970-01-15 06:56\n",
     )
 }
 
 fn run_cat(config: &Config) -> Result<SampleRow> {
-    let temp = EvidenceTempDir::new("layer36-phase2-cat")?;
+    let temp = EvidenceTempDir::new("krate-phase2-cat")?;
     let fixtures = temp.path.join("fixtures");
     fs::create_dir(&fixtures).with_context(|| format!("create {}", fixtures.display()))?;
-    fs::write(fixtures.join("a.txt"), "hello from Layer36 A\n")?;
-    fs::write(fixtures.join("b.txt"), "hello from Layer36 B\n")?;
+    fs::write(fixtures.join("a.txt"), "hello from Krate A\n")?;
+    fs::write(fixtures.join("b.txt"), "hello from Krate B\n")?;
 
     let args = ["run", "--grant", "fs.read:fixtures/**"];
     let tail = ["--", "fixtures/a.txt", "fixtures/b.txt"];
-    let output = Command::new(&config.layer36)
+    let output = Command::new(&config.krate)
         .current_dir(&temp.path)
         .args(args)
         .arg(&config.cat)
         .args(tail)
         .output()
-        .context("run layer36-cat evidence")?;
+        .context("run krate-cat evidence")?;
 
-    let command = command_text_with_cwd(&config.layer36, &temp.path, args, [&config.cat], tail);
+    let command = command_text_with_cwd(&config.krate, &temp.path, args, [&config.cat], tail);
     row_from_output(
-        "layer36-cat",
+        "krate-cat",
         command,
         output,
-        "hello from Layer36 A\nhello from Layer36 B\n",
+        "hello from Krate A\nhello from Krate B\n",
     )
 }
 
 fn run_curl(config: &Config) -> Result<SampleRow> {
-    let body = b"hello from Layer36 curl\n";
+    let body = b"hello from Krate curl\n";
     let Some((addr, handle)) = spawn_http_fixture(body)? else {
         return Ok(blocked_row(
-            "layer36-curl",
+            "krate-curl",
             "localhost HTTP fixture bind is blocked in this environment",
         ));
     };
     let url = format!("http://{addr}/fixture.txt");
     let grant = format!("net.connect:{addr}");
 
-    let output = Command::new(&config.layer36)
+    let output = Command::new(&config.krate)
         .args(["run", "--grant", &grant])
         .arg(&config.curl)
         .args(["--", &url])
         .output()
-        .context("run layer36-curl evidence")?;
+        .context("run krate-curl evidence")?;
 
     let accepted = handle
         .join()
         .map_err(|_| anyhow::anyhow!("HTTP fixture thread panicked"))?;
     if !accepted {
         return Ok(blocked_row(
-            "layer36-curl",
+            "krate-curl",
             "localhost HTTP fixture was not reached before timeout",
         ));
     }
 
     row_from_output(
-        "layer36-curl",
+        "krate-curl",
         command_text(
-            &config.layer36,
+            &config.krate,
             ["run", "--grant", grant.as_str()],
             [&config.curl],
         ) + &format!(" -- {url}"),
         output,
-        "hello from Layer36 curl\n",
+        "hello from Krate curl\n",
     )
 }
 
@@ -503,9 +503,9 @@ mod tests {
             host_os: "linux".to_string(),
             host_arch: "x86_64".to_string(),
             rows: vec![SampleRow {
-                name: "layer36-clock".to_string(),
+                name: "krate-clock".to_string(),
                 status: "passed".to_string(),
-                command: "layer36 run clock.wasm".to_string(),
+                command: "krate run clock.wasm".to_string(),
                 exit_code: Some(0),
                 stdout: "ok\n".to_string(),
                 stderr: String::new(),
@@ -519,6 +519,6 @@ mod tests {
 
         assert!(markdown.contains("# Phase 2 Sample Evidence Run"));
         assert!(markdown.contains("For Phase 2 exit"));
-        assert!(markdown.contains("layer36-clock"));
+        assert!(markdown.contains("krate-clock"));
     }
 }

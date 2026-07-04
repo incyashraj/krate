@@ -18,13 +18,13 @@ pub use real::*;
 pub use stub::*;
 
 #[cfg(target_os = "windows")]
-use layer36_adapter_common::ui::WidgetKind;
-use layer36_adapter_common::ui::{
+use krate_adapter_common::ui::WidgetKind;
+use krate_adapter_common::ui::{
     RawPointerSample, UiAdapterError, WidgetPlacement, WindowId, WindowSize,
     WinitWindowNativeEvent, WinitWindowSnapshot,
 };
 
-/// Native events paired with the Layer36 window they belong to.
+/// Native events paired with the Krate window they belong to.
 pub type CollectedNativeEvents = Vec<(WindowId, WinitWindowNativeEvent)>;
 
 #[cfg(target_os = "windows")]
@@ -74,13 +74,13 @@ mod real {
     }
 
     struct PendingCreate {
-        layer36: WindowId,
+        krate: WindowId,
         title: String,
         size: WindowSize,
     }
 
     struct TrackedWindow {
-        layer36: WindowId,
+        krate: WindowId,
         window: Rc<Window>,
         surface: Option<DrawSurface>,
         placements: Vec<WidgetPlacement>,
@@ -100,7 +100,7 @@ mod real {
                     self.windows.insert(
                         window.id(),
                         TrackedWindow {
-                            layer36: pending.layer36,
+                            krate: pending.krate,
                             window: Rc::new(window),
                             surface: None,
                             placements: Vec::new(),
@@ -110,8 +110,8 @@ mod real {
             }
         }
 
-        fn layer36_id(&self, native: NativeWindowId) -> Option<WindowId> {
-            self.windows.get(&native).map(|tracked| tracked.layer36)
+        fn krate_id(&self, native: NativeWindowId) -> Option<WindowId> {
+            self.windows.get(&native).map(|tracked| tracked.krate)
         }
     }
 
@@ -130,7 +130,7 @@ mod real {
             native: NativeWindowId,
             event: WindowEvent,
         ) {
-            let Some(layer36) = self.layer36_id(native) else {
+            let Some(krate) = self.krate_id(native) else {
                 return;
             };
             let mapped = match event {
@@ -164,7 +164,7 @@ mod real {
                 } => {
                     if let Some((x, y)) = self.cursor.get(&native).copied() {
                         self.pointer_samples.push(RawPointerSample {
-                            window: layer36,
+                            window: krate,
                             x,
                             y,
                             pressed: state == winit::event::ElementState::Pressed,
@@ -175,7 +175,7 @@ mod real {
                 _ => None,
             };
             if let Some(event) = mapped {
-                self.events.push((layer36, event));
+                self.events.push((krate, event));
             }
         }
     }
@@ -272,7 +272,7 @@ mod real {
     /// through a CPU framebuffer. Labels and real styling arrive with the
     /// vello renderer; the placement contract stays the same.
     pub fn set_drawn_placements(
-        layer36: WindowId,
+        krate: WindowId,
         placements: &[WidgetPlacement],
     ) -> Result<usize, UiAdapterError> {
         if !host_initialized() {
@@ -281,7 +281,7 @@ mod real {
         with_host(|host| {
             let mut drawn = 0;
             for tracked in host.app.windows.values_mut() {
-                if tracked.layer36 == layer36 {
+                if tracked.krate == krate {
                     tracked.placements = placements
                         .iter()
                         .filter(|placement| {
@@ -326,7 +326,7 @@ mod real {
                 // Tests run on worker threads, where winit refuses to build
                 // an event loop by default. The opt-in keeps production on
                 // the safe main-thread default.
-                if std::env::var("LAYER36_WINIT_ANY_THREAD").as_deref() == Ok("1") {
+                if std::env::var("KRATE_WINIT_ANY_THREAD").as_deref() == Ok("1") {
                     use winit::platform::windows::EventLoopBuilderExtWindows;
                     builder.with_any_thread(true);
                 }
@@ -347,17 +347,17 @@ mod real {
         let _status = event_loop.pump_app_events(Some(Duration::ZERO), app);
     }
 
-    /// Create a real (initially hidden) winit window for a Layer36 window id.
+    /// Create a real (initially hidden) winit window for a Krate window id.
     ///
     /// Returns the opaque native handle value and the first native snapshot.
     pub fn create_native_window(
-        layer36: WindowId,
+        krate: WindowId,
         title: &str,
         size: WindowSize,
     ) -> Result<(u64, WinitWindowSnapshot), UiAdapterError> {
         with_host(|host| {
             host.app.pending_creates.push(PendingCreate {
-                layer36,
+                krate,
                 title: title.to_string(),
                 size,
             });
@@ -367,7 +367,7 @@ mod real {
                 .app
                 .windows
                 .values()
-                .find(|tracked| tracked.layer36 == layer36)
+                .find(|tracked| tracked.krate == krate)
                 .ok_or_else(|| {
                     UiAdapterError::Unsupported(
                         "winit did not create the requested window".to_string(),
@@ -377,7 +377,7 @@ mod real {
             let raw_handle = u64::from(tracked.window.id());
             let inner = tracked.window.inner_size();
             let snapshot = WinitWindowSnapshot::new(
-                layer36,
+                krate,
                 WindowSize::new(inner.width.max(1), inner.height.max(1))?,
                 false,
                 tracked.window.has_focus(),
@@ -388,7 +388,7 @@ mod real {
     }
 
     fn with_tracked<T>(
-        layer36: WindowId,
+        krate: WindowId,
         f: impl FnOnce(&TrackedWindow) -> T,
     ) -> Result<Option<T>, UiAdapterError> {
         if !host_initialized() {
@@ -399,30 +399,30 @@ mod real {
                 .app
                 .windows
                 .values()
-                .find(|tracked| tracked.layer36 == layer36)
+                .find(|tracked| tracked.krate == krate)
                 .map(f))
         })
     }
 
     /// Make a created native window visible.
-    pub fn show_native_window(layer36: WindowId) -> Result<bool, UiAdapterError> {
-        with_tracked(layer36, |tracked| tracked.window.set_visible(true))
+    pub fn show_native_window(krate: WindowId) -> Result<bool, UiAdapterError> {
+        with_tracked(krate, |tracked| tracked.window.set_visible(true))
             .map(|shown| shown.is_some())
     }
 
     /// Update the native window title.
-    pub fn set_native_window_title(layer36: WindowId, title: &str) -> Result<bool, UiAdapterError> {
-        with_tracked(layer36, |tracked| tracked.window.set_title(title)).map(|set| set.is_some())
+    pub fn set_native_window_title(krate: WindowId, title: &str) -> Result<bool, UiAdapterError> {
+        with_tracked(krate, |tracked| tracked.window.set_title(title)).map(|set| set.is_some())
     }
 
     /// Ask the native window for a redraw.
-    pub fn request_native_redraw(layer36: WindowId) -> Result<bool, UiAdapterError> {
-        with_tracked(layer36, |tracked| tracked.window.request_redraw())
+    pub fn request_native_redraw(krate: WindowId) -> Result<bool, UiAdapterError> {
+        with_tracked(krate, |tracked| tracked.window.request_redraw())
             .map(|requested| requested.is_some())
     }
 
-    /// Drop the native window for a Layer36 window id.
-    pub fn close_native_window(layer36: WindowId) -> Result<bool, UiAdapterError> {
+    /// Drop the native window for a Krate window id.
+    pub fn close_native_window(krate: WindowId) -> Result<bool, UiAdapterError> {
         if !host_initialized() {
             return Ok(false);
         }
@@ -431,7 +431,7 @@ mod real {
                 .app
                 .windows
                 .iter()
-                .filter(|(_, tracked)| tracked.layer36 == layer36)
+                .filter(|(_, tracked)| tracked.krate == krate)
                 .map(|(native, _)| *native)
                 .collect();
             for id in &native {
@@ -467,8 +467,8 @@ mod real {
     }
 
     /// Whether a native window is currently tracked for the id.
-    pub fn has_native_window(layer36: WindowId) -> Result<bool, UiAdapterError> {
-        with_tracked(layer36, |_| ()).map(|found| found.is_some())
+    pub fn has_native_window(krate: WindowId) -> Result<bool, UiAdapterError> {
+        with_tracked(krate, |_| ()).map(|found| found.is_some())
     }
 }
 
@@ -484,7 +484,7 @@ mod stub {
 
     /// Winit windows are only available in Windows builds.
     pub fn create_native_window(
-        _layer36: WindowId,
+        _krate: WindowId,
         _title: &str,
         _size: WindowSize,
     ) -> Result<(u64, WinitWindowSnapshot), UiAdapterError> {
@@ -492,25 +492,25 @@ mod stub {
     }
 
     /// Winit windows are only available in Windows builds.
-    pub fn show_native_window(_layer36: WindowId) -> Result<bool, UiAdapterError> {
+    pub fn show_native_window(_krate: WindowId) -> Result<bool, UiAdapterError> {
         unsupported()
     }
 
     /// Winit windows are only available in Windows builds.
     pub fn set_native_window_title(
-        _layer36: WindowId,
+        _krate: WindowId,
         _title: &str,
     ) -> Result<bool, UiAdapterError> {
         unsupported()
     }
 
     /// Winit windows are only available in Windows builds.
-    pub fn request_native_redraw(_layer36: WindowId) -> Result<bool, UiAdapterError> {
+    pub fn request_native_redraw(_krate: WindowId) -> Result<bool, UiAdapterError> {
         unsupported()
     }
 
     /// Winit windows are only available in Windows builds.
-    pub fn close_native_window(_layer36: WindowId) -> Result<bool, UiAdapterError> {
+    pub fn close_native_window(_krate: WindowId) -> Result<bool, UiAdapterError> {
         unsupported()
     }
 
@@ -520,13 +520,13 @@ mod stub {
     }
 
     /// Winit windows are only available in Windows builds.
-    pub fn has_native_window(_layer36: WindowId) -> Result<bool, UiAdapterError> {
+    pub fn has_native_window(_krate: WindowId) -> Result<bool, UiAdapterError> {
         unsupported()
     }
 
     /// Winit windows are only available in Windows builds.
     pub fn set_drawn_placements(
-        _layer36: WindowId,
+        _krate: WindowId,
         _placements: &[WidgetPlacement],
     ) -> Result<usize, UiAdapterError> {
         unsupported()

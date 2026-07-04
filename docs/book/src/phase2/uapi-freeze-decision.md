@@ -4,9 +4,9 @@
 
 This page is the decision packet for freezing the Phase 2 UAPI.
 
-The freeze decision is small but serious. It says the `layer36:*@0.1.0`
+The freeze decision is small but serious. It says the `krate:*@0.1.0`
 contracts are stable enough for apps and SDKs to depend on them. It does not
-mean Layer36 is complete. It only means this first CLI contract is no longer a
+mean Krate is complete. It only means this first CLI contract is no longer a
 casual draft.
 
 ## Decision State
@@ -24,13 +24,13 @@ fresh evidence bundle and the outside Rust walkthrough is filled.
 
 The freeze covers these Phase 2 packages:
 
-- `layer36:io@0.1.0`
-- `layer36:fs@0.1.0`
-- `layer36:net@0.1.0`
-- `layer36:time@0.1.0`
-- `layer36:locale@0.1.0`
+- `krate:io@0.1.0`
+- `krate:fs@0.1.0`
+- `krate:net@0.1.0`
+- `krate:time@0.1.0`
+- `krate:locale@0.1.0`
 
-The freeze also covers the `layer36:platform/cli@0.1.0` world shape, because it
+The freeze also covers the `krate:platform/cli@0.1.0` world shape, because it
 defines how CLI components import those packages and export `run`.
 
 ## What Must Be True
@@ -58,7 +58,7 @@ Do not freeze if any of these are true:
 - a WIT file changed but the freeze lock was not regenerated
 - generated reference docs are stale
 - UCap deny-before-adapter coverage is missing for a current UAPI entry
-- a sample app relies on direct host APIs instead of `layer36:*` imports, except
+- a sample app relies on direct host APIs instead of `krate:*` imports, except
   for the documented experimental Go runtime path
 - the outside walkthrough has not been completed
 - CI or self-hosted evidence is failing on the freeze commit
@@ -89,6 +89,6 @@ When the freeze is accepted:
    on.
 
 After freeze, breaking changes need a new package version such as
-`layer36:fs@0.2.0`. Additive changes can be considered only if they do not
+`krate:fs@0.2.0`. Additive changes can be considered only if they do not
 change existing names, parameter order, result shape, capability meaning, or
 error meaning.

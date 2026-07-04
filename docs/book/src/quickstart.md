@@ -1,16 +1,16 @@
-# Quickstart: Run A Phase 2 Layer36 Component
+# Quickstart: Run A Phase 2 Krate Component
 
-This walkthrough builds the Layer36 CLI, builds the current Phase 2 sample
-components, and runs a file-reading WebAssembly component through the Layer36
+This walkthrough builds the Krate CLI, builds the current Phase 2 sample
+components, and runs a file-reading WebAssembly component through the Krate
 UAPI and capability path.
 
 At the end your terminal should print:
 
 ```text
-hello from Layer36
+hello from Krate
 ```
 
-Layer36 is still pre-alpha. This quickstart is for local developer proof, not
+Krate is still pre-alpha. This quickstart is for local developer proof, not
 for running untrusted third-party components.
 
 ## Prerequisites
@@ -21,7 +21,7 @@ Install:
 - Rust via `rustup`
 - `cargo-component`
 
-Layer36 pins its Rust toolchain in `rust-toolchain.toml`, so entering the repo
+Krate pins its Rust toolchain in `rust-toolchain.toml`, so entering the repo
 lets `rustup` install the right compiler and WASM targets.
 
 Install the component tooling:
@@ -37,16 +37,16 @@ git clone https://github.com/incyashraj/layer6x6.git
 cd layer6x6
 ```
 
-## Build Layer36
+## Build Krate
 
 ```bash
-cargo build -p layer36-cli
+cargo build -p krate-cli
 ```
 
 Check the local environment:
 
 ```bash
-target/debug/layer36 doctor
+target/debug/krate doctor
 ```
 
 `doctor` reports core Rust tools first, then Phase 2 language tools such as
@@ -55,15 +55,15 @@ target/debug/layer36 doctor
 ## Build The Phase 2 Samples
 
 ```bash
-scripts/build-layer36-clock-component.sh
-scripts/build-layer36-cat-component.sh
-scripts/build-layer36-curl-component.sh
+scripts/build-krate-clock-component.sh
+scripts/build-krate-cat-component.sh
+scripts/build-krate-curl-component.sh
 ```
 
 The scripts print component paths like:
 
 ```text
-apps/layer36-cat/target/wasm32-wasip1/release/layer36_cat.wasm
+apps/krate-cat/target/wasm32-wasip1/release/krate_cat.wasm
 ```
 
 ## Inspect A Manifest
@@ -72,7 +72,7 @@ Phase 2 apps carry a `manifest.toml` for app identity and capability requests.
 Before running the file sample, inspect what it asks for:
 
 ```bash
-target/debug/layer36 manifest explain apps/layer36-cat/manifest.toml
+target/debug/krate manifest explain apps/krate-cat/manifest.toml
 ```
 
 You should see:
@@ -92,13 +92,13 @@ host file/network access -> explicit launch grant
 Run a deterministic clock sample through the Phase 2 UAPI path:
 
 ```bash
-target/debug/layer36 run \
+target/debug/krate run \
   --auto-grant \
-  --manifest apps/layer36-clock/manifest.toml \
+  --manifest apps/krate-clock/manifest.toml \
   --test-time 1234567890 \
   --test-locale en-US \
   --test-timezone UTC \
-  apps/layer36-clock/target/wasm32-wasip1/release/layer36_clock.wasm
+  apps/krate-clock/target/wasm32-wasip1/release/krate_clock.wasm
 ```
 
 This exercises time, locale, timezone, and stdout. The test flags make output
@@ -109,18 +109,18 @@ stable enough for evidence runs.
 Create a test file:
 
 ```bash
-mkdir -p apps/layer36-cat/fixtures
-printf 'hello from Layer36\n' > apps/layer36-cat/fixtures/hello.txt
+mkdir -p apps/krate-cat/fixtures
+printf 'hello from Krate\n' > apps/krate-cat/fixtures/hello.txt
 ```
 
 Run with the sample manifest and grant approval:
 
 ```bash
-cd apps/layer36-cat
-../../target/debug/layer36 run \
+cd apps/krate-cat
+../../target/debug/krate run \
   --manifest manifest.toml \
   --auto-grant \
-  target/wasm32-wasip1/release/layer36_cat.wasm \
+  target/wasm32-wasip1/release/krate_cat.wasm \
   -- ./fixtures/hello.txt
 cd ../..
 ```
@@ -128,7 +128,7 @@ cd ../..
 Expected output:
 
 ```text
-hello from Layer36
+hello from Krate
 ```
 
 ## See The Denial Path
@@ -136,15 +136,15 @@ hello from Layer36
 Run the same app without granting the file capability:
 
 ```bash
-cd apps/layer36-cat
-printf '' | ../../target/debug/layer36 run \
+cd apps/krate-cat
+printf '' | ../../target/debug/krate run \
   --manifest manifest.toml \
-  target/wasm32-wasip1/release/layer36_cat.wasm \
+  target/wasm32-wasip1/release/krate_cat.wasm \
   -- ./fixtures/hello.txt
 cd ../..
 ```
 
-In a non-interactive shell, Layer36 exits before starting the component and
+In a non-interactive shell, Krate exits before starting the component and
 prints the missing required capability. That is intentional: host file access
 should be explicit.
 
@@ -153,9 +153,9 @@ should be explicit.
 Start a local HTTP server in one terminal:
 
 ```bash
-mkdir -p /tmp/layer36-demo-http
-printf 'portable runtime response\n' > /tmp/layer36-demo-http/demo.txt
-cd /tmp/layer36-demo-http
+mkdir -p /tmp/krate-demo-http
+printf 'portable runtime response\n' > /tmp/krate-demo-http/demo.txt
+cd /tmp/krate-demo-http
 python3 -m http.server 8765
 ```
 
@@ -163,9 +163,9 @@ In another terminal, run the curl sample with an explicit network grant:
 
 ```bash
 cd /path/to/layer6x6
-target/debug/layer36 run \
+target/debug/krate run \
   --grant net.connect:127.0.0.1:8765 \
-  apps/layer36-curl/target/wasm32-wasip1/release/layer36_curl.wasm \
+  apps/krate-curl/target/wasm32-wasip1/release/krate_curl.wasm \
   -- http://127.0.0.1:8765/demo.txt
 ```
 
@@ -211,13 +211,13 @@ runtime base:
 
 ```bash
 scripts/build-hello-component.sh
-target/debug/layer36 run test/integration/hello-world/target/wasm32-wasip1/release/hello_world.wasm
+target/debug/krate run test/integration/hello-world/target/wasm32-wasip1/release/hello_world.wasm
 ```
 
 Expected output:
 
 ```text
-Hello, Layer36!
+Hello, Krate!
 ```
 
 For new app work, use the Phase 2 UAPI path instead:
@@ -243,8 +243,8 @@ manual, including manual commands and troubleshooting, is on the
 
 ## Machine-Readable Runs
 
-Add `--json` to any run to get one `layer36.run.v1` object describing it —
+Add `--json` to any run to get one `krate.run.v1` object describing it —
 app identity, granted capabilities with boundaries, denials, exit class,
 duration, and captured output. This is the same report AI agents receive
-through `layer36-mcp-server`; see
+through `krate-mcp-server`; see
 [Embedding & JSON Runs](phase3/embedding.md).

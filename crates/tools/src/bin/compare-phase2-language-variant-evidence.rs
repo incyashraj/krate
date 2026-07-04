@@ -11,12 +11,12 @@ const REQUIRED_STEPS: &[&str] = &[
 ];
 
 const REQUIRED_FIXTURES: &[&str] = &[
-    "layer36_go_clock.wasm",
-    "layer36_go_cat.wasm",
-    "layer36_go_curl.wasm",
-    "layer36_ts_clock.wasm",
-    "layer36_ts_cat.wasm",
-    "layer36_ts_curl.wasm",
+    "krate_go_clock.wasm",
+    "krate_go_cat.wasm",
+    "krate_go_curl.wasm",
+    "krate_ts_clock.wasm",
+    "krate_ts_cat.wasm",
+    "krate_ts_curl.wasm",
 ];
 
 fn main() -> Result<()> {
@@ -275,7 +275,7 @@ fn parse_tables(source: &str) -> Result<(BTreeMap<String, StepRow>, BTreeMap<Str
 }
 
 fn compare_reports(reports: &[HostReport]) -> Result<()> {
-    println!("Layer36 Phase 2 language-variant evidence comparison");
+    println!("Krate Phase 2 language-variant evidence comparison");
     for report in reports {
         println!(
             "- {}: {} ({})",
@@ -446,12 +446,12 @@ mod tests {
 
 | Fixture | Exists | SHA-256 |
 |---|---|---|
-| layer36_go_clock.wasm | {go_exists_text} | {go_hash} |
-| layer36_go_cat.wasm | {go_exists_text} | {go_hash} |
-| layer36_go_curl.wasm | {go_exists_text} | {go_hash} |
-| layer36_ts_clock.wasm | yes | `ts-clock-{ts_hash_suffix}` |
-| layer36_ts_cat.wasm | yes | `ts-cat-{ts_hash_suffix}` |
-| layer36_ts_curl.wasm | yes | `ts-curl-{ts_hash_suffix}` |
+| krate_go_clock.wasm | {go_exists_text} | {go_hash} |
+| krate_go_cat.wasm | {go_exists_text} | {go_hash} |
+| krate_go_curl.wasm | {go_exists_text} | {go_hash} |
+| krate_ts_clock.wasm | yes | `ts-clock-{ts_hash_suffix}` |
+| krate_ts_cat.wasm | yes | `ts-cat-{ts_hash_suffix}` |
+| krate_ts_curl.wasm | yes | `ts-curl-{ts_hash_suffix}` |
 "#
         )
     }
@@ -482,8 +482,8 @@ mod tests {
             parse_tables(&report("Darwin", "abc123", "same", false)).expect("tables");
         assert_eq!(steps.len(), 2);
         assert_eq!(fixtures.len(), 6);
-        assert!(fixtures["layer36_ts_curl.wasm"].exists);
-        assert!(!fixtures["layer36_go_curl.wasm"].exists);
+        assert!(fixtures["krate_ts_curl.wasm"].exists);
+        assert!(!fixtures["krate_go_curl.wasm"].exists);
     }
 
     #[test]
@@ -535,7 +535,7 @@ mod tests {
         ];
         reports[2]
             .fixture_rows
-            .get_mut("layer36_ts_clock.wasm")
+            .get_mut("krate_ts_clock.wasm")
             .expect("fixture row")
             .sha256 = None;
 

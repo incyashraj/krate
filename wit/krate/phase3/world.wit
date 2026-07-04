@@ -1,0 +1,33 @@
+package krate:app@0.2.0;
+
+/// GUI component world for the first Phase 3 desktop app surface.
+///
+/// A GUI app keeps the Phase 2 CLI-grade host APIs and adds windowing, widget
+/// tree, event, drawing, and audio imports. This lets the runtime prove that
+/// the same portable component model can handle interactive desktop apps.
+world gui {
+  import krate:io/stdio@0.1.0;
+  import krate:io/args@0.1.0;
+  import krate:io/log@0.1.0;
+  import krate:fs/files@0.1.0;
+  import krate:net/http-client@0.1.0;
+  import krate:time/clock@0.1.0;
+  import krate:time/sleep@0.1.0;
+  import krate:locale/info@0.1.0;
+  import krate:locale/format@0.1.0;
+
+  import krate:ui/window@0.1.0;
+  import krate:ui/tree@0.1.0;
+  import krate:ui/events@0.1.0;
+  import krate:ui/dialog@0.1.0;
+  import krate:ui/clipboard@0.1.0;
+  import krate:ui/menu@0.1.0;
+
+  import krate:gfx/canvas2d@0.1.0;
+  import krate:gfx/gpu3d@0.1.0;
+
+  import krate:audio/playback@0.1.0;
+  import krate:audio/capture@0.1.0;
+
+  export run: func() -> s32;
+}

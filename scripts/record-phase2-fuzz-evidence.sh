@@ -7,10 +7,10 @@ cd "$ROOT"
 export PATH="$HOME/.cargo/bin:$PATH"
 
 OUTPUT="target/phase2-fuzz-evidence/fuzz-evidence.md"
-STRICT="${LAYER36_FUZZ_EVIDENCE_STRICT:-0}"
-DRY_RUN="${LAYER36_FUZZ_EVIDENCE_DRY_RUN:-0}"
-FUZZ_MAX_TOTAL_TIME="${LAYER36_FUZZ_MAX_TOTAL_TIME:-30}"
-FUZZ_TARGETS="${LAYER36_FUZZ_TARGETS:-manifest_parse logical_path_parse policy_match}"
+STRICT="${KRATE_FUZZ_EVIDENCE_STRICT:-0}"
+DRY_RUN="${KRATE_FUZZ_EVIDENCE_DRY_RUN:-0}"
+FUZZ_MAX_TOTAL_TIME="${KRATE_FUZZ_MAX_TOTAL_TIME:-30}"
+FUZZ_TARGETS="${KRATE_FUZZ_TARGETS:-manifest_parse logical_path_parse policy_match}"
 
 usage() {
   cat <<'USAGE'
@@ -24,10 +24,10 @@ Options:
   --output <path>             Output markdown report path
 
 Environment:
-  LAYER36_FUZZ_EVIDENCE_STRICT    1 to exit non-zero when fuzz smoke fails
-  LAYER36_FUZZ_EVIDENCE_DRY_RUN   1 to record planned commands only
-  LAYER36_FUZZ_MAX_TOTAL_TIME     Seconds per fuzz target
-  LAYER36_FUZZ_TARGETS            Space-separated target list
+  KRATE_FUZZ_EVIDENCE_STRICT    1 to exit non-zero when fuzz smoke fails
+  KRATE_FUZZ_EVIDENCE_DRY_RUN   1 to record planned commands only
+  KRATE_FUZZ_MAX_TOTAL_TIME     Seconds per fuzz target
+  KRATE_FUZZ_TARGETS            Space-separated target list
 USAGE
 }
 
@@ -108,9 +108,9 @@ mkdir -p "$TMP_DIR"
 
 FUZZ_LOG="$TMP_DIR/fuzz-smoke.log"
 
-if LAYER36_FUZZ_MAX_TOTAL_TIME="$FUZZ_MAX_TOTAL_TIME" \
-  LAYER36_FUZZ_TARGETS="$FUZZ_TARGETS" \
-  LAYER36_FUZZ_SMOKE_DRY_RUN="$DRY_RUN" \
+if KRATE_FUZZ_MAX_TOTAL_TIME="$FUZZ_MAX_TOTAL_TIME" \
+  KRATE_FUZZ_TARGETS="$FUZZ_TARGETS" \
+  KRATE_FUZZ_SMOKE_DRY_RUN="$DRY_RUN" \
   scripts/run-phase2-fuzz-smoke.sh >"$FUZZ_LOG" 2>&1; then
   FUZZ_CODE=0
 else

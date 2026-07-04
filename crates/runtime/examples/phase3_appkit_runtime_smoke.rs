@@ -2,21 +2,21 @@ use std::error::Error;
 
 #[cfg(target_os = "macos")]
 fn main() -> Result<(), Box<dyn Error>> {
-    use layer36_adapter_common::ui::{
+    use krate_adapter_common::ui::{
         UiEvent, WidgetId, WidgetKind, WidgetNode, WidgetStyle, WindowBackendKind, WindowOptions,
         WindowSize,
     };
-    use layer36_adapter_macos::{AppKitWidgetPlacement, MacosAppKitPrototypeUiAdapter};
-    use layer36_layout::{absolute_rect, LayoutViewport};
-    use layer36_policy::SessionPolicy;
-    use layer36_runtime::{phase3_ui::Phase3UiDispatcher, uapi::UapiGuard};
+    use krate_adapter_macos::{AppKitWidgetPlacement, MacosAppKitPrototypeUiAdapter};
+    use krate_layout::{absolute_rect, LayoutViewport};
+    use krate_policy::SessionPolicy;
+    use krate_runtime::{phase3_ui::Phase3UiDispatcher, uapi::UapiGuard};
 
     let guard = UapiGuard::new(SessionPolicy::default());
     let adapter = MacosAppKitPrototypeUiAdapter::new();
     let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
     let info = dispatcher.adapter_info();
     let window = dispatcher.create_window(WindowOptions::new(
-        "Layer36 runtime AppKit smoke",
+        "Krate runtime AppKit smoke",
         WindowSize::new(640, 480)?,
     )?)?;
 
@@ -34,12 +34,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     assert!(info.native_event_loop);
     assert_eq!(tick.window, window);
     assert!(tick.snapshot_refreshed);
-    assert_eq!(record.title, "Layer36 runtime AppKit smoke");
+    assert_eq!(record.title, "Krate runtime AppKit smoke");
     assert!(record.visible);
 
     // P3-VS-01 sub-slice 1: lower a small widget tree to real AppKit controls,
     // drive the native button, and watch the click come back as a routed
-    // Layer36 event.
+    // Krate event.
     let root = WidgetId::new(1)?;
     let button = WidgetId::new(2)?;
     let field = WidgetId::new(3)?;
@@ -133,7 +133,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .any(|event| matches!(event, UiEvent::Pointer(pointer) if pointer.widget == Some(button)));
     assert!(
         clicked,
-        "expected a routed Layer36 pointer event for the native NSButton click"
+        "expected a routed Krate pointer event for the native NSButton click"
     );
 
     // React the way an app would: update the native text field.
@@ -145,7 +145,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     dispatcher.close_window(window)?;
 
-    println!("Layer36 Phase 3 AppKit runtime smoke passed");
+    println!("Krate Phase 3 AppKit runtime smoke passed");
     println!("- window: {}", window.get());
     println!("- backend: {}", info.backend);
     println!("- widgets lowered natively: {}", lowered.lowered.len());
@@ -161,6 +161,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 #[cfg(not(target_os = "macos"))]
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("Layer36 Phase 3 AppKit runtime smoke skipped: host is not macOS");
+    println!("Krate Phase 3 AppKit runtime smoke skipped: host is not macOS");
     Ok(())
 }

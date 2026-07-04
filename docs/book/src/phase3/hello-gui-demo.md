@@ -1,6 +1,6 @@
 # Hello GUI: Testing the Vertical Slice
 
-`layer36-hello-gui` is the first GUI component: one portable `.wasm` file
+`krate-hello-gui` is the first GUI component: one portable `.wasm` file
 that opens a real native window with a real native button and text field.
 This page is the test manual for it.
 
@@ -34,26 +34,26 @@ The app reports what it observed, so scripts and CI can assert behavior:
 Interactive native window (macOS):
 
 ```bash
-target/debug/layer36 run --auto-grant --native-window \
-  --manifest apps/layer36-hello-gui/manifest.toml \
-  apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm
+target/debug/krate run --auto-grant --native-window \
+  --manifest apps/krate-hello-gui/manifest.toml \
+  apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm
 ```
 
 Headless, fast, any OS (the `quick` app arg shortens the wait loop):
 
 ```bash
-target/debug/layer36 run --auto-grant \
-  --manifest apps/layer36-hello-gui/manifest.toml \
-  apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm \
+target/debug/krate run --auto-grant \
+  --manifest apps/krate-hello-gui/manifest.toml \
+  apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm \
   -- quick
 ```
 
-Machine-readable report of the same run (schema `layer36.run.v1`):
+Machine-readable report of the same run (schema `krate.run.v1`):
 
 ```bash
-target/debug/layer36 run --json --auto-grant \
-  --manifest apps/layer36-hello-gui/manifest.toml \
-  apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm \
+target/debug/krate run --json --auto-grant \
+  --manifest apps/krate-hello-gui/manifest.toml \
+  apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm \
   -- quick
 ```
 

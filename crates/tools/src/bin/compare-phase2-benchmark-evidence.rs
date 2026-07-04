@@ -6,12 +6,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 const REQUIRED_STEPS: &[&str] = &[
-    "Startup benchmark (`cargo bench -p layer36-runtime --bench startup`)",
-    "Dispatch benchmark (`cargo bench -p layer36-runtime --bench uapi_dispatch`)",
+    "Startup benchmark (`cargo bench -p krate-runtime --bench startup`)",
+    "Dispatch benchmark (`cargo bench -p krate-runtime --bench uapi_dispatch`)",
     "Regression check (`scripts/check-benchmark-regression.sh`)",
-    "CLI release build (`cargo build -p layer36-cli --release`)",
-    "Clock component build (`scripts/build-layer36-clock-component.sh`)",
-    "Full CLI startup (`layer36 run layer36-clock`)",
+    "CLI release build (`cargo build -p krate-cli --release`)",
+    "Clock component build (`scripts/build-krate-clock-component.sh`)",
+    "Full CLI startup (`krate run krate-clock`)",
 ];
 
 const REQUIRED_METRICS: &[&str] = &[
@@ -278,7 +278,7 @@ fn parse_tables(source: &str) -> Result<(BTreeMap<String, StepRow>, BTreeMap<Str
 }
 
 fn compare_reports(reports: &[HostReport]) -> Result<()> {
-    println!("Layer36 Phase 2 benchmark evidence comparison");
+    println!("Krate Phase 2 benchmark evidence comparison");
     for report in reports {
         println!(
             "- {}: {} ({})",
@@ -495,12 +495,12 @@ mod tests {
 
 | Step | Exit code | Result |
 |---|---:|---|
-| Startup benchmark (`cargo bench -p layer36-runtime --bench startup`) | {step_code} | {step_result} |
-| Dispatch benchmark (`cargo bench -p layer36-runtime --bench uapi_dispatch`) | {step_code} | {step_result} |
+| Startup benchmark (`cargo bench -p krate-runtime --bench startup`) | {step_code} | {step_result} |
+| Dispatch benchmark (`cargo bench -p krate-runtime --bench uapi_dispatch`) | {step_code} | {step_result} |
 | Regression check (`scripts/check-benchmark-regression.sh`) | {step_code} | {step_result} |
-| CLI release build (`cargo build -p layer36-cli --release`) | {step_code} | {step_result} |
-| Clock component build (`scripts/build-layer36-clock-component.sh`) | {step_code} | {step_result} |
-| Full CLI startup (`layer36 run layer36-clock`) | {step_code} | {step_result} |
+| CLI release build (`cargo build -p krate-cli --release`) | {step_code} | {step_result} |
+| Clock component build (`scripts/build-krate-clock-component.sh`) | {step_code} | {step_result} |
+| Full CLI startup (`krate run krate-clock`) | {step_code} | {step_result} |
 
 ## Metric Snapshot
 

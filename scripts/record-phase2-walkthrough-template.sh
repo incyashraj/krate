@@ -76,19 +76,19 @@ git_commit="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
   echo
   echo "## Pass Rule"
   echo
-  echo "P2E-12 passes when a Rust developer who does not already know Layer36 can"
+  echo "P2E-12 passes when a Rust developer who does not already know Krate can"
   echo "complete the Rust UAPI walkthrough in 30 minutes or less without private help."
   echo
   echo "## Step Results"
   echo
   echo "| Step | Expected result | Reviewer result | Notes |"
   echo "|---|---|---|---|"
-  echo "| Tool check | \`layer36 doctor\` shows required Rust tooling or clear install guidance |  |  |"
-  echo "| Build CLI | \`cargo build -p layer36-cli\` passes |  |  |"
-  echo "| Build cat component | \`scripts/build-layer36-cat-component.sh\` prints a wasm path |  |  |"
+  echo "| Tool check | \`krate doctor\` shows required Rust tooling or clear install guidance |  |  |"
+  echo "| Build CLI | \`cargo build -p krate-cli\` passes |  |  |"
+  echo "| Build cat component | \`scripts/build-krate-cat-component.sh\` prints a wasm path |  |  |"
   echo "| Generate manifest | \`manifest.toml\` is written and capabilities parse |  |  |"
   echo "| Explain manifest | reviewer can identify default grants and explicit fs grant |  |  |"
-  echo "| Granted run | app prints \`hello from Layer36\` |  |  |"
+  echo "| Granted run | app prints \`hello from Krate\` |  |  |"
   echo "| Denied run | app exits before native file access with a missing-capability message |  |  |"
   echo
   echo "## Reviewer Notes"

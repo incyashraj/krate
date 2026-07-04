@@ -7,7 +7,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    phase2_bindings::layer36::{fs, io, locale, net, time},
+    phase2_bindings::krate::{fs, io, locale, net, time},
     phase2_bridge as bridge,
     uapi::UapiGuard,
     uapi_dispatch::{FileHandle, HostAdapter, UapiDispatcher},
@@ -544,7 +544,7 @@ fn missing_stream_resource() -> io::types::IoError {
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use layer36_policy::SessionPolicy;
+    use krate_policy::SessionPolicy;
 
     use crate::uapi_dispatch::{
         AdapterError, DateStyle, FsAdapter, Header, HttpRequest, HttpResponse, IoAdapter,

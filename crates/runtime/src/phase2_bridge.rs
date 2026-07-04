@@ -5,7 +5,7 @@
 //! later Wasmtime import wiring small and easier to audit.
 
 use crate::{
-    phase2_bindings::layer36::{fs, io, locale, net},
+    phase2_bindings::krate::{fs, io, locale, net},
     uapi_dispatch as dispatch,
 };
 

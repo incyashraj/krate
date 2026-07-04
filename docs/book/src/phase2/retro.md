@@ -10,7 +10,7 @@ review, the outside walkthrough, and the last evidence bundle are complete.
 
 ## What Shipped
 
-Phase 2 turned Layer36 from a runtime proof into a useful CLI platform slice.
+Phase 2 turned Krate from a runtime proof into a useful CLI platform slice.
 
 The main shipped pieces are:
 
@@ -35,13 +35,13 @@ These are still open before Phase 2 can close.
 |---|---|---|
 | UAPI freeze | Strong draft | Run final freeze review after the remaining proof is collected. |
 | Cross-host evidence | Partial | Keep Linux, macOS, and Windows reports aligned for one commit. |
-| Go runtime parity | Experimental | Keep TinyGo smoke builds, but wait for import-pure Layer36 components before promotion. |
+| Go runtime parity | Experimental | Keep TinyGo smoke builds, but wait for import-pure Krate components before promotion. |
 | Long fuzz soak | Partial | Run a longer self-hosted fuzz pass on the final candidate. |
-| Timed outside walkthrough | Pending | Ask a Rust developer new to Layer36 to run the walkthrough and pass the filled-packet checker. |
+| Timed outside walkthrough | Pending | Ask a Rust developer new to Krate to run the walkthrough and pass the filled-packet checker. |
 
 ## UAPI Lessons
 
-The UAPI direction is still right. Apps should call a small Layer36 surface, not
+The UAPI direction is still right. Apps should call a small Krate surface, not
 direct host APIs. That keeps the later 6 by 6 host matrix possible.
 
 The main lesson is that the WIT contract must be treated like a product surface,

@@ -3,14 +3,14 @@
 **Status:** Draft  
 **Publish target:** Refresh before public launch
 
-1. We are starting Layer36: a universal application platform for software that
+1. We are starting Krate: a universal application platform for software that
    runs natively across desktop, mobile, and the web from one portable target.
 
 2. The bet is simple: WebAssembly plus the Component Model can become more than
    a server/runtime substrate. With the right UAPI and capability model, it can
    be the center of native app distribution.
 
-3. Layer36 is not a new kernel, emulator, browser, or Electron competitor. It is a
+3. Krate is not a new kernel, emulator, browser, or Electron competitor. It is a
    runtime, standard library, permission model, package format, and host adapter
    layer.
 

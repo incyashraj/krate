@@ -2,7 +2,7 @@
 
 **Status:** Planned
 **Estimate:** after Phase 6
-**Goal:** Prove Layer36 with a real product and prepare for public launch.
+**Goal:** Prove Krate with a real product and prepare for public launch.
 
 This is where the project stops being only a runtime project.
 

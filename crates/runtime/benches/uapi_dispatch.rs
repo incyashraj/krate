@@ -1,8 +1,8 @@
 use std::{hint::black_box, time::Duration};
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use layer36_policy::SessionPolicy;
-use layer36_runtime::{
+use krate_policy::SessionPolicy;
+use krate_runtime::{
     uapi::UapiGuard,
     uapi_dispatch::{
         AdapterError, DateStyle, FileHandle, FileStat, FsAdapter, Header, HostAdapter, HttpRequest,
@@ -83,7 +83,7 @@ fn phase2_uapi_dispatch_benches(c: &mut Criterion) {
 
     group.bench_function("net_fetch_granted", |b| {
         let req = HttpRequest {
-            method: layer36_runtime::uapi_dispatch::HttpMethod::Get,
+            method: krate_runtime::uapi_dispatch::HttpMethod::Get,
             url: "http://127.0.0.1/health".to_string(),
             headers: Vec::new(),
             body: Vec::new(),
@@ -281,7 +281,7 @@ impl LocaleAdapter for NoopAdapter {
     fn format_number(
         &self,
         _value: f64,
-        _style: layer36_runtime::uapi_dispatch::NumberStyle,
+        _style: krate_runtime::uapi_dispatch::NumberStyle,
         _loc: &LocaleId,
     ) -> Result<String, AdapterError> {
         Ok("number".to_string())

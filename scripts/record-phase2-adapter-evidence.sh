@@ -5,7 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-adapter-evidence/adapter-evidence.md"
-STRICT="${LAYER36_ADAPTER_EVIDENCE_STRICT:-0}"
+STRICT="${KRATE_ADAPTER_EVIDENCE_STRICT:-0}"
 
 usage() {
   cat <<'USAGE'
@@ -16,7 +16,7 @@ Options:
   --output <path>  Output markdown file path
 
 Environment:
-  LAYER36_ADAPTER_EVIDENCE_STRICT   1 to exit non-zero when check fails
+  KRATE_ADAPTER_EVIDENCE_STRICT   1 to exit non-zero when check fails
 USAGE
 }
 
@@ -65,7 +65,7 @@ else
   CHECK_CODE=$?
 fi
 
-if cargo test -p layer36-adapter-common >"$COMMON_TEST_LOG" 2>&1; then
+if cargo test -p krate-adapter-common >"$COMMON_TEST_LOG" 2>&1; then
   COMMON_TEST_CODE=0
 else
   COMMON_TEST_CODE=$?
@@ -78,13 +78,13 @@ git_commit="$(git rev-parse --short HEAD 2>/dev/null || printf 'unknown')"
 
 case "$(printf '%s' "$host_os" | tr '[:upper:]' '[:lower:]')" in
   linux*)
-    adapter_crate="layer36-adapter-linux"
+    adapter_crate="krate-adapter-linux"
     ;;
   darwin*)
-    adapter_crate="layer36-adapter-macos"
+    adapter_crate="krate-adapter-macos"
     ;;
   mingw*|msys*|cygwin*|windows*)
-    adapter_crate="layer36-adapter-windows"
+    adapter_crate="krate-adapter-windows"
     ;;
   *)
     adapter_crate=""
@@ -128,7 +128,7 @@ result_of() {
   echo "| Step | Exit code | Result |"
   echo "|---|---:|---|"
   echo "| Adapter boundary check (\`scripts/check-adapter-boundary.sh\`) | $CHECK_CODE | $(result_of "$CHECK_CODE") |"
-  echo "| Shared adapter behavior tests (\`cargo test -p layer36-adapter-common\`) | $COMMON_TEST_CODE | $(result_of "$COMMON_TEST_CODE") |"
+  echo "| Shared adapter behavior tests (\`cargo test -p krate-adapter-common\`) | $COMMON_TEST_CODE | $(result_of "$COMMON_TEST_CODE") |"
   echo "| Native adapter crate tests (\`cargo test -p ${adapter_crate:-unknown}\`) | $OS_TEST_CODE | $(result_of "$OS_TEST_CODE") |"
   echo
   echo "## Adapter Boundary Check Log (tail)"

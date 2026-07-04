@@ -1,0 +1,11 @@
+package krate:phase1@0.0.1;
+
+interface host {
+  print: func(msg: string);
+  exit: func(code: s32);
+}
+
+world app {
+  import host;
+  export run: func();
+}

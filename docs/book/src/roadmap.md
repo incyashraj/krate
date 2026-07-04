@@ -10,7 +10,7 @@ The current state is:
   setup exist. Community and public launch items remain.
 - **Phase 1 engineering is done.** One shared `.wasm` component proved the base
   runtime path.
-- **Phase 2 is active and close in engineering terms.** Layer36 now has UAPI
+- **Phase 2 is active and close in engineering terms.** Krate now has UAPI
   slices for CLI-style apps, UCap manifests and launch grants, sample apps, and
   repeatable evidence scripts. Formal Phase 2 exit still needs final
   cross-host evidence, UAPI freeze review, and an outside developer walkthrough.
@@ -80,7 +80,7 @@ the evidence is crisp:
 
 ## Phase 2 In One Sentence
 
-Phase 2 makes Layer36 useful: a WebAssembly app can call Layer36 for files,
+Phase 2 makes Krate useful: a WebAssembly app can call Krate for files,
 network, time, locale, and terminal I/O, and the runtime can enforce explicit
 capability grants before host access.
 

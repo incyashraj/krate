@@ -2,7 +2,7 @@
 
 This page records how Phase 2 checks Rust dependency risk before exit.
 
-The dependency audit is not only a CI checkbox. Layer36 puts Wasmtime,
+The dependency audit is not only a CI checkbox. Krate puts Wasmtime,
 Cranelift, parser crates, SDK helpers, and test tools in the trusted build
 path. If one of those dependencies brings an unsafe license, an unexpected
 source, or a known advisory, we need to see it before freezing the phase.

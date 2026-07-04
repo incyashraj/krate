@@ -86,7 +86,7 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-phase2-bindings-${{ hashFiles('**/Cargo.lock') }}
       - name: Generate and test Phase 2 Rust host bindings
-        run: cargo test -p layer36-runtime --features phase2-bindings
+        run: cargo test -p krate-runtime --features phase2-bindings
 
   # ──────────────────────────────────────────────
   # 4. Fast Linux workspace test
@@ -133,15 +133,15 @@ jobs:
           key: ${{ runner.os }}-cargo-sdk-package-${{ hashFiles('**/Cargo.lock') }}
       - name: Record Rust SDK evidence
         run: |
-          mkdir -p layer36-evidence
+          mkdir -p krate-evidence
           scripts/record-phase2-rust-sdk-evidence.sh \
             --strict \
-            --output layer36-evidence/rust-sdk-evidence.md
+            --output krate-evidence/rust-sdk-evidence.md
       - name: Upload Rust SDK evidence
         uses: actions/upload-artifact@v7
         with:
           name: rust-sdk-evidence
-          path: layer36-evidence/rust-sdk-evidence.md
+          path: krate-evidence/rust-sdk-evidence.md
           if-no-files-found: error
 
   # ──────────────────────────────────────────────
@@ -221,55 +221,55 @@ jobs:
         shell: bash
         run: |
           wasm_path="$(scripts/build-hello-component.sh)"
-          mkdir -p layer36-fixture
-          cp "$wasm_path" layer36-fixture/hello_world.wasm
+          mkdir -p krate-fixture
+          cp "$wasm_path" krate-fixture/hello_world.wasm
       - name: Build Phase 2 smoke fixture once
         shell: bash
         run: |
           wasm_path="$(scripts/build-phase2-smoke-component.sh)"
-          cp "$wasm_path" layer36-fixture/phase2_smoke.wasm
-      - name: Build layer36-clock fixture once
+          cp "$wasm_path" krate-fixture/phase2_smoke.wasm
+      - name: Build krate-clock fixture once
         shell: bash
         run: |
-          wasm_path="$(scripts/build-layer36-clock-component.sh)"
-          cp "$wasm_path" layer36-fixture/layer36_clock.wasm
-      - name: Build layer36-cat fixture once
+          wasm_path="$(scripts/build-krate-clock-component.sh)"
+          cp "$wasm_path" krate-fixture/krate_clock.wasm
+      - name: Build krate-cat fixture once
         shell: bash
         run: |
-          wasm_path="$(scripts/build-layer36-cat-component.sh)"
-          cp "$wasm_path" layer36-fixture/layer36_cat.wasm
-      - name: Build layer36-curl fixture once
+          wasm_path="$(scripts/build-krate-cat-component.sh)"
+          cp "$wasm_path" krate-fixture/krate_cat.wasm
+      - name: Build krate-curl fixture once
         shell: bash
         run: |
-          wasm_path="$(scripts/build-layer36-curl-component.sh)"
-          cp "$wasm_path" layer36-fixture/layer36_curl.wasm
-      - name: Build layer36-hello-gui fixture once
+          wasm_path="$(scripts/build-krate-curl-component.sh)"
+          cp "$wasm_path" krate-fixture/krate_curl.wasm
+      - name: Build krate-hello-gui fixture once
         shell: bash
         run: |
-          wasm_path="$(scripts/build-layer36-hello-gui-component.sh)"
-          cp "$wasm_path" layer36-fixture/layer36_hello_gui.wasm
+          wasm_path="$(scripts/build-krate-hello-gui-component.sh)"
+          cp "$wasm_path" krate-fixture/krate_hello_gui.wasm
       - name: Check Phase 2 fixture imports
         shell: bash
         run: |
           scripts/check-component-imports.sh \
-            layer36-fixture/phase2_smoke.wasm \
-            layer36-fixture/layer36_clock.wasm \
-            layer36-fixture/layer36_cat.wasm \
-            layer36-fixture/layer36_curl.wasm \
-            layer36-fixture/layer36_hello_gui.wasm
+            krate-fixture/phase2_smoke.wasm \
+            krate-fixture/krate_clock.wasm \
+            krate-fixture/krate_cat.wasm \
+            krate-fixture/krate_curl.wasm \
+            krate-fixture/krate_hello_gui.wasm
       - name: Record fixture hash
         id: hash
         shell: bash
         run: |
-          sha256="$(sha256sum layer36-fixture/hello_world.wasm | awk '{print $1}')"
-          printf '%s\n' "$sha256" > layer36-fixture/hello_world.wasm.sha256
+          sha256="$(sha256sum krate-fixture/hello_world.wasm | awk '{print $1}')"
+          printf '%s\n' "$sha256" > krate-fixture/hello_world.wasm.sha256
           echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
           echo "hello fixture sha256: $sha256"
       - name: Upload component fixtures
         uses: actions/upload-artifact@v7
         with:
           name: phase-component-fixtures
-          path: layer36-fixture/
+          path: krate-fixture/
           if-no-files-found: error
 
   # ──────────────────────────────────────────────
@@ -306,36 +306,36 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: phase-component-fixtures
-          path: layer36-fixture
+          path: krate-fixture
       - name: Install fixtures at sample manifest entries
         shell: bash
         run: |
           mkdir -p \
-            apps/layer36-clock/target/wasm32-wasip1/release \
-            apps/layer36-cat/target/wasm32-wasip1/release \
-            apps/layer36-curl/target/wasm32-wasip1/release
-          cp layer36-fixture/layer36_clock.wasm \
-            apps/layer36-clock/target/wasm32-wasip1/release/layer36_clock.wasm
-          cp layer36-fixture/layer36_cat.wasm \
-            apps/layer36-cat/target/wasm32-wasip1/release/layer36_cat.wasm
-          cp layer36-fixture/layer36_curl.wasm \
-            apps/layer36-curl/target/wasm32-wasip1/release/layer36_curl.wasm
-          mkdir -p apps/layer36-hello-gui/target/wasm32-wasip1/release
-          cp layer36-fixture/layer36_hello_gui.wasm \
-            apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm
+            apps/krate-clock/target/wasm32-wasip1/release \
+            apps/krate-cat/target/wasm32-wasip1/release \
+            apps/krate-curl/target/wasm32-wasip1/release
+          cp krate-fixture/krate_clock.wasm \
+            apps/krate-clock/target/wasm32-wasip1/release/krate_clock.wasm
+          cp krate-fixture/krate_cat.wasm \
+            apps/krate-cat/target/wasm32-wasip1/release/krate_cat.wasm
+          cp krate-fixture/krate_curl.wasm \
+            apps/krate-curl/target/wasm32-wasip1/release/krate_curl.wasm
+          mkdir -p apps/krate-hello-gui/target/wasm32-wasip1/release
+          cp krate-fixture/krate_hello_gui.wasm \
+            apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm
       - name: Run Phase 3 GUI component headless on this host
         shell: bash
         run: |
-          cargo build -p layer36-cli
-          bin=target/debug/layer36
+          cargo build -p krate-cli
+          bin=target/debug/krate
           if [ "$RUNNER_OS" = "Windows" ]; then
-            bin=target/debug/layer36.exe
+            bin=target/debug/krate.exe
           fi
           set +e
           "$bin" run \
             --auto-grant \
-            --manifest apps/layer36-hello-gui/manifest.toml \
-            apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm \
+            --manifest apps/krate-hello-gui/manifest.toml \
+            apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm \
             -- quick
           code=$?
           set -e
@@ -353,17 +353,17 @@ jobs:
           # winit's X11 keyboard path and absent on minimal runners.
           sudo apt-get install -y -q xvfb libxkbcommon-x11-0 xdotool
           # 1. Adapter-level native smoke: real winit window round trip.
-          LAYER36_WINIT_NATIVE_SMOKE=1 LAYER36_WINIT_ANY_THREAD=1 xvfb-run -a \
-            cargo test -p layer36-adapter-linux --lib -- --ignored \
+          KRATE_WINIT_NATIVE_SMOKE=1 KRATE_WINIT_ANY_THREAD=1 xvfb-run -a \
+            cargo test -p krate-adapter-linux --lib -- --ignored \
             winit_prototype_native_window_smoke
           # 2. The slice's definition of done: the portable hello-gui
           #    component opens a real window on a Linux host.
           set +e
-          xvfb-run -a target/debug/layer36 run \
+          xvfb-run -a target/debug/krate run \
             --auto-grant \
             --native-window \
-            --manifest apps/layer36-hello-gui/manifest.toml \
-            apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm \
+            --manifest apps/krate-hello-gui/manifest.toml \
+            apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm \
             -- quick
           code=$?
           set -e
@@ -388,17 +388,17 @@ jobs:
         shell: bash
         run: |
           # 1. Adapter-level native smoke: real winit window round trip.
-          LAYER36_WINIT_NATIVE_SMOKE=1 LAYER36_WINIT_ANY_THREAD=1 \
-            cargo test -p layer36-adapter-windows --lib -- --ignored \
+          KRATE_WINIT_NATIVE_SMOKE=1 KRATE_WINIT_ANY_THREAD=1 \
+            cargo test -p krate-adapter-windows --lib -- --ignored \
             winit_prototype_native_window_smoke
           # 2. The portable hello-gui component opens a real window on a
           #    Windows host.
           set +e
-          target/debug/layer36.exe run \
+          target/debug/krate.exe run \
             --auto-grant \
             --native-window \
-            --manifest apps/layer36-hello-gui/manifest.toml \
-            apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm \
+            --manifest apps/krate-hello-gui/manifest.toml \
+            apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm \
             -- quick
           code=$?
           set -e
@@ -410,12 +410,12 @@ jobs:
       - name: Run Phase 1 tests
         shell: bash
         env:
-          LAYER36_HELLO_WASM: layer36-fixture/hello_world.wasm
-          LAYER36_HELLO_SHA256: ${{ needs.hello-fixture.outputs.sha256 }}
-          LAYER36_PHASE2_SMOKE_WASM: layer36-fixture/phase2_smoke.wasm
-          LAYER36_CLOCK_WASM: apps/layer36-clock/target/wasm32-wasip1/release/layer36_clock.wasm
-          LAYER36_CAT_WASM: apps/layer36-cat/target/wasm32-wasip1/release/layer36_cat.wasm
-          LAYER36_CURL_WASM: apps/layer36-curl/target/wasm32-wasip1/release/layer36_curl.wasm
+          KRATE_HELLO_WASM: krate-fixture/hello_world.wasm
+          KRATE_HELLO_SHA256: ${{ needs.hello-fixture.outputs.sha256 }}
+          KRATE_PHASE2_SMOKE_WASM: krate-fixture/phase2_smoke.wasm
+          KRATE_CLOCK_WASM: apps/krate-clock/target/wasm32-wasip1/release/krate_clock.wasm
+          KRATE_CAT_WASM: apps/krate-cat/target/wasm32-wasip1/release/krate_cat.wasm
+          KRATE_CURL_WASM: apps/krate-curl/target/wasm32-wasip1/release/krate_curl.wasm
         run: scripts/test-phase1.sh
       - name: Set up Node.js for TypeScript fixture lane
         uses: actions/setup-node@v5
@@ -424,67 +424,67 @@ jobs:
       - name: Build Phase 2 language-variant fixtures
         shell: bash
         env:
-          LAYER36_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'ts' }}
-          LAYER36_ALLOW_NPX_INSTALL: "1"
+          KRATE_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'ts' }}
+          KRATE_ALLOW_NPX_INSTALL: "1"
         run: scripts/build-phase2-language-variant-fixtures.sh
       - name: Run Phase 2 language-variant runtime tests
         shell: bash
         env:
-          LAYER36_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'ts' }}
+          KRATE_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'ts' }}
         run: scripts/test-phase2-language-variants.sh
       - name: Record Phase 2 language-variant evidence
         shell: bash
         env:
-          LAYER36_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'ts' }}
+          KRATE_LANGUAGE_VARIANTS_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.language_variants_mode || 'ts' }}
         run: |
-          mkdir -p layer36-evidence
+          mkdir -p krate-evidence
           scripts/record-phase2-language-variant-evidence.sh \
-            --mode "${LAYER36_LANGUAGE_VARIANTS_MODE}" \
+            --mode "${KRATE_LANGUAGE_VARIANTS_MODE}" \
             --strict \
-            --output "layer36-evidence/language-variant-${{ matrix.os }}.md"
+            --output "krate-evidence/language-variant-${{ matrix.os }}.md"
       - name: Upload language-variant evidence
         uses: actions/upload-artifact@v7
         with:
           name: language-variant-evidence-${{ matrix.os }}
-          path: layer36-evidence/language-variant-${{ matrix.os }}.md
+          path: krate-evidence/language-variant-${{ matrix.os }}.md
           if-no-files-found: error
       - name: Record Phase 2 UCap enforcement evidence
         shell: bash
         run: |
-          mkdir -p layer36-evidence
+          mkdir -p krate-evidence
           scripts/record-phase2-ucap-evidence.sh \
             --strict \
-            --output "layer36-evidence/ucap-enforcement-${{ matrix.os }}.md"
+            --output "krate-evidence/ucap-enforcement-${{ matrix.os }}.md"
       - name: Upload UCap enforcement evidence
         uses: actions/upload-artifact@v7
         with:
           name: ucap-enforcement-evidence-${{ matrix.os }}
-          path: layer36-evidence/ucap-enforcement-${{ matrix.os }}.md
+          path: krate-evidence/ucap-enforcement-${{ matrix.os }}.md
           if-no-files-found: error
       - name: Record Phase 2 adapter evidence
         shell: bash
         run: |
-          mkdir -p layer36-evidence
+          mkdir -p krate-evidence
           scripts/record-phase2-adapter-evidence.sh \
             --strict \
-            --output "layer36-evidence/adapter-evidence-${{ matrix.os }}.md"
+            --output "krate-evidence/adapter-evidence-${{ matrix.os }}.md"
       - name: Upload adapter evidence
         uses: actions/upload-artifact@v7
         with:
           name: adapter-evidence-${{ matrix.os }}
-          path: layer36-evidence/adapter-evidence-${{ matrix.os }}.md
+          path: krate-evidence/adapter-evidence-${{ matrix.os }}.md
           if-no-files-found: error
       - name: Record Phase 2 sample evidence
         shell: bash
         run: |
-          mkdir -p layer36-evidence
+          mkdir -p krate-evidence
           scripts/record-phase2-sample-evidence.sh \
-            "layer36-evidence/sample-evidence-${{ matrix.os }}.md"
+            "krate-evidence/sample-evidence-${{ matrix.os }}.md"
       - name: Upload sample evidence
         uses: actions/upload-artifact@v7
         with:
           name: sample-evidence-${{ matrix.os }}
-          path: layer36-evidence/sample-evidence-${{ matrix.os }}.md
+          path: krate-evidence/sample-evidence-${{ matrix.os }}.md
           if-no-files-found: error
 
   # ──────────────────────────────────────────────
@@ -503,24 +503,24 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: language-variant-evidence-ubuntu-latest
-          path: layer36-evidence/linux
+          path: krate-evidence/linux
       - name: Download macOS language-variant evidence
         uses: actions/download-artifact@v8
         with:
           name: language-variant-evidence-macos-latest
-          path: layer36-evidence/macos
+          path: krate-evidence/macos
       - name: Download Windows language-variant evidence
         uses: actions/download-artifact@v8
         with:
           name: language-variant-evidence-windows-latest
-          path: layer36-evidence/windows
+          path: krate-evidence/windows
       - name: Compare language-variant evidence reports
         shell: bash
         run: |
           scripts/compare-phase2-language-variant-evidence.sh \
-            layer36-evidence/linux/language-variant-ubuntu-latest.md \
-            layer36-evidence/macos/language-variant-macos-latest.md \
-            layer36-evidence/windows/language-variant-windows-latest.md
+            krate-evidence/linux/language-variant-ubuntu-latest.md \
+            krate-evidence/macos/language-variant-macos-latest.md \
+            krate-evidence/windows/language-variant-windows-latest.md
 
   # ──────────────────────────────────────────────
   # 10. Compare UCap enforcement evidence across hosts
@@ -538,24 +538,24 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: ucap-enforcement-evidence-ubuntu-latest
-          path: layer36-evidence/linux
+          path: krate-evidence/linux
       - name: Download macOS UCap evidence
         uses: actions/download-artifact@v8
         with:
           name: ucap-enforcement-evidence-macos-latest
-          path: layer36-evidence/macos
+          path: krate-evidence/macos
       - name: Download Windows UCap evidence
         uses: actions/download-artifact@v8
         with:
           name: ucap-enforcement-evidence-windows-latest
-          path: layer36-evidence/windows
+          path: krate-evidence/windows
       - name: Compare UCap enforcement evidence reports
         shell: bash
         run: |
           scripts/compare-phase2-ucap-evidence.sh \
-            layer36-evidence/linux/ucap-enforcement-ubuntu-latest.md \
-            layer36-evidence/macos/ucap-enforcement-macos-latest.md \
-            layer36-evidence/windows/ucap-enforcement-windows-latest.md
+            krate-evidence/linux/ucap-enforcement-ubuntu-latest.md \
+            krate-evidence/macos/ucap-enforcement-macos-latest.md \
+            krate-evidence/windows/ucap-enforcement-windows-latest.md
 
   # ──────────────────────────────────────────────
   # 11. Compare adapter evidence across hosts
@@ -573,24 +573,24 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: adapter-evidence-ubuntu-latest
-          path: layer36-evidence/linux
+          path: krate-evidence/linux
       - name: Download macOS adapter evidence
         uses: actions/download-artifact@v8
         with:
           name: adapter-evidence-macos-latest
-          path: layer36-evidence/macos
+          path: krate-evidence/macos
       - name: Download Windows adapter evidence
         uses: actions/download-artifact@v8
         with:
           name: adapter-evidence-windows-latest
-          path: layer36-evidence/windows
+          path: krate-evidence/windows
       - name: Compare adapter evidence reports
         shell: bash
         run: |
           scripts/compare-phase2-adapter-evidence.sh \
-            layer36-evidence/linux/adapter-evidence-ubuntu-latest.md \
-            layer36-evidence/macos/adapter-evidence-macos-latest.md \
-            layer36-evidence/windows/adapter-evidence-windows-latest.md
+            krate-evidence/linux/adapter-evidence-ubuntu-latest.md \
+            krate-evidence/macos/adapter-evidence-macos-latest.md \
+            krate-evidence/windows/adapter-evidence-windows-latest.md
 
   # ──────────────────────────────────────────────
   # 12. Compare sample evidence across hosts
@@ -608,24 +608,24 @@ jobs:
         uses: actions/download-artifact@v8
         with:
           name: sample-evidence-ubuntu-latest
-          path: layer36-evidence/linux
+          path: krate-evidence/linux
       - name: Download macOS sample evidence
         uses: actions/download-artifact@v8
         with:
           name: sample-evidence-macos-latest
-          path: layer36-evidence/macos
+          path: krate-evidence/macos
       - name: Download Windows sample evidence
         uses: actions/download-artifact@v8
         with:
           name: sample-evidence-windows-latest
-          path: layer36-evidence/windows
+          path: krate-evidence/windows
       - name: Compare sample evidence reports
         shell: bash
         run: |
           scripts/compare-phase2-sample-evidence.sh \
-            layer36-evidence/linux/sample-evidence-ubuntu-latest.md \
-            layer36-evidence/macos/sample-evidence-macos-latest.md \
-            layer36-evidence/windows/sample-evidence-windows-latest.md \
+            krate-evidence/linux/sample-evidence-ubuntu-latest.md \
+            krate-evidence/macos/sample-evidence-macos-latest.md \
+            krate-evidence/windows/sample-evidence-windows-latest.md \
             --allow-blocked-curl
 
   # ──────────────────────────────────────────────
@@ -679,11 +679,11 @@ jobs:
         shell: bash
         run: |
           scripts/build-phase2-smoke-component.sh
-          scripts/build-layer36-clock-component.sh
+          scripts/build-krate-clock-component.sh
       - name: Run runtime startup benchmarks
-        run: cargo bench -p layer36-runtime --bench startup
+        run: cargo bench -p krate-runtime --bench startup
       - name: Run Phase 2 UAPI dispatch benchmarks
-        run: cargo bench -p layer36-runtime --bench uapi_dispatch
+        run: cargo bench -p krate-runtime --bench uapi_dispatch
       - name: Check against recorded baseline
         if: always()
         env:

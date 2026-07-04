@@ -1,11 +1,11 @@
-//! macOS host adapter surface for Layer36 Phase 2.
+//! macOS host adapter surface for Krate Phase 2.
 //!
 //! This crate is the macOS ownership boundary. Shared behavior still comes from
-//! `layer36-adapter-common`, while macOS-specific host wiring will land here.
+//! `krate-adapter-common`, while macOS-specific host wiring will land here.
 
 mod appkit;
 
-use layer36_adapter_common::{
+use krate_adapter_common::{
     locale::{DateStyle, HostLocale, LocaleId, NumberStyle},
     time::HostClock,
     ui::{
@@ -71,7 +71,7 @@ impl MacosUiAdapter {
         WindowBackendKind::AppKit
     }
 
-    /// Attach a real AppKit `NSWindow` pointer to a Layer36 window id.
+    /// Attach a real AppKit `NSWindow` pointer to a Krate window id.
     ///
     /// This is the handoff point for the first native macOS backend. The
     /// current default adapter still creates headless draft windows, but the
@@ -764,7 +764,7 @@ mod tests {
         let adapter = discover_ui_adapter();
         let size = WindowSize::new(640, 480).expect("size");
         let id = adapter
-            .create_window(WindowOptions::new("Layer36 blank window", size).expect("options"))
+            .create_window(WindowOptions::new("Krate blank window", size).expect("options"))
             .expect("create window");
 
         adapter.show_window(id).expect("show");
@@ -787,7 +787,7 @@ mod tests {
             adapter.planned_native_window_backend(),
             WindowBackendKind::AppKit
         );
-        assert_eq!(window.title, "Layer36 blank window");
+        assert_eq!(window.title, "Krate blank window");
         assert_eq!(window.size, size);
         assert!(window.visible);
         assert_eq!(
@@ -805,7 +805,7 @@ mod tests {
         let adapter = discover_ui_adapter();
         let size = WindowSize::new(640, 480).expect("size");
         let id = adapter
-            .create_window(WindowOptions::new("Layer36 native host", size).expect("options"))
+            .create_window(WindowOptions::new("Krate native host", size).expect("options"))
             .expect("create window");
         let handle = adapter
             .attach_appkit_window_handle(id, 0xA11CE)

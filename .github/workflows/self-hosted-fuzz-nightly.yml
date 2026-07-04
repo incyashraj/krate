@@ -1,7 +1,7 @@
 name: Self-hosted Fuzz Nightly
 
 on:
-  # Schedule restored 2026-07-02: the layer36-local runner is re-registered and
+  # Schedule restored 2026-07-02: the krate-local runner is re-registered and
   # now runs as a LaunchAgent service, so it survives reboots.
   # (It had been offline since 2026-06-24 because it only ran in a foreground
   # terminal; GitHub then deleted the stale registration.)
@@ -27,10 +27,10 @@ env:
 jobs:
   fuzz-nightly:
     name: Fuzz nightly
-    runs-on: [self-hosted, layer36-local]
+    runs-on: [self-hosted, krate-local]
     timeout-minutes: 360
     env:
-      LAYER36_FUZZ_MAX_TOTAL_TIME: ${{ github.event_name == 'workflow_dispatch' && inputs.fuzz_max_total_time || '4800' }}
+      KRATE_FUZZ_MAX_TOTAL_TIME: ${{ github.event_name == 'workflow_dispatch' && inputs.fuzz_max_total_time || '4800' }}
     steps:
       - uses: actions/checkout@v4
 

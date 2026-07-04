@@ -1,25 +1,25 @@
 # Your First UAPI App In Rust
 
 This walkthrough is the shortest current path from "I know Rust" to "I ran a
-Layer36 Phase 2 app." It uses the real Rust SDK, the real manifest commands, and
-the current `layer36 run` path.
+Krate Phase 2 app." It uses the real Rust SDK, the real manifest commands, and
+the current `krate run` path.
 
 Phase 2 is still pre-alpha, so this guide uses the repo workspace directly. The
-future version will start with `cargo add layer36`.
+future version will start with `cargo add krate`.
 
 ## What You Build
 
 A tiny CLI app that:
 
 - reads one file path from app arguments
-- reads that file through Layer36 `fs`
-- writes the text through Layer36 `stdout`
+- reads that file through Krate `fs`
+- writes the text through Krate `stdout`
 - declares its permissions in `manifest.toml`
 
 That is enough to touch the core Phase 2 loop:
 
 ```text
-Rust app -> Layer36 SDK -> UAPI import -> UCap check -> host adapter
+Rust app -> Krate SDK -> UAPI import -> UCap check -> host adapter
 ```
 
 ## 1. Check Your Tools
@@ -27,7 +27,7 @@ Rust app -> Layer36 SDK -> UAPI import -> UCap check -> host adapter
 From the repo root:
 
 ```bash
-cargo run -p layer36-cli -- doctor
+cargo run -p krate-cli -- doctor
 ```
 
 For this walkthrough, you need:
@@ -47,13 +47,13 @@ cargo install cargo-component --locked --version 0.21.1
 The current Rust SDK is local, so the easiest first app is the existing sample:
 
 ```bash
-apps/layer36-cat/
+apps/krate-cat/
 ```
 
 The core code is intentionally plain:
 
 ```rust
-use layer36::{
+use krate::{
     fs,
     io::{args, stdio, streams::OutputStreamExt},
     Guest,
@@ -64,7 +64,7 @@ struct Component;
 impl Guest for Component {
     fn run() -> i32 {
         let Some(path) = args::first() else {
-            let _ = stdio::stderr().write_line("usage: layer36-cat <file>");
+            let _ = stdio::stderr().write_line("usage: krate-cat <file>");
             return 64;
         };
 
@@ -81,11 +81,11 @@ impl Guest for Component {
     }
 }
 
-layer36::export!(Component);
+krate::export!(Component);
 ```
 
 The important part is what it does not do. It does not call `std::fs`, `std::env`,
-or direct WASI imports. It asks Layer36 for arguments, file access, stdout, and
+or direct WASI imports. It asks Krate for arguments, file access, stdout, and
 stderr.
 
 ## 3. Build The Component
@@ -93,14 +93,14 @@ stderr.
 From the repo root:
 
 ```bash
-cargo build -p layer36-cli
-scripts/build-layer36-cat-component.sh
+cargo build -p krate-cli
+scripts/build-krate-cat-component.sh
 ```
 
 The script prints a component path like:
 
 ```text
-apps/layer36-cat/target/wasm32-wasip1/release/layer36_cat.wasm
+apps/krate-cat/target/wasm32-wasip1/release/krate_cat.wasm
 ```
 
 ## 4. Generate A Manifest
@@ -108,15 +108,15 @@ apps/layer36-cat/target/wasm32-wasip1/release/layer36_cat.wasm
 Use the CLI to create a starter manifest:
 
 ```bash
-cargo run -p layer36-cli -- manifest init \
-  --id dev.layer36.cat \
-  --name layer36-cat \
-  --entry target/wasm32-wasip1/release/layer36_cat.wasm \
+cargo run -p krate-cli -- manifest init \
+  --id dev.krate.cat \
+  --name krate-cat \
+  --entry target/wasm32-wasip1/release/krate_cat.wasm \
   --cap io.args \
   --cap io.stdout \
   --cap io.stderr \
   --cap 'fs.read:./fixtures/**' \
-  --output apps/layer36-cat/manifest.toml \
+  --output apps/krate-cat/manifest.toml \
   --force
 ```
 
@@ -127,7 +127,7 @@ This writes valid TOML and checks every capability string before it writes.
 Before running the app, inspect what it asks for:
 
 ```bash
-cargo run -p layer36-cli -- manifest explain apps/layer36-cat/manifest.toml
+cargo run -p krate-cli -- manifest explain apps/krate-cat/manifest.toml
 ```
 
 You should see that `io.args`, `io.stdout`, and `io.stderr` are default grants.
@@ -136,9 +136,9 @@ You should also see that `fs.read:./fixtures/**` needs a launch grant.
 If you want the same explanation as structured data, use JSON:
 
 ```bash
-cargo run -p layer36-cli -- manifest explain \
+cargo run -p krate-cli -- manifest explain \
   --format json \
-  apps/layer36-cat/manifest.toml
+  apps/krate-cat/manifest.toml
 ```
 
 The check and capability table commands can print JSON too, which is useful
@@ -154,13 +154,13 @@ host file/network access -> explicit launch grant
 If you want a local record of the grants used for a run, add:
 
 ```bash
---log-grants layer36-grants.log
+--log-grants krate-grants.log
 ```
 
-For scripts, use JSON Lines. Layer36 writes one audit record per line:
+For scripts, use JSON Lines. Krate writes one audit record per line:
 
 ```bash
---log-grants layer36-grants.jsonl --log-grants-format jsonl
+--log-grants krate-grants.jsonl --log-grants-format jsonl
 ```
 
 If you want a script-readable preview before the component starts, use:
@@ -174,18 +174,18 @@ If you want a script-readable preview before the component starts, use:
 Create a test file:
 
 ```bash
-mkdir -p apps/layer36-cat/fixtures
-printf 'hello from Layer36\n' > apps/layer36-cat/fixtures/hello.txt
+mkdir -p apps/krate-cat/fixtures
+printf 'hello from Krate\n' > apps/krate-cat/fixtures/hello.txt
 ```
 
 Run with the sample manifest:
 
 ```bash
-cd apps/layer36-cat
-../../target/debug/layer36 run \
+cd apps/krate-cat
+../../target/debug/krate run \
   --manifest manifest.toml \
   --auto-grant \
-  target/wasm32-wasip1/release/layer36_cat.wasm \
+  target/wasm32-wasip1/release/krate_cat.wasm \
   -- ./fixtures/hello.txt
 cd ../..
 ```
@@ -193,7 +193,7 @@ cd ../..
 Expected output:
 
 ```text
-hello from Layer36
+hello from Krate
 ```
 
 ## 7. See The Denial Path
@@ -201,15 +201,15 @@ hello from Layer36
 Run without granting the file capability:
 
 ```bash
-cd apps/layer36-cat
-printf '' | ../../target/debug/layer36 run \
+cd apps/krate-cat
+printf '' | ../../target/debug/krate run \
   --manifest manifest.toml \
-  target/wasm32-wasip1/release/layer36_cat.wasm \
+  target/wasm32-wasip1/release/krate_cat.wasm \
   -- ./fixtures/hello.txt
 cd ../..
 ```
 
-In a non-interactive shell, Layer36 exits before starting the component and
+In a non-interactive shell, Krate exits before starting the component and
 prints the missing required capability.
 
 That is the behavior we want. The runtime should refuse the app before native
@@ -219,12 +219,12 @@ file access happens.
 
 Start by changing:
 
-- `apps/layer36-cat/src/lib.rs`
-- `apps/layer36-cat/Cargo.toml`
-- `apps/layer36-cat/manifest.toml`
+- `apps/krate-cat/src/lib.rs`
+- `apps/krate-cat/Cargo.toml`
+- `apps/krate-cat/manifest.toml`
 
 Then rebuild and rerun. As the SDK gets published, this flow will move from a
-repo-local sample to a fresh project outside the Layer36 tree.
+repo-local sample to a fresh project outside the Krate tree.
 
 ## Current Limits
 
@@ -234,4 +234,4 @@ repo-local sample to a fresh project outside the Layer36 tree.
 - Cross-host sample proof is still running through CI, not through a released
   installer.
 
-Even with those limits, this is now the core shape of a Layer36 CLI app.
+Even with those limits, this is now the core shape of a Krate CLI app.

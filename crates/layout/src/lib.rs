@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use layer36_adapter_common::ui::{WidgetId, WidgetKind, WidgetNode, WidgetStyle, WidgetTree};
+use krate_adapter_common::ui::{WidgetId, WidgetKind, WidgetNode, WidgetStyle, WidgetTree};
 use taffy::prelude::*;
 use taffy::TaffyError;
 use thiserror::Error;
@@ -417,7 +417,7 @@ fn map_taffy(err: TaffyError) -> LayoutError {
 
 #[cfg(test)]
 mod tests {
-    use layer36_adapter_common::ui::WidgetStyle;
+    use krate_adapter_common::ui::WidgetStyle;
 
     use super::*;
 

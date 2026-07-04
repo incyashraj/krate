@@ -90,9 +90,9 @@ pub enum WindowBackendKind {
     Unknown,
 }
 
-/// Opaque host window handle associated with a Layer36 window id.
+/// Opaque host window handle associated with a Krate window id.
 ///
-/// The raw value is owned by the host adapter. Layer36 only stores it so a
+/// The raw value is owned by the host adapter. Krate only stores it so a
 /// native backend can keep the stable `WindowId` and the OS-level window object
 /// connected while events move through the shared queue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -593,7 +593,7 @@ pub struct WinitWindowEventCollector {
 }
 
 impl WinitWindowEventCollector {
-    /// Create an empty callback collector for one Layer36 window.
+    /// Create an empty callback collector for one Krate window.
     pub fn new(window: WindowId) -> Self {
         Self {
             window,
@@ -601,7 +601,7 @@ impl WinitWindowEventCollector {
         }
     }
 
-    /// Return the stable Layer36 window id this collector feeds.
+    /// Return the stable Krate window id this collector feeds.
     pub fn window(&self) -> WindowId {
         self.window
     }
@@ -654,7 +654,7 @@ pub struct WinitWindowSession {
 }
 
 impl WinitWindowSession {
-    /// Create session state for a winit-backed Layer36 window.
+    /// Create session state for a winit-backed Krate window.
     pub fn new(
         id: WindowId,
         handle: NativeWindowHandle,
@@ -679,7 +679,7 @@ impl WinitWindowSession {
         })
     }
 
-    /// Return the stable Layer36 window id.
+    /// Return the stable Krate window id.
     pub fn id(&self) -> WindowId {
         self.id
     }
@@ -689,7 +689,7 @@ impl WinitWindowSession {
         self.handle
     }
 
-    /// Return the latest native snapshot seen by Layer36.
+    /// Return the latest native snapshot seen by Krate.
     pub fn last_snapshot(&self) -> WinitWindowSnapshot {
         self.last_snapshot
     }
@@ -2155,17 +2155,17 @@ mod tests {
         let adapter = DraftUiAdapter::new();
         let size = WindowSize::new(700, 500).expect("size");
         let id = adapter
-            .create_window(WindowOptions::new("Layer36", size).expect("options"))
+            .create_window(WindowOptions::new("Krate", size).expect("options"))
             .expect("create");
 
         adapter.show_window(id).expect("show");
         adapter
-            .set_title(id, "Layer36 Preview".to_string())
+            .set_title(id, "Krate Preview".to_string())
             .expect("title");
         adapter.request_redraw(id).expect("redraw");
 
         let window = adapter.window(id).expect("window lookup").expect("window");
-        assert_eq!(window.title, "Layer36 Preview");
+        assert_eq!(window.title, "Krate Preview");
         assert!(window.visible);
         assert_eq!(
             adapter.drain_events().expect("events"),
@@ -2174,7 +2174,7 @@ mod tests {
                 UiEvent::WindowShown(id),
                 UiEvent::TitleChanged {
                     id,
-                    title: "Layer36 Preview".to_string(),
+                    title: "Krate Preview".to_string(),
                 },
                 UiEvent::RedrawRequested(id),
             ]
@@ -2186,7 +2186,7 @@ mod tests {
         let adapter = DraftUiAdapter::new();
         let size = WindowSize::new(700, 500).expect("size");
         let id = adapter
-            .create_window(WindowOptions::new("Layer36", size).expect("options"))
+            .create_window(WindowOptions::new("Krate", size).expect("options"))
             .expect("create");
         adapter.show_window(id).expect("show");
 
@@ -2206,7 +2206,7 @@ mod tests {
         let adapter = DraftUiAdapter::new();
         let id = adapter
             .create_window(
-                WindowOptions::new("Layer36 no native loop", WindowSize::new(640, 480).unwrap())
+                WindowOptions::new("Krate no native loop", WindowSize::new(640, 480).unwrap())
                     .unwrap(),
             )
             .expect("create");
@@ -2219,7 +2219,7 @@ mod tests {
         let adapter = DraftUiAdapter::new();
         let size = WindowSize::new(640, 480).expect("size");
         let id = adapter
-            .create_window(WindowOptions::new("Layer36 winit", size).expect("options"))
+            .create_window(WindowOptions::new("Krate winit", size).expect("options"))
             .expect("create");
         let handle = NativeWindowHandle::new(WindowBackendKind::Winit, 0xD06).expect("handle");
         adapter
@@ -2260,7 +2260,7 @@ mod tests {
         let adapter = DraftUiAdapter::new();
         let size = WindowSize::new(640, 480).expect("size");
         let id = adapter
-            .create_window(WindowOptions::new("Layer36 winit", size).expect("options"))
+            .create_window(WindowOptions::new("Krate winit", size).expect("options"))
             .expect("create");
         let handle = NativeWindowHandle::new(WindowBackendKind::Winit, 0xD06).expect("handle");
         adapter
@@ -2308,7 +2308,7 @@ mod tests {
         let adapter = DraftUiAdapter::new();
         let size = WindowSize::new(640, 480).expect("size");
         let id = adapter
-            .create_window(WindowOptions::new("Layer36 winit", size).expect("options"))
+            .create_window(WindowOptions::new("Krate winit", size).expect("options"))
             .expect("create");
         let handle = NativeWindowHandle::new(WindowBackendKind::Winit, 0xD06).expect("handle");
         adapter
@@ -2365,10 +2365,10 @@ mod tests {
         let adapter = DraftUiAdapter::new();
         let size = WindowSize::new(640, 480).expect("size");
         let first = adapter
-            .create_window(WindowOptions::new("Layer36 first", size).expect("options"))
+            .create_window(WindowOptions::new("Krate first", size).expect("options"))
             .expect("first");
         let second = adapter
-            .create_window(WindowOptions::new("Layer36 second", size).expect("options"))
+            .create_window(WindowOptions::new("Krate second", size).expect("options"))
             .expect("second");
         let mut collector = WinitWindowEventCollector::new(first);
         let foreign = WinitWindowSnapshot::new(second, size, false, false, 1.0).expect("snapshot");
@@ -2404,7 +2404,7 @@ mod tests {
         let adapter = DraftUiAdapter::new();
         let size = WindowSize::new(640, 480).expect("size");
         let id = adapter
-            .create_window(WindowOptions::new("Layer36", size).expect("options"))
+            .create_window(WindowOptions::new("Krate", size).expect("options"))
             .expect("window");
         let handle = NativeWindowHandle::new(WindowBackendKind::Winit, 0x1234).expect("handle");
 

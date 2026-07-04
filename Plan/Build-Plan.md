@@ -1,9 +1,9 @@
-# Layer36 Build Plan
+# Krate Build Plan
 
 > **Version:** 0.1: Working draft
 > **Status:** Phase 1 engineering proof complete; Phase 0 external launch items still pending.
 > **Horizon:** estimated. The plan is phase based, not a fixed 24 month promise.
-> **Name:** Krate (formerly Layer36; company Krate Labs)
+> **Name:** Krate (formerly Krate; company Krate Labs)
 > **Development repo:** `incyashraj/layer6x6` while the 6x6 portability matrix is being built.
 > **Tagline:** Write once. Run on everything. Natively.
 > **Current focus:** Phase 3 desktop UI adapter foundation, while Phase 2 waits
@@ -55,7 +55,7 @@ All task IDs follow the pattern `P{phase}-{area}-{n}` (e.g. `P2-UAPI-05`). Refer
 
 ### 1.1 What we're building
 
-**Layer36** is a universal application platform: a portable runtime, a universal standard library (UAPI), a capability-based permission system (UCap), a package format, and a distribution layer that together let developers write an app **once** and have it run natively: with access to each platform's hardware and performance: on Windows, macOS, Linux, iOS, Android, and the web.
+**Krate** is a universal application platform: a portable runtime, a universal standard library (UAPI), a capability-based permission system (UCap), a package format, and a distribution layer that together let developers write an app **once** and have it run natively: with access to each platform's hardware and performance: on Windows, macOS, Linux, iOS, Android, and the web.
 
 It is not:
 - A new operating system in the Linux kernel sense
@@ -78,7 +78,7 @@ Four forces are converging:
 
 ### 1.3 Success criteria (v1.0)
 
-At v1.0 launch, Layer36 must be able to:
+At v1.0 launch, Krate must be able to:
 
 | # | Criterion | Target |
 |---|-----------|--------|
@@ -95,7 +95,7 @@ At v1.0 launch, Layer36 must be able to:
 
 ```mermaid
 gantt
-    title Layer36 estimated roadmap
+    title Krate estimated roadmap
     dateFormat  YYYY-MM-DD
     axisFormat  %b '%y
 
@@ -132,7 +132,7 @@ Every scalable computing abstraction has solved fragmentation the same way: **in
 - Multiple OSes (server) -> **JVM bytecode / .NET CLR** -> any OS
 - Multiple devices (web) -> **HTML/JS/CSS** -> any browser
 
-Each time, the N² problem became 2N. Layer36 applies the same change to native apps: **one portable bytecode, one standard library, one permission model** at the center; a thin adapter per host on the outside.
+Each time, the N² problem became 2N. Krate applies the same change to native apps: **one portable bytecode, one standard library, one permission model** at the center; a thin adapter per host on the outside.
 
 ### 2.3 Prior art (what we learn from each)
 
@@ -165,16 +165,16 @@ Every concept here has a one-sentence canonical definition. Memorize them: they 
 
 ### 3.1 Universal IR (UIR)
 
-The portable bytecode and ABI that every Layer36 app compiles to. **Base: WebAssembly Core + Component Model.** Extensions we add: structured Unicode strings at ABI level, SIMD 128 mandatory, threads mandatory, exception handling (proposal) required, GC (proposal) required.
+The portable bytecode and ABI that every Krate app compiles to. **Base: WebAssembly Core + Component Model.** Extensions we add: structured Unicode strings at ABI level, SIMD 128 mandatory, threads mandatory, exception handling (proposal) required, GC (proposal) required.
 
 ### 3.2 Universal API (UAPI)
 
-The standard library every Layer36 app calls. **Defined as WIT interfaces** (WebAssembly Interface Types). Implemented by the runtime on each host by calling native OS APIs.
+The standard library every Krate app calls. **Defined as WIT interfaces** (WebAssembly Interface Types). Implemented by the runtime on each host by calling native OS APIs.
 
 UAPI modules (target set for v1.0):
 
 ```
-layer36:
+krate:
   io/              # stdio, files, pipes, stdout, stderr
   net/             # TCP, UDP, QUIC, HTTP, WebSocket, DNS
   time/            # clocks, timers, scheduling
@@ -254,7 +254,7 @@ flowchart TB
         BUNDLE --> APP[myapp.l36app]
     end
 
-    subgraph Runtime["Layer36 Runtime (per host)"]
+    subgraph Runtime["Krate Runtime (per host)"]
         LOADER[Bundle Loader]
         VERIFY[Signature + Manifest Verifier]
         PERM[UCap Enforcer]
@@ -329,7 +329,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant App as Layer36 App
+    participant App as Krate App
     participant Rt as Runtime
     participant DB as Policy DB
     participant Host as Host OS
@@ -496,7 +496,7 @@ Every choice below is a **decision**, not a suggestion. Departing from it requir
 | `wit-bindgen` | Generate language bindings from WIT |
 | `wasm-tools` | Component composition, optimization, validation |
 | `wasmtime` CLI | Local execution for debugging |
-| `layer36` CLI | Our product CLI (built Phase 5) |
+| `krate` CLI | Our product CLI (built Phase 5) |
 | `just` | Task runner (thin layer over make) |
 | `pre-commit` | Lint + format hooks |
 
@@ -524,7 +524,7 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 | 2 | UAPI v0.1 (CLI) | Ship the first useful cross-platform CLI app through our runtime. | est. 4 to 8 weeks |
 | 3 | UI + Graphics | First GUI app running natively on Win / macOS / Linux. | est. 6 to 10 weeks |
 | 4 | Mobile Hosts | Same app runs on iOS and Android. | est. 8 to 12 weeks |
-| 5 | Developer SDK | A dev can `layer36 new hello && layer36 run` in under 60 seconds. | est. 6 to 10 weeks |
+| 5 | Developer SDK | A dev can `krate new hello && krate run` in under 60 seconds. | est. 6 to 10 weeks |
 | 6 | Distribution & Identity | Users discover, install, update, and sign in across devices. | est. 8 to 12 weeks |
 | 7 | v1.0 Hardening | ParkSure migrated end-to-end; public launch. | est. after Phase 6 |
 
@@ -533,7 +533,7 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 **Objective:** Everything a new contributor needs to start writing code on day 1.
 
 **Deliverables:**
-- Monorepo `layer36/layer36` on GitHub (MIT + Apache-2.0 dual license).
+- Monorepo `krate/krate` on GitHub (MIT + Apache-2.0 dual license).
 - README, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT.
 - Repo skeleton (see §7.0).
 - First ADR (ADR-0001: "We use Rust for the runtime").
@@ -552,13 +552,13 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 **Objective:** "Same `.wasm` file runs via our CLI on Linux, macOS, Windows and prints Hello World. Nothing else."
 
 **Deliverables:**
-- `layer36-runtime` crate wrapping Wasmtime with the beginnings of our API surface.
-- `layer36` CLI v0.0.1 with `layer36 run <file.wasm>`.
+- `krate-runtime` crate wrapping Wasmtime with the beginnings of our API surface.
+- `krate` CLI v0.0.1 with `krate run <file.wasm>`.
 - Cross-platform CI matrix green.
 - ADR-0002: "We use Wasmtime." ADR-0003: "We adopt Component Model."
 
 **Exit criteria:**
-- One Rust file -> `cargo component build` -> `layer36 run foo.wasm` prints hello on all three desktop OSes.
+- One Rust file -> `cargo component build` -> `krate run foo.wasm` prints hello on all three desktop OSes.
 - Startup time < 200 ms cold on mid-range hardware.
 - Runtime binary size < 30 MB.
 
@@ -569,11 +569,11 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 **Scope for v0.1:** `io`, `fs`, `net` (HTTP client only), `time`, `locale`.
 
 **Deliverables:**
-- WIT files for each v0.1 module in `wit/layer36/*.wit`.
+- WIT files for each v0.1 module in `wit/krate/*.wit`.
 - Host adapter implementations for Linux, macOS, Windows.
 - `wit-bindgen` generated Rust, Go, and TypeScript stubs.
-- Sample apps: `layer36-curl` (HTTP client), `layer36-cat` (file reader), `layer36-clock` (time demo).
-- Integration test harness that runs sample apps under `layer36 run` on all three hosts and diffs stdout.
+- Sample apps: `krate-curl` (HTTP client), `krate-cat` (file reader), `krate-clock` (time demo).
+- Integration test harness that runs sample apps under `krate run` on all three hosts and diffs stdout.
 
 **Exit criteria:**
 - All three sample apps pass on all three hosts in CI.
@@ -594,12 +594,12 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 - 2D canvas fallback (vello / wgpu) for custom-drawn widgets.
 - Layout engine (flexbox subset based on Taffy).
 - Input (keyboard, mouse, touch surrogate).
-- Sample app: `layer36-notes`: minimal note-taking app with list, editor, save to disk.
+- Sample app: `krate-notes`: minimal note-taking app with list, editor, save to disk.
 
-**Parallel track (added 2026-07, `Plan/Plan-Amendments-2026-07.md` A3):** the agent-embedding surface — a stable library embedding API on `crates/runtime`, `layer36 run --json` machine-readable output, and a thin MCP server wrapper (tasks P3-EMB-01..03). This is the Phase-3-era expression of the "safe execution of AI-generated software" wedge: agent frameworks can execute generated components inside UCap sandboxes long before the Phase 5–6 hosted and marketplace expressions exist. It is additive and does not gate Phase 3 exit.
+**Parallel track (added 2026-07, `Plan/Plan-Amendments-2026-07.md` A3):** the agent-embedding surface — a stable library embedding API on `crates/runtime`, `krate run --json` machine-readable output, and a thin MCP server wrapper (tasks P3-EMB-01..03). This is the Phase-3-era expression of the "safe execution of AI-generated software" wedge: agent frameworks can execute generated components inside UCap sandboxes long before the Phase 5–6 hosted and marketplace expressions exist. It is additive and does not gate Phase 3 exit.
 
 **Exit criteria:**
-- `layer36-notes` runs on all three desktop OSes and feels native (no Electron-style "web app in a chrome").
+- `krate-notes` runs on all three desktop OSes and feels native (no Electron-style "web app in a chrome").
 - 60 fps steady on 2020+ hardware.
 
 ### Phase 4: Mobile Hosts (est. 8 to 12 weeks)
@@ -615,7 +615,7 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 - Mobile CI (GitHub Actions macOS runners for iOS; Linux for Android via AVD).
 
 **Exit criteria:**
-- `layer36-notes` runs on iPhone and Android phone.
+- `krate-notes` runs on iPhone and Android phone.
 - Battery usage comparable to a native Swift/Kotlin equivalent of the same app (<= 1.5x acceptable for v0.1).
 
 ### Phase 5: Developer SDK (est. 6 to 10 weeks)
@@ -623,7 +623,7 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 **Objective:** A developer's first 60 seconds.
 
 **Deliverables:**
-- `layer36` CLI: `new`, `build`, `run`, `test`, `deploy`, `doctor`.
+- `krate` CLI: `new`, `build`, `run`, `test`, `deploy`, `doctor`.
 - Project templates (Rust, Go, TypeScript).
 - Hot reload during dev.
 - Debugger integration (DWARF via `wasm-tools component-debug`, VSCode extension).
@@ -631,7 +631,7 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 - Language servers / IntelliSense work for WIT-generated bindings in all three first-class languages.
 
 **Exit criteria:**
-- `layer36 new hello --lang rust && cd hello && layer36 run` produces a running GUI on the dev's machine in under 60 seconds.
+- `krate new hello --lang rust && cd hello && krate run` produces a running GUI on the dev's machine in under 60 seconds.
 - Stack traces in app crashes point to app source, not WASM offsets.
 
 ### Phase 6: Distribution & Identity (est. 8 to 12 weeks)
@@ -640,7 +640,7 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 
 **Deliverables:**
 - Marketplace backend (axum + Postgres + S3).
-- Marketplace frontend (itself a Layer36 app: deep dogfood).
+- Marketplace frontend (itself a Krate app: deep dogfood).
 - Signing infrastructure (developer keypairs, revocation, transparency log).
 - Delta updates (`.l36app` diff format).
 - Identity: `did:key` support in runtime, `uapi::identity` module, DID resolution UI.
@@ -648,14 +648,14 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 
 **Exit criteria:**
 - A new user can install runtime, sign in, install 3 apps, and each app recognizes them as same user: on two different devices: without manual account setup in each app.
-- Developer can `layer36 deploy` and the update reaches users' devices within 24 hours.
+- Developer can `krate deploy` and the update reaches users' devices within 24 hours.
 
 ### Phase 7: v1.0 Hardening (est. after Phase 6)
 
 **Objective:** Ship.
 
 **Deliverables:**
-- ParkSure migrated to Layer36 (all 6 client apps -> 1 codebase).
+- ParkSure migrated to Krate (all 6 client apps -> 1 codebase).
 - Security audit by external firm (Trail of Bits or similar).
 - Performance work: meet all §1.3 + §11 targets.
 - Documentation pass: every UAPI function documented with examples.
@@ -674,7 +674,7 @@ Each phase's tasks are listed with an ID. Tasks are independent enough to be ass
 ### 7.0 Repo skeleton (Phase 0)
 
 ```
-layer36/
+krate/
 """""" Cargo.toml              # workspace
 """""" rust-toolchain.toml     # pinned stable + wasm32 targets
 """""" .github/
@@ -686,7 +686,7 @@ layer36/
 "   """"" PULL_REQUEST_TEMPLATE.md
 """""" crates/
 "   """""" runtime/            # the host runtime (Phase 1+)
-"   """""" cli/                # `layer36` command (Phase 1+)
+"   """""" cli/                # `krate` command (Phase 1+)
 "   """""" bundle/             # .l36app format (Phase 6)
 "   """""" policy/             # UCap policy engine (Phase 2+)
 "   """"" host-adapter/
@@ -696,13 +696,13 @@ layer36/
 "       """""" ios/            # Phase 4
 "       """"" android/        # Phase 4
 """""" wit/
-"   """"" layer36/
+"   """"" krate/
 "       """""" io.wit
 "       """""" net.wit
 "       """"" ...             # one file per UAPI module
 """""" apps/                   # sample & dogfood apps
-"   """""" layer36-curl/
-"   """""" layer36-notes/
+"   """""" krate-curl/
+"   """""" krate-notes/
 "   """"" marketplace/        # Phase 6
 """""" docs/
 "   """""" adr/                # decision records
@@ -732,7 +732,7 @@ layer36/
 | P0-DOCS-03 | CONTRIBUTING.md covering PR flow, DCO, commit style | 0.5d |
 | P0-COMM-01 | Discord server + #general, #dev, #design, #help | 0.5d |
 | P0-COMM-02 | Twitter/X account, first announcement thread draft | 0.5d |
-| P0-LEGAL-01 | Trademark search for "Layer36" (defer filing) | 0.5d |
+| P0-LEGAL-01 | Trademark search for "Krate" (defer filing) | 0.5d |
 | P0-HIRE-01 | Write contributor guide for first external PR | 0.5d |
 
 ### 7.2 Phase 1 tasks
@@ -743,13 +743,13 @@ layer36/
 | P1-RT-02 | Load + instantiate a WASM component | 1d |
 | P1-RT-03 | Define minimal host import table (print, exit) | 1d |
 | P1-RT-04 | Configurable fuel / memory limits | 1d |
-| P1-CLI-01 | `layer36` binary using `clap` | 1d |
-| P1-CLI-02 | `layer36 run <file>` subcommand | 1d |
-| P1-CLI-03 | `layer36 version`, `layer36 doctor` basic | 0.5d |
+| P1-CLI-01 | `krate` binary using `clap` | 1d |
+| P1-CLI-02 | `krate run <file>` subcommand | 1d |
+| P1-CLI-03 | `krate version`, `krate doctor` basic | 0.5d |
 | P1-CI-01 | Cross-platform CI matrix | 2d |
 | P1-CI-02 | Release artifacts (tar.gz, zip, .msi, .pkg) | 2d |
 | P1-TEST-01 | Integration test: hello-world.wasm runs on all hosts | 1d |
-| P1-DOC-01 | Quickstart: "Run your first WASM under layer36" | 1d |
+| P1-DOC-01 | Quickstart: "Run your first WASM under krate" | 1d |
 | P1-DOC-02 | ADR-0002 (Wasmtime), ADR-0003 (Component Model) | 1d |
 | P1-PERF-01 | Baseline startup, memory benchmarks | 2d |
 | P1-SEC-01 | Threat model document v0.1 | 2d |
@@ -758,20 +758,20 @@ layer36/
 
 | ID | Task | Est |
 |---|---|---|
-| P2-UAPI-01 | Write `wit/layer36/io.wit` (stdio, log) | 1d |
-| P2-UAPI-02 | Write `wit/layer36/fs.wit` (open, read, write, stat) | 2d |
-| P2-UAPI-03 | Write `wit/layer36/net.wit` (HTTP client only) | 2d |
-| P2-UAPI-04 | Write `wit/layer36/time.wit` (clock, sleep, timer) | 1d |
-| P2-UAPI-05 | Write `wit/layer36/locale.wit` (current locale, format) | 1d |
+| P2-UAPI-01 | Write `wit/krate/io.wit` (stdio, log) | 1d |
+| P2-UAPI-02 | Write `wit/krate/fs.wit` (open, read, write, stat) | 2d |
+| P2-UAPI-03 | Write `wit/krate/net.wit` (HTTP client only) | 2d |
+| P2-UAPI-04 | Write `wit/krate/time.wit` (clock, sleep, timer) | 1d |
+| P2-UAPI-05 | Write `wit/krate/locale.wit` (current locale, format) | 1d |
 | P2-ADPT-01 | Implement io/fs/net/time adapters on Linux | 3d |
 | P2-ADPT-02 | Implement same on macOS | 3d |
 | P2-ADPT-03 | Implement same on Windows | 3d |
 | P2-BIND-01 | Rust bindings via wit-bindgen | 1d |
 | P2-BIND-02 | Go bindings via TinyGo | 2d |
 | P2-BIND-03 | TypeScript bindings via jco | 2d |
-| P2-APP-01 | Write `layer36-curl` sample | 2d |
-| P2-APP-02 | Write `layer36-cat` sample | 1d |
-| P2-APP-03 | Write `layer36-clock` sample | 1d |
+| P2-APP-01 | Write `krate-curl` sample | 2d |
+| P2-APP-02 | Write `krate-cat` sample | 1d |
+| P2-APP-03 | Write `krate-clock` sample | 1d |
 | P2-TEST-01 | Harness: run sample, diff stdout across hosts | 2d |
 | P2-SEC-01 | UCap minimum: cap per UAPI module, grant-at-launch | 3d |
 | P2-DOC-01 | WIT style guide | 1d |
@@ -782,19 +782,19 @@ layer36/
 | ID | Task | Est |
 |---|---|---|
 | P3-UI-01 | Widget protocol design RFC | 3d |
-| P3-UI-02 | `wit/layer36/ui.wit` | 2d |
+| P3-UI-02 | `wit/krate/ui.wit` | 2d |
 | P3-UI-03 | Layout engine (Taffy integration) | 3d |
 | P3-UI-04 | Window + event loop abstractions | 3d |
 | P3-UI-05 | macOS adapter: NSWindow + NSView widget bridge | 5d |
 | P3-UI-06 | Windows adapter: Win32 + DirectComposition | 5d |
 | P3-UI-07 | Linux adapter: drawn-widget backend (ADR-0015; was GTK4 bridge) | 5d |
-| P3-GFX-01 | `wit/layer36/gfx.wit` (2D canvas) | 2d |
+| P3-GFX-01 | `wit/krate/gfx.wit` (2D canvas) | 2d |
 | P3-GFX-02 | `wgpu` integration in runtime | 3d |
 | P3-GFX-03 | 2D canvas via vello | 5d |
 | P3-GFX-04 | 3D API (WebGPU-compatible subset) | 5d |
 | P3-INPUT-01 | Keyboard + mouse input | 2d |
 | P3-INPUT-02 | Text input + IME | 3d |
-| P3-APP-01 | Design and build `layer36-notes` | 5d |
+| P3-APP-01 | Design and build `krate-notes` | 5d |
 | P3-A11Y-01 | Screen reader integration per platform | 5d |
 | P3-TEST-01 | UI snapshot testing harness | 3d |
 | P3-PERF-01 | Frame budget dashboard | 2d |
@@ -820,7 +820,7 @@ layer36/
 | P4-AND-07 | APK/AAB packaging | 2d |
 | P4-UI-01 | Touch + gesture UAPI | 3d |
 | P4-UI-02 | Mobile-appropriate default layouts | 3d |
-| P4-APP-01 | `layer36-notes` port verified on both mobile OSes | 3d |
+| P4-APP-01 | `krate-notes` port verified on both mobile OSes | 3d |
 | P4-CI-01 | iOS CI on GitHub Actions macOS runners | 3d |
 | P4-CI-02 | Android CI via emulator | 3d |
 
@@ -828,10 +828,10 @@ layer36/
 
 | ID | Task | Est |
 |---|---|---|
-| P5-CLI-01 | `layer36 new <name> --lang <rust\|go\|ts>` scaffolding | 3d |
-| P5-CLI-02 | `layer36 build` wrapper around component builds | 2d |
-| P5-CLI-03 | `layer36 test` harness integration | 2d |
-| P5-CLI-04 | `layer36 doctor` environment check | 2d |
+| P5-CLI-01 | `krate new <name> --lang <rust\|go\|ts>` scaffolding | 3d |
+| P5-CLI-02 | `krate build` wrapper around component builds | 2d |
+| P5-CLI-03 | `krate test` harness integration | 2d |
+| P5-CLI-04 | `krate doctor` environment check | 2d |
 | P5-HOT-01 | Hot reload architecture RFC | 2d |
 | P5-HOT-02 | Hot reload implementation (re-instantiate w/ state migration) | 7d |
 | P5-DBG-01 | DWARF in component format | 5d |
@@ -862,7 +862,7 @@ layer36/
 | P6-MP-04 | Reviews + ratings | 3d |
 | P6-MP-05 | Categories + featured content | 2d |
 | P6-MP-06 | Age-rating + moderation tooling | 5d |
-| P6-MP-07 | Marketplace frontend (itself a Layer36 app) | 10d |
+| P6-MP-07 | Marketplace frontend (itself a Krate app) | 10d |
 | P6-ID-01 | `did:key` implementation | 3d |
 | P6-ID-02 | `did:web` resolver | 3d |
 | P6-ID-03 | `uapi::identity` module | 3d |
@@ -875,7 +875,7 @@ layer36/
 
 | ID | Task | Est |
 |---|---|---|
-| P7-PARK-01 | ParkSure architecture review for Layer36 port | 3d |
+| P7-PARK-01 | ParkSure architecture review for Krate port | 3d |
 | P7-PARK-02 | Port driver app | 10d |
 | P7-PARK-03 | Port operator app | 10d |
 | P7-PARK-04 | Port valet ops + lot admin | 10d |
@@ -885,7 +885,7 @@ layer36/
 | P7-SEC-02 | Remediation of findings | 10d |
 | P7-PERF-01 | Meet §1.3 and §11 targets | 20d |
 | P7-DOC-01 | Documentation pass (every UAPI fn) | 15d |
-| P7-DOC-02 | Migration guide "from Electron/Flutter/RN to Layer36" | 5d |
+| P7-DOC-02 | Migration guide "from Electron/Flutter/RN to Krate" | 5d |
 | P7-I18N-01 | Runtime + marketplace in 6 locales | 10d |
 | P7-A11Y-01 | Full accessibility audit | 5d |
 | P7-LAUNCH-01 | Marketing site | 5d |
@@ -1067,12 +1067,12 @@ CREATE INDEX idx_grant_app ON ucap_grant(app_id);
 
 | Metric | Target | Measured how |
 |---|---|---|
-| Cold start (hello-world CLI) | < 100 ms | `layer36 run` wall time, average of 20 |
+| Cold start (hello-world CLI) | < 100 ms | `krate run` wall time, average of 20 |
 | Warm start (same binary) | < 20 ms | As above, after first run |
 | UAPI dispatch overhead | < 500 ns | Microbench inside runtime |
 | First frame (GUI hello-world) | < 300 ms | Timestamp diff from exec to first paint |
 | Steady-state frame | 16.7 ms (60 fps) | Per-frame histogram |
-| Bundle install time (10 MB) | < 2 s | `layer36 install` wall time |
+| Bundle install time (10 MB) | < 2 s | `krate install` wall time |
 | Bundle delta update (1 MB) | < 500 ms | Download + apply |
 | Memory overhead (runtime + empty app) | < 40 MB RSS | `ps` after hello-world exits |
 | Binary size overhead vs native equivalent | < 3x | Size of `.l36app` vs hand-written native |
@@ -1177,12 +1177,12 @@ Any change to UIR, UAPI, UCap, or bundle format requires an RFC:
 | Founder-only team cannot ship the full plan alone | High | Critical | Recruit co-founder or first key systems contributor by end of Phase 1 |
 | Funding runway | Medium | Critical | Build MVP (Phase 2) before fundraising; OSS + sponsorships supplement |
 | Burnout | Medium | High | Hard 40h/wk default; explicit rest weeks between phases |
-| ParkSure time conflict | High | High | Schedule Layer36 work around ParkSure milestones; use Phase 7 to migrate ParkSure itself: one-stone-two-birds |
+| ParkSure time conflict | High | High | Schedule Krate work around ParkSure milestones; use Phase 7 to migrate ParkSure itself: one-stone-two-birds |
 
 ### 14.4 Legal (deferred per founder instruction; tracked)
 
 Items to revisit at Phase 6:
-- Trademark "Layer36" + "META-OS".
+- Trademark "Krate" + "META-OS".
 - GPL-vs-permissive implications of any linked code.
 - Export controls on crypto (BIS EAR classification).
 - App Store ToS compliance posture.
@@ -1256,7 +1256,7 @@ Rank order for the next three hires after founder:
 
 ### 16.3 Co-founder question
 
-Y's existing memory says a technical co-founder with DeFi or security background is the highest-impact hire for Bouclier. For Layer36 the best co-founder profile is different: **systems / compiler / OS kernel background**. Not the same person. If Bouclier and Layer36 both need a co-founder, these are two different people and time has to be allocated to recruiting both separately.
+Y's existing memory says a technical co-founder with DeFi or security background is the highest-impact hire for Bouclier. For Krate the best co-founder profile is different: **systems / compiler / OS kernel background**. Not the same person. If Bouclier and Krate both need a co-founder, these are two different people and time has to be allocated to recruiting both separately.
 
 ---
 
@@ -1316,11 +1316,11 @@ Total infra without salaries: < $1k/month for 18 months, < $2k/month after launc
 - **Capability**: An unforgeable token granting the right to perform an operation on a resource.
 - **Component Model**: WebAssembly specification adding typed interfaces and composition to WASM modules.
 - **DID**: Decentralized Identifier. A W3C standard for self-sovereign identity.
-- **Host Adapter**: The per-OS module inside the Layer36 runtime that maps UAPI to native calls.
+- **Host Adapter**: The per-OS module inside the Krate runtime that maps UAPI to native calls.
 - **JIT**: Just-In-Time compilation.
-- **Manifest**: `manifest.toml` describing a Layer36 app's metadata and required capabilities.
-- **Layer36**: Product name for the META-OS described here.
-- **UAPI**: Universal API. The standard library exposed to every Layer36 app.
+- **Manifest**: `manifest.toml` describing a Krate app's metadata and required capabilities.
+- **Krate**: Product name for the META-OS described here.
+- **UAPI**: Universal API. The standard library exposed to every Krate app.
 - **UCap**: Universal Capabilities. The permission model.
 - **UIR**: Universal Intermediate Representation. The bytecode every app compiles to (= WASM).
 - **WASI**: WebAssembly System Interface. A standard set of host interfaces for WASM.
@@ -1376,10 +1376,10 @@ Total infra without salaries: < $1k/month for 18 months, < $2k/month after launc
 
 ## 20. Appendices
 
-### Appendix A: Example WIT file (`wit/layer36/fs.wit`)
+### Appendix A: Example WIT file (`wit/krate/fs.wit`)
 
 ```wit
-package layer36:fs@0.1.0;
+package krate:fs@0.1.0;
 
 interface types {
   record file-stat {
@@ -1475,10 +1475,10 @@ splash     = "assets/splash.png"
 
 ```rust
 // myapp/src/main.rs
-use layer36::fs::{self, OpenMode};
-use layer36::ui::{Window, Stack, Text, Button};
+use krate::fs::{self, OpenMode};
+use krate::ui::{Window, Stack, Text, Button};
 
-fn main() -> layer36::Result<()> {
+fn main() -> krate::Result<()> {
     let mut file = fs::open("~/notes.txt", OpenMode::Read)?;
     let contents = file.read_to_string()?;
 
@@ -1493,7 +1493,7 @@ fn main() -> layer36::Result<()> {
     window.show_and_run()
 }
 
-fn save(_ev: layer36::ui::Event) {
+fn save(_ev: krate::ui::Event) {
     // ...
 }
 ```
@@ -1535,8 +1535,8 @@ Links, prior art, discussion threads.
 Day-by-day for Phase 0 week 1, no room for "what do I do next?"
 
 **Monday**
-- [ ] Create GitHub org `layer36`
-- [ ] Create repo `layer36/layer36`
+- [ ] Create GitHub org `krate`
+- [ ] Create repo `krate/krate`
 - [x] Add MIT + Apache-2.0 LICENSE files
 - [x] Init Cargo workspace
 - [ ] Push first commit: `chore: init workspace`
@@ -1561,7 +1561,7 @@ Day-by-day for Phase 0 week 1, no room for "what do I do next?"
 
 **Friday**
 - [x] Write ADR-0001 (Rust choice)
-- [x] First blog post draft: "Why I'm building Layer36"
+- [x] First blog post draft: "Why I'm building Krate"
 - [x] Twitter/X announcement thread draft
 - [x] Retrospective: what took longer than expected; update this plan
 
@@ -1574,7 +1574,7 @@ What we call things vs. what the ecosystem calls them. Keep these consistent in 
 | UIR | WASM bytecode | Same thing; UIR is our platform-branded name. |
 | UAPI | WASI + our additions | Superset of WASI. |
 | UCap | WASI capabilities + grants + policy | We add the grant UX + policy DB. |
-| Layer36 runtime | WASM runtime (Wasmtime) | Ours = Wasmtime + our adapters + loaders + policy. |
+| Krate runtime | WASM runtime (Wasmtime) | Ours = Wasmtime + our adapters + loaders + policy. |
 | Host Adapter | (no standard name) | Our term for the OS-specific translation layer. |
 | .l36app | WASM component + manifest | Packaged form. |
 
@@ -1591,7 +1591,7 @@ What we call things vs. what the ecosystem calls them. Keep these consistent in 
 > **Last Updated:** 2026-07-02
 > **Process rule (2026-07-02):** Phase 2 closeout is timeboxed and evidence tooling is frozen — no new evidence recorder/comparator/checker scripts until a second engineer joins; reuse existing harnesses. See `Plan/Plan-Amendments-2026-07.md` A4.
 
-This section is the living status board for all of Layer36. Update it at every phase boundary, major milestone, and architectural pivot. It is the first thing a returning contributor should read.
+This section is the living status board for all of Krate. Update it at every phase boundary, major milestone, and architectural pivot. It is the first thing a returning contributor should read.
 
 ---
 
@@ -1599,9 +1599,9 @@ This section is the living status board for all of Layer36. Update it at every p
 
 | # | Phase | Status | Started | Completed | Notes |
 |---|-------|--------|---------|-----------|-------|
-| 0 | Foundation | Mostly done | 2026-05-01 | pending external gates | Renamed from OneOS to Layer36 on 2026-05-02; local scaffold, docs, Pages, labels/issues, and CI are green. |
+| 0 | Foundation | Mostly done | 2026-05-01 | pending external gates | Renamed from OneOS to Krate on 2026-05-02; local scaffold, docs, Pages, labels/issues, and CI are green. |
 | 1 | POC Runtime | Engineering done | 2026-05-02 | pending formal exit gates | Runtime, CLI, WIT host imports, shared hello-world fixture, CI harness, fuel/memory limits, release packaging, quickstart, threat model, benchmarks, ADRs, retrospective, and `v0.1.0-rc1` are in place. |
-| 2 | UAPI v0.1 (CLI) | Started | 2026-05-03 | pending | Draft WIT package, manifest/policy checks, manifest generation and text/JSON inspection, manifest entry/run-file match check, terminal grant prompt, effective capability text/JSON dump, local text/JSONL grant logging, runtime guard, host-binding checkpoint, dispatcher scaffold, policy coverage tests, file-handle and stdio stream capability rechecks, generated type bridge, generated host wiring, resource table, initial Phase 2 `layer36 run` linker path, smoke happy/denied proofs, first Rust SDK crate and helper layer, first Rust app walkthrough, Phase 1 to Phase 2 migration note, first Go and TypeScript SDK scaffolds with clock/cat/curl sample variants and shape checks, optional Go/TypeScript runtime fixture assertions wired behind `LAYER36_GO_*`/`LAYER36_TS_*` WASM paths plus language-variant fixture path auto-discovery, `layer36-clock`, first `layer36-cat`, first `layer36-curl`, sample-manifest launch coverage, language-tooling doctor probes, pure Layer36 imports for the Rust cat/curl samples, component import purity checks, permission-denied exit-code alignment, explicit filesystem sandbox-root resolution with symlink escape checks, no-follow final file opens on Unix and Windows, root-like destructive operation guards, bounded per-call filesystem read/list limits, bounded per-call stream/filesystem write limits, raw app-argument transport guardrails, CLI-side app-argument preflight validation, runtime resource-table cap for stream/file handles, runtime close-on-drop resource cleanup wiring, generated-host resource-table cap, and shared path prefix/reserved-name/trailing-segment/path-length hardening plus sandbox-rooted absolute logical-path handling, shared host clock and locale helpers, shared time overflow guards, deterministic baseline locale date/number formatting, locale-tag canonicalization hardening, locale-subtag shape hardening, timezone-shape normalization hardening, plain HTTP request framing with configurable response-size guard, request-line URL validation, plain-HTTP authority and header-value hardening, shared endpoint parsing for policy checks, shared authority parsing reuse across runtime and adapter-common, shared strict HTTP response parsing and validation, shared host-label and IPv4 parsing hardening, shared host-case normalization, host-case policy parity tests, shared URL scheme-case normalization for parser parity, shared ASCII-only URL input hardening for parser parity, shared response read-loop limits and timeout mapping, shared response content-length and transfer-encoding integrity checks, strict buffered content-length matching, shared request-body size guard, shared request-target size guard, typed network errors, clearer curl messages, deterministic locale/timezone test overrides plus strict clock snapshot fixture coverage, Rust SDK docs and packaged-crate smoke, manifest-derived UAPI reference capability tables, function-level UAPI reference notes, first UAPI dispatch and component startup benchmarks, first `adapter-common` shared network, filesystem path and operation, time, and locale slices, budget-aware CI mode, Node 24 workflow hardening, a repeatable Phase 2 exit-readiness command, an explicit Go experimental-runtime decision, hosted CI stability evidence recording, a filled walkthrough evidence checker, and draft closeout handoff docs with a hosted/self-hosted CI guard are in place. |
+| 2 | UAPI v0.1 (CLI) | Started | 2026-05-03 | pending | Draft WIT package, manifest/policy checks, manifest generation and text/JSON inspection, manifest entry/run-file match check, terminal grant prompt, effective capability text/JSON dump, local text/JSONL grant logging, runtime guard, host-binding checkpoint, dispatcher scaffold, policy coverage tests, file-handle and stdio stream capability rechecks, generated type bridge, generated host wiring, resource table, initial Phase 2 `krate run` linker path, smoke happy/denied proofs, first Rust SDK crate and helper layer, first Rust app walkthrough, Phase 1 to Phase 2 migration note, first Go and TypeScript SDK scaffolds with clock/cat/curl sample variants and shape checks, optional Go/TypeScript runtime fixture assertions wired behind `KRATE_GO_*`/`KRATE_TS_*` WASM paths plus language-variant fixture path auto-discovery, `krate-clock`, first `krate-cat`, first `krate-curl`, sample-manifest launch coverage, language-tooling doctor probes, pure Krate imports for the Rust cat/curl samples, component import purity checks, permission-denied exit-code alignment, explicit filesystem sandbox-root resolution with symlink escape checks, no-follow final file opens on Unix and Windows, root-like destructive operation guards, bounded per-call filesystem read/list limits, bounded per-call stream/filesystem write limits, raw app-argument transport guardrails, CLI-side app-argument preflight validation, runtime resource-table cap for stream/file handles, runtime close-on-drop resource cleanup wiring, generated-host resource-table cap, and shared path prefix/reserved-name/trailing-segment/path-length hardening plus sandbox-rooted absolute logical-path handling, shared host clock and locale helpers, shared time overflow guards, deterministic baseline locale date/number formatting, locale-tag canonicalization hardening, locale-subtag shape hardening, timezone-shape normalization hardening, plain HTTP request framing with configurable response-size guard, request-line URL validation, plain-HTTP authority and header-value hardening, shared endpoint parsing for policy checks, shared authority parsing reuse across runtime and adapter-common, shared strict HTTP response parsing and validation, shared host-label and IPv4 parsing hardening, shared host-case normalization, host-case policy parity tests, shared URL scheme-case normalization for parser parity, shared ASCII-only URL input hardening for parser parity, shared response read-loop limits and timeout mapping, shared response content-length and transfer-encoding integrity checks, strict buffered content-length matching, shared request-body size guard, shared request-target size guard, typed network errors, clearer curl messages, deterministic locale/timezone test overrides plus strict clock snapshot fixture coverage, Rust SDK docs and packaged-crate smoke, manifest-derived UAPI reference capability tables, function-level UAPI reference notes, first UAPI dispatch and component startup benchmarks, first `adapter-common` shared network, filesystem path and operation, time, and locale slices, budget-aware CI mode, Node 24 workflow hardening, a repeatable Phase 2 exit-readiness command, an explicit Go experimental-runtime decision, hosted CI stability evidence recording, a filled walkthrough evidence checker, and draft closeout handoff docs with a hosted/self-hosted CI guard are in place. |
 | 3 | UI + Graphics | Started | 2026-05-19 | pending | Phase 3 has begun at the contract and prototype layer: draft GUI WIT, GUI manifest recognition, first `ui`/`gfx`/`audio` capability names, shared UI adapter model, runtime UI dispatcher scaffold, layout proof, input routes, and an opt-in macOS AppKit window prototype with event bridge, session state, delegate-shaped native event state, redraw bridge, delegate callback bridge, draw-surface state, draw view surface, retained native window delegate, non-blocking event-loop step driver, selectable native prototype runtime mode, shared event-loop pump boundary, a local runtime smoke command for the selectable AppKit path, guarded Linux/Windows Winit prototype boundaries, a shared Winit session owner scaffold, and a Winit callback collector bridge are in place. P3-VS-01 (native macOS window + widgets from one portable component, human-verified) and the P3-EMB agent-embedding track (embed API, `--json`, MCP server) are complete; the full CI matrix runs the byte-identical GUI artifact on all three desktop OSes. |
 | 4 | Mobile Hosts | Not started | pending | pending | |
 | 5 | Developer SDK | Not started | pending | pending | |
@@ -1615,13 +1615,13 @@ This section is the living status board for all of Layer36. Update it at every p
 | Milestone | Target Phase | Status | Date | Notes |
 |-----------|-------------|--------|------|-------|
 | First external contributor PR merged | 0 | Pending | pending | |
-| `layer36 run hello.wasm` green on 3 desktop OSes | 1 | Done | 2026-05-03 | GitHub CI confirmed Linux, macOS, and Windows with one shared `.wasm` artifact across all three. |
-| `layer36-curl` byte-identical across Linux/macOS/Win | 2 | Pending | pending | |
-| `layer36-notes` GUI running on Win/macOS/Linux | 3 | Pending | pending | |
-| `layer36-notes` running on iOS + Android | 4 | Pending | pending | |
-| 60-second `layer36 new && layer36 run` walkthrough | 5 | Pending | pending | |
+| `krate run hello.wasm` green on 3 desktop OSes | 1 | Done | 2026-05-03 | GitHub CI confirmed Linux, macOS, and Windows with one shared `.wasm` artifact across all three. |
+| `krate-curl` byte-identical across Linux/macOS/Win | 2 | Pending | pending | |
+| `krate-notes` GUI running on Win/macOS/Linux | 3 | Pending | pending | |
+| `krate-notes` running on iOS + Android | 4 | Pending | pending | |
+| 60-second `krate new && krate run` walkthrough | 5 | Pending | pending | |
 | First app published via external developer | 6 | Pending | pending | |
-| ParkSure fully migrated to Layer36 | 7 | Pending | pending | |
+| ParkSure fully migrated to Krate | 7 | Pending | pending | |
 | Co-founder / first key hire onboarded | Phase 1 target | Pending | pending | |
 | v1.0 public launch | 7 | Pending | pending | |
 
@@ -1676,39 +1676,39 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | Date | Entry |
 |------|-------|
 | 2026-05-01 | Project initiated. Build Plan and all Phase Plans written. Phase 0 underway. |
-| 2026-05-02 | Project renamed from OneOS to Layer36 after preliminary trademark search found material OneOS conflicts. Plans, docs, CLI placeholders, WIT namespace examples, and bundle extension updated. |
+| 2026-05-02 | Project renamed from OneOS to Krate after preliminary trademark search found material OneOS conflicts. Plans, docs, CLI placeholders, WIT namespace examples, and bundle extension updated. |
 | 2026-05-02 | Phase 0 local scaffold verified: Cargo build/test/fmt/clippy, mdBook build, cargo-deny, and setup script are green. |
-| 2026-05-02 | Phase 1 local development started: `crates/runtime` and `crates/cli` added, Wasmtime 43.0.2 selected for Rust 1.91.1, and initial `layer36` CLI commands verified. |
-| 2026-05-02 | First Phase 1 end-to-end local run: `cargo-component` built the Rust hello-world component and `layer36 run` printed `Hello, Layer36!` through WIT host imports. |
-| 2026-05-02 | Local release build verified: `cargo build --release --workspace` produced `target/release/layer36`, and the release binary ran the hello-world component. |
-| 2026-05-02 | Phase 1 CI harness added: Linux/macOS/Windows test matrix now builds release binaries, builds the hello component, checks its SHA-256, and runs it through `layer36`. |
-| 2026-05-02 | Phase 1 limit enforcement added: `layer36 run --fuel 1` and `layer36 run --mem-limit 0` fail cleanly with exit code 4. |
+| 2026-05-02 | Phase 1 local development started: `crates/runtime` and `crates/cli` added, Wasmtime 43.0.2 selected for Rust 1.91.1, and initial `krate` CLI commands verified. |
+| 2026-05-02 | First Phase 1 end-to-end local run: `cargo-component` built the Rust hello-world component and `krate run` printed `Hello, Krate!` through WIT host imports. |
+| 2026-05-02 | Local release build verified: `cargo build --release --workspace` produced `target/release/krate`, and the release binary ran the hello-world component. |
+| 2026-05-02 | Phase 1 CI harness added: Linux/macOS/Windows test matrix now builds release binaries, builds the hello component, checks its SHA-256, and runs it through `krate`. |
+| 2026-05-02 | Phase 1 limit enforcement added: `krate run --fuel 1` and `krate run --mem-limit 0` fail cleanly with exit code 4. |
 | 2026-05-02 | Phase 1 release packaging added: `release.yml` builds five planned artifacts on tags and `scripts/package.sh` produced a local 4.4 MB macOS tarball. |
 | 2026-05-02 | Phase 1 quickstart added to the mdBook and linked from README. Volunteer timing is still pending. |
-| 2026-05-02 | `layer36 doctor` improved to find `cargo-component` under Cargo home and report both Phase 1 WASM targets. |
+| 2026-05-02 | `krate doctor` improved to find `cargo-component` under Cargo home and report both Phase 1 WASM targets. |
 | 2026-05-02 | Phase 1 Threat Model v0.1 added with STRIDE analysis and explicit deferred security work. |
 | 2026-05-02 | Phase 1 benchmark suite added with Criterion, a print-loop component fixture, warning-only CI regression checks, and an Apple M4 local baseline published in the mdBook. |
 | 2026-05-02 | Phase 1 test harness consolidated in `scripts/test-phase1.sh` so local setup and CI both build the hello component before running fixture-backed tests. |
 | 2026-05-02 | Drafted the Phase 2 kickoff issue under `docs/governance/phase-2-kickoff-issue.md`; actual GitHub issue creation remains pending until Phase 1 exits. |
-| 2026-05-02 | Initial Layer36 workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4`, credited only to `incyashraj`. |
+| 2026-05-02 | Initial Krate workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4`, credited only to `incyashraj`. |
 | 2026-05-02 | First GitHub CI exposed two portability issues: host-dependent hello component hashes and an old cargo-deny action unable to parse CVSS 4.0 advisories. CI now logs fixture hashes and installs `cargo-deny 0.19.4`. |
 | 2026-05-02 | GitHub CLI setup completed for `incyashraj`; repository homepage/topics, labels, five good-first issues, Phase 1 kickoff issue, and Pages URL were configured for `incyashraj/layer6x6`. |
-| 2026-05-03 | Phase 1 shared-fixture CI is green: one uploaded hello `.wasm` artifact is verified by SHA-256 and executed through `layer36` on Linux, macOS, and Windows. |
+| 2026-05-03 | Phase 1 shared-fixture CI is green: one uploaded hello `.wasm` artifact is verified by SHA-256 and executed through `krate` on Linux, macOS, and Windows. |
 | 2026-05-03 | Published `v0.1.0-rc1` as a GitHub prerelease with five platform archives and `SHA256SUMS`: Linux x64, Linux ARM64, macOS Intel, macOS Apple Silicon, and Windows x64. |
 | 2026-05-03 | Verified ADR-0002 and ADR-0003 are on `main`; Phase 1 ADR gate is closed. |
 | 2026-05-03 | Wrote the Phase 1 engineering retrospective. External quickstart timing and governance closeout remain pending. |
 | 2026-05-03 | Reworked public docs into simpler human language, added a left-to-right system timeline, and changed roadmap timing from fixed months to estimates. |
-| 2026-05-04 | Added the first named Phase 2 sample app, `apps/layer36-clock`, and a hidden fixed-time test flag so clock output can be tested without depending on the real wall clock. |
-| 2026-05-04 | Added a Layer36-native `io.args` import, app argument forwarding through `layer36 run ... -- <args>`, and the first `apps/layer36-cat` sample with grant and denial tests. |
-| 2026-05-04 | Added the first `apps/layer36-curl` sample and a plain HTTP adapter slice. Local tests now prove granted localhost GET works and missing `net.connect` is denied before network access. |
-| 2026-05-04 | Added the first Rust guest SDK crate at `crates/bindings-rust` and migrated the Rust sample apps to `use layer36::{io, fs, net, time, locale}` instead of raw app-local binding paths. |
-| 2026-05-04 | Added the first Rust SDK helper layer and public SDK guide. The sample components still import only Layer36 UAPI after the helper work. |
-| 2026-05-04 | Added the first terminal grant prompt through `layer36 run --prompt`, while preserving clean missing-grant denials for non-interactive runs. |
+| 2026-05-04 | Added the first named Phase 2 sample app, `apps/krate-clock`, and a hidden fixed-time test flag so clock output can be tested without depending on the real wall clock. |
+| 2026-05-04 | Added a Krate-native `io.args` import, app argument forwarding through `krate run ... -- <args>`, and the first `apps/krate-cat` sample with grant and denial tests. |
+| 2026-05-04 | Added the first `apps/krate-curl` sample and a plain HTTP adapter slice. Local tests now prove granted localhost GET works and missing `net.connect` is denied before network access. |
+| 2026-05-04 | Added the first Rust guest SDK crate at `crates/bindings-rust` and migrated the Rust sample apps to `use krate::{io, fs, net, time, locale}` instead of raw app-local binding paths. |
+| 2026-05-04 | Added the first Rust SDK helper layer and public SDK guide. The sample components still import only Krate UAPI after the helper work. |
+| 2026-05-04 | Added the first terminal grant prompt through `krate run --prompt`, while preserving clean missing-grant denials for non-interactive runs. |
 | 2026-05-04 | Hardened Phase 2 manifest loading so `app.entry` must match the `.wasm` being executed before grants or runtime execution begin. |
 | 2026-05-04 | GitHub Actions account billing/spending limit blocked new jobs, so CI was moved to manual-only temporarily. Local fmt, clippy, mdBook, and full workspace tests are the development gate until Actions is available again. |
-| 2026-05-04 | Added `layer36 run --dump-caps` so effective session grants can be inspected without starting the component. |
-| 2026-05-04 | Aligned sample-app UCap denial behavior on exit code 5 and added an outside-granted-glob denial test for `layer36-cat`. |
-| 2026-05-04 | Repo visibility changed to public, so cheap hosted CI is restored on pushes and PRs. Added a manual self-hosted CI path for a local runner labeled `layer36-local`. |
+| 2026-05-04 | Added `krate run --dump-caps` so effective session grants can be inspected without starting the component. |
+| 2026-05-04 | Aligned sample-app UCap denial behavior on exit code 5 and added an outside-granted-glob denial test for `krate-cat`. |
+| 2026-05-04 | Repo visibility changed to public, so cheap hosted CI is restored on pushes and PRs. Added a manual self-hosted CI path for a local runner labeled `krate-local`. |
 | 2026-05-04 | Fixed the first self-hosted runner failure by adding Cargo's bin directory to the runner PATH and calling the installed `mdbook` binary directly. |
 | 2026-05-04 | Prepared the Rust guest SDK package surface: crate README, crates.io metadata, package include list, local package proof, and CI package dry-runs. |
 | 2026-05-04 | Added the first generated UAPI reference page from Phase 2 WIT, linked it in mdBook, and made hosted/self-hosted CI check it stays current. |
@@ -1717,8 +1717,8 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-04 | Polished the Rust SDK surface with crate docs, rustdoc comments, owned argument helpers, sample app cleanup, and a self-hosted SDK doc build check. |
 | 2026-05-04 | Published the Phase 2 WIT style guide with rules for UAPI naming, resources, errors, capability mapping, comments, versioning, and review. |
 | 2026-05-04 | Added a Phase 2 UAPI contract checker and wired it into hosted and self-hosted CI so WIT package shape changes are caught early. |
-| 2026-05-04 | Moved the Phase 2 capability table into the manifest crate and exposed it through `layer36 manifest capabilities`. |
-| 2026-05-04 | Wired the generated UAPI reference to the manifest crate's capability table, so docs, manifest validation, and `layer36 manifest capabilities` describe the same accepted strings. |
+| 2026-05-04 | Moved the Phase 2 capability table into the manifest crate and exposed it through `krate manifest capabilities`. |
+| 2026-05-04 | Wired the generated UAPI reference to the manifest crate's capability table, so docs, manifest validation, and `krate manifest capabilities` describe the same accepted strings. |
 | 2026-05-05 | Hardened shared filesystem path parsing to reject path segments with trailing dots or trailing spaces before host I/O, closing a Windows path normalization edge case and keeping sandbox behavior consistent across hosts. |
 | 2026-05-05 | Hardened shared URL parsing so `http` and `https` schemes are treated case-insensitively in both plain HTTP parsing and network capability endpoint checks, keeping grant behavior stable for mixed-case input URLs. |
 | 2026-05-05 | Hardened shared locale parsing so locale tags are canonicalized with deterministic subtag casing and malformed tags fall back to `en-US`; timezone normalization now rejects control-character values and falls back to `UTC`. |
@@ -1731,32 +1731,32 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-04 | Added filesystem denial-before-adapter coverage for Phase 2 `stat`, `list`, `remove`, `mkdir`, and `rename` dispatcher paths. |
 | 2026-05-04 | Added Phase 2 UAPI dispatch microbenchmarks and published first local sub-microsecond readings for IO, filesystem, denial, and network grant paths. |
 | 2026-05-04 | Extended the startup benchmark to run real Phase 2 components. The first local read puts the Phase 2 smoke app cold runtime path around 3.47 ms on Apple M4; full CLI and cross-host timing still remain. |
-| 2026-05-04 | Cleaned up `layer36-cat` and `layer36-curl` so their rebuilt components import only Layer36 UAPI, not accidental WASI Preview 2 helpers. Explicit fixture-backed CLI tests now pass locally for hello, smoke, clock, cat, and curl. |
-| 2026-05-04 | Added an automated component import purity check so built Phase 2 fixtures fail full CI if they import host APIs outside `layer36:*`. |
-| 2026-05-04 | Added fixture-backed sample manifest launch tests for `layer36-clock`, `layer36-cat`, and `layer36-curl` using `layer36 run --manifest ... --auto-grant`. |
-| 2026-05-04 | Extended `layer36 doctor` to show Phase 2 language-binding tool readiness for TinyGo, Go, Node, npm, and jco before wiring those build paths into CI. |
+| 2026-05-04 | Cleaned up `krate-cat` and `krate-curl` so their rebuilt components import only Krate UAPI, not accidental WASI Preview 2 helpers. Explicit fixture-backed CLI tests now pass locally for hello, smoke, clock, cat, and curl. |
+| 2026-05-04 | Added an automated component import purity check so built Phase 2 fixtures fail full CI if they import host APIs outside `krate:*`. |
+| 2026-05-04 | Added fixture-backed sample manifest launch tests for `krate-clock`, `krate-cat`, and `krate-curl` using `krate run --manifest ... --auto-grant`. |
+| 2026-05-04 | Extended `krate doctor` to show Phase 2 language-binding tool readiness for TinyGo, Go, Node, npm, and jco before wiring those build paths into CI. |
 | 2026-05-04 | Started the TypeScript SDK track with `packages/sdk-ts`, WIT import declarations, helper wrappers, examples, a package shape check, and a docs page. Runtime proof with jco still remains. |
 | 2026-05-04 | Started the Go/TinyGo SDK track with `packages/sdk-go`, UAPI helper packages, clock/curl examples, a package shape check, and a docs page. Runtime proof with TinyGo still remains. |
-| 2026-05-04 | Added `layer36 manifest init` so developers can generate a valid starter manifest from app id, name, entry, and capability strings instead of copying TOML by hand. |
-| 2026-05-04 | Added `layer36 manifest explain` so developers can inspect default grants, launch-grant needs, resources, and rationales before running an app. |
+| 2026-05-04 | Added `krate manifest init` so developers can generate a valid starter manifest from app id, name, entry, and capability strings instead of copying TOML by hand. |
+| 2026-05-04 | Added `krate manifest explain` so developers can inspect default grants, launch-grant needs, resources, and rationales before running an app. |
 | 2026-05-04 | Added the first end-to-end Rust UAPI walkthrough covering SDK usage, component build, manifest init/explain, granted run, and denial behavior. |
 | 2026-05-04 | Published the Phase 1 to Phase 2 migration note so early proof-app experiments have a clear path to the real UAPI, manifest, and grant model. |
-| 2026-05-04 | Added `layer36 run --log-grants` to append app identity and effective session grants to a local audit log during Phase 2 test runs. |
-| 2026-05-04 | Added `layer36 manifest explain --format json` so CI scripts, editors, and future tools can consume the same manifest grant explanation as the human text view. |
-| 2026-05-04 | Added JSON output for `layer36 manifest check` and `layer36 manifest capabilities`, completing the script-friendly manifest inspection surface. |
+| 2026-05-04 | Added `krate run --log-grants` to append app identity and effective session grants to a local audit log during Phase 2 test runs. |
+| 2026-05-04 | Added `krate manifest explain --format json` so CI scripts, editors, and future tools can consume the same manifest grant explanation as the human text view. |
+| 2026-05-04 | Added JSON output for `krate manifest check` and `krate manifest capabilities`, completing the script-friendly manifest inspection surface. |
 | 2026-05-04 | Added a 1 MiB cap to the Phase 2 plain HTTP adapter response reader, turning one open network hardening item into deterministic runtime behavior. |
-| 2026-05-04 | Added `layer36 run --dump-caps-format json` so effective run grants can be inspected by scripts before runtime execution. |
-| 2026-05-04 | Added JSON Lines output for `layer36 run --log-grants` so local audit records can be consumed by scripts. |
-| 2026-05-04 | Added `layer36 run --max-http-response-bytes` so the Phase 2 plain HTTP response guard is explicit and tunable per run. |
+| 2026-05-04 | Added `krate run --dump-caps-format json` so effective run grants can be inspected by scripts before runtime execution. |
+| 2026-05-04 | Added JSON Lines output for `krate run --log-grants` so local audit records can be consumed by scripts. |
+| 2026-05-04 | Added `krate run --max-http-response-bytes` so the Phase 2 plain HTTP response guard is explicit and tunable per run. |
 | 2026-05-04 | Mapped oversized Phase 2 HTTP responses to WIT `net-error.body-too-large` so apps can distinguish response limits from connection failures. |
 | 2026-05-04 | Mapped Phase 2 HTTP timeouts and malformed responses to WIT `net-error.timeout` and `net-error.protocol`. |
-| 2026-05-04 | Updated `layer36-curl` to print specific messages for response-too-large, timeout, and protocol errors. |
+| 2026-05-04 | Updated `krate-curl` to print specific messages for response-too-large, timeout, and protocol errors. |
 | 2026-05-04 | Deepened the generated UAPI reference with function-level behavior notes for interfaces and resource methods. |
-| 2026-05-04 | Added a Rust SDK packaged-crate smoke check that compiles a fresh outside-workspace Layer36 component against the packaged SDK. |
+| 2026-05-04 | Added a Rust SDK packaged-crate smoke check that compiles a fresh outside-workspace Krate component against the packaged SDK. |
 | 2026-05-15 | Added a Rust SDK evidence recorder and hosted CI artifact so Phase 2 can track SDK package smoke, SDK doc build, and packaged-file proof in one report. |
 | 2026-05-15 | Added a Phase 2 exit bundle recorder so the main local review checks, gate snapshot, working tree state, and log tails can be captured in one handoff report. |
 | 2026-05-15 | Added a UAPI freeze candidate lock with per-WIT SHA-256 hashes, a checker, and hosted CI freshness gate so Phase 2 contract drift is visible and intentional. |
-| 2026-05-15 | Added full external CLI startup evidence for Phase 2 benchmarks, measuring the real `layer36 run` process path for deterministic `layer36-clock`. |
+| 2026-05-15 | Added full external CLI startup evidence for Phase 2 benchmarks, measuring the real `krate run` process path for deterministic `krate-clock`. |
 | 2026-05-15 | Added a Phase 2 dependency evidence recorder so `cargo-deny` signoff is captured with tool versions, advisory status, license/bans/source status, and log tails. |
 | 2026-05-15 | Added a Phase 2 Go readiness evidence recorder so TinyGo smoke builds, artifact hashes, tool versions, and current import-purity blockers are captured in one report. |
 | 2026-05-15 | Expanded Phase 2 adapter evidence so each host report now includes shared adapter behavior tests and the native adapter crate test, not only the boundary-shape check. |
@@ -1774,7 +1774,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-04 | Accepted ADR-0006, ADR-0007, and ADR-0008 for Phase 2 WIT versioning, UCap soft enforcement, and host async runtime direction. |
 | 2026-05-04 | Started `crates/adapter-common` and moved the plain HTTP URL parser plus request framing into shared adapter code so future Linux, macOS, and Windows adapter crates reuse the same behavior. |
 | 2026-05-04 | Added shared filesystem path normalization to `adapter-common`; local filesystem calls and UCap filesystem resource matching now reject parent traversal and use one portable separator rule. |
-| 2026-05-04 | Added an explicit Phase 2 filesystem sandbox root to runtime config and `layer36 run --sandbox-root`, so relative app paths resolve through the runtime instead of relying on process CWD. |
+| 2026-05-04 | Added an explicit Phase 2 filesystem sandbox root to runtime config and `krate run --sandbox-root`, so relative app paths resolve through the runtime instead of relying on process CWD. |
 | 2026-05-04 | Hardened relative sandbox-root filesystem paths against symlink escapes by checking canonical existing targets or canonical parents before local host I/O. |
 | 2026-05-04 | Added no-follow final-symlink flags to Unix Phase 2 file opens, so the OS rejects final symlink swaps after the sandbox path check. |
 | 2026-05-04 | Added the Windows final-symlink equivalent (`FILE_FLAG_OPEN_REPARSE_POINT`) to Phase 2 file opens, so final symlink swaps are blocked at open time on both desktop host families. |
@@ -1788,9 +1788,9 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-04 | Added a shared URL endpoint parser for capability checks and switched runtime network policy gating to use it, removing duplicate endpoint parsing between runtime and shared adapter code. |
 | 2026-05-04 | Refactored plain HTTP URL parsing to reuse the same shared authority parser used by runtime network policy checks, and added runtime tests for invalid-URL short-circuiting and default HTTP port grant behavior. |
 | 2026-05-04 | Hardened shared filesystem path parsing against Windows device-name edge cases by rejecting reserved path segments such as `CON`, `NUL`, `COM1`-`COM9`, and `LPT1`-`LPT9` before host I/O. |
-| 2026-05-04 | Added hidden `layer36 run --test-locale` and `--test-timezone` flags, wired locale/timezone overrides through runtime + adapter-common locale helpers, and added a strict deterministic `layer36-clock` fixture snapshot test for cross-host output comparisons. |
-| 2026-05-05 | Added Go and TypeScript `layer36-cat` sample variants and extended both SDK shape checks to validate cat/clock/curl sample behavior contracts, moving the language-variant side of Phase 2 app coverage forward without adding expensive CI runtime jobs. |
-| 2026-05-05 | Added optional Go/TypeScript runtime fixture assertions in the CLI integration test harness behind `LAYER36_GO_*` and `LAYER36_TS_*` WASM env vars, plus `scripts/test-phase2-language-variants.sh` and CI workflow hooks that auto-skip until those variant components are provided. |
+| 2026-05-04 | Added hidden `krate run --test-locale` and `--test-timezone` flags, wired locale/timezone overrides through runtime + adapter-common locale helpers, and added a strict deterministic `krate-clock` fixture snapshot test for cross-host output comparisons. |
+| 2026-05-05 | Added Go and TypeScript `krate-cat` sample variants and extended both SDK shape checks to validate cat/clock/curl sample behavior contracts, moving the language-variant side of Phase 2 app coverage forward without adding expensive CI runtime jobs. |
+| 2026-05-05 | Added optional Go/TypeScript runtime fixture assertions in the CLI integration test harness behind `KRATE_GO_*` and `KRATE_TS_*` WASM env vars, plus `scripts/test-phase2-language-variants.sh` and CI workflow hooks that auto-skip until those variant components are provided. |
 | 2026-05-05 | Upgraded shared locale formatting from placeholder strings to deterministic baseline date/number formatting in `adapter-common`, and updated runtime/CLI snapshot tests for stable cross-host outputs. |
 | 2026-05-05 | Added shared plain HTTP response parsing in `adapter-common` and switched runtime fetch parsing to it, with strict response validation for version, status range, header shape, header count, and header value safety. |
 | 2026-05-05 | Tightened shared host parsing for Phase 2 network URLs: domain labels cannot start/end with `-`, label lengths are bounded, and numeric-dot hosts must parse as valid IPv4 addresses. |
@@ -1806,7 +1806,7 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-05 | Added raw app-argument transport guardrails in the local adapter: `io.args.raw` now rejects empty args, newline/NUL delimiter characters, and oversized raw payloads above 64 KiB, with runtime tests covering valid and invalid argument shapes. |
 | 2026-05-05 | Added CLI preflight checks for Phase 2 app arguments so invalid raw-args shapes fail before runtime execution: empty args, newline/NUL delimiter characters, and oversized raw payloads now return clear CLI errors with dedicated integration coverage. |
 | 2026-05-05 | Extended Phase 2 app-argument guardrails with a count limit: runtime and CLI now reject more than 1024 app arguments before guest parsing, with runtime and CLI tests for this path. |
-| 2026-05-05 | Added language-variant fixture auto-discovery for Go/TypeScript runtime tests: both CLI integration helpers and `scripts/test-phase2-language-variants.sh` now detect `test/integration/language-variants/*.wasm` when `LAYER36_GO_*` / `LAYER36_TS_*` env vars are not set. |
+| 2026-05-05 | Added language-variant fixture auto-discovery for Go/TypeScript runtime tests: both CLI integration helpers and `scripts/test-phase2-language-variants.sh` now detect `test/integration/language-variants/*.wasm` when `KRATE_GO_*` / `KRATE_TS_*` env vars are not set. |
 | 2026-05-05 | Added a local runtime resource-table cap for Phase 2 file/stream handles. Once the open-handle cap is reached, further handle allocation fails with a clear runtime I/O error, and runtime tests cover overflow rejection. |
 | 2026-05-05 | Added close-on-drop wiring for Phase 2 file/stream resources: generated host `drop` callbacks now close underlying local adapter handles before removing host-side resource entries, with tests covering drop-close behavior and resource-slot reuse after close. |
 | 2026-05-05 | Added a generated-host resource-table cap for Phase 2 file/input/output resources, with overflow now failing through a clear host-table limit error and runtime tests proving overflow rejection. |
@@ -1828,9 +1828,9 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-05-05 | Extended Unix timezone fallback discovery to parse `/etc/timezone` when `/etc/localtime` is not a usable zoneinfo symlink. Parser behavior is strict (skip blanks/comments, inline-comment tolerant, first valid candidate only, malformed shapes rejected) and backed by adapter-common tests. |
 | 2026-05-05 | Hardened shared plain-HTTP parsing with a strict response header-block size cap (16 KiB). Oversized header sections are now rejected deterministically in `adapter-common` before runtime response mapping, with dedicated coverage. |
 | 2026-05-05 | Hardened shared plain-HTTP request framing with a strict total request-frame size cap (`MAX_HTTP_REQUEST_BYTES`): oversized combinations of otherwise valid headers and request body now fail as `body-too-large` before socket writes, with dedicated adapter-common coverage. |
-| 2026-05-19 | Started Phase 3 with parseable draft GUI WIT, manifest recognition for `layer36:app/gui@0.2.0`, first Phase 3 capability names, and an `adapter-common::ui` draft window registry for lifecycle and event-model testing before native windows are wired. |
+| 2026-05-19 | Started Phase 3 with parseable draft GUI WIT, manifest recognition for `krate:app/gui@0.2.0`, first Phase 3 capability names, and an `adapter-common::ui` draft window registry for lifecycle and event-model testing before native windows are wired. |
 | 2026-05-21 | Added the first Phase 3 runtime UI dispatcher scaffold. It gates draft window operations through UCap, reuses the shared window registry, and proves clipboard reads fail at the permission boundary before unsupported host integration is reached. |
-| 2026-05-22 | Added the first opt-in macOS AppKit window prototype and event bridge targets. Layer36 can now bind a real `NSWindow` to a stable window id, show it, snapshot native state, and queue close, resize, focus, and display-scale events through the shared adapter path. |
+| 2026-05-22 | Added the first opt-in macOS AppKit window prototype and event bridge targets. Krate can now bind a real `NSWindow` to a stable window id, show it, snapshot native state, and queue close, resize, focus, and display-scale events through the shared adapter path. |
 | 2026-05-22 | Added AppKit window session state. The native macOS prototype now has one object that owns the window, remembers the last snapshot, refreshes changed state into the shared queue, and gives AppKit delegates a clear place to connect next. |
 | 2026-05-23 | Added AppKit native event state. The macOS adapter now exports a delegate-shaped event enum and state object that can accept close, resize, focus, scale, and snapshot callbacks before the real Objective-C delegate object lands. |
 | 2026-05-23 | Added the AppKit redraw bridge. The first native drawing surface can now request a repaint through the same shared `WindowAdapter` event path as the rest of the window state. |
@@ -1845,13 +1845,13 @@ Short time-stamped entries for anything significant: ecosystem developments, piv
 | 2026-06-21 | Added Linux and Windows Winit prototype boundaries. Both host adapter crates now have explicit prototype adapter types, native-handle handoff helpers, guarded discovery entry points, runtime selector wiring, and boundary checks. Real Linux and Windows native windows are still the next implementation step. |
 | 2026-06-21 | Added the shared Winit session owner scaffold. Linux and Windows prototype adapters can now track Winit sessions, attach a native handle token, pump prepared native events through the shared queue, and clean up session state on close. Real Winit OS window creation is still pending. |
 | 2026-06-23 | Added the Winit callback collector bridge. Linux and Windows prototype adapters can now record Winit-shaped callbacks in FIFO order, count what is waiting, drain the callbacks through the shared event-loop pump, and clean the collector up with the tracked session. |
-| 2026-07-02 | Adopted the July 2026 plan amendments (`Plan/Plan-Amendments-2026-07.md`): Linux v0.1 widgets move to the drawn fallback (ADR-0015, resolving the GTK4-in-winit embedding conflict), Phase 3 re-sequenced around the P3-VS-01 macOS vertical slice, agent-embedding tasks P3-EMB-01..03 added as a parallel track, Phase 2 closeout timeboxed with an evidence-tooling freeze, GTM Stage 1 activated, a hiring lane added to STATUS.md, and the self-hosted fuzz nightly paused while the `layer36-local` runner is offline. |
-| 2026-07-02 | P3-VS-01 sub-slice 1: first native AppKit widget lowering. A Layer36 widget tree lowers to a real `NSButton`/`NSTextField` placed by Taffy layout; a native click routes back through the delegate queue into the shared event stream. The `layer36-local` runner was also restored as a LaunchAgent service. |
-| 2026-07-03 | P3-VS-01 complete: `layer36 run` executes `gui` world components through generated bindings and `Phase3GuiHost`; `--native-window` opens the real AppKit window; `apps/layer36-hello-gui` is the first import-pure GUI component; a human click round trip was verified on screen (after fixing activation policy and NSApp event pumping). The `layer36:ui` events contract moved to single-event `option<event>` polling to keep guest components WASI-free. |
-| 2026-07-03 | Agent-embedding track (amendment A3) complete: `layer36_runtime::embed`, `layer36 run --json` (schema `layer36.run.v1`), and `layer36-mcp-server` (MCP stdio tool `run_component`). Deny/allow verified end to end over the real transport. |
+| 2026-07-02 | Adopted the July 2026 plan amendments (`Plan/Plan-Amendments-2026-07.md`): Linux v0.1 widgets move to the drawn fallback (ADR-0015, resolving the GTK4-in-winit embedding conflict), Phase 3 re-sequenced around the P3-VS-01 macOS vertical slice, agent-embedding tasks P3-EMB-01..03 added as a parallel track, Phase 2 closeout timeboxed with an evidence-tooling freeze, GTM Stage 1 activated, a hiring lane added to STATUS.md, and the self-hosted fuzz nightly paused while the `krate-local` runner is offline. |
+| 2026-07-02 | P3-VS-01 sub-slice 1: first native AppKit widget lowering. A Krate widget tree lowers to a real `NSButton`/`NSTextField` placed by Taffy layout; a native click routes back through the delegate queue into the shared event stream. The `krate-local` runner was also restored as a LaunchAgent service. |
+| 2026-07-03 | P3-VS-01 complete: `krate run` executes `gui` world components through generated bindings and `Phase3GuiHost`; `--native-window` opens the real AppKit window; `apps/krate-hello-gui` is the first import-pure GUI component; a human click round trip was verified on screen (after fixing activation policy and NSApp event pumping). The `krate:ui` events contract moved to single-event `option<event>` polling to keep guest components WASI-free. |
+| 2026-07-03 | Agent-embedding track (amendment A3) complete: `krate_runtime::embed`, `krate run --json` (schema `krate.run.v1`), and `krate-mcp-server` (MCP stdio tool `run_component`). Deny/allow verified end to end over the real transport. |
 | 2026-07-03 | Cross-OS GUI artifact proof wired into the full CI matrix: the byte-identical hello-gui component runs headless on Linux, macOS, and Windows (all three lanes green). One-command demo `scripts/demo-hello-gui.sh` and the hello-gui test manual added to the book. |
-| 2026-07-02 | Restored the `layer36-local` self-hosted runner: root cause was a foreground-terminal-only runner whose stale registration GitHub deleted; it is re-registered and installed as a LaunchAgent service, the nightly schedule is back, and a short verification fuzz run passed green. |
-| 2026-07-02 | Landed P3-VS-01 sub-slice 1 — the first real native widget lowering. `adapter-macos` lowers Layer36 `Button`/`TextField`/`Text` placements to real `NSButton`/`NSTextField` controls positioned from Taffy layout rects with AppKit Y-flip; a new `Layer36WidgetTarget` receives target-action callbacks and feeds native clicks through the existing delegate FIFO and event-loop pump into the shared stream as routed pointer events with widget ids. Verified end to end by the extended `phase3_appkit_runtime_smoke` example: real window, real native click via `performClick`, routed Layer36 event observed, native text field updated. Answer D's native-lowering path is now proven on macOS. |
+| 2026-07-02 | Restored the `krate-local` self-hosted runner: root cause was a foreground-terminal-only runner whose stale registration GitHub deleted; it is re-registered and installed as a LaunchAgent service, the nightly schedule is back, and a short verification fuzz run passed green. |
+| 2026-07-02 | Landed P3-VS-01 sub-slice 1 — the first real native widget lowering. `adapter-macos` lowers Krate `Button`/`TextField`/`Text` placements to real `NSButton`/`NSTextField` controls positioned from Taffy layout rects with AppKit Y-flip; a new `KrateWidgetTarget` receives target-action callbacks and feeds native clicks through the existing delegate FIFO and event-loop pump into the shared stream as routed pointer events with widget ids. Verified end to end by the extended `phase3_appkit_runtime_smoke` example: real window, real native click via `performClick`, routed Krate event observed, native text field updated. Answer D's native-lowering path is now proven on macOS. |
 
 ---
 

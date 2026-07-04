@@ -127,7 +127,7 @@ const RUNTIME_BOUNDARY_CALLS: &[BoundaryCall] = &[
 fn main() -> Result<()> {
     let report = check_adapter_boundary()?;
 
-    println!("Layer36 adapter boundary check passed");
+    println!("Krate adapter boundary check passed");
     println!("- runtime wrappers: {}", report.runtime_wrappers);
     println!("- adapter crates: {}", report.adapter_crates);
     println!("- filesystem wrappers: {}", report.filesystem_wrappers);

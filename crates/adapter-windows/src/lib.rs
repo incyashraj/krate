@@ -1,10 +1,10 @@
-//! Windows host adapter surface for Layer36 Phase 2.
+//! Windows host adapter surface for Krate Phase 2.
 //!
 //! This crate is the Windows ownership boundary. Shared behavior still comes
-//! from `layer36-adapter-common`, while Windows-specific host wiring will land
+//! from `krate-adapter-common`, while Windows-specific host wiring will land
 //! here.
 
-use layer36_adapter_common::{
+use krate_adapter_common::{
     locale::{DateStyle, HostLocale, LocaleId, NumberStyle},
     time::HostClock,
     ui::{
@@ -59,7 +59,7 @@ impl WindowsUiAdapter {
         WindowBackendKind::Winit
     }
 
-    /// Attach a future winit or Win32-owned window handle to a Layer36 window id.
+    /// Attach a future winit or Win32-owned window handle to a Krate window id.
     ///
     /// Windows still uses the headless draft path by default. This method is
     /// the stable handoff point the first real native backend will use once it
@@ -110,7 +110,7 @@ impl WindowsWinitPrototypeUiAdapter {
         cfg!(target_os = "windows")
     }
 
-    /// Attach a tracked winit session to a Layer36 window id.
+    /// Attach a tracked winit session to a Krate window id.
     ///
     /// This is still a prototype helper. Real winit code will call this after
     /// it creates the OS window and has a real raw handle to attach.
@@ -176,7 +176,7 @@ impl WindowsWinitPrototypeUiAdapter {
         session.pump_event_loop_once(&self.headless, step).map(Some)
     }
 
-    /// Drain collected future winit callbacks and pump them through Layer36.
+    /// Drain collected future winit callbacks and pump them through Krate.
     pub fn pump_collected_winit_events(
         &self,
         id: WindowId,
@@ -777,7 +777,7 @@ mod tests {
         let adapter = discover_ui_adapter();
         let size = WindowSize::new(640, 480).expect("size");
         let id = adapter
-            .create_window(WindowOptions::new("Layer36 blank window", size).expect("options"))
+            .create_window(WindowOptions::new("Krate blank window", size).expect("options"))
             .expect("create window");
 
         adapter.show_window(id).expect("show");
@@ -800,7 +800,7 @@ mod tests {
             adapter.planned_native_window_backend(),
             WindowBackendKind::Winit
         );
-        assert_eq!(window.title, "Layer36 blank window");
+        assert_eq!(window.title, "Krate blank window");
         assert_eq!(window.size, size);
         assert!(window.visible);
         assert_eq!(
@@ -818,7 +818,7 @@ mod tests {
         let adapter = discover_ui_adapter();
         let size = WindowSize::new(640, 480).expect("size");
         let id = adapter
-            .create_window(WindowOptions::new("Layer36 native host", size).expect("options"))
+            .create_window(WindowOptions::new("Krate native host", size).expect("options"))
             .expect("create window");
         let handle = adapter
             .attach_winit_window_handle(id, 0xB17E)
@@ -891,7 +891,7 @@ mod tests {
         // is covered by the ignored native smoke).
         let id = adapter
             .headless
-            .create_window(WindowOptions::new("Layer36 winit host", size).expect("options"))
+            .create_window(WindowOptions::new("Krate winit host", size).expect("options"))
             .expect("create window");
         let snapshot =
             WinitWindowSnapshot::new(id, size, false, false, 1.0).expect("initial snapshot");
@@ -900,9 +900,9 @@ mod tests {
             .expect("attach session");
         let resized = WindowSize::new(900, 700).expect("resized");
         let step = WinitWindowEventLoopStep::new().with_callbacks([
-            layer36_adapter_common::ui::WinitWindowNativeEvent::Focused(true),
-            layer36_adapter_common::ui::WinitWindowNativeEvent::Resized(resized),
-            layer36_adapter_common::ui::WinitWindowNativeEvent::RedrawRequested,
+            krate_adapter_common::ui::WinitWindowNativeEvent::Focused(true),
+            krate_adapter_common::ui::WinitWindowNativeEvent::Resized(resized),
+            krate_adapter_common::ui::WinitWindowNativeEvent::RedrawRequested,
         ]);
 
         let report = adapter
@@ -945,19 +945,19 @@ mod tests {
     }
 
     /// Real winit window round trip. Run on a Windows host with
-    /// `LAYER36_WINIT_NATIVE_SMOKE=1 LAYER36_WINIT_ANY_THREAD=1
-    ///  cargo test -p layer36-adapter-windows -- --ignored`.
+    /// `KRATE_WINIT_NATIVE_SMOKE=1 KRATE_WINIT_ANY_THREAD=1
+    ///  cargo test -p krate-adapter-windows -- --ignored`.
     #[test]
     #[ignore = "needs a Windows desktop session; opt-in native smoke"]
     fn winit_prototype_native_window_smoke() {
-        if std::env::var("LAYER36_WINIT_NATIVE_SMOKE").as_deref() != Ok("1") {
-            eprintln!("skipping: LAYER36_WINIT_NATIVE_SMOKE not set");
+        if std::env::var("KRATE_WINIT_NATIVE_SMOKE").as_deref() != Ok("1") {
+            eprintln!("skipping: KRATE_WINIT_NATIVE_SMOKE not set");
             return;
         }
         let adapter = WindowsWinitPrototypeUiAdapter::new();
         let size = WindowSize::new(640, 480).expect("size");
         let id = adapter
-            .create_window(WindowOptions::new("Layer36 winit native smoke", size).expect("options"))
+            .create_window(WindowOptions::new("Krate winit native smoke", size).expect("options"))
             .expect("create native window");
         assert!(winit_native::has_native_window(id).expect("native window tracked"));
         adapter.show_window(id).expect("show native window");
@@ -975,7 +975,7 @@ mod tests {
         let size = WindowSize::new(640, 480).expect("size");
         let id = adapter
             .headless
-            .create_window(WindowOptions::new("Layer36 winit collected", size).expect("options"))
+            .create_window(WindowOptions::new("Krate winit collected", size).expect("options"))
             .expect("create window");
         let snapshot =
             WinitWindowSnapshot::new(id, size, false, false, 1.0).expect("initial snapshot");

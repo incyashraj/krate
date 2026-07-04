@@ -63,22 +63,22 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ matrix.cross }}" == "true" ]]; then
-            cross build --release --target "${{ matrix.target }}" -p layer36-cli
+            cross build --release --target "${{ matrix.target }}" -p krate-cli
           else
-            cargo build --release --target "${{ matrix.target }}" -p layer36-cli
+            cargo build --release --target "${{ matrix.target }}" -p krate-cli
           fi
 
       - name: Package
         shell: bash
         env:
-          LAYER36_VERSION: ${{ github.ref_name }}
+          KRATE_VERSION: ${{ github.ref_name }}
         run: scripts/package.sh "${{ matrix.target }}" "${{ matrix.ext }}"
 
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v7
         with:
-          name: layer36-${{ matrix.target }}
-          path: dist/layer36-*.${{ matrix.ext }}
+          name: krate-${{ matrix.target }}
+          path: dist/krate-*.${{ matrix.ext }}
           if-no-files-found: error
 
   publish:

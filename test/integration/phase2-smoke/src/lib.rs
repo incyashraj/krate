@@ -1,7 +1,7 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::layer36::{
+use bindings::krate::{
     fs::{
         files,
         types::{FsError, OpenMode},
@@ -60,12 +60,12 @@ impl Guest for Component {
     }
 }
 
-fn write_line(stream: &bindings::layer36::io::streams::OutputStream, value: &str) -> bool {
+fn write_line(stream: &bindings::krate::io::streams::OutputStream, value: &str) -> bool {
     stream.write_all(value.as_bytes()).is_ok() && stream.write_all(b"\n").is_ok()
 }
 
 fn write_pair(
-    stream: &bindings::layer36::io::streams::OutputStream,
+    stream: &bindings::krate::io::streams::OutputStream,
     key: &str,
     value: &str,
 ) -> bool {

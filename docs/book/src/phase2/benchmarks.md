@@ -20,13 +20,13 @@ whether the current design is in the right range before we freeze UAPI v0.1.
 ## Commands
 
 ```bash
-cargo bench -p layer36-runtime --bench uapi_dispatch
-cargo bench -p layer36-runtime --bench startup
+cargo bench -p krate-runtime --bench uapi_dispatch
+cargo bench -p krate-runtime --bench startup
 scripts/record-phase2-benchmark-baseline.sh
 scripts/check-benchmark-regression.sh
 ```
 
-The benchmark uses a no-op host adapter. That means it measures Layer36
+The benchmark uses a no-op host adapter. That means it measures Krate
 dispatcher and policy overhead, not disk speed, terminal speed, or network
 speed.
 
@@ -79,8 +79,8 @@ Build the fixtures first:
 ```bash
 scripts/build-phase1-components.sh
 scripts/build-phase2-smoke-component.sh
-scripts/build-layer36-clock-component.sh
-cargo bench -p layer36-runtime --bench startup
+scripts/build-krate-clock-component.sh
+cargo bench -p krate-runtime --bench startup
 ```
 
 ## Startup Baseline (2026-05-05)
@@ -90,7 +90,7 @@ cargo bench -p layer36-runtime --bench startup
 | Compile Phase 2 smoke component from bytes | ~2.86 ms | track | Wasmtime component compile path. |
 | Cold runtime + run Phase 2 smoke app | ~3.16 ms | < 150 ms | Reads a granted file, uses time, locale, and stdout. |
 | Run preloaded Phase 2 smoke app | ~81.05 us | track | UAPI calls with component already loaded. |
-| Run preloaded `layer36-clock` with fixed time | ~49.92 us | track | Time, locale, and stdout path. |
+| Run preloaded `krate-clock` with fixed time | ~49.92 us | track | Time, locale, and stdout path. |
 
 The first cold runtime number is comfortably below the Phase 2 startup target on
 the reference machine. We still need a full CLI benchmark with `hyperfine`,

@@ -5,8 +5,8 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-go-readiness-evidence/go-readiness-evidence.md"
-STRICT="${LAYER36_GO_READINESS_EVIDENCE_STRICT:-0}"
-MODE="${LAYER36_GO_VARIANT_SMOKE_MODE:-required}"
+STRICT="${KRATE_GO_READINESS_EVIDENCE_STRICT:-0}"
+MODE="${KRATE_GO_VARIANT_SMOKE_MODE:-required}"
 
 usage() {
   cat <<'USAGE'
@@ -18,12 +18,12 @@ Options:
   --output <path>    Output markdown file path
 
 Environment:
-  LAYER36_GO_READINESS_EVIDENCE_STRICT   1 to fail on build/import-purity errors
-  LAYER36_GO_VARIANT_SMOKE_MODE          optional|required
+  KRATE_GO_READINESS_EVIDENCE_STRICT   1 to fail on build/import-purity errors
+  KRATE_GO_VARIANT_SMOKE_MODE          optional|required
 
 Notes:
   - The script always writes a markdown report.
-  - Import purity means every component import starts with layer36:.
+  - Import purity means every component import starts with krate:.
 USAGE
 }
 
@@ -90,15 +90,15 @@ BUILD_LOG="$TMP_DIR/build.log"
 IMPORT_LOG="$TMP_DIR/imports.log"
 SMOKE_DIR="$ROOT/$TMP_DIR/smoke"
 
-if LAYER36_GO_VARIANT_SMOKE_MODE="$MODE" LAYER36_GO_VARIANT_SMOKE_OUT_DIR="$SMOKE_DIR" scripts/build-phase2-go-variant-smoke.sh >"$BUILD_LOG" 2>&1; then
+if KRATE_GO_VARIANT_SMOKE_MODE="$MODE" KRATE_GO_VARIANT_SMOKE_OUT_DIR="$SMOKE_DIR" scripts/build-phase2-go-variant-smoke.sh >"$BUILD_LOG" 2>&1; then
   BUILD_CODE=0
 else
   BUILD_CODE=$?
 fi
 
-clock="$SMOKE_DIR/layer36_go_clock_wasip2.wasm"
-cat="$SMOKE_DIR/layer36_go_cat_wasip2.wasm"
-curl="$SMOKE_DIR/layer36_go_curl_wasip2.wasm"
+clock="$SMOKE_DIR/krate_go_clock_wasip2.wasm"
+cat="$SMOKE_DIR/krate_go_cat_wasip2.wasm"
+curl="$SMOKE_DIR/krate_go_curl_wasip2.wasm"
 
 if [ "$BUILD_CODE" -eq 0 ] && [ -f "$clock" ] && [ -f "$cat" ] && [ -f "$curl" ]; then
   if scripts/check-component-imports.sh "$clock" "$cat" "$curl" >"$IMPORT_LOG" 2>&1; then
@@ -159,7 +159,7 @@ status_note="Go runtime fixtures are ready for Phase 2 promotion."
 if [ "$BUILD_CODE" -ne 0 ]; then
   status_note="Go smoke artifacts did not build on this host."
 elif [ "$IMPORT_CODE" -ne 0 ]; then
-  status_note="Go smoke artifacts build, but they are not Layer36 import-pure yet."
+  status_note="Go smoke artifacts build, but they are not Krate import-pure yet."
 fi
 
 {
@@ -171,7 +171,7 @@ fi
   echo
   echo "$status_note"
   echo
-  echo "Phase 2 only promotes Go runtime fixtures when the components import Layer36"
+  echo "Phase 2 only promotes Go runtime fixtures when the components import Krate"
   echo "UAPI packages and do not import host \`wasi:*\` APIs directly."
   echo
   echo "## Host"
@@ -189,15 +189,15 @@ fi
   echo "| Step | Exit code | Result |"
   echo "|---|---:|---|"
   echo "| Build Go smoke components (\`scripts/build-phase2-go-variant-smoke.sh\`) | $BUILD_CODE | $(result_of "$BUILD_CODE") |"
-  echo "| Check Layer36 import purity (\`scripts/check-component-imports.sh\`) | $IMPORT_CODE | $(result_of "$IMPORT_CODE") |"
+  echo "| Check Krate import purity (\`scripts/check-component-imports.sh\`) | $IMPORT_CODE | $(result_of "$IMPORT_CODE") |"
   echo
   echo "## Smoke Artifacts"
   echo
   echo "| Artifact | Exists | SHA-256 |"
   echo "|---|---|---|"
-  echo "| layer36_go_clock_wasip2.wasm | $(exists_of "$clock") | \`$(hash_of "$clock")\` |"
-  echo "| layer36_go_cat_wasip2.wasm | $(exists_of "$cat") | \`$(hash_of "$cat")\` |"
-  echo "| layer36_go_curl_wasip2.wasm | $(exists_of "$curl") | \`$(hash_of "$curl")\` |"
+  echo "| krate_go_clock_wasip2.wasm | $(exists_of "$clock") | \`$(hash_of "$clock")\` |"
+  echo "| krate_go_cat_wasip2.wasm | $(exists_of "$cat") | \`$(hash_of "$cat")\` |"
+  echo "| krate_go_curl_wasip2.wasm | $(exists_of "$curl") | \`$(hash_of "$curl")\` |"
   echo
   echo "## Import-Purity Log"
   echo

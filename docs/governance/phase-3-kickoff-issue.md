@@ -1,6 +1,6 @@
 # Phase 3 Kickoff Issue Draft
 
-**Title:** `phase 3: build the first Layer36 desktop UI surface`
+**Title:** `phase 3: build the first Krate desktop UI surface`
 
 ## Status
 
@@ -13,7 +13,7 @@ it as the base for desktop UI work.
 
 The Phase 3 sentence is:
 
-> Run one Layer36 windowed app on Windows, macOS, and Linux.
+> Run one Krate windowed app on Windows, macOS, and Linux.
 
 ## Why This Starts After Phase 2
 
@@ -25,7 +25,7 @@ are unstable, UI work will hide platform bugs instead of solving them.
 
 - Phase 2 exit evidence is green for the final commit.
 - UAPI v0.1 is frozen for `io`, `fs`, `net`, `time`, and `locale`.
-- `layer36-clock`, `layer36-cat`, and `layer36-curl` have current evidence.
+- `krate-clock`, `krate-cat`, and `krate-curl` have current evidence.
 - Host adapter evidence exists for Linux, macOS, and Windows.
 - UCap deny-before-adapter evidence is current.
 - Rust SDK evidence is current.
@@ -43,7 +43,7 @@ are unstable, UI work will hide platform bugs instead of solving them.
   - macOS AppKit window
   - Windows window shell
   - Linux GTK4 window
-- Add a minimal `layer36-notes` sample plan.
+- Add a minimal `krate-notes` sample plan.
 - Define first-paint and frame-time measurements before feature work expands.
 - Add an accessibility checklist before widget implementation begins.
 
@@ -59,7 +59,7 @@ are unstable, UI work will hide platform bugs instead of solving them.
 
 ## Exit Signal
 
-Phase 3 is ready to close when `layer36-notes` runs as a real windowed Layer36
+Phase 3 is ready to close when `krate-notes` runs as a real windowed Krate
 app on Windows, macOS, and Linux, with input, layout, rendering, accessibility
 checks, and frame-time evidence.
 

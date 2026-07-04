@@ -2,15 +2,15 @@
 
 This page explains the first Phase 3 contract in simple terms.
 
-Phase 2 proved that a portable app can ask Layer36 for files, network, time,
+Phase 2 proved that a portable app can ask Krate for files, network, time,
 locale, and terminal input or output. Phase 3 adds the first desktop app shape.
-The app still does not call macOS, Windows, or Linux directly. It asks Layer36
+The app still does not call macOS, Windows, or Linux directly. It asks Krate
 for a window, input events, drawing, and audio. The host adapter translates
 those requests.
 
 ```mermaid
 flowchart LR
-    APP["Portable app component"] --> GUI["layer36:app gui world"]
+    APP["Portable app component"] --> GUI["krate:app gui world"]
     GUI --> UDISP["Runtime UI dispatcher"]
     UDISP --> ADAPTER["Shared UiAdapter trait"]
     ADAPTER --> UI["UI<br/>window, tree, events"]
@@ -32,14 +32,14 @@ flowchart LR
 
 ## What Exists Now
 
-The first draft lives under `wit/layer36/phase3`.
+The first draft lives under `wit/krate/phase3`.
 
 It defines:
 
-- `layer36:app@0.2.0` with a `gui` world
-- `layer36:ui@0.1.0` for windows, widget trees, events, dialogs, clipboard, and menus
-- `layer36:gfx@0.1.0` for simple 2D drawing and an early 3D surface shape
-- `layer36:audio@0.1.0` for playback and capture stream shape
+- `krate:app@0.2.0` with a `gui` world
+- `krate:ui@0.1.0` for windows, widget trees, events, dialogs, clipboard, and menus
+- `krate:gfx@0.1.0` for simple 2D drawing and an early 3D surface shape
+- `krate:audio@0.1.0` for playback and capture stream shape
 
 The checker is:
 
@@ -60,11 +60,11 @@ id = "com.example.notes"
 name = "Notes"
 version = "0.1.0"
 entry = "notes.wasm"
-world = "layer36:app/gui@0.2.0"
+world = "krate:app/gui@0.2.0"
 ```
 
-`layer36 manifest check` accepts that world and labels it as a Phase 3 GUI
-draft. `layer36 run` does not launch it yet. It exits early with a clear message
+`krate manifest check` accepts that world and labels it as a Phase 3 GUI
+draft. `krate run` does not launch it yet. It exits early with a clear message
 that the GUI runtime is not implemented. This is intentional. We want the
 manifest and tooling path to be real before we add windows.
 
@@ -119,16 +119,16 @@ clipboard. This keeps the first native window backend smaller than the full
 widget bridge.
 
 That window boundary now has the first native handle handoff. In plain terms,
-Layer36 has a stable `WindowId`, while the host has a real object such as an
+Krate has a stable `WindowId`, while the host has a real object such as an
 AppKit `NSWindow`, a winit window, or a Win32 window. The new
 `NativeWindowHandle` token lets a host adapter attach that native object to the
-Layer36 id, look it up later, and detach it. macOS has the first AppKit handoff
+Krate id, look it up later, and detach it. macOS has the first AppKit handoff
 method. The default backend is still headless draft, so this does not open a
 real window yet.
 
 macOS now has the first opt-in native window prototype behind that handoff. The
 `AppKitWindowBackend` can create an owned AppKit `NSWindow` on the main thread,
-attach its raw handle to the Layer36 window id, and show it through the shared
+attach its raw handle to the Krate window id, and show it through the shared
 window path. The normal adapter still reports headless draft because native
 event capture, drawing, and app-facing loop wiring are not finished yet.
 
@@ -152,7 +152,7 @@ scale, or a full snapshot. This lets us test the event behavior before adding
 the unsafe AppKit callback object.
 
 Redraw requests are part of that path now. In plain terms, when the future
-AppKit view needs to paint again, it can ask Layer36 for a redraw through the
+AppKit view needs to paint again, it can ask Krate for a redraw through the
 same shared window event queue. That keeps drawing requests beside resize,
 focus, scale, and close events instead of making a separate one-off path.
 
@@ -201,7 +201,7 @@ one shared event-loop tick, inspect the tick report, and close the window. It
 runs as a command rather than a unit test because AppKit needs the main process
 thread. Normal CI should not open native desktop windows.
 
-AppKit now has draw-surface state too. It records the Layer36 window id, logical
+AppKit now has draw-surface state too. It records the Krate window id, logical
 size, display scale, clear color, redraw count, and frame number. A redraw
 request from that surface goes through the same delegate bridge as a future
 native AppKit view. This still does not paint pixels. It is the small state
@@ -215,7 +215,7 @@ uses the headless draft adapter until native event-loop wiring is ready.
 
 ADR-0013 and RFC-0003 now define how widgets lower once a native backend exists.
 A widget should become a native control when the host has a semantic match. If
-it does not, Layer36 uses a drawn fallback with the same layout, input,
+it does not, Krate uses a drawn fallback with the same layout, input,
 accessibility, and permission rules.
 
 The shared Rust model has started too. `adapter-common::ui` now has stable
@@ -281,7 +281,7 @@ host work in the right direction.
 
 ## Why Start Here
 
-For Layer36, the contract is the platform boundary. If the contract is vague,
+For Krate, the contract is the platform boundary. If the contract is vague,
 each host adapter will drift. Starting with WIT gives us one shared language for
 the app, runtime, SDKs, and host adapters.
 

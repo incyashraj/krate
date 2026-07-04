@@ -4,13 +4,13 @@ use wit_parser::{Resolve, WorldItem};
 
 #[test]
 fn phase_3_gui_wit_package_parses() {
-    let wit_dir = workspace_root().join("wit/layer36/phase3");
+    let wit_dir = workspace_root().join("wit/krate/phase3");
     let mut resolve = Resolve::default();
     let (package, _) = resolve.push_dir(&wit_dir).expect("parse Phase 3 WIT");
 
     let world = resolve
         .select_world(&[package], Some("gui"))
-        .expect("select layer36:app/gui world");
+        .expect("select krate:app/gui world");
 
     let gui = &resolve.worlds[world];
     let imports = gui

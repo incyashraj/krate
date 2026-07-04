@@ -1,6 +1,6 @@
 # CI and runners
 
-Layer36 uses two CI paths.
+Krate uses two CI paths.
 
 The normal `CI` workflow runs on GitHub-hosted runners. Because the repository
 is public, this is the best default path for daily work. Pushes to `main` and
@@ -44,7 +44,7 @@ parser or lock-path failures in the current `cargo-deny` path are downgraded to
 warnings until upstream compatibility catches up.
 
 There is also a `Self-hosted CI` workflow. It is manual-only and targets a
-runner labeled `layer36-local`. Use it when you want GitHub to run the full
+runner labeled `krate-local`. Use it when you want GitHub to run the full
 local gate on your own machine instead of a hosted runner.
 Self-hosted workflows currently keep `actions/checkout@v4` to preserve
 compatibility with older local runner installs.
@@ -61,7 +61,7 @@ The benchmark regression step is warning-only by default in this manual
 workflow, and you can switch it to strict fail mode with the
 `benchmark_regression_mode` input when you want to enforce performance gating.
 It now runs a TinyGo WASI Preview 2 build-smoke lane for Go clock/cat/curl
-samples and then tries to promote those artifacts into Layer36 runtime fixtures
+samples and then tries to promote those artifacts into Krate runtime fixtures
 through:
 
 ```bash
@@ -70,7 +70,7 @@ scripts/promote-phase2-go-runtime-fixtures.sh
 
 The promotion script still builds with TinyGo and checks `wasi:cli/run` export
 shape. It then runs import-purity checks. Only import-pure outputs are copied to
-`test/integration/language-variants/layer36_go_*.wasm` and picked up by runtime
+`test/integration/language-variants/krate_go_*.wasm` and picked up by runtime
 variant tests. When imports are still host `wasi:*`, the script keeps the Go
 runtime fixtures disabled and prints a clear skip message.
 
@@ -95,22 +95,22 @@ cross-language parity checks for Rust, Go, and TypeScript `clock`, `cat`, and
 By default it skips unless any of these env vars are set to built component
 paths:
 
-- `LAYER36_GO_CLOCK_WASM`
-- `LAYER36_GO_CAT_WASM`
-- `LAYER36_GO_CURL_WASM`
-- `LAYER36_TS_CLOCK_WASM`
-- `LAYER36_TS_CAT_WASM`
-- `LAYER36_TS_CURL_WASM`
+- `KRATE_GO_CLOCK_WASM`
+- `KRATE_GO_CAT_WASM`
+- `KRATE_GO_CURL_WASM`
+- `KRATE_TS_CLOCK_WASM`
+- `KRATE_TS_CAT_WASM`
+- `KRATE_TS_CURL_WASM`
 
 It can also auto-discover built variant fixtures at these paths when the env
 vars are not set:
 
-- `test/integration/language-variants/layer36_go_clock.wasm`
-- `test/integration/language-variants/layer36_go_cat.wasm`
-- `test/integration/language-variants/layer36_go_curl.wasm`
-- `test/integration/language-variants/layer36_ts_clock.wasm`
-- `test/integration/language-variants/layer36_ts_cat.wasm`
-- `test/integration/language-variants/layer36_ts_curl.wasm`
+- `test/integration/language-variants/krate_go_clock.wasm`
+- `test/integration/language-variants/krate_go_cat.wasm`
+- `test/integration/language-variants/krate_go_curl.wasm`
+- `test/integration/language-variants/krate_ts_clock.wasm`
+- `test/integration/language-variants/krate_ts_cat.wasm`
+- `test/integration/language-variants/krate_ts_curl.wasm`
 
 ## Setting up a local runner
 
@@ -122,7 +122,7 @@ Choose macOS if you are using your Mac. GitHub will show the exact commands to
 download and configure the runner. When it asks for labels, add:
 
 ```text
-layer36-local
+krate-local
 ```
 
 Start the runner with the command GitHub shows, usually:

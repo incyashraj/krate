@@ -1,4 +1,4 @@
-# Krate (formerly Layer36)
+# Krate (formerly Krate)
 
 > Software should run like a PDF opens: exactly the same on any device — and
 > never touch anything without permission.
@@ -6,7 +6,7 @@
 **Krate** — by Krate Labs — is a safe runtime for portable software. Like a
 shipping crate (and like a Rust crate), an app is packed once and travels
 anywhere. A program compiles once to a
-WebAssembly component; the Layer36 runtime runs that same file natively on
+WebAssembly component; the Krate runtime runs that same file natively on
 Linux, macOS, and Windows through one standard library (UAPI), and a
 capability system (UCap) means the program touches nothing — not a file, not
 the network — without an explicit grant.
@@ -22,11 +22,11 @@ identity built in. See [the full vision](https://incyashraj.github.io/layer6x6/v
 [the roadmap](https://incyashraj.github.io/layer6x6/roadmap.html), and
 [follow the build](https://incyashraj.github.io/layer6x6/build-log.html).
 
-**Naming note:** The project was renamed from **Layer36** to **Krate** in
+**Naming note:** The project was renamed from **Krate** to **Krate** in
 July 2026 (company: Krate Labs). During the transition, the repository,
-code, commands, crate names, and `layer36:*` API namespaces keep the legacy
+code, commands, crate names, and `krate:*` API namespaces keep the legacy
 name — the code-level rename is a scheduled slice that lands before the
-UAPI freeze. Everything you run below therefore still says `layer36`; the
+UAPI freeze. Everything you run below therefore still says `krate`; the
 behavior is Krate.
 
 **Status:** Pre-alpha. The Krate runtime runs real CLI components — clock, cat,
@@ -36,8 +36,8 @@ proven by cross-host CI. The first GUI component works too: one portable file
 opens a real native window (real `NSButton`, real `NSTextField`) on macOS and
 runs headless on the other hosts — the full CI matrix executes the
 byte-identical GUI artifact on all three OSes. Agents can drive all of it:
-an embedding API, `layer36 run --json`, and an MCP server
-(`layer36-mcp-server`) expose sandboxed execution with permission decisions
+an embedding API, `krate run --json`, and an MCP server
+(`krate-mcp-server`) expose sandboxed execution with permission decisions
 returned as data. Formal Phase 2 exit still needs final cross-host evidence,
 a UAPI freeze review, and an outside developer walkthrough.
 
@@ -52,8 +52,8 @@ Current work covers:
   a real native macOS window with native controls, and a human click flows
   back into the component as a portable event
   (`sh scripts/demo-hello-gui.sh` to see it)
-- **done:** the agent-embedding track — `layer36_runtime::embed`,
-  `layer36 run --json` (schema `layer36.run.v1`), and the `layer36-mcp-server`
+- **done:** the agent-embedding track — `krate_runtime::embed`,
+  `krate run --json` (schema `krate.run.v1`), and the `krate-mcp-server`
   MCP tool for agent frameworks
 - **done:** cross-OS artifact proof — full CI runs the byte-identical GUI
   component headless on Linux, macOS, and Windows
@@ -68,40 +68,40 @@ Phase 2's CLI path stays fully supported: UAPI modules for `io`, `fs`, `net`,
 Build the CLI and the Phase 2 sample components:
 
 ```bash
-cargo build -p layer36-cli
-scripts/build-layer36-clock-component.sh
-scripts/build-layer36-cat-component.sh
-scripts/build-layer36-curl-component.sh
+cargo build -p krate-cli
+scripts/build-krate-clock-component.sh
+scripts/build-krate-cat-component.sh
+scripts/build-krate-curl-component.sh
 ```
 
 Explain the permissions for the file-reading sample:
 
 ```bash
-target/debug/layer36 manifest explain apps/layer36-cat/manifest.toml
+target/debug/krate manifest explain apps/krate-cat/manifest.toml
 ```
 
 Run a deterministic clock component through the Phase 2 UAPI path:
 
 ```bash
-target/debug/layer36 run \
+target/debug/krate run \
   --auto-grant \
-  --manifest apps/layer36-clock/manifest.toml \
+  --manifest apps/krate-clock/manifest.toml \
   --test-time 1234567890 \
   --test-locale en-US \
   --test-timezone UTC \
-  apps/layer36-clock/target/wasm32-wasip1/release/layer36_clock.wasm
+  apps/krate-clock/target/wasm32-wasip1/release/krate_clock.wasm
 ```
 
 Run the file sample with an explicit grant:
 
 ```bash
-mkdir -p apps/layer36-cat/fixtures
-printf 'hello from Layer36\n' > apps/layer36-cat/fixtures/hello.txt
-cd apps/layer36-cat
-../../target/debug/layer36 run \
+mkdir -p apps/krate-cat/fixtures
+printf 'hello from Krate\n' > apps/krate-cat/fixtures/hello.txt
+cd apps/krate-cat
+../../target/debug/krate run \
   --manifest manifest.toml \
   --auto-grant \
-  target/wasm32-wasip1/release/layer36_cat.wasm \
+  target/wasm32-wasip1/release/krate_cat.wasm \
   -- ./fixtures/hello.txt
 cd ../..
 ```
@@ -109,7 +109,7 @@ cd ../..
 Expected file sample output:
 
 ```text
-hello from Layer36
+hello from Krate
 ```
 
 Check the current Phase 2 exit status:
@@ -132,9 +132,9 @@ run without a click, `2` window closed early. Full test manual:
 Get a machine-readable run report (what agents consume):
 
 ```bash
-target/debug/layer36 run --json --auto-grant \
-  --manifest apps/layer36-clock/manifest.toml \
-  apps/layer36-clock/target/wasm32-wasip1/release/layer36_clock.wasm
+target/debug/krate run --json --auto-grant \
+  --manifest apps/krate-clock/manifest.toml \
+  apps/krate-clock/target/wasm32-wasip1/release/krate_clock.wasm
 ```
 
 For the full walkthrough, read the
@@ -142,7 +142,7 @@ For the full walkthrough, read the
 
 ## Security
 
-Layer36 is pre-alpha. Do not run untrusted WebAssembly through `layer36` yet.
+Krate is pre-alpha. Do not run untrusted WebAssembly through `krate` yet.
 Phase 2 has real capability checks for the current UAPI slice, but the platform
 is not adversarially hardened and should still be treated as a developer proof.
 
@@ -185,7 +185,7 @@ at your option. Contributions are dual-licensed under the same terms.
 
 ## Acknowledgements
 
-Layer36 stands on the shoulders of the
+Krate stands on the shoulders of the
 [Bytecode Alliance](https://bytecodealliance.org/), the
 [Rust Foundation](https://foundation.rust-lang.org/), and everyone else
 building the open WebAssembly ecosystem.

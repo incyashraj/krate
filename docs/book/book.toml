@@ -1,6 +1,6 @@
 [book]
-title = "Layer36 Documentation"
-authors = ["Layer36 contributors"]
+title = "Krate Documentation"
+authors = ["Krate contributors"]
 language = "en"
 multilingual = false
 src = "src"

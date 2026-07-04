@@ -2,16 +2,16 @@
 
 **Status:** Engineering closeout complete; external validation still pending.
 
-Phase 1 proved the smallest useful Layer36 loop: build one WASM component once,
-run the exact same bytes through the Layer36 runtime on Linux, macOS, and
+Phase 1 proved the smallest useful Krate loop: build one WASM component once,
+run the exact same bytes through the Krate runtime on Linux, macOS, and
 Windows, and package release artifacts that a real user can download and verify.
 
 ## What Shipped
 
 - `crates/runtime` embeds Wasmtime with Component Model support.
-- `crates/cli` ships the first `layer36` binary with `run`, `version`, and
+- `crates/cli` ships the first `krate` binary with `run`, `version`, and
   `doctor` commands.
-- A temporary `layer36:phase1/host` WIT interface supports `print` and `exit`
+- A temporary `krate:phase1/host` WIT interface supports `print` and `exit`
   for the hello-world proof.
 - `scripts/test-phase1.sh` validates runtime behavior locally and in CI.
 - CI builds one shared hello `.wasm` fixture, records its SHA-256 hash, and runs
@@ -24,7 +24,7 @@ Windows, and package release artifacts that a real user can download and verify.
 
 The shared-fixture CI design was the right proof. Earlier runs compared
 host-built `.wasm` hashes and failed for a reason that was true but not useful:
-different hosts can produce different component bytes. The real Layer36 promise
+different hosts can produce different component bytes. The real Krate promise
 is that one app artifact runs everywhere, so CI now tests that directly.
 
 Keeping Phase 1 narrow also helped. The runtime only has the
@@ -43,8 +43,8 @@ runtime feel less like a local experiment and more like a product foundation.
 
 ## What Changed In The Plan
 
-Layer36 remains the product name, while `layer6x6` remains the development repo
-name for now. The 6x6 framing is still the strategic map; Layer36 is the name of
+Krate remains the product name, while `layer6x6` remains the development repo
+name for now. The 6x6 framing is still the strategic map; Krate is the name of
 the platform that grows out of solving that matrix.
 
 The Phase 1 release gate now explicitly accepts RC tags such as `v0.1.0-rc1`.

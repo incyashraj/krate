@@ -35,7 +35,7 @@ scripts/record-phase2-rust-sdk-evidence.sh --strict --output /tmp/rust-sdk-evide
 The recorder runs:
 
 1. `scripts/smoke-rust-sdk.sh`
-2. `cargo doc -p layer36 --no-deps`
+2. `cargo doc -p krate --no-deps`
 
 It also records whether the packaged SDK contains:
 

@@ -1,8 +1,8 @@
-# Krate Status (formerly Layer36)
+# Krate Status (formerly Krate)
 
 Last updated: 2026-07-04
 Naming: the project is now Krate (company: Krate Labs); code, commands, and
-`layer36:*` namespaces keep the legacy name until the scheduled rename slice
+`krate:*` namespaces keep the legacy name until the scheduled rename slice
 lands (before the UAPI freeze).
 Repo: `incyashraj/layer6x6`
 Branch: `main`
@@ -15,24 +15,24 @@ human-verified on a real screen, and the full CI matrix now runs the
 byte-identical GUI artifact headless on Linux, macOS, and Windows (all three
 lanes green on run `28654507550`). Older detail below: P3-VS-01 through the
 WASM path.
-`layer36 run` now executes Phase 3 `gui` world components: the hello-gui
+`krate run` now executes Phase 3 `gui` world components: the hello-gui
 sample creates a window, submits a widget tree, and polls events through real
-`layer36:ui` host imports backed by the UCap-gated dispatcher. With
+`krate:ui` host imports backed by the UCap-gated dispatcher. With
 `--native-window` on macOS the same portable component opens a real AppKit
 window with real native controls; a click on the native button reaches the
 component as a portable pointer event and updates the native text field. The
-component imports only `layer36:*` interfaces (the events contract moved to
+component imports only `krate:*` interfaces (the events contract moved to
 single-event `option<event>` polling to keep guest bindings free of
 list-of-variant lifting, which current guest toolchains cannot compile
 without dragging WASI panic machinery into the component). Sub-slice 1
-(native AppKit lowering) was verified earlier the same slice — the first real native AppKit widget lowering. A Layer36
+(native AppKit lowering) was verified earlier the same slice — the first real native AppKit widget lowering. A Krate
 widget tree now lowers to a real `NSButton` and `NSTextField` positioned by
 the Taffy layout, a native click flows back through the delegate queue and
 event-loop pump into the shared stream as a routed pointer event with the
 correct widget id, and native text updates round-trip. Proven by the extended
 `phase3_appkit_runtime_smoke` example on a real window. Earlier this same day
 the July 2026 plan amendments were applied (`Plan/Plan-Amendments-2026-07.md`)
-and the `layer36-local` runner was restored as a LaunchAgent service with a
+and the `krate-local` runner was restored as a LaunchAgent service with a
 green verification fuzz run.
 
 ## 1) Project size today
@@ -55,7 +55,7 @@ Linux, macOS, and Windows full-test lanes all passed. The language-variant,
 UCap, adapter, and sample evidence compare jobs all passed too. This closes the
 immediate hosted full CI blocker that was left after run `26064573902`.
 
-The self-hosted `layer36-local` runner is back online as of 2026-07-02 and the
+The self-hosted `krate-local` runner is back online as of 2026-07-02 and the
 fuzz nightly schedule is restored. Root cause of the outage: the runner had
 only ever run in a foreground terminal, died when that terminal closed
 (2026-06-24), and GitHub then deleted the stale registration. It is now
@@ -65,13 +65,13 @@ again: `cd ~/runner/actions-runner && ./svc.sh status && ./svc.sh start`.
 
 ## 3) What this version can do now
 
-Layer36 already runs real Phase 2 CLI components through the runtime:
+Krate already runs real Phase 2 CLI components through the runtime:
 
-- `layer36-clock`
-- `layer36-cat`
-- `layer36-curl`
+- `krate-clock`
+- `krate-cat`
+- `krate-curl`
 
-It also runs the first Phase 3 GUI component, `layer36-hello-gui`: headless
+It also runs the first Phase 3 GUI component, `krate-hello-gui`: headless
 on every OS (proven byte-identical across Linux, macOS, and Windows in the
 full CI matrix), with a real native window on macOS
 (`sh scripts/demo-hello-gui.sh`), and — as of 2026-07-04 — with real winit
@@ -90,8 +90,8 @@ Current capability set includes:
 - Runtime UAPI policy checks before host calls
 - Native macOS windows with native widget lowering for the GUI world
   (`--native-window`), headless GUI execution everywhere
-- Agent-facing execution: `layer36_runtime::embed`, `layer36 run --json`
-  (schema `layer36.run.v1`), and the `layer36-mcp-server` MCP tool
+- Agent-facing execution: `krate_runtime::embed`, `krate run --json`
+  (schema `krate.run.v1`), and the `krate-mcp-server` MCP tool
 - Cross language fixture and parity coverage for Rust, TypeScript, and available Go paths
 - Published docs on GitHub Pages with Phase tracking
 
@@ -114,13 +114,13 @@ before formal closeout.
 
 Current Phase 3 slice:
 
-- `layer36:app@0.2.0` with a `gui` world
-- `layer36:ui@0.1.0` WIT draft for windows, widget trees, events, dialogs, clipboard, and menus
-- `layer36:gfx@0.1.0` WIT draft for 2D canvas and a small future 3D surface
-- `layer36:audio@0.1.0` WIT draft for playback and capture shape
+- `krate:app@0.2.0` with a `gui` world
+- `krate:ui@0.1.0` WIT draft for windows, widget trees, events, dialogs, clipboard, and menus
+- `krate:gfx@0.1.0` WIT draft for 2D canvas and a small future 3D surface
+- `krate:audio@0.1.0` WIT draft for playback and capture shape
 - `scripts/check-phase3-uapi.sh` to keep the draft parseable and documented
-- manifest tooling now accepts `layer36:app/gui@0.2.0`
-- `layer36 run` executes GUI manifests end to end (historical note: it
+- manifest tooling now accepts `krate:app/gui@0.2.0`
+- `krate run` executes GUI manifests end to end (historical note: it
   originally exited cleanly until the window runtime existed)
 - first Phase 3 capability names now parse through the existing manifest and
   policy layer: `ui`, `gfx`, and `audio`
@@ -169,7 +169,7 @@ Current Phase 3 slice:
 - `Phase3UiDispatcher` can now compute a layout snapshot for the draft widget
   tree stored on a window, after the same UI capability check used by the rest
   of the Phase 3 UI path.
-- `layer36-layout` now has generated coverage for 100 different layout tree
+- `krate-layout` now has generated coverage for 100 different layout tree
   shapes, a compile-checked Criterion benchmark target for 1,000-node and
   10,000-node trees, absolute rectangle helpers, and a first hit-test helper
   that can find the deepest widget under a point.
@@ -219,10 +219,10 @@ Current Phase 3 slice:
   Windows.
 - `WindowAdapter` now has a native handle handoff path. A future native backend
   can attach, inspect, and detach an opaque AppKit, winit, or Win32 host handle
-  for a stable Layer36 `WindowId`. macOS has the first AppKit handoff method,
+  for a stable Krate `WindowId`. macOS has the first AppKit handoff method,
   while the default backend still stays headless draft.
 - macOS now has an opt-in AppKit window prototype. It can create an owned
-  `NSWindow` on the main thread, attach the native pointer to a Layer36 window
+  `NSWindow` on the main thread, attach the native pointer to a Krate window
   id, and show it through the shared window path. This is not the default UI
   runtime yet because native event capture and drawing still need to land.
 - The AppKit prototype now has explicit bridge methods for native close,
@@ -245,7 +245,7 @@ Current Phase 3 slice:
   `AppKitWindowDelegateBridge`. These use AppKit-style callback names and
   translate them into the tested native event state, so the coming Objective-C
   delegate can stay thin.
-- AppKit now has the first draw-surface state scaffold. It tracks the Layer36
+- AppKit now has the first draw-surface state scaffold. It tracks the Krate
   window id, logical size, display scale, clear color, redraw count, and frame
   number. Redraw requests use the same delegate bridge as the future `NSView`
   painter. This does not paint pixels yet.
@@ -274,19 +274,19 @@ Current Phase 3 slice:
   and closes the window through the runtime dispatcher on the main process
   thread.
 
-- P3-EMB-03 landed: `layer36-mcp-server`, a minimal MCP server binary in
+- P3-EMB-03 landed: `krate-mcp-server`, a minimal MCP server binary in
   `crates/tools` exposing one `run_component` tool over stdio JSON-RPC. An
-  MCP client executing `layer36-cat` without grants observes
+  MCP client executing `krate-cat` without grants observes
   `permission-denied` with the exact missing capability; the same call with
   `auto_grant` succeeds with captured stdout — verified end to end over the
   real stdio transport. Scope stays bounded per the task spec: no
   orchestration, no model calls, no tool registry.
 - P3-EMB-01 and P3-EMB-02 landed: the agent-embedding surface.
-  `layer36_runtime::embed::run_component` executes a component with
+  `krate_runtime::embed::run_component` executes a component with
   programmatic grants (no terminal, no prompts), captured stdout, a
   classified exit (`success`/`permission-denied`/`app-error`/
   `limit-exceeded`), and run duration — doc-tested at under 30 lines for an
-  external caller. `layer36 run --json` emits one `layer36.run.v1` object
+  external caller. `krate run --json` emits one `krate.run.v1` object
   per run (app identity, granted capabilities with boundaries, denied
   required capabilities on refusal, exit class, duration, captured stdout)
   while keeping process exit codes identical to the interactive mode.
@@ -296,15 +296,15 @@ Current Phase 3 slice:
 - P3-VS-01 sub-slice 2 landed: the WASM path. `runtime` gained
   `phase3_gui_bindings` (the `gui` world generated against the Phase 3 WIT,
   reusing the Phase 2 generated modules via `with:` mappings) and
-  `phase3_gui_host::Phase3GuiHost`, which serves `layer36:ui` window, tree,
+  `phase3_gui_host::Phase3GuiHost`, which serves `krate:ui` window, tree,
   and events imports through the Phase 3 dispatcher, re-lowers supported
   widgets natively after every tree change (naive re-submit, per the slice
   spec), and returns honest `unsupported` errors for dialog, menu, gfx, and
-  audio. `layer36 run` reaches the gui world through the existing fallback
+  audio. `krate run` reaches the gui world through the existing fallback
   chain, and the new `--native-window` flag selects the AppKit prototype.
-  `apps/layer36-hello-gui` is the first GUI component: import-pure
-  (`layer36:*` only), runs headless everywhere (clean bounded exit 1), and
-  opens a real native window on macOS. The `layer36:ui` events interface
+  `apps/krate-hello-gui` is the first GUI component: import-pure
+  (`krate:*` only), runs headless everywhere (clean bounded exit 1), and
+  opens a real native window on macOS. The `krate:ui` events interface
   changed from `list<event>` to `option<event>` polling — it matches the
   dispatcher's FIFO `poll_event` design and keeps guest components pure; the
   guest-side lesson (std string constructors and list-of-variant lifting pull
@@ -315,13 +315,13 @@ Current Phase 3 slice:
   `TextField`, and `Text` widget placements to real AppKit controls
   (`AppKitWidgetPlacement`, `AppKitWidgetSurface`) inside the prototype
   window's content view, with top-left-to-AppKit Y-flip from layout rects. A
-  new `Layer36WidgetTarget` Objective-C object receives NSButton
+  new `KrateWidgetTarget` Objective-C object receives NSButton
   target-action callbacks and pushes `WidgetActivated` into the same FIFO the
   window delegate uses, so the normal event-loop pump drains native clicks
   into the shared stream as routed pointer events carrying the widget id.
   `performClick` drives the identical path a physical click uses, so the
   round trip is provable without a human. Remaining for P3-VS-01: the WASM
-  component wiring (minimal `layer36:ui` host imports for the `gui` world)
+  component wiring (minimal `krate:ui` host imports for the `gui` world)
   and the demo component under `apps/`.
 - The July 2026 plan amendments are now in effect
   (`Plan/Plan-Amendments-2026-07.md`). The three that change Phase 3 work:
@@ -331,7 +331,7 @@ Current Phase 3 slice:
   milestone is re-sequenced to `P3-VS-01`, the macOS vertical slice that
   proves native widget lowering end-to-end before Winit broadening; and the
   agent-embedding tasks `P3-EMB-01..03` (runtime embedding API,
-  `layer36 run --json`, MCP server wrapper) are added as a parallel,
+  `krate run --json`, MCP server wrapper) are added as a parallel,
   non-exit-blocking track after the slice.
 
 This does not mean desktop UI is implemented yet. It means the first public
@@ -373,7 +373,7 @@ Timebox rule (2026-07-02, per `Plan/Plan-Amendments-2026-07.md` A4): closeout
 gets one focused week; whatever is not closed stays tracked in the exit ledger
 without blocking Phase 3. No new evidence recorder/comparator/checker scripts
 until a second engineer joins — reuse existing harnesses. The long fuzz soak
-additionally waits on the `layer36-local` runner returning (nightly schedule
+additionally waits on the `krate-local` runner returning (nightly schedule
 paused 2026-07-02 while it is offline).
 
 ## 6) Recent completed development highlights
@@ -409,7 +409,7 @@ paused 2026-07-02 while it is offline).
 - Added an explicit `WindowAdapter` trait below `UiAdapter`, plus active/planned window backend reporting for macOS, Linux, and Windows.
 - Added native window handle attach, lookup, and detach support, plus the first macOS AppKit handle handoff method.
 - Added the first opt-in AppKit window prototype for macOS, with target-specific `objc2` dependencies, owned `NSWindow` lifetime, main-thread gating, shared handle attachment, and ignored local smoke coverage for opening the real native window.
-- Added AppKit event bridge targets and a native snapshot helper so close, resize, focus, and scale changes can flow from the real macOS window into the shared Layer36 event queue.
+- Added AppKit event bridge targets and a native snapshot helper so close, resize, focus, and scale changes can flow from the real macOS window into the shared Krate event queue.
 - Added AppKit window session state so the native macOS prototype owns the window, caches the last snapshot, refreshes changed state, and has a clear place for real delegates to report close requests.
 - Added AppKit native event state so future delegates can report close, resize, focus, scale, and snapshot events through one exported, tested Rust path.
 - Added the AppKit redraw bridge so the future native drawing surface can request paint through the same shared event queue as other window events.
@@ -433,7 +433,7 @@ paused 2026-07-02 while it is offline).
 - Wired hosted full CI to upload per-OS UCap evidence artifacts and run a dedicated cross-host compare gate
 - Added a benchmark evidence recorder and comparator (`record-phase2-benchmark-evidence` + `compare-phase2-benchmark-evidence`) to track startup and dispatch performance evidence in one per-host report
 - Tightened benchmark evidence comparison so each host report must also stay within per-metric baseline thresholds, not only match report shape and step pass state
-- Added full external CLI startup evidence for `layer36 run layer36-clock`; the benchmark evidence report now checks the real command path, not only the in-process runtime path
+- Added full external CLI startup evidence for `krate run krate-clock`; the benchmark evidence report now checks the real command path, not only the in-process runtime path
 - Added a dependency evidence recorder so Phase 2 `cargo-deny` signoff records tool versions, advisory status, license/bans/source status, and log tails
 - Added a Go readiness evidence recorder so TinyGo smoke builds, artifact hashes, tool versions, and current import-purity blockers are recorded in one report
 - Added an adapter evidence recorder and comparator (`record-phase2-adapter-evidence` + `compare-phase2-adapter-evidence`) to track adapter-boundary proof per host and compare Linux/macOS/Windows reports for one commit
@@ -450,7 +450,7 @@ paused 2026-07-02 while it is offline).
 - Added a timed Rust walkthrough evidence template so the outside developer proof can be recorded against a specific commit
 - Opted GitHub Actions workflows into the Node 24 JavaScript action runtime and moved cache/artifact/Pages upload steps to Node 24 action majors where available
 - Added a Phase 2 exit readiness command so the current gate count and hard blockers can be checked from the ledger without reading the whole page by hand
-- Recorded the Go Phase 2 decision: Go remains in the SDK and TinyGo smoke-build track, but runtime parity is experimental until artifacts import only `layer36:*`
+- Recorded the Go Phase 2 decision: Go remains in the SDK and TinyGo smoke-build track, but runtime parity is experimental until artifacts import only `krate:*`
 - Added a hosted CI stability evidence recorder so recent CI and Pages run history can be attached to Phase 2 exit review
 - Added a timed walkthrough evidence checker so the outside Rust walkthrough packet must have filled metadata, numeric timing, a pass/fail result, and reviewer results before `P2E-12` can be accepted
 - Added the Phase 2 retrospective draft, Phase 3 kickoff issue draft, and a closeout-docs checker so handoff material exists without claiming Phase 2 is complete early
@@ -469,10 +469,10 @@ paused 2026-07-02 while it is offline).
 - Fixed hosted full CI sample manifest fixture setup so downloaded shared Rust fixtures are copied into the app target paths used by the sample manifests
 - Recorded the Windows command-line limit for the oversized raw-args guard test so full CI can keep proving reachable behavior on each host
 - Fixed the hosted full CI evidence recorder so cancelled or failed full runs are shown accurately in the selected-run summary
-- Hardened the local HTTP fixture used by curl response-limit tests so Windows early client close behavior does not hide the Layer36 assertion
-- Fixed Windows sandbox resolution for absolute Layer36 logical paths by converting normalized logical strings into relative sandbox segments before host path joining
+- Hardened the local HTTP fixture used by curl response-limit tests so Windows early client close behavior does not hide the Krate assertion
+- Fixed Windows sandbox resolution for absolute Krate logical paths by converting normalized logical strings into relative sandbox segments before host path joining
 - Hardened sample evidence recording so hosted full CI reuses shared downloaded fixture bytes instead of rebuilding with lane-local `cargo-component`
-- Fixed Windows sample evidence recording so the hosted full-test lane can use `target/debug/layer36.exe` explicitly under Git Bash while Linux and macOS continue using `target/debug/layer36`
+- Fixed Windows sample evidence recording so the hosted full-test lane can use `target/debug/krate.exe` explicitly under Git Bash while Linux and macOS continue using `target/debug/krate`
 - Fixed language-variant evidence comparison so it records Windows fixture hashes correctly and checks portable behavior without claiming byte-identical jco output across hosts
 - Recorded hosted full CI run `26069665276` as green for the full Linux, macOS, Windows Phase 2 evidence matrix
 - Expanded UCap evidence with a named dispatcher deny-before-adapter matrix that covers every non-default filesystem and network boundary
@@ -519,4 +519,4 @@ paused 2026-07-02 while it is offline).
 
 Use this exact prompt in a new session:
 
-`Continue Layer36 on main. Read Plan/Plan-Amendments-2026-07.md and the Winit slice map at the top of Plan/Phase-3-Plan.md section 18 FIRST. P3-VS-01 (macOS vertical slice: portable component -> real native AppKit window with native NSButton/NSTextField, human click round trip verified on screen) and the P3-EMB agent-embedding track (embed API, layer36 run --json schema layer36.run.v1, layer36-mcp-server MCP tool) are COMPLETE and CI-green, and the full CI matrix runs the byte-identical hello-gui GUI artifact headless on Linux, macOS, and Windows (all lanes green, run 28663629770). Next implementation work is the Winit slice: real Linux and Windows winit 0.30 windows behind the existing prototype boundaries (LinuxWinitPrototypeUiAdapter / WindowsWinitPrototypeUiAdapter, WinitWindowSession, WinitWindowEventCollector), following the six-step map in the plan — thread-local EventLoop with pump_app_events, ApplicationHandler pushing WindowEvents into the collector, create_window inside the first pump, drawn-fallback-only widgets on Linux per ADR-0015, verification through the fast-CI ubuntu compile lane and xvfb-run smokes in the full matrix. Definition of done: layer36 run --native-window opens a real window for hello-gui on a Linux host with close/resize/focus events flowing. Keep Phase 2 closeout separate and timeboxed, no new evidence tooling (amendment A4), update STATUS.md and the build log after each chunk, verify with CI-parity commands (clippy -D warnings), never push while a [full-ci] or dispatched full run is in flight, keep GitHub Pages in sync, and never add AI co-author credits to commits.`
+`Continue Krate on main. Read Plan/Plan-Amendments-2026-07.md and the Winit slice map at the top of Plan/Phase-3-Plan.md section 18 FIRST. P3-VS-01 (macOS vertical slice: portable component -> real native AppKit window with native NSButton/NSTextField, human click round trip verified on screen) and the P3-EMB agent-embedding track (embed API, krate run --json schema krate.run.v1, krate-mcp-server MCP tool) are COMPLETE and CI-green, and the full CI matrix runs the byte-identical hello-gui GUI artifact headless on Linux, macOS, and Windows (all lanes green, run 28663629770). Next implementation work is the Winit slice: real Linux and Windows winit 0.30 windows behind the existing prototype boundaries (LinuxWinitPrototypeUiAdapter / WindowsWinitPrototypeUiAdapter, WinitWindowSession, WinitWindowEventCollector), following the six-step map in the plan — thread-local EventLoop with pump_app_events, ApplicationHandler pushing WindowEvents into the collector, create_window inside the first pump, drawn-fallback-only widgets on Linux per ADR-0015, verification through the fast-CI ubuntu compile lane and xvfb-run smokes in the full matrix. Definition of done: krate run --native-window opens a real window for hello-gui on a Linux host with close/resize/focus events flowing. Keep Phase 2 closeout separate and timeboxed, no new evidence tooling (amendment A4), update STATUS.md and the build log after each chunk, verify with CI-parity commands (clippy -D warnings), never push while a [full-ci] or dispatched full run is in flight, keep GitHub Pages in sync, and never add AI co-author credits to commits.`

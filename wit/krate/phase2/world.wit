@@ -1,0 +1,19 @@
+package krate:app@0.1.0;
+
+/// CLI component world for the Phase 2 UAPI.
+///
+/// Apps import Krate host APIs and export `run`, returning a process-style
+/// status code to the runtime.
+world cli {
+  import krate:io/stdio@0.1.0;
+  import krate:io/args@0.1.0;
+  import krate:io/log@0.1.0;
+  import krate:fs/files@0.1.0;
+  import krate:net/http-client@0.1.0;
+  import krate:time/clock@0.1.0;
+  import krate:time/sleep@0.1.0;
+  import krate:locale/info@0.1.0;
+  import krate:locale/format@0.1.0;
+
+  export run: func() -> s32;
+}

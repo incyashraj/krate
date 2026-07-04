@@ -2,7 +2,7 @@
 
 This page is the checklist we use before calling Phase 2 UAPI v0.1 frozen.
 
-Freezing does not mean Layer36 is finished. It means the Phase 2 contract is
+Freezing does not mean Krate is finished. It means the Phase 2 contract is
 stable enough that apps can depend on it without us casually changing function
 names, error shapes, resource behavior, or capability strings.
 
@@ -47,14 +47,14 @@ What is not frozen yet:
 
 After freeze:
 
-- no breaking changes inside `layer36:*@0.1.0`
+- no breaking changes inside `krate:*@0.1.0`
 - no removing functions, records, variants, or enum cases
 - no changing parameter order or result shape
 - no changing capability string meaning
 - no changing error meaning in a way that breaks existing apps
 
 If we need a breaking change later, we publish a new package version such as
-`layer36:fs@0.2.0` beside the old one.
+`krate:fs@0.2.0` beside the old one.
 
 ## Review Checklist
 
@@ -84,10 +84,10 @@ Before checking the Phase 2 WIT freeze box, all items below should be true.
 
 ### Samples
 
-- [ ] `layer36-clock` has deterministic fixed-time output
-- [ ] `layer36-cat` reads granted files and denies missing grants
-- [ ] `layer36-curl` fetches granted HTTP fixtures and denies missing grants
-- [ ] sample components import only `layer36:*`
+- [ ] `krate-clock` has deterministic fixed-time output
+- [ ] `krate-cat` reads granted files and denies missing grants
+- [ ] `krate-curl` fetches granted HTTP fixtures and denies missing grants
+- [ ] sample components import only `krate:*`
 - [ ] Rust and TypeScript sample behavior matches for covered paths
 
 ### Language Tracks
@@ -119,7 +119,7 @@ scripts/generate-uapi-freeze-lock.sh
 scripts/check-uapi-freeze-lock.sh
 scripts/check-phase2-freeze-decision.sh
 scripts/record-phase2-uapi-freeze-review.sh --strict
-cargo test -p layer36-tools
+cargo test -p krate-tools
 env PATH="$HOME/.cargo/bin:$PATH" mdbook build docs/book
 scripts/record-phase2-dependency-evidence.sh --strict
 scripts/smoke-rust-sdk.sh
@@ -136,12 +136,12 @@ For Go readiness:
 
 ```bash
 scripts/build-phase2-go-variant-smoke.sh
-LAYER36_GO_RUNTIME_FIXTURE_MODE=optional scripts/promote-phase2-go-runtime-fixtures.sh
+KRATE_GO_RUNTIME_FIXTURE_MODE=optional scripts/promote-phase2-go-runtime-fixtures.sh
 scripts/record-phase2-go-readiness-evidence.sh
 ```
 
 The promotion command should only copy fixtures when all Go artifacts import
-`layer36:*` APIs only. The recorder keeps the build result and the current
+`krate:*` APIs only. The recorder keeps the build result and the current
 import-purity log in one review file.
 
 The freeze-review recorder writes

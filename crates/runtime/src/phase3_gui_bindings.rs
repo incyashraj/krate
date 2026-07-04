@@ -7,25 +7,25 @@
 //! new Phase 3 traits are implemented once by `Phase3GuiHost`.
 
 wasmtime::component::bindgen!({
-    path: "../../wit/layer36/phase3",
+    path: "../../wit/krate/phase3",
     world: "gui",
     imports: {
         default: trappable,
     },
     with: {
-        "layer36:io/types@0.1.0": crate::phase2_bindings::layer36::io::types,
-        "layer36:io/streams@0.1.0": crate::phase2_bindings::layer36::io::streams,
-        "layer36:io/stdio@0.1.0": crate::phase2_bindings::layer36::io::stdio,
-        "layer36:io/args@0.1.0": crate::phase2_bindings::layer36::io::args,
-        "layer36:io/log@0.1.0": crate::phase2_bindings::layer36::io::log,
-        "layer36:fs/types@0.1.0": crate::phase2_bindings::layer36::fs::types,
-        "layer36:fs/files@0.1.0": crate::phase2_bindings::layer36::fs::files,
-        "layer36:net/types@0.1.0": crate::phase2_bindings::layer36::net::types,
-        "layer36:net/http-client@0.1.0": crate::phase2_bindings::layer36::net::http_client,
-        "layer36:time/clock@0.1.0": crate::phase2_bindings::layer36::time::clock,
-        "layer36:time/sleep@0.1.0": crate::phase2_bindings::layer36::time::sleep,
-        "layer36:locale/info@0.1.0": crate::phase2_bindings::layer36::locale::info,
-        "layer36:locale/format@0.1.0": crate::phase2_bindings::layer36::locale::format,
+        "krate:io/types@0.1.0": crate::phase2_bindings::krate::io::types,
+        "krate:io/streams@0.1.0": crate::phase2_bindings::krate::io::streams,
+        "krate:io/stdio@0.1.0": crate::phase2_bindings::krate::io::stdio,
+        "krate:io/args@0.1.0": crate::phase2_bindings::krate::io::args,
+        "krate:io/log@0.1.0": crate::phase2_bindings::krate::io::log,
+        "krate:fs/types@0.1.0": crate::phase2_bindings::krate::fs::types,
+        "krate:fs/files@0.1.0": crate::phase2_bindings::krate::fs::files,
+        "krate:net/types@0.1.0": crate::phase2_bindings::krate::net::types,
+        "krate:net/http-client@0.1.0": crate::phase2_bindings::krate::net::http_client,
+        "krate:time/clock@0.1.0": crate::phase2_bindings::krate::time::clock,
+        "krate:time/sleep@0.1.0": crate::phase2_bindings::krate::time::sleep,
+        "krate:locale/info@0.1.0": crate::phase2_bindings::krate::locale::info,
+        "krate:locale/format@0.1.0": crate::phase2_bindings::krate::locale::format,
     },
 });
 
@@ -48,7 +48,7 @@ mod tests {
 
     #[test]
     fn generated_gui_types_keep_expected_rust_names() {
-        use layer36::ui::types::{WidgetKind, WindowSize};
+        use krate::ui::types::{WidgetKind, WindowSize};
 
         let size = WindowSize {
             width: 640,

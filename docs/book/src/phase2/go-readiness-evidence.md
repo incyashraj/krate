@@ -4,16 +4,16 @@ This page records the current Phase 2 state for Go.
 
 The short version: the Go examples build with TinyGo, but they are not runtime
 fixtures yet. They still import some WASI host APIs directly. Phase 2 keeps them
-out of the runtime fixture set until those imports are replaced by `layer36:*`
+out of the runtime fixture set until those imports are replaced by `krate:*`
 UAPI imports.
 
 ## Why This Matters
 
-Layer36 is trying to make apps portable by keeping host access behind one small
+Krate is trying to make apps portable by keeping host access behind one small
 runtime boundary.
 
-For Go, that means a compiled component should call Layer36 UAPI packages such
-as `layer36:io`, `layer36:fs`, and `layer36:net`. It should not reach around
+For Go, that means a compiled component should call Krate UAPI packages such
+as `krate:io`, `krate:fs`, and `krate:net`. It should not reach around
 the runtime and call `wasi:filesystem`, `wasi:stdio`, or other host APIs
 directly.
 
@@ -21,13 +21,13 @@ That rule keeps the security model simple:
 
 ```mermaid
 flowchart LR
-    GO["Go app"] --> L36["layer36:* UAPI"]
-    L36 --> POLICY["Layer36 policy checks"]
+    GO["Go app"] --> L36["krate:* UAPI"]
+    L36 --> POLICY["Krate policy checks"]
     POLICY --> ADAPTER["Host adapter"]
     ADAPTER --> OS["Operating system"]
 
     GO -.blocked for runtime fixtures.-> WASI["wasi:* host API"]
-    WASI -.bypasses Layer36 policy.-> OS
+    WASI -.bypasses Krate policy.-> OS
 ```
 
 ## Run The Recorder
@@ -70,7 +70,7 @@ The accepted Phase 2 decision is:
 - keep Go SDK source, examples, shape checks, and TinyGo build smoke
 - keep Go runtime fixture promotion gated by import purity
 - do not claim Go runtime parity until the compiled artifacts import only
-  `layer36:*`
+  `krate:*`
 - mark Go runtime parity as experimental for this phase
 - carry the import-pure runtime proof into the next phase if it is not ready
   before the Phase 2 freeze

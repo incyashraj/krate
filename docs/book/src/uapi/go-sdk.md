@@ -17,7 +17,7 @@ What still needs proof:
 - Install Go and TinyGo.
 - Generate or wire WIT bindings behind the public helpers.
 - Build a real Go component.
-- Run that component through `layer36 run`.
+- Run that component through `krate run`.
 - Add fixture-backed tests like the Rust samples.
 
 ## Example
@@ -26,14 +26,14 @@ What still needs proof:
 package main
 
 import (
-    l36io "github.com/incyashraj/layer6x6/packages/sdk-go/layer36/io"
-    l36net "github.com/incyashraj/layer6x6/packages/sdk-go/layer36/net"
+    l36io "github.com/incyashraj/layer6x6/packages/sdk-go/krate/io"
+    l36net "github.com/incyashraj/layer6x6/packages/sdk-go/krate/net"
 )
 
 func main() {
     args := l36io.Args()
     if len(args) == 0 {
-        _ = l36io.Eprintln("usage: layer36-go-curl <url>")
+        _ = l36io.Eprintln("usage: krate-go-curl <url>")
         return
     }
 
@@ -49,16 +49,16 @@ func main() {
 
 The longer examples live here:
 
-- `packages/sdk-go/examples/layer36-clock/main.go`
-- `packages/sdk-go/examples/layer36-cat/main.go`
-- `packages/sdk-go/examples/layer36-curl/main.go`
+- `packages/sdk-go/examples/krate-clock/main.go`
+- `packages/sdk-go/examples/krate-cat/main.go`
+- `packages/sdk-go/examples/krate-curl/main.go`
 
 ## Tooling
 
 Run:
 
 ```bash
-layer36 doctor
+krate doctor
 ```
 
 For this track, these lines should be present:
@@ -68,7 +68,7 @@ tinygo          ...
 go              ...
 ```
 
-If either is missing, the Go runtime proof is blocked. The rest of Layer36 can
+If either is missing, the Go runtime proof is blocked. The rest of Krate can
 continue without them.
 
 ## Current Check

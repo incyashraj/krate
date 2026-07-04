@@ -15,11 +15,11 @@
 ## What Took Longer Than Expected
 
 - The original OneOS naming search uncovered material conflicts, so the project
-  moved to Layer36 before public announcement.
+  moved to Krate before public announcement.
 
 ## What Changed In The Plan
 
-- Layer36 is the active project name, pending formal trademark clearance.
+- Krate is the active project name, pending formal trademark clearance.
 
 ## Open Risks
 

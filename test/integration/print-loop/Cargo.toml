@@ -11,8 +11,8 @@ crate-type = ["cdylib"]
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 
 [package.metadata.component]
-package = "layer36:print-loop"
+package = "krate:print-loop"
 
 [package.metadata.component.target]
-path = "../../../wit/layer36"
+path = "../../../wit/krate"
 world = "app"

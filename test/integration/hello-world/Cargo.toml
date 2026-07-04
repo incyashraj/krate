@@ -13,8 +13,8 @@ wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 crate-type = ["cdylib"]
 
 [package.metadata.component]
-package = "layer36:hello-world"
+package = "krate:hello-world"
 
 [package.metadata.component.target]
-path = "../../../wit/layer36/phase1.wit"
+path = "../../../wit/krate/phase1.wit"
 world = "app"

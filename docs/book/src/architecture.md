@@ -1,9 +1,9 @@
 # Architecture
 
-Layer36 has one job: keep app code above the platform line.
+Krate has one job: keep app code above the platform line.
 
 An app should not need to know whether it is running on Linux, Windows, macOS,
-Android, or iOS for common work. It should call Layer36. The host adapter should
+Android, or iOS for common work. It should call Krate. The host adapter should
 do the platform work.
 
 ## Full Shape Of The System
@@ -14,7 +14,7 @@ flowchart LR
     WASM["WASM component<br/>portable app code"]
     MAN["Manifest<br/>name, version, permissions"]
     BUNDLE[".l36app bundle<br/>component, assets, signature"]
-    RT["Layer36 runtime"]
+    RT["Krate runtime"]
     UAPI["UAPI<br/>io, files, net, time, locale"]
     UCAP["UCap<br/>permission grants"]
     ADAPT["Host adapter"]
@@ -49,14 +49,14 @@ GUI APIs, mobile hosts, signing, and distribution are later phases.
 ```mermaid
 sequenceDiagram
     participant User
-    participant CLI as layer36 CLI
+    participant CLI as krate CLI
     participant Policy as UCap policy
     participant Runtime
     participant Wasmtime
     participant Adapter as Host adapter
     participant App as WASM component
 
-    User->>CLI: layer36 run --manifest app.toml --auto-grant app.wasm
+    User->>CLI: krate run --manifest app.toml --auto-grant app.wasm
     CLI->>Policy: resolve manifest and launch grants
     CLI->>Runtime: run_file(path, config, policy)
     Runtime->>Wasmtime: load component and link Phase 2 UAPI
@@ -73,13 +73,13 @@ sequenceDiagram
 ## What The Current Proof Shows
 
 Phase 1 proved that the loader works: one hello-world component can run through
-the Layer36 runtime. Phase 2 builds on that with useful app calls. The current
+the Krate runtime. Phase 2 builds on that with useful app calls. The current
 proof shows:
 
-- `layer36-clock` can use time, locale, timezone, and stdout.
-- `layer36-cat` can read granted files and deny missing or out-of-scope file
+- `krate-clock` can use time, locale, timezone, and stdout.
+- `krate-cat` can read granted files and deny missing or out-of-scope file
   grants.
-- `layer36-curl` can fetch a granted local HTTP endpoint and deny missing
+- `krate-curl` can fetch a granted local HTTP endpoint and deny missing
   network grants.
 - sample and UCap evidence scripts can record repeatable reports for exit
   review.
@@ -98,8 +98,8 @@ flowchart TD
     MAN["crates/manifest"]
     ADAPT["crates/adapter-*"]
     SDK["crates/bindings-rust"]
-    APPS["apps/layer36-*"]
-    WIT["wit/layer36"]
+    APPS["apps/krate-*"]
+    WIT["wit/krate"]
     TEST["test/integration"]
 
     CLI --> RT
@@ -132,7 +132,7 @@ are trusted project code. The operating system is outside the project boundary.
 Phase 2 has real capability checks for the current UAPI slice, but it is not a
 production sandbox. Do not run untrusted third-party components yet. The current
 goal is to prove that host access can be declared, granted, denied, and recorded
-before Layer36 moves into GUI and distribution work.
+before Krate moves into GUI and distribution work.
 
 ## Later Phases
 

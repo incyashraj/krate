@@ -1,8 +1,8 @@
-# Layer36 — Phase 7 Detailed Plan: v1.0 Hardening
+# Krate — Phase 7 Detailed Plan: v1.0 Hardening
 
 > **Phase:** 7 of 8 (final phase before v1.0 launch)
 > **Duration:** Months 23–24 (60 calendar days, ~40–50 engineering days of work)
-> **Phase sentence:** *Make every piece of Layer36 launch-quality, migrate ParkSure end-to-end, and ship v1.0 in public.*
+> **Phase sentence:** *Make every piece of Krate launch-quality, migrate ParkSure end-to-end, and ship v1.0 in public.*
 > **Prerequisite:** Phase 6 complete — marketplace, signing, identity, sync all operational.
 > **Supersedes:** nothing.
 > **Superseded by:** v1.0 maintenance phase (post-launch, out of scope of this plan).
@@ -44,7 +44,7 @@
 
 ## 0. How to Use This Document
 
-Phase 7 is unlike every other phase in this plan. The previous seven phases were about *building* Layer36. Phase 7 is about making sure what was built actually holds up to the world. There is almost no new architecture, almost no new code beyond bug fixes, almost no new APIs. Instead, there is intense discipline: every promise made in Phases 1–6 must be verified, every rough edge must be smoothed, every component must be production-ready, and the platform must stand on its own without the founder personally vouching for it.
+Phase 7 is unlike every other phase in this plan. The previous seven phases were about *building* Krate. Phase 7 is about making sure what was built actually holds up to the world. There is almost no new architecture, almost no new code beyond bug fixes, almost no new APIs. Instead, there is intense discipline: every promise made in Phases 1–6 must be verified, every rough edge must be smoothed, every component must be production-ready, and the platform must stand on its own without the founder personally vouching for it.
 
 - This document is shorter than Phases 5 and 6 — proportional to its scope. The work is real but most of it is judgment, not engineering.
 - Read §5 (Phase 7 Mindset) first. The discipline shift is the hardest part.
@@ -58,20 +58,20 @@ Phase 7 is unlike every other phase in this plan. The previous seven phases were
 
 ### 1.1 One-sentence objective
 
-**Every Layer36 component is production-ready, ParkSure runs end-to-end on Layer36, security has been audited by people who weren't involved in building it, and on launch day a stranger reads about Layer36 on Hacker News, installs it, builds an app, and ships it — and nothing breaks.**
+**Every Krate component is production-ready, ParkSure runs end-to-end on Krate, security has been audited by people who weren't involved in building it, and on launch day a stranger reads about Krate on Hacker News, installs it, builds an app, and ships it — and nothing breaks.**
 
 ### 1.2 Why this matters
 
-The first 24 hours of v1.0 launch decide whether Layer36 gets a second look from the world. A platform that's "almost ready" at launch is a platform that gets dismissed in one tweet and never recovers. Phase 7 is the difference between a fair shot and a missed one. It's two months of un-glamorous work — bug fixes, doc polish, perf tuning, audit response, localization review — that determine whether the previous 22 months of architectural cleverness reach anyone.
+The first 24 hours of v1.0 launch decide whether Krate gets a second look from the world. A platform that's "almost ready" at launch is a platform that gets dismissed in one tweet and never recovers. Phase 7 is the difference between a fair shot and a missed one. It's two months of un-glamorous work — bug fixes, doc polish, perf tuning, audit response, localization review — that determine whether the previous 22 months of architectural cleverness reach anyone.
 
 ### 1.3 The seven deliverables of Phase 7
 
-1. **ParkSure migrated** — all 6 client apps (driver, operator, valet ops, lot admin, event ops, public dashboard) running as a single Layer36 codebase.
+1. **ParkSure migrated** — all 6 client apps (driver, operator, valet ops, lot admin, event ops, public dashboard) running as a single Krate codebase.
 2. **External security audit** — third-party firm reviews runtime, crypto, signing, marketplace; findings remediated.
 3. **Performance pass** — every metric in §19 hit on reference hardware.
 4. **Documentation** — every public API has examples; every concept has a guide; every error has remediation.
 5. **Localization** — runtime + marketplace translated to en, de, fr, es, hi, ja, zh.
-6. **Accessibility audit** — WCAG 2.1 AA compliance verified for marketplace; full screen-reader pass for `layer36-notes` on all 5 platforms.
+6. **Accessibility audit** — WCAG 2.1 AA compliance verified for marketplace; full screen-reader pass for `krate-notes` on all 5 platforms.
 7. **Public launch** — coordinated blog, HN, Product Hunt, press, video demo, all on Day 0.
 
 ---
@@ -101,15 +101,15 @@ Phase 7 is **done** when, and only when, every row below is true. These rows are
 
 | # | Criterion | Measured how |
 |---|-----------|--------------|
-| 1 | ParkSure: all 6 client apps run on Layer36 in production | ParkSure team sign-off |
+| 1 | ParkSure: all 6 client apps run on Krate in production | ParkSure team sign-off |
 | 2 | Single ParkSure codebase replaces previous 6 native codebases | Git history confirms |
 | 3 | External security audit complete; all P0/P1 findings remediated | Audit report + remediation matrix |
 | 4 | All v1.0 performance targets met within 5% on reference hardware | Benchmark dashboard |
 | 5 | UAPI reference: every function has at least one code example | Auto-generated check in CI |
 | 6 | Migration guides exist from Electron, Flutter, React Native | Three docs published |
 | 7 | Localization complete in 7 target locales for runtime + marketplace | Translation review sign-off |
-| 8 | Accessibility audit: WCAG 2.1 AA pass for marketplace; screen reader pass for `layer36-notes` on 5 platforms | Audit firm report |
-| 9 | Marketing site (layer36.dev) live with documentation, tutorials, blog | Public URL working |
+| 8 | Accessibility audit: WCAG 2.1 AA pass for marketplace; screen reader pass for `krate-notes` on 5 platforms | Audit firm report |
+| 9 | Marketing site (krate.dev) live with documentation, tutorials, blog | Public URL working |
 | 10 | Launch blog post written and ready | Draft reviewed |
 | 11 | Coordinated launch communications drafted (HN, Product Hunt, Twitter/X, press) | Launch playbook in `docs/internal/launch/` |
 | 12 | Zero P0 bugs open at launch gate | Bug tracker |
@@ -130,7 +130,7 @@ Phase 7 is **done** when, and only when, every row below is true. These rows are
 - Documentation rewrites and pass-throughs.
 - Translation review across seven languages.
 - Accessibility audit and remediation.
-- Marketing site (layer36.dev) and the launch blog post.
+- Marketing site (krate.dev) and the launch blog post.
 - Coordinated public launch.
 - Bug bash, bug bash, bug bash.
 - 24/7 on-call rotation training.
@@ -234,7 +234,7 @@ ParkSure already exists. It already has six native client codebases. It is alrea
 | Event ops | Event-day staff | iOS, Android |
 | Public dashboard | Anyone (parking availability lookup) | Web, mobile-web |
 
-Six codebases, three target platform sets, mixed native + web. After migration: **one Layer36 codebase**, all targets.
+Six codebases, three target platform sets, mixed native + web. After migration: **one Krate codebase**, all targets.
 
 ### 7.3 Migration order
 
@@ -251,7 +251,7 @@ Each client app:
 - Same feature set as production (no scope creep into "let's add X while we're rewriting").
 - Single codebase in Rust (likely; could be TypeScript if team prefers).
 - Manifest declares all required UCap caps with rationales.
-- Cross-device sync via `layer36:identity` so a driver who installs on phone and tablet is recognized as same user.
+- Cross-device sync via `krate:identity` so a driver who installs on phone and tablet is recognized as same user.
 
 ### 7.5 What ParkSure gains
 
@@ -267,7 +267,7 @@ Each client app:
 ### 7.6 What ParkSure pays
 
 - Initial migration effort (~6 weeks of focused work).
-- Acceptance of Layer36 limitations: no third-party SDKs that don't have Layer36 bindings (e.g., specific payment providers — handle through HTTP in v1).
+- Acceptance of Krate limitations: no third-party SDKs that don't have Krate bindings (e.g., specific payment providers — handle through HTTP in v1).
 - Slightly different UX per host (intentional — natives feel native).
 
 ### 7.7 The migration playbook
@@ -276,7 +276,7 @@ Each app follows:
 
 ```
 1. Inventory features in the existing app. Document.
-2. Create Layer36 project from `rust-mobile` template.
+2. Create Krate project from `rust-mobile` template.
 3. Port screens one at a time. Native rendering on each host.
 4. Move backend integration. ParkSure server unchanged.
 5. Add UCap declarations.
@@ -289,7 +289,7 @@ Each app follows:
 
 ### 7.8 Cross-device journey test
 
-The single test that proves ParkSure-on-Layer36 works:
+The single test that proves ParkSure-on-Krate works:
 
 ```
 A driver opens the app on their iPhone, books a parking spot.
@@ -299,11 +299,11 @@ At the lot, the driver opens the app on a third device (display screen at the pa
 The booking is recognized. Entry granted.
 ```
 
-If this works, Layer36 is everything we said it was. If it doesn't, we don't ship.
+If this works, Krate is everything we said it was. If it doesn't, we don't ship.
 
 ### 7.9 Rollback plan
 
-ParkSure's existing apps stay on production until Layer36-ParkSure has run for 14 days at SLA. Switch is gradual: percentage rollout via app version distribution. Revert = roll back distribution percentages.
+ParkSure's existing apps stay on production until Krate-ParkSure has run for 14 days at SLA. Switch is gradual: percentage rollout via app version distribution. Revert = roll back distribution percentages.
 
 ---
 
@@ -311,11 +311,11 @@ ParkSure's existing apps stay on production until Layer36-ParkSure has run for 1
 
 ### 8.1 Why an external audit
 
-The team that built Layer36 knows Layer36 too well. Subtle assumptions bake in over 22 months. An external auditor's job is to break those assumptions on purpose, professionally, before adversaries break them in production.
+The team that built Krate knows Krate too well. Subtle assumptions bake in over 22 months. An external auditor's job is to break those assumptions on purpose, professionally, before adversaries break them in production.
 
 ### 8.2 Firm selection
 
-Three firms qualified for Layer36's surface:
+Three firms qualified for Krate's surface:
 - **Trail of Bits** — strong in cryptography, runtime sandboxing.
 - **NCC Group** — broad; experienced with platform-scale audits.
 - **Cure53** — specialized in browser/sandbox security; good for our boundary work.
@@ -329,12 +329,12 @@ Audit firm reviews:
 1. **Runtime sandbox.** WASM ↔ host adapter boundary.
 2. **UCap policy enforcement.** Capability matching, revocation, race conditions.
 3. **Bundle signing + transparency log.** Cryptographic correctness.
-4. **Identity (`layer36:identity`).** DID handling, key storage, sync encryption.
+4. **Identity (`krate:identity`).** DID handling, key storage, sync encryption.
 5. **Marketplace backend.** API auth, rate limits, injection, privilege escalation.
 6. **Background update service.** Code-running-as-elevated-privileges.
 
 Audit excludes:
-- Apps built on Layer36 (their developers' responsibility).
+- Apps built on Krate (their developers' responsibility).
 - Cloud infra outside our service code (Cloudflare, AWS).
 - Third-party libraries (we audit the integration; not the library itself).
 
@@ -364,7 +364,7 @@ Standard CVSS-aligned:
 
 ### 8.7 Bug bounty kickoff
 
-Phase 7 launches Layer36 Bug Bounty. Initial rewards:
+Phase 7 launches Krate Bug Bounty. Initial rewards:
 - P0: $5,000–25,000.
 - P1: $1,500–5,000.
 - P2: $250–1,500.
@@ -374,7 +374,7 @@ Scoped to runtime, marketplace, identity, signing. Hosted via HackerOne or Intig
 
 ### 8.8 Cost
 
-Budget: $40,000–$80,000 for the audit, depending on firm and scope. This is real money; the Layer36 budget anticipates it. Counsel sign-off on the audit contract is also part of legal scope.
+Budget: $40,000–$80,000 for the audit, depending on firm and scope. This is real money; the Krate budget anticipates it. Counsel sign-off on the audit contract is also part of legal scope.
 
 ---
 
@@ -420,7 +420,7 @@ The areas most likely to need work, based on prior phase retrospectives:
 - **iOS cold start with AOT cache.** Pre-launch this was just under target; expect 10–20% gap to close.
 - **Marketplace API p99.** Cold-cache requests to S3 are slow; warm-up + edge caching needed.
 - **Hot reload on Android over Wi-Fi.** Network latency dominates; investigate USB-tethered fallback.
-- **Mobile RSS for `layer36-notes`.** Likely 130 MB; target 120; identify allocation hot spots.
+- **Mobile RSS for `krate-notes`.** Likely 130 MB; target 120; identify allocation hot spots.
 
 ### 9.5 What we won't do
 
@@ -430,7 +430,7 @@ The areas most likely to need work, based on prior phase retrospectives:
 
 ### 9.6 Public benchmark page
 
-Final results published at `layer36.dev/benchmarks` with reproducible methodology. This is a credibility document; rivals will read it line by line.
+Final results published at `krate.dev/benchmarks` with reproducible methodology. This is a credibility document; rivals will read it line by line.
 
 ---
 
@@ -451,7 +451,7 @@ Walk every page. Three categories of finding:
 Roughly the structure that should exist at launch:
 
 ```
-docs.layer36.dev/
+docs.krate.dev/
 ├── /                           # Landing
 ├── getting-started/
 │   ├── install
@@ -472,7 +472,7 @@ docs.layer36.dev/
 │   ├── errors                  # Every error code documented
 │   └── glossary
 ├── concepts/
-│   ├── why-layer36
+│   ├── why-krate
 │   ├── architecture
 │   ├── widget-protocol
 │   ├── lifecycle
@@ -501,7 +501,7 @@ docs.layer36.dev/
 │   ├── from-flutter
 │   └── from-react-native
 ├── operations/
-│   ├── monitoring         # for Layer36 itself, useful for self-hosters
+│   ├── monitoring         # for Krate itself, useful for self-hosters
 │   └── status-page-readiness
 ├── policy/
 │   ├── content
@@ -514,7 +514,7 @@ docs.layer36.dev/
 │   ├── contributing
 │   └── governance
 └── blog/
-    ├── 0001-announcing-layer36      # Phase 0
+    ├── 0001-announcing-krate      # Phase 0
     ├── 0002-phase-1-complete
     ├── ...
     └── 00xx-launching-v1
@@ -522,12 +522,12 @@ docs.layer36.dev/
 
 ### 10.3 Migration guides
 
-The three "from X" guides serve a specific GTM purpose: they tell developers stuck maintaining Flutter/Electron/RN codebases that they have a path out. Each guide is written from a real porting experience (the Layer36 team picks a small Flutter/Electron/RN project, ports it, documents what changed).
+The three "from X" guides serve a specific GTM purpose: they tell developers stuck maintaining Flutter/Electron/RN codebases that they have a path out. Each guide is written from a real porting experience (the Krate team picks a small Flutter/Electron/RN project, ports it, documents what changed).
 
 ### 10.4 Quality gate
 
 A documentation page is "done" when:
-- A reader who has never seen Layer36 can complete the task it describes.
+- A reader who has never seen Krate can complete the task it describes.
 - All code samples in it run as written, in CI.
 - Cross-references to other pages are correct.
 - It loads in under 2 seconds.
@@ -542,7 +542,7 @@ External technical writer engaged in Week 1. Reviews + co-authors with engineeri
 
 ### 11.1 Target locales (v1.0)
 
-Seven, chosen for: combined developer + user reach, content quality of available translators, and Layer36's geographical priorities (Singapore + India + Europe + East Asia).
+Seven, chosen for: combined developer + user reach, content quality of available translators, and Krate's geographical priorities (Singapore + India + Europe + East Asia).
 
 | Locale | Code |
 |---|---|
@@ -557,9 +557,9 @@ Seven, chosen for: combined developer + user reach, content quality of available
 ### 11.2 What gets localized
 
 - Runtime UI strings (UCap dialogs, error messages, system prompts).
-- `layer36` CLI strings.
+- `krate` CLI strings.
 - Marketplace frontend strings.
-- Marketing site strings (layer36.dev).
+- Marketing site strings (krate.dev).
 - Top-tier docs (getting-started + tutorials only — full reference stays en-US for v1.0).
 
 ### 11.3 Format
@@ -616,9 +616,9 @@ WCAG 2.1 Level AA. Recognized standard, regulatory force in EU (EAA) and US (Sec
 Two parts:
 
 - **Marketplace frontend:** primary focus. WCAG 2.1 AA across all flows (browse, search, detail, install, account, library).
-- **`layer36-notes` flagship:** screen reader pass on all five platforms.
+- **`krate-notes` flagship:** screen reader pass on all five platforms.
 
-Apps built on Layer36 by other developers are their own responsibility. We provide the primitives (accesskit integration in Phase 3, a11y tree); developers use them.
+Apps built on Krate by other developers are their own responsibility. We provide the primitives (accesskit integration in Phase 3, a11y tree); developers use them.
 
 ### 12.3 Audit firm
 
@@ -646,7 +646,7 @@ Findings classified P0/P1/P2 same as security audit. P0/P1 fix before launch. P2
 
 ### 12.6 Public statement
 
-`docs.layer36.dev/policy/accessibility` with VPAT (Voluntary Product Accessibility Template) at launch.
+`docs.krate.dev/policy/accessibility` with VPAT (Voluntary Product Accessibility Template) at launch.
 
 ---
 
@@ -665,8 +665,8 @@ Avoid:
 
 | Channel | Asset | Owner |
 |---|---|---|
-| layer36.dev | Marketing site landing | Founder + designer |
-| Blog | "Launching Layer36 v1.0" post | Founder |
+| krate.dev | Marketing site landing | Founder + designer |
+| Blog | "Launching Krate v1.0" post | Founder |
 | Hacker News | Show HN post | Founder, prepared |
 | Product Hunt | Featured launch | Product Hunt veteran assist |
 | Twitter/X | Launch thread | Founder |
@@ -710,7 +710,7 @@ The team's job during launch day, in priority order:
 
 ### 13.5 Pre-recorded demo video
 
-3 minutes. Shows: install Layer36, run `layer36 new`, hit save, see app, install ParkSure from marketplace, sign in on second device, see same data.
+3 minutes. Shows: install Krate, run `krate new`, hit save, see app, install ParkSure from marketplace, sign in on second device, see same data.
 
 Production: simple screencast + voiceover. No fancy editing. Honesty over polish.
 
@@ -737,7 +737,7 @@ These numbers are *targets*, not predictions. The launch is successful even at h
 
 Two dedicated bug bashes during Phase 7:
 - **Week 4:** Internal bash. Whole team uses every flow on every platform. Log everything.
-- **Week 7:** External bash. Invite 50 trusted users for one weekend. Pay them with Layer36 swag + early-access flair.
+- **Week 7:** External bash. Invite 50 trusted users for one weekend. Pay them with Krate swag + early-access flair.
 
 ### 14.2 Triage process
 
@@ -859,7 +859,7 @@ P0/P1 fixes get a regression test added. No "trust me, it's fixed" merges.
 
 Matches Build Plan §7.8.
 
-### P7-PARK-01 — ParkSure architecture review for Layer36 port
+### P7-PARK-01 — ParkSure architecture review for Krate port
 
 **Estimate:** 3 days.
 **Branch:** `p7-park-01-arch-review`.
@@ -872,7 +872,7 @@ Matches Build Plan §7.8.
 ### P7-PARK-02 — Port driver app
 
 **Estimate:** 10 days.
-**Branch:** `parksure/driver-layer36`.
+**Branch:** `parksure/driver-krate`.
 **Acceptance:**
 - Feature parity with current production.
 - Runs on iOS + Android.
@@ -882,23 +882,23 @@ Matches Build Plan §7.8.
 ### P7-PARK-03 — Port operator app
 
 **Estimate:** 10 days.
-**Branch:** `parksure/operator-layer36`.
+**Branch:** `parksure/operator-krate`.
 **Acceptance:**
 - Same as P7-PARK-02 for operator workflows.
 
 ### P7-PARK-04 — Port valet ops + lot admin
 
 **Estimate:** 10 days.
-**Branch:** `parksure/valet-and-admin-layer36`.
+**Branch:** `parksure/valet-and-admin-krate`.
 **Acceptance:**
 - Both apps run on iOS, Android, desktop where applicable.
 
 ### P7-PARK-05 — Port public dashboard
 
 **Estimate:** 5 days.
-**Branch:** `parksure/dashboard-layer36`.
+**Branch:** `parksure/dashboard-krate`.
 **Acceptance:**
-- Runs on web (where Layer36 browser host applies if available) + mobile + desktop.
+- Runs on web (where Krate browser host applies if available) + mobile + desktop.
 - Read-only public access.
 
 ### P7-PARK-06 — Cross-device user journey end-to-end
@@ -907,7 +907,7 @@ Matches Build Plan §7.8.
 **Branch:** `parksure/cross-device-test`.
 **Acceptance:**
 - The test in §7.8 passes consistently.
-- Documented as a public Layer36 case study.
+- Documented as a public Krate case study.
 
 ### P7-SEC-01 — External security audit
 
@@ -965,15 +965,15 @@ Matches Build Plan §7.8.
 **Branch:** `p7-a11y-01-audit-fixes`.
 **Acceptance:**
 - WCAG 2.1 AA pass for marketplace.
-- Screen reader pass for `layer36-notes` on all 5 platforms.
+- Screen reader pass for `krate-notes` on all 5 platforms.
 - VPAT published.
 
 ### P7-LAUNCH-01 — Marketing site
 
 **Estimate:** 5 days.
-**Branch:** `layer36-marketing/launch`.
+**Branch:** `krate-marketing/launch`.
 **Acceptance:**
-- layer36.dev live with hero, value prop, links to docs/marketplace/Discord/GitHub.
+- krate.dev live with hero, value prop, links to docs/marketplace/Discord/GitHub.
 - Performance budget met.
 - A11y AA.
 
@@ -1009,7 +1009,7 @@ Phase 7 has very little new code. Most "skeletons" are configuration, scripts, a
 // in docs/book/src/reference/uapi/ contains at least one example.
 
 fn main() -> anyhow::Result<()> {
-    let wit_files = glob::glob("wit/layer36/*.wit")?;
+    let wit_files = glob::glob("wit/krate/*.wit")?;
     let mut missing = Vec::new();
 
     for path in wit_files.flatten() {
@@ -1080,7 +1080,7 @@ id      = "com.parksure.driver"
 name    = "ParkSure Driver"
 version = "1.0.0"
 entry   = "driver.wasm"
-world   = "layer36:app/full@0.4.0"
+world   = "krate:app/full@0.4.0"
 runtime-min = "1.0.0"
 
 [metadata]
@@ -1152,7 +1152,7 @@ groups:
         labels: { severity: warning, team: oncall }
         annotations:
           summary: "Marketplace API p99 above 200 ms"
-          runbook: "https://docs.layer36.dev/runbook/marketplace-latency"
+          runbook: "https://docs.krate.dev/runbook/marketplace-latency"
 
       - alert: SignupFailureRateHigh
         expr: rate(identity_creation_failures_total[5m]) / rate(identity_creation_attempts_total[5m]) > 0.01
@@ -1200,7 +1200,7 @@ Two formal bashes plus continuous testing.
 
 ### 18.4 Acceptance testing for ParkSure
 
-ParkSure's existing QA suite runs against the Layer36-built clients. Pass rate ≥ 98% required for switchover.
+ParkSure's existing QA suite runs against the Krate-built clients. Pass rate ≥ 98% required for switchover.
 
 ---
 
@@ -1244,8 +1244,8 @@ Miss > 5% blocks launch.
 
 ### 19.3 Performance benchmark page
 
-`layer36.dev/benchmarks` with:
-- Methodology (machines, OS versions, Layer36 version).
+`krate.dev/benchmarks` with:
+- Methodology (machines, OS versions, Krate version).
 - All metrics with measured values and targets.
 - Comparison to Flutter, Electron, React Native (where comparable).
 - Reproducibility instructions.
@@ -1256,11 +1256,11 @@ Miss > 5% blocks launch.
 
 ### 20.1 What v1.0 represents
 
-The threat model is no longer a draft. v1.0 is the reference document for everything Layer36 protects against, what it doesn't, and how. It is the document users, developers, and auditors will cite.
+The threat model is no longer a draft. v1.0 is the reference document for everything Krate protects against, what it doesn't, and how. It is the document users, developers, and auditors will cite.
 
 ### 20.2 Final threat model structure
 
-`docs.layer36.dev/security/threat-model` contains:
+`docs.krate.dev/security/threat-model` contains:
 
 1. **Trust zones** (developer, marketplace, runtime, host OS, user).
 2. **STRIDE inventory per zone.**
@@ -1302,7 +1302,7 @@ By end of Phase 7, the documentation site contains everything in §10.2 with the
 - Every error message has a remediation page.
 - All UAPI functions have at least one example.
 - Migration guides for Electron / Flutter / React Native exist and are honest about tradeoffs.
-- Status page exists (`status.layer36.dev`) with public uptime.
+- Status page exists (`status.krate.dev`) with public uptime.
 
 ### 21.2 Internal documentation
 
@@ -1318,7 +1318,7 @@ For ourselves and future maintainers:
 
 Length: 1500–2500 words. Structure:
 
-- Lede: what Layer36 is in one sentence.
+- Lede: what Krate is in one sentence.
 - The problem: every app is written six times today.
 - The bet: WebAssembly + native widget lowering + first-class capability model.
 - What we built: short tour of the platform.
@@ -1413,8 +1413,8 @@ Budget: $5–15k for launch week alone.
 This list = v1.0 launch gate. Do not launch with any item red.
 
 ### ParkSure
-- [ ] All 6 ParkSure clients running on Layer36 in production.
-- [ ] Single Layer36 codebase replaces 6 native codebases.
+- [ ] All 6 ParkSure clients running on Krate in production.
+- [ ] Single Krate codebase replaces 6 native codebases.
 - [ ] Cross-device user journey test passes consistently.
 - [ ] Performance ≥ existing native production app.
 - [ ] ParkSure team formal sign-off.
@@ -1445,7 +1445,7 @@ This list = v1.0 launch gate. Do not launch with any item red.
 
 ### Accessibility
 - [ ] WCAG 2.1 AA pass for marketplace.
-- [ ] Screen reader pass on all 5 platforms for `layer36-notes`.
+- [ ] Screen reader pass on all 5 platforms for `krate-notes`.
 - [ ] VPAT published.
 - [ ] Accessibility statement on docs site.
 
@@ -1457,7 +1457,7 @@ This list = v1.0 launch gate. Do not launch with any item red.
 - [ ] Monitoring + alerting verified.
 
 ### Launch
-- [ ] Marketing site (layer36.dev) live.
+- [ ] Marketing site (krate.dev) live.
 - [ ] Launch blog post drafted + reviewed.
 - [ ] Demo video recorded + uploaded.
 - [ ] Launch playbook in `docs/internal/launch/`.
@@ -1504,7 +1504,7 @@ This list = v1.0 launch gate. Do not launch with any item red.
 
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| ParkSure-on-Layer36 underperforms native version | Medium | High | Performance comparison early; tune; if can't close gap, document and accept for v1.0 |
+| ParkSure-on-Krate underperforms native version | Medium | High | Performance comparison early; tune; if can't close gap, document and accept for v1.0 |
 | New regressions from audit fixes | Medium | High | Regression test every fix; run full suite before merge |
 | Translations are technically wrong but stylistically off | High | Medium | Native-speaker review; community feedback channel post-launch |
 | Last-minute legal item (e.g., new EU regulation) | Low | Critical | Counsel monitors; documented response process |
@@ -1645,7 +1645,7 @@ Day +30: Public Day-30 update + v2 conversation begins.
 
 | Area | Criterion | Status |
 |---|---|---|
-| ParkSure | All 6 clients on Layer36 in prod | ☐ |
+| ParkSure | All 6 clients on Krate in prod | ☐ |
 | Security | Audit complete, P0/P1 closed | ☐ |
 | Performance | All targets within 5% | ☐ |
 | Docs | UAPI examples, concepts, migration guides | ☐ |
@@ -1769,15 +1769,15 @@ Full criteria in [§3 Success Criteria](#3-success-criteria--v10-launch-gate). E
 
 | # | Criterion | Status |
 |---|-----------|--------|
-| 1 | ParkSure: all 6 client apps running on Layer36 in production (team sign-off) | Not done |
+| 1 | ParkSure: all 6 client apps running on Krate in production (team sign-off) | Not done |
 | 2 | Single ParkSure codebase replaces all 6 previous native codebases | Not done |
 | 3 | External security audit complete; all P0/P1 findings remediated | Not done |
 | 4 | All v1.0 performance targets met within 5% on reference hardware | Not done |
 | 5 | UAPI reference: every public function has ≥ 1 code example (CI-verified) | Not done |
 | 6 | Migration guides from Electron, Flutter, React Native published (3 docs) | Not done |
 | 7 | Localization complete in 7 locales for runtime + marketplace | Not done |
-| 8 | Accessibility audit: WCAG 2.1 AA for marketplace; screen reader pass for `layer36-notes` on 5 platforms | Not done |
-| 9 | Marketing site (layer36.dev) live with docs, tutorials, blog | Not done |
+| 8 | Accessibility audit: WCAG 2.1 AA for marketplace; screen reader pass for `krate-notes` on 5 platforms | Not done |
+| 9 | Marketing site (krate.dev) live with docs, tutorials, blog | Not done |
 | 10 | Launch blog post written and reviewed | Not done |
 | 11 | Coordinated launch communications drafted (HN, Product Hunt, Twitter/X, press) | Not done |
 | 12 | Zero P0 bugs open at launch gate | Not done |
@@ -1850,10 +1850,10 @@ Phase 7 is unromantic. There are no architectural breakthroughs, no clever new a
 
 The founders of every successful platform have a moment in their telling of the story where they describe something that sounds like Phase 7 — the months before launch when they stopped building and started polishing, when they invited strangers to break their work, when they wrote the docs they thought were boring and turned out to be the docs that made everything else findable. The platforms that don't have that phase in their story are the ones nobody remembers.
 
-When v1.0 ships, the work doesn't end — it changes shape. The platform gets its real test from real users, not the imagined ones who shaped Phases 1–6. Some of what was built will turn out to be wrong; some will turn out to be more important than expected. v1.0 is not the goal. v1.0 is the moment Layer36 earns the right to be measured by reality.
+When v1.0 ships, the work doesn't end — it changes shape. The platform gets its real test from real users, not the imagined ones who shaped Phases 1–6. Some of what was built will turn out to be wrong; some will turn out to be more important than expected. v1.0 is not the goal. v1.0 is the moment Krate earns the right to be measured by reality.
 
 Spend Phase 7 the way it deserves to be spent. Finish the thing. Ship.
 
 — end of document —
 
-— end of Layer36 planning suite —
+— end of Krate planning suite —

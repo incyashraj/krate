@@ -3,9 +3,9 @@
 //! The default macOS adapter still uses the headless draft backend. This module
 //! is the first native path behind the checked handle handoff: it creates an
 //! AppKit `NSWindow`, keeps that object alive, and binds its raw pointer to a
-//! stable Layer36 `WindowId`.
+//! stable Krate `WindowId`.
 
-use layer36_adapter_common::ui::{
+use krate_adapter_common::ui::{
     Modifiers, NativeWindowHandle, PointerButton, PointerEvent, UiAdapter, UiAdapterError,
     WidgetId, WidgetKind, WindowAdapter, WindowBackendKind, WindowId, WindowOptions, WindowSize,
 };
@@ -14,7 +14,7 @@ use crate::MacosUiAdapter;
 
 /// Placement of one widget inside an AppKit content view.
 ///
-/// Coordinates are logical Layer36 layout units with a top-left origin, exactly
+/// Coordinates are logical Krate layout units with a top-left origin, exactly
 /// as `LayoutSnapshot` reports them. AppKit uses a bottom-left origin, so the
 /// lowering path flips Y with [`AppKitWidgetPlacement::appkit_origin_y`].
 #[derive(Debug, Clone, PartialEq)]
@@ -105,7 +105,7 @@ impl AppKitWidgetPlacement {
 /// Result of one native AppKit widget lowering pass.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AppKitWidgetSurfaceSnapshot {
-    /// Layer36 window that owns the lowered widgets.
+    /// Krate window that owns the lowered widgets.
     pub window: WindowId,
     /// Widgets lowered to native AppKit controls, in placement order.
     pub lowered: Vec<WidgetId>,
@@ -113,7 +113,7 @@ pub struct AppKitWidgetSurfaceSnapshot {
 
 /// FIFO callback queue used by the real AppKit delegate object.
 ///
-/// AppKit owns the timing of native callbacks. Layer36 drains this queue from
+/// AppKit owns the timing of native callbacks. Krate drains this queue from
 /// the Rust session object and then feeds the existing delegate bridge.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct AppKitWindowDelegateQueue {
@@ -170,8 +170,8 @@ pub struct AppKitColor {
 }
 
 impl AppKitColor {
-    /// Default Layer36 blue used by early drawing-surface tests.
-    pub const LAYER36_BLUE: Self = Self {
+    /// Default Krate blue used by early drawing-surface tests.
+    pub const KRATE_BLUE: Self = Self {
         red: 0.075,
         green: 0.263,
         blue: 0.859,
@@ -224,7 +224,7 @@ pub struct AppKitDrawSurfaceState {
 }
 
 impl AppKitDrawSurfaceState {
-    /// Create drawing-surface state for one AppKit-backed Layer36 window.
+    /// Create drawing-surface state for one AppKit-backed Krate window.
     pub fn new(
         window: WindowId,
         size: WindowSize,
@@ -251,7 +251,7 @@ impl AppKitDrawSurfaceState {
         Self::new(window, snapshot.size, snapshot.scale, clear_color)
     }
 
-    /// Return the Layer36 window this surface belongs to.
+    /// Return the Krate window this surface belongs to.
     pub fn window(&self) -> WindowId {
         self.window
     }
@@ -519,7 +519,7 @@ impl AppKitWindowEventLoopDriver {
     }
 }
 
-/// Mutable native event-loop state for one AppKit-backed Layer36 window.
+/// Mutable native event-loop state for one AppKit-backed Krate window.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct AppKitWindowEventState {
     id: WindowId,
@@ -527,7 +527,7 @@ pub struct AppKitWindowEventState {
 }
 
 impl AppKitWindowEventState {
-    /// Create event-loop state for an AppKit-backed Layer36 window.
+    /// Create event-loop state for an AppKit-backed Krate window.
     pub fn new(id: WindowId) -> Self {
         Self {
             id,
@@ -535,7 +535,7 @@ impl AppKitWindowEventState {
         }
     }
 
-    /// Return the Layer36 window id this state belongs to.
+    /// Return the Krate window id this state belongs to.
     pub fn id(&self) -> WindowId {
         self.id
     }
@@ -609,7 +609,7 @@ impl AppKitWindowEventState {
     }
 }
 
-/// Owned AppKit window plus the last native state seen by Layer36.
+/// Owned AppKit window plus the last native state seen by Krate.
 pub struct AppKitWindowSession {
     window: AppKitWindowPrototype,
     event_state: AppKitWindowEventState,
@@ -618,7 +618,7 @@ pub struct AppKitWindowSession {
 }
 
 impl AppKitWindowSession {
-    /// Return the stable Layer36 window id for this native window session.
+    /// Return the stable Krate window id for this native window session.
     pub fn id(&self) -> WindowId {
         self.window.id()
     }
@@ -698,7 +698,7 @@ impl AppKitWindowSession {
         self.widget_surface()?.text(widget)
     }
 
-    /// Show the native window through AppKit and the shared Layer36 adapter.
+    /// Show the native window through AppKit and the shared Krate adapter.
     pub fn show(
         &self,
         backend: &AppKitWindowBackend,
@@ -717,7 +717,7 @@ impl AppKitWindowSession {
         self.event_state.sync_snapshot(backend, adapter, snapshot)
     }
 
-    /// Queue a native AppKit event into the shared Layer36 event stream.
+    /// Queue a native AppKit event into the shared Krate event stream.
     pub fn handle_native_event(
         &mut self,
         backend: &AppKitWindowBackend,
@@ -848,7 +848,7 @@ impl AppKitWindowBackend {
         })
     }
 
-    /// Queue a native close request for a Layer36 window id.
+    /// Queue a native close request for a Krate window id.
     pub fn report_close_requested_for_id(
         &self,
         adapter: &MacosUiAdapter,
@@ -857,7 +857,7 @@ impl AppKitWindowBackend {
         WindowAdapter::queue_close_requested(adapter, id)
     }
 
-    /// Queue a native resize for a Layer36 window id.
+    /// Queue a native resize for a Krate window id.
     pub fn report_resized_for_id(
         &self,
         adapter: &MacosUiAdapter,
@@ -867,7 +867,7 @@ impl AppKitWindowBackend {
         WindowAdapter::queue_host_resize(adapter, id, size)
     }
 
-    /// Queue a native focus change for a Layer36 window id.
+    /// Queue a native focus change for a Krate window id.
     pub fn report_focused_for_id(
         &self,
         adapter: &MacosUiAdapter,
@@ -877,7 +877,7 @@ impl AppKitWindowBackend {
         WindowAdapter::queue_window_focused(adapter, id, focused)
     }
 
-    /// Queue a native display scale change for a Layer36 window id.
+    /// Queue a native display scale change for a Krate window id.
     pub fn report_scale_changed_for_id(
         &self,
         adapter: &MacosUiAdapter,
@@ -887,7 +887,7 @@ impl AppKitWindowBackend {
         WindowAdapter::queue_scale_changed(adapter, id, scale)
     }
 
-    /// Queue a native redraw request for a Layer36 window id.
+    /// Queue a native redraw request for a Krate window id.
     pub fn report_redraw_requested_for_id(
         &self,
         adapter: &MacosUiAdapter,
@@ -921,7 +921,7 @@ impl AppKitWindowBackend {
         )
     }
 
-    /// Queue changed native state for a Layer36 window id.
+    /// Queue changed native state for a Krate window id.
     pub fn sync_snapshot_for_id(
         &self,
         adapter: &MacosUiAdapter,
@@ -1023,7 +1023,7 @@ mod platform {
     type SharedDelegateQueue = Rc<RefCell<AppKitWindowDelegateQueue>>;
 
     #[derive(Debug, Default)]
-    struct Layer36WidgetTargetIvars {
+    struct KrateWidgetTargetIvars {
         callbacks: SharedDelegateQueue,
     }
 
@@ -1035,18 +1035,18 @@ mod platform {
         //   actions on the main thread.
         #[unsafe(super = NSObject)]
         #[thread_kind = MainThreadOnly]
-        #[ivars = Layer36WidgetTargetIvars]
-        struct Layer36WidgetTarget;
+        #[ivars = KrateWidgetTargetIvars]
+        struct KrateWidgetTarget;
 
         // SAFETY: NSObjectProtocol has no additional safety requirements.
-        unsafe impl NSObjectProtocol for Layer36WidgetTarget {}
+        unsafe impl NSObjectProtocol for KrateWidgetTarget {}
 
-        impl Layer36WidgetTarget {
+        impl KrateWidgetTarget {
             // SAFETY: The action signature matches AppKit's target-action
             // convention (`-(void)action:(id)sender`), and every control that
             // uses this selector is an NSControl created by the lowering path.
-            #[unsafe(method(layer36WidgetActivated:))]
-            fn layer36_widget_activated(&self, sender: &NSControl) {
+            #[unsafe(method(krateWidgetActivated:))]
+            fn krate_widget_activated(&self, sender: &NSControl) {
                 let tag = sender.tag();
                 if tag <= 0 {
                     return;
@@ -1061,18 +1061,18 @@ mod platform {
         }
     );
 
-    impl Layer36WidgetTarget {
+    impl KrateWidgetTarget {
         fn new(mtm: MainThreadMarker, callbacks: SharedDelegateQueue) -> Retained<Self> {
-            let this = Self::alloc(mtm).set_ivars(Layer36WidgetTargetIvars { callbacks });
+            let this = Self::alloc(mtm).set_ivars(KrateWidgetTargetIvars { callbacks });
             // SAFETY: NSObject's `init` signature is correct for a fresh allocation.
             unsafe { msg_send![super(this), init] }
         }
     }
 
-    /// Native AppKit controls lowered from Layer36 widget placements.
+    /// Native AppKit controls lowered from Krate widget placements.
     pub struct AppKitWidgetSurface {
         window: WindowId,
-        _target: Retained<Layer36WidgetTarget>,
+        _target: Retained<KrateWidgetTarget>,
         controls: BTreeMap<WidgetId, Retained<NSControl>>,
         kinds: BTreeMap<WidgetId, WidgetKind>,
         lowered: Vec<WidgetId>,
@@ -1153,7 +1153,7 @@ mod platform {
     }
 
     #[derive(Debug, Default)]
-    struct Layer36WindowDelegateIvars {
+    struct KrateWindowDelegateIvars {
         callbacks: SharedDelegateQueue,
     }
 
@@ -1164,14 +1164,14 @@ mod platform {
         //   on the main thread.
         #[unsafe(super = NSObject)]
         #[thread_kind = MainThreadOnly]
-        #[ivars = Layer36WindowDelegateIvars]
-        struct Layer36WindowDelegate;
+        #[ivars = KrateWindowDelegateIvars]
+        struct KrateWindowDelegate;
 
         // SAFETY: NSObjectProtocol has no additional safety requirements.
-        unsafe impl NSObjectProtocol for Layer36WindowDelegate {}
+        unsafe impl NSObjectProtocol for KrateWindowDelegate {}
 
         // SAFETY: Method signatures match the generated NSWindowDelegate protocol.
-        unsafe impl NSWindowDelegate for Layer36WindowDelegate {
+        unsafe impl NSWindowDelegate for KrateWindowDelegate {
             #[unsafe(method(windowShouldClose:))]
             fn window_should_close(&self, _sender: &NSWindow) -> bool {
                 self.push_callback(AppKitWindowDelegateCallback::WindowShouldClose);
@@ -1208,9 +1208,9 @@ mod platform {
         }
     );
 
-    impl Layer36WindowDelegate {
+    impl KrateWindowDelegate {
         fn new(mtm: MainThreadMarker, callbacks: SharedDelegateQueue) -> Retained<Self> {
-            let this = Self::alloc(mtm).set_ivars(Layer36WindowDelegateIvars { callbacks });
+            let this = Self::alloc(mtm).set_ivars(KrateWindowDelegateIvars { callbacks });
             // SAFETY: NSObject's `init` signature is correct for a fresh allocation.
             unsafe { msg_send![super(this), init] }
         }
@@ -1220,7 +1220,7 @@ mod platform {
         }
     }
 
-    /// Owned AppKit window bound to one Layer36 window id.
+    /// Owned AppKit window bound to one Krate window id.
     pub struct AppKitWindowPrototype {
         id: WindowId,
         native_handle: NativeWindowHandle,
@@ -1235,12 +1235,12 @@ mod platform {
 
     /// Retained AppKit window delegate plus the queue it writes into.
     pub struct AppKitWindowNativeDelegate {
-        delegate: Retained<Layer36WindowDelegate>,
+        delegate: Retained<KrateWindowDelegate>,
         callbacks: SharedDelegateQueue,
     }
 
     impl AppKitWindowPrototype {
-        /// Return the stable Layer36 window id.
+        /// Return the stable Krate window id.
         pub fn id(&self) -> WindowId {
             self.id
         }
@@ -1250,7 +1250,7 @@ mod platform {
             self.native_handle
         }
 
-        /// Read current AppKit window state without draining the Layer36 queue.
+        /// Read current AppKit window state without draining the Krate queue.
         pub fn snapshot(&self) -> Result<AppKitWindowSnapshot, UiAdapterError> {
             let _mtm = main_thread_marker()?;
             let content_rect = self.window.contentLayoutRect();
@@ -1307,7 +1307,7 @@ mod platform {
         /// `NSTextField`, and text labels become non-editable `NSTextField`
         /// labels. Button activations flow into the same callback queue the
         /// installed window delegate writes to, so the normal event-loop pump
-        /// drains them into the shared Layer36 event stream.
+        /// drains them into the shared Krate event stream.
         pub fn lower_widget_placements(
             &self,
             placements: &[AppKitWidgetPlacement],
@@ -1321,7 +1321,7 @@ mod platform {
             })?;
             let content_height = self.window.contentLayoutRect().size.height as f32;
 
-            let target = Layer36WidgetTarget::new(mtm, Rc::clone(&delegate.callbacks));
+            let target = KrateWidgetTarget::new(mtm, Rc::clone(&delegate.callbacks));
             let mut controls = BTreeMap::new();
             let mut kinds = BTreeMap::new();
             let mut lowered = Vec::with_capacity(placements.len());
@@ -1342,12 +1342,12 @@ mod platform {
                         let target_object: &AnyObject = &target;
                         // SAFETY: The target outlives the button (both are
                         // owned by the returned surface), and the selector is
-                        // implemented by Layer36WidgetTarget above.
+                        // implemented by KrateWidgetTarget above.
                         let button = unsafe {
                             NSButton::buttonWithTitle_target_action(
                                 &title,
                                 Some(target_object),
-                                Some(sel!(layer36WidgetActivated:)),
+                                Some(sel!(krateWidgetActivated:)),
                                 mtm,
                             )
                         };
@@ -1395,7 +1395,7 @@ mod platform {
     impl AppKitWindowNativeDelegate {
         fn new(mtm: MainThreadMarker) -> Self {
             let callbacks = Rc::new(RefCell::new(AppKitWindowDelegateQueue::new()));
-            let delegate = Layer36WindowDelegate::new(mtm, Rc::clone(&callbacks));
+            let delegate = KrateWindowDelegate::new(mtm, Rc::clone(&callbacks));
             Self {
                 delegate,
                 callbacks,
@@ -1419,7 +1419,7 @@ mod platform {
     }
 
     impl AppKitDrawViewSurface {
-        /// Return the stable Layer36 window id this view belongs to.
+        /// Return the stable Krate window id this view belongs to.
         pub fn window(&self) -> WindowId {
             self.snapshot.window
         }
@@ -1456,7 +1456,7 @@ mod platform {
     }
 
     impl AppKitWindowBackend {
-        /// Create a real AppKit `NSWindow` and attach it to a Layer36 window id.
+        /// Create a real AppKit `NSWindow` and attach it to a Krate window id.
         pub fn create_window(
             &self,
             adapter: &MacosUiAdapter,
@@ -1478,7 +1478,7 @@ mod platform {
             })
         }
 
-        /// Show the AppKit window and mark the Layer36 window visible.
+        /// Show the AppKit window and mark the Krate window visible.
         ///
         /// An unbundled process defaults to a background activation policy,
         /// under which the WindowServer never displays its windows. Promote
@@ -1606,7 +1606,7 @@ mod platform {
     #[cfg(test)]
     mod tests {
         use super::*;
-        use layer36_adapter_common::ui::WindowSize;
+        use krate_adapter_common::ui::WindowSize;
 
         #[test]
         fn appkit_backend_reports_native_target() {
@@ -1620,11 +1620,11 @@ mod platform {
             let backend = AppKitWindowBackend;
             assert!(backend.is_available());
             let options = WindowOptions::new(
-                "Layer36 AppKit prototype",
+                "Krate AppKit prototype",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap();
-            assert_eq!(options.title, "Layer36 AppKit prototype");
+            assert_eq!(options.title, "Krate AppKit prototype");
         }
 
         #[test]
@@ -1633,7 +1633,7 @@ mod platform {
             let adapter = MacosUiAdapter::new();
             let backend = AppKitWindowBackend;
             let options = WindowOptions::new(
-                "Layer36 AppKit prototype",
+                "Krate AppKit prototype",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap();
@@ -1652,7 +1652,7 @@ mod platform {
             let adapter = MacosUiAdapter::new();
             let backend = AppKitWindowBackend;
             let options = WindowOptions::new(
-                "Layer36 AppKit event bridge",
+                "Krate AppKit event bridge",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap();
@@ -1673,7 +1673,7 @@ mod platform {
             let adapter = MacosUiAdapter::new();
             let backend = AppKitWindowBackend;
             let options =
-                WindowOptions::new("Layer36 AppKit session", WindowSize::new(640, 480).unwrap())
+                WindowOptions::new("Krate AppKit session", WindowSize::new(640, 480).unwrap())
                     .unwrap();
             let mut session = backend
                 .create_session(&adapter, options)
@@ -1698,7 +1698,7 @@ mod platform {
             let adapter = MacosUiAdapter::new();
             let backend = AppKitWindowBackend;
             let options = WindowOptions::new(
-                "Layer36 AppKit draw view",
+                "Krate AppKit draw view",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap();
@@ -1709,7 +1709,7 @@ mod platform {
                 .refresh(&backend, &adapter)
                 .expect("refresh appkit session");
             let mut state = session
-                .create_draw_surface_state(AppKitColor::LAYER36_BLUE)
+                .create_draw_surface_state(AppKitColor::KRATE_BLUE)
                 .expect("draw surface state");
             let mut view = session
                 .attach_draw_view_surface(&mut state)
@@ -1802,7 +1802,7 @@ mod platform {
                 "AppKit widget lowering is only available on macOS".to_string(),
             ))
         }
-        /// Return the stable Layer36 window id.
+        /// Return the stable Krate window id.
         pub fn id(&self) -> WindowId {
             self.id
         }
@@ -1845,7 +1845,7 @@ mod platform {
     }
 
     impl AppKitDrawViewSurface {
-        /// Return the stable Layer36 window id this view belongs to.
+        /// Return the stable Krate window id this view belongs to.
         pub fn window(&self) -> WindowId {
             self.snapshot.window
         }
@@ -1944,7 +1944,7 @@ fn validate_scale_factor(value: f32) -> Result<(), UiAdapterError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use layer36_adapter_common::ui::UiEvent;
+    use krate_adapter_common::ui::UiEvent;
 
     #[test]
     fn appkit_widget_placement_validates_kind_and_geometry() {
@@ -2006,7 +2006,7 @@ mod tests {
         let id = WindowAdapter::create_window(
             &adapter,
             WindowOptions::new(
-                "Layer36 AppKit activation",
+                "Krate AppKit activation",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap(),
@@ -2016,13 +2016,13 @@ mod tests {
         UiAdapter::set_root(
             &adapter,
             id,
-            layer36_adapter_common::ui::WidgetNode {
+            krate_adapter_common::ui::WidgetNode {
                 id: widget,
                 parent: None,
                 kind: WidgetKind::Button,
                 label: Some("Save".to_string()),
                 role: None,
-                style: layer36_adapter_common::ui::WidgetStyle::default(),
+                style: krate_adapter_common::ui::WidgetStyle::default(),
             },
         )
         .expect("set root widget");
@@ -2059,7 +2059,7 @@ mod tests {
         let backend = AppKitWindowBackend;
         let id = WindowAdapter::create_window(
             &adapter,
-            WindowOptions::new("Layer36 AppKit events", WindowSize::new(640, 480).unwrap())
+            WindowOptions::new("Krate AppKit events", WindowSize::new(640, 480).unwrap())
                 .unwrap(),
         )
         .expect("create window");
@@ -2096,7 +2096,7 @@ mod tests {
         let backend = AppKitWindowBackend;
         let id = WindowAdapter::create_window(
             &adapter,
-            WindowOptions::new("Layer36 AppKit scale", WindowSize::new(640, 480).unwrap()).unwrap(),
+            WindowOptions::new("Krate AppKit scale", WindowSize::new(640, 480).unwrap()).unwrap(),
         )
         .expect("create window");
 
@@ -2113,7 +2113,7 @@ mod tests {
         let id = WindowAdapter::create_window(
             &adapter,
             WindowOptions::new(
-                "Layer36 AppKit snapshot",
+                "Krate AppKit snapshot",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap(),
@@ -2182,7 +2182,7 @@ mod tests {
         let id = WindowAdapter::create_window(
             &adapter,
             WindowOptions::new(
-                "Layer36 AppKit delegate",
+                "Krate AppKit delegate",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap(),
@@ -2256,7 +2256,7 @@ mod tests {
         let id = WindowAdapter::create_window(
             &adapter,
             WindowOptions::new(
-                "Layer36 AppKit bad scale",
+                "Krate AppKit bad scale",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap(),
@@ -2294,7 +2294,7 @@ mod tests {
         let id = WindowAdapter::create_window(
             &adapter,
             WindowOptions::new(
-                "Layer36 AppKit delegate bridge",
+                "Krate AppKit delegate bridge",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap(),
@@ -2400,7 +2400,7 @@ mod tests {
         let id = WindowAdapter::create_window(
             &adapter,
             WindowOptions::new(
-                "Layer36 AppKit bad delegate scale",
+                "Krate AppKit bad delegate scale",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap(),
@@ -2444,7 +2444,7 @@ mod tests {
         let id = WindowAdapter::create_window(
             &adapter,
             WindowOptions::new(
-                "Layer36 AppKit event-loop step",
+                "Krate AppKit event-loop step",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap(),
@@ -2513,7 +2513,7 @@ mod tests {
         let id = WindowAdapter::create_window(
             &adapter,
             WindowOptions::new(
-                "Layer36 AppKit empty event-loop step",
+                "Krate AppKit empty event-loop step",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap(),
@@ -2569,7 +2569,7 @@ mod tests {
         let backend = AppKitWindowBackend;
         let id = WindowAdapter::create_window(
             &adapter,
-            WindowOptions::new("Layer36 AppKit redraw", WindowSize::new(640, 480).unwrap())
+            WindowOptions::new("Krate AppKit redraw", WindowSize::new(640, 480).unwrap())
                 .unwrap(),
         )
         .expect("create window");
@@ -2590,7 +2590,7 @@ mod tests {
         let id = WindowAdapter::create_window(
             &adapter,
             WindowOptions::new(
-                "Layer36 AppKit draw surface",
+                "Krate AppKit draw surface",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap(),
@@ -2600,7 +2600,7 @@ mod tests {
             id,
             WindowSize::new(640, 480).unwrap(),
             2.0,
-            AppKitColor::LAYER36_BLUE,
+            AppKitColor::KRATE_BLUE,
         )
         .expect("surface state");
 
@@ -2616,7 +2616,7 @@ mod tests {
                 window: id,
                 size: WindowSize::new(640, 480).unwrap(),
                 scale: 2.0,
-                clear_color: AppKitColor::LAYER36_BLUE,
+                clear_color: AppKitColor::KRATE_BLUE,
                 frame_index: 1,
             }
         );
@@ -2626,7 +2626,7 @@ mod tests {
                 window: id,
                 size: resized,
                 scale: 1.5,
-                clear_color: AppKitColor::LAYER36_BLUE,
+                clear_color: AppKitColor::KRATE_BLUE,
                 frame_index: 2,
             }
         );
@@ -2643,7 +2643,7 @@ mod tests {
         let id = WindowAdapter::create_window(
             &adapter,
             WindowOptions::new(
-                "Layer36 AppKit draw redraw",
+                "Krate AppKit draw redraw",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap(),
@@ -2654,7 +2654,7 @@ mod tests {
             id,
             WindowSize::new(640, 480).unwrap(),
             1.0,
-            AppKitColor::LAYER36_BLUE,
+            AppKitColor::KRATE_BLUE,
         )
         .expect("surface state");
 
@@ -2681,7 +2681,7 @@ mod tests {
         let id = WindowAdapter::create_window(
             &adapter,
             WindowOptions::new(
-                "Layer36 AppKit draw validation",
+                "Krate AppKit draw validation",
                 WindowSize::new(640, 480).unwrap(),
             )
             .unwrap(),
@@ -2692,7 +2692,7 @@ mod tests {
                 id,
                 WindowSize::new(640, 480).unwrap(),
                 0.0,
-                AppKitColor::LAYER36_BLUE,
+                AppKitColor::KRATE_BLUE,
             ),
             Err(UiAdapterError::InvalidScaleFactor(_))
         ));

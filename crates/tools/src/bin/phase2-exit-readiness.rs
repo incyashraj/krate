@@ -112,7 +112,7 @@ impl ReadinessReport {
 }
 
 fn print_report(evidence_page: &Path, report: &ReadinessReport, show_all: bool) {
-    println!("Layer36 Phase 2 exit readiness");
+    println!("Krate Phase 2 exit readiness");
     println!("- evidence page: {}", evidence_page.display());
     println!("- gates tracked: {}", report.gates);
     println!("- fully done: {}", report.done);

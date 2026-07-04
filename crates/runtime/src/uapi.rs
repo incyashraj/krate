@@ -6,8 +6,8 @@
 
 use std::{fmt, str::FromStr};
 
-use layer36_manifest::{Capability, ManifestError};
-use layer36_policy::{PolicyError, SessionPolicy};
+use krate_manifest::{Capability, ManifestError};
+use krate_policy::{PolicyError, SessionPolicy};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -193,7 +193,7 @@ pub type Result<T> = std::result::Result<T, UapiError>;
 mod tests {
     use std::collections::BTreeSet;
 
-    use layer36_manifest::supported_phase2_capability_specs;
+    use krate_manifest::supported_phase2_capability_specs;
 
     use super::*;
 

@@ -21,44 +21,44 @@ run_cargo() {
   fi
 }
 
-if [ "${LAYER36_OFFLINE:-}" = "1" ]; then
-  run_cargo package -p layer36 --allow-dirty --offline
+if [ "${KRATE_OFFLINE:-}" = "1" ]; then
+  run_cargo package -p krate --allow-dirty --offline
 else
-  run_cargo package -p layer36 --allow-dirty
+  run_cargo package -p krate --allow-dirty
 fi
 
 package_dir="$(
-  find "$ROOT/target/package" -maxdepth 1 -type d -name 'layer36-*' \
+  find "$ROOT/target/package" -maxdepth 1 -type d -name 'krate-*' \
     | sort \
     | tail -n 1
 )"
 
 if [ -z "$package_dir" ] || [ ! -f "$package_dir/Cargo.toml" ]; then
-  echo "could not find packaged layer36 SDK under target/package" >&2
+  echo "could not find packaged krate SDK under target/package" >&2
   exit 1
 fi
 
 for required in Cargo.toml README.md src/lib.rs src/bindings.rs; do
   if [ ! -f "$package_dir/$required" ]; then
-    echo "packaged layer36 SDK is missing required file: $required" >&2
+    echo "packaged krate SDK is missing required file: $required" >&2
     exit 1
   fi
 done
 
-smoke_root="${TMPDIR:-/tmp}/layer36-rust-sdk-smoke-$$"
+smoke_root="${TMPDIR:-/tmp}/krate-rust-sdk-smoke-$$"
 trap 'rm -rf "$smoke_root"' EXIT INT TERM
 
 mkdir -p "$smoke_root/src"
 
 cat > "$smoke_root/Cargo.toml" <<EOF
 [package]
-name = "layer36-rust-sdk-smoke"
+name = "krate-rust-sdk-smoke"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [dependencies]
-layer36 = { path = "$package_dir" }
+krate = { path = "$package_dir" }
 
 [lib]
 crate-type = ["cdylib"]
@@ -68,13 +68,13 @@ panic = "abort"
 EOF
 
 cat > "$smoke_root/src/lib.rs" <<'EOF'
-use layer36::{io::stdio, Guest};
+use krate::{io::stdio, Guest};
 
 struct Component;
 
 impl Guest for Component {
     fn run() -> i32 {
-        if stdio::println("Layer36 Rust SDK smoke").is_err() {
+        if stdio::println("Krate Rust SDK smoke").is_err() {
             return 20;
         }
 
@@ -82,13 +82,13 @@ impl Guest for Component {
     }
 }
 
-layer36::export!(Component);
+krate::export!(Component);
 EOF
 
-if [ "${LAYER36_OFFLINE:-}" = "1" ]; then
+if [ "${KRATE_OFFLINE:-}" = "1" ]; then
   run_cargo check --manifest-path "$smoke_root/Cargo.toml" --target wasm32-wasip1 --offline
 else
   run_cargo check --manifest-path "$smoke_root/Cargo.toml" --target wasm32-wasip1
 fi
 
-echo "Layer36 Rust SDK external smoke passed"
+echo "Krate Rust SDK external smoke passed"

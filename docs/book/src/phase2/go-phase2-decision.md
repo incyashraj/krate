@@ -8,9 +8,9 @@ That is the current decision.
 
 The Go SDK source is in the repo. The examples build with TinyGo:
 
-- `layer36-clock`
-- `layer36-cat`
-- `layer36-curl`
+- `krate-clock`
+- `krate-cat`
+- `krate-curl`
 
 The readiness recorder also captures tool versions, artifact hashes, and the
 import check result:
@@ -23,8 +23,8 @@ scripts/record-phase2-go-readiness-evidence.sh
 
 The compiled Go components still import `wasi:*` host APIs directly.
 
-That means they are not promoted into the runtime fixture set yet. Layer36 Phase
-2 requires promoted runtime fixtures to import `layer36:*` UAPI packages, so
+That means they are not promoted into the runtime fixture set yet. Krate Phase
+2 requires promoted runtime fixtures to import `krate:*` UAPI packages, so
 policy checks stay in front of host access.
 
 ## Why We Are Not Forcing It
@@ -50,7 +50,7 @@ For Phase 2 exit, Go is considered:
 
 - usable as an SDK source and TinyGo build-smoke track
 - not yet a runtime parity track
-- explicitly experimental until compiled artifacts pass the Layer36 import check
+- explicitly experimental until compiled artifacts pass the Krate import check
 
 The command that decides promotion is still:
 

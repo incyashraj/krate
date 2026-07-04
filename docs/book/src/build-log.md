@@ -16,11 +16,11 @@ every system library loaded at runtime) because the pipeline was the point;
 the vello GPU renderer replaces the painter behind the same contract. All
 three OS lanes green with it aboard.
 
-## 2026-07-04 — Layer36 becomes Krate
+## 2026-07-04 — Krate becomes Krate
 
 The project has a new name: **Krate**, by **Krate Labs**. A crate ships
 goods anywhere unchanged; a Rust crate ships code. Both are exactly what
-this runtime does to applications. The code, commands, and `layer36:*` API
+this runtime does to applications. The code, commands, and `krate:*` API
 namespaces keep the legacy name for a short transition — the code-level
 rename is scheduled to land before the UAPI freeze, so early adopters never
 face a breaking rename after stability is promised.
@@ -48,9 +48,9 @@ Xvfb and exited cleanly, with the adapter's window round-trip smoke passing
 beside it. Two of three desktops now open real windows from one file;
 Windows is next, and the component still will not change.
 
-## 2026-07-03 — Layer36 speaks MCP
+## 2026-07-03 — Krate speaks MCP
 
-The agent-embedding track is complete. `layer36-mcp-server` is a small
+The agent-embedding track is complete. `krate-mcp-server` is a small
 binary any MCP-capable agent framework can attach to: one `run_component`
 tool, executing portable components inside the capability sandbox and
 returning the full machine-readable report. In the first end-to-end run an
@@ -59,12 +59,12 @@ capability was missing; asked again with grants, it got the file. The
 permission wall is now something agents can see and reason about, not just
 hit.
 
-## 2026-07-03 — Agents can now call Layer36
+## 2026-07-03 — Agents can now call Krate
 
 The embedding surface landed the same day as the native window. Any program
 — including an AI-agent framework — can now execute a component inside
-Layer36's capability sandbox in under 30 lines of Rust: grants supplied as
-data, no prompts, stdout captured, exit classified. And `layer36 run --json`
+Krate's capability sandbox in under 30 lines of Rust: grants supplied as
+data, no prompts, stdout captured, exit classified. And `krate run --json`
 turns every run into one machine-readable object: which app, which
 capabilities were granted (with exact boundaries), what was denied, how it
 exited, how long it took, what it printed. The wedge — safe execution of
@@ -72,24 +72,24 @@ generated software — now has a socket for the machines that need it.
 
 ## 2026-07-03 — One portable file opens a native window
 
-The vertical slice is complete. `layer36 run --native-window hello-gui.wasm`
+The vertical slice is complete. `krate run --native-window hello-gui.wasm`
 now takes a single portable WebAssembly component — the same bytes on any
 OS — and opens a real native macOS window containing a real native button
 and text field, laid out by our engine, permission-checked by our capability
 layer. Click the native button and the component receives a portable event
 and updates the native text. Headless, the same file runs everywhere in CI.
-The component imports only `layer36:*` interfaces — no WASI, no host
+The component imports only `krate:*` interfaces — no WASI, no host
 specifics — which required teaching the events contract to deliver one event
 at a time and the guest to allocate strings the way generated bindings do.
 This is the platform's core promise, demonstrated end to end for the first
 time.
 
-## 2026-07-02 — A real native button, driven by a Layer36 widget tree
+## 2026-07-02 — A real native button, driven by a Krate widget tree
 
 The first native widget lowering landed, hours after the amendments that
-ordered it. A Layer36 widget tree now becomes a real AppKit `NSButton` and
+ordered it. A Krate widget tree now becomes a real AppKit `NSButton` and
 `NSTextField`, positioned by our layout engine inside the prototype window. A
-native click travels AppKit's own target-action path into Layer36's shared
+native click travels AppKit's own target-action path into Krate's shared
 event stream as a routed event carrying the widget id — the same shape drawn
 widgets use. The smoke run proves the loop end to end without a human: lower
 the widgets, click the real button programmatically, observe the routed
@@ -116,8 +116,8 @@ before starting the next big slice. The result is a formal change order
    end-to-end through the permission layer and the runtime dispatcher. It
    proves the riskiest architectural bet first.
 3. **An agent-embedding track.** After the slice: a runtime embedding API,
-   `layer36 run --json`, and an MCP server wrapper, so AI-agent frameworks can
-   execute generated components inside Layer36's capability sandbox.
+   `krate run --json`, and an MCP server wrapper, so AI-agent frameworks can
+   execute generated components inside Krate's capability sandbox.
 
 Also: Phase 2 closeout is timeboxed (the engineering has been done for a
 while; what remains is evidence paperwork), and the self-hosted fuzz nightly
@@ -126,7 +126,7 @@ is paused while its runner is offline.
 ## 2026-06-23 — AppKit prototype complete through the event loop
 
 The opt-in macOS native path now covers the full prototype chain: an owned
-`NSWindow` bound to a Layer36 window id, a real retained `NSWindowDelegate`
+`NSWindow` bound to a Krate window id, a real retained `NSWindowDelegate`
 recording close/resize/focus/scale callbacks, an attached `NSView` draw
 surface with a visible clear color, a non-blocking event-loop step driver,
 and a local smoke command that creates, shows, pumps, inspects, and closes
@@ -143,7 +143,7 @@ it headless and tested before any native backend depends on it.
 
 ## 2026-05 — Phase 2: real CLI apps with real permissions
 
-The runtime runs `layer36-clock`, `layer36-cat`, and `layer36-curl` from a
+The runtime runs `krate-clock`, `krate-cat`, and `krate-curl` from a
 single `.wasm` per app on Linux, macOS, and Windows. Apps declare
 capabilities in a manifest; the runtime refuses undeclared or ungranted
 access before any host call happens. Cross-host CI records evidence for
@@ -151,5 +151,5 @@ samples, permission enforcement, adapters, and benchmarks on every change.
 
 ## 2026-05-03 — One binary, three operating systems
 
-`layer36 run hello.wasm` produced identical output on Linux, macOS, and
+`krate run hello.wasm` produced identical output on Linux, macOS, and
 Windows in hosted CI from one shared artifact. The portability bet works.

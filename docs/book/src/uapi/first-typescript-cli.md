@@ -1,6 +1,6 @@
 # Your First UAPI App In TypeScript
 
-This walkthrough gets you started with the TypeScript Layer36 SDK in the
+This walkthrough gets you started with the TypeScript Krate SDK in the
 current Phase 2 state.
 
 Right now, TypeScript is in scaffold mode: SDK shape is live, and hosted full
@@ -8,7 +8,7 @@ CI now runs the TypeScript runtime fixture lane by default.
 
 ## What You Build Today
 
-- a small TypeScript app shape using `@layer36/sdk`
+- a small TypeScript app shape using `@krate/sdk`
 - a validated package structure
 - a practical map of what works now vs what is still pending
 
@@ -17,7 +17,7 @@ CI now runs the TypeScript runtime fixture lane by default.
 From repo root:
 
 ```bash
-cargo run -p layer36-cli -- doctor
+cargo run -p krate-cli -- doctor
 ```
 
 Look for:
@@ -34,14 +34,14 @@ not ready on that machine yet.
 Use:
 
 ```text
-packages/sdk-ts/examples/layer36-cat.ts
+packages/sdk-ts/examples/krate-cat.ts
 ```
 
 The sample path is intentionally simple:
 
-- read args through Layer36 SDK
-- read files through Layer36 SDK
-- print through Layer36 SDK
+- read args through Krate SDK
+- read files through Krate SDK
+- print through Krate SDK
 
 No direct Node filesystem or socket APIs are used in the app path.
 
@@ -73,7 +73,7 @@ test/integration/language-variants/
 ```
 
 If `jco` is missing, it exits cleanly in default mode and tells you what is
-missing. For hosted full CI, Layer36 now allows `npx`-driven jco installation
+missing. For hosted full CI, Krate now allows `npx`-driven jco installation
 for this step (with a pinned jco package version), so the TypeScript lane can
 stay active by default.
 
@@ -96,7 +96,7 @@ If you provide TypeScript fixture env vars, provide all three (`clock`, `cat`,
 and `curl`) so the runtime lane runs as one complete set.
 When all three are present, the script also runs the component import-purity
 check before runtime assertions.
-You can force stricter CI behavior with `LAYER36_LANGUAGE_VARIANTS_MODE`.
+You can force stricter CI behavior with `KRATE_LANGUAGE_VARIANTS_MODE`.
 Useful values are `optional` (default), `go`, `ts`, `any`, and `both`.
 
 ## 6. Where This Fits In Phase 2

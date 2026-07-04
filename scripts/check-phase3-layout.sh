@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cargo test -p layer36-layout
-cargo bench -p layer36-layout --bench layout --no-run
+cargo test -p krate-layout
+cargo bench -p krate-layout --bench layout --no-run

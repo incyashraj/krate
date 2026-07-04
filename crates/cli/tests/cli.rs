@@ -7,13 +7,13 @@ use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 
-fn layer36() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_layer36"))
+fn krate() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_krate"))
 }
 
 #[test]
 fn help_lists_phase_1_commands() {
-    let output = layer36().arg("--help").output().expect("run layer36 help");
+    let output = krate().arg("--help").output().expect("run krate help");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -26,14 +26,14 @@ fn help_lists_phase_1_commands() {
 
 #[test]
 fn version_prints_runtime_metadata() {
-    let output = layer36()
+    let output = krate()
         .arg("version")
         .output()
-        .expect("run layer36 version");
+        .expect("run krate version");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("layer36"));
+    assert!(stdout.contains("krate"));
     assert!(stdout.contains("wasmtime  43.0.2"));
     assert!(stdout.contains("rustc"));
     assert!(stdout.contains("commit"));
@@ -41,14 +41,14 @@ fn version_prints_runtime_metadata() {
 
 #[test]
 fn doctor_lists_phase_1_tooling() {
-    let output = layer36()
+    let output = krate()
         .arg("doctor")
         .output()
-        .expect("run layer36 doctor");
+        .expect("run krate doctor");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Layer36 doctor"));
+    assert!(stdout.contains("Krate doctor"));
     assert!(stdout.contains("Core tools"));
     assert!(stdout.contains("cargo-component"));
     assert!(stdout.contains("wasm32-wasip1"));
@@ -75,7 +75,7 @@ fn manifest_check_validates_phase_2_manifest() {
             name = "Hello"
             version = "1.0.0"
             entry = "hello.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "io.stdout"
@@ -85,7 +85,7 @@ fn manifest_check_validates_phase_2_manifest() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args(["manifest", "check"])
         .arg(&manifest_path)
         .output()
@@ -116,7 +116,7 @@ fn manifest_check_json_reports_summary() {
             name = "Hello"
             version = "1.0.0"
             entry = "hello.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "io.stdout"
@@ -126,7 +126,7 @@ fn manifest_check_json_reports_summary() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args(["manifest", "check", "--format", "json"])
         .arg(&manifest_path)
         .output()
@@ -159,7 +159,7 @@ fn manifest_check_accepts_phase_3_gui_draft_world() {
             name = "Notes"
             version = "1.0.0"
             entry = "notes.wasm"
-            world = "layer36:app/gui@0.2.0"
+            world = "krate:app/gui@0.2.0"
 
             [[capabilities]]
             cap = "io.stdout"
@@ -169,7 +169,7 @@ fn manifest_check_accepts_phase_3_gui_draft_world() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args(["manifest", "check"])
         .arg(&manifest_path)
         .output()
@@ -184,7 +184,7 @@ fn manifest_check_accepts_phase_3_gui_draft_world() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Manifest OK"));
-    assert!(stdout.contains("world           layer36:app/gui@0.2.0"));
+    assert!(stdout.contains("world           krate:app/gui@0.2.0"));
     assert!(stdout.contains("world status    Phase 3 GUI draft"));
 }
 
@@ -200,7 +200,7 @@ fn manifest_check_rejects_bad_capability() {
             name = "Hello"
             version = "1.0.0"
             entry = "hello.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "FS.read:./data/**"
@@ -210,7 +210,7 @@ fn manifest_check_rejects_bad_capability() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args(["manifest", "check"])
         .arg(&manifest_path)
         .output()
@@ -233,7 +233,7 @@ fn manifest_explain_shows_default_and_launch_grants() {
             name = "Notes"
             version = "1.0.0"
             entry = "notes.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "io.stdout"
@@ -248,7 +248,7 @@ fn manifest_explain_shows_default_and_launch_grants() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args(["manifest", "explain"])
         .arg(&manifest_path)
         .output()
@@ -287,7 +287,7 @@ fn manifest_explain_json_reports_structured_grants() {
             name = "Notes"
             version = "1.0.0"
             entry = "notes.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "io.stdout"
@@ -302,7 +302,7 @@ fn manifest_explain_json_reports_structured_grants() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args(["manifest", "explain", "--format", "json"])
         .arg(&manifest_path)
         .output()
@@ -331,14 +331,14 @@ fn manifest_explain_json_reports_structured_grants() {
 
 #[test]
 fn manifest_capabilities_lists_phase_2_cap_table() {
-    let output = layer36()
+    let output = krate()
         .args(["manifest", "capabilities"])
         .output()
         .expect("run manifest capabilities");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Layer36 capabilities"));
+    assert!(stdout.contains("Krate capabilities"));
     assert!(stdout.contains("io.args"));
     assert!(stdout.contains("fs.read:<path-glob>"));
     assert!(stdout.contains("net.connect:<host>:<port>"));
@@ -363,12 +363,12 @@ fn run_accepts_phase_3_gui_manifest_and_reaches_the_runtime() {
             name = "Notes"
             version = "1.0.0"
             entry = "notes.wasm"
-            world = "layer36:app/gui@0.2.0"
+            world = "krate:app/gui@0.2.0"
         "#,
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--manifest"])
         .arg(&manifest_path)
         .arg(&wasm_path)
@@ -398,7 +398,7 @@ fn run_json_reports_denied_capabilities_before_running() {
             name = "JsonApp"
             version = "1.0.0"
             entry = "app.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "fs.read:data/**"
@@ -408,18 +408,18 @@ fn run_json_reports_denied_capabilities_before_running() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--json", "--manifest"])
         .arg(&manifest_path)
         .arg(&wasm_path)
-        .env_remove("LAYER36_TEST_PROMPT")
+        .env_remove("KRATE_TEST_PROMPT")
         .output()
         .expect("run json denied");
 
     assert_eq!(output.status.code(), Some(5));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let payload: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse run json");
-    assert_eq!(payload["schema"], "layer36.run.v1");
+    assert_eq!(payload["schema"], "krate.run.v1");
     assert_eq!(payload["exit"]["class"], "permission-denied");
     assert_eq!(payload["exit"]["code"], 5);
     assert_eq!(payload["capabilities"]["denied"][0], "fs.read:data/**");
@@ -432,7 +432,7 @@ fn run_json_reports_invalid_components_as_machine_readable_failure() {
     let wasm_path = dir.path().join("app.wasm");
     std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--json"])
         .arg(&wasm_path)
         .output()
@@ -441,7 +441,7 @@ fn run_json_reports_invalid_components_as_machine_readable_failure() {
     assert_eq!(output.status.code(), Some(2));
     let stdout = String::from_utf8_lossy(&output.stdout);
     let payload: serde_json::Value = serde_json::from_str(stdout.trim()).expect("parse run json");
-    assert_eq!(payload["schema"], "layer36.run.v1");
+    assert_eq!(payload["schema"], "krate.run.v1");
     assert_eq!(payload["exit"]["class"], "invalid-component");
     assert!(payload["exit"]["message"].as_str().is_some());
     assert_eq!(payload["stdout"], "");
@@ -449,7 +449,7 @@ fn run_json_reports_invalid_components_as_machine_readable_failure() {
 
 #[test]
 fn manifest_capabilities_json_lists_phase_2_cap_table() {
-    let output = layer36()
+    let output = krate()
         .args(["manifest", "capabilities", "--format", "json"])
         .output()
         .expect("run manifest capabilities json");
@@ -469,7 +469,7 @@ fn manifest_capabilities_json_lists_phase_2_cap_table() {
 
 #[test]
 fn manifest_init_prints_valid_phase_2_manifest() {
-    let output = layer36()
+    let output = krate()
         .args([
             "manifest",
             "init",
@@ -506,7 +506,7 @@ fn manifest_init_prints_valid_phase_2_manifest() {
     let manifest_path = dir.path().join("manifest.toml");
     std::fs::write(&manifest_path, stdout.as_bytes()).expect("write generated manifest");
 
-    let check = layer36()
+    let check = krate()
         .args(["manifest", "check"])
         .arg(&manifest_path)
         .output()
@@ -524,7 +524,7 @@ fn manifest_init_writes_output_and_refuses_overwrite() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let manifest_path = dir.path().join("manifest.toml");
 
-    let output = layer36()
+    let output = krate()
         .args([
             "manifest",
             "init",
@@ -550,7 +550,7 @@ fn manifest_init_writes_output_and_refuses_overwrite() {
     );
     assert!(manifest_path.exists());
 
-    let second = layer36()
+    let second = krate()
         .args([
             "manifest",
             "init",
@@ -574,12 +574,12 @@ fn manifest_init_writes_output_and_refuses_overwrite() {
 #[test]
 fn sample_manifests_validate() {
     for manifest in [
-        "apps/layer36-clock/manifest.toml",
-        "apps/layer36-cat/manifest.toml",
-        "apps/layer36-curl/manifest.toml",
+        "apps/krate-clock/manifest.toml",
+        "apps/krate-cat/manifest.toml",
+        "apps/krate-curl/manifest.toml",
     ] {
         let manifest = workspace_path(PathBuf::from(manifest));
-        let output = layer36()
+        let output = krate()
             .args(["manifest", "check"])
             .arg(&manifest)
             .output()
@@ -597,10 +597,10 @@ fn sample_manifests_validate() {
 
 #[test]
 fn missing_input_returns_clear_error() {
-    let output = layer36()
+    let output = krate()
         .args(["run", "/definitely/not/a/component.wasm"])
         .output()
-        .expect("run layer36 with missing input");
+        .expect("run krate with missing input");
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -613,13 +613,13 @@ fn run_rejects_empty_app_argument_before_runtime() {
     let wasm_path = dir.path().join("app.wasm");
     std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
 
-    let output = layer36()
+    let output = krate()
         .arg("run")
         .arg(&wasm_path)
         .arg("--")
         .arg("")
         .output()
-        .expect("run layer36 with empty app arg");
+        .expect("run krate with empty app arg");
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -636,13 +636,13 @@ fn run_rejects_newline_app_argument_before_runtime() {
     let wasm_path = dir.path().join("app.wasm");
     std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
 
-    let output = layer36()
+    let output = krate()
         .arg("run")
         .arg(&wasm_path)
         .arg("--")
         .arg("bad\narg")
         .output()
-        .expect("run layer36 with newline app arg");
+        .expect("run krate with newline app arg");
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -657,7 +657,7 @@ fn run_rejects_newline_app_argument_before_runtime() {
 fn run_rejects_oversized_raw_args_payload_before_runtime() {
     if cfg!(windows) {
         eprintln!(
-            "skipping oversized raw-args spawn on Windows: the OS command-line limit is lower than Layer36's 64 KiB raw-args guard"
+            "skipping oversized raw-args spawn on Windows: the OS command-line limit is lower than Krate's 64 KiB raw-args guard"
         );
         return;
     }
@@ -667,13 +667,13 @@ fn run_rejects_oversized_raw_args_payload_before_runtime() {
     std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
     let oversized = "x".repeat((64 * 1024) + 1);
 
-    let output = layer36()
+    let output = krate()
         .arg("run")
         .arg(&wasm_path)
         .arg("--")
         .arg(oversized)
         .output()
-        .expect("run layer36 with oversized app arg payload");
+        .expect("run krate with oversized app arg payload");
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -690,14 +690,14 @@ fn run_rejects_too_many_app_arguments_before_runtime() {
     let wasm_path = dir.path().join("app.wasm");
     std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
 
-    let mut cmd = layer36();
+    let mut cmd = krate();
     cmd.arg("run").arg(&wasm_path).arg("--");
     for _ in 0..1025 {
         cmd.arg("x");
     }
     let output = cmd
         .output()
-        .expect("run layer36 with too many app arguments");
+        .expect("run krate with too many app arguments");
 
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -725,21 +725,21 @@ fn configured_hello_component_runs_and_matches_expected_fixture_hash() {
         );
     }
 
-    let output = layer36()
+    let output = krate()
         .args(["run"])
         .arg(path)
         .output()
-        .expect("run layer36 hello component");
+        .expect("run krate hello component");
 
     assert!(
         output.status.success(),
-        "layer36 run failed\nstdout:\n{}\nstderr:\n{}",
+        "krate run failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.lines().collect::<Vec<_>>(), ["Hello, Layer36!"]);
+    assert_eq!(stdout.lines().collect::<Vec<_>>(), ["Hello, Krate!"]);
 }
 
 #[test]
@@ -751,27 +751,27 @@ fn configured_phase2_smoke_component_runs_through_uapi() {
     let dir = tempfile::tempdir().expect("create temp dir");
     std::fs::write(
         dir.path().join("phase2-smoke-input.txt"),
-        "Layer36 Phase 2 input\n",
+        "Krate Phase 2 input\n",
     )
     .expect("write Phase 2 smoke input");
 
-    let output = layer36()
+    let output = krate()
         .current_dir(dir.path())
         .args(["run", "--grant", "fs.read:phase2-smoke-input.txt"])
         .arg(path)
         .output()
-        .expect("run layer36 Phase 2 smoke component");
+        .expect("run krate Phase 2 smoke component");
 
     assert!(
         output.status.success(),
-        "layer36 run failed\nstdout:\n{}\nstderr:\n{}",
+        "krate run failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("phase2-smoke ok"));
-    assert!(stdout.contains("file=Layer36 Phase 2 input"));
+    assert!(stdout.contains("file=Krate Phase 2 input"));
     assert!(stdout.contains("locale="));
     assert!(stdout.contains("timezone="));
     assert!(stdout.contains("number=12.5"));
@@ -788,16 +788,16 @@ fn configured_phase2_smoke_component_denies_missing_file_grant() {
     let dir = tempfile::tempdir().expect("create temp dir");
     std::fs::write(
         dir.path().join("phase2-smoke-input.txt"),
-        "Layer36 Phase 2 input\n",
+        "Krate Phase 2 input\n",
     )
     .expect("write Phase 2 smoke input");
 
-    let output = layer36()
+    let output = krate()
         .current_dir(dir.path())
         .args(["run"])
         .arg(path)
         .output()
-        .expect("run layer36 Phase 2 smoke component without grant");
+        .expect("run krate Phase 2 smoke component without grant");
 
     assert_eq!(output.status.code(), Some(25));
     assert!(output.stdout.is_empty());
@@ -806,38 +806,38 @@ fn configured_phase2_smoke_component_denies_missing_file_grant() {
 }
 
 #[test]
-fn configured_layer36_clock_component_uses_fixed_test_time() {
-    let Some(path) = configured_layer36_clock_component() else {
+fn configured_krate_clock_component_uses_fixed_test_time() {
+    let Some(path) = configured_krate_clock_component() else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--test-time", "1234567890"])
         .arg(path)
         .output()
-        .expect("run layer36-clock component");
+        .expect("run krate-clock component");
 
     assert!(
         output.status.success(),
-        "layer36-clock failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-clock failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("app=layer36-clock"));
+    assert!(stdout.contains("app=krate-clock"));
     assert!(stdout.contains("timezone="));
     assert!(stdout.contains("locale="));
     assert!(stdout.contains("date=1970-01-15 06:56"));
 }
 
 #[test]
-fn configured_layer36_clock_component_matches_deterministic_fixture_snapshot() {
-    let Some(path) = configured_layer36_clock_component() else {
+fn configured_krate_clock_component_matches_deterministic_fixture_snapshot() {
+    let Some(path) = configured_krate_clock_component() else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--test-time",
@@ -849,18 +849,18 @@ fn configured_layer36_clock_component_matches_deterministic_fixture_snapshot() {
         ])
         .arg(path)
         .output()
-        .expect("run layer36-clock component with deterministic locale/timezone");
+        .expect("run krate-clock component with deterministic locale/timezone");
 
     assert!(
         output.status.success(),
-        "layer36-clock deterministic snapshot failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-clock deterministic snapshot failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         concat!(
-            "app=layer36-clock\n",
+            "app=krate-clock\n",
             "timezone=UTC\n",
             "locale=en-US\n",
             "date=1970-01-15 06:56\n"
@@ -870,12 +870,12 @@ fn configured_layer36_clock_component_matches_deterministic_fixture_snapshot() {
 }
 
 #[test]
-fn configured_layer36_clock_component_applies_positive_timezone_offset() {
-    let Some(path) = configured_layer36_clock_component() else {
+fn configured_krate_clock_component_applies_positive_timezone_offset() {
+    let Some(path) = configured_krate_clock_component() else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--test-time",
@@ -887,11 +887,11 @@ fn configured_layer36_clock_component_applies_positive_timezone_offset() {
         ])
         .arg(path)
         .output()
-        .expect("run layer36-clock with positive timezone offset");
+        .expect("run krate-clock with positive timezone offset");
 
     assert!(
         output.status.success(),
-        "layer36-clock timezone offset run failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-clock timezone offset run failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -903,12 +903,12 @@ fn configured_layer36_clock_component_applies_positive_timezone_offset() {
 }
 
 #[test]
-fn configured_layer36_clock_component_applies_negative_timezone_offset() {
-    let Some(path) = configured_layer36_clock_component() else {
+fn configured_krate_clock_component_applies_negative_timezone_offset() {
+    let Some(path) = configured_krate_clock_component() else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--test-time",
@@ -920,11 +920,11 @@ fn configured_layer36_clock_component_applies_negative_timezone_offset() {
         ])
         .arg(path)
         .output()
-        .expect("run layer36-clock with negative timezone offset");
+        .expect("run krate-clock with negative timezone offset");
 
     assert!(
         output.status.success(),
-        "layer36-clock negative timezone offset run failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-clock negative timezone offset run failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -936,17 +936,17 @@ fn configured_layer36_clock_component_applies_negative_timezone_offset() {
 }
 
 #[test]
-fn configured_layer36_clock_component_runs_with_sample_manifest_auto_grant() {
-    let Some(path) = configured_layer36_clock_component() else {
+fn configured_krate_clock_component_runs_with_sample_manifest_auto_grant() {
+    let Some(path) = configured_krate_clock_component() else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--auto-grant",
             "--manifest",
-            sample_manifest("layer36-clock")
+            sample_manifest("krate-clock")
                 .to_str()
                 .expect("manifest path"),
             "--test-time",
@@ -954,23 +954,23 @@ fn configured_layer36_clock_component_runs_with_sample_manifest_auto_grant() {
         ])
         .arg(path)
         .output()
-        .expect("run layer36-clock with sample manifest");
+        .expect("run krate-clock with sample manifest");
 
     assert!(
         output.status.success(),
-        "layer36-clock manifest run failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-clock manifest run failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("app=layer36-clock"));
+    assert!(stdout.contains("app=krate-clock"));
     assert!(stdout.contains("date=1970-01-15 06:56"));
 }
 
 #[test]
-fn configured_layer36_cat_component_reads_granted_files() {
-    let Some(path) = configured_layer36_cat_component() else {
+fn configured_krate_cat_component_reads_granted_files() {
+    let Some(path) = configured_krate_cat_component() else {
         return;
     };
 
@@ -980,17 +980,17 @@ fn configured_layer36_cat_component_reads_granted_files() {
     std::fs::write(fixtures.join("a.txt"), "hello from A\n").expect("write fixture A");
     std::fs::write(fixtures.join("b.txt"), "hello from B\n").expect("write fixture B");
 
-    let output = layer36()
+    let output = krate()
         .current_dir(dir.path())
         .args(["run", "--grant", "fs.read:fixtures/**"])
         .arg(path)
         .args(["--", "fixtures/a.txt", "fixtures/b.txt"])
         .output()
-        .expect("run layer36-cat component");
+        .expect("run krate-cat component");
 
     assert!(
         output.status.success(),
-        "layer36-cat failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-cat failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1003,8 +1003,8 @@ fn configured_layer36_cat_component_reads_granted_files() {
 }
 
 #[test]
-fn configured_layer36_cat_component_reads_from_sandbox_root() {
-    let Some(path) = configured_layer36_cat_component() else {
+fn configured_krate_cat_component_reads_from_sandbox_root() {
+    let Some(path) = configured_krate_cat_component() else {
         return;
     };
 
@@ -1013,7 +1013,7 @@ fn configured_layer36_cat_component_reads_from_sandbox_root() {
     std::fs::create_dir(&fixtures).expect("create fixtures dir");
     std::fs::write(fixtures.join("a.txt"), "hello from sandbox\n").expect("write fixture A");
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--sandbox-root",
@@ -1024,11 +1024,11 @@ fn configured_layer36_cat_component_reads_from_sandbox_root() {
         .arg(path)
         .args(["--", "fixtures/a.txt"])
         .output()
-        .expect("run layer36-cat component with sandbox root");
+        .expect("run krate-cat component with sandbox root");
 
     assert!(
         output.status.success(),
-        "layer36-cat sandbox-root run failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-cat sandbox-root run failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1041,8 +1041,8 @@ fn configured_layer36_cat_component_reads_from_sandbox_root() {
 }
 
 #[test]
-fn configured_layer36_cat_component_runs_with_sample_manifest_auto_grant() {
-    let Some(path) = configured_layer36_cat_component() else {
+fn configured_krate_cat_component_runs_with_sample_manifest_auto_grant() {
+    let Some(path) = configured_krate_cat_component() else {
         return;
     };
 
@@ -1051,24 +1051,24 @@ fn configured_layer36_cat_component_runs_with_sample_manifest_auto_grant() {
     std::fs::create_dir(&fixtures).expect("create fixtures dir");
     std::fs::write(fixtures.join("a.txt"), "hello from manifest cat\n").expect("write fixture A");
 
-    let output = layer36()
+    let output = krate()
         .current_dir(dir.path())
         .args([
             "run",
             "--auto-grant",
             "--manifest",
-            sample_manifest("layer36-cat")
+            sample_manifest("krate-cat")
                 .to_str()
                 .expect("manifest path"),
         ])
         .arg(path)
         .args(["--", "./fixtures/a.txt"])
         .output()
-        .expect("run layer36-cat with sample manifest");
+        .expect("run krate-cat with sample manifest");
 
     assert!(
         output.status.success(),
-        "layer36-cat manifest run failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-cat manifest run failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1081,8 +1081,8 @@ fn configured_layer36_cat_component_runs_with_sample_manifest_auto_grant() {
 }
 
 #[test]
-fn configured_layer36_cat_component_denies_missing_file_grant() {
-    let Some(path) = configured_layer36_cat_component() else {
+fn configured_krate_cat_component_denies_missing_file_grant() {
+    let Some(path) = configured_krate_cat_component() else {
         return;
     };
 
@@ -1091,23 +1091,23 @@ fn configured_layer36_cat_component_denies_missing_file_grant() {
     std::fs::create_dir(&fixtures).expect("create fixtures dir");
     std::fs::write(fixtures.join("secret.txt"), "not granted\n").expect("write fixture");
 
-    let output = layer36()
+    let output = krate()
         .current_dir(dir.path())
         .args(["run"])
         .arg(path)
         .args(["--", "fixtures/secret.txt"])
         .output()
-        .expect("run layer36-cat component without grant");
+        .expect("run krate-cat component without grant");
 
     assert_eq!(output.status.code(), Some(5));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-cat: permission denied: fixtures/secret.txt"));
+    assert!(stderr.contains("krate-cat: permission denied: fixtures/secret.txt"));
 }
 
 #[test]
-fn configured_layer36_cat_component_denies_file_outside_granted_glob() {
-    let Some(path) = configured_layer36_cat_component() else {
+fn configured_krate_cat_component_denies_file_outside_granted_glob() {
+    let Some(path) = configured_krate_cat_component() else {
         return;
     };
 
@@ -1116,23 +1116,23 @@ fn configured_layer36_cat_component_denies_file_outside_granted_glob() {
     std::fs::create_dir_all(fixtures.join("public")).expect("create public fixtures dir");
     std::fs::write(fixtures.join("secret.txt"), "not granted\n").expect("write fixture");
 
-    let output = layer36()
+    let output = krate()
         .current_dir(dir.path())
         .args(["run", "--grant", "fs.read:fixtures/public/**"])
         .arg(path)
         .args(["--", "fixtures/secret.txt"])
         .output()
-        .expect("run layer36-cat component outside granted glob");
+        .expect("run krate-cat component outside granted glob");
 
     assert_eq!(output.status.code(), Some(5));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-cat: permission denied: fixtures/secret.txt"));
+    assert!(stderr.contains("krate-cat: permission denied: fixtures/secret.txt"));
 }
 
 #[test]
-fn configured_layer36_curl_component_fetches_granted_http_url() {
-    let Some(path) = configured_layer36_curl_component() else {
+fn configured_krate_curl_component_fetches_granted_http_url() {
+    let Some(path) = configured_krate_curl_component() else {
         return;
     };
 
@@ -1142,21 +1142,21 @@ fn configured_layer36_curl_component_fetches_granted_http_url() {
     };
     let url = format!("http://{addr}/fixture.txt");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--grant", &format!("net.connect:{addr}")])
         .arg(path)
         .args(["--", &url])
         .output()
-        .expect("run layer36-curl component");
+        .expect("run krate-curl component");
     let accepted = server.join().expect("HTTP fixture thread completed");
     if !accepted {
-        eprintln!("skipping layer36-curl success fixture: runtime could not connect to localhost fixture in this environment");
+        eprintln!("skipping krate-curl success fixture: runtime could not connect to localhost fixture in this environment");
         return;
     }
 
     assert!(
         output.status.success(),
-        "layer36-curl failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-curl failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1165,8 +1165,8 @@ fn configured_layer36_curl_component_fetches_granted_http_url() {
 }
 
 #[test]
-fn configured_layer36_curl_component_rejects_response_above_cli_limit() {
-    let Some(path) = configured_layer36_curl_component() else {
+fn configured_krate_curl_component_rejects_response_above_cli_limit() {
+    let Some(path) = configured_krate_curl_component() else {
         return;
     };
 
@@ -1176,7 +1176,7 @@ fn configured_layer36_curl_component_rejects_response_above_cli_limit() {
     };
     let url = format!("http://{addr}/fixture.txt");
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--grant",
@@ -1187,22 +1187,22 @@ fn configured_layer36_curl_component_rejects_response_above_cli_limit() {
         .arg(path)
         .args(["--", &url])
         .output()
-        .expect("run layer36-curl component with tiny HTTP response limit");
+        .expect("run krate-curl component with tiny HTTP response limit");
     let accepted = server.join().expect("HTTP fixture thread completed");
     if !accepted {
-        eprintln!("skipping layer36-curl response-limit fixture: runtime could not connect to localhost fixture in this environment");
+        eprintln!("skipping krate-curl response-limit fixture: runtime could not connect to localhost fixture in this environment");
         return;
     }
 
     assert_eq!(output.status.code(), Some(21));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-curl: response too large"));
+    assert!(stderr.contains("krate-curl: response too large"));
 }
 
 #[test]
-fn configured_layer36_curl_component_runs_with_sample_manifest_auto_grant() {
-    let Some(path) = configured_layer36_curl_component() else {
+fn configured_krate_curl_component_runs_with_sample_manifest_auto_grant() {
+    let Some(path) = configured_krate_curl_component() else {
         return;
     };
 
@@ -1212,28 +1212,28 @@ fn configured_layer36_curl_component_runs_with_sample_manifest_auto_grant() {
     };
     let url = format!("http://{addr}/fixture.txt");
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--auto-grant",
             "--manifest",
-            sample_manifest("layer36-curl")
+            sample_manifest("krate-curl")
                 .to_str()
                 .expect("manifest path"),
         ])
         .arg(path)
         .args(["--", &url])
         .output()
-        .expect("run layer36-curl with sample manifest");
+        .expect("run krate-curl with sample manifest");
     let accepted = server.join().expect("HTTP fixture thread completed");
     if !accepted {
-        eprintln!("skipping layer36-curl manifest fixture: runtime could not connect to localhost fixture in this environment");
+        eprintln!("skipping krate-curl manifest fixture: runtime could not connect to localhost fixture in this environment");
         return;
     }
 
     assert!(
         output.status.success(),
-        "layer36-curl manifest run failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-curl manifest run failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1242,27 +1242,27 @@ fn configured_layer36_curl_component_runs_with_sample_manifest_auto_grant() {
 }
 
 #[test]
-fn configured_layer36_curl_component_denies_missing_net_grant() {
-    let Some(path) = configured_layer36_curl_component() else {
+fn configured_krate_curl_component_denies_missing_net_grant() {
+    let Some(path) = configured_krate_curl_component() else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args(["run"])
         .arg(path)
         .args(["--", "http://127.0.0.1:80/blocked"])
         .output()
-        .expect("run layer36-curl component without grant");
+        .expect("run krate-curl component without grant");
 
     assert_eq!(output.status.code(), Some(5));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-curl: permission denied"));
+    assert!(stderr.contains("krate-curl: permission denied"));
 }
 
 #[test]
-fn configured_layer36_curl_component_reports_connect_failure() {
-    let Some(path) = configured_layer36_curl_component() else {
+fn configured_krate_curl_component_reports_connect_failure() {
+    let Some(path) = configured_krate_curl_component() else {
         return;
     };
 
@@ -1271,48 +1271,48 @@ fn configured_layer36_curl_component_reports_connect_failure() {
     };
     let url = format!("http://{addr}/unreachable");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--grant", &format!("net.connect:{addr}")])
         .arg(path)
         .args(["--", &url])
         .output()
-        .expect("run layer36-curl against unused local port");
+        .expect("run krate-curl against unused local port");
 
     assert_eq!(output.status.code(), Some(21));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-curl: connection failed"));
+    assert!(stderr.contains("krate-curl: connection failed"));
 }
 
 #[test]
-fn configured_layer36_curl_component_reports_dns_failure() {
-    let Some(path) = configured_layer36_curl_component() else {
+fn configured_krate_curl_component_reports_dns_failure() {
+    let Some(path) = configured_krate_curl_component() else {
         return;
     };
 
-    let host = "layer36-does-not-exist.invalid";
+    let host = "krate-does-not-exist.invalid";
     let url = format!("http://{host}/unreachable");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--grant", &format!("net.connect:{host}:80")])
         .arg(path)
         .args(["--", &url])
         .output()
-        .expect("run layer36-curl against unresolved host");
+        .expect("run krate-curl against unresolved host");
 
     assert_eq!(output.status.code(), Some(21));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("layer36-curl: dns lookup failed")
-            || stderr.contains("layer36-curl: connection failed"),
+        stderr.contains("krate-curl: dns lookup failed")
+            || stderr.contains("krate-curl: connection failed"),
         "unexpected stderr for unresolved host path: {stderr}"
     );
 }
 
 #[test]
-fn configured_layer36_curl_component_reports_protocol_error() {
-    let Some(path) = configured_layer36_curl_component() else {
+fn configured_krate_curl_component_reports_protocol_error() {
+    let Some(path) = configured_krate_curl_component() else {
         return;
     };
 
@@ -1321,29 +1321,29 @@ fn configured_layer36_curl_component_reports_protocol_error() {
     };
     let url = format!("http://{addr}/malformed");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--grant", &format!("net.connect:{addr}")])
         .arg(path)
         .args(["--", &url])
         .output()
-        .expect("run layer36-curl against malformed HTTP fixture");
+        .expect("run krate-curl against malformed HTTP fixture");
     let accepted = server
         .join()
         .expect("malformed HTTP fixture thread completed");
     if !accepted {
-        eprintln!("skipping layer36-curl protocol fixture: runtime could not connect to localhost fixture in this environment");
+        eprintln!("skipping krate-curl protocol fixture: runtime could not connect to localhost fixture in this environment");
         return;
     }
 
     assert_eq!(output.status.code(), Some(21));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-curl: protocol error"));
+    assert!(stderr.contains("krate-curl: protocol error"));
 }
 
 #[test]
-fn configured_layer36_curl_component_reports_timeout() {
-    let Some(path) = configured_layer36_curl_component() else {
+fn configured_krate_curl_component_reports_timeout() {
+    let Some(path) = configured_krate_curl_component() else {
         return;
     };
 
@@ -1352,7 +1352,7 @@ fn configured_layer36_curl_component_reports_timeout() {
     };
     let url = format!("http://{addr}/stall");
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--http-timeout-millis",
@@ -1363,32 +1363,32 @@ fn configured_layer36_curl_component_reports_timeout() {
         .arg(path)
         .args(["--", &url])
         .output()
-        .expect("run layer36-curl against stalling HTTP fixture");
+        .expect("run krate-curl against stalling HTTP fixture");
     let accepted = server
         .join()
         .expect("stalling HTTP fixture thread completed");
     if !accepted {
-        eprintln!("skipping layer36-curl timeout fixture: runtime could not connect to localhost fixture in this environment");
+        eprintln!("skipping krate-curl timeout fixture: runtime could not connect to localhost fixture in this environment");
         return;
     }
 
     assert_eq!(output.status.code(), Some(21));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-curl: request timed out"));
+    assert!(stderr.contains("krate-curl: request timed out"));
 }
 
 #[test]
-fn configured_layer36_go_clock_component_matches_deterministic_fixture_snapshot() {
+fn configured_krate_go_clock_component_matches_deterministic_fixture_snapshot() {
     let Some(path) = configured_go_component(
-        "LAYER36_GO_CLOCK_WASM",
-        "layer36-go-clock component test",
-        "layer36_go_clock.wasm",
+        "KRATE_GO_CLOCK_WASM",
+        "krate-go-clock component test",
+        "krate_go_clock.wasm",
     ) else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--test-time",
@@ -1400,18 +1400,18 @@ fn configured_layer36_go_clock_component_matches_deterministic_fixture_snapshot(
         ])
         .arg(path)
         .output()
-        .expect("run layer36-go-clock component with deterministic locale/timezone");
+        .expect("run krate-go-clock component with deterministic locale/timezone");
 
     assert!(
         output.status.success(),
-        "layer36-go-clock deterministic snapshot failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-go-clock deterministic snapshot failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         concat!(
-            "app=layer36-go-clock\n",
+            "app=krate-go-clock\n",
             "locale=en-US\n",
             "timezone=UTC\n",
             "date=1970-01-15 06:56\n"
@@ -1421,11 +1421,11 @@ fn configured_layer36_go_clock_component_matches_deterministic_fixture_snapshot(
 }
 
 #[test]
-fn configured_layer36_go_cat_component_reads_granted_files() {
+fn configured_krate_go_cat_component_reads_granted_files() {
     let Some(path) = configured_go_component(
-        "LAYER36_GO_CAT_WASM",
-        "layer36-go-cat component test",
-        "layer36_go_cat.wasm",
+        "KRATE_GO_CAT_WASM",
+        "krate-go-cat component test",
+        "krate_go_cat.wasm",
     ) else {
         return;
     };
@@ -1436,17 +1436,17 @@ fn configured_layer36_go_cat_component_reads_granted_files() {
     std::fs::write(fixtures.join("a.txt"), "hello from go A\n").expect("write fixture A");
     std::fs::write(fixtures.join("b.txt"), "hello from go B\n").expect("write fixture B");
 
-    let output = layer36()
+    let output = krate()
         .current_dir(dir.path())
         .args(["run", "--grant", "fs.read:fixtures/**"])
         .arg(path)
         .args(["--", "fixtures/a.txt", "fixtures/b.txt"])
         .output()
-        .expect("run layer36-go-cat component");
+        .expect("run krate-go-cat component");
 
     assert!(
         output.status.success(),
-        "layer36-go-cat failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-go-cat failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1458,11 +1458,11 @@ fn configured_layer36_go_cat_component_reads_granted_files() {
 }
 
 #[test]
-fn configured_layer36_go_curl_component_fetches_granted_http_url() {
+fn configured_krate_go_curl_component_fetches_granted_http_url() {
     let Some(path) = configured_go_component(
-        "LAYER36_GO_CURL_WASM",
-        "layer36-go-curl component test",
-        "layer36_go_curl.wasm",
+        "KRATE_GO_CURL_WASM",
+        "krate-go-curl component test",
+        "krate_go_curl.wasm",
     ) else {
         return;
     };
@@ -1473,21 +1473,21 @@ fn configured_layer36_go_curl_component_fetches_granted_http_url() {
     };
     let url = format!("http://{addr}/fixture.txt");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--grant", &format!("net.connect:{addr}")])
         .arg(path)
         .args(["--", &url])
         .output()
-        .expect("run layer36-go-curl component");
+        .expect("run krate-go-curl component");
     let accepted = server.join().expect("HTTP fixture thread completed");
     if !accepted {
-        eprintln!("skipping layer36-go-curl fixture: runtime could not connect to localhost fixture in this environment");
+        eprintln!("skipping krate-go-curl fixture: runtime could not connect to localhost fixture in this environment");
         return;
     }
 
     assert!(
         output.status.success(),
-        "layer36-go-curl failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-go-curl failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1496,70 +1496,70 @@ fn configured_layer36_go_curl_component_fetches_granted_http_url() {
 }
 
 #[test]
-fn configured_layer36_go_curl_component_denies_missing_grant() {
+fn configured_krate_go_curl_component_denies_missing_grant() {
     let Some(path) = configured_go_component(
-        "LAYER36_GO_CURL_WASM",
-        "layer36-go-curl component test",
-        "layer36_go_curl.wasm",
+        "KRATE_GO_CURL_WASM",
+        "krate-go-curl component test",
+        "krate_go_curl.wasm",
     ) else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .arg("run")
         .arg(path)
         .args(["--", "http://example.com/"])
         .output()
-        .expect("run layer36-go-curl component without grant");
+        .expect("run krate-go-curl component without grant");
 
     assert_eq!(output.status.code(), Some(5));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-go-curl: permission denied"));
+    assert!(stderr.contains("krate-go-curl: permission denied"));
 }
 
 #[test]
-fn configured_layer36_go_curl_component_reports_unresolved_host() {
+fn configured_krate_go_curl_component_reports_unresolved_host() {
     let Some(path) = configured_go_component(
-        "LAYER36_GO_CURL_WASM",
-        "layer36-go-curl component test",
-        "layer36_go_curl.wasm",
+        "KRATE_GO_CURL_WASM",
+        "krate-go-curl component test",
+        "krate_go_curl.wasm",
     ) else {
         return;
     };
 
-    let host = "layer36-does-not-exist.invalid";
+    let host = "krate-does-not-exist.invalid";
     let url = format!("http://{host}/unreachable");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--grant", &format!("net.connect:{host}:80")])
         .arg(path)
         .args(["--", &url])
         .output()
-        .expect("run layer36-go-curl against unresolved host");
+        .expect("run krate-go-curl against unresolved host");
 
     assert_eq!(output.status.code(), Some(21));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("layer36-go-curl: dns lookup failed")
-            || stderr.contains("layer36-go-curl: connection failed")
-            || stderr.contains("layer36-go-curl: fetch failed"),
+        stderr.contains("krate-go-curl: dns lookup failed")
+            || stderr.contains("krate-go-curl: connection failed")
+            || stderr.contains("krate-go-curl: fetch failed"),
         "unexpected unresolved-host stderr: {stderr}"
     );
 }
 
 #[test]
-fn configured_layer36_ts_clock_component_matches_deterministic_fixture_snapshot() {
+fn configured_krate_ts_clock_component_matches_deterministic_fixture_snapshot() {
     let Some(path) = configured_ts_component(
-        "LAYER36_TS_CLOCK_WASM",
-        "layer36-ts-clock component test",
-        "layer36_ts_clock.wasm",
+        "KRATE_TS_CLOCK_WASM",
+        "krate-ts-clock component test",
+        "krate_ts_clock.wasm",
     ) else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--test-time",
@@ -1571,18 +1571,18 @@ fn configured_layer36_ts_clock_component_matches_deterministic_fixture_snapshot(
         ])
         .arg(path)
         .output()
-        .expect("run layer36-ts-clock component with deterministic locale/timezone");
+        .expect("run krate-ts-clock component with deterministic locale/timezone");
 
     assert!(
         output.status.success(),
-        "layer36-ts-clock deterministic snapshot failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-ts-clock deterministic snapshot failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(
         String::from_utf8_lossy(&output.stdout),
         concat!(
-            "app=layer36-ts-clock\n",
+            "app=krate-ts-clock\n",
             "locale=en-US\n",
             "timezone=UTC\n",
             "date=1970-01-15 06:56\n"
@@ -1592,11 +1592,11 @@ fn configured_layer36_ts_clock_component_matches_deterministic_fixture_snapshot(
 }
 
 #[test]
-fn configured_layer36_ts_cat_component_reads_granted_files() {
+fn configured_krate_ts_cat_component_reads_granted_files() {
     let Some(path) = configured_ts_component(
-        "LAYER36_TS_CAT_WASM",
-        "layer36-ts-cat component test",
-        "layer36_ts_cat.wasm",
+        "KRATE_TS_CAT_WASM",
+        "krate-ts-cat component test",
+        "krate_ts_cat.wasm",
     ) else {
         return;
     };
@@ -1607,17 +1607,17 @@ fn configured_layer36_ts_cat_component_reads_granted_files() {
     std::fs::write(fixtures.join("a.txt"), "hello from ts A\n").expect("write fixture A");
     std::fs::write(fixtures.join("b.txt"), "hello from ts B\n").expect("write fixture B");
 
-    let output = layer36()
+    let output = krate()
         .current_dir(dir.path())
         .args(["run", "--grant", "fs.read:fixtures/**"])
         .arg(path)
         .args(["--", "fixtures/a.txt", "fixtures/b.txt"])
         .output()
-        .expect("run layer36-ts-cat component");
+        .expect("run krate-ts-cat component");
 
     assert!(
         output.status.success(),
-        "layer36-ts-cat failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-ts-cat failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1629,11 +1629,11 @@ fn configured_layer36_ts_cat_component_reads_granted_files() {
 }
 
 #[test]
-fn configured_layer36_ts_curl_component_fetches_granted_http_url() {
+fn configured_krate_ts_curl_component_fetches_granted_http_url() {
     let Some(path) = configured_ts_component(
-        "LAYER36_TS_CURL_WASM",
-        "layer36-ts-curl component test",
-        "layer36_ts_curl.wasm",
+        "KRATE_TS_CURL_WASM",
+        "krate-ts-curl component test",
+        "krate_ts_curl.wasm",
     ) else {
         return;
     };
@@ -1644,21 +1644,21 @@ fn configured_layer36_ts_curl_component_fetches_granted_http_url() {
     };
     let url = format!("http://{addr}/fixture.txt");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--grant", &format!("net.connect:{addr}")])
         .arg(path)
         .args(["--", &url])
         .output()
-        .expect("run layer36-ts-curl component");
+        .expect("run krate-ts-curl component");
     let accepted = server.join().expect("HTTP fixture thread completed");
     if !accepted {
-        eprintln!("skipping layer36-ts-curl fixture: runtime could not connect to localhost fixture in this environment");
+        eprintln!("skipping krate-ts-curl fixture: runtime could not connect to localhost fixture in this environment");
         return;
     }
 
     assert!(
         output.status.success(),
-        "layer36-ts-curl failed\nstdout:\n{}\nstderr:\n{}",
+        "krate-ts-curl failed\nstdout:\n{}\nstderr:\n{}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
@@ -1667,99 +1667,99 @@ fn configured_layer36_ts_curl_component_fetches_granted_http_url() {
 }
 
 #[test]
-fn configured_layer36_ts_curl_component_denies_missing_grant() {
+fn configured_krate_ts_curl_component_denies_missing_grant() {
     let Some(path) = configured_ts_component(
-        "LAYER36_TS_CURL_WASM",
-        "layer36-ts-curl component test",
-        "layer36_ts_curl.wasm",
+        "KRATE_TS_CURL_WASM",
+        "krate-ts-curl component test",
+        "krate_ts_curl.wasm",
     ) else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .arg("run")
         .arg(path)
         .args(["--", "http://example.com/"])
         .output()
-        .expect("run layer36-ts-curl component without grant");
+        .expect("run krate-ts-curl component without grant");
 
     assert_eq!(output.status.code(), Some(5));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-ts-curl: permission denied"));
+    assert!(stderr.contains("krate-ts-curl: permission denied"));
 }
 
 #[test]
-fn configured_layer36_ts_curl_component_reports_unresolved_host() {
+fn configured_krate_ts_curl_component_reports_unresolved_host() {
     let Some(path) = configured_ts_component(
-        "LAYER36_TS_CURL_WASM",
-        "layer36-ts-curl component test",
-        "layer36_ts_curl.wasm",
+        "KRATE_TS_CURL_WASM",
+        "krate-ts-curl component test",
+        "krate_ts_curl.wasm",
     ) else {
         return;
     };
 
-    let host = "layer36-does-not-exist.invalid";
+    let host = "krate-does-not-exist.invalid";
     let url = format!("http://{host}/unreachable");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--grant", &format!("net.connect:{host}:80")])
         .arg(path)
         .args(["--", &url])
         .output()
-        .expect("run layer36-ts-curl against unresolved host");
+        .expect("run krate-ts-curl against unresolved host");
 
     assert_eq!(output.status.code(), Some(21));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("layer36-ts-curl: dns lookup failed")
-            || stderr.contains("layer36-ts-curl: connection failed")
-            || stderr.contains("layer36-ts-curl: fetch failed"),
+        stderr.contains("krate-ts-curl: dns lookup failed")
+            || stderr.contains("krate-ts-curl: connection failed")
+            || stderr.contains("krate-ts-curl: fetch failed"),
         "unexpected unresolved-host stderr: {stderr}"
     );
 }
 
 #[test]
-fn configured_layer36_ts_curl_component_reports_invalid_url() {
+fn configured_krate_ts_curl_component_reports_invalid_url() {
     let Some(path) = configured_ts_component(
-        "LAYER36_TS_CURL_WASM",
-        "layer36-ts-curl component test",
-        "layer36_ts_curl.wasm",
+        "KRATE_TS_CURL_WASM",
+        "krate-ts-curl component test",
+        "krate_ts_curl.wasm",
     ) else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--grant", "net.connect:*:*"])
         .arg(path)
         .args(["--", "not-a-url"])
         .output()
-        .expect("run layer36-ts-curl against invalid URL");
+        .expect("run krate-ts-curl against invalid URL");
 
     assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-ts-curl: invalid url"));
+    assert!(stderr.contains("krate-ts-curl: invalid url"));
 }
 
 #[test]
 fn language_variants_curl_permission_denied_matches_rust_go_ts() {
-    let Some(rust_path) = configured_layer36_curl_component() else {
+    let Some(rust_path) = configured_krate_curl_component() else {
         return;
     };
     let Some(go_path) = configured_go_component(
-        "LAYER36_GO_CURL_WASM",
-        "layer36-go-curl component test",
-        "layer36_go_curl.wasm",
+        "KRATE_GO_CURL_WASM",
+        "krate-go-curl component test",
+        "krate_go_curl.wasm",
     ) else {
         eprintln!("skipping language variant curl denial parity: Go fixture is unavailable");
         return;
     };
     let Some(ts_path) = configured_ts_component(
-        "LAYER36_TS_CURL_WASM",
-        "layer36-ts-curl component test",
-        "layer36_ts_curl.wasm",
+        "KRATE_TS_CURL_WASM",
+        "krate-ts-curl component test",
+        "krate_ts_curl.wasm",
     ) else {
         eprintln!(
             "skipping language variant curl denial parity: TypeScript fixture is unavailable"
@@ -1768,7 +1768,7 @@ fn language_variants_curl_permission_denied_matches_rust_go_ts() {
     };
 
     let run_without_grant = |path: &PathBuf, label: &str| {
-        let output = layer36()
+        let output = krate()
             .arg("run")
             .arg(path)
             .args(["--", "http://example.com/"])
@@ -1787,9 +1787,9 @@ fn language_variants_curl_permission_denied_matches_rust_go_ts() {
         String::from_utf8_lossy(&output.stderr).to_string()
     };
 
-    let rust_stderr = run_without_grant(&rust_path, "layer36-curl");
-    let go_stderr = run_without_grant(&go_path, "layer36-go-curl");
-    let ts_stderr = run_without_grant(&ts_path, "layer36-ts-curl");
+    let rust_stderr = run_without_grant(&rust_path, "krate-curl");
+    let go_stderr = run_without_grant(&go_path, "krate-go-curl");
+    let ts_stderr = run_without_grant(&ts_path, "krate-ts-curl");
     assert!(rust_stderr.contains("permission denied"));
     assert!(go_stderr.contains("permission denied"));
     assert!(ts_stderr.contains("permission denied"));
@@ -1797,21 +1797,21 @@ fn language_variants_curl_permission_denied_matches_rust_go_ts() {
 
 #[test]
 fn language_variants_curl_invalid_url_matches_rust_go_ts() {
-    let Some(rust_path) = configured_layer36_curl_component() else {
+    let Some(rust_path) = configured_krate_curl_component() else {
         return;
     };
     let Some(go_path) = configured_go_component(
-        "LAYER36_GO_CURL_WASM",
-        "layer36-go-curl component test",
-        "layer36_go_curl.wasm",
+        "KRATE_GO_CURL_WASM",
+        "krate-go-curl component test",
+        "krate_go_curl.wasm",
     ) else {
         eprintln!("skipping language variant curl invalid-url parity: Go fixture is unavailable");
         return;
     };
     let Some(ts_path) = configured_ts_component(
-        "LAYER36_TS_CURL_WASM",
-        "layer36-ts-curl component test",
-        "layer36_ts_curl.wasm",
+        "KRATE_TS_CURL_WASM",
+        "krate-ts-curl component test",
+        "krate_ts_curl.wasm",
     ) else {
         eprintln!(
             "skipping language variant curl invalid-url parity: TypeScript fixture is unavailable"
@@ -1820,7 +1820,7 @@ fn language_variants_curl_invalid_url_matches_rust_go_ts() {
     };
 
     let run_invalid_url = |path: &PathBuf, label: &str| {
-        let output = layer36()
+        let output = krate()
             .args(["run", "--grant", "net.connect:*:*"])
             .arg(path)
             .args(["--", "not-a-url"])
@@ -1839,9 +1839,9 @@ fn language_variants_curl_invalid_url_matches_rust_go_ts() {
         String::from_utf8_lossy(&output.stderr).to_string()
     };
 
-    let rust_stderr = run_invalid_url(&rust_path, "layer36-curl");
-    let go_stderr = run_invalid_url(&go_path, "layer36-go-curl");
-    let ts_stderr = run_invalid_url(&ts_path, "layer36-ts-curl");
+    let rust_stderr = run_invalid_url(&rust_path, "krate-curl");
+    let go_stderr = run_invalid_url(&go_path, "krate-go-curl");
+    let ts_stderr = run_invalid_url(&ts_path, "krate-ts-curl");
     assert!(rust_stderr.contains("invalid url"));
     assert!(go_stderr.contains("invalid url"));
     assert!(ts_stderr.contains("invalid url"));
@@ -1849,13 +1849,13 @@ fn language_variants_curl_invalid_url_matches_rust_go_ts() {
 
 #[test]
 fn language_variants_curl_unresolved_host_matches_rust_go_ts() {
-    let Some(rust_path) = configured_layer36_curl_component() else {
+    let Some(rust_path) = configured_krate_curl_component() else {
         return;
     };
     let Some(go_path) = configured_go_component(
-        "LAYER36_GO_CURL_WASM",
-        "layer36-go-curl component test",
-        "layer36_go_curl.wasm",
+        "KRATE_GO_CURL_WASM",
+        "krate-go-curl component test",
+        "krate_go_curl.wasm",
     ) else {
         eprintln!(
             "skipping language variant curl unresolved-host parity: Go fixture is unavailable"
@@ -1863,9 +1863,9 @@ fn language_variants_curl_unresolved_host_matches_rust_go_ts() {
         return;
     };
     let Some(ts_path) = configured_ts_component(
-        "LAYER36_TS_CURL_WASM",
-        "layer36-ts-curl component test",
-        "layer36_ts_curl.wasm",
+        "KRATE_TS_CURL_WASM",
+        "krate-ts-curl component test",
+        "krate_ts_curl.wasm",
     ) else {
         eprintln!(
             "skipping language variant curl unresolved-host parity: TypeScript fixture is unavailable"
@@ -1873,12 +1873,12 @@ fn language_variants_curl_unresolved_host_matches_rust_go_ts() {
         return;
     };
 
-    let host = "layer36-does-not-exist.invalid";
+    let host = "krate-does-not-exist.invalid";
     let url = format!("http://{host}/unreachable");
     let grant = format!("net.connect:{host}:80");
 
     let run_unresolved = |path: &PathBuf, label: &str| {
-        let output = layer36()
+        let output = krate()
             .args(["run", "--grant", &grant])
             .arg(path)
             .args(["--", &url])
@@ -1897,9 +1897,9 @@ fn language_variants_curl_unresolved_host_matches_rust_go_ts() {
         String::from_utf8_lossy(&output.stderr).to_string()
     };
 
-    let rust_stderr = run_unresolved(&rust_path, "layer36-curl");
-    let go_stderr = run_unresolved(&go_path, "layer36-go-curl");
-    let ts_stderr = run_unresolved(&ts_path, "layer36-ts-curl");
+    let rust_stderr = run_unresolved(&rust_path, "krate-curl");
+    let go_stderr = run_unresolved(&go_path, "krate-go-curl");
+    let ts_stderr = run_unresolved(&ts_path, "krate-ts-curl");
 
     let has_unresolved_error = |stderr: &str| {
         stderr.contains("dns lookup failed")
@@ -1922,52 +1922,52 @@ fn language_variants_curl_unresolved_host_matches_rust_go_ts() {
 }
 
 #[test]
-fn configured_layer36_go_curl_component_reports_invalid_url() {
+fn configured_krate_go_curl_component_reports_invalid_url() {
     let Some(path) = configured_go_component(
-        "LAYER36_GO_CURL_WASM",
-        "layer36-go-curl component test",
-        "layer36_go_curl.wasm",
+        "KRATE_GO_CURL_WASM",
+        "krate-go-curl component test",
+        "krate_go_curl.wasm",
     ) else {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--grant", "net.connect:*:*"])
         .arg(path)
         .args(["--", "not-a-url"])
         .output()
-        .expect("run layer36-go-curl against invalid URL");
+        .expect("run krate-go-curl against invalid URL");
 
     assert_eq!(output.status.code(), Some(20));
     assert!(output.stdout.is_empty());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("layer36-go-curl: invalid url"));
+    assert!(stderr.contains("krate-go-curl: invalid url"));
 }
 
 #[test]
 fn language_variants_clock_output_matches_across_rust_go_ts() {
-    let Some(rust_path) = configured_layer36_clock_component() else {
+    let Some(rust_path) = configured_krate_clock_component() else {
         return;
     };
     let Some(go_path) = configured_go_component(
-        "LAYER36_GO_CLOCK_WASM",
-        "layer36-go-clock component test",
-        "layer36_go_clock.wasm",
+        "KRATE_GO_CLOCK_WASM",
+        "krate-go-clock component test",
+        "krate_go_clock.wasm",
     ) else {
         eprintln!("skipping language variant clock parity: Go fixture is unavailable");
         return;
     };
     let Some(ts_path) = configured_ts_component(
-        "LAYER36_TS_CLOCK_WASM",
-        "layer36-ts-clock component test",
-        "layer36_ts_clock.wasm",
+        "KRATE_TS_CLOCK_WASM",
+        "krate-ts-clock component test",
+        "krate_ts_clock.wasm",
     ) else {
         eprintln!("skipping language variant clock parity: TypeScript fixture is unavailable");
         return;
     };
 
     let run_clock = |path: &PathBuf, label: &str| {
-        let output = layer36()
+        let output = krate()
             .args([
                 "run",
                 "--test-time",
@@ -1991,9 +1991,9 @@ fn language_variants_clock_output_matches_across_rust_go_ts() {
         output.stdout
     };
 
-    let rust_stdout = run_clock(&rust_path, "layer36-clock");
-    let go_stdout = run_clock(&go_path, "layer36-go-clock");
-    let ts_stdout = run_clock(&ts_path, "layer36-ts-clock");
+    let rust_stdout = run_clock(&rust_path, "krate-clock");
+    let go_stdout = run_clock(&go_path, "krate-go-clock");
+    let ts_stdout = run_clock(&ts_path, "krate-ts-clock");
 
     assert_eq!(go_stdout, rust_stdout, "Go clock output drifted from Rust");
     assert_eq!(
@@ -2004,21 +2004,21 @@ fn language_variants_clock_output_matches_across_rust_go_ts() {
 
 #[test]
 fn language_variants_cat_output_matches_across_rust_go_ts() {
-    let Some(rust_path) = configured_layer36_cat_component() else {
+    let Some(rust_path) = configured_krate_cat_component() else {
         return;
     };
     let Some(go_path) = configured_go_component(
-        "LAYER36_GO_CAT_WASM",
-        "layer36-go-cat component test",
-        "layer36_go_cat.wasm",
+        "KRATE_GO_CAT_WASM",
+        "krate-go-cat component test",
+        "krate_go_cat.wasm",
     ) else {
         eprintln!("skipping language variant cat parity: Go fixture is unavailable");
         return;
     };
     let Some(ts_path) = configured_ts_component(
-        "LAYER36_TS_CAT_WASM",
-        "layer36-ts-cat component test",
-        "layer36_ts_cat.wasm",
+        "KRATE_TS_CAT_WASM",
+        "krate-ts-cat component test",
+        "krate_ts_cat.wasm",
     ) else {
         eprintln!("skipping language variant cat parity: TypeScript fixture is unavailable");
         return;
@@ -2031,7 +2031,7 @@ fn language_variants_cat_output_matches_across_rust_go_ts() {
     std::fs::write(fixtures.join("b.txt"), "hello from parity B\n").expect("write fixture B");
 
     let run_cat = |path: &PathBuf, label: &str| {
-        let output = layer36()
+        let output = krate()
             .current_dir(dir.path())
             .args(["run", "--grant", "fs.read:fixtures/**"])
             .arg(path)
@@ -2049,9 +2049,9 @@ fn language_variants_cat_output_matches_across_rust_go_ts() {
         output.stdout
     };
 
-    let rust_stdout = run_cat(&rust_path, "layer36-cat");
-    let go_stdout = run_cat(&go_path, "layer36-go-cat");
-    let ts_stdout = run_cat(&ts_path, "layer36-ts-cat");
+    let rust_stdout = run_cat(&rust_path, "krate-cat");
+    let go_stdout = run_cat(&go_path, "krate-go-cat");
+    let ts_stdout = run_cat(&ts_path, "krate-ts-cat");
 
     assert_eq!(go_stdout, rust_stdout, "Go cat output drifted from Rust");
     assert_eq!(
@@ -2062,21 +2062,21 @@ fn language_variants_cat_output_matches_across_rust_go_ts() {
 
 #[test]
 fn language_variants_curl_output_matches_across_rust_go_ts() {
-    let Some(rust_path) = configured_layer36_curl_component() else {
+    let Some(rust_path) = configured_krate_curl_component() else {
         return;
     };
     let Some(go_path) = configured_go_component(
-        "LAYER36_GO_CURL_WASM",
-        "layer36-go-curl component test",
-        "layer36_go_curl.wasm",
+        "KRATE_GO_CURL_WASM",
+        "krate-go-curl component test",
+        "krate_go_curl.wasm",
     ) else {
         eprintln!("skipping language variant curl parity: Go fixture is unavailable");
         return;
     };
     let Some(ts_path) = configured_ts_component(
-        "LAYER36_TS_CURL_WASM",
-        "layer36-ts-curl component test",
-        "layer36_ts_curl.wasm",
+        "KRATE_TS_CURL_WASM",
+        "krate-ts-curl component test",
+        "krate_ts_curl.wasm",
     ) else {
         eprintln!("skipping language variant curl parity: TypeScript fixture is unavailable");
         return;
@@ -2090,7 +2090,7 @@ fn language_variants_curl_output_matches_across_rust_go_ts() {
     let grant = format!("net.connect:{addr}");
 
     let run_curl = |path: &PathBuf, label: &str| {
-        let output = layer36()
+        let output = krate()
             .args(["run", "--grant", &grant])
             .arg(path)
             .args(["--", &url])
@@ -2107,9 +2107,9 @@ fn language_variants_curl_output_matches_across_rust_go_ts() {
         output.stdout
     };
 
-    let rust_stdout = run_curl(&rust_path, "layer36-curl");
-    let go_stdout = run_curl(&go_path, "layer36-go-curl");
-    let ts_stdout = run_curl(&ts_path, "layer36-ts-curl");
+    let rust_stdout = run_curl(&rust_path, "krate-curl");
+    let go_stdout = run_curl(&go_path, "krate-go-curl");
+    let ts_stdout = run_curl(&ts_path, "krate-ts-curl");
 
     let accepted = server.join().expect("HTTP fixture thread completed");
     if !accepted {
@@ -2133,11 +2133,11 @@ fn fuel_limit_exits_with_limit_code() {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--fuel", "1"])
         .arg(path)
         .output()
-        .expect("run layer36 hello component with low fuel");
+        .expect("run krate hello component with low fuel");
 
     assert_eq!(output.status.code(), Some(4));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2150,11 +2150,11 @@ fn memory_limit_exits_with_limit_code() {
         return;
     };
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--mem-limit", "0"])
         .arg(path)
         .output()
-        .expect("run layer36 hello component with low memory");
+        .expect("run krate hello component with low memory");
 
     assert_eq!(output.status.code(), Some(4));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2175,7 +2175,7 @@ fn run_with_manifest_denies_missing_required_capability() {
             name = "Denied"
             version = "1.0.0"
             entry = "app.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "fs.read:./data/**"
@@ -2185,11 +2185,11 @@ fn run_with_manifest_denies_missing_required_capability() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .arg("run")
         .arg(&wasm_path)
         .output()
-        .expect("run layer36 with sidecar manifest");
+        .expect("run krate with sidecar manifest");
 
     assert_eq!(output.status.code(), Some(5));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2210,16 +2210,16 @@ fn run_with_manifest_rejects_entry_mismatch() {
             name = "Mismatch"
             version = "1.0.0"
             entry = "app.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
         "#,
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .arg("run")
         .arg(&wasm_path)
         .output()
-        .expect("run layer36 with mismatched sidecar manifest");
+        .expect("run krate with mismatched sidecar manifest");
 
     assert_eq!(output.status.code(), Some(5));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2240,7 +2240,7 @@ fn run_with_manifest_and_explicit_grant_reaches_runtime() {
             name = "Granted"
             version = "1.0.0"
             entry = "app.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "fs.read:./data/**"
@@ -2250,11 +2250,11 @@ fn run_with_manifest_and_explicit_grant_reaches_runtime() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--grant", "fs.read:./data/**"])
         .arg(&wasm_path)
         .output()
-        .expect("run layer36 with granted sidecar manifest");
+        .expect("run krate with granted sidecar manifest");
 
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2267,11 +2267,11 @@ fn run_dump_caps_prints_effective_policy_without_running_component() {
     let wasm_path = dir.path().join("app.wasm");
     std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--dump-caps", "--grant", "fs.read:./data/**"])
         .arg(&wasm_path)
         .output()
-        .expect("run layer36 dump caps");
+        .expect("run krate dump caps");
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -2296,7 +2296,7 @@ fn run_dump_caps_json_reports_effective_policy_without_running_component() {
             name = "Dump"
             version = "1.0.0"
             entry = "app.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "io.stdout"
@@ -2311,7 +2311,7 @@ fn run_dump_caps_json_reports_effective_policy_without_running_component() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--auto-grant",
@@ -2323,7 +2323,7 @@ fn run_dump_caps_json_reports_effective_policy_without_running_component() {
         ])
         .arg(&wasm_path)
         .output()
-        .expect("run layer36 dump caps json");
+        .expect("run krate dump caps json");
 
     assert!(
         output.status.success(),
@@ -2358,7 +2358,7 @@ fn run_log_grants_records_effective_session_policy() {
             name = "Audit"
             version = "1.0.0"
             entry = "app.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "io.stdout"
@@ -2373,7 +2373,7 @@ fn run_log_grants_records_effective_session_policy() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--auto-grant",
@@ -2395,10 +2395,10 @@ fn run_log_grants_records_effective_session_policy() {
     );
 
     let log = std::fs::read_to_string(&log_path).expect("read grant log");
-    assert!(log.contains("Layer36 grant log"));
+    assert!(log.contains("Krate grant log"));
     assert!(log.contains("app id           com.example.audit"));
     assert!(log.contains("app name         Audit"));
-    assert!(log.contains("manifest world   layer36:app/cli@0.1.0"));
+    assert!(log.contains("manifest world   krate:app/cli@0.1.0"));
     assert!(log.contains("  - io.stdout"));
     assert!(log.contains("  - fs.read:data/**"));
 }
@@ -2418,7 +2418,7 @@ fn run_log_grants_jsonl_records_effective_session_policy() {
             name = "Audit"
             version = "1.0.0"
             entry = "app.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "io.stdout"
@@ -2433,7 +2433,7 @@ fn run_log_grants_jsonl_records_effective_session_policy() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args([
             "run",
             "--auto-grant",
@@ -2460,7 +2460,7 @@ fn run_log_grants_jsonl_records_effective_session_policy() {
     let lines = log.lines().collect::<Vec<_>>();
     assert_eq!(lines.len(), 1);
     assert!(lines[0].contains(r#""format_version":1"#));
-    assert!(lines[0].contains(r#""event":"layer36.grants""#));
+    assert!(lines[0].contains(r#""event":"krate.grants""#));
     assert!(lines[0].contains(r#""id":"com.example.audit""#));
     assert!(lines[0].contains(r#""name":"Audit""#));
     assert!(lines[0].contains(r#""io.stdout""#));
@@ -2480,7 +2480,7 @@ fn run_with_manifest_auto_grant_reaches_runtime() {
             name = "Auto"
             version = "1.0.0"
             entry = "app.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "net.connect:api.example.com:443"
@@ -2490,11 +2490,11 @@ fn run_with_manifest_auto_grant_reaches_runtime() {
     )
     .expect("write manifest");
 
-    let output = layer36()
+    let output = krate()
         .args(["run", "--auto-grant"])
         .arg(&wasm_path)
         .output()
-        .expect("run layer36 with auto-grant");
+        .expect("run krate with auto-grant");
 
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2514,7 +2514,7 @@ fn run_with_manifest_prompt_can_grant_required_capability() {
             name = "Prompt"
             version = "1.0.0"
             entry = "app.wasm"
-            world = "layer36:app/cli@0.1.0"
+            world = "krate:app/cli@0.1.0"
 
             [[capabilities]]
             cap = "fs.read:./data/**"
@@ -2524,14 +2524,14 @@ fn run_with_manifest_prompt_can_grant_required_capability() {
     )
     .expect("write manifest");
 
-    let mut child = layer36()
+    let mut child = krate()
         .args(["run", "--prompt"])
         .arg(&wasm_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("spawn layer36 with prompt");
+        .expect("spawn krate with prompt");
 
     child
         .stdin
@@ -2575,23 +2575,23 @@ fn sample_manifest(app: &str) -> PathBuf {
 }
 
 fn configured_hello_component() -> Option<PathBuf> {
-    configured_component_from_env("LAYER36_HELLO_WASM", "hello component test")
+    configured_component_from_env("KRATE_HELLO_WASM", "hello component test")
 }
 
 fn configured_phase2_smoke_component() -> Option<PathBuf> {
-    configured_component_from_env("LAYER36_PHASE2_SMOKE_WASM", "Phase 2 smoke component test")
+    configured_component_from_env("KRATE_PHASE2_SMOKE_WASM", "Phase 2 smoke component test")
 }
 
-fn configured_layer36_clock_component() -> Option<PathBuf> {
-    configured_component_from_env("LAYER36_CLOCK_WASM", "layer36-clock component test")
+fn configured_krate_clock_component() -> Option<PathBuf> {
+    configured_component_from_env("KRATE_CLOCK_WASM", "krate-clock component test")
 }
 
-fn configured_layer36_cat_component() -> Option<PathBuf> {
-    configured_component_from_env("LAYER36_CAT_WASM", "layer36-cat component test")
+fn configured_krate_cat_component() -> Option<PathBuf> {
+    configured_component_from_env("KRATE_CAT_WASM", "krate-cat component test")
 }
 
-fn configured_layer36_curl_component() -> Option<PathBuf> {
-    configured_component_from_env("LAYER36_CURL_WASM", "layer36-curl component test")
+fn configured_krate_curl_component() -> Option<PathBuf> {
+    configured_component_from_env("KRATE_CURL_WASM", "krate-curl component test")
 }
 
 fn configured_go_component(env: &str, label: &str, filename: &str) -> Option<PathBuf> {
@@ -2789,7 +2789,7 @@ fn spawn_stalling_http_fixture(wait: Duration) -> Option<(SocketAddr, thread::Jo
 }
 
 fn expected_hello_hash() -> Option<String> {
-    std::env::var("LAYER36_HELLO_SHA256")
+    std::env::var("KRATE_HELLO_SHA256")
         .ok()
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| !value.is_empty())

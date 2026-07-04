@@ -3,7 +3,7 @@
 This page explains the repeatable review report for the Phase 2 UAPI freeze
 candidate.
 
-The freeze candidate is the current set of WIT files under `wit/layer36/phase2`.
+The freeze candidate is the current set of WIT files under `wit/krate/phase2`.
 Those files define the public contract for `io`, `fs`, `net`, `time`, and
 `locale`. Once we call that contract frozen, app authors should be able to build
 against it without names, error shapes, resources, or capability meanings

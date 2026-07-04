@@ -18,7 +18,7 @@ If you want GitHub to run jobs on your own machine, see
 Run this after setup:
 
 ```bash
-layer36 doctor
+krate doctor
 ```
 
 It reports core Rust tools first, then Phase 2 language tools, including

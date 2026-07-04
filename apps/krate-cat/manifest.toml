@@ -1,0 +1,26 @@
+[app]
+id = "dev.krate.cat"
+name = "krate-cat"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_cat.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read file paths passed after the app separator"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print file contents"
+required = true
+
+[[capabilities]]
+cap = "io.stderr"
+rationale = "Print usage and file errors"
+required = true
+
+[[capabilities]]
+cap = "fs.read:./fixtures/**"
+rationale = "Read test fixture files"
+required = true

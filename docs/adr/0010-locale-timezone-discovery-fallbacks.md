@@ -11,7 +11,7 @@
 ## Context
 
 Phase 2 needs stable locale and timezone behavior for CLI apps that use
-`layer36:locale`. The first implementation relied mostly on `LC_ALL`, `LANG`,
+`krate:locale`. The first implementation relied mostly on `LC_ALL`, `LANG`,
 and `TZ`, with strict normalization and deterministic formatting.
 
 In practice, many host environments do not set all three values in a

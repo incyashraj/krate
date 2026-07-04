@@ -1,6 +1,6 @@
-//! Layer36 sidecar manifest parser.
+//! Krate sidecar manifest parser.
 //!
-//! A Layer36 app is still a plain `.wasm` component, but it may sit next to a
+//! A Krate app is still a plain `.wasm` component, but it may sit next to a
 //! `manifest.toml` that declares identity, entry world, and requested
 //! capabilities.
 
@@ -11,15 +11,15 @@ use std::{
     str::FromStr,
 };
 
-use layer36_adapter_common::path::LogicalPath;
+use krate_adapter_common::path::LogicalPath;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub const PHASE2_CLI_WORLD: &str = "layer36:app/cli@0.1.0";
-pub const PHASE3_GUI_WORLD: &str = "layer36:app/gui@0.2.0";
+pub const PHASE2_CLI_WORLD: &str = "krate:app/cli@0.1.0";
+pub const PHASE3_GUI_WORLD: &str = "krate:app/gui@0.2.0";
 const MAX_NET_CONNECT_HOST_BYTES: usize = 253;
 
-const LAYER36_CAPABILITY_SPECS: &[CapabilitySpec] = &[
+const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "io", "stdin", true),
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "io", "stdout", true),
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "io", "stderr", true),
@@ -286,7 +286,7 @@ impl Capability {
         let resource_required = capability_resource_required(module, action).ok_or_else(|| {
             ManifestError::InvalidCapability {
                 cap: cap_name.clone(),
-                reason: "unknown Layer36 capability".to_string(),
+                reason: "unknown Krate capability".to_string(),
             }
         })?;
         let resource_was_present = resource.is_some();
@@ -395,7 +395,7 @@ impl fmt::Display for Capability {
 }
 
 pub fn default_granted_capabilities() -> BTreeSet<Capability> {
-    LAYER36_CAPABILITY_SPECS
+    KRATE_CAPABILITY_SPECS
         .iter()
         .filter(|spec| spec.default_granted())
         .map(|spec| {
@@ -406,11 +406,11 @@ pub fn default_granted_capabilities() -> BTreeSet<Capability> {
 }
 
 pub fn supported_capability_specs() -> &'static [CapabilitySpec] {
-    LAYER36_CAPABILITY_SPECS
+    KRATE_CAPABILITY_SPECS
 }
 
 pub fn supported_phase2_capability_specs() -> impl Iterator<Item = &'static CapabilitySpec> {
-    LAYER36_CAPABILITY_SPECS
+    KRATE_CAPABILITY_SPECS
         .iter()
         .filter(|spec| spec.phase() == CapabilityPhase::Phase2)
 }
@@ -727,7 +727,7 @@ mod tests {
         name = "Hello"
         version = "1.0.0"
         entry = "hello.wasm"
-        world = "layer36:app/cli@0.1.0"
+        world = "krate:app/cli@0.1.0"
 
         [[capabilities]]
         cap = "fs.read:~/Documents/notes/**"
@@ -769,7 +769,7 @@ mod tests {
 
     #[test]
     fn rejects_unknown_worlds() {
-        let input = EXAMPLE.replace(PHASE2_CLI_WORLD, "layer36:app/gui@0.1.0");
+        let input = EXAMPLE.replace(PHASE2_CLI_WORLD, "krate:app/gui@0.1.0");
         let err = Manifest::parse(&input).expect_err("reject unsupported world");
 
         assert!(matches!(err, ManifestError::UnsupportedWorld { .. }));
@@ -896,7 +896,7 @@ mod tests {
         name = "Hello"
         version = "1.0.0"
         entry = "hello.wasm"
-        world = "layer36:app/cli@0.1.0"
+        world = "krate:app/cli@0.1.0"
 
         [[capabilities]]
         cap = "fs.read:./notes/**"

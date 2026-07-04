@@ -8,13 +8,13 @@ in one focused sitting.
 
 **Labels:** `good first issue`, `type:docs`, `phase:0`, `status:ready`
 
-Read the README as if you have never seen Layer36 before. Fix wording that is
+Read the README as if you have never seen Krate before. Fix wording that is
 unclear, tighten the project summary, and note any unanswered questions in the
 pull request description.
 
 **Acceptance:**
 
-- README still explains Layer36 in under 90 seconds.
+- README still explains Krate in under 90 seconds.
 - No broken links are introduced.
 - PR includes a short note about what confused you before the edit.
 

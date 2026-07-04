@@ -16,7 +16,7 @@ scripts/check-phase2-rust-walkthrough-rehearsal.sh
 
 It runs the same core path the reviewer will use:
 
-- `layer36 doctor`
+- `krate doctor`
 - CLI build
 - Rust cat component build
 - manifest generation
@@ -79,7 +79,7 @@ denial path works.
 The pass rule is simple:
 
 ```text
-Rust developer, new to Layer36, completes the walkthrough in 30 minutes or less.
+Rust developer, new to Krate, completes the walkthrough in 30 minutes or less.
 ```
 
 Private help from us does not count. Docs fixes after the run are welcome, but

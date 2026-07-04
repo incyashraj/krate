@@ -38,7 +38,7 @@ const REQUIRED_SECTIONS: &[&str] = &[
 fn main() -> Result<()> {
     let report = check_exit_evidence()?;
 
-    println!("Layer36 Phase 2 exit evidence check passed");
+    println!("Krate Phase 2 exit evidence check passed");
     println!("- page: {EVIDENCE_PAGE}");
     println!("- gates: {}", report.gates);
     println!("- done: {}", report.done);

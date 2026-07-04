@@ -5,7 +5,7 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-dependency-evidence/dependency-evidence.md"
-STRICT="${LAYER36_DEPENDENCY_EVIDENCE_STRICT:-0}"
+STRICT="${KRATE_DEPENDENCY_EVIDENCE_STRICT:-0}"
 
 usage() {
   cat <<'USAGE'
@@ -16,7 +16,7 @@ Options:
   --output <md>   Output markdown file path
 
 Environment:
-  LAYER36_DEPENDENCY_EVIDENCE_STRICT  1 to exit non-zero when the dependency check fails
+  KRATE_DEPENDENCY_EVIDENCE_STRICT  1 to exit non-zero when the dependency check fails
 USAGE
 }
 

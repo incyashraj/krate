@@ -11,7 +11,7 @@
 ## Context
 
 Phase 2 adapter work now covers real filesystem, network, time, locale, and I/O
-behavior through `layer36-adapter-common` plus runtime-local host wiring.
+behavior through `krate-adapter-common` plus runtime-local host wiring.
 That got us moving quickly, but it also mixed host-specific concerns into one
 large implementation surface.
 

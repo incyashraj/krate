@@ -9,8 +9,8 @@ The current evidence run checks six deny paths:
 
 1. Runtime deny matrix for non-default capabilities
 2. Dispatcher deny-before-adapter matrix for every non-default Phase 2 boundary
-3. `layer36-cat` denies missing `fs.read` grant
-4. `layer36-curl` denies missing `net.connect` grant
+3. `krate-cat` denies missing `fs.read` grant
+4. `krate-curl` denies missing `net.connect` grant
 5. Manifest-required capability deny path
 6. Rust Go TypeScript curl missing-grant parity test
 

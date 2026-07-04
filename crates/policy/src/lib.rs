@@ -6,8 +6,8 @@
 
 use std::{collections::BTreeSet, str::FromStr};
 
-use layer36_adapter_common::path::LogicalPath;
-use layer36_manifest::{default_granted_capabilities, Capability, Manifest, ManifestError};
+use krate_adapter_common::path::LogicalPath;
+use krate_manifest::{default_granted_capabilities, Capability, Manifest, ManifestError};
 use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -241,7 +241,7 @@ mod tests {
         name = "Notes"
         version = "1.0.0"
         entry = "notes.wasm"
-        world = "layer36:app/cli@0.1.0"
+        world = "krate:app/cli@0.1.0"
 
         [[capabilities]]
         cap = "io.stdout"

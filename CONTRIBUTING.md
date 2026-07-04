@@ -1,6 +1,6 @@
-# Contributing to Layer36
+# Contributing to Krate
 
-First off: thank you. Layer36 is a long project built on first principles, and
+First off: thank you. Krate is a long project built on first principles, and
 every contribution — code, docs, design, or ideas — compounds.
 
 ---

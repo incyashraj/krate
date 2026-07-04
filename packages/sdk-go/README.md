@@ -1,4 +1,4 @@
-# Layer36 Go SDK
+# Krate Go SDK
 
 This is the first Go/TinyGo shape for the Phase 2 UAPI. It is a draft facade,
 not the final generated binding proof.
@@ -11,14 +11,14 @@ TinyGo component build still needs the Go toolchain and generated WIT bindings.
 package main
 
 import (
-    l36io "github.com/incyashraj/layer6x6/packages/sdk-go/layer36/io"
-    l36net "github.com/incyashraj/layer6x6/packages/sdk-go/layer36/net"
+    l36io "github.com/incyashraj/layer6x6/packages/sdk-go/krate/io"
+    l36net "github.com/incyashraj/layer6x6/packages/sdk-go/krate/net"
 )
 
 func main() {
     args := l36io.Args()
     if len(args) == 0 {
-        l36io.Eprintln("usage: layer36-go-curl <url>")
+        l36io.Eprintln("usage: krate-go-curl <url>")
         return
     }
 
@@ -38,6 +38,6 @@ piece.
 
 Current sample sources:
 
-- `examples/layer36-clock/main.go`
-- `examples/layer36-cat/main.go`
-- `examples/layer36-curl/main.go`
+- `examples/krate-clock/main.go`
+- `examples/krate-cat/main.go`
+- `examples/krate-curl/main.go`

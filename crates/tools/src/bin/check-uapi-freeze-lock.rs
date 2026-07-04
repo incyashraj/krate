@@ -20,7 +20,7 @@ fn main() -> Result<()> {
                     "UAPI freeze lock is stale. Run `scripts/generate-uapi-freeze-lock.sh` and review the WIT diff."
                 );
             }
-            println!("Layer36 Phase 2 UAPI freeze lock is current");
+            println!("Krate Phase 2 UAPI freeze lock is current");
             println!("- page: {}", lock_path.display());
         }
         Mode::Write => {
@@ -66,7 +66,7 @@ struct WitFile {
 }
 
 fn render_lock(root: &Path) -> Result<String> {
-    let wit_root = root.join("wit/layer36/phase2");
+    let wit_root = root.join("wit/krate/phase2");
     let files = collect_wit_files(root, &wit_root)?;
     let aggregate_sha256 = aggregate_sha256(&files);
 
@@ -78,7 +78,7 @@ fn render_lock(root: &Path) -> Result<String> {
         "This file records the exact Phase 2 WIT files being reviewed for UAPI v0.1. It does not replace the human freeze decision. It makes contract drift visible before that decision and after it.\n\n",
     );
     out.push_str("## Summary\n\n");
-    out.push_str("- Package root: `wit/layer36/phase2`\n");
+    out.push_str("- Package root: `wit/krate/phase2`\n");
     out.push_str(&format!("- WIT files: {}\n", files.len()));
     out.push_str(&format!("- Aggregate SHA-256: `{aggregate_sha256}`\n\n"));
     out.push_str("## Files\n\n");
@@ -175,8 +175,8 @@ mod tests {
     #[test]
     fn generated_lock_lists_current_phase2_wit_files() {
         let report = render_lock(&workspace_root()).expect("render lock");
-        assert!(report.contains("wit/layer36/phase2/world.wit"));
-        assert!(report.contains("wit/layer36/phase2/deps/io/io.wit"));
+        assert!(report.contains("wit/krate/phase2/world.wit"));
+        assert!(report.contains("wit/krate/phase2/deps/io/io.wit"));
         assert!(report.contains("Aggregate SHA-256"));
     }
 }

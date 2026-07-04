@@ -57,7 +57,7 @@ The final review bundle includes fuzz evidence too:
 scripts/record-phase2-exit-bundle.sh --final-review
 ```
 
-Set `LAYER36_FUZZ_MAX_TOTAL_TIME` first if the final review should use a longer
+Set `KRATE_FUZZ_MAX_TOTAL_TIME` first if the final review should use a longer
 soak window.
 
 ## Current Reading

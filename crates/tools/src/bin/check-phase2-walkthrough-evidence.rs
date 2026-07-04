@@ -44,7 +44,7 @@ fn main() -> Result<()> {
     let path = evidence_path_from_args()?;
     let report = check_walkthrough_evidence(&path)?;
 
-    println!("Layer36 Phase 2 walkthrough evidence check passed");
+    println!("Krate Phase 2 walkthrough evidence check passed");
     println!("- file: {}", path.display());
     println!("- result: {}", report.result);
     println!("- total minutes: {:.1}", report.total_minutes);
@@ -68,7 +68,7 @@ fn evidence_path_from_args() -> Result<PathBuf> {
 
     if first == "--help" || first == "-h" {
         println!(
-            "Usage: cargo run -p layer36-tools --bin check-phase2-walkthrough-evidence -- [path]"
+            "Usage: cargo run -p krate-tools --bin check-phase2-walkthrough-evidence -- [path]"
         );
         println!();
         println!("Default path: {DEFAULT_EVIDENCE_PATH}");
@@ -309,7 +309,7 @@ mod tests {
 - Template generated at (UTC): `2026-05-17T00:00:00Z`
 - Host used to generate template: `Darwin` / `arm64`
 - Reviewer name or handle: reviewer
-- Reviewer background: Rust developer, new to Layer36
+- Reviewer background: Rust developer, new to Krate
 - Review host OS and arch: macOS arm64
 - Started at: 10:00
 - Finished at: 10:24
@@ -318,19 +318,19 @@ mod tests {
 
 ## Pass Rule
 
-P2E-12 passes when a Rust developer who does not already know Layer36 can
+P2E-12 passes when a Rust developer who does not already know Krate can
 complete the Rust UAPI walkthrough in 30 minutes or less without private help.
 
 ## Step Results
 
 | Step | Expected result | Reviewer result | Notes |
 |---|---|---|---|
-| Tool check | `layer36 doctor` shows required Rust tooling or clear install guidance | pass | ok |
-| Build CLI | `cargo build -p layer36-cli` passes | pass | ok |
-| Build cat component | `scripts/build-layer36-cat-component.sh` prints a wasm path | pass | ok |
+| Tool check | `krate doctor` shows required Rust tooling or clear install guidance | pass | ok |
+| Build CLI | `cargo build -p krate-cli` passes | pass | ok |
+| Build cat component | `scripts/build-krate-cat-component.sh` prints a wasm path | pass | ok |
 | Generate manifest | `manifest.toml` is written and capabilities parse | pass | ok |
 | Explain manifest | reviewer can identify default grants and explicit fs grant | pass | ok |
-| Granted run | app prints `hello from Layer36` | pass | ok |
+| Granted run | app prints `hello from Krate` | pass | ok |
 | Denied run | app exits before native file access with a missing-capability message | pass | ok |
 
 ## Reviewer Notes

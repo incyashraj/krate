@@ -1,4 +1,4 @@
-# ADR-0001: Rust for the Layer36 runtime
+# ADR-0001: Rust for the Krate runtime
 
 **Status:** Accepted  
 **Date:** 2026-05-01  
@@ -10,7 +10,7 @@
 
 ## Context
 
-The Layer36 runtime is a native binary that ships on every host operating
+The Krate runtime is a native binary that ships on every host operating
 system we support (Windows, macOS, Linux, iOS, Android, browsers via
 WASM). Its job is to load a WebAssembly component, enforce a capability
 model, and dispatch UAPI calls to per-OS adapters.
@@ -27,12 +27,12 @@ The language we write it in is one of the most consequential early decisions:
 
 ## Decision
 
-We write the Layer36 runtime in **Rust**.
+We write the Krate runtime in **Rust**.
 
 Specifically:
 
 - `crates/runtime/` — the core runtime library.
-- `crates/cli/` — the `layer36` command-line binary.
+- `crates/cli/` — the `krate` command-line binary.
 - `crates/host-adapter/*` — per-OS adapter crates.
 - `crates/bundle/`, `crates/policy/`, and future crates.
 

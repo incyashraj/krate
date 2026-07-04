@@ -45,7 +45,7 @@ fn main() -> Result<()> {
     check_doc(&root, RETRO_PATH, RETRO_REQUIRED)?;
     check_doc(&root, KICKOFF_PATH, KICKOFF_REQUIRED)?;
 
-    println!("Layer36 Phase 2 closeout docs check passed");
+    println!("Krate Phase 2 closeout docs check passed");
     println!("- retro draft: {RETRO_PATH}");
     println!("- Phase 3 kickoff draft: {KICKOFF_PATH}");
 

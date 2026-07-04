@@ -1,0 +1,26 @@
+[app]
+id = "dev.krate.clock"
+name = "krate-clock"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_clock.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print the formatted clock output"
+required = true
+
+[[capabilities]]
+cap = "time.clock"
+rationale = "Read the current wall-clock time"
+required = true
+
+[[capabilities]]
+cap = "locale.info"
+rationale = "Read the user's locale and timezone"
+required = true
+
+[[capabilities]]
+cap = "locale.format"
+rationale = "Format the timestamp through the host locale adapter"
+required = true

@@ -10,7 +10,7 @@
 
 ## Context
 
-Layer36's Universal API is planned as WIT interfaces implemented by host
+Krate's Universal API is planned as WIT interfaces implemented by host
 adapters. That makes the WebAssembly Component Model the natural execution unit:
 it gives structured imports and exports, language-neutral bindings, and a path
 to composing app modules later.
@@ -24,12 +24,12 @@ the first useful UAPI modules.
 
 ## Decision
 
-We will require WebAssembly components, not raw core modules, for Layer36
+We will require WebAssembly components, not raw core modules, for Krate
 runtime inputs from Phase 1 onward.
 
 The first runtime slice validates and instantiates components and calls a
 zero-argument `run` export when present. The next Phase 1 slice adds the
-temporary `layer36:phase1/host` WIT interface for `print` and `exit`.
+temporary `krate:phase1/host` WIT interface for `print` and `exit`.
 
 ---
 
@@ -47,7 +47,7 @@ surface before the project has a single successful path.
 
 ### Delay WIT Until Phase 2
 
-Rejected. WIT is central to Layer36's UAPI story, so Phase 1 should force the
+Rejected. WIT is central to Krate's UAPI story, so Phase 1 should force the
 toolchain and runtime shape into the same direction early.
 
 ---
@@ -57,7 +57,7 @@ toolchain and runtime shape into the same direction early.
 ### Positive
 
 - Loader architecture matches the UAPI plan.
-- Early tests exercise the toolchain Layer36 actually wants developers to use.
+- Early tests exercise the toolchain Krate actually wants developers to use.
 - Future host imports map cleanly to WIT interfaces.
 
 ### Negative

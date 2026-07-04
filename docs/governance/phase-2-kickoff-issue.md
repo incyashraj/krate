@@ -12,7 +12,7 @@ waived. The Phase 2 sentence is:
 ## Prerequisites
 
 - All Phase 1 exit criteria met or explicitly waived in `Plan/Phase-1-Plan.md`.
-- `layer36 run hello.wasm` verified on Linux, macOS, and Windows.
+- `krate run hello.wasm` verified on Linux, macOS, and Windows.
 - Release artifacts cut at least once from a tag such as `v0.1.0-rc1`.
 - Phase 1 benchmarks and Threat Model v0.1 published.
 - ADR-0002 and ADR-0003 accepted and merged.
@@ -26,14 +26,14 @@ waived. The Phase 2 sentence is:
   - `net`
   - `time`
   - `locale`
-- Replace the temporary `layer36:phase1/host` interface with Phase 2 UAPI
+- Replace the temporary `krate:phase1/host` interface with Phase 2 UAPI
   imports.
 - Add host adapter structure for Linux, macOS, and Windows.
 - Add the first soft UCap manifest checks at UAPI call sites.
 - Build the first three sample CLI apps:
-  - `layer36-cat`
-  - `layer36-curl`
-  - `layer36-clock`
+  - `krate-cat`
+  - `krate-curl`
+  - `krate-clock`
 - Extend CI so each sample builds and runs on all three desktop hosts.
 
 ## Non-Goals
@@ -47,7 +47,7 @@ waived. The Phase 2 sentence is:
 
 Phase 2 is ready to close when a developer can write a Rust, Go, or TypeScript
 CLI component that reads files, makes HTTP requests, prints output, and uses
-time/locale primitives through Layer36 on Linux, macOS, and Windows.
+time/locale primitives through Krate on Linux, macOS, and Windows.
 
 ## References
 

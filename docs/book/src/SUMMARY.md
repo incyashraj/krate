@@ -9,7 +9,7 @@
 - [Vision](vision.md)
 - [Roadmap](roadmap.md)
 - [Build Log](build-log.md)
-- [Layer36 for Everyone](progress-for-everyone.md)
+- [Krate for Everyone](progress-for-everyone.md)
 - [Architecture](architecture.md)
 - [Core Concepts](concepts.md)
 
@@ -85,7 +85,7 @@
 
 # Blog
 
-- [Announcing Layer36](blog/0001-announcing-layer36.md)
+- [Announcing Krate](blog/0001-announcing-krate.md)
 
 # Appendix
 

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
-const REQUIRED_SAMPLES: &[&str] = &["layer36-clock", "layer36-cat", "layer36-curl"];
+const REQUIRED_SAMPLES: &[&str] = &["krate-clock", "krate-cat", "krate-curl"];
 
 fn main() -> Result<()> {
     let config = Config::parse(env::args().skip(1))?;
@@ -177,7 +177,7 @@ fn parse_sample_rows(source: &str) -> Result<BTreeMap<String, SampleRow>> {
     let mut rows = BTreeMap::new();
     for line in source.lines() {
         let trimmed = line.trim();
-        if !trimmed.starts_with("| layer36-") {
+        if !trimmed.starts_with("| krate-") {
             continue;
         }
         let columns = trimmed
@@ -230,7 +230,7 @@ fn parse_hash(value: &str) -> Option<String> {
 }
 
 fn compare_reports(reports: &[HostReport], allow_blocked_curl: bool) -> Result<()> {
-    println!("Layer36 Phase 2 sample evidence comparison");
+    println!("Krate Phase 2 sample evidence comparison");
     for report in reports {
         println!(
             "- {}: {} ({})",
@@ -326,7 +326,7 @@ fn compare_sample(reports: &[HostReport], sample: &str, allow_blocked_curl: bool
     }
 
     if !blocked_hosts.is_empty() {
-        if sample == "layer36-curl" && allow_blocked_curl {
+        if sample == "krate-curl" && allow_blocked_curl {
             if passed_hashes.len() >= 2 {
                 validate_passed_hashes_match(sample, &passed_hashes)?;
                 println!(
@@ -386,9 +386,9 @@ mod tests {
 
 | Sample | Status | Exit | Stdout SHA-256 | Stderr SHA-256 |
 |---|---|---:|---|---|
-| layer36-clock | passed | 0 | `clock{hash_suffix}` | `z` |
-| layer36-cat | passed | 0 | `cat{hash_suffix}` | `z` |
-| layer36-curl | {status_curl} | n/a | `n/a` | `n/a` |
+| krate-clock | passed | 0 | `clock{hash_suffix}` | `z` |
+| krate-cat | passed | 0 | `cat{hash_suffix}` | `z` |
+| krate-curl | {status_curl} | n/a | `n/a` | `n/a` |
 "#
         )
     }
@@ -397,8 +397,8 @@ mod tests {
     fn parses_rows_from_markdown_table() {
         let rows = parse_sample_rows(&sample_report("linux", "blocked", "123")).expect("rows");
         assert_eq!(rows.len(), 3);
-        assert_eq!(rows["layer36-clock"].status, "passed");
-        assert_eq!(rows["layer36-curl"].status, "blocked");
+        assert_eq!(rows["krate-clock"].status, "passed");
+        assert_eq!(rows["krate-curl"].status, "blocked");
     }
 
     #[test]
@@ -458,9 +458,9 @@ mod tests {
 ## Results
 | Sample | Status | Exit | Stdout SHA-256 | Stderr SHA-256 |
 |---|---|---:|---|---|
-| layer36-clock | passed | 0 | `clock1` | `z` |
-| layer36-cat | passed | 0 | `cat1` | `z` |
-| layer36-curl | {curl_status} | {curl_exit} | `{curl_hash}` | `z` |
+| krate-clock | passed | 0 | `clock1` | `z` |
+| krate-cat | passed | 0 | `cat1` | `z` |
+| krate-curl | {curl_status} | {curl_exit} | `{curl_hash}` | `z` |
 "#
                 ))
                 .expect("rows"),
@@ -495,9 +495,9 @@ mod tests {
 ## Results
 | Sample | Status | Exit | Stdout SHA-256 | Stderr SHA-256 |
 |---|---|---:|---|---|
-| layer36-clock | passed | 0 | `clock{suffix}` | `z` |
-| layer36-cat | passed | 0 | `cat{suffix}` | `z` |
-| layer36-curl | passed | 0 | `curl{suffix}` | `z` |
+| krate-clock | passed | 0 | `clock{suffix}` | `z` |
+| krate-cat | passed | 0 | `cat{suffix}` | `z` |
+| krate-curl | passed | 0 | `curl{suffix}` | `z` |
 "#
             ))
             .expect("rows"),
@@ -554,9 +554,9 @@ mod tests {
 ## Results
 | Sample | Status | Exit | Stdout SHA-256 | Stderr SHA-256 |
 |---|---|---:|---|---|
-| layer36-clock | passed | 0 | `clock1` | `z` |
-| layer36-cat | passed | 0 | `cat1` | `z` |
-| layer36-curl | blocked | n/a | `n/a` | `n/a` |
+| krate-clock | passed | 0 | `clock1` | `z` |
+| krate-cat | passed | 0 | `cat1` | `z` |
+| krate-curl | blocked | n/a | `n/a` | `n/a` |
 "#
                 ))
                 .expect("rows"),

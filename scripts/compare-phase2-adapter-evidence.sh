@@ -9,7 +9,7 @@ if [ "$#" -ne 3 ]; then
   exit 2
 fi
 
-cargo run -p layer36-tools --bin compare-phase2-adapter-evidence -- \
+cargo run -p krate-tools --bin compare-phase2-adapter-evidence -- \
   --linux "$1" \
   --macos "$2" \
   --windows "$3"

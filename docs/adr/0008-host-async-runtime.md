@@ -10,7 +10,7 @@
 
 ## Context
 
-Layer36 UAPI calls look synchronous to app code in Phase 2. A CLI app calls
+Krate UAPI calls look synchronous to app code in Phase 2. A CLI app calls
 `fs.read`, `net.fetch`, or `time.sleep` and waits for a result. The host side,
 however, will eventually need async I/O for networking, timers, and platform
 adapters.
@@ -30,7 +30,7 @@ point of view.
 The first runtime slices may stay blocking where that keeps the implementation
 smaller and tests clearer. As soon as an adapter needs async DNS, HTTP, timers,
 or platform event integration, it should use a small Tokio runtime owned by the
-Layer36 host path, not by guest apps.
+Krate host path, not by guest apps.
 
 ---
 
@@ -73,7 +73,7 @@ should keep runtime ownership explicit and small.
 
 - Tokio adds dependency weight and compile time.
 - Careless blocking inside async paths can cause performance issues.
-- Runtime ownership must be handled carefully when Layer36 is embedded inside
+- Runtime ownership must be handled carefully when Krate is embedded inside
   GUI or mobile apps.
 
 ### Neutral
@@ -85,7 +85,7 @@ should keep runtime ownership explicit and small.
 
 ## Revisiting
 
-Revisit this when Component Model async support is stable enough for Layer36 app
+Revisit this when Component Model async support is stable enough for Krate app
 authors, or when embedding in a GUI or mobile host reveals runtime ownership
 problems. Any change must keep existing Phase 2 apps runnable.
 

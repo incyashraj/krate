@@ -4,12 +4,12 @@
 //! the shared UI adapter trait from `adapter-common`; native AppKit, Win32, and
 //! GTK windows come later.
 
-use layer36_adapter_common::ui::{
+use krate_adapter_common::ui::{
     KeyEvent, Modifiers, PointerButton, PointerEvent, TextInputEvent, Theme, UiAdapter,
     UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick, WidgetId, WidgetNode, WidgetTree,
     WindowId, WindowOptions, WindowRecord, WindowSize,
 };
-use layer36_layout::{
+use krate_layout::{
     compute_layout, hit_test, LayoutPoint, LayoutSnapshot, LayoutViewport, PreparedLayoutTree,
 };
 use thiserror::Error;
@@ -195,7 +195,7 @@ impl<'a> Phase3UiDispatcher<'a> {
     pub fn lower_widget_placements(
         &self,
         window: WindowId,
-        placements: &[layer36_adapter_common::ui::WidgetPlacement],
+        placements: &[krate_adapter_common::ui::WidgetPlacement],
     ) -> UiDispatchResult<usize> {
         self.check_window_access()?;
         Ok(self.adapter.lower_widget_placements(window, placements)?)
@@ -355,7 +355,7 @@ impl<'a> Phase3UiDispatcher<'a> {
     }
 
     /// Drain raw native pointer input for runtime-side hit-test routing.
-    pub fn drain_raw_pointer_input(&self) -> Vec<layer36_adapter_common::ui::RawPointerSample> {
+    pub fn drain_raw_pointer_input(&self) -> Vec<krate_adapter_common::ui::RawPointerSample> {
         self.adapter.drain_raw_pointer_input()
     }
 
@@ -387,22 +387,22 @@ impl<'a> Phase3UiDispatcher<'a> {
 fn discover_host_ui_adapter() -> Box<dyn UiAdapter> {
     #[cfg(target_os = "linux")]
     {
-        Box::new(layer36_adapter_linux::discover_ui_adapter())
+        Box::new(krate_adapter_linux::discover_ui_adapter())
     }
 
     #[cfg(target_os = "macos")]
     {
-        Box::new(layer36_adapter_macos::discover_ui_adapter())
+        Box::new(krate_adapter_macos::discover_ui_adapter())
     }
 
     #[cfg(target_os = "windows")]
     {
-        Box::new(layer36_adapter_windows::discover_ui_adapter())
+        Box::new(krate_adapter_windows::discover_ui_adapter())
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
-        Box::new(layer36_adapter_common::ui::DraftUiAdapter::new())
+        Box::new(krate_adapter_common::ui::DraftUiAdapter::new())
     }
 }
 
@@ -419,21 +419,21 @@ fn discover_native_prototype_ui_adapter() -> UiDispatchResult<Box<dyn UiAdapter>
     #[cfg(target_os = "linux")]
     {
         Ok(Box::new(
-            layer36_adapter_linux::discover_winit_prototype_ui_adapter()?,
+            krate_adapter_linux::discover_winit_prototype_ui_adapter()?,
         ))
     }
 
     #[cfg(target_os = "macos")]
     {
         Ok(Box::new(
-            layer36_adapter_macos::discover_appkit_prototype_ui_adapter()?,
+            krate_adapter_macos::discover_appkit_prototype_ui_adapter()?,
         ))
     }
 
     #[cfg(target_os = "windows")]
     {
         Ok(Box::new(
-            layer36_adapter_windows::discover_winit_prototype_ui_adapter()?,
+            krate_adapter_windows::discover_winit_prototype_ui_adapter()?,
         ))
     }
 
@@ -446,7 +446,7 @@ fn discover_native_prototype_ui_adapter() -> UiDispatchResult<Box<dyn UiAdapter>
 fn map_ui_policy(err: UapiError) -> UiDispatchError {
     if matches!(
         err,
-        UapiError::Policy(layer36_policy::PolicyError::Denied { .. })
+        UapiError::Policy(krate_policy::PolicyError::Denied { .. })
     ) {
         UiDispatchError::PermissionDenied
     } else {
@@ -456,11 +456,11 @@ fn map_ui_policy(err: UapiError) -> UiDispatchError {
 
 #[cfg(test)]
 mod tests {
-    use layer36_adapter_common::ui::{
+    use krate_adapter_common::ui::{
         DraftUiAdapter, UiEvent, WidgetId, WidgetKind, WidgetNode, WidgetStyle, WindowBackendKind,
         WindowOptions, WindowSize,
     };
-    use layer36_policy::SessionPolicy;
+    use krate_policy::SessionPolicy;
 
     use super::*;
 
@@ -472,7 +472,7 @@ mod tests {
         let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
 
         let id = dispatcher
-            .create_window(WindowOptions::new("Layer36 Notes", size).expect("options"))
+            .create_window(WindowOptions::new("Krate Notes", size).expect("options"))
             .expect("create window");
         dispatcher.show_window(id).expect("show window");
         let resized = WindowSize::new(1024, 768).expect("resized");
@@ -481,7 +481,7 @@ mod tests {
         dispatcher.close_window(id).expect("close window");
 
         let window = dispatcher.window(id).expect("adapter").expect("window");
-        assert_eq!(window.title, "Layer36 Notes");
+        assert_eq!(window.title, "Krate Notes");
         assert_eq!(window.size, resized);
         assert!(!window.visible);
         assert!(window.closed);
@@ -505,7 +505,7 @@ mod tests {
         let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
 
         let id = dispatcher
-            .create_window(WindowOptions::new("Layer36 Notes", size).expect("options"))
+            .create_window(WindowOptions::new("Krate Notes", size).expect("options"))
             .expect("create window");
         dispatcher.show_window(id).expect("show window");
 
@@ -528,7 +528,7 @@ mod tests {
         let id = dispatcher
             .create_window(
                 WindowOptions::new(
-                    "Layer36 headless pump",
+                    "Krate headless pump",
                     WindowSize::new(640, 480).expect("size"),
                 )
                 .expect("options"),
@@ -546,7 +546,7 @@ mod tests {
         let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
 
         let id = dispatcher
-            .create_window(WindowOptions::new("Layer36 Notes", size).expect("options"))
+            .create_window(WindowOptions::new("Krate Notes", size).expect("options"))
             .expect("create window");
         let resized = WindowSize::new(900, 700).expect("resized");
 
@@ -583,7 +583,7 @@ mod tests {
         let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
 
         let id = dispatcher
-            .create_window(WindowOptions::new("Layer36 Notes", size).expect("options"))
+            .create_window(WindowOptions::new("Krate Notes", size).expect("options"))
             .expect("create window");
 
         dispatcher
@@ -619,12 +619,12 @@ mod tests {
         assert!(!info.native_event_loop);
 
         let id = dispatcher
-            .create_window(WindowOptions::new("Layer36 host adapter", size).expect("options"))
+            .create_window(WindowOptions::new("Krate host adapter", size).expect("options"))
             .expect("create window through discovered adapter");
         dispatcher.show_window(id).expect("show");
 
         let window = dispatcher.window(id).expect("adapter").expect("window");
-        assert_eq!(window.title, "Layer36 host adapter");
+        assert_eq!(window.title, "Krate host adapter");
         assert_eq!(
             dispatcher.drain_events().expect("events"),
             vec![UiEvent::WindowCreated(id), UiEvent::WindowShown(id)]
@@ -804,7 +804,7 @@ mod tests {
 
         assert_eq!(
             layout.rect(WidgetId::new(1).expect("root")),
-            Some(layer36_layout::ComputedRect {
+            Some(krate_layout::ComputedRect {
                 x: 0.0,
                 y: 0.0,
                 width: 300.0,
@@ -813,7 +813,7 @@ mod tests {
         );
         assert_eq!(
             layout.rect(WidgetId::new(2).expect("row")),
-            Some(layer36_layout::ComputedRect {
+            Some(krate_layout::ComputedRect {
                 x: 0.0,
                 y: 0.0,
                 width: 120.0,
@@ -854,7 +854,7 @@ mod tests {
 
         assert_eq!(
             first.rect(WidgetId::new(1).expect("root")),
-            Some(layer36_layout::ComputedRect {
+            Some(krate_layout::ComputedRect {
                 x: 0.0,
                 y: 0.0,
                 width: 300.0,
@@ -863,7 +863,7 @@ mod tests {
         );
         assert_eq!(
             second.rect(WidgetId::new(1).expect("root")),
-            Some(layer36_layout::ComputedRect {
+            Some(krate_layout::ComputedRect {
                 x: 0.0,
                 y: 0.0,
                 width: 600.0,

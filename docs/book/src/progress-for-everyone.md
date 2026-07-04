@@ -1,4 +1,4 @@
-# Layer36 for Everyone
+# Krate for Everyone
 
 Updated on July 3, 2026.
 
@@ -17,19 +17,19 @@ Most software teams build the same product many times.
 
 That costs time, money, and focus.
 
-Layer36 is trying to reduce that duplication. The long term goal is one app model that can run across many hosts.
+Krate is trying to reduce that duplication. The long term goal is one app model that can run across many hosts.
 
 ## The Basic Idea
 
 The app runs as a WebAssembly component. WebAssembly is a portable binary format.  
-The app does not call host APIs directly. It calls Layer36 APIs.  
+The app does not call host APIs directly. It calls Krate APIs.  
 The host adapter translates those calls to the real operating system.
 
 ```mermaid
 flowchart LR
     A["App source code"] --> B["WebAssembly component"]
-    B --> C["Layer36 runtime"]
-    C --> D["Layer36 API calls"]
+    B --> C["Krate runtime"]
+    C --> D["Krate API calls"]
     D --> E["Host adapter"]
     E --> F["Native OS and hardware"]
 ```
@@ -43,9 +43,9 @@ flowchart LR
    - time and locale
    - standard input and output
 3. Sample apps are implemented:
-   - `layer36-clock`
-   - `layer36-cat`
-   - `layer36-curl`
+   - `krate-clock`
+   - `krate-cat`
+   - `krate-curl`
 4. Capability checks are in place, so apps only get access they request and are granted.
 5. The first windowed app works: one portable file opens a real native window
    with a real button and text field on macOS (a human click travels into the
@@ -108,13 +108,13 @@ flowchart LR
     when the host has a real match, and use drawn fallback surfaces when it does
     not.
 23. The shared adapter code now has the first widget tree model. In simple
-    terms, Layer36 can represent stable widget IDs, widget types, labels, roles,
+    terms, Krate can represent stable widget IDs, widget types, labels, roles,
     and parent links before it connects them to real OS controls.
 24. The runtime can now move that draft widget tree through the UI adapter
-    boundary. In simple terms, Layer36 can set a root widget, add or update
+    boundary. In simple terms, Krate can set a root widget, add or update
     child widgets, remove widgets, and track focus before real native controls
     exist.
-25. The first layout layer now exists. In simple terms, Layer36 can take the
+25. The first layout layer now exists. In simple terms, Krate can take the
     draft widget tree and calculate rectangles for each widget. Nothing is
     drawn yet, but native controls, drawn fallback, hit testing, and
     accessibility can now share the same position and size answer.
@@ -122,16 +122,16 @@ flowchart LR
     generated screen shapes, has a large-tree benchmark target, and can answer
     "which widget is under this point?" before real mouse or touch events are
     connected.
-27. Layout now has a faster repeated-frame path. In simple terms, Layer36 can
+27. Layout now has a faster repeated-frame path. In simple terms, Krate can
     prepare the layout tree once and reuse it when only the window size changes.
     The local prepared 10,000-widget path is under the Phase 3 budget now, but
     we still need formal Linux, macOS, and Windows evidence before calling that
     exit item done.
-28. Pointer routing has started. In simple terms, Layer36 can now take a
+28. Pointer routing has started. In simple terms, Krate can now take a
     pointer position, ask layout which widget is under it, and queue an event
     with that widget ID. Real native mouse and touch events are still pending,
     but the runtime route they will use now exists.
-29. Keyboard and text routing have started too. In simple terms, Layer36 can
+29. Keyboard and text routing have started too. In simple terms, Krate can
     now send a key press or committed typed text to the focused widget. Full
     native keyboard handling and IME composition are still pending, but the
     runtime route is in place.
@@ -139,10 +139,10 @@ flowchart LR
     event at a time to the future app-facing `events.poll()` path. Real native
     event loops still need to feed this queue.
 31. Basic host window events have routes now. In simple terms, a future native
-    window can tell Layer36 that the user tried to close it, resized it, or
+    window can tell Krate that the user tried to close it, resized it, or
     moved focus, and the app can decide what to do next.
 32. Theme and display scale events have routes now. In simple terms, a future
-    native window can tell Layer36 that dark mode changed or that the window
+    native window can tell Krate that dark mode changed or that the window
     moved to a screen with a different scale. This is needed for correct DPI
     behavior before we draw real pixels.
 33. The window layer has a clearer name now. In simple terms, `WindowAdapter`
@@ -150,17 +150,17 @@ flowchart LR
     `UiAdapter` sits above it for widgets, input, and clipboard. The host
     adapters also say which real backend they are aiming at next: AppKit on
     macOS, winit on Linux and Windows.
-34. The native window handoff has started. In simple terms, Layer36 has its own
+34. The native window handoff has started. In simple terms, Krate has its own
     stable window id, and the operating system has its own real window object.
     We now have a checked place to connect those two. macOS has the first AppKit
     handoff method. It still does not show a real window yet.
 35. macOS now has the first real native window prototype. In simple terms,
-    Layer36 can create an AppKit `NSWindow`, keep it alive, attach it to the
-    Layer36 window id, and show it. This path is opt-in for now. The normal
+    Krate can create an AppKit `NSWindow`, keep it alive, attach it to the
+    Krate window id, and show it. This path is opt-in for now. The normal
     adapter still stays headless until native events and drawing are ready.
 36. The macOS window prototype now has event bridge points. In simple terms,
     the real AppKit window has a checked place to report close requests, resize,
-    focus changes, and display scale changes back into the Layer36 event queue.
+    focus changes, and display scale changes back into the Krate event queue.
     The next step is connecting AppKit delegate callbacks to those bridge points.
 37. The macOS window prototype now has session state. In simple terms, one
     object owns the AppKit window, remembers the last native state, and only
@@ -171,12 +171,12 @@ flowchart LR
     changed", "scale changed", or "close was requested" through one tested Rust
     object instead of scattering that logic across the adapter.
 39. The macOS redraw path has started. In simple terms, when the future native
-    AppKit view needs to paint again, it can ask Layer36 for a redraw through
+    AppKit view needs to paint again, it can ask Krate for a redraw through
     the same event queue as resize, focus, scale, and close events.
 40. The macOS delegate bridge has started. In simple terms, the future AppKit
     delegate can use normal AppKit callback names, then hand them to tested Rust
-    code that queues the right Layer36 event.
-41. The macOS drawing surface preparation has started. In simple terms, Layer36
+    code that queues the right Krate event.
+41. The macOS drawing surface preparation has started. In simple terms, Krate
     can now remember the size, scale, clear color, redraw count, and frame
     number for an AppKit-backed surface. It still does not paint pixels, but the
     next native AppKit view has a small state object ready to use.
@@ -185,12 +185,12 @@ flowchart LR
     clear color, mark the view as needing display, and record the first frame.
     This is still a prototype path, not the normal runtime path.
 43. The macOS prototype now has a real window delegate object. In simple terms,
-    macOS can call a small Layer36-owned object when the native window resizes,
-    gains focus, loses focus, changes display scale, or asks to close. Layer36
+    macOS can call a small Krate-owned object when the native window resizes,
+    gains focus, loses focus, changes display scale, or asks to close. Krate
     records those callbacks in order and drains them through the same tested
     event bridge.
 44. The macOS prototype now has a first event-loop tick. In simple terms,
-    Layer36 can take one small step through the native AppKit path: read the
+    Krate can take one small step through the native AppKit path: read the
     latest window state, drain queued native callbacks, and ask for a redraw if
     needed. This is still opt-in, but it is the shape the runtime needs next.
 45. The runtime can now ask for that macOS prototype path by name. In simple
@@ -208,13 +208,13 @@ flowchart LR
     terms, the code now has the right entry points and handle handoff checks for
     those hosts, but it still does not open real Linux or Windows windows yet.
 49. Linux and Windows now have a first Winit session owner scaffold. In simple
-    terms, Layer36 can track a future native window session and route prepared
+    terms, Krate can track a future native window session and route prepared
     resize, focus, scale, redraw, and close events through the same UI queue.
     The missing piece is connecting this to real Winit OS windows.
 50. Linux and Windows now have a Winit callback collector bridge. In simple
     terms, future native Winit event handlers have a small inbox where they can
     place resize, focus, scale, redraw, and close callbacks. The normal
-    Layer36 event-loop pump can drain that inbox in order.
+    Krate event-loop pump can drain that inbox in order.
 
 ## Current Build Timeline
 
@@ -267,7 +267,7 @@ This is a simple status view for non technical readers.
 
 ## Phase 2 In Simple Terms
 
-Phase 2 is close in engineering terms. The app can call Layer36 for files,
+Phase 2 is close in engineering terms. The app can call Krate for files,
 network, time, locale, and terminal input or output. Those calls go through
 permission checks before native host code runs.
 
@@ -290,8 +290,8 @@ scripts/phase2-exit-readiness.sh
 
 - **WebAssembly (WASM)**: A portable binary format that can run on different systems through a runtime.
 - **Runtime**: The engine that loads and executes the app component.
-- **UAPI**: The app facing API that Layer36 exposes. This is how apps ask for files, network, time, and more.
-- **Host adapter**: The translation layer from Layer36 calls to native operating system calls.
+- **UAPI**: The app facing API that Krate exposes. This is how apps ask for files, network, time, and more.
+- **Host adapter**: The translation layer from Krate calls to native operating system calls.
 - **Capability**: A specific permission, such as reading files from one path or connecting to one network endpoint.
 
 ## What Happens Next

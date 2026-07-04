@@ -2,7 +2,7 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-MODE="${LAYER36_GO_RUNTIME_FIXTURE_MODE:-optional}"
+MODE="${KRATE_GO_RUNTIME_FIXTURE_MODE:-optional}"
 SMOKE_DIR="$ROOT/test/integration/language-variants-go-smoke"
 RUNTIME_DIR="$ROOT/test/integration/language-variants"
 
@@ -10,22 +10,22 @@ case "$MODE" in
   optional|required)
     ;;
   *)
-    echo "Go runtime fixture promotion error: unknown LAYER36_GO_RUNTIME_FIXTURE_MODE='$MODE'." >&2
+    echo "Go runtime fixture promotion error: unknown KRATE_GO_RUNTIME_FIXTURE_MODE='$MODE'." >&2
     echo "Allowed values: optional, required" >&2
     exit 1
     ;;
 esac
 
 if [ "$MODE" = "required" ]; then
-  export LAYER36_GO_VARIANT_SMOKE_MODE="required"
+  export KRATE_GO_VARIANT_SMOKE_MODE="required"
 else
-  export LAYER36_GO_VARIANT_SMOKE_MODE="optional"
+  export KRATE_GO_VARIANT_SMOKE_MODE="optional"
 fi
 scripts/build-phase2-go-variant-smoke.sh
 
-clock_src="$SMOKE_DIR/layer36_go_clock_wasip2.wasm"
-cat_src="$SMOKE_DIR/layer36_go_cat_wasip2.wasm"
-curl_src="$SMOKE_DIR/layer36_go_curl_wasip2.wasm"
+clock_src="$SMOKE_DIR/krate_go_clock_wasip2.wasm"
+cat_src="$SMOKE_DIR/krate_go_cat_wasip2.wasm"
+curl_src="$SMOKE_DIR/krate_go_curl_wasip2.wasm"
 
 if [ ! -f "$clock_src" ] || [ ! -f "$cat_src" ] || [ ! -f "$curl_src" ]; then
   if [ "$MODE" = "optional" ]; then
@@ -38,25 +38,25 @@ fi
 
 if scripts/check-component-imports.sh "$clock_src" "$cat_src" "$curl_src"; then
   mkdir -p "$RUNTIME_DIR"
-  cp "$clock_src" "$RUNTIME_DIR/layer36_go_clock.wasm"
-  cp "$cat_src" "$RUNTIME_DIR/layer36_go_cat.wasm"
-  cp "$curl_src" "$RUNTIME_DIR/layer36_go_curl.wasm"
+  cp "$clock_src" "$RUNTIME_DIR/krate_go_clock.wasm"
+  cp "$cat_src" "$RUNTIME_DIR/krate_go_cat.wasm"
+  cp "$curl_src" "$RUNTIME_DIR/krate_go_curl.wasm"
   echo "Promoted Go runtime fixtures to:"
-  echo "  $RUNTIME_DIR/layer36_go_clock.wasm"
-  echo "  $RUNTIME_DIR/layer36_go_cat.wasm"
-  echo "  $RUNTIME_DIR/layer36_go_curl.wasm"
+  echo "  $RUNTIME_DIR/krate_go_clock.wasm"
+  echo "  $RUNTIME_DIR/krate_go_cat.wasm"
+  echo "  $RUNTIME_DIR/krate_go_curl.wasm"
   exit 0
 fi
 
 rm -f \
-  "$RUNTIME_DIR/layer36_go_clock.wasm" \
-  "$RUNTIME_DIR/layer36_go_cat.wasm" \
-  "$RUNTIME_DIR/layer36_go_curl.wasm"
+  "$RUNTIME_DIR/krate_go_clock.wasm" \
+  "$RUNTIME_DIR/krate_go_cat.wasm" \
+  "$RUNTIME_DIR/krate_go_curl.wasm"
 
 if [ "$MODE" = "optional" ]; then
-  echo "Skipping Go runtime fixture promotion: current TinyGo outputs are not Layer36 import-pure yet."
+  echo "Skipping Go runtime fixture promotion: current TinyGo outputs are not Krate import-pure yet."
   exit 0
 fi
 
-echo "Go runtime fixture promotion error: TinyGo outputs failed Layer36 import-purity checks." >&2
+echo "Go runtime fixture promotion error: TinyGo outputs failed Krate import-purity checks." >&2
 exit 1

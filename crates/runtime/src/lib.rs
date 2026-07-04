@@ -1,7 +1,7 @@
-//! Layer36 runtime: Phase 1 proof of concept.
+//! Krate runtime: Phase 1 proof of concept.
 //!
 //! Phase 1 intentionally exposes only one temporary host interface:
-//! `layer36:phase1/host` with `print(string)` and `exit(s32)`.
+//! `krate:phase1/host` with `print(string)` and `exit(s32)`.
 
 use std::{
     cell::RefCell,
@@ -37,21 +37,21 @@ pub mod phase3_gui_bindings;
 pub mod phase3_gui_host;
 
 #[cfg(feature = "phase2-bindings")]
-use layer36_adapter_common::locale::{
+use krate_adapter_common::locale::{
     DateStyle as HostDateStyle, HostLocale, LocaleId as HostLocaleId,
     NumberStyle as HostNumberStyle,
 };
 #[cfg(feature = "phase2-bindings")]
-use layer36_adapter_common::net::{
+use krate_adapter_common::net::{
     build_plain_http_request, normalize_resolved_socket_addrs, parse_plain_http_response,
     read_plain_http_response_limited, PlainHttpError, PlainHttpHeader, PlainHttpMethod,
     PlainHttpReadError, PlainHttpRequest, PlainHttpUrl,
 };
 #[cfg(feature = "phase2-bindings")]
-use layer36_adapter_common::path::{FsOperation, LogicalPath, PathError};
+use krate_adapter_common::path::{FsOperation, LogicalPath, PathError};
 #[cfg(feature = "phase2-bindings")]
-use layer36_adapter_common::time::{HostClock, TimeError};
-use layer36_policy::SessionPolicy;
+use krate_adapter_common::time::{HostClock, TimeError};
+use krate_policy::SessionPolicy;
 use uapi::UapiGuard;
 use uapi_dispatch::{
     AdapterError, DateStyle, FileHandle, FileStat, FsAdapter, Header, HostAdapter, HttpRequest,
@@ -59,11 +59,11 @@ use uapi_dispatch::{
 };
 
 #[cfg(all(feature = "phase2-bindings", target_os = "linux"))]
-use layer36_adapter_linux as host_os_adapter;
+use krate_adapter_linux as host_os_adapter;
 #[cfg(all(feature = "phase2-bindings", target_os = "macos"))]
-use layer36_adapter_macos as host_os_adapter;
+use krate_adapter_macos as host_os_adapter;
 #[cfg(all(feature = "phase2-bindings", target_os = "windows"))]
-use layer36_adapter_windows as host_os_adapter;
+use krate_adapter_windows as host_os_adapter;
 
 pub const DEFAULT_MAX_HTTP_RESPONSE_BYTES: usize = 1024 * 1024;
 pub const DEFAULT_HTTP_TIMEOUT_MILLIS: u32 = 5_000;
@@ -81,11 +81,11 @@ const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
 const MAX_PHASE2_OPEN_RESOURCES: usize = 1024;
 
 wasmtime::component::bindgen!({
-    path: "../../wit/layer36",
+    path: "../../wit/krate",
     world: "app",
 });
 
-/// Runtime configuration for a single `layer36 run` invocation.
+/// Runtime configuration for a single `krate run` invocation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     /// Optional Wasmtime fuel budget. `None` means no fuel limit.
@@ -100,7 +100,7 @@ pub struct Config {
     pub test_locale: Option<String>,
     /// Optional timezone override for deterministic test runs.
     pub test_timezone: Option<String>,
-    /// Arguments exposed to Phase 2 apps through `layer36:io/args`.
+    /// Arguments exposed to Phase 2 apps through `krate:io/args`.
     pub app_args: Vec<String>,
     /// Maximum full HTTP response size accepted by the local Phase 2 adapter.
     pub max_http_response_bytes: usize,
@@ -253,7 +253,7 @@ impl Runtime {
                 if matches!(err, RuntimeError::Instantiate(_)) {
                     return match self.run_phase2_component(component, config, output.clone()) {
                         Ok(outcome) => Ok(outcome),
-                        // A Phase 3 GUI component imports layer36:ui, which the
+                        // A Phase 3 GUI component imports krate:ui, which the
                         // CLI world linker cannot satisfy — fall through to the
                         // gui world path before giving up.
                         Err(RuntimeError::Instantiate(_)) => {
@@ -360,8 +360,8 @@ impl Runtime {
         config: &Config,
         output: OutputMode,
     ) -> Result<RunOutcome> {
-        use phase2_bindings::layer36::{fs, io, locale, net, time};
-        use phase3_gui_bindings::layer36::{audio, gfx, ui};
+        use phase2_bindings::krate::{fs, io, locale, net, time};
+        use phase3_gui_bindings::krate::{audio, gfx, ui};
 
         let mut store = self.new_store(config, output)?;
         let gui_host = phase3_gui_host::Phase3GuiHost::new(
@@ -575,7 +575,7 @@ impl ResourceLimiter for Phase1Limits {
     }
 }
 
-impl layer36::phase1::host::Host for HostState {
+impl krate::phase1::host::Host for HostState {
     fn print(&mut self, msg: String) {
         self.output.borrow_mut().print_line(&msg);
     }
@@ -2059,12 +2059,12 @@ mod tests {
     #[cfg(feature = "phase2-bindings")]
     #[test]
     fn plain_http_url_parser_normalizes_query_only_paths() {
-        let parsed = PlainHttpUrl::parse("http://127.0.0.1:8080?name=layer36#local")
+        let parsed = PlainHttpUrl::parse("http://127.0.0.1:8080?name=krate#local")
             .expect("parse HTTP URL");
 
         assert_eq!(parsed.host, "127.0.0.1");
         assert_eq!(parsed.port, 8080);
-        assert_eq!(parsed.path_and_query, "/?name=layer36");
+        assert_eq!(parsed.path_and_query, "/?name=krate");
     }
 
     #[cfg(feature = "phase2-bindings")]
@@ -2126,7 +2126,7 @@ mod tests {
     #[test]
     fn local_fs_adapter_normalizes_portable_separators() {
         let temp =
-            std::env::temp_dir().join(format!("layer36-path-normalize-{}", std::process::id()));
+            std::env::temp_dir().join(format!("krate-path-normalize-{}", std::process::id()));
         let nested = temp.join("fixtures").join("public");
         std::fs::create_dir_all(&nested).expect("create fixture directory");
         let file = nested.join("note.txt");
@@ -2163,7 +2163,7 @@ mod tests {
             .expect("time should move forward")
             .as_nanos();
         let temp = std::env::temp_dir().join(format!(
-            "layer36-absolute-logical-path-{}-{unique}",
+            "krate-absolute-logical-path-{}-{unique}",
             std::process::id(),
         ));
         let nested = temp.join("fixtures").join("public");
@@ -2315,7 +2315,7 @@ mod tests {
             .expect("time should move forward")
             .as_nanos();
         let temp = std::env::temp_dir().join(format!(
-            "layer36-oversized-read-{}-{unique}",
+            "krate-oversized-read-{}-{unique}",
             std::process::id(),
         ));
         std::fs::create_dir_all(&temp).expect("create sandbox");
@@ -2508,7 +2508,7 @@ mod tests {
             .expect("time should move forward")
             .as_nanos();
         let temp = std::env::temp_dir().join(format!(
-            "layer36-oversized-write-{}-{unique}",
+            "krate-oversized-write-{}-{unique}",
             std::process::id(),
         ));
         std::fs::create_dir_all(&temp).expect("create sandbox");
@@ -2551,7 +2551,7 @@ mod tests {
             .expect("time should move forward")
             .as_nanos();
         let temp = std::env::temp_dir().join(format!(
-            "layer36-oversized-list-{}-{unique}",
+            "krate-oversized-list-{}-{unique}",
             std::process::id(),
         ));
         let list_dir = temp.join("many");
@@ -2594,7 +2594,7 @@ mod tests {
             .expect("time should move forward")
             .as_nanos();
         let temp = std::env::temp_dir().join(format!(
-            "layer36-root-target-{}-{unique}",
+            "krate-root-target-{}-{unique}",
             std::process::id()
         ));
         std::fs::create_dir_all(&temp).expect("create sandbox");
@@ -2639,7 +2639,7 @@ mod tests {
             .expect("time should move forward")
             .as_nanos();
         let temp = std::env::temp_dir().join(format!(
-            "layer36-sandbox-symlink-{}-{unique}",
+            "krate-sandbox-symlink-{}-{unique}",
             std::process::id()
         ));
         let sandbox = temp.join("sandbox");
@@ -2699,7 +2699,7 @@ mod tests {
             .expect("time should move forward")
             .as_nanos();
         let temp = std::env::temp_dir().join(format!(
-            "layer36-sandbox-inner-symlink-{}-{unique}",
+            "krate-sandbox-inner-symlink-{}-{unique}",
             std::process::id()
         ));
         let sandbox = temp.join("sandbox");
@@ -2735,13 +2735,13 @@ mod tests {
     #[cfg(feature = "phase2-bindings")]
     #[test]
     fn plain_http_request_builder_forwards_method_headers_and_body() {
-        let url = PlainHttpUrl::parse("http://127.0.0.1:8080/submit?name=layer36")
+        let url = PlainHttpUrl::parse("http://127.0.0.1:8080/submit?name=krate")
             .expect("parse HTTP URL");
         let req = HttpRequest {
             method: uapi_dispatch::HttpMethod::Post,
-            url: "http://127.0.0.1:8080/submit?name=layer36".to_string(),
+            url: "http://127.0.0.1:8080/submit?name=krate".to_string(),
             headers: vec![Header {
-                name: "X-Layer36".to_string(),
+                name: "X-Krate".to_string(),
                 value: "yes".to_string(),
             }],
             body: b"payload".to_vec(),
@@ -2752,10 +2752,10 @@ mod tests {
             .expect("build HTTP request");
         let request = String::from_utf8(request).expect("request is UTF-8");
 
-        assert!(request.starts_with("POST /submit?name=layer36 HTTP/1.1\r\n"));
+        assert!(request.starts_with("POST /submit?name=krate HTTP/1.1\r\n"));
         assert!(request.contains("Host: 127.0.0.1\r\n"));
         assert!(request.contains("Connection: close\r\n"));
-        assert!(request.contains("X-Layer36: yes\r\n"));
+        assert!(request.contains("X-Krate: yes\r\n"));
         assert!(request.contains("Content-Length: 7\r\n"));
         assert!(request.ends_with("\r\n\r\npayload"));
     }
@@ -2952,7 +2952,7 @@ mod tests {
                 method: uapi_dispatch::HttpMethod::Post,
                 url: format!("http://{addr}/submit"),
                 headers: vec![Header {
-                    name: "X-Layer36".to_string(),
+                    name: "X-Krate".to_string(),
                     value: "yes".to_string(),
                 }],
                 body: b"payload".to_vec(),
@@ -2964,7 +2964,7 @@ mod tests {
         let request = rx.recv().expect("captured request");
 
         assert!(request.starts_with("POST /submit HTTP/1.1\r\n"));
-        assert!(request.contains("X-Layer36: yes\r\n"));
+        assert!(request.contains("X-Krate: yes\r\n"));
         assert!(request.contains("Content-Length: 7\r\n"));
         assert!(request.ends_with("\r\n\r\npayload"));
         assert_eq!(response.status, 201);

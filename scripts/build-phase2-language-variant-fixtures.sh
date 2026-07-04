@@ -2,7 +2,7 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-MODE="${LAYER36_LANGUAGE_VARIANTS_MODE:-optional}"
+MODE="${KRATE_LANGUAGE_VARIANTS_MODE:-optional}"
 OUT_DIR="$ROOT/test/integration/language-variants"
 SRC_DIR="$ROOT/test/integration/language-variants-src"
 TMP_DIR="$OUT_DIR/.tmp-ts-build"
@@ -35,7 +35,7 @@ set_imports_are_pure() {
 }
 
 jco_runner() {
-  jco_npx_package="${LAYER36_JCO_NPX_PACKAGE:-@bytecodealliance/jco@1.14.0}"
+  jco_npx_package="${KRATE_JCO_NPX_PACKAGE:-@bytecodealliance/jco@1.14.0}"
 
   if command -v jco >/dev/null 2>&1; then
     XDG_CACHE_HOME="$ROOT/.cache" jco "$@"
@@ -43,7 +43,7 @@ jco_runner() {
   fi
 
   if command -v npx >/dev/null 2>&1; then
-    if [ "${LAYER36_ALLOW_NPX_INSTALL:-0}" = "1" ]; then
+    if [ "${KRATE_ALLOW_NPX_INSTALL:-0}" = "1" ]; then
       XDG_CACHE_HOME="$ROOT/.cache" npx --yes "$jco_npx_package" "$@"
       return
     fi
@@ -72,30 +72,30 @@ build_ts_fixtures() {
   mkdir -p "$TMP_DIR"
 
   jco_runner componentize \
-    "$SRC_DIR/layer36-ts-clock.mjs" \
-    --wit "$ROOT/wit/layer36/phase2" \
+    "$SRC_DIR/krate-ts-clock.mjs" \
+    --wit "$ROOT/wit/krate/phase2" \
     --world-name cli \
     --disable all \
-    --out "$TMP_DIR/layer36_ts_clock.wasm"
+    --out "$TMP_DIR/krate_ts_clock.wasm"
 
   jco_runner componentize \
-    "$SRC_DIR/layer36-ts-cat.mjs" \
-    --wit "$ROOT/wit/layer36/phase2" \
+    "$SRC_DIR/krate-ts-cat.mjs" \
+    --wit "$ROOT/wit/krate/phase2" \
     --world-name cli \
     --disable all \
-    --out "$TMP_DIR/layer36_ts_cat.wasm"
+    --out "$TMP_DIR/krate_ts_cat.wasm"
 
   jco_runner componentize \
-    "$SRC_DIR/layer36-ts-curl.mjs" \
-    --wit "$ROOT/wit/layer36/phase2" \
+    "$SRC_DIR/krate-ts-curl.mjs" \
+    --wit "$ROOT/wit/krate/phase2" \
     --world-name cli \
     --disable all \
-    --out "$TMP_DIR/layer36_ts_curl.wasm"
+    --out "$TMP_DIR/krate_ts_curl.wasm"
 
   for file in \
-    "$TMP_DIR/layer36_ts_clock.wasm" \
-    "$TMP_DIR/layer36_ts_cat.wasm" \
-    "$TMP_DIR/layer36_ts_curl.wasm"
+    "$TMP_DIR/krate_ts_clock.wasm" \
+    "$TMP_DIR/krate_ts_cat.wasm" \
+    "$TMP_DIR/krate_ts_curl.wasm"
   do
     if [ ! -f "$file" ]; then
       echo "TypeScript language-variant fixture build failed: expected output was not created: $file" >&2
@@ -105,18 +105,18 @@ build_ts_fixtures() {
   done
 
   if scripts/check-component-imports.sh \
-    "$TMP_DIR/layer36_ts_clock.wasm" \
-    "$TMP_DIR/layer36_ts_cat.wasm" \
-    "$TMP_DIR/layer36_ts_curl.wasm"
+    "$TMP_DIR/krate_ts_clock.wasm" \
+    "$TMP_DIR/krate_ts_cat.wasm" \
+    "$TMP_DIR/krate_ts_curl.wasm"
   then
-    mv "$TMP_DIR/layer36_ts_clock.wasm" "$OUT_DIR/layer36_ts_clock.wasm"
-    mv "$TMP_DIR/layer36_ts_cat.wasm" "$OUT_DIR/layer36_ts_cat.wasm"
-    mv "$TMP_DIR/layer36_ts_curl.wasm" "$OUT_DIR/layer36_ts_curl.wasm"
+    mv "$TMP_DIR/krate_ts_clock.wasm" "$OUT_DIR/krate_ts_clock.wasm"
+    mv "$TMP_DIR/krate_ts_cat.wasm" "$OUT_DIR/krate_ts_cat.wasm"
+    mv "$TMP_DIR/krate_ts_curl.wasm" "$OUT_DIR/krate_ts_curl.wasm"
     rm -rf "$TMP_DIR"
     return 0
   fi
 
-  echo "TypeScript language-variant fixtures failed Layer36 import purity checks and were not activated." >&2
+  echo "TypeScript language-variant fixtures failed Krate import purity checks and were not activated." >&2
   rm -rf "$TMP_DIR"
   return 1
 }
@@ -125,7 +125,7 @@ case "$MODE" in
   optional|any|both|go|ts)
     ;;
   *)
-    echo "Phase 2 language-variant build error: unknown LAYER36_LANGUAGE_VARIANTS_MODE='$MODE'." >&2
+    echo "Phase 2 language-variant build error: unknown KRATE_LANGUAGE_VARIANTS_MODE='$MODE'." >&2
     echo "Allowed values: optional, any, both, go, ts" >&2
     exit 1
     ;;
@@ -138,20 +138,20 @@ go_ready=0
 ts_reason=""
 go_reason=""
 
-if has_complete_set "layer36_ts"; then
-  if set_imports_are_pure "layer36_ts"; then
+if has_complete_set "krate_ts"; then
+  if set_imports_are_pure "krate_ts"; then
     ts_ready=1
   else
-    echo "Existing TypeScript fixtures failed Layer36 import purity checks; removing stale files."
-    remove_set "layer36_ts"
+    echo "Existing TypeScript fixtures failed Krate import purity checks; removing stale files."
+    remove_set "krate_ts"
   fi
 fi
-if has_complete_set "layer36_go"; then
-  if set_imports_are_pure "layer36_go"; then
+if has_complete_set "krate_go"; then
+  if set_imports_are_pure "krate_go"; then
     go_ready=1
   else
-    echo "Existing Go fixtures failed Layer36 import purity checks; removing stale files."
-    remove_set "layer36_go"
+    echo "Existing Go fixtures failed Krate import purity checks; removing stale files."
+    remove_set "krate_go"
   fi
 fi
 
@@ -183,8 +183,8 @@ if [ "$go_ready" -eq 0 ]; then
 
   if can_build_go_runtime_fixtures; then
     echo "Building and promoting Go language-variant runtime fixtures with TinyGo"
-    if LAYER36_GO_RUNTIME_FIXTURE_MODE="$go_fixture_mode" scripts/promote-phase2-go-runtime-fixtures.sh; then
-      if has_complete_set "layer36_go" && set_imports_are_pure "layer36_go"; then
+    if KRATE_GO_RUNTIME_FIXTURE_MODE="$go_fixture_mode" scripts/promote-phase2-go-runtime-fixtures.sh; then
+      if has_complete_set "krate_go" && set_imports_are_pure "krate_go"; then
         go_ready=1
         go_reason="fixtures built/promoted and import-pure"
       else

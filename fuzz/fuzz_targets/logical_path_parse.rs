@@ -1,6 +1,6 @@
 #![no_main]
 
-use layer36_adapter_common::path::{FsOperation, LogicalPath};
+use krate_adapter_common::path::{FsOperation, LogicalPath};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

@@ -19,11 +19,11 @@ const REQUIRED_PHRASES: &[&str] = &[
     "scripts/check-uapi-freeze-lock.sh",
     "scripts/record-phase2-uapi-freeze-review.sh --strict",
     "scripts/record-phase2-exit-bundle.sh --strict",
-    "layer36:io@0.1.0",
-    "layer36:fs@0.1.0",
-    "layer36:net@0.1.0",
-    "layer36:time@0.1.0",
-    "layer36:locale@0.1.0",
+    "krate:io@0.1.0",
+    "krate:fs@0.1.0",
+    "krate:net@0.1.0",
+    "krate:time@0.1.0",
+    "krate:locale@0.1.0",
 ];
 
 const FORBIDDEN_PREMATURE_CLAIMS: &[&str] = &[
@@ -37,7 +37,7 @@ fn main() -> Result<()> {
     let root = workspace_root();
     check_freeze_decision(&root)?;
 
-    println!("Layer36 Phase 2 freeze decision check passed");
+    println!("Krate Phase 2 freeze decision check passed");
     println!("- decision packet: {DECISION_PATH}");
 
     Ok(())

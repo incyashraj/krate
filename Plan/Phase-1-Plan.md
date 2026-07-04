@@ -1,4 +1,4 @@
-# Layer36 — Phase 1 Detailed Plan: POC Runtime
+# Krate — Phase 1 Detailed Plan: POC Runtime
 
 > **Phase:** 1 of 8
 > **Duration:** Months 2–3 (60 calendar days, ~20 engineering days of work)
@@ -48,7 +48,7 @@ This document is the **single source of truth for Phase 1**. If you are working 
 
 ### 1.1 One-sentence objective
 
-**Same `.wasm` binary, loaded by `layer36 run foo.wasm`, prints "Hello, Layer36!" on Linux, macOS, and Windows. Nothing else.**
+**Same `.wasm` binary, loaded by `krate run foo.wasm`, prints "Hello, Krate!" on Linux, macOS, and Windows. Nothing else.**
 
 ### 1.2 What Phase 1 is
 
@@ -94,8 +94,8 @@ Phase 1 is **done** when, and only when, every row below is true.
 
 | # | Criterion | Measured How |
 |---|-----------|--------------|
-| 1 | `cargo build --release` produces an `layer36` binary on all three hosts | CI green |
-| 2 | `layer36 run hello.wasm` prints `Hello, Layer36!` on all three hosts | Integration test |
+| 1 | `cargo build --release` produces an `krate` binary on all three hosts | CI green |
+| 2 | `krate run hello.wasm` prints `Hello, Krate!` on all three hosts | Integration test |
 | 3 | The `hello.wasm` input is identical across hosts (byte-for-byte) | SHA-256 checked in test harness |
 | 4 | Cold start < 200 ms on a 2020+ laptop | Benchmark suite |
 | 5 | Release binary size < 30 MB (compressed) | CI artifact size check |
@@ -123,8 +123,8 @@ flowchart TB
     end
 
     subgraph User["User Side — Host OS"]
-        CLI["layer36 CLI"]
-        RT["layer36-runtime"]
+        CLI["krate CLI"]
+        RT["krate-runtime"]
         WT["Wasmtime engine"]
         HI["Host imports<br/>print, exit"]
         STDOUT[("stdout")]
@@ -132,14 +132,14 @@ flowchart TB
         WT <--> HI --> STDOUT
     end
 
-    WASM -->|layer36 run hello.wasm| CLI
+    WASM -->|krate run hello.wasm| CLI
 ```
 
-### 4.2 The `layer36 run` execution flow
+### 4.2 The `krate run` execution flow
 
 ```mermaid
 flowchart TD
-    A([user types 'layer36 run hello.wasm']) --> B[CLI parses args]
+    A([user types 'krate run hello.wasm']) --> B[CLI parses args]
     B --> C{File exists + readable?}
     C -- no --> E1[Print error, exit 1]
     C -- yes --> D[Read bytes into memory]
@@ -161,7 +161,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    CLI[layer36-cli] --> RT[layer36-runtime]
+    CLI[krate-cli] --> RT[krate-runtime]
     CLI --> CLAP[clap]
     RT --> WT[wasmtime]
     RT --> WTC[wasmtime-wasi]
@@ -179,16 +179,16 @@ flowchart LR
 At Phase 1 the entire "UAPI" is two functions. They are temporary — Phase 2 replaces them with real UAPI modules.
 
 ```
-layer36:phase1/host@0.0.1:
+krate:phase1/host@0.0.1:
   print: func(msg: string)
   exit:  func(code: s32)
 ```
 
-That's the whole surface. A hello-world calls `print("Hello, Layer36!")` and optionally `exit(0)`. Anything else and the WASM traps.
+That's the whole surface. A hello-world calls `print("Hello, Krate!")` and optionally `exit(0)`. Anything else and the WASM traps.
 
 ### 4.5 Process model
 
-Phase 1 runs one WASM component per `layer36 run` invocation, in-process, single-threaded, no sandboxing beyond what Wasmtime gives us by default (no file access, no network, no env vars). When the component's `run` function returns or traps, the process exits.
+Phase 1 runs one WASM component per `krate run` invocation, in-process, single-threaded, no sandboxing beyond what Wasmtime gives us by default (no file access, no network, no env vars). When the component's `run` function returns or traps, the process exits.
 
 This will evolve — Phase 4 needs multi-app lifecycle on mobile — but we do not design for that today.
 
@@ -221,14 +221,14 @@ Why Wasmtime and not Wasmer or WasmEdge: Component Model maturity, Bytecode Alli
 
 ### 5.4 Error handling — **`anyhow` at binary edges, `thiserror` inside libraries**
 
-- `layer36-cli` uses `anyhow::Result<()>` for `main`.
-- `layer36-runtime` uses typed errors via `thiserror`.
+- `krate-cli` uses `anyhow::Result<()>` for `main`.
+- `krate-runtime` uses typed errors via `thiserror`.
 - Never return `anyhow::Error` from a library; downstream callers can't match on it.
 
 ### 5.5 Logging — **`tracing`**
 
 - Structured spans, filterable by module, standard in the Rust ecosystem.
-- `tracing-subscriber` with an env filter (`LAYER36_LOG=debug`).
+- `tracing-subscriber` with an env filter (`KRATE_LOG=debug`).
 - Apps log through host `print` in Phase 1; real logging UAPI arrives in Phase 2.
 
 ### 5.6 Sample app language — **Rust**
@@ -279,11 +279,11 @@ Sized for a founder working ~15–25 h/week on this project alongside ParkSure a
 **Tasks:** P1-CLI-01, P1-CLI-02, P1-CLI-03, P1-RT-03
 
 - Create `crates/cli/`.
-- `layer36 run <file>` reads file, calls into runtime, propagates exit code.
-- `layer36 version` prints runtime + Wasmtime + Rust version, commit hash.
-- `layer36 doctor` checks for `cargo-component` on PATH and prints a short status table.
+- `krate run <file>` reads file, calls into runtime, propagates exit code.
+- `krate version` prints runtime + Wasmtime + Rust version, commit hash.
+- `krate doctor` checks for `cargo-component` on PATH and prints a short status table.
 - Register the two host imports (`print`, `exit`) in the runtime.
-- At end of this week: from a clean checkout, `cargo install --path crates/cli && layer36 run hello.wasm` works locally.
+- At end of this week: from a clean checkout, `cargo install --path crates/cli && krate run hello.wasm` works locally.
 
 ### Week 4 — Cross-platform CI
 
@@ -291,7 +291,7 @@ Sized for a founder working ~15–25 h/week on this project alongside ParkSure a
 
 - Matrix across `ubuntu-latest`, `macos-latest`, `windows-latest`.
 - Build + test job for each.
-- Integration test job that, on all three, builds `hello.wasm` and runs it through `layer36`.
+- Integration test job that, on all three, builds `hello.wasm` and runs it through `krate`.
 - Fix the platform-specific breakage that will definitely surface here. Budget for it.
 
 ### Week 5 — Release artifacts
@@ -317,7 +317,7 @@ Sized for a founder working ~15–25 h/week on this project alongside ParkSure a
 
 - Quickstart tutorial in `docs/book/src/quickstart.md`.
 - ADR-0002 and ADR-0003 written and merged.
-- README updated to reflect what `layer36` actually does now.
+- README updated to reflect what `krate` actually does now.
 - First blog post: "Phase 1 complete — one binary on three OSes."
 
 ### Week 8 — Buffer / exit criteria / retro
@@ -373,7 +373,7 @@ Sized for a founder working ~15–25 h/week on this project alongside ParkSure a
 
 **Gotchas:**
 - Do NOT use the full `wasmtime-wasi` until Phase 2; it brings in a lot of surface we don't want to lock in.
-- Define your own tiny WIT interface (`wit/layer36/phase1.wit`) and bind it.
+- Define your own tiny WIT interface (`wit/krate/phase1.wit`) and bind it.
 
 ### P1-RT-04 — Configurable fuel / memory limits
 
@@ -389,36 +389,36 @@ Sized for a founder working ~15–25 h/week on this project alongside ParkSure a
 - Fuel metering is opt-in — must call `Config::consume_fuel(true)` on the Wasmtime config *and* set initial fuel on the store.
 - Memory limits work via the `StoreLimits` / `StoreLimitsBuilder` API.
 
-### P1-CLI-01 — `layer36` binary using `clap`
+### P1-CLI-01 — `krate` binary using `clap`
 
 **Estimate:** 1 day.
 **Branch:** `p1-cli-01-skeleton`.
 
 **Acceptance:**
-- `crates/cli/` builds as `layer36` binary (via `[[bin]]` in Cargo.toml or path/name conventions).
-- `layer36 --help` works and looks clean.
-- `layer36 --version` prints version + commit hash (compile-time via `env!("VERGEN_GIT_SHA")` or similar).
+- `crates/cli/` builds as `krate` binary (via `[[bin]]` in Cargo.toml or path/name conventions).
+- `krate --help` works and looks clean.
+- `krate --version` prints version + commit hash (compile-time via `env!("VERGEN_GIT_SHA")` or similar).
 
-### P1-CLI-02 — `layer36 run <file>` subcommand
+### P1-CLI-02 — `krate run <file>` subcommand
 
 **Estimate:** 1 day.
 **Branch:** `p1-cli-02-run`.
 
 **Acceptance:**
-- `layer36 run hello.wasm` executes the file and propagates its exit code.
-- `layer36 run --fuel 1000000 foo.wasm` enforces the fuel limit.
+- `krate run hello.wasm` executes the file and propagates its exit code.
+- `krate run --fuel 1000000 foo.wasm` enforces the fuel limit.
 - Invalid path → clear error, exit 1.
 - Invalid WASM → clear error with file offset, exit 2.
 - Trap during run → formatted trap output, exit 3+.
 
-### P1-CLI-03 — `layer36 version`, `layer36 doctor`
+### P1-CLI-03 — `krate version`, `krate doctor`
 
 **Estimate:** 0.5 day.
 **Branch:** `p1-cli-03-meta-cmds`.
 
 **Acceptance:**
-- `layer36 version` prints, with labels: `layer36`, `wasmtime`, `rustc` used for build, build commit, build date.
-- `layer36 doctor` prints a table: `cargo-component` on PATH (yes/no, version), `rustup target list` contains wasm32-wasip2, disk free in `~/.layer36` (will be empty in Phase 1 — still check).
+- `krate version` prints, with labels: `krate`, `wasmtime`, `rustc` used for build, build commit, build date.
+- `krate doctor` prints a table: `cargo-component` on PATH (yes/no, version), `rustup target list` contains wasm32-wasip2, disk free in `~/.krate` (will be empty in Phase 1 — still check).
 
 ### P1-CI-01 — Cross-platform CI matrix
 
@@ -445,11 +445,11 @@ Sized for a founder working ~15–25 h/week on this project alongside ParkSure a
 - `.github/workflows/release.yml` triggered on version tags such as `v0.1.0` and
   `v0.1.0-rc1`.
 - Produces:
-  - `layer36-<version>-x86_64-unknown-linux-gnu.tar.gz`
-  - `layer36-<version>-aarch64-unknown-linux-gnu.tar.gz`
-  - `layer36-<version>-x86_64-apple-darwin.tar.gz`
-  - `layer36-<version>-aarch64-apple-darwin.tar.gz`
-  - `layer36-<version>-x86_64-pc-windows-msvc.zip`
+  - `krate-<version>-x86_64-unknown-linux-gnu.tar.gz`
+  - `krate-<version>-aarch64-unknown-linux-gnu.tar.gz`
+  - `krate-<version>-x86_64-apple-darwin.tar.gz`
+  - `krate-<version>-aarch64-apple-darwin.tar.gz`
+  - `krate-<version>-x86_64-pc-windows-msvc.zip`
 - Uploads to GitHub Releases with auto-generated release notes.
 - A `SHA256SUMS` file alongside.
 
@@ -461,8 +461,8 @@ Sized for a founder working ~15–25 h/week on this project alongside ParkSure a
 **Branch:** `p1-test-01-integration`.
 
 **Acceptance:**
-- `test/integration/hello-world/` contains a Rust source that prints `Hello, Layer36!`.
-- Test harness (`test/integration/runner.rs`) builds the WASM once, runs `layer36 run` on it across each host, asserts exit 0 and stdout.
+- `test/integration/hello-world/` contains a Rust source that prints `Hello, Krate!`.
+- Test harness (`test/integration/runner.rs`) builds the WASM once, runs `krate run` on it across each host, asserts exit 0 and stdout.
 - Runs as part of CI on all three OSes.
 - SHA-256 of `hello.wasm` is the same on all three hosts and asserted in the harness.
 
@@ -473,7 +473,7 @@ Sized for a founder working ~15–25 h/week on this project alongside ParkSure a
 
 **Acceptance:**
 - `docs/book/src/quickstart.md` exists.
-- Walks a reader from zero (no Rust installed) to running hello-world under `layer36`.
+- Walks a reader from zero (no Rust installed) to running hello-world under `krate`.
 - Includes a copy-pasteable code block for `hello.rs` and `Cargo.toml`.
 - Tested end-to-end by someone who is not the author, in under 10 minutes.
 
@@ -529,7 +529,7 @@ members = [
 edition    = "2021"
 version    = "0.1.0-dev"
 license    = "MIT OR Apache-2.0"
-repository = "https://github.com/layer36/layer36"
+repository = "https://github.com/krate/krate"
 rust-version = "1.78"
 
 [workspace.dependencies]
@@ -551,7 +551,7 @@ panic        = "abort"
 
 ```toml
 [package]
-name         = "layer36-runtime"
+name         = "krate-runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -575,7 +575,7 @@ harness = false
 ### 8.3 `crates/runtime/src/lib.rs` (skeleton)
 
 ```rust
-//! Layer36 runtime: Phase 1 POC.
+//! Krate runtime: Phase 1 POC.
 //!
 //! Loads and executes a WASM component with a minimal host import surface:
 //! `print(string)` and `exit(s32)`. Anything else is a trap.
@@ -672,7 +672,7 @@ struct HostState {
 }
 
 fn register_host_imports<T>(_linker: &mut Linker<T>) -> Result<()> {
-    // TODO(P1-RT-03): add layer36:phase1/host interface with print + exit.
+    // TODO(P1-RT-03): add krate:phase1/host interface with print + exit.
     Ok(())
 }
 ```
@@ -687,10 +687,10 @@ use std::process::ExitCode;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use layer36_runtime::{Config, Runtime, RunOutcome};
+use krate_runtime::{Config, Runtime, RunOutcome};
 
 #[derive(Parser)]
-#[command(name = "layer36", version, about = "Layer36 — write once, run on everything.")]
+#[command(name = "krate", version, about = "Krate — write once, run on everything.")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -698,7 +698,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Run a WASM component through the Layer36 runtime.
+    /// Run a WASM component through the Krate runtime.
     Run {
         /// Path to the .wasm component.
         file: PathBuf,
@@ -720,7 +720,7 @@ enum Command {
 fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_env("LAYER36_LOG")
+            tracing_subscriber::EnvFilter::try_from_env("KRATE_LOG")
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
@@ -749,7 +749,7 @@ fn run() -> Result<u8> {
             }
         }
         Command::Version => {
-            println!("layer36     {}", env!("CARGO_PKG_VERSION"));
+            println!("krate     {}", env!("CARGO_PKG_VERSION"));
             println!("wasmtime  {}", wasmtime_version());
             println!("rustc     {}", env!("RUSTC_VERSION"));
             println!("commit    {}", env!("GIT_SHA"));
@@ -778,10 +778,10 @@ fn doctor() -> Result<u8> {
 // test/integration/hello-world/src/lib.rs
 //
 // This file is compiled to hello.wasm via `cargo component build --release`.
-// It imports the layer36:phase1/host interface and calls `print`.
+// It imports the krate:phase1/host interface and calls `print`.
 
 wit_bindgen::generate!({
-    path: "../../../wit/layer36/phase1.wit",
+    path: "../../../wit/krate/phase1.wit",
     world: "app",
 });
 
@@ -789,7 +789,7 @@ struct HelloWorld;
 
 impl Guest for HelloWorld {
     fn run() -> i32 {
-        layer36::phase1::host::print("Hello, Layer36!");
+        krate::phase1::host::print("Hello, Krate!");
         0
     }
 }
@@ -800,8 +800,8 @@ export!(HelloWorld);
 ### 8.6 The Phase 1 WIT interface
 
 ```wit
-// wit/layer36/phase1.wit
-package layer36:phase1@0.0.1;
+// wit/krate/phase1.wit
+package krate:phase1@0.0.1;
 
 interface host {
     /// Write a line to stdout.
@@ -827,19 +827,19 @@ use std::process::Command;
 
 #[test]
 fn hello_world_runs() {
-    // Assumes `layer36` built via `cargo build --release -p layer36-cli`
+    // Assumes `krate` built via `cargo build --release -p krate-cli`
     // and hello.wasm built in the test setup phase.
-    let layer36 = env!("CARGO_BIN_EXE_layer36");
+    let krate = env!("CARGO_BIN_EXE_krate");
     let wasm = concat!(env!("CARGO_MANIFEST_DIR"), "/hello.wasm");
 
-    let output = Command::new(layer36)
+    let output = Command::new(krate)
         .args(["run", wasm])
         .output()
-        .expect("failed to run layer36");
+        .expect("failed to run krate");
 
     assert!(output.status.success(), "exit: {:?}", output.status);
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Hello, Layer36!"), "stdout was: {stdout}");
+    assert!(stdout.contains("Hello, Krate!"), "stdout was: {stdout}");
 }
 ```
 
@@ -951,16 +951,16 @@ jobs:
         shell: bash
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }} -p layer36-cli
+            cross build --release --target ${{ matrix.target }} -p krate-cli
           else
-            cargo build --release --target ${{ matrix.target }} -p layer36-cli
+            cargo build --release --target ${{ matrix.target }} -p krate-cli
           fi
       - name: Package
         shell: bash
         run: scripts/package.sh "${{ matrix.target }}" "${{ matrix.ext }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: layer36-${{ matrix.target }}
+          name: krate-${{ matrix.target }}
           path: dist/*
 
   release:
@@ -988,15 +988,15 @@ set -euo pipefail
 target="$1"
 ext="$2"
 version=$(grep -m1 '^version' Cargo.toml | awk -F'"' '{print $2}')
-name="layer36-${version}-${target}"
+name="krate-${version}-${target}"
 dist="dist/${name}"
 mkdir -p "$dist"
 
 # binary name differs by OS
 if [[ "$target" == *windows* ]]; then
-    cp "target/${target}/release/layer36.exe" "$dist/"
+    cp "target/${target}/release/krate.exe" "$dist/"
 else
-    cp "target/${target}/release/layer36" "$dist/"
+    cp "target/${target}/release/krate" "$dist/"
 fi
 
 cp README.md LICENSE-MIT LICENSE-APACHE "$dist/"
@@ -1034,14 +1034,14 @@ multiple-versions = "warn"
 |---|---|---|
 | Unit | inside each crate | Functions, error paths, config defaults |
 | Component | `crates/runtime/tests/` | Runtime loading real `.wasm` fixtures |
-| Integration | `test/integration/` | Full `layer36 run` invocation |
-| Snapshot | `crates/cli/tests/` | `layer36 --help`, `layer36 doctor` output using `insta` |
+| Integration | `test/integration/` | Full `krate run` invocation |
+| Snapshot | `crates/cli/tests/` | `krate --help`, `krate doctor` output using `insta` |
 | Benchmark | `crates/runtime/benches/` | Startup, dispatch; `criterion` |
 
 ### 10.2 Coverage expectations
 
 - Not measured quantitatively in Phase 1 (optimizing for coverage % this early produces junk tests).
-- Every public function in `layer36-runtime` has at least one happy-path test.
+- Every public function in `krate-runtime` has at least one happy-path test.
 - Every error variant has at least one test that produces it.
 
 ### 10.3 Snapshot tests for CLI
@@ -1051,7 +1051,7 @@ Use `insta` so CI detects unintended changes to `--help` output, which is user-f
 ```rust
 #[test]
 fn help_snapshot() {
-    let output = std::process::Command::new(env!("CARGO_BIN_EXE_layer36"))
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_krate"))
         .arg("--help")
         .output()
         .unwrap();
@@ -1088,19 +1088,19 @@ Document the exact CPU, RAM, SSD, OS version in `docs/book/src/phase1/benchmarks
 
 ```bash
 # microbenches
-cargo bench -p layer36-runtime
+cargo bench -p krate-runtime
 
 # end-to-end wall clock
-hyperfine --warmup 3 "./target/release/layer36 run hello.wasm"
+hyperfine --warmup 3 "./target/release/krate run hello.wasm"
 
 # memory
-/usr/bin/time -v ./target/release/layer36 run hello.wasm 2>&1 | grep 'Maximum resident'
+/usr/bin/time -v ./target/release/krate run hello.wasm 2>&1 | grep 'Maximum resident'
 ```
 
 ### 11.4 What we don't optimize yet
 
-- No AOT caching. Recompile every run. Phase 2+ adds a `~/.layer36/cache/`.
-- No shared process. Each `layer36 run` is a fresh process. Good enough for Phase 1.
+- No AOT caching. Recompile every run. Phase 2+ adds a `~/.krate/cache/`.
+- No shared process. Each `krate run` is a fresh process. Good enough for Phase 1.
 - No JIT warmup tricks. Single-shot invocation.
 
 ---
@@ -1119,7 +1119,7 @@ flowchart LR
         WASM["WASM component"]
     end
     subgraph Trusted
-        RT["layer36-runtime"]
+        RT["krate-runtime"]
         HI["host imports"]
     end
     subgraph Platform
@@ -1145,7 +1145,7 @@ Only one boundary: **WASM component ↔ runtime**. The runtime is trusted; the W
 ### 12.4 Known out-of-scope (deferred)
 
 - Malicious WASM that tries to call capabilities it doesn't have (Phase 2 — we don't have capabilities yet).
-- Tampering with `layer36` binary itself (Phase 6 — code signing).
+- Tampering with `krate` binary itself (Phase 6 — code signing).
 - Supply chain attacks on dependencies (partial: `cargo-deny`; full review in Phase 7).
 - Side-channel attacks (Spectre, rowhammer) — deferred indefinitely; rely on OS mitigations.
 - Physical attack on user machine — out of scope forever.
@@ -1154,7 +1154,7 @@ Only one boundary: **WASM component ↔ runtime**. The runtime is trusted; the W
 
 The README's Security section must say, in plain language:
 
-> Layer36 is pre-alpha. Do not run untrusted WASM through `layer36` in Phase 1. Treat `layer36 run foo.wasm` exactly as you would treat `./foo` — the sandbox is real but not adversarially hardened. Real security boundaries arrive in Phase 2 with the capability system.
+> Krate is pre-alpha. Do not run untrusted WASM through `krate` in Phase 1. Treat `krate run foo.wasm` exactly as you would treat `./foo` — the sandbox is real but not adversarially hardened. Real security boundaries arrive in Phase 2 with the capability system.
 
 ---
 
@@ -1165,17 +1165,17 @@ Phase 1 ships four user-facing docs. If you run out of time, do them in this ord
 ### 13.1 Quickstart (`docs/book/src/quickstart.md`)
 
 Target reader: Rust-curious, has `rustup` installed, nothing else.
-Target time to first `Hello, Layer36!`: ≤ 10 minutes.
+Target time to first `Hello, Krate!`: ≤ 10 minutes.
 
 Structure:
 1. "What you'll build" (2 sentences + screenshot of final output)
-2. Install `layer36` (platform tabs)
+2. Install `krate` (platform tabs)
 3. Install `cargo-component`
 4. Create `hello/` with `cargo component new --lib hello`
 5. Paste the source from §8.5
 6. `cargo component build --release`
-7. `layer36 run target/wasm32-wasip2/release/hello.wasm`
-8. "You saw Hello, Layer36!. What happened?" (2 paragraphs — not a lecture)
+7. `krate run target/wasm32-wasip2/release/hello.wasm`
+8. "You saw Hello, Krate!. What happened?" (2 paragraphs — not a lecture)
 
 ### 13.2 Architecture overview (`docs/book/src/architecture.md`)
 
@@ -1221,10 +1221,10 @@ Tick every box. No exceptions.
 ### Code
 - [x] `crates/runtime/` compiles on all three hosts.
 - [x] `crates/cli/` compiles on all three hosts.
-- [x] `layer36 run hello.wasm` prints `Hello, Layer36!` and exits 0 on all three hosts.
-- [x] `layer36 version` prints correct info.
-- [x] `layer36 doctor` runs without panic.
-- [x] `layer36 run --fuel 1 hello.wasm` fails with a clear "limit exceeded" error.
+- [x] `krate run hello.wasm` prints `Hello, Krate!` and exits 0 on all three hosts.
+- [x] `krate version` prints correct info.
+- [x] `krate doctor` runs without panic.
+- [x] `krate run --fuel 1 hello.wasm` fails with a clear "limit exceeded" error.
 - [x] Invalid `.wasm` file → clear error message, exit code ≠ 0.
 
 ### CI
@@ -1295,8 +1295,8 @@ For the last one, the answer is almost always "downgrade to an earlier stable ve
 
 | Thing | Why replaced |
 |---|---|
-| `layer36:phase1/host` interface | Replaced by real UAPI modules (`io`, `fs`, `net`, `time`, `locale`) |
-| `hello-world` sample | Superseded by `layer36-curl`, `layer36-cat`, `layer36-clock` |
+| `krate:phase1/host` interface | Replaced by real UAPI modules (`io`, `fs`, `net`, `time`, `locale`) |
+| `hello-world` sample | Superseded by `krate-curl`, `krate-cat`, `krate-clock` |
 | Trust model v0.1 | Extended with UCap enforcement |
 
 ### 17.3 What Phase 2 must *not* touch
@@ -1312,7 +1312,7 @@ Before starting Phase 2, produce a `docs/phase2-plan.md` in the same style as th
 - Phase 2 objective sentence.
 - WIT file drafts for each v0.1 UAPI module.
 - Capability surface for each module (even if enforcement is soft).
-- Sample app specs (`layer36-curl`, `layer36-cat`, `layer36-clock`).
+- Sample app specs (`krate-curl`, `krate-cat`, `krate-clock`).
 - Language binding strategy per language.
 - Per-host adapter scaffolding plan.
 
@@ -1335,10 +1335,10 @@ cargo test --workspace
 cd test/integration/hello-world && cargo component build --release
 
 # Run it
-./target/release/layer36 run test/integration/hello-world/target/wasm32-wasip2/release/hello.wasm
+./target/release/krate run test/integration/hello-world/target/wasm32-wasip2/release/hello.wasm
 
 # Benchmarks
-cargo bench -p layer36-runtime
+cargo bench -p krate-runtime
 
 # Fresh clippy
 cargo clippy --workspace --all-targets -- -D warnings
@@ -1355,10 +1355,10 @@ git tag v0.1.0-rc1 && git push --tags
 
 ### Appendix B — Debugging a WASM trap
 
-When `layer36 run` prints a trap:
+When `krate run` prints a trap:
 
 1. Rebuild the component in debug mode (`cargo component build` without `--release`) so DWARF is present.
-2. Re-run with `LAYER36_LOG=debug layer36 run ...` for verbose runtime logs.
+2. Re-run with `KRATE_LOG=debug krate run ...` for verbose runtime logs.
 3. Use `wasm-tools` to inspect the component:
    ```bash
    wasm-tools print hello.wasm | less
@@ -1369,7 +1369,7 @@ When `layer36 run` prints a trap:
 ### Appendix C — Folder layout at Phase 1 end
 
 ```
-layer36/
+krate/
 ├── Cargo.toml
 ├── Cargo.lock
 ├── rust-toolchain.toml
@@ -1393,7 +1393,7 @@ layer36/
 │       └── src/
 │           └── main.rs
 ├── wit/
-│   └── layer36/
+│   └── krate/
 │       └── phase1.wit
 ├── test/
 │   └── integration/
@@ -1487,7 +1487,7 @@ Save as `docs/book/src/phase1/retro.md` at the end of Phase 1.
 
 ### Progress Summary
 
-_Phase 1 engineering is complete under a local-development waiver for account-bound Phase 0 items. Runtime and CLI crates exist, Wasmtime 43.0.2 is pinned for Rust 1.91.1 compatibility, host `print`/`exit` imports are wired through WIT, the hello-world component runs through `layer36 run`, CI is green across Linux/macOS/Windows, the matrix consumes one shared hello `.wasm` fixture with SHA-256 verification, fuel/memory limits fail cleanly, `v0.1.0-rc1` publishes all five release artifacts plus `SHA256SUMS`, the quickstart is published, Threat Model v0.1 is documented, benchmarks are recorded, ADR-0002/0003 are merged, and the retrospective is written. Formal exit still waits on external timing, five green days, P0 issue review, and the Phase 2 kickoff issue._
+_Phase 1 engineering is complete under a local-development waiver for account-bound Phase 0 items. Runtime and CLI crates exist, Wasmtime 43.0.2 is pinned for Rust 1.91.1 compatibility, host `print`/`exit` imports are wired through WIT, the hello-world component runs through `krate run`, CI is green across Linux/macOS/Windows, the matrix consumes one shared hello `.wasm` fixture with SHA-256 verification, fuel/memory limits fail cleanly, `v0.1.0-rc1` publishes all five release artifacts plus `SHA256SUMS`, the quickstart is published, Threat Model v0.1 is documented, benchmarks are recorded, ADR-0002/0003 are merged, and the retrospective is written. Formal exit still waits on external timing, five green days, P0 issue review, and the Phase 2 kickoff issue._
 
 ---
 
@@ -1497,9 +1497,9 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 | # | Criterion | Status |
 |---|-----------|--------|
-| 1 | `cargo build --release` produces `layer36` binary on Linux, macOS, Windows | Green in GitHub CI on 2026-05-03 |
-| 2 | `layer36 run hello.wasm` prints `Hello, Layer36!` on all three hosts | Green in GitHub CI on 2026-05-03 |
-| 3 | `hello.wasm` input is byte-for-byte identical across hosts (SHA-256 verified) | Green in GitHub CI on 2026-05-03 with one uploaded fixture and `LAYER36_HELLO_SHA256` across Linux/macOS/Windows |
+| 1 | `cargo build --release` produces `krate` binary on Linux, macOS, Windows | Green in GitHub CI on 2026-05-03 |
+| 2 | `krate run hello.wasm` prints `Hello, Krate!` on all three hosts | Green in GitHub CI on 2026-05-03 |
+| 3 | `hello.wasm` input is byte-for-byte identical across hosts (SHA-256 verified) | Green in GitHub CI on 2026-05-03 with one uploaded fixture and `KRATE_HELLO_SHA256` across Linux/macOS/Windows |
 | 4 | Cold start < 200 ms on a 2020+ laptop | Locally green on Apple M4 at ~2.45 ms; cross-host baselines pending |
 | 5 | Release binary size < 30 MB (compressed) | Green on `v0.1.0-rc1`; largest archive is ~5.7 MB compressed |
 | 6 | Memory RSS < 40 MB after hello-world exits | Locally green on macOS at ~14.9 MiB; cross-host baselines pending |
@@ -1515,16 +1515,16 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | Task ID | Task | Completed | Notes |
 |---------|------|-----------|-------|
 | P1-RT-01 | Runtime crate scaffold | 2026-05-02 | `crates/runtime` initializes Wasmtime Component Model support and validates components. |
-| P1-RT-02 | Component `run` execution + host imports | 2026-05-02 | `layer36:phase1/host` WIT imports for `print` and `exit` execute a component locally. |
-| P1-CLI-01 | `layer36` binary using `clap` | 2026-05-02 | `--help`, `version`, and command routing work locally. |
-| P1-CLI-02 | `layer36 run <file>` subcommand | 2026-05-02 | Runs the hello-world component locally and maps runtime failures to CLI exit codes. |
-| P1-CLI-03 | `layer36 version`, `layer36 doctor` basic | 2026-05-02 | `doctor` reports `cargo-component`, `wasm32-wasip1`, `wasm32-wasip2`, and state directory status. |
+| P1-RT-02 | Component `run` execution + host imports | 2026-05-02 | `krate:phase1/host` WIT imports for `print` and `exit` execute a component locally. |
+| P1-CLI-01 | `krate` binary using `clap` | 2026-05-02 | `--help`, `version`, and command routing work locally. |
+| P1-CLI-02 | `krate run <file>` subcommand | 2026-05-02 | Runs the hello-world component locally and maps runtime failures to CLI exit codes. |
+| P1-CLI-03 | `krate version`, `krate doctor` basic | 2026-05-02 | `doctor` reports `cargo-component`, `wasm32-wasip1`, `wasm32-wasip2`, and state directory status. |
 | P1-CI-01 | Cross-platform CI matrix | 2026-05-03 | Linux/macOS/Windows CI is green; the test matrix now runs one shared hello `.wasm` artifact across all three hosts. |
 | P1-RT-04 | Configurable fuel / memory limits | 2026-05-02 | Store fuel and resource limiter are wired; `--fuel 1` and `--mem-limit 0` return exit code 4 with clear limit messages. |
-| P1-DOC-01 | Quickstart | 2026-05-02 | `docs/book/src/quickstart.md` walks from checkout/tooling to `Hello, Layer36!`; external timing still pending. |
+| P1-DOC-01 | Quickstart | 2026-05-02 | `docs/book/src/quickstart.md` walks from checkout/tooling to `Hello, Krate!`; external timing still pending. |
 | P1-SEC-01 | Threat Model v0.1 | 2026-05-02 | STRIDE model published in `docs/book/src/phase1/threat-model.md`; README/SECURITY warning updated. |
 | P1-PERF-01 | Baseline benchmarks | 2026-05-02 | Criterion suite added in `crates/runtime/benches/startup.rs`; local Apple M4 baseline published in `docs/book/src/phase1/benchmarks.md`; CI warns on >10% regression. |
-| P1-TEST-01 | Integration test: hello-world.wasm runs on all hosts | 2026-05-03 | GitHub-hosted Linux/macOS/Windows run the same uploaded hello `.wasm` artifact and assert its SHA-256 before executing through `layer36`. |
+| P1-TEST-01 | Integration test: hello-world.wasm runs on all hosts | 2026-05-03 | GitHub-hosted Linux/macOS/Windows run the same uploaded hello `.wasm` artifact and assert its SHA-256 before executing through `krate`. |
 | P1-CI-02 | Release artifacts | 2026-05-03 | `v0.1.0-rc1` prerelease published with Linux x64, Linux ARM64, macOS Intel, macOS Apple Silicon, Windows x64, and `SHA256SUMS`. |
 | P1-ADR-01 | ADR-0002 and ADR-0003 | 2026-05-02 | Merged on `main` in `docs/adr/`. |
 
@@ -1559,9 +1559,9 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 ### Notes & Learnings
 
 - 2026-05-02: Wasmtime latest is 44.0.1 but requires Rust 1.92.0; selected Wasmtime 43.0.2 while repo remains pinned to Rust 1.91.1.
-- 2026-05-02: `cargo-component` builds the sample component to `target/wasm32-wasip1/release/hello_world.wasm`; `layer36 run` prints `Hello, Layer36!` locally through the temporary WIT host imports.
-- 2026-05-02: `cargo build --release --workspace` succeeds locally and the release `target/release/layer36` binary runs the hello-world component.
-- 2026-05-02: Added a CLI integration test that logs the hello component SHA-256 and asserts `layer36 run` prints `Hello, Layer36!`. First GitHub CI showed component bytes differ by host, so byte-for-byte reproducibility remains open.
+- 2026-05-02: `cargo-component` builds the sample component to `target/wasm32-wasip1/release/hello_world.wasm`; `krate run` prints `Hello, Krate!` locally through the temporary WIT host imports.
+- 2026-05-02: `cargo build --release --workspace` succeeds locally and the release `target/release/krate` binary runs the hello-world component.
+- 2026-05-02: Added a CLI integration test that logs the hello component SHA-256 and asserts `krate run` prints `Hello, Krate!`. First GitHub CI showed component bytes differ by host, so byte-for-byte reproducibility remains open.
 - 2026-05-02: Replaced the bundled `cargo-deny-action@v1` CI path with `cargo-deny 0.19.4` installed by Cargo, because the older action could not parse RustSec advisories carrying CVSS 4.0 vectors.
 - 2026-05-02: Updated `.github/workflows/ci.yml` so the Linux/macOS/Windows test matrix installs `cargo-component`, builds the hello fixture, builds release binaries, and runs the fixture-backed workspace tests.
 - 2026-05-02: Enforced Phase 1 runtime limits with Wasmtime fuel and a store resource limiter. CLI now maps out-of-fuel and memory-cap failures to exit code 4.
@@ -1569,14 +1569,14 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 - 2026-05-02: Added `docs/book/src/quickstart.md` and linked it from the mdBook summary and README. It follows the current `cargo-component 0.21.1` / `wasm32-wasip1` output path.
 - 2026-05-02: Added Phase 1 Threat Model v0.1 using STRIDE, linked it from mdBook, and updated README/SECURITY to warn against running untrusted WASM in Phase 1.
 - 2026-05-02: Added Phase 1 Criterion benchmarks for engine construction, component compilation, cold run, first host print, and 1,000-print dispatch. Local Apple M4 baseline is published in `docs/book/src/phase1/benchmarks.md`; CI uses `scripts/check-benchmark-regression.sh` for warning-only regression checks.
-- 2026-05-02: Added `scripts/test-phase1.sh` and wired `scripts/setup.sh` plus CI to use it, preventing fixture-backed tests from silently skipping when `LAYER36_HELLO_WASM` is not already set.
+- 2026-05-02: Added `scripts/test-phase1.sh` and wired `scripts/setup.sh` plus CI to use it, preventing fixture-backed tests from silently skipping when `KRATE_HELLO_WASM` is not already set.
 - 2026-05-02: Drafted the Phase 2 kickoff issue in `docs/governance/phase-2-kickoff-issue.md`; the Phase 1 exit checkbox stays open until it is created on GitHub.
-- 2026-05-02: Initial Layer36 workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4`; remote CI/release/Page checks are the next gates.
+- 2026-05-02: Initial Krate workspace pushed to GitHub at `incyashraj/layer6x6` with commit `fe41db4`; remote CI/release/Page checks are the next gates.
 - 2026-05-02: Local environment note: `cargo-component` currently needs the rustup-managed Cargo earlier in `PATH` so it can see the installed WASM target. `scripts/build-hello-component.sh` handles this for local development.
-- 2026-05-02: Improved `layer36 doctor` so it can find `cargo-component` in `CARGO_HOME`/`~/.cargo/bin` and reports both `wasm32-wasip1` and `wasm32-wasip2`.
-- 2026-05-02: Added `crates/runtime` and `crates/cli`; `layer36 --help`, `layer36 version`, and `layer36 doctor` run locally.
+- 2026-05-02: Improved `krate doctor` so it can find `cargo-component` in `CARGO_HOME`/`~/.cargo/bin` and reports both `wasm32-wasip1` and `wasm32-wasip2`.
+- 2026-05-02: Added `crates/runtime` and `crates/cli`; `krate --help`, `krate version`, and `krate doctor` run locally.
 - 2026-05-03: GitHub CI is green across Linux, macOS, and Windows. Follow-up CI now builds the hello component once on Ubuntu, uploads it as an artifact, and makes every OS assert the same SHA-256 before running it.
-- 2026-05-03: Shared-fixture CI is green on run `25267714585`; Linux, macOS, and Windows all executed the same uploaded hello `.wasm` bytes through `layer36`.
+- 2026-05-03: Shared-fixture CI is green on run `25267714585`; Linux, macOS, and Windows all executed the same uploaded hello `.wasm` bytes through `krate`.
 - 2026-05-03: Cut and pushed `v0.1.0-rc1`. Release run `25268003713` published a prerelease with five platform archives plus `SHA256SUMS`: Linux x64, Linux ARM64, macOS Intel, macOS Apple Silicon, and Windows x64.
 - 2026-05-03: Verified ADR-0002 and ADR-0003 are present on `main` under `docs/adr/`; Phase 1 ADR exit criteria are closed.
 - 2026-05-03: Wrote the Phase 1 engineering retrospective at `docs/book/src/phase1/retro.md`. External quickstart timing and governance closeout remain pending.
@@ -1585,6 +1585,6 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 ## Closing
 
-Phase 1 is where Layer36 becomes real. At its end you have a binary, not a slide deck. Every later phase is easier because of it, and every later phase is impossible without it. Resist every temptation to expand scope — "just one UAPI function" is how six-week projects become six-month ones. Ship hello-world on three OSes, write the retrospective, and start Phase 2 with momentum.
+Phase 1 is where Krate becomes real. At its end you have a binary, not a slide deck. Every later phase is easier because of it, and every later phase is impossible without it. Resist every temptation to expand scope — "just one UAPI function" is how six-week projects become six-month ones. Ship hello-world on three OSes, write the retrospective, and start Phase 2 with momentum.
 
 — end of document —

@@ -10,7 +10,7 @@
 
 ## Context
 
-Layer36 Phase 2 introduces the first real UAPI modules: `io`, `fs`, `net`,
+Krate Phase 2 introduces the first real UAPI modules: `io`, `fs`, `net`,
 `time`, and `locale`. These modules are written in WIT and become the contract
 between apps, SDKs, and host adapters.
 
@@ -20,24 +20,24 @@ same time, app authors should not need to guess which module versions work
 together.
 
 The Component Model already gives us package names with versions, such as
-`layer36:fs@0.1.0`. The decision is how Layer36 uses that version field.
+`krate:fs@0.1.0`. The decision is how Krate uses that version field.
 
 ---
 
 ## Decision
 
-We will version each Layer36 WIT package with semver, starting at `0.1.0`, and
+We will version each Krate WIT package with semver, starting at `0.1.0`, and
 we will treat the Phase 2 `cli` world as the compatibility set that names the
 exact module versions an app imports together.
 
 For Phase 2 this means:
 
-- `layer36:io@0.1.0`
-- `layer36:fs@0.1.0`
-- `layer36:net@0.1.0`
-- `layer36:time@0.1.0`
-- `layer36:locale@0.1.0`
-- `layer36:app@0.1.0`
+- `krate:io@0.1.0`
+- `krate:fs@0.1.0`
+- `krate:net@0.1.0`
+- `krate:time@0.1.0`
+- `krate:locale@0.1.0`
+- `krate:app@0.1.0`
 
 Patch releases may clarify docs or add compatible behavior. Breaking WIT shape
 changes require a new minor version before `1.0`, and a new major version after
@@ -49,7 +49,7 @@ changes require a new minor version before `1.0`, and a new major version after
 
 ### One Global UAPI Version
 
-Rejected. A single `layer36:uapi@0.1.0` package would be simple at first, but it
+Rejected. A single `krate:uapi@0.1.0` package would be simple at first, but it
 would make small future changes expensive. A filesystem-only update should not
 force network, locale, and time packages to move.
 

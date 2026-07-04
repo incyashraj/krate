@@ -10,7 +10,7 @@
 
 ## Context
 
-Layer36 needs an embeddable WebAssembly runtime that can run the Component Model
+Krate needs an embeddable WebAssembly runtime that can run the Component Model
 from Phase 1 onward. The runtime must work across desktop hosts first, then leave
 a credible path to mobile hosts, capability enforcement, fuel metering, and
 resource limits.
@@ -24,7 +24,7 @@ runtime crate and most integration tests.
 
 ## Decision
 
-We will use **Wasmtime** as the Layer36 runtime engine.
+We will use **Wasmtime** as the Krate runtime engine.
 
 Phase 1 pins `wasmtime = 43.0.2` because the current latest release, `44.0.1`,
 requires Rust `1.92.0`, while this repository is pinned to Rust `1.91.1`.
@@ -37,7 +37,7 @@ requires Rust `1.92.0`, while this repository is pinned to Rust `1.91.1`.
 
 Rejected for Phase 1. Wasmer is mature for many embedding cases, but Wasmtime has
 the stronger Component Model story and closer alignment with the Bytecode
-Alliance ecosystem Layer36 is building on.
+Alliance ecosystem Krate is building on.
 
 ### WasmEdge
 
@@ -47,7 +47,7 @@ the Rust embedding surface.
 
 ### Custom Runtime
 
-Rejected. A custom WebAssembly runtime would turn Layer36 into a VM project
+Rejected. A custom WebAssembly runtime would turn Krate into a VM project
 before it becomes an application platform. The goal is the UAPI, capability
 model, host adapters, and distribution layer, not reimplementing a mature WASM
 engine.

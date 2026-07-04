@@ -1,4 +1,4 @@
-# RFC-0003: Layer36 Phase 3 Widget Protocol
+# RFC-0003: Krate Phase 3 Widget Protocol
 
 **Status:** Draft  
 **Date:** 2026-05-21  
@@ -9,7 +9,7 @@
 
 ## Summary
 
-Layer36 apps should describe a small widget tree. The runtime and host adapter
+Krate apps should describe a small widget tree. The runtime and host adapter
 then turn that tree into native widgets where the host has a good match, or into
 custom drawn UI where it does not.
 
@@ -28,7 +28,7 @@ shared target.
   good native match.
 - Stable widget identity so input, focus, state, and accessibility can survive
   across frames.
-- A small first widget set that is enough for `layer36-notes`.
+- A small first widget set that is enough for `krate-notes`.
 
 ---
 
@@ -88,7 +88,7 @@ Anything outside this set needs a separate RFC note or an update to this one.
 
 ## Native Three Of Five Rule
 
-A widget can become a first class Layer36 protocol widget when at least three of
+A widget can become a first class Krate protocol widget when at least three of
 these hosts have a native control with the same meaning:
 
 - Windows
@@ -147,7 +147,7 @@ sequenceDiagram
     participant App
 
     Host->>Adapter: native click, key, text, pointer, close
-    Adapter->>Runtime: normalized Layer36 UI event
+    Adapter->>Runtime: normalized Krate UI event
     Runtime->>Runtime: check window and widget state
     Runtime->>App: event with WidgetId or WindowId
     App->>Runtime: next widget tree
@@ -195,5 +195,5 @@ This RFC is useful when the next three pieces can be built against it:
 
 - one native blank window proof
 - one tiny widget tree with text and button
-- one `layer36-notes` skeleton that can later replace placeholders with real
+- one `krate-notes` skeleton that can later replace placeholders with real
   native controls

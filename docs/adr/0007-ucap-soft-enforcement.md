@@ -10,9 +10,9 @@
 
 ## Context
 
-Layer36 apps need access to useful host features: files, network, time, locale,
+Krate apps need access to useful host features: files, network, time, locale,
 stdin, stdout, and stderr. That access cannot be implicit. The whole point of
-Layer36 is that the runtime sits between an app and the host, so access must be
+Krate is that the runtime sits between an app and the host, so access must be
 declared, granted, checked, and explainable.
 
 Phase 2 is still a CLI phase. There is no GUI grant prompt, signed bundle,
@@ -105,6 +105,6 @@ UAPI path that can reach a host adapter without a policy check.
 
 ## References
 
-- [Layer36 Phase 2 Plan](../../Plan/Phase-2-Plan.md)
+- [Krate Phase 2 Plan](../../Plan/Phase-2-Plan.md)
 - [Generated UAPI reference](../book/src/reference/uapi/index.md)
 - [Capability-Based Security](https://en.wikipedia.org/wiki/Capability-based_security)

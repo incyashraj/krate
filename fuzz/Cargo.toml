@@ -1,5 +1,5 @@
 [package]
-name = "layer36-fuzz"
+name = "krate-fuzz"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -9,9 +9,9 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
-layer36-adapter-common = { path = "../crates/adapter-common", version = "0.1.0-dev" }
-layer36-manifest = { path = "../crates/manifest", version = "0.1.0-dev" }
-layer36-policy = { path = "../crates/policy", version = "0.1.0-dev" }
+krate-adapter-common = { path = "../crates/adapter-common", version = "0.1.0-dev" }
+krate-manifest = { path = "../crates/manifest", version = "0.1.0-dev" }
+krate-policy = { path = "../crates/policy", version = "0.1.0-dev" }
 
 [workspace]
 members = ["."]

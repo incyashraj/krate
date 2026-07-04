@@ -53,12 +53,12 @@ The report includes:
   - `scripts/build-phase2-language-variant-fixtures.sh`
   - `scripts/test-phase2-language-variants.sh`
 - fixture presence and SHA-256 hashes for:
-  - `layer36_go_clock.wasm`
-  - `layer36_go_cat.wasm`
-  - `layer36_go_curl.wasm`
-  - `layer36_ts_clock.wasm`
-  - `layer36_ts_cat.wasm`
-  - `layer36_ts_curl.wasm`
+  - `krate_go_clock.wasm`
+  - `krate_go_cat.wasm`
+  - `krate_go_curl.wasm`
+  - `krate_ts_clock.wasm`
+  - `krate_ts_cat.wasm`
+  - `krate_ts_curl.wasm`
 - tail logs for build and test steps
 
 ## What The Comparator Checks
@@ -74,7 +74,7 @@ The comparator checks that:
 
 It does not require independently generated TypeScript fixtures to have the
 same hash on every operating system. The useful Phase 2 proof is that the same
-source fixtures build, pass import checks, and run through Layer36 on Linux,
+source fixtures build, pass import checks, and run through Krate on Linux,
 macOS, and Windows. Byte-for-byte reproducible jco output is a different
 promise and is not needed for this phase.
 

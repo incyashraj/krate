@@ -2,16 +2,16 @@
 
 UAPI means Universal API.
 
-It is the standard app API every Layer36 app will call. Instead of calling
+It is the standard app API every Krate app will call. Instead of calling
 Windows files, macOS files, Linux files, Android files, or iOS files directly,
-an app calls the Layer36 file API. The host adapter then does the native work.
+an app calls the Krate file API. The host adapter then does the native work.
 
 Phase 2 starts this layer.
 
 ## Planned Modules
 
 ```text
-layer36:
+krate:
   io/              stdio, pipes, stdout, stderr
   fs/              files, paths, metadata
   net/             HTTP first, more network APIs later
@@ -42,7 +42,7 @@ Phase 2 only covers:
 That is enough to build the first useful CLI apps without pretending the whole
 platform is ready.
 
-The first Phase 2 draft is checked into `wit/layer36/phase2`. It is a review
+The first Phase 2 draft is checked into `wit/krate/phase2`. It is a review
 draft, not a frozen compatibility promise yet.
 
 The generated reference page is built from those WIT files:
@@ -77,7 +77,7 @@ id = "com.example.hello"
 name = "Hello"
 version = "1.0.0"
 entry = "hello.wasm"
-world = "layer36:app/cli@0.1.0"
+world = "krate:app/cli@0.1.0"
 
 [[capabilities]]
 cap = "fs.read:~/Documents/notes/**"
@@ -93,13 +93,13 @@ required = false
 You can validate the file today:
 
 ```bash
-cargo run -p layer36-cli -- manifest check manifest.toml
+cargo run -p krate-cli -- manifest check manifest.toml
 ```
 
 To read it in human form:
 
 ```bash
-cargo run -p layer36-cli -- manifest explain manifest.toml
+cargo run -p krate-cli -- manifest explain manifest.toml
 ```
 
 This prints app identity, every requested capability, whether the capability is
@@ -108,7 +108,7 @@ default-granted, and whether a launch grant is needed.
 You can also create a starter manifest from the CLI:
 
 ```bash
-cargo run -p layer36-cli -- manifest init \
+cargo run -p krate-cli -- manifest init \
   --id com.example.notes \
   --name Notes \
   --entry notes.wasm \
@@ -123,16 +123,16 @@ file, and `--force` if you really want to replace an existing file.
 You can also print the capability strings this runtime understands:
 
 ```bash
-cargo run -p layer36-cli -- manifest capabilities
+cargo run -p krate-cli -- manifest capabilities
 ```
 
 For scripts and editor tools, the manifest inspection commands can print JSON
 too:
 
 ```bash
-cargo run -p layer36-cli -- manifest check --format json manifest.toml
-cargo run -p layer36-cli -- manifest explain --format json manifest.toml
-cargo run -p layer36-cli -- manifest capabilities --format json
+cargo run -p krate-cli -- manifest check --format json manifest.toml
+cargo run -p krate-cli -- manifest explain --format json manifest.toml
+cargo run -p krate-cli -- manifest capabilities --format json
 ```
 
 That JSON includes the app identity, capability counts, each requested
@@ -150,10 +150,10 @@ id = "com.example.notes"
 name = "Notes"
 version = "0.1.0"
 entry = "notes.wasm"
-world = "layer36:app/gui@0.2.0"
+world = "krate:app/gui@0.2.0"
 ```
 
-Manifest tools can check and explain this world today. `layer36 run` still exits
+Manifest tools can check and explain this world today. `krate run` still exits
 early for it because the window runtime has not been implemented yet.
 Internally, Phase 3 now has a small runtime UI dispatcher scaffold that checks
 window and clipboard permissions before calling a shared UI adapter trait. The
@@ -162,24 +162,24 @@ draft backend, not a real native window backend yet. The runtime can select
 that current host adapter and report whether the backend is still headless or
 native.
 
-`layer36 run` also reads `manifest.toml` when it sits next to the `.wasm` file:
+`krate run` also reads `manifest.toml` when it sits next to the `.wasm` file:
 
 ```bash
-cargo run -p layer36-cli -- run app.wasm --grant 'fs.read:~/Documents/notes/**'
-cargo run -p layer36-cli -- run app.wasm --auto-grant
-cargo run -p layer36-cli -- run --prompt app.wasm
-cargo run -p layer36-cli -- run --dump-caps app.wasm
-cargo run -p layer36-cli -- run --dump-caps --dump-caps-format json app.wasm
+cargo run -p krate-cli -- run app.wasm --grant 'fs.read:~/Documents/notes/**'
+cargo run -p krate-cli -- run app.wasm --auto-grant
+cargo run -p krate-cli -- run --prompt app.wasm
+cargo run -p krate-cli -- run --dump-caps app.wasm
+cargo run -p krate-cli -- run --dump-caps --dump-caps-format json app.wasm
 ```
 
 For now, this starts as a launch-time session check. If a required capability is
-missing and no prompt is available, Layer36 exits before the component starts.
+missing and no prompt is available, Krate exits before the component starts.
 When `--prompt` is passed, or when the command is running in a real terminal,
-Layer36 can ask for the missing manifest capabilities and add them to the
+Krate can ask for the missing manifest capabilities and add them to the
 current run session.
 
 The manifest entry is checked too. If `manifest.toml` says `entry = "app.wasm"`
-but you run a different file, Layer36 stops before grant resolution. That keeps
+but you run a different file, Krate stops before grant resolution. That keeps
 a manifest from accidentally applying to the wrong component.
 
 `--dump-caps` is for debugging. It resolves the same session policy as a real
@@ -191,10 +191,10 @@ and component path.
 For a local audit trail, pass `--log-grants`:
 
 ```bash
-cargo run -p layer36-cli -- run \
+cargo run -p krate-cli -- run \
   --manifest manifest.toml \
   --auto-grant \
-  --log-grants layer36-grants.log \
+  --log-grants krate-grants.log \
   app.wasm
 ```
 
@@ -204,10 +204,10 @@ Use `--log-grants-format jsonl` when a script needs one structured audit record
 per line:
 
 ```bash
-cargo run -p layer36-cli -- run \
+cargo run -p krate-cli -- run \
   --manifest manifest.toml \
   --auto-grant \
-  --log-grants layer36-grants.jsonl \
+  --log-grants krate-grants.jsonl \
   --log-grants-format jsonl \
   app.wasm
 ```
@@ -314,7 +314,7 @@ Later reads, writes, seeks, stats, and flushes use that ID to find the real host
 handle and call the adapter. This keeps handles inside the runtime instead of
 letting guest code pass around raw host IDs.
 
-This host is now installed into the real `layer36 run` path. The runtime still
+This host is now installed into the real `krate run` path. The runtime still
 tries the Phase 1 world first for the original proof app. If that world does
 not match, it tries the Phase 2 `cli` world and installs the generated UAPI
 imports.
@@ -322,7 +322,7 @@ imports.
 The local adapter is still small on purpose. It can handle stdio, basic files,
 time, locale, and plain HTTP request framing. Relative filesystem paths now go
 through the runtime sandbox root instead of the process working directory by
-accident. The default root is `.`, and `layer36 run --sandbox-root <dir>` lets a
+accident. The default root is `.`, and `krate run --sandbox-root <dir>` lets a
 run point app-relative paths at a specific directory. Path cleanup and
 filesystem grant matching share the same rules, so simple separator differences
 do not change permission behavior, `..` traversal is rejected, and colon-based
@@ -357,7 +357,7 @@ for `http://` and `https://`, so capability checks and adapter-side URL parsing
 stay aligned. The plain `http://` request parser now reuses that same authority
 path, so host/port validation logic is no longer duplicated across net layers.
 Helper `get(url)` calls now use a runtime-configured default timeout:
-`layer36 run --http-timeout-millis` (default `5000`, set `0` to disable).
+`krate run --http-timeout-millis` (default `5000`, set `0` to disable).
 HTTPS, redirects, streaming, and deeper protocol work are
 still open.
 
@@ -384,20 +384,20 @@ This is the first end-to-end proof that the UAPI path is more than generated
 types. The matching denial test runs the same component without `fs.read`; the
 host returns permission denied before native file access happens.
 
-The first named sample app is `apps/layer36-clock`. It uses the same Phase 2
+The first named sample app is `apps/krate-clock`. It uses the same Phase 2
 world but focuses on time, locale, and stdout. A hidden `--test-time` runner
 flag lets the test suite freeze wall-clock time. Hidden `--test-locale` and
 `--test-timezone` flags can pin locale and timezone too, so the clock fixture
 can assert one exact snapshot across machines.
 
-The next sample is `apps/layer36-cat`. It forced one important addition:
-Layer36-native app arguments. You pass app arguments after `--`:
+The next sample is `apps/krate-cat`. It forced one important addition:
+Krate-native app arguments. You pass app arguments after `--`:
 
 ```bash
-layer36 run --grant fs.read:fixtures/** layer36_cat.wasm -- fixtures/a.txt fixtures/b.txt
+krate run --grant fs.read:fixtures/** krate_cat.wasm -- fixtures/a.txt fixtures/b.txt
 ```
 
-Inside the component, those arguments come from `layer36:io/args.raw`. The first
+Inside the component, those arguments come from `krate:io/args.raw`. The first
 draft returns a newline-separated string. That is intentionally simple while the
 CLI UAPI is still taking shape.
 
@@ -406,14 +406,14 @@ short permission-denied message and exits with code `5`. The same happens when
 the app has a grant for one path glob but asks for a different file outside
 that glob.
 
-The third sample is `apps/layer36-curl`. It uses those same app arguments for a
-URL, then calls `layer36:net/http-client.get`:
+The third sample is `apps/krate-curl`. It uses those same app arguments for a
+URL, then calls `krate:net/http-client.get`:
 
 ```bash
-layer36 run --grant net.connect:127.0.0.1:8080 layer36_curl.wasm -- http://127.0.0.1:8080/file.txt
+krate run --grant net.connect:127.0.0.1:8080 krate_curl.wasm -- http://127.0.0.1:8080/file.txt
 ```
 
-The important part is the grant. Layer36 checks `net.connect:HOST:PORT` before
+The important part is the grant. Krate checks `net.connect:HOST:PORT` before
 the adapter opens a socket. If the grant is missing, the app gets permission
 denied, exits with code `5`, and the host network is never touched.
 If the response is too large, times out, or cannot be parsed as HTTP, the sample
@@ -425,7 +425,7 @@ The runtime has a feature named `phase2-bindings` that asks Wasmtime to generate
 Rust host bindings from the Phase 2 WIT:
 
 ```bash
-cargo test -p layer36-runtime --features phase2-bindings
+cargo test -p krate-runtime --features phase2-bindings
 ```
 
 This is not the public SDK yet. It is a safety check for us while the WIT is
@@ -435,7 +435,7 @@ names before we build adapter code on top of them.
 The first guest-side Rust SDK crate has started now too:
 
 ```rust
-use layer36::{
+use krate::{
     io::{stdio, streams::OutputStreamExt},
     locale::{self, DateStyle},
     time,
@@ -443,7 +443,7 @@ use layer36::{
 };
 ```
 
-It lives at `crates/bindings-rust` and builds as package `layer36`. For now it
+It lives at `crates/bindings-rust` and builds as package `krate`. For now it
 is a thin facade over generated WIT imports, plus a few helpers for app
 arguments, text output, file reads and writes, HTTP GET, time, and locale.
 

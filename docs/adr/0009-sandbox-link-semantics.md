@@ -49,7 +49,7 @@ not express a policy about link semantics, and can drift across host behavior.
 
 ### Keep Unix symlink checks and skip Windows reparse checks
 
-Rejected. It creates host parity gaps in the exact place where Layer36 needs
+Rejected. It creates host parity gaps in the exact place where Krate needs
 predictable cross-platform sandbox behavior.
 
 ---

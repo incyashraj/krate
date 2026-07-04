@@ -5,8 +5,8 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-language-variant-evidence/language-variant-evidence.md"
-STRICT="${LAYER36_LANGUAGE_VARIANT_EVIDENCE_STRICT:-0}"
-MODE="${LAYER36_LANGUAGE_VARIANTS_MODE:-optional}"
+STRICT="${KRATE_LANGUAGE_VARIANT_EVIDENCE_STRICT:-0}"
+MODE="${KRATE_LANGUAGE_VARIANTS_MODE:-optional}"
 
 usage() {
   cat <<'USAGE'
@@ -14,12 +14,12 @@ Usage: scripts/record-phase2-language-variant-evidence.sh [--strict] [--mode <mo
 
 Options:
   --strict           Exit non-zero when build/test fails
-  --mode <mode>      optional|any|both|go|ts (default: env LAYER36_LANGUAGE_VARIANTS_MODE or optional)
+  --mode <mode>      optional|any|both|go|ts (default: env KRATE_LANGUAGE_VARIANTS_MODE or optional)
   --output <path>    Output markdown file path
 
 Environment:
-  LAYER36_LANGUAGE_VARIANTS_MODE             optional|any|both|go|ts (default: optional)
-  LAYER36_LANGUAGE_VARIANT_EVIDENCE_STRICT   1 to exit non-zero when build/test fails
+  KRATE_LANGUAGE_VARIANTS_MODE             optional|any|both|go|ts (default: optional)
+  KRATE_LANGUAGE_VARIANT_EVIDENCE_STRICT   1 to exit non-zero when build/test fails
 
 Notes:
   - The script always writes a markdown report.
@@ -115,12 +115,12 @@ exists_of() {
   fi
 }
 
-go_clock="$ROOT/test/integration/language-variants/layer36_go_clock.wasm"
-go_cat="$ROOT/test/integration/language-variants/layer36_go_cat.wasm"
-go_curl="$ROOT/test/integration/language-variants/layer36_go_curl.wasm"
-ts_clock="$ROOT/test/integration/language-variants/layer36_ts_clock.wasm"
-ts_cat="$ROOT/test/integration/language-variants/layer36_ts_cat.wasm"
-ts_curl="$ROOT/test/integration/language-variants/layer36_ts_curl.wasm"
+go_clock="$ROOT/test/integration/language-variants/krate_go_clock.wasm"
+go_cat="$ROOT/test/integration/language-variants/krate_go_cat.wasm"
+go_curl="$ROOT/test/integration/language-variants/krate_go_curl.wasm"
+ts_clock="$ROOT/test/integration/language-variants/krate_ts_clock.wasm"
+ts_cat="$ROOT/test/integration/language-variants/krate_ts_cat.wasm"
+ts_curl="$ROOT/test/integration/language-variants/krate_ts_curl.wasm"
 
 {
   echo "# Phase 2 Language Variant Evidence"
@@ -145,12 +145,12 @@ ts_curl="$ROOT/test/integration/language-variants/layer36_ts_curl.wasm"
   echo
   echo "| Fixture | Exists | SHA-256 |"
   echo "|---|---|---|"
-  echo "| layer36_go_clock.wasm | $(exists_of "$go_clock") | \`$(hash_of "$go_clock")\` |"
-  echo "| layer36_go_cat.wasm | $(exists_of "$go_cat") | \`$(hash_of "$go_cat")\` |"
-  echo "| layer36_go_curl.wasm | $(exists_of "$go_curl") | \`$(hash_of "$go_curl")\` |"
-  echo "| layer36_ts_clock.wasm | $(exists_of "$ts_clock") | \`$(hash_of "$ts_clock")\` |"
-  echo "| layer36_ts_cat.wasm | $(exists_of "$ts_cat") | \`$(hash_of "$ts_cat")\` |"
-  echo "| layer36_ts_curl.wasm | $(exists_of "$ts_curl") | \`$(hash_of "$ts_curl")\` |"
+  echo "| krate_go_clock.wasm | $(exists_of "$go_clock") | \`$(hash_of "$go_clock")\` |"
+  echo "| krate_go_cat.wasm | $(exists_of "$go_cat") | \`$(hash_of "$go_cat")\` |"
+  echo "| krate_go_curl.wasm | $(exists_of "$go_curl") | \`$(hash_of "$go_curl")\` |"
+  echo "| krate_ts_clock.wasm | $(exists_of "$ts_clock") | \`$(hash_of "$ts_clock")\` |"
+  echo "| krate_ts_cat.wasm | $(exists_of "$ts_cat") | \`$(hash_of "$ts_cat")\` |"
+  echo "| krate_ts_curl.wasm | $(exists_of "$ts_curl") | \`$(hash_of "$ts_curl")\` |"
   echo
   echo "## Build Log (tail)"
   echo

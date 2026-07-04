@@ -2,7 +2,7 @@
 
 These numbers are the first local baseline for the proof-of-concept runtime.
 They are not product performance promises; they give us a repeatable way to see
-whether future runtime changes move Layer36 in the right direction.
+whether future runtime changes move Krate in the right direction.
 
 ## Reference Machine
 
@@ -23,7 +23,7 @@ Run with:
 
 ```bash
 scripts/build-phase1-components.sh
-cargo bench -p layer36-runtime --bench startup
+cargo bench -p krate-runtime --bench startup
 scripts/check-benchmark-regression.sh
 ```
 
@@ -46,8 +46,8 @@ runners are noisy.
 
 | Artifact | Size |
 |---|---:|
-| `target/release/layer36` | 11 MB |
-| `dist/layer36-0.1.0-dev-aarch64-apple-darwin.tar.gz` | 4.4 MB |
+| `target/release/krate` | 11 MB |
+| `dist/krate-0.1.0-dev-aarch64-apple-darwin.tar.gz` | 4.4 MB |
 
 ## Notes
 

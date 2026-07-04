@@ -16,7 +16,7 @@ logical rectangle as a custom drawn canvas. Without a shared layout engine, each
 host adapter would be tempted to lay out controls its own way, and the platform
 would drift quickly.
 
-Layer36 also needs a layout model developers already understand. Flex style
+Krate also needs a layout model developers already understand. Flex style
 layout is the smallest useful common ground for stacks, lists, sidebars, note
 editors, and basic tool surfaces. CSS Grid is useful later, but the first notes
 app can start with flex.
@@ -29,8 +29,8 @@ budget.
 
 ## Decision
 
-We will use Taffy as the Phase 3 layout engine. Layer36 will keep a small
-wrapper crate, `layer36-layout`, between the runtime and Taffy so WIT-facing
+We will use Taffy as the Phase 3 layout engine. Krate will keep a small
+wrapper crate, `krate-layout`, between the runtime and Taffy so WIT-facing
 types, widget IDs, error mapping, and future compatibility rules stay under our
 control.
 
@@ -47,18 +47,18 @@ platform UI path.
 ### Let every host toolkit do layout
 
 Rejected. That gives each platform too much freedom. Native controls can still
-render natively, but the Layer36 runtime must own the portable layout result so
+render natively, but the Krate runtime must own the portable layout result so
 drawn fallback widgets, hit testing, snapshots, and accessibility bounds stay
 consistent.
 
 ### Use a browser engine for layout
 
 Rejected for Phase 3. It brings a much larger surface than we need and pushes
-Layer36 toward a browser-shell architecture.
+Krate toward a browser-shell architecture.
 
 ### Use a tiny stack-only layout permanently
 
-Rejected. A stack-only layout is useful as a first smoke path, but `layer36-notes`
+Rejected. A stack-only layout is useful as a first smoke path, but `krate-notes`
 needs scrolling, editor panes, lists, toolbars, and resizable regions. We need a
 real layout engine before native widgets become deep.
 
@@ -73,13 +73,13 @@ real layout engine before native widgets become deep.
   bounds.
 - Taffy gives us flexbox behavior without writing a layout engine from scratch.
 - The wrapper crate lets us swap or pin engine behavior later without exposing
-  Taffy directly as the Layer36 API.
+  Taffy directly as the Krate API.
 
 ### Negative
 
 - Taffy becomes part of the runtime dependency graph.
 - Layout behavior may change when Taffy changes, so we need pinned versions and
-  tests around Layer36 expectations.
+  tests around Krate expectations.
 - The first wrapper only covers the small style subset in the Phase 3 draft.
 
 ### Neutral
@@ -96,7 +96,7 @@ Revisit this decision if one of these conditions appears:
 
 1. Taffy cannot meet the 10,000-node layout budget after realistic widget
    styles are added
-2. Taffy behavior changes in ways that break Layer36's compatibility promises
+2. Taffy behavior changes in ways that break Krate's compatibility promises
 3. native host layout proves necessary for a class of controls we cannot model
    at the runtime layer
 4. accessibility or IME bounds require layout data Taffy cannot provide

@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     check_doc(
         &root.join("docs/rfc/0003-widget-protocol.md"),
         &[
-            "RFC-0003: Layer36 Phase 3 Widget Protocol",
+            "RFC-0003: Krate Phase 3 Widget Protocol",
             "WidgetId",
             "First Widget Set",
             "Native Three Of Five Rule",
@@ -38,7 +38,7 @@ fn main() -> Result<()> {
             "routed pointer event",
             "routed key events",
             "real native window backend",
-            "layer36-notes",
+            "krate-notes",
         ],
     )?;
     check_doc(
@@ -46,7 +46,7 @@ fn main() -> Result<()> {
         &[
             "ADR-0014: Layout Engine Uses Taffy",
             "Status:** Proposed",
-            "layer36-layout",
+            "krate-layout",
             "Taffy",
             "stable widget IDs",
         ],

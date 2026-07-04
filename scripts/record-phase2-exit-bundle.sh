@@ -5,12 +5,12 @@ ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
 OUTPUT="target/phase2-exit-bundle/exit-bundle.md"
-STRICT="${LAYER36_EXIT_BUNDLE_STRICT:-0}"
-INCLUDE_RUST_SDK="${LAYER36_EXIT_BUNDLE_INCLUDE_RUST_SDK:-0}"
-INCLUDE_CI_STABILITY="${LAYER36_EXIT_BUNDLE_INCLUDE_CI_STABILITY:-0}"
-INCLUDE_HOSTED_FULL_CI="${LAYER36_EXIT_BUNDLE_INCLUDE_HOSTED_FULL_CI:-0}"
-INCLUDE_SELF_HOSTED="${LAYER36_EXIT_BUNDLE_INCLUDE_SELF_HOSTED:-0}"
-INCLUDE_FUZZ="${LAYER36_EXIT_BUNDLE_INCLUDE_FUZZ:-0}"
+STRICT="${KRATE_EXIT_BUNDLE_STRICT:-0}"
+INCLUDE_RUST_SDK="${KRATE_EXIT_BUNDLE_INCLUDE_RUST_SDK:-0}"
+INCLUDE_CI_STABILITY="${KRATE_EXIT_BUNDLE_INCLUDE_CI_STABILITY:-0}"
+INCLUDE_HOSTED_FULL_CI="${KRATE_EXIT_BUNDLE_INCLUDE_HOSTED_FULL_CI:-0}"
+INCLUDE_SELF_HOSTED="${KRATE_EXIT_BUNDLE_INCLUDE_SELF_HOSTED:-0}"
+INCLUDE_FUZZ="${KRATE_EXIT_BUNDLE_INCLUDE_FUZZ:-0}"
 
 usage() {
   cat <<'USAGE'
@@ -28,12 +28,12 @@ Options:
   --output <path>         Output markdown file path
 
 Environment:
-  LAYER36_EXIT_BUNDLE_STRICT                1 to exit non-zero on failed included steps
-  LAYER36_EXIT_BUNDLE_INCLUDE_RUST_SDK      1 to include Rust SDK package evidence
-  LAYER36_EXIT_BUNDLE_INCLUDE_CI_STABILITY  1 to include hosted CI stability evidence
-  LAYER36_EXIT_BUNDLE_INCLUDE_HOSTED_FULL_CI 1 to include hosted full CI evidence
-  LAYER36_EXIT_BUNDLE_INCLUDE_SELF_HOSTED   1 to include self-hosted evidence
-  LAYER36_EXIT_BUNDLE_INCLUDE_FUZZ          1 to include fuzz smoke evidence
+  KRATE_EXIT_BUNDLE_STRICT                1 to exit non-zero on failed included steps
+  KRATE_EXIT_BUNDLE_INCLUDE_RUST_SDK      1 to include Rust SDK package evidence
+  KRATE_EXIT_BUNDLE_INCLUDE_CI_STABILITY  1 to include hosted CI stability evidence
+  KRATE_EXIT_BUNDLE_INCLUDE_HOSTED_FULL_CI 1 to include hosted full CI evidence
+  KRATE_EXIT_BUNDLE_INCLUDE_SELF_HOSTED   1 to include self-hosted evidence
+  KRATE_EXIT_BUNDLE_INCLUDE_FUZZ          1 to include fuzz smoke evidence
 USAGE
 }
 

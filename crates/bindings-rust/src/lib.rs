@@ -7,12 +7,12 @@ pub mod bindings;
 
 pub use bindings::Guest;
 
-/// Common imports for small Layer36 Rust components.
+/// Common imports for small Krate Rust components.
 ///
 /// This keeps sample apps readable while the SDK is still thin:
 ///
 /// ```no_run
-/// use layer36::prelude::*;
+/// use krate::prelude::*;
 /// ```
 pub mod prelude {
     pub use crate::export;
@@ -37,10 +37,10 @@ macro_rules! export {
 
 /// Standard input, output, arguments, and structured logs.
 pub mod io {
-    pub use crate::bindings::layer36::io::types::IoError;
+    pub use crate::bindings::krate::io::types::IoError;
     pub use crate::Guest;
 
-    /// App arguments passed to `layer36 run app.wasm -- ...`.
+    /// App arguments passed to `krate run app.wasm -- ...`.
     pub mod args {
         /// Return all app arguments as owned strings.
         ///
@@ -64,7 +64,7 @@ pub mod io {
         /// apps.
         #[inline]
         pub fn raw() -> String {
-            crate::bindings::layer36::io::args::raw()
+            crate::bindings::krate::io::args::raw()
         }
 
         /// Split a raw Phase 2 argument string into non-empty arguments.
@@ -85,10 +85,10 @@ pub mod io {
 
     /// Resource stream helpers for text and byte I/O.
     pub mod streams {
-        pub use crate::bindings::layer36::io::streams::{InputStream, OutputStream};
-        pub use crate::bindings::layer36::io::types::IoError;
+        pub use crate::bindings::krate::io::streams::{InputStream, OutputStream};
+        pub use crate::bindings::krate::io::types::IoError;
 
-        /// Convenience methods for generated Layer36 input streams.
+        /// Convenience methods for generated Krate input streams.
         pub trait InputStreamExt {
             /// Read until EOF and return every byte.
             fn read_to_end(&self) -> Result<Vec<u8>, IoError>;
@@ -117,7 +117,7 @@ pub mod io {
             }
         }
 
-        /// Convenience methods for generated Layer36 output streams.
+        /// Convenience methods for generated Krate output streams.
         pub trait OutputStreamExt {
             /// Write the complete byte slice.
             fn write_bytes(&self, bytes: &[u8]) -> Result<(), IoError>;
@@ -147,7 +147,7 @@ pub mod io {
 
     /// Host standard streams.
     pub mod stdio {
-        pub use crate::bindings::layer36::io::stdio::{stderr, stdin, stdout};
+        pub use crate::bindings::krate::io::stdio::{stderr, stdin, stdout};
 
         use super::streams::OutputStreamExt;
         use super::IoError;
@@ -175,22 +175,22 @@ pub mod io {
 
     /// Structured log records emitted through the runtime.
     pub mod log {
-        pub use crate::bindings::layer36::io::log::{emit, Field};
-        pub use crate::bindings::layer36::io::types::LogLevel;
+        pub use crate::bindings::krate::io::log::{emit, Field};
+        pub use crate::bindings::krate::io::types::LogLevel;
     }
 }
 
 /// Capability-checked file access.
 pub mod fs {
-    pub use crate::bindings::layer36::fs::files::File;
-    pub use crate::bindings::layer36::fs::types::{FileStat, FsError, OpenMode};
+    pub use crate::bindings::krate::fs::files::File;
+    pub use crate::bindings::krate::fs::types::{FileStat, FsError, OpenMode};
 
-    /// Open a file through the Layer36 filesystem UAPI.
+    /// Open a file through the Krate filesystem UAPI.
     ///
     /// The runtime checks the active UCap session before the host filesystem is
     /// touched.
     pub fn open(path: &str, mode: OpenMode) -> Result<File, FsError> {
-        crate::bindings::layer36::fs::files::open(path, mode)
+        crate::bindings::krate::fs::files::open(path, mode)
     }
 
     /// Read a whole file as bytes.
@@ -210,35 +210,35 @@ pub mod fs {
 
     /// Return metadata for a path.
     pub fn stat(path: &str) -> Result<FileStat, FsError> {
-        crate::bindings::layer36::fs::files::stat(path)
+        crate::bindings::krate::fs::files::stat(path)
     }
 
     /// List a directory.
     pub fn list(path: &str) -> Result<Vec<String>, FsError> {
-        crate::bindings::layer36::fs::files::list(path)
+        crate::bindings::krate::fs::files::list(path)
     }
 
     /// Remove a file.
     pub fn remove_file(path: &str) -> Result<(), FsError> {
-        crate::bindings::layer36::fs::files::remove_file(path)
+        crate::bindings::krate::fs::files::remove_file(path)
     }
 
     /// Remove a directory.
     pub fn remove_dir(path: &str) -> Result<(), FsError> {
-        crate::bindings::layer36::fs::files::remove_dir(path)
+        crate::bindings::krate::fs::files::remove_dir(path)
     }
 
     /// Create a directory.
     pub fn mkdir(path: &str) -> Result<(), FsError> {
-        crate::bindings::layer36::fs::files::mkdir(path)
+        crate::bindings::krate::fs::files::mkdir(path)
     }
 
     /// Rename or move a path.
     pub fn rename(from: &str, to: &str) -> Result<(), FsError> {
-        crate::bindings::layer36::fs::files::rename(from, to)
+        crate::bindings::krate::fs::files::rename(from, to)
     }
 
-    /// Convenience methods for generated Layer36 file resources.
+    /// Convenience methods for generated Krate file resources.
     pub trait FileExt {
         /// Read the file from the current cursor position until EOF.
         fn read_to_end(&self) -> Result<Vec<u8>, FsError>;
@@ -294,13 +294,13 @@ pub mod fs {
 
 /// Capability-checked HTTP client access.
 pub mod net {
-    pub use crate::bindings::layer36::net::types::{
+    pub use crate::bindings::krate::net::types::{
         Header, HttpMethod, NetError, Request, Response,
     };
 
     /// Fetch a URL with a simple HTTP GET and return the response body.
     pub fn get(url: &str) -> Result<Vec<u8>, NetError> {
-        crate::bindings::layer36::net::http_client::get(url)
+        crate::bindings::krate::net::http_client::get(url)
     }
 
     /// Fetch a URL with HTTP GET and decode the response body as UTF-8 text.
@@ -316,7 +316,7 @@ pub mod net {
     /// transport headers such as `Host`, `Connection`, and `Content-Length`
     /// under host control.
     pub fn fetch(req: Request) -> Result<Response, NetError> {
-        crate::bindings::layer36::net::http_client::fetch(&req)
+        crate::bindings::krate::net::http_client::fetch(&req)
     }
 }
 
@@ -337,31 +337,31 @@ pub mod time {
         sleep::sleep_millis(millis)
     }
 
-    /// Clock functions from `layer36:time/clock`.
+    /// Clock functions from `krate:time/clock`.
     pub mod clock {
         /// Return the current wall-clock time in milliseconds since Unix epoch.
         pub fn now_millis() -> u64 {
-            crate::bindings::layer36::time::clock::now_millis()
+            crate::bindings::krate::time::clock::now_millis()
         }
 
         /// Return a monotonic timestamp in nanoseconds.
         pub fn monotonic_nanos() -> u64 {
-            crate::bindings::layer36::time::clock::monotonic_nanos()
+            crate::bindings::krate::time::clock::monotonic_nanos()
         }
     }
 
-    /// Sleep functions from `layer36:time/sleep`.
+    /// Sleep functions from `krate:time/sleep`.
     pub mod sleep {
         /// Sleep the current component for at least the requested milliseconds.
         pub fn sleep_millis(millis: u32) {
-            crate::bindings::layer36::time::sleep::sleep_millis(millis)
+            crate::bindings::krate::time::sleep::sleep_millis(millis)
         }
     }
 }
 
 /// Locale, timezone, date, and number formatting helpers.
 pub mod locale {
-    pub use crate::bindings::layer36::locale::types::{DateStyle, LocaleId, NumberStyle};
+    pub use crate::bindings::krate::locale::types::{DateStyle, LocaleId, NumberStyle};
 
     /// Return the user's current locale.
     pub fn current() -> LocaleId {
@@ -385,13 +385,13 @@ pub mod locale {
 
     /// Locale and timezone discovery.
     pub mod info {
-        pub use crate::bindings::layer36::locale::info::{current, timezone};
+        pub use crate::bindings::krate::locale::info::{current, timezone};
     }
 
     /// Date and number formatting.
     pub mod format {
-        pub use crate::bindings::layer36::locale::format::{format_date, format_number};
-        pub use crate::bindings::layer36::locale::types::{DateStyle, LocaleId, NumberStyle};
+        pub use crate::bindings::krate::locale::format::{format_date, format_number};
+        pub use crate::bindings::krate::locale::types::{DateStyle, LocaleId, NumberStyle};
     }
 }
 

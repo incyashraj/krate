@@ -2,11 +2,11 @@
 
 **Status:** Planned
 **Estimate:** est. 6 to 10 weeks
-**Goal:** Make Layer36 pleasant to build with.
+**Goal:** Make Krate pleasant to build with.
 
 This phase turns the runtime into a developer workflow:
 
-- `layer36 new`
+- `krate new`
 - templates for first class languages
 - debug support
 - hot reload

@@ -5,7 +5,7 @@
 //! Model binding generator before we freeze names and finish dispatch wiring.
 
 wasmtime::component::bindgen!({
-    path: "../../wit/layer36/phase2",
+    path: "../../wit/krate/phase2",
     world: "cli",
     imports: {
         default: trappable,
@@ -31,8 +31,8 @@ mod tests {
 
     #[test]
     fn generated_types_keep_expected_rust_names() {
-        use layer36::fs::types::OpenMode;
-        use layer36::net::types::HttpMethod;
+        use krate::fs::types::OpenMode;
+        use krate::net::types::HttpMethod;
 
         let read = OpenMode::Read;
         let get = HttpMethod::Get;

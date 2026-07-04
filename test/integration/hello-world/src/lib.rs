@@ -7,8 +7,8 @@ struct Component;
 
 impl Guest for Component {
     fn run() {
-        bindings::layer36::phase1::host::print("Hello, Layer36!");
-        bindings::layer36::phase1::host::exit(0);
+        bindings::krate::phase1::host::print("Hello, Krate!");
+        bindings::krate::phase1::host::exit(0);
     }
 }
 

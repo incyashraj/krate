@@ -12,7 +12,7 @@
 - GitHub Pages publishes this book.
 - Issues, labels, templates, contributor docs, and security docs exist.
 - ADR-0001 records the Rust runtime decision.
-- The project name moved to Layer36 after the first naming screen.
+- The project name moved to Krate after the first naming screen.
 - The repo has been pushed to `incyashraj/layer6x6`.
 
 ## Still Important
@@ -21,7 +21,7 @@
 - Confirm public repo visibility, social preview, and repo metadata.
 - Have one outside reader review the README.
 - Create Discord or another community home before a public announcement.
-- Secure `layer36.dev` or another chosen domain.
+- Secure `krate.dev` or another chosen domain.
 - Finish official naming and trademark checks.
 - Get one external contributor PR opened and merged.
 

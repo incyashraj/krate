@@ -1,4 +1,4 @@
-# Layer36 Plan Amendments — July 2026 (Change Order)
+# Krate Plan Amendments — July 2026 (Change Order)
 
 > **Status:** Approved by the founder 2026-07-02, based on a full direction review of the repo, plans, exit ledger, and CI state (review notes kept founder-private).
 > **Purpose:** The single instruction set for updating every plan document before development moves forward. Apply all amendments below, in order, before starting new Phase 3 implementation work.
@@ -32,7 +32,7 @@ Facts verified against the repo, CI, and ledger on 2026-07-02. These are the bas
 - **Phase 2**: engineering ~90–92% complete. Exit ledger (`docs/book/src/phase2/exit-evidence.md`): P2E-13/14/15 Done; P2E-01 strong draft; P2E-02..11 Partial; P2E-12 (outside timed walkthrough) Pending. All remaining work is evidence/gate closure, not architecture.
 - **Phase 3**: started under the documented waiver. Landed: WIT drafts (ui/gfx/audio), shared widget tree, Taffy layout crate + prepared-layout path, UCap-gated `runtime::phase3_ui` dispatcher, headless adapters ×3 OSes, opt-in AppKit native window prototype (NSWindow, delegate, draw view, event-loop step, smoke command), Winit session/callback scaffolding for Linux+Windows (no real Winit OS windows yet).
 - Known recorded deficits: 10k-node **cold** layout rebuild above Phase 3 budget (prepared path under budget); Go runtime parity experimental.
-- **Operational**: self-hosted runner `layer36-local` offline since 2026-06-24 — nightly fuzz runs queue 24h and cancel, every night. `Layer36-book.pdf` untracked in repo root since May 23.
+- **Operational**: self-hosted runner `krate-local` offline since 2026-06-24 — nightly fuzz runs queue 24h and cancel, every night. `Krate-book.pdf` untracked in repo root since May 23.
 - **ADR numbering**: highest existing ADR in `docs/adr/` is `0014-layout-engine-taffy.md`. Next free number is **0015**. (Note: Phase-3-Plan.md *text* cites different ADR numbers for some decisions than the files actually use — when applying A1, follow the repo's file numbering, and fix plan-text citations where touched.)
 - **External context** (drives priority, not architecture): the project needs, in the near term, a demonstrable native-window milestone, first outside-developer validation, and a clean CI history. These needs affect sequencing only; the founder tracks them outside this repo.
 
@@ -115,9 +115,9 @@ The company's stated wedge is "safe runtime for portable AI-generated software,"
 
 ### The decision (solution)
 
-Add three bounded tasks (specs in §11): **P3-EMB-01** stable embedding API on `crates/runtime` (execute a component under a policy object, structured results); **P3-EMB-02** `layer36 run --json` machine-readable output (run result, grants used, denials with capability names, exit classification); **P3-EMB-03** a thin MCP server wrapping the runtime so agent frameworks can execute components under UCap. Scheduled **after** P3-VS-01 — the slice comes first.
+Add three bounded tasks (specs in §11): **P3-EMB-01** stable embedding API on `crates/runtime` (execute a component under a policy object, structured results); **P3-EMB-02** `krate run --json` machine-readable output (run result, grants used, denials with capability names, exit classification); **P3-EMB-03** a thin MCP server wrapping the runtime so agent frameworks can execute components under UCap. Scheduled **after** P3-VS-01 — the slice comes first.
 
-Scope bound (guardrail 3 applies): no agent orchestration, no model calls, no tool registry — Layer36 executes artifacts safely; the agent ecosystem does the rest.
+Scope bound (guardrail 3 applies): no agent orchestration, no model calls, no tool registry — Krate executes artifacts safely; the agent ecosystem does the rest.
 
 ### Changes to make
 
@@ -215,8 +215,8 @@ STATUS.md contains the lane; it is non-empty (at minimum the profile is written)
 
 Three small items with outsized diligence/exit impact. Reasons inline:
 
-1. **Self-hosted runner `layer36-local`**: bring it back online, or disable the nightly fuzz schedule until it is. *Reason:* nine consecutive cancelled runs pollute the public Actions history, and the Phase 2 fuzz-soak gate cannot close while it's down. Verify the queued run `28562509376` resolves.
-2. **`Layer36-book.pdf`** (untracked in repo root since May 23): decide — move it out of the repo (recommended if it's a personal artifact), or gitignore it, or commit it deliberately. *Reason:* a stray 224 KB unexplained PDF in the root of a repo that prides itself on discipline is noise at best, a question mark in diligence at worst.
+1. **Self-hosted runner `krate-local`**: bring it back online, or disable the nightly fuzz schedule until it is. *Reason:* nine consecutive cancelled runs pollute the public Actions history, and the Phase 2 fuzz-soak gate cannot close while it's down. Verify the queued run `28562509376` resolves.
+2. **`Krate-book.pdf`** (untracked in repo root since May 23): decide — move it out of the repo (recommended if it's a personal artifact), or gitignore it, or commit it deliberately. *Reason:* a stray 224 KB unexplained PDF in the root of a repo that prides itself on discipline is noise at best, a question mark in diligence at worst.
 3. **Founder-private files check**: confirm the private `/Invest/` folder and any personal material remain fully gitignored. *Reason:* the repo is public; private operating files must never land in history.
 
 ### Acceptance
@@ -257,22 +257,22 @@ A fresh session following STATUS.md §8 lands on P3-VS-01, not on Winit windows.
 ### P3-EMB-01 — Runtime embedding API
 
 - **What**: a documented public API on `crates/runtime`: load component + manifest, supply grants programmatically (no interactive prompt), run, receive a structured result (exit class, stdout/stderr handles, per-capability grant/deny log).
-- **Done when**: an external Rust program (doc-tested example) embeds Layer36 in <30 lines; no interactive TTY required.
+- **Done when**: an external Rust program (doc-tested example) embeds Krate in <30 lines; no interactive TTY required.
 
-### P3-EMB-02 — `layer36 run --json`
+### P3-EMB-02 — `krate run --json`
 
 - **What**: machine-readable run output on stdout/stderr-safe channel: run status, exit code + classification, capabilities requested/granted/denied (names + boundaries), timing. Schema documented in the book.
-- **Done when**: `layer36 run --json` output parses with a documented schema for success, permission-denied, and invalid-input paths of the three sample apps.
+- **Done when**: `krate run --json` output parses with a documented schema for success, permission-denied, and invalid-input paths of the three sample apps.
 
 ### P3-EMB-03 — MCP server wrapper
 
 - **What**: minimal MCP server exposing `run_component` (artifact path/bytes, manifest, grants) backed by P3-EMB-01, returning P3-EMB-02-shaped results. Ships as a `tools/` binary.
-- **Done when**: an MCP-capable agent client can execute `layer36-cat` with and without grants and observe the deny/allow difference.
+- **Done when**: an MCP-capable agent client can execute `krate-cat` with and without grants and observe the deny/allow difference.
 
 ---
 
 <a name="a9"></a>
-## Amendment A9 — Rename: Layer36 becomes Krate (added 2026-07-04)
+## Amendment A9 — Rename: Krate becomes Krate (added 2026-07-04)
 
 **Decision**: the product is **Krate**; the company is **Krate Labs**. The
 `.ai` naming neighborhood is crowded (krater.ai, krateo.ai, krates.ai), the
@@ -282,17 +282,17 @@ crate and Rust-crate meanings natively.
 **Phase A (done with this amendment)**: outward surfaces — README, docs
 title, introduction naming note, build log, STATUS, Build Plan name field,
 the product book, and founder-private materials — carry the new name with a
-"formerly Layer36" transition note. Code, commands, crate names, and WIT
-namespaces intentionally keep `layer36`.
+"formerly Krate" transition note. Code, commands, crate names, and WIT
+namespaces intentionally keep `krate`.
 
 **Phase B (scheduled slice — land BEFORE the UAPI v0.1 freeze decision)**:
-1. WIT namespaces `layer36:*` to `krate:*` across phase1/phase2/phase3
+1. WIT namespaces `krate:*` to `krate:*` across phase1/phase2/phase3
    packages, with freeze-lock regeneration, generated-binding regeneration,
    import-purity checker updates, fixture rebuilds, and manifest world
    strings.
-2. Crate renames (`layer36-*` to `krate-*`), CLI binary `layer36` to
-   `krate`, script names, env var prefixes (`LAYER36_` to `KRATE_`), JSON
-   schema id (`layer36.run.v1` to `krate.run.v1` with the old id accepted
+2. Crate renames (`krate-*` to `krate-*`), CLI binary `krate` to
+   `krate`, script names, env var prefixes (`KRATE_` to `KRATE_`), JSON
+   schema id (`krate.run.v1` to `krate.run.v1` with the old id accepted
    during transition), MCP server name.
 3. Repository rename and docs URL migration; GitHub redirects cover old
    links.
@@ -308,7 +308,7 @@ bindings, lockfiles, and fixtures; (4) sweep scripts/workflows/env vars;
 (5) let clippy + fast CI + the full matrix flush every missed reference;
 (6) prose sweep across Plan/docs/book last, once commands are real;
 (7) repo rename + Pages URL last of all (GitHub redirects cover old
-links). Keep `layer36.run.v1` accepted as a schema alias during
+links). Keep `krate.run.v1` accepted as a schema alias during
 transition. One focused session with the CI loop as the verifier.
 
 ## 12. Order of application
@@ -336,4 +336,4 @@ Apply in this order (dependencies flow downward):
 
 ### What this change order does NOT do
 
-It does not alter Phase 3's destination (GUI on three OSes, `layer36-notes`, the §3 exit criteria except the Linux annotation), does not touch Phase 2's UAPI, does not add platform scope, and does not change the architecture bet. It re-orders work so the riskiest assumption is tested first, removes one impossible integration, bounds process overhead, and makes the project's stated wedge buildable — so that development, documentation, and the outward story all point in the same direction.
+It does not alter Phase 3's destination (GUI on three OSes, `krate-notes`, the §3 exit criteria except the Linux annotation), does not touch Phase 2's UAPI, does not add platform scope, and does not change the architecture bet. It re-orders work so the riskiest assumption is tested first, removes one impossible integration, bounds process overhead, and makes the project's stated wedge buildable — so that development, documentation, and the outward story all point in the same direction.

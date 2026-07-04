@@ -2,8 +2,8 @@
 
 use std::str::FromStr;
 
-use layer36_manifest::Capability;
-use layer36_policy::SessionPolicy;
+use krate_manifest::Capability;
+use krate_policy::SessionPolicy;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

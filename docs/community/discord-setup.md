@@ -1,7 +1,7 @@
 # Discord Setup Checklist
 
 Phase 0 calls for a small, useful community server. Keep it quiet and technical
-until Layer36's official name search and docs site are ready.
+until Krate's official name search and docs site are ready.
 
 ## Channels
 
@@ -16,7 +16,7 @@ until Layer36's official name search and docs site are ready.
 ## Welcome Message
 
 ```text
-Welcome. This is the early community for Layer36, a universal app platform for
+Welcome. This is the early community for Krate, a universal app platform for
 native cross-platform software.
 
 Start here:
@@ -31,7 +31,7 @@ Start here:
 - Follow the repository Code of Conduct.
 - No harassment, spam, or personal attacks.
 - Keep project decisions in durable GitHub records.
-- Do not present Layer36 as a cleared trademark until official search is complete.
+- Do not present Krate as a cleared trademark until official search is complete.
 
 ## Launch Order
 

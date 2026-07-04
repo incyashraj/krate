@@ -42,7 +42,7 @@ target/phase2-exit-bundle/exit-bundle.md
 Choose a custom output path:
 
 ```bash
-scripts/record-phase2-exit-bundle.sh --strict --output /tmp/layer36-exit-bundle.md
+scripts/record-phase2-exit-bundle.sh --strict --output /tmp/krate-exit-bundle.md
 ```
 
 ## Record A Final Review Bundle
@@ -55,9 +55,9 @@ scripts/record-phase2-exit-bundle.sh --final-review
 
 That is shorthand for strict mode plus Rust SDK proof, hosted CI stability
 proof, hosted full CI proof, self-hosted full-gate proof, and fuzz evidence.
-Set `LAYER36_CI_STABILITY_CREATED`, `LAYER36_HOSTED_FULL_CI_CREATED`, and
-`LAYER36_SELF_HOSTED_CREATED` first if you want GitHub run history limited to a
-review window. Set `LAYER36_FUZZ_MAX_TOTAL_TIME` first if the final packet
+Set `KRATE_CI_STABILITY_CREATED`, `KRATE_HOSTED_FULL_CI_CREATED`, and
+`KRATE_SELF_HOSTED_CREATED` first if you want GitHub run history limited to a
+review window. Set `KRATE_FUZZ_MAX_TOTAL_TIME` first if the final packet
 should record a longer fuzz soak.
 
 ## Include Rust SDK Proof
@@ -85,7 +85,7 @@ This adds the recent hosted CI and GitHub Pages run history from
 recorder with `--require-success`, so a strict review bundle fails if hosted CI
 or GitHub Pages does not show a completed green run.
 
-For the final candidate, set `LAYER36_CI_STABILITY_CREATED` to the review
+For the final candidate, set `KRATE_CI_STABILITY_CREATED` to the review
 window you want, for example `>=2026-05-18`, before running the bundle. That
 keeps older green hosted runs from being mistaken for final proof.
 
@@ -103,7 +103,7 @@ The strict bundle fails if the inspected history does not contain a completed
 full CI run where the Linux, macOS, Windows, language, UCap, adapter, sample,
 benchmark, and dependency jobs all ran and passed.
 
-For the final candidate, set `LAYER36_HOSTED_FULL_CI_CREATED` to the review
+For the final candidate, set `KRATE_HOSTED_FULL_CI_CREATED` to the review
 window you want, for example `>=2026-05-18`.
 
 ## Include Self-Hosted Full-Gate Proof
@@ -120,7 +120,7 @@ This adds recent `Self-hosted CI` run history from
 with `--require-success`, so a strict review bundle fails if the inspected
 self-hosted history does not contain a completed green full-gate run.
 
-For the final candidate, set `LAYER36_SELF_HOSTED_CREATED` to the review window
+For the final candidate, set `KRATE_SELF_HOSTED_CREATED` to the review window
 you want, for example `>=2026-05-18`, before running the bundle. That keeps old
 green local runs from being mistaken for final proof.
 
@@ -133,7 +133,7 @@ Include it when you want the bundle to record a fuzz smoke or longer soak:
 scripts/record-phase2-exit-bundle.sh --strict --include-fuzz
 ```
 
-The default is a short smoke. For final review, set `LAYER36_FUZZ_MAX_TOTAL_TIME`
+The default is a short smoke. For final review, set `KRATE_FUZZ_MAX_TOTAL_TIME`
 to the per-target soak window first.
 
 Dependency evidence is included by default because it is one of the final Phase
@@ -143,7 +143,7 @@ passed.
 
 Go readiness evidence is also included by default, but it is not treated as a
 completion stamp. It records whether the TinyGo smoke artifacts build and
-whether they are Layer36 import-pure. Today this helps reviewers see the exact
+whether they are Krate import-pure. Today this helps reviewers see the exact
 reason Go runtime fixtures are still blocked.
 
 ## What The Bundle Shows

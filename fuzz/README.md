@@ -1,10 +1,10 @@
-# Layer36 fuzz targets
+# Krate fuzz targets
 
 This folder contains the first Phase 2 fuzz harness set.
 
 ## Current targets
 
-- `manifest_parse`: fuzzes `layer36_manifest::Manifest::parse`
+- `manifest_parse`: fuzzes `krate_manifest::Manifest::parse`
 - `logical_path_parse`: fuzzes `LogicalPath::parse` and filesystem operation intent checks
 - `policy_match`: fuzzes capability grant and requirement parsing plus session-policy matching
 

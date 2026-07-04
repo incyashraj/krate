@@ -5,7 +5,7 @@ use std::path::PathBuf;
 const MAX_LOGICAL_PATH_BYTES: usize = 4096;
 const MAX_PATH_SEGMENT_BYTES: usize = 255;
 
-/// A normalized logical path from a Layer36 app.
+/// A normalized logical path from a Krate app.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LogicalPath {
     normalized: String,
@@ -190,9 +190,9 @@ mod tests {
 
     #[test]
     fn keeps_absolute_paths_absolute() {
-        let path = LogicalPath::parse("/tmp//layer36/file.txt").expect("valid path");
+        let path = LogicalPath::parse("/tmp//krate/file.txt").expect("valid path");
 
-        assert_eq!(path.as_str(), "/tmp/layer36/file.txt");
+        assert_eq!(path.as_str(), "/tmp/krate/file.txt");
     }
 
     #[test]

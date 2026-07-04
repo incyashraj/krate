@@ -36,7 +36,7 @@ env:
 jobs:
   local-full-gate:
     name: Local full gate
-    runs-on: [self-hosted, layer36-local]
+    runs-on: [self-hosted, krate-local]
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -83,9 +83,9 @@ jobs:
         run: |
           hello_path="$(scripts/build-hello-component.sh | tail -n 1)"
           phase2_smoke_path="$(scripts/build-phase2-smoke-component.sh | tail -n 1)"
-          clock_path="$(scripts/build-layer36-clock-component.sh | tail -n 1)"
-          cat_path="$(scripts/build-layer36-cat-component.sh | tail -n 1)"
-          curl_path="$(scripts/build-layer36-curl-component.sh | tail -n 1)"
+          clock_path="$(scripts/build-krate-clock-component.sh | tail -n 1)"
+          cat_path="$(scripts/build-krate-cat-component.sh | tail -n 1)"
+          curl_path="$(scripts/build-krate-curl-component.sh | tail -n 1)"
           printf 'hello=%s\n' "$hello_path" >> "$GITHUB_OUTPUT"
           printf 'phase2_smoke=%s\n' "$phase2_smoke_path" >> "$GITHUB_OUTPUT"
           printf 'clock=%s\n' "$clock_path" >> "$GITHUB_OUTPUT"
@@ -102,64 +102,64 @@ jobs:
 
       - name: Test workspace
         env:
-          LAYER36_HELLO_WASM: ${{ steps.fixtures.outputs.hello }}
-          LAYER36_PHASE2_SMOKE_WASM: ${{ steps.fixtures.outputs.phase2_smoke }}
-          LAYER36_CLOCK_WASM: ${{ steps.fixtures.outputs.clock }}
-          LAYER36_CAT_WASM: ${{ steps.fixtures.outputs.cat }}
-          LAYER36_CURL_WASM: ${{ steps.fixtures.outputs.curl }}
+          KRATE_HELLO_WASM: ${{ steps.fixtures.outputs.hello }}
+          KRATE_PHASE2_SMOKE_WASM: ${{ steps.fixtures.outputs.phase2_smoke }}
+          KRATE_CLOCK_WASM: ${{ steps.fixtures.outputs.clock }}
+          KRATE_CAT_WASM: ${{ steps.fixtures.outputs.cat }}
+          KRATE_CURL_WASM: ${{ steps.fixtures.outputs.curl }}
         run: cargo test --workspace --all-features
 
       - name: Build Phase 2 language-variant fixtures
         env:
-          LAYER36_LANGUAGE_VARIANTS_MODE: ${{ inputs.language_variants_mode }}
-          LAYER36_ALLOW_NPX_INSTALL: "1"
-          LAYER36_JCO_NPX_PACKAGE: "@bytecodealliance/jco@1.14.0"
+          KRATE_LANGUAGE_VARIANTS_MODE: ${{ inputs.language_variants_mode }}
+          KRATE_ALLOW_NPX_INSTALL: "1"
+          KRATE_JCO_NPX_PACKAGE: "@bytecodealliance/jco@1.14.0"
         run: scripts/build-phase2-language-variant-fixtures.sh
 
       - name: Promote Phase 2 Go runtime fixtures when import-pure
         env:
-          LAYER36_GO_RUNTIME_FIXTURE_MODE: optional
+          KRATE_GO_RUNTIME_FIXTURE_MODE: optional
         run: scripts/promote-phase2-go-runtime-fixtures.sh
 
       - name: Test Phase 2 language variants
         env:
-          LAYER36_LANGUAGE_VARIANTS_MODE: ${{ inputs.language_variants_mode }}
+          KRATE_LANGUAGE_VARIANTS_MODE: ${{ inputs.language_variants_mode }}
         run: scripts/test-phase2-language-variants.sh
 
       - name: Package Rust SDK
-        run: LAYER36_OFFLINE=1 sh scripts/smoke-rust-sdk.sh
+        run: KRATE_OFFLINE=1 sh scripts/smoke-rust-sdk.sh
 
       - name: Check Rust SDK docs
-        run: cargo doc -p layer36 --no-deps --offline
+        run: cargo doc -p krate --no-deps --offline
 
       - name: Check generated UAPI reference
         run: |
-          LAYER36_OFFLINE=1 sh scripts/check-uapi.sh
-          LAYER36_OFFLINE=1 sh scripts/check-phase3-uapi.sh
-          LAYER36_OFFLINE=1 sh scripts/generate-uapi-reference.sh
-          LAYER36_OFFLINE=1 sh scripts/generate-uapi-freeze-evidence.sh
-          LAYER36_OFFLINE=1 sh scripts/generate-uapi-freeze-lock.sh
+          KRATE_OFFLINE=1 sh scripts/check-uapi.sh
+          KRATE_OFFLINE=1 sh scripts/check-phase3-uapi.sh
+          KRATE_OFFLINE=1 sh scripts/generate-uapi-reference.sh
+          KRATE_OFFLINE=1 sh scripts/generate-uapi-freeze-evidence.sh
+          KRATE_OFFLINE=1 sh scripts/generate-uapi-freeze-lock.sh
           git diff --exit-code -- docs/book/src/reference/uapi/index.md
           git diff --exit-code -- docs/book/src/phase2/uapi-freeze-evidence.md
           git diff --exit-code -- docs/book/src/phase2/uapi-freeze-lock.md
-          LAYER36_OFFLINE=1 sh scripts/check-uapi-freeze-lock.sh
-          LAYER36_OFFLINE=1 sh scripts/check-adapter-boundary.sh
-          LAYER36_OFFLINE=1 sh scripts/check-phase2-exit-evidence.sh
-          LAYER36_OFFLINE=1 sh scripts/check-phase2-freeze-decision.sh
-          LAYER36_OFFLINE=1 sh scripts/check-phase2-closeout-docs.sh
+          KRATE_OFFLINE=1 sh scripts/check-uapi-freeze-lock.sh
+          KRATE_OFFLINE=1 sh scripts/check-adapter-boundary.sh
+          KRATE_OFFLINE=1 sh scripts/check-phase2-exit-evidence.sh
+          KRATE_OFFLINE=1 sh scripts/check-phase2-freeze-decision.sh
+          KRATE_OFFLINE=1 sh scripts/check-phase2-closeout-docs.sh
 
       - name: Record UAPI freeze review evidence
         run: |
-          mkdir -p layer36-evidence
-          LAYER36_OFFLINE=1 sh scripts/record-phase2-uapi-freeze-review.sh \
+          mkdir -p krate-evidence
+          KRATE_OFFLINE=1 sh scripts/record-phase2-uapi-freeze-review.sh \
             --strict \
-            --output layer36-evidence/uapi-freeze-review.md
+            --output krate-evidence/uapi-freeze-review.md
 
       - name: Upload UAPI freeze review evidence
         uses: actions/upload-artifact@v7
         with:
           name: uapi-freeze-review-evidence
-          path: layer36-evidence/uapi-freeze-review.md
+          path: krate-evidence/uapi-freeze-review.md
           if-no-files-found: error
 
       - name: Dependency audit
@@ -169,10 +169,10 @@ jobs:
         run: scripts/build-phase1-components.sh
 
       - name: Run runtime startup benchmarks
-        run: cargo bench -p layer36-runtime --bench startup
+        run: cargo bench -p krate-runtime --bench startup
 
       - name: Run Phase 2 UAPI dispatch benchmarks
-        run: cargo bench -p layer36-runtime --bench uapi_dispatch
+        run: cargo bench -p krate-runtime --bench uapi_dispatch
 
       - name: Check benchmark regression (Phase 2 baseline)
         env:
@@ -184,7 +184,7 @@ jobs:
       - name: Fuzz smoke
         env:
           RUSTUP_TOOLCHAIN: nightly
-          LAYER36_FUZZ_MAX_TOTAL_TIME: ${{ inputs.fuzz_max_total_time }}
+          KRATE_FUZZ_MAX_TOTAL_TIME: ${{ inputs.fuzz_max_total_time }}
         run: scripts/run-phase2-fuzz-smoke.sh
 
       - name: Docs

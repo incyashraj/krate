@@ -1,6 +1,6 @@
 # Phase 2 Threat Model v0.2
 
-Phase 2 is where Layer36 starts doing real host work: file reads and writes,
+Phase 2 is where Krate starts doing real host work: file reads and writes,
 network requests, clock access, locale formatting, and manifest-based grants.
 
 So this threat model is about one thing: **do we enforce capability checks
@@ -10,7 +10,7 @@ before host access, every time, in every path?**
 
 In scope:
 
-- `layer36 run` with Phase 2 `layer36:app/cli@0.1.0` components
+- `krate run` with Phase 2 `krate:app/cli@0.1.0` components
 - UAPI modules: `io`, `fs`, `net`, `time`, `locale`
 - Manifest parsing and capability validation
 - Session grants (`--grant`, `--auto-grant`, prompt flow)
@@ -42,7 +42,7 @@ flowchart LR
         WASM["WASM component"]
     end
 
-    subgraph Runtime["Trusted Layer36 runtime"]
+    subgraph Runtime["Trusted Krate runtime"]
         CLI["CLI preflight and grant resolution"]
         POL["Session policy and capability matcher"]
         DISP["UAPI dispatcher"]

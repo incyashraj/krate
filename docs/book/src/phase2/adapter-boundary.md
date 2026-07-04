@@ -11,7 +11,7 @@ crate for the current OS.
 ## Current Shape
 
 ```text
-Layer36 app
+Krate app
     |
     v
 Phase 2 UAPI call
@@ -64,7 +64,7 @@ The same check runs in hosted CI and in the self-hosted full gate.
 
 ## Why This Helps Phase 2
 
-The final Layer36 goal is one app contract across many systems. We do not get
+The final Krate goal is one app contract across many systems. We do not get
 there by hiding every OS difference. We get there by keeping OS-specific work
 behind a small boundary and making the shared contract clear.
 

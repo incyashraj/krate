@@ -1,10 +1,10 @@
-# Layer36 — Phase 2 Detailed Plan: UAPI v0.1 (CLI)
+# Krate — Phase 2 Detailed Plan: UAPI v0.1 (CLI)
 
 > **Phase:** 2 of 8
 > **Duration:** est. 4 to 8 weeks for the first useful CLI slice
 > **Phase sentence:** *Ship the first useful cross-platform CLI app through our runtime.*
 > **Prerequisite:** Phase 1 complete — runtime + CLI + CI green on three desktop hosts.
-> **Supersedes:** `layer36:phase1/host` WIT interface.
+> **Supersedes:** `krate:phase1/host` WIT interface.
 > **Superseded by:** nothing.
 > **Status:** Started under the Phase 1 engineering-complete waiver; formal external gates still pending.
 > **Closeout note (2026-07-02):** Closeout is timeboxed per `Plan/Plan-Amendments-2026-07.md` A4 — one focused week for the freeze review, decision packet, final bundle, and scheduling the outside walkthrough. Unfinished formal gates stay tracked in the exit ledger without blocking or interleaving with Phase 3 work.
@@ -42,7 +42,7 @@
 
 ## 0. How to Use This Document
 
-Phase 2 is where Layer36 becomes useful. Phase 1 proved we could run a WASM binary; Phase 2 proves we can run a WASM binary that *does something*. It is also the first phase where the decisions you make will live forever — WIT interfaces become ABI commitments, and breaking a v0.1 module costs you every app that ever depended on it.
+Phase 2 is where Krate becomes useful. Phase 1 proved we could run a WASM binary; Phase 2 proves we can run a WASM binary that *does something*. It is also the first phase where the decisions you make will live forever — WIT interfaces become ABI commitments, and breaking a v0.1 module costs you every app that ever depended on it.
 
 - Every task has an ID (`P2-UAPI-01`, etc.) matching §7 of the main Build Plan.
 - The WIT specs in §7 are the most important artifacts of this phase. They will be copied, pasted, generated from, and depended on by every future phase. Get them right, not fast.
@@ -55,19 +55,19 @@ Phase 2 is where Layer36 becomes useful. Phase 1 proved we could run a WASM bina
 
 ### 1.1 One-sentence objective
 
-**A developer writes a CLI app in Rust, Go, or TypeScript against UAPI v0.1, compiles it to a `.wasm` component, and runs it through `layer36` on Linux, macOS, and Windows — where it reads files, makes HTTP calls, prints to stdout, and uses time/locale primitives correctly.**
+**A developer writes a CLI app in Rust, Go, or TypeScript against UAPI v0.1, compiles it to a `.wasm` component, and runs it through `krate` on Linux, macOS, and Windows — where it reads files, makes HTTP calls, prints to stdout, and uses time/locale primitives correctly.**
 
 ### 1.2 Why this matters
 
-Phase 1 had one host import (`print`) and no real I/O. A runtime that cannot read a file or make a network request is not a runtime, it is a demo. Phase 2 is the first phase where an outside developer can reasonably attempt to build a real thing with Layer36. Everything after Phase 2 — GUI, mobile, marketplace — is an extension of primitives that must be correct here.
+Phase 1 had one host import (`print`) and no real I/O. A runtime that cannot read a file or make a network request is not a runtime, it is a demo. Phase 2 is the first phase where an outside developer can reasonably attempt to build a real thing with Krate. Everything after Phase 2 — GUI, mobile, marketplace — is an extension of primitives that must be correct here.
 
 ### 1.3 The five deliverables of Phase 2
 
 1. **Five UAPI modules** — `io`, `fs`, `net`, `time`, `locale` — designed as WIT, implemented on three desktop hosts.
 2. **Language bindings** for Rust (first-class), Go via TinyGo, TypeScript via jco.
-3. **Three sample CLI apps** — `layer36-curl`, `layer36-cat`, `layer36-clock` — all passing cross-host identity tests.
+3. **Three sample CLI apps** — `krate-curl`, `krate-cat`, `krate-clock` — all passing cross-host identity tests.
 4. **UCap v0.1 (soft enforcement)** — manifest-declared capabilities, runtime-checked at UAPI call sites, one-time grant at launch via terminal prompt.
-5. **An integration test harness** that builds each sample, runs it via `layer36 run` on all three hosts, and asserts byte-identical stdout.
+5. **An integration test harness** that builds each sample, runs it via `krate run` on all three hosts, and asserts byte-identical stdout.
 
 ---
 
@@ -76,8 +76,8 @@ Phase 1 had one host import (`print`) and no real I/O. A runtime that cannot rea
 Before touching a single line of Phase 2 code, verify:
 
 - [ ] All Phase 1 exit criteria met (see Phase 1 Plan §15).
-- [ ] `layer36 run hello.wasm` works on Linux, macOS, Windows.
-- [ ] `cargo build --release --workspace` produces `layer36` binary on all three hosts.
+- [ ] `krate run hello.wasm` works on Linux, macOS, Windows.
+- [ ] `cargo build --release --workspace` produces `krate` binary on all three hosts.
 - [ ] Release artifacts have been cut at least once (`v0.1.0-rc1` or later).
 - [ ] Phase 1 benchmarks recorded and published.
 - [ ] Threat Model v0.1 published.
@@ -94,14 +94,14 @@ Phase 2 is **done** when, and only when, every row below is true.
 
 | # | Criterion | Measured How |
 |---|-----------|--------------|
-| 1 | All five UAPI modules defined as stable v0.1 WIT | `wit/layer36/*.wit` frozen |
+| 1 | All five UAPI modules defined as stable v0.1 WIT | `wit/krate/*.wit` frozen |
 | 2 | Each module implemented in Linux, macOS, Windows host adapters | CI green on all hosts |
-| 3 | Rust bindings generated and usable | `cargo add layer36 && use layer36::fs` works |
+| 3 | Rust bindings generated and usable | `cargo add krate && use krate::fs` works |
 | 4 | Go bindings (TinyGo) generated and usable | Sample builds and runs |
 | 5 | TypeScript bindings (jco) generated and usable | Sample builds and runs |
-| 6 | `layer36-curl <url>` works identically on all three hosts | Integration test |
-| 7 | `layer36-cat <file>` works identically on all three hosts | Integration test |
-| 8 | `layer36-clock` prints time in user's locale on all three hosts | Integration test |
+| 6 | `krate-curl <url>` works identically on all three hosts | Integration test |
+| 7 | `krate-cat <file>` works identically on all three hosts | Integration test |
+| 8 | `krate-clock` prints time in user's locale on all three hosts | Integration test |
 | 9 | UCap v0.1: manifest-declared caps enforced at UAPI boundary | Attempting unauthorized call traps cleanly |
 | 10 | Startup overhead for a UAPI-using app < 150 ms | Benchmark suite |
 | 11 | UAPI hot-path dispatch < 1 µs | Microbenchmark |
@@ -121,7 +121,7 @@ Phase 2 is **done** when, and only when, every row below is true.
 - Three language binding pipelines.
 - The beginning of UCap (soft enforcement, terminal prompts only).
 - Three sample CLI apps that prove the UAPI works end-to-end.
-- A capability-aware runtime: `layer36 run --grant net,fs:./data/**` style.
+- A capability-aware runtime: `krate run --grant net,fs:./data/**` style.
 
 ### 4.2 Phase 2 is NOT
 
@@ -146,7 +146,7 @@ Every request during Phase 2 will sound like "can we also add X?" The answer is 
 flowchart TB
     subgraph Dev["Developer Side"]
         SRC["main.rs / main.go / main.ts"]
-        WIT["wit/layer36/*.wit"]
+        WIT["wit/krate/*.wit"]
         WITG["wit-bindgen / jco / TinyGo"]
         CC["compile to component"]
         MANIFEST["manifest.toml"]
@@ -157,8 +157,8 @@ flowchart TB
         MANIFEST -.sidecar.-> COMP
     end
 
-    subgraph RT["Layer36 Runtime"]
-        CLI["layer36 CLI"]
+    subgraph RT["Krate Runtime"]
+        CLI["krate CLI"]
         LOAD["Loader + Manifest Parser"]
         UCAP["UCap Enforcer v0.1"]
         ENGINE["Wasmtime"]
@@ -173,7 +173,7 @@ flowchart TB
         WIN["Windows: Win32 + hyper + chrono + ICU"]
     end
 
-    COMP -->|layer36 run| CLI
+    COMP -->|krate run| CLI
     MANIFEST -->|declared caps| LOAD
     DISP --> LINUX
     DISP --> MACOS
@@ -209,7 +209,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    A([layer36 run app.wasm]) --> B{manifest.toml<br/>next to wasm?}
+    A([krate run app.wasm]) --> B{manifest.toml<br/>next to wasm?}
     B -- no --> C[No capabilities declared]
     B -- yes --> D[Parse manifest]
     D --> E[Extract capability list]
@@ -232,21 +232,21 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    CLI[layer36-cli] --> RT[layer36-runtime]
-    CLI --> MAN[layer36-manifest]
+    CLI[krate-cli] --> RT[krate-runtime]
+    CLI --> MAN[krate-manifest]
     RT --> WT[wasmtime]
-    RT --> POL[layer36-policy]
-    RT --> AD_LINUX[layer36-adapter-linux]
-    RT --> AD_MAC[layer36-adapter-macos]
-    RT --> AD_WIN[layer36-adapter-windows]
+    RT --> POL[krate-policy]
+    RT --> AD_LINUX[krate-adapter-linux]
+    RT --> AD_MAC[krate-adapter-macos]
+    RT --> AD_WIN[krate-adapter-windows]
     AD_LINUX --> TOKIO[tokio, hyper, chrono, icu4x]
     AD_MAC --> TOKIO
     AD_WIN --> TOKIO
     POL --> MAN
 
-    BIND_RUST[layer36-bindings-rust] -.generated from.-> WIT[wit/layer36]
-    BIND_GO[layer36-bindings-go] -.generated from.-> WIT
-    BIND_TS[layer36-bindings-ts] -.generated from.-> WIT
+    BIND_RUST[krate-bindings-rust] -.generated from.-> WIT[wit/krate]
+    BIND_GO[krate-bindings-go] -.generated from.-> WIT
+    BIND_TS[krate-bindings-ts] -.generated from.-> WIT
 ```
 
 ### 5.5 Trust boundaries (Phase 2)
@@ -281,15 +281,15 @@ Every choice below is frozen for Phase 2. Changes require an ADR.
 
 ### 6.1 Interface definition: **WIT + Component Model** (continues from ADR-0003)
 
-All UAPI modules are WIT interfaces. Phase 2 produces `wit/layer36/*.wit` files that are *normative* — once published they cannot break in v0.1.x.
+All UAPI modules are WIT interfaces. Phase 2 produces `wit/krate/*.wit` files that are *normative* — once published they cannot break in v0.1.x.
 
 ### 6.2 WIT package versioning: **semver per module**
 
-- `layer36:io@0.1.0`
-- `layer36:fs@0.1.0`
-- `layer36:net@0.1.0`
-- `layer36:time@0.1.0`
-- `layer36:locale@0.1.0`
+- `krate:io@0.1.0`
+- `krate:fs@0.1.0`
+- `krate:net@0.1.0`
+- `krate:time@0.1.0`
+- `krate:locale@0.1.0`
 
 Every module versions independently. v0.1.0 is *pre-stable* — breaking changes allowed until v1.0.0. Bumping a module version requires an ADR.
 
@@ -340,7 +340,7 @@ Per ADR-0008 (see §19): UAPI functions appear synchronous from WASM's point of 
 ### 6.10 Manifest format: **TOML**
 
 - `manifest.toml` co-located with `.wasm` file (Phase 2 sidecar).
-- Parsed by `layer36-manifest` crate using `toml` + `serde`.
+- Parsed by `krate-manifest` crate using `toml` + `serde`.
 - Schema validated on load.
 
 ### 6.11 Capability strings: **stable format from Phase 2**
@@ -371,7 +371,7 @@ Format `<module>.<action>[:<resource>]` is frozen in Phase 2 per Build Plan §10
 
 These five WIT files are the core deliverable of Phase 2. Each is presented with design rationale followed by the authoritative WIT text.
 
-### 7.1 `layer36:io@0.1.0`
+### 7.1 `krate:io@0.1.0`
 
 **Purpose:** standard I/O, logging.
 
@@ -382,8 +382,8 @@ These five WIT files are the core deliverable of Phase 2. Each is presented with
 - `log` is structured: level + message + key-value pairs.
 
 ```wit
-// wit/layer36/io.wit
-package layer36:io@0.1.0;
+// wit/krate/io.wit
+package krate:io@0.1.0;
 
 interface types {
     enum log-level {
@@ -447,7 +447,7 @@ world consumer {
 }
 ```
 
-### 7.2 `layer36:fs@0.1.0`
+### 7.2 `krate:fs@0.1.0`
 
 **Purpose:** filesystem access within granted paths.
 
@@ -458,8 +458,8 @@ world consumer {
 - No `O_DIRECTORY`, `O_APPEND`, symlink semantics, or permissions in v0.1.
 
 ```wit
-// wit/layer36/fs.wit
-package layer36:fs@0.1.0;
+// wit/krate/fs.wit
+package krate:fs@0.1.0;
 
 interface types {
     record file-stat {
@@ -511,7 +511,7 @@ world consumer {
 }
 ```
 
-### 7.3 `layer36:net@0.1.0`
+### 7.3 `krate:net@0.1.0`
 
 **Purpose:** outbound HTTP client.
 
@@ -523,8 +523,8 @@ world consumer {
 - Connect-scoped caps: `net.connect:host:port` — wildcards allowed per Build Plan §10.2.
 
 ```wit
-// wit/layer36/net.wit
-package layer36:net@0.1.0;
+// wit/krate/net.wit
+package krate:net@0.1.0;
 
 interface types {
     enum http-method {
@@ -581,7 +581,7 @@ world consumer {
 }
 ```
 
-### 7.4 `layer36:time@0.1.0`
+### 7.4 `krate:time@0.1.0`
 
 **Purpose:** clocks and sleeping.
 
@@ -591,8 +591,8 @@ world consumer {
 - No timers as resources in v0.1 (that is Phase 3 for UI loops).
 
 ```wit
-// wit/layer36/time.wit
-package layer36:time@0.1.0;
+// wit/krate/time.wit
+package krate:time@0.1.0;
 
 interface clock {
     /// Milliseconds since Unix epoch. Wall-clock; can jump.
@@ -614,7 +614,7 @@ world consumer {
 }
 ```
 
-### 7.5 `layer36:locale@0.1.0`
+### 7.5 `krate:locale@0.1.0`
 
 **Purpose:** formatting, timezone, user locale.
 
@@ -624,8 +624,8 @@ world consumer {
 - Locale ID is BCP 47 (e.g. `en-US`, `de-DE`, `hi-IN`).
 
 ```wit
-// wit/layer36/locale.wit
-package layer36:locale@0.1.0;
+// wit/krate/locale.wit
+package krate:locale@0.1.0;
 
 interface types {
     record locale-id {
@@ -684,18 +684,18 @@ world consumer {
 Phase 2 apps target this composite world:
 
 ```wit
-// wit/layer36/app.wit
-package layer36:app@0.1.0;
+// wit/krate/app.wit
+package krate:app@0.1.0;
 
 world cli {
-    import layer36:io/stdio@0.1.0;
-    import layer36:io/log@0.1.0;
-    import layer36:fs/files@0.1.0;
-    import layer36:net/http-client@0.1.0;
-    import layer36:time/clock@0.1.0;
-    import layer36:time/sleep@0.1.0;
-    import layer36:locale/info@0.1.0;
-    import layer36:locale/format@0.1.0;
+    import krate:io/stdio@0.1.0;
+    import krate:io/log@0.1.0;
+    import krate:fs/files@0.1.0;
+    import krate:net/http-client@0.1.0;
+    import krate:time/clock@0.1.0;
+    import krate:time/sleep@0.1.0;
+    import krate:locale/info@0.1.0;
+    import krate:locale/format@0.1.0;
 
     export run: func() -> s32;
 }
@@ -755,9 +755,9 @@ Document each gotcha in `docs/book/src/phase2/adapter-notes-{linux,macos,windows
 
 Every app gets a per-app sandbox directory:
 
-- Linux: `~/.local/share/layer36/apps/<app-id>/`
-- macOS: `~/Library/Application Support/layer36/apps/<app-id>/`
-- Windows: `%LOCALAPPDATA%\layer36\apps\<app-id>\`
+- Linux: `~/.local/share/krate/apps/<app-id>/`
+- macOS: `~/Library/Application Support/krate/apps/<app-id>/`
+- Windows: `%LOCALAPPDATA%\krate\apps\<app-id>\`
 
 Relative `fs` paths resolve inside the sandbox root. Absolute paths (or `~/`-prefixed) require explicit caps in the manifest.
 
@@ -767,16 +767,16 @@ Relative `fs` paths resolve inside the sandbox root. Absolute paths (or `~/`-pre
 
 ### 9.1 Rust (first-class)
 
-- `wit-bindgen` generates `layer36-bindings-rust` crate.
-- Published to crates.io as `layer36`.
-- Re-exports each module: `layer36::fs`, `layer36::net`, etc.
+- `wit-bindgen` generates `krate-bindings-rust` crate.
+- Published to crates.io as `krate`.
+- Re-exports each module: `krate::fs`, `krate::net`, etc.
 - Provides ergonomic `Result<T, Error>` wrappers around WIT-generated types.
 
 ```rust
 // Developer-visible API
-use layer36::fs::{open, OpenMode};
+use krate::fs::{open, OpenMode};
 
-let mut file = layer36::fs::open("data.txt", OpenMode::Read)?;
+let mut file = krate::fs::open("data.txt", OpenMode::Read)?;
 let contents = file.read_to_string()?;
 ```
 
@@ -784,10 +784,10 @@ let contents = file.read_to_string()?;
 
 - TinyGo project provides WASM component output (component-model support landed 2024).
 - Bindings generated via `wit-bindgen-go`.
-- Published as `github.com/layer36/layer36-go`.
+- Published as `github.com/krate/krate-go`.
 
 ```go
-import "github.com/layer36/layer36-go/fs"
+import "github.com/krate/krate-go/fs"
 
 file, err := fs.Open("data.txt", fs.OpenModeRead)
 if err != nil { ... }
@@ -805,7 +805,7 @@ contents, err := file.ReadToString()
 - Best DX of the three: fastest to prototype, familiar to web developers.
 
 ```typescript
-import { open, OpenMode } from 'layer36:fs/files';
+import { open, OpenMode } from 'krate:fs/files';
 
 const file = open('data.txt', OpenMode.Read);
 const contents = new TextDecoder().decode(file.read(1_000_000));
@@ -834,14 +834,14 @@ Each of those deserves deliberate treatment — rushing them in Phase 2 dilutes 
 
 Three ways an app obtains capabilities:
 
-1. **`--grant` flag:** `layer36 run --grant net,fs:./data/** app.wasm`.
+1. **`--grant` flag:** `krate run --grant net,fs:./data/** app.wasm`.
 2. **`--auto-grant` flag:** grants everything declared in the manifest.
 3. **Interactive prompt:** default mode; prompts once per unique cap per session.
 
 ### 10.3 Interactive prompt example
 
 ```
-layer36 run hello.wasm
+krate run hello.wasm
 
 App: com.example.hello (v1.0.0)
 Publisher: unsigned — caution
@@ -881,7 +881,7 @@ id      = "com.example.hello"
 name    = "Hello"
 version = "1.0.0"
 entry   = "hello.wasm"
-world   = "layer36:app/cli@0.1.0"
+world   = "krate:app/cli@0.1.0"
 
 [[capabilities]]
 cap       = "fs.read:~/Documents/notes/**"
@@ -916,7 +916,7 @@ locale.info
 locale.format
 ```
 
-Any UAPI call not covered by one of these caps — because someone added a new function without updating the cap table — fails a CI check. The canonical list is also exposed by `layer36 manifest capabilities`.
+Any UAPI call not covered by one of these caps — because someone added a new function without updating the cap table — fails a CI check. The canonical list is also exposed by `krate manifest capabilities`.
 
 ### 10.7 Default grants
 
@@ -929,12 +929,12 @@ Any UAPI call not covered by one of these caps — because someone added a new f
 
 The three sample apps drive the UAPI design backward: if a common CLI pattern is hard to write, the UAPI is wrong. Build them in parallel with the UAPI, not after.
 
-### 11.1 `layer36-curl`
+### 11.1 `krate-curl`
 
-**Purpose:** minimal HTTP client — Layer36's version of curl.
+**Purpose:** minimal HTTP client — Krate's version of curl.
 
 **Feature set (v0.1):**
-- `layer36-curl <url>` — GET, print body.
+- `krate-curl <url>` — GET, print body.
 - `-X POST` — request method.
 - `-H "Name: value"` — custom headers (repeatable).
 - `-d @file` or `-d 'text'` — request body.
@@ -945,12 +945,12 @@ The three sample apps drive the UAPI design backward: if a common CLI pattern is
 **Caps required:** `net.connect:*:*`, plus `fs.write:<out>` if `-o`, plus `fs.read:<file>` if `-d @`.
 **LOC target:** < 300 lines including argument parsing.
 
-### 11.2 `layer36-cat`
+### 11.2 `krate-cat`
 
-**Purpose:** minimal file reader — Layer36's version of cat.
+**Purpose:** minimal file reader — Krate's version of cat.
 
 **Feature set (v0.1):**
-- `layer36-cat <file1> [file2 ...]` — concatenate and print to stdout.
+- `krate-cat <file1> [file2 ...]` — concatenate and print to stdout.
 - `-n` — number lines.
 - `-b` — number non-blank lines only.
 - Reading `-` reads from stdin.
@@ -960,12 +960,12 @@ The three sample apps drive the UAPI design backward: if a common CLI pattern is
 **Current implementation:** Rust first, Go/TinyGo variant later.
 **Reason:** the Rust binding path is already usable, so the file/args behavior can harden now. The Go version still matters for the language-binding track.
 
-### 11.3 `layer36-clock`
+### 11.3 `krate-clock`
 
 **Purpose:** show current time in locale-aware format.
 
 **Feature set (v0.1):**
-- `layer36-clock` — print current date and time in user's locale.
+- `krate-clock` — print current date and time in user's locale.
 - `--tz <iana>` — override timezone (e.g. `--tz Asia/Tokyo`).
 - `--format short|medium|long|full` — ICU style.
 - `--json` — machine-readable output.
@@ -982,9 +982,9 @@ All three samples have a property: **byte-identical stdout across hosts given by
 
 Where the property cannot hold by physics (timestamps differ across runs, DNS varies), tests use frozen inputs:
 
-- `layer36-curl http://localhost:PORT` against a test HTTP server with fixed responses.
-- `layer36-cat test-fixtures/*.txt` with checked-in fixtures.
-- `layer36-clock` tested with a frozen clock stub via `--test-time <millis>` flag (dev-only).
+- `krate-curl http://localhost:PORT` against a test HTTP server with fixed responses.
+- `krate-cat test-fixtures/*.txt` with checked-in fixtures.
+- `krate-clock` tested with a frozen clock stub via `--test-time <millis>` flag (dev-only).
 
 ---
 
@@ -1002,21 +1002,21 @@ Phase 2 is 12 weeks of calendar time, scaled for ~20 hours/week of active develo
 
 - The easy three. Small adapters. Get the binding + dispatch pipeline working end-to-end on one module before tackling `fs` and `net`.
 - Rust bindings via wit-bindgen.
-- First sample: `layer36-clock` (TypeScript, jco) — also validates TS pipeline early.
+- First sample: `krate-clock` (TypeScript, jco) — also validates TS pipeline early.
 
 ### Weeks 5–6: `fs`
 
 - Design doc for sandbox root (ADR-0009).
 - Linux/macOS/Windows adapter implementations.
 - Path canonicalization logic.
-- `layer36-cat` sample in Go via TinyGo (validates Go pipeline).
+- `krate-cat` sample in Go via TinyGo (validates Go pipeline).
 
 ### Weeks 7–8: `net`
 
 - HTTP client adapter using hyper + rustls.
 - DNS resolver integration.
 - Timeout and error mapping.
-- `layer36-curl` sample in Rust.
+- `krate-curl` sample in Rust.
 
 ### Week 9: UCap v0.1
 
@@ -1052,7 +1052,7 @@ Phase 2 is 12 weeks of calendar time, scaled for ~20 hours/week of active develo
 
 Each task targets approximately one engineer-week unless noted. Task IDs match Build Plan §7.3.
 
-### P2-UAPI-01 — `wit/layer36/io.wit`
+### P2-UAPI-01 — `wit/krate/io.wit`
 
 **Branch:** `p2-uapi-01-io-wit`.
 
@@ -1061,7 +1061,7 @@ Each task targets approximately one engineer-week unless noted. Task IDs match B
 - Parses via `wasm-tools component wit`.
 - Style guide checked.
 
-### P2-UAPI-02 — `wit/layer36/fs.wit`
+### P2-UAPI-02 — `wit/krate/fs.wit`
 
 **Branch:** `p2-uapi-02-fs-wit`.
 
@@ -1070,7 +1070,7 @@ Each task targets approximately one engineer-week unless noted. Task IDs match B
 - Parses via `wasm-tools`.
 - Sandbox root concept documented in companion markdown.
 
-### P2-UAPI-03 — `wit/layer36/net.wit`
+### P2-UAPI-03 — `wit/krate/net.wit`
 
 **Branch:** `p2-uapi-03-net-wit`.
 
@@ -1079,7 +1079,7 @@ Each task targets approximately one engineer-week unless noted. Task IDs match B
 - HTTP/1.1 and HTTP/2 explicit in module README.
 - DNS error semantics documented.
 
-### P2-UAPI-04 — `wit/layer36/time.wit`
+### P2-UAPI-04 — `wit/krate/time.wit`
 
 **Branch:** `p2-uapi-04-time-wit`.
 
@@ -1087,7 +1087,7 @@ Each task targets approximately one engineer-week unless noted. Task IDs match B
 - File matches §7.4.
 - Wall vs monotonic distinction documented.
 
-### P2-UAPI-05 — `wit/layer36/locale.wit`
+### P2-UAPI-05 — `wit/krate/locale.wit`
 
 **Branch:** `p2-uapi-05-locale-wit`.
 
@@ -1103,7 +1103,7 @@ Each task targets approximately one engineer-week unless noted. Task IDs match B
 **Acceptance:**
 - `crates/adapter-linux/` implements all five UAPI modules.
 - Sandbox root created on first run.
-- Unit tests per module, integration tests run under `layer36 run` on Ubuntu in CI.
+- Unit tests per module, integration tests run under `krate run` on Ubuntu in CI.
 
 ### P2-ADPT-02 — macOS adapters
 
@@ -1131,7 +1131,7 @@ Each task targets approximately one engineer-week unless noted. Task IDs match B
 **Branch:** `p2-bind-01-rust`.
 
 **Acceptance:**
-- `crates/bindings-rust/` (published as `layer36` on crates.io) re-exports each module.
+- `crates/bindings-rust/` (published as `krate` on crates.io) re-exports each module.
 - Generated via `wit-bindgen` with additional ergonomic wrappers.
 - `cargo doc` generates clean reference.
 
@@ -1141,7 +1141,7 @@ Each task targets approximately one engineer-week unless noted. Task IDs match B
 **Branch:** `p2-bind-02-go`.
 
 **Acceptance:**
-- `layer36-go` repo with generated bindings.
+- `krate-go` repo with generated bindings.
 - TinyGo build verified for a hello-world.
 - Documented limitations of TinyGo stdlib.
 
@@ -1151,37 +1151,37 @@ Each task targets approximately one engineer-week unless noted. Task IDs match B
 **Branch:** `p2-bind-03-ts`.
 
 **Acceptance:**
-- `@layer36/sdk` NPM package with type definitions.
+- `@krate/sdk` NPM package with type definitions.
 - jco componentization pipeline documented.
 - Hello-world TS sample < 10 MB as component.
 
-### P2-APP-01 — `layer36-curl`
+### P2-APP-01 — `krate-curl`
 
 **Estimate:** 2 days.
 **Branch:** `p2-app-01-curl`.
 
 **Acceptance:**
-- Source in `apps/layer36-curl/` (Rust).
+- Source in `apps/krate-curl/` (Rust).
 - Behaves as §11.1.
 - CI runs against test HTTP server, diffs stdout across hosts.
 
-### P2-APP-02 — `layer36-cat`
+### P2-APP-02 — `krate-cat`
 
 **Estimate:** 1 day.
 **Branch:** `p2-app-02-cat`.
 
 **Acceptance:**
-- Source in `apps/layer36-cat/` (Rust first; Go/TinyGo variant later).
+- Source in `apps/krate-cat/` (Rust first; Go/TinyGo variant later).
 - Behaves as §11.2.
 - Cross-host stdout-identical against fixtures.
 
-### P2-APP-03 — `layer36-clock`
+### P2-APP-03 — `krate-clock`
 
 **Estimate:** 1 day.
 **Branch:** `p2-app-03-clock`.
 
 **Acceptance:**
-- Source in `apps/layer36-clock/` (Rust first; TypeScript/jco variant later).
+- Source in `apps/krate-clock/` (Rust first; TypeScript/jco variant later).
 - Behaves as §11.3.
 - Snapshot tested with `--test-time` flag for determinism.
 
@@ -1191,9 +1191,9 @@ Each task targets approximately one engineer-week unless noted. Task IDs match B
 **Branch:** `p2-test-01-harness`.
 
 **Acceptance:**
-- `test/integration/runner.rs` builds each sample, runs via `layer36`, diffs stdout.
+- `test/integration/runner.rs` builds each sample, runs via `krate`, diffs stdout.
 - Fixtures checked into `test/fixtures/`.
-- Test HTTP server (simple hyper-based) for `layer36-curl` tests.
+- Test HTTP server (simple hyper-based) for `krate-curl` tests.
 - CI runs on all three hosts.
 
 ### P2-SEC-01 — UCap soft enforcement
@@ -1203,7 +1203,7 @@ Each task targets approximately one engineer-week unless noted. Task IDs match B
 
 **Acceptance:**
 - `crates/policy/` implements cap matching and checking.
-- Manifest parser in `crates/manifest/`. Started as `crates/manifest/`, package name `layer36-manifest`.
+- Manifest parser in `crates/manifest/`. Started as `crates/manifest/`, package name `krate-manifest`.
 - Dispatcher calls `policy.check()` at every UAPI entry.
 - CLI flags `--grant`, `--auto-grant`, interactive prompt.
 
@@ -1241,7 +1241,7 @@ use crate::adapter::HostAdapter;
 pub fn wire_fs<A: HostAdapter + 'static>(
     linker: &mut wasmtime::component::Linker<HostState<A>>,
 ) -> anyhow::Result<()> {
-    let mut fs = linker.instance("layer36:fs/files@0.1.0")?;
+    let mut fs = linker.instance("krate:fs/files@0.1.0")?;
 
     fs.func_wrap(
         "open",
@@ -1472,8 +1472,8 @@ impl Manifest {
 
 ```rust
 // crates/cli/src/prompt.rs
-use layer36_manifest::CapabilityDecl;
-use layer36_policy::Cap;
+use krate_manifest::CapabilityDecl;
+use krate_policy::Cap;
 use std::io::{self, Write};
 
 pub fn interactive_grant(caps: &[CapabilityDecl], app_id: &str)
@@ -1493,16 +1493,16 @@ pub fn interactive_grant(caps: &[CapabilityDecl], app_id: &str)
 }
 ```
 
-### 14.7 Rust sample: `layer36-curl` excerpt
+### 14.7 Rust sample: `krate-curl` excerpt
 
 ```rust
-// apps/layer36-curl/src/main.rs
-use layer36::net::http_client::{fetch, HttpMethod, Request};
+// apps/krate-curl/src/main.rs
+use krate::net::http_client::{fetch, HttpMethod, Request};
 
 fn main() -> i32 {
     let args: Vec<String> = std::env::args().collect();
     let url = args.get(1).cloned().unwrap_or_else(|| {
-        eprintln!("usage: layer36-curl <url>");
+        eprintln!("usage: krate-curl <url>");
         std::process::exit(1);
     });
 
@@ -1516,7 +1516,7 @@ fn main() -> i32 {
 
     match fetch(req) {
         Ok(resp) => {
-            layer36::io::stdio::stdout().write_all(&resp.body).ok();
+            krate::io::stdio::stdout().write_all(&resp.body).ok();
             if resp.status >= 400 { 22 } else { 0 }
         }
         Err(e) => {
@@ -1527,17 +1527,17 @@ fn main() -> i32 {
 }
 ```
 
-### 14.8 Go sample: `layer36-cat` excerpt
+### 14.8 Go sample: `krate-cat` excerpt
 
 ```go
-// apps/layer36-cat/main.go
+// apps/krate-cat/main.go
 package main
 
 import (
     "os"
 
-    fs   "github.com/layer36/layer36-go/fs/files"
-    stdio "github.com/layer36/layer36-go/io/stdio"
+    fs   "github.com/krate/krate-go/fs/files"
+    stdio "github.com/krate/krate-go/io/stdio"
 )
 
 func main() {
@@ -1565,14 +1565,14 @@ func main() {
 }
 ```
 
-### 14.9 TypeScript sample: `layer36-clock` excerpt
+### 14.9 TypeScript sample: `krate-clock` excerpt
 
 ```typescript
-// apps/layer36-clock/src/main.ts
-import { current, timezone } from 'layer36:locale/info@0.1.0';
-import { formatDate, DateStyle } from 'layer36:locale/format@0.1.0';
-import { nowMillis } from 'layer36:time/clock@0.1.0';
-import { stdout } from 'layer36:io/stdio@0.1.0';
+// apps/krate-clock/src/main.ts
+import { current, timezone } from 'krate:locale/info@0.1.0';
+import { formatDate, DateStyle } from 'krate:locale/format@0.1.0';
+import { nowMillis } from 'krate:time/clock@0.1.0';
+import { stdout } from 'krate:io/stdio@0.1.0';
 
 export function run(): number {
     const loc = current();
@@ -1603,7 +1603,7 @@ export function run(): number {
 ### 15.2 Fixture strategy
 
 `test/fixtures/` contains:
-- Deterministic text files for `layer36-cat`.
+- Deterministic text files for `krate-cat`.
 - Checked-in HTTP response bodies, replayed via the test HTTP server.
 - Frozen-clock test data (`--test-time` flag outputs known strings).
 
@@ -1613,10 +1613,10 @@ Cross-host diff tests take the form:
 
 ```rust
 #[test]
-fn layer36_cat_identical_across_hosts() {
-    let output_linux = run_on_host("linux", "layer36-cat fixtures/hello.txt");
-    let output_macos = run_on_host("macos", "layer36-cat fixtures/hello.txt");
-    let output_windows = run_on_host("windows", "layer36-cat fixtures/hello.txt");
+fn krate_cat_identical_across_hosts() {
+    let output_linux = run_on_host("linux", "krate-cat fixtures/hello.txt");
+    let output_macos = run_on_host("macos", "krate-cat fixtures/hello.txt");
+    let output_windows = run_on_host("windows", "krate-cat fixtures/hello.txt");
     assert_eq!(output_linux, output_macos);
     assert_eq!(output_linux, output_windows);
 }
@@ -1646,10 +1646,10 @@ Each sample's `--help` output snapshotted via `insta`. Errors surface on help-te
 |---|---|---|
 | UAPI dispatch overhead (hot) | < 1 µs | `criterion` microbench |
 | UCap check overhead (cached grant) | < 500 ns | microbench |
-| `layer36 run` cold start w/ UAPI app | < 150 ms | `hyperfine` |
-| `layer36 run` warm start | < 30 ms | `hyperfine` |
-| `layer36-curl` vs native `curl` (GET localhost) | < 3× overhead | comparison bench |
-| `layer36-cat` vs native `cat` (1 MB file) | < 2× overhead | comparison bench |
+| `krate run` cold start w/ UAPI app | < 150 ms | `hyperfine` |
+| `krate run` warm start | < 30 ms | `hyperfine` |
+| `krate-curl` vs native `curl` (GET localhost) | < 3× overhead | comparison bench |
+| `krate-cat` vs native `cat` (1 MB file) | < 2× overhead | comparison bench |
 | Runtime binary size | < 50 MB (up from 30 in Phase 1, due to adapters) | artifact size |
 | RSS per running app | < 60 MB | `ps`/`Get-Process`/`Activity Monitor` |
 
@@ -1699,7 +1699,7 @@ Misses > 10% from any target trigger an issue blocking exit criteria.
 
 `SECURITY.md` should be updated at end of Phase 2 to:
 
-> Layer36 is pre-alpha. Phase 2 introduces capability-based sandboxing, but sandboxes are defense-in-depth — not a substitute for trusting the apps you run. Do not run malicious WASM expecting the sandbox to save you. Real hardening arrives in Phase 6 with signed bundles and persistent policy.
+> Krate is pre-alpha. Phase 2 introduces capability-based sandboxing, but sandboxes are defense-in-depth — not a substitute for trusting the apps you run. Do not run malicious WASM expecting the sandbox to save you. Real hardening arrives in Phase 6 with signed bundles and persistent policy.
 
 ---
 
@@ -1710,7 +1710,7 @@ Phase 2 ships five user-facing docs. Priority order:
 ### 18.1 WIT Style Guide
 
 `docs/book/src/wit-style.md`. Covers:
-- Package naming: `layer36:<module>@<semver>`.
+- Package naming: `krate:<module>@<semver>`.
 - Interface organization: `types` / functional interfaces / consumer `world`.
 - Error variants: always `variant`, always include an `other(string)` bucket as last option.
 - Resource vs function: resources for anything with lifecycle; functions for stateless operations.
@@ -1767,14 +1767,14 @@ Additional ADRs as decisions surface. Rule of thumb: if you have to ask "should 
 - [ ] `crates/adapter-common/` shared logic passes on all three.
 
 ### Bindings
-- [ ] `layer36` Rust crate published to crates.io (or ready to publish).
-- [ ] `layer36-go` Go module; TinyGo build verified.
-- [ ] `@layer36/sdk` TypeScript package; jco pipeline documented.
+- [ ] `krate` Rust crate published to crates.io (or ready to publish).
+- [ ] `krate-go` Go module; TinyGo build verified.
+- [ ] `@krate/sdk` TypeScript package; jco pipeline documented.
 
 ### Samples
-- [ ] `layer36-curl` runs on all three hosts, cross-host stdout identical for fixture URLs.
-- [ ] `layer36-cat` runs on all three hosts, cross-host stdout identical for fixture files.
-- [ ] `layer36-clock` runs on all three hosts, snapshot-tested with frozen clock.
+- [ ] `krate-curl` runs on all three hosts, cross-host stdout identical for fixture URLs.
+- [ ] `krate-cat` runs on all three hosts, cross-host stdout identical for fixture files.
+- [ ] `krate-clock` runs on all three hosts, snapshot-tested with frozen clock.
 
 ### UCap
 - [x] Manifest parser handles all §10.5 fields.
@@ -1789,7 +1789,7 @@ Additional ADRs as decisions surface. Rule of thumb: if you have to ask "should 
 - [ ] Cross-host CI matrix green for ≥ 7 consecutive days.
 - [x] Fuzz targets defined.
 - [ ] Nightly fuzz run for ≥ 4 h succeeds without crash.
-- [x] Built Phase 2 sample components checked for pure `layer36:*` imports.
+- [x] Built Phase 2 sample components checked for pure `krate:*` imports.
 - [x] First UAPI dispatch microbenchmark target exists.
 - [x] First UAPI component startup benchmark target exists.
 - [ ] Benchmark regressions ≤ 10% vs Phase 1 baseline.
@@ -1824,7 +1824,7 @@ Additional ADRs as decisions surface. Rule of thumb: if you have to ask "should 
 | Path canonicalization has sandbox-escape edge cases | High | Critical | Fuzz aggressively. Port tests from well-trodden capability systems (sandboxie, chromium sandbox docs). |
 | Async-over-sync UAPI pattern causes deadlocks | Medium | High | Architectural RFC in Week 1 (ADR-0008); single-threaded Tokio per store enforced. |
 | HTTP client memory blowup on large responses | Medium | Medium | Hard cap on response body size (16 MB v0.1). Streaming is v0.2 of `net`. |
-| Cross-host stdout differs subtly (line endings, locale formatting) | High | Medium | Test fixtures explicit about encoding; LF-only output; `layer36-clock` tests use `--test-time` for determinism. |
+| Cross-host stdout differs subtly (line endings, locale formatting) | High | Medium | Test fixtures explicit about encoding; LF-only output; `krate-clock` tests use `--test-time` for determinism. |
 
 ### 21.2 Process risks
 
@@ -1889,10 +1889,10 @@ Before kicking off Phase 3, update the main Build Plan with anything the Phase 2
 
 ### Appendix A — Complete WIT package index
 
-At end of Phase 2, `wit/layer36/` contains:
+At end of Phase 2, `wit/krate/` contains:
 
 ```
-wit/layer36/
+wit/krate/
 ├── io.wit           # 0.1.0
 ├── fs.wit           # 0.1.0
 ├── net.wit          # 0.1.0
@@ -1902,7 +1902,7 @@ wit/layer36/
 ```
 
 Deleted at end of Phase 2:
-- `wit/layer36/phase1.wit` — removed; apps migrated to real UAPI.
+- `wit/krate/phase1.wit` — removed; apps migrated to real UAPI.
 
 ### Appendix B — Capability quick reference
 
@@ -1931,28 +1931,28 @@ Requires explicit grant:
 
 ```bash
 # Validate WIT
-wasm-tools component wit wit/layer36/fs.wit
+wasm-tools component wit wit/krate/fs.wit
 
 # Generate Rust bindings
 cargo component bindings
 
 # Build the Rust sample
-cd apps/layer36-curl && cargo component build --release
+cd apps/krate-curl && cargo component build --release
 
 # Build the Go sample
-cd apps/layer36-cat && tinygo build -target=wasi-p2 -o layer36-cat.wasm ./main.go
+cd apps/krate-cat && tinygo build -target=wasi-p2 -o krate-cat.wasm ./main.go
 
 # Build the clock sample
-scripts/build-layer36-clock-component.sh
+scripts/build-krate-clock-component.sh
 
 # Run with specific grants
-layer36 run --grant net.connect:api.example.com:443,fs.read:./data/** app.wasm
+krate run --grant net.connect:api.example.com:443,fs.read:./data/** app.wasm
 
 # Auto-grant everything in manifest
-layer36 run --auto-grant app.wasm
+krate run --auto-grant app.wasm
 
 # Interactive mode (default)
-layer36 run app.wasm
+krate run app.wasm
 
 # Cross-host integration test locally
 cargo test -p integration-runner --release -- --test-threads 1
@@ -1964,15 +1964,15 @@ When a UAPI call fails unexpectedly:
 
 1. Enable UAPI tracing:
    ```bash
-   LAYER36_LOG=layer36_runtime::uapi=trace layer36 run app.wasm
+   KRATE_LOG=krate_runtime::uapi=trace krate run app.wasm
    ```
 2. Enable policy tracing:
    ```bash
-   LAYER36_LOG=layer36_policy=trace layer36 run app.wasm
+   KRATE_LOG=krate_policy=trace krate run app.wasm
    ```
 3. Dump effective capabilities for a session:
    ```bash
-   layer36 run --dump-caps app.wasm
+   krate run --dump-caps app.wasm
    ```
 4. Validate the component's imports against the runtime's expected world:
    ```bash
@@ -2037,22 +2037,22 @@ Save as `docs/book/src/phase2/retro.md` at the end of Phase 2.
 
 ### Progress Summary
 
-Phase 2 development has started with the UAPI contract layer. The first draft lives under `wit/layer36/phase2`, uses WIT dependency packages for `io`, `fs`, `net`, `time`, and `locale`, and is parse-checked by `crates/runtime/tests/phase2_wit.rs`.
+Phase 2 development has started with the UAPI contract layer. The first draft lives under `wit/krate/phase2`, uses WIT dependency packages for `io`, `fs`, `net`, `time`, and `locale`, and is parse-checked by `crates/runtime/tests/phase2_wit.rs`.
 
-The first UCap slices also exist now. `crates/manifest` parses the Phase 2 `manifest.toml` shape, validates app identity and capability strings, records default grants, exposes the canonical Phase 2 capability table, and is surfaced through `layer36 manifest check` plus `layer36 manifest capabilities`. `crates/policy` resolves the run-session grants, checks required capabilities, supports simple wildcard resource matching, and is wired into `layer36 run --grant ...` / `--auto-grant` before the component starts. The CLI also has the first terminal grant prompt through `layer36 run --prompt`, with automatic prompting in real terminals and clean denial in non-interactive runs. The run path now checks that `app.entry` matches the `.wasm` being executed before grant resolution. `layer36 run --dump-caps` prints the effective session policy without starting the component. The runtime carries the session policy and exposes a Phase 2 UAPI guard that maps calls such as `fs.read`, `fs.write`, and `net.connect` to capability checks before host adapters do native work. A contract test now proves every supported capability name has a UAPI call mapping.
+The first UCap slices also exist now. `crates/manifest` parses the Phase 2 `manifest.toml` shape, validates app identity and capability strings, records default grants, exposes the canonical Phase 2 capability table, and is surfaced through `krate manifest check` plus `krate manifest capabilities`. `crates/policy` resolves the run-session grants, checks required capabilities, supports simple wildcard resource matching, and is wired into `krate run --grant ...` / `--auto-grant` before the component starts. The CLI also has the first terminal grant prompt through `krate run --prompt`, with automatic prompting in real terminals and clean denial in non-interactive runs. The run path now checks that `app.entry` matches the `.wasm` being executed before grant resolution. `krate run --dump-caps` prints the effective session policy without starting the component. The runtime carries the session policy and exposes a Phase 2 UAPI guard that maps calls such as `fs.read`, `fs.write`, and `net.connect` to capability checks before host adapters do native work. A contract test now proves every supported capability name has a UAPI call mapping.
 
 The dispatcher scaffold is now in the runtime too. `crates/runtime/src/uapi_dispatch.rs` defines the first host-adapter traits for `io`, `fs`, `net`, `time`, and `locale`, plus a `UapiDispatcher` that checks policy before calling an adapter method. Unit tests prove denied file and network calls stop before the adapter runs, while granted calls pass through. File handles now carry their opened path and mode, so `read-write` opens require both read and write grants, and later file resource methods re-check the right path capability before native file work. Stdio stream handles now carry their origin too, so stdin reads, stdout/stderr writes, and stream flushes re-check the matching `io.*` capability before adapter work. A dispatcher coverage test now walks the current Phase 2 adapter surface, including stdio, args, logging, filesystem paths, file resources, network, time, and locale, through the policy gate.
 
 The Rust host-binding checkpoint is in place behind the `phase2-bindings` runtime feature. It confirms the Phase 2 `cli` world generates through Wasmtime, that `run` is exposed as a host-side `i32` result, and that generated names such as `OpenMode::Read` and `HttpMethod::Get` are usable before we wire dispatch.
 
-The first Rust guest SDK crate exists now too. `crates/bindings-rust` builds as package `layer36`, wraps the generated guest imports behind simple modules like `layer36::io`, `layer36::fs`, `layer36::net`, `layer36::time`, and `layer36::locale`, and provides the `Guest` trait plus `layer36::export!`. The Rust sample apps now use that SDK facade instead of calling app-local generated binding modules directly. The SDK also has the first ergonomic helper layer: owned app-argument helpers, stdout/stderr text helpers, file read/write helpers, HTTP text helpers, top-level time and locale shortcuts, a crate README, crate-level docs, rustdoc comments for public helpers, publish-facing package metadata, a package dry-run in CI, a self-hosted doc build check, an outside-workspace packaged-crate smoke check, package-content checks for the files that must ship (`README.md`, SDK root, and generated bindings), and a short public Rust SDK guide. The cat and curl samples intentionally parse `io.args.raw` directly for now, because that keeps their built components on pure Layer36 UAPI imports with no accidental WASI Preview 2 host imports.
+The first Rust guest SDK crate exists now too. `crates/bindings-rust` builds as package `krate`, wraps the generated guest imports behind simple modules like `krate::io`, `krate::fs`, `krate::net`, `krate::time`, and `krate::locale`, and provides the `Guest` trait plus `krate::export!`. The Rust sample apps now use that SDK facade instead of calling app-local generated binding modules directly. The SDK also has the first ergonomic helper layer: owned app-argument helpers, stdout/stderr text helpers, file read/write helpers, HTTP text helpers, top-level time and locale shortcuts, a crate README, crate-level docs, rustdoc comments for public helpers, publish-facing package metadata, a package dry-run in CI, a self-hosted doc build check, an outside-workspace packaged-crate smoke check, package-content checks for the files that must ship (`README.md`, SDK root, and generated bindings), and a short public Rust SDK guide. The cat and curl samples intentionally parse `io.args.raw` directly for now, because that keeps their built components on pure Krate UAPI imports with no accidental WASI Preview 2 host imports.
 
 The first generated UAPI reference exists too. `crates/tools` parses
-`wit/layer36/phase2` with `wit-parser`, writes
+`wit/krate/phase2` with `wit-parser`, writes
 `docs/book/src/reference/uapi/index.md`, and CI checks that the generated page
 is current. Its capability lists are generated from the manifest crate's
 canonical Phase 2 capability table, so the docs, manifest validator, and
-`layer36 manifest capabilities` command now share one source. It now includes
+`krate manifest capabilities` command now share one source. It now includes
 plain behavior notes under each function and resource method, so readers can see
 what the call does, which grant matters, and which parts are still early Phase 2
 shape. The WIT files now also carry first-pass contract comments for the Phase 2
@@ -2065,15 +2065,15 @@ The generated WIT type bridge is also in place. `crates/runtime/src/phase2_bridg
 
 The generated import host exists now as well. `crates/runtime/src/phase2_host.rs` implements Wasmtime's generated Phase 2 host traits over `UapiDispatcher` for path-level filesystem calls, HTTP fetch, time, locale, logging, and stdio. It now has a small resource table too, so opened files and stdio streams get runtime-owned IDs before file read/write/seek/stat and stream read/write/flush calls reach the host adapter. The dispatcher now checks both file and stdio stream resource metadata before those resource methods touch native adapters.
 
-`layer36 run` now has an initial Phase 2 execution path. The runtime still tries the Phase 1 `app` world first, then falls back to the Phase 2 `cli` world and installs the generated UAPI host into the Wasmtime linker. The local Phase 2 adapter is intentionally small: stdio, basic filesystem, time, locale, and plain HTTP request framing are wired. HTTP is only a first localhost/test-server slice right now, with a 1 MiB default full-response cap so tests have deterministic bounds. `layer36 run --max-http-response-bytes` can tune that cap per run, and oversized responses now cross the WIT boundary as `net-error.body-too-large`. Timeout and malformed-response paths now map to `net-error.timeout` and `net-error.protocol`. The fetch timeout now applies to connect, read, and write stages in this plain-HTTP path, and a zero-millisecond timeout fails immediately as `net-error.timeout`. Lower-level `fetch(req)` now sends the selected method, app headers, and buffered body while the host keeps `Host`, `Connection`, `Content-Length`, and `Transfer-Encoding` under adapter control. Shared validation also rejects whitespace/control request-line injection, empty or zero ports, oversized request targets, unsupported authority forms, malformed HTTP response shapes, invalid domain-label forms, and invalid IPv4 literals in this early plain-HTTP slice. Shared response reading now also owns size-limit and timeout mapping before parse steps run, so host adapters share one response-read behavior. Response integrity checks now also reject unsupported response `Transfer-Encoding` and conflicting or mismatched `Content-Length` shapes in the same shared parser path, including truncated empty-body responses that declare non-zero content. Shared request framing now also enforces a buffered body size cap before socket writes. Shared host parsing now normalizes accepted host names to lowercase so capability endpoint checks do not drift on input case. Runtime network capability checks now use a shared endpoint parser too, so policy gating and adapter URL handling stay aligned. HTTPS, redirects, streaming, DNS policy details, and production hardening remain open.
+`krate run` now has an initial Phase 2 execution path. The runtime still tries the Phase 1 `app` world first, then falls back to the Phase 2 `cli` world and installs the generated UAPI host into the Wasmtime linker. The local Phase 2 adapter is intentionally small: stdio, basic filesystem, time, locale, and plain HTTP request framing are wired. HTTP is only a first localhost/test-server slice right now, with a 1 MiB default full-response cap so tests have deterministic bounds. `krate run --max-http-response-bytes` can tune that cap per run, and oversized responses now cross the WIT boundary as `net-error.body-too-large`. Timeout and malformed-response paths now map to `net-error.timeout` and `net-error.protocol`. The fetch timeout now applies to connect, read, and write stages in this plain-HTTP path, and a zero-millisecond timeout fails immediately as `net-error.timeout`. Lower-level `fetch(req)` now sends the selected method, app headers, and buffered body while the host keeps `Host`, `Connection`, `Content-Length`, and `Transfer-Encoding` under adapter control. Shared validation also rejects whitespace/control request-line injection, empty or zero ports, oversized request targets, unsupported authority forms, malformed HTTP response shapes, invalid domain-label forms, and invalid IPv4 literals in this early plain-HTTP slice. Shared response reading now also owns size-limit and timeout mapping before parse steps run, so host adapters share one response-read behavior. Response integrity checks now also reject unsupported response `Transfer-Encoding` and conflicting or mismatched `Content-Length` shapes in the same shared parser path, including truncated empty-body responses that declare non-zero content. Shared request framing now also enforces a buffered body size cap before socket writes. Shared host parsing now normalizes accepted host names to lowercase so capability endpoint checks do not drift on input case. Runtime network capability checks now use a shared endpoint parser too, so policy gating and adapter URL handling stay aligned. HTTPS, redirects, streaming, DNS policy details, and production hardening remain open.
 
-The first real Phase 2 component proof exists under `test/integration/phase2-smoke`. It targets the Phase 2 `cli` world, reads `phase2-smoke-input.txt` through `layer36:fs/files`, calls time and locale imports, and writes its result through `layer36:io/stdio`. CI can build this component as a shared fixture and run it through `layer36 run --grant fs.read:phase2-smoke-input.txt` on the cross-host test matrix. The local test suite now also checks the missing-grant path: without `fs.read`, the host maps the call to `permission-denied`, the component writes a short stderr message, and exits with a stable non-zero code.
+The first real Phase 2 component proof exists under `test/integration/phase2-smoke`. It targets the Phase 2 `cli` world, reads `phase2-smoke-input.txt` through `krate:fs/files`, calls time and locale imports, and writes its result through `krate:io/stdio`. CI can build this component as a shared fixture and run it through `krate run --grant fs.read:phase2-smoke-input.txt` on the cross-host test matrix. The local test suite now also checks the missing-grant path: without `fs.read`, the host maps the call to `permission-denied`, the component writes a short stderr message, and exits with a stable non-zero code.
 
-The first named sample app also exists now: `apps/layer36-clock`. It is a Rust component for the current binding path. It calls the Phase 2 time and locale imports, writes through UAPI stdout, and can run with `layer36 run --test-time` so tests can compare stable output instead of racing the real clock. The hidden `--test-locale` and `--test-timezone` flags now let the fixture path pin locale and timezone too, so the clock output can be asserted as one exact cross-host snapshot. The original TypeScript/jco sample plan is still useful for the language-binding track, but the Rust sample lets the runtime path mature first.
+The first named sample app also exists now: `apps/krate-clock`. It is a Rust component for the current binding path. It calls the Phase 2 time and locale imports, writes through UAPI stdout, and can run with `krate run --test-time` so tests can compare stable output instead of racing the real clock. The hidden `--test-locale` and `--test-timezone` flags now let the fixture path pin locale and timezone too, so the clock output can be asserted as one exact cross-host snapshot. The original TypeScript/jco sample plan is still useful for the language-binding track, but the Rust sample lets the runtime path mature first.
 
-`apps/layer36-cat` has started too. The CLI can now forward app arguments after `--`, the runtime exposes them through `layer36:io/args.raw`, and the cat sample uses those args plus `fs.read` grants to concatenate fixture files. The test suite checks the granted path, the missing-grant denial path, and the outside-granted-glob denial path. Permission denial exits with code `5`.
+`apps/krate-cat` has started too. The CLI can now forward app arguments after `--`, the runtime exposes them through `krate:io/args.raw`, and the cat sample uses those args plus `fs.read` grants to concatenate fixture files. The test suite checks the granted path, the missing-grant denial path, and the outside-granted-glob denial path. Permission denial exits with code `5`.
 
-`apps/layer36-curl` has started now as well. It reads its URL from Layer36 app args, calls `layer36:net/http-client.get`, and writes the response body through UAPI stdout. The first test uses a local HTTP server and an exact `net.connect:127.0.0.1:PORT` grant. The matching denial test runs without that grant and exits cleanly with code `5` before the adapter can open a socket. The sample now prints specific messages for oversized responses, timeouts, and malformed HTTP responses.
+`apps/krate-curl` has started now as well. It reads its URL from Krate app args, calls `krate:net/http-client.get`, and writes the response body through UAPI stdout. The first test uses a local HTTP server and an exact `net.connect:127.0.0.1:PORT` grant. The matching denial test runs without that grant and exits cleanly with code `5` before the adapter can open a socket. The sample now prints specific messages for oversized responses, timeouts, and malformed HTTP responses.
 
 GitHub Actions is back in public-repo mode. Normal pushes and pull requests run
 the cheap hosted checks: format, clippy, Linux workspace tests, and docs. The
@@ -2099,7 +2099,7 @@ deterministic inputs. The curl parity path uses a local fixture server and
 skips cleanly on restricted runners that cannot use localhost socket fixtures.
 
 There is also a manual self-hosted workflow for a local runner labeled
-`layer36-local`. That gives us a way to run the full local gate on a trusted
+`krate-local`. That gives us a way to run the full local gate on a trusted
 machine without relying on hosted runner availability.
 
 The WIT style guide is now published in the book as well. It gives us concrete rules for package names, interface names, function names, resources, typed errors, capability mapping, comments, versioning, and review checks before we freeze UAPI v0.1.
@@ -2107,7 +2107,7 @@ The WIT style guide is now published in the book as well. It gives us concrete r
 The Phase 2 UAPI contract checker exists now too. `scripts/check-uapi.sh` now
 runs two checks in one pass: `wasm-tools component wit` validation for every
 Phase 2 package directory (`world` plus `io`, `fs`, `net`, `time`, `locale`)
-and the `layer36-tools --bin check-uapi` contract checks for expected package
+and the `krate-tools --bin check-uapi` contract checks for expected package
 set, `cli` world imports, `run` export shape, kebab-case naming, and
 `permission-denied` variants. The checker now also requires WIT docs on public
 Phase 2 contract items, so future API changes cannot drop human-readable
@@ -2126,15 +2126,15 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 |---|-----------|--------|
 | 1 | All five UAPI modules (`io`, `fs`, `net`, `time`, `locale`) frozen as stable v0.1 WIT | Drafted, not frozen; CI now checks the current package shape before freeze |
 | 2 | Each module implemented in Linux, macOS, Windows host adapters; CI green on all | Not done |
-| 3 | Rust bindings generated and usable (`cargo add layer36 && use layer36::fs` works) | Started: host-side Wasmtime binding checkpoint, generated type bridge, import host trait wiring, guest SDK crate, sample-app migration, helper layer, crate README, crate docs, rustdoc comments, package metadata, package dry-run, packaged-crate smoke check, SDK doc build check, and Rust SDK guide exist; crates.io publication remains |
-| 4 | Go (TinyGo) bindings generated and usable; sample builds and runs | Advanced: `layer36 doctor` now reports TinyGo and Go readiness, `packages/sdk-go` has the helper scaffold and examples, self-hosted CI now runs a TinyGo WASI Preview 2 build-smoke lane for clock/cat/curl with component-shape verification plus a runtime-fixture promotion gate that only activates when imports are Layer36-pure, and the shared language-fixture build step now auto-attempts Go runtime fixture promotion when the TinyGo toolchain is present. Local TinyGo artifacts build, and `scripts/record-phase2-go-readiness-evidence.sh` now records tool versions, artifact hashes, and current import-purity diagnostics. The artifacts still show remaining WASI imports, so generated Layer36 import bindings and full Layer36-runtime fixture proof remain |
-| 5 | TypeScript (jco) bindings generated and usable; sample builds and runs | Advanced: `layer36 doctor` reports Node/npm/jco readiness (including local `npx` fallback), `packages/sdk-ts` has the SDK scaffold and shape checks, fixture build now auto-runs in CI/self-hosted, hosted full CI now defaults language-variant mode to `ts` with `npx` jco install enabled for fixture build (pinned jco package and Node 22 lane), and TypeScript `clock` and `cat` runtime fixture tests pass locally; stable `curl` fixture evidence across restricted runners remains |
-| 6 | `layer36-curl <url>` works identically on all three hosts | Started: Rust sample builds locally, imports only Layer36 UAPI after the raw-args cleanup, has granted/denied localhost HTTP tests, a configurable response-limit test, typed network error mapping, clearer error messages, and now runs through its sample manifest with `--auto-grant`; full cross-host run remains |
-| 7 | `layer36-cat <file>` works identically on all three hosts | Started: Rust sample builds locally, imports only Layer36 UAPI after the raw-args cleanup, has granted/denied fixture tests including outside-granted-glob denial, and now runs through its sample manifest with `--auto-grant`; full cross-host run remains |
-| 8 | `layer36-clock` prints time in user locale on all three hosts | Started: Rust sample builds locally and has fixed-time plus sample-manifest `--auto-grant` integration coverage; full cross-host run remains |
-| 9 | UCap v0.1: manifest-declared caps enforced; unauthorized calls trap cleanly | Started: CLI preflight, manifest generation and text/JSON inspection, manifest entry/run-file match check, canonical capability table, `--grant`, `--auto-grant`, first terminal prompt, `--dump-caps`, `--dump-caps-format json`, `--log-grants`, `--log-grants-format jsonl`, runtime UAPI guard, dispatcher scaffold, policy coverage tests, file-handle and stdio stream capability rechecks, filesystem denial-before-adapter coverage, generated WIT type bridge, generated host wiring, resource table, runtime linker install, Phase 2 smoke happy path, missing-grant proof, app args, `layer36-clock`, first `layer36-cat`, first `layer36-curl`, a plain HTTP adapter slice with request methods, headers, buffered bodies, configurable response cap, typed network errors, and an evidence-backed deny-before-adapter matrix for every non-default dispatcher boundary exist; cross-host signoff and final review remain |
-| 10 | Startup overhead for a UAPI-using app < 150 ms | Advanced: `cargo bench -p layer36-runtime --bench startup` measures Phase 2 smoke and `layer36-clock`, Phase 2 baseline regression tracking exists in strict self-hosted mode, and the benchmark evidence recorder now also measures the full external `layer36 run` command path for deterministic `layer36-clock`; cross-host numbers and a final CLI threshold remain |
-| 11 | UAPI hot-path dispatch < 1 µs (microbenchmark) | Started and locally green: `cargo bench -p layer36-runtime --bench uapi_dispatch` tracks default IO, filesystem grant checks, denial path, and network grant checks with a recorded Phase 2 baseline and strict self-hosted regression checks; cross-host baseline evidence remains |
+| 3 | Rust bindings generated and usable (`cargo add krate && use krate::fs` works) | Started: host-side Wasmtime binding checkpoint, generated type bridge, import host trait wiring, guest SDK crate, sample-app migration, helper layer, crate README, crate docs, rustdoc comments, package metadata, package dry-run, packaged-crate smoke check, SDK doc build check, and Rust SDK guide exist; crates.io publication remains |
+| 4 | Go (TinyGo) bindings generated and usable; sample builds and runs | Advanced: `krate doctor` now reports TinyGo and Go readiness, `packages/sdk-go` has the helper scaffold and examples, self-hosted CI now runs a TinyGo WASI Preview 2 build-smoke lane for clock/cat/curl with component-shape verification plus a runtime-fixture promotion gate that only activates when imports are Krate-pure, and the shared language-fixture build step now auto-attempts Go runtime fixture promotion when the TinyGo toolchain is present. Local TinyGo artifacts build, and `scripts/record-phase2-go-readiness-evidence.sh` now records tool versions, artifact hashes, and current import-purity diagnostics. The artifacts still show remaining WASI imports, so generated Krate import bindings and full Krate-runtime fixture proof remain |
+| 5 | TypeScript (jco) bindings generated and usable; sample builds and runs | Advanced: `krate doctor` reports Node/npm/jco readiness (including local `npx` fallback), `packages/sdk-ts` has the SDK scaffold and shape checks, fixture build now auto-runs in CI/self-hosted, hosted full CI now defaults language-variant mode to `ts` with `npx` jco install enabled for fixture build (pinned jco package and Node 22 lane), and TypeScript `clock` and `cat` runtime fixture tests pass locally; stable `curl` fixture evidence across restricted runners remains |
+| 6 | `krate-curl <url>` works identically on all three hosts | Started: Rust sample builds locally, imports only Krate UAPI after the raw-args cleanup, has granted/denied localhost HTTP tests, a configurable response-limit test, typed network error mapping, clearer error messages, and now runs through its sample manifest with `--auto-grant`; full cross-host run remains |
+| 7 | `krate-cat <file>` works identically on all three hosts | Started: Rust sample builds locally, imports only Krate UAPI after the raw-args cleanup, has granted/denied fixture tests including outside-granted-glob denial, and now runs through its sample manifest with `--auto-grant`; full cross-host run remains |
+| 8 | `krate-clock` prints time in user locale on all three hosts | Started: Rust sample builds locally and has fixed-time plus sample-manifest `--auto-grant` integration coverage; full cross-host run remains |
+| 9 | UCap v0.1: manifest-declared caps enforced; unauthorized calls trap cleanly | Started: CLI preflight, manifest generation and text/JSON inspection, manifest entry/run-file match check, canonical capability table, `--grant`, `--auto-grant`, first terminal prompt, `--dump-caps`, `--dump-caps-format json`, `--log-grants`, `--log-grants-format jsonl`, runtime UAPI guard, dispatcher scaffold, policy coverage tests, file-handle and stdio stream capability rechecks, filesystem denial-before-adapter coverage, generated WIT type bridge, generated host wiring, resource table, runtime linker install, Phase 2 smoke happy path, missing-grant proof, app args, `krate-clock`, first `krate-cat`, first `krate-curl`, a plain HTTP adapter slice with request methods, headers, buffered bodies, configurable response cap, typed network errors, and an evidence-backed deny-before-adapter matrix for every non-default dispatcher boundary exist; cross-host signoff and final review remain |
+| 10 | Startup overhead for a UAPI-using app < 150 ms | Advanced: `cargo bench -p krate-runtime --bench startup` measures Phase 2 smoke and `krate-clock`, Phase 2 baseline regression tracking exists in strict self-hosted mode, and the benchmark evidence recorder now also measures the full external `krate run` command path for deterministic `krate-clock`; cross-host numbers and a final CLI threshold remain |
+| 11 | UAPI hot-path dispatch < 1 µs (microbenchmark) | Started and locally green: `cargo bench -p krate-runtime --bench uapi_dispatch` tracks default IO, filesystem grant checks, denial path, and network grant checks with a recorded Phase 2 baseline and strict self-hosted regression checks; cross-host baseline evidence remains |
 | 12 | Developer who knows Rust but not WASM can write a CLI in < 30 min using docs | Started: first Rust walkthrough exists using the current repo-local SDK, component build, manifest init/explain, granted run, and denial path; timed external run remains |
 | 13 | UAPI reference docs auto-generated from WIT and published on docs site | Done for the current draft: generated mdBook page exists under `reference/uapi`, its capability tables come from the manifest crate, it includes function-level behavior notes, and hosted/self-hosted CI checks it is current |
 | 14 | WIT Style Guide merged into `docs/book/` | Done: `docs/book/src/wit-style.md` is linked from mdBook and `CONTRIBUTING.md` |
@@ -2158,28 +2158,28 @@ formal exit gates.
 
 | Task ID | Task | Completed | Notes |
 |---------|------|-----------|-------|
-| P2-UAPI-01 | Draft `io` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/io`; parse-checked. |
-| P2-UAPI-02 | Draft `fs` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/fs`; parser catches WIT keyword escapes. |
-| P2-UAPI-03 | Draft `net` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/net`; HTTP client only. |
-| P2-UAPI-04 | Draft `time` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/time`; clock and sleep only. |
-| P2-UAPI-05 | Draft `locale` WIT package | 2026-05-03 | Added under `wit/layer36/phase2/deps/locale`; info and formatting only. |
-| P2-SEC-01A | Manifest parser and capability string validator | 2026-05-03 | Added `crates/manifest` and `layer36 manifest check`; policy matching and runtime enforcement remain open. |
-| P2-SEC-01K | Canonical Phase 2 capability table | 2026-05-04 | `crates/manifest` now exposes the supported capability specs and default-grant flags, and `layer36 manifest capabilities` prints the runtime's accepted capability strings. |
-| P2-SEC-01B | Session policy and CLI grant preflight | 2026-05-03 | Added `crates/policy`; `layer36 run` reads sidecar manifests and enforces required grants before execution. |
-| P2-SEC-01G | Terminal grant prompt | 2026-05-04 | Added `layer36 run --prompt`; it lists missing manifest capabilities, accepts all or numbered grants, and keeps non-interactive missing-grant runs as clear permission denials. |
-| P2-SEC-01H | Manifest entry match check | 2026-05-04 | `layer36 run` now rejects a sidecar manifest if `app.entry` does not resolve to the `.wasm` being executed. |
-| P2-SEC-01I | Effective capability dump | 2026-05-04 | Added `layer36 run --dump-caps` to print the resolved session grants and exit before runtime execution. |
-| P2-SEC-01O | Structured effective capability dump | 2026-05-04 | Added `layer36 run --dump-caps-format json` so scripts can inspect component path, app identity, and effective session grants before runtime execution. |
-| P2-SEC-01N | Local grant audit log | 2026-05-04 | Added `layer36 run --log-grants <file>` to append app identity, manifest world, wasm path, and effective session grants to a local text log. |
-| P2-SEC-01P | Structured grant audit log | 2026-05-04 | Added `layer36 run --log-grants-format jsonl` so grant audit logs can be appended as one structured JSON record per line. |
-| P2-SEC-01J | Sample permission-denied exit code | 2026-05-04 | `layer36-cat` and `layer36-curl` now use exit code `5` for UCap denial; cat has an outside-granted-glob denial test. |
+| P2-UAPI-01 | Draft `io` WIT package | 2026-05-03 | Added under `wit/krate/phase2/deps/io`; parse-checked. |
+| P2-UAPI-02 | Draft `fs` WIT package | 2026-05-03 | Added under `wit/krate/phase2/deps/fs`; parser catches WIT keyword escapes. |
+| P2-UAPI-03 | Draft `net` WIT package | 2026-05-03 | Added under `wit/krate/phase2/deps/net`; HTTP client only. |
+| P2-UAPI-04 | Draft `time` WIT package | 2026-05-03 | Added under `wit/krate/phase2/deps/time`; clock and sleep only. |
+| P2-UAPI-05 | Draft `locale` WIT package | 2026-05-03 | Added under `wit/krate/phase2/deps/locale`; info and formatting only. |
+| P2-SEC-01A | Manifest parser and capability string validator | 2026-05-03 | Added `crates/manifest` and `krate manifest check`; policy matching and runtime enforcement remain open. |
+| P2-SEC-01K | Canonical Phase 2 capability table | 2026-05-04 | `crates/manifest` now exposes the supported capability specs and default-grant flags, and `krate manifest capabilities` prints the runtime's accepted capability strings. |
+| P2-SEC-01B | Session policy and CLI grant preflight | 2026-05-03 | Added `crates/policy`; `krate run` reads sidecar manifests and enforces required grants before execution. |
+| P2-SEC-01G | Terminal grant prompt | 2026-05-04 | Added `krate run --prompt`; it lists missing manifest capabilities, accepts all or numbered grants, and keeps non-interactive missing-grant runs as clear permission denials. |
+| P2-SEC-01H | Manifest entry match check | 2026-05-04 | `krate run` now rejects a sidecar manifest if `app.entry` does not resolve to the `.wasm` being executed. |
+| P2-SEC-01I | Effective capability dump | 2026-05-04 | Added `krate run --dump-caps` to print the resolved session grants and exit before runtime execution. |
+| P2-SEC-01O | Structured effective capability dump | 2026-05-04 | Added `krate run --dump-caps-format json` so scripts can inspect component path, app identity, and effective session grants before runtime execution. |
+| P2-SEC-01N | Local grant audit log | 2026-05-04 | Added `krate run --log-grants <file>` to append app identity, manifest world, wasm path, and effective session grants to a local text log. |
+| P2-SEC-01P | Structured grant audit log | 2026-05-04 | Added `krate run --log-grants-format jsonl` so grant audit logs can be appended as one structured JSON record per line. |
+| P2-SEC-01J | Sample permission-denied exit code | 2026-05-04 | `krate-cat` and `krate-curl` now use exit code `5` for UCap denial; cat has an outside-granted-glob denial test. |
 | P2-SEC-01L | File-handle capability rechecks | 2026-05-04 | File handles now carry opened path/mode metadata. `read-write` opens require both read and write grants, and file read/write/stat/seek methods re-check capabilities before adapter calls. |
 | P2-SEC-01Q | Stdio stream capability rechecks | 2026-05-04 | Stdio stream handles now carry stdin/stdout/stderr metadata. Stream read/write/write-all/flush methods re-check the matching `io.*` capability and reject wrong-direction or metadata-less handles before adapter calls. |
 | P2-SEC-01M | Filesystem denial-before-adapter coverage | 2026-05-04 | Dispatcher tests now prove `stat`, `list`, `remove-file`, `remove-dir`, `mkdir`, and `rename` stop before the adapter when the needed filesystem grants are missing. |
 | P2-SEC-01S | Bounded Phase 2 filesystem reads and listings | 2026-05-05 | Local Phase 2 adapter now rejects per-call read sizes above 8 MiB and directory listings above 4096 entries with explicit runtime I/O errors. Runtime tests now cover both bounds so oversized calls fail deterministically before host-side resource pressure grows. |
 | P2-SEC-01T | Bounded Phase 2 filesystem and stream writes | 2026-05-05 | Local Phase 2 adapter now rejects per-call stream and filesystem writes above 8 MiB with explicit runtime I/O errors. Runtime tests cover oversized stdout stream writes and oversized file writes so large write requests fail before host-side resource pressure grows. |
 | P2-SEC-01U | Raw app-argument transport guardrails | 2026-05-05 | Local Phase 2 `io.args.raw` now rejects empty argument entries, newline/NUL delimiter characters, too many arguments above 1024 entries, and oversized raw argument payloads above 64 KiB. Runtime tests now cover valid encoding and invalid argument-shape rejection so raw-args behavior stays deterministic in this phase. |
-| P2-SEC-01V | CLI preflight for raw app-argument guardrails | 2026-05-05 | `layer36 run` now validates app arguments before runtime execution. Empty args, newline/NUL delimiter characters, too many arguments above 1024 entries, and oversized Phase 2 raw-args payloads are rejected early with clear CLI errors. Integration tests cover all preflight rejections. |
+| P2-SEC-01V | CLI preflight for raw app-argument guardrails | 2026-05-05 | `krate run` now validates app arguments before runtime execution. Empty args, newline/NUL delimiter characters, too many arguments above 1024 entries, and oversized Phase 2 raw-args payloads are rejected early with clear CLI errors. Integration tests cover all preflight rejections. |
 | P2-SEC-01W | Runtime resource-table cap | 2026-05-05 | Local Phase 2 adapter now enforces a maximum open-resource table size for file and stream handles. New handle allocation fails with a clear runtime I/O error once the cap is reached, and runtime tests cover overflow rejection. |
 | P2-SEC-01X | Runtime resource-drop close path | 2026-05-05 | Generated Phase 2 resource `drop` callbacks now close underlying local adapter file/stream handles before removing host-side table entries. Runtime tests now cover close-on-drop behavior and slot reuse after explicit close so open-resource limits remain practical for long-lived app runs. |
 | P2-SEC-01Y | Generated host resource-table cap | 2026-05-05 | The generated Phase 2 host-side resource table now enforces a maximum active-resource cap before allocating new file/input/output resources. Overflow now traps with a clear host-table limit message, and runtime tests cover this overflow behavior. |
@@ -2189,41 +2189,41 @@ formal exit gates.
 | P2-SEC-01AC | Policy net wildcard scope parity | 2026-05-06 | Session policy matching for `net.connect` now treats `*.example.com` as exactly one left-most label match (for example `api.example.com`), not an arbitrary-depth match. Global `*` host grants remain supported. Added policy tests for single-label wildcard behavior and wildcard-host broad grants, plus runtime dispatcher coverage that proves `*.example.com` grants allow one-label hosts and deny deeper hosts before adapter calls. |
 | P2-SEC-01AD | Canonical net-connect capability resource storage | 2026-05-06 | Manifest capability parsing now canonicalizes valid `net.connect` resources to deterministic forms at parse time: host is stored lowercase and numeric ports are normalized (for example `API.Example.com:0443` becomes `api.example.com:443`). Duplicate-capability detection now also catches these canonical duplicates reliably. |
 | P2-SEC-01AE | Canonical filesystem capability resource storage | 2026-05-06 | Manifest capability parsing now canonicalizes valid `fs.*` resources through shared logical-path normalization before storing capability values. This keeps capability output deterministic (`./notes/**` and `notes\\**` normalize to `notes/**`) and lets duplicate-capability checks catch path-format duplicates reliably. CLI capability explain/dump/log tests were updated to assert canonicalized filesystem capability rendering. |
-| P2-SEC-01AF | Prompt rationale mapping parity after capability canonicalization | 2026-05-06 | Fixed `layer36 run --prompt` capability rationale lookup to compare canonical parsed capabilities instead of raw manifest strings. This preserves rationale lines for non-canonical manifest resource text (for example `./data/**`) after canonicalization (`data/**`) and keeps interactive grant prompts understandable. |
+| P2-SEC-01AF | Prompt rationale mapping parity after capability canonicalization | 2026-05-06 | Fixed `krate run --prompt` capability rationale lookup to compare canonical parsed capabilities instead of raw manifest strings. This preserves rationale lines for non-canonical manifest resource text (for example `./data/**`) after canonicalization (`data/**`) and keeps interactive grant prompts understandable. |
 | P2-PERF-01A | UAPI dispatch microbenchmarks | 2026-05-04 | Added `crates/runtime/benches/uapi_dispatch.rs`, wired it into full benchmark CI, and published the first local sub-microsecond dispatcher readings in the mdBook. |
-| P2-PERF-01B | UAPI component startup benchmarks | 2026-05-04 | Extended `crates/runtime/benches/startup.rs` with Phase 2 smoke and `layer36-clock` runs. First local read: Phase 2 smoke cold runtime path is about 3.47 ms on Apple M4, with full CLI `hyperfine` still pending. |
+| P2-PERF-01B | UAPI component startup benchmarks | 2026-05-04 | Extended `crates/runtime/benches/startup.rs` with Phase 2 smoke and `krate-clock` runs. First local read: Phase 2 smoke cold runtime path is about 3.47 ms on Apple M4, with full CLI `hyperfine` still pending. |
 | P2-PERF-01C | Phase 2 benchmark baseline + strict regression mode | 2026-05-05 | Added `docs/book/src/phase2/benchmark-baseline.json` and extended `scripts/check-benchmark-regression.sh` with configurable baseline sets, threshold tuning, and `warn`/`fail` modes. Self-hosted CI now runs Phase 2 startup + dispatch benches and can hard-fail on regression against the Phase 2 baseline. |
 | P2-PERF-01D | Benchmark baseline recording automation | 2026-05-05 | Added `scripts/record-phase2-benchmark-baseline.sh` to regenerate `docs/book/src/phase2/benchmark-baseline.json` directly from local Criterion outputs (`startup` + `uapi_dispatch`) with current date and machine details. This removes manual JSON edits when refreshing Phase 2 baseline snapshots. |
 | P2-PERF-01E | Per-metric benchmark thresholds for noisy startup paths | 2026-05-05 | Extended `scripts/check-benchmark-regression.sh` to support optional per-metric `threshold_pct` overrides from baseline JSON. Phase 2 baseline now sets wider thresholds for startup-heavy metrics while keeping strict 10% checks for stable hot-path dispatch metrics, reducing false failures on self-hosted runners. |
-| P2-SEC-01C | Runtime UAPI policy guard | 2026-05-03 | Runtime config now carries the session policy; `layer36_runtime::uapi` maps Phase 2 calls to capability checks. |
+| P2-SEC-01C | Runtime UAPI policy guard | 2026-05-03 | Runtime config now carries the session policy; `krate_runtime::uapi` maps Phase 2 calls to capability checks. |
 | P2-UAPI-REVIEW | Rust host binding checkpoint | 2026-05-03 | Added `phase2-bindings` feature and CI job; confirms Phase 2 WIT generates usable host-side Rust names. |
 | P2-SEC-01D | Runtime UAPI dispatcher scaffold | 2026-05-03 | Added adapter traits and dispatcher methods that map policy denial to module-level errors before adapter calls run. |
 | P2-SEC-01R | UAPI policy coverage tests | 2026-05-04 | Added runtime tests proving every supported capability name has a UAPI call mapping and the current dispatcher adapter surface is reached through the policy gate. |
 | P2-SEC-01E-a | Generated WIT type/error bridge | 2026-05-03 | Added `phase2_bridge` to convert generated WIT records, enums, and module errors to and from runtime dispatcher types. |
 | P2-SEC-01E-b | Generated import host trait wiring | 2026-05-03 | Added `phase2_host` so generated Wasmtime traits call `UapiDispatcher` for HTTP, path-level fs, time, locale, logging, and stdio handle creation. |
 | P2-SEC-01E-c | Phase 2 host resource table | 2026-05-03 | Added runtime-owned resource IDs for file and stream handles, then routed file read/write/seek/stat and stream read/write/flush calls through dispatcher adapter methods. |
-| P2-SEC-01E-d | Runtime Phase 2 linker install | 2026-05-03 | `layer36 run` can now fall back from the Phase 1 `app` world to the Phase 2 `cli` world and install generated UAPI imports with a local adapter for stdio, basic fs, time, and locale. |
+| P2-SEC-01E-d | Runtime Phase 2 linker install | 2026-05-03 | `krate run` can now fall back from the Phase 1 `app` world to the Phase 2 `cli` world and install generated UAPI imports with a local adapter for stdio, basic fs, time, and locale. |
 | P2-SEC-01E-e | Phase 2 smoke component proof | 2026-05-03 | Added `test/integration/phase2-smoke`, a real Phase 2 `cli` component that reads a file, calls time/locale, writes to stdout, and is wired into the cross-host CI fixture path. |
 | P2-CI-01 | Budget-aware CI mode | 2026-05-04 | Normal push CI now runs cheap Linux checks only; full cross-host matrix, benchmarks, cargo-deny, fixtures, and the dedicated Phase 2 binding checkpoint run manually with `full = true` or a `[full-ci]` commit marker. |
-| P2-CI-02 | Public CI and self-hosted runner path | 2026-05-04 | Repo visibility is public, cheap hosted CI is restored for pushes and PRs, Pages deploys from docs changes, and a manual `Self-hosted CI` workflow targets local runners labeled `layer36-local`. |
+| P2-CI-02 | Public CI and self-hosted runner path | 2026-05-04 | Repo visibility is public, cheap hosted CI is restored for pushes and PRs, Pages deploys from docs changes, and a manual `Self-hosted CI` workflow targets local runners labeled `krate-local`. |
 | P2-CI-04 | Dependency audit runner hardening | 2026-05-05 | Added `scripts/check-dependencies.sh` and switched hosted + self-hosted CI dependency-audit steps to use it. The wrapper keeps `licenses`, `bans`, and `sources` as hard gates, while allowing known advisory-db parser/lock-path failures in current `cargo-deny` to degrade to a warning until upstream compatibility catches up. |
 | P2-CI-05 | Phase 2 baseline-aligned benchmark checks in hosted and self-hosted CI | 2026-05-05 | Full hosted benchmark CI now runs warning-only regression checks against the dedicated Phase 2 baseline file, while self-hosted CI can run strict fail-mode checks on the same baseline. This keeps benchmark noise focused on current Phase 2 goals and supports practical hard gating on local runners. |
 | P2-TEST-02A | First Phase 2 fuzz harness set | 2026-05-05 | Added `fuzz/` with first `cargo-fuzz` targets for manifest parsing, logical path parsing, and policy match checks, plus `scripts/run-phase2-fuzz-smoke.sh` for short local/self-hosted fuzz smoke runs. |
 | P2-TEST-02B | Fuzz-smoke nightly toolchain pinning hardening | 2026-05-05 | Hardened `scripts/run-phase2-fuzz-smoke.sh` so it pins nightly `cargo` and `rustc` explicitly before running `cargo-fuzz`. This avoids host setups where a stable Homebrew `cargo` is first in `PATH`, which previously caused `-Zsanitizer` failures during fuzz smoke runs. |
-| P2-TEST-02C | Configurable long-run fuzz sessions + nightly self-hosted workflow | 2026-05-05 | `scripts/run-phase2-fuzz-smoke.sh` now accepts `LAYER36_FUZZ_MAX_TOTAL_TIME` and target-list overrides, so short smoke and long soak runs share one path. `Self-hosted CI` now exposes per-target fuzz duration as manual input, and a dedicated `Self-hosted Fuzz Nightly` workflow was added with a long-run default for local runners. |
+| P2-TEST-02C | Configurable long-run fuzz sessions + nightly self-hosted workflow | 2026-05-05 | `scripts/run-phase2-fuzz-smoke.sh` now accepts `KRATE_FUZZ_MAX_TOTAL_TIME` and target-list overrides, so short smoke and long soak runs share one path. `Self-hosted CI` now exposes per-target fuzz duration as manual input, and a dedicated `Self-hosted Fuzz Nightly` workflow was added with a long-run default for local runners. |
 | P2-ADPT-COMMON-02S | Fuzz-found path panic fix | 2026-05-05 | Self-hosted fuzz smoke found a panic in Windows reserved-name detection for non-ASCII four-byte segments. Replaced byte-index string splitting with ASCII-byte checks for COM/LPT patterns, and added a regression test from the crashing input so `LogicalPath::parse` no longer panics on that shape. |
 | P2-SEC-01F | Phase 2 smoke missing-grant proof | 2026-05-04 | Added a CLI integration test proving the smoke component receives `fs.permission-denied` without `fs.read`, writes a clear stderr message, and exits non-zero without reading host files. |
-| P2-APP-03A | First `layer36-clock` sample path | 2026-05-04 | Added `apps/layer36-clock`, a Rust Phase 2 component using time, locale, and stdout, plus `layer36 run --test-time` for deterministic sample tests. |
-| P2-UAPI-06 | Layer36 app arguments | 2026-05-04 | Added `layer36:io/args.raw`, default `io.args` grants, CLI forwarding through `layer36 run ... -- <args>`, and host dispatch wiring. |
-| P2-UAPI-07 | UAPI contract checker | 2026-05-04 | Added `scripts/check-uapi.sh` and `layer36-tools --bin check-uapi` to validate the Phase 2 package set, `cli` world shape, naming, and permission-denied error variants in hosted and self-hosted CI. |
-| P2-UAPI-08 | wasm-tools package validation gate for Phase 2 WIT | 2026-05-06 | Extended `scripts/check-uapi.sh` to run `wasm-tools component wit` across `wit/layer36/phase2` and each dependency package directory (`io`, `fs`, `net`, `time`, `locale`) before contract checks. Hosted CI `uapi-reference` now installs `wasm-tools` so this runs on every cheap hosted push lane too. |
-| P2-UAPI-09 | WIT contract docs freeze-readiness gate | 2026-05-06 | Added first-pass WIT contract comments across the Phase 2 world, interfaces, records, variants, enum cases, resources, methods, and functions. Regenerated the UAPI reference so those comments publish to mdBook, and hardened `layer36-tools --bin check-uapi` to fail when public Phase 2 WIT contract items are missing docs before freeze review. |
-| P2-UAPI-10 | UAPI freeze evidence snapshot generator | 2026-05-06 | `layer36-tools --bin check-uapi` now supports `--format markdown`, and `scripts/generate-uapi-freeze-evidence.sh` writes the published `docs/book/src/phase2/uapi-freeze-evidence.md` snapshot. The page records the current app package, `cli` world, package set, imported interface set, and contract checks, giving freeze review a repeatable evidence artifact. |
-| P2-UAPI-11 | UAPI freeze candidate lock | 2026-05-15 | Added `layer36-tools --bin check-uapi-freeze-lock`, `scripts/generate-uapi-freeze-lock.sh`, `scripts/check-uapi-freeze-lock.sh`, and the published UAPI Freeze Lock page. The lock records SHA-256 hashes for the Phase 2 WIT files so contract drift is visible before and after the final freeze decision. |
-| P2-APP-02A | First `layer36-cat` sample path | 2026-05-04 | Added `apps/layer36-cat`, a Rust Phase 2 component that reads app args, opens granted files, writes stdout, and fails cleanly without `fs.read`. |
+| P2-APP-03A | First `krate-clock` sample path | 2026-05-04 | Added `apps/krate-clock`, a Rust Phase 2 component using time, locale, and stdout, plus `krate run --test-time` for deterministic sample tests. |
+| P2-UAPI-06 | Krate app arguments | 2026-05-04 | Added `krate:io/args.raw`, default `io.args` grants, CLI forwarding through `krate run ... -- <args>`, and host dispatch wiring. |
+| P2-UAPI-07 | UAPI contract checker | 2026-05-04 | Added `scripts/check-uapi.sh` and `krate-tools --bin check-uapi` to validate the Phase 2 package set, `cli` world shape, naming, and permission-denied error variants in hosted and self-hosted CI. |
+| P2-UAPI-08 | wasm-tools package validation gate for Phase 2 WIT | 2026-05-06 | Extended `scripts/check-uapi.sh` to run `wasm-tools component wit` across `wit/krate/phase2` and each dependency package directory (`io`, `fs`, `net`, `time`, `locale`) before contract checks. Hosted CI `uapi-reference` now installs `wasm-tools` so this runs on every cheap hosted push lane too. |
+| P2-UAPI-09 | WIT contract docs freeze-readiness gate | 2026-05-06 | Added first-pass WIT contract comments across the Phase 2 world, interfaces, records, variants, enum cases, resources, methods, and functions. Regenerated the UAPI reference so those comments publish to mdBook, and hardened `krate-tools --bin check-uapi` to fail when public Phase 2 WIT contract items are missing docs before freeze review. |
+| P2-UAPI-10 | UAPI freeze evidence snapshot generator | 2026-05-06 | `krate-tools --bin check-uapi` now supports `--format markdown`, and `scripts/generate-uapi-freeze-evidence.sh` writes the published `docs/book/src/phase2/uapi-freeze-evidence.md` snapshot. The page records the current app package, `cli` world, package set, imported interface set, and contract checks, giving freeze review a repeatable evidence artifact. |
+| P2-UAPI-11 | UAPI freeze candidate lock | 2026-05-15 | Added `krate-tools --bin check-uapi-freeze-lock`, `scripts/generate-uapi-freeze-lock.sh`, `scripts/check-uapi-freeze-lock.sh`, and the published UAPI Freeze Lock page. The lock records SHA-256 hashes for the Phase 2 WIT files so contract drift is visible before and after the final freeze decision. |
+| P2-APP-02A | First `krate-cat` sample path | 2026-05-04 | Added `apps/krate-cat`, a Rust Phase 2 component that reads app args, opens granted files, writes stdout, and fails cleanly without `fs.read`. |
 | P2-NET-01 | Plain HTTP GET adapter slice | 2026-05-04 | Added a minimal `http://` GET adapter for test servers and localhost-style requests, with policy still checked before socket access. |
 | P2-NET-02 | Plain HTTP response-size guard | 2026-05-04 | Added a 1 MiB full-response cap to the Phase 2 plain HTTP adapter reader, with unit coverage for exact-limit acceptance and oversized rejection. |
-| P2-NET-03 | Configurable HTTP response-size guard | 2026-05-04 | Added runtime config and `layer36 run --max-http-response-bytes` so the plain HTTP response cap is explicit, tunable, and covered by curl fixture tests. |
+| P2-NET-03 | Configurable HTTP response-size guard | 2026-05-04 | Added runtime config and `krate run --max-http-response-bytes` so the plain HTTP response cap is explicit, tunable, and covered by curl fixture tests. |
 | P2-NET-04 | Typed oversized HTTP response error | 2026-05-04 | Oversized Phase 2 HTTP responses now map through the host bridge as WIT `net-error.body-too-large` instead of a generic connection failure. |
 | P2-NET-05 | Typed HTTP timeout and protocol errors | 2026-05-04 | Phase 2 HTTP timeout and malformed-response paths now map through the host bridge as WIT `net-error.timeout` and `net-error.protocol`. |
 | P2-NET-06 | Plain HTTP request framing | 2026-05-04 | The Phase 2 plain HTTP adapter now builds lower-level `fetch(req)` requests with the selected method, app headers, and buffered body, while rejecting host-controlled transport headers before socket access. |
@@ -2248,7 +2248,7 @@ formal exit gates.
 | P2-NET-25 | Network error classification hardening for socket I/O kinds | 2026-05-05 | Runtime network error mapping now classifies connection-oriented socket failures (`connection-refused/reset/aborted`, `not-connected`, address unavailability, broken pipe, unexpected EOF) as `AdapterError::Network` instead of generic I/O errors. This improves `net-error.connect-failure` consistency at the UAPI boundary. |
 | P2-NET-26 | DNS-classification hardening for unresolved-host paths | 2026-05-05 | Runtime plain-HTTP connect now maps unresolved-host cases to `AdapterError::NotFound` (including empty resolved-address sets) instead of generic network errors, so bridge mapping produces `net-error.dns-failure` consistently. Added runtime and bridge coverage for `NotFound -> dns-failure` and `Network -> connect-failure` mapping parity. |
 | P2-NET-27 | Unified plain-HTTP connect path for timeout and non-timeout modes | 2026-05-05 | Refactored runtime plain-HTTP connect setup so both timeout and non-timeout modes use the same host-resolution helper and multi-address connect loop. This removes behavior drift between modes and keeps unresolved-host and connection-failure mapping consistent. Added runtime coverage for non-timeout connection-refused mapping. |
-| P2-NET-28 | Configurable default timeout for helper HTTP GET path | 2026-05-05 | Added runtime config `default_http_timeout_millis` and CLI flag `layer36 run --http-timeout-millis` (`0` disables). Generated host `net.http-client.get` now uses the runtime-configured default timeout instead of a hardcoded 5000 ms value, while explicit `net.fetch` request timeouts remain unchanged. Added runtime host tests for configured, disabled, and explicit-timeout behavior. |
+| P2-NET-28 | Configurable default timeout for helper HTTP GET path | 2026-05-05 | Added runtime config `default_http_timeout_millis` and CLI flag `krate run --http-timeout-millis` (`0` disables). Generated host `net.http-client.get` now uses the runtime-configured default timeout instead of a hardcoded 5000 ms value, while explicit `net.fetch` request timeouts remain unchanged. Added runtime host tests for configured, disabled, and explicit-timeout behavior. |
 | P2-NET-29 | Resolved-address normalization guard for plain HTTP connect loops | 2026-05-06 | Added shared `adapter-common` normalization for resolved socket addresses used by plain HTTP fetch: first-seen ordering is preserved, duplicates are removed, and connect-attempt lists are capped to a fixed maximum. Runtime resolution now uses this helper before connect attempts, keeping host DNS variance from creating unbounded retry loops. |
 | P2-NET-30 | Resolved-address IP-family ordering parity | 2026-05-06 | Extended shared resolved-address normalization to prefer IPv4 addresses before IPv6 while preserving first-seen ordering within each family, with the same dedupe and cap behavior. This reduces host resolver order variance in plain HTTP connect attempts on mixed-stack hosts. |
 | P2-NET-31 | Bounded total connect-time budget across resolved addresses | 2026-05-06 | Timed plain HTTP connect loops now spend one shared timeout budget across all resolved addresses instead of applying the full timeout to each address attempt. This keeps `timeout_millis` behavior deterministic for multi-address hosts and prevents additive timeout drift when several connect attempts fail in sequence. |
@@ -2258,7 +2258,7 @@ formal exit gates.
 | P2-NET-35 | Empty-after-normalization resolve mapping parity | 2026-05-06 | Runtime plain HTTP resolution now has an explicit normalization-and-validation helper that maps fully filtered resolved-address sets to `AdapterError::NotFound`. This keeps DNS-failure style behavior deterministic when host resolution returns only unusable endpoint shapes. |
 | P2-ADPT-COMMON-01 | First shared adapter-common crate | 2026-05-04 | Added `crates/adapter-common` and moved plain HTTP URL parsing plus HTTP/1.1 request framing into shared code. The runtime now calls this crate, keeping future Linux, macOS, and Windows adapters on the same network behavior. |
 | P2-ADPT-COMMON-02A | Shared filesystem logical path helper | 2026-05-04 | Added `adapter-common::path::LogicalPath`, wired local filesystem calls through it, and made filesystem policy resource matching use the same normalization. Paths now reject empty strings, control characters, `..` traversal, and colon-based prefix forms before host I/O. |
-| P2-ADPT-COMMON-02B | Runtime filesystem sandbox root | 2026-05-04 | Runtime config now carries a sandbox root, local filesystem calls resolve relative paths through that root, and `layer36 run --sandbox-root <dir>` exposes the setting for CLI runs and tests. |
+| P2-ADPT-COMMON-02B | Runtime filesystem sandbox root | 2026-05-04 | Runtime config now carries a sandbox root, local filesystem calls resolve relative paths through that root, and `krate run --sandbox-root <dir>` exposes the setting for CLI runs and tests. |
 | P2-ADPT-COMMON-02C | Sandbox-root symlink escape checks | 2026-05-04 | Relative filesystem paths now canonicalize existing targets, or canonicalize the parent for new files, before local host I/O. If the resolved target leaves the sandbox root through a symlink, the adapter returns permission denied. |
 | P2-ADPT-COMMON-02D | No-follow Unix file opens | 2026-05-04 | Local Phase 2 file opens now set the Unix no-follow final-symlink flag before host I/O. A final symlink is denied even if it points inside the sandbox, reducing the race between path checking and file opening. |
 | P2-ADPT-COMMON-02E | Shared host clock helper | 2026-05-04 | Added `adapter-common::time::HostClock` and moved runtime Phase 2 clock behavior through it. Fixed test time, Unix-epoch millisecond conversion, monotonic elapsed time, and sleep now have shared tests. |
@@ -2289,67 +2289,67 @@ formal exit gates.
 | P2-ADPT-COMMON-02WE | Net-connect wildcard host-pattern shape hardening | 2026-05-06 | Manifest `net.connect` host-pattern validation now accepts wildcard only as a full left-most `*` label (`*` or `*.example.com`) and rejects ambiguous forms such as partial-label wildcards (`exa*mple.com`, `api*`) or multiple wildcard labels (`*.*.example.com`). This keeps grant patterns explicit and avoids over-broad host matching semantics. |
 | P2-ADPT-COMMON-02WF | Strict decimal IPv4 textual-shape parity | 2026-05-06 | Shared URL endpoint parsing and manifest `net.connect` validation now require strict dotted-decimal IPv4 textual forms, rejecting ambiguous leading-zero IPv4 forms such as `001.2.3.4`. Runtime dispatcher tests now also prove those URLs fail as invalid before adapter calls. This keeps endpoint parsing deterministic across hosts and avoids octal-like ambiguity in grant and URL inputs. |
 | P2-ADPT-COMMON-02WG | Net endpoint host-length parity hardening | 2026-05-06 | Shared URL endpoint parsing and manifest `net.connect` host validation now both enforce a maximum host length (253 bytes). Oversized host inputs now fail early as invalid in grant parsing and runtime URL endpoint checks, with runtime dispatcher coverage proving rejection before adapter calls. |
-| P2-APP-01A | First `layer36-curl` sample path | 2026-05-04 | Added `apps/layer36-curl`, a Rust Phase 2 component that reads a URL from app args, fetches through `net.http-client.get`, writes stdout, and fails cleanly without `net.connect`. |
-| P2-APP-01E | Clear `layer36-curl` network failures | 2026-05-04 | `layer36-curl` now prints distinct messages for response-too-large, timeout, and protocol errors while keeping its fetch-failure exit behavior stable. |
-| P2-APP-01I | Clear `layer36-curl` DNS, connect, and TLS failures | 2026-05-05 | Extended `layer36-curl` error classification so DNS failures, connect failures, and TLS failures emit explicit stderr messages instead of collapsing into generic fetch-failed output. Added unit coverage for DNS/connect mapping behavior. |
-| P2-APP-01J | End to end connect-failure fixture coverage for `layer36-curl` | 2026-05-05 | Added a CLI integration test that grants an unused localhost endpoint and runs `layer36-curl` against it, asserting exit code `21` and `layer36-curl: connection failed` stderr output. This keeps runtime network classification and app-level user messaging aligned. |
-| P2-APP-01K | End to end DNS-failure fixture coverage for `layer36-curl` | 2026-05-05 | Added a CLI integration test that grants `net.connect:layer36-does-not-exist.invalid:80` and runs `layer36-curl` against that unresolved host, asserting exit code `21` and `layer36-curl: dns lookup failed` stderr output. This keeps runtime DNS mapping and app-level messaging aligned. |
-| P2-APP-01L | End to end protocol-error fixture coverage for `layer36-curl` | 2026-05-05 | Added a CLI integration test that serves malformed HTTP bytes from a local fixture and verifies `layer36-curl` exits with `21` and prints `layer36-curl: protocol error`. This keeps parser hardening and user-facing error messaging aligned. |
-| P2-APP-01M | Timeout fixture coverage for `layer36-curl` | 2026-05-05 | Added a CLI integration test with a stalling local HTTP fixture that verifies exit code `21` and `layer36-curl: request timed out`. The current sample uses `net.get` and the runtime default timeout path for this behavior. |
+| P2-APP-01A | First `krate-curl` sample path | 2026-05-04 | Added `apps/krate-curl`, a Rust Phase 2 component that reads a URL from app args, fetches through `net.http-client.get`, writes stdout, and fails cleanly without `net.connect`. |
+| P2-APP-01E | Clear `krate-curl` network failures | 2026-05-04 | `krate-curl` now prints distinct messages for response-too-large, timeout, and protocol errors while keeping its fetch-failure exit behavior stable. |
+| P2-APP-01I | Clear `krate-curl` DNS, connect, and TLS failures | 2026-05-05 | Extended `krate-curl` error classification so DNS failures, connect failures, and TLS failures emit explicit stderr messages instead of collapsing into generic fetch-failed output. Added unit coverage for DNS/connect mapping behavior. |
+| P2-APP-01J | End to end connect-failure fixture coverage for `krate-curl` | 2026-05-05 | Added a CLI integration test that grants an unused localhost endpoint and runs `krate-curl` against it, asserting exit code `21` and `krate-curl: connection failed` stderr output. This keeps runtime network classification and app-level user messaging aligned. |
+| P2-APP-01K | End to end DNS-failure fixture coverage for `krate-curl` | 2026-05-05 | Added a CLI integration test that grants `net.connect:krate-does-not-exist.invalid:80` and runs `krate-curl` against that unresolved host, asserting exit code `21` and `krate-curl: dns lookup failed` stderr output. This keeps runtime DNS mapping and app-level messaging aligned. |
+| P2-APP-01L | End to end protocol-error fixture coverage for `krate-curl` | 2026-05-05 | Added a CLI integration test that serves malformed HTTP bytes from a local fixture and verifies `krate-curl` exits with `21` and prints `krate-curl: protocol error`. This keeps parser hardening and user-facing error messaging aligned. |
+| P2-APP-01M | Timeout fixture coverage for `krate-curl` | 2026-05-05 | Added a CLI integration test with a stalling local HTTP fixture that verifies exit code `21` and `krate-curl: request timed out`. The current sample uses `net.get` and the runtime default timeout path for this behavior. |
 | P2-APP-01N | Language-variant fixture completeness gate | 2026-05-05 | Hardened `scripts/test-phase2-language-variants.sh` so each language lane now runs only when its full fixture trio is present (`clock`, `cat`, `curl`). Partial per-language fixture sets now fail fast with clear setup errors, missing env-path files fail before test execution, and complete lanes run with explicit Go/TypeScript test-stage logs. |
-| P2-APP-01O | Language-variant import-purity preflight gate | 2026-05-05 | `scripts/test-phase2-language-variants.sh` now runs `scripts/check-component-imports.sh` on complete Go and TypeScript fixture trios before runtime tests. This keeps optional language-variant fixtures aligned with the Phase 2 import rule (`layer36:*` only) and fails fast if a fixture drifts back to host `wasi:*` imports. |
-| P2-APP-01P | Language-variant strictness mode gate | 2026-05-05 | Added `LAYER36_LANGUAGE_VARIANTS_MODE` support to language-variant test orchestration with explicit modes (`optional`, `any`, `both`, `go`, `ts`). CI and self-hosted workflows now expose this mode for manual full runs, allowing a controlled transition from optional variant checks to required gating once fixture generation is ready. |
-| P2-APP-01F | Deterministic clock fixture snapshot controls | 2026-05-04 | Added hidden `layer36 run --test-locale` and `--test-timezone` flags, wired locale/timezone overrides through runtime adapter-common locale helpers, and added a strict `layer36-clock` snapshot test with fixed time, locale, and timezone so cross-host fixture output can be compared exactly. |
-| P2-APP-03B | Clock fixture timezone-offset assertions | 2026-05-05 | Added CLI integration coverage proving `layer36-clock` applies timezone offsets in deterministic runs: `UTC+05:30` shifts the fixed fixture time forward and `UTC-01:00` shifts Unix epoch output to the previous day. This keeps app-level clock output aligned with shared locale offset formatting behavior. |
-| P2-APP-01B | Pure Layer36 imports for cat/curl samples | 2026-05-04 | `layer36-cat` and `layer36-curl` now parse `io.args.raw` directly. Their rebuilt components no longer import `wasi:*`, and the explicit fixture-backed CLI tests pass for hello, smoke, clock, cat, and curl. |
-| P2-CI-03 | Component import purity gate | 2026-05-04 | Added `layer36-tools --bin check-component-imports` and `scripts/check-component-imports.sh` to parse built component imports and reject anything outside `layer36:*`; full hosted CI and self-hosted CI run it after building Phase 2 fixtures. |
+| P2-APP-01O | Language-variant import-purity preflight gate | 2026-05-05 | `scripts/test-phase2-language-variants.sh` now runs `scripts/check-component-imports.sh` on complete Go and TypeScript fixture trios before runtime tests. This keeps optional language-variant fixtures aligned with the Phase 2 import rule (`krate:*` only) and fails fast if a fixture drifts back to host `wasi:*` imports. |
+| P2-APP-01P | Language-variant strictness mode gate | 2026-05-05 | Added `KRATE_LANGUAGE_VARIANTS_MODE` support to language-variant test orchestration with explicit modes (`optional`, `any`, `both`, `go`, `ts`). CI and self-hosted workflows now expose this mode for manual full runs, allowing a controlled transition from optional variant checks to required gating once fixture generation is ready. |
+| P2-APP-01F | Deterministic clock fixture snapshot controls | 2026-05-04 | Added hidden `krate run --test-locale` and `--test-timezone` flags, wired locale/timezone overrides through runtime adapter-common locale helpers, and added a strict `krate-clock` snapshot test with fixed time, locale, and timezone so cross-host fixture output can be compared exactly. |
+| P2-APP-03B | Clock fixture timezone-offset assertions | 2026-05-05 | Added CLI integration coverage proving `krate-clock` applies timezone offsets in deterministic runs: `UTC+05:30` shifts the fixed fixture time forward and `UTC-01:00` shifts Unix epoch output to the previous day. This keeps app-level clock output aligned with shared locale offset formatting behavior. |
+| P2-APP-01B | Pure Krate imports for cat/curl samples | 2026-05-04 | `krate-cat` and `krate-curl` now parse `io.args.raw` directly. Their rebuilt components no longer import `wasi:*`, and the explicit fixture-backed CLI tests pass for hello, smoke, clock, cat, and curl. |
+| P2-CI-03 | Component import purity gate | 2026-05-04 | Added `krate-tools --bin check-component-imports` and `scripts/check-component-imports.sh` to parse built component imports and reject anything outside `krate:*`; full hosted CI and self-hosted CI run it after building Phase 2 fixtures. |
 | P2-CI-03B | Clippy benchmark adapter parity | 2026-05-05 | Updated `crates/runtime/benches/uapi_dispatch.rs` benchmark adapter to implement newly added `close_stream` and `close_file` trait methods. This restores hosted `cargo clippy --all-targets --all-features -D warnings` after the Phase 2 resource-lifecycle trait expansion. |
 | P2-RSRC-02 | Resource ID reuse in local and host tables | 2026-05-05 | Local adapter and generated host resource tables now reuse released file/stream IDs before allocating new IDs. Added runtime tests for close/drop reuse and free-list-first allocation when ID counters are at their numeric ceiling, so long-running sessions do not consume unbounded resource IDs. |
-| P2-APP-01D | Sample manifest launch coverage | 2026-05-04 | Sample manifests for `layer36-clock`, `layer36-cat`, and `layer36-curl` are now validated in CLI tests, and each Rust sample has a fixture-backed `layer36 run --manifest ... --auto-grant` test. |
-| P2-DEV-01 | Manifest generator | 2026-05-04 | Added `layer36 manifest init` to render a validated starter `manifest.toml` from app id, name, entry, and repeated `--cap` values, with stdout output by default and guarded file writes through `--output` plus `--force`. |
-| P2-DEV-02 | Manifest explanation | 2026-05-04 | Added `layer36 manifest explain` to print app identity and each requested capability with required/default-grant/launch-grant/resource/rationale details. |
-| P2-DEV-03 | Structured manifest explanation | 2026-05-04 | Added `layer36 manifest explain --format json` with app identity and per-capability module/action/resource/default-grant/launch-grant fields for CI, editor, and SDK tooling. |
-| P2-DEV-04 | Structured manifest checks and capability table | 2026-05-04 | Added `--format json` to `layer36 manifest check` and `layer36 manifest capabilities`, so all manifest inspection commands now have script-friendly output. |
+| P2-APP-01D | Sample manifest launch coverage | 2026-05-04 | Sample manifests for `krate-clock`, `krate-cat`, and `krate-curl` are now validated in CLI tests, and each Rust sample has a fixture-backed `krate run --manifest ... --auto-grant` test. |
+| P2-DEV-01 | Manifest generator | 2026-05-04 | Added `krate manifest init` to render a validated starter `manifest.toml` from app id, name, entry, and repeated `--cap` values, with stdout output by default and guarded file writes through `--output` plus `--force`. |
+| P2-DEV-02 | Manifest explanation | 2026-05-04 | Added `krate manifest explain` to print app identity and each requested capability with required/default-grant/launch-grant/resource/rationale details. |
+| P2-DEV-03 | Structured manifest explanation | 2026-05-04 | Added `krate manifest explain --format json` with app identity and per-capability module/action/resource/default-grant/launch-grant fields for CI, editor, and SDK tooling. |
+| P2-DEV-04 | Structured manifest checks and capability table | 2026-05-04 | Added `--format json` to `krate manifest check` and `krate manifest capabilities`, so all manifest inspection commands now have script-friendly output. |
 | P2-DOC-03A | First Rust UAPI walkthrough | 2026-05-04 | Added `docs/book/src/uapi/first-rust-cli.md`, a repo-local tutorial for building the Rust cat sample, generating and explaining a manifest, running with `--auto-grant`, and observing the missing-grant denial path. |
 | P2-DOC-03B | First Go UAPI walkthrough | 2026-05-05 | Added `docs/book/src/uapi/first-go-cli.md`, a practical Go tutorial for current Phase 2 status: tool checks, sample entry points, SDK shape verification, and optional runtime variant test hook usage. |
 | P2-DOC-03C | First TypeScript UAPI walkthrough | 2026-05-05 | Added `docs/book/src/uapi/first-typescript-cli.md`, a practical TypeScript tutorial for current Phase 2 status: tool checks, sample entry points, SDK shape verification, and optional runtime variant test hook usage. |
 | P2-DOC-04 | Phase 1 to Phase 2 migration note | 2026-05-04 | Added `docs/book/src/phase2/migrating-from-phase1.md`, explaining how the Phase 1 `print`/`exit` proof interface maps to Phase 2 UAPI stdout, `Guest::run` return codes, manifests, and session grants. |
-| P2-BIND-01A | Rust SDK crate skeleton | 2026-05-04 | Added `crates/bindings-rust` as package `layer36`, with first wrappers over generated guest bindings and the Rust sample apps migrated to the SDK facade. |
-| P2-BIND-01B | Rust SDK helper layer and guide | 2026-05-04 | Added app-facing helpers for args, stream text output, file read/write, HTTP text, time, and locale; documented them in `docs/book/src/uapi/rust-sdk.md`; verified samples still import only Layer36 UAPI. |
-| P2-BIND-01C | Rust SDK API docs and sample cleanup | 2026-05-04 | Added crate-level SDK docs, rustdoc comments for public helpers, owned argument helpers, sample usage of those helpers, and a self-hosted `cargo doc -p layer36 --no-deps --offline` check. |
-| P2-BIND-01D | Rust SDK packaged-crate smoke | 2026-05-04 | Added `scripts/smoke-rust-sdk.sh`; CI now packages the Rust SDK, verifies the packaged crate contains the public README, SDK root, and generated bindings files, creates a temporary app outside the workspace, and checks that it compiles a tiny Layer36 component for `wasm32-wasip1`. |
-| P2-BIND-01F | Rust SDK evidence recorder | 2026-05-15 | Added `scripts/record-phase2-rust-sdk-evidence.sh` and a matching mdBook page. The recorder wraps the packaged-crate smoke, checks `cargo doc -p layer36 --no-deps`, records packaged-file presence, and writes one markdown proof file for `P2E-03`. |
-| P2-BIND-02A | Go and TypeScript tooling probes | 2026-05-04 | `layer36 doctor` now reports TinyGo, Go, Node, npm, and jco so the language-binding tracks can fail early with clear setup guidance before their sample builds are wired into CI. |
+| P2-BIND-01A | Rust SDK crate skeleton | 2026-05-04 | Added `crates/bindings-rust` as package `krate`, with first wrappers over generated guest bindings and the Rust sample apps migrated to the SDK facade. |
+| P2-BIND-01B | Rust SDK helper layer and guide | 2026-05-04 | Added app-facing helpers for args, stream text output, file read/write, HTTP text, time, and locale; documented them in `docs/book/src/uapi/rust-sdk.md`; verified samples still import only Krate UAPI. |
+| P2-BIND-01C | Rust SDK API docs and sample cleanup | 2026-05-04 | Added crate-level SDK docs, rustdoc comments for public helpers, owned argument helpers, sample usage of those helpers, and a self-hosted `cargo doc -p krate --no-deps --offline` check. |
+| P2-BIND-01D | Rust SDK packaged-crate smoke | 2026-05-04 | Added `scripts/smoke-rust-sdk.sh`; CI now packages the Rust SDK, verifies the packaged crate contains the public README, SDK root, and generated bindings files, creates a temporary app outside the workspace, and checks that it compiles a tiny Krate component for `wasm32-wasip1`. |
+| P2-BIND-01F | Rust SDK evidence recorder | 2026-05-15 | Added `scripts/record-phase2-rust-sdk-evidence.sh` and a matching mdBook page. The recorder wraps the packaged-crate smoke, checks `cargo doc -p krate --no-deps`, records packaged-file presence, and writes one markdown proof file for `P2E-03`. |
+| P2-BIND-02A | Go and TypeScript tooling probes | 2026-05-04 | `krate doctor` now reports TinyGo, Go, Node, npm, and jco so the language-binding tracks can fail early with clear setup guidance before their sample builds are wired into CI. |
 | P2-BIND-02B | Go SDK scaffold | 2026-05-04 | Added `packages/sdk-go` as the first Go/TinyGo SDK shape, with public helper packages for `io`, `fs`, `net`, `time`, and `locale`, example clock/curl sources, README, mdBook guide, and a dependency-free CI shape check. |
-| P2-BIND-03A | TypeScript SDK scaffold | 2026-05-04 | Added `packages/sdk-ts` as the first `@layer36/sdk` shape, with WIT import declarations, helper modules for `io`, `fs`, `net`, `time`, and `locale`, example clock/curl sources, package metadata, README, an mdBook guide, and a dependency-free CI shape check. |
-| P2-BIND-02C | Go cat sample variant + shape contract | 2026-05-05 | Added `packages/sdk-go/examples/layer36-cat/main.go` and extended the Go SDK shape check with required sample tokens for cat/clock/curl behavior contracts. |
-| P2-BIND-02D | TinyGo WASI Preview 2 build-smoke lane | 2026-05-05 | Added `scripts/build-phase2-go-variant-smoke.sh` and wired it into self-hosted CI. The lane now builds Go clock/cat/curl examples with TinyGo `-target wasip2` and verifies each artifact exports `wasi:cli/run@0.2.0`. This closes the first full TinyGo compile lane while Layer36-runtime fixture wiring remains separate work. |
-| P2-BIND-02E | Doctor includes wasm-tools check | 2026-05-05 | `layer36 doctor` now reports `wasm-tools` in the Phase 2 language-tools section, making the TinyGo WASI Preview 2 smoke-lane dependency visible during local setup checks. |
-| P2-BIND-02F | Go runtime fixture readiness gate | 2026-05-06 | Added `scripts/promote-phase2-go-runtime-fixtures.sh` and wired it into self-hosted CI. The step builds TinyGo WASI Preview 2 Go artifacts, verifies component shape, then promotes them to `test/integration/language-variants/layer36_go_*.wasm` only if Layer36 import-purity checks pass. When imports are still `wasi:*`, the step now prints a clear skip and keeps Go runtime fixtures disabled. |
-| P2-BIND-02G | Shared language-fixture builder Go promotion integration | 2026-05-06 | `scripts/build-phase2-language-variant-fixtures.sh` now auto-attempts Go runtime fixture promotion through `scripts/promote-phase2-go-runtime-fixtures.sh` when `go`, `tinygo`, and `wasm-tools` are available. This unifies TypeScript and Go fixture activation behind one build step, and now switches promotion to strict `required` mode when fixture mode is `go` or `both`, while still keeping optional runs safe when Layer36 import-purity checks do not pass. |
+| P2-BIND-03A | TypeScript SDK scaffold | 2026-05-04 | Added `packages/sdk-ts` as the first `@krate/sdk` shape, with WIT import declarations, helper modules for `io`, `fs`, `net`, `time`, and `locale`, example clock/curl sources, package metadata, README, an mdBook guide, and a dependency-free CI shape check. |
+| P2-BIND-02C | Go cat sample variant + shape contract | 2026-05-05 | Added `packages/sdk-go/examples/krate-cat/main.go` and extended the Go SDK shape check with required sample tokens for cat/clock/curl behavior contracts. |
+| P2-BIND-02D | TinyGo WASI Preview 2 build-smoke lane | 2026-05-05 | Added `scripts/build-phase2-go-variant-smoke.sh` and wired it into self-hosted CI. The lane now builds Go clock/cat/curl examples with TinyGo `-target wasip2` and verifies each artifact exports `wasi:cli/run@0.2.0`. This closes the first full TinyGo compile lane while Krate-runtime fixture wiring remains separate work. |
+| P2-BIND-02E | Doctor includes wasm-tools check | 2026-05-05 | `krate doctor` now reports `wasm-tools` in the Phase 2 language-tools section, making the TinyGo WASI Preview 2 smoke-lane dependency visible during local setup checks. |
+| P2-BIND-02F | Go runtime fixture readiness gate | 2026-05-06 | Added `scripts/promote-phase2-go-runtime-fixtures.sh` and wired it into self-hosted CI. The step builds TinyGo WASI Preview 2 Go artifacts, verifies component shape, then promotes them to `test/integration/language-variants/krate_go_*.wasm` only if Krate import-purity checks pass. When imports are still `wasi:*`, the step now prints a clear skip and keeps Go runtime fixtures disabled. |
+| P2-BIND-02G | Shared language-fixture builder Go promotion integration | 2026-05-06 | `scripts/build-phase2-language-variant-fixtures.sh` now auto-attempts Go runtime fixture promotion through `scripts/promote-phase2-go-runtime-fixtures.sh` when `go`, `tinygo`, and `wasm-tools` are available. This unifies TypeScript and Go fixture activation behind one build step, and now switches promotion to strict `required` mode when fixture mode is `go` or `both`, while still keeping optional runs safe when Krate import-purity checks do not pass. |
 | P2-BIND-02H | Language-fixture mode diagnostics for strict lanes | 2026-05-06 | `scripts/build-phase2-language-variant-fixtures.sh` now records and prints per-language readiness reasons (toolchain unavailable, build/import-purity outcome, existing fixture state) and includes those reasons in strict-mode failure messages (`go` or `ts`). This makes self-hosted and CI lane failures faster to triage without opening deep logs first. |
-| P2-BIND-02I | Full Go import-purity failure diagnostics | 2026-05-06 | `layer36-tools --bin check-component-imports` now reports non-Layer36 imports for every supplied component before failing, instead of stopping at the first bad artifact. The Go runtime promotion path now surfaces the full current TinyGo blocker set: clock/cat still import WASI stdout/IO/random/run-helper APIs, while curl imports a broader WASI environment/exit/stdio/clock/filesystem/IO/random surface. |
-| P2-BIND-03B | TypeScript cat sample variant + shape contract | 2026-05-05 | Added `packages/sdk-ts/examples/layer36-cat.ts` and extended the TypeScript SDK shape check with required sample tokens for cat/clock/curl behavior contracts. |
+| P2-BIND-02I | Full Go import-purity failure diagnostics | 2026-05-06 | `krate-tools --bin check-component-imports` now reports non-Krate imports for every supplied component before failing, instead of stopping at the first bad artifact. The Go runtime promotion path now surfaces the full current TinyGo blocker set: clock/cat still import WASI stdout/IO/random/run-helper APIs, while curl imports a broader WASI environment/exit/stdio/clock/filesystem/IO/random surface. |
+| P2-BIND-03B | TypeScript cat sample variant + shape contract | 2026-05-05 | Added `packages/sdk-ts/examples/krate-cat.ts` and extended the TypeScript SDK shape check with required sample tokens for cat/clock/curl behavior contracts. |
 | P2-BIND-03C | TypeScript WIT variant-shape alignment | 2026-05-05 | Aligned TypeScript SDK and fixture sources with real jco guest-type shapes for WIT variants (`open-mode` now uses tagged objects such as `{ tag: "read" }`), and explicitly dispose file resources in the TS cat fixture to keep runtime resource behavior deterministic. |
-| P2-APP-01G | Go/TypeScript runtime fixture test hooks | 2026-05-05 | Added optional CLI integration tests for Go and TypeScript clock/cat/curl variants behind `LAYER36_GO_*` and `LAYER36_TS_*` WASM env vars, plus `scripts/test-phase2-language-variants.sh` and CI/self-hosted workflow hooks that auto-skip until those variant WASM paths are provided. |
+| P2-APP-01G | Go/TypeScript runtime fixture test hooks | 2026-05-05 | Added optional CLI integration tests for Go and TypeScript clock/cat/curl variants behind `KRATE_GO_*` and `KRATE_TS_*` WASM env vars, plus `scripts/test-phase2-language-variants.sh` and CI/self-hosted workflow hooks that auto-skip until those variant WASM paths are provided. |
 | P2-APP-01H | Go/TypeScript fixture path auto-discovery | 2026-05-05 | Added conventional fixture-path discovery for Phase 2 language-variant tests. CLI tests and `scripts/test-phase2-language-variants.sh` now auto-detect `test/integration/language-variants/*.wasm` when env vars are not set, reducing local and self-hosted CI setup friction. |
 | P2-APP-01Q | TypeScript fixture auto-build lane + CI wiring | 2026-05-05 | Added `scripts/build-phase2-language-variant-fixtures.sh` and `test/integration/language-variants-src/` TypeScript sources so fixture builds are attempted automatically before language-variant runtime tests. Hosted full CI and self-hosted CI now run this build step, and TypeScript runtime fixtures become active without manual env wiring when jco is available. |
 | P2-APP-01R | TypeScript fixture build hardening and local runtime proof | 2026-05-05 | TS fixture build now uses `jco componentize --disable all`, checks expected output files before activation, and validates import purity before publishing fixtures. Local runtime verification now passes TypeScript clock and cat fixture tests; curl fixture behavior still depends on local runner socket permissions in restricted environments. |
-| P2-APP-01S | Curl sample import-purity correction | 2026-05-05 | Fixed self-hosted CI purity regression where `layer36-curl` component pulled `wasi:*` imports. The sample now uses the pure Layer36 `net.get` path again, and Phase 2 component import checks pass for smoke/clock/cat/curl fixtures. |
+| P2-APP-01S | Curl sample import-purity correction | 2026-05-05 | Fixed self-hosted CI purity regression where `krate-curl` component pulled `wasi:*` imports. The sample now uses the pure Krate `net.get` path again, and Phase 2 component import checks pass for smoke/clock/cat/curl fixtures. |
 | P2-TEST-04 | Cross-runner curl fixture assertion stabilization | 2026-05-05 | Hardened CLI curl fixture assertions for runner variance: unresolved-host test now accepts either explicit DNS-failure or connect-failure messaging, and timeout fixture run now sets `--http-timeout-millis 1000` explicitly so timeout behavior stays deterministic after moving curl sample back to `net.get`. |
 | P2-TEST-04B | Localhost fixture bind-permission stabilization | 2026-05-05 | CLI integration fixture helpers now skip cleanly when localhost bind is blocked (`PermissionDenied`) instead of panicking. This keeps language-variant curl fixture tests from failing on restricted runners where local socket bind is disallowed. |
 | P2-TEST-04C | Localhost fixture accept-timeout stabilization | 2026-05-05 | CLI integration fixture server threads now return a non-panicking `accepted` signal. When a restricted runner cannot reach a localhost fixture in time, tests skip that fixture path with a clear log message instead of failing through fixture thread panic. This reduces false negatives for Rust, Go, and TypeScript curl fixture tests in constrained environments. |
 | P2-TEST-04D | TypeScript curl non-localhost error-path assertions | 2026-05-05 | Added TypeScript curl fixture assertions for missing-grant denial and unresolved-host failure paths that do not require localhost fixture sockets. Also improved TypeScript curl fixture error rendering so stderr reports structured details instead of a raw `[object Object]` conversion. |
-| P2-TEST-04E | Go curl non-localhost error-path assertions | 2026-05-05 | Added Go curl fixture assertions for missing-grant denial and unresolved-host failure paths that do not require localhost fixture sockets. Updated Go curl sample error classification to map common Layer36 net variants to stable messages and exit codes (`permission-denied` -> `5`, `invalid-url` -> `20`, network failures -> `21`) and added focused Go unit coverage for that classifier. |
-| P2-TEST-04F | Cross-language output parity checks in CLI harness | 2026-05-06 | Added CLI integration tests that compare Rust, Go, and TypeScript sample outputs for deterministic `layer36-clock` and fixture-backed `layer36-cat` runs. Updated `scripts/test-phase2-language-variants.sh` to run these parity checks automatically when both Go and TypeScript fixture sets are present. |
-| P2-TEST-04G | Cross-language curl parity check in CLI harness | 2026-05-06 | Added CLI integration parity coverage for `layer36-curl`, `layer36-go-curl`, and `layer36-ts-curl` against one shared localhost fixture server. The test asserts byte-identical stdout across languages and cleanly skips on restricted runners where localhost fixture sockets are unavailable. |
+| P2-TEST-04E | Go curl non-localhost error-path assertions | 2026-05-05 | Added Go curl fixture assertions for missing-grant denial and unresolved-host failure paths that do not require localhost fixture sockets. Updated Go curl sample error classification to map common Krate net variants to stable messages and exit codes (`permission-denied` -> `5`, `invalid-url` -> `20`, network failures -> `21`) and added focused Go unit coverage for that classifier. |
+| P2-TEST-04F | Cross-language output parity checks in CLI harness | 2026-05-06 | Added CLI integration tests that compare Rust, Go, and TypeScript sample outputs for deterministic `krate-clock` and fixture-backed `krate-cat` runs. Updated `scripts/test-phase2-language-variants.sh` to run these parity checks automatically when both Go and TypeScript fixture sets are present. |
+| P2-TEST-04G | Cross-language curl parity check in CLI harness | 2026-05-06 | Added CLI integration parity coverage for `krate-curl`, `krate-go-curl`, and `krate-ts-curl` against one shared localhost fixture server. The test asserts byte-identical stdout across languages and cleanly skips on restricted runners where localhost fixture sockets are unavailable. |
 | P2-TEST-04H | TypeScript curl error-class parity with Rust | 2026-05-06 | Updated TypeScript curl fixture error classification so `permission-denied` now exits with code `5` and `invalid-url` exits with code `20`, matching Rust sample behavior. Added CLI tests for TypeScript invalid-url handling and Rust-vs-TypeScript parity checks for permission-denied and invalid-url paths. |
 | P2-TEST-04I | Curl error-path parity across Rust, Go, and TypeScript | 2026-05-06 | Expanded CLI language-variant parity coverage so curl missing-grant, invalid-url, and unresolved-host paths are now checked across all three sample implementations. The tests assert stable exit-code classes and expected error markers without relying on localhost fixture sockets. |
 | P2-TEST-04J | Go curl fixture contract assertions tightened | 2026-05-06 | Tightened dedicated Go curl fixture tests to assert intended error contracts directly: missing grant now requires exit code `5` with `permission denied`, unresolved-host now requires exit code `21` with expected network-failure marker, and invalid URL now requires exit code `20` with `invalid url`. |
 | P2-DOC-01 | WIT style guide | 2026-05-04 | Published `docs/book/src/wit-style.md` with naming, resources, typed errors, capability mapping, comments, versioning, and review checks; linked it from mdBook and `CONTRIBUTING.md`. |
-| P2-DOC-02A | Generated UAPI reference seed | 2026-05-04 | Added `layer36-tools` reference generator using `wit-parser`; generated `docs/book/src/reference/uapi/index.md`; linked it in mdBook; hosted and self-hosted CI check the generated page is current. |
+| P2-DOC-02A | Generated UAPI reference seed | 2026-05-04 | Added `krate-tools` reference generator using `wit-parser`; generated `docs/book/src/reference/uapi/index.md`; linked it in mdBook; hosted and self-hosted CI check the generated page is current. |
 | P2-DOC-02B | Generated UAPI reference context | 2026-05-04 | The generated reference now includes interface summaries, capability notes, Rust SDK examples, WIT doc comments, and a generator test that checks those sections stay present. |
-| P2-DOC-02C | Reference capability table derivation | 2026-05-04 | The generated UAPI reference now renders accepted capability strings from `crates/manifest`, keeping docs aligned with manifest validation and `layer36 manifest capabilities`. |
+| P2-DOC-02C | Reference capability table derivation | 2026-05-04 | The generated UAPI reference now renders accepted capability strings from `crates/manifest`, keeping docs aligned with manifest validation and `krate manifest capabilities`. |
 | P2-DOC-02D | Function-level UAPI reference notes | 2026-05-04 | The reference generator now adds plain behavior notes under Phase 2 functions and resource methods, including grant expectations and current adapter limits. |
 | P2-DOC-05 | Non technical progress explainer page | 2026-05-05 | Added `docs/book/src/progress-for-everyone.md` with plain language project context, visual system flow, current timeline state, and glossary level explanations for non technical readers. Linked it from mdBook navigation. |
 | P2-DOC-06 | Phase 2 threat model v0.2 | 2026-05-05 | Published `docs/book/src/phase2/threat-model-v0-2.md` with current trust boundaries, STRIDE coverage, Phase 2 security invariants, and open risks; linked it into Phase 2 docs navigation. |
@@ -2379,16 +2379,16 @@ formal exit gates.
 | P2-ADPT-SPLIT-18 | Runtime stdio host-call wiring through per-OS adapter crates | 2026-05-06 | Runtime Phase 2 stdio host calls (`stdin` read, `stderr` write, `stderr` flush) now route through target OS adapter crates with fallback behavior for unsupported hosts. This removes remaining runtime-local stdio host calls from the local IO adapter path. |
 | P2-ADPT-SPLIT-19 | Runtime plain-HTTP socket IO host-call wiring through per-OS adapter crates | 2026-05-06 | Runtime Phase 2 plain-HTTP request writes and response reads now route through target OS adapter crates (`write-all-tcp`, `read-tcp`) with fallback behavior for unsupported hosts. This removes remaining runtime-local TCP stream IO calls from the fetch execution path. |
 | P2-ADPT-SPLIT-20 | Runtime stdout host-call wiring through per-OS adapter crates | 2026-05-06 | Runtime output paths now route host stdout operations (`print-line`, `write`, `flush`) through target OS adapter crates with fallback behavior for unsupported hosts. This removes remaining runtime-local stdout host calls from shared output paths used by both Phase 1 and Phase 2 execution. |
-| P2-ADPT-SPLIT-21 | Runtime adapter-boundary regression guard | 2026-05-06 | Added `layer36-tools --bin check-adapter-boundary` and `scripts/check-adapter-boundary.sh`. The guard verifies 34 runtime host wrappers route through `host_os_adapter::*` on supported desktop hosts and checks that Linux, macOS, and Windows adapter crates expose matching functions. Hosted CI and self-hosted CI now run it, and the mdBook has a plain adapter-boundary page. |
+| P2-ADPT-SPLIT-21 | Runtime adapter-boundary regression guard | 2026-05-06 | Added `krate-tools --bin check-adapter-boundary` and `scripts/check-adapter-boundary.sh`. The guard verifies 34 runtime host wrappers route through `host_os_adapter::*` on supported desktop hosts and checks that Linux, macOS, and Windows adapter crates expose matching functions. Hosted CI and self-hosted CI now run it, and the mdBook has a plain adapter-boundary page. |
 | P2-CI-06 | Self-hosted benchmark gate default mode adjustment | 2026-05-05 | Updated `Self-hosted CI` manual workflow to default benchmark regression checks to `warn`, with `fail` still available through the workflow input. This keeps routine local full-gate runs stable under common workstation noise while preserving strict mode when needed. |
 | P2-CI-07 | Hosted full CI TypeScript fixture default gate | 2026-05-05 | Updated hosted full-test CI to run language-variant fixtures in `ts` mode by default, enabled `npx` jco installation in the fixture build step, and pinned this lane to Node 22 plus a pinned jco package version. This keeps the TypeScript runtime fixture lane active by default in full hosted CI while reducing cross-runner npm drift and preserving manual mode override inputs. |
 | P2-CI-08 | Hosted CI Node 24 core-action readiness | 2026-05-06 | Upgraded hosted workflows to `actions/checkout@v5` and `actions/setup-node@v5` so normal CI and docs lanes run on Node 24-ready action runtimes. Kept self-hosted workflows on `actions/checkout@v4` for local runner compatibility until all local runners are confirmed on the required minimum runner version. |
 | P2-CI-09 | UAPI freeze evidence freshness gate | 2026-05-06 | Hosted `UAPI contract` CI and self-hosted full gate now regenerate `docs/book/src/phase2/uapi-freeze-evidence.md` and fail if the committed page is stale. This keeps the published freeze evidence tied to the checked WIT contract instead of becoming a manual note. |
-| P2-CI-10 | Phase 2 exit evidence ledger guard | 2026-05-06 | Added `docs/book/src/phase2/exit-evidence.md`, `layer36-tools --bin check-phase2-exit-evidence`, and `scripts/check-phase2-exit-evidence.sh`. The page tracks all 15 Phase 2 exit gates with a status, proof source, and next step. Hosted CI and self-hosted CI now check that the ledger keeps every planned gate represented. |
+| P2-CI-10 | Phase 2 exit evidence ledger guard | 2026-05-06 | Added `docs/book/src/phase2/exit-evidence.md`, `krate-tools --bin check-phase2-exit-evidence`, and `scripts/check-phase2-exit-evidence.sh`. The page tracks all 15 Phase 2 exit gates with a status, proof source, and next step. Hosted CI and self-hosted CI now check that the ledger keeps every planned gate represented. |
 | P2-CI-11 | Hosted full CI language-variant evidence artifacts | 2026-05-07 | Hosted full test matrix now records one language-variant evidence report per OS lane and uploads it as an artifact (`language-variant-evidence-<os>`). This gives repeatable cross-host evidence files for later parity comparison with `scripts/compare-phase2-language-variant-evidence.sh`. |
 | P2-CI-12 | Hosted full CI language-variant evidence compare gate | 2026-05-08 | Hosted full CI now runs a dedicated `language-variant-evidence-compare` job after the Linux/macOS/Windows full-test matrix. The job downloads all three per-OS evidence artifacts and fails if commit metadata, step outcomes, fixture availability, or fixture hashes drift across hosts. |
 | P2-CI-13 | Hosted full CI UCap evidence artifacts and compare gate | 2026-05-08 | Hosted full test matrix now records one UCap enforcement evidence report per OS lane and uploads it as `ucap-enforcement-evidence-<os>`. A new `ucap-enforcement-evidence-compare` job then validates Linux/macOS/Windows commit alignment, host labeling, and required deny-step pass state in one cross-host gate. |
-| P2-CI-14 | Cross-host benchmark evidence scripts and compare gate tooling | 2026-05-08 | Added `scripts/record-phase2-benchmark-evidence.sh`, `layer36-tools --bin compare-phase2-benchmark-evidence`, and `scripts/compare-phase2-benchmark-evidence.sh`. This gives repeatable benchmark evidence reports plus a strict Linux/macOS/Windows compare pass for commit alignment, host labeling, benchmark step pass state, and metric-table consistency. |
+| P2-CI-14 | Cross-host benchmark evidence scripts and compare gate tooling | 2026-05-08 | Added `scripts/record-phase2-benchmark-evidence.sh`, `krate-tools --bin compare-phase2-benchmark-evidence`, and `scripts/compare-phase2-benchmark-evidence.sh`. This gives repeatable benchmark evidence reports plus a strict Linux/macOS/Windows compare pass for commit alignment, host labeling, benchmark step pass state, and metric-table consistency. |
 | P2-CI-15 | Hosted full CI adapter evidence artifacts and compare gate | 2026-05-08 | Hosted full test matrix now records one adapter evidence report per OS lane and uploads it as `adapter-evidence-<os>`. A new `adapter-evidence-compare` job validates Linux/macOS/Windows commit alignment, host labeling, adapter-boundary check pass state, shared adapter behavior tests, and the native adapter crate test for each host in one cross-host gate. |
 | P2-CI-16 | Hosted full CI sample evidence artifacts and compare gate | 2026-05-15 | Hosted full test matrix now records one sample evidence report per OS lane and uploads it as `sample-evidence-<os>`. A new `sample-evidence-compare` job validates Linux/macOS/Windows commit alignment and cross-host sample hash parity, with temporary `--allow-blocked-curl` support for restricted localhost fixture environments. |
 | P2-CI-17 | Self-hosted fuzz nightly queue-preservation hardening | 2026-05-15 | Updated `Self-hosted Fuzz Nightly` workflow concurrency so scheduled runs no longer cancel older queued runs when the local runner is offline. Manual dispatch still cancels in-progress runs for the same branch, keeping operator control during active debugging. |
@@ -2398,9 +2398,9 @@ formal exit gates.
 | P2-CI-22 | GitHub Actions Node 24 runtime opt-in | 2026-05-16 | Added `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24=true` to hosted, Pages, release, self-hosted CI, and self-hosted fuzz workflows. Upgraded cache/artifact actions to Node 24 major families (`cache@v5`, `upload-artifact@v7`, `download-artifact@v8`) and Pages setup/upload actions to `configure-pages@v5` and `upload-pages-artifact@v4`. |
 | P2-CI-23 | Hosted CI stability evidence recorder | 2026-05-17 | Added `scripts/record-phase2-ci-stability-evidence.sh` and a matching mdBook page. The recorder uses GitHub CLI to capture recent hosted CI and Pages runs, latest conclusions, and completed success streaks in one markdown report for Phase 2 exit review. |
 | P2-CI-24 | Closeout docs CI gate | 2026-05-17 | Wired `scripts/check-phase2-closeout-docs.sh` into hosted UAPI contract CI, self-hosted full gate, and the Phase 2 exit bundle. This keeps the retrospective draft and Phase 3 kickoff draft checked alongside the exit ledger instead of relying on manual memory. |
-| P2-CI-25 | UAPI freeze decision packet gate | 2026-05-17 | Added `docs/book/src/phase2/uapi-freeze-decision.md`, `layer36-tools --bin check-phase2-freeze-decision`, and `scripts/check-phase2-freeze-decision.sh`. Hosted CI, self-hosted CI, the UAPI freeze review recorder, and the Phase 2 exit bundle now check that the final freeze decision stays explicit and does not get claimed before evidence is ready. |
+| P2-CI-25 | UAPI freeze decision packet gate | 2026-05-17 | Added `docs/book/src/phase2/uapi-freeze-decision.md`, `krate-tools --bin check-phase2-freeze-decision`, and `scripts/check-phase2-freeze-decision.sh`. Hosted CI, self-hosted CI, the UAPI freeze review recorder, and the Phase 2 exit bundle now check that the final freeze decision stays explicit and does not get claimed before evidence is ready. |
 | P2-CI-26 | Optional CI stability evidence in exit bundle | 2026-05-18 | `scripts/record-phase2-exit-bundle.sh --include-ci-stability` now records hosted CI and GitHub Pages run history into the same review bundle. The default bundle stays local-friendly, while final review can include current GitHub stability proof without opening a separate artifact first. |
-| P2-CI-27 | Local generated artifact ignore rules | 2026-05-18 | Added ignore rules for demo output folders and the quickstart `layer36-cat` fixture directory so local proof runs do not pollute Phase 2 source-status checks. |
+| P2-CI-27 | Local generated artifact ignore rules | 2026-05-18 | Added ignore rules for demo output folders and the quickstart `krate-cat` fixture directory so local proof runs do not pollute Phase 2 source-status checks. |
 | P2-CI-28 | Self-hosted full-gate evidence recorder | 2026-05-18 | Added `scripts/record-phase2-self-hosted-evidence.sh` and a matching docs page. The exit bundle can now include recent self-hosted CI history with `--include-self-hosted`, which gives the final review packet a clear record of local runner proof. |
 | P2-CI-29 | Strict self-hosted evidence check | 2026-05-18 | Added `--require-success`, `--min-success-streak`, and `--created` to the self-hosted evidence recorder. The exit bundle now uses the strict self-hosted mode when `--include-self-hosted` is passed, so final review fails if the inspected local full-gate history does not show a green completed run, and reviewers can narrow proof to the final candidate window. |
 | P2-CI-30 | Strict hosted CI stability evidence check | 2026-05-18 | Added `--require-success`, `--min-success-streak`, and `--created` to the hosted CI stability recorder. The exit bundle now uses strict hosted stability mode when `--include-ci-stability` is passed, so final review fails if hosted CI or GitHub Pages does not show a completed green run in the selected review window. |
@@ -2408,39 +2408,39 @@ formal exit gates.
 | P2-CI-32 | Fuzz evidence recorder | 2026-05-18 | Added `scripts/record-phase2-fuzz-evidence.sh` and a matching mdBook page. The recorder captures fuzz target list, per-target duration, host and commit metadata, tool versions, command result, and log tail. The exit bundle can include it with `--include-fuzz`, and `--final-review` now includes fuzz evidence too. |
 | P2-CI-33 | Full readiness snapshot in exit bundle | 2026-05-18 | Added `scripts/phase2-exit-readiness.sh --all` support and wired that full open-gate view into the Phase 2 exit bundle. Review packets now include every unfinished gate and its next step, not only the short daily status view. |
 | P2-CI-34 | Hosted full CI evidence recorder | 2026-05-18 | Added `scripts/record-phase2-hosted-full-ci-evidence.sh` and a matching mdBook page. The recorder inspects GitHub CI run history and only counts a run as full proof when the Phase 2 bindings, shared fixtures, Linux/macOS/Windows full-test lanes, language compare, UCap compare, adapter compare, sample compare, benchmark, and dependency jobs are present and green. The exit bundle can include it with `--include-hosted-full-ci`, and `--final-review` now includes hosted full CI proof too. |
-| P2-CI-35 | Hosted full-test sample manifest fixture path | 2026-05-18 | A manual hosted full CI run exposed that the shared fixture artifact path did not match the sample manifest `entry` paths for `layer36-clock` and `layer36-cat`. The full-test job now installs downloaded fixtures back into the app target paths before Phase 1 tests, so the sample manifest tests prove the same paths users see in the example manifests. |
-| P2-CI-36 | Windows oversized raw-args proof handling | 2026-05-18 | Hosted full CI found that Windows rejects a single 65 KiB command argument before the Layer36 CLI can start. The oversized raw-args guard remains covered on Linux/macOS, while Windows now records the host limit as an explicit skip so full CI tests the behavior it can actually reach. |
+| P2-CI-35 | Hosted full-test sample manifest fixture path | 2026-05-18 | A manual hosted full CI run exposed that the shared fixture artifact path did not match the sample manifest `entry` paths for `krate-clock` and `krate-cat`. The full-test job now installs downloaded fixtures back into the app target paths before Phase 1 tests, so the sample manifest tests prove the same paths users see in the example manifests. |
+| P2-CI-36 | Windows oversized raw-args proof handling | 2026-05-18 | Hosted full CI found that Windows rejects a single 65 KiB command argument before the Krate CLI can start. The oversized raw-args guard remains covered on Linux/macOS, while Windows now records the host limit as an explicit skip so full CI tests the behavior it can actually reach. |
 | P2-CI-37 | Hosted full CI evidence summary correctness | 2026-05-18 | Tightened the hosted full CI evidence recorder so job-level conclusion checks cannot overwrite the selected workflow-run conclusion in the summary table. This keeps cancelled or failed full runs clear in the generated Phase 2 proof file. |
-| P2-CI-38 | Windows localhost response-limit fixture hardening | 2026-05-18 | A follow-up hosted full CI run showed that Windows can report an expected early client close as `ConnectionAborted` while the HTTP fixture writes a deliberately over-limit response. The fixture now treats that as an accepted connection, so the test asserts Layer36's response-limit exit code instead of failing in fixture cleanup. |
-| P2-CI-39 | Windows sandboxed absolute logical paths | 2026-05-18 | Hosted full CI then found that `/fixtures/...` logical paths could be treated like host-rooted paths on Windows during sandbox resolution. The runtime now converts normalized Layer36 path strings into relative sandbox segments before joining the host root, with a focused portability test covering the conversion. |
-| P2-CI-40 | Hosted sample evidence shared-fixture reuse | 2026-05-18 | The next hosted full CI run reached macOS sample evidence and found that the sample recorder rebuilt fixtures instead of reusing the shared downloaded `.wasm` files. The recorder now uses existing `LAYER36_*_WASM` or app-target fixture paths first, and only falls back to local `cargo-component` builds when those files are missing. |
-| P2-CI-41 | Windows sample evidence CLI path | 2026-05-18 | Hosted full CI runs `26050285568` and `26053206271` proved Linux and macOS full-test lanes green, then found that Windows sample evidence looked for `target/debug/layer36` instead of Cargo's Windows binary `target/debug/layer36.exe`. The recorder now resolves the built CLI binary with an optional `LAYER36_BIN` override and an explicit Git Bash Windows `.exe` path before running sample evidence. |
+| P2-CI-38 | Windows localhost response-limit fixture hardening | 2026-05-18 | A follow-up hosted full CI run showed that Windows can report an expected early client close as `ConnectionAborted` while the HTTP fixture writes a deliberately over-limit response. The fixture now treats that as an accepted connection, so the test asserts Krate's response-limit exit code instead of failing in fixture cleanup. |
+| P2-CI-39 | Windows sandboxed absolute logical paths | 2026-05-18 | Hosted full CI then found that `/fixtures/...` logical paths could be treated like host-rooted paths on Windows during sandbox resolution. The runtime now converts normalized Krate path strings into relative sandbox segments before joining the host root, with a focused portability test covering the conversion. |
+| P2-CI-40 | Hosted sample evidence shared-fixture reuse | 2026-05-18 | The next hosted full CI run reached macOS sample evidence and found that the sample recorder rebuilt fixtures instead of reusing the shared downloaded `.wasm` files. The recorder now uses existing `KRATE_*_WASM` or app-target fixture paths first, and only falls back to local `cargo-component` builds when those files are missing. |
+| P2-CI-41 | Windows sample evidence CLI path | 2026-05-18 | Hosted full CI runs `26050285568` and `26053206271` proved Linux and macOS full-test lanes green, then found that Windows sample evidence looked for `target/debug/krate` instead of Cargo's Windows binary `target/debug/krate.exe`. The recorder now resolves the built CLI binary with an optional `KRATE_BIN` override and an explicit Git Bash Windows `.exe` path before running sample evidence. |
 | P2-CI-42 | Language evidence comparator scope | 2026-05-19 | Hosted full CI run `26064573902` proved the Windows sample-evidence fix and got every full host lane green, then failed only in language-variant evidence compare. The issue was in the proof layer: Windows recorded empty fixture hashes, and the comparator required byte-identical jco TypeScript output across hosts. The recorder now uses portable SHA-256 tools, and the comparator now checks commit, host labels, pass rows, fixture presence alignment, and non-empty hashes without claiming cross-host compiler byte identity. |
 | P2-CI-43 | Hosted full CI green after language evidence fix | 2026-05-19 | Hosted full CI run `26069665276` passed on commit `3f1a219`. Linux, macOS, and Windows full-test lanes all passed, and the language-variant, UCap, adapter, and sample evidence compare jobs all passed. This closes the immediate hosted full CI blocker for the Phase 2 proof packet. |
 | P2-TEST-16 | Phase 2 exit bundle recorder | 2026-05-15 | Added `scripts/record-phase2-exit-bundle.sh` and a matching mdBook page. The recorder runs the core local exit-review checks, captures the current `P2E-*` gate snapshot, records working tree state, and writes one handoff report for review without pretending Phase 2 is complete. |
 | P2-TEST-17 | UAPI freeze review recorder | 2026-05-16 | Added `scripts/record-phase2-uapi-freeze-review.sh` and a matching mdBook page. The recorder checks the UAPI contract, generated reference freshness, freeze evidence freshness, freeze lock freshness, adapter boundary guard, and exit ledger in one report. |
 | P2-TEST-18 | Timed Rust walkthrough evidence packet | 2026-05-16 | Added `scripts/record-phase2-walkthrough-template.sh` and a matching mdBook page so an outside Rust reviewer can record timing, step results, notes, and the commit used for `P2E-12`. This prepares the evidence path but does not close the external walkthrough gate. |
 | P2-TEST-18B | Rust walkthrough rehearsal check | 2026-05-18 | Added `scripts/check-phase2-rust-walkthrough-rehearsal.sh` and wired it into the Phase 2 exit bundle. The script locally runs the core Rust walkthrough path: doctor, CLI build, cat component build, manifest init, manifest explain, granted run, and denied missing-grant run. This proves the guide is ready for an outside reviewer without counting as the outside proof itself. |
-| P2-TEST-19 | Phase 2 exit readiness command | 2026-05-16 | Added `layer36-tools --bin phase2-exit-readiness`, `scripts/phase2-exit-readiness.sh`, and a matching mdBook page. The command reads the Phase 2 exit ledger, counts done/strong-draft/partial/pending/blocked gates, and prints the hard blockers so progress checks are repeatable. |
+| P2-TEST-19 | Phase 2 exit readiness command | 2026-05-16 | Added `krate-tools --bin phase2-exit-readiness`, `scripts/phase2-exit-readiness.sh`, and a matching mdBook page. The command reads the Phase 2 exit ledger, counts done/strong-draft/partial/pending/blocked gates, and prints the hard blockers so progress checks are repeatable. |
 | P2-TEST-19B | Full Phase 2 readiness mode | 2026-05-18 | Added `--all` to the readiness command. The default output stays short for day-to-day checks, while the full mode prints every open proof item with its next step for final review and session handoff. |
-| P2-TEST-20 | Timed walkthrough packet checker | 2026-05-17 | Added `layer36-tools --bin check-phase2-walkthrough-evidence` and `scripts/check-phase2-walkthrough-evidence.sh`. The checker validates that a filled outside-review packet has metadata, a pass/fail result, numeric timing, a 30-minute cap for passing runs, and reviewer results for every Rust walkthrough step. This strengthens `P2E-12` without pretending the outside walkthrough has happened. |
-| P2-TEST-21 | Phase 2 closeout draft guard | 2026-05-17 | Added `docs/book/src/phase2/retro.md`, `docs/governance/phase-3-kickoff-issue.md`, `layer36-tools --bin check-phase2-closeout-docs`, and `scripts/check-phase2-closeout-docs.sh`. The docs stay in draft form until exit review passes, and the checker prevents accidental final-exit wording before the evidence is ready. |
-| P2-TEST-05 | Phase 2 Rust sample evidence recorder | 2026-05-06 | Added `layer36-tools --bin record-phase2-sample-evidence` and `scripts/record-phase2-sample-evidence.sh`. The recorder builds the local CLI plus Rust clock/cat/curl components, runs fixed fixtures, and writes a markdown evidence report with host metadata, commands, exit codes, stdout hashes, and output snapshots. The mdBook now has a Sample Evidence page and the exit-evidence ledger points cross-host sample gates at this recorder. |
-| P2-TEST-06 | Phase 2 cross-host sample evidence comparator | 2026-05-06 | Added `layer36-tools --bin compare-phase2-sample-evidence` and `scripts/compare-phase2-sample-evidence.sh`. The comparator reads Linux/macOS/Windows sample-evidence reports, verifies required sample statuses, and fails if clock/cat/curl stdout hashes drift across hosts. It also supports a temporary `--allow-blocked-curl` mode for restricted localhost environments while still enforcing clock/cat parity and matching curl hashes across hosts that did run curl. |
+| P2-TEST-20 | Timed walkthrough packet checker | 2026-05-17 | Added `krate-tools --bin check-phase2-walkthrough-evidence` and `scripts/check-phase2-walkthrough-evidence.sh`. The checker validates that a filled outside-review packet has metadata, a pass/fail result, numeric timing, a 30-minute cap for passing runs, and reviewer results for every Rust walkthrough step. This strengthens `P2E-12` without pretending the outside walkthrough has happened. |
+| P2-TEST-21 | Phase 2 closeout draft guard | 2026-05-17 | Added `docs/book/src/phase2/retro.md`, `docs/governance/phase-3-kickoff-issue.md`, `krate-tools --bin check-phase2-closeout-docs`, and `scripts/check-phase2-closeout-docs.sh`. The docs stay in draft form until exit review passes, and the checker prevents accidental final-exit wording before the evidence is ready. |
+| P2-TEST-05 | Phase 2 Rust sample evidence recorder | 2026-05-06 | Added `krate-tools --bin record-phase2-sample-evidence` and `scripts/record-phase2-sample-evidence.sh`. The recorder builds the local CLI plus Rust clock/cat/curl components, runs fixed fixtures, and writes a markdown evidence report with host metadata, commands, exit codes, stdout hashes, and output snapshots. The mdBook now has a Sample Evidence page and the exit-evidence ledger points cross-host sample gates at this recorder. |
+| P2-TEST-06 | Phase 2 cross-host sample evidence comparator | 2026-05-06 | Added `krate-tools --bin compare-phase2-sample-evidence` and `scripts/compare-phase2-sample-evidence.sh`. The comparator reads Linux/macOS/Windows sample-evidence reports, verifies required sample statuses, and fails if clock/cat/curl stdout hashes drift across hosts. It also supports a temporary `--allow-blocked-curl` mode for restricted localhost environments while still enforcing clock/cat parity and matching curl hashes across hosts that did run curl. |
 | P2-TEST-07 | Comparator host-label guard hardening | 2026-05-06 | Hardened `compare-phase2-sample-evidence` so each report must match the flag used for it (`--linux`, `--macos`, `--windows`) based on the embedded host metadata line. Added parser/validation tests and docs note so accidental same-host report reuse fails fast. |
 | P2-TEST-08 | Comparator same-commit guard hardening | 2026-05-06 | Hardened `compare-phase2-sample-evidence` to parse `Git commit` metadata and fail when Linux/macOS/Windows reports come from different commits. This avoids false parity signals when reports are mixed across code revisions. Added parser/validation tests and docs note. |
 | P2-TEST-09 | Language-variant evidence recorder | 2026-05-06 | Added `scripts/record-phase2-language-variant-evidence.sh` and a matching docs page. The recorder runs language-variant fixture build/test commands, captures exit codes, fixture file hashes, and log tails, then writes one markdown artifact for Rust/Go/TypeScript evidence review. It supports `--mode`, `--output`, and `--strict` flags for local and CI usage. |
-| P2-TEST-10 | Language-variant evidence comparator | 2026-05-06 | Added `layer36-tools --bin compare-phase2-language-variant-evidence` and `scripts/compare-phase2-language-variant-evidence.sh`. The comparator reads Linux/macOS/Windows language-variant evidence reports, checks commit and host metadata alignment, verifies build/test steps passed, and fails when fixture availability or hashes drift across hosts. |
-| P2-TEST-11 | UCap enforcement evidence recorder and comparator | 2026-05-08 | Added `scripts/record-phase2-ucap-evidence.sh`, `layer36-tools --bin compare-phase2-ucap-evidence`, and `scripts/compare-phase2-ucap-evidence.sh`, plus docs. The recorder captures deny-focused runtime and CLI evidence in one markdown report. The comparator checks Linux/macOS/Windows commit alignment, host labeling, and required deny-step pass outcomes. |
+| P2-TEST-10 | Language-variant evidence comparator | 2026-05-06 | Added `krate-tools --bin compare-phase2-language-variant-evidence` and `scripts/compare-phase2-language-variant-evidence.sh`. The comparator reads Linux/macOS/Windows language-variant evidence reports, checks commit and host metadata alignment, verifies build/test steps passed, and fails when fixture availability or hashes drift across hosts. |
+| P2-TEST-11 | UCap enforcement evidence recorder and comparator | 2026-05-08 | Added `scripts/record-phase2-ucap-evidence.sh`, `krate-tools --bin compare-phase2-ucap-evidence`, and `scripts/compare-phase2-ucap-evidence.sh`, plus docs. The recorder captures deny-focused runtime and CLI evidence in one markdown report. The comparator checks Linux/macOS/Windows commit alignment, host labeling, and required deny-step pass outcomes. |
 | P2-TEST-11B | UCap deny-before-adapter evidence expansion | 2026-05-16 | Added a named dispatcher matrix test that proves every non-default Phase 2 boundary denies before adapter calls run, then made the UCap evidence recorder, comparator, and docs require that row. This strengthens `P2E-09` without changing the public UAPI. |
-| P2-TEST-12 | Benchmark evidence recorder and comparator | 2026-05-08 | Added `scripts/record-phase2-benchmark-evidence.sh`, `layer36-tools --bin compare-phase2-benchmark-evidence`, and `scripts/compare-phase2-benchmark-evidence.sh`, plus docs. The recorder captures startup and dispatch benchmark runs plus regression-check output in one markdown report, and the comparator validates cross-host commit alignment, required benchmark-step pass state, and metric-table shape consistency. |
+| P2-TEST-12 | Benchmark evidence recorder and comparator | 2026-05-08 | Added `scripts/record-phase2-benchmark-evidence.sh`, `krate-tools --bin compare-phase2-benchmark-evidence`, and `scripts/compare-phase2-benchmark-evidence.sh`, plus docs. The recorder captures startup and dispatch benchmark runs plus regression-check output in one markdown report, and the comparator validates cross-host commit alignment, required benchmark-step pass state, and metric-table shape consistency. |
 | P2-TEST-13 | Benchmark comparator threshold enforcement | 2026-05-08 | Tightened `compare-phase2-benchmark-evidence` so it now enforces per-metric threshold bounds from the report table (`current <= baseline * (1 + threshold%)`) on every host report. This prevents warning-only regression mode from masking over-threshold metrics in cross-host benchmark evidence comparison. |
-| P2-PERF-01C | Full external CLI startup evidence recorder | 2026-05-15 | Added `layer36-tools --bin record-phase2-cli-startup` and wired it into `scripts/record-phase2-benchmark-evidence.sh`. The benchmark evidence now records the full `layer36 run` process path for deterministic `layer36-clock`, including CLI process start, manifest handling, grant resolution, runtime setup, component execution, and stdout verification. |
+| P2-PERF-01C | Full external CLI startup evidence recorder | 2026-05-15 | Added `krate-tools --bin record-phase2-cli-startup` and wired it into `scripts/record-phase2-benchmark-evidence.sh`. The benchmark evidence now records the full `krate run` process path for deterministic `krate-clock`, including CLI process start, manifest handling, grant resolution, runtime setup, component execution, and stdout verification. |
 | P2-CI-20 | Phase 2 dependency evidence recorder | 2026-05-15 | Added `scripts/record-phase2-dependency-evidence.sh` and a matching mdBook page. The recorder captures `scripts/check-dependencies.sh`, tool versions, advisory-check status, license/bans/source status, and log tails so dependency signoff is reviewable without digging through CI logs. Local evidence currently passes licenses, bans, and sources while noting the advisory DB lock warning on this machine. |
 | P2-BIND-02J | Go readiness evidence recorder | 2026-05-15 | Added `scripts/record-phase2-go-readiness-evidence.sh` and a matching mdBook page. The recorder builds the TinyGo clock/cat/curl smoke artifacts, captures Go/TinyGo/wasm-tools versions, hashes the artifacts, and records the import-purity log. The current report confirms the Go path builds but remains blocked from runtime-fixture promotion by direct WASI imports. |
-| P2-BIND-02K | Go Phase 2 experimental runtime decision | 2026-05-17 | Recorded the Phase 2 decision that Go remains in the SDK and TinyGo smoke-build track, but Go runtime parity is experimental until compiled artifacts import only `layer36:*`. The exit ledger now treats Go as partial rather than blocked, because the deferral is explicit and guarded by import-purity checks. |
-| P2-TEST-14 | Adapter evidence recorder and comparator | 2026-05-08 | Added `scripts/record-phase2-adapter-evidence.sh`, `layer36-tools --bin compare-phase2-adapter-evidence`, and `scripts/compare-phase2-adapter-evidence.sh`, plus docs. The recorder now captures adapter-boundary results, shared adapter behavior tests, and the native adapter crate test for the current host in one markdown report. The comparator validates Linux/macOS/Windows commit alignment, host labeling, and required adapter-step pass outcomes. |
-| P2-ADPT-EVID-01 | Adapter evidence behavior-test expansion | 2026-05-15 | Expanded adapter evidence so each host report records `cargo test -p layer36-adapter-common` and the matching native adapter crate test (`linux`, `macos`, or `windows`) in addition to the adapter-boundary check. The cross-host comparator now requires those rows to pass for each OS lane. |
+| P2-BIND-02K | Go Phase 2 experimental runtime decision | 2026-05-17 | Recorded the Phase 2 decision that Go remains in the SDK and TinyGo smoke-build track, but Go runtime parity is experimental until compiled artifacts import only `krate:*`. The exit ledger now treats Go as partial rather than blocked, because the deferral is explicit and guarded by import-purity checks. |
+| P2-TEST-14 | Adapter evidence recorder and comparator | 2026-05-08 | Added `scripts/record-phase2-adapter-evidence.sh`, `krate-tools --bin compare-phase2-adapter-evidence`, and `scripts/compare-phase2-adapter-evidence.sh`, plus docs. The recorder now captures adapter-boundary results, shared adapter behavior tests, and the native adapter crate test for the current host in one markdown report. The comparator validates Linux/macOS/Windows commit alignment, host labeling, and required adapter-step pass outcomes. |
+| P2-ADPT-EVID-01 | Adapter evidence behavior-test expansion | 2026-05-15 | Expanded adapter evidence so each host report records `cargo test -p krate-adapter-common` and the matching native adapter crate test (`linux`, `macos`, or `windows`) in addition to the adapter-boundary check. The cross-host comparator now requires those rows to pass for each OS lane. |
 | P2-TEST-15 | Hosted sample evidence compare rollout | 2026-05-15 | Wired sample evidence recorder output into hosted full CI artifacts and added an automated cross-host compare step. This moves sample proof from manual-only collection to repeatable CI evidence while preserving a temporary curl blocked fallback mode for restricted runners. |
 | P2-TEST-15B | Curl blocked-exception comparator hardening | 2026-05-16 | Tightened `compare-phase2-sample-evidence` so `--allow-blocked-curl` only excuses hosts that cannot run the localhost fixture. Any hosts that do run curl must still produce matching stdout hashes. |
 
@@ -2450,7 +2450,7 @@ formal exit gates.
 
 | Task ID | Task | Started | Blockers |
 |---------|------|---------|----------|
-| P2-APP-01C | Add cross-host fixture assertions and language sample variants | 2026-05-04 | Rust sample coverage includes deterministic `layer36-clock` snapshot assertions with fixed time/locale/timezone. Go/TypeScript now have clock/cat/curl sample sources, CI shape contracts, runtime fixture assertions in the CLI harness, fixture completeness checks, import-purity preflight checks, configurable strictness modes, an automated pre-test fixture build step, and a self-hosted TinyGo WASI Preview 2 build-smoke lane for Go clock/cat/curl artifacts. Self-hosted CI now also runs a Go runtime-fixture readiness gate that only promotes Go fixtures when Layer36 import-purity checks pass, and the shared language-fixture build step now auto-attempts the same Go promotion path when TinyGo tools are present. That shared build step now also prints per-language readiness reasons and includes those reasons in strict mode failures for faster CI triage. Hosted full CI now defaults the language-variant lane to `ts` mode with `npx` jco install enabled and pinned (Node 22 plus pinned jco package), TypeScript clock and cat fixture runtime tests pass locally after WIT-variant shape alignment, localhost fixture failures now skip cleanly for both bind-denied and accept-timeout paths, and both TypeScript and Go curl now have non-localhost denial/unresolved-host assertions for restricted-runner stability. Cross-language parity tests for `clock`, `cat`, and `curl` now run when both Go and TypeScript fixture sets are present; curl error-path parity now also covers missing-grant, invalid-url, and unresolved-host checks across Rust, Go, and TypeScript. TypeScript curl now matches Rust for missing-grant (`5`) and invalid-url (`20`) exit-code paths with parity assertions; and Go curl now uses stable variant-classification logic with unit tests for core error classes. A language-variant evidence recorder now exists so each run can emit one markdown artifact with fixture hashes and command outcomes, and a companion comparator now checks Linux/macOS/Windows report parity in one command. Remaining work: real Layer36 import-pure Go bindings plus runtime proof for Go fixtures, and broader cross-host runtime evidence for language-variant curl success paths. |
+| P2-APP-01C | Add cross-host fixture assertions and language sample variants | 2026-05-04 | Rust sample coverage includes deterministic `krate-clock` snapshot assertions with fixed time/locale/timezone. Go/TypeScript now have clock/cat/curl sample sources, CI shape contracts, runtime fixture assertions in the CLI harness, fixture completeness checks, import-purity preflight checks, configurable strictness modes, an automated pre-test fixture build step, and a self-hosted TinyGo WASI Preview 2 build-smoke lane for Go clock/cat/curl artifacts. Self-hosted CI now also runs a Go runtime-fixture readiness gate that only promotes Go fixtures when Krate import-purity checks pass, and the shared language-fixture build step now auto-attempts the same Go promotion path when TinyGo tools are present. That shared build step now also prints per-language readiness reasons and includes those reasons in strict mode failures for faster CI triage. Hosted full CI now defaults the language-variant lane to `ts` mode with `npx` jco install enabled and pinned (Node 22 plus pinned jco package), TypeScript clock and cat fixture runtime tests pass locally after WIT-variant shape alignment, localhost fixture failures now skip cleanly for both bind-denied and accept-timeout paths, and both TypeScript and Go curl now have non-localhost denial/unresolved-host assertions for restricted-runner stability. Cross-language parity tests for `clock`, `cat`, and `curl` now run when both Go and TypeScript fixture sets are present; curl error-path parity now also covers missing-grant, invalid-url, and unresolved-host checks across Rust, Go, and TypeScript. TypeScript curl now matches Rust for missing-grant (`5`) and invalid-url (`20`) exit-code paths with parity assertions; and Go curl now uses stable variant-classification logic with unit tests for core error classes. A language-variant evidence recorder now exists so each run can emit one markdown artifact with fixture hashes and command outcomes, and a companion comparator now checks Linux/macOS/Windows report parity in one command. Remaining work: real Krate import-pure Go bindings plus runtime proof for Go fixtures, and broader cross-host runtime evidence for language-variant curl success paths. |
 | P2-ADPT-COMMON-02 | Expand shared adapter-common beyond HTTP framing | 2026-05-04 | Path normalization, prefix hardening, Windows reserved-name hardening, trailing-dot and trailing-space segment hardening, path-length guard hardening, sandbox-root resolution, sandbox-rooted absolute logical-path handling, symlink escape checks, symlink-segment traversal denial for existing and create paths, Windows reparse-point traversal parity hardening, Unix and Windows no-follow final-symlink open hardening, root-like destructive operation guards, first shared clock and time-overflow helpers, first shared locale helpers, deterministic baseline locale formatting, UTC-offset aware date formatting, locale-tag canonicalization hardening, locale-subtag shape hardening, timezone-shape normalization hardening, UTC-offset timezone normalization, extended locale env fallback (`LC_TIME`/`LC_NUMERIC`/`LC_MONETARY`/`LC_CTYPE`/`LC_COLLATE`/`LC_MESSAGES`/`LANGUAGE`/`AppleLocale`) plus Unix `/etc/localtime` and timezone file fallbacks (`/etc/timezone`, `/etc/TIMEZONE`, `/var/db/timezone/timezone`), shared strict HTTP response parsing, stricter shared host/IPv4 validation, strict dotted-decimal IPv4 textual-shape enforcement (rejecting leading-zero forms), endpoint/grant host-length parity enforcement (max host length 253), disallowed wildcard and non-unicast numeric IPv4 endpoint-shape rejection (`0.0.0.0`, `255.255.255.255`, and multicast forms), wildcard host-pattern shape hardening for `net.connect` grants (full left-most `*` label only), one-label wildcard scope matching for `*.example.com` grants in policy checks, lowercase host normalization, shared response read-loop limits, response integrity checks, a shared request-body size guard, strict buffered Content-Length matching, a shared request-target size guard, resolved-address dedupe plus cap normalization with IPv4-first family ordering, wildcard-address filtering, unusable-target filtering (`port=0`, scope-less IPv6 link-local), non-unicast filtering (IPv4 broadcast/multicast and IPv6 multicast), explicit empty-after-normalization `NotFound` resolve mapping, and a bounded total connect-time budget across resolved addresses now exist. Per-OS adapter crate scaffolding exists and runtime locale/clock/sleep, locale read/format, no-follow-open, TCP-connect, socket-resolve, TCP-timeout, plain-HTTP socket IO, link-metadata semantics, filesystem stat/list host-call, filesystem mutation host-call, symlink-metadata host-call, canonicalize host-call, file-open host-call, bootstrap read/create-dir-all host-call, file-handle IO/seek/stat host-call, stdio host-call, and stdout host-call paths now route through those crates; remaining work is expanding runtime wiring for filesystem/network/IO adapter surfaces and adding richer host-native locale/timezone fidelity (ICU4X-grade formatting and broader discovery). |
 | P2-BIND-01E | Rust SDK crates.io publication | 2026-05-04 | Package shape, API docs, and outside-workspace smoke are ready locally; actual crates.io publication remains blocked until UAPI v0.1 is intentionally frozen. |
 
@@ -2480,14 +2480,14 @@ _None currently._
 
 ### Notes & Learnings
 
-- 2026-05-03: Added the first parseable Phase 2 WIT package at `wit/layer36/phase2`. Kept it separate from the Phase 1 runtime WIT so the current `layer36 run` proof stays green while UAPI is reviewed.
+- 2026-05-03: Added the first parseable Phase 2 WIT package at `wit/krate/phase2`. Kept it separate from the Phase 1 runtime WIT so the current `krate run` proof stays green while UAPI is reviewed.
 
 ---
 
-Phase 2 is where Layer36 stops being a runtime and starts being a platform. The five WIT files you ship this phase will be cited, copied, and depended on by every Layer36 app ever written. The adapter crates will be forked and ported for every new host. The UCap model will be extended, not replaced, for a decade.
+Phase 2 is where Krate stops being a runtime and starts being a platform. The five WIT files you ship this phase will be cited, copied, and depended on by every Krate app ever written. The adapter crates will be forked and ported for every new host. The UCap model will be extended, not replaced, for a decade.
 
 Spend the time. Review the WIT aloud with someone who hasn't seen it. Write the tutorials before you think they're ready. Run the cross-host diff test until you trust it. Getting Phase 2 right matters more than hitting a fixed calendar date.
 
-When you ship, `layer36-curl`, `layer36-cat`, and `layer36-clock` running byte-identically on three operating systems is the moment Layer36 stops being a plan and becomes a thing. That moment is worth earning.
+When you ship, `krate-curl`, `krate-cat`, and `krate-clock` running byte-identically on three operating systems is the moment Krate stops being a plan and becomes a thing. That moment is worth earning.
 
 — end of document —

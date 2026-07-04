@@ -13,7 +13,7 @@ const FIXED_TIME_MILLIS: &str = "1234567890";
 const FIXED_LOCALE: &str = "en-US";
 const FIXED_TIMEZONE: &str = "UTC";
 const EXPECTED_STDOUT: &str =
-    "app=layer36-clock\ntimezone=UTC\nlocale=en-US\ndate=1970-01-15 06:56\n";
+    "app=krate-clock\ntimezone=UTC\nlocale=en-US\ndate=1970-01-15 06:56\n";
 
 fn main() -> Result<()> {
     let config = Config::parse(env::args().skip(1))?;
@@ -33,7 +33,7 @@ fn main() -> Result<()> {
 
 #[derive(Debug, Clone)]
 struct Config {
-    layer36: PathBuf,
+    krate: PathBuf,
     manifest: PathBuf,
     wasm: PathBuf,
     output: PathBuf,
@@ -43,7 +43,7 @@ struct Config {
 
 impl Config {
     fn parse(args: impl IntoIterator<Item = String>) -> Result<Self> {
-        let mut layer36 = None;
+        let mut krate = None;
         let mut manifest = None;
         let mut wasm = None;
         let mut output = PathBuf::from("target/phase2-benchmark-evidence/cli-startup.md");
@@ -53,7 +53,7 @@ impl Config {
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
             match arg.as_str() {
-                "--layer36" => layer36 = Some(next_path(&mut args, "--layer36")?),
+                "--krate" => krate = Some(next_path(&mut args, "--krate")?),
                 "--manifest" => manifest = Some(next_path(&mut args, "--manifest")?),
                 "--wasm" => wasm = Some(next_path(&mut args, "--wasm")?),
                 "--output" => output = next_path(&mut args, "--output")?,
@@ -61,7 +61,7 @@ impl Config {
                 "--warmups" => warmups = next_usize(&mut args, "--warmups")?,
                 "--help" | "-h" => {
                     println!(
-                        "Usage: record-phase2-cli-startup [--layer36 <path>] [--manifest <path>] [--wasm <path>] [--runs <n>] [--warmups <n>] [--output <md>]"
+                        "Usage: record-phase2-cli-startup [--krate <path>] [--manifest <path>] [--wasm <path>] [--runs <n>] [--warmups <n>] [--output <md>]"
                     );
                     std::process::exit(0);
                 }
@@ -74,10 +74,10 @@ impl Config {
         }
 
         let config = Self {
-            layer36: layer36.unwrap_or_else(default_layer36_path),
-            manifest: manifest.unwrap_or_else(|| PathBuf::from("apps/layer36-clock/manifest.toml")),
+            krate: krate.unwrap_or_else(default_krate_path),
+            manifest: manifest.unwrap_or_else(|| PathBuf::from("apps/krate-clock/manifest.toml")),
             wasm: wasm.unwrap_or_else(|| {
-                PathBuf::from("apps/layer36-clock/target/wasm32-wasip1/release/layer36_clock.wasm")
+                PathBuf::from("apps/krate-clock/target/wasm32-wasip1/release/krate_clock.wasm")
             }),
             output,
             runs,
@@ -89,7 +89,7 @@ impl Config {
 
     fn validate_paths(&self) -> Result<()> {
         for (name, path) in [
-            ("layer36", &self.layer36),
+            ("krate", &self.krate),
             ("manifest", &self.manifest),
             ("wasm", &self.wasm),
         ] {
@@ -104,10 +104,10 @@ impl Config {
     }
 }
 
-fn default_layer36_path() -> PathBuf {
+fn default_krate_path() -> PathBuf {
     PathBuf::from("target")
         .join("release")
-        .join(format!("layer36{}", env::consts::EXE_SUFFIX))
+        .join(format!("krate{}", env::consts::EXE_SUFFIX))
 }
 
 fn next_path(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<PathBuf> {
@@ -180,7 +180,7 @@ impl CliStartupReport {
         out.push_str("```\n\n");
         out.push_str("## Reading The Result\n\n");
         out.push_str(
-            "This is not a microbenchmark. It measures the full `layer36 run` command path for the deterministic clock sample, including process start, argument parsing, manifest handling, runtime setup, component execution, and output collection.\n",
+            "This is not a microbenchmark. It measures the full `krate run` command path for the deterministic clock sample, including process start, argument parsing, manifest handling, runtime setup, component execution, and output collection.\n",
         );
         out
     }
@@ -250,7 +250,7 @@ fn record_cli_startup(config: &Config) -> Result<CliStartupReport> {
 
 fn run_once(config: &Config) -> Result<Output> {
     let manifest = path_string(&config.manifest);
-    Command::new(&config.layer36)
+    Command::new(&config.krate)
         .args([
             "run",
             "--auto-grant",
@@ -265,7 +265,7 @@ fn run_once(config: &Config) -> Result<Output> {
         ])
         .arg(&config.wasm)
         .output()
-        .with_context(|| format!("run {}", config.layer36.display()))
+        .with_context(|| format!("run {}", config.krate.display()))
 }
 
 fn validate_output(output: &Output) -> Result<()> {
@@ -298,7 +298,7 @@ fn validate_output(output: &Output) -> Result<()> {
 
 fn command_text(config: &Config) -> String {
     [
-        path_string(&config.layer36),
+        path_string(&config.krate),
         "run".to_string(),
         "--auto-grant".to_string(),
         "--manifest".to_string(),
@@ -366,9 +366,9 @@ mod tests {
     }
 
     #[test]
-    fn default_layer36_path_uses_platform_exe_suffix() {
-        let path = default_layer36_path();
-        let expected = format!("layer36{}", env::consts::EXE_SUFFIX);
+    fn default_krate_path_uses_platform_exe_suffix() {
+        let path = default_krate_path();
+        let expected = format!("krate{}", env::consts::EXE_SUFFIX);
         assert_eq!(
             path.file_name().and_then(|name| name.to_str()),
             Some(expected.as_str())

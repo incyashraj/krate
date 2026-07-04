@@ -2,7 +2,7 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
-MODE="${LAYER36_LANGUAGE_VARIANTS_MODE:-optional}"
+MODE="${KRATE_LANGUAGE_VARIANTS_MODE:-optional}"
 
 set_if_exists() {
   key="$1"
@@ -17,12 +17,12 @@ set_if_exists() {
   fi
 }
 
-set_if_exists "LAYER36_GO_CLOCK_WASM" "test/integration/language-variants/layer36_go_clock.wasm"
-set_if_exists "LAYER36_GO_CAT_WASM" "test/integration/language-variants/layer36_go_cat.wasm"
-set_if_exists "LAYER36_GO_CURL_WASM" "test/integration/language-variants/layer36_go_curl.wasm"
-set_if_exists "LAYER36_TS_CLOCK_WASM" "test/integration/language-variants/layer36_ts_clock.wasm"
-set_if_exists "LAYER36_TS_CAT_WASM" "test/integration/language-variants/layer36_ts_cat.wasm"
-set_if_exists "LAYER36_TS_CURL_WASM" "test/integration/language-variants/layer36_ts_curl.wasm"
+set_if_exists "KRATE_GO_CLOCK_WASM" "test/integration/language-variants/krate_go_clock.wasm"
+set_if_exists "KRATE_GO_CAT_WASM" "test/integration/language-variants/krate_go_cat.wasm"
+set_if_exists "KRATE_GO_CURL_WASM" "test/integration/language-variants/krate_go_curl.wasm"
+set_if_exists "KRATE_TS_CLOCK_WASM" "test/integration/language-variants/krate_ts_clock.wasm"
+set_if_exists "KRATE_TS_CAT_WASM" "test/integration/language-variants/krate_ts_cat.wasm"
+set_if_exists "KRATE_TS_CURL_WASM" "test/integration/language-variants/krate_ts_curl.wasm"
 
 require_existing_path_for_var() {
   key="$1"
@@ -70,39 +70,39 @@ require_all_or_none() {
 }
 
 for key in \
-  LAYER36_GO_CLOCK_WASM \
-  LAYER36_GO_CAT_WASM \
-  LAYER36_GO_CURL_WASM \
-  LAYER36_TS_CLOCK_WASM \
-  LAYER36_TS_CAT_WASM \
-  LAYER36_TS_CURL_WASM
+  KRATE_GO_CLOCK_WASM \
+  KRATE_GO_CAT_WASM \
+  KRATE_GO_CURL_WASM \
+  KRATE_TS_CLOCK_WASM \
+  KRATE_TS_CAT_WASM \
+  KRATE_TS_CURL_WASM
 do
   require_existing_path_for_var "$key"
 done
 
 go_count="$(count_set_vars \
-  LAYER36_GO_CLOCK_WASM \
-  LAYER36_GO_CAT_WASM \
-  LAYER36_GO_CURL_WASM)"
+  KRATE_GO_CLOCK_WASM \
+  KRATE_GO_CAT_WASM \
+  KRATE_GO_CURL_WASM)"
 ts_count="$(count_set_vars \
-  LAYER36_TS_CLOCK_WASM \
-  LAYER36_TS_CAT_WASM \
-  LAYER36_TS_CURL_WASM)"
+  KRATE_TS_CLOCK_WASM \
+  KRATE_TS_CAT_WASM \
+  KRATE_TS_CURL_WASM)"
 
 require_all_or_none "Go" "$go_count" 3 \
-  LAYER36_GO_CLOCK_WASM \
-  LAYER36_GO_CAT_WASM \
-  LAYER36_GO_CURL_WASM
+  KRATE_GO_CLOCK_WASM \
+  KRATE_GO_CAT_WASM \
+  KRATE_GO_CURL_WASM
 require_all_or_none "TypeScript" "$ts_count" 3 \
-  LAYER36_TS_CLOCK_WASM \
-  LAYER36_TS_CAT_WASM \
-  LAYER36_TS_CURL_WASM
+  KRATE_TS_CLOCK_WASM \
+  KRATE_TS_CAT_WASM \
+  KRATE_TS_CURL_WASM
 
 case "$MODE" in
   optional|any|both|go|ts)
     ;;
   *)
-    echo "Phase 2 language-variant setup error: unknown LAYER36_LANGUAGE_VARIANTS_MODE='$MODE'." >&2
+    echo "Phase 2 language-variant setup error: unknown KRATE_LANGUAGE_VARIANTS_MODE='$MODE'." >&2
     echo "Allowed values: optional, any, both, go, ts" >&2
     exit 1
     ;;
@@ -136,7 +136,7 @@ case "$MODE" in
 esac
 
 if [ "$MODE" = "optional" ] && [ "$go_count" -eq 0 ] && [ "$ts_count" -eq 0 ]; then
-  echo "Skipping Phase 2 language-variant runtime tests (no LAYER36_GO_* or LAYER36_TS_* vars set, and no test/integration/language-variants/*.wasm fixtures found)."
+  echo "Skipping Phase 2 language-variant runtime tests (no KRATE_GO_* or KRATE_TS_* vars set, and no test/integration/language-variants/*.wasm fixtures found)."
   exit 0
 fi
 
@@ -146,26 +146,26 @@ cd "$ROOT"
 if [ "$go_count" -eq 3 ]; then
   echo "Checking Go language-variant component imports"
   scripts/check-component-imports.sh \
-    "$LAYER36_GO_CLOCK_WASM" \
-    "$LAYER36_GO_CAT_WASM" \
-    "$LAYER36_GO_CURL_WASM"
+    "$KRATE_GO_CLOCK_WASM" \
+    "$KRATE_GO_CAT_WASM" \
+    "$KRATE_GO_CURL_WASM"
 
   echo "Running Go language-variant runtime tests"
-  cargo test -p layer36-cli --test cli configured_layer36_go_
+  cargo test -p krate-cli --test cli configured_krate_go_
 fi
 
 if [ "$ts_count" -eq 3 ]; then
   echo "Checking TypeScript language-variant component imports"
   scripts/check-component-imports.sh \
-    "$LAYER36_TS_CLOCK_WASM" \
-    "$LAYER36_TS_CAT_WASM" \
-    "$LAYER36_TS_CURL_WASM"
+    "$KRATE_TS_CLOCK_WASM" \
+    "$KRATE_TS_CAT_WASM" \
+    "$KRATE_TS_CURL_WASM"
 
   echo "Running TypeScript language-variant runtime tests"
-  cargo test -p layer36-cli --test cli configured_layer36_ts_
+  cargo test -p krate-cli --test cli configured_krate_ts_
 fi
 
 if [ "$go_count" -eq 3 ] && [ "$ts_count" -eq 3 ]; then
   echo "Running cross-language parity tests for Rust, Go, and TypeScript fixtures"
-  cargo test -p layer36-cli --test cli language_variants_
+  cargo test -p krate-cli --test cli language_variants_
 fi

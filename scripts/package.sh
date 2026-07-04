@@ -4,13 +4,13 @@ set -euo pipefail
 target="${1:?usage: scripts/package.sh <target-triple> <tar.gz|zip>}"
 ext="${2:?usage: scripts/package.sh <target-triple> <tar.gz|zip>}"
 
-version="${LAYER36_VERSION:-}"
+version="${KRATE_VERSION:-}"
 if [[ -z "$version" ]]; then
   version="$(awk -F'"' '/^version = / { print $2; exit }' Cargo.toml)"
 fi
 version="${version#v}"
 
-name="layer36-${version}-${target}"
+name="krate-${version}-${target}"
 dist_root="dist"
 package_dir="${dist_root}/${name}"
 target_release="target/${target}/release"
@@ -19,9 +19,9 @@ if [[ ! -d "$target_release" ]]; then
   target_release="target/release"
 fi
 
-binary="layer36"
+binary="krate"
 if [[ "$target" == *windows* ]]; then
-  binary="layer36.exe"
+  binary="krate.exe"
 fi
 
 binary_path="${target_release}/${binary}"

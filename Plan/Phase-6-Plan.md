@@ -1,4 +1,4 @@
-# Layer36 — Phase 6 Detailed Plan: Distribution & Identity
+# Krate — Phase 6 Detailed Plan: Distribution & Identity
 
 > **Phase:** 6 of 8
 > **Duration:** Months 19–22 (120 calendar days, ~70–90 engineering days of work)
@@ -23,10 +23,10 @@
 9. [Developer Signing & Transparency Log](#9-developer-signing--transparency-log)
 10. [Delta Updates](#10-delta-updates)
 11. [Marketplace Backend](#11-marketplace-backend)
-12. [Marketplace Frontend (Itself a Layer36 App)](#12-marketplace-frontend-itself-a-layer36-app)
+12. [Marketplace Frontend (Itself a Krate App)](#12-marketplace-frontend-itself-a-krate-app)
 13. [Discovery, Categories, Search](#13-discovery-categories-search)
 14. [Reviews, Ratings, Moderation](#14-reviews-ratings-moderation)
-15. [Identity: DIDs and `layer36:identity`](#15-identity-dids-and-layer36identity)
+15. [Identity: DIDs and `krate:identity`](#15-identity-dids-and-krateidentity)
 16. [Cross-Device Sync](#16-cross-device-sync)
 17. [UCap v0.4 (Persistent Grants + Revocation)](#17-ucap-v04-persistent-grants--revocation)
 18. [Background Update Service](#18-background-update-service)
@@ -62,19 +62,19 @@ Phase 6 is operationally and legally the heaviest phase. Every prior phase was m
 
 ### 1.1 One-sentence objective
 
-**A user downloads the Layer36 host app, creates a cross-device identity in under 60 seconds, installs three apps from a discoverable marketplace, and each app recognizes them as the same user when they pick up a different device — and a developer publishes their app to that marketplace through `layer36 deploy` in under 5 minutes.**
+**A user downloads the Krate host app, creates a cross-device identity in under 60 seconds, installs three apps from a discoverable marketplace, and each app recognizes them as the same user when they pick up a different device — and a developer publishes their app to that marketplace through `krate deploy` in under 5 minutes.**
 
 ### 1.2 Why this matters
 
-Phases 1–5 made Layer36 technically real. Phase 6 makes it *socially* real — the point at which strangers can trust strangers' code because the platform mediates that trust. A platform without a marketplace is a curiosity. A platform without identity is a tool. A platform with both becomes infrastructure. Phase 6 is the hinge between Layer36-as-interesting-tech and Layer36-as-something-users-depend-on.
+Phases 1–5 made Krate technically real. Phase 6 makes it *socially* real — the point at which strangers can trust strangers' code because the platform mediates that trust. A platform without a marketplace is a curiosity. A platform without identity is a tool. A platform with both becomes infrastructure. Phase 6 is the hinge between Krate-as-interesting-tech and Krate-as-something-users-depend-on.
 
 ### 1.3 The seven deliverables of Phase 6
 
 1. **`.l36app` bundle format** — the signed, versioned, inspectable format every app ships in.
 2. **Developer signing + transparency log** — Sigstore-style immutable record of every app ever published.
 3. **Marketplace backend** — Postgres + S3 + axum, serving discovery, install, updates.
-4. **Marketplace frontend** — itself a Layer36 app, deep dogfood of the platform.
-5. **Identity UAPI (`layer36:identity`)** — DID-based; users own their account and carry it between devices.
+4. **Marketplace frontend** — itself a Krate app, deep dogfood of the platform.
+5. **Identity UAPI (`krate:identity`)** — DID-based; users own their account and carry it between devices.
 6. **Background update service** — per-host, keeps apps current with delta patches.
 7. **UCap v0.4** — persistent grants, revocation, audit log.
 
@@ -86,7 +86,7 @@ Before touching a single line of Phase 6 code, verify:
 
 - [ ] All Phase 5 exit criteria met.
 - [ ] 60-second walkthrough benchmark passing on all five platforms.
-- [ ] `layer36` CLI stable with all 19 subcommands.
+- [ ] `krate` CLI stable with all 19 subcommands.
 - [ ] UAPI v0.4 frozen: `storage`, `crypto`, `ipc`, `notifications`.
 - [ ] IDE extensions published to VS Code + JetBrains marketplaces.
 - [ ] C/C++ and Python bindings shipped.
@@ -104,13 +104,13 @@ Phase 6 is **done** when, and only when, every row below is true.
 | # | Criterion | Measured How |
 |---|-----------|--------------|
 | 1 | `.l36app` bundle format frozen; spec published | Spec document |
-| 2 | Developer can run `layer36 publish` from their machine and reach the marketplace in < 5 min | Timed walkthrough |
+| 2 | Developer can run `krate publish` from their machine and reach the marketplace in < 5 min | Timed walkthrough |
 | 3 | User can install an app from the marketplace in < 30 s (10 MB app) | Timed walkthrough |
 | 4 | Delta update of a 1 MB patch applies in < 500 ms | Timer |
 | 5 | A new user completes identity creation + sign-in on 2 devices in < 60 s | Timed walkthrough |
 | 6 | The same identity authenticates the user across Windows, macOS, Linux, iOS, Android | Manual test |
 | 7 | Revoking a capability immediately invalidates in-flight uses | Scripted test |
-| 8 | Marketplace frontend is itself a Layer36 app, shipping from its own `.l36app` bundle | Self-hosting confirmed |
+| 8 | Marketplace frontend is itself a Krate app, shipping from its own `.l36app` bundle | Self-hosting confirmed |
 | 9 | Transparency log is append-only, publicly queryable, tamper-evident | Audit test |
 | 10 | Marketplace backend handles 10k req/s steady-state with p99 < 200 ms | Load test |
 | 11 | Background update service keeps installed apps current within 24 h of release | Time-to-update measurement |
@@ -161,7 +161,7 @@ Phase 6 wants to be everything — storefront, community, ID provider, app-analy
 
 ### 5.1 What changes
 
-Phases 1–5 had one type of user: developers using Layer36. Phase 6 introduces a second type: **end users using apps built on Layer36**. These two audiences have almost nothing in common:
+Phases 1–5 had one type of user: developers using Krate. Phase 6 introduces a second type: **end users using apps built on Krate**. These two audiences have almost nothing in common:
 
 | Developer | End user |
 |---|---|
@@ -198,9 +198,9 @@ Recorded in ADR-0045 as the Phase 6 design philosophy.
 flowchart TB
     subgraph Dev["Developer"]
         SRC[source]
-        CLI[layer36 CLI]
+        CLI[krate CLI]
         SRC --> CLI
-        CLI -->|layer36 publish| MS
+        CLI -->|krate publish| MS
     end
 
     subgraph MS["Marketplace backend"]
@@ -220,7 +220,7 @@ flowchart TB
     end
 
     subgraph User["User device (any OS)"]
-        HOST[Layer36 host app]
+        HOST[Krate host app]
         FRONT[Marketplace frontend app]
         UPDATE[Background updater]
         POLICY[(Policy DB)]
@@ -243,14 +243,14 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant Dev as Developer
-    participant CLI as layer36 CLI
+    participant CLI as krate CLI
     participant API as Marketplace API
     participant S as Signing service
     participant L as Transparency log
     participant S3 as Object store
     participant DB as Postgres
 
-    Dev->>CLI: layer36 publish
+    Dev->>CLI: krate publish
     CLI->>CLI: build + package .l36app
     CLI->>CLI: sign with dev keypair
     CLI->>API: upload bundle + manifest
@@ -316,11 +316,11 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     subgraph Runtime[Runtime additions]
-        BUNDLE[layer36-bundle]
-        SIGN[layer36-sign]
-        UPDATE[layer36-update]
-        IDENT[layer36-identity]
-        SYNC[layer36-sync]
+        BUNDLE[krate-bundle]
+        SIGN[krate-sign]
+        UPDATE[krate-update]
+        IDENT[krate-identity]
+        SYNC[krate-sync]
     end
 
     subgraph Server[Server-side, new]
@@ -425,7 +425,7 @@ Each item frozen for Phase 6 unless noted. ADR references in §27.
 
 ### 7.7 Credential format: **W3C Verifiable Credentials (VC) with JWT encoding**
 
-- Standards-aligned so Layer36 identities interoperate with OpenID-Connect bridges if/when added.
+- Standards-aligned so Krate identities interoperate with OpenID-Connect bridges if/when added.
 - JWT encoding for ubiquitous tool support.
 - **Recorded:** ADR-0052.
 
@@ -471,7 +471,7 @@ Each item frozen for Phase 6 unless noted. ADR references in §27.
 ### 7.13 Age rating system: **self-declared + verified categories**
 
 - Developers self-declare age rating per submission (all ages / 12+ / 17+).
-- Layer36 moderation verifies sensitive categories.
+- Krate moderation verifies sensitive categories.
 - Aligns with IARC (International Age Rating Coalition) where applicable.
 - **Recorded:** ADR-0058.
 
@@ -529,7 +529,7 @@ id          = "com.example.notes"
 name        = "Notes"
 version     = "1.2.0"
 entry       = "code.wasm"
-world       = "layer36:app/full@0.4.0"
+world       = "krate:app/full@0.4.0"
 runtime-min = "0.6.0"
 
 [metadata]
@@ -577,14 +577,14 @@ migrations = [
 [dependencies]
 # Declared runtime dependencies, for transparency
 # Not used by runtime; informational for marketplace display
-"layer36-core" = "0.6.0"
+"krate-core" = "0.6.0"
 ```
 
 ### 8.4 Versioning
 
 - `app.version` follows semver.
 - Marketplace enforces monotonically increasing versions per app.
-- Downgrades not allowed through normal update channel (only via explicit `layer36 rollback` by user).
+- Downgrades not allowed through normal update channel (only via explicit `krate rollback` by user).
 
 ### 8.5 Bundle size limits
 
@@ -597,7 +597,7 @@ migrations = [
 - Deterministic file ordering.
 - Timestamps set to manifest-declared release date.
 - Rust toolchain version pinned in `rust-toolchain.toml`.
-- `layer36 build --reproducible` produces identical output for identical input.
+- `krate build --reproducible` produces identical output for identical input.
 - Attestation file records build environment.
 
 ---
@@ -608,7 +608,7 @@ migrations = [
 
 ```mermaid
 flowchart LR
-    GEN[Developer generates Ed25519 keypair] --> EN[Enrollment via layer36 auth]
+    GEN[Developer generates Ed25519 keypair] --> EN[Enrollment via krate auth]
     EN --> VER[Email or DID verification]
     VER --> ACT[Active dev key]
     ACT --> ROTATE[Rotation]
@@ -627,7 +627,7 @@ flowchart LR
   "dev_key_id": "did:key:z6Mk...",
   "dev_signature": "base64:...",
   "marketplace_countersignature": "base64:...",
-  "transparency_log_entry": "https://transparency.layer36.dev/log/8273",
+  "transparency_log_entry": "https://transparency.krate.dev/log/8273",
   "issued_at": "2026-11-03T12:34:56Z"
 }
 ```
@@ -657,7 +657,7 @@ Revocation lists are transparency-logged too.
 
 ### 9.6 Trusted root
 
-The marketplace's signing key is the trust root for Layer36 v1.0. It's stored in a hardware security module (HSM) managed by the Layer36 team. Rotation procedure documented; emergency rotation rehearsed before Phase 6 exit.
+The marketplace's signing key is the trust root for Krate v1.0. It's stored in a hardware security module (HSM) managed by the Krate team. Rotation procedure documented; emergency rotation rehearsed before Phase 6 exit.
 
 ---
 
@@ -715,7 +715,7 @@ Further back than N-2 → fall back to full download.
 | `marketplace-worker` | Async processing (publishing, delta computation) | Rust + Tokio queues |
 | `marketplace-signing` | Countersignature, HSM access | Rust + isolated service |
 | `marketplace-transparency-log` | Rekor-style log | Rust + existing Sigstore crates where possible |
-| `marketplace-moderation` | Moderator dashboard, queue | Rust + HTML or Layer36 app |
+| `marketplace-moderation` | Moderator dashboard, queue | Rust + HTML or Krate app |
 | `marketplace-identity` | DID resolver, identity helpers | Rust |
 
 ### 11.2 Data model (key tables)
@@ -843,13 +843,13 @@ Implemented via Cloudflare at edge plus application-level enforcement.
 
 ---
 
-## 12. Marketplace Frontend (Itself a Layer36 App)
+## 12. Marketplace Frontend (Itself a Krate App)
 
-### 12.1 Why itself a Layer36 app
+### 12.1 Why itself a Krate app
 
-The marketplace frontend is the highest-profile Layer36 app in existence. If it isn't *itself* built on Layer36, we've lost the argument for the platform before we make it.
+The marketplace frontend is the highest-profile Krate app in existence. If it isn't *itself* built on Krate, we've lost the argument for the platform before we make it.
 
-Also: if the frontend is a Layer36 app, it benefits from every Phase 3–5 improvement automatically — native feel on each host, offline capability, cross-device state sync for the user's install history.
+Also: if the frontend is a Krate app, it benefits from every Phase 3–5 improvement automatically — native feel on each host, offline capability, cross-device state sync for the user's install history.
 
 ### 12.2 Features (v1)
 
@@ -871,7 +871,7 @@ Also: if the frontend is a Layer36 app, it benefits from every Phase 3–5 impro
 
 ### 12.4 LOC budget
 
-~5,000 LOC of Rust. Larger than `layer36-notes` but deliberately bounded so it remains understandable and portable. If we can't build the marketplace in 5k LOC of Layer36, the platform is too hard to build on.
+~5,000 LOC of Rust. Larger than `krate-notes` but deliberately bounded so it remains understandable and portable. If we can't build the marketplace in 5k LOC of Krate, the platform is too hard to build on.
 
 ### 12.5 Language
 
@@ -907,7 +907,7 @@ Categories are editorial. Developers pick 1–2 at submission time; moderation c
 
 ### 13.3 Featured content
 
-- Weekly editorial picks, chosen by Layer36 team.
+- Weekly editorial picks, chosen by Krate team.
 - No paid promotion ever in v1.
 - Featured section labeled explicitly as editorial.
 
@@ -973,27 +973,27 @@ flowchart TD
 
 ---
 
-## 15. Identity: DIDs and `layer36:identity`
+## 15. Identity: DIDs and `krate:identity`
 
 ### 15.1 Design principles
 
-- **User owns their identity.** Not Layer36. Not the marketplace.
+- **User owns their identity.** Not Krate. Not the marketplace.
 - **Self-sovereign.** Works without any central server.
 - **Portable.** Users carry identity between devices.
 - **Pseudonymous by default.** Real name optional.
 - **Upgradeable.** v1 uses `did:key`; future methods slot in without breaking apps.
 
-### 15.2 What a Layer36 identity is
+### 15.2 What a Krate identity is
 
 Technically: an Ed25519 keypair. The public key is the identity; the private key is held on device in the OS secure store.
 
 For user: an avatar, a display name (optional), and a set of devices.
 
-### 15.3 `layer36:identity@0.1.0`
+### 15.3 `krate:identity@0.1.0`
 
 ```wit
-// wit/layer36/identity.wit
-package layer36:identity@0.1.0;
+// wit/krate/identity.wit
+package krate:identity@0.1.0;
 
 interface types {
     record identity-id {
@@ -1049,7 +1049,7 @@ Note what's absent: no `login`, no `logout`, no `register`. Identity is managed 
 
 ```rust
 // Typical app authenticating a user
-use layer36::identity::{current, sign};
+use krate::identity::{current, sign};
 
 fn sign_in_to_my_server() -> Result<AuthToken> {
     let profile = current::profile()?;
@@ -1079,8 +1079,8 @@ Lose all devices + lose recovery code = identity lost. Documented clearly at cre
 ### 15.7 Identity creation flow
 
 ```
-1. User opens Layer36 host app for first time.
-2. Host shows: "Welcome. Create an identity to use Layer36 apps."
+1. User opens Krate host app for first time.
+2. Host shows: "Welcome. Create an identity to use Krate apps."
 3. User taps "Create".
 4. Runtime generates Ed25519 keypair.
 5. User picks display name (optional, max 50 chars, no uniqueness constraint).
@@ -1324,7 +1324,7 @@ Sized for 16 weeks calendar, ~70–90 engineering days. This phase has significa
 
 - `crates/bundle/` implementation.
 - `crates/sign/` dev-side signing.
-- `layer36 build` updated to produce signed bundles.
+- `krate build` updated to produce signed bundles.
 - Reproducible build mode.
 
 ### Weeks 5–6: Marketplace backend skeleton
@@ -1349,7 +1349,7 @@ Sized for 16 weeks calendar, ~70–90 engineering days. This phase has significa
 
 ### Weeks 9–10: Identity + DIDs
 
-- `layer36:identity` UAPI.
+- `krate:identity` UAPI.
 - Per-host secure key storage (keychain/keystore/TPM).
 - DID creation flow in host app.
 - Cross-device sign-in (QR + attestation).
@@ -1370,7 +1370,7 @@ Sized for 16 weeks calendar, ~70–90 engineering days. This phase has significa
 
 ### Week 13: Marketplace frontend app
 
-- Start building `apps/marketplace` as a Layer36 app.
+- Start building `apps/marketplace` as a Krate app.
 - Home, search, detail pages.
 - Install/update integration.
 
@@ -1382,7 +1382,7 @@ Sized for 16 weeks calendar, ~70–90 engineering days. This phase has significa
 
 ### Week 15: Moderation tooling + age rating
 
-- Moderation dashboard (web or Layer36 app).
+- Moderation dashboard (web or Krate app).
 - Queue + workflow.
 - Age rating flows.
 - Legal review of content policy.
@@ -1432,7 +1432,7 @@ Matches Build Plan §7.7.
 **Estimate:** 3 days.
 **Branch:** `p6-sign-01-enrollment`.
 **Acceptance:**
-- `layer36 auth` flow: generate keypair, verify email/DID, enroll with marketplace.
+- `krate auth` flow: generate keypair, verify email/DID, enroll with marketplace.
 - Keys stored in OS keychain.
 
 ### P6-SIGN-02 — Signature verification in runtime
@@ -1530,7 +1530,7 @@ Matches Build Plan §7.7.
 - Fetches + caches DID documents.
 - Handles rotation.
 
-### P6-ID-03 — `layer36:identity` UAPI
+### P6-ID-03 — `krate:identity` UAPI
 
 **Estimate:** 3 days.
 **Branch:** `p6-id-03-uapi`.
@@ -1560,7 +1560,7 @@ Matches Build Plan §7.7.
 **Estimate:** 5 days.
 **Branch:** `p6-upd-01-service`.
 **Acceptance:**
-- Per-OS service installed with Layer36 host.
+- Per-OS service installed with Krate host.
 - Checks, downloads, applies updates.
 - Respects trust rules.
 
@@ -1937,7 +1937,7 @@ Must sustain without error for 30 minutes.
 
 | Metric | Target | Measured how |
 |---|---|---|
-| Publish (`layer36 publish`) end to end | < 5 min (5 MB bundle) | Timer |
+| Publish (`krate publish`) end to end | < 5 min (5 MB bundle) | Timer |
 | Install (10 MB bundle, good connection) | < 30 s | Timer |
 | Delta apply (1 MB patch) | < 500 ms | Timer |
 | Marketplace API p99 latency | < 200 ms | Prometheus |
@@ -1992,7 +1992,7 @@ Any one failing → bundle rejected.
 
 ### 25.5 Incident response
 
-- Security mailbox (`security@layer36.dev`) monitored during business hours.
+- Security mailbox (`security@krate.dev`) monitored during business hours.
 - PGP key published.
 - Response targets: ack 24h, initial assessment 72h, disclosed within 90 days per §11 of Phase 0's SECURITY.md.
 
@@ -2010,7 +2010,7 @@ Any one failing → bundle rejected.
 ### 26.2 Developer-facing
 
 - `docs/book/src/publishing/first-publish.md` — tutorial.
-- `docs/book/src/publishing/versioning.md` — semver in Layer36 context.
+- `docs/book/src/publishing/versioning.md` — semver in Krate context.
 - `docs/book/src/publishing/dev-portal.md` — managing your apps.
 - `docs/book/src/publishing/moderation.md` — what gets reviewed, how, SLAs.
 
@@ -2099,7 +2099,7 @@ Further ADRs as decisions surface.
 ### 28.4 Tax & corporate
 
 - Deferred most; note: accepting developer uploads may trigger obligations in some jurisdictions.
-- Defer IP ownership clarification until this phase: confirm Layer36 entity owns the IP, founder's employer has no claim.
+- Defer IP ownership clarification until this phase: confirm Krate entity owns the IP, founder's employer has no claim.
 
 ### 28.5 Accessibility law
 
@@ -2132,7 +2132,7 @@ Retain counsel by Week 1. Expected spend: $15–30k across the phase. Budget for
 - [ ] `.l36app` spec published.
 - [ ] Reproducible builds verified.
 - [ ] Canonical hash deterministic across platforms.
-- [ ] `layer36 build` produces signed bundles.
+- [ ] `krate build` produces signed bundles.
 
 ### Signing + transparency
 - [ ] Dev key enrollment flow works.
@@ -2153,14 +2153,14 @@ Retain counsel by Week 1. Expected spend: $15–30k across the phase. Budget for
 - [ ] 99.9% uptime target with monitoring.
 
 ### Marketplace frontend
-- [ ] `apps/marketplace` built as Layer36 app.
+- [ ] `apps/marketplace` built as Krate app.
 - [ ] Runs on all 5 platforms.
 - [ ] Self-hosts: distributes itself via marketplace.
 - [ ] Accessibility WCAG 2.1 AA.
 
 ### Identity
 - [ ] `did:key` + `did:web` implemented.
-- [ ] `layer36:identity` UAPI on all hosts.
+- [ ] `krate:identity` UAPI on all hosts.
 - [ ] Identity creation < 60 s.
 - [ ] Cross-device sign-in < 60 s.
 - [ ] Recovery code flow tested.
@@ -2298,7 +2298,7 @@ Before Phase 7 kickoff:
 
 ### Appendix A — Complete UAPI index at end of Phase 6
 
-Modules in WIT package `layer36:*`:
+Modules in WIT package `krate:*`:
 
 ```
 io/{stdio,log}                @0.1.0   (Phase 2)
@@ -2353,33 +2353,33 @@ storage.sql:app, storage.kv:app     # usually auto-granted
 
 ```bash
 # Authentication
-layer36 auth enroll             # generate dev keypair + enroll
-layer36 auth rotate             # rotate dev keypair
-layer36 auth revoke             # revoke a key
+krate auth enroll             # generate dev keypair + enroll
+krate auth rotate             # rotate dev keypair
+krate auth revoke             # revoke a key
 
 # Publishing
-layer36 publish                 # build + sign + upload
-layer36 publish --dry-run       # validate without upload
-layer36 versions                # list versions of current app
-layer36 rollback <version>      # revert user's install
+krate publish                 # build + sign + upload
+krate publish --dry-run       # validate without upload
+krate versions                # list versions of current app
+krate rollback <version>      # revert user's install
 
 # Identity
-layer36 identity create         # create user identity
-layer36 identity info           # show current identity
-layer36 identity export         # export recovery code
-layer36 identity add-device     # start device pairing (shows QR)
-layer36 identity pair <qr>      # complete pairing
+krate identity create         # create user identity
+krate identity info           # show current identity
+krate identity export         # export recovery code
+krate identity add-device     # start device pairing (shows QR)
+krate identity pair <qr>      # complete pairing
 
 # Marketplace
-layer36 marketplace install <app-id>
-layer36 marketplace uninstall <app-id>
-layer36 marketplace list        # list installed apps
-layer36 marketplace update      # check + apply updates
+krate marketplace install <app-id>
+krate marketplace uninstall <app-id>
+krate marketplace list        # list installed apps
+krate marketplace update      # check + apply updates
 
 # Caps
-layer36 cap list                # caps granted per app
-layer36 cap revoke <app> <cap>
-layer36 cap audit               # show audit log
+krate cap list                # caps granted per app
+krate cap revoke <app> <cap>
+krate cap audit               # show audit log
 ```
 
 ### Appendix D — Retrospective template
@@ -2463,7 +2463,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 | # | Criterion | Status |
 |---|-----------|--------|
 | 1 | `.l36app` bundle format frozen; spec published | Not done |
-| 2 | Developer can `layer36 publish` and reach marketplace in < 5 min | Not done |
+| 2 | Developer can `krate publish` and reach marketplace in < 5 min | Not done |
 | 3 | User can install a 10 MB app from marketplace in < 30 s | Not done |
 | 4 | Delta update of a 1 MB patch applies in < 500 ms | Not done |
 | 5 | New user completes identity creation + sign-in on 2 devices in < 60 s | Not done |
@@ -2524,8 +2524,8 @@ _Nothing yet. Add time-stamped notes as work progresses: signing infrastructure 
 
 ## Closing
 
-Phase 6 is the phase that turns a platform into infrastructure. Before Phase 6, developers could build Layer36 apps, but only if they knew the person who built Layer36; every install was by side-channel, every update was by email. After Phase 6, a developer in one country publishes an app, a user in another country discovers it, and the platform mediates everything between them — identity, integrity, updates, permissions — without either person having to trust the other directly, and without the platform violating either party's trust.
+Phase 6 is the phase that turns a platform into infrastructure. Before Phase 6, developers could build Krate apps, but only if they knew the person who built Krate; every install was by side-channel, every update was by email. After Phase 6, a developer in one country publishes an app, a user in another country discovers it, and the platform mediates everything between them — identity, integrity, updates, permissions — without either person having to trust the other directly, and without the platform violating either party's trust.
 
-That mediation is the hardest software engineering problem in this plan. Phases 1–5 were about doing things; Phase 6 is about standing between people while doing them. Cryptography, law, moderation, operations — every one of these is a domain where mistakes are public, costly, and reputationally permanent. Four months is barely enough. Spend it well. Hire counsel in Week 1. Stand up the transparency log early. Keep the marketplace frontend simple. Don't add features. Don't add payments. Don't add plugins. Ship what this document describes and nothing else, and in Phase 7, Layer36 becomes the thing it was always meant to be.
+That mediation is the hardest software engineering problem in this plan. Phases 1–5 were about doing things; Phase 6 is about standing between people while doing them. Cryptography, law, moderation, operations — every one of these is a domain where mistakes are public, costly, and reputationally permanent. Four months is barely enough. Spend it well. Hire counsel in Week 1. Stand up the transparency log early. Keep the marketplace frontend simple. Don't add features. Don't add payments. Don't add plugins. Ship what this document describes and nothing else, and in Phase 7, Krate becomes the thing it was always meant to be.
 
 — end of document —

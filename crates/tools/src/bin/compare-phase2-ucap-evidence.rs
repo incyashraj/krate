@@ -6,12 +6,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 
 const REQUIRED_STEPS: &[&str] = &[
-    "Runtime UCap deny matrix (`cargo test -p layer36-runtime uapi::tests::non_default_capabilities_are_denied_by_default_policy -- --exact`)",
-    "Dispatcher deny-before-adapter matrix (`cargo test -p layer36-runtime uapi_dispatch::tests::dispatcher_denies_all_non_default_boundaries_before_adapter -- --exact`)",
-    "Cat denies missing fs grant (`cargo test -p layer36-cli --test cli configured_layer36_cat_component_denies_missing_file_grant -- --exact`)",
-    "Curl denies missing net grant (`cargo test -p layer36-cli --test cli configured_layer36_curl_component_denies_missing_net_grant -- --exact`)",
-    "Manifest denies missing required cap (`cargo test -p layer36-cli --test cli run_with_manifest_denies_missing_required_capability -- --exact`)",
-    "Curl denial parity across Rust Go TS (`cargo test -p layer36-cli --test cli language_variants_curl_permission_denied_matches_rust_go_ts -- --exact`)",
+    "Runtime UCap deny matrix (`cargo test -p krate-runtime uapi::tests::non_default_capabilities_are_denied_by_default_policy -- --exact`)",
+    "Dispatcher deny-before-adapter matrix (`cargo test -p krate-runtime uapi_dispatch::tests::dispatcher_denies_all_non_default_boundaries_before_adapter -- --exact`)",
+    "Cat denies missing fs grant (`cargo test -p krate-cli --test cli configured_krate_cat_component_denies_missing_file_grant -- --exact`)",
+    "Curl denies missing net grant (`cargo test -p krate-cli --test cli configured_krate_curl_component_denies_missing_net_grant -- --exact`)",
+    "Manifest denies missing required cap (`cargo test -p krate-cli --test cli run_with_manifest_denies_missing_required_capability -- --exact`)",
+    "Curl denial parity across Rust Go TS (`cargo test -p krate-cli --test cli language_variants_curl_permission_denied_matches_rust_go_ts -- --exact`)",
 ];
 
 fn main() -> Result<()> {
@@ -203,7 +203,7 @@ fn parse_step_table(source: &str) -> Result<BTreeMap<String, StepRow>> {
 }
 
 fn compare_reports(reports: &[HostReport]) -> Result<()> {
-    println!("Layer36 Phase 2 UCap evidence comparison");
+    println!("Krate Phase 2 UCap evidence comparison");
     for report in reports {
         println!(
             "- {}: {} ({})",
@@ -307,12 +307,12 @@ mod tests {
 
 | Step | Exit code | Result |
 |---|---:|---|
-| Runtime UCap deny matrix (`cargo test -p layer36-runtime uapi::tests::non_default_capabilities_are_denied_by_default_policy -- --exact`) | {code} | {result} |
-| Dispatcher deny-before-adapter matrix (`cargo test -p layer36-runtime uapi_dispatch::tests::dispatcher_denies_all_non_default_boundaries_before_adapter -- --exact`) | {code} | {result} |
-| Cat denies missing fs grant (`cargo test -p layer36-cli --test cli configured_layer36_cat_component_denies_missing_file_grant -- --exact`) | {code} | {result} |
-| Curl denies missing net grant (`cargo test -p layer36-cli --test cli configured_layer36_curl_component_denies_missing_net_grant -- --exact`) | {code} | {result} |
-| Manifest denies missing required cap (`cargo test -p layer36-cli --test cli run_with_manifest_denies_missing_required_capability -- --exact`) | {code} | {result} |
-| Curl denial parity across Rust Go TS (`cargo test -p layer36-cli --test cli language_variants_curl_permission_denied_matches_rust_go_ts -- --exact`) | {code} | {result} |
+| Runtime UCap deny matrix (`cargo test -p krate-runtime uapi::tests::non_default_capabilities_are_denied_by_default_policy -- --exact`) | {code} | {result} |
+| Dispatcher deny-before-adapter matrix (`cargo test -p krate-runtime uapi_dispatch::tests::dispatcher_denies_all_non_default_boundaries_before_adapter -- --exact`) | {code} | {result} |
+| Cat denies missing fs grant (`cargo test -p krate-cli --test cli configured_krate_cat_component_denies_missing_file_grant -- --exact`) | {code} | {result} |
+| Curl denies missing net grant (`cargo test -p krate-cli --test cli configured_krate_curl_component_denies_missing_net_grant -- --exact`) | {code} | {result} |
+| Manifest denies missing required cap (`cargo test -p krate-cli --test cli run_with_manifest_denies_missing_required_capability -- --exact`) | {code} | {result} |
+| Curl denial parity across Rust Go TS (`cargo test -p krate-cli --test cli language_variants_curl_permission_denied_matches_rust_go_ts -- --exact`) | {code} | {result} |
 "#
         )
     }

@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 
 const ADAPTER_BOUNDARY_STEP: &str = "Adapter boundary check (`scripts/check-adapter-boundary.sh`)";
 const SHARED_BEHAVIOR_STEP: &str =
-    "Shared adapter behavior tests (`cargo test -p layer36-adapter-common`)";
+    "Shared adapter behavior tests (`cargo test -p krate-adapter-common`)";
 
 fn main() -> Result<()> {
     let config = Config::parse(env::args().skip(1))?;
@@ -85,9 +85,9 @@ fn next_path(args: &mut impl Iterator<Item = String>, flag: &str) -> Result<Path
 
 fn native_adapter_step(label: &str) -> Result<&'static str> {
     match label {
-        "linux" => Ok("Native adapter crate tests (`cargo test -p layer36-adapter-linux`)"),
-        "macos" => Ok("Native adapter crate tests (`cargo test -p layer36-adapter-macos`)"),
-        "windows" => Ok("Native adapter crate tests (`cargo test -p layer36-adapter-windows`)"),
+        "linux" => Ok("Native adapter crate tests (`cargo test -p krate-adapter-linux`)"),
+        "macos" => Ok("Native adapter crate tests (`cargo test -p krate-adapter-macos`)"),
+        "windows" => Ok("Native adapter crate tests (`cargo test -p krate-adapter-windows`)"),
         other => bail!("unsupported report label `{other}`"),
     }
 }
@@ -211,7 +211,7 @@ fn parse_step_table(source: &str) -> Result<BTreeMap<String, StepRow>> {
 }
 
 fn compare_reports(reports: &[HostReport]) -> Result<()> {
-    println!("Layer36 Phase 2 adapter evidence comparison");
+    println!("Krate Phase 2 adapter evidence comparison");
     for report in reports {
         println!(
             "- {}: {} ({})",
@@ -321,7 +321,7 @@ mod tests {
 | Step | Exit code | Result |
 |---|---:|---|
 | Adapter boundary check (`scripts/check-adapter-boundary.sh`) | {code} | {result} |
-| Shared adapter behavior tests (`cargo test -p layer36-adapter-common`) | {code} | {result} |
+| Shared adapter behavior tests (`cargo test -p krate-adapter-common`) | {code} | {result} |
 | {native_step} | {code} | {result} |
 "#
         )

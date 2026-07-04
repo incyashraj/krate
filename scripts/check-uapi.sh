@@ -15,18 +15,18 @@ else
 fi
 
 for package_dir in \
-  "wit/layer36/phase2" \
-  "wit/layer36/phase2/deps/io" \
-  "wit/layer36/phase2/deps/fs" \
-  "wit/layer36/phase2/deps/net" \
-  "wit/layer36/phase2/deps/time" \
-  "wit/layer36/phase2/deps/locale"
+  "wit/krate/phase2" \
+  "wit/krate/phase2/deps/io" \
+  "wit/krate/phase2/deps/fs" \
+  "wit/krate/phase2/deps/net" \
+  "wit/krate/phase2/deps/time" \
+  "wit/krate/phase2/deps/locale"
 do
   "$WIT_TOOL" component wit "$package_dir" >/dev/null
 done
 
-if [ "${LAYER36_OFFLINE:-}" = "1" ]; then
-  cargo run -p layer36-tools --bin check-uapi --offline
+if [ "${KRATE_OFFLINE:-}" = "1" ]; then
+  cargo run -p krate-tools --bin check-uapi --offline
 else
-  cargo run -p layer36-tools --bin check-uapi
+  cargo run -p krate-tools --bin check-uapi
 fi

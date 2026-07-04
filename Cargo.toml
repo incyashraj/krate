@@ -14,10 +14,10 @@ members = [
     "crates/tools",
 ]
 exclude = [
-    "apps/layer36-curl",
-    "apps/layer36-cat",
-    "apps/layer36-clock",
-    "apps/layer36-hello-gui",
+    "apps/krate-curl",
+    "apps/krate-cat",
+    "apps/krate-clock",
+    "apps/krate-hello-gui",
     "test/integration/hello-world",
     "test/integration/phase2-smoke",
     "test/integration/print-loop",

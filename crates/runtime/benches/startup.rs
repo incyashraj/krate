@@ -1,8 +1,8 @@
 use std::{hint::black_box, path::PathBuf, time::Duration};
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use layer36_policy::SessionPolicy;
-use layer36_runtime::{Config, Runtime};
+use krate_policy::SessionPolicy;
+use krate_runtime::{Config, Runtime};
 use wasmtime::{component::Component, Config as WasmtimeConfig, Engine};
 
 const PRINT_LOOP_CALLS: u64 = 1_000;
@@ -10,11 +10,11 @@ const PHASE2_SMOKE_INPUT: &str = "phase2-smoke-input.txt";
 
 fn phase1_runtime_benches(c: &mut Criterion) {
     let hello_wasm = wasm_path(
-        "LAYER36_HELLO_WASM",
+        "KRATE_HELLO_WASM",
         "test/integration/hello-world/target/wasm32-wasip1/release/hello_world.wasm",
     );
     let print_loop_wasm = wasm_path(
-        "LAYER36_PRINT_LOOP_WASM",
+        "KRATE_PRINT_LOOP_WASM",
         "test/integration/print-loop/target/wasm32-wasip1/release/print_loop.wasm",
     );
 
@@ -79,12 +79,12 @@ fn phase1_runtime_benches(c: &mut Criterion) {
 
 fn phase2_runtime_benches(c: &mut Criterion) {
     let phase2_smoke_wasm = wasm_path(
-        "LAYER36_PHASE2_SMOKE_WASM",
+        "KRATE_PHASE2_SMOKE_WASM",
         "test/integration/phase2-smoke/target/wasm32-wasip1/release/phase2_smoke.wasm",
     );
     let clock_wasm = wasm_path(
-        "LAYER36_CLOCK_WASM",
-        "apps/layer36-clock/target/wasm32-wasip1/release/layer36_clock.wasm",
+        "KRATE_CLOCK_WASM",
+        "apps/krate-clock/target/wasm32-wasip1/release/krate_clock.wasm",
     );
 
     let phase2_smoke = read_wasm(&phase2_smoke_wasm);
@@ -128,15 +128,15 @@ fn phase2_runtime_benches(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("loaded_run_layer36_clock_fixed_time", |b| {
+    group.bench_function("loaded_run_krate_clock_fixed_time", |b| {
         let runtime = Runtime::new(&clock_config).expect("runtime should initialize");
         let component = runtime
             .load_component(&clock)
-            .expect("layer36-clock component should compile");
+            .expect("krate-clock component should compile");
         b.iter(|| {
             runtime
                 .run_loaded_silent(black_box(&component), black_box(&clock_config))
-                .expect("layer36-clock component should run")
+                .expect("krate-clock component should run")
         });
     });
 
@@ -169,7 +169,7 @@ fn ensure_phase2_smoke_input() -> Option<Vec<u8>> {
     let path = PathBuf::from(PHASE2_SMOKE_INPUT);
     let previous = std::fs::read(&path).ok();
 
-    std::fs::write(path, b"Layer36 Phase 2 input\n")
+    std::fs::write(path, b"Krate Phase 2 input\n")
         .expect("Phase 2 smoke benchmark input should be writable");
 
     previous
@@ -198,7 +198,7 @@ fn read_wasm(path: &PathBuf) -> Vec<u8> {
     std::fs::read(path).unwrap_or_else(|err| {
         panic!(
             "failed to read {}: {err}. Build benchmark components first, or set the matching \
-             LAYER36_*_WASM environment variable.",
+             KRATE_*_WASM environment variable.",
             path.display()
         )
     })

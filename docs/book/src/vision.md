@@ -1,12 +1,12 @@
 # Vision
 
-Layer36 exists because app portability is still broken.
+Krate exists because app portability is still broken.
 
 A text file can move from one device to another. A photo can move. A web page
 can move. A serious native app usually cannot. It has to be rebuilt for each
 platform, then tested, packaged, signed, distributed, and maintained again.
 
-Layer36 is a plan to put one runtime layer between apps and operating systems.
+Krate is a plan to put one runtime layer between apps and operating systems.
 
 ## The 6 x 6 Problem
 
@@ -21,7 +21,7 @@ The dream is a full matrix:
 | macOS app | Windows, Linux, ChromeOS, Android, macOS, iOS |
 | iOS app | Windows, Linux, ChromeOS, Android, macOS, iOS |
 
-Layer36 does not magically run every existing native app today. The path is more
+Krate does not magically run every existing native app today. The path is more
 practical: define a new portable app target that can become good enough for new
 apps, then build bridges and tooling over time.
 
@@ -35,12 +35,12 @@ The same pattern has worked before:
 | Many servers | JVM and .NET bytecode | One backend app can run on many OSes. |
 | Many browsers | HTML, CSS, and JS | One site can reach almost every device. |
 
-Layer36 tries to bring that pattern to native apps:
+Krate tries to bring that pattern to native apps:
 
 1. WebAssembly is the portable program format.
 2. UAPI is the standard app API.
 3. UCap is the permission model.
-4. Host adapters translate Layer36 calls into native OS calls.
+4. Host adapters translate Krate calls into native OS calls.
 5. A bundle format and marketplace make apps installable.
 
 ## Why This Might Work Now
@@ -53,7 +53,7 @@ Layer36 tries to bring that pattern to native apps:
 
 ## What Success Looks Like
 
-At v1.0, a developer should be able to build one Layer36 app and ship it to the
+At v1.0, a developer should be able to build one Krate app and ship it to the
 main desktop and mobile platforms with platform specific adapters doing the
 native work.
 
@@ -67,4 +67,4 @@ The hard requirements are:
 | APIs | Files, network, time, locale, UI, graphics, sensors, identity |
 | Permissions | Clear grants instead of silent host access |
 | Developer flow | New project to running app in about a minute |
-| Real proof | ParkSure or another real product running on Layer36 |
+| Real proof | ParkSure or another real product running on Krate |

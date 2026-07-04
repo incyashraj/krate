@@ -1,11 +1,11 @@
 # Phase 3: UI + Graphics
 
-**Status:** About half done — real windows open from one portable artifact on all three desktop OSes (human-verified native widgets and click round trip on macOS; CI-proven winit windows with the first drawn-widget pass on Linux and Windows); the agent-embedding track (embed API, `layer36 run --json`, MCP server) is complete. Remaining: the vello renderer, richer widgets, text input, accessibility, and `layer36-notes`.
+**Status:** About half done — real windows open from one portable artifact on all three desktop OSes (human-verified native widgets and click round trip on macOS; CI-proven winit windows with the first drawn-widget pass on Linux and Windows); the agent-embedding track (embed API, `krate run --json`, MCP server) is complete. Remaining: the vello renderer, richer widgets, text input, accessibility, and `krate-notes`.
 **Estimate:** est. 6 to 10 weeks
 **Goal:** Run one windowed app on Windows, macOS, and Linux.
 
 Phase 3 has started with the contract layer. That means we are defining what a
-desktop app is allowed to ask Layer36 for before we build the host adapters and
+desktop app is allowed to ask Krate for before we build the host adapters and
 sample app behind it.
 
 Phase 2 is still waiting on the outside developer review before we call it
@@ -21,17 +21,17 @@ Phase 3 adds the first visual app surface:
 - 2D drawing
 - a small notes app
 
-The target is not a web view hidden in a desktop shell. The target is a Layer36
+The target is not a web view hidden in a desktop shell. The target is a Krate
 app that feels close to native on each desktop host.
 
 ## Current Slice
 
 The first Phase 3 slice is now in the repo:
 
-- `layer36:app@0.2.0` with a `gui` world
-- `layer36:ui@0.1.0` for windows, widget trees, events, dialogs, clipboard, and menus
-- `layer36:gfx@0.1.0` for 2D canvas and a small future 3D surface
-- `layer36:audio@0.1.0` for playback and capture shape
+- `krate:app@0.2.0` with a `gui` world
+- `krate:ui@0.1.0` for windows, widget trees, events, dialogs, clipboard, and menus
+- `krate:gfx@0.1.0` for 2D canvas and a small future 3D surface
+- `krate:audio@0.1.0` for playback and capture shape
 - `scripts/check-phase3-uapi.sh` so CI can reject broken WIT before runtime code depends on it
 - manifest and policy support for the first Phase 3 permission names
 - `adapter-common::ui`, an in-memory draft window registry for IDs, title and size validation, lifecycle state, redraw requests, and events
@@ -40,7 +40,7 @@ The first Phase 3 slice is now in the repo:
 - `adapter-common::ui::UiAdapter`, the shared trait that native UI adapters will implement
 - `runtime::phase3_ui`, a runtime dispatcher scaffold that checks UCap before calling the shared UI adapter
 - draft widget-tree dispatch for setting a root widget, upserting nodes, removing nodes, moving focus, and inspecting widget state
-- `layer36-layout`, the first Taffy-backed layout wrapper, which turns the shared widget tree into stable rectangles by widget ID
+- `krate-layout`, the first Taffy-backed layout wrapper, which turns the shared widget tree into stable rectangles by widget ID
 - runtime layout dispatch, so the Phase 3 dispatcher can compute layout for a stored draft widget tree after the same UI capability check
 - generated layout tests across 100 tree shapes, plus a 1k/10k-node Criterion benchmark target
 - a prepared repeated-layout path, so future event loops can reuse the same layout tree instead of rebuilding it each frame
@@ -52,9 +52,9 @@ The first Phase 3 slice is now in the repo:
 - draft theme and scale event routing, so dark mode and DPI changes have a stable path before native windows land
 - headless draft UI adapter entry points in the macOS, Linux, and Windows adapter crates, each with a blank-window smoke test
 - active and planned window backend info for each host, with AppKit planned for macOS and winit planned for Linux and Windows
-- native window handle handoff in `WindowAdapter`, so a real host window can be bound to a stable Layer36 `WindowId`
+- native window handle handoff in `WindowAdapter`, so a real host window can be bound to a stable Krate `WindowId`
 - the first macOS AppKit handoff method, ready for the native AppKit window prototype while the default adapter remains headless draft
-- an opt-in macOS `AppKitWindowBackend` that creates an owned `NSWindow` on the main thread, attaches its native handle to a Layer36 window id, and shows it through the shared window path
+- an opt-in macOS `AppKitWindowBackend` that creates an owned `NSWindow` on the main thread, attaches its native handle to a Krate window id, and shows it through the shared window path
 - AppKit event bridge targets for close, resize, focus, and display scale, plus a native window snapshot helper for the coming delegate wiring
 - `AppKitWindowSession`, a small state object that owns the native window, remembers the last snapshot, and refreshes changed native state into the shared event queue
 - `AppKitWindowNativeEvent` and `AppKitWindowEventState`, a tested Rust callback surface for the real AppKit delegate to call next

@@ -1,6 +1,6 @@
-# Contributing to Layer36
+# Contributing to Krate
 
-Thanks for your interest. Layer36 is young and every contribution compounds.
+Thanks for your interest. Krate is young and every contribution compounds.
 
 ## Where to start
 

@@ -1,0 +1,31 @@
+[package]
+name = "krate-cat"
+version = "0.1.0-dev"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/incyashraj/layer6x6"
+rust-version = "1.91"
+
+[dependencies]
+krate = { path = "../../crates/bindings-rust" }
+wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "krate:cat"
+
+[package.metadata.component.target]
+path = "../../wit/krate/phase2"
+world = "cli"
+
+[package.metadata.component.target.dependencies]
+"krate:io" = { path = "../../wit/krate/phase2/deps/io" }
+"krate:fs" = { path = "../../wit/krate/phase2/deps/fs" }
+"krate:net" = { path = "../../wit/krate/phase2/deps/net" }
+"krate:time" = { path = "../../wit/krate/phase2/deps/time" }
+"krate:locale" = { path = "../../wit/krate/phase2/deps/locale" }
+
+[profile.release]
+panic = "abort"

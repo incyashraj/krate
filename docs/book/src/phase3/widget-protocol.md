@@ -1,6 +1,6 @@
 # Widget Protocol
 
-Layer36 does not want every desktop app to look like the same painted surface.
+Krate does not want every desktop app to look like the same painted surface.
 It also does not want every app developer to write three different UIs for
 Windows, macOS, and Linux.
 
@@ -9,17 +9,17 @@ adapter decides how to make it feel right on that machine.
 
 ## The Basic Idea
 
-For common controls, Layer36 should use real host widgets. A button should be a
+For common controls, Krate should use real host widgets. A button should be a
 real button. A text field should use the host text system where possible. A menu
 should follow host menu rules.
 
-For surfaces that do not have a good native match, Layer36 draws them itself.
+For surfaces that do not have a good native match, Krate draws them itself.
 That gives apps room for canvas, custom lists, charts, and later richer
 graphics.
 
 ```mermaid
 flowchart LR
-    A["App asks for widgets"] --> B["Layer36 runtime"]
+    A["App asks for widgets"] --> B["Krate runtime"]
     B --> C["Layout and permission checks"]
     C --> D{"Host has a real match?"}
     D -->|yes| E["Native widget"]
@@ -32,13 +32,13 @@ flowchart LR
 
 There are three common ways to build cross platform desktop UI:
 
-| Approach | What it means | Why Layer36 is not using it as the main path |
+| Approach | What it means | Why Krate is not using it as the main path |
 |---|---|---|
 | Draw everything | The framework paints every control itself | Easier to match pixels, but often feels less native |
 | Use only native controls | Every widget is a host widget | Good feel, but too rigid for custom app surfaces |
-| Embed a browser | The app is a web UI in a desktop shell | Useful elsewhere, but not the Layer36 desktop goal |
+| Embed a browser | The app is a web UI in a desktop shell | Useful elsewhere, but not the Krate desktop goal |
 
-Layer36 uses a mixed path. Native where the host has the right control. Drawn
+Krate uses a mixed path. Native where the host has the right control. Drawn
 where the app needs its own surface.
 
 ## Per-Host Lowering In v0.1
@@ -91,12 +91,12 @@ The first set is intentionally small:
 | Menu | App and window commands |
 | Canvas | Custom drawing later |
 
-That is enough to build the first `layer36-notes` app without turning Phase 3
+That is enough to build the first `krate-notes` app without turning Phase 3
 into a full design system.
 
 ## How Events Move
 
-The host creates raw events. Layer36 turns those into stable events that the app
+The host creates raw events. Krate turns those into stable events that the app
 can understand.
 
 ```mermaid
@@ -107,7 +107,7 @@ sequenceDiagram
     participant App
 
     Host->>Adapter: click, key, text, pointer, close
-    Adapter->>Runtime: Layer36 UI event
+    Adapter->>Runtime: Krate UI event
     Runtime->>App: event with widget or window id
     App->>Runtime: next widget tree
 ```
@@ -130,7 +130,7 @@ Done now:
   `WidgetId`, `WidgetKind`, `WidgetNode`, `WidgetStyle`, and `WidgetTree`.
 - The shared UI adapter and runtime dispatcher can now set a root widget,
   update child nodes, remove nodes, move focus, and inspect draft widget state.
-- `layer36-layout` can compute Taffy-backed rectangles for the shared widget
+- `krate-layout` can compute Taffy-backed rectangles for the shared widget
   tree and return them by stable widget ID.
 - The runtime dispatcher can ask for a layout snapshot for the widget tree
   stored on a draft window.
@@ -139,7 +139,7 @@ Done now:
 - The layout crate has a first hit-test helper. It can use the layout snapshot
   to find the deepest widget under a point.
 - The runtime can queue a routed pointer event after hit testing, so a future
-  native mouse or touch event can already become a stable Layer36 event with a
+  native mouse or touch event can already become a stable Krate event with a
   window ID and optional widget ID.
 - The runtime can queue routed key events and committed text input for the
   focused widget, which gives native keyboard and IME commit events a stable
@@ -153,10 +153,10 @@ Done now:
 - `WindowAdapter` now names the lower window/event-loop boundary. `UiAdapter`
   builds on it for widget trees, input, and clipboard.
 - Native window handles now have a shared handoff point. A host backend can
-  attach an AppKit, winit, or Win32 handle to a stable Layer36 window id, then
+  attach an AppKit, winit, or Win32 handle to a stable Krate window id, then
   look it up or detach it later.
 - macOS has the first opt-in AppKit window prototype. It creates an owned
-  `NSWindow`, binds it to the Layer36 window id, and can show it through the
+  `NSWindow`, binds it to the Krate window id, and can show it through the
   shared window path. This starts the real native window backend work. Native
   events and drawing are still pending.
 - The AppKit prototype now has bridge targets for close requests, resize,
@@ -169,7 +169,7 @@ Done now:
   for close, resize, focus, display scale, and full snapshots, then queues them
   through the same shared path.
 - AppKit redraw requests now use that same path, so the first native drawing
-  surface has a tested way to ask Layer36 for another paint.
+  surface has a tested way to ask Krate for another paint.
 - AppKit delegate callbacks now have a Rust bridge. The future Objective-C
   delegate can translate native method calls into a small enum, then the Rust
   bridge handles resize, focus, scale, redraw, close, and snapshot routing.
@@ -229,7 +229,7 @@ Pending:
 - larger layout style coverage and recorded large-tree benchmark results on all target hosts
 - IME composition events
 - accessibility tree
-- `layer36-notes`
+- `krate-notes`
 
 This is the right direction for the universal platform goal. We are building the
 contract first, then the runtime boundary, then the host adapters. That keeps

@@ -547,12 +547,12 @@ mod tests {
 
     #[test]
     fn url_parser_normalizes_query_only_paths() {
-        let parsed = PlainHttpUrl::parse("http://127.0.0.1:8080?name=layer36#local")
+        let parsed = PlainHttpUrl::parse("http://127.0.0.1:8080?name=krate#local")
             .expect("parse HTTP URL");
 
         assert_eq!(parsed.host, "127.0.0.1");
         assert_eq!(parsed.port, 8080);
-        assert_eq!(parsed.path_and_query, "/?name=layer36");
+        assert_eq!(parsed.path_and_query, "/?name=krate");
     }
 
     #[test]
@@ -628,12 +628,12 @@ mod tests {
 
     #[test]
     fn request_builder_forwards_method_headers_and_body() {
-        let url = PlainHttpUrl::parse("http://127.0.0.1:8080/submit?name=layer36")
+        let url = PlainHttpUrl::parse("http://127.0.0.1:8080/submit?name=krate")
             .expect("parse HTTP URL");
         let req = PlainHttpRequest {
             method: PlainHttpMethod::Post,
             headers: vec![PlainHttpHeader {
-                name: "X-Layer36".to_string(),
+                name: "X-Krate".to_string(),
                 value: "yes".to_string(),
             }],
             body: b"payload".to_vec(),
@@ -642,10 +642,10 @@ mod tests {
         let request = build_plain_http_request(&req, &url).expect("build HTTP request");
         let request = String::from_utf8(request).expect("request is UTF-8");
 
-        assert!(request.starts_with("POST /submit?name=layer36 HTTP/1.1\r\n"));
+        assert!(request.starts_with("POST /submit?name=krate HTTP/1.1\r\n"));
         assert!(request.contains("Host: 127.0.0.1\r\n"));
         assert!(request.contains("Connection: close\r\n"));
-        assert!(request.contains("X-Layer36: yes\r\n"));
+        assert!(request.contains("X-Krate: yes\r\n"));
         assert!(request.contains("Content-Length: 7\r\n"));
         assert!(request.ends_with("\r\n\r\npayload"));
     }
@@ -674,7 +674,7 @@ mod tests {
         let req = PlainHttpRequest {
             method: PlainHttpMethod::Get,
             headers: vec![PlainHttpHeader {
-                name: "X-Layer36".to_string(),
+                name: "X-Krate".to_string(),
                 value: "safe\tno".to_string(),
             }],
             body: Vec::new(),
@@ -720,7 +720,7 @@ mod tests {
         let long_value = PlainHttpRequest {
             method: PlainHttpMethod::Get,
             headers: vec![PlainHttpHeader {
-                name: "X-Layer36".to_string(),
+                name: "X-Krate".to_string(),
                 value: "v".repeat(MAX_HTTP_HEADER_VALUE_BYTES + 1),
             }],
             body: Vec::new(),
@@ -1074,7 +1074,7 @@ mod tests {
     fn response_parser_rejects_oversized_header_block() {
         let mut response = String::from("HTTP/1.1 200 OK\r\n");
         while response.len() <= MAX_HTTP_HEADER_BLOCK_BYTES {
-            response.push_str("X-Layer36: ");
+            response.push_str("X-Krate: ");
             response.push_str(&"a".repeat(200));
             response.push_str("\r\n");
         }

@@ -1,6 +1,6 @@
 //! Host implementation for the Phase 3 `gui` world's new imports.
 //!
-//! `Phase3GuiHost` backs the `layer36:ui` interfaces with the UCap-gated
+//! `Phase3GuiHost` backs the `krate:ui` interfaces with the UCap-gated
 //! Phase 3 UI dispatcher. Window, widget-tree, and event calls are real;
 //! after every tree change the host recomputes layout and re-lowers the
 //! supported widgets to native controls when the selected adapter can (the
@@ -8,14 +8,14 @@
 //! that is a valid state). The `gfx`, `audio`, `dialog`, and `menu` surfaces
 //! return honest `unsupported` errors until their runtimes exist.
 
-use layer36_adapter_common::ui::{
+use krate_adapter_common::ui::{
     Modifiers, PointerButton, Theme, UiAdapterError, UiEvent, WidgetId, WidgetKind, WidgetNode,
     WidgetPlacement, WidgetStyle, WindowId, WindowOptions, WindowSize,
 };
-use layer36_layout::{absolute_rect, LayoutViewport};
+use krate_layout::{absolute_rect, LayoutViewport};
 
 use crate::{
-    phase3_gui_bindings::layer36::{audio, gfx, ui},
+    phase3_gui_bindings::krate::{audio, gfx, ui},
     phase3_ui::{Phase3HostUiMode, Phase3UiDispatcher, Phase3UiRuntime, UiDispatchError},
     uapi::UapiGuard,
 };

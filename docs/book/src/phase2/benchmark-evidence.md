@@ -3,7 +3,7 @@
 This page shows the repeatable way to record Phase 2 performance evidence for:
 
 - startup path checks
-- full external `layer36 run` startup checks
+- full external `krate run` startup checks
 - UAPI dispatch checks
 - baseline regression checks
 
@@ -20,12 +20,12 @@ scripts/record-phase2-benchmark-evidence.sh --strict
 
 This runs:
 
-1. `cargo bench -p layer36-runtime --bench startup`
-2. `cargo bench -p layer36-runtime --bench uapi_dispatch`
+1. `cargo bench -p krate-runtime --bench startup`
+2. `cargo bench -p krate-runtime --bench uapi_dispatch`
 3. `scripts/check-benchmark-regression.sh`
-4. `cargo build -p layer36-cli --release`
-5. `scripts/build-layer36-clock-component.sh`
-6. a measured external `layer36 run` loop for `layer36-clock`
+4. `cargo build -p krate-cli --release`
+5. `scripts/build-krate-clock-component.sh`
+6. a measured external `krate run` loop for `krate-clock`
 
 Default output path:
 

@@ -1,14 +1,14 @@
-//! Embedding API for running Layer36 components from other programs.
+//! Embedding API for running Krate components from other programs.
 //!
 //! This is the entry point for AI-agent frameworks and other hosts that want
-//! to execute a portable component inside Layer36's capability sandbox
+//! to execute a portable component inside Krate's capability sandbox
 //! without a terminal: grants are supplied programmatically through
-//! [`SessionPolicy`](layer36_policy::SessionPolicy), no prompt is ever shown,
+//! [`SessionPolicy`](krate_policy::SessionPolicy), no prompt is ever shown,
 //! and the app's stdout comes back captured next to a classified exit.
 //!
 //! ```no_run
-//! use layer36_policy::SessionPolicy;
-//! use layer36_runtime::{embed, Config};
+//! use krate_policy::SessionPolicy;
+//! use krate_runtime::{embed, Config};
 //!
 //! fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     let component = std::fs::read("app.wasm")?;
@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 
 use crate::{Config, Result, RunOutcome, Runtime};
 
-/// Exit code Layer36 CLI apps use for a capability denial.
+/// Exit code Krate CLI apps use for a capability denial.
 pub const APP_EXIT_PERMISSION_DENIED: i32 = 5;
 
 /// Classified result of an embedded component run.
@@ -37,7 +37,7 @@ pub enum EmbedExitClass {
     /// The app ran and returned exit code zero.
     Success,
     /// The app stopped itself after a capability denial (exit code 5 by
-    /// Layer36 app convention).
+    /// Krate app convention).
     PermissionDenied,
     /// The app ran and returned a non-zero, app-defined exit code.
     AppError,
@@ -46,7 +46,7 @@ pub enum EmbedExitClass {
 }
 
 impl EmbedExitClass {
-    /// Stable string form used by `layer36 run --json` and logs.
+    /// Stable string form used by `krate run --json` and logs.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Success => "success",
@@ -130,7 +130,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exit_classes_map_the_layer36_app_conventions() {
+    fn exit_classes_map_the_krate_app_conventions() {
         let case = |outcome: RunOutcome| EmbedOutcome {
             outcome,
             stdout: Vec::new(),

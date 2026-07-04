@@ -4,8 +4,8 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
-if [ "${LAYER36_OFFLINE:-}" = "1" ]; then
-  cargo run -p layer36-tools --bin check-uapi-freeze-lock --offline -- --check
+if [ "${KRATE_OFFLINE:-}" = "1" ]; then
+  cargo run -p krate-tools --bin check-uapi-freeze-lock --offline -- --check
 else
-  cargo run -p layer36-tools --bin check-uapi-freeze-lock -- --check
+  cargo run -p krate-tools --bin check-uapi-freeze-lock -- --check
 fi

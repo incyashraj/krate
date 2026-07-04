@@ -99,9 +99,9 @@ The full-test lanes also copy those downloaded files into the app target paths
 named by the sample manifests:
 
 ```text
-apps/layer36-clock/target/wasm32-wasip1/release/layer36_clock.wasm
-apps/layer36-cat/target/wasm32-wasip1/release/layer36_cat.wasm
-apps/layer36-curl/target/wasm32-wasip1/release/layer36_curl.wasm
+apps/krate-clock/target/wasm32-wasip1/release/krate_clock.wasm
+apps/krate-cat/target/wasm32-wasip1/release/krate_cat.wasm
+apps/krate-curl/target/wasm32-wasip1/release/krate_curl.wasm
 ```
 
 That keeps two checks true at the same time: each host runs the same shared
@@ -115,19 +115,19 @@ local machine, if those files are missing, it can still build the fixtures with
 
 ## Windows CLI Binary Path
 
-Cargo writes the Layer36 CLI to `target/debug/layer36` on Linux and macOS, and
-to `target/debug/layer36.exe` on Windows.
+Cargo writes the Krate CLI to `target/debug/krate` on Linux and macOS, and
+to `target/debug/krate.exe` on Windows.
 
 The sample evidence recorder now resolves that host difference before it runs.
 In Git Bash on Windows, it chooses the `.exe` path directly after `cargo build`.
-It also accepts `LAYER36_BIN` when a caller wants to point at a specific binary.
+It also accepts `KRATE_BIN` when a caller wants to point at a specific binary.
 This keeps the evidence command portable instead of making each workflow lane
 know the executable suffix by hand.
 
 ## Language Variant Evidence Hashes
 
 The language-variant evidence lane builds TypeScript fixtures on each host with
-jco, runs the Layer36 import checks, and runs the TypeScript runtime tests.
+jco, runs the Krate import checks, and runs the TypeScript runtime tests.
 
 The comparator requires matching commit metadata, matching host labels, passing
 build/test rows, aligned fixture presence, and a recorded hash for every present
@@ -141,33 +141,33 @@ Git Bash and still works on macOS.
 
 ## Windows Command-Line Limit
 
-One guard test sends more than 64 KiB of app arguments to prove that Layer36
+One guard test sends more than 64 KiB of app arguments to prove that Krate
 rejects the payload before the runtime starts. Linux and macOS can launch that
-test command and Layer36 rejects it.
+test command and Krate rejects it.
 
 Windows has a lower process command-line limit for this shape of argument. The
-OS rejects the process before Layer36 can run, so the Windows lane records this
+OS rejects the process before Krate can run, so the Windows lane records this
 case as a host-limit skip. The related count-limit, empty-argument, newline, and
 NUL checks still run on Windows.
 
 ## Local HTTP Fixtures
 
 Some curl tests use a tiny local HTTP server inside the test process. The
-response-limit test asks Layer36 to stop after a very small number of response
+response-limit test asks Krate to stop after a very small number of response
 bytes. On Windows, that early close can surface in the fixture thread as a
 connection-aborted write. The fixture treats that as an accepted connection and
-lets the test check the real Layer36 result: exit code `21` and a
+lets the test check the real Krate result: exit code `21` and a
 `response too large` message.
 
 ## Sandboxed Logical Paths
 
-Layer36 filesystem paths are logical paths, not direct host paths. A component
+Krate filesystem paths are logical paths, not direct host paths. A component
 may ask for `/fixtures/public/note.txt`, but the runtime must resolve that as
 `fixtures/public/note.txt` under the sandbox root.
 
 This matters on Windows because a leading slash can be interpreted as a rooted
 host path before the sandbox root is joined. The runtime now trims the leading
-slash from the normalized Layer36 path string first, then builds host path
+slash from the normalized Krate path string first, then builds host path
 segments. That keeps the same sandbox behavior on Linux, macOS, and Windows.
 
 ## What This Does Not Prove

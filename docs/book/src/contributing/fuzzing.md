@@ -1,6 +1,6 @@
 # Fuzzing
 
-Layer36 now has a first Phase 2 fuzz harness set in:
+Krate now has a first Phase 2 fuzz harness set in:
 
 ```text
 fuzz/

@@ -7,8 +7,8 @@ fn main() {
     let git_sha = command_output("git", &["rev-parse", "--short=12", "HEAD"])
         .unwrap_or_else(|| "unknown".to_owned());
 
-    println!("cargo:rustc-env=LAYER36_RUSTC_VERSION={rustc}");
-    println!("cargo:rustc-env=LAYER36_GIT_SHA={git_sha}");
+    println!("cargo:rustc-env=KRATE_RUSTC_VERSION={rustc}");
+    println!("cargo:rustc-env=KRATE_GIT_SHA={git_sha}");
 }
 
 fn command_output(program: &str, args: &[&str]) -> Option<String> {

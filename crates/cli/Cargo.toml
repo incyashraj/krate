@@ -1,5 +1,5 @@
 [package]
-name = "layer36-cli"
+name = "krate-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,15 +9,15 @@ publish = false
 build = "build.rs"
 
 [[bin]]
-name = "layer36"
+name = "krate"
 path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-layer36-manifest = { path = "../manifest", version = "0.1.0-dev" }
-layer36-policy = { path = "../policy", version = "0.1.0-dev" }
-layer36-runtime = { path = "../runtime", version = "0.1.0-dev" }
+krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
+krate-policy = { path = "../policy", version = "0.1.0-dev" }
+krate-runtime = { path = "../runtime", version = "0.1.0-dev" }
 serde.workspace = true
 serde_json.workspace = true
 tracing-subscriber.workspace = true

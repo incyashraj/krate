@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command Layer36 GUI demo.
+# One-command Krate GUI demo.
 #
 #   sh scripts/demo-hello-gui.sh
 #
@@ -13,20 +13,20 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$ROOT"
 
-WASM="apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm"
+WASM="apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm"
 
 if [ ! -f "$WASM" ]; then
   echo "==> Building the hello-gui component (first run only)..."
-  sh scripts/build-layer36-hello-gui-component.sh >/dev/null
+  sh scripts/build-krate-hello-gui-component.sh >/dev/null
 fi
 
-if [ ! -x target/debug/layer36 ] && [ ! -x target/debug/layer36.exe ]; then
-  echo "==> Building the layer36 CLI (first run only)..."
-  cargo build -p layer36-cli
+if [ ! -x target/debug/krate ] && [ ! -x target/debug/krate.exe ]; then
+  echo "==> Building the krate CLI (first run only)..."
+  cargo build -p krate-cli
 fi
 
-BIN=target/debug/layer36
-[ -x target/debug/layer36.exe ] && BIN=target/debug/layer36.exe
+BIN=target/debug/krate
+[ -x target/debug/krate.exe ] && BIN=target/debug/krate.exe
 
 if [ "$(uname -s)" = "Darwin" ]; then
   echo ""
@@ -38,7 +38,7 @@ if [ "$(uname -s)" = "Darwin" ]; then
   "$BIN" run \
     --auto-grant \
     --native-window \
-    --manifest apps/layer36-hello-gui/manifest.toml \
+    --manifest apps/krate-hello-gui/manifest.toml \
     "$WASM"
   CODE=$?
   set -e
@@ -50,7 +50,7 @@ else
   set +e
   "$BIN" run \
     --auto-grant \
-    --manifest apps/layer36-hello-gui/manifest.toml \
+    --manifest apps/krate-hello-gui/manifest.toml \
     "$WASM" \
     -- quick
   CODE=$?
@@ -66,7 +66,7 @@ case "$CODE" in
 esac
 echo ""
 echo "What just ran: one portable WebAssembly component (same bytes on every"
-echo "OS) asked Layer36 for a window and widgets; the host lowered them to"
+echo "OS) asked Krate for a window and widgets; the host lowered them to"
 echo "real native controls, and your click traveled back into the component"
 echo "as a portable event. Machine-readable variant:"
-echo "  $BIN run --json --auto-grant --manifest apps/layer36-hello-gui/manifest.toml $WASM -- quick"
+echo "  $BIN run --json --auto-grant --manifest apps/krate-hello-gui/manifest.toml $WASM -- quick"
