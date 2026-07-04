@@ -299,6 +299,18 @@ namespaces intentionally keep `layer36`.
 Rationale for the pre-freeze deadline: renaming a frozen namespace later
 would be a breaking version bump; renaming a draft namespace now is cheap.
 
+**Inventory (measured 2026-07-04)**: ~4,900 occurrences in ~300 files —
+wit/ 47 (the decision core), crates/ 1,285, apps/ 715 (mostly regenerable
+bindings), scripts/ 393, docs 846, Plan 1,286 (prose), .github 151,
+Cargo.lock 31 (regenerates). Execution order for the slice: (1) rename WIT
+packages and worlds; (2) rename crates and the CLI binary; (3) regenerate
+bindings, lockfiles, and fixtures; (4) sweep scripts/workflows/env vars;
+(5) let clippy + fast CI + the full matrix flush every missed reference;
+(6) prose sweep across Plan/docs/book last, once commands are real;
+(7) repo rename + Pages URL last of all (GitHub redirects cover old
+links). Keep `layer36.run.v1` accepted as a schema alias during
+transition. One focused session with the CI loop as the verifier.
+
 ## 12. Order of application
 
 Apply in this order (dependencies flow downward):
