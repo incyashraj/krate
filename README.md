@@ -113,6 +113,25 @@ Check the current Phase 2 exit status:
 scripts/phase2-exit-readiness.sh
 ```
 
+See it with a window (macOS shows a real native window; other hosts run the
+same file headless):
+
+```bash
+sh scripts/demo-hello-gui.sh
+```
+
+Exit codes are the assertions: `0` you clicked the native button, `1` clean
+run without a click, `2` window closed early. Full test manual:
+[Hello GUI Demo & Testing](https://incyashraj.github.io/layer6x6/phase3/hello-gui-demo.html).
+
+Get a machine-readable run report (what agents consume):
+
+```bash
+target/debug/layer36 run --json --auto-grant \
+  --manifest apps/layer36-clock/manifest.toml \
+  apps/layer36-clock/target/wasm32-wasip1/release/layer36_clock.wasm
+```
+
 For the full walkthrough, read the
 [Quickstart](https://incyashraj.github.io/layer6x6/quickstart.html).
 

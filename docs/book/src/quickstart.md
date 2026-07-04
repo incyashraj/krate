@@ -224,3 +224,27 @@ For new app work, use the Phase 2 UAPI path instead:
 
 - [Your First UAPI App In Rust](uapi/first-rust-cli.md)
 - [Migrating From Phase 1 To Phase 2](phase2/migrating-from-phase1.md)
+
+## See It With a Window
+
+The GUI vertical slice has a one-command demo. On macOS it opens a real
+native window (click the button within 30 seconds and watch the text field
+change); on Linux and Windows the same portable file runs headless — and the
+full CI matrix proves the identical bytes open real windows there too.
+
+```bash
+sh scripts/demo-hello-gui.sh
+```
+
+Exit codes are the assertions: `0` = native click observed, `1` = clean
+bounded run without a click, `2` = window closed early. The full test
+manual, including manual commands and troubleshooting, is on the
+[Hello GUI Demo & Testing](phase3/hello-gui-demo.md) page.
+
+## Machine-Readable Runs
+
+Add `--json` to any run to get one `layer36.run.v1` object describing it —
+app identity, granted capabilities with boundaries, denials, exit class,
+duration, and captured output. This is the same report AI agents receive
+through `layer36-mcp-server`; see
+[Embedding & JSON Runs](phase3/embedding.md).
