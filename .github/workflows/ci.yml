@@ -372,6 +372,30 @@ jobs:
             exit 1
           fi
           echo "hello-gui opened a real winit window on Linux (Xvfb) and exited cleanly"
+      - name: Run Windows winit native window proof
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          # 1. Adapter-level native smoke: real winit window round trip.
+          LAYER36_WINIT_NATIVE_SMOKE=1 LAYER36_WINIT_ANY_THREAD=1 \
+            cargo test -p layer36-adapter-windows --lib -- --ignored \
+            winit_prototype_native_window_smoke
+          # 2. The portable hello-gui component opens a real window on a
+          #    Windows host.
+          set +e
+          target/debug/layer36.exe run \
+            --auto-grant \
+            --native-window \
+            --manifest apps/layer36-hello-gui/manifest.toml \
+            apps/layer36-hello-gui/target/wasm32-wasip1/release/layer36_hello_gui.wasm \
+            -- quick
+          code=$?
+          set -e
+          if [ "$code" != "1" ]; then
+            echo "expected clean bounded exit 1 from the native Windows window run, got $code" >&2
+            exit 1
+          fi
+          echo "hello-gui opened a real winit window on Windows and exited cleanly"
       - name: Run Phase 1 tests
         shell: bash
         env:

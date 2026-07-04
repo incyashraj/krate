@@ -660,10 +660,15 @@ mod tests {
 
         #[cfg(target_os = "windows")]
         {
-            assert!(matches!(
-                runtime,
-                Err(UiDispatchError::Adapter(UiAdapterError::Unsupported(_)))
-            ));
+            let runtime = runtime.expect("Windows winit prototype runtime");
+            let info = runtime.adapter_info();
+
+            assert_eq!(runtime.host_mode(), Phase3HostUiMode::NativePrototype);
+            assert_eq!(info.host_family, "windows");
+            assert_eq!(info.backend, "windows-winit-prototype");
+            assert_eq!(info.planned_window_backend, WindowBackendKind::Winit);
+            assert!(info.native_windows);
+            assert!(info.native_event_loop);
         }
 
         #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
