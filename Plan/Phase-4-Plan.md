@@ -2,7 +2,7 @@
 
 > **Phase:** 4 of 8
 > **Duration:** Months 11–14 (120 calendar days, ~70–90 engineering days of work)
-> **Phase sentence:** *The same `.l36app` that runs on desktop runs on iOS and Android without source changes — only with mobile-appropriate layout.*
+> **Phase sentence:** *The same `.krate` that runs on desktop runs on iOS and Android without source changes — only with mobile-appropriate layout.*
 > **Prerequisite:** Phase 3 complete — desktop GUI stable on Windows, macOS, Linux.
 > **Supersedes:** nothing.
 > **Superseded by:** nothing.
@@ -68,8 +68,8 @@ Every previous phase has been an incremental extension of the same form factor. 
 
 ### 1.3 The six deliverables of Phase 4
 
-1. **iOS host app** — a Swift-thin-shell that embeds the Krate runtime and lets a user run `.l36app` bundles on iPhone/iPad.
-2. **Android host app** — a Kotlin-thin-shell that embeds the Krate runtime and lets a user run `.l36app` bundles on Android phones/tablets.
+1. **iOS host app** — a Swift-thin-shell that embeds the Krate runtime and lets a user run `.krate` bundles on iPhone/iPad.
+2. **Android host app** — a Kotlin-thin-shell that embeds the Krate runtime and lets a user run `.krate` bundles on Android phones/tablets.
 3. **Three new UAPI modules** — `krate:sensors`, `krate:ui/touch`, `krate:lifecycle`.
 4. **Porting work for Phase 3 UAPIs** — `ui` widget lowering to UIKit and Android Views, `gfx` on Metal/Vulkan (already wgpu-covered, needs surface integration), `audio` on CoreAudio/AAudio.
 5. **Mobile-aware packaging** — `.ipa` for iOS developer distribution, `.apk`/`.aab` for Android sideload and Play Store.
@@ -100,8 +100,8 @@ Phase 4 is **done** when, and only when, every row below is true.
 
 | # | Criterion | Measured How |
 |---|-----------|--------------|
-| 1 | iOS host app builds for arm64 device + simulator, runs `.l36app` | TestFlight + sim |
-| 2 | Android host app builds for arm64 + x86_64, runs `.l36app` | Play Internal Testing + emulator |
+| 1 | iOS host app builds for arm64 device + simulator, runs `.krate` | TestFlight + sim |
+| 2 | Android host app builds for arm64 + x86_64, runs `.krate` | Play Internal Testing + emulator |
 | 3 | `krate-notes` runs on iPhone and Pixel with no source changes | Side-by-side manual test |
 | 4 | Touch, tap, long-press, scroll, pinch all work correctly | Automated + manual |
 | 5 | App survives background → foreground round-trip | Scripted test |
@@ -413,8 +413,8 @@ Each item frozen for Phase 4 unless noted. ADR references in §26.
 ### 7.11 App store policy posture (recorded in ADR-0029)
 
 - Phase 4 operates under TestFlight + Play Internal Testing constraints only. These are more permissive than public App Store.
-- We explicitly **do not ship arbitrary user-supplied `.l36app` bundles as a feature of a store-distributed Krate host app in Phase 4**. That would clearly violate App Store rules about interpreters and downloaded code.
-- Instead, the iOS host app in Phase 4 is a **developer tool** — the developer's `.l36app` is bundled at build time into the Swift shell, not downloaded at runtime.
+- We explicitly **do not ship arbitrary user-supplied `.krate` bundles as a feature of a store-distributed Krate host app in Phase 4**. That would clearly violate App Store rules about interpreters and downloaded code.
+- Instead, the iOS host app in Phase 4 is a **developer tool** — the developer's `.krate` is bundled at build time into the Swift shell, not downloaded at runtime.
 - Public distribution mode comes in Phase 7 with negotiated sideload / marketplace strategies.
 - See §17 for the full store posture.
 
@@ -755,7 +755,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     func application(_ app: UIApplication,
                      didFinishLaunchingWithOptions opts: [...]) -> Bool {
         runtime = KrateRuntime(bundleURL: Bundle.main.url(forResource: "app",
-                                                          withExtension: "l36app")!)
+                                                          withExtension: "krate-bundle")!)
         runtime.start()
         return true
     }
@@ -886,7 +886,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-        val bundlePath = assets.extractBundle("app.l36app")
+        val bundlePath = assets.extractBundle("app.krate")
         nativeStart(bundlePath)
     }
 
@@ -1269,13 +1269,13 @@ interface settings {
 
 ### 17.1 The constraint
 
-Both Apple and Google restrict apps that "download and execute code." Naively distributing the Krate host app on App Store and allowing users to install arbitrary `.l36app` bundles at runtime would likely be rejected.
+Both Apple and Google restrict apps that "download and execute code." Naively distributing the Krate host app on App Store and allowing users to install arbitrary `.krate` bundles at runtime would likely be rejected.
 
 ### 17.2 Phase 4 posture
 
 In Phase 4, **we do not distribute a consumer-facing Krate host app to public stores.** Instead:
 
-- **Developer mode:** each developer builds their own IPA/APK via `krate package` which bakes their specific `.l36app` into a standalone Swift/Kotlin shell.
+- **Developer mode:** each developer builds their own IPA/APK via `krate package` which bakes their specific `.krate` into a standalone Swift/Kotlin shell.
 - **TestFlight and Play Internal Testing:** used to share builds with beta testers.
 - **Direct install:** APK sideload works without Play Store.
 - **No public consumer marketplace until Phase 6–7.**
@@ -1286,14 +1286,14 @@ This means Phase 4 has no App Store rejection risk — we're not submitting to A
 
 The host shell templates support **two modes**:
 
-- **"Baked"** — `.l36app` is bundled at build time. The shell loads only that. This is the default for Phase 4.
-- **"Runtime"** — the shell loads user-supplied `.l36app` at runtime. Works in dev mode / TestFlight but is risky for public stores.
+- **"Baked"** — `.krate` is bundled at build time. The shell loads only that. This is the default for Phase 4.
+- **"Runtime"** — the shell loads user-supplied `.krate` at runtime. Works in dev mode / TestFlight but is risky for public stores.
 
 Both modes coexist. Developers start with baked; Krate team experiments internally with runtime to learn.
 
 ### 17.4 What the long-term play looks like (not Phase 4's problem)
 
-- **Marketplace as a website**, not an app. Users download `.l36app`s there. Krate host on device loads them.
+- **Marketplace as a website**, not an app. Users download `.krate`s there. Krate host on device loads them.
 - **Small pre-reviewed library**, where the Krate org vets bundles and includes them inside a host app distributed on stores. Conservative but store-acceptable.
 - **Interpreter-only mode** where WASM never JIT-compiles; some prior art (Swift Playgrounds, Pythonista) has shown this gets past review.
 - **Developer-tools classification** where Krate targets developer audiences explicitly and can avoid consumer-facing store rules.
@@ -1926,7 +1926,7 @@ Only changes from Phase 3:
 
 | Category | Threat | Mitigation |
 |---|---|---|
-| S | Hostile `.l36app` spoofs another app ID | Bundle signing required before Phase 7 store distribution; Phase 4 TestFlight assumes signed dev builds only |
+| S | Hostile `.krate` spoofs another app ID | Bundle signing required before Phase 7 store distribution; Phase 4 TestFlight assumes signed dev builds only |
 | T | Tampered AOT cache loaded on device | AOT files are validated against signed manifest hash before load |
 | R | OS-level permission decision not reflected in app logic | Always re-query OS permission at point of use, not just at grant time |
 | I | Camera frames leak to disk via logs | No frame data in logs at any verbosity level; enforced by lint rule |
@@ -2284,8 +2284,8 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 | # | Criterion | Status |
 |---|-----------|--------|
-| 1 | iOS host app builds for arm64 device + simulator; runs `.l36app` | Not done |
-| 2 | Android host app builds for arm64 + x86_64; runs `.l36app` | Not done |
+| 1 | iOS host app builds for arm64 device + simulator; runs `.krate` | Not done |
+| 2 | Android host app builds for arm64 + x86_64; runs `.krate` | Not done |
 | 3 | `krate-notes` runs on iPhone and Pixel without source changes | Not done |
 | 4 | Touch, tap, long-press, scroll, pinch all work correctly | Not done |
 | 5 | App survives background → foreground round-trip | Not done |

@@ -2058,7 +2058,7 @@ Stop and reassess if:
 
 ### 28.2 What Phase 6 builds on top
 
-- Bundle format (`.l36app`) using Phase 5's storage + crypto UAPIs for encryption and signing.
+- Bundle format (`.krate`) using Phase 5's storage + crypto UAPIs for encryption and signing.
 - Marketplace backend — `krate deploy` target extended.
 - Identity (DIDs) — uses Phase 5's crypto UAPI.
 - Delta updates — builds on Phase 5's packaging pipeline.

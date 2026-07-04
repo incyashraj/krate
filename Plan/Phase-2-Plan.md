@@ -130,7 +130,7 @@ Phase 2 is **done** when, and only when, every row below is true.
 - Not a server. No HTTP server, no socket listeners. Phase 3+ (and even then, client-first).
 - Not the complete UAPI. Missing from v0.1: storage, crypto, sensors, UI, GPU, audio, IPC, notifications, accessibility, AI, identity. Those come later.
 - Not complete UCap. No user-facing grant UI (that is Phase 3), no policy DB (that is Phase 6), no revocation flow (Phase 6).
-- Not a bundle format. `.l36app` is Phase 6. Phase 2 ships `.wasm` components with a sidecar `manifest.toml` consumed by the CLI.
+- Not a bundle format. `.krate` is Phase 6. Phase 2 ships `.wasm` components with a sidecar `manifest.toml` consumed by the CLI.
 
 ### 4.3 The scope discipline
 

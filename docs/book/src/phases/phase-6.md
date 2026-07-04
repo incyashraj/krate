@@ -6,7 +6,7 @@
 
 This phase adds the platform pieces around the runtime:
 
-- `.l36app` bundle format
+- `.krate` bundle format
 - signing
 - update flow
 - developer identity

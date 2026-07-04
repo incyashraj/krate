@@ -22,7 +22,7 @@ In scope:
 Out of scope:
 
 - Real UAPI modules such as filesystem, network, UI, sensors, and identity
-- `.l36app` bundles, manifests, signing, and marketplace distribution
+- `.krate` bundles, manifests, signing, and marketplace distribution
 - Long-running app lifecycle, windows, background services, and updates
 - Running adversarial WebAssembly as a hardened security boundary
 

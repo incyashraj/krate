@@ -82,7 +82,7 @@ At v1.0 launch, Krate must be able to:
 
 | # | Criterion | Target |
 |---|-----------|--------|
-| 1 | Run the same `.l36app` binary on | Windows 11+, macOS 13+, Ubuntu 22.04+, iOS 16+, Android 12+, browsers w/ WASM2 |
+| 1 | Run the same `.krate` binary on | Windows 11+, macOS 13+, Ubuntu 22.04+, iOS 16+, Android 12+, browsers w/ WASM2 |
 | 2 | Hello-world startup time | < 100 ms cold, < 20 ms warm |
 | 3 | GUI app frame budget | 16.7 ms (60 fps) on M1/Snapdragon 8 Gen 2 |
 | 4 | Binary size overhead vs native | < 3x for a typical productivity app |
@@ -207,7 +207,7 @@ Canonical capability examples:
 
 ### 3.4 Runtime
 
-The binary installed on each host that loads and executes `.l36app` bundles. Responsibilities: bytecode JIT/AOT, UAPI dispatch, UCap enforcement, app lifecycle, window/surface management, update delivery.
+The binary installed on each host that loads and executes `.krate` bundles. Responsibilities: bytecode JIT/AOT, UAPI dispatch, UCap enforcement, app lifecycle, window/surface management, update delivery.
 
 **One runtime per host OS.** Internal architecture is shared across hosts; only the host-adapter layer differs.
 
@@ -215,12 +215,12 @@ The binary installed on each host that loads and executes `.l36app` bundles. Res
 
 The per-OS module inside the runtime that translates UAPI calls into native OS calls. Example: `uapi::ui::window::create` on macOS host adapter calls AppKit `NSWindow`; on Windows, `CreateWindowExW`; on Android, `Activity` binder calls.
 
-### 3.6 App Bundle (`.l36app`)
+### 3.6 App Bundle (`.krate`)
 
 The distributable package. A zip-structured container:
 
 ```
-myapp.l36app/
+myapp.krate/
 """""" manifest.toml        # app id, version, capabilities, entry point, locale, deps
 """""" code.wasm            # WASM component (main entry)
 """""" modules/             # additional WASM components (lazy-loaded)
@@ -251,7 +251,7 @@ flowchart TB
         SRC --> COMP
         WIT --> COMP
         COMP --> BUNDLE
-        BUNDLE --> APP[myapp.l36app]
+        BUNDLE --> APP[myapp.krate]
     end
 
     subgraph Runtime["Krate Runtime (per host)"]
@@ -294,7 +294,7 @@ flowchart LR
     D --> E[wasm-tools optimize]
     E --> F[Merge assets + manifest]
     F --> G[Sign + attest]
-    G --> H[myapp.l36app]
+    G --> H[myapp.krate]
     H --> I{{Marketplace upload}}
     H --> J{{Side-load / dev install}}
 ```
@@ -303,7 +303,7 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    START([User opens myapp.l36app]) --> CHECK{Signature valid?}
+    START([User opens myapp.krate]) --> CHECK{Signature valid?}
     CHECK -- no --> REJECT[Show error, refuse]
     CHECK -- yes --> MANIFEST[Parse manifest.toml]
     MANIFEST --> CAPS{New capabilities?}
@@ -472,7 +472,7 @@ Every choice below is a **decision**, not a suggestion. Departing from it requir
 
 ### 5.10 Package format
 
-- **Decision:** `.l36app` = zip with deterministic ordering, using `zip` crate.
+- **Decision:** `.krate` = zip with deterministic ordering, using `zip` crate.
 - **Signing:** Ed25519 signature over the manifest + content hashes; signature verified before any WASM executes.
 - **Reproducible builds:** deterministic timestamps, sorted file order, locked toolchain versions.
 
@@ -604,7 +604,7 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 
 ### Phase 4: Mobile Hosts (est. 8 to 12 weeks)
 
-**Objective:** The same `.l36app` that ran on desktop in Phase 3 runs on iOS and Android without source changes, only with mobile-appropriate layout.
+**Objective:** The same `.krate` that ran on desktop in Phase 3 runs on iOS and Android without source changes, only with mobile-appropriate layout.
 
 **Deliverables:**
 - Runtime port to iOS (via Embedded Swift bridge + Wasmtime-on-iOS).
@@ -642,7 +642,7 @@ Eight phases. The timing below is an estimate, not a deadline. Each phase has a 
 - Marketplace backend (axum + Postgres + S3).
 - Marketplace frontend (itself a Krate app: deep dogfood).
 - Signing infrastructure (developer keypairs, revocation, transparency log).
-- Delta updates (`.l36app` diff format).
+- Delta updates (`.krate` diff format).
 - Identity: `did:key` support in runtime, `uapi::identity` module, DID resolution UI.
 - Age-rating, content guidelines, moderation tooling (basic).
 
@@ -687,7 +687,7 @@ krate/
 """""" crates/
 "   """""" runtime/            # the host runtime (Phase 1+)
 "   """""" cli/                # `krate` command (Phase 1+)
-"   """""" bundle/             # .l36app format (Phase 6)
+"   """""" bundle/             # .krate format (Phase 6)
 "   """""" policy/             # UCap policy engine (Phase 2+)
 "   """"" host-adapter/
 "       """""" linux/
@@ -850,7 +850,7 @@ krate/
 
 | ID | Task | Est |
 |---|---|---|
-| P6-BUNDLE-01 | `.l36app` format spec | 3d |
+| P6-BUNDLE-01 | `.krate` format spec | 3d |
 | P6-BUNDLE-02 | Packer / unpacker in bundle crate | 3d |
 | P6-BUNDLE-03 | Delta update diff format | 5d |
 | P6-SIGN-01 | Developer keypair enrollment flow | 3d |
@@ -935,7 +935,7 @@ Every phase owns a benchmark suite. Results published to a dashboard.
 - `bench_startup`: cold start, warm start, first frame.
 - `bench_uapi_hot_path`: UAPI call overhead (measured in ns).
 - `bench_ui_frame`: build + render a 1000-widget tree.
-- `bench_bundle_install`: extract + verify `.l36app`.
+- `bench_bundle_install`: extract + verify `.krate`.
 
 CI fails if benchmarks regress > 5% without an approved ADR.
 
@@ -1075,7 +1075,7 @@ CREATE INDEX idx_grant_app ON ucap_grant(app_id);
 | Bundle install time (10 MB) | < 2 s | `krate install` wall time |
 | Bundle delta update (1 MB) | < 500 ms | Download + apply |
 | Memory overhead (runtime + empty app) | < 40 MB RSS | `ps` after hello-world exits |
-| Binary size overhead vs native equivalent | < 3x | Size of `.l36app` vs hand-written native |
+| Binary size overhead vs native equivalent | < 3x | Size of `.krate` vs hand-written native |
 
 Every phase has a subset of these to hit. §7 tasks link to the relevant target.
 
@@ -1576,7 +1576,7 @@ What we call things vs. what the ecosystem calls them. Keep these consistent in 
 | UCap | WASI capabilities + grants + policy | We add the grant UX + policy DB. |
 | Krate runtime | WASM runtime (Wasmtime) | Ours = Wasmtime + our adapters + loaders + policy. |
 | Host Adapter | (no standard name) | Our term for the OS-specific translation layer. |
-| .l36app | WASM component + manifest | Packaged form. |
+| .krate | WASM component + manifest | Packaged form. |
 
 ---
 

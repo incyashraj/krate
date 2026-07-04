@@ -775,7 +775,7 @@ Phase 1 starts in 4 weeks. First `krate run hello.wasm` shortly after.
 
 4/ Target v1.0: 24 months.
 
-By then: one .l36app runs on Windows, macOS, Linux, iOS, Android, and
+By then: one .krate runs on Windows, macOS, Linux, iOS, Android, and
 the web. Natively.
 
 First anchor tenant: @ParkSure — 6 client apps → 1 codebase.

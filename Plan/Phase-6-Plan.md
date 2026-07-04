@@ -4,7 +4,7 @@
 > **Duration:** Months 19–22 (120 calendar days, ~70–90 engineering days of work)
 > **Phase sentence:** *Users discover, install, update, and sign in across devices.*
 > **Prerequisite:** Phase 5 complete — SDK productized, UAPI v0.4 frozen, IDE extensions shipped.
-> **Supersedes:** sidecar `manifest.toml` (replaced by in-bundle manifest in `.l36app`).
+> **Supersedes:** sidecar `manifest.toml` (replaced by in-bundle manifest in `.krate`).
 > **Superseded by:** nothing.
 
 ---
@@ -19,7 +19,7 @@
 5. [The Phase 6 Shift](#5-the-phase-6-shift)
 6. [Architecture](#6-architecture)
 7. [Technology Decisions](#7-technology-decisions)
-8. [Bundle Format (`.l36app`)](#8-bundle-format-l36app)
+8. [Bundle Format (`.krate`)](#8-bundle-format-krate-bundle)
 9. [Developer Signing & Transparency Log](#9-developer-signing--transparency-log)
 10. [Delta Updates](#10-delta-updates)
 11. [Marketplace Backend](#11-marketplace-backend)
@@ -70,7 +70,7 @@ Phases 1–5 made Krate technically real. Phase 6 makes it *socially* real — t
 
 ### 1.3 The seven deliverables of Phase 6
 
-1. **`.l36app` bundle format** — the signed, versioned, inspectable format every app ships in.
+1. **`.krate` bundle format** — the signed, versioned, inspectable format every app ships in.
 2. **Developer signing + transparency log** — Sigstore-style immutable record of every app ever published.
 3. **Marketplace backend** — Postgres + S3 + axum, serving discovery, install, updates.
 4. **Marketplace frontend** — itself a Krate app, deep dogfood of the platform.
@@ -103,14 +103,14 @@ Phase 6 is **done** when, and only when, every row below is true.
 
 | # | Criterion | Measured How |
 |---|-----------|--------------|
-| 1 | `.l36app` bundle format frozen; spec published | Spec document |
+| 1 | `.krate` bundle format frozen; spec published | Spec document |
 | 2 | Developer can run `krate publish` from their machine and reach the marketplace in < 5 min | Timed walkthrough |
 | 3 | User can install an app from the marketplace in < 30 s (10 MB app) | Timed walkthrough |
 | 4 | Delta update of a 1 MB patch applies in < 500 ms | Timer |
 | 5 | A new user completes identity creation + sign-in on 2 devices in < 60 s | Timed walkthrough |
 | 6 | The same identity authenticates the user across Windows, macOS, Linux, iOS, Android | Manual test |
 | 7 | Revoking a capability immediately invalidates in-flight uses | Scripted test |
-| 8 | Marketplace frontend is itself a Krate app, shipping from its own `.l36app` bundle | Self-hosting confirmed |
+| 8 | Marketplace frontend is itself a Krate app, shipping from its own `.krate` bundle | Self-hosting confirmed |
 | 9 | Transparency log is append-only, publicly queryable, tamper-evident | Audit test |
 | 10 | Marketplace backend handles 10k req/s steady-state with p99 < 200 ms | Load test |
 | 11 | Background update service keeps installed apps current within 24 h of release | Time-to-update measurement |
@@ -251,7 +251,7 @@ sequenceDiagram
     participant DB as Postgres
 
     Dev->>CLI: krate publish
-    CLI->>CLI: build + package .l36app
+    CLI->>CLI: build + package .krate
     CLI->>CLI: sign with dev keypair
     CLI->>API: upload bundle + manifest
     API->>DB: create draft release
@@ -362,7 +362,7 @@ flowchart LR
     end
     subgraph T4[Untrusted]
         APP[Published app code]
-        BUNDLE[.l36app bundle bytes]
+        BUNDLE[.krate bundle bytes]
     end
 
     DEVKEY --signs--> BUNDLE
@@ -491,12 +491,12 @@ Each item frozen for Phase 6 unless noted. ADR references in §27.
 
 ---
 
-## 8. Bundle Format (`.l36app`)
+## 8. Bundle Format (`.krate`)
 
 ### 8.1 Layout
 
 ```
-myapp.l36app/
+myapp.krate/
 ├── manifest.toml          # app metadata, capabilities, entry point
 ├── code.wasm              # main component (pre-AOT-compiled optional sibling: code.cwasm)
 ├── modules/               # lazy-loaded additional components
@@ -673,7 +673,7 @@ Full download of a 50 MB bundle every minor update costs bandwidth and user pati
 flowchart LR
     V1[bundle v1.1.0] --> DIFF[compute diff]
     V2[bundle v1.2.0] --> DIFF
-    DIFF --> PATCH[.l36app-patch]
+    DIFF --> PATCH[.krate-patch]
     PATCH --> S3[store on CDN]
     S3 --> HOST[host downloads]
     HOST --> APPLY[apply to local v1.1.0]
@@ -1316,7 +1316,7 @@ Sized for 16 weeks calendar, ~70–90 engineering days. This phase has significa
 ### Weeks 1–2: Architecture, ADRs, bundle format
 
 - Write ADRs 0045–0058.
-- Finalize `.l36app` format spec.
+- Finalize `.krate` format spec.
 - Design signing and transparency log schemes.
 - Start legal engagement: trademark filing, privacy policy drafting.
 
@@ -1401,12 +1401,12 @@ Sized for 16 weeks calendar, ~70–90 engineering days. This phase has significa
 
 Matches Build Plan §7.7.
 
-### P6-BUNDLE-01 — `.l36app` format spec
+### P6-BUNDLE-01 — `.krate` format spec
 
 **Estimate:** 3 days.
 **Branch:** `p6-bundle-01-spec`.
 **Acceptance:**
-- Spec in `docs/rfc/0010-l36app-format.md`.
+- Spec in `docs/rfc/0010-krate-bundle-format.md`.
 - Reviewed with one external security-minded reviewer.
 - Published as normative.
 
@@ -1415,7 +1415,7 @@ Matches Build Plan §7.7.
 **Estimate:** 3 days.
 **Branch:** `p6-bundle-02-packer`.
 **Acceptance:**
-- `crates/bundle/` creates and reads `.l36app` files.
+- `crates/bundle/` creates and reads `.krate` files.
 - Reproducible mode verified: same input → identical output across machines.
 
 ### P6-BUNDLE-03 — Delta update diff
@@ -2002,7 +2002,7 @@ Any one failing → bundle rejected.
 
 ### 26.1 Spec docs
 
-- `docs/book/src/spec/l36app-format.md` — bundle format spec.
+- `docs/book/src/spec/krate-bundle-format.md` — bundle format spec.
 - `docs/book/src/spec/signing.md` — signing + transparency log spec.
 - `docs/book/src/spec/identity.md` — DID usage, recovery.
 - `docs/book/src/spec/sync.md` — sync protocol.
@@ -2129,7 +2129,7 @@ Retain counsel by Week 1. Expected spend: $15–30k across the phase. Budget for
 ## 29. Exit Criteria Checklist
 
 ### Bundle format
-- [ ] `.l36app` spec published.
+- [ ] `.krate` spec published.
 - [ ] Reproducible builds verified.
 - [ ] Canonical hash deterministic across platforms.
 - [ ] `krate build` produces signed bundles.
@@ -2462,14 +2462,14 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 | # | Criterion | Status |
 |---|-----------|--------|
-| 1 | `.l36app` bundle format frozen; spec published | Not done |
+| 1 | `.krate` bundle format frozen; spec published | Not done |
 | 2 | Developer can `krate publish` and reach marketplace in < 5 min | Not done |
 | 3 | User can install a 10 MB app from marketplace in < 30 s | Not done |
 | 4 | Delta update of a 1 MB patch applies in < 500 ms | Not done |
 | 5 | New user completes identity creation + sign-in on 2 devices in < 60 s | Not done |
 | 6 | Same identity authenticates user across all 5 platforms | Not done |
 | 7 | Revoking a capability immediately invalidates in-flight uses | Not done |
-| 8 | Marketplace frontend is itself a `.l36app` bundle (self-hosted) | Not done |
+| 8 | Marketplace frontend is itself a `.krate` bundle (self-hosted) | Not done |
 | 9 | Transparency log is append-only, publicly queryable, tamper-evident | Not done |
 | 10 | Marketplace backend handles 10k req/s at p99 < 200 ms (load test) | Not done |
 | 11 | Background update service keeps apps current within 24 h of release | Not done |
@@ -2500,7 +2500,7 @@ Full criteria in [§3 Success Criteria](#3-success-criteria). Check off as each 
 
 | ADR | Title | Status | Merged |
 |-----|-------|--------|--------|
-| ADR-0045 | `.l36app` bundle format spec | Pending | — |
+| ADR-0045 | `.krate` bundle format spec | Pending | — |
 | ADR-0046 | Signing model: Ed25519 + Sigstore-style transparency log | Pending | — |
 | ADR-0047 | Delta update diffing algorithm | Pending | — |
 | ADR-0048 | DID method selection (`did:key` + `did:web`) | Pending | — |

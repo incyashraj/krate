@@ -13,7 +13,7 @@ flowchart LR
     SRC["App source<br/>Rust, Go, TS, C, etc."]
     WASM["WASM component<br/>portable app code"]
     MAN["Manifest<br/>name, version, permissions"]
-    BUNDLE[".l36app bundle<br/>component, assets, signature"]
+    BUNDLE[".krate bundle<br/>component, assets, signature"]
     RT["Krate runtime"]
     UAPI["UAPI<br/>io, files, net, time, locale"]
     UCAP["UCap<br/>permission grants"]
@@ -41,7 +41,7 @@ flowchart LR
 ```
 
 Phase 2 has the yellow part: WebAssembly components, manifests, the runtime,
-UAPI slices, UCap checks, and early host adapter paths. The `.l36app` bundle,
+UAPI slices, UCap checks, and early host adapter paths. The `.krate` bundle,
 GUI APIs, mobile hosts, signing, and distribution are later phases.
 
 ## Runtime Flow Today

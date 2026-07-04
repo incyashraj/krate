@@ -62,7 +62,7 @@ The hard requirements are:
 | Area | Target |
 |------|--------|
 | Hosts | Windows, macOS, Linux, iOS, Android, and web where possible |
-| App format | `.l36app` bundle |
+| App format | `.krate` bundle |
 | Runtime | Fast cold start and predictable memory use |
 | APIs | Files, network, time, locale, UI, graphics, sensors, identity |
 | Permissions | Clear grants instead of silent host access |

@@ -78,7 +78,7 @@ distribution are still later work.
   not yet).
 - Graphics (`gfx`) and audio beyond honest `unsupported` stubs; sensors,
   identity, and production app lifecycle APIs.
-- A `.l36app` bundle format.
+- A `.krate` bundle format.
 - Mobile hosts.
 - Security strong enough for untrusted third party apps.
 - A finished developer SDK or app store.

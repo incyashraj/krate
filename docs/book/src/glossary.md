@@ -5,7 +5,7 @@
 | **ABI** | Application Binary Interface: the contract between caller and callee in compiled code. |
 | **ADR** | Architecture Decision Record: a short document capturing a decision and its context. |
 | **AOT** | Ahead-Of-Time compilation. |
-| **App Bundle** | The `.l36app` distributable package. |
+| **App Bundle** | The `.krate` distributable package. |
 | **Capability** | An unforgeable token granting the right to perform an operation on a resource. |
 | **Component Model** | WebAssembly specification adding typed interfaces and composition to WASM modules. |
 | **DID** | Decentralized Identifier: a W3C standard for self-sovereign identity. |

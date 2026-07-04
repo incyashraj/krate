@@ -6,6 +6,18 @@ pages.
 
 ---
 
+## 2026-07-04 — The rename lands: the system is Krate everywhere
+
+Phase B of the rename executed: 272 files of content, 25 renamed paths
+with history preserved, regenerated bindings and contract-lock hashes
+under the `krate:*` namespace, all four sample components rebuilt
+import-pure, the CLI reborn as `krate`, the JSON schema as
+`krate.run.v1`, the repository moved to `incyashraj/krate` (old links
+redirect), and the self-hosted runner re-badged `krate-local`. Verified
+before pushing: full workspace tests, lints, and a live
+`krate run --json` answering with its new name. The future bundle
+format becomes `.krate` — the brand you can attach to an email.
+
 ## 2026-07-04 — The Linux window shows its first pixels
 
 The drawn-widget pass landed the same day: the Krate window on Linux now
