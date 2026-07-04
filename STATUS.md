@@ -23,8 +23,14 @@ screenshot of the drawn window, uploaded as a CI artifact
 (`hello-gui-linux-screenshot`) — visual evidence of the Linux UI from
 hosted CI, no Linux machine required. The bitmap font is an explicit
 placeholder until the vello renderer brings real typography behind the
-same placement contract. Older detail below: P3-VS-01 through the
-WASM path.
+same placement contract.
+Certification: this slice landed as `c61b661` + `c63e7d8` and the full
+matrix run `28710233712` is green on all three OS lanes. The first
+screenshot artifact was downloaded and verified by eye: the blue button
+reads "Click me" centered, and the field shows the component's own
+string "waiting for click" — guest text rendered onto Linux pixels by
+hosted CI. A copy lives in `Invest/evidence/` (gitignored) for demo
+material. Older detail below: P3-VS-01 through the WASM path.
 `krate run` now executes Phase 3 `gui` world components: the hello-gui
 sample creates a window, submits a widget tree, and polls events through real
 `krate:ui` host imports backed by the UCap-gated dispatcher. With
