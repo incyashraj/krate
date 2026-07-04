@@ -351,7 +351,9 @@ jobs:
           sudo apt-get update -q
           # xvfb provides the display server; libxkbcommon-x11 is dlopen'd by
           # winit's X11 keyboard path and absent on minimal runners.
-          sudo apt-get install -y -q xvfb libxkbcommon-x11-0 xdotool
+          # x11-apps (xwd) + imagemagick capture the drawn window as evidence.
+          sudo apt-get install -y -q xvfb libxkbcommon-x11-0 xdotool \
+            x11-apps imagemagick
           # 1. Adapter-level native smoke: real winit window round trip.
           KRATE_WINIT_NATIVE_SMOKE=1 KRATE_WINIT_ANY_THREAD=1 xvfb-run -a \
             cargo test -p krate-adapter-linux --lib -- --ignored \
@@ -375,7 +377,8 @@ jobs:
           # 3. Synthetic click round trip: xdotool presses the drawn button
           #    and the component must observe it (exit 0).
           set +e
-          xvfb-run -a bash scripts/xvfb-click-hello-gui.sh
+          KRATE_XVFB_SCREENSHOT="$RUNNER_TEMP/hello-gui-linux.png" \
+            xvfb-run -a bash scripts/xvfb-click-hello-gui.sh
           code=$?
           set -e
           if [ "$code" != "0" ]; then
@@ -383,6 +386,14 @@ jobs:
             exit 1
           fi
           echo "synthetic click on the drawn button reached the component on Linux (exit 0)"
+      - name: Upload Linux drawn-window screenshot
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: hello-gui-linux-screenshot
+          path: ${{ runner.temp }}/hello-gui-linux.png
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Run Windows winit native window proof
         if: matrix.os == 'windows-latest'
         shell: bash

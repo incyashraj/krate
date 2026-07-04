@@ -16,6 +16,13 @@ APP=$!
 # Give the window and the first draw a moment, then click twice for
 # robustness (the first movement also seeds CursorMoved before MouseInput).
 sleep 5
+
+# Optional visual evidence: capture the Xvfb root window as a PNG before the
+# click ends the app. Never fails the proof — screenshots are best-effort.
+if [ -n "${KRATE_XVFB_SCREENSHOT:-}" ]; then
+  xwd -root -silent | convert xwd:- "$KRATE_XVFB_SCREENSHOT" || true
+fi
+
 xdotool mousemove 96 32 click 1 || true
 sleep 1
 xdotool mousemove 96 32 click 1 || true

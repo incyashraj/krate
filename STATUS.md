@@ -1,19 +1,29 @@
 # Krate Status (formerly Layer36)
 
 Last updated: 2026-07-04
-Naming: the project is now Krate (company: Krate Labs); code, commands, and
-`krate:*` namespaces keep the legacy name until the scheduled rename slice
-lands (before the UAPI freeze).
+Naming: the project is Krate (company: Krate Labs, Inc.). The A9 rename is
+fully executed — CLI `krate`, WIT `krate:*`, schema `krate.run.v1`, env
+`KRATE_*`, repo `incyashraj/krate`, runner `krate-local`, future bundle
+format `.krate`. No legacy `layer36` identifiers remain in code or contracts.
 Repo: `incyashraj/krate`
 Branch: `main`
-Latest checked completed push before this slice: `884dce8` (full matrix run `28672835046`-successor green: all three OS lanes) (verified by the
-dispatched full CI matrix; fast CI on that push was superseded by the full
-run)
-Working tree at this status update: the P3-VS-01 vertical slice and the
-whole P3-EMB agent-embedding track are complete, the hello-gui demo is
-human-verified on a real screen, and the full CI matrix now runs the
-byte-identical GUI artifact headless on Linux, macOS, and Windows (all three
-lanes green on run `28654507550`). Older detail below: P3-VS-01 through the
+Latest checked completed push before this slice: `6a6f0be` (fast CI green,
+then dispatched full matrix run `28708285696` green: all three OS lanes —
+the first full-matrix certification of the renamed world).
+Working tree at this status update: pointer input routing is CI-certified —
+on the Linux lane a synthetic `xdotool` click presses the drawn button
+inside a real winit window under Xvfb and the portable component observes
+it and exits 0, completing the same click round trip macOS proved with a
+human hand. On top of that, drawn text v0 landed: a 5x7 bitmap font module
+in `adapter-common` (`drawtext.rs`) renders real labels in the winit
+windows on Linux and Windows — the button caption centered in the button,
+the field text inside the field, and `Text` widgets as actual glyphs
+instead of gray blocks. The Xvfb click proof now also captures a PNG
+screenshot of the drawn window, uploaded as a CI artifact
+(`hello-gui-linux-screenshot`) — visual evidence of the Linux UI from
+hosted CI, no Linux machine required. The bitmap font is an explicit
+placeholder until the vello renderer brings real typography behind the
+same placement contract. Older detail below: P3-VS-01 through the
 WASM path.
 `krate run` now executes Phase 3 `gui` world components: the hello-gui
 sample creates a window, submits a widget tree, and polls events through real

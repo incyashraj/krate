@@ -6,6 +6,21 @@ pages.
 
 ---
 
+## 2026-07-04 — The Linux button gets clicked by a robot, then learns to speak
+
+Two proofs in one day. First, input routing: the full CI matrix now runs a
+synthetic click — `xdotool` moves the pointer to the drawn button inside a
+real winit window under Xvfb and presses it, and the portable component
+observes the press and exits clean. The same click round trip a human hand
+proved on macOS is now machine-proved on Linux, on every full CI run.
+Second, drawn text: a small 5x7 bitmap font (a deliberate placeholder until
+the vello renderer brings real typography) now paints actual labels into
+the drawn windows on Linux and Windows — the button says "Click me",
+fields show their text, and `Text` widgets are words instead of gray
+blocks. The click proof also captures a screenshot of the drawn window and
+publishes it as a CI artifact: visual evidence of the Linux UI produced
+entirely by hosted CI.
+
 ## 2026-07-04 — The rename lands: the system is Krate everywhere
 
 Phase B of the rename executed: 272 files of content, 25 renamed paths

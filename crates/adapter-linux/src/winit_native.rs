@@ -238,9 +238,22 @@ mod real {
         for placement in &tracked.placements {
             let (px, py) = (placement.x * scale, placement.y * scale);
             let (pw, ph) = (placement.width * scale, placement.height * scale);
+            let text_scale = (scale.round() as u32).max(1);
+            let label = placement.label.as_deref().unwrap_or("");
             match placement.kind {
                 WidgetKind::Button => {
                     fill_rect(&mut buffer, w, h, (px, py, pw, ph), COLOR_BUTTON);
+                    let tw = krate_adapter_common::drawtext::text_width(label, text_scale) as f32;
+                    let th = krate_adapter_common::drawtext::text_height(text_scale) as f32;
+                    krate_adapter_common::drawtext::draw_text(
+                        &mut buffer,
+                        w,
+                        h,
+                        ((px + (pw - tw) / 2.0) as i32, (py + (ph - th) / 2.0) as i32),
+                        text_scale,
+                        0xFFFFFFFF,
+                        label,
+                    );
                 }
                 WidgetKind::TextField | WidgetKind::TextArea => {
                     fill_rect(&mut buffer, w, h, (px, py, pw, ph), COLOR_FIELD_BORDER);
@@ -256,9 +269,28 @@ mod real {
                         ),
                         COLOR_FIELD_FILL,
                     );
+                    let th = krate_adapter_common::drawtext::text_height(text_scale) as f32;
+                    krate_adapter_common::drawtext::draw_text(
+                        &mut buffer,
+                        w,
+                        h,
+                        ((px + 4.0 * scale) as i32, (py + (ph - th) / 2.0) as i32),
+                        text_scale,
+                        0xFF1F2937,
+                        label,
+                    );
                 }
                 WidgetKind::Text => {
-                    fill_rect(&mut buffer, w, h, (px, py, pw, ph), COLOR_TEXT_BLOCK);
+                    let th = krate_adapter_common::drawtext::text_height(text_scale) as f32;
+                    krate_adapter_common::drawtext::draw_text(
+                        &mut buffer,
+                        w,
+                        h,
+                        (px as i32, (py + (ph - th) / 2.0) as i32),
+                        text_scale,
+                        0xFF111827,
+                        label,
+                    );
                 }
                 _ => {}
             }
