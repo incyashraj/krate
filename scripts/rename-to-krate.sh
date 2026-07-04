@@ -18,9 +18,17 @@
 #        sh scripts/generate-uapi-freeze-evidence.sh
 #     4. mdbook build docs/book
 #     5. Push; fast CI; dispatch full matrix; iterate to green.
-#     6. LAST: rename the GitHub repo (Settings) and update Pages URLs;
-#        GitHub redirects cover old links. Re-register the self-hosted
-#        runner if its configured repo URL changes.
+#     6. RUNNER: the blanket rename changes the workflow label
+#        `layer36-local` to `krate-local`, but the physical runner keeps its
+#        old label until re-registered. Before pushing, re-register it:
+#          cd ~/runner/actions-runner && ./svc.sh stop && ./svc.sh uninstall
+#          ./config.sh remove --token <remove-token>
+#          ./config.sh --unattended --url <repo-url> --token <reg-token> \
+#            --name krate-local --labels krate-local --replace
+#          ./svc.sh install && ./svc.sh start
+#     7. LAST: rename the GitHub repo (Settings) and update Pages URLs;
+#        GitHub redirects cover old links; update the runner's configured
+#        URL if the slug changes.
 #
 # The schema id krate.run.v1 replaces layer36.run.v1; keep the old id
 # accepted wherever the schema is *parsed* (currently only tests assert it).
