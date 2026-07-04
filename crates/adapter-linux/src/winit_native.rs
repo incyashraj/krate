@@ -47,6 +47,15 @@ mod real {
         app: PumpApp,
     }
 
+    /// Whether the event loop has been created on this thread.
+    ///
+    /// Query and pump paths must never lazily create the loop: winit
+    /// panics off the main thread, and an uninitialized host simply means
+    /// no native windows exist yet.
+    fn host_initialized() -> bool {
+        WINIT_HOST.with(|slot| slot.borrow().is_some())
+    }
+
     #[derive(Default)]
     struct PumpApp {
         pending_creates: Vec<PendingCreate>,
@@ -216,6 +225,9 @@ mod real {
         layer36: WindowId,
         f: impl FnOnce(&TrackedWindow) -> T,
     ) -> Result<Option<T>, UiAdapterError> {
+        if !host_initialized() {
+            return Ok(None);
+        }
         with_host(|host| {
             Ok(host
                 .app
@@ -245,6 +257,9 @@ mod real {
 
     /// Drop the native window for a Layer36 window id.
     pub fn close_native_window(layer36: WindowId) -> Result<bool, UiAdapterError> {
+        if !host_initialized() {
+            return Ok(false);
+        }
         with_host(|host| {
             let native: Vec<NativeWindowId> = host
                 .app
@@ -263,6 +278,9 @@ mod real {
 
     /// Pump the native event loop once and drain mapped window events.
     pub fn pump_native_events() -> Result<CollectedNativeEvents, UiAdapterError> {
+        if !host_initialized() {
+            return Ok(Vec::new());
+        }
         with_host(|host| {
             pump(host);
             Ok(std::mem::take(&mut host.app.events))
