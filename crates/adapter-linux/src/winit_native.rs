@@ -162,12 +162,10 @@ mod real {
         buffer: &mut [u32],
         width: u32,
         height: u32,
-        x: f32,
-        y: f32,
-        w: f32,
-        h: f32,
+        rect: (f32, f32, f32, f32),
         color: u32,
     ) {
+        let (x, y, w, h) = rect;
         let x0 = x.max(0.0) as u32;
         let y0 = y.max(0.0) as u32;
         let x1 = ((x + w).max(0.0) as u32).min(width);
@@ -193,10 +191,7 @@ mod real {
                 Ok(context) => context,
                 Err(_) => return,
             };
-            tracked.surface = match softbuffer::Surface::new(&context, tracked.window.clone()) {
-                Ok(surface) => Some(surface),
-                Err(_) => None,
-            };
+            tracked.surface = softbuffer::Surface::new(&context, tracked.window.clone()).ok();
         }
         let Some(surface) = tracked.surface.as_mut() else {
             return;
@@ -216,23 +211,25 @@ mod real {
             let (pw, ph) = (placement.width * scale, placement.height * scale);
             match placement.kind {
                 WidgetKind::Button => {
-                    fill_rect(&mut buffer, w, h, px, py, pw, ph, COLOR_BUTTON);
+                    fill_rect(&mut buffer, w, h, (px, py, pw, ph), COLOR_BUTTON);
                 }
                 WidgetKind::TextField | WidgetKind::TextArea => {
-                    fill_rect(&mut buffer, w, h, px, py, pw, ph, COLOR_FIELD_BORDER);
+                    fill_rect(&mut buffer, w, h, (px, py, pw, ph), COLOR_FIELD_BORDER);
                     fill_rect(
                         &mut buffer,
                         w,
                         h,
-                        px + 1.0 * scale,
-                        py + 1.0 * scale,
-                        (pw - 2.0 * scale).max(0.0),
-                        (ph - 2.0 * scale).max(0.0),
+                        (
+                            px + 1.0 * scale,
+                            py + 1.0 * scale,
+                            (pw - 2.0 * scale).max(0.0),
+                            (ph - 2.0 * scale).max(0.0),
+                        ),
                         COLOR_FIELD_FILL,
                     );
                 }
                 WidgetKind::Text => {
-                    fill_rect(&mut buffer, w, h, px, py, pw, ph, COLOR_TEXT_BLOCK);
+                    fill_rect(&mut buffer, w, h, (px, py, pw, ph), COLOR_TEXT_BLOCK);
                 }
                 _ => {}
             }
