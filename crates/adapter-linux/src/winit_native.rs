@@ -18,7 +18,8 @@ pub use real::*;
 pub use stub::*;
 
 use layer36_adapter_common::ui::{
-    UiAdapterError, WindowId, WindowSize, WinitWindowNativeEvent, WinitWindowSnapshot,
+    UiAdapterError, WidgetKind, WidgetPlacement, WindowId, WindowSize, WinitWindowNativeEvent,
+    WinitWindowSnapshot,
 };
 
 /// Native events paired with the Layer36 window they belong to.
@@ -31,12 +32,17 @@ mod real {
     use std::collections::BTreeMap;
     use std::time::Duration;
 
+    use std::num::NonZeroU32;
+    use std::rc::Rc;
+
     use winit::application::ApplicationHandler;
     use winit::dpi::LogicalSize;
     use winit::event::WindowEvent;
     use winit::event_loop::{ActiveEventLoop, EventLoop};
     use winit::platform::pump_events::EventLoopExtPumpEvents;
     use winit::window::{Window, WindowAttributes, WindowId as NativeWindowId};
+
+    type DrawSurface = softbuffer::Surface<Rc<Window>, Rc<Window>>;
 
     thread_local! {
         static WINIT_HOST: RefCell<Option<Host>> = const { RefCell::new(None) };
@@ -71,7 +77,9 @@ mod real {
 
     struct TrackedWindow {
         layer36: WindowId,
-        window: Window,
+        window: Rc<Window>,
+        surface: Option<DrawSurface>,
+        placements: Vec<WidgetPlacement>,
     }
 
     impl PumpApp {
@@ -89,7 +97,9 @@ mod real {
                         window.id(),
                         TrackedWindow {
                             layer36: pending.layer36,
-                            window,
+                            window: Rc::new(window),
+                            surface: None,
+                            placements: Vec::new(),
                         },
                     );
                 }
@@ -137,6 +147,145 @@ mod real {
                 self.events.push((layer36, event));
             }
         }
+    }
+
+    /// Colors for the first drawn pass (0xAARRGGBB).
+    const COLOR_BACKGROUND: u32 = 0xFFF2F2F2;
+    const COLOR_BUTTON: u32 = 0xFF3B82F6;
+    const COLOR_FIELD_FILL: u32 = 0xFFFFFFFF;
+    const COLOR_FIELD_BORDER: u32 = 0xFF9CA3AF;
+    const COLOR_TEXT_BLOCK: u32 = 0xFF6B7280;
+
+    fn fill_rect(
+        buffer: &mut [u32],
+        width: u32,
+        height: u32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        color: u32,
+    ) {
+        let x0 = x.max(0.0) as u32;
+        let y0 = y.max(0.0) as u32;
+        let x1 = ((x + w).max(0.0) as u32).min(width);
+        let y1 = ((y + h).max(0.0) as u32).min(height);
+        for row in y0..y1 {
+            let start = (row * width + x0) as usize;
+            let end = (row * width + x1) as usize;
+            for pixel in &mut buffer[start..end] {
+                *pixel = color;
+            }
+        }
+    }
+
+    fn draw_placements(tracked: &mut TrackedWindow) {
+        let size = tracked.window.inner_size();
+        let (Some(width), Some(height)) =
+            (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
+        else {
+            return;
+        };
+        if tracked.surface.is_none() {
+            let context = match softbuffer::Context::new(tracked.window.clone()) {
+                Ok(context) => context,
+                Err(_) => return,
+            };
+            tracked.surface = match softbuffer::Surface::new(&context, tracked.window.clone()) {
+                Ok(surface) => Some(surface),
+                Err(_) => None,
+            };
+        }
+        let Some(surface) = tracked.surface.as_mut() else {
+            return;
+        };
+        if surface.resize(width, height).is_err() {
+            return;
+        }
+        let Ok(mut buffer) = surface.buffer_mut() else {
+            return;
+        };
+
+        let scale = tracked.window.scale_factor() as f32;
+        let (w, h) = (width.get(), height.get());
+        buffer.fill(COLOR_BACKGROUND);
+        for placement in &tracked.placements {
+            let (px, py) = (placement.x * scale, placement.y * scale);
+            let (pw, ph) = (placement.width * scale, placement.height * scale);
+            match placement.kind {
+                WidgetKind::Button => {
+                    fill_rect(&mut buffer, w, h, px, py, pw, ph, COLOR_BUTTON);
+                }
+                WidgetKind::TextField | WidgetKind::TextArea => {
+                    fill_rect(&mut buffer, w, h, px, py, pw, ph, COLOR_FIELD_BORDER);
+                    fill_rect(
+                        &mut buffer,
+                        w,
+                        h,
+                        px + 1.0 * scale,
+                        py + 1.0 * scale,
+                        (pw - 2.0 * scale).max(0.0),
+                        (ph - 2.0 * scale).max(0.0),
+                        COLOR_FIELD_FILL,
+                    );
+                }
+                WidgetKind::Text => {
+                    fill_rect(&mut buffer, w, h, px, py, pw, ph, COLOR_TEXT_BLOCK);
+                }
+                _ => {}
+            }
+        }
+        let _ = buffer.present();
+    }
+
+    /// Store drawn-widget placements for a window and repaint it.
+    ///
+    /// This is the first drawn-fallback pass: solid rectangles presented
+    /// through a CPU framebuffer. Labels and real styling arrive with the
+    /// vello renderer; the placement contract stays the same.
+    pub fn set_drawn_placements(
+        layer36: WindowId,
+        placements: &[WidgetPlacement],
+    ) -> Result<usize, UiAdapterError> {
+        if !host_initialized() {
+            return Ok(0);
+        }
+        with_host(|host| {
+            let mut drawn = 0;
+            for tracked in host.app.windows.values_mut() {
+                if tracked.layer36 == layer36 {
+                    tracked.placements = placements
+                        .iter()
+                        .filter(|placement| {
+                            matches!(
+                                placement.kind,
+                                WidgetKind::Button
+                                    | WidgetKind::TextField
+                                    | WidgetKind::TextArea
+                                    | WidgetKind::Text
+                            )
+                        })
+                        .cloned()
+                        .collect();
+                    drawn = tracked.placements.len();
+                    draw_placements(tracked);
+                }
+            }
+            Ok(drawn)
+        })
+    }
+
+    /// Repaint every tracked window from its stored placements.
+    pub fn redraw_all() -> Result<(), UiAdapterError> {
+        if !host_initialized() {
+            return Ok(());
+        }
+        with_host(|host| {
+            for tracked in host.app.windows.values_mut() {
+                draw_placements(tracked);
+            }
+            Ok(())
+        })
     }
 
     fn with_host<T>(
@@ -342,6 +491,19 @@ mod stub {
 
     /// Winit windows are only available in Linux builds.
     pub fn has_native_window(_layer36: WindowId) -> Result<bool, UiAdapterError> {
+        unsupported()
+    }
+
+    /// Winit windows are only available in Linux builds.
+    pub fn set_drawn_placements(
+        _layer36: WindowId,
+        _placements: &[WidgetPlacement],
+    ) -> Result<usize, UiAdapterError> {
+        unsupported()
+    }
+
+    /// Winit windows are only available in Linux builds.
+    pub fn redraw_all() -> Result<(), UiAdapterError> {
         unsupported()
     }
 }

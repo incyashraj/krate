@@ -18,3 +18,7 @@ libc.workspace = true
 # still get windows through XWayland; native Wayland is a later, deliberate
 # step (system deps in CI or a pure-Rust client).
 winit = { version = "0.30", default-features = false, features = ["x11", "rwh_06"] }
+# CPU framebuffer presentation for the first drawn-widget pass. The
+# renderer behind the draw pass moves to vello/wgpu later (plan section 7.5);
+# softbuffer keeps the pipeline proof dependency-light.
+softbuffer = { version = "0.4", default-features = false, features = ["x11"] }

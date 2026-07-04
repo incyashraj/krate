@@ -9,8 +9,8 @@ use layer36_adapter_common::{
     ui::{
         DraftUiAdapter, KeyEvent, NativeWindowHandle, PointerEvent, TextInputEvent, Theme,
         UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick, WidgetId, WidgetNode,
-        WidgetTree, WindowAdapter, WindowBackendKind, WindowId, WindowOptions, WindowRecord,
-        WindowSize, WinitWindowEventCollector, WinitWindowEventLoopStep,
+        WidgetPlacement, WidgetTree, WindowAdapter, WindowBackendKind, WindowId, WindowOptions,
+        WindowRecord, WindowSize, WinitWindowEventCollector, WinitWindowEventLoopStep,
         WinitWindowEventLoopStepReport, WinitWindowNativeEvent, WinitWindowSession,
         WinitWindowSnapshot,
     },
@@ -446,6 +446,17 @@ impl WindowAdapter for LinuxWinitPrototypeUiAdapter {
 }
 
 impl UiAdapter for LinuxWinitPrototypeUiAdapter {
+    fn lower_widget_placements(
+        &self,
+        window: WindowId,
+        placements: &[WidgetPlacement],
+    ) -> Result<usize, UiAdapterError> {
+        if winit_native::has_native_window(window).unwrap_or(false) {
+            return winit_native::set_drawn_placements(window, placements);
+        }
+        Ok(0)
+    }
+
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
         self.headless.set_root(window, root)
     }
@@ -490,6 +501,7 @@ impl UiAdapter for LinuxWinitPrototypeUiAdapter {
             for (target, event) in winit_native::pump_native_events()? {
                 self.record_winit_native_event(target, event)?;
             }
+            winit_native::redraw_all()?;
         }
         Ok(self
             .pump_collected_winit_events(window)?
