@@ -20,8 +20,8 @@ pub use stub::*;
 #[cfg(target_os = "windows")]
 use layer36_adapter_common::ui::WidgetKind;
 use layer36_adapter_common::ui::{
-    UiAdapterError, WidgetPlacement, WindowId, WindowSize, WinitWindowNativeEvent,
-    WinitWindowSnapshot,
+    RawPointerSample, UiAdapterError, WidgetPlacement, WindowId, WindowSize,
+    WinitWindowNativeEvent, WinitWindowSnapshot,
 };
 
 /// Native events paired with the Layer36 window they belong to.
@@ -69,6 +69,8 @@ mod real {
         pending_creates: Vec<PendingCreate>,
         windows: BTreeMap<NativeWindowId, TrackedWindow>,
         events: CollectedNativeEvents,
+        cursor: BTreeMap<NativeWindowId, (f32, f32)>,
+        pointer_samples: Vec<RawPointerSample>,
     }
 
     struct PendingCreate {
@@ -143,6 +145,33 @@ mod real {
                     Some(WinitWindowNativeEvent::ScaleChanged(scale_factor as f32))
                 }
                 WindowEvent::RedrawRequested => Some(WinitWindowNativeEvent::RedrawRequested),
+                WindowEvent::CursorMoved { position, .. } => {
+                    let scale = self
+                        .windows
+                        .get(&native)
+                        .map(|tracked| tracked.window.scale_factor())
+                        .unwrap_or(1.0);
+                    self.cursor.insert(
+                        native,
+                        ((position.x / scale) as f32, (position.y / scale) as f32),
+                    );
+                    None
+                }
+                WindowEvent::MouseInput {
+                    state,
+                    button: winit::event::MouseButton::Left,
+                    ..
+                } => {
+                    if let Some((x, y)) = self.cursor.get(&native).copied() {
+                        self.pointer_samples.push(RawPointerSample {
+                            window: layer36,
+                            x,
+                            y,
+                            pressed: state == winit::event::ElementState::Pressed,
+                        });
+                    }
+                    None
+                }
                 _ => None,
             };
             if let Some(event) = mapped {
@@ -424,6 +453,19 @@ mod real {
         })
     }
 
+    /// Drain raw pointer samples captured since the last call.
+    pub fn drain_pointer_samples() -> Vec<RawPointerSample> {
+        if !host_initialized() {
+            return Vec::new();
+        }
+        WINIT_HOST.with(|slot| {
+            slot.borrow_mut()
+                .as_mut()
+                .map(|host| std::mem::take(&mut host.app.pointer_samples))
+                .unwrap_or_default()
+        })
+    }
+
     /// Whether a native window is currently tracked for the id.
     pub fn has_native_window(layer36: WindowId) -> Result<bool, UiAdapterError> {
         with_tracked(layer36, |_| ()).map(|found| found.is_some())
@@ -493,5 +535,10 @@ mod stub {
     /// Winit windows are only available in Windows builds.
     pub fn redraw_all() -> Result<(), UiAdapterError> {
         unsupported()
+    }
+
+    /// Winit windows are only available in Windows builds.
+    pub fn drain_pointer_samples() -> Vec<RawPointerSample> {
+        Vec::new()
     }
 }

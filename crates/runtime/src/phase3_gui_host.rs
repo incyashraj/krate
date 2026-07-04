@@ -95,6 +95,27 @@ impl Phase3GuiHost {
             let _ = dispatcher.pump_event_loop_once(*window);
         }
 
+        // Route raw native pointer input through layout hit testing so the
+        // app-facing event carries a widget id. Raw samples never reach the
+        // queue directly, so this cannot loop.
+        for sample in dispatcher.drain_raw_pointer_input() {
+            if let Some(record) = dispatcher.window(sample.window)? {
+                if let Ok(viewport) =
+                    LayoutViewport::new(record.size.width as f32, record.size.height as f32)
+                {
+                    let _ = dispatcher.route_pointer_event(crate::phase3_ui::PointerRouteRequest {
+                        window: sample.window,
+                        viewport,
+                        x: sample.x,
+                        y: sample.y,
+                        button: Some(PointerButton::Primary),
+                        pressed: sample.pressed,
+                        modifiers: Modifiers::default(),
+                    });
+                }
+            }
+        }
+
         // Skip host-side bookkeeping events that have no portable WIT shape.
         while let Some(event) = dispatcher.poll_event()? {
             if let Some(event) = event_to_wit(event) {

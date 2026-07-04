@@ -7,12 +7,12 @@ use layer36_adapter_common::{
     locale::{DateStyle, HostLocale, LocaleId, NumberStyle},
     time::HostClock,
     ui::{
-        DraftUiAdapter, KeyEvent, NativeWindowHandle, PointerEvent, TextInputEvent, Theme,
-        UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick, WidgetId, WidgetNode,
-        WidgetPlacement, WidgetTree, WindowAdapter, WindowBackendKind, WindowId, WindowOptions,
-        WindowRecord, WindowSize, WinitWindowEventCollector, WinitWindowEventLoopStep,
-        WinitWindowEventLoopStepReport, WinitWindowNativeEvent, WinitWindowSession,
-        WinitWindowSnapshot,
+        DraftUiAdapter, KeyEvent, NativeWindowHandle, PointerEvent, RawPointerSample,
+        TextInputEvent, Theme, UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick,
+        WidgetId, WidgetNode, WidgetPlacement, WidgetTree, WindowAdapter, WindowBackendKind,
+        WindowId, WindowOptions, WindowRecord, WindowSize, WinitWindowEventCollector,
+        WinitWindowEventLoopStep, WinitWindowEventLoopStepReport, WinitWindowNativeEvent,
+        WinitWindowSession, WinitWindowSnapshot,
     },
 };
 use std::collections::BTreeMap;
@@ -446,6 +446,10 @@ impl WindowAdapter for LinuxWinitPrototypeUiAdapter {
 }
 
 impl UiAdapter for LinuxWinitPrototypeUiAdapter {
+    fn drain_raw_pointer_input(&self) -> Vec<RawPointerSample> {
+        winit_native::drain_pointer_samples()
+    }
+
     fn lower_widget_placements(
         &self,
         window: WindowId,

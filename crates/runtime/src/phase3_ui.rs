@@ -354,6 +354,11 @@ impl<'a> Phase3UiDispatcher<'a> {
         Ok(())
     }
 
+    /// Drain raw native pointer input for runtime-side hit-test routing.
+    pub fn drain_raw_pointer_input(&self) -> Vec<layer36_adapter_common::ui::RawPointerSample> {
+        self.adapter.drain_raw_pointer_input()
+    }
+
     pub fn drain_events(&self) -> UiDispatchResult<Vec<UiEvent>> {
         Ok(self.adapter.drain_events()?)
     }

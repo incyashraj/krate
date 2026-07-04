@@ -351,7 +351,7 @@ jobs:
           sudo apt-get update -q
           # xvfb provides the display server; libxkbcommon-x11 is dlopen'd by
           # winit's X11 keyboard path and absent on minimal runners.
-          sudo apt-get install -y -q xvfb libxkbcommon-x11-0
+          sudo apt-get install -y -q xvfb libxkbcommon-x11-0 xdotool
           # 1. Adapter-level native smoke: real winit window round trip.
           LAYER36_WINIT_NATIVE_SMOKE=1 LAYER36_WINIT_ANY_THREAD=1 xvfb-run -a \
             cargo test -p layer36-adapter-linux --lib -- --ignored \
@@ -372,6 +372,17 @@ jobs:
             exit 1
           fi
           echo "hello-gui opened a real winit window on Linux (Xvfb) and exited cleanly"
+          # 3. Synthetic click round trip: xdotool presses the drawn button
+          #    and the component must observe it (exit 0).
+          set +e
+          xvfb-run -a bash scripts/xvfb-click-hello-gui.sh
+          code=$?
+          set -e
+          if [ "$code" != "0" ]; then
+            echo "expected exit 0 from the synthetic click round trip, got $code" >&2
+            exit 1
+          fi
+          echo "synthetic click on the drawn button reached the component on Linux (exit 0)"
       - name: Run Windows winit native window proof
         if: matrix.os == 'windows-latest'
         shell: bash

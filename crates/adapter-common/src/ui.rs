@@ -941,6 +941,24 @@ pub struct WidgetPlacement {
     pub height: f32,
 }
 
+/// One raw pointer sample from a native backend, before hit testing.
+///
+/// Backends report where and whether the primary button changed; the
+/// runtime routes samples through layout hit testing so the app-facing
+/// event carries a widget id. Raw samples never enter the UI event queue
+/// directly.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RawPointerSample {
+    /// Window the sample belongs to.
+    pub window: WindowId,
+    /// X in logical pixels.
+    pub x: f32,
+    /// Y in logical pixels.
+    pub y: f32,
+    /// True on primary-button press, false on release.
+    pub pressed: bool,
+}
+
 pub trait UiAdapter: WindowAdapter {
     /// Set or replace the root widget tree for a window.
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError>;
@@ -989,6 +1007,12 @@ pub trait UiAdapter: WindowAdapter {
         _window: WindowId,
     ) -> Result<Option<UiEventLoopTick>, UiAdapterError> {
         Ok(None)
+    }
+
+    /// Drain raw pointer input captured by a native backend since the last
+    /// call. Headless adapters return nothing.
+    fn drain_raw_pointer_input(&self) -> Vec<RawPointerSample> {
+        Vec::new()
     }
 
     /// Lower widget placements to native host controls, replacing any
