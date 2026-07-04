@@ -1261,6 +1261,7 @@ name = "layer36-adapter-windows"
 version = "0.1.0-dev"
 dependencies = [
  "layer36-adapter-common",
+ "softbuffer",
  "winit",
 ]
 
