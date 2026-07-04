@@ -349,7 +349,9 @@ jobs:
         shell: bash
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q xvfb
+          # xvfb provides the display server; libxkbcommon-x11 is dlopen'd by
+          # winit's X11 keyboard path and absent on minimal runners.
+          sudo apt-get install -y -q xvfb libxkbcommon-x11-0
           # 1. Adapter-level native smoke: real winit window round trip.
           LAYER36_WINIT_NATIVE_SMOKE=1 LAYER36_WINIT_ANY_THREAD=1 xvfb-run -a \
             cargo test -p layer36-adapter-linux --lib -- --ignored \
