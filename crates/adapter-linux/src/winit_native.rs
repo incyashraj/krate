@@ -17,8 +17,10 @@ pub use real::*;
 #[cfg(not(target_os = "linux"))]
 pub use stub::*;
 
+#[cfg(target_os = "linux")]
+use layer36_adapter_common::ui::WidgetKind;
 use layer36_adapter_common::ui::{
-    UiAdapterError, WidgetKind, WidgetPlacement, WindowId, WindowSize, WinitWindowNativeEvent,
+    UiAdapterError, WidgetPlacement, WindowId, WindowSize, WinitWindowNativeEvent,
     WinitWindowSnapshot,
 };
 
