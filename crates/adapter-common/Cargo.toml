@@ -16,12 +16,13 @@ parley = { version = "0.11.0", optional = true }
 vello_cpu = { version = "0.0.9", features = ["text"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# fontique (via parley) links fontconfig through this sys crate. The
-# dlopen feature loads it at runtime instead, keeping Krate's Linux rule:
-# no build-time system library requirements, everything dlopen'd.
-yeslogic-fontconfig-sys = { version = "6.0.1", features = [
-    "dlopen",
+# fontique (parley's font backend) links fontconfig at build time by
+# default. Its fontconfig-dlopen feature switches both fontique and the
+# sys crate to runtime loading, keeping Krate's Linux rule: no build-time
+# system library requirements, everything dlopen'd.
+fontique = { version = "0.11.0", features = [
+    "fontconfig-dlopen",
 ], optional = true }
 
 [features]
-vector-text = ["dep:parley", "dep:vello_cpu", "dep:yeslogic-fontconfig-sys"]
+vector-text = ["dep:parley", "dep:vello_cpu", "dep:fontique"]

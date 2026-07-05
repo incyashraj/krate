@@ -1514,10 +1514,10 @@ dependencies = [
 name = "krate-adapter-common"
 version = "0.1.0-dev"
 dependencies = [
+ "fontique",
  "parley",
  "thiserror 2.0.18",
  "vello_cpu",
- "yeslogic-fontconfig-sys",
 ]
 
 [[package]]
