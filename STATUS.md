@@ -1,15 +1,15 @@
 # Krate Status (formerly Layer36)
 
-Last updated: 2026-07-04
+Last updated: 2026-07-05
 Naming: the project is Krate (company: Krate Labs, Inc.). The A9 rename is
 fully executed — CLI `krate`, WIT `krate:*`, schema `krate.run.v1`, env
 `KRATE_*`, repo `incyashraj/krate`, runner `krate-local`, future bundle
 format `.krate`. No legacy `layer36` identifiers remain in code or contracts.
 Repo: `incyashraj/krate`
 Branch: `main`
-Latest checked completed push before this slice: `6a6f0be` (fast CI green,
-then dispatched full matrix run `28708285696` green: all three OS lanes —
-the first full-matrix certification of the renamed world).
+Latest checked completed push before this status update: `8b1c9ec` (fast
+CI run `28740942296` green, then dispatched full matrix run `28741064867`
+green: all three OS lanes — certifying the vector-text renderer pass).
 Working tree at this status update: the renderer slice's first pass is in.
 The duplicated softbuffer painting moved into one shared CPU painter
 (`adapter-common/src/painter.rs`) with deterministic pixel tests, and on
@@ -71,18 +71,19 @@ green verification fuzz run.
 
 ## 1) Project size today
 
-- Commits after this slice lands: about 350
-- Tracked files after this slice lands: about 334
-- Total tracked lines after this slice lands: about 98,012
-- Rust lines (`.rs`) after this slice lands: about 50,020
-- Docs lines (`.md`) after this slice lands: about 30,644
+- Commits after this slice lands: about 410
+- Tracked files after this slice lands: about 359
+- Total tracked lines after this slice lands: about 114,500
+- Rust lines (`.rs`) after this slice lands: about 63,000
+- Docs lines (`.md`) after this slice lands: about 31,900
 
 ## 2) Latest CI and Pages state
 
-Latest completed push (`02f28bf`) checks:
+Latest completed push checks (`8b1c9ec`, 2026-07-05):
 
-- CI: success (run `27895755338`)
-- Deploy docs to GitHub Pages: success (run `27895755345`)
+- CI (fast): success (run `28740942296`)
+- CI (dispatched full matrix, all three OS lanes): success (run `28741064867`)
+- Deploy docs to GitHub Pages: green through this push
 
 Manual hosted full CI run `26069665276` passed on commit `3f1a219`.
 Linux, macOS, and Windows full-test lanes all passed. The language-variant,
@@ -112,10 +113,13 @@ full CI matrix), with a real native window on macOS
 windows on Linux (proven in CI under Xvfb) and Windows (proven on the
 windows-latest lane). ALL THREE desktop OSes open real windows from the
 same portable file, machine-certified in one green full-matrix run. The
-first drawn-widget pass is in too: the Linux window paints button and
-field rectangles from lowered placements through a CPU framebuffer
-(softbuffer, everything dlopened), verified in the green matrix. Next:
-the Windows drawing clone, then the real renderer (vello, per ADR-0015).
+drawn widgets are interactive and properly rendered on Linux and Windows:
+every full CI run synthetically clicks the drawn Linux button (xdotool
+under Xvfb) and the component observes it, and the frame renders as a
+vector scene — antialiased system-font labels via parley + vello_cpu,
+bitmap-font fallback kept — with a screenshot of the window published as
+a CI artifact. Next per the renderer map: theme-token styling (rounded
+corners, hover/pressed states), richer widgets, then text input.
 
 Current capability set includes:
 
