@@ -14,8 +14,14 @@ attached to the focused widget, and clicking a text field now moves
 focus there. The contract needed zero changes — key, text-input, and
 focus-changed events were designed into the WIT months ago and were
 waiting for a backend to feed them. Raw keys travel the same
-loop-proof drain channel the pointer uses. Next: a component that
-visibly types.
+loop-proof drain channel the pointer uses. And the component that
+visibly types landed the same evening: hello-gui renders every
+keystroke into its text field live and echoes the final text on exit,
+so CI now runs the complete loop on Linux — click the field, type
+"hi krate" with a synthetic keyboard, photograph the window with the
+words in it, click the button, and check the app repeated the text
+back. A keyboard round trip through nine layers, machine-verified on
+every full run.
 
 ## 2026-07-05 — The drawn widgets learn manners
 

@@ -19,8 +19,17 @@ portable key and text-input events, and a pointer press on a text field
 now moves focus there (click-to-focus, emitting the portable
 focus-changed event). Zero WIT changes: `key`, `text-input`, and
 `focus-changed` were already in the frozen-shape contract. Round-trip
-covered by new dispatcher tests; the visible typing demo (guest updating
-field text from text-input events) is the next slice.
+covered by new dispatcher tests. The visible typing demo landed right
+behind it: hello-gui now buffers text-input events (fixed-capacity,
+panic-free — indexed slice ops pull WASI panic machinery, so all access
+is via non-panicking accessors), renders the text into the field live,
+handles Backspace, and reports `typed:<text>` on stdout at exit. The
+Xvfb proof script gained the full loop: click the field to focus, type
+"hi krate" with xdotool, screenshot with the text visible, click the
+button, and assert both exit 0 and the typed marker in the app's own
+output — the first machine-verified keyboard round trip through the
+whole stack (X11 key event → winit → drain → focus routing → portable
+text-input → guest → widget update → drawn pixels → stdout).
 Previous slice: widget styling — Buttons and
 fields render with rounded corners in the vector painter, and buttons
 give hover and pressed feedback: the winit hosts (Linux and Windows)

@@ -378,14 +378,15 @@ jobs:
           #    and the component must observe it (exit 0).
           set +e
           KRATE_XVFB_SCREENSHOT="$RUNNER_TEMP/hello-gui-linux.png" \
+          KRATE_EXPECT_TYPED="hi krate" \
             xvfb-run -a bash scripts/xvfb-click-hello-gui.sh
           code=$?
           set -e
           if [ "$code" != "0" ]; then
-            echo "expected exit 0 from the synthetic click round trip, got $code" >&2
+            echo "expected exit 0 from the synthetic input round trip, got $code" >&2
             exit 1
           fi
-          echo "synthetic click on the drawn button reached the component on Linux (exit 0)"
+          echo "synthetic typing + click reached the component on Linux (exit 0, typed text echoed)"
       - name: Upload Linux drawn-window screenshot
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v7
