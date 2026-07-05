@@ -1517,6 +1517,7 @@ dependencies = [
  "parley",
  "thiserror 2.0.18",
  "vello_cpu",
+ "yeslogic-fontconfig-sys",
 ]
 
 [[package]]
