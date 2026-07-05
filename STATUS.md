@@ -22,6 +22,12 @@ oversized surfaces, or `KRATE_BITMAP_TEXT=1`). A scratch spike proved the
 released crates (`vello_cpu` 0.0.9 + `parley` 0.11) interoperate before
 any dependency was added. The GPU vello renderer later swaps this same
 painter; the placement contract did not change.
+Certification: landed as `cbea87e` + `b0e41fd` + two CI-caught fixes
+(`797dc98`, `8b1c9ec` — fontconfig must be dlopen'd through fontique's
+own `fontconfig-dlopen` feature, keeping the no-build-time-system-libs
+rule). Full matrix run `28741064867` green on all three OS lanes; the
+screenshot artifact verified by eye — antialiased system-font labels in
+the Linux window. Copies in `Invest/evidence/`.
 Previous slice, certified: pointer input routing —
 on the Linux lane a synthetic `xdotool` click presses the drawn button
 inside a real winit window under Xvfb and the portable component observes
