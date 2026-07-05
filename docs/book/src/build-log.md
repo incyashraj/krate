@@ -6,6 +6,17 @@ pages.
 
 ---
 
+## 2026-07-05 — The windows learn to listen to the keyboard
+
+Keyboard input flows end to end on the host side: real key presses in
+the Linux and Windows windows become portable key and text events
+attached to the focused widget, and clicking a text field now moves
+focus there. The contract needed zero changes — key, text-input, and
+focus-changed events were designed into the WIT months ago and were
+waiting for a backend to feed them. Raw keys travel the same
+loop-proof drain channel the pointer uses. Next: a component that
+visibly types.
+
 ## 2026-07-05 — The drawn widgets learn manners
 
 Styling pass: buttons and fields now have rounded corners, and buttons

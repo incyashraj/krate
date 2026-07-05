@@ -355,6 +355,32 @@ impl<'a> Phase3UiDispatcher<'a> {
     }
 
     /// Drain raw native pointer input for runtime-side hit-test routing.
+    /// Drain raw keyboard samples from the native backend.
+    pub fn drain_raw_key_input(&self) -> Vec<krate_adapter_common::ui::RawKeySample> {
+        if self.check_window_access().is_err() {
+            return Vec::new();
+        }
+        self.adapter.drain_raw_key_input()
+    }
+
+    /// Queue a focus-routed key event for the app.
+    pub fn queue_key_event(
+        &self,
+        event: krate_adapter_common::ui::KeyEvent,
+    ) -> UiDispatchResult<()> {
+        self.check_window_access()?;
+        self.adapter.queue_key_event(event).map_err(Into::into)
+    }
+
+    /// Queue a focus-routed text input event for the app.
+    pub fn queue_text_input(
+        &self,
+        event: krate_adapter_common::ui::TextInputEvent,
+    ) -> UiDispatchResult<()> {
+        self.check_window_access()?;
+        self.adapter.queue_text_input(event).map_err(Into::into)
+    }
+
     pub fn drain_raw_pointer_input(&self) -> Vec<krate_adapter_common::ui::RawPointerSample> {
         self.adapter.drain_raw_pointer_input()
     }
@@ -700,6 +726,60 @@ mod tests {
             err,
             UiDispatchError::Adapter(UiAdapterError::EmptyTitle)
         ));
+    }
+
+    #[test]
+    fn key_and_text_events_route_through_the_dispatcher() {
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let adapter = DraftUiAdapter::default();
+        let size = WindowSize::new(640, 480).expect("size");
+        let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+        let window = dispatcher
+            .create_window(WindowOptions::new("Notes", size).expect("options"))
+            .expect("create window");
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let field = WidgetNode::new(WidgetId::new(2).expect("field"), WidgetKind::TextField)
+            .with_parent(root.id);
+        dispatcher.set_root(window, root).expect("set root");
+        dispatcher.upsert_node(window, field).expect("upsert field");
+        let field_id = WidgetId::new(2).expect("field");
+        dispatcher.focus_node(window, field_id).expect("focus");
+
+        // No native backend: the draft adapter reports no raw samples.
+        assert!(dispatcher.drain_raw_key_input().is_empty());
+
+        let key = krate_adapter_common::ui::KeyEvent::new(
+            window,
+            Some(field_id),
+            "a",
+            true,
+            krate_adapter_common::ui::Modifiers::default(),
+        )
+        .expect("key event");
+        dispatcher.queue_key_event(key.clone()).expect("queue key");
+        let text = krate_adapter_common::ui::TextInputEvent::new(window, Some(field_id), "a")
+            .expect("text event");
+        dispatcher
+            .queue_text_input(text.clone())
+            .expect("queue text");
+
+        // Focus change from focus_node arrives first, then key, then text.
+        let mut saw_key = false;
+        let mut saw_text = false;
+        while let Some(event) = dispatcher.poll_event().expect("poll") {
+            match event {
+                UiEvent::Key(event) => {
+                    assert_eq!(event, key);
+                    saw_key = true;
+                }
+                UiEvent::TextInput(event) => {
+                    assert_eq!(event, text);
+                    saw_text = true;
+                }
+                _ => {}
+            }
+        }
+        assert!(saw_key && saw_text, "key and text events must round-trip");
     }
 
     #[test]

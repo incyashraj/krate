@@ -449,6 +449,10 @@ impl UiAdapter for WindowsWinitPrototypeUiAdapter {
         winit_native::drain_pointer_samples()
     }
 
+    fn drain_raw_key_input(&self) -> Vec<krate_adapter_common::ui::RawKeySample> {
+        winit_native::drain_key_samples()
+    }
+
     fn lower_widget_placements(
         &self,
         window: WindowId,

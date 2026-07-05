@@ -959,6 +959,26 @@ pub struct RawPointerSample {
     pub pressed: bool,
 }
 
+/// One raw keyboard sample from a native backend, before focus routing.
+///
+/// Backends report the normalized key name, transition, modifier state,
+/// and any text the platform produced for the press. The runtime attaches
+/// the focused widget and queues portable key/text events; raw samples
+/// never enter the UI event queue directly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RawKeySample {
+    /// Window the sample belongs to.
+    pub window: WindowId,
+    /// Host-normalized key name (for example "a", "Enter").
+    pub key: String,
+    /// True on key press, false on release.
+    pub pressed: bool,
+    /// Modifier state at the time of the sample.
+    pub modifiers: Modifiers,
+    /// Text produced by the press after keyboard layout processing.
+    pub text: Option<String>,
+}
+
 pub trait UiAdapter: WindowAdapter {
     /// Set or replace the root widget tree for a window.
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError>;
@@ -1012,6 +1032,13 @@ pub trait UiAdapter: WindowAdapter {
     /// Drain raw pointer input captured by a native backend since the last
     /// call. Headless adapters return nothing.
     fn drain_raw_pointer_input(&self) -> Vec<RawPointerSample> {
+        Vec::new()
+    }
+
+    /// Drain raw keyboard samples captured by the native backend since
+    /// the last call. Headless adapters have no native input and return
+    /// nothing.
+    fn drain_raw_key_input(&self) -> Vec<RawKeySample> {
         Vec::new()
     }
 

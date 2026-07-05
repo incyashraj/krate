@@ -10,7 +10,18 @@ Branch: `main`
 Latest checked completed push before this status update: `8b1c9ec` (fast
 CI run `28740942296` green, then dispatched full matrix run `28741064867`
 green: all three OS lanes — certifying the vector-text renderer pass).
-Working tree at this status update: widget styling is in. Buttons and
+Working tree at this status update: keyboard input is wired end to end
+(host side). The winit hosts capture real key presses — normalized key
+names, modifier state, and layout-processed text — into a raw-sample
+drain channel mirroring the pointer path (samples never enter the event
+queue directly). The gui host attaches keyboard focus and queues
+portable key and text-input events, and a pointer press on a text field
+now moves focus there (click-to-focus, emitting the portable
+focus-changed event). Zero WIT changes: `key`, `text-input`, and
+`focus-changed` were already in the frozen-shape contract. Round-trip
+covered by new dispatcher tests; the visible typing demo (guest updating
+field text from text-input events) is the next slice.
+Previous slice: widget styling — Buttons and
 fields render with rounded corners in the vector painter, and buttons
 give hover and pressed feedback: the winit hosts (Linux and Windows)
 hit-test the cursor against placements on every move, track the pressed

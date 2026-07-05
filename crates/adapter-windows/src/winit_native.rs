@@ -18,9 +18,9 @@ pub use real::*;
 pub use stub::*;
 
 #[cfg(target_os = "windows")]
-use krate_adapter_common::ui::WidgetKind;
+use krate_adapter_common::ui::{Modifiers, WidgetKind};
 use krate_adapter_common::ui::{
-    RawPointerSample, UiAdapterError, WidgetPlacement, WindowId, WindowSize,
+    RawKeySample, RawPointerSample, UiAdapterError, WidgetPlacement, WindowId, WindowSize,
     WinitWindowNativeEvent, WinitWindowSnapshot,
 };
 
@@ -71,6 +71,8 @@ mod real {
         events: CollectedNativeEvents,
         cursor: BTreeMap<NativeWindowId, (f32, f32)>,
         pointer_samples: Vec<RawPointerSample>,
+        key_samples: Vec<RawKeySample>,
+        modifiers: Modifiers,
     }
 
     struct PendingCreate {
@@ -86,6 +88,38 @@ mod real {
         placements: Vec<WidgetPlacement>,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
+    }
+
+    /// Normalize a winit logical key into the portable key-name shape.
+    /// Characters map to themselves; a curated set of named keys map to
+    /// stable names; everything else (bare modifiers, media keys) is
+    /// dropped for now.
+    fn key_name(key: &winit::keyboard::Key) -> Option<String> {
+        use winit::keyboard::{Key, NamedKey};
+        match key {
+            Key::Character(text) => Some(text.to_string()),
+            Key::Named(named) => {
+                let name = match named {
+                    NamedKey::Enter => "Enter",
+                    NamedKey::Space => "Space",
+                    NamedKey::Backspace => "Backspace",
+                    NamedKey::Delete => "Delete",
+                    NamedKey::Tab => "Tab",
+                    NamedKey::Escape => "Escape",
+                    NamedKey::ArrowLeft => "ArrowLeft",
+                    NamedKey::ArrowRight => "ArrowRight",
+                    NamedKey::ArrowUp => "ArrowUp",
+                    NamedKey::ArrowDown => "ArrowDown",
+                    NamedKey::Home => "Home",
+                    NamedKey::End => "End",
+                    NamedKey::PageUp => "PageUp",
+                    NamedKey::PageDown => "PageDown",
+                    _ => return None,
+                };
+                Some(name.to_string())
+            }
+            _ => None,
+        }
     }
 
     impl PumpApp {
@@ -190,6 +224,43 @@ mod real {
                                 draw_placements(tracked);
                             }
                         }
+                    }
+                    None
+                }
+                WindowEvent::ModifiersChanged(state) => {
+                    let state = state.state();
+                    self.modifiers = Modifiers {
+                        shift: state.shift_key(),
+                        control: state.control_key(),
+                        alt: state.alt_key(),
+                        meta: state.super_key(),
+                    };
+                    None
+                }
+                WindowEvent::KeyboardInput { event, .. } => {
+                    if let Some(key) = key_name(&event.logical_key) {
+                        let pressed = event.state == winit::event::ElementState::Pressed;
+                        // Text comes from the platform's layout processing;
+                        // only presses produce it, and control characters
+                        // (Enter, Backspace) travel as key names instead.
+                        let text = if pressed {
+                            event
+                                .text
+                                .as_ref()
+                                .map(|text| text.to_string())
+                                .filter(|text| {
+                                    !text.is_empty() && !text.chars().any(char::is_control)
+                                })
+                        } else {
+                            None
+                        };
+                        self.key_samples.push(RawKeySample {
+                            window: krate,
+                            key,
+                            pressed,
+                            modifiers: self.modifiers,
+                            text,
+                        });
                     }
                     None
                 }
@@ -437,6 +508,19 @@ mod real {
         })
     }
 
+    /// Drain raw keyboard samples captured since the last call.
+    pub fn drain_key_samples() -> Vec<RawKeySample> {
+        if !host_initialized() {
+            return Vec::new();
+        }
+        WINIT_HOST.with(|slot| {
+            slot.borrow_mut()
+                .as_mut()
+                .map(|host| std::mem::take(&mut host.app.key_samples))
+                .unwrap_or_default()
+        })
+    }
+
     /// Whether a native window is currently tracked for the id.
     pub fn has_native_window(krate: WindowId) -> Result<bool, UiAdapterError> {
         with_tracked(krate, |_| ()).map(|found| found.is_some())
@@ -507,6 +591,11 @@ mod stub {
 
     /// Winit windows are only available in Windows builds.
     pub fn drain_pointer_samples() -> Vec<RawPointerSample> {
+        Vec::new()
+    }
+
+    /// Winit windows are only available in Windows builds.
+    pub fn drain_key_samples() -> Vec<RawKeySample> {
         Vec::new()
     }
 }

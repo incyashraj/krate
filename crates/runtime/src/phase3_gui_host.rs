@@ -103,15 +103,58 @@ impl Phase3GuiHost {
                 if let Ok(viewport) =
                     LayoutViewport::new(record.size.width as f32, record.size.height as f32)
                 {
-                    let _ = dispatcher.route_pointer_event(crate::phase3_ui::PointerRouteRequest {
-                        window: sample.window,
-                        viewport,
-                        x: sample.x,
-                        y: sample.y,
-                        button: Some(PointerButton::Primary),
-                        pressed: sample.pressed,
-                        modifiers: Modifiers::default(),
-                    });
+                    let routed =
+                        dispatcher.route_pointer_event(crate::phase3_ui::PointerRouteRequest {
+                            window: sample.window,
+                            viewport,
+                            x: sample.x,
+                            y: sample.y,
+                            button: Some(PointerButton::Primary),
+                            pressed: sample.pressed,
+                            modifiers: Modifiers::default(),
+                        });
+                    // Click-to-focus: a press routed onto a text-entry
+                    // widget moves keyboard focus there (queues the
+                    // portable focus-changed event through the dispatcher).
+                    if sample.pressed {
+                        if let Ok(Some(widget)) = routed {
+                            if let Ok(Some(tree)) = dispatcher.widget_tree(sample.window) {
+                                let focusable = tree
+                                    .node(widget)
+                                    .is_some_and(|node| press_focuses(node.kind));
+                                if focusable
+                                    && dispatcher.focused_widget(sample.window).ok().flatten()
+                                        != Some(widget)
+                                {
+                                    let _ = dispatcher.focus_node(sample.window, widget);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Attach keyboard focus to raw key samples and queue portable
+        // key/text events. Raw samples never enter the queue directly.
+        for sample in dispatcher.drain_raw_key_input() {
+            let focused = dispatcher.focused_widget(sample.window).ok().flatten();
+            if let Ok(event) = krate_adapter_common::ui::KeyEvent::new(
+                sample.window,
+                focused,
+                sample.key.clone(),
+                sample.pressed,
+                sample.modifiers,
+            ) {
+                let _ = dispatcher.queue_key_event(event);
+            }
+            if sample.pressed {
+                if let Some(text) = sample.text.as_deref() {
+                    if let Ok(event) =
+                        krate_adapter_common::ui::TextInputEvent::new(sample.window, focused, text)
+                    {
+                        let _ = dispatcher.queue_text_input(event);
+                    }
                 }
             }
         }
@@ -153,6 +196,11 @@ impl Phase3GuiHost {
             .find(|window| window.get() == raw)
             .ok_or(ui::types::UiError::InvalidWindow)
     }
+}
+
+/// Widget kinds that take keyboard focus from a pointer press.
+fn press_focuses(kind: WidgetKind) -> bool {
+    matches!(kind, WidgetKind::TextField | WidgetKind::TextArea)
 }
 
 fn widget_id(raw: u64) -> Result<WidgetId, ui::types::UiError> {
@@ -644,5 +692,19 @@ impl audio::capture::Host for Phase3GuiHost {
         _max_bytes: u32,
     ) -> wasmtime::Result<Result<Vec<u8>, audio::types::AudioError>> {
         Ok(Err(audio_unsupported()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn presses_focus_text_entry_widgets_only() {
+        assert!(press_focuses(WidgetKind::TextField));
+        assert!(press_focuses(WidgetKind::TextArea));
+        assert!(!press_focuses(WidgetKind::Button));
+        assert!(!press_focuses(WidgetKind::Text));
+        assert!(!press_focuses(WidgetKind::Stack));
     }
 }
