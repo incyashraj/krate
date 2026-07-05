@@ -30,6 +30,12 @@ button, and assert both exit 0 and the typed marker in the app's own
 output — the first machine-verified keyboard round trip through the
 whole stack (X11 key event → winit → drain → focus routing → portable
 text-input → guest → widget update → drawn pixels → stdout).
+Certification: landed as `97363e6` + `4d67598` + one CI-caught fix
+(`8df3870` — bare Xvfb runs no window manager, so X input focus must be
+set explicitly with `xdotool windowfocus` before typing). Full matrix
+run `28746399711` green on all three OS lanes; the log shows the guest
+echoing `typed:hi krate` and the screenshot artifact shows the words
+sitting in the field. Copies in `Invest/evidence/`.
 Previous slice: widget styling — Buttons and
 fields render with rounded corners in the vector painter, and buttons
 give hover and pressed feedback: the winit hosts (Linux and Windows)
