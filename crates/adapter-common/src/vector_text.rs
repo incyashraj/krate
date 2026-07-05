@@ -14,12 +14,12 @@ use parley::{
     PositionedLayoutItem, StyleProperty,
 };
 use vello_cpu::color::AlphaColor;
-use vello_cpu::kurbo::Rect;
+use vello_cpu::kurbo::{Rect, RoundedRect, Shape};
 use vello_cpu::{Glyph, Pixmap, RenderContext, Resources};
 
 use crate::painter::{
-    COLOR_BACKGROUND, COLOR_BUTTON, COLOR_BUTTON_LABEL, COLOR_FIELD_BORDER, COLOR_FIELD_FILL,
-    COLOR_FIELD_TEXT, COLOR_TEXT,
+    button_fill_color, PaintInteraction, COLOR_BACKGROUND, COLOR_BUTTON_LABEL, COLOR_FIELD_BORDER,
+    COLOR_FIELD_FILL, COLOR_FIELD_TEXT, COLOR_TEXT,
 };
 use crate::ui::{WidgetKind, WidgetPlacement};
 
@@ -77,6 +77,19 @@ fn fill(ctx: &mut RenderContext, color: u32, x: f32, y: f32, w: f32, h: f32) {
     ));
 }
 
+/// Fill a rounded rectangle (radius in physical pixels).
+fn fill_rounded(ctx: &mut RenderContext, color: u32, x: f32, y: f32, w: f32, h: f32, radius: f32) {
+    ctx.set_paint(argb(color));
+    let rrect = RoundedRect::new(
+        x as f64,
+        y as f64,
+        (x + w) as f64,
+        (y + h) as f64,
+        radius as f64,
+    );
+    ctx.fill_path(&rrect.to_path(0.25));
+}
+
 /// Draw one laid-out label with its top-left corner at `(x, y)`.
 fn draw_layout(
     ctx: &mut RenderContext,
@@ -131,6 +144,7 @@ pub fn try_paint_placements(
     height: u32,
     scale: f32,
     placements: &[WidgetPlacement],
+    interaction: PaintInteraction,
 ) -> bool {
     let (Ok(w16), Ok(h16)) = (u16::try_from(width), u16::try_from(height)) else {
         return false;
@@ -158,18 +172,20 @@ pub fn try_paint_placements(
             let label = placement.label.as_deref().unwrap_or("");
             let (text_color, inset) = match placement.kind {
                 WidgetKind::Button => {
-                    fill(&mut ctx, COLOR_BUTTON, px, py, pw, ph);
+                    let color = button_fill_color(placement.widget, interaction);
+                    fill_rounded(&mut ctx, color, px, py, pw, ph, 6.0 * scale);
                     (COLOR_BUTTON_LABEL, None)
                 }
                 WidgetKind::TextField | WidgetKind::TextArea => {
-                    fill(&mut ctx, COLOR_FIELD_BORDER, px, py, pw, ph);
-                    fill(
+                    fill_rounded(&mut ctx, COLOR_FIELD_BORDER, px, py, pw, ph, 4.0 * scale);
+                    fill_rounded(
                         &mut ctx,
                         COLOR_FIELD_FILL,
                         px + scale,
                         py + scale,
                         (pw - 2.0 * scale).max(0.0),
                         (ph - 2.0 * scale).max(0.0),
+                        3.0 * scale,
                     );
                     (COLOR_FIELD_TEXT, Some(4.0 * scale))
                 }
@@ -219,7 +235,14 @@ mod tests {
             width: 160.0,
             height: 32.0,
         }];
-        if !try_paint_placements(&mut buffer, w, h, 1.0, &placements) {
+        if !try_paint_placements(
+            &mut buffer,
+            w,
+            h,
+            1.0,
+            &placements,
+            PaintInteraction::default(),
+        ) {
             // Host without system fonts: the bitmap fallback covers it.
             eprintln!("skipping: no usable system fonts on this host");
             return;
@@ -242,7 +265,65 @@ mod tests {
     #[test]
     fn oversized_surfaces_fall_back() {
         let mut buffer = vec![0u32; 4];
-        assert!(!try_paint_placements(&mut buffer, 70_000, 1, 1.0, &[]));
+        assert!(!try_paint_placements(
+            &mut buffer,
+            70_000,
+            1,
+            1.0,
+            &[],
+            PaintInteraction::default()
+        ));
         assert_eq!(buffer, vec![0u32; 4]);
+    }
+
+    #[test]
+    fn corners_are_rounded_and_hover_changes_fill() {
+        let (w, h) = (200u32, 60u32);
+        let button = WidgetPlacement {
+            widget: WidgetId::new(1).unwrap(),
+            kind: WidgetKind::Button,
+            label: None,
+            x: 10.0,
+            y: 10.0,
+            width: 160.0,
+            height: 32.0,
+        };
+        let placements = [button];
+        let mut plain = vec![0u32; (w * h) as usize];
+        if !try_paint_placements(
+            &mut plain,
+            w,
+            h,
+            1.0,
+            &placements,
+            PaintInteraction::default(),
+        ) {
+            eprintln!("skipping: no usable system fonts on this host");
+            return;
+        }
+        let at = |b: &Vec<u32>, x: u32, y: u32| b[(y * w + x) as usize];
+        // The exact rectangle corner sits outside the 6px rounding, so it
+        // keeps the background; the button interior is filled.
+        assert_eq!(at(&plain, 10, 10), crate::painter::COLOR_BACKGROUND);
+        assert_ne!(at(&plain, 20, 20), crate::painter::COLOR_BACKGROUND);
+
+        let mut hovered = vec![0u32; (w * h) as usize];
+        let interaction = PaintInteraction {
+            hovered: Some(placements[0].widget),
+            pressed: None,
+        };
+        assert!(try_paint_placements(
+            &mut hovered,
+            w,
+            h,
+            1.0,
+            &placements,
+            interaction
+        ));
+        assert_ne!(
+            at(&plain, 20, 20),
+            at(&hovered, 20, 20),
+            "hover must change the button fill"
+        );
     }
 }

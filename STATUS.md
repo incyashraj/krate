@@ -10,7 +10,16 @@ Branch: `main`
 Latest checked completed push before this status update: `8b1c9ec` (fast
 CI run `28740942296` green, then dispatched full matrix run `28741064867`
 green: all three OS lanes — certifying the vector-text renderer pass).
-Working tree at this status update: the renderer slice's first pass is in.
+Working tree at this status update: widget styling is in. Buttons and
+fields render with rounded corners in the vector painter, and buttons
+give hover and pressed feedback: the winit hosts (Linux and Windows)
+hit-test the cursor against placements on every move, track the pressed
+widget, and repaint on state change through a new `PaintInteraction`
+value both painters accept. The hit-test helper is shared and
+unit-tested (paint order and widget kind honored); pixel tests cover the
+rounded corner (exact corner keeps the background), the hover fill
+change, and the pressed color in the bitmap fallback.
+Previous slice, certified: the renderer's first pass —
 The duplicated softbuffer painting moved into one shared CPU painter
 (`adapter-common/src/painter.rs`) with deterministic pixel tests, and on
 top of it vector text landed: with the new `vector-text` feature (enabled

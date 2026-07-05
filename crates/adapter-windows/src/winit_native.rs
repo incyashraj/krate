@@ -84,6 +84,8 @@ mod real {
         window: Rc<Window>,
         surface: Option<DrawSurface>,
         placements: Vec<WidgetPlacement>,
+        hovered: Option<krate_adapter_common::ui::WidgetId>,
+        pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
     }
 
     impl PumpApp {
@@ -104,6 +106,8 @@ mod real {
                             window: Rc::new(window),
                             surface: None,
                             placements: Vec::new(),
+                            hovered: None,
+                            pressed_widget: None,
                         },
                     );
                 }
@@ -151,10 +155,19 @@ mod real {
                         .get(&native)
                         .map(|tracked| tracked.window.scale_factor())
                         .unwrap_or(1.0);
-                    self.cursor.insert(
-                        native,
-                        ((position.x / scale) as f32, (position.y / scale) as f32),
-                    );
+                    let (x, y) = ((position.x / scale) as f32, (position.y / scale) as f32);
+                    self.cursor.insert(native, (x, y));
+                    if let Some(tracked) = self.windows.get_mut(&native) {
+                        let hovered = krate_adapter_common::painter::topmost_interactive_at(
+                            &tracked.placements,
+                            x,
+                            y,
+                        );
+                        if hovered != tracked.hovered {
+                            tracked.hovered = hovered;
+                            draw_placements(tracked);
+                        }
+                    }
                     None
                 }
                 WindowEvent::MouseInput {
@@ -163,12 +176,20 @@ mod real {
                     ..
                 } => {
                     if let Some((x, y)) = self.cursor.get(&native).copied() {
+                        let pressed = state == winit::event::ElementState::Pressed;
                         self.pointer_samples.push(RawPointerSample {
                             window: krate,
                             x,
                             y,
-                            pressed: state == winit::event::ElementState::Pressed,
+                            pressed,
                         });
+                        if let Some(tracked) = self.windows.get_mut(&native) {
+                            let pressed_widget = if pressed { tracked.hovered } else { None };
+                            if pressed_widget != tracked.pressed_widget {
+                                tracked.pressed_widget = pressed_widget;
+                                draw_placements(tracked);
+                            }
+                        }
                     }
                     None
                 }
@@ -209,6 +230,10 @@ mod real {
             height.get(),
             tracked.window.scale_factor() as f32,
             &tracked.placements,
+            krate_adapter_common::painter::PaintInteraction {
+                hovered: tracked.hovered,
+                pressed: tracked.pressed_widget,
+            },
         );
         let _ = buffer.present();
     }

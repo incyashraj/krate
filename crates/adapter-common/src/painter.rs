@@ -9,16 +9,55 @@
 //! softbuffer presents on both hosts.
 
 use crate::drawtext;
-use crate::ui::{WidgetKind, WidgetPlacement};
+use crate::ui::{WidgetId, WidgetKind, WidgetPlacement};
 
 /// Widget palette for the drawn pass (0xAARRGGBB).
 pub const COLOR_BACKGROUND: u32 = 0xFFF2F2F2;
 pub const COLOR_BUTTON: u32 = 0xFF3B82F6;
+pub const COLOR_BUTTON_HOVER: u32 = 0xFF5C93F8;
+pub const COLOR_BUTTON_PRESSED: u32 = 0xFF2563EB;
 pub const COLOR_BUTTON_LABEL: u32 = 0xFFFFFFFF;
 pub const COLOR_FIELD_FILL: u32 = 0xFFFFFFFF;
 pub const COLOR_FIELD_BORDER: u32 = 0xFF9CA3AF;
 pub const COLOR_FIELD_TEXT: u32 = 0xFF1F2937;
 pub const COLOR_TEXT: u32 = 0xFF111827;
+
+/// Transient pointer state a backend reports so widgets can render
+/// hover and pressed feedback. Purely visual: event routing is separate.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PaintInteraction {
+    /// Widget currently under the cursor, if any.
+    pub hovered: Option<WidgetId>,
+    /// Widget the primary button is currently held down on, if any.
+    pub pressed: Option<WidgetId>,
+}
+
+/// Resolve the fill color for a button under the given interaction.
+pub fn button_fill_color(widget: WidgetId, interaction: PaintInteraction) -> u32 {
+    if interaction.pressed == Some(widget) {
+        COLOR_BUTTON_PRESSED
+    } else if interaction.hovered == Some(widget) {
+        COLOR_BUTTON_HOVER
+    } else {
+        COLOR_BUTTON
+    }
+}
+
+/// Topmost interactive widget (buttons for now) containing the logical
+/// point, honoring paint order: later placements draw on top.
+pub fn topmost_interactive_at(placements: &[WidgetPlacement], x: f32, y: f32) -> Option<WidgetId> {
+    placements
+        .iter()
+        .rev()
+        .find(|placement| {
+            placement.kind == WidgetKind::Button
+                && x >= placement.x
+                && y >= placement.y
+                && x < placement.x + placement.width
+                && y < placement.y + placement.height
+        })
+        .map(|placement| placement.widget)
+}
 
 /// Fill an axis-aligned rectangle, clipped to the buffer bounds.
 pub fn fill_rect(
@@ -55,14 +94,22 @@ pub fn paint_placements(
     height: u32,
     scale: f32,
     placements: &[WidgetPlacement],
+    interaction: PaintInteraction,
 ) {
     #[cfg(feature = "vector-text")]
     if std::env::var_os("KRATE_BITMAP_TEXT").is_none()
-        && crate::vector_text::try_paint_placements(buffer, width, height, scale, placements)
+        && crate::vector_text::try_paint_placements(
+            buffer,
+            width,
+            height,
+            scale,
+            placements,
+            interaction,
+        )
     {
         return;
     }
-    paint_placements_bitmap(buffer, width, height, scale, placements);
+    paint_placements_bitmap(buffer, width, height, scale, placements, interaction);
 }
 
 /// The zero-dependency painter: flat fills plus 5x7 bitmap-font labels.
@@ -72,6 +119,7 @@ pub fn paint_placements_bitmap(
     height: u32,
     scale: f32,
     placements: &[WidgetPlacement],
+    interaction: PaintInteraction,
 ) {
     buffer.fill(COLOR_BACKGROUND);
     let text_scale = (scale.round() as u32).max(1);
@@ -82,7 +130,8 @@ pub fn paint_placements_bitmap(
         let th = drawtext::text_height(text_scale) as f32;
         match placement.kind {
             WidgetKind::Button => {
-                fill_rect(buffer, width, height, (px, py, pw, ph), COLOR_BUTTON);
+                let fill = button_fill_color(placement.widget, interaction);
+                fill_rect(buffer, width, height, (px, py, pw, ph), fill);
                 let tw = drawtext::text_width(label, text_scale) as f32;
                 drawtext::draw_text(
                     buffer,
@@ -159,7 +208,14 @@ mod tests {
             placement(WidgetKind::TextField, "hello", 10.0, 50.0, 150.0, 24.0),
             placement(WidgetKind::Text, "Title", 10.0, 84.0, 100.0, 16.0),
         ];
-        paint_placements_bitmap(&mut buffer, w, h, 1.0, &placements);
+        paint_placements_bitmap(
+            &mut buffer,
+            w,
+            h,
+            1.0,
+            &placements,
+            PaintInteraction::default(),
+        );
 
         let at = |x: u32, y: u32| buffer[(y * w + x) as usize];
         // Background fills untouched space.
@@ -183,11 +239,59 @@ mod tests {
     }
 
     #[test]
+    fn pressed_and_hovered_buttons_change_fill() {
+        let (w, h) = (100u32, 60u32);
+        let mut buffer = vec![0u32; (w * h) as usize];
+        let placements = [placement(WidgetKind::Button, "", 10.0, 10.0, 40.0, 20.0)];
+        let id = placements[0].widget;
+        let at = |b: &Vec<u32>, x: u32, y: u32| b[(y * w + x) as usize];
+
+        let hover = PaintInteraction {
+            hovered: Some(id),
+            pressed: None,
+        };
+        paint_placements_bitmap(&mut buffer, w, h, 1.0, &placements, hover);
+        assert_eq!(at(&buffer, 20, 20), COLOR_BUTTON_HOVER);
+
+        let pressed = PaintInteraction {
+            hovered: Some(id),
+            pressed: Some(id),
+        };
+        paint_placements_bitmap(&mut buffer, w, h, 1.0, &placements, pressed);
+        assert_eq!(at(&buffer, 20, 20), COLOR_BUTTON_PRESSED);
+    }
+
+    #[test]
+    fn hit_test_honors_paint_order_and_kind() {
+        let below = placement(WidgetKind::Button, "", 0.0, 0.0, 50.0, 50.0);
+        let mut top = placement(WidgetKind::Button, "", 20.0, 20.0, 50.0, 50.0);
+        top.widget = crate::ui::WidgetId::new(2).unwrap();
+        let text = placement(WidgetKind::Text, "", 0.0, 0.0, 200.0, 200.0);
+        let placements = [below.clone(), top.clone(), text];
+        assert_eq!(
+            topmost_interactive_at(&placements, 30.0, 30.0),
+            Some(top.widget)
+        );
+        assert_eq!(
+            topmost_interactive_at(&placements, 5.0, 5.0),
+            Some(below.widget)
+        );
+        assert_eq!(topmost_interactive_at(&placements, 150.0, 150.0), None);
+    }
+
+    #[test]
     fn scale_doubles_physical_geometry() {
         let (w, h) = (100u32, 60u32);
         let mut buffer = vec![0u32; (w * h) as usize];
         let placements = [placement(WidgetKind::Button, "", 10.0, 10.0, 20.0, 10.0)];
-        paint_placements_bitmap(&mut buffer, w, h, 2.0, &placements);
+        paint_placements_bitmap(
+            &mut buffer,
+            w,
+            h,
+            2.0,
+            &placements,
+            PaintInteraction::default(),
+        );
         let at = |x: u32, y: u32| buffer[(y * w + x) as usize];
         // Logical (10,10)-(30,20) becomes physical (20,20)-(60,40).
         assert_eq!(at(21, 21), COLOR_BUTTON);

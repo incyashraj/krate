@@ -6,6 +6,16 @@ pages.
 
 ---
 
+## 2026-07-05 — The drawn widgets learn manners
+
+Styling pass: buttons and fields now have rounded corners, and buttons
+respond to the pointer — a lighter fill on hover, a deeper one while
+pressed — repainted the moment the state changes. The interaction state
+is a tiny value both painters accept, the cursor hit-testing is one
+shared, unit-tested helper, and the pixel tests assert the corner
+rounding and the state colors directly. Small slice, but it is the
+difference between "a drawing of a button" and "a button."
+
 ## 2026-07-05 — The drawn windows get real typography
 
 The renderer slice's first pass: widget frames on Linux and Windows now
