@@ -10,3 +10,5 @@ pub mod painter;
 pub mod path;
 pub mod time;
 pub mod ui;
+#[cfg(feature = "vector-text")]
+pub mod vector_text;

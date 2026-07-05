@@ -6,6 +6,18 @@ pages.
 
 ---
 
+## 2026-07-05 — The drawn windows get real typography
+
+The renderer slice's first pass: widget frames on Linux and Windows now
+render as full vector scenes — antialiased labels laid out by parley
+from the host's real fonts, rasterized by vello_cpu on the CPU, so CI
+needs no GPU and the pipeline stays byte-inspectable. The two platform
+painters collapsed into one shared implementation first, so this swap
+(and the GPU vello swap later) touches exactly one module. The 5x7
+bitmap font stays as the zero-dependency fallback for hosts with no
+usable fonts. A five-minute compile spike against the released crates
+de-risked the dependency before a single line entered the tree.
+
 ## 2026-07-04 — The Linux button gets clicked by a robot, then learns to speak
 
 Two proofs in one day. First, input routing: the full CI matrix now runs a

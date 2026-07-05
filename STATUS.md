@@ -10,7 +10,19 @@ Branch: `main`
 Latest checked completed push before this slice: `6a6f0be` (fast CI green,
 then dispatched full matrix run `28708285696` green: all three OS lanes —
 the first full-matrix certification of the renamed world).
-Working tree at this status update: pointer input routing is CI-certified —
+Working tree at this status update: the renderer slice's first pass is in.
+The duplicated softbuffer painting moved into one shared CPU painter
+(`adapter-common/src/painter.rs`) with deterministic pixel tests, and on
+top of it vector text landed: with the new `vector-text` feature (enabled
+by the Linux and Windows adapters) the whole frame renders through
+`vello_cpu` with antialiased labels laid out by `parley` from real system
+fonts — verified by a unit test that counts blended shades. The 5x7
+bitmap painter remains the zero-dependency fallback (no usable fonts,
+oversized surfaces, or `KRATE_BITMAP_TEXT=1`). A scratch spike proved the
+released crates (`vello_cpu` 0.0.9 + `parley` 0.11) interoperate before
+any dependency was added. The GPU vello renderer later swaps this same
+painter; the placement contract did not change.
+Previous slice, certified: pointer input routing —
 on the Linux lane a synthetic `xdotool` click presses the drawn button
 inside a real winit window under Xvfb and the portable component observes
 it and exits 0, completing the same click round trip macOS proved with a

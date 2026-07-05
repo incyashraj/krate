@@ -1,0 +1,248 @@
+//! Vector renderer for the drawn-widget fallback (ADR-0015 renderer slice).
+//!
+//! Paints the whole frame — background, widget fills, and antialiased
+//! text laid out by parley from real system fonts — through `vello_cpu`
+//! into the same `0xAARRGGBB` framebuffer the bitmap painter targets.
+//! The bitmap painter remains the zero-dependency fallback: callers use
+//! [`try_paint_placements`] and fall back when it returns `false`
+//! (oversized surface, or a host with no usable system fonts).
+
+use std::cell::RefCell;
+
+use parley::{
+    Alignment, AlignmentOptions, FontContext, GenericFamily, Layout, LayoutContext,
+    PositionedLayoutItem, StyleProperty,
+};
+use vello_cpu::color::AlphaColor;
+use vello_cpu::kurbo::Rect;
+use vello_cpu::{Glyph, Pixmap, RenderContext, Resources};
+
+use crate::painter::{
+    COLOR_BACKGROUND, COLOR_BUTTON, COLOR_BUTTON_LABEL, COLOR_FIELD_BORDER, COLOR_FIELD_FILL,
+    COLOR_FIELD_TEXT, COLOR_TEXT,
+};
+use crate::ui::{WidgetKind, WidgetPlacement};
+
+/// Logical font size for widget labels; multiplied by the scale factor
+/// through parley's display scale.
+const LABEL_FONT_SIZE: f32 = 13.0;
+
+thread_local! {
+    static TEXT_ENGINE: RefCell<TextEngine> = RefCell::new(TextEngine::new());
+}
+
+struct TextEngine {
+    font_cx: FontContext,
+    layout_cx: LayoutContext<()>,
+}
+
+impl TextEngine {
+    fn new() -> Self {
+        Self {
+            font_cx: FontContext::new(),
+            layout_cx: LayoutContext::new(),
+        }
+    }
+
+    /// Lay out one line of label text at the given display scale.
+    fn layout_label(&mut self, text: &str, scale: f32) -> Layout<()> {
+        let mut builder = self
+            .layout_cx
+            .ranged_builder(&mut self.font_cx, text, scale, true);
+        builder.push_default(GenericFamily::SansSerif);
+        builder.push_default(StyleProperty::FontSize(LABEL_FONT_SIZE));
+        let mut layout = builder.build(text);
+        layout.break_all_lines(None);
+        layout.align(Alignment::Start, AlignmentOptions::default());
+        layout
+    }
+}
+
+fn argb(color: u32) -> AlphaColor<vello_cpu::color::Srgb> {
+    AlphaColor::from_rgba8(
+        ((color >> 16) & 0xFF) as u8,
+        ((color >> 8) & 0xFF) as u8,
+        (color & 0xFF) as u8,
+        ((color >> 24) & 0xFF) as u8,
+    )
+}
+
+fn fill(ctx: &mut RenderContext, color: u32, x: f32, y: f32, w: f32, h: f32) {
+    ctx.set_paint(argb(color));
+    ctx.fill_rect(&Rect::new(
+        x as f64,
+        y as f64,
+        (x + w) as f64,
+        (y + h) as f64,
+    ));
+}
+
+/// Draw one laid-out label with its top-left corner at `(x, y)`.
+fn draw_layout(
+    ctx: &mut RenderContext,
+    resources: &mut Resources,
+    layout: &Layout<()>,
+    color: u32,
+    x: f32,
+    y: f32,
+) -> usize {
+    let mut drawn = 0usize;
+    for line in layout.lines() {
+        for item in line.items() {
+            if let PositionedLayoutItem::GlyphRun(glyph_run) = item {
+                let mut run_x = glyph_run.offset();
+                let run_y = glyph_run.baseline();
+                let glyphs: Vec<Glyph> = glyph_run
+                    .glyphs()
+                    .map(|g| {
+                        let gx = x + run_x + g.x;
+                        let gy = y + run_y - g.y;
+                        run_x += g.advance;
+                        Glyph {
+                            id: g.id,
+                            x: gx,
+                            y: gy,
+                        }
+                    })
+                    .collect();
+                drawn += glyphs.len();
+                let run = glyph_run.run();
+                let font = run.font();
+                let font_size = run.font_size();
+                ctx.set_paint(argb(color));
+                ctx.glyph_run(resources, font)
+                    .font_size(font_size)
+                    .hint(true)
+                    .fill_glyphs(glyphs.into_iter());
+            }
+        }
+    }
+    drawn
+}
+
+/// Paint the placements with vector fills and antialiased text.
+///
+/// Returns `false` without touching `buffer` when the surface exceeds
+/// `u16` pixmap limits or when a non-empty label produces no glyphs
+/// (no usable system fonts) — callers then use the bitmap painter.
+pub fn try_paint_placements(
+    buffer: &mut [u32],
+    width: u32,
+    height: u32,
+    scale: f32,
+    placements: &[WidgetPlacement],
+) -> bool {
+    let (Ok(w16), Ok(h16)) = (u16::try_from(width), u16::try_from(height)) else {
+        return false;
+    };
+    if w16 == 0 || h16 == 0 {
+        return false;
+    }
+
+    TEXT_ENGINE.with(|engine| {
+        let engine = &mut *engine.borrow_mut();
+        let mut ctx = RenderContext::new(w16, h16);
+        let mut resources = Resources::new();
+        fill(
+            &mut ctx,
+            COLOR_BACKGROUND,
+            0.0,
+            0.0,
+            width as f32,
+            height as f32,
+        );
+
+        for placement in placements {
+            let (px, py) = (placement.x * scale, placement.y * scale);
+            let (pw, ph) = (placement.width * scale, placement.height * scale);
+            let label = placement.label.as_deref().unwrap_or("");
+            let (text_color, inset) = match placement.kind {
+                WidgetKind::Button => {
+                    fill(&mut ctx, COLOR_BUTTON, px, py, pw, ph);
+                    (COLOR_BUTTON_LABEL, None)
+                }
+                WidgetKind::TextField | WidgetKind::TextArea => {
+                    fill(&mut ctx, COLOR_FIELD_BORDER, px, py, pw, ph);
+                    fill(
+                        &mut ctx,
+                        COLOR_FIELD_FILL,
+                        px + scale,
+                        py + scale,
+                        (pw - 2.0 * scale).max(0.0),
+                        (ph - 2.0 * scale).max(0.0),
+                    );
+                    (COLOR_FIELD_TEXT, Some(4.0 * scale))
+                }
+                WidgetKind::Text => (COLOR_TEXT, Some(0.0)),
+                _ => continue,
+            };
+            if label.is_empty() {
+                continue;
+            }
+            let layout = engine.layout_label(label, scale);
+            let (tw, th) = (layout.width(), layout.height());
+            let tx = match inset {
+                Some(inset) => px + inset,
+                None => px + (pw - tw) / 2.0,
+            };
+            let ty = py + (ph - th) / 2.0;
+            if draw_layout(&mut ctx, &mut resources, &layout, text_color, tx, ty) == 0 {
+                return false;
+            }
+        }
+
+        ctx.flush();
+        let mut pixmap = Pixmap::new(w16, h16);
+        ctx.render_to_pixmap(&mut resources, &mut pixmap);
+        for (dst, src) in buffer.iter_mut().zip(pixmap.data().iter()) {
+            *dst = 0xFF00_0000 | ((src.r as u32) << 16) | ((src.g as u32) << 8) | (src.b as u32);
+        }
+        true
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::WidgetId;
+
+    #[test]
+    fn vector_labels_are_antialiased() {
+        let (w, h) = (200u32, 60u32);
+        let mut buffer = vec![0u32; (w * h) as usize];
+        let placements = [WidgetPlacement {
+            widget: WidgetId::new(1).unwrap(),
+            kind: WidgetKind::Button,
+            label: Some("Click me".to_string()),
+            x: 10.0,
+            y: 10.0,
+            width: 160.0,
+            height: 32.0,
+        }];
+        if !try_paint_placements(&mut buffer, w, h, 1.0, &placements) {
+            // Host without system fonts: the bitmap fallback covers it.
+            eprintln!("skipping: no usable system fonts on this host");
+            return;
+        }
+        // Antialiasing blends label pixels over the button fill: the
+        // button area must show more shades than flat fill + flat label.
+        let mut shades = std::collections::BTreeSet::new();
+        for y in 10..42u32 {
+            for x in 10..170u32 {
+                shades.insert(buffer[(y * w + x) as usize]);
+            }
+        }
+        assert!(
+            shades.len() > 3,
+            "expected antialiased blends, found {} shades",
+            shades.len()
+        );
+    }
+
+    #[test]
+    fn oversized_surfaces_fall_back() {
+        let mut buffer = vec![0u32; 4];
+        assert!(!try_paint_placements(&mut buffer, 70_000, 1, 1.0, &[]));
+        assert_eq!(buffer, vec![0u32; 4]);
+    }
+}

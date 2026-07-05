@@ -45,8 +45,28 @@ pub fn fill_rect(
 /// Paint the lowered widget placements into a framebuffer.
 ///
 /// `scale` is the window's device scale factor; placements arrive in
-/// logical coordinates and are painted in physical pixels.
+/// logical coordinates and are painted in physical pixels. With the
+/// `vector-text` feature the frame renders through vello with
+/// antialiased parley text, falling back to the bitmap painter when the
+/// host has no usable fonts or `KRATE_BITMAP_TEXT` is set.
 pub fn paint_placements(
+    buffer: &mut [u32],
+    width: u32,
+    height: u32,
+    scale: f32,
+    placements: &[WidgetPlacement],
+) {
+    #[cfg(feature = "vector-text")]
+    if std::env::var_os("KRATE_BITMAP_TEXT").is_none()
+        && crate::vector_text::try_paint_placements(buffer, width, height, scale, placements)
+    {
+        return;
+    }
+    paint_placements_bitmap(buffer, width, height, scale, placements);
+}
+
+/// The zero-dependency painter: flat fills plus 5x7 bitmap-font labels.
+pub fn paint_placements_bitmap(
     buffer: &mut [u32],
     width: u32,
     height: u32,
@@ -139,7 +159,7 @@ mod tests {
             placement(WidgetKind::TextField, "hello", 10.0, 50.0, 150.0, 24.0),
             placement(WidgetKind::Text, "Title", 10.0, 84.0, 100.0, 16.0),
         ];
-        paint_placements(&mut buffer, w, h, 1.0, &placements);
+        paint_placements_bitmap(&mut buffer, w, h, 1.0, &placements);
 
         let at = |x: u32, y: u32| buffer[(y * w + x) as usize];
         // Background fills untouched space.
@@ -167,7 +187,7 @@ mod tests {
         let (w, h) = (100u32, 60u32);
         let mut buffer = vec![0u32; (w * h) as usize];
         let placements = [placement(WidgetKind::Button, "", 10.0, 10.0, 20.0, 10.0)];
-        paint_placements(&mut buffer, w, h, 2.0, &placements);
+        paint_placements_bitmap(&mut buffer, w, h, 2.0, &placements);
         let at = |x: u32, y: u32| buffer[(y * w + x) as usize];
         // Logical (10,10)-(30,20) becomes physical (20,20)-(60,40).
         assert_eq!(at(21, 21), COLOR_BUTTON);

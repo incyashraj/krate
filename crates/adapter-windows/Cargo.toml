@@ -8,7 +8,9 @@ rust-version.workspace = true
 publish = false
 
 [dependencies]
-krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
+krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev", features = [
+    "vector-text",
+] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
