@@ -23,9 +23,17 @@ APP=$!
 # also seeds CursorMoved before any MouseInput.
 sleep 5
 
-# Keyboard round trip: click the text field (center 176,62) to focus it,
-# then type. The guest renders the text and reports it on exit.
+# Keyboard round trip. Bare Xvfb has no window manager, so no window ever
+# gets X input focus on its own and typed keys would go nowhere: set focus
+# explicitly on the app window first, then click the text field (center
+# 176,62) so the app-level focus lands on the field, then type. The guest
+# renders the text and reports it on exit.
 if [ -n "${KRATE_EXPECT_TYPED:-}" ]; then
+  WIN_ID="$(xdotool search --name "Krate Hello GUI" 2>/dev/null | head -1 || true)"
+  echo "app window id: ${WIN_ID:-not found}"
+  if [ -n "$WIN_ID" ]; then
+    xdotool windowfocus --sync "$WIN_ID" || true
+  fi
   xdotool mousemove 176 62 click 1 || true
   sleep 1
   xdotool type --delay 60 "$KRATE_EXPECT_TYPED" || true

@@ -388,7 +388,7 @@ jobs:
           fi
           echo "synthetic typing + click reached the component on Linux (exit 0, typed text echoed)"
       - name: Upload Linux drawn-window screenshot
-        if: matrix.os == 'ubuntu-latest'
+        if: always() && matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v7
         with:
           name: hello-gui-linux-screenshot
