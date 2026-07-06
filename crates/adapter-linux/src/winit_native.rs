@@ -18,7 +18,7 @@ pub use real::*;
 pub use stub::*;
 
 #[cfg(target_os = "linux")]
-use krate_adapter_common::ui::{Modifiers, WidgetKind};
+use krate_adapter_common::ui::Modifiers;
 use krate_adapter_common::ui::{
     RawKeySample, RawPointerSample, UiAdapterError, WidgetPlacement, WindowId, WindowSize,
     WinitWindowNativeEvent, WinitWindowSnapshot,
@@ -328,13 +328,7 @@ mod real {
                     tracked.placements = placements
                         .iter()
                         .filter(|placement| {
-                            matches!(
-                                placement.kind,
-                                WidgetKind::Button
-                                    | WidgetKind::TextField
-                                    | WidgetKind::TextArea
-                                    | WidgetKind::Text
-                            )
+                            krate_adapter_common::painter::drawn_kind(placement.kind)
                         })
                         .cloned()
                         .collect();

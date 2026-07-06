@@ -34,6 +34,24 @@ pub struct PaintInteraction {
     pub pressed: Option<WidgetId>,
 }
 
+/// Whether the drawn-fallback painters can render this widget kind.
+/// The winit hosts use this to filter placements, so painting support
+/// and placement filtering can never drift apart again.
+pub fn drawn_kind(kind: WidgetKind) -> bool {
+    matches!(
+        kind,
+        WidgetKind::Button
+            | WidgetKind::TextField
+            | WidgetKind::TextArea
+            | WidgetKind::Text
+            | WidgetKind::Checkbox
+            | WidgetKind::Radio
+            | WidgetKind::Switch
+            | WidgetKind::Slider
+            | WidgetKind::Progress
+    )
+}
+
 /// Resolve the fill color for a button under the given interaction.
 pub fn button_fill_color(widget: WidgetId, interaction: PaintInteraction) -> u32 {
     if interaction.pressed == Some(widget) {
@@ -399,6 +417,25 @@ mod tests {
             Some(below.widget)
         );
         assert_eq!(topmost_interactive_at(&placements, 150.0, 150.0), None);
+    }
+
+    #[test]
+    fn drawn_kinds_cover_every_painted_arm() {
+        for kind in [
+            WidgetKind::Button,
+            WidgetKind::TextField,
+            WidgetKind::TextArea,
+            WidgetKind::Text,
+            WidgetKind::Checkbox,
+            WidgetKind::Radio,
+            WidgetKind::Switch,
+            WidgetKind::Slider,
+            WidgetKind::Progress,
+        ] {
+            assert!(drawn_kind(kind), "{kind:?} must be drawable");
+        }
+        assert!(!drawn_kind(WidgetKind::Stack));
+        assert!(!drawn_kind(WidgetKind::Canvas));
     }
 
     #[test]
