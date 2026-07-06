@@ -58,6 +58,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 grow: 0.0,
                 padding: 16.0,
             },
+            checked: None,
+            value: None,
         },
     )?;
     dispatcher.upsert_node(
@@ -73,6 +75,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 height: Some(32.0),
                 ..WidgetStyle::default()
             },
+            checked: None,
+            value: None,
         },
     )?;
     dispatcher.upsert_node(
@@ -88,6 +92,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 height: Some(28.0),
                 ..WidgetStyle::default()
             },
+            checked: None,
+            value: None,
         },
     )?;
 

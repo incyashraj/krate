@@ -2017,6 +2017,8 @@ mod tests {
                 label: Some("Save".to_string()),
                 role: None,
                 style: krate_adapter_common::ui::WidgetStyle::default(),
+                checked: None,
+                value: None,
             },
         )
         .expect("set root widget");

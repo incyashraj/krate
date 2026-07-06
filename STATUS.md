@@ -10,7 +10,19 @@ Branch: `main`
 Latest checked completed push before this status update: `8b1c9ec` (fast
 CI run `28740942296` green, then dispatched full matrix run `28741064867`
 green: all three OS lanes — certifying the vector-text renderer pass).
-Working tree at this status update: keyboard input is wired end to end
+Working tree at this status update: widget state entered the contract.
+The Phase 3 draft WIT `widget-node` gained `checked: option<bool>` and
+`value: option<f32>` (validated finite, 0..=1), threaded through the
+dispatcher types and placements into both painters: checkboxes, radios,
+switches, sliders, and progress bars now render with real state on Linux
+and Windows (vector shapes with circles and rounded tracks; bitmap
+fallback kept). AppKit skips the new kinds until native lowering lands.
+hello-gui grew an interactive checkbox (click toggles it through the
+full round trip) and a progress bar that fills as you type, both below
+the existing widgets so certified CI coordinates are untouched. The
+component stays import-pure. Pixel tests pin checked/unchecked fills,
+switch knob positions, and progress fractions.
+Previous slice, certified: keyboard input wired end to end
 (host side). The winit hosts capture real key presses — normalized key
 names, modifier state, and layout-processed text — into a raw-sample
 drain channel mirroring the pointer path (samples never enter the event

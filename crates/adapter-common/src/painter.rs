@@ -18,6 +18,8 @@ pub const COLOR_BUTTON_HOVER: u32 = 0xFF5C93F8;
 pub const COLOR_BUTTON_PRESSED: u32 = 0xFF2563EB;
 pub const COLOR_BUTTON_LABEL: u32 = 0xFFFFFFFF;
 pub const COLOR_FIELD_FILL: u32 = 0xFFFFFFFF;
+pub const COLOR_TRACK: u32 = 0xFFD1D5DB;
+pub const COLOR_KNOB: u32 = 0xFFFFFFFF;
 pub const COLOR_FIELD_BORDER: u32 = 0xFF9CA3AF;
 pub const COLOR_FIELD_TEXT: u32 = 0xFF1F2937;
 pub const COLOR_TEXT: u32 = 0xFF111827;
@@ -178,6 +180,124 @@ pub fn paint_placements_bitmap(
                     label,
                 );
             }
+            WidgetKind::Checkbox | WidgetKind::Radio => {
+                let box_side = ph.min(18.0 * scale);
+                let by = py + (ph - box_side) / 2.0;
+                fill_rect(
+                    buffer,
+                    width,
+                    height,
+                    (px, by, box_side, box_side),
+                    COLOR_FIELD_BORDER,
+                );
+                fill_rect(
+                    buffer,
+                    width,
+                    height,
+                    (
+                        px + scale,
+                        by + scale,
+                        (box_side - 2.0 * scale).max(0.0),
+                        (box_side - 2.0 * scale).max(0.0),
+                    ),
+                    COLOR_FIELD_FILL,
+                );
+                if placement.checked == Some(true) {
+                    let inset = 4.0 * scale;
+                    fill_rect(
+                        buffer,
+                        width,
+                        height,
+                        (
+                            px + inset,
+                            by + inset,
+                            (box_side - 2.0 * inset).max(0.0),
+                            (box_side - 2.0 * inset).max(0.0),
+                        ),
+                        COLOR_BUTTON,
+                    );
+                }
+                drawtext::draw_text(
+                    buffer,
+                    width,
+                    height,
+                    (
+                        (px + box_side + 8.0 * scale) as i32,
+                        (py + (ph - th) / 2.0) as i32,
+                    ),
+                    text_scale,
+                    COLOR_TEXT,
+                    label,
+                );
+            }
+            WidgetKind::Switch => {
+                let track_w = (36.0 * scale).min(pw);
+                let track_h = (20.0 * scale).min(ph);
+                let ty = py + (ph - track_h) / 2.0;
+                let on = placement.checked == Some(true);
+                let track_color = if on { COLOR_BUTTON } else { COLOR_TRACK };
+                fill_rect(
+                    buffer,
+                    width,
+                    height,
+                    (px, ty, track_w, track_h),
+                    track_color,
+                );
+                let knob_side = (track_h - 4.0 * scale).max(0.0);
+                let knob_x = if on {
+                    px + track_w - knob_side - 2.0 * scale
+                } else {
+                    px + 2.0 * scale
+                };
+                fill_rect(
+                    buffer,
+                    width,
+                    height,
+                    (knob_x, ty + 2.0 * scale, knob_side, knob_side),
+                    COLOR_KNOB,
+                );
+            }
+            WidgetKind::Slider | WidgetKind::Progress => {
+                let fraction = placement.value.unwrap_or(0.0).clamp(0.0, 1.0);
+                let groove_h = if placement.kind == WidgetKind::Slider {
+                    4.0 * scale
+                } else {
+                    6.0 * scale
+                };
+                let gy = py + (ph - groove_h) / 2.0;
+                fill_rect(buffer, width, height, (px, gy, pw, groove_h), COLOR_TRACK);
+                fill_rect(
+                    buffer,
+                    width,
+                    height,
+                    (px, gy, pw * fraction, groove_h),
+                    COLOR_BUTTON,
+                );
+                if placement.kind == WidgetKind::Slider {
+                    let thumb = (16.0 * scale).min(ph);
+                    let tx = px + (pw - thumb) * fraction;
+                    let ty2 = py + (ph - thumb) / 2.0;
+                    fill_rect(
+                        buffer,
+                        width,
+                        height,
+                        (tx, ty2, thumb, thumb),
+                        COLOR_FIELD_BORDER,
+                    );
+                    fill_rect(
+                        buffer,
+                        width,
+                        height,
+                        (
+                            tx + scale,
+                            ty2 + scale,
+                            (thumb - 2.0 * scale).max(0.0),
+                            (thumb - 2.0 * scale).max(0.0),
+                        ),
+                        COLOR_KNOB,
+                    );
+                }
+            }
             _ => {}
         }
     }
@@ -192,6 +312,8 @@ mod tests {
             widget: crate::ui::WidgetId::new(1).unwrap(),
             kind,
             label: Some(label.to_string()),
+            checked: None,
+            value: None,
             x,
             y,
             width: w,
@@ -277,6 +399,70 @@ mod tests {
             Some(below.widget)
         );
         assert_eq!(topmost_interactive_at(&placements, 150.0, 150.0), None);
+    }
+
+    #[test]
+    fn stateful_widgets_render_their_state() {
+        let (w, h) = (200u32, 40u32);
+        let at = |b: &Vec<u32>, x: u32, y: u32| b[(y * w + x) as usize];
+
+        // Checkbox: checked fills the inner box with the accent color.
+        let mut unchecked = vec![0u32; (w * h) as usize];
+        let mut node = placement(WidgetKind::Checkbox, "ok", 10.0, 10.0, 120.0, 20.0);
+        paint_placements_bitmap(
+            &mut unchecked,
+            w,
+            h,
+            1.0,
+            &[node.clone()],
+            PaintInteraction::default(),
+        );
+        let mut checked = vec![0u32; (w * h) as usize];
+        node.checked = Some(true);
+        paint_placements_bitmap(
+            &mut checked,
+            w,
+            h,
+            1.0,
+            &[node],
+            PaintInteraction::default(),
+        );
+        assert_eq!(at(&unchecked, 19, 20), COLOR_FIELD_FILL);
+        assert_eq!(at(&checked, 19, 20), COLOR_BUTTON);
+
+        // Switch: the knob sits left when off, right when on.
+        let mut off = vec![0u32; (w * h) as usize];
+        let mut switch = placement(WidgetKind::Switch, "", 10.0, 10.0, 40.0, 20.0);
+        switch.checked = Some(false);
+        paint_placements_bitmap(
+            &mut off,
+            w,
+            h,
+            1.0,
+            &[switch.clone()],
+            PaintInteraction::default(),
+        );
+        let mut on = vec![0u32; (w * h) as usize];
+        switch.checked = Some(true);
+        paint_placements_bitmap(&mut on, w, h, 1.0, &[switch], PaintInteraction::default());
+        assert_eq!(at(&off, 14, 20), COLOR_KNOB);
+        assert_eq!(at(&on, 14, 20), COLOR_BUTTON);
+        assert_eq!(at(&on, 41, 20), COLOR_KNOB);
+
+        // Progress: the filled fraction uses the accent color.
+        let mut bar = vec![0u32; (w * h) as usize];
+        let mut progress = placement(WidgetKind::Progress, "", 10.0, 10.0, 100.0, 20.0);
+        progress.value = Some(0.5);
+        paint_placements_bitmap(
+            &mut bar,
+            w,
+            h,
+            1.0,
+            &[progress],
+            PaintInteraction::default(),
+        );
+        assert_eq!(at(&bar, 30, 20), COLOR_BUTTON);
+        assert_eq!(at(&bar, 90, 20), COLOR_TRACK);
     }
 
     #[test]

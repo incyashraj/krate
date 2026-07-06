@@ -64,7 +64,14 @@ impl Phase3GuiHost {
         for (id, node) in tree.nodes() {
             if !matches!(
                 node.kind,
-                WidgetKind::Button | WidgetKind::TextField | WidgetKind::Text
+                WidgetKind::Button
+                    | WidgetKind::TextField
+                    | WidgetKind::Text
+                    | WidgetKind::Checkbox
+                    | WidgetKind::Radio
+                    | WidgetKind::Switch
+                    | WidgetKind::Slider
+                    | WidgetKind::Progress
             ) {
                 continue;
             }
@@ -75,6 +82,8 @@ impl Phase3GuiHost {
                 widget: *id,
                 kind: node.kind,
                 label: node.label.clone(),
+                checked: node.checked,
+                value: node.value,
                 x: rect.x,
                 y: rect.y,
                 width: rect.width,
@@ -238,6 +247,13 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
         grow: node.style.grow,
         padding: node.style.padding,
     };
+    if let Some(value) = node.value {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err(ui::types::UiError::Unsupported(
+                "widget value must be a finite number in 0..=1".to_string(),
+            ));
+        }
+    }
 
     Ok(WidgetNode {
         id,
@@ -246,6 +262,8 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
         label: node.label,
         role: node.role,
         style,
+        checked: node.checked,
+        value: node.value,
     })
 }
 

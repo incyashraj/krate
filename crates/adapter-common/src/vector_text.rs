@@ -14,12 +14,12 @@ use parley::{
     PositionedLayoutItem, StyleProperty,
 };
 use vello_cpu::color::AlphaColor;
-use vello_cpu::kurbo::{Rect, RoundedRect, Shape};
+use vello_cpu::kurbo::{Circle, Rect, RoundedRect, Shape};
 use vello_cpu::{Glyph, Pixmap, RenderContext, Resources};
 
 use crate::painter::{
-    button_fill_color, PaintInteraction, COLOR_BACKGROUND, COLOR_BUTTON_LABEL, COLOR_FIELD_BORDER,
-    COLOR_FIELD_FILL, COLOR_FIELD_TEXT, COLOR_TEXT,
+    button_fill_color, PaintInteraction, COLOR_BACKGROUND, COLOR_BUTTON, COLOR_BUTTON_LABEL,
+    COLOR_FIELD_BORDER, COLOR_FIELD_FILL, COLOR_FIELD_TEXT, COLOR_KNOB, COLOR_TEXT, COLOR_TRACK,
 };
 use crate::ui::{WidgetKind, WidgetPlacement};
 
@@ -75,6 +75,13 @@ fn fill(ctx: &mut RenderContext, color: u32, x: f32, y: f32, w: f32, h: f32) {
         (x + w) as f64,
         (y + h) as f64,
     ));
+}
+
+/// Fill a circle centered at (cx, cy).
+fn fill_circle(ctx: &mut RenderContext, color: u32, cx: f32, cy: f32, radius: f32) {
+    ctx.set_paint(argb(color));
+    let circle = Circle::new((cx as f64, cy as f64), radius as f64);
+    ctx.fill_path(&circle.to_path(0.25));
 }
 
 /// Fill a rounded rectangle (radius in physical pixels).
@@ -190,6 +197,134 @@ pub fn try_paint_placements(
                     (COLOR_FIELD_TEXT, Some(4.0 * scale))
                 }
                 WidgetKind::Text => (COLOR_TEXT, Some(0.0)),
+                WidgetKind::Checkbox => {
+                    let side = (ph.min(18.0 * scale)).max(0.0);
+                    let by = py + (ph - side) / 2.0;
+                    fill_rounded(
+                        &mut ctx,
+                        COLOR_FIELD_BORDER,
+                        px,
+                        by,
+                        side,
+                        side,
+                        3.0 * scale,
+                    );
+                    fill_rounded(
+                        &mut ctx,
+                        COLOR_FIELD_FILL,
+                        px + scale,
+                        by + scale,
+                        (side - 2.0 * scale).max(0.0),
+                        (side - 2.0 * scale).max(0.0),
+                        2.0 * scale,
+                    );
+                    if placement.checked == Some(true) {
+                        let inset = 3.5 * scale;
+                        fill_rounded(
+                            &mut ctx,
+                            COLOR_BUTTON,
+                            px + inset,
+                            by + inset,
+                            (side - 2.0 * inset).max(0.0),
+                            (side - 2.0 * inset).max(0.0),
+                            1.5 * scale,
+                        );
+                    }
+                    if !label.is_empty() {
+                        let layout = engine.layout_label(label, scale);
+                        let th = layout.height();
+                        let _ = draw_layout(
+                            &mut ctx,
+                            &mut resources,
+                            &layout,
+                            COLOR_TEXT,
+                            px + side + 8.0 * scale,
+                            py + (ph - th) / 2.0,
+                        );
+                    }
+                    continue;
+                }
+                WidgetKind::Radio => {
+                    let side = (ph.min(18.0 * scale)).max(0.0);
+                    let r = side / 2.0;
+                    let (cx, cy) = (px + r, py + ph / 2.0);
+                    fill_circle(&mut ctx, COLOR_FIELD_BORDER, cx, cy, r);
+                    fill_circle(&mut ctx, COLOR_FIELD_FILL, cx, cy, (r - scale).max(0.0));
+                    if placement.checked == Some(true) {
+                        fill_circle(&mut ctx, COLOR_BUTTON, cx, cy, (r - 4.0 * scale).max(0.0));
+                    }
+                    if !label.is_empty() {
+                        let layout = engine.layout_label(label, scale);
+                        let th = layout.height();
+                        let _ = draw_layout(
+                            &mut ctx,
+                            &mut resources,
+                            &layout,
+                            COLOR_TEXT,
+                            px + side + 8.0 * scale,
+                            py + (ph - th) / 2.0,
+                        );
+                    }
+                    continue;
+                }
+                WidgetKind::Switch => {
+                    let track_w = (36.0 * scale).min(pw);
+                    let track_h = (20.0 * scale).min(ph);
+                    let ty = py + (ph - track_h) / 2.0;
+                    let on = placement.checked == Some(true);
+                    let track_color = if on { COLOR_BUTTON } else { COLOR_TRACK };
+                    fill_rounded(
+                        &mut ctx,
+                        track_color,
+                        px,
+                        ty,
+                        track_w,
+                        track_h,
+                        track_h / 2.0,
+                    );
+                    let r = (track_h / 2.0 - 2.0 * scale).max(0.0);
+                    let cx = if on {
+                        px + track_w - r - 2.0 * scale
+                    } else {
+                        px + r + 2.0 * scale
+                    };
+                    fill_circle(&mut ctx, COLOR_KNOB, cx, ty + track_h / 2.0, r);
+                    continue;
+                }
+                WidgetKind::Slider | WidgetKind::Progress => {
+                    let fraction = placement.value.unwrap_or(0.0).clamp(0.0, 1.0);
+                    let groove_h = if placement.kind == WidgetKind::Slider {
+                        4.0 * scale
+                    } else {
+                        6.0 * scale
+                    };
+                    let gy = py + (ph - groove_h) / 2.0;
+                    fill_rounded(&mut ctx, COLOR_TRACK, px, gy, pw, groove_h, groove_h / 2.0);
+                    if fraction > 0.0 {
+                        fill_rounded(
+                            &mut ctx,
+                            COLOR_BUTTON,
+                            px,
+                            gy,
+                            pw * fraction,
+                            groove_h,
+                            groove_h / 2.0,
+                        );
+                    }
+                    if placement.kind == WidgetKind::Slider {
+                        let r = (8.0 * scale).min(ph / 2.0);
+                        let cx = px + r + (pw - 2.0 * r) * fraction;
+                        fill_circle(&mut ctx, COLOR_FIELD_BORDER, cx, py + ph / 2.0, r);
+                        fill_circle(
+                            &mut ctx,
+                            COLOR_KNOB,
+                            cx,
+                            py + ph / 2.0,
+                            (r - scale).max(0.0),
+                        );
+                    }
+                    continue;
+                }
                 _ => continue,
             };
             if label.is_empty() {
@@ -230,6 +365,8 @@ mod tests {
             widget: WidgetId::new(1).unwrap(),
             kind: WidgetKind::Button,
             label: Some("Click me".to_string()),
+            checked: None,
+            value: None,
             x: 10.0,
             y: 10.0,
             width: 160.0,
@@ -283,6 +420,8 @@ mod tests {
             widget: WidgetId::new(1).unwrap(),
             kind: WidgetKind::Button,
             label: None,
+            checked: None,
+            value: None,
             x: 10.0,
             y: 10.0,
             width: 160.0,

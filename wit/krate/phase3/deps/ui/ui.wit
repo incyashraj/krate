@@ -178,6 +178,10 @@ interface types {
     role: option<string>,
     /// Small layout and sizing block.
     style: style,
+    /// On/off state for checkable kinds (checkbox, radio, switch).
+    checked: option<bool>,
+    /// Normalized 0..=1 value for slider and progress kinds.
+    value: option<f32>,
   }
 
   /// Top-level menu item.

@@ -23,6 +23,8 @@ use bindings::krate::ui::{events, tree, types, window};
 const ROOT_ID: u64 = 1;
 const BUTTON_ID: u64 = 2;
 const FIELD_ID: u64 = 3;
+const CHECKBOX_ID: u64 = 4;
+const PROGRESS_ID: u64 = 5;
 
 /// Interactive wait budget: 600 rounds of 50ms is a 30-second demo window.
 const MAX_WAIT_ROUNDS: u32 = 600;
@@ -51,6 +53,8 @@ fn stack_root() -> types::WidgetNode {
             grow: 0.0,
             padding: 16.0,
         },
+        checked: None,
+        value: None,
     }
 }
 
@@ -67,6 +71,8 @@ fn click_button() -> types::WidgetNode {
             grow: 0.0,
             padding: 0.0,
         },
+        checked: None,
+        value: None,
     }
 }
 
@@ -83,6 +89,44 @@ fn text_field(label: &str) -> types::WidgetNode {
             grow: 0.0,
             padding: 0.0,
         },
+        checked: None,
+        value: None,
+    }
+}
+
+fn robot_checkbox(checked: bool) -> types::WidgetNode {
+    types::WidgetNode {
+        id: CHECKBOX_ID,
+        parent: Some(ROOT_ID),
+        kind: types::WidgetKind::Checkbox,
+        label: Some(pure_string("robot was here")),
+        role: Some(pure_string("checkbox")),
+        style: types::Style {
+            width: Some(200.0),
+            height: Some(20.0),
+            grow: 0.0,
+            padding: 0.0,
+        },
+        checked: Some(checked),
+        value: None,
+    }
+}
+
+fn typing_progress(fraction: f32) -> types::WidgetNode {
+    types::WidgetNode {
+        id: PROGRESS_ID,
+        parent: Some(ROOT_ID),
+        kind: types::WidgetKind::Progress,
+        label: None,
+        role: Some(pure_string("progressbar")),
+        style: types::Style {
+            width: Some(320.0),
+            height: Some(12.0),
+            grow: 0.0,
+            padding: 0.0,
+        },
+        checked: None,
+        value: Some(if fraction > 1.0 { 1.0 } else { fraction }),
     }
 }
 
@@ -102,6 +146,8 @@ impl bindings::Guest for Component {
         if tree::set_root(win, &stack_root()).is_err()
             || tree::upsert_node(win, &click_button()).is_err()
             || tree::upsert_node(win, &text_field("waiting for click")).is_err()
+            || tree::upsert_node(win, &robot_checkbox(false)).is_err()
+            || tree::upsert_node(win, &typing_progress(0.0)).is_err()
         {
             let _ = window::close(win);
             return 32;
@@ -118,6 +164,7 @@ impl bindings::Guest for Component {
         let mut clicked = false;
         let mut close_requested = false;
         let mut linger = 0u32;
+        let mut checkbox_on = false;
         // Fixed-capacity typing buffer: growth-free so no allocation-error
         // machinery (and its WASI imports) enters the component.
         let mut typed = [0u8; TYPED_CAPACITY];
@@ -130,6 +177,12 @@ impl bindings::Guest for Component {
                     clicked = true;
                     linger = LINGER_ROUNDS_AFTER_CLICK;
                     let _ = tree::upsert_node(win, &text_field("clicked!"));
+                }
+                Some(types::Event::Pointer(pointer))
+                    if pointer.widget == Some(CHECKBOX_ID) && pointer.pressed =>
+                {
+                    checkbox_on = !checkbox_on;
+                    let _ = tree::upsert_node(win, &robot_checkbox(checkbox_on));
                 }
                 Some(types::Event::TextInput(text)) => {
                     for byte in text.as_bytes() {
@@ -147,6 +200,8 @@ impl bindings::Guest for Component {
                     }
                     let shown = typed.get(..typed_len).unwrap_or(&[]);
                     let _ = tree::upsert_node(win, &text_field_bytes(shown));
+                    let _ =
+                        tree::upsert_node(win, &typing_progress(typed_len as f32 / 16.0));
                 }
                 Some(types::Event::Key(key))
                     if key.pressed && key.key.as_bytes() == b"Backspace" =>

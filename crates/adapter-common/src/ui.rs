@@ -307,6 +307,10 @@ pub struct WidgetNode {
     pub label: Option<String>,
     pub role: Option<String>,
     pub style: WidgetStyle,
+    /// On/off state for checkable kinds (checkbox, radio, switch).
+    pub checked: Option<bool>,
+    /// Normalized 0..=1 value for slider and progress kinds.
+    pub value: Option<f32>,
 }
 
 impl WidgetNode {
@@ -319,7 +323,26 @@ impl WidgetNode {
             label: None,
             role: None,
             style: WidgetStyle::default(),
+            checked: None,
+            value: None,
         }
+    }
+
+    /// Attach on/off state (checkbox, radio, switch).
+    pub fn with_checked(mut self, checked: bool) -> Self {
+        self.checked = Some(checked);
+        self
+    }
+
+    /// Attach a normalized 0..=1 value (slider, progress).
+    pub fn with_value(mut self, value: f32) -> Result<Self, UiAdapterError> {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err(UiAdapterError::Unsupported(format!(
+                "widget value must be a finite number in 0..=1, got {value}"
+            )));
+        }
+        self.value = Some(value);
+        Ok(self)
     }
 
     /// Attach a parent id.
@@ -931,6 +954,10 @@ pub struct WidgetPlacement {
     pub kind: WidgetKind,
     /// Label or text content for the native control.
     pub label: Option<String>,
+    /// On/off state for checkable kinds.
+    pub checked: Option<bool>,
+    /// Normalized 0..=1 value for slider and progress kinds.
+    pub value: Option<f32>,
     /// Left edge in logical pixels.
     pub x: f32,
     /// Top edge in logical pixels.

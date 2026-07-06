@@ -6,6 +6,17 @@ pages.
 
 ---
 
+## 2026-07-06 — Widgets get memory: checkboxes, switches, sliders
+
+The portable contract learned state. A widget node can now carry
+checked on/off and a normalized value, so checkboxes, radio buttons,
+switches, sliders, and progress bars render as real controls in the
+drawn windows, not just kinds in an enum. hello-gui shows it off: a
+checkbox you can toggle by clicking (the full pointer round trip
+through the sandbox) and a progress bar that fills live as you type.
+The demo app still imports only krate:* interfaces, and the CI click
+coordinates didn't move.
+
 ## 2026-07-05 — The windows learn to listen to the keyboard
 
 Keyboard input flows end to end on the host side: real key presses in
