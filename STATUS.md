@@ -22,6 +22,13 @@ full round trip) and a progress bar that fills as you type, both below
 the existing widgets so certified CI coordinates are untouched. The
 component stays import-pure. Pixel tests pin checked/unchecked fills,
 switch knob positions, and progress fractions.
+Certification: landed as `b8454a4` + `4abbc8b` (CI screenshot caught the
+winit hosts' private kind filter silently dropping the new widgets —
+filtering now shares one `drawn_kind` list with the painter). Full
+matrix run `28772540656` green on all three OS lanes; the screenshot
+artifact verified by eye: checkbox labeled "robot was here" and a
+progress bar filled to exactly 8/16 = 50% after the robot typed
+"hi krate". Copies in `Invest/evidence/`.
 Previous slice, certified: keyboard input wired end to end
 (host side). The winit hosts capture real key presses — normalized key
 names, modifier state, and layout-processed text — into a raw-sample
