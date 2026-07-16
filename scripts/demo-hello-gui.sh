@@ -59,7 +59,7 @@ fi
 
 echo ""
 case "$CODE" in
-  0) echo "RESULT: you clicked the native button and the component saw it. ✅" ;;
+  0) echo "RESULT: native button clicked, and the click was received and recorded inside the portable component (exit 0)." ;;
   1) echo "RESULT: clean run, no click observed (timed out, or headless host)." ;;
   2) echo "RESULT: you closed the window before clicking." ;;
   *) echo "RESULT: unexpected exit code $CODE — something is wrong." ; exit 1 ;;
