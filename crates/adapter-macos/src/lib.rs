@@ -449,6 +449,12 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
     ) -> Result<usize, UiAdapterError> {
         let mut native = Vec::with_capacity(placements.len());
         for placement in placements {
+            // Kinds without native AppKit lowering yet (checkbox, slider,
+            // progress, ...) are skipped, not errors: one drawn-only widget
+            // in the tree must not break the window's native controls.
+            if !AppKitWidgetPlacement::kind_supported(placement.kind) {
+                continue;
+            }
             native.push(AppKitWidgetPlacement::new(
                 placement.widget,
                 placement.kind,
@@ -734,6 +740,41 @@ pub fn apply_no_follow_final_symlink(opts: &mut OpenOptions) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_lowering_skips_kinds_without_appkit_support() {
+        use krate_adapter_common::ui::{
+            UiAdapter, WidgetId, WidgetKind, WidgetPlacement, WindowAdapter, WindowOptions,
+            WindowSize,
+        };
+        let adapter = MacosAppKitPrototypeUiAdapter::default();
+        // A real AppKit window needs the main thread; the historical failure
+        // happened while CONVERTING placements, before any session lookup,
+        // so an id with no native session behind it exercises the fix.
+        let size = WindowSize::new(640, 480).expect("size");
+        let draft = krate_adapter_common::ui::DraftUiAdapter::default();
+        let window = WindowAdapter::create_window(
+            &draft,
+            WindowOptions::new("Test", size).expect("options"),
+        )
+        .expect("create window");
+        let checkbox = WidgetPlacement {
+            widget: WidgetId::new(9).expect("id"),
+            kind: WidgetKind::Checkbox,
+            label: Some("robot was here".to_string()),
+            checked: Some(false),
+            value: None,
+            x: 10.0,
+            y: 10.0,
+            width: 100.0,
+            height: 20.0,
+        };
+        // No native session exists in tests; the call used to fail while
+        // converting the unsupported kind, before even reaching a session.
+        let lowered = UiAdapter::lower_widget_placements(&adapter, window, &[checkbox])
+            .expect("unsupported kinds are skipped, not fatal");
+        assert_eq!(lowered, 0);
+    }
+
     use super::*;
 
     #[test]
