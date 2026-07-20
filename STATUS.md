@@ -25,6 +25,11 @@ to a mid-list position before the screenshot. The nightly fuzz lane was
 also hardened the same day: runs were dying because the cron fired
 while this laptop slept on battery — the fuzz step now runs under
 caffeinate and the cron moved to 13:00Z (21:00 SGT).
+Certification: landed as `8355970`, full matrix run `29727004728` green
+on all three OS lanes. The screenshot artifact verified by eye: the
+scroll area shows lines four through eight — the robot's three wheel
+notches (60 logical px) scrolled the first three lines out of view,
+clipped exactly at the container edge. Copy in `Invest/evidence/`.
 Previous slice, certified: widget state entered the contract.
 The Phase 3 draft WIT `widget-node` gained `checked: option<bool>` and
 `value: option<f32>` (validated finite, 0..=1), threaded through the
