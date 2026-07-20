@@ -5,8 +5,12 @@ on:
   # now runs as a LaunchAgent service, so it survives reboots.
   # (It had been offline since 2026-06-24 because it only ran in a foreground
   # terminal; GitHub then deleted the stale registration.)
+  # Moved 2026-07-20 from 02:00Z: the runner is a laptop, and 02:00Z is
+  # mid-morning Singapore where it was repeatedly asleep on battery, which
+  # cancelled runs mid-fuzz. 13:00Z = 21:00 SGT, when the machine is
+  # reliably awake; the fuzz step also holds it awake via caffeinate.
   schedule:
-    - cron: "0 2 * * *"
+    - cron: "0 13 * * *"
   workflow_dispatch:
     inputs:
       fuzz_max_total_time:
@@ -54,4 +58,6 @@ jobs:
       - name: Run fuzz targets
         env:
           RUSTUP_TOOLCHAIN: nightly
-        run: scripts/run-phase2-fuzz-smoke.sh
+        # caffeinate -i keeps this macOS laptop from idle-sleeping mid-fuzz
+        # (the exact failure mode of the 2026-07-19/20 cancelled runs).
+        run: caffeinate -i scripts/run-phase2-fuzz-smoke.sh
