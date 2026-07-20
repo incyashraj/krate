@@ -40,6 +40,12 @@ if [ -n "${KRATE_EXPECT_TYPED:-}" ]; then
   sleep 1
 fi
 
+# Scroll the drawn scroll area (logical y 110..230; wheel over its center)
+# so the screenshot shows a mid-list position: X11 wheel-down is button 5.
+xdotool mousemove 176 170 || true
+xdotool click --repeat 3 5 || true
+sleep 1
+
 # Optional visual evidence: capture the Xvfb root window as a PNG before the
 # click ends the app — after typing, so the typed text is in the picture.
 # Never fails the proof; screenshots are best-effort.

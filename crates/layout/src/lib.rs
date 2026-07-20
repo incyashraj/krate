@@ -354,6 +354,15 @@ fn taffy_style_from_parts(
         display: Display::Flex,
         flex_direction: flex_direction_for(kind),
         flex_grow: widget_style.grow,
+        // Widgets with an explicit height keep it: Taffy's default
+        // flex_shrink of 1 would compress Scroll children to fit their
+        // container instead of overflowing it, which makes scrolling
+        // impossible.
+        flex_shrink: if widget_style.height.is_some() && !is_root {
+            0.0
+        } else {
+            1.0
+        },
         size,
         padding: Rect {
             left: LengthPercentage::length(widget_style.padding),

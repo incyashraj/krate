@@ -454,6 +454,10 @@ impl UiAdapter for LinuxWinitPrototypeUiAdapter {
         winit_native::drain_key_samples()
     }
 
+    fn drain_raw_wheel_input(&self) -> Vec<krate_adapter_common::ui::RawWheelSample> {
+        winit_native::drain_wheel_samples()
+    }
+
     fn lower_widget_placements(
         &self,
         window: WindowId,

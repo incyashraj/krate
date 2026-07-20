@@ -6,6 +6,17 @@ pages.
 
 ---
 
+## 2026-07-20 — The windows learn to scroll
+
+Scroll containers landed, and the portable app never lifts a finger: a
+component declares a Scroll node with children, and everything else is
+the host's job — clipping to the container, tracking the offset,
+catching the mouse wheel, clamping at the ends. That's how native
+platforms treat scrolling, so that's how Krate treats it, and the
+contract needed zero changes. The demo app now carries an
+eight-line list in a 120-pixel window, and the CI robot wheels it to
+the middle before taking its daily photograph.
+
 ## 2026-07-06 — Widgets get memory: checkboxes, switches, sliders
 
 The portable contract learned state. A widget node can now carry

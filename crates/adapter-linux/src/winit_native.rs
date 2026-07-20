@@ -20,8 +20,8 @@ pub use stub::*;
 #[cfg(target_os = "linux")]
 use krate_adapter_common::ui::Modifiers;
 use krate_adapter_common::ui::{
-    RawKeySample, RawPointerSample, UiAdapterError, WidgetPlacement, WindowId, WindowSize,
-    WinitWindowNativeEvent, WinitWindowSnapshot,
+    RawKeySample, RawPointerSample, RawWheelSample, UiAdapterError, WidgetPlacement, WindowId,
+    WindowSize, WinitWindowNativeEvent, WinitWindowSnapshot,
 };
 
 /// Native events paired with the Krate window they belong to.
@@ -72,6 +72,7 @@ mod real {
         cursor: BTreeMap<NativeWindowId, (f32, f32)>,
         pointer_samples: Vec<RawPointerSample>,
         key_samples: Vec<RawKeySample>,
+        wheel_samples: Vec<RawWheelSample>,
         modifiers: Modifiers,
     }
 
@@ -223,6 +224,34 @@ mod real {
                                 tracked.pressed_widget = pressed_widget;
                                 draw_placements(tracked);
                             }
+                        }
+                    }
+                    None
+                }
+                WindowEvent::MouseWheel { delta, .. } => {
+                    if let Some((x, y)) = self.cursor.get(&native).copied() {
+                        // Line deltas scale to ~20 logical px per notch;
+                        // pixel deltas divide by the window scale factor.
+                        // Winit's positive y scrolls content up; our dy is
+                        // positive-down.
+                        let dy = match delta {
+                            winit::event::MouseScrollDelta::LineDelta(_, lines) => -lines * 20.0,
+                            winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                                let scale = self
+                                    .windows
+                                    .get(&native)
+                                    .map(|tracked| tracked.window.scale_factor())
+                                    .unwrap_or(1.0);
+                                -(pos.y / scale) as f32
+                            }
+                        };
+                        if dy.abs() > f32::EPSILON {
+                            self.wheel_samples.push(RawWheelSample {
+                                window: krate,
+                                x,
+                                y,
+                                dy,
+                            });
                         }
                     }
                     None
@@ -526,6 +555,19 @@ mod real {
         })
     }
 
+    /// Drain raw mouse-wheel samples captured since the last call.
+    pub fn drain_wheel_samples() -> Vec<RawWheelSample> {
+        if !host_initialized() {
+            return Vec::new();
+        }
+        WINIT_HOST.with(|slot| {
+            slot.borrow_mut()
+                .as_mut()
+                .map(|host| std::mem::take(&mut host.app.wheel_samples))
+                .unwrap_or_default()
+        })
+    }
+
     /// Whether a native window is currently tracked for the id.
     pub fn has_native_window(krate: WindowId) -> Result<bool, UiAdapterError> {
         with_tracked(krate, |_| ()).map(|found| found.is_some())
@@ -601,6 +643,11 @@ mod stub {
 
     /// Winit windows are only available in Linux builds.
     pub fn drain_key_samples() -> Vec<RawKeySample> {
+        Vec::new()
+    }
+
+    /// Winit windows are only available in Linux builds.
+    pub fn drain_wheel_samples() -> Vec<RawWheelSample> {
         Vec::new()
     }
 }

@@ -79,6 +79,22 @@ pub fn topmost_interactive_at(placements: &[WidgetPlacement], x: f32, y: f32) ->
         .map(|placement| placement.widget)
 }
 
+/// Intersect two logical rectangles; None when they do not overlap.
+pub fn intersect_rects(
+    a: (f32, f32, f32, f32),
+    b: (f32, f32, f32, f32),
+) -> Option<(f32, f32, f32, f32)> {
+    let x0 = a.0.max(b.0);
+    let y0 = a.1.max(b.1);
+    let x1 = (a.0 + a.2).min(b.0 + b.2);
+    let y1 = (a.1 + a.3).min(b.1 + b.3);
+    if x1 > x0 && y1 > y0 {
+        Some((x0, y0, x1 - x0, y1 - y0))
+    } else {
+        None
+    }
+}
+
 /// Fill an axis-aligned rectangle, clipped to the buffer bounds.
 pub fn fill_rect(
     buffer: &mut [u32],
@@ -146,12 +162,34 @@ pub fn paint_placements_bitmap(
     for placement in placements {
         let (px, py) = (placement.x * scale, placement.y * scale);
         let (pw, ph) = (placement.width * scale, placement.height * scale);
+        // Scroll clipping: skip fully-hidden widgets; for the rest the
+        // fills intersect the clip and labels render only when their own
+        // rect fits inside it (partial text rows wait for vello clip
+        // layers).
+        let clip_px = placement
+            .clip
+            .map(|(cx, cy, cw, ch)| (cx * scale, cy * scale, cw * scale, ch * scale));
+        if let Some(clip) = clip_px {
+            if intersect_rects((px, py, pw, ph), clip).is_none() {
+                continue;
+            }
+        }
+        let clip_fill = |rect: (f32, f32, f32, f32)| match clip_px {
+            Some(clip) => intersect_rects(rect, clip),
+            None => Some(rect),
+        };
+        let label_visible = clip_px
+            .map(|clip| intersect_rects((px, py, pw, ph), clip) == Some((px, py, pw, ph)))
+            .unwrap_or(true);
         let label = placement.label.as_deref().unwrap_or("");
+        let label = if label_visible { label } else { "" };
         let th = drawtext::text_height(text_scale) as f32;
         match placement.kind {
             WidgetKind::Button => {
                 let fill = button_fill_color(placement.widget, interaction);
-                fill_rect(buffer, width, height, (px, py, pw, ph), fill);
+                if let Some(clipped) = clip_fill((px, py, pw, ph)) {
+                    fill_rect(buffer, width, height, clipped, fill)
+                };
                 let tw = drawtext::text_width(label, text_scale) as f32;
                 drawtext::draw_text(
                     buffer,
@@ -164,19 +202,17 @@ pub fn paint_placements_bitmap(
                 );
             }
             WidgetKind::TextField | WidgetKind::TextArea => {
-                fill_rect(buffer, width, height, (px, py, pw, ph), COLOR_FIELD_BORDER);
-                fill_rect(
-                    buffer,
-                    width,
-                    height,
-                    (
-                        px + 1.0 * scale,
-                        py + 1.0 * scale,
-                        (pw - 2.0 * scale).max(0.0),
-                        (ph - 2.0 * scale).max(0.0),
-                    ),
-                    COLOR_FIELD_FILL,
-                );
+                if let Some(clipped) = clip_fill((px, py, pw, ph)) {
+                    fill_rect(buffer, width, height, clipped, COLOR_FIELD_BORDER)
+                };
+                if let Some(clipped) = clip_fill((
+                    px + 1.0 * scale,
+                    py + 1.0 * scale,
+                    (pw - 2.0 * scale).max(0.0),
+                    (ph - 2.0 * scale).max(0.0),
+                )) {
+                    fill_rect(buffer, width, height, clipped, COLOR_FIELD_FILL)
+                };
                 drawtext::draw_text(
                     buffer,
                     width,
@@ -201,39 +237,27 @@ pub fn paint_placements_bitmap(
             WidgetKind::Checkbox | WidgetKind::Radio => {
                 let box_side = ph.min(18.0 * scale);
                 let by = py + (ph - box_side) / 2.0;
-                fill_rect(
-                    buffer,
-                    width,
-                    height,
-                    (px, by, box_side, box_side),
-                    COLOR_FIELD_BORDER,
-                );
-                fill_rect(
-                    buffer,
-                    width,
-                    height,
-                    (
-                        px + scale,
-                        by + scale,
-                        (box_side - 2.0 * scale).max(0.0),
-                        (box_side - 2.0 * scale).max(0.0),
-                    ),
-                    COLOR_FIELD_FILL,
-                );
+                if let Some(clipped) = clip_fill((px, by, box_side, box_side)) {
+                    fill_rect(buffer, width, height, clipped, COLOR_FIELD_BORDER)
+                };
+                if let Some(clipped) = clip_fill((
+                    px + scale,
+                    by + scale,
+                    (box_side - 2.0 * scale).max(0.0),
+                    (box_side - 2.0 * scale).max(0.0),
+                )) {
+                    fill_rect(buffer, width, height, clipped, COLOR_FIELD_FILL)
+                };
                 if placement.checked == Some(true) {
                     let inset = 4.0 * scale;
-                    fill_rect(
-                        buffer,
-                        width,
-                        height,
-                        (
-                            px + inset,
-                            by + inset,
-                            (box_side - 2.0 * inset).max(0.0),
-                            (box_side - 2.0 * inset).max(0.0),
-                        ),
-                        COLOR_BUTTON,
-                    );
+                    if let Some(clipped) = clip_fill((
+                        px + inset,
+                        by + inset,
+                        (box_side - 2.0 * inset).max(0.0),
+                        (box_side - 2.0 * inset).max(0.0),
+                    )) {
+                        fill_rect(buffer, width, height, clipped, COLOR_BUTTON)
+                    };
                 }
                 drawtext::draw_text(
                     buffer,
@@ -254,26 +278,18 @@ pub fn paint_placements_bitmap(
                 let ty = py + (ph - track_h) / 2.0;
                 let on = placement.checked == Some(true);
                 let track_color = if on { COLOR_BUTTON } else { COLOR_TRACK };
-                fill_rect(
-                    buffer,
-                    width,
-                    height,
-                    (px, ty, track_w, track_h),
-                    track_color,
-                );
+                if let Some(clipped) = clip_fill((px, ty, track_w, track_h)) {
+                    fill_rect(buffer, width, height, clipped, track_color)
+                };
                 let knob_side = (track_h - 4.0 * scale).max(0.0);
                 let knob_x = if on {
                     px + track_w - knob_side - 2.0 * scale
                 } else {
                     px + 2.0 * scale
                 };
-                fill_rect(
-                    buffer,
-                    width,
-                    height,
-                    (knob_x, ty + 2.0 * scale, knob_side, knob_side),
-                    COLOR_KNOB,
-                );
+                if let Some(clipped) = clip_fill((knob_x, ty + 2.0 * scale, knob_side, knob_side)) {
+                    fill_rect(buffer, width, height, clipped, COLOR_KNOB)
+                };
             }
             WidgetKind::Slider | WidgetKind::Progress => {
                 let fraction = placement.value.unwrap_or(0.0).clamp(0.0, 1.0);
@@ -283,37 +299,27 @@ pub fn paint_placements_bitmap(
                     6.0 * scale
                 };
                 let gy = py + (ph - groove_h) / 2.0;
-                fill_rect(buffer, width, height, (px, gy, pw, groove_h), COLOR_TRACK);
-                fill_rect(
-                    buffer,
-                    width,
-                    height,
-                    (px, gy, pw * fraction, groove_h),
-                    COLOR_BUTTON,
-                );
+                if let Some(clipped) = clip_fill((px, gy, pw, groove_h)) {
+                    fill_rect(buffer, width, height, clipped, COLOR_TRACK)
+                };
+                if let Some(clipped) = clip_fill((px, gy, pw * fraction, groove_h)) {
+                    fill_rect(buffer, width, height, clipped, COLOR_BUTTON)
+                };
                 if placement.kind == WidgetKind::Slider {
                     let thumb = (16.0 * scale).min(ph);
                     let tx = px + (pw - thumb) * fraction;
                     let ty2 = py + (ph - thumb) / 2.0;
-                    fill_rect(
-                        buffer,
-                        width,
-                        height,
-                        (tx, ty2, thumb, thumb),
-                        COLOR_FIELD_BORDER,
-                    );
-                    fill_rect(
-                        buffer,
-                        width,
-                        height,
-                        (
-                            tx + scale,
-                            ty2 + scale,
-                            (thumb - 2.0 * scale).max(0.0),
-                            (thumb - 2.0 * scale).max(0.0),
-                        ),
-                        COLOR_KNOB,
-                    );
+                    if let Some(clipped) = clip_fill((tx, ty2, thumb, thumb)) {
+                        fill_rect(buffer, width, height, clipped, COLOR_FIELD_BORDER)
+                    };
+                    if let Some(clipped) = clip_fill((
+                        tx + scale,
+                        ty2 + scale,
+                        (thumb - 2.0 * scale).max(0.0),
+                        (thumb - 2.0 * scale).max(0.0),
+                    )) {
+                        fill_rect(buffer, width, height, clipped, COLOR_KNOB)
+                    };
                 }
             }
             _ => {}
@@ -332,6 +338,7 @@ mod tests {
             label: Some(label.to_string()),
             checked: None,
             value: None,
+            clip: None,
             x,
             y,
             width: w,
@@ -500,6 +507,34 @@ mod tests {
         );
         assert_eq!(at(&bar, 30, 20), COLOR_BUTTON);
         assert_eq!(at(&bar, 90, 20), COLOR_TRACK);
+    }
+
+    #[test]
+    fn clip_limits_fills_and_hides_out_of_view_widgets() {
+        let (w, h) = (100u32, 100u32);
+        let at = |b: &Vec<u32>, x: u32, y: u32| b[(y * w + x) as usize];
+        // Clip region y 20..60: a button half-below the clip bottom only
+        // paints inside it, and a button entirely below paints nothing.
+        let mut half = placement(WidgetKind::Button, "", 10.0, 50.0, 40.0, 20.0);
+        half.clip = Some((0.0, 20.0, 100.0, 40.0));
+        let mut hidden = placement(WidgetKind::Button, "", 10.0, 70.0, 40.0, 20.0);
+        hidden.clip = Some((0.0, 20.0, 100.0, 40.0));
+        let mut buffer = vec![0u32; (w * h) as usize];
+        paint_placements_bitmap(
+            &mut buffer,
+            w,
+            h,
+            1.0,
+            &[half, hidden],
+            PaintInteraction::default(),
+        );
+        assert_eq!(at(&buffer, 20, 55), COLOR_BUTTON, "inside clip paints");
+        assert_eq!(at(&buffer, 20, 62), COLOR_BACKGROUND, "below clip is cut");
+        assert_eq!(
+            at(&buffer, 20, 75),
+            COLOR_BACKGROUND,
+            "hidden widget skipped"
+        );
     }
 
     #[test]

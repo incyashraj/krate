@@ -381,6 +381,14 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.queue_text_input(event).map_err(Into::into)
     }
 
+    /// Drain raw mouse-wheel samples from the native backend.
+    pub fn drain_raw_wheel_input(&self) -> Vec<krate_adapter_common::ui::RawWheelSample> {
+        if self.check_window_access().is_err() {
+            return Vec::new();
+        }
+        self.adapter.drain_raw_wheel_input()
+    }
+
     pub fn drain_raw_pointer_input(&self) -> Vec<krate_adapter_common::ui::RawPointerSample> {
         self.adapter.drain_raw_pointer_input()
     }

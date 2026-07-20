@@ -958,6 +958,9 @@ pub struct WidgetPlacement {
     pub checked: Option<bool>,
     /// Normalized 0..=1 value for slider and progress kinds.
     pub value: Option<f32>,
+    /// Clip rectangle (x, y, w, h) in logical pixels, set for widgets
+    /// inside Scroll containers; painters must not draw outside it.
+    pub clip: Option<(f32, f32, f32, f32)>,
     /// Left edge in logical pixels.
     pub x: f32,
     /// Top edge in logical pixels.
@@ -1004,6 +1007,24 @@ pub struct RawKeySample {
     pub modifiers: Modifiers,
     /// Text produced by the press after keyboard layout processing.
     pub text: Option<String>,
+}
+
+/// One raw mouse-wheel sample from a native backend, before routing.
+///
+/// Deltas are in logical pixels (line-based wheels are pre-scaled by the
+/// backend). The runtime hit-tests the position against Scroll
+/// containers and adjusts host-side scroll offsets; raw samples never
+/// enter the UI event queue.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RawWheelSample {
+    /// Window the sample belongs to.
+    pub window: WindowId,
+    /// Cursor X in logical pixels at wheel time.
+    pub x: f32,
+    /// Cursor Y in logical pixels at wheel time.
+    pub y: f32,
+    /// Vertical scroll delta in logical pixels (positive scrolls down).
+    pub dy: f32,
 }
 
 pub trait UiAdapter: WindowAdapter {
@@ -1066,6 +1087,12 @@ pub trait UiAdapter: WindowAdapter {
     /// the last call. Headless adapters have no native input and return
     /// nothing.
     fn drain_raw_key_input(&self) -> Vec<RawKeySample> {
+        Vec::new()
+    }
+
+    /// Drain raw mouse-wheel samples captured by the native backend
+    /// since the last call. Headless adapters return nothing.
+    fn drain_raw_wheel_input(&self) -> Vec<RawWheelSample> {
         Vec::new()
     }
 

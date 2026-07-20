@@ -27,6 +27,10 @@ const WAIT_POLL_INTERVAL_MILLIS: u64 = 10;
 pub struct Phase3GuiHost {
     runtime: Phase3UiRuntime,
     windows: Vec<WindowId>,
+    /// Host-side vertical scroll offsets per (window, Scroll widget).
+    /// Scrolling never involves the guest: wheel input adjusts these and
+    /// re-lowers placements, matching native platform feel.
+    scroll_offsets: std::cell::RefCell<std::collections::BTreeMap<(WindowId, WidgetId), f32>>,
 }
 
 impl Phase3GuiHost {
@@ -36,6 +40,7 @@ impl Phase3GuiHost {
         Ok(Self {
             runtime,
             windows: Vec::new(),
+            scroll_offsets: std::cell::RefCell::new(std::collections::BTreeMap::new()),
         })
     }
 
@@ -60,6 +65,7 @@ impl Phase3GuiHost {
             .map_err(|err| UiDispatchError::Layout(err.to_string()))?;
         let layout = dispatcher.compute_layout(window, viewport)?;
 
+        let offsets = self.scroll_offsets.borrow();
         let mut placements = Vec::new();
         for (id, node) in tree.nodes() {
             if !matches!(
@@ -78,18 +84,36 @@ impl Phase3GuiHost {
             let Some(rect) = absolute_rect(&tree, &layout, *id) else {
                 continue;
             };
+            // Widgets inside a Scroll container shift by the container's
+            // host-side offset and clip to the container's rectangle.
+            let mut y = rect.y;
+            let mut clip = None;
+            if let Some(scroll_id) = nearest_scroll_ancestor(&tree, *id) {
+                if let Some(scroll_rect) = absolute_rect(&tree, &layout, scroll_id) {
+                    let offset = offsets.get(&(window, scroll_id)).copied().unwrap_or(0.0);
+                    y -= offset;
+                    clip = Some((
+                        scroll_rect.x,
+                        scroll_rect.y,
+                        scroll_rect.width,
+                        scroll_rect.height,
+                    ));
+                }
+            }
             placements.push(WidgetPlacement {
                 widget: *id,
                 kind: node.kind,
                 label: node.label.clone(),
                 checked: node.checked,
                 value: node.value,
+                clip,
                 x: rect.x,
-                y: rect.y,
+                y,
                 width: rect.width,
                 height: rect.height,
             });
         }
+        drop(offsets);
 
         dispatcher.lower_widget_placements(window, &placements)?;
         Ok(())
@@ -168,6 +192,49 @@ impl Phase3GuiHost {
             }
         }
 
+        // Wheel input scrolls host-side: hit-test the topmost Scroll
+        // container under the cursor, clamp its offset to the content
+        // extent, and re-lower. The guest never sees wheel events.
+        for sample in dispatcher.drain_raw_wheel_input() {
+            let Ok(Some(record)) = dispatcher.window(sample.window) else {
+                continue;
+            };
+            let Ok(viewport) =
+                LayoutViewport::new(record.size.width as f32, record.size.height as f32)
+            else {
+                continue;
+            };
+            let Ok(Some(tree)) = dispatcher.widget_tree(sample.window) else {
+                continue;
+            };
+            let Ok(layout) = dispatcher.compute_layout(sample.window, viewport) else {
+                continue;
+            };
+            let Some(scroll_id) = scroll_container_at(&tree, &layout, sample.x, sample.y) else {
+                continue;
+            };
+            let Some(scroll_rect) = absolute_rect(&tree, &layout, scroll_id) else {
+                continue;
+            };
+            let content_bottom = tree
+                .nodes()
+                .iter()
+                .filter(|(child, _)| nearest_scroll_ancestor(&tree, **child) == Some(scroll_id))
+                .filter_map(|(child, _)| absolute_rect(&tree, &layout, *child))
+                .map(|r| r.y + r.height)
+                .fold(scroll_rect.y, f32::max);
+            let content_height = content_bottom - scroll_rect.y;
+            let mut offsets = self.scroll_offsets.borrow_mut();
+            let entry = offsets.entry((sample.window, scroll_id)).or_insert(0.0);
+            let updated =
+                clamped_scroll_offset(*entry, sample.dy, content_height, scroll_rect.height);
+            if (updated - *entry).abs() > f32::EPSILON {
+                *entry = updated;
+                drop(offsets);
+                let _ = self.sync_native_widgets(sample.window);
+            }
+        }
+
         // Skip host-side bookkeeping events that have no portable WIT shape.
         while let Some(event) = dispatcher.poll_event()? {
             if let Some(event) = event_to_wit(event) {
@@ -205,6 +272,47 @@ impl Phase3GuiHost {
             .find(|window| window.get() == raw)
             .ok_or(ui::types::UiError::InvalidWindow)
     }
+}
+
+/// Nearest Scroll ancestor of a widget, if any.
+fn nearest_scroll_ancestor(
+    tree: &krate_adapter_common::ui::WidgetTree,
+    id: WidgetId,
+) -> Option<WidgetId> {
+    let mut current = tree.node(id)?.parent;
+    while let Some(parent_id) = current {
+        let parent = tree.node(parent_id)?;
+        if parent.kind == WidgetKind::Scroll {
+            return Some(parent_id);
+        }
+        current = parent.parent;
+    }
+    None
+}
+
+/// Topmost Scroll container whose rectangle contains the logical point.
+fn scroll_container_at(
+    tree: &krate_adapter_common::ui::WidgetTree,
+    layout: &krate_layout::LayoutSnapshot,
+    x: f32,
+    y: f32,
+) -> Option<WidgetId> {
+    tree.nodes()
+        .iter()
+        .rev()
+        .filter(|(_, node)| node.kind == WidgetKind::Scroll)
+        .find(|(id, _)| {
+            absolute_rect(tree, layout, **id)
+                .is_some_and(|r| x >= r.x && y >= r.y && x < r.x + r.width && y < r.y + r.height)
+        })
+        .map(|(id, _)| *id)
+}
+
+/// Clamp a scroll offset after applying a wheel delta: never negative,
+/// never past the point where the last content row is visible.
+fn clamped_scroll_offset(current: f32, dy: f32, content_height: f32, viewport_height: f32) -> f32 {
+    let max_offset = (content_height - viewport_height).max(0.0);
+    (current + dy).clamp(0.0, max_offset)
 }
 
 /// Widget kinds that take keyboard focus from a pointer press.
@@ -716,6 +824,16 @@ impl audio::capture::Host for Phase3GuiHost {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scroll_offset_clamps_to_content_extent() {
+        // Content 192 tall in a 120 viewport: max offset 72.
+        assert_eq!(clamped_scroll_offset(0.0, 30.0, 192.0, 120.0), 30.0);
+        assert_eq!(clamped_scroll_offset(60.0, 30.0, 192.0, 120.0), 72.0);
+        assert_eq!(clamped_scroll_offset(10.0, -30.0, 192.0, 120.0), 0.0);
+        // Content shorter than the viewport never scrolls.
+        assert_eq!(clamped_scroll_offset(0.0, 30.0, 80.0, 120.0), 0.0);
+    }
 
     #[test]
     fn presses_focus_text_entry_widgets_only() {

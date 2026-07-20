@@ -25,6 +25,18 @@ const BUTTON_ID: u64 = 2;
 const FIELD_ID: u64 = 3;
 const CHECKBOX_ID: u64 = 4;
 const PROGRESS_ID: u64 = 5;
+const SCROLL_ID: u64 = 6;
+const SCROLL_LINE_BASE_ID: u64 = 10;
+const SCROLL_LINE_LABELS: [&str; 8] = [
+    "scroll line one",
+    "scroll line two",
+    "scroll line three",
+    "scroll line four",
+    "scroll line five",
+    "scroll line six",
+    "scroll line seven",
+    "scroll line eight",
+];
 
 /// Interactive wait budget: 600 rounds of 50ms is a 30-second demo window.
 const MAX_WAIT_ROUNDS: u32 = 600;
@@ -94,6 +106,42 @@ fn text_field(label: &str) -> types::WidgetNode {
     }
 }
 
+fn scroll_area() -> types::WidgetNode {
+    types::WidgetNode {
+        id: SCROLL_ID,
+        parent: Some(ROOT_ID),
+        kind: types::WidgetKind::Scroll,
+        label: None,
+        role: Some(pure_string("scrollarea")),
+        style: types::Style {
+            width: Some(320.0),
+            height: Some(120.0),
+            grow: 0.0,
+            padding: 0.0,
+        },
+        checked: None,
+        value: None,
+    }
+}
+
+fn scroll_line(index: usize) -> types::WidgetNode {
+    types::WidgetNode {
+        id: SCROLL_LINE_BASE_ID + index as u64,
+        parent: Some(SCROLL_ID),
+        kind: types::WidgetKind::Text,
+        label: Some(pure_string(SCROLL_LINE_LABELS[index & 7])),
+        role: Some(pure_string("text")),
+        style: types::Style {
+            width: Some(300.0),
+            height: Some(24.0),
+            grow: 0.0,
+            padding: 0.0,
+        },
+        checked: None,
+        value: None,
+    }
+}
+
 fn robot_checkbox(checked: bool) -> types::WidgetNode {
     types::WidgetNode {
         id: CHECKBOX_ID,
@@ -148,9 +196,21 @@ impl bindings::Guest for Component {
             || tree::upsert_node(win, &text_field("waiting for click")).is_err()
             || tree::upsert_node(win, &robot_checkbox(false)).is_err()
             || tree::upsert_node(win, &typing_progress(0.0)).is_err()
+            || tree::upsert_node(win, &scroll_area()).is_err()
         {
             let _ = window::close(win);
             return 32;
+        }
+
+        // Eight lines of 24px content in a 120px scroll area: the host
+        // clips and scrolls them; this component never handles a wheel.
+        let mut line_index = 0usize;
+        while line_index < SCROLL_LINE_LABELS.len() {
+            if tree::upsert_node(win, &scroll_line(line_index)).is_err() {
+                let _ = window::close(win);
+                return 32;
+            }
+            line_index += 1;
         }
 
         // Byte equality, not str::contains: pattern-search machinery pulls

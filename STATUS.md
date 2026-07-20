@@ -10,7 +10,22 @@ Branch: `main`
 Latest checked completed push before this status update: `8b1c9ec` (fast
 CI run `28740942296` green, then dispatched full matrix run `28741064867`
 green: all three OS lanes — certifying the vector-text renderer pass).
-Working tree at this status update: widget state entered the contract.
+Working tree at this status update: scrolling works, entirely host-side.
+A `Scroll` container now behaves like a real one: children overflow it
+(fixed-height widgets no longer flex-shrink), placements inside carry a
+clip rectangle both painters honor (fills intersect the clip; labels
+render when fully visible), the winit hosts capture mouse-wheel input
+into a raw-sample drain channel, and the gui host keeps per-container
+scroll offsets — wheel input hit-tests the topmost Scroll under the
+cursor, clamps the offset to the content extent, and re-lowers. Zero
+WIT changes: the guest declares a Scroll node with children and never
+sees a wheel event, matching native platform feel. hello-gui grew a
+120px scroll area with eight text rows, and the Xvfb proof wheels it
+to a mid-list position before the screenshot. The nightly fuzz lane was
+also hardened the same day: runs were dying because the cron fired
+while this laptop slept on battery — the fuzz step now runs under
+caffeinate and the cron moved to 13:00Z (21:00 SGT).
+Previous slice, certified: widget state entered the contract.
 The Phase 3 draft WIT `widget-node` gained `checked: option<bool>` and
 `value: option<f32>` (validated finite, 0..=1), threaded through the
 dispatcher types and placements into both painters: checkboxes, radios,

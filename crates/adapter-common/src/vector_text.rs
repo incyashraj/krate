@@ -18,8 +18,9 @@ use vello_cpu::kurbo::{Circle, Rect, RoundedRect, Shape};
 use vello_cpu::{Glyph, Pixmap, RenderContext, Resources};
 
 use crate::painter::{
-    button_fill_color, PaintInteraction, COLOR_BACKGROUND, COLOR_BUTTON, COLOR_BUTTON_LABEL,
-    COLOR_FIELD_BORDER, COLOR_FIELD_FILL, COLOR_FIELD_TEXT, COLOR_KNOB, COLOR_TEXT, COLOR_TRACK,
+    button_fill_color, intersect_rects, PaintInteraction, COLOR_BACKGROUND, COLOR_BUTTON,
+    COLOR_BUTTON_LABEL, COLOR_FIELD_BORDER, COLOR_FIELD_FILL, COLOR_FIELD_TEXT, COLOR_KNOB,
+    COLOR_TEXT, COLOR_TRACK,
 };
 use crate::ui::{WidgetKind, WidgetPlacement};
 
@@ -176,6 +177,37 @@ pub fn try_paint_placements(
         for placement in placements {
             let (px, py) = (placement.x * scale, placement.y * scale);
             let (pw, ph) = (placement.width * scale, placement.height * scale);
+            // Scroll clipping mirrors the bitmap painter: fully hidden
+            // widgets skip; clipped widgets draw as plain intersected
+            // fills (rounded corners resume when unclipped); labels
+            // render only when the widget rect fits inside the clip.
+            let clip_px = placement
+                .clip
+                .map(|(cx, cy, cw, ch)| (cx * scale, cy * scale, cw * scale, ch * scale));
+            if let Some(clip) = clip_px {
+                if intersect_rects((px, py, pw, ph), clip).is_none() {
+                    continue;
+                }
+            }
+            let fully_visible = clip_px
+                .map(|clip| intersect_rects((px, py, pw, ph), clip) == Some((px, py, pw, ph)))
+                .unwrap_or(true);
+            if !fully_visible {
+                if let Some(clip) = clip_px {
+                    if let Some((ix, iy, iw, ih)) = intersect_rects((px, py, pw, ph), clip) {
+                        let color = match placement.kind {
+                            WidgetKind::Button => button_fill_color(placement.widget, interaction),
+                            WidgetKind::TextField | WidgetKind::TextArea => COLOR_FIELD_FILL,
+                            WidgetKind::Switch | WidgetKind::Slider | WidgetKind::Progress => {
+                                COLOR_TRACK
+                            }
+                            _ => COLOR_BACKGROUND,
+                        };
+                        fill(&mut ctx, color, ix, iy, iw, ih);
+                    }
+                }
+                continue;
+            }
             let label = placement.label.as_deref().unwrap_or("");
             let (text_color, inset) = match placement.kind {
                 WidgetKind::Button => {
@@ -367,6 +399,7 @@ mod tests {
             label: Some("Click me".to_string()),
             checked: None,
             value: None,
+            clip: None,
             x: 10.0,
             y: 10.0,
             width: 160.0,
@@ -422,6 +455,7 @@ mod tests {
             label: None,
             checked: None,
             value: None,
+            clip: None,
             x: 10.0,
             y: 10.0,
             width: 160.0,
