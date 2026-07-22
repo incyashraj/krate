@@ -1,0 +1,36 @@
+[package]
+name = "krate-notes"
+version = "0.1.0-dev"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/incyashraj/krate"
+rust-version = "1.91"
+
+[dependencies]
+wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "krate:notes"
+
+[package.metadata.component.target]
+path = "../../wit/krate/phase3"
+world = "gui"
+
+[package.metadata.component.target.dependencies]
+"krate:io" = { path = "../../wit/krate/phase3/deps/io" }
+"krate:fs" = { path = "../../wit/krate/phase3/deps/fs" }
+"krate:net" = { path = "../../wit/krate/phase3/deps/net" }
+"krate:time" = { path = "../../wit/krate/phase3/deps/time" }
+"krate:locale" = { path = "../../wit/krate/phase3/deps/locale" }
+"krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }
+"krate:gfx" = { path = "../../wit/krate/phase3/deps/gfx" }
+"krate:audio" = { path = "../../wit/krate/phase3/deps/audio" }
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = "s"
