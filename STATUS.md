@@ -23,7 +23,32 @@ Nothing architectural changes; portability stops being the headline and
 becomes how the property is achieved. The Adobe/Flash analogy is retired.
 Next implementation work is P3-SHARE-01, not further widget slices.
 
-Working tree at this status update: list selection round-trips. A
+Working tree at this status update: an app is one shareable file. A
+`.krate` is a zip carrying `manifest.toml` and `code.wasm`, written by the
+new `krate pack` subcommand and run by `krate run app.krate` or
+`krate run <url>`. This is the minimal subset of the Phase 6 bundle format
+(§8.1) pulled forward as P3-SHARE-01 under Change Order 2; signing, the
+transparency log, delta updates and the marketplace stay in Phase 6.
+The property under test is that packaging changes delivery and nothing
+else: a new `krate-bundle` crate resolves a bundle (local or fetched) into
+paths, and the CLI then runs the *existing* policy path unchanged, so a
+downloaded bundle has exactly the authority a local one has, which is none
+until granted. A CLI test asserts the sidecar and bundle paths produce
+byte-identical capability sets, and `--manifest` is refused alongside a
+bundle so a caller cannot widen what the author shipped. Opening a bundle
+writes attacker-influenced bytes to disk, so entries are read by exact
+name rather than iterated (path traversal is unrepresentable, not
+filtered), and both the archive and each decompressed entry are size
+capped. Plain http is refused unless `--insecure-http` is passed for a
+local test server. The Linux CI lane now runs the GUI proof twice, once
+from a path and once after packing hello-gui, serving it over local HTTP
+and running it by URL, with identical assertions both times. `deny.toml`
+gained CDLA-Permissive-2.0 for the Mozilla CA store that arrives with the
+TLS stack; advisories are clean. README now opens with the sharing
+property rather than portability.
+Certification: pending — full matrix must be green before this counts.
+
+Previous slice, certified: list selection round-trips. A
 `ListView` is now a real selectable container: the draft WIT `widget-node`
 gained `selected: option<u32>` (rejected on kinds that cannot carry a
 selection, in both the builder and the WIT boundary), the gui host resolves
