@@ -200,6 +200,17 @@ impl MacosAppKitPrototypeUiAdapter {
         })
     }
 
+    /// Widgets lowered to controls a person can type into.
+    pub fn editable_widgets(&self, id: WindowId) -> Vec<WidgetId> {
+        APPKIT_PROTOTYPE_SESSIONS.with(|sessions| {
+            let sessions = sessions.borrow();
+            sessions
+                .get(&id)
+                .map(|session| session.editable_widgets())
+                .unwrap_or_default()
+        })
+    }
+
     fn remove_session(&self, id: WindowId) {
         APPKIT_PROTOTYPE_SESSIONS.with(|sessions| {
             sessions.borrow_mut().remove(&id);
@@ -440,6 +451,18 @@ impl UiAdapter for MacosUiAdapter {
 impl UiAdapter for MacosAppKitPrototypeUiAdapter {
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
         self.headless.set_root(window, root)
+    }
+
+    /// AppKit keeps typed text inside the native control, so the guest never
+    /// sees it unless the host reads it back. These two make that possible.
+    fn native_widget_text(&self, window: WindowId, widget: WidgetId) -> Option<String> {
+        MacosAppKitPrototypeUiAdapter::widget_text(self, window, widget)
+            .ok()
+            .flatten()
+    }
+
+    fn native_editable_widgets(&self, window: WindowId) -> Vec<WidgetId> {
+        MacosAppKitPrototypeUiAdapter::editable_widgets(self, window)
     }
 
     fn lower_widget_placements(

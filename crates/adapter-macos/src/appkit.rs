@@ -33,7 +33,11 @@ impl AppKitWidgetPlacement {
     pub fn kind_supported(kind: WidgetKind) -> bool {
         matches!(
             kind,
-            WidgetKind::Button | WidgetKind::TextField | WidgetKind::Text
+            WidgetKind::Button
+                | WidgetKind::TextField
+                | WidgetKind::Text
+                | WidgetKind::TextArea
+                | WidgetKind::ListView
         )
     }
 
@@ -89,6 +93,13 @@ impl AppKitWidgetPlacement {
     /// Return the label or text content for the native control.
     pub fn label(&self) -> Option<&str> {
         self.label.as_deref()
+    }
+
+    /// Replace the label, used to carry a person's in-progress typing across
+    /// a re-lower rather than reverting the control to the guest's copy.
+    pub fn with_label(mut self, label: String) -> Self {
+        self.label = Some(label);
+        self
     }
 
     /// Return the logical top-left rectangle as `(x, y, width, height)`.
@@ -662,7 +673,36 @@ impl AppKitWindowSession {
                 "AppKit widget lowering needs the native delegate installed first".to_string(),
             )
         })?;
-        let surface = self.window.lower_widget_placements(placements, delegate)?;
+
+        // Every tree change replaces the whole native control set, which
+        // would destroy the control a person is typing into and reset it to
+        // whatever the guest last knew. For an editable control the person is
+        // the source of truth, not the guest, so carry the live text across
+        // the rebuild. Without this, each keystroke races the re-lower and
+        // characters are dropped.
+        let live_text: std::collections::BTreeMap<WidgetId, String> = self
+            .widget_surface
+            .as_ref()
+            .map(|surface| {
+                surface
+                    .editable_widgets()
+                    .into_iter()
+                    .filter_map(|widget| surface.text(widget).ok().map(|text| (widget, text)))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let placements: Vec<AppKitWidgetPlacement> = placements
+            .iter()
+            .map(|placement| match live_text.get(&placement.widget()) {
+                Some(text) if placement.kind() == WidgetKind::TextArea => {
+                    placement.clone().with_label(text.clone())
+                }
+                _ => placement.clone(),
+            })
+            .collect();
+
+        let surface = self.window.lower_widget_placements(&placements, delegate)?;
         let snapshot = surface.snapshot();
         self.widget_surface = Some(surface);
         Ok(snapshot)
@@ -696,6 +736,13 @@ impl AppKitWindowSession {
     /// Read the current text content of a lowered native control.
     pub fn widget_text(&self, widget: WidgetId) -> Result<String, UiAdapterError> {
         self.widget_surface()?.text(widget)
+    }
+
+    /// Widgets lowered to controls a person can type into.
+    pub fn editable_widgets(&self) -> Vec<WidgetId> {
+        self.widget_surface()
+            .map(|surface| surface.editable_widgets())
+            .unwrap_or_default()
     }
 
     /// Show the native window through AppKit and the shared Krate adapter.
@@ -1129,6 +1176,18 @@ mod platform {
             Ok(control.stringValue().to_string())
         }
 
+        /// Widgets lowered to controls a person can type into.
+        ///
+        /// AppKit keeps typed text inside the control, so the gui host polls
+        /// exactly these after each pump to notice what was typed.
+        pub fn editable_widgets(&self) -> Vec<WidgetId> {
+            self.kinds
+                .iter()
+                .filter(|(_, kind)| matches!(kind, WidgetKind::TextField | WidgetKind::TextArea))
+                .map(|(widget, _)| *widget)
+                .collect()
+        }
+
         /// Trigger a lowered button exactly as a physical click would.
         ///
         /// AppKit's `performClick:` drives the same target-action path a real
@@ -1365,6 +1424,32 @@ mod platform {
                     WidgetKind::Text => {
                         let value = NSString::from_str(placement.label().unwrap_or(""));
                         let label = NSTextField::labelWithString(&value, mtm);
+                        label.setFrame(frame);
+                        label.setTag(placement.widget().get() as isize);
+                        Retained::into_super(label)
+                    }
+                    WidgetKind::TextArea => {
+                        // A multi-line editable NSTextField rather than an
+                        // NSTextView: it is an NSControl like every other
+                        // lowered widget, so it fits the existing surface
+                        // without a second storage path, and it is genuinely
+                        // editable, which is what a note editor needs.
+                        let value = NSString::from_str(placement.label().unwrap_or(""));
+                        let field = NSTextField::textFieldWithString(&value, mtm);
+                        field.setFrame(frame);
+                        field.setTag(placement.widget().get() as isize);
+                        field.setEditable(true);
+                        field.setSelectable(true);
+                        Retained::into_super(field)
+                    }
+                    WidgetKind::ListView => {
+                        // The container itself paints nothing on macOS: its
+                        // rows are separate Text placements that lower to
+                        // labels. Lowering it as a non-editable, empty label
+                        // keeps ids and hit testing consistent without drawing
+                        // a box over the rows.
+                        let empty = NSString::from_str("");
+                        let label = NSTextField::labelWithString(&empty, mtm);
                         label.setFrame(frame);
                         label.setTag(placement.widget().get() as isize);
                         Retained::into_super(label)

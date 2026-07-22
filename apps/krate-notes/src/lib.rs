@@ -274,10 +274,9 @@ impl bindings::Guest for Component {
 
         let mut selected: u32 = 0;
         let mut buffer = NoteBuffer::new();
-        let loaded = load_note(0, &mut buffer);
-        if !loaded {
-            buffer.push_str("type here, then press save");
-        }
+        // A hint belongs on screen, not in the buffer: text seeded here would
+        // be saved to the file as though the person had typed it.
+        load_note(0, &mut buffer);
 
         if tree::set_root(win, &stack_root()).is_err()
             || tree::upsert_node(win, &sidebar(Some(selected))).is_err()

@@ -32,6 +32,10 @@ pub struct Phase3GuiHost {
     /// Scrolling never involves the guest: wheel input adjusts these and
     /// re-lowers placements, matching native platform feel.
     scroll_offsets: std::cell::RefCell<std::collections::BTreeMap<(WindowId, WidgetId), f32>>,
+    /// Last text the host observed in each natively lowered editable control.
+    /// AppKit keeps typed characters inside the control, so the guest only
+    /// learns about them by the host reading the control back and comparing.
+    native_text: std::cell::RefCell<std::collections::BTreeMap<(WindowId, WidgetId), String>>,
 }
 
 impl Phase3GuiHost {
@@ -42,6 +46,7 @@ impl Phase3GuiHost {
             runtime,
             windows: Vec::new(),
             scroll_offsets: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            native_text: std::cell::RefCell::new(std::collections::BTreeMap::new()),
         })
     }
 
@@ -127,6 +132,43 @@ impl Phase3GuiHost {
         Ok(())
     }
 
+    /// Notice text typed into a natively lowered control and tell the guest.
+    ///
+    /// On hosts that lower to real OS controls, keystrokes land inside the
+    /// control and never reach the component. Reading each editable control
+    /// back after a pump is what closes that loop.
+    ///
+    /// `text-input` has append semantics, so only the newly added suffix is
+    /// queued. Sending the whole field value would duplicate everything the
+    /// guest already has. A shrink (backspace, or a selection replaced) cannot
+    /// be expressed as an append, so the host records the new value and stays
+    /// quiet rather than corrupting the guest's buffer; the control still
+    /// shows the truth, and the next growth reports correctly against it.
+    fn sync_native_text(&self, window: WindowId, dispatcher: &Phase3UiDispatcher<'_>) {
+        for widget in dispatcher.native_editable_widgets(window) {
+            let Some(current) = dispatcher.native_widget_text(window, widget) else {
+                continue;
+            };
+            let mut seen = self.native_text.borrow_mut();
+            let previous = seen.get(&(window, widget));
+            let added = appended_text(previous.map(String::as_str), &current).unwrap_or("");
+            if previous.map(String::as_str) != Some(current.as_str()) {
+                seen.insert((window, widget), current.clone());
+            }
+            drop(seen);
+
+            if !added.is_empty() {
+                if let Ok(event) = krate_adapter_common::ui::TextInputEvent::new(
+                    window,
+                    Some(widget),
+                    added.to_string(),
+                ) {
+                    let _ = dispatcher.queue_text_input(event);
+                }
+            }
+        }
+    }
+
     fn poll_one_event(&self) -> Result<Option<ui::types::Event>, UiDispatchError> {
         let dispatcher = self.dispatcher();
         for window in &self.windows {
@@ -134,6 +176,7 @@ impl Phase3GuiHost {
             // headless adapters return no tick. Ignore per-window pump errors
             // so one closed window cannot wedge event delivery.
             let _ = dispatcher.pump_event_loop_once(*window);
+            self.sync_native_text(*window, &dispatcher);
         }
 
         // Route raw native pointer input through layout hit testing so the
@@ -324,6 +367,25 @@ fn clamped_scroll_offset(current: f32, dy: f32, content_height: f32, viewport_he
 }
 
 /// Widget kinds that take keyboard focus from a pointer press.
+/// What was appended to a native control's text since the host last looked.
+///
+/// `text-input` is an append: the guest adds what it receives to its own
+/// buffer. So only a pure growth can be reported. Anything else (the first
+/// sighting of a control, a deletion, or a replacement) returns `None`, and
+/// the caller stays quiet rather than corrupting the guest's buffer with text
+/// it already has or a change it cannot express.
+fn appended_text<'a>(previous: Option<&str>, current: &'a str) -> Option<&'a str> {
+    // No baseline yet: the host has never seen this control, so whatever it
+    // holds came from the guest's own lowering, not from typing.
+    let previous = previous?;
+    if !current.starts_with(previous) {
+        return None;
+    }
+    current
+        .get(previous.len()..)
+        .filter(|rest| !rest.is_empty())
+}
+
 fn press_focuses(kind: WidgetKind) -> bool {
     matches!(kind, WidgetKind::TextField | WidgetKind::TextArea)
 }
@@ -857,5 +919,45 @@ mod tests {
         assert!(!press_focuses(WidgetKind::Button));
         assert!(!press_focuses(WidgetKind::Text));
         assert!(!press_focuses(WidgetKind::Stack));
+    }
+}
+
+#[cfg(test)]
+mod native_text_sync_tests {
+    use super::appended_text;
+
+    #[test]
+    fn the_first_sighting_of_a_control_reports_nothing() {
+        // Whatever the control holds on first look came from the guest's own
+        // lowering. Reporting it would echo the guest's text back at it.
+        assert_eq!(appended_text(None, "hello"), None);
+    }
+
+    #[test]
+    fn typing_reports_only_the_new_characters() {
+        assert_eq!(appended_text(Some("hel"), "hello"), Some("lo"));
+        assert_eq!(appended_text(Some(""), "h"), Some("h"));
+    }
+
+    #[test]
+    fn no_change_reports_nothing() {
+        assert_eq!(appended_text(Some("hello"), "hello"), None);
+    }
+
+    #[test]
+    fn deletions_and_replacements_report_nothing() {
+        // text-input cannot express a shrink, so the host records the new
+        // value silently rather than corrupting the guest's buffer.
+        assert_eq!(appended_text(Some("hello"), "hell"), None);
+        assert_eq!(appended_text(Some("hello"), "goodbye"), None);
+        assert_eq!(appended_text(Some("hello"), ""), None);
+    }
+
+    #[test]
+    fn multibyte_text_is_split_on_a_character_boundary() {
+        // Slicing by byte length would panic mid-character without the
+        // checked accessor.
+        assert_eq!(appended_text(Some("héllo"), "héllo wörld"), Some(" wörld"));
+        assert_eq!(appended_text(Some("日本"), "日本語"), Some("語"));
     }
 }

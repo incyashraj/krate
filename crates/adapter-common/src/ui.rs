@@ -1140,6 +1140,27 @@ pub trait UiAdapter: WindowAdapter {
         Vec::new()
     }
 
+    /// Read the current text of a natively lowered editable control.
+    ///
+    /// Hosts that lower to real OS controls keep typed text inside those
+    /// controls, where the guest cannot see it. The gui host reads it back
+    /// after each pump so the component learns what the person typed.
+    ///
+    /// Returns `None` when the host draws its own widgets (Linux and Windows
+    /// today, where keystrokes already arrive as portable events) or when the
+    /// widget is not a lowered editable control.
+    fn native_widget_text(&self, _window: WindowId, _widget: WidgetId) -> Option<String> {
+        None
+    }
+
+    /// Widgets currently lowered to native editable controls for a window.
+    ///
+    /// The gui host polls exactly these after each pump rather than every
+    /// widget in the tree.
+    fn native_editable_widgets(&self, _window: WindowId) -> Vec<WidgetId> {
+        Vec::new()
+    }
+
     /// Lower widget placements to native host controls, replacing any
     /// previously lowered set for the window.
     ///

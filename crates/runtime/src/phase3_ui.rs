@@ -409,6 +409,16 @@ impl<'a> Phase3UiDispatcher<'a> {
         Ok(self.adapter.pump_event_loop_once(window)?)
     }
 
+    /// Widgets the host lowered to native controls a person can type into.
+    pub fn native_editable_widgets(&self, window: WindowId) -> Vec<WidgetId> {
+        self.adapter.native_editable_widgets(window)
+    }
+
+    /// Current text of a natively lowered editable control.
+    pub fn native_widget_text(&self, window: WindowId, widget: WidgetId) -> Option<String> {
+        self.adapter.native_widget_text(window, widget)
+    }
+
     fn check_window_access(&self) -> UiDispatchResult<()> {
         self.check(&UapiCall::Ui(UiCall::WindowCreate))
     }
