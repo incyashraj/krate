@@ -463,6 +463,19 @@ fn run_component(request: RunRequest) -> Result<u8> {
                 for cap in &missing {
                     eprintln!("  - {cap}");
                 }
+                // Someone running a shared app for the first time hits this
+                // without knowing the vocabulary yet. Saying what is missing
+                // and stopping leaves them stuck, so name the two ways out and
+                // put the narrow one first.
+                if !can_prompt {
+                    eprintln!();
+                    eprintln!("To allow one of these for this run:");
+                    if let Some(first) = missing.first() {
+                        eprintln!("  krate run --grant {first} {}", request.target);
+                    }
+                    eprintln!("Or review them one at a time:");
+                    eprintln!("  krate run --prompt {}", request.target);
+                }
             }
             return Ok(5);
         }

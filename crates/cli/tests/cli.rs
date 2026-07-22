@@ -2913,3 +2913,28 @@ fn fetching_a_bundle_over_plain_http_is_refused_by_default() {
         "expected an https refusal, got: {stderr}"
     );
 }
+
+#[test]
+fn a_denial_tells_you_how_to_grant_and_names_what_you_ran() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let Some(bundle) = pack_fixture(dir.path()) else {
+        eprintln!("skipping: phase2 smoke fixture not built");
+        return;
+    };
+
+    // Non-interactive runs cannot prompt, so the denial has to carry the way
+    // out with it, echoing the target the user actually typed.
+    let output = krate()
+        .arg("run")
+        .arg(&bundle)
+        .output()
+        .expect("run bundle without grants");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("missing required capabilities") {
+        assert!(stderr.contains("--grant"), "should suggest --grant: {stderr}");
+        assert!(
+            stderr.contains(bundle.to_str().expect("bundle path is utf8")),
+            "should echo the target that was run: {stderr}"
+        );
+    }
+}
