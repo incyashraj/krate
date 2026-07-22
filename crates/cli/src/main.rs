@@ -638,6 +638,19 @@ fn print_run_json(
     });
     let granted: Vec<String> = policy.grants().iter().map(|cap| cap.to_string()).collect();
 
+    // A denial that only says "no" is a dead end for an agent, which then has
+    // to guess that the fix is re-issuing the same call with the refused
+    // strings added. Hand it the exact remedy instead, so a refusal is a step
+    // rather than a stop.
+    let remedy = (!exit.denied.is_empty()).then(|| {
+        serde_json::json!({
+            "action": "grant-and-retry",
+            "grants": exit.denied,
+            "note": "Re-run with these capability strings in `grants` to proceed. \
+                    Each one is narrow: granting it allows only what it names.",
+        })
+    });
+
     let payload = serde_json::json!({
         "schema": "krate.run.v1",
         "app": app,
@@ -650,6 +663,7 @@ fn print_run_json(
             "class": exit.class,
             "message": exit.message,
         },
+        "remedy": remedy,
         "duration_ms": duration_ms,
         "stdout": stdout,
     });

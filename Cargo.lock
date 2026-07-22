@@ -1675,12 +1675,14 @@ name = "krate-tools"
 version = "0.1.0-dev"
 dependencies = [
  "anyhow",
+ "krate-bundle",
  "krate-manifest",
  "krate-policy",
  "krate-runtime",
  "serde",
  "serde_json",
  "sha2",
+ "tempfile",
  "wasmparser 0.244.0",
  "wit-parser 0.244.0",
 ]
