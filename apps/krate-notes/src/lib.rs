@@ -333,6 +333,19 @@ impl bindings::Guest for Component {
                         let _ = tree::upsert_node(win, &status("loaded"));
                     }
                 }
+                // A native control (macOS) owns its text and reports the whole
+                // value after any edit, including deletes and pastes. Replace,
+                // do not append, and do not re-lower the editor: the control
+                // already shows the truth, and re-lowering would fight it.
+                Some(types::Event::TextChanged(changed)) if changed.widget == EDITOR_ID => {
+                    buffer.clear();
+                    for byte in changed.text.as_bytes() {
+                        buffer.push(*byte);
+                    }
+                }
+                // A drawn host (Linux, Windows) sends the added characters and
+                // relies on the guest to render them, so this path appends and
+                // re-lowers.
                 Some(types::Event::TextInput(text)) => {
                     for byte in text.as_bytes() {
                         let printable = byte.is_ascii_graphic() || *byte == b' ';

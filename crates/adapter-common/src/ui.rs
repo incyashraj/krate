@@ -211,6 +211,34 @@ impl TextInputEvent {
     }
 }
 
+/// A natively lowered control's complete text after a person edited it.
+///
+/// Unlike [`TextInputEvent`], which appends, this replaces: the widget's whole
+/// text is carried, which is the only faithful representation of deleting,
+/// selecting, or pasting inside a real OS control.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextChangedEvent {
+    pub window: WindowId,
+    pub widget: WidgetId,
+    pub text: String,
+}
+
+impl TextChangedEvent {
+    pub fn new(
+        window: WindowId,
+        widget: WidgetId,
+        text: impl Into<String>,
+    ) -> Result<Self, UiAdapterError> {
+        let text = text.into();
+        validate_text_input(&text)?;
+        Ok(Self {
+            window,
+            widget,
+            text,
+        })
+    }
+}
+
 /// Options used when creating a window.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowOptions {
@@ -569,6 +597,7 @@ pub enum UiEvent {
     Pointer(PointerEvent),
     Key(KeyEvent),
     TextInput(TextInputEvent),
+    TextChanged(TextChangedEvent),
 }
 
 /// Summary from one non-blocking host event-loop tick.
@@ -1099,6 +1128,9 @@ pub trait UiAdapter: WindowAdapter {
     /// Queue committed text input.
     fn queue_text_input(&self, event: TextInputEvent) -> Result<(), UiAdapterError>;
 
+    /// Queue a native control's complete text after a person edited it.
+    fn queue_text_changed(&self, event: TextChangedEvent) -> Result<(), UiAdapterError>;
+
     /// Read host clipboard text.
     fn read_clipboard_text(&self) -> Result<String, UiAdapterError> {
         Err(UiAdapterError::Unsupported(
@@ -1316,6 +1348,10 @@ impl UiAdapter for DraftUiAdapter {
 
     fn queue_text_input(&self, event: TextInputEvent) -> Result<(), UiAdapterError> {
         self.registry()?.queue_text_input(event)
+    }
+
+    fn queue_text_changed(&self, event: TextChangedEvent) -> Result<(), UiAdapterError> {
+        self.registry()?.queue_text_changed(event)
     }
 }
 
@@ -1611,6 +1647,13 @@ impl DraftWindowRegistry {
         validate_text_input(&event.text)?;
         self.validate_event_target(event.window, event.widget)?;
         self.events.push_back(UiEvent::TextInput(event));
+        Ok(())
+    }
+
+    pub fn queue_text_changed(&mut self, event: TextChangedEvent) -> Result<(), UiAdapterError> {
+        validate_text_input(&event.text)?;
+        self.validate_event_target(event.window, Some(event.widget))?;
+        self.events.push_back(UiEvent::TextChanged(event));
         Ok(())
     }
 

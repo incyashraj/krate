@@ -674,12 +674,14 @@ impl AppKitWindowSession {
             )
         })?;
 
-        // Every tree change replaces the whole native control set, which
-        // would destroy the control a person is typing into and reset it to
-        // whatever the guest last knew. For an editable control the person is
-        // the source of truth, not the guest, so carry the live text across
-        // the rebuild. Without this, each keystroke races the re-lower and
-        // characters are dropped.
+        // The guest now receives every native edit through text-changed and
+        // re-lowers with the current text, so the placement's label is the
+        // authority and no live-text preservation is needed. But a component
+        // that ignores those events (or has not processed the latest one yet)
+        // could still stomp an in-progress edit on an unrelated re-lower. Only
+        // carry the live text forward when the guest is asking for the value
+        // it already knows about, so a deliberate change (loading another note)
+        // still takes effect while a stale rebuild does not.
         let live_text: std::collections::BTreeMap<WidgetId, String> = self
             .widget_surface
             .as_ref()
@@ -695,7 +697,14 @@ impl AppKitWindowSession {
         let placements: Vec<AppKitWidgetPlacement> = placements
             .iter()
             .map(|placement| match live_text.get(&placement.widget()) {
-                Some(text) if placement.kind() == WidgetKind::TextArea => {
+                // Keep the live text only when the guest is re-lowering with a
+                // value that is a prefix of what the control holds, i.e. it has
+                // not caught up to the newest keystrokes. A guest that loads a
+                // different note sends unrelated text and that wins.
+                Some(text)
+                    if placement.kind() == WidgetKind::TextArea
+                        && text.starts_with(placement.label().unwrap_or("")) =>
+                {
                     placement.clone().with_label(text.clone())
                 }
                 _ => placement.clone(),

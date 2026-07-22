@@ -8,11 +8,11 @@ use krate_adapter_common::{
     time::HostClock,
     ui::{
         DraftUiAdapter, KeyEvent, NativeWindowHandle, PointerEvent, RawPointerSample,
-        TextInputEvent, Theme, UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick,
-        WidgetId, WidgetNode, WidgetPlacement, WidgetTree, WindowAdapter, WindowBackendKind,
-        WindowId, WindowOptions, WindowRecord, WindowSize, WinitWindowEventCollector,
-        WinitWindowEventLoopStep, WinitWindowEventLoopStepReport, WinitWindowNativeEvent,
-        WinitWindowSession, WinitWindowSnapshot,
+        TextChangedEvent, TextInputEvent, Theme, UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent,
+        UiEventLoopTick, WidgetId, WidgetNode, WidgetPlacement, WidgetTree, WindowAdapter,
+        WindowBackendKind, WindowId, WindowOptions, WindowRecord, WindowSize,
+        WinitWindowEventCollector, WinitWindowEventLoopStep, WinitWindowEventLoopStepReport,
+        WinitWindowNativeEvent, WinitWindowSession, WinitWindowSnapshot,
     },
 };
 use std::collections::BTreeMap;
@@ -340,6 +340,10 @@ impl UiAdapter for LinuxUiAdapter {
     fn queue_text_input(&self, event: TextInputEvent) -> Result<(), UiAdapterError> {
         self.draft.queue_text_input(event)
     }
+
+    fn queue_text_changed(&self, event: TextChangedEvent) -> Result<(), UiAdapterError> {
+        self.draft.queue_text_changed(event)
+    }
 }
 
 impl WindowAdapter for LinuxWinitPrototypeUiAdapter {
@@ -503,6 +507,10 @@ impl UiAdapter for LinuxWinitPrototypeUiAdapter {
 
     fn queue_text_input(&self, event: TextInputEvent) -> Result<(), UiAdapterError> {
         self.headless.queue_text_input(event)
+    }
+
+    fn queue_text_changed(&self, event: TextChangedEvent) -> Result<(), UiAdapterError> {
+        self.headless.queue_text_changed(event)
     }
 
     fn pump_event_loop_once(

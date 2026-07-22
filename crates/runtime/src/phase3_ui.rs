@@ -381,6 +381,18 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.queue_text_input(event).map_err(Into::into)
     }
 
+    /// Queue a native control's complete text after a person edited it.
+    pub fn queue_text_changed(
+        &self,
+        window: WindowId,
+        widget: WidgetId,
+        text: String,
+    ) -> UiDispatchResult<()> {
+        self.check_window_access()?;
+        let event = krate_adapter_common::ui::TextChangedEvent::new(window, widget, text)?;
+        self.adapter.queue_text_changed(event).map_err(Into::into)
+    }
+
     /// Drain raw mouse-wheel samples from the native backend.
     pub fn drain_raw_wheel_input(&self) -> Vec<krate_adapter_common::ui::RawWheelSample> {
         if self.check_window_access().is_err() {

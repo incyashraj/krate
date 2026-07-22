@@ -9,10 +9,10 @@ use krate_adapter_common::{
     locale::{DateStyle, HostLocale, LocaleId, NumberStyle},
     time::HostClock,
     ui::{
-        DraftUiAdapter, KeyEvent, NativeWindowHandle, PointerEvent, TextInputEvent, Theme,
-        UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick, WidgetId, WidgetNode,
-        WidgetPlacement, WidgetTree, WindowAdapter, WindowBackendKind, WindowId, WindowOptions,
-        WindowRecord, WindowSize,
+        DraftUiAdapter, KeyEvent, NativeWindowHandle, PointerEvent, TextChangedEvent,
+        TextInputEvent, Theme, UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick,
+        WidgetId, WidgetNode, WidgetPlacement, WidgetTree, WindowAdapter, WindowBackendKind,
+        WindowId, WindowOptions, WindowRecord, WindowSize,
     },
 };
 use std::cell::RefCell;
@@ -446,6 +446,10 @@ impl UiAdapter for MacosUiAdapter {
     fn queue_text_input(&self, event: TextInputEvent) -> Result<(), UiAdapterError> {
         self.draft.queue_text_input(event)
     }
+
+    fn queue_text_changed(&self, event: TextChangedEvent) -> Result<(), UiAdapterError> {
+        self.draft.queue_text_changed(event)
+    }
 }
 
 impl UiAdapter for MacosAppKitPrototypeUiAdapter {
@@ -525,6 +529,10 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
 
     fn queue_text_input(&self, event: TextInputEvent) -> Result<(), UiAdapterError> {
         self.headless.queue_text_input(event)
+    }
+
+    fn queue_text_changed(&self, event: TextChangedEvent) -> Result<(), UiAdapterError> {
+        self.headless.queue_text_changed(event)
     }
 
     fn read_clipboard_text(&self) -> Result<String, UiAdapterError> {

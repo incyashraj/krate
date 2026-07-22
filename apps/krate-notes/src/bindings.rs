@@ -5277,6 +5277,33 @@ pub mod krate {
                         .finish()
                 }
             }
+            /// A widget's complete text after a person edited it in a native control.
+            ///
+            /// Sent by hosts that lower widgets to real OS controls, where the control
+            /// holds the authoritative text. The app replaces its own copy with `text`
+            /// rather than appending, which is the only way deleting, selecting, and
+            /// pasting can be represented faithfully.
+            #[derive(Clone)]
+            pub struct TextChangedEvent {
+                /// Target window id.
+                pub window: u64,
+                /// Widget whose text changed.
+                pub widget: u64,
+                /// The control's complete text now.
+                pub text: _rt::String,
+            }
+            impl ::core::fmt::Debug for TextChangedEvent {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("TextChangedEvent")
+                        .field("window", &self.window)
+                        .field("widget", &self.widget)
+                        .field("text", &self.text)
+                        .finish()
+                }
+            }
             /// Keyboard input event delivered by the host.
             #[derive(Clone)]
             pub struct KeyEvent {
@@ -5570,7 +5597,17 @@ pub mod krate {
                 /// Keyboard input changed.
                 Key(KeyEvent),
                 /// Text input after keyboard layout or IME processing.
+                ///
+                /// Append semantics: the characters named here were added to whatever the
+                /// app already had. Hosts that draw their own widgets send this.
                 TextInput(_rt::String),
+                /// A widget's complete text after the person edited it.
+                ///
+                /// Replace semantics: the app should set its buffer to exactly this.
+                /// Hosts that lower to real OS controls send this instead of `text-input`,
+                /// because the control owns the text and edits like deleting, selecting,
+                /// and pasting cannot be described as an append.
+                TextChanged(TextChangedEvent),
                 /// A widget or menu command fired.
                 Action(u64),
                 /// Focus moved to another widget.
@@ -5599,6 +5636,9 @@ pub mod krate {
                         Event::Key(e) => f.debug_tuple("Event::Key").field(e).finish(),
                         Event::TextInput(e) => {
                             f.debug_tuple("Event::TextInput").field(e).finish()
+                        }
+                        Event::TextChanged(e) => {
+                            f.debug_tuple("Event::TextChanged").field(e).finish()
                         }
                         Event::Action(e) => {
                             f.debug_tuple("Event::Action").field(e).finish()
@@ -7137,22 +7177,22 @@ pub mod krate {
                     }
                     unsafe { wit_import1(ptr0) };
                     let l2 = i32::from(*ptr0.add(0).cast::<u8>());
-                    let result39 = match l2 {
+                    let result44 = match l2 {
                         0 => None,
                         1 => {
                             let e = {
                                 let l3 = i32::from(*ptr0.add(8).cast::<u8>());
-                                use super::super::super::krate::ui::types::Event as V38;
-                                let v38 = match l3 {
+                                use super::super::super::krate::ui::types::Event as V43;
+                                let v43 = match l3 {
                                     0 => {
-                                        let e38 = {
+                                        let e43 = {
                                             let l4 = *ptr0.add(16).cast::<i64>();
                                             l4 as u64
                                         };
-                                        V38::CloseRequested(e38)
+                                        V43::CloseRequested(e43)
                                     }
                                     1 => {
-                                        let e38 = {
+                                        let e43 = {
                                             let l5 = *ptr0.add(16).cast::<i32>();
                                             let l6 = *ptr0.add(20).cast::<i32>();
                                             super::super::super::krate::ui::types::WindowSize {
@@ -7160,17 +7200,17 @@ pub mod krate {
                                                 height: l6 as u32,
                                             }
                                         };
-                                        V38::Resized(e38)
+                                        V43::Resized(e43)
                                     }
                                     2 => {
-                                        let e38 = {
+                                        let e43 = {
                                             let l7 = *ptr0.add(16).cast::<i64>();
                                             l7 as u64
                                         };
-                                        V38::RedrawRequested(e38)
+                                        V43::RedrawRequested(e43)
                                     }
                                     3 => {
-                                        let e38 = {
+                                        let e43 = {
                                             let l8 = *ptr0.add(16).cast::<i64>();
                                             let l9 = i32::from(*ptr0.add(24).cast::<u8>());
                                             let l11 = *ptr0.add(40).cast::<f32>();
@@ -7218,10 +7258,10 @@ pub mod krate {
                                                 },
                                             }
                                         };
-                                        V38::Pointer(e38)
+                                        V43::Pointer(e43)
                                     }
                                     4 => {
-                                        let e38 = {
+                                        let e43 = {
                                             let l20 = *ptr0.add(16).cast::<i64>();
                                             let l21 = i32::from(*ptr0.add(24).cast::<u8>());
                                             let l23 = *ptr0.add(40).cast::<*mut u8>();
@@ -7282,10 +7322,10 @@ pub mod krate {
                                                 },
                                             }
                                         };
-                                        V38::Key(e38)
+                                        V43::Key(e43)
                                     }
                                     5 => {
-                                        let e38 = {
+                                        let e43 = {
                                             let l31 = *ptr0.add(16).cast::<*mut u8>();
                                             let l32 = *ptr0
                                                 .add(16 + 1 * ::core::mem::size_of::<*const u8>())
@@ -7298,50 +7338,72 @@ pub mod krate {
                                             );
                                             _rt::string_lift(bytes33)
                                         };
-                                        V38::TextInput(e38)
+                                        V43::TextInput(e43)
                                     }
                                     6 => {
-                                        let e38 = {
+                                        let e43 = {
                                             let l34 = *ptr0.add(16).cast::<i64>();
-                                            l34 as u64
+                                            let l35 = *ptr0.add(24).cast::<i64>();
+                                            let l36 = *ptr0.add(32).cast::<*mut u8>();
+                                            let l37 = *ptr0
+                                                .add(32 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len38 = l37;
+                                            let bytes38 = _rt::Vec::from_raw_parts(
+                                                l36.cast(),
+                                                len38,
+                                                len38,
+                                            );
+                                            super::super::super::krate::ui::types::TextChangedEvent {
+                                                window: l34 as u64,
+                                                widget: l35 as u64,
+                                                text: _rt::string_lift(bytes38),
+                                            }
                                         };
-                                        V38::Action(e38)
+                                        V43::TextChanged(e43)
                                     }
                                     7 => {
-                                        let e38 = {
-                                            let l35 = i32::from(*ptr0.add(16).cast::<u8>());
-                                            match l35 {
+                                        let e43 = {
+                                            let l39 = *ptr0.add(16).cast::<i64>();
+                                            l39 as u64
+                                        };
+                                        V43::Action(e43)
+                                    }
+                                    8 => {
+                                        let e43 = {
+                                            let l40 = i32::from(*ptr0.add(16).cast::<u8>());
+                                            match l40 {
                                                 0 => None,
                                                 1 => {
                                                     let e = {
-                                                        let l36 = *ptr0.add(24).cast::<i64>();
-                                                        l36 as u64
+                                                        let l41 = *ptr0.add(24).cast::<i64>();
+                                                        l41 as u64
                                                     };
                                                     Some(e)
                                                 }
                                                 _ => _rt::invalid_enum_discriminant(),
                                             }
                                         };
-                                        V38::FocusChanged(e38)
+                                        V43::FocusChanged(e43)
                                     }
                                     n => {
-                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
-                                        let e38 = {
-                                            let l37 = i32::from(*ptr0.add(16).cast::<u8>());
+                                        debug_assert_eq!(n, 9, "invalid enum discriminant");
+                                        let e43 = {
+                                            let l42 = i32::from(*ptr0.add(16).cast::<u8>());
                                             super::super::super::krate::ui::types::Theme::_lift(
-                                                l37 as u8,
+                                                l42 as u8,
                                             )
                                         };
-                                        V38::ThemeChanged(e38)
+                                        V43::ThemeChanged(e43)
                                     }
                                 };
-                                v38
+                                v43
                             };
                             Some(e)
                         }
                         _ => _rt::invalid_enum_discriminant(),
                     };
-                    result39
+                    result44
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
@@ -7375,22 +7437,22 @@ pub mod krate {
                     }
                     unsafe { wit_import2(result0_0, result0_1, ptr1) };
                     let l3 = i32::from(*ptr1.add(0).cast::<u8>());
-                    let result40 = match l3 {
+                    let result45 = match l3 {
                         0 => None,
                         1 => {
                             let e = {
                                 let l4 = i32::from(*ptr1.add(8).cast::<u8>());
-                                use super::super::super::krate::ui::types::Event as V39;
-                                let v39 = match l4 {
+                                use super::super::super::krate::ui::types::Event as V44;
+                                let v44 = match l4 {
                                     0 => {
-                                        let e39 = {
+                                        let e44 = {
                                             let l5 = *ptr1.add(16).cast::<i64>();
                                             l5 as u64
                                         };
-                                        V39::CloseRequested(e39)
+                                        V44::CloseRequested(e44)
                                     }
                                     1 => {
-                                        let e39 = {
+                                        let e44 = {
                                             let l6 = *ptr1.add(16).cast::<i32>();
                                             let l7 = *ptr1.add(20).cast::<i32>();
                                             super::super::super::krate::ui::types::WindowSize {
@@ -7398,17 +7460,17 @@ pub mod krate {
                                                 height: l7 as u32,
                                             }
                                         };
-                                        V39::Resized(e39)
+                                        V44::Resized(e44)
                                     }
                                     2 => {
-                                        let e39 = {
+                                        let e44 = {
                                             let l8 = *ptr1.add(16).cast::<i64>();
                                             l8 as u64
                                         };
-                                        V39::RedrawRequested(e39)
+                                        V44::RedrawRequested(e44)
                                     }
                                     3 => {
-                                        let e39 = {
+                                        let e44 = {
                                             let l9 = *ptr1.add(16).cast::<i64>();
                                             let l10 = i32::from(*ptr1.add(24).cast::<u8>());
                                             let l12 = *ptr1.add(40).cast::<f32>();
@@ -7456,10 +7518,10 @@ pub mod krate {
                                                 },
                                             }
                                         };
-                                        V39::Pointer(e39)
+                                        V44::Pointer(e44)
                                     }
                                     4 => {
-                                        let e39 = {
+                                        let e44 = {
                                             let l21 = *ptr1.add(16).cast::<i64>();
                                             let l22 = i32::from(*ptr1.add(24).cast::<u8>());
                                             let l24 = *ptr1.add(40).cast::<*mut u8>();
@@ -7520,10 +7582,10 @@ pub mod krate {
                                                 },
                                             }
                                         };
-                                        V39::Key(e39)
+                                        V44::Key(e44)
                                     }
                                     5 => {
-                                        let e39 = {
+                                        let e44 = {
                                             let l32 = *ptr1.add(16).cast::<*mut u8>();
                                             let l33 = *ptr1
                                                 .add(16 + 1 * ::core::mem::size_of::<*const u8>())
@@ -7536,50 +7598,72 @@ pub mod krate {
                                             );
                                             _rt::string_lift(bytes34)
                                         };
-                                        V39::TextInput(e39)
+                                        V44::TextInput(e44)
                                     }
                                     6 => {
-                                        let e39 = {
+                                        let e44 = {
                                             let l35 = *ptr1.add(16).cast::<i64>();
-                                            l35 as u64
+                                            let l36 = *ptr1.add(24).cast::<i64>();
+                                            let l37 = *ptr1.add(32).cast::<*mut u8>();
+                                            let l38 = *ptr1
+                                                .add(32 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len39 = l38;
+                                            let bytes39 = _rt::Vec::from_raw_parts(
+                                                l37.cast(),
+                                                len39,
+                                                len39,
+                                            );
+                                            super::super::super::krate::ui::types::TextChangedEvent {
+                                                window: l35 as u64,
+                                                widget: l36 as u64,
+                                                text: _rt::string_lift(bytes39),
+                                            }
                                         };
-                                        V39::Action(e39)
+                                        V44::TextChanged(e44)
                                     }
                                     7 => {
-                                        let e39 = {
-                                            let l36 = i32::from(*ptr1.add(16).cast::<u8>());
-                                            match l36 {
+                                        let e44 = {
+                                            let l40 = *ptr1.add(16).cast::<i64>();
+                                            l40 as u64
+                                        };
+                                        V44::Action(e44)
+                                    }
+                                    8 => {
+                                        let e44 = {
+                                            let l41 = i32::from(*ptr1.add(16).cast::<u8>());
+                                            match l41 {
                                                 0 => None,
                                                 1 => {
                                                     let e = {
-                                                        let l37 = *ptr1.add(24).cast::<i64>();
-                                                        l37 as u64
+                                                        let l42 = *ptr1.add(24).cast::<i64>();
+                                                        l42 as u64
                                                     };
                                                     Some(e)
                                                 }
                                                 _ => _rt::invalid_enum_discriminant(),
                                             }
                                         };
-                                        V39::FocusChanged(e39)
+                                        V44::FocusChanged(e44)
                                     }
                                     n => {
-                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
-                                        let e39 = {
-                                            let l38 = i32::from(*ptr1.add(16).cast::<u8>());
+                                        debug_assert_eq!(n, 9, "invalid enum discriminant");
+                                        let e44 = {
+                                            let l43 = i32::from(*ptr1.add(16).cast::<u8>());
                                             super::super::super::krate::ui::types::Theme::_lift(
-                                                l38 as u8,
+                                                l43 as u8,
                                             )
                                         };
-                                        V39::ThemeChanged(e39)
+                                        V44::ThemeChanged(e44)
                                     }
                                 };
-                                v39
+                                v44
                             };
                             Some(e)
                         }
                         _ => _rt::invalid_enum_discriminant(),
                     };
-                    result40
+                    result45
                 }
             }
         }
@@ -8464,8 +8548,8 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 6533] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x8b2\x01A\x02\x01AQ\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 6598] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xcc2\x01A\x02\x01AQ\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -8530,92 +8614,93 @@ ale/info@0.1.0\x05\x17\x02\x03\0\x0b\x0adate-style\x02\x03\0\x0b\x0cnumber-style
 \0\x0adate-style\x03\0\x02\x02\x03\x02\x01\x19\x04\0\x0cnumber-style\x03\0\x04\x01\
 @\x04\x06millisw\x02tzs\x05style\x03\x03loc\x01\0s\x04\0\x0bformat-date\x01\x06\x01\
 @\x03\x05valueu\x05style\x05\x03loc\x01\0s\x04\0\x0dformat-number\x01\x07\x03\0\x19\
-krate:locale/format@0.1.0\x05\x1a\x01B\"\x01m\x04\x06normal\x09minimized\x09maxi\
-mized\x0afullscreen\x04\0\x0cwindow-state\x03\0\0\x01r\x02\x05widthy\x06heighty\x04\
+krate:locale/format@0.1.0\x05\x1a\x01B$\x01m\x04\x06normal\x09minimized\x09maxim\
+ized\x0afullscreen\x04\0\x0cwindow-state\x03\0\0\x01r\x02\x05widthy\x06heighty\x04\
 \0\x0bwindow-size\x03\0\x02\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04r\
 ect\x03\0\x04\x01m\x03\x05light\x04dark\x07unknown\x04\0\x05theme\x03\0\x06\x01m\
 \x04\x07primary\x09secondary\x06middle\x05other\x04\0\x0epointer-button\x03\0\x08\
 \x01r\x04\x05shift\x7f\x07control\x7f\x03alt\x7f\x04meta\x7f\x04\0\x09modifiers\x03\
 \0\x0a\x01kw\x01k\x09\x01r\x07\x06windoww\x06widget\x0c\x01xv\x01yv\x06button\x0d\
-\x07pressed\x7f\x09modifiers\x0b\x04\0\x0dpointer-event\x03\0\x0e\x01r\x05\x06wi\
-ndoww\x06widget\x0c\x03keys\x07pressed\x7f\x09modifiers\x0b\x04\0\x09key-event\x03\
-\0\x10\x01q\x05\x11permission-denied\0\0\x0einvalid-window\0\0\x0einvalid-widget\
-\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x08ui-error\x03\0\x12\x01m\x11\
+\x07pressed\x7f\x09modifiers\x0b\x04\0\x0dpointer-event\x03\0\x0e\x01r\x03\x06wi\
+ndoww\x06widgetw\x04texts\x04\0\x12text-changed-event\x03\0\x10\x01r\x05\x06wind\
+oww\x06widget\x0c\x03keys\x07pressed\x7f\x09modifiers\x0b\x04\0\x09key-event\x03\
+\0\x12\x01q\x05\x11permission-denied\0\0\x0einvalid-window\0\0\x0einvalid-widget\
+\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x08ui-error\x03\0\x14\x01m\x11\
 \x05stack\x04grid\x06scroll\x04tabs\x06button\x08checkbox\x05radio\x06switch\x06\
 slider\x08progress\x04text\x0atext-field\x09text-area\x09list-view\x09tree-view\x05\
-image\x06canvas\x04\0\x0bwidget-kind\x03\0\x14\x01kv\x01r\x04\x05width\x16\x06he\
-ight\x16\x04growv\x07paddingv\x04\0\x05style\x03\0\x17\x01ks\x01k\x7f\x01ky\x01r\
-\x09\x02idw\x06parent\x0c\x04kind\x15\x05label\x19\x04role\x19\x05style\x18\x07c\
-hecked\x1a\x05value\x16\x08selected\x1b\x04\0\x0bwidget-node\x03\0\x1c\x01r\x03\x02\
-idw\x05labels\x07enabled\x7f\x04\0\x09menu-item\x03\0\x1e\x01q\x09\x0fclose-requ\
+image\x06canvas\x04\0\x0bwidget-kind\x03\0\x16\x01kv\x01r\x04\x05width\x18\x06he\
+ight\x18\x04growv\x07paddingv\x04\0\x05style\x03\0\x19\x01ks\x01k\x7f\x01ky\x01r\
+\x09\x02idw\x06parent\x0c\x04kind\x17\x05label\x1b\x04role\x1b\x05style\x1a\x07c\
+hecked\x1c\x05value\x18\x08selected\x1d\x04\0\x0bwidget-node\x03\0\x1e\x01r\x03\x02\
+idw\x05labels\x07enabled\x7f\x04\0\x09menu-item\x03\0\x20\x01q\x0a\x0fclose-requ\
 ested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01w\0\x07pointer\x01\x0f\0\
-\x03key\x01\x11\0\x0atext-input\x01s\0\x06action\x01w\0\x0dfocus-changed\x01\x0c\
-\0\x0dtheme-changed\x01\x07\0\x04\0\x05event\x03\0\x20\x03\0\x14krate:ui/types@0\
-.1.0\x05\x1b\x02\x03\0\x0e\x08ui-error\x02\x03\0\x0e\x0bwindow-size\x02\x03\0\x0e\
-\x0cwindow-state\x01B\x14\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\0\x02\x03\x02\
-\x01\x1d\x04\0\x0bwindow-size\x03\0\x02\x02\x03\x02\x01\x1e\x04\0\x0cwindow-stat\
-e\x03\0\x04\x01j\x01w\x01\x01\x01@\x02\x05titles\x04size\x03\0\x06\x04\0\x06crea\
-te\x01\x07\x01j\0\x01\x01\x01@\x01\x06windoww\0\x08\x04\0\x04show\x01\x09\x04\0\x05\
-close\x01\x09\x01@\x02\x06windoww\x05titles\0\x08\x04\0\x09set-title\x01\x0a\x01\
-@\x02\x06windoww\x04size\x03\0\x08\x04\0\x08set-size\x01\x0b\x01@\x02\x06windoww\
-\x05state\x05\0\x08\x04\0\x09set-state\x01\x0c\x04\0\x0erequest-redraw\x01\x09\x03\
-\0\x15krate:ui/window@0.1.0\x05\x1f\x02\x03\0\x0e\x0bwidget-node\x01B\x0e\x02\x03\
-\x02\x01\x1c\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01\x20\x04\0\x0bwidget-node\x03\
-\0\x02\x01j\0\x01\x01\x01@\x02\x06windoww\x04root\x03\0\x04\x04\0\x08set-root\x01\
-\x05\x01@\x02\x06windoww\x04node\x03\0\x04\x04\0\x0bupsert-node\x01\x06\x01@\x02\
-\x06windoww\x06widgetw\0\x04\x04\0\x0bremove-node\x01\x07\x04\0\x0afocus-node\x01\
-\x07\x01@\x03\x06windoww\x06widgetw\x07enabled\x7f\0\x04\x04\0\x0bset-enabled\x01\
-\x08\x03\0\x13krate:ui/tree@0.1.0\x05!\x02\x03\0\x0e\x05event\x01B\x08\x02\x03\x02\
-\x01\"\x04\0\x05event\x03\0\0\x01k\x01\x01@\0\0\x02\x04\0\x04poll\x01\x03\x01ky\x01\
-@\x01\x0etimeout-millis\x04\0\x02\x04\0\x04wait\x01\x05\x03\0\x15krate:ui/events\
-@0.1.0\x05#\x01B\x08\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\0\x01j\0\x01\x01\
-\x01@\x03\x06windoww\x05titles\x04bodys\0\x02\x04\0\x07message\x01\x03\x01j\x01\x7f\
-\x01\x01\x01@\x03\x06windoww\x05titles\x04bodys\0\x04\x04\0\x07confirm\x01\x05\x03\
-\0\x15krate:ui/dialog@0.1.0\x05$\x01B\x08\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\
-\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\x01\
-@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1\
-.0\x05%\x02\x03\0\x0e\x09menu-item\x01B\x08\x02\x03\x02\x01&\x04\0\x09menu-item\x03\
-\0\0\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\x01\
-@\x02\x06windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui\
-/menu@0.1.0\x05'\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\x05color\x03\0\0\
-\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\x02\x05widthv\x06heightv\x04\
-\0\x04size\x03\0\x04\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04rect\x03\
-\0\x06\x01r\x05\x04texts\x06origin\x03\x0bfont-familys\x09font-sizev\x05color\x01\
-\x04\0\x08text-run\x03\0\x08\x01q\x04\x11permission-denied\0\0\x0einvalid-target\
-\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\0\x0a\x01r\x02\
-\x04rect\x07\x05color\x01\x04\0\x11fill-rect-command\x03\0\x0c\x01r\x03\x04rect\x07\
-\x05color\x01\x05widthv\x04\0\x13stroke-rect-command\x03\0\x0e\x01q\x03\x09fill-\
-rect\x01\x0d\0\x0bstroke-rect\x01\x0f\0\x04text\x01\x09\0\x04\0\x0cdraw-command\x03\
-\0\x10\x01r\x03\x05widthy\x06heighty\x05vsync\x7f\x04\0\x0fsurface-options\x03\0\
-\x12\x03\0\x15krate:gfx/types@0.1.0\x05(\x02\x03\0\x15\x05color\x02\x03\0\x15\x0c\
-draw-command\x02\x03\0\x15\x09gfx-error\x01B\x0f\x02\x03\x02\x01)\x04\0\x05color\
-\x03\0\0\x02\x03\x02\x01*\x04\0\x0cdraw-command\x03\0\x02\x02\x03\x02\x01+\x04\0\
-\x09gfx-error\x03\0\x04\x01j\x01w\x01\x05\x01@\x02\x06windoww\x06widgetw\0\x06\x04\
-\0\x04bind\x01\x07\x01j\0\x01\x05\x01@\x02\x06canvasw\x05color\x01\0\x08\x04\0\x05\
-clear\x01\x09\x01p\x03\x01@\x02\x06canvasw\x08commands\x0a\0\x08\x04\0\x06submit\
-\x01\x0b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05,\x02\x03\0\x15\x0fsurface-options\
-\x01B\x0a\x02\x03\x02\x01+\x04\0\x09gfx-error\x03\0\0\x02\x03\x02\x01-\x04\0\x0f\
-surface-options\x03\0\x02\x01j\x01w\x01\x01\x01@\x03\x06windoww\x06widgetw\x07op\
-tions\x03\0\x04\x04\0\x0ecreate-surface\x01\x05\x01j\0\x01\x01\x01@\x01\x07surfa\
-cew\0\x06\x04\0\x07present\x01\x07\x03\0\x15krate:gfx/gpu3d@0.1.0\x05.\x01B\x06\x01\
-m\x02\x07pcm-s16\x07float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0bsample-ra\
-tey\x08channels{\x06format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\x03\0\x02\
-\x01q\x05\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\
-\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\
-\x17krate:audio/types@0.1.0\x05/\x02\x03\0\x18\x0baudio-error\x02\x03\0\x18\x0ds\
-tream-config\x01B\x0f\x02\x03\x02\x010\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01\
-1\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\
-\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05star\
-t\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-idw\x05\
-bytes\x08\0\x09\x04\0\x05write\x01\x0a\x03\0\x1akrate:audio/playback@0.1.0\x052\x01\
-B\x0f\x02\x03\x02\x010\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x011\x04\0\x0dst\
-ream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04op\
-en\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\
-\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09max-byte\
-sy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19krate:audio/capture@0.1.0\x053\x01@\0\0z\
-\x04\0\x03run\x014\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\
-\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bi\
-ndgen-rust\x060.41.0";
+\x03key\x01\x13\0\x0atext-input\x01s\0\x0ctext-changed\x01\x11\0\x06action\x01w\0\
+\x0dfocus-changed\x01\x0c\0\x0dtheme-changed\x01\x07\0\x04\0\x05event\x03\0\"\x03\
+\0\x14krate:ui/types@0.1.0\x05\x1b\x02\x03\0\x0e\x08ui-error\x02\x03\0\x0e\x0bwi\
+ndow-size\x02\x03\0\x0e\x0cwindow-state\x01B\x14\x02\x03\x02\x01\x1c\x04\0\x08ui\
+-error\x03\0\0\x02\x03\x02\x01\x1d\x04\0\x0bwindow-size\x03\0\x02\x02\x03\x02\x01\
+\x1e\x04\0\x0cwindow-state\x03\0\x04\x01j\x01w\x01\x01\x01@\x02\x05titles\x04siz\
+e\x03\0\x06\x04\0\x06create\x01\x07\x01j\0\x01\x01\x01@\x01\x06windoww\0\x08\x04\
+\0\x04show\x01\x09\x04\0\x05close\x01\x09\x01@\x02\x06windoww\x05titles\0\x08\x04\
+\0\x09set-title\x01\x0a\x01@\x02\x06windoww\x04size\x03\0\x08\x04\0\x08set-size\x01\
+\x0b\x01@\x02\x06windoww\x05state\x05\0\x08\x04\0\x09set-state\x01\x0c\x04\0\x0e\
+request-redraw\x01\x09\x03\0\x15krate:ui/window@0.1.0\x05\x1f\x02\x03\0\x0e\x0bw\
+idget-node\x01B\x0e\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01\
+\x20\x04\0\x0bwidget-node\x03\0\x02\x01j\0\x01\x01\x01@\x02\x06windoww\x04root\x03\
+\0\x04\x04\0\x08set-root\x01\x05\x01@\x02\x06windoww\x04node\x03\0\x04\x04\0\x0b\
+upsert-node\x01\x06\x01@\x02\x06windoww\x06widgetw\0\x04\x04\0\x0bremove-node\x01\
+\x07\x04\0\x0afocus-node\x01\x07\x01@\x03\x06windoww\x06widgetw\x07enabled\x7f\0\
+\x04\x04\0\x0bset-enabled\x01\x08\x03\0\x13krate:ui/tree@0.1.0\x05!\x02\x03\0\x0e\
+\x05event\x01B\x08\x02\x03\x02\x01\"\x04\0\x05event\x03\0\0\x01k\x01\x01@\0\0\x02\
+\x04\0\x04poll\x01\x03\x01ky\x01@\x01\x0etimeout-millis\x04\0\x02\x04\0\x04wait\x01\
+\x05\x03\0\x15krate:ui/events@0.1.0\x05#\x01B\x08\x02\x03\x02\x01\x1c\x04\0\x08u\
+i-error\x03\0\0\x01j\0\x01\x01\x01@\x03\x06windoww\x05titles\x04bodys\0\x02\x04\0\
+\x07message\x01\x03\x01j\x01\x7f\x01\x01\x01@\x03\x06windoww\x05titles\x04bodys\0\
+\x04\x04\0\x07confirm\x01\x05\x03\0\x15krate:ui/dialog@0.1.0\x05$\x01B\x08\x02\x03\
+\x02\x01\x1c\x04\0\x08ui-error\x03\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09r\
+ead-text\x01\x03\x01j\0\x01\x01\x01@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\
+\x03\0\x18krate:ui/clipboard@0.1.0\x05%\x02\x03\0\x0e\x09menu-item\x01B\x08\x02\x03\
+\x02\x01&\x04\0\x09menu-item\x03\0\0\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\
+\x02\x01p\x01\x01j\0\x01\x03\x01@\x02\x06windoww\x05items\x04\0\x05\x04\0\x09set\
+-items\x01\x06\x03\0\x13krate:ui/menu@0.1.0\x05'\x01B\x14\x01r\x04\x01rv\x01gv\x01\
+bv\x01av\x04\0\x05color\x03\0\0\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01\
+r\x02\x05widthv\x06heightv\x04\0\x04size\x03\0\x04\x01r\x04\x01xv\x01yv\x05width\
+v\x06heightv\x04\0\x04rect\x03\0\x06\x01r\x05\x04texts\x06origin\x03\x0bfont-fam\
+ilys\x09font-sizev\x05color\x01\x04\0\x08text-run\x03\0\x08\x01q\x04\x11permissi\
+on-denied\0\0\x0einvalid-target\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\
+\0\x09gfx-error\x03\0\x0a\x01r\x02\x04rect\x07\x05color\x01\x04\0\x11fill-rect-c\
+ommand\x03\0\x0c\x01r\x03\x04rect\x07\x05color\x01\x05widthv\x04\0\x13stroke-rec\
+t-command\x03\0\x0e\x01q\x03\x09fill-rect\x01\x0d\0\x0bstroke-rect\x01\x0f\0\x04\
+text\x01\x09\0\x04\0\x0cdraw-command\x03\0\x10\x01r\x03\x05widthy\x06heighty\x05\
+vsync\x7f\x04\0\x0fsurface-options\x03\0\x12\x03\0\x15krate:gfx/types@0.1.0\x05(\
+\x02\x03\0\x15\x05color\x02\x03\0\x15\x0cdraw-command\x02\x03\0\x15\x09gfx-error\
+\x01B\x0f\x02\x03\x02\x01)\x04\0\x05color\x03\0\0\x02\x03\x02\x01*\x04\0\x0cdraw\
+-command\x03\0\x02\x02\x03\x02\x01+\x04\0\x09gfx-error\x03\0\x04\x01j\x01w\x01\x05\
+\x01@\x02\x06windoww\x06widgetw\0\x06\x04\0\x04bind\x01\x07\x01j\0\x01\x05\x01@\x02\
+\x06canvasw\x05color\x01\0\x08\x04\0\x05clear\x01\x09\x01p\x03\x01@\x02\x06canva\
+sw\x08commands\x0a\0\x08\x04\0\x06submit\x01\x0b\x03\0\x18krate:gfx/canvas2d@0.1\
+.0\x05,\x02\x03\0\x15\x0fsurface-options\x01B\x0a\x02\x03\x02\x01+\x04\0\x09gfx-\
+error\x03\0\0\x02\x03\x02\x01-\x04\0\x0fsurface-options\x03\0\x02\x01j\x01w\x01\x01\
+\x01@\x03\x06windoww\x06widgetw\x07options\x03\0\x04\x04\0\x0ecreate-surface\x01\
+\x05\x01j\0\x01\x01\x01@\x01\x07surfacew\0\x06\x04\0\x07present\x01\x07\x03\0\x15\
+krate:gfx/gpu3d@0.1.0\x05.\x01B\x06\x01m\x02\x07pcm-s16\x07float32\x04\0\x0dsamp\
+le-format\x03\0\0\x01r\x04\x0bsample-ratey\x08channels{\x06format\x01\x0dbuffer-\
+framesy\x04\0\x0dstream-config\x03\0\x02\x01q\x05\x11permission-denied\0\0\x0ein\
+valid-stream\0\0\x12device-unavailable\0\0\x0bunsupported\x01s\0\x08platform\x01\
+s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\x17krate:audio/types@0.1.0\x05/\x02\x03\
+\0\x18\x0baudio-error\x02\x03\0\x18\x0dstream-config\x01B\x0f\x02\x03\x02\x010\x04\
+\0\x0baudio-error\x03\0\0\x02\x03\x02\x011\x04\0\x0dstream-config\x03\0\x02\x01j\
+\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01\
+@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01\
+j\x01y\x01\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\0\x05write\x01\x0a\x03\
+\0\x1akrate:audio/playback@0.1.0\x052\x01B\x0f\x02\x03\x02\x010\x04\0\x0baudio-e\
+rror\x03\0\0\x02\x03\x02\x011\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\
+\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09s\
+tream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\
+\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19k\
+rate:audio/capture@0.1.0\x053\x01@\0\0z\x04\0\x03run\x014\x04\0\x13krate:app/gui\
+@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\
+\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {
