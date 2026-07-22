@@ -86,6 +86,7 @@
 # Blog
 
 - [Announcing Krate](blog/0001-announcing-krate.md)
+- [Every AI sandbox in 2026 runs in someone else's cloud](blog/0002-every-sandbox-is-cloud.md)
 
 # Appendix
 
