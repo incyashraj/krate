@@ -261,7 +261,10 @@ fn run_component_tool(arguments: &Value) -> Result<Value> {
                 .get("insecure_http")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            Some(krate_bundle::fetch(target, allow_http).with_context(|| format!("fetch {target}"))?)
+            Some(
+                krate_bundle::fetch(target, allow_http)
+                    .with_context(|| format!("fetch {target}"))?,
+            )
         }
         Some(target) => {
             Some(krate_bundle::open(Path::new(target)).with_context(|| format!("open {target}"))?)
@@ -552,8 +555,8 @@ required = true
         let dir = tempfile::tempdir().expect("tempdir");
         let bundle = packed_bundle(dir.path());
 
-        let report = run_component_tool(&json!({ "bundle": bundle.to_str().expect("utf8") }))
-            .expect("run");
+        let report =
+            run_component_tool(&json!({ "bundle": bundle.to_str().expect("utf8") })).expect("run");
 
         assert_eq!(report["exit"]["class"], "permission-denied");
         let denied = report["capabilities"]["denied"]
@@ -561,7 +564,10 @@ required = true
             .expect("denied array");
         // The remedy must name exactly what was refused, so an agent can
         // re-issue the call without inferring anything.
-        assert_eq!(&report["remedy"]["grants"], &report["capabilities"]["denied"]);
+        assert_eq!(
+            &report["remedy"]["grants"],
+            &report["capabilities"]["denied"]
+        );
         assert_eq!(report["remedy"]["action"], "grant-and-retry");
         assert!(!denied.is_empty());
     }

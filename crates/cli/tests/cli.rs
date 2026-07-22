@@ -2931,7 +2931,10 @@ fn a_denial_tells_you_how_to_grant_and_names_what_you_ran() {
         .expect("run bundle without grants");
     let stderr = String::from_utf8_lossy(&output.stderr);
     if stderr.contains("missing required capabilities") {
-        assert!(stderr.contains("--grant"), "should suggest --grant: {stderr}");
+        assert!(
+            stderr.contains("--grant"),
+            "should suggest --grant: {stderr}"
+        );
         assert!(
             stderr.contains(bundle.to_str().expect("bundle path is utf8")),
             "should echo the target that was run: {stderr}"
