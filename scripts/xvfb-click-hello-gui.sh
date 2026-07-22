@@ -11,15 +11,58 @@
 set -u
 
 OUT="$(mktemp)"
-trap 'rm -f "$OUT"' EXIT
+SERVE_DIR=""
+SERVER_PID=""
+cleanup() {
+  rm -f "$OUT"
+  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null
+  [ -n "$SERVE_DIR" ] && rm -rf "$SERVE_DIR"
+  return 0
+}
+trap cleanup EXIT
 
-target/debug/krate run \
-  --auto-grant \
-  --native-window \
-  --manifest apps/krate-hello-gui/manifest.toml \
-  apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm \
-  >"$OUT" 2>&1 &
-APP=$!
+# KRATE_BUNDLE_URL_PROOF packs hello-gui into a .krate, serves it over local
+# HTTP, and runs it by URL instead of from a path. Same app, same assertions:
+# the point is that delivering an app as one downloadable file changes nothing
+# about how it behaves or what it is allowed to do.
+if [ -n "${KRATE_BUNDLE_URL_PROOF:-}" ]; then
+  SERVE_DIR="$(mktemp -d)"
+  cp apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm \
+    "$SERVE_DIR/code.wasm"
+  sed 's|^entry.*|entry = "code.wasm"|' apps/krate-hello-gui/manifest.toml \
+    >"$SERVE_DIR/manifest.toml"
+
+  target/debug/krate pack "$SERVE_DIR/code.wasm" \
+    --manifest "$SERVE_DIR/manifest.toml" \
+    -o "$SERVE_DIR/hello.krate" || exit 92
+
+  ( cd "$SERVE_DIR" && python3 -m http.server 8899 >/dev/null 2>&1 ) &
+  SERVER_PID=$!
+  # Wait for the server rather than sleeping a fixed amount.
+  for _ in $(seq 1 40); do
+    if curl -fsS -o /dev/null "http://127.0.0.1:8899/hello.krate" 2>/dev/null; then
+      break
+    fi
+    sleep 0.25
+  done
+
+  echo "serving bundle: $(stat -c%s "$SERVE_DIR/hello.krate") bytes"
+  target/debug/krate run \
+    --auto-grant \
+    --native-window \
+    --insecure-http \
+    "http://127.0.0.1:8899/hello.krate" \
+    >"$OUT" 2>&1 &
+  APP=$!
+else
+  target/debug/krate run \
+    --auto-grant \
+    --native-window \
+    --manifest apps/krate-hello-gui/manifest.toml \
+    apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm \
+    >"$OUT" 2>&1 &
+  APP=$!
+fi
 
 # Give the window and the first draw a moment. The first pointer movement
 # also seeds CursorMoved before any MouseInput.

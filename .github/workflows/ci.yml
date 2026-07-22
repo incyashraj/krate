@@ -388,12 +388,31 @@ jobs:
             exit 1
           fi
           echo "synthetic typing + click reached the component on Linux (exit 0, typed text echoed)"
+          # 4. The same proof, delivered as one downloadable file. Packs
+          #    hello-gui into a .krate, serves it over local HTTP, runs it by
+          #    URL, and asserts the identical round trip. Delivering an app as
+          #    a link must change nothing about how it behaves.
+          set +e
+          KRATE_BUNDLE_URL_PROOF=1 \
+          KRATE_XVFB_SCREENSHOT="$RUNNER_TEMP/hello-gui-linux-bundle.png" \
+          KRATE_EXPECT_TYPED="hi krate" \
+          KRATE_EXPECT_SELECTED="pick beta" \
+            xvfb-run -a bash scripts/xvfb-click-hello-gui.sh
+          code=$?
+          set -e
+          if [ "$code" != "0" ]; then
+            echo "expected exit 0 running hello-gui from a .krate URL, got $code" >&2
+            exit 1
+          fi
+          echo "the same app, fetched from a URL as one .krate file, passed the identical round trip"
       - name: Upload Linux drawn-window screenshot
         if: always() && matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v7
         with:
           name: hello-gui-linux-screenshot
-          path: ${{ runner.temp }}/hello-gui-linux.png
+          path: |
+            ${{ runner.temp }}/hello-gui-linux.png
+            ${{ runner.temp }}/hello-gui-linux-bundle.png
           if-no-files-found: ignore
           retention-days: 14
       - name: Run Windows winit native window proof
