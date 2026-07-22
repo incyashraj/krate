@@ -46,7 +46,14 @@ and running it by URL, with identical assertions both times. `deny.toml`
 gained CDLA-Permissive-2.0 for the Mozilla CA store that arrives with the
 TLS stack; advisories are clean. README now opens with the sharing
 property rather than portability.
-Certification: pending — full matrix must be green before this counts.
+Certification: landed as `992a5ce` + `ca6035d` + `5581cab`, dispatched full
+matrix run `29950538607` green on all three OS lanes. The Linux log shows
+the app exercised twice, once from a path and once after `serving bundle:
+11080 bytes`, echoing `typed:hi krate` and `selected:pick beta` both
+times. The two screenshot artifacts have identical SHA-256
+(`d55dea0e6cad594e79d89ce5c2de340e4a8402af48ab82eb446894cc81e9c3a9`): the
+downloaded app rendered pixel-for-pixel the same as the local one. Copy in
+`Invest/evidence/hello-gui-linux-from-bundle-url-2026-07-23.png`.
 
 Previous slice, certified: list selection round-trips. A
 `ListView` is now a real selectable container: the draft WIT `widget-node`
