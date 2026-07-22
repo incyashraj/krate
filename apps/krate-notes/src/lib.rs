@@ -38,7 +38,13 @@ const NOTE_FILES: [&str; NOTE_COUNT] = [
 /// that must not pull panic machinery into the component does not.
 const NOTE_CAPACITY: usize = 512;
 
-const MAX_WAIT_ROUNDS: u32 = 600;
+/// Rounds the interactive session runs for. A note taking app should stay
+/// open until the person closes it, not time out while they are thinking, so
+/// this is a very high ceiling rather than a demo budget: about eight hours at
+/// the round length below. `hello-gui` uses a short bound because it is a CI
+/// fixture that must never hang; this is an app someone uses.
+const MAX_WAIT_ROUNDS: u32 = 600_000;
+/// Automated runs pass `quick` and exit promptly.
 const QUICK_WAIT_ROUNDS: u32 = 40;
 const WAIT_ROUND_MILLIS: u32 = 50;
 
@@ -291,7 +297,15 @@ impl bindings::Guest for Component {
             row += 1;
         }
 
-        let quick = args::raw().as_bytes() == b"quick";
+        // Raw args are newline terminated, one per argument, so an exact
+        // comparison against b"quick" never matches. Comparing the first line
+        // is what actually detects the flag.
+        let raw = args::raw();
+        let quick = raw
+            .as_bytes()
+            .split(|byte| *byte == b'\n')
+            .next()
+            .is_some_and(|first| first == b"quick");
         let rounds = if quick {
             QUICK_WAIT_ROUNDS
         } else {
