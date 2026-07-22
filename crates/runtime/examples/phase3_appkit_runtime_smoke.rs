@@ -60,6 +60,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             },
             checked: None,
             value: None,
+            selected: None,
         },
     )?;
     dispatcher.upsert_node(
@@ -77,6 +78,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             },
             checked: None,
             value: None,
+            selected: None,
         },
     )?;
     dispatcher.upsert_node(
@@ -94,6 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             },
             checked: None,
             value: None,
+            selected: None,
         },
     )?;
 
