@@ -20,7 +20,18 @@ That produces `target/debug/krate`. Everything below uses it.
 
 ## 1. Get the app
 
-Download the bundle, or build it yourself from the repository:
+The quickest path is to skip downloading entirely and run it straight from its
+release URL:
+
+```bash
+krate run https://github.com/incyashraj/krate/releases/download/notes-v0.1.0/notes.krate --native-window --prompt
+```
+
+Nothing lands on your disk first. The bundle is fetched, you are shown what it
+wants, and it runs with only what you allow. Downloading grants nothing on its
+own.
+
+Or build it yourself from the repository:
 
 ```bash
 sh scripts/build-krate-notes-component.sh
