@@ -1,20 +1,30 @@
 # Krate (formerly Layer36)
 
-> Software should run like a PDF opens: exactly the same on any device — and
-> never touch anything without permission.
+> Share software the way you share a document, without handing over your machine.
 
-**Krate** — by Krate Labs — is a safe runtime for portable software. Like a
-shipping crate (and like a Rust crate), an app is packed once and travels
-anywhere. A program compiles once to a
-WebAssembly component; the Krate runtime runs that same file natively on
-Linux, macOS, and Windows through one standard library (UAPI), and a
-capability system (UCap) means the program touches nothing — not a file, not
-the network — without an explicit grant.
+**Krate** — by Krate Labs — packs an application and the permissions it is
+asking for into a single file. Send someone a link to it. It opens on their
+Mac, Windows, or Linux machine as a real desktop app, and it cannot read a
+file, reach the network, or touch anything else unless they allow it.
 
-**Why now:** software is being generated faster than it can be ported, audited,
-or sandboxed. Machine-generated tools need one safe, universal place to run.
-Krate is being built to be that place — starting with developer tools and
-local utilities, growing toward the full platform.
+```console
+$ krate pack app.wasm --manifest app.toml -o hello.krate
+wrote hello.krate (11080 bytes)
+
+$ krate run https://example.com/hello.krate
+```
+
+**Why this matters now:** AI writes most new software, and nobody reads it.
+Software gets generated constantly and shared constantly, between people who
+did not write it and cannot audit it. So the thing that travels between people
+has to carry its own permissions. Running it on your own machine is how it stays
+useful — that is where your files and your work already are — and the capability
+model is what keeps that safe.
+
+Underneath, a program compiles once to a WebAssembly component and runs
+natively on Linux, macOS, and Windows through one standard library (UAPI), with
+a capability system (UCap) enforcing every grant. That portability is how the
+sharing property is achieved, not the point of it.
 
 **The long-term arc** is a universal application platform: the same portable
 file running natively on desktop, mobile, and the web, with distribution and
@@ -64,6 +74,50 @@ Phase 2's CLI path stays fully supported: UAPI modules for `io`, `fs`, `net`,
 `time`, and `locale`, the sample apps, and the evidence harness are unchanged.
 
 ## Quickstart
+
+### Pack an app into one file and share it
+
+A `.krate` is a single file holding the component and the permissions it asks
+for. Packing changes how an app is delivered and nothing about what it may do:
+a bundle fetched from a URL gets exactly the authority a local one does, which
+is none until it is granted.
+
+```bash
+cargo build -p krate-cli
+scripts/build-krate-cat-component.sh
+
+mkdir -p /tmp/share/fixtures && cd /tmp/share
+# a bundle always runs code.wasm, so the manifest names that
+cp "$OLDPWD/apps/krate-cat/target/wasm32-wasip1/release/krate_cat.wasm" code.wasm
+sed 's|^entry.*|entry = "code.wasm"|' "$OLDPWD/apps/krate-cat/manifest.toml" > manifest.toml
+printf 'hello from a shared krate\n' > fixtures/hello.txt
+
+"$OLDPWD/target/debug/krate" pack code.wasm --manifest manifest.toml -o cat.krate
+"$OLDPWD/target/debug/krate" run cat.krate --auto-grant -- ./fixtures/hello.txt
+```
+
+```text
+hello from a shared krate
+```
+
+The app declared `fs.read:./fixtures/**`, so that is all it can read. Ask it for
+anything else and it is refused, even with `--auto-grant`:
+
+```console
+$ krate run cat.krate --auto-grant -- /etc/hosts
+krate-cat: permission denied: /etc/hosts
+```
+
+Put `cat.krate` behind any URL and it runs from there, with the same limits:
+
+```bash
+krate run https://example.com/cat.krate -- ./fixtures/hello.txt
+```
+
+Plain `http://` is refused unless you pass `--insecure-http`, which exists for
+local test servers.
+
+### The rest
 
 Build the CLI and the Phase 2 sample components:
 
