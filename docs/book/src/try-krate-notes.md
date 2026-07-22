@@ -16,7 +16,16 @@ cd krate
 cargo build -p krate-cli
 ```
 
-That produces `target/debug/krate`. Everything below uses it.
+That produces `target/debug/krate`. Everything below calls it as `krate`, so
+put it on your PATH for this shell:
+
+```bash
+export PATH="$PWD/target/debug:$PATH"
+```
+
+To make that permanent, add the same line (with the full path) to your
+`~/.zshrc` or `~/.bashrc`. Otherwise call the binary by its full path
+everywhere below.
 
 ## 1. Get the app
 
