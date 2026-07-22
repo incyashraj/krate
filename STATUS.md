@@ -23,6 +23,20 @@ Nothing architectural changes; portability stops being the headline and
 becomes how the property is achieved. The Adobe/Flash analogy is retired.
 Next implementation work is P3-SHARE-01, not further widget slices.
 
+Certification checkpoint 2026-07-23: the whole shareability arc is green.
+Full matrix run `29964096927` (commit `09a5e58`) passed on all three OS
+lanes, certifying: the `.krate` bundle format (pack + run-from-URL), the
+agent surface (inspect_bundle, remedy on denials), krate-notes with its
+save-and-refuse CI proof, TextArea wrapping, native macOS text editing
+via the text-changed event, the macOS Edit menu (clipboard works), and a
+one-command installer. The Linux log shows krate-notes saving into its
+granted directory and refusing to start (exit 5) when fs.write is
+withheld. This is the branch to merge. Two bugs were caught by CI before
+merge and fixed: an off-macOS stub gap (only Linux/Windows builds saw it),
+and krate-notes clobbering an unedited note with an empty buffer on exit
+(would have lost real user data). Known gap: nothing on macOS keyboard
+beyond what shipped; see the input-lane note in Phase-3-Plan §18.
+
 Working tree at this status update: there is an app worth sharing.
 `krate-notes` is the Phase 3 flagship (§17): a sidebar of notes, an editor,
 and saving into a directory the user granted, in 388 lines against the
