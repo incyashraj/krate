@@ -61,7 +61,9 @@ Current work covers:
 - **done:** the P3-VS-01 vertical slice — one portable WASM component opens
   a real native macOS window with native controls, and a human click flows
   back into the component as a portable event
-  (`sh scripts/demo-hello-gui.sh` to see it)
+  (`sh scripts/demo-hello-gui.sh` to see it). Keyboard input is not wired on
+  macOS yet, so an AppKit window is clickable but not typable; Linux and
+  Windows deliver keys and modifiers today.
 - **done:** the agent-embedding track — `krate_runtime::embed`,
   `krate run --json` (schema `krate.run.v1`), and the `krate-mcp-server`
   MCP tool for agent frameworks
