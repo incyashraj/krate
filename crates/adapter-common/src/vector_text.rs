@@ -20,9 +20,9 @@ use vello_cpu::{Glyph, Pixmap, RenderContext, Resources};
 use crate::painter::{
     button_fill_color, intersect_rects, PaintInteraction, COLOR_BACKGROUND, COLOR_BUTTON,
     COLOR_BUTTON_LABEL, COLOR_FIELD_BORDER, COLOR_FIELD_FILL, COLOR_FIELD_TEXT, COLOR_KNOB,
-    COLOR_TEXT, COLOR_TRACK,
+    COLOR_SELECTION, COLOR_TEXT, COLOR_TRACK,
 };
-use crate::ui::{WidgetKind, WidgetPlacement};
+use crate::ui::{kind_is_selectable, WidgetKind, WidgetPlacement};
 
 /// Logical font size for widget labels; multiplied by the scale factor
 /// through parley's display scale.
@@ -194,6 +194,21 @@ pub fn try_paint_placements(
                 .unwrap_or(true);
             if !fully_visible {
                 if let Some(clip) = clip_px {
+                    // A selectable container is mostly empty space, so a
+                    // partially visible one must still paint whatever of
+                    // its selection wash survives the clip; falling
+                    // through to the flat background fill would erase it.
+                    if kind_is_selectable(placement.kind) {
+                        if let Some((sx, sy, sw, sh)) = placement.selection {
+                            if let Some((ix, iy, iw, ih)) = intersect_rects(
+                                (sx * scale, sy * scale, sw * scale, sh * scale),
+                                clip,
+                            ) {
+                                fill(&mut ctx, COLOR_SELECTION, ix, iy, iw, ih);
+                            }
+                        }
+                        continue;
+                    }
                     if let Some((ix, iy, iw, ih)) = intersect_rects((px, py, pw, ph), clip) {
                         let color = match placement.kind {
                             WidgetKind::Button => button_fill_color(placement.widget, interaction),
@@ -229,6 +244,23 @@ pub fn try_paint_placements(
                     (COLOR_FIELD_TEXT, Some(4.0 * scale))
                 }
                 WidgetKind::Text => (COLOR_TEXT, Some(0.0)),
+                WidgetKind::ListView | WidgetKind::TreeView => {
+                    // Rows paint themselves as child Text placements; the
+                    // container contributes only the selection wash, and
+                    // never a label of its own.
+                    if let Some((sx, sy, sw, sh)) = placement.selection {
+                        fill_rounded(
+                            &mut ctx,
+                            COLOR_SELECTION,
+                            sx * scale,
+                            sy * scale,
+                            sw * scale,
+                            sh * scale,
+                            3.0 * scale,
+                        );
+                    }
+                    (COLOR_TEXT, None)
+                }
                 WidgetKind::Checkbox => {
                     let side = (ph.min(18.0 * scale)).max(0.0);
                     let by = py + (ph - side) / 2.0;
@@ -399,6 +431,7 @@ mod tests {
             label: Some("Click me".to_string()),
             checked: None,
             value: None,
+            selection: None,
             clip: None,
             x: 10.0,
             y: 10.0,
@@ -455,6 +488,7 @@ mod tests {
             label: None,
             checked: None,
             value: None,
+            selection: None,
             clip: None,
             x: 10.0,
             y: 10.0,

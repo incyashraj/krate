@@ -182,6 +182,9 @@ interface types {
     checked: option<bool>,
     /// Normalized 0..=1 value for slider and progress kinds.
     value: option<f32>,
+    /// Zero-based index of the selected child, for selectable container
+    /// kinds (list-view, tree-view). Out-of-range indices are rejected.
+    selected: option<u32>,
   }
 
   /// Top-level menu item.

@@ -26,7 +26,12 @@ const FIELD_ID: u64 = 3;
 const CHECKBOX_ID: u64 = 4;
 const PROGRESS_ID: u64 = 5;
 const SCROLL_ID: u64 = 6;
+const LIST_ID: u64 = 7;
 const SCROLL_LINE_BASE_ID: u64 = 10;
+/// Row ids sit above the scroll lines (10..=17) so both blocks stay
+/// contiguous and the certified scroll coordinates never shift.
+const LIST_ROW_BASE_ID: u64 = 20;
+const LIST_ROW_LABELS: [&str; 3] = ["pick alpha", "pick beta", "pick gamma"];
 const SCROLL_LINE_LABELS: [&str; 8] = [
     "scroll line one",
     "scroll line two",
@@ -67,6 +72,7 @@ fn stack_root() -> types::WidgetNode {
         },
         checked: None,
         value: None,
+        selected: None,
     }
 }
 
@@ -85,6 +91,7 @@ fn click_button() -> types::WidgetNode {
         },
         checked: None,
         value: None,
+        selected: None,
     }
 }
 
@@ -103,6 +110,7 @@ fn text_field(label: &str) -> types::WidgetNode {
         },
         checked: None,
         value: None,
+        selected: None,
     }
 }
 
@@ -121,6 +129,7 @@ fn scroll_area() -> types::WidgetNode {
         },
         checked: None,
         value: None,
+        selected: None,
     }
 }
 
@@ -139,6 +148,55 @@ fn scroll_line(index: usize) -> types::WidgetNode {
         },
         checked: None,
         value: None,
+        selected: None,
+    }
+}
+
+/// Whether a hit widget id is one of the list's own rows.
+fn is_row_id(widget: Option<u64>) -> bool {
+    match widget {
+        Some(id) => {
+            id >= LIST_ROW_BASE_ID && id < LIST_ROW_BASE_ID + LIST_ROW_LABELS.len() as u64
+        }
+        None => false,
+    }
+}
+
+fn pick_list(selected: Option<u32>) -> types::WidgetNode {
+    types::WidgetNode {
+        id: LIST_ID,
+        parent: Some(ROOT_ID),
+        kind: types::WidgetKind::ListView,
+        label: None,
+        role: Some(pure_string("listbox")),
+        style: types::Style {
+            width: Some(320.0),
+            height: Some(72.0),
+            grow: 0.0,
+            padding: 0.0,
+        },
+        checked: None,
+        value: None,
+        selected,
+    }
+}
+
+fn pick_row(index: usize) -> types::WidgetNode {
+    types::WidgetNode {
+        id: LIST_ROW_BASE_ID + index as u64,
+        parent: Some(LIST_ID),
+        kind: types::WidgetKind::Text,
+        label: Some(pure_string(LIST_ROW_LABELS[index % LIST_ROW_LABELS.len()])),
+        role: Some(pure_string("option")),
+        style: types::Style {
+            width: Some(300.0),
+            height: Some(24.0),
+            grow: 0.0,
+            padding: 0.0,
+        },
+        checked: None,
+        value: None,
+        selected: None,
     }
 }
 
@@ -157,6 +215,7 @@ fn robot_checkbox(checked: bool) -> types::WidgetNode {
         },
         checked: Some(checked),
         value: None,
+        selected: None,
     }
 }
 
@@ -175,6 +234,7 @@ fn typing_progress(fraction: f32) -> types::WidgetNode {
         },
         checked: None,
         value: Some(if fraction > 1.0 { 1.0 } else { fraction }),
+        selected: None,
     }
 }
 
@@ -197,6 +257,7 @@ impl bindings::Guest for Component {
             || tree::upsert_node(win, &robot_checkbox(false)).is_err()
             || tree::upsert_node(win, &typing_progress(0.0)).is_err()
             || tree::upsert_node(win, &scroll_area()).is_err()
+            || tree::upsert_node(win, &pick_list(None)).is_err()
         {
             let _ = window::close(win);
             return 32;
@@ -213,6 +274,18 @@ impl bindings::Guest for Component {
             line_index += 1;
         }
 
+        // Three selectable rows. The component owns the selection: it maps
+        // the clicked row id to an index and re-lowers the list with a new
+        // `selected`, and the host paints the highlight from that index.
+        let mut row_index = 0usize;
+        while row_index < LIST_ROW_LABELS.len() {
+            if tree::upsert_node(win, &pick_row(row_index)).is_err() {
+                let _ = window::close(win);
+                return 32;
+            }
+            row_index += 1;
+        }
+
         // Byte equality, not str::contains: pattern-search machinery pulls
         // std panic paths (and with them WASI imports) into the component.
         let rounds = if args::raw().as_bytes() == b"quick" {
@@ -225,6 +298,7 @@ impl bindings::Guest for Component {
         let mut close_requested = false;
         let mut linger = 0u32;
         let mut checkbox_on = false;
+        let mut selected_row: Option<u32> = None;
         // Fixed-capacity typing buffer: growth-free so no allocation-error
         // machinery (and its WASI imports) enters the component.
         let mut typed = [0u8; TYPED_CAPACITY];
@@ -243,6 +317,20 @@ impl bindings::Guest for Component {
                 {
                     checkbox_on = !checkbox_on;
                     let _ = tree::upsert_node(win, &robot_checkbox(checkbox_on));
+                }
+                // A press on any row selects it: the pointer event already
+                // carries the hit widget id, so no selection-specific event
+                // is needed. The component maps id to index, re-lowers the
+                // list, and prints the choice so CI can assert the round
+                // trip rather than only photographing it.
+                Some(types::Event::Pointer(pointer))
+                    if pointer.pressed && is_row_id(pointer.widget) =>
+                {
+                    if let Some(widget) = pointer.widget {
+                        let index = (widget - LIST_ROW_BASE_ID) as u32;
+                        selected_row = Some(index);
+                        let _ = tree::upsert_node(win, &pick_list(selected_row));
+                    }
                 }
                 Some(types::Event::TextInput(text)) => {
                     for byte in text.as_bytes() {
@@ -294,6 +382,22 @@ impl bindings::Guest for Component {
             let out = stdio::stdout();
             let _ = out.write(b"typed:");
             let _ = out.write(typed.get(..typed_len).unwrap_or(&[]));
+            let _ = out.write(b"\n");
+        }
+
+        // Same shape for the list round trip: `selected:<label>` proves the
+        // component received the row press and owns the selection state,
+        // not just that a highlight appeared in the screenshot.
+        if let Some(index) = selected_row {
+            let out = stdio::stdout();
+            let _ = out.write(b"selected:");
+            let _ = out.write(
+                LIST_ROW_LABELS
+                    .get(index as usize)
+                    .copied()
+                    .unwrap_or("")
+                    .as_bytes(),
+            );
             let _ = out.write(b"\n");
         }
 

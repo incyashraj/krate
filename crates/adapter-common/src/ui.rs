@@ -298,6 +298,13 @@ impl WidgetStyle {
     }
 }
 
+/// Whether this widget kind can carry a `selected` child index.
+/// Selection belongs to container kinds that present a list of choices;
+/// every other kind rejects it at construction time.
+pub fn kind_is_selectable(kind: WidgetKind) -> bool {
+    matches!(kind, WidgetKind::ListView | WidgetKind::TreeView)
+}
+
 /// One node in the portable widget tree.
 #[derive(Debug, Clone, PartialEq)]
 pub struct WidgetNode {
@@ -311,6 +318,9 @@ pub struct WidgetNode {
     pub checked: Option<bool>,
     /// Normalized 0..=1 value for slider and progress kinds.
     pub value: Option<f32>,
+    /// Zero-based index of the selected child, for selectable container
+    /// kinds (list view, tree view).
+    pub selected: Option<u32>,
 }
 
 impl WidgetNode {
@@ -325,6 +335,7 @@ impl WidgetNode {
             style: WidgetStyle::default(),
             checked: None,
             value: None,
+            selected: None,
         }
     }
 
@@ -332,6 +343,21 @@ impl WidgetNode {
     pub fn with_checked(mut self, checked: bool) -> Self {
         self.checked = Some(checked);
         self
+    }
+
+    /// Attach a selected child index (list view, tree view). The index is
+    /// bounds-checked against the real child count at lowering time, when
+    /// the tree is known; here we only reject kinds that cannot carry a
+    /// selection at all.
+    pub fn with_selected(mut self, selected: u32) -> Result<Self, UiAdapterError> {
+        if !kind_is_selectable(self.kind) {
+            return Err(UiAdapterError::Unsupported(format!(
+                "widget kind {:?} cannot carry a selected index",
+                self.kind
+            )));
+        }
+        self.selected = Some(selected);
+        Ok(self)
     }
 
     /// Attach a normalized 0..=1 value (slider, progress).
@@ -472,6 +498,20 @@ impl WidgetTree {
     /// Return all nodes keyed by stable widget id.
     pub fn nodes(&self) -> &BTreeMap<WidgetId, WidgetNode> {
         &self.nodes
+    }
+
+    /// Return the children of one widget, ordered by widget id.
+    ///
+    /// The tree is stored flat with parent pointers, so this walks the map;
+    /// ordering follows the `BTreeMap` key order, which is the same order
+    /// layout assigns rows. Callers that index into the result (selection,
+    /// for one) therefore see stable indices across re-lowering.
+    pub fn children(&self, parent: WidgetId) -> Vec<WidgetId> {
+        self.nodes
+            .iter()
+            .filter(|(_, node)| node.parent == Some(parent))
+            .map(|(id, _)| *id)
+            .collect()
     }
 }
 
@@ -958,6 +998,10 @@ pub struct WidgetPlacement {
     pub checked: Option<bool>,
     /// Normalized 0..=1 value for slider and progress kinds.
     pub value: Option<f32>,
+    /// Row rect of the selected child, in logical pixels, resolved at
+    /// lowering time for selectable containers. Painters draw the
+    /// selection highlight here; `None` means nothing is selected.
+    pub selection: Option<(f32, f32, f32, f32)>,
     /// Clip rectangle (x, y, w, h) in logical pixels, set for widgets
     /// inside Scroll containers; painters must not draw outside it.
     pub clip: Option<(f32, f32, f32, f32)>,
@@ -1951,6 +1995,44 @@ mod tests {
             WindowOptions::new(" ", WindowSize::new(100, 100).expect("size")),
             Err(UiAdapterError::EmptyTitle)
         );
+    }
+
+    #[test]
+    fn selected_index_is_accepted_only_by_selectable_kinds() {
+        let list = WidgetNode::new(WidgetId::new(1).expect("list"), WidgetKind::ListView)
+            .with_selected(2)
+            .expect("list view accepts a selection");
+        assert_eq!(list.selected, Some(2));
+
+        WidgetNode::new(WidgetId::new(2).expect("tree"), WidgetKind::TreeView)
+            .with_selected(0)
+            .expect("tree view accepts a selection");
+
+        // A selection on a leaf widget is meaningless and must be refused
+        // at construction rather than silently ignored at paint time.
+        let err = WidgetNode::new(WidgetId::new(3).expect("button"), WidgetKind::Button)
+            .with_selected(0)
+            .expect_err("button must reject a selection");
+        assert!(matches!(err, UiAdapterError::Unsupported(_)));
+    }
+
+    #[test]
+    fn children_are_returned_in_stable_id_order() {
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::ListView);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        // Insert out of order; the accessor must still report id order, so
+        // a selected index means the same row across re-lowering.
+        for id in [30u64, 10, 20] {
+            let row = WidgetNode::new(WidgetId::new(id).expect("row"), WidgetKind::Text)
+                .with_parent(tree.root());
+            tree.upsert(row).expect("insert row");
+        }
+        let children: Vec<u64> = tree
+            .children(tree.root())
+            .into_iter()
+            .map(|id| id.get())
+            .collect();
+        assert_eq!(children, vec![10, 20, 30]);
     }
 
     #[test]

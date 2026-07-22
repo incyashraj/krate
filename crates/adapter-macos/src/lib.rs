@@ -763,6 +763,7 @@ mod tests {
             label: Some("robot was here".to_string()),
             checked: Some(false),
             value: None,
+            selection: None,
             clip: None,
             x: 10.0,
             y: 10.0,

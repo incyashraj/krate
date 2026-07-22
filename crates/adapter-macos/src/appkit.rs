@@ -2019,6 +2019,7 @@ mod tests {
                 style: krate_adapter_common::ui::WidgetStyle::default(),
                 checked: None,
                 value: None,
+                selected: None,
             },
         )
         .expect("set root widget");

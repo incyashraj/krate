@@ -23,6 +23,10 @@ pub const COLOR_KNOB: u32 = 0xFFFFFFFF;
 pub const COLOR_FIELD_BORDER: u32 = 0xFF9CA3AF;
 pub const COLOR_FIELD_TEXT: u32 = 0xFF1F2937;
 pub const COLOR_TEXT: u32 = 0xFF111827;
+/// Fill behind the selected row of a selectable container. A tinted
+/// wash of the button blue, so selection reads as the same accent
+/// without competing with a real button for attention.
+pub const COLOR_SELECTION: u32 = 0xFFBFD8FD;
 
 /// Transient pointer state a backend reports so widgets can render
 /// hover and pressed feedback. Purely visual: event routing is separate.
@@ -49,6 +53,8 @@ pub fn drawn_kind(kind: WidgetKind) -> bool {
             | WidgetKind::Switch
             | WidgetKind::Slider
             | WidgetKind::Progress
+            | WidgetKind::ListView
+            | WidgetKind::TreeView
     )
 }
 
@@ -291,6 +297,18 @@ pub fn paint_placements_bitmap(
                     fill_rect(buffer, width, height, clipped, COLOR_KNOB)
                 };
             }
+            WidgetKind::ListView | WidgetKind::TreeView => {
+                // The container itself only paints the selection wash; the
+                // rows are their own placements and paint their labels on
+                // top, because parents lower before their children.
+                if let Some((sx, sy, sw, sh)) = placement.selection {
+                    if let Some(clipped) =
+                        clip_fill((sx * scale, sy * scale, sw * scale, sh * scale))
+                    {
+                        fill_rect(buffer, width, height, clipped, COLOR_SELECTION)
+                    };
+                }
+            }
             WidgetKind::Slider | WidgetKind::Progress => {
                 let fraction = placement.value.unwrap_or(0.0).clamp(0.0, 1.0);
                 let groove_h = if placement.kind == WidgetKind::Slider {
@@ -338,6 +356,7 @@ mod tests {
             label: Some(label.to_string()),
             checked: None,
             value: None,
+            selection: None,
             clip: None,
             x,
             y,
@@ -438,11 +457,91 @@ mod tests {
             WidgetKind::Switch,
             WidgetKind::Slider,
             WidgetKind::Progress,
+            WidgetKind::ListView,
+            WidgetKind::TreeView,
         ] {
             assert!(drawn_kind(kind), "{kind:?} must be drawable");
         }
         assert!(!drawn_kind(WidgetKind::Stack));
         assert!(!drawn_kind(WidgetKind::Canvas));
+    }
+
+    #[test]
+    fn list_view_paints_selection_only_where_selected() {
+        let (w, h) = (200u32, 80u32);
+        let at = |b: &Vec<u32>, x: u32, y: u32| b[(y * w + x) as usize];
+
+        // No selection: the container contributes no fill of its own.
+        let mut empty = vec![0u32; (w * h) as usize];
+        let list = placement(WidgetKind::ListView, "", 0.0, 0.0, 200.0, 80.0);
+        paint_placements_bitmap(
+            &mut empty,
+            w,
+            h,
+            1.0,
+            std::slice::from_ref(&list),
+            PaintInteraction::default(),
+        );
+        assert_eq!(
+            at(&empty, 10, 10),
+            COLOR_BACKGROUND,
+            "an unselected list must not tint its own area"
+        );
+
+        // Selecting the second row fills that row's rect, and only it.
+        let mut painted = vec![0u32; (w * h) as usize];
+        let selected = WidgetPlacement {
+            selection: Some((0.0, 24.0, 200.0, 24.0)),
+            ..list
+        };
+        paint_placements_bitmap(
+            &mut painted,
+            w,
+            h,
+            1.0,
+            &[selected],
+            PaintInteraction::default(),
+        );
+        assert_eq!(
+            at(&painted, 10, 30),
+            COLOR_SELECTION,
+            "the selected row rect must carry the selection fill"
+        );
+        assert_eq!(
+            at(&painted, 10, 10),
+            COLOR_BACKGROUND,
+            "rows above the selection stay unpainted"
+        );
+        assert_eq!(
+            at(&painted, 10, 60),
+            COLOR_BACKGROUND,
+            "rows below the selection stay unpainted"
+        );
+    }
+
+    #[test]
+    fn list_view_selection_is_clipped_by_a_scroll_ancestor() {
+        let (w, h) = (200u32, 80u32);
+        let at = |b: &Vec<u32>, x: u32, y: u32| b[(y * w + x) as usize];
+        let mut buffer = vec![0u32; (w * h) as usize];
+        // Selection spans y 0..40 but the scroll clip only admits y 20..80,
+        // so the top half of the highlight must not reach the buffer.
+        let list = WidgetPlacement {
+            selection: Some((0.0, 0.0, 200.0, 40.0)),
+            clip: Some((0.0, 20.0, 200.0, 60.0)),
+            ..placement(WidgetKind::ListView, "", 0.0, 0.0, 200.0, 80.0)
+        };
+        paint_placements_bitmap(&mut buffer, w, h, 1.0, &[list], PaintInteraction::default());
+        assert_eq!(
+            at(&buffer, 10, 10),
+            COLOR_BACKGROUND,
+            "highlight above the clip must be cut"
+        );
+        assert_eq!(
+            at(&buffer, 10, 30),
+            COLOR_SELECTION,
+            "highlight inside the clip must survive"
+        );
     }
 
     #[test]

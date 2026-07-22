@@ -8,9 +8,10 @@
 //! that is a valid state). The `gfx`, `audio`, `dialog`, and `menu` surfaces
 //! return honest `unsupported` errors until their runtimes exist.
 
+use krate_adapter_common::painter::drawn_kind;
 use krate_adapter_common::ui::{
-    Modifiers, PointerButton, Theme, UiAdapterError, UiEvent, WidgetId, WidgetKind, WidgetNode,
-    WidgetPlacement, WidgetStyle, WindowId, WindowOptions, WindowSize,
+    kind_is_selectable, Modifiers, PointerButton, Theme, UiAdapterError, UiEvent, WidgetId,
+    WidgetKind, WidgetNode, WidgetPlacement, WidgetStyle, WindowId, WindowOptions, WindowSize,
 };
 use krate_layout::{absolute_rect, LayoutViewport};
 
@@ -68,17 +69,9 @@ impl Phase3GuiHost {
         let offsets = self.scroll_offsets.borrow();
         let mut placements = Vec::new();
         for (id, node) in tree.nodes() {
-            if !matches!(
-                node.kind,
-                WidgetKind::Button
-                    | WidgetKind::TextField
-                    | WidgetKind::Text
-                    | WidgetKind::Checkbox
-                    | WidgetKind::Radio
-                    | WidgetKind::Switch
-                    | WidgetKind::Slider
-                    | WidgetKind::Progress
-            ) {
+            // One shared list decides what the drawn painters support, so
+            // placement filtering and painting can never drift apart.
+            if !drawn_kind(node.kind) {
                 continue;
             }
             let Some(rect) = absolute_rect(&tree, &layout, *id) else {
@@ -100,12 +93,27 @@ impl Phase3GuiHost {
                     ));
                 }
             }
+            // Resolve a selectable container's selected index to the child's
+            // rect here, where the tree and layout are both in hand; the
+            // painters only ever see rectangles. Out-of-range indices and
+            // children that failed layout simply draw no highlight.
+            let selection = node.selected.and_then(|index| {
+                let child = *tree.children(*id).get(index as usize)?;
+                let child_rect = absolute_rect(&tree, &layout, child)?;
+                Some((
+                    child_rect.x,
+                    child_rect.y - (rect.y - y),
+                    child_rect.width,
+                    child_rect.height,
+                ))
+            });
             placements.push(WidgetPlacement {
                 widget: *id,
                 kind: node.kind,
                 label: node.label.clone(),
                 checked: node.checked,
                 value: node.value,
+                selection,
                 clip,
                 x: rect.x,
                 y,
@@ -362,16 +370,23 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
             ));
         }
     }
+    let kind = widget_kind_from_wit(node.kind);
+    if node.selected.is_some() && !kind_is_selectable(kind) {
+        return Err(ui::types::UiError::Unsupported(format!(
+            "widget kind {kind:?} cannot carry a selected index"
+        )));
+    }
 
     Ok(WidgetNode {
         id,
         parent,
-        kind: widget_kind_from_wit(node.kind),
+        kind,
         label: node.label,
         role: node.role,
         style,
         checked: node.checked,
         value: node.value,
+        selected: node.selected,
     })
 }
 

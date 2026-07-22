@@ -379,6 +379,7 @@ jobs:
           set +e
           KRATE_XVFB_SCREENSHOT="$RUNNER_TEMP/hello-gui-linux.png" \
           KRATE_EXPECT_TYPED="hi krate" \
+          KRATE_EXPECT_SELECTED="pick beta" \
             xvfb-run -a bash scripts/xvfb-click-hello-gui.sh
           code=$?
           set -e

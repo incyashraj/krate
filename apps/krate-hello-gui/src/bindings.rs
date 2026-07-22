@@ -5512,6 +5512,9 @@ pub mod krate {
                 pub checked: Option<bool>,
                 /// Normalized 0..=1 value for slider and progress kinds.
                 pub value: Option<f32>,
+                /// Zero-based index of the selected child, for selectable container
+                /// kinds (list-view, tree-view). Out-of-range indices are rejected.
+                pub selected: Option<u32>,
             }
             impl ::core::fmt::Debug for WidgetNode {
                 fn fmt(
@@ -5527,6 +5530,7 @@ pub mod krate {
                         .field("style", &self.style)
                         .field("checked", &self.checked)
                         .field("value", &self.value)
+                        .field("selected", &self.selected)
                         .finish()
                 }
             }
@@ -6316,10 +6320,10 @@ pub mod krate {
                     struct RetArea(
                         [::core::mem::MaybeUninit<
                             u8,
-                        >; 64 + 8 * ::core::mem::size_of::<*const u8>()],
+                        >; 72 + 8 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit(); 64
+                        [::core::mem::MaybeUninit::uninit(); 72
                             + 8 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
@@ -6333,6 +6337,7 @@ pub mod krate {
                         style: style1,
                         checked: checked1,
                         value: value1,
+                        selected: selected1,
                     } = root;
                     *ptr0.add(8).cast::<i64>() = _rt::as_i64(id1);
                     match parent1 {
@@ -6462,6 +6467,21 @@ pub mod krate {
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
+                    match selected1 {
+                        Some(e) => {
+                            *ptr0
+                                .add(68 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (1i32) as u8;
+                            *ptr0
+                                .add(72 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<i32>() = _rt::as_i32(e);
+                        }
+                        None => {
+                            *ptr0
+                                .add(68 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (0i32) as u8;
+                        }
+                    };
                     let ptr5 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
                     #[link(wasm_import_module = "krate:ui/tree@0.1.0")]
@@ -6545,10 +6565,10 @@ pub mod krate {
                     struct RetArea(
                         [::core::mem::MaybeUninit<
                             u8,
-                        >; 64 + 8 * ::core::mem::size_of::<*const u8>()],
+                        >; 72 + 8 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit(); 64
+                        [::core::mem::MaybeUninit::uninit(); 72
                             + 8 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
@@ -6562,6 +6582,7 @@ pub mod krate {
                         style: style1,
                         checked: checked1,
                         value: value1,
+                        selected: selected1,
                     } = node;
                     *ptr0.add(8).cast::<i64>() = _rt::as_i64(id1);
                     match parent1 {
@@ -6688,6 +6709,21 @@ pub mod krate {
                         None => {
                             *ptr0
                                 .add(60 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (0i32) as u8;
+                        }
+                    };
+                    match selected1 {
+                        Some(e) => {
+                            *ptr0
+                                .add(68 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (1i32) as u8;
+                            *ptr0
+                                .add(72 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<i32>() = _rt::as_i32(e);
+                        }
+                        None => {
+                            *ptr0
+                                .add(68 + 7 * ::core::mem::size_of::<*const u8>())
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
@@ -8428,8 +8464,8 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 6520] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xfe1\x01A\x02\x01AQ\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 6533] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x8b2\x01A\x02\x01AQ\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -8494,8 +8530,8 @@ ale/info@0.1.0\x05\x17\x02\x03\0\x0b\x0adate-style\x02\x03\0\x0b\x0cnumber-style
 \0\x0adate-style\x03\0\x02\x02\x03\x02\x01\x19\x04\0\x0cnumber-style\x03\0\x04\x01\
 @\x04\x06millisw\x02tzs\x05style\x03\x03loc\x01\0s\x04\0\x0bformat-date\x01\x06\x01\
 @\x03\x05valueu\x05style\x05\x03loc\x01\0s\x04\0\x0dformat-number\x01\x07\x03\0\x19\
-krate:locale/format@0.1.0\x05\x1a\x01B!\x01m\x04\x06normal\x09minimized\x09maxim\
-ized\x0afullscreen\x04\0\x0cwindow-state\x03\0\0\x01r\x02\x05widthy\x06heighty\x04\
+krate:locale/format@0.1.0\x05\x1a\x01B\"\x01m\x04\x06normal\x09minimized\x09maxi\
+mized\x0afullscreen\x04\0\x0cwindow-state\x03\0\0\x01r\x02\x05widthy\x06heighty\x04\
 \0\x0bwindow-size\x03\0\x02\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04r\
 ect\x03\0\x04\x01m\x03\x05light\x04dark\x07unknown\x04\0\x05theme\x03\0\x06\x01m\
 \x04\x07primary\x09secondary\x06middle\x05other\x04\0\x0epointer-button\x03\0\x08\
@@ -8508,54 +8544,54 @@ ndoww\x06widget\x0c\x03keys\x07pressed\x7f\x09modifiers\x0b\x04\0\x09key-event\x
 \x05stack\x04grid\x06scroll\x04tabs\x06button\x08checkbox\x05radio\x06switch\x06\
 slider\x08progress\x04text\x0atext-field\x09text-area\x09list-view\x09tree-view\x05\
 image\x06canvas\x04\0\x0bwidget-kind\x03\0\x14\x01kv\x01r\x04\x05width\x16\x06he\
-ight\x16\x04growv\x07paddingv\x04\0\x05style\x03\0\x17\x01ks\x01k\x7f\x01r\x08\x02\
-idw\x06parent\x0c\x04kind\x15\x05label\x19\x04role\x19\x05style\x18\x07checked\x1a\
-\x05value\x16\x04\0\x0bwidget-node\x03\0\x1b\x01r\x03\x02idw\x05labels\x07enable\
-d\x7f\x04\0\x09menu-item\x03\0\x1d\x01q\x09\x0fclose-requested\x01w\0\x07resized\
-\x01\x03\0\x10redraw-requested\x01w\0\x07pointer\x01\x0f\0\x03key\x01\x11\0\x0at\
-ext-input\x01s\0\x06action\x01w\0\x0dfocus-changed\x01\x0c\0\x0dtheme-changed\x01\
-\x07\0\x04\0\x05event\x03\0\x1f\x03\0\x14krate:ui/types@0.1.0\x05\x1b\x02\x03\0\x0e\
-\x08ui-error\x02\x03\0\x0e\x0bwindow-size\x02\x03\0\x0e\x0cwindow-state\x01B\x14\
-\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01\x1d\x04\0\x0bwind\
-ow-size\x03\0\x02\x02\x03\x02\x01\x1e\x04\0\x0cwindow-state\x03\0\x04\x01j\x01w\x01\
-\x01\x01@\x02\x05titles\x04size\x03\0\x06\x04\0\x06create\x01\x07\x01j\0\x01\x01\
-\x01@\x01\x06windoww\0\x08\x04\0\x04show\x01\x09\x04\0\x05close\x01\x09\x01@\x02\
-\x06windoww\x05titles\0\x08\x04\0\x09set-title\x01\x0a\x01@\x02\x06windoww\x04si\
-ze\x03\0\x08\x04\0\x08set-size\x01\x0b\x01@\x02\x06windoww\x05state\x05\0\x08\x04\
-\0\x09set-state\x01\x0c\x04\0\x0erequest-redraw\x01\x09\x03\0\x15krate:ui/window\
-@0.1.0\x05\x1f\x02\x03\0\x0e\x0bwidget-node\x01B\x0e\x02\x03\x02\x01\x1c\x04\0\x08\
-ui-error\x03\0\0\x02\x03\x02\x01\x20\x04\0\x0bwidget-node\x03\0\x02\x01j\0\x01\x01\
-\x01@\x02\x06windoww\x04root\x03\0\x04\x04\0\x08set-root\x01\x05\x01@\x02\x06win\
-doww\x04node\x03\0\x04\x04\0\x0bupsert-node\x01\x06\x01@\x02\x06windoww\x06widge\
-tw\0\x04\x04\0\x0bremove-node\x01\x07\x04\0\x0afocus-node\x01\x07\x01@\x03\x06wi\
-ndoww\x06widgetw\x07enabled\x7f\0\x04\x04\0\x0bset-enabled\x01\x08\x03\0\x13krat\
-e:ui/tree@0.1.0\x05!\x02\x03\0\x0e\x05event\x01B\x08\x02\x03\x02\x01\"\x04\0\x05\
-event\x03\0\0\x01k\x01\x01@\0\0\x02\x04\0\x04poll\x01\x03\x01ky\x01@\x01\x0etime\
-out-millis\x04\0\x02\x04\0\x04wait\x01\x05\x03\0\x15krate:ui/events@0.1.0\x05#\x01\
-B\x08\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\0\x01j\0\x01\x01\x01@\x03\x06w\
-indoww\x05titles\x04bodys\0\x02\x04\0\x07message\x01\x03\x01j\x01\x7f\x01\x01\x01\
-@\x03\x06windoww\x05titles\x04bodys\0\x04\x04\0\x07confirm\x01\x05\x03\0\x15krat\
-e:ui/dialog@0.1.0\x05$\x01B\x08\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\0\x01\
-j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\x01@\x01\x04\
-texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1.0\x05%\x02\
-\x03\0\x0e\x09menu-item\x01B\x08\x02\x03\x02\x01&\x04\0\x09menu-item\x03\0\0\x02\
-\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\x01@\x02\x06\
-windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui/menu@0.1\
-.0\x05'\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\x05color\x03\0\0\x01r\x02\
-\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\x02\x05widthv\x06heightv\x04\0\x04siz\
-e\x03\0\x04\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04rect\x03\0\x06\x01\
-r\x05\x04texts\x06origin\x03\x0bfont-familys\x09font-sizev\x05color\x01\x04\0\x08\
-text-run\x03\0\x08\x01q\x04\x11permission-denied\0\0\x0einvalid-target\0\0\x0bun\
-supported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\0\x0a\x01r\x02\x04rec\
-t\x07\x05color\x01\x04\0\x11fill-rect-command\x03\0\x0c\x01r\x03\x04rect\x07\x05\
-color\x01\x05widthv\x04\0\x13stroke-rect-command\x03\0\x0e\x01q\x03\x09fill-rect\
-\x01\x0d\0\x0bstroke-rect\x01\x0f\0\x04text\x01\x09\0\x04\0\x0cdraw-command\x03\0\
-\x10\x01r\x03\x05widthy\x06heighty\x05vsync\x7f\x04\0\x0fsurface-options\x03\0\x12\
-\x03\0\x15krate:gfx/types@0.1.0\x05(\x02\x03\0\x15\x05color\x02\x03\0\x15\x0cdra\
-w-command\x02\x03\0\x15\x09gfx-error\x01B\x0f\x02\x03\x02\x01)\x04\0\x05color\x03\
-\0\0\x02\x03\x02\x01*\x04\0\x0cdraw-command\x03\0\x02\x02\x03\x02\x01+\x04\0\x09\
-gfx-error\x03\0\x04\x01j\x01w\x01\x05\x01@\x02\x06windoww\x06widgetw\0\x06\x04\0\
-\x04bind\x01\x07\x01j\0\x01\x05\x01@\x02\x06canvasw\x05color\x01\0\x08\x04\0\x05\
+ight\x16\x04growv\x07paddingv\x04\0\x05style\x03\0\x17\x01ks\x01k\x7f\x01ky\x01r\
+\x09\x02idw\x06parent\x0c\x04kind\x15\x05label\x19\x04role\x19\x05style\x18\x07c\
+hecked\x1a\x05value\x16\x08selected\x1b\x04\0\x0bwidget-node\x03\0\x1c\x01r\x03\x02\
+idw\x05labels\x07enabled\x7f\x04\0\x09menu-item\x03\0\x1e\x01q\x09\x0fclose-requ\
+ested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01w\0\x07pointer\x01\x0f\0\
+\x03key\x01\x11\0\x0atext-input\x01s\0\x06action\x01w\0\x0dfocus-changed\x01\x0c\
+\0\x0dtheme-changed\x01\x07\0\x04\0\x05event\x03\0\x20\x03\0\x14krate:ui/types@0\
+.1.0\x05\x1b\x02\x03\0\x0e\x08ui-error\x02\x03\0\x0e\x0bwindow-size\x02\x03\0\x0e\
+\x0cwindow-state\x01B\x14\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\0\x02\x03\x02\
+\x01\x1d\x04\0\x0bwindow-size\x03\0\x02\x02\x03\x02\x01\x1e\x04\0\x0cwindow-stat\
+e\x03\0\x04\x01j\x01w\x01\x01\x01@\x02\x05titles\x04size\x03\0\x06\x04\0\x06crea\
+te\x01\x07\x01j\0\x01\x01\x01@\x01\x06windoww\0\x08\x04\0\x04show\x01\x09\x04\0\x05\
+close\x01\x09\x01@\x02\x06windoww\x05titles\0\x08\x04\0\x09set-title\x01\x0a\x01\
+@\x02\x06windoww\x04size\x03\0\x08\x04\0\x08set-size\x01\x0b\x01@\x02\x06windoww\
+\x05state\x05\0\x08\x04\0\x09set-state\x01\x0c\x04\0\x0erequest-redraw\x01\x09\x03\
+\0\x15krate:ui/window@0.1.0\x05\x1f\x02\x03\0\x0e\x0bwidget-node\x01B\x0e\x02\x03\
+\x02\x01\x1c\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01\x20\x04\0\x0bwidget-node\x03\
+\0\x02\x01j\0\x01\x01\x01@\x02\x06windoww\x04root\x03\0\x04\x04\0\x08set-root\x01\
+\x05\x01@\x02\x06windoww\x04node\x03\0\x04\x04\0\x0bupsert-node\x01\x06\x01@\x02\
+\x06windoww\x06widgetw\0\x04\x04\0\x0bremove-node\x01\x07\x04\0\x0afocus-node\x01\
+\x07\x01@\x03\x06windoww\x06widgetw\x07enabled\x7f\0\x04\x04\0\x0bset-enabled\x01\
+\x08\x03\0\x13krate:ui/tree@0.1.0\x05!\x02\x03\0\x0e\x05event\x01B\x08\x02\x03\x02\
+\x01\"\x04\0\x05event\x03\0\0\x01k\x01\x01@\0\0\x02\x04\0\x04poll\x01\x03\x01ky\x01\
+@\x01\x0etimeout-millis\x04\0\x02\x04\0\x04wait\x01\x05\x03\0\x15krate:ui/events\
+@0.1.0\x05#\x01B\x08\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\0\x01j\0\x01\x01\
+\x01@\x03\x06windoww\x05titles\x04bodys\0\x02\x04\0\x07message\x01\x03\x01j\x01\x7f\
+\x01\x01\x01@\x03\x06windoww\x05titles\x04bodys\0\x04\x04\0\x07confirm\x01\x05\x03\
+\0\x15krate:ui/dialog@0.1.0\x05$\x01B\x08\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\
+\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\x01\
+@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1\
+.0\x05%\x02\x03\0\x0e\x09menu-item\x01B\x08\x02\x03\x02\x01&\x04\0\x09menu-item\x03\
+\0\0\x02\x03\x02\x01\x1c\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\x01\
+@\x02\x06windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui\
+/menu@0.1.0\x05'\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\x05color\x03\0\0\
+\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\x02\x05widthv\x06heightv\x04\
+\0\x04size\x03\0\x04\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04rect\x03\
+\0\x06\x01r\x05\x04texts\x06origin\x03\x0bfont-familys\x09font-sizev\x05color\x01\
+\x04\0\x08text-run\x03\0\x08\x01q\x04\x11permission-denied\0\0\x0einvalid-target\
+\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\0\x0a\x01r\x02\
+\x04rect\x07\x05color\x01\x04\0\x11fill-rect-command\x03\0\x0c\x01r\x03\x04rect\x07\
+\x05color\x01\x05widthv\x04\0\x13stroke-rect-command\x03\0\x0e\x01q\x03\x09fill-\
+rect\x01\x0d\0\x0bstroke-rect\x01\x0f\0\x04text\x01\x09\0\x04\0\x0cdraw-command\x03\
+\0\x10\x01r\x03\x05widthy\x06heighty\x05vsync\x7f\x04\0\x0fsurface-options\x03\0\
+\x12\x03\0\x15krate:gfx/types@0.1.0\x05(\x02\x03\0\x15\x05color\x02\x03\0\x15\x0c\
+draw-command\x02\x03\0\x15\x09gfx-error\x01B\x0f\x02\x03\x02\x01)\x04\0\x05color\
+\x03\0\0\x02\x03\x02\x01*\x04\0\x0cdraw-command\x03\0\x02\x02\x03\x02\x01+\x04\0\
+\x09gfx-error\x03\0\x04\x01j\x01w\x01\x05\x01@\x02\x06windoww\x06widgetw\0\x06\x04\
+\0\x04bind\x01\x07\x01j\0\x01\x05\x01@\x02\x06canvasw\x05color\x01\0\x08\x04\0\x05\
 clear\x01\x09\x01p\x03\x01@\x02\x06canvasw\x08commands\x0a\0\x08\x04\0\x06submit\
 \x01\x0b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05,\x02\x03\0\x15\x0fsurface-options\
 \x01B\x0a\x02\x03\x02\x01+\x04\0\x09gfx-error\x03\0\0\x02\x03\x02\x01-\x04\0\x0f\

@@ -1,6 +1,6 @@
 # Krate Status (formerly Layer36)
 
-Last updated: 2026-07-05
+Last updated: 2026-07-22
 Naming: the project is Krate (company: Krate Labs, Inc.). The A9 rename is
 fully executed — CLI `krate`, WIT `krate:*`, schema `krate.run.v1`, env
 `KRATE_*`, repo `incyashraj/krate`, runner `krate-local`, future bundle
@@ -10,7 +10,27 @@ Branch: `main`
 Latest checked completed push before this status update: `8b1c9ec` (fast
 CI run `28740942296` green, then dispatched full matrix run `28741064867`
 green: all three OS lanes — certifying the vector-text renderer pass).
-Working tree at this status update: scrolling works, entirely host-side.
+Working tree at this status update: list selection round-trips. A
+`ListView` is now a real selectable container: the draft WIT `widget-node`
+gained `selected: option<u32>` (rejected on kinds that cannot carry a
+selection, in both the builder and the WIT boundary), the gui host resolves
+that index to the child's rect at lowering time and ships it as
+`WidgetPlacement::selection`, and both painters fill that rect with a
+tinted accent wash behind the row labels — honoring the Scroll clip in the
+fully-visible and partially-clipped paths alike. No new event: pointer
+routing already hit-tests to the row's own node and delivers its widget id,
+so the component maps id to index, re-lowers with a new `selected`, and
+reports `selected:<label>` on exit. The gui host's private kind filter was
+also deleted in favor of the shared `drawn_kind` list, closing the drift
+that CI caught during the widget-state slice. hello-gui grew a three-row
+pick list below the scroll area (row ids 20..22, so certified scroll
+coordinates are untouched), and the Xvfb proof clicks row two at (166,264)
+— coordinates taken from the layout engine, not guessed — before the
+screenshot, then asserts `selected:pick beta`. The component artifact grew
+from 24,062 to 26,378 bytes, so external "24KB" claims need refreshing.
+Certification: pending — full matrix must be green before this slice counts.
+
+Previous slice, certified: scrolling works, entirely host-side.
 A `Scroll` container now behaves like a real one: children overflow it
 (fixed-height widgets no longer flex-shrink), placements inside carry a
 clip rectangle both painters honor (fills intersect the clip; labels
