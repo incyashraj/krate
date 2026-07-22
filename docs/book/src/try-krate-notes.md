@@ -7,25 +7,26 @@ This page is written for someone who has never used Krate before.
 
 ## What you need
 
-The Krate runtime. Until signed releases land you build it once from source,
-which takes a few minutes:
+The Krate runtime. One command installs it on macOS and Linux:
 
 ```bash
-git clone https://github.com/incyashraj/krate
-cd krate
-cargo build -p krate-cli
+curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh
 ```
 
-That produces `target/debug/krate`. Everything below calls it as `krate`, so
-put it on your PATH for this shell:
+This downloads the binary for your machine, verifies its checksum, and puts
+`krate` on your PATH. Check it worked:
 
 ```bash
+krate --version
+```
+
+Prefer to build from source? That works too:
+
+```bash
+git clone https://github.com/incyashraj/krate && cd krate
+cargo build -p krate-cli
 export PATH="$PWD/target/debug:$PATH"
 ```
-
-To make that permanent, add the same line (with the full path) to your
-`~/.zshrc` or `~/.bashrc`. Otherwise call the binary by its full path
-everywhere below.
 
 ## 1. Get the app
 

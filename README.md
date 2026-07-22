@@ -26,6 +26,22 @@ natively on Linux, macOS, and Windows through one standard library (UAPI), with
 a capability system (UCap) enforcing every grant. That portability is how the
 sharing property is achieved, not the point of it.
 
+## Install
+
+macOS and Linux, one command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh
+```
+
+Then try the note-taking sample, which is one 12 KB file:
+
+```bash
+krate run https://github.com/incyashraj/krate/releases/download/notes-v0.1.0/notes.krate --native-window --prompt
+```
+
+Full walkthrough: [Try Krate Notes](https://incyashraj.github.io/krate/try-krate-notes.html).
+
 **The long-term arc** is a universal application platform: the same portable
 file running natively on desktop, mobile, and the web, with distribution and
 identity built in. See [the full vision](https://incyashraj.github.io/krate/vision.html),
