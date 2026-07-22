@@ -2786,3 +2786,130 @@ fn expected_hello_hash() -> Option<String> {
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| !value.is_empty())
 }
+
+// ---------------------------------------------------------------------------
+// .krate bundles (P3-SHARE-01)
+//
+// The property under test is that packaging a component changes how it is
+// delivered and nothing about what it is allowed to do. Every assertion below
+// compares a bundle against the sidecar-manifest path it must match exactly.
+// ---------------------------------------------------------------------------
+
+const BUNDLE_MANIFEST: &str = r#"
+[app]
+id = "com.example.bundle"
+name = "Bundle Demo"
+version = "0.1.0"
+entry = "code.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "print"
+required = true
+"#;
+
+/// Minimal valid component: the phase 2 smoke fixture built by CI.
+fn smoke_component() -> Option<PathBuf> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../test/integration/phase2-smoke/target/wasm32-wasip1/release/phase2_smoke.wasm");
+    path.exists().then_some(path)
+}
+
+fn pack_fixture(dir: &std::path::Path) -> Option<PathBuf> {
+    let component = smoke_component()?;
+    let manifest = dir.join("manifest.toml");
+    std::fs::write(&manifest, BUNDLE_MANIFEST).expect("write manifest");
+    let wasm = dir.join("code.wasm");
+    std::fs::copy(&component, &wasm).expect("copy component");
+    let bundle = dir.join("demo.krate");
+
+    let status = krate()
+        .args(["pack"])
+        .arg(&wasm)
+        .arg("--manifest")
+        .arg(&manifest)
+        .arg("-o")
+        .arg(&bundle)
+        .status()
+        .expect("run krate pack");
+    assert!(status.success(), "pack should succeed");
+    Some(bundle)
+}
+
+#[test]
+fn pack_writes_a_single_bundle_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let Some(bundle) = pack_fixture(dir.path()) else {
+        eprintln!("skipping: phase2 smoke fixture not built");
+        return;
+    };
+    let size = std::fs::metadata(&bundle).expect("bundle metadata").len();
+    assert!(size > 0, "bundle should not be empty");
+}
+
+#[test]
+fn a_bundle_grants_exactly_what_the_sidecar_manifest_grants() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let Some(bundle) = pack_fixture(dir.path()) else {
+        eprintln!("skipping: phase2 smoke fixture not built");
+        return;
+    };
+
+    let from_sidecar = krate()
+        .arg("run")
+        .arg(dir.path().join("code.wasm"))
+        .arg("--manifest")
+        .arg(dir.path().join("manifest.toml"))
+        .arg("--dump-caps")
+        .output()
+        .expect("run with sidecar manifest");
+    let from_bundle = krate()
+        .arg("run")
+        .arg(&bundle)
+        .arg("--dump-caps")
+        .output()
+        .expect("run bundle");
+
+    assert_eq!(
+        String::from_utf8_lossy(&from_sidecar.stdout),
+        String::from_utf8_lossy(&from_bundle.stdout),
+        "packaging must not change the effective capability set"
+    );
+}
+
+#[test]
+fn a_bundle_refuses_an_external_manifest() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let Some(bundle) = pack_fixture(dir.path()) else {
+        eprintln!("skipping: phase2 smoke fixture not built");
+        return;
+    };
+
+    // Otherwise a caller could hand a bundle a wider manifest than the one its
+    // author shipped, which would defeat the point of packaging them together.
+    let output = krate()
+        .arg("run")
+        .arg(&bundle)
+        .arg("--manifest")
+        .arg(dir.path().join("manifest.toml"))
+        .output()
+        .expect("run bundle with external manifest");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("carries its own manifest"));
+}
+
+#[test]
+fn fetching_a_bundle_over_plain_http_is_refused_by_default() {
+    let output = krate()
+        .arg("run")
+        .arg("http://127.0.0.1:1/app.krate")
+        .output()
+        .expect("run http url");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("refusing to fetch over plain HTTP"),
+        "expected an https refusal, got: {stderr}"
+    );
+}
