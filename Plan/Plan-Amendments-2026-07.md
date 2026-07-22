@@ -337,3 +337,117 @@ Apply in this order (dependencies flow downward):
 ### What this change order does NOT do
 
 It does not alter Phase 3's destination (GUI on three OSes, `krate-notes`, the §3 exit criteria except the Linux annotation), does not touch Phase 2's UAPI, does not add platform scope, and does not change the architecture bet. It re-orders work so the riskiest assumption is tested first, removes one impossible integration, bounds process overhead, and makes the project's stated wedge buildable — so that development, documentation, and the outward story all point in the same direction.
+
+---
+
+# Change Order 2 — Shareability first (2026-07-23)
+
+> **Status:** Approved by the founder 2026-07-23, after external technical
+> feedback and a re-read of YC's current Requests for Startups.
+> **Rule:** where this conflicts with Change Order 1 or any phase plan, this wins.
+
+## 1. Why this changes
+
+Two inputs, days apart, pointing the same way.
+
+**Adam Wiggins (Heroku co-founder), 2026-07-23, in reply to a request for
+brutal feedback:** general-purpose runtimes and development platforms are very
+hard to sell; cross-platform specifically has absorbed enormous investment with
+few real successes, Electron being the closest and fading; and the Adobe Flash
+comparison cuts the wrong way, because Flash began as a tool animators wanted
+and only became a platform later. His prescription: find a specific wedge that
+needs this more than others.
+
+**YC's current (Fall 2026) Requests for Startups, "A Cloud for Small Software":**
+software built with agents is "now very easy to build, but still hard to deploy
+and share"; "auth & permissions are hard"; "allowing nontechnical users to share
+arbitrary code is tricky to do securely"; and "small software should be as easy
+to share with your colleagues as a Google Doc."
+
+Read together: the durable problem is not portability. Portability is a means.
+The durable problem is that software is now generated constantly, shared
+constantly, and read by nobody — so the unit that moves between people has to
+carry its own permissions.
+
+## 2. The change, in one line
+
+**Krate leads with shareable software that cannot betray you.** Local execution
+and cross-OS portability remain exactly as built; they stop being the headline
+and become how the property is achieved.
+
+The Adobe/Flash analogy is retired everywhere it appears. If a comparison is
+needed, the honest one is a Google Doc: you share a link, and what the recipient
+may do is decided in the same gesture as the sharing.
+
+## 3. What is NOT changing
+
+- No architecture change. The runtime, UCap model, WIT contracts, layout engine,
+  adapters, and three-OS CI all stand.
+- No phase deletion. Phase 6 keeps the marketplace, identity, transparency log,
+  and legal work. This amendment pulls forward a minimal slice of §8 only.
+- No certification-ritual change. Every claim still has to be machine-verified
+  before it is stated anywhere outward-facing.
+- The SDK remains the milestone after this. Shareability is the wedge; the SDK is
+  what turns one demo into many users.
+
+## 4. Amendment B1 — pull a minimal `.krate` bundle forward into Phase 3
+
+**Task ID: P3-SHARE-01.** Insert as the immediate next implementation work,
+ahead of further widget slices.
+
+Scope, deliberately minimal. This is Phase 6 §8.1 reduced to what one person can
+certify in days rather than months:
+
+```
+myapp.krate            # a single file: zip container
+├── manifest.toml      # existing crates/manifest schema, unchanged
+└── code.wasm          # the component
+```
+
+Out of scope for P3-SHARE-01, deferred to Phase 6 as already planned: signing
+(§9), transparency log (§9), delta updates (§10), AOT sibling artifacts, module
+and asset directories, Merkle/ORDER canonical hashing, marketplace, identity.
+
+Definition of done:
+
+1. `krate pack --manifest app.toml app.wasm -o app.krate` produces one file.
+2. `krate run app.krate` runs it with capabilities read from the in-bundle
+   manifest, enforcing exactly what the sidecar manifest enforces today.
+3. `krate run <https url>` fetches a `.krate` over the network and runs it, with
+   the same capability enforcement and no ambient authority granted by virtue of
+   having been downloaded.
+4. The fetch path itself is capability-checked and refuses non-HTTPS by default.
+5. A denied capability inside a downloaded bundle produces the same structured
+   denial as a local run.
+6. Full CI matrix green on all three OS lanes, with the Linux lane fetching a
+   bundle over HTTP from a local test server and running it headless.
+
+Verification: extend the existing Xvfb proof so the robot runs a bundle fetched
+from a URL rather than a path on disk, and screenshots the result. Same
+certification bar as every prior slice — landed commit, green matrix run id,
+screenshot verified by eye, evidence copied to `Invest/evidence/`.
+
+## 5. Amendment B2 — narrative alignment
+
+Files to update once P3-SHARE-01 is certified, not before:
+
+| File | Change |
+|---|---|
+| `README.md` | Open with the sharing property, not the runtime. |
+| `STATUS.md` | Record the slice and the direction change in the working-tree section. |
+| `Plan/Build-Plan.md` §14 | Note that the wedge is shareability; SDK follows. |
+| `Plan/Phase-6-Plan.md` §8 | Note that a minimal subset landed early as P3-SHARE-01. |
+| `docs/book/src/blog/` | Third post, when there is something certified to write about. |
+
+Outward-facing material (deck, memo, YC answers) is tracked outside this repo and
+updated in the same pass.
+
+## 6. What would falsify this
+
+Recorded so the decision stays honest rather than becoming an identity:
+
+- If nobody asked to share a generated tool with someone else, the wedge is wrong
+  and the SDK-first order was right.
+- If the first users want programmatic execution rather than human sharing, this
+  amendment is reversed and Phase 5 resumes as planned.
+- Five conversations before or during the build are worth more than the build.

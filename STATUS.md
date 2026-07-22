@@ -1,6 +1,6 @@
 # Krate Status (formerly Layer36)
 
-Last updated: 2026-07-22
+Last updated: 2026-07-23
 Naming: the project is Krate (company: Krate Labs, Inc.). The A9 rename is
 fully executed — CLI `krate`, WIT `krate:*`, schema `krate.run.v1`, env
 `KRATE_*`, repo `incyashraj/krate`, runner `krate-local`, future bundle
@@ -10,6 +10,19 @@ Branch: `main`
 Latest checked completed push before this status update: `8b1c9ec` (fast
 CI run `28740942296` green, then dispatched full matrix run `28741064867`
 green: all three OS lanes — certifying the vector-text renderer pass).
+Direction change, 2026-07-23: shareability is now the wedge. Recorded in
+full as Change Order 2 in `Plan/Plan-Amendments-2026-07.md`, with the task
+spec as P3-SHARE-01 in `Plan/Phase-3-Plan.md` §19. Short version: Adam
+Wiggins (Heroku co-founder) gave brutal feedback that general-purpose
+runtimes are very hard to sell and that a specific wedge is needed, and
+YC's current RFS asks for a way to deploy and share small software with
+permissions named as the hard part. Both point at the same thing — the
+durable problem is that generated software is shared constantly and read
+by nobody, so the unit that moves has to carry its own permissions.
+Nothing architectural changes; portability stops being the headline and
+becomes how the property is achieved. The Adobe/Flash analogy is retired.
+Next implementation work is P3-SHARE-01, not further widget slices.
+
 Working tree at this status update: list selection round-trips. A
 `ListView` is now a real selectable container: the draft WIT `widget-node`
 gained `selected: option<u32>` (rejected on kinds that cannot carry a
@@ -658,4 +671,4 @@ paused 2026-07-02 while it is offline).
 
 Use this exact prompt in a new session:
 
-`Continue Krate on main. Read Plan/Plan-Amendments-2026-07.md and the Winit slice map at the top of Plan/Phase-3-Plan.md section 18 FIRST. P3-VS-01 (macOS vertical slice: portable component -> real native AppKit window with native NSButton/NSTextField, human click round trip verified on screen) and the P3-EMB agent-embedding track (embed API, krate run --json schema krate.run.v1, krate-mcp-server MCP tool) are COMPLETE and CI-green, and the full CI matrix runs the byte-identical hello-gui GUI artifact headless on Linux, macOS, and Windows (all lanes green, run 28663629770). Next implementation work is the Winit slice: real Linux and Windows winit 0.30 windows behind the existing prototype boundaries (LinuxWinitPrototypeUiAdapter / WindowsWinitPrototypeUiAdapter, WinitWindowSession, WinitWindowEventCollector), following the six-step map in the plan — thread-local EventLoop with pump_app_events, ApplicationHandler pushing WindowEvents into the collector, create_window inside the first pump, drawn-fallback-only widgets on Linux per ADR-0015, verification through the fast-CI ubuntu compile lane and xvfb-run smokes in the full matrix. Definition of done: krate run --native-window opens a real window for hello-gui on a Linux host with close/resize/focus events flowing. Keep Phase 2 closeout separate and timeboxed, no new evidence tooling (amendment A4), update STATUS.md and the build log after each chunk, verify with CI-parity commands (clippy -D warnings), never push while a [full-ci] or dispatched full run is in flight, keep GitHub Pages in sync, and never add AI co-author credits to commits.`
+`Continue Krate on main. Read Plan/Plan-Amendments-2026-07.md FIRST, including Change Order 2 at the end, then the P3-SHARE-01 spec in Plan/Phase-3-Plan.md section 19. Direction as of 2026-07-23: shareability is the wedge. The runtime, UCap model, three-OS CI, winit windows, keyboard input, widget state, scrolling, and list selection are all COMPLETE and certified (latest: list selection, commit 1088945, full matrix run 29896675435 green on all three lanes). Next implementation work is P3-SHARE-01: a minimal .krate bundle (zip of manifest.toml + code.wasm, reusing crates/manifest unchanged), a krate pack subcommand, bundle execution via krate run app.krate, and krate run <https url> which fetches and runs a bundle with the same capability enforcement and no ambient authority from having been downloaded. Signing, transparency log, delta updates, marketplace and identity stay in Phase 6. Verify by extending scripts/xvfb-click-hello-gui.sh so the Linux lane serves a .krate over local HTTP, runs it by URL, drives the GUI and screenshots it. Same certification bar as every prior slice: landed commit, green full matrix run id, screenshot verified by eye, evidence copied to Invest/evidence/, STATUS.md updated. Verify with CI-parity commands (clippy -D warnings), never push while a [full-ci] or dispatched full run is in flight, keep GitHub Pages in sync, and never add AI co-author credits to commits.`

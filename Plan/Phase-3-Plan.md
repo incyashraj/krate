@@ -1279,6 +1279,58 @@ Sized for 16 weeks calendar, ~60–80 engineering days of active work. A full-ti
 
 Matches Build Plan §7.4 task IDs.
 
+### P3-SHARE-01 — minimal `.krate` bundle + run from URL *(added 2026-07-23, Change Order 2 amendment B1)*
+
+**Estimate:** 4–5 days. **Priority: this is the immediate next implementation
+work, ahead of further widget slices.**
+
+**Why it exists.** External feedback and YC's current RFS both point at the same
+gap: the durable problem is sharing generated software safely, not portability
+for its own sake. Portability is how the property is achieved. See
+`Plan/Plan-Amendments-2026-07.md`, Change Order 2, for the full reasoning and for
+what would falsify it.
+
+**Scope.** Phase 6 §8.1 reduced to a certifiable minimum:
+
+```
+myapp.krate            # single file, zip container
+├── manifest.toml      # existing crates/manifest schema, unchanged
+└── code.wasm          # the component
+```
+
+Explicitly deferred to Phase 6 as already planned: signing (§9), transparency
+log, delta updates (§10), AOT siblings, modules/ and assets/ directories,
+Merkle/ORDER canonical hashing, marketplace, identity.
+
+**Steps.**
+
+1. `krate pack` — new CLI subcommand. Takes a manifest and a component, writes
+   one `.krate`. Reuses `crates/manifest` verbatim; no schema change.
+2. Bundle reader in the runtime — open a `.krate`, read the in-bundle manifest,
+   hand the component to the existing execution path. The sidecar `--manifest`
+   flag keeps working; this is additive.
+3. `krate run app.krate` — local bundle execution, capabilities enforced exactly
+   as they are for a sidecar manifest today.
+4. `krate run <https url>` — fetch then run. The fetch is itself
+   capability-checked, refuses non-HTTPS by default, and grants nothing by virtue
+   of the bundle having been downloaded.
+5. Denials inside a downloaded bundle produce the same structured denial as a
+   local run. This is the property the whole wedge rests on.
+
+**Verification.** Extend `scripts/xvfb-click-hello-gui.sh` so the Linux lane
+serves a `.krate` from a local HTTP server, runs it by URL, drives the GUI, and
+screenshots the result. Unit tests cover pack/unpack round trip, a manifest that
+does not match its component, a non-HTTPS URL, and a denied capability inside a
+fetched bundle.
+
+**Definition of done.** Full CI matrix green on all three OS lanes, screenshot
+verified by eye, evidence copied to `Invest/evidence/`, STATUS.md updated with
+the landed commit and run id. Same bar as every prior slice.
+
+**Definition of done for the demo, separately:** a `.krate` on a public URL that
+a stranger can run with one command, opening a real window, unable to read
+anything not granted.
+
 ### P3-VS-01 — macOS vertical slice (native widget end-to-end) *(added 2026-07, amendment A2)*
 
 **Estimate:** 8–10 days.
