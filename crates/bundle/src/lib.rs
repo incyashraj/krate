@@ -112,7 +112,8 @@ pub fn is_url(target: &str) -> bool {
 pub fn pack(manifest_path: &Path, component_path: &Path, output_path: &Path) -> Result<u64> {
     let manifest_text =
         fs::read_to_string(manifest_path).map_err(|err| io_err(manifest_path, err))?;
-    let manifest = Manifest::parse(&manifest_text).map_err(|err| BundleError::Manifest(err.to_string()))?;
+    let manifest =
+        Manifest::parse(&manifest_text).map_err(|err| BundleError::Manifest(err.to_string()))?;
 
     // Inside a bundle the component always lands at COMPONENT_ENTRY, so the
     // manifest has to name that. Rewriting it silently would mean the file the
@@ -369,7 +370,8 @@ required = true
             let opts = SimpleFileOptions::default();
             zip.start_file("../../evil", opts).expect("start evil");
             zip.write_all(b"pwned").expect("write evil");
-            zip.start_file(MANIFEST_ENTRY, opts).expect("start manifest");
+            zip.start_file(MANIFEST_ENTRY, opts)
+                .expect("start manifest");
             zip.write_all(MANIFEST.as_bytes()).expect("write manifest");
             zip.start_file(COMPONENT_ENTRY, opts).expect("start wasm");
             zip.write_all(b"\0asm\x01\0\0\0").expect("write wasm");
