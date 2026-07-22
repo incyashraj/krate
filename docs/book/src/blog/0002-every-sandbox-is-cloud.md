@@ -87,6 +87,10 @@ button, type into the text field and scroll the list, then photographs the
 screen and uploads the image as a build artifact. A machine I have never touched
 exercised the interface and produced the evidence, before I wrote this sentence.
 
+![The Krate demo app running on Linux under CI: a clicked button, the text "hi
+krate" typed into the field, a checkbox, a progress bar, and a list scrolled
+down to line eight](../images/hello-gui-linux-scrolled-2026-07-20.png)
+
 The click-and-photograph step is Linux only today. macOS and Windows run the
 component and open real windows in the same CI run, but are not yet driven
 synthetically. Extending that is on the list.
