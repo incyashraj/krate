@@ -1871,6 +1871,11 @@ mod platform {
             ))
         }
 
+        /// No native controls exist off macOS, so nothing is editable.
+        pub fn editable_widgets(&self) -> Vec<WidgetId> {
+            Vec::new()
+        }
+
         /// AppKit clicks are only available on macOS.
         pub fn perform_click(&self, _widget: WidgetId) -> Result<(), UiAdapterError> {
             Err(UiAdapterError::Unsupported(
