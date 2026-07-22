@@ -74,7 +74,7 @@ single file. It runs natively on macOS, Windows and Linux, opening a real
 desktop window, not a bundled browser. It starts with zero ambient permissions
 and receives capabilities only through explicit grants.
 
-The demo application is 24 kilobytes. The same file, unmodified, runs on all
+The demo application is 26 kilobytes. The same file, unmodified, runs on all
 three operating systems.
 
 I want to be precise about what is and is not proven, because this space is full

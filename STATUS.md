@@ -27,8 +27,15 @@ pick list below the scroll area (row ids 20..22, so certified scroll
 coordinates are untouched), and the Xvfb proof clicks row two at (166,264)
 — coordinates taken from the layout engine, not guessed — before the
 screenshot, then asserts `selected:pick beta`. The component artifact grew
-from 24,062 to 26,378 bytes, so external "24KB" claims need refreshing.
-Certification: pending — full matrix must be green before this slice counts.
+from 24,062 to 26,378 bytes (CI-built artifact byte-identical to the local
+build), so external "24KB" claims were refreshed to 26KB alongside this.
+Certification: landed as `1088945`, dispatched full matrix run
+`29896675435` green on all three OS lanes. The Linux log shows the guest
+echoing both `typed:hi krate` and `selected:pick beta`, and the screenshot
+artifact verified by eye: "pick beta" carries the selection wash exactly
+one row tall while "pick alpha" and "pick gamma" stay unpainted, with the
+scroll area still parked at lines four through eight. Copy in
+`Invest/evidence/hello-gui-linux-selected-2026-07-22.png`.
 
 Previous slice, certified: scrolling works, entirely host-side.
 A `Scroll` container now behaves like a real one: children overflow it
