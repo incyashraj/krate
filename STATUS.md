@@ -23,7 +23,37 @@ Nothing architectural changes; portability stops being the headline and
 becomes how the property is achieved. The Adobe/Flash analogy is retired.
 Next implementation work is P3-SHARE-01, not further widget slices.
 
-Working tree at this status update: an app is one shareable file. A
+Working tree at this status update: there is an app worth sharing.
+`krate-notes` is the Phase 3 flagship (§17): a sidebar of notes, an editor,
+and saving into a directory the user granted, in 388 lines against the
+plan's 2000 line ceiling. The margin is itself the result the plan asked
+for, since it says a ballooning flagship means the UAPI is too granular.
+It packs to a 28KB `.krate`, runs from that bundle, persists a note, and
+refuses to start at all when `fs.write` is withheld (exit 5). CI now packs
+it, runs it, requires the note to exist on disk, then withholds the write
+grant and requires the refusal, which is a stronger proof than another
+screenshot.
+`TextArea` had been sharing the single-line `TextField` arm, so it centered
+one line and never wrapped. It now wraps to the inner width and fills from
+the top in both painters: parley breaks lines in the vector path, the
+bitmap fallback does the arithmetic itself since its font is a fixed cell.
+Two pixel tests pin both properties, counting only rows with several dark
+pixels so a descender bridging two lines cannot look like one band.
+The agent surface got three changes aimed at making a refusal a next step
+rather than a dead end: `run_component` accepts a `bundle` (path or https
+URL); a denied run carries a `remedy` naming the exact capability strings
+to retry with, verified by running the loop end to end; and a new
+`inspect_bundle` tool reports an app's identity and every requested
+capability with the author's own rationale, without executing anything.
+A non-interactive denial now also prints the two ways forward and echoes
+the target the user typed rather than a temporary unpack path.
+One real bug the runtime caught: `String::push_str` references std's OOM
+handler, which drags the whole `wasi:cli` import set into an otherwise pure
+component and makes it unloadable. Notes uses the raw-allocation path
+hello-gui already had.
+Certification: pending — full matrix must be green before this counts.
+
+Previous slice, certified: an app is one shareable file. A
 `.krate` is a zip carrying `manifest.toml` and `code.wasm`, written by the
 new `krate pack` subcommand and run by `krate run app.krate` or
 `krate run <url>`. This is the minimal subset of the Phase 6 bundle format
