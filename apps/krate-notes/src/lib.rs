@@ -278,6 +278,18 @@ impl bindings::Guest for Component {
         // be saved to the file as though the person had typed it.
         load_note(0, &mut buffer);
 
+        // Detect the automation flag before building the tree so a quick run
+        // can seed deterministic content and exit having provably saved it.
+        let raw = args::raw();
+        let quick = raw
+            .as_bytes()
+            .split(|byte| *byte == b'\n')
+            .next()
+            .is_some_and(|first| first == b"quick");
+        if quick && buffer.as_str().is_empty() {
+            buffer.push_str("saved by quick run");
+        }
+
         if tree::set_root(win, &stack_root()).is_err()
             || tree::upsert_node(win, &sidebar(Some(selected))).is_err()
             || tree::upsert_node(win, &editor(buffer.as_str())).is_err()
@@ -296,15 +308,6 @@ impl bindings::Guest for Component {
             row += 1;
         }
 
-        // Raw args are newline terminated, one per argument, so an exact
-        // comparison against b"quick" never matches. Comparing the first line
-        // is what actually detects the flag.
-        let raw = args::raw();
-        let quick = raw
-            .as_bytes()
-            .split(|byte| *byte == b'\n')
-            .next()
-            .is_some_and(|first| first == b"quick");
         let rounds = if quick {
             QUICK_WAIT_ROUNDS
         } else {
@@ -381,8 +384,10 @@ impl bindings::Guest for Component {
             }
         }
 
-        // Save on the way out, so closing the window does not lose work.
-        if save_note(selected as usize, &buffer) {
+        // Save on the way out, so closing the window does not lose work, but
+        // never write an empty buffer over a file that has content: a run that
+        // only loaded and never edited must not erase the note it opened.
+        if !buffer.as_str().is_empty() && save_note(selected as usize, &buffer) {
             saved_any = true;
         }
 

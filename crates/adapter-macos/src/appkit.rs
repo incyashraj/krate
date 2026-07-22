@@ -1066,7 +1066,8 @@ mod platform {
     use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
         NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSButton, NSColor,
-        NSControl, NSEventMask, NSTextField, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
+        NSControl, NSEventMask, NSMenu, NSMenuItem, NSTextField, NSView, NSWindow,
+        NSWindowDelegate, NSWindowStyleMask,
     };
     use objc2_foundation::{
         NSDefaultRunLoopMode, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
@@ -1586,6 +1587,7 @@ mod platform {
             let mtm = main_thread_marker()?;
             let app = NSApplication::sharedApplication(mtm);
             app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+            install_edit_menu(&app, mtm);
             window.window.makeKeyAndOrderFront(None);
             #[allow(deprecated)]
             app.activateIgnoringOtherApps(true);
@@ -1634,6 +1636,46 @@ mod platform {
                 "AppKit windows must be created on the macOS main thread".to_string(),
             )
         })
+    }
+
+    /// Give the app an Edit menu so the standard clipboard shortcuts work.
+    ///
+    /// macOS routes Cmd+X/C/V/A through the application's main menu to the
+    /// first responder. Without a menu the keystrokes reach nothing, which is
+    /// why a bare window can be typed into but not pasted into. Targeting `nil`
+    /// (the default `addItemWithTitle_action_keyEquivalent` behavior) sends
+    /// each item down the responder chain, where the focused NSTextField
+    /// already implements `cut:`, `copy:`, `paste:`, and `selectAll:`. Idempotent:
+    /// the menu is installed only once per process.
+    fn install_edit_menu(app: &NSApplication, mtm: MainThreadMarker) {
+        if app.mainMenu().is_some() {
+            return;
+        }
+
+        // SAFETY: all AppKit menu construction runs on the main thread, proven
+        // by `mtm`, and every selector below is implemented by NSResponder.
+        unsafe {
+            let main_menu = NSMenu::new(mtm);
+
+            let edit_item = NSMenuItem::new(mtm);
+            let edit_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("Edit"));
+
+            let add = |title: &str, selector, key: &str| {
+                edit_menu.addItemWithTitle_action_keyEquivalent(
+                    &NSString::from_str(title),
+                    Some(selector),
+                    &NSString::from_str(key),
+                );
+            };
+            add("Cut", sel!(cut:), "x");
+            add("Copy", sel!(copy:), "c");
+            add("Paste", sel!(paste:), "v");
+            add("Select All", sel!(selectAll:), "a");
+
+            main_menu.addItem(&edit_item);
+            main_menu.setSubmenu_forItem(Some(&edit_menu), &edit_item);
+            app.setMainMenu(Some(&main_menu));
+        }
     }
 
     fn create_native_window(mtm: MainThreadMarker, options: &WindowOptions) -> Retained<NSWindow> {
