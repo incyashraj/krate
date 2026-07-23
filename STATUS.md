@@ -23,6 +23,37 @@ Nothing architectural changes; portability stops being the headline and
 becomes how the property is achieved. The Adobe/Flash analogy is retired.
 Next implementation work is P3-SHARE-01, not further widget slices.
 
+Certification checkpoint 2026-07-23 (latest): sidebar note rows are
+clickable and selectable on macOS, exactly one row glows, and a "+ New note"
+button grows the list. The `checked`/`selected` state is now threaded from
+the common `WidgetPlacement` into the macOS `AppKitWidgetPlacement` (the
+missing link that left every row un-highlighted), and the selected row
+lowers as a borderless button tinted with the accent color via
+`setContentTintColor`. krate-notes carries a fixed 8-slot note capacity
+(seeded with three, panic-free: no allocation, bounded, non-panicking
+access) and a "+ New note" row that reveals the next empty slot, saving the
+note in progress before switching. Verified interactively on macOS by the
+founder: selecting a note moves the glow to that row; "+ New note" adds a
+slot and switches to it; the status line renders cleanly with no overlap.
+Two bugs were caught by CI before merge and fixed, both the same class of
+off-macOS-stub gap that has bitten this codebase before: `teardown()`
+existed only on the real macOS surface, not the Linux/Windows stub (broke
+the Ubuntu test lane and clippy); and a pre-existing macOS-only test built
+`WidgetPlacement` without the new `clickable` field (only clippy
+`--all-targets` on CI saw it, since `cargo build` skips test targets). Both
+are now covered by running the exact CI checks locally — `cargo clippy
+--all-targets --all-features -- -D warnings` and `cargo test --workspace`
+— before pushing.
+Certification: landed as `c7afb25` + `00fa9f0` + `0baf9be`, merged to main
+as `c21d88e` (PR #8), dispatched full matrix run `29985193087` green on all
+three OS lanes. Evidence note: the accent glow is a macOS-native AppKit
+tint, so the Linux CI screenshot path does not exercise it — the glow and
+"+ New note" were verified by the founder interactively on macOS (screenshot
+reviewed in-session, not saved as a repo artifact). The Linux selection wash
+that CI does prove is already evidenced by
+`Invest/evidence/hello-gui-linux-selected-2026-07-22.png` from the prior
+list-selection slice; this slice did not change that path.
+
 Certification checkpoint 2026-07-23: the whole shareability arc is green.
 Full matrix run `29964096927` (commit `09a5e58`) passed on all three OS
 lanes, certifying: the `.krate` bundle format (pack + run-from-URL), the
@@ -65,7 +96,9 @@ One real bug the runtime caught: `String::push_str` references std's OOM
 handler, which drags the whole `wasi:cli` import set into an otherwise pure
 component and makes it unloadable. Notes uses the raw-allocation path
 hello-gui already had.
-Certification: pending — full matrix must be green before this counts.
+Certification: certified and merged to main — see the checkpoint blocks at
+the top of this section (shareability arc run `29964096927`, then the
+clickable-rows slice run `29985193087`).
 
 Previous slice, certified: an app is one shareable file. A
 `.krate` is a zip carrying `manifest.toml` and `code.wasm`, written by the

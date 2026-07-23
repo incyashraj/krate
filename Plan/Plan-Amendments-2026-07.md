@@ -22,6 +22,12 @@
 11. [New task definitions (full specs)](#11-new-task-definitions)
 12. [Order of application + acceptance checklist](#12-order-of-application)
 
+Later change orders (appended after the A-amendments above, most recent last):
+
+- [Change Order 2 — Shareability first (2026-07-23)](#change-order-2--shareability-first-2026-07-23)
+- [Change Order 3 — Adoptability phase (2026-07-23)](#change-order-3--adoptability-phase-2026-07-23)
+- [Change Order 4 — Open like a document (2026-07-23)](#change-order-4--open-like-a-document-2026-07-23)
+
 ---
 
 ## 1. Verified current state
@@ -489,3 +495,190 @@ at least three agent-builder teams describing the same operational pain (Gate 1)
 and one committing to a pilot (Gate 2), per Change Order 2. Expert/tester
 feedback Yashraj gathers is the highest-priority input to what gets built after
 this phase, ahead of any roadmap guess.
+
+---
+
+# Change Order 4 — Open like a document (2026-07-23)
+
+> **Status:** Approved by the founder 2026-07-23. Nothing in this change order
+> is built yet — every task below is a *proposed* slice with unchecked
+> done-criteria. Do not read any item here as done until its slice appears as a
+> certified record in `STATUS.md`. Division of labor unchanged from Change
+> Order 3: Yashraj owns outreach/applications/expert conversations; Claude owns
+> development. Boundary is certified `main`.
+> **Rule:** where this conflicts with an earlier change order or phase plan on
+> what to build next, this wins. It does not change any architecture, capability
+> model, or certification ritual.
+
+## Why
+
+Change Order 2 made shareability the wedge and Change Order 3 made the product
+adoptable. Both leave one gap unclosed: the pitch is *"a `.krate` opens like a
+document,"* but today a recipient can only open one by typing a terminal
+command with explicit `--grant` flags, e.g.
+`krate run app.krate --grant fs.write:./notes`. That is developer-facing, not
+document-facing. The gap between what Krate *says* it is and what a recipient
+*experiences* is exactly this: no double-click, and no place for consent to
+happen except a CLI flag.
+
+This is the highest-leverage unbuilt work before the SDK, per the variant
+analysis of YC's "A Cloud for Small Software" RFS (2026-07-23, kept
+founder-private): the wedge is the sequence "agent emits a `.krate` → you get a
+link → you see what it wants → you allow it → it runs," and that sequence breaks
+at "you get a link" until opening is a document gesture with a consent wall.
+
+## What this change order is
+
+Make a `.krate` open like a document on the three desktop OSes Krate already
+ships (macOS, Windows, Linux), with a native consent wall replacing the terminal
+`--grant`. Nothing new about *where* code runs: execution stays local, on the
+recipient's machine, exactly as built. This is a distribution and consent-UX
+change, not an execution-model change.
+
+The genuinely valuable, reusable piece is **the native first-run consent
+dialog**, not the per-OS file-type plumbing. Without a terminal there is no
+`--grant`, so consent must become UI, or a double-click would either silently
+grant (which betrays the whole safety property) or silently fail (which looks
+broken). The dialog is built once and reused on all three OSes.
+
+## Task IDs and definitions of done
+
+Tasks are **P3-OPEN-01** through **P3-OPEN-04**. They are sequenced: 01 first
+(the consent dialog is a prerequisite for a safe double-click), then 02, 03, 04.
+Each is a separately certifiable slice under the standard bar. None may be
+marked done anywhere until its `STATUS.md` record exists and it names a green
+full-matrix run id.
+
+### P3-OPEN-01 — Native first-run consent dialog
+
+Build the permission wall as UI, not a CLI flag. When a `.krate` is opened
+without pre-supplied grants, the runtime presents a native dialog naming the app
+identity and each requested capability with its manifest rationale, and the user
+allows or denies before any component code runs.
+
+Definition of done:
+
+1. A new run mode (e.g. `krate run app.krate --consent`, exact flag TBD in the
+   slice) shows a native dialog listing app id and every requested capability
+   with its `rationale` from the in-bundle manifest, before instantiation.
+2. Allow grants exactly the listed capabilities for that session and nothing
+   else; Deny refuses and the component never runs.
+3. A denied or partially-denied set produces the same structured denial a
+   withheld `--grant` produces today — no new denial semantics.
+4. The dialog is implemented once in a shared place and lowered per-OS; the
+   non-macOS path has a working equivalent or an explicit, tested stub (the
+   off-macOS-stub gap has bitten this codebase before — the stub must compile
+   and be exercised on the Linux and Windows lanes, not only macOS).
+5. Full CI matrix green on all three OS lanes.
+
+Verification: extend the existing Xvfb proof so the Linux robot opens a bundle
+in consent mode, sees the dialog, allows it, and screenshots the running app;
+add a second proof that Deny refuses and exits with the withheld-capability exit
+code. Evidence copied to `Invest/evidence/`.
+
+### P3-OPEN-02 — Linux double-click (`.desktop` + MIME association)
+
+Register `.krate` as a MIME type on Linux so a file manager double-click, or
+"Open with Krate," launches the runtime in consent mode (P3-OPEN-01).
+
+Definition of done:
+
+1. Installing Krate on Linux registers an `application/x-krate` (or agreed
+   name) MIME type and a `.desktop` entry that invokes the runtime in consent
+   mode with the opened file path.
+2. The installer (`scripts/install.sh`) performs the registration idempotently
+   and a documented uninstall step reverses it; re-running install does not
+   duplicate entries.
+3. A headless CI check verifies the association is registered (e.g. `xdg-mime
+   query default` resolves `application/x-krate` to the Krate desktop entry)
+   without requiring a real GUI double-click.
+4. Full CI matrix green on all three OS lanes.
+
+### P3-OPEN-03 — macOS double-click (`.app` bundle + UTI)
+
+Ship the macOS runtime as a proper `.app` bundle declaring a `.krate` document
+type via a UTI, so Finder double-click and "Open With" route the file to Krate
+in consent mode.
+
+Definition of done:
+
+1. The macOS release artifact is (or includes) a `.app` bundle whose
+   `Info.plist` declares `CFBundleDocumentTypes` + an exported UTI for the
+   `krate` extension.
+2. A double-clicked `.krate`, or one opened via an open-file Apple event, starts
+   the runtime in consent mode on the opened file.
+3. The app-bundle build is produced by CI (`.github/workflows/release.yml`) and
+   the one-command installer serves it; the plain CLI binary path continues to
+   work unchanged for terminal users.
+4. Full CI matrix green on all three OS lanes.
+
+> Note: this task introduces a macOS `.app` bundle, which does not exist yet.
+> That is new build/release scope, scoped here and nowhere else. It does not
+> pull any Phase 4 mobile packaging forward — Phase 4 stays untouched.
+
+### P3-OPEN-04 — Windows double-click (registry association)
+
+Register `.krate` in the Windows per-user registry so Explorer double-click
+launches the runtime in consent mode.
+
+Definition of done:
+
+1. Installation registers `HKCU\Software\Classes\.krate` → a ProgId → the Krate
+   executable invoked in consent mode with `"%1"`, idempotently, with a
+   documented reversal.
+2. A CI check verifies the registration on the Windows lane without a real GUI
+   double-click.
+3. Full CI matrix green on all three OS lanes.
+
+> **Known blocker, recorded so it is not a surprise:** a double-clicked
+> downloaded executable triggers Windows SmartScreen / Mark-of-the-Web
+> warnings. A clean experience needs code signing, which is a **gated Phase 6
+> item** (§9), not in scope here. P3-OPEN-04 delivers the association and
+> documents the SmartScreen warning as a known limitation; it does **not**
+> deliver signing. If the warning proves to block testers, signing is
+> re-evaluated against the Gate 1 / Gate 2 conditions in Change Order 2, not
+> pulled forward silently.
+
+## Narrative alignment
+
+Files to update **once each task is certified, not before** — this table is a
+to-do, and an entry being listed here does **not** mean the change has been
+made:
+
+| File | Change | Gated on |
+|---|---|---|
+| `STATUS.md` | Record each slice in the working-tree section as it certifies. | each task |
+| `docs/book/src/try-krate-notes.md` | Once a platform's double-click lands, lead its instructions with "double-click / click Allow" and keep the terminal command as the fallback. | P3-OPEN-01 + one of 02/03/04 |
+| Getting-started guide (Change Order 3, item 4) | Fold double-click + consent into the unaided path once available; until then it stays terminal-based and must remain accurate. | P3-OPEN-01 + a platform |
+| `README.md` | Mention "open like a document" only after at least one platform's double-click is certified. | first platform task |
+| `Plan/Phase-6-Plan.md` §8/§9 | Note that consent-UX and file association landed early here, and that signing (§9) remains in Phase 6 and gates a clean Windows double-click. | after P3-OPEN-01 and P3-OPEN-04 |
+
+Outward-facing material (deck, memo, YC answers) is tracked outside this repo and
+updated in the same pass, once there is a certified capability to describe.
+
+## What this change order is NOT
+
+- Not a hosting/"run on our servers" layer. Execution stays local on the
+  recipient's machine. A hosted or browser ("web runtime") execution surface is
+  a *separate* future direction, out of scope here, and itself gated on the
+  Change Order 2 conditions.
+- Not mobile. No iOS/Android host app, no Phase 4 packaging. "Open a `.krate`"
+  on mobile stays a narrative item, revisited post-SDK.
+- Not signing, not a registry/hub, not a marketplace, not identity. Those remain
+  Phase 6 and gated. P3-OPEN-04 explicitly ships without signing and documents
+  the consequence.
+- No architecture, capability-model, WIT-contract, or certification-ritual
+  change. Every claim is still machine-verified before it is stated anywhere
+  outward-facing.
+
+## What would falsify this
+
+Recorded so the decision stays honest:
+
+- If testers open `.krate`s happily from the terminal and never ask for
+  double-click, this change order was premature and the SDK should have come
+  first.
+- If the native consent dialog (P3-OPEN-01) proves users click "Allow" without
+  reading — i.e. consent theater — then the dialog's design, not its existence,
+  is the problem, and the wedge's safety claim needs rethinking before more
+  platforms are wired.
