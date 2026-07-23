@@ -800,6 +800,7 @@ mod tests {
             value: None,
             selection: None,
             clip: None,
+            clickable: false,
             x: 10.0,
             y: 10.0,
             width: 100.0,
