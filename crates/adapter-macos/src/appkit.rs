@@ -26,6 +26,11 @@ pub struct AppKitWidgetPlacement {
     y: f32,
     width: f32,
     height: f32,
+    /// A passive kind (Text) that should still be clickable, because it is a
+    /// row inside a list. Lowered as a borderless button so clicks route back.
+    clickable: bool,
+    /// Selected state, used to tint the active list row.
+    checked: Option<bool>,
 }
 
 impl AppKitWidgetPlacement {
@@ -77,6 +82,8 @@ impl AppKitWidgetPlacement {
             y,
             width,
             height,
+            clickable: false,
+            checked: None,
         })
     }
 
@@ -100,6 +107,23 @@ impl AppKitWidgetPlacement {
     pub fn with_label(mut self, label: String) -> Self {
         self.label = Some(label);
         self
+    }
+
+    /// Mark a passive placement clickable (a list row) so it lowers as a button.
+    pub fn with_clickable(mut self, clickable: bool) -> Self {
+        self.clickable = clickable;
+        self
+    }
+
+    /// Carry selected state so a lowered list row can be tinted active.
+    pub fn with_checked(mut self, checked: Option<bool>) -> Self {
+        self.checked = checked;
+        self
+    }
+
+    /// Selected state for a list row, if any.
+    pub fn checked(&self) -> Option<bool> {
+        self.checked
     }
 
     /// Return the logical top-left rectangle as `(x, y, width, height)`.
@@ -674,44 +698,19 @@ impl AppKitWindowSession {
             )
         })?;
 
-        // The guest now receives every native edit through text-changed and
-        // re-lowers with the current text, so the placement's label is the
-        // authority and no live-text preservation is needed. But a component
-        // that ignores those events (or has not processed the latest one yet)
-        // could still stomp an in-progress edit on an unrelated re-lower. Only
-        // carry the live text forward when the guest is asking for the value
-        // it already knows about, so a deliberate change (loading another note)
-        // still takes effect while a stale rebuild does not.
-        let live_text: std::collections::BTreeMap<WidgetId, String> = self
-            .widget_surface
-            .as_ref()
-            .map(|surface| {
-                surface
-                    .editable_widgets()
-                    .into_iter()
-                    .filter_map(|widget| surface.text(widget).ok().map(|text| (widget, text)))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let placements: Vec<AppKitWidgetPlacement> = placements
-            .iter()
-            .map(|placement| match live_text.get(&placement.widget()) {
-                // Keep the live text only when the guest is re-lowering with a
-                // value that is a prefix of what the control holds, i.e. it has
-                // not caught up to the newest keystrokes. A guest that loads a
-                // different note sends unrelated text and that wins.
-                Some(text)
-                    if placement.kind() == WidgetKind::TextArea
-                        && text.starts_with(placement.label().unwrap_or("")) =>
-                {
-                    placement.clone().with_label(text.clone())
-                }
-                _ => placement.clone(),
-            })
-            .collect();
-
-        let surface = self.window.lower_widget_placements(&placements, delegate)?;
+        // The guest owns editable text now: it receives every native edit via
+        // text-changed and re-lowers with the authoritative value, so the
+        // placement label always wins. An earlier "preserve the live control
+        // text across a re-lower" heuristic lived here; it caused typed text to
+        // ghost behind the control's own value, because both the guest label
+        // and the retained live text were applied. Trusting the guest label is
+        // correct precisely because text-changed keeps the guest in sync.
+        // Remove the previous control set before adding the new one, or old
+        // controls linger on screen under the new ones and overlap.
+        if let Some(previous) = self.widget_surface.take() {
+            previous.teardown();
+        }
+        let surface = self.window.lower_widget_placements(placements, delegate)?;
         let snapshot = surface.snapshot();
         self.widget_surface = Some(surface);
         Ok(snapshot)
@@ -1165,6 +1164,18 @@ mod platform {
             })
         }
 
+        /// Remove every lowered control from its superview.
+        ///
+        /// Re-lowering builds a fresh control set; without tearing the old one
+        /// down first, the previous controls stay on screen underneath the new
+        /// ones, so successive updates (a changing status line, a reselected
+        /// row) visibly stack and overlap.
+        pub fn teardown(&self) {
+            for control in self.controls.values() {
+                control.removeFromSuperview();
+            }
+        }
+
         /// Set the text content of a lowered text field or label.
         pub fn set_text(&self, widget: WidgetId, text: &str) -> Result<(), UiAdapterError> {
             match self.kinds.get(&widget) {
@@ -1430,6 +1441,39 @@ mod platform {
                         field.setFrame(frame);
                         field.setTag(placement.widget().get() as isize);
                         Retained::into_super(field)
+                    }
+                    WidgetKind::Text if placement.clickable => {
+                        // A list row: a borderless, left-aligned button that
+                        // reads as a label but routes clicks through the same
+                        // target-action path as a real button, so selecting a
+                        // note works.
+                        let title = NSString::from_str(placement.label().unwrap_or(""));
+                        let target_object: &AnyObject = &target;
+                        // SAFETY: the target outlives the button (both owned by
+                        // the returned surface) and the selector is implemented
+                        // by KrateWidgetTarget.
+                        let button = unsafe {
+                            NSButton::buttonWithTitle_target_action(
+                                &title,
+                                Some(target_object),
+                                Some(sel!(krateWidgetActivated:)),
+                                mtm,
+                            )
+                        };
+                        button.setFrame(frame);
+                        button.setTag(placement.widget().get() as isize);
+                        button.setBordered(false);
+                        // Left-align the title so a note row reads as a list
+                        // item, not a centered button label.
+                        button.setAlignment(objc2_app_kit::NSTextAlignment::Left);
+                        // The selected row (checked) glows in the accent color
+                        // so exactly one note reads as active.
+                        if placement.checked() == Some(true) {
+                            let accent =
+                                NSColor::colorWithSRGBRed_green_blue_alpha(0.0, 0.48, 1.0, 1.0);
+                            button.setContentTintColor(Some(&accent));
+                        }
+                        Retained::into_super(button)
                     }
                     WidgetKind::Text => {
                         let value = NSString::from_str(placement.label().unwrap_or(""));
@@ -1917,6 +1961,9 @@ mod platform {
         pub fn editable_widgets(&self) -> Vec<WidgetId> {
             Vec::new()
         }
+
+        /// No native controls exist off macOS, so there is nothing to tear down.
+        pub fn teardown(&self) {}
 
         /// AppKit clicks are only available on macOS.
         pub fn perform_click(&self, _widget: WidgetId) -> Result<(), UiAdapterError> {

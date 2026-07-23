@@ -1042,6 +1042,10 @@ pub struct WidgetPlacement {
     pub width: f32,
     /// Height in logical pixels.
     pub height: f32,
+    /// True when this placement should behave as a clickable target even
+    /// though its kind would normally be passive (a Text row inside a list).
+    /// Hosts that lower to native controls use it to make list rows selectable.
+    pub clickable: bool,
 }
 
 /// One raw pointer sample from a native backend, before hit testing.
