@@ -451,3 +451,41 @@ Recorded so the decision stays honest rather than becoming an identity:
 - If the first users want programmatic execution rather than human sharing, this
   amendment is reversed and Phase 5 resumes as planned.
 - Five conversations before or during the build are worth more than the build.
+
+---
+
+# Change Order 3 — Adoptability phase (2026-07-23)
+
+> **Status:** Approved by the founder 2026-07-23. Division of labor set the same
+> day: Yashraj owns outreach/applications/expert conversations; Claude owns
+> development and drives it forward. Boundary is certified `main`.
+
+## Why
+
+The shareability arc is certified and released (v0.1.0-rc2, one-command install,
+notes app runnable from a public link). The biggest near-term risk remains slow
+adoption, not missing capability. So the next phase optimizes for the outreach
+Yashraj is about to do: every rough edge is one a tester or investor hits.
+
+## What this phase is
+
+Make Krate adoptable, not more capable. Chosen over widening the UI stack,
+starting the SDK, or building signing — all real, none of them what a first
+tester needs, and the last two are gated on design partners existing.
+
+Work, in priority order:
+
+1. **Notes UI for the demo** — two-column layout (done), live sidebar titles,
+   visible save state (done), real spacing. No search/themes/markdown.
+2. **Version string** — release binaries report the tag, not 0.1.0-dev (done).
+3. **Silent installer** — no alarming 404 before the fallback (done).
+4. **Getting-started a stranger can follow unaided** — install, run the link,
+   consent, edit, save, with every command verified from a clean state.
+
+## What this phase is NOT
+
+No SDK, no signing, no marketplace, no new platform scope. Those are gated on
+at least three agent-builder teams describing the same operational pain (Gate 1)
+and one committing to a pilot (Gate 2), per Change Order 2. Expert/tester
+feedback Yashraj gathers is the highest-priority input to what gets built after
+this phase, ahead of any roadmap guess.
