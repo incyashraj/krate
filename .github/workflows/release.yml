@@ -61,6 +61,11 @@ jobs:
 
       - name: Build release binary
         shell: bash
+        env:
+          # Stamp the release tag (without the leading v) into the binary so
+          # `krate --version` reports the real version rather than the crate's
+          # 0.1.0-dev placeholder.
+          KRATE_RELEASE_VERSION: ${{ github.ref_name }}
         run: |
           if [[ "${{ matrix.cross }}" == "true" ]]; then
             cross build --release --target "${{ matrix.target }}" -p krate-cli

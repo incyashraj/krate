@@ -48,19 +48,13 @@ target="${arch_part}-${os_part}"
 version="${KRATE_VERSION:-}"
 if [ -z "$version" ]; then
   say "Finding the latest release..."
-  # /releases/latest excludes pre-releases, and Krate is pre-release only for
-  # now, so fall back to the newest entry in the full release list (which the
-  # API returns newest-first) and take its tag.
-  version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
-    | grep '"tag_name"' | head -1 | cut -d '"' -f 4 || true)"
-  if [ -z "$version" ]; then
-    # Krate is pre-release only for now, so /latest is empty. Pick the newest
-    # release whose tag starts with v: those carry the krate binaries, unlike
-    # the notes-* bundle releases.
-    version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=30" \
-      | grep '"tag_name"' | cut -d '"' -f 4 | grep '^v' | head -1 || true)"
-  fi
-  [ -n "$version" ] || die "could not determine a release; set KRATE_VERSION to pin one"
+  # /releases/latest excludes pre-releases and Krate is pre-release only, so
+  # query the full list directly (newest first) and take the newest tag that
+  # starts with v. Those carry the krate binaries; the notes-* bundle releases
+  # do not. Querying the list avoids a guaranteed 404 on /latest.
+  version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=30" \
+    | grep '"tag_name"' | cut -d '"' -f 4 | grep '^v' | head -1 || true)"
+  [ -n "$version" ] || die "could not find a release; set KRATE_VERSION to pin one"
 fi
 
 # The release tag keeps its leading v (v0.1.0-rc2) but the packaging script

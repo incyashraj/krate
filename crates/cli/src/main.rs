@@ -20,10 +20,18 @@ const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
 const MAX_PHASE2_ARG_COUNT: usize = 1024;
 const PHASE3_GUI_UNIMPLEMENTED_EXIT: u8 = 6;
 
+/// Version shown by `krate --version`. The release workflow sets
+/// `KRATE_RELEASE_VERSION` to the git tag so a released binary reports its real
+/// version; local and CI builds fall back to the crate version from Cargo.toml.
+const KRATE_VERSION: &str = match option_env!("KRATE_RELEASE_VERSION") {
+    Some(version) => version,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 #[derive(Debug, Parser)]
 #[command(
     name = "krate",
-    version,
+    version = KRATE_VERSION,
     about = "Krate: write once, run on everything."
 )]
 struct Cli {
