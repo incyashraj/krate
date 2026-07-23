@@ -19,6 +19,11 @@ allow = [
     "CC0-1.0",
     "Zlib",
     "OpenSSL",
+    # webpki-roots ships Mozilla's CA certificate store, which Mozilla
+    # publishes under CDLA-Permissive-2.0. It is certificate data rather than
+    # code, and it arrives with the TLS stack that lets `krate run <https url>`
+    # verify who it is downloading a bundle from.
+    "CDLA-Permissive-2.0",
 ]
 # Confidence threshold for license expression detection.
 confidence-threshold = 0.8

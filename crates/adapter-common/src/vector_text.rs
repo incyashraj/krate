@@ -47,13 +47,21 @@ impl TextEngine {
 
     /// Lay out one line of label text at the given display scale.
     fn layout_label(&mut self, text: &str, scale: f32) -> Layout<()> {
+        self.layout_text(text, scale, None)
+    }
+
+    /// Lay out text, wrapping to `max_width` when one is given.
+    ///
+    /// A single-line field passes `None` and gets the old behavior. A text
+    /// area passes its inner width, and parley breaks lines to fit.
+    fn layout_text(&mut self, text: &str, scale: f32, max_width: Option<f32>) -> Layout<()> {
         let mut builder = self
             .layout_cx
             .ranged_builder(&mut self.font_cx, text, scale, true);
         builder.push_default(GenericFamily::SansSerif);
         builder.push_default(StyleProperty::FontSize(LABEL_FONT_SIZE));
         let mut layout = builder.build(text);
-        layout.break_all_lines(None);
+        layout.break_all_lines(max_width);
         layout.align(Alignment::Start, AlignmentOptions::default());
         layout
     }
@@ -230,7 +238,7 @@ pub fn try_paint_placements(
                     fill_rounded(&mut ctx, color, px, py, pw, ph, 6.0 * scale);
                     (COLOR_BUTTON_LABEL, None)
                 }
-                WidgetKind::TextField | WidgetKind::TextArea => {
+                WidgetKind::TextField => {
                     fill_rounded(&mut ctx, COLOR_FIELD_BORDER, px, py, pw, ph, 4.0 * scale);
                     fill_rounded(
                         &mut ctx,
@@ -242,6 +250,36 @@ pub fn try_paint_placements(
                         3.0 * scale,
                     );
                     (COLOR_FIELD_TEXT, Some(4.0 * scale))
+                }
+                WidgetKind::TextArea => {
+                    // Same chrome as a field, but the text wraps to the inner
+                    // width and starts at the top rather than sitting on one
+                    // centered line. Handled here rather than falling through
+                    // to the shared label path, which centers a single line.
+                    fill_rounded(&mut ctx, COLOR_FIELD_BORDER, px, py, pw, ph, 4.0 * scale);
+                    fill_rounded(
+                        &mut ctx,
+                        COLOR_FIELD_FILL,
+                        px + scale,
+                        py + scale,
+                        (pw - 2.0 * scale).max(0.0),
+                        (ph - 2.0 * scale).max(0.0),
+                        3.0 * scale,
+                    );
+                    if !label.is_empty() {
+                        let inset = 4.0 * scale;
+                        let inner_width = (pw - inset * 2.0).max(1.0);
+                        let layout = engine.layout_text(label, scale, Some(inner_width));
+                        let _ = draw_layout(
+                            &mut ctx,
+                            &mut resources,
+                            &layout,
+                            COLOR_FIELD_TEXT,
+                            px + inset,
+                            py + inset,
+                        );
+                    }
+                    continue;
                 }
                 WidgetKind::Text => (COLOR_TEXT, Some(0.0)),
                 WidgetKind::ListView | WidgetKind::TreeView => {
@@ -531,6 +569,113 @@ mod tests {
             at(&plain, 20, 20),
             at(&hovered, 20, 20),
             "hover must change the button fill"
+        );
+    }
+}
+
+#[cfg(test)]
+mod text_area_tests {
+    use super::*;
+    use crate::ui::WidgetId;
+
+    fn area(label: &str, w: f32, h: f32) -> WidgetPlacement {
+        WidgetPlacement {
+            widget: WidgetId::new(1).unwrap(),
+            kind: WidgetKind::TextArea,
+            label: Some(label.to_string()),
+            checked: None,
+            value: None,
+            selection: None,
+            clip: None,
+            x: 0.0,
+            y: 0.0,
+            width: w,
+            height: h,
+        }
+    }
+
+    /// Count bands of text rows. A wrapped paragraph occupies several bands
+    /// separated by leading; a single line occupies one.
+    ///
+    /// Rows are counted only when they carry several dark pixels. Descenders
+    /// like `q` and `y` leave one or two stray pixels in the gap between
+    /// lines, which would otherwise bridge two bands into one.
+    fn text_row_bands(buffer: &[u32], w: u32, h: u32) -> usize {
+        const MIN_DARK_PIXELS: usize = 8;
+        let mut bands = 0;
+        let mut in_band = false;
+        for y in 0..h {
+            let dark = (0..w)
+                .filter(|&x| {
+                    let px = buffer[(y * w + x) as usize];
+                    // Field text is dark; the fill behind it is white.
+                    let (r, g, b) = ((px >> 16) & 0xFF, (px >> 8) & 0xFF, px & 0xFF);
+                    r < 0x80 && g < 0x80 && b < 0x80
+                })
+                .count();
+            let row_has_text = dark >= MIN_DARK_PIXELS;
+            if row_has_text && !in_band {
+                bands += 1;
+            }
+            in_band = row_has_text;
+        }
+        bands
+    }
+
+    #[test]
+    fn a_text_area_wraps_long_text_onto_several_lines() {
+        let (w, h) = (160u32, 120u32);
+        let long = "the quick brown fox jumps over the lazy dog and keeps running";
+
+        let mut wrapped = vec![0u32; (w * h) as usize];
+        if !try_paint_placements(
+            &mut wrapped,
+            w,
+            h,
+            1.0,
+            &[area(long, 150.0, 110.0)],
+            PaintInteraction::default(),
+        ) {
+            eprintln!("skipping: no usable system fonts");
+            return;
+        }
+
+        let bands = text_row_bands(&wrapped, w, h);
+        assert!(
+            bands >= 2,
+            "long text in a narrow area must wrap onto multiple lines, saw {bands} band(s)"
+        );
+    }
+
+    #[test]
+    fn a_text_area_starts_at_the_top_not_the_middle() {
+        let (w, h) = (160u32, 120u32);
+        let mut buffer = vec![0u32; (w * h) as usize];
+        if !try_paint_placements(
+            &mut buffer,
+            w,
+            h,
+            1.0,
+            &[area("one short line", 150.0, 110.0)],
+            PaintInteraction::default(),
+        ) {
+            eprintln!("skipping: no usable system fonts");
+            return;
+        }
+
+        // A note editor fills downward from the top. Centering one line would
+        // put the first row of text near the middle of the box.
+        let first_text_row = (0..h).find(|&y| {
+            (0..w).any(|x| {
+                let px = buffer[(y * w + x) as usize];
+                let (r, g, b) = ((px >> 16) & 0xFF, (px >> 8) & 0xFF, px & 0xFF);
+                r < 0x80 && g < 0x80 && b < 0x80
+            })
+        });
+        let first = first_text_row.expect("some text should be painted");
+        assert!(
+            first < h / 3,
+            "text should start near the top, first painted row was {first} of {h}"
         );
     }
 }

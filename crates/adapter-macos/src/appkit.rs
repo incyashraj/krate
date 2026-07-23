@@ -33,7 +33,11 @@ impl AppKitWidgetPlacement {
     pub fn kind_supported(kind: WidgetKind) -> bool {
         matches!(
             kind,
-            WidgetKind::Button | WidgetKind::TextField | WidgetKind::Text
+            WidgetKind::Button
+                | WidgetKind::TextField
+                | WidgetKind::Text
+                | WidgetKind::TextArea
+                | WidgetKind::ListView
         )
     }
 
@@ -89,6 +93,13 @@ impl AppKitWidgetPlacement {
     /// Return the label or text content for the native control.
     pub fn label(&self) -> Option<&str> {
         self.label.as_deref()
+    }
+
+    /// Replace the label, used to carry a person's in-progress typing across
+    /// a re-lower rather than reverting the control to the guest's copy.
+    pub fn with_label(mut self, label: String) -> Self {
+        self.label = Some(label);
+        self
     }
 
     /// Return the logical top-left rectangle as `(x, y, width, height)`.
@@ -662,7 +673,45 @@ impl AppKitWindowSession {
                 "AppKit widget lowering needs the native delegate installed first".to_string(),
             )
         })?;
-        let surface = self.window.lower_widget_placements(placements, delegate)?;
+
+        // The guest now receives every native edit through text-changed and
+        // re-lowers with the current text, so the placement's label is the
+        // authority and no live-text preservation is needed. But a component
+        // that ignores those events (or has not processed the latest one yet)
+        // could still stomp an in-progress edit on an unrelated re-lower. Only
+        // carry the live text forward when the guest is asking for the value
+        // it already knows about, so a deliberate change (loading another note)
+        // still takes effect while a stale rebuild does not.
+        let live_text: std::collections::BTreeMap<WidgetId, String> = self
+            .widget_surface
+            .as_ref()
+            .map(|surface| {
+                surface
+                    .editable_widgets()
+                    .into_iter()
+                    .filter_map(|widget| surface.text(widget).ok().map(|text| (widget, text)))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let placements: Vec<AppKitWidgetPlacement> = placements
+            .iter()
+            .map(|placement| match live_text.get(&placement.widget()) {
+                // Keep the live text only when the guest is re-lowering with a
+                // value that is a prefix of what the control holds, i.e. it has
+                // not caught up to the newest keystrokes. A guest that loads a
+                // different note sends unrelated text and that wins.
+                Some(text)
+                    if placement.kind() == WidgetKind::TextArea
+                        && text.starts_with(placement.label().unwrap_or("")) =>
+                {
+                    placement.clone().with_label(text.clone())
+                }
+                _ => placement.clone(),
+            })
+            .collect();
+
+        let surface = self.window.lower_widget_placements(&placements, delegate)?;
         let snapshot = surface.snapshot();
         self.widget_surface = Some(surface);
         Ok(snapshot)
@@ -696,6 +745,13 @@ impl AppKitWindowSession {
     /// Read the current text content of a lowered native control.
     pub fn widget_text(&self, widget: WidgetId) -> Result<String, UiAdapterError> {
         self.widget_surface()?.text(widget)
+    }
+
+    /// Widgets lowered to controls a person can type into.
+    pub fn editable_widgets(&self) -> Vec<WidgetId> {
+        self.widget_surface()
+            .map(|surface| surface.editable_widgets())
+            .unwrap_or_default()
     }
 
     /// Show the native window through AppKit and the shared Krate adapter.
@@ -1010,7 +1066,8 @@ mod platform {
     use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
         NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSButton, NSColor,
-        NSControl, NSEventMask, NSTextField, NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
+        NSControl, NSEventMask, NSMenu, NSMenuItem, NSTextField, NSView, NSWindow,
+        NSWindowDelegate, NSWindowStyleMask,
     };
     use objc2_foundation::{
         NSDefaultRunLoopMode, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
@@ -1127,6 +1184,18 @@ mod platform {
         pub fn text(&self, widget: WidgetId) -> Result<String, UiAdapterError> {
             let control = self.control(widget)?;
             Ok(control.stringValue().to_string())
+        }
+
+        /// Widgets lowered to controls a person can type into.
+        ///
+        /// AppKit keeps typed text inside the control, so the gui host polls
+        /// exactly these after each pump to notice what was typed.
+        pub fn editable_widgets(&self) -> Vec<WidgetId> {
+            self.kinds
+                .iter()
+                .filter(|(_, kind)| matches!(kind, WidgetKind::TextField | WidgetKind::TextArea))
+                .map(|(widget, _)| *widget)
+                .collect()
         }
 
         /// Trigger a lowered button exactly as a physical click would.
@@ -1369,6 +1438,32 @@ mod platform {
                         label.setTag(placement.widget().get() as isize);
                         Retained::into_super(label)
                     }
+                    WidgetKind::TextArea => {
+                        // A multi-line editable NSTextField rather than an
+                        // NSTextView: it is an NSControl like every other
+                        // lowered widget, so it fits the existing surface
+                        // without a second storage path, and it is genuinely
+                        // editable, which is what a note editor needs.
+                        let value = NSString::from_str(placement.label().unwrap_or(""));
+                        let field = NSTextField::textFieldWithString(&value, mtm);
+                        field.setFrame(frame);
+                        field.setTag(placement.widget().get() as isize);
+                        field.setEditable(true);
+                        field.setSelectable(true);
+                        Retained::into_super(field)
+                    }
+                    WidgetKind::ListView => {
+                        // The container itself paints nothing on macOS: its
+                        // rows are separate Text placements that lower to
+                        // labels. Lowering it as a non-editable, empty label
+                        // keeps ids and hit testing consistent without drawing
+                        // a box over the rows.
+                        let empty = NSString::from_str("");
+                        let label = NSTextField::labelWithString(&empty, mtm);
+                        label.setFrame(frame);
+                        label.setTag(placement.widget().get() as isize);
+                        Retained::into_super(label)
+                    }
                     other => {
                         return Err(UiAdapterError::Unsupported(format!(
                             "AppKit lowering does not support {other:?} yet"
@@ -1492,6 +1587,7 @@ mod platform {
             let mtm = main_thread_marker()?;
             let app = NSApplication::sharedApplication(mtm);
             app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
+            install_edit_menu(&app, mtm);
             window.window.makeKeyAndOrderFront(None);
             #[allow(deprecated)]
             app.activateIgnoringOtherApps(true);
@@ -1540,6 +1636,46 @@ mod platform {
                 "AppKit windows must be created on the macOS main thread".to_string(),
             )
         })
+    }
+
+    /// Give the app an Edit menu so the standard clipboard shortcuts work.
+    ///
+    /// macOS routes Cmd+X/C/V/A through the application's main menu to the
+    /// first responder. Without a menu the keystrokes reach nothing, which is
+    /// why a bare window can be typed into but not pasted into. Targeting `nil`
+    /// (the default `addItemWithTitle_action_keyEquivalent` behavior) sends
+    /// each item down the responder chain, where the focused NSTextField
+    /// already implements `cut:`, `copy:`, `paste:`, and `selectAll:`. Idempotent:
+    /// the menu is installed only once per process.
+    fn install_edit_menu(app: &NSApplication, mtm: MainThreadMarker) {
+        if app.mainMenu().is_some() {
+            return;
+        }
+
+        // SAFETY: all AppKit menu construction runs on the main thread, proven
+        // by `mtm`, and every selector below is implemented by NSResponder.
+        unsafe {
+            let main_menu = NSMenu::new(mtm);
+
+            let edit_item = NSMenuItem::new(mtm);
+            let edit_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("Edit"));
+
+            let add = |title: &str, selector, key: &str| {
+                edit_menu.addItemWithTitle_action_keyEquivalent(
+                    &NSString::from_str(title),
+                    Some(selector),
+                    &NSString::from_str(key),
+                );
+            };
+            add("Cut", sel!(cut:), "x");
+            add("Copy", sel!(copy:), "c");
+            add("Paste", sel!(paste:), "v");
+            add("Select All", sel!(selectAll:), "a");
+
+            main_menu.addItem(&edit_item);
+            main_menu.setSubmenu_forItem(Some(&edit_menu), &edit_item);
+            app.setMainMenu(Some(&main_menu));
+        }
     }
 
     fn create_native_window(mtm: MainThreadMarker, options: &WindowOptions) -> Retained<NSWindow> {
@@ -1775,6 +1911,11 @@ mod platform {
             Err(UiAdapterError::Unsupported(
                 "AppKit widget text is only available on macOS".to_string(),
             ))
+        }
+
+        /// No native controls exist off macOS, so nothing is editable.
+        pub fn editable_widgets(&self) -> Vec<WidgetId> {
+            Vec::new()
         }
 
         /// AppKit clicks are only available on macOS.

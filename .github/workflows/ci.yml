@@ -248,6 +248,11 @@ jobs:
         run: |
           wasm_path="$(scripts/build-krate-hello-gui-component.sh)"
           cp "$wasm_path" krate-fixture/krate_hello_gui.wasm
+      - name: Build krate-notes fixture once
+        shell: bash
+        run: |
+          wasm_path="$(scripts/build-krate-notes-component.sh)"
+          cp "$wasm_path" krate-fixture/krate_notes.wasm
       - name: Check Phase 2 fixture imports
         shell: bash
         run: |
@@ -388,12 +393,67 @@ jobs:
             exit 1
           fi
           echo "synthetic typing + click reached the component on Linux (exit 0, typed text echoed)"
+          # 4. The same proof, delivered as one downloadable file. Packs
+          #    hello-gui into a .krate, serves it over local HTTP, runs it by
+          #    URL, and asserts the identical round trip. Delivering an app as
+          #    a link must change nothing about how it behaves.
+          set +e
+          KRATE_BUNDLE_URL_PROOF=1 \
+          KRATE_XVFB_SCREENSHOT="$RUNNER_TEMP/hello-gui-linux-bundle.png" \
+          KRATE_EXPECT_TYPED="hi krate" \
+          KRATE_EXPECT_SELECTED="pick beta" \
+            xvfb-run -a bash scripts/xvfb-click-hello-gui.sh
+          code=$?
+          set -e
+          if [ "$code" != "0" ]; then
+            echo "expected exit 0 running hello-gui from a .krate URL, got $code" >&2
+            exit 1
+          fi
+          echo "the same app, fetched from a URL as one .krate file, passed the identical round trip"
+          # 5. The flagship, packed and run as one file. What matters here is
+          #    not another screenshot but that a real app persists to the
+          #    directory it was granted, and cannot start without that grant.
+          set +e
+          notes_dir="$RUNNER_TEMP/notes-demo"
+          rm -rf "$notes_dir" && mkdir -p "$notes_dir/notes"
+          cp krate-fixture/krate_notes.wasm "$notes_dir/code.wasm"
+          cp apps/krate-notes/manifest.toml "$notes_dir/manifest.toml"
+          target/debug/krate pack "$notes_dir/code.wasm" \
+            --manifest "$notes_dir/manifest.toml" \
+            -o "$notes_dir/notes.krate" || exit 1
+          ( cd "$notes_dir" && "$GITHUB_WORKSPACE/target/debug/krate" run notes.krate \
+              --auto-grant -- quick )
+          code=$?
+          set -e
+          if [ "$code" != "0" ]; then
+            echo "expected krate-notes to run cleanly from its bundle, got $code" >&2
+            exit 1
+          fi
+          if [ ! -s "$notes_dir/notes/first.txt" ]; then
+            echo "krate-notes should have saved a note into the granted directory" >&2
+            exit 1
+          fi
+          echo "krate-notes ran from a .krate and saved into the directory it was granted"
+          # The wall: without fs.write the app must refuse to start at all.
+          set +e
+          ( cd "$notes_dir" && "$GITHUB_WORKSPACE/target/debug/krate" run notes.krate \
+              --grant "fs.read:./notes/**" --grant ui.window:create \
+              --grant io.stdout --grant io.args -- quick )
+          denied=$?
+          set -e
+          if [ "$denied" != "5" ]; then
+            echo "expected exit 5 when fs.write is withheld, got $denied" >&2
+            exit 1
+          fi
+          echo "withholding fs.write stopped krate-notes before it ran (exit 5)"
       - name: Upload Linux drawn-window screenshot
         if: always() && matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v7
         with:
           name: hello-gui-linux-screenshot
-          path: ${{ runner.temp }}/hello-gui-linux.png
+          path: |
+            ${{ runner.temp }}/hello-gui-linux.png
+            ${{ runner.temp }}/hello-gui-linux-bundle.png
           if-no-files-found: ignore
           retention-days: 14
       - name: Run Windows winit native window proof

@@ -32,6 +32,10 @@ pub struct Phase3GuiHost {
     /// Scrolling never involves the guest: wheel input adjusts these and
     /// re-lowers placements, matching native platform feel.
     scroll_offsets: std::cell::RefCell<std::collections::BTreeMap<(WindowId, WidgetId), f32>>,
+    /// Last text the host observed in each natively lowered editable control.
+    /// AppKit keeps typed characters inside the control, so the guest only
+    /// learns about them by the host reading the control back and comparing.
+    native_text: std::cell::RefCell<std::collections::BTreeMap<(WindowId, WidgetId), String>>,
 }
 
 impl Phase3GuiHost {
@@ -42,6 +46,7 @@ impl Phase3GuiHost {
             runtime,
             windows: Vec::new(),
             scroll_offsets: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            native_text: std::cell::RefCell::new(std::collections::BTreeMap::new()),
         })
     }
 
@@ -127,6 +132,38 @@ impl Phase3GuiHost {
         Ok(())
     }
 
+    /// Report a natively lowered control's text whenever a person changes it.
+    ///
+    /// On hosts that lower to real OS controls, the control holds the text and
+    /// the component never sees it. Reading each editable control back after a
+    /// pump closes that loop.
+    ///
+    /// This sends the control's **complete** text, not the part that was added.
+    /// An append cannot describe deleting, selecting, or pasting, and trying to
+    /// derive one leaves two copies of the text drifting apart. The control is
+    /// the single owner; the component mirrors it.
+    fn sync_native_text(&self, window: WindowId, dispatcher: &Phase3UiDispatcher<'_>) {
+        for widget in dispatcher.native_editable_widgets(window) {
+            let Some(current) = dispatcher.native_widget_text(window, widget) else {
+                continue;
+            };
+
+            let changed = {
+                let mut seen = self.native_text.borrow_mut();
+                if seen.get(&(window, widget)).map(String::as_str) == Some(current.as_str()) {
+                    false
+                } else {
+                    seen.insert((window, widget), current.clone());
+                    true
+                }
+            };
+
+            if changed {
+                let _ = dispatcher.queue_text_changed(window, widget, current);
+            }
+        }
+    }
+
     fn poll_one_event(&self) -> Result<Option<ui::types::Event>, UiDispatchError> {
         let dispatcher = self.dispatcher();
         for window in &self.windows {
@@ -134,6 +171,7 @@ impl Phase3GuiHost {
             // headless adapters return no tick. Ignore per-window pump errors
             // so one closed window cannot wedge event delivery.
             let _ = dispatcher.pump_event_loop_once(*window);
+            self.sync_native_text(*window, &dispatcher);
         }
 
         // Route raw native pointer input through layout hit testing so the
@@ -445,6 +483,13 @@ fn event_to_wit(event: UiEvent) -> Option<ui::types::Event> {
             modifiers: modifiers_to_wit(key.modifiers),
         })),
         UiEvent::TextInput(text) => Some(ui::types::Event::TextInput(text.text)),
+        UiEvent::TextChanged(changed) => {
+            Some(ui::types::Event::TextChanged(ui::types::TextChangedEvent {
+                window: changed.window.get(),
+                widget: changed.widget.get(),
+                text: changed.text,
+            }))
+        }
         UiEvent::FocusChanged { widget, .. } => {
             Some(ui::types::Event::FocusChanged(Some(widget.get())))
         }

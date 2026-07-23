@@ -381,6 +381,18 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.queue_text_input(event).map_err(Into::into)
     }
 
+    /// Queue a native control's complete text after a person edited it.
+    pub fn queue_text_changed(
+        &self,
+        window: WindowId,
+        widget: WidgetId,
+        text: String,
+    ) -> UiDispatchResult<()> {
+        self.check_window_access()?;
+        let event = krate_adapter_common::ui::TextChangedEvent::new(window, widget, text)?;
+        self.adapter.queue_text_changed(event).map_err(Into::into)
+    }
+
     /// Drain raw mouse-wheel samples from the native backend.
     pub fn drain_raw_wheel_input(&self) -> Vec<krate_adapter_common::ui::RawWheelSample> {
         if self.check_window_access().is_err() {
@@ -407,6 +419,16 @@ impl<'a> Phase3UiDispatcher<'a> {
     ) -> UiDispatchResult<Option<UiEventLoopTick>> {
         self.check_window_access()?;
         Ok(self.adapter.pump_event_loop_once(window)?)
+    }
+
+    /// Widgets the host lowered to native controls a person can type into.
+    pub fn native_editable_widgets(&self, window: WindowId) -> Vec<WidgetId> {
+        self.adapter.native_editable_widgets(window)
+    }
+
+    /// Current text of a natively lowered editable control.
+    pub fn native_widget_text(&self, window: WindowId, widget: WidgetId) -> Option<String> {
+        self.adapter.native_widget_text(window, widget)
     }
 
     fn check_window_access(&self) -> UiDispatchResult<()> {

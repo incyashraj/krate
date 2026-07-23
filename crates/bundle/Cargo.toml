@@ -1,0 +1,17 @@
+[package]
+name = "krate-bundle"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
+tempfile.workspace = true
+thiserror.workspace = true
+ureq.workspace = true
+zip.workspace = true
+
+[dev-dependencies]

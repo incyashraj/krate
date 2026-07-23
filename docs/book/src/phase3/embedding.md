@@ -101,23 +101,68 @@ Done now:
 
 ## The MCP server
 
-`krate-mcp-server` (a `crates/tools` binary) exposes one MCP tool,
-`run_component`, over newline-delimited JSON-RPC on stdio. Any MCP-capable
-agent framework can execute components inside the sandbox without linking
-Rust:
+`krate-mcp-server` (a `crates/tools` binary) exposes two MCP tools over
+newline-delimited JSON-RPC on stdio. Any MCP-capable agent framework can
+inspect and execute apps inside the sandbox without linking Rust:
 
 ```bash
 cargo build -p krate-tools --bin krate-mcp-server
 claude mcp add krate -- target/debug/krate-mcp-server
 ```
 
-The tool takes `component_path`, optional `manifest_path`, `grants`,
-`auto_grant`, `app_args`, and `sandbox_root`, and returns the
-`krate.run.v1` report as the tool result (with `isError` set for anything
-but `success`). Denials surface as data: calling without grants returns
-`permission-denied` plus the exact missing capabilities, and the same call
-with `auto_grant` succeeds — the agent observes the capability wall
-directly.
+### `inspect_bundle`
+
+Reads a `.krate` bundle's identity and the capabilities it requests, from a
+path or an https URL, **without running it**. Nothing is executed and
+nothing is granted, so an agent can decide whether an app should run at all
+before it does:
+
+```json
+{
+  "schema": "krate.inspect.v1",
+  "app": { "id": "dev.krate.cat", "name": "krate-cat", "version": "0.1.0-dev" },
+  "requests": [
+    { "capability": "fs.read:./fixtures/**",
+      "rationale": "Read test fixture files",
+      "required": true }
+  ]
+}
+```
+
+The `rationale` is the app author's own stated reason, carried in the
+manifest. An agent weighing whether to grant something gets the request and
+the justification together.
+
+### `run_component`
+
+Takes either a `bundle` (a `.krate` path or https URL, which carries its own
+manifest) or the `component_path` / `manifest_path` pair, plus `grants`,
+`auto_grant`, `app_args`, and `sandbox_root`. Returns the `krate.run.v1`
+report, with `isError` set for anything but `success`.
+
+Fetching grants nothing. A downloaded bundle has exactly the authority a
+local one has, which is none until something is granted.
+
+### Denials are a next step, not a dead end
+
+A refusal an agent cannot act on is just a failure. When required
+capabilities are missing, the report carries a `remedy` naming the exact
+retry:
+
+```json
+{
+  "capabilities": { "denied": ["fs.read:fixtures/**"] },
+  "exit": { "code": 5, "class": "permission-denied" },
+  "remedy": {
+    "action": "grant-and-retry",
+    "grants": ["fs.read:fixtures/**"],
+    "note": "Call run_component again with these strings in `grants`."
+  }
+}
+```
+
+Re-issuing the call with `remedy.grants` succeeds. The agent never has to
+infer the fix from an error string.
 
 Still pending on this track:
 

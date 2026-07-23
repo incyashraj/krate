@@ -35,8 +35,8 @@ struct Cli {
 enum Command {
     /// Run a WebAssembly component through the Krate runtime.
     Run {
-        /// Path to the .wasm component.
-        file: PathBuf,
+        /// Path to a .wasm component, a .krate bundle, or an https URL to one.
+        target: String,
 
         /// Max fuel units to allow. Omit for unlimited.
         #[arg(long)]
@@ -78,6 +78,11 @@ enum Command {
         /// (macOS AppKit today). The default GUI path stays headless.
         #[arg(long)]
         native_window: bool,
+
+        /// Allow fetching a bundle over plain http. Intended for a local test
+        /// server; https is required otherwise.
+        #[arg(long)]
+        insecure_http: bool,
 
         /// Print one machine-readable JSON object describing the run instead
         /// of streaming the app's stdout. Schema: krate.run.v1.
@@ -124,6 +129,20 @@ enum Command {
     Manifest {
         #[command(subcommand)]
         command: ManifestCommand,
+    },
+
+    /// Pack a component and its manifest into one shareable .krate bundle.
+    Pack {
+        /// Path to the .wasm component.
+        file: PathBuf,
+
+        /// Path to the manifest.toml describing it.
+        #[arg(long)]
+        manifest: PathBuf,
+
+        /// Where to write the bundle.
+        #[arg(short, long)]
+        output: PathBuf,
     },
 }
 
@@ -220,7 +239,7 @@ fn run() -> Result<u8> {
 
     match cli.command {
         Command::Run {
-            file,
+            target,
             fuel,
             mem_limit,
             max_http_response_bytes,
@@ -231,6 +250,7 @@ fn run() -> Result<u8> {
             auto_grant,
             prompt,
             native_window,
+            insecure_http,
             json,
             dump_caps,
             dump_caps_format,
@@ -241,7 +261,9 @@ fn run() -> Result<u8> {
             test_timezone,
             app_args,
         } => run_component(RunRequest {
-            file,
+            target,
+            file: PathBuf::new(),
+            insecure_http,
             fuel,
             mem_limit,
             max_http_response_bytes,
@@ -262,6 +284,11 @@ fn run() -> Result<u8> {
             test_timezone,
             app_args,
         }),
+        Command::Pack {
+            file,
+            manifest,
+            output,
+        } => pack_bundle(&file, &manifest, &output),
         Command::Version => {
             print_version();
             Ok(0)
@@ -293,6 +320,9 @@ fn run() -> Result<u8> {
 }
 
 struct RunRequest {
+    /// What the user asked to run: a path, a bundle, or a URL.
+    target: String,
+    /// Resolved component path. Filled in by resolve_run_target.
     file: PathBuf,
     fuel: Option<u64>,
     mem_limit: u64,
@@ -304,6 +334,7 @@ struct RunRequest {
     auto_grant: bool,
     prompt: bool,
     native_window: bool,
+    insecure_http: bool,
     json: bool,
     dump_caps: bool,
     dump_caps_format: OutputFormat,
@@ -325,12 +356,75 @@ struct ManifestInitRequest {
     force: bool,
 }
 
-fn run_component(request: RunRequest) -> Result<u8> {
-    if !request.file.exists() {
-        anyhow::bail!("input file does not exist: {}", request.file.display());
+/// Write a `.krate` bundle from a component and its manifest.
+fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
+    let size = krate_bundle::pack(manifest, file, output)
+        .with_context(|| format!("could not pack {}", output.display()))?;
+    println!("wrote {} ({size} bytes)", output.display());
+    Ok(0)
+}
+
+/// Resolve what the user asked to run into a component on disk.
+///
+/// A bare `.wasm` path is returned as-is. A `.krate` bundle, whether local or
+/// fetched over the network, is unpacked into a temporary directory and its
+/// in-bundle manifest is used. The returned `OpenBundle` must outlive the run:
+/// dropping it deletes the extracted files.
+///
+/// Nothing here grants authority. A fetched bundle reaches the same policy
+/// resolution as a component sitting on disk, so downloading something does not
+/// make it trusted.
+fn resolve_run_target(
+    target: &str,
+    insecure_http: bool,
+) -> Result<(PathBuf, Option<PathBuf>, Option<krate_bundle::OpenBundle>)> {
+    if krate_bundle::is_url(target) {
+        let bundle = krate_bundle::fetch(target, insecure_http)
+            .with_context(|| format!("could not open bundle from {target}"))?;
+        return Ok((
+            bundle.component_path().to_path_buf(),
+            Some(bundle.manifest_path().to_path_buf()),
+            Some(bundle),
+        ));
     }
 
+    let path = PathBuf::from(target);
+    if krate_bundle::is_bundle_path(&path) {
+        let bundle = krate_bundle::open(&path)
+            .with_context(|| format!("could not open bundle {}", path.display()))?;
+        return Ok((
+            bundle.component_path().to_path_buf(),
+            Some(bundle.manifest_path().to_path_buf()),
+            Some(bundle),
+        ));
+    }
+
+    Ok((path, None, None))
+}
+
+fn run_component(request: RunRequest) -> Result<u8> {
     validate_app_args(&request.app_args)?;
+
+    // Held for the whole run: dropping it removes the extracted bundle.
+    let (file, bundle_manifest, _bundle) =
+        resolve_run_target(&request.target, request.insecure_http)?;
+
+    if !file.exists() {
+        anyhow::bail!("input file does not exist: {}", file.display());
+    }
+
+    // A bundle carries its own manifest, and an explicit --manifest must not be
+    // able to widen what the bundle asked for.
+    if bundle_manifest.is_some() && request.manifest_path.is_some() {
+        anyhow::bail!("--manifest cannot be combined with a .krate bundle: the bundle carries its own manifest");
+    }
+    let manifest_path = bundle_manifest.or(request.manifest_path.clone());
+
+    let request = RunRequest {
+        file: file.clone(),
+        manifest_path,
+        ..request
+    };
 
     let loaded_manifest = load_run_manifest(&request.file, request.manifest_path.as_deref())?;
     if let Some(loaded) = &loaded_manifest {
@@ -368,6 +462,19 @@ fn run_component(request: RunRequest) -> Result<u8> {
                 eprintln!("permission denied: missing required capabilities");
                 for cap in &missing {
                     eprintln!("  - {cap}");
+                }
+                // Someone running a shared app for the first time hits this
+                // without knowing the vocabulary yet. Saying what is missing
+                // and stopping leaves them stuck, so name the two ways out and
+                // put the narrow one first.
+                if !can_prompt {
+                    eprintln!();
+                    eprintln!("To allow one of these for this run:");
+                    if let Some(first) = missing.first() {
+                        eprintln!("  krate run --grant {first} {}", request.target);
+                    }
+                    eprintln!("Or review them one at a time:");
+                    eprintln!("  krate run --prompt {}", request.target);
                 }
             }
             return Ok(5);
@@ -531,6 +638,19 @@ fn print_run_json(
     });
     let granted: Vec<String> = policy.grants().iter().map(|cap| cap.to_string()).collect();
 
+    // A denial that only says "no" is a dead end for an agent, which then has
+    // to guess that the fix is re-issuing the same call with the refused
+    // strings added. Hand it the exact remedy instead, so a refusal is a step
+    // rather than a stop.
+    let remedy = (!exit.denied.is_empty()).then(|| {
+        serde_json::json!({
+            "action": "grant-and-retry",
+            "grants": exit.denied,
+            "note": "Re-run with these capability strings in `grants` to proceed. \
+                    Each one is narrow: granting it allows only what it names.",
+        })
+    });
+
     let payload = serde_json::json!({
         "schema": "krate.run.v1",
         "app": app,
@@ -543,6 +663,7 @@ fn print_run_json(
             "class": exit.class,
             "message": exit.message,
         },
+        "remedy": remedy,
         "duration_ms": duration_ms,
         "stdout": stdout,
     });

@@ -1,0 +1,31 @@
+[app]
+id = "dev.krate.notes"
+name = "Krate Notes"
+version = "0.1.0-dev"
+entry = "code.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the notes window"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report what was saved on exit"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated tests"
+required = true
+
+[[capabilities]]
+cap = "fs.read:./notes/**"
+rationale = "Load your saved notes"
+required = true
+
+[[capabilities]]
+cap = "fs.write:./notes/**"
+rationale = "Save the note you are editing"
+required = true

@@ -27,6 +27,7 @@
 # Developer Guide
 
 - [Quickstart](quickstart.md)
+- [Try Krate Notes](try-krate-notes.md)
 - [Contributing](contributing/index.md)
   - [Your first PR](contributing/first-pr.md)
   - [ADR process](contributing/adrs.md)

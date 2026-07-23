@@ -86,6 +86,21 @@ interface types {
     modifiers: modifiers,
   }
 
+  /// A widget's complete text after a person edited it in a native control.
+  ///
+  /// Sent by hosts that lower widgets to real OS controls, where the control
+  /// holds the authoritative text. The app replaces its own copy with `text`
+  /// rather than appending, which is the only way deleting, selecting, and
+  /// pasting can be represented faithfully.
+  record text-changed-event {
+    /// Target window id.
+    window: u64,
+    /// Widget whose text changed.
+    widget: u64,
+    /// The control's complete text now.
+    text: string,
+  }
+
   /// Keyboard input event delivered by the host.
   record key-event {
     /// Target window id.
@@ -210,7 +225,17 @@ interface types {
     /// Keyboard input changed.
     key(key-event),
     /// Text input after keyboard layout or IME processing.
+    ///
+    /// Append semantics: the characters named here were added to whatever the
+    /// app already had. Hosts that draw their own widgets send this.
     text-input(string),
+    /// A widget's complete text after the person edited it.
+    ///
+    /// Replace semantics: the app should set its buffer to exactly this.
+    /// Hosts that lower to real OS controls send this instead of `text-input`,
+    /// because the control owns the text and edits like deleting, selecting,
+    /// and pasting cannot be described as an append.
+    text-changed(text-changed-event),
     /// A widget or menu command fired.
     action(u64),
     /// Focus moved to another widget.

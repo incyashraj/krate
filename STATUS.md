@@ -23,7 +23,83 @@ Nothing architectural changes; portability stops being the headline and
 becomes how the property is achieved. The Adobe/Flash analogy is retired.
 Next implementation work is P3-SHARE-01, not further widget slices.
 
-Working tree at this status update: list selection round-trips. A
+Certification checkpoint 2026-07-23: the whole shareability arc is green.
+Full matrix run `29964096927` (commit `09a5e58`) passed on all three OS
+lanes, certifying: the `.krate` bundle format (pack + run-from-URL), the
+agent surface (inspect_bundle, remedy on denials), krate-notes with its
+save-and-refuse CI proof, TextArea wrapping, native macOS text editing
+via the text-changed event, the macOS Edit menu (clipboard works), and a
+one-command installer. The Linux log shows krate-notes saving into its
+granted directory and refusing to start (exit 5) when fs.write is
+withheld. This is the branch to merge. Two bugs were caught by CI before
+merge and fixed: an off-macOS stub gap (only Linux/Windows builds saw it),
+and krate-notes clobbering an unedited note with an empty buffer on exit
+(would have lost real user data). Known gap: nothing on macOS keyboard
+beyond what shipped; see the input-lane note in Phase-3-Plan §18.
+
+Working tree at this status update: there is an app worth sharing.
+`krate-notes` is the Phase 3 flagship (§17): a sidebar of notes, an editor,
+and saving into a directory the user granted, in 388 lines against the
+plan's 2000 line ceiling. The margin is itself the result the plan asked
+for, since it says a ballooning flagship means the UAPI is too granular.
+It packs to a 28KB `.krate`, runs from that bundle, persists a note, and
+refuses to start at all when `fs.write` is withheld (exit 5). CI now packs
+it, runs it, requires the note to exist on disk, then withholds the write
+grant and requires the refusal, which is a stronger proof than another
+screenshot.
+`TextArea` had been sharing the single-line `TextField` arm, so it centered
+one line and never wrapped. It now wraps to the inner width and fills from
+the top in both painters: parley breaks lines in the vector path, the
+bitmap fallback does the arithmetic itself since its font is a fixed cell.
+Two pixel tests pin both properties, counting only rows with several dark
+pixels so a descender bridging two lines cannot look like one band.
+The agent surface got three changes aimed at making a refusal a next step
+rather than a dead end: `run_component` accepts a `bundle` (path or https
+URL); a denied run carries a `remedy` naming the exact capability strings
+to retry with, verified by running the loop end to end; and a new
+`inspect_bundle` tool reports an app's identity and every requested
+capability with the author's own rationale, without executing anything.
+A non-interactive denial now also prints the two ways forward and echoes
+the target the user typed rather than a temporary unpack path.
+One real bug the runtime caught: `String::push_str` references std's OOM
+handler, which drags the whole `wasi:cli` import set into an otherwise pure
+component and makes it unloadable. Notes uses the raw-allocation path
+hello-gui already had.
+Certification: pending — full matrix must be green before this counts.
+
+Previous slice, certified: an app is one shareable file. A
+`.krate` is a zip carrying `manifest.toml` and `code.wasm`, written by the
+new `krate pack` subcommand and run by `krate run app.krate` or
+`krate run <url>`. This is the minimal subset of the Phase 6 bundle format
+(§8.1) pulled forward as P3-SHARE-01 under Change Order 2; signing, the
+transparency log, delta updates and the marketplace stay in Phase 6.
+The property under test is that packaging changes delivery and nothing
+else: a new `krate-bundle` crate resolves a bundle (local or fetched) into
+paths, and the CLI then runs the *existing* policy path unchanged, so a
+downloaded bundle has exactly the authority a local one has, which is none
+until granted. A CLI test asserts the sidecar and bundle paths produce
+byte-identical capability sets, and `--manifest` is refused alongside a
+bundle so a caller cannot widen what the author shipped. Opening a bundle
+writes attacker-influenced bytes to disk, so entries are read by exact
+name rather than iterated (path traversal is unrepresentable, not
+filtered), and both the archive and each decompressed entry are size
+capped. Plain http is refused unless `--insecure-http` is passed for a
+local test server. The Linux CI lane now runs the GUI proof twice, once
+from a path and once after packing hello-gui, serving it over local HTTP
+and running it by URL, with identical assertions both times. `deny.toml`
+gained CDLA-Permissive-2.0 for the Mozilla CA store that arrives with the
+TLS stack; advisories are clean. README now opens with the sharing
+property rather than portability.
+Certification: landed as `992a5ce` + `ca6035d` + `5581cab`, dispatched full
+matrix run `29950538607` green on all three OS lanes. The Linux log shows
+the app exercised twice, once from a path and once after `serving bundle:
+11080 bytes`, echoing `typed:hi krate` and `selected:pick beta` both
+times. The two screenshot artifacts have identical SHA-256
+(`d55dea0e6cad594e79d89ce5c2de340e4a8402af48ab82eb446894cc81e9c3a9`): the
+downloaded app rendered pixel-for-pixel the same as the local one. Copy in
+`Invest/evidence/hello-gui-linux-from-bundle-url-2026-07-23.png`.
+
+Previous slice, certified: list selection round-trips. A
 `ListView` is now a real selectable container: the draft WIT `widget-node`
 gained `selected: option<u32>` (rejected on kinds that cannot carry a
 selection, in both the builder and the WIT boundary), the gui host resolves

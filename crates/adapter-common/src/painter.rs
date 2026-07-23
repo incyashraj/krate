@@ -207,7 +207,7 @@ pub fn paint_placements_bitmap(
                     label,
                 );
             }
-            WidgetKind::TextField | WidgetKind::TextArea => {
+            WidgetKind::TextField => {
                 if let Some(clipped) = clip_fill((px, py, pw, ph)) {
                     fill_rect(buffer, width, height, clipped, COLOR_FIELD_BORDER)
                 };
@@ -228,6 +228,48 @@ pub fn paint_placements_bitmap(
                     COLOR_FIELD_TEXT,
                     label,
                 );
+            }
+            WidgetKind::TextArea => {
+                if let Some(clipped) = clip_fill((px, py, pw, ph)) {
+                    fill_rect(buffer, width, height, clipped, COLOR_FIELD_BORDER)
+                };
+                if let Some(clipped) = clip_fill((
+                    px + 1.0 * scale,
+                    py + 1.0 * scale,
+                    (pw - 2.0 * scale).max(0.0),
+                    (ph - 2.0 * scale).max(0.0),
+                )) {
+                    fill_rect(buffer, width, height, clipped, COLOR_FIELD_FILL)
+                };
+                // The bitmap font is a fixed cell, so wrapping is arithmetic
+                // rather than shaping: how many glyphs fit across the inner
+                // width. Lines fill downward from the top, like a note.
+                let inset = 4.0 * scale;
+                let cell = drawtext::text_width("x", text_scale).max(1) as f32;
+                let per_line = (((pw - inset * 2.0) / cell).floor() as usize).max(1);
+                let line_h = th + 2.0 * scale;
+                let mut line_y = py + inset;
+                let mut rest = label;
+                while !rest.is_empty() && line_y + th <= py + ph - inset {
+                    let take = rest.chars().count().min(per_line);
+                    let split = rest
+                        .char_indices()
+                        .nth(take)
+                        .map(|(index, _)| index)
+                        .unwrap_or(rest.len());
+                    let (line, remainder) = rest.split_at(split);
+                    drawtext::draw_text(
+                        buffer,
+                        width,
+                        height,
+                        ((px + inset) as i32, line_y as i32),
+                        text_scale,
+                        COLOR_FIELD_TEXT,
+                        line,
+                    );
+                    rest = remainder;
+                    line_y += line_h;
+                }
             }
             WidgetKind::Text => {
                 drawtext::draw_text(

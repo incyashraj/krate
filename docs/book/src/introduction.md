@@ -64,8 +64,14 @@ distribution are still later work.
   widgets on macOS, winit windows on Linux and Windows, the first drawn
   widget pass, and the `krate-hello-gui` sample (import-pure, runs on all
   three OSes, `sh scripts/demo-hello-gui.sh`).
+- Shareable apps: `krate pack` writes a single `.krate` file carrying the
+  component and the permissions it asks for; `krate run` takes that file or
+  an https URL to one. Fetching grants nothing.
 - The agent surface: `krate_runtime::embed`, `krate run --json`
-  (schema `krate.run.v1`), and `krate-mcp-server`.
+  (schema `krate.run.v1`), and `krate-mcp-server` with two tools —
+  `inspect_bundle` to see what an app wants before running it, and
+  `run_component` to run it, whose denials carry the exact retry that
+  would succeed.
 - A prerelease, `v0.1.0-rc1`, with platform archives and checksums.
 - Docs, threat models, benchmarks, architecture records, and Phase 2 exit
   evidence pages.

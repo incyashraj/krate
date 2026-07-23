@@ -288,7 +288,16 @@ impl bindings::Guest for Component {
 
         // Byte equality, not str::contains: pattern-search machinery pulls
         // std panic paths (and with them WASI imports) into the component.
-        let rounds = if args::raw().as_bytes() == b"quick" {
+        // Raw args are newline terminated, one per argument, so comparing the
+        // whole string against b"quick" never matches and this always took the
+        // long path. Compare the first line instead.
+        let raw = args::raw();
+        let quick = raw
+            .as_bytes()
+            .split(|byte| *byte == b'\n')
+            .next()
+            .is_some_and(|first| first == b"quick");
+        let rounds = if quick {
             QUICK_WAIT_ROUNDS
         } else {
             MAX_WAIT_ROUNDS
