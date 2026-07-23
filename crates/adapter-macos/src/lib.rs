@@ -5,6 +5,7 @@
 
 mod appkit;
 mod consent;
+mod open_document;
 
 use krate_adapter_common::{
     locale::{DateStyle, HostLocale, LocaleId, NumberStyle},
@@ -25,6 +26,7 @@ use std::path::Path;
 use std::time::Duration;
 
 pub use consent::{present_consent_window, ConsentChoice, ConsentItem};
+pub use open_document::wait_for_opened_documents;
 
 pub use appkit::{
     AppKitColor, AppKitDrawFrame, AppKitDrawSurfaceState, AppKitDrawViewSurface,

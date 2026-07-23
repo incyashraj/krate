@@ -146,6 +146,13 @@ enum Command {
         command: ManifestCommand,
     },
 
+    /// Entry point used inside Krate.app: wait for the document Finder asked
+    /// us to open, then run it behind the consent wall. Not intended for
+    /// direct use; double-click a .krate instead.
+    #[cfg(target_os = "macos")]
+    #[command(hide = true)]
+    OpenApp,
+
     /// Pack a component and its manifest into one shareable .krate bundle.
     Pack {
         /// Path to the .wasm component.
@@ -301,6 +308,8 @@ fn run() -> Result<u8> {
             test_timezone,
             app_args,
         }),
+        #[cfg(target_os = "macos")]
+        Command::OpenApp => open_app(),
         Command::Pack {
             file,
             manifest,
@@ -724,6 +733,89 @@ fn validate_app_args(app_args: &[String]) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// The Krate.app entry point (P3-OPEN-03): receive the document Finder asked
+/// us to open, then run it through the ordinary consent + native-window flow.
+/// The sandbox root is the folder the `.krate` sits in, so an app that writes
+/// `./notes/**` keeps its data in a folder next to the document — visible,
+/// understandable, and identical to running it from a terminal in that folder.
+#[cfg(target_os = "macos")]
+fn open_app() -> Result<u8> {
+    // A document that arrives while this instance is already running an app
+    // (double-click in Finder mid-session) gets its own process, so every
+    // opened .krate behaves like its own application.
+    let late_open = Box::new(|path: PathBuf| {
+        spawn_open_run(&path);
+    });
+    let opened = krate_adapter_macos::wait_for_opened_documents(late_open)
+        .map_err(|error| anyhow::anyhow!("waiting for the opened document failed: {error}"))?;
+    // AppKit also feeds process arguments through application:openFiles:, so
+    // our own subcommand name can arrive as a "document". Only paths that
+    // actually exist on disk are documents.
+    let opened: Vec<PathBuf> = opened.into_iter().filter(|path| path.exists()).collect();
+    let Some(target) = opened.first() else {
+        eprintln!("Krate opens .krate app bundles. Double-click a .krate file to run one.");
+        return Ok(2);
+    };
+    let sandbox_root = target
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    // Several documents opened at once: the first runs in this process, the
+    // rest each get their own.
+    for extra in opened.iter().skip(1) {
+        spawn_open_run(extra);
+    }
+
+    run_component(RunRequest {
+        target: target.display().to_string(),
+        file: PathBuf::new(),
+        insecure_http: false,
+        fuel: None,
+        mem_limit: 256,
+        max_http_response_bytes: DEFAULT_MAX_HTTP_RESPONSE_BYTES,
+        http_timeout_millis: DEFAULT_HTTP_TIMEOUT_MILLIS,
+        sandbox_root,
+        manifest_path: None,
+        grants: Vec::new(),
+        auto_grant: false,
+        prompt: false,
+        consent: true,
+        native_window: true,
+        json: false,
+        dump_caps: false,
+        dump_caps_format: OutputFormat::Text,
+        log_grants: None,
+        log_grants_format: GrantLogFormat::Text,
+        test_time_millis: None,
+        test_locale: None,
+        test_timezone: None,
+        app_args: Vec::new(),
+    })
+}
+
+/// Run one opened document in its own process, mirroring what open_app does
+/// for the first document. Fire-and-forget: the child owns its own consent
+/// window and lifetime.
+#[cfg(target_os = "macos")]
+fn spawn_open_run(path: &Path) {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let sandbox_root = path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let _ = ProcessCommand::new(exe)
+        .arg("run")
+        .arg(path)
+        .arg("--consent")
+        .arg("--native-window")
+        .arg("--sandbox-root")
+        .arg(sandbox_root)
+        .spawn();
 }
 
 fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Result<SessionPolicy> {
