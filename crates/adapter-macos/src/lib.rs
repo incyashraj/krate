@@ -492,7 +492,8 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
                     placement.width,
                     placement.height,
                 )?
-                .with_clickable(placement.clickable),
+                .with_clickable(placement.clickable)
+                .with_checked(placement.checked),
             );
         }
 

@@ -29,6 +29,8 @@ pub struct AppKitWidgetPlacement {
     /// A passive kind (Text) that should still be clickable, because it is a
     /// row inside a list. Lowered as a borderless button so clicks route back.
     clickable: bool,
+    /// Selected state, used to tint the active list row.
+    checked: Option<bool>,
 }
 
 impl AppKitWidgetPlacement {
@@ -81,6 +83,7 @@ impl AppKitWidgetPlacement {
             width,
             height,
             clickable: false,
+            checked: None,
         })
     }
 
@@ -110,6 +113,17 @@ impl AppKitWidgetPlacement {
     pub fn with_clickable(mut self, clickable: bool) -> Self {
         self.clickable = clickable;
         self
+    }
+
+    /// Carry selected state so a lowered list row can be tinted active.
+    pub fn with_checked(mut self, checked: Option<bool>) -> Self {
+        self.checked = checked;
+        self
+    }
+
+    /// Selected state for a list row, if any.
+    pub fn checked(&self) -> Option<bool> {
+        self.checked
     }
 
     /// Return the logical top-left rectangle as `(x, y, width, height)`.
@@ -691,6 +705,11 @@ impl AppKitWindowSession {
         // ghost behind the control's own value, because both the guest label
         // and the retained live text were applied. Trusting the guest label is
         // correct precisely because text-changed keeps the guest in sync.
+        // Remove the previous control set before adding the new one, or old
+        // controls linger on screen under the new ones and overlap.
+        if let Some(previous) = self.widget_surface.take() {
+            previous.teardown();
+        }
         let surface = self.window.lower_widget_placements(placements, delegate)?;
         let snapshot = surface.snapshot();
         self.widget_surface = Some(surface);
@@ -1145,6 +1164,18 @@ mod platform {
             })
         }
 
+        /// Remove every lowered control from its superview.
+        ///
+        /// Re-lowering builds a fresh control set; without tearing the old one
+        /// down first, the previous controls stay on screen underneath the new
+        /// ones, so successive updates (a changing status line, a reselected
+        /// row) visibly stack and overlap.
+        pub fn teardown(&self) {
+            for control in self.controls.values() {
+                control.removeFromSuperview();
+            }
+        }
+
         /// Set the text content of a lowered text field or label.
         pub fn set_text(&self, widget: WidgetId, text: &str) -> Result<(), UiAdapterError> {
             match self.kinds.get(&widget) {
@@ -1432,6 +1463,16 @@ mod platform {
                         button.setFrame(frame);
                         button.setTag(placement.widget().get() as isize);
                         button.setBordered(false);
+                        // Left-align the title so a note row reads as a list
+                        // item, not a centered button label.
+                        button.setAlignment(objc2_app_kit::NSTextAlignment::Left);
+                        // The selected row (checked) glows in the accent color
+                        // so exactly one note reads as active.
+                        if placement.checked() == Some(true) {
+                            let accent =
+                                NSColor::colorWithSRGBRed_green_blue_alpha(0.0, 0.48, 1.0, 1.0);
+                            button.setContentTintColor(Some(&accent));
+                        }
                         Retained::into_super(button)
                     }
                     WidgetKind::Text => {

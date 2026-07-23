@@ -25,14 +25,34 @@ const EDITOR_ID: u64 = 3;
 const STATUS_ID: u64 = 4;
 const EDITOR_COLUMN_ID: u64 = 5;
 const NOTE_ROW_BASE_ID: u64 = 10;
+/// The "+ New note" row lives just past the last possible note slot, so its id
+/// never collides with a note row and `is_note_row` can reject it cleanly.
+const NEW_NOTE_ID: u64 = NOTE_ROW_BASE_ID + NOTE_CAPACITY_SLOTS as u64;
 
-/// How many notes the sample manages. Fixed so no allocation is needed.
-const NOTE_COUNT: usize = 3;
-const NOTE_TITLES: [&str; NOTE_COUNT] = ["first note", "second note", "third note"];
-const NOTE_FILES: [&str; NOTE_COUNT] = [
+/// Total note slots the sample can ever hold. Fixed so no allocation is needed;
+/// only the first `live` of them are shown, and "+ New note" reveals the next.
+const NOTE_CAPACITY_SLOTS: usize = 8;
+/// How many notes exist when the app first opens.
+const INITIAL_NOTE_COUNT: usize = 3;
+const NOTE_TITLES: [&str; NOTE_CAPACITY_SLOTS] = [
+    "first note",
+    "second note",
+    "third note",
+    "fourth note",
+    "fifth note",
+    "sixth note",
+    "seventh note",
+    "eighth note",
+];
+const NOTE_FILES: [&str; NOTE_CAPACITY_SLOTS] = [
     "./notes/first.txt",
     "./notes/second.txt",
     "./notes/third.txt",
+    "./notes/fourth.txt",
+    "./notes/fifth.txt",
+    "./notes/sixth.txt",
+    "./notes/seventh.txt",
+    "./notes/eighth.txt",
 ];
 
 /// Bytes of note text the editor holds. A real editor would grow; a sample
@@ -211,7 +231,7 @@ fn editor(text: &str) -> types::WidgetNode {
         role: Some(pure_string("textbox")),
         style: types::Style {
             width: Some(460.0),
-            height: Some(400.0),
+            height: Some(392.0),
             grow: 1.0,
             padding: 0.0,
         },
@@ -240,13 +260,38 @@ fn status(text: &str) -> types::WidgetNode {
     }
 }
 
+/// The "+ New note" affordance at the bottom of the list. A clickable row, not
+/// a note: selecting it reveals the next slot instead of loading a file.
+fn new_note_row() -> types::WidgetNode {
+    types::WidgetNode {
+        id: NEW_NOTE_ID,
+        parent: Some(SIDEBAR_ID),
+        kind: types::WidgetKind::Text,
+        label: Some(pure_string("+ New note")),
+        role: Some(pure_string("button")),
+        style: types::Style {
+            width: Some(200.0),
+            height: Some(24.0),
+            grow: 0.0,
+            padding: 0.0,
+        },
+        checked: None,
+        value: None,
+        selected: None,
+    }
+}
+
 fn is_note_row(widget: Option<u64>) -> Option<usize> {
     let id = widget?;
-    if id < NOTE_ROW_BASE_ID {
+    if id < NOTE_ROW_BASE_ID || id >= NEW_NOTE_ID {
         return None;
     }
     let index = (id - NOTE_ROW_BASE_ID) as usize;
-    (index < NOTE_COUNT).then_some(index)
+    (index < NOTE_CAPACITY_SLOTS).then_some(index)
+}
+
+fn is_new_note_row(widget: Option<u64>) -> bool {
+    widget == Some(NEW_NOTE_ID)
 }
 
 /// Load a note from the granted directory. A missing file is an empty note,
@@ -324,13 +369,20 @@ impl bindings::Guest for Component {
             return 32;
         }
 
+        // How many note slots are currently in use. Starts at the seeded
+        // count and grows (up to capacity) when "+ New note" is chosen.
+        let mut live: usize = INITIAL_NOTE_COUNT;
         let mut row = 0usize;
-        while row < NOTE_COUNT {
+        while row < live {
             if tree::upsert_node(win, &note_row(row)).is_err() {
                 let _ = window::close(win);
                 return 32;
             }
             row += 1;
+        }
+        if tree::upsert_node(win, &new_note_row()).is_err() {
+            let _ = window::close(win);
+            return 32;
         }
 
         let rounds = if quick {
@@ -362,6 +414,30 @@ impl bindings::Guest for Component {
                         let _ = tree::upsert_node(win, &sidebar(Some(selected)));
                         let _ = tree::upsert_node(win, &editor(buffer.as_str()));
                         let _ = tree::upsert_node(win, &status("loaded"));
+                        dirty = false;
+                    }
+                }
+                // "+ New note" reveals the next unused slot, up to capacity. It
+                // saves the note being edited first, then switches to a fresh
+                // empty note so nothing in progress is lost.
+                Some(types::Event::Pointer(pointer))
+                    if pointer.pressed && is_new_note_row(pointer.widget) =>
+                {
+                    if live < NOTE_CAPACITY_SLOTS {
+                        if save_note(selected as usize, &buffer) {
+                            saved_any = true;
+                        }
+                        let index = live;
+                        live += 1;
+                        selected = index as u32;
+                        buffer.clear();
+                        let _ = tree::upsert_node(win, &note_row(index));
+                        let _ = tree::upsert_node(win, &sidebar(Some(selected)));
+                        let _ = tree::upsert_node(win, &editor(buffer.as_str()));
+                        let _ = tree::upsert_node(win, &status("new note"));
+                        dirty = false;
+                    } else {
+                        let _ = tree::upsert_node(win, &status("note list full"));
                     }
                 }
                 // A native control (macOS) owns its text and reports the whole

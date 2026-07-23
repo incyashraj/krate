@@ -116,16 +116,25 @@ impl Phase3GuiHost {
             // passive label, so mark it clickable. Native hosts lower clickable
             // rows as buttons so a click routes back with the row's widget id;
             // drawn hosts already hit-test every placement and ignore this.
-            let clickable = node.kind == WidgetKind::Text
-                && node
-                    .parent
-                    .and_then(|parent| tree.node(parent))
-                    .is_some_and(|parent| parent.kind == WidgetKind::ListView);
+            let list_parent = node
+                .parent
+                .filter(|_| node.kind == WidgetKind::Text)
+                .and_then(|parent| tree.node(parent).map(|p| (parent, p)))
+                .filter(|(_, parent)| parent.kind == WidgetKind::ListView);
+            let clickable = list_parent.is_some();
+            // For a native host, mark the selected row via `checked` so its
+            // button can be tinted; the drawn painters use the container's
+            // selection wash instead and leave `checked` alone here.
+            let row_selected = list_parent.and_then(|(parent_id, parent)| {
+                let index = parent.selected?;
+                let selected_child = *tree.children(parent_id).get(index as usize)?;
+                Some(selected_child == *id)
+            });
             placements.push(WidgetPlacement {
                 widget: *id,
                 kind: node.kind,
                 label: node.label.clone(),
-                checked: node.checked,
+                checked: row_selected.or(node.checked),
                 value: node.value,
                 selection,
                 clip,
