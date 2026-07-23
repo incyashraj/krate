@@ -1962,6 +1962,9 @@ mod platform {
             Vec::new()
         }
 
+        /// No native controls exist off macOS, so there is nothing to tear down.
+        pub fn teardown(&self) {}
+
         /// AppKit clicks are only available on macOS.
         pub fn perform_click(&self, _widget: WidgetId) -> Result<(), UiAdapterError> {
             Err(UiAdapterError::Unsupported(
