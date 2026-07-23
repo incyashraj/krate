@@ -63,7 +63,10 @@ if [ -z "$version" ]; then
   [ -n "$version" ] || die "could not determine a release; set KRATE_VERSION to pin one"
 fi
 
-archive="krate-${version}-${target}.tar.gz"
+# The release tag keeps its leading v (v0.1.0-rc2) but the packaging script
+# strips it from the archive name (krate-0.1.0-rc2-...), so match that.
+archive_version="${version#v}"
+archive="krate-${archive_version}-${target}.tar.gz"
 base="https://github.com/${REPO}/releases/download/${version}"
 
 # ---- download, verify, install ---------------------------------------------
@@ -78,19 +81,27 @@ curl -fSL "${base}/${archive}" -o "${tmp}/${archive}" \
 # Checksums are best effort: verify when SHA256SUMS is published, warn if not,
 # never install a file that fails a check that did run.
 if curl -fsSL "${base}/SHA256SUMS" -o "${tmp}/SHA256SUMS" 2>/dev/null; then
-  expected="$(grep "  ${archive}\$" "${tmp}/SHA256SUMS" | cut -d ' ' -f 1)"
-  if [ -n "$expected" ]; then
-    if command -v sha256sum >/dev/null 2>&1; then
-      actual="$(sha256sum "${tmp}/${archive}" | cut -d ' ' -f 1)"
-    elif command -v shasum >/dev/null 2>&1; then
-      actual="$(shasum -a 256 "${tmp}/${archive}" | cut -d ' ' -f 1)"
-    else
-      actual=""
-    fi
-    if [ -n "$actual" ]; then
-      [ "$actual" = "$expected" ] || die "checksum mismatch for ${archive}; refusing to install"
-      say "Checksum verified."
-    fi
+  # The sums file lists paths (dist/.../krate-...tar.gz), so match the archive
+  # basename anywhere on the line rather than anchoring to the whole field.
+  expected="$(grep -E "[/[:space:]]${archive}\$" "${tmp}/SHA256SUMS" \
+    | head -1 | cut -d ' ' -f 1)"
+  if [ -z "$expected" ]; then
+    # The file exists but has no entry for our archive: something is wrong with
+    # the release, so fail rather than install an unverified binary quietly.
+    die "SHA256SUMS has no entry for ${archive}; refusing to install unverified"
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual="$(sha256sum "${tmp}/${archive}" | cut -d ' ' -f 1)"
+  elif command -v shasum >/dev/null 2>&1; then
+    actual="$(shasum -a 256 "${tmp}/${archive}" | cut -d ' ' -f 1)"
+  else
+    actual=""
+  fi
+  if [ -n "$actual" ]; then
+    [ "$actual" = "$expected" ] || die "checksum mismatch for ${archive}; refusing to install"
+    say "Checksum verified."
+  else
+    say "Note: no sha256 tool found, skipping checksum verification."
   fi
 else
   say "Note: no SHA256SUMS published for this release, skipping checksum."
