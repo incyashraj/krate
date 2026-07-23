@@ -286,8 +286,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: hello-fixture
     # A stuck runner (a hung evidence step, a stalled GUI proof) must fail the
-    # lane, not sit at GitHub's 6-hour default. These lanes finish in ~25 min.
-    timeout-minutes: 45
+    # lane, not sit at GitHub's 6-hour default. Ubuntu/macOS finish in ~25 min,
+    # but the Windows lane legitimately takes ~53 (slower runner + cache save),
+    # so 75 leaves margin while still catching a real hang.
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
