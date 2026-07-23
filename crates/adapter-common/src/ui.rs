@@ -1046,6 +1046,10 @@ pub struct WidgetPlacement {
     /// though its kind would normally be passive (a Text row inside a list).
     /// Hosts that lower to native controls use it to make list rows selectable.
     pub clickable: bool,
+    /// Semantic role carried from the widget node ("heading", "status",
+    /// "textbox", "option", "button"). Styling stays out of the guest
+    /// contract; hosts may use the role to pick native typography.
+    pub role: Option<String>,
 }
 
 /// One raw pointer sample from a native backend, before hit testing.

@@ -20,10 +20,15 @@ use bindings::krate::io::{args, stdio};
 use bindings::krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
-const SIDEBAR_ID: u64 = 2;
+/// The left column wraps a header label and the note list. Child order is
+/// BTreeMap id order, so the left column's id must sort before the editor
+/// column's for the sidebar to sit on the left.
+const LEFT_COLUMN_ID: u64 = 2;
 const EDITOR_ID: u64 = 3;
 const STATUS_ID: u64 = 4;
 const EDITOR_COLUMN_ID: u64 = 5;
+const SIDEBAR_HEADER_ID: u64 = 6;
+const SIDEBAR_ID: u64 = 7;
 const NOTE_ROW_BASE_ID: u64 = 10;
 /// The "+ New note" row lives just past the last possible note slot, so its id
 /// never collides with a note row and `is_note_row` can reject it cleanly.
@@ -180,17 +185,58 @@ fn editor_column() -> types::WidgetNode {
     }
 }
 
+/// The left column: a header label above the note list.
+fn left_column() -> types::WidgetNode {
+    types::WidgetNode {
+        id: LEFT_COLUMN_ID,
+        parent: Some(ROOT_ID),
+        kind: types::WidgetKind::Stack,
+        label: None,
+        role: None,
+        style: types::Style {
+            width: Some(200.0),
+            height: Some(448.0),
+            grow: 0.0,
+            padding: 0.0,
+        },
+        checked: None,
+        value: None,
+        selected: None,
+    }
+}
+
+/// The list's header. A plain label: its parent is the Stack, not the
+/// ListView, so the host does not lower it as a clickable row.
+fn sidebar_header() -> types::WidgetNode {
+    types::WidgetNode {
+        id: SIDEBAR_HEADER_ID,
+        parent: Some(LEFT_COLUMN_ID),
+        kind: types::WidgetKind::Text,
+        label: Some(pure_string("Notes")),
+        role: Some(pure_string("heading")),
+        style: types::Style {
+            width: Some(200.0),
+            height: Some(30.0),
+            grow: 0.0,
+            padding: 0.0,
+        },
+        checked: None,
+        value: None,
+        selected: None,
+    }
+}
+
 /// The note list. Selection lives here, so the host paints the highlight.
 fn sidebar(selected: Option<u32>) -> types::WidgetNode {
     types::WidgetNode {
         id: SIDEBAR_ID,
-        parent: Some(ROOT_ID),
+        parent: Some(LEFT_COLUMN_ID),
         kind: types::WidgetKind::ListView,
         label: None,
         role: Some(pure_string("listbox")),
         style: types::Style {
             width: Some(200.0),
-            height: Some(448.0),
+            height: Some(418.0),
             grow: 0.0,
             padding: 0.0,
         },
@@ -211,7 +257,7 @@ fn note_row(index: usize) -> types::WidgetNode {
         role: Some(pure_string("option")),
         style: types::Style {
             width: Some(200.0),
-            height: Some(24.0),
+            height: Some(28.0),
             grow: 0.0,
             padding: 0.0,
         },
@@ -271,7 +317,7 @@ fn new_note_row() -> types::WidgetNode {
         role: Some(pure_string("button")),
         style: types::Style {
             width: Some(200.0),
-            height: Some(24.0),
+            height: Some(28.0),
             grow: 0.0,
             padding: 0.0,
         },
@@ -360,6 +406,8 @@ impl bindings::Guest for Component {
 
         // The editor column must exist before its children (editor, status).
         if tree::set_root(win, &stack_root()).is_err()
+            || tree::upsert_node(win, &left_column()).is_err()
+            || tree::upsert_node(win, &sidebar_header()).is_err()
             || tree::upsert_node(win, &sidebar(Some(selected))).is_err()
             || tree::upsert_node(win, &editor_column()).is_err()
             || tree::upsert_node(win, &editor(buffer.as_str())).is_err()
@@ -370,8 +418,19 @@ impl bindings::Guest for Component {
         }
 
         // How many note slots are currently in use. Starts at the seeded
-        // count and grows (up to capacity) when "+ New note" is chosen.
+        // count, grows when "+ New note" is chosen, and re-discovers notes
+        // created in earlier sessions by probing which files exist — a note
+        // added yesterday must still be in the list today.
         let mut live: usize = INITIAL_NOTE_COUNT;
+        while live < NOTE_CAPACITY_SLOTS {
+            let Some(path) = NOTE_FILES.get(live) else {
+                break;
+            };
+            if files::open(path, OpenMode::Read).is_err() {
+                break;
+            }
+            live += 1;
+        }
         let mut row = 0usize;
         while row < live {
             if tree::upsert_node(win, &note_row(row)).is_err() {

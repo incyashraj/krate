@@ -13,6 +13,20 @@
 use krate_adapter_common::ui::UiAdapterError;
 use std::path::PathBuf;
 
+/// Show the native open panel filtered to `.krate`, for when Krate.app is
+/// launched with no document. Returns `None` when the person cancels.
+#[cfg(target_os = "macos")]
+pub fn choose_document() -> Result<Option<PathBuf>, UiAdapterError> {
+    platform::choose()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn choose_document() -> Result<Option<PathBuf>, UiAdapterError> {
+    Err(UiAdapterError::Unsupported(
+        "the document picker is only available on macOS".to_string(),
+    ))
+}
+
 /// Block until macOS finishes launching us and delivers any opened documents.
 ///
 /// Returns the documents Launch Services asked us to open. An empty vec means
@@ -124,6 +138,35 @@ mod platform {
         }
     }
 
+    pub(super) fn choose() -> Result<Option<PathBuf>, UiAdapterError> {
+        use objc2_app_kit::NSOpenPanel;
+        let mtm = MainThreadMarker::new().ok_or_else(|| {
+            UiAdapterError::Unsupported(
+                "the document picker must be shown on the macOS main thread".to_string(),
+            )
+        })?;
+        let panel = NSOpenPanel::openPanel(mtm);
+        panel.setTitle(Some(&NSString::from_str("Open a Krate app")));
+        panel.setCanChooseDirectories(false);
+        panel.setAllowsMultipleSelection(false);
+        // The modern replacement (allowedContentTypes) needs the UTType stack;
+        // the deprecated extension filter does exactly what we need here.
+        #[allow(deprecated)]
+        panel.setAllowedFileTypes(Some(&objc2_foundation::NSArray::from_retained_slice(&[
+            NSString::from_str("krate"),
+        ])));
+        let response = panel.runModal();
+        // NSModalResponseOK == 1
+        if response != 1 {
+            return Ok(None);
+        }
+        let urls = panel.URLs();
+        let Some(url) = urls.to_vec().into_iter().next() else {
+            return Ok(None);
+        };
+        Ok(url.path().map(|path| PathBuf::from(path.to_string())))
+    }
+
     pub(super) fn wait(late_open: Box<dyn Fn(PathBuf)>) -> Result<Vec<PathBuf>, UiAdapterError> {
         let mtm = MainThreadMarker::new().ok_or_else(|| {
             UiAdapterError::Unsupported(
@@ -134,8 +177,7 @@ mod platform {
         let opened: SharedPaths = Rc::new(RefCell::new(Vec::new()));
         let launched = Rc::new(std::cell::Cell::new(false));
         let late: LateHandler = Rc::new(RefCell::new(Some(late_open)));
-        let delegate =
-            KrateOpenDelegate::new(mtm, Rc::clone(&opened), Rc::clone(&launched), late);
+        let delegate = KrateOpenDelegate::new(mtm, Rc::clone(&opened), Rc::clone(&launched), late);
         let app = NSApplication::sharedApplication(mtm);
         app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
 

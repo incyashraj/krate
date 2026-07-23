@@ -26,7 +26,7 @@ use std::path::Path;
 use std::time::Duration;
 
 pub use consent::{present_consent_window, ConsentChoice, ConsentItem};
-pub use open_document::wait_for_opened_documents;
+pub use open_document::{choose_document, wait_for_opened_documents};
 
 pub use appkit::{
     AppKitColor, AppKitDrawFrame, AppKitDrawSurfaceState, AppKitDrawViewSurface,
@@ -498,7 +498,8 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
                     placement.height,
                 )?
                 .with_clickable(placement.clickable)
-                .with_checked(placement.checked),
+                .with_checked(placement.checked)
+                .with_role(placement.role.clone()),
             );
         }
 
@@ -806,6 +807,7 @@ mod tests {
             selection: None,
             clip: None,
             clickable: false,
+            role: None,
             x: 10.0,
             y: 10.0,
             width: 100.0,

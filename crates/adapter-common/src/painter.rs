@@ -405,6 +405,7 @@ mod tests {
             width: w,
             height: h,
             clickable: false,
+            role: None,
         }
     }
 

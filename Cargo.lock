@@ -1665,6 +1665,7 @@ dependencies = [
  "krate-manifest",
  "krate-policy",
  "libc",
+ "tempfile",
  "thiserror 2.0.18",
  "tracing",
  "wasmtime",

@@ -754,9 +754,23 @@ fn open_app() -> Result<u8> {
     // our own subcommand name can arrive as a "document". Only paths that
     // actually exist on disk are documents.
     let opened: Vec<PathBuf> = opened.into_iter().filter(|path| path.exists()).collect();
-    let Some(target) = opened.first() else {
-        eprintln!("Krate opens .krate app bundles. Double-click a .krate file to run one.");
-        return Ok(2);
+    // Launched with no document (Krate.app opened directly): offer the native
+    // picker instead of dying silently — there is no terminal to print to.
+    let picked;
+    let target = match opened.first() {
+        Some(target) => target,
+        None => {
+            match krate_adapter_macos::choose_document()
+                .map_err(|error| anyhow::anyhow!("the document picker failed: {error}"))?
+            {
+                Some(path) => {
+                    picked = path;
+                    &picked
+                }
+                // Cancelled: quitting quietly is the correct outcome.
+                None => return Ok(0),
+            }
+        }
     };
     let sandbox_root = target
         .parent()
@@ -864,7 +878,10 @@ fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Res
 /// The rich window is macOS-only for now (founder decision, 2026-07-23). On
 /// other platforms this falls back to the terminal prompt, so a `--consent` run
 /// there still works; a portable window is a later P3-OPEN slice.
-fn consent_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Result<SessionPolicy> {
+fn consent_for_session_grants(
+    manifest: &Manifest,
+    policy: &SessionPolicy,
+) -> Result<SessionPolicy> {
     let consent_caps = manifest
         .declared_capabilities()?
         .into_iter()
@@ -912,6 +929,10 @@ fn consent_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Re
 }
 
 /// One capability shown in the consent window.
+///
+/// Off macOS the native window does not exist, so nothing reads these fields
+/// there — the terminal fallback re-derives what it needs from the manifest.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 struct ConsentCapability {
     cap: Capability,
     display: String,

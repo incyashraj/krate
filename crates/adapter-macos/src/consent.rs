@@ -251,6 +251,9 @@ mod platform {
             NSPoint::new(WINDOW_WIDTH - 120.0, 16.0),
             NSSize::new(100.0, 32.0),
         ));
+        // Return activates Open, which also renders it as the default
+        // (accent-filled) button — the standard macOS dialog affordance.
+        open_button.setKeyEquivalent(&NSString::from_str("\r"));
         content.addSubview(&open_button);
 
         let cancel_button = unsafe {
@@ -265,6 +268,8 @@ mod platform {
             NSPoint::new(20.0, 16.0),
             NSSize::new(100.0, 32.0),
         ));
+        // Escape cancels, matching every macOS dialog.
+        cancel_button.setKeyEquivalent(&NSString::from_str("\u{1b}"));
         content.addSubview(&cancel_button);
 
         window.setContentView(Some(&content));
