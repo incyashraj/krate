@@ -7,7 +7,7 @@ multilingual = false
 src = "src"
 
 [output.html]
-site-url = "/krate/"
+site-url = "/krate/docs/"
 git-repository-url = "https://github.com/incyashraj/krate"
 git-repository-icon = "fa-github"
 edit-url-template = "https://github.com/incyashraj/krate/edit/main/docs/book/{path}"

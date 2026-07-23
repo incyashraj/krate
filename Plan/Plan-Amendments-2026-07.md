@@ -562,14 +562,28 @@ Definition of done:
    slice) shows a native dialog listing app id and every requested capability
    with its `rationale` from the in-bundle manifest, before instantiation.
 2. Allow grants exactly the listed capabilities for that session and nothing
-   else; Deny refuses and the component never runs.
+   else; Deny refuses and the component never runs. Consent is per-capability:
+   the window lists each requested (non-default-granted) capability with the
+   author's rationale and a per-capability allow/deny, mirroring the existing
+   terminal `prompt_for_session_grants` semantics exactly — the same
+   `SessionPolicy::from_grants` fold, so the native and terminal paths produce
+   identical grant sets.
 3. A denied or partially-denied set produces the same structured denial a
    withheld `--grant` produces today — no new denial semantics.
-4. The dialog is implemented once in a shared place and lowered per-OS; the
-   non-macOS path has a working equivalent or an explicit, tested stub (the
-   off-macOS-stub gap has bitten this codebase before — the stub must compile
-   and be exercised on the Linux and Windows lanes, not only macOS).
-5. Full CI matrix green on all three OS lanes.
+4. **Platform scope for this slice (founder decision, 2026-07-23): the rich
+   native consent window is macOS-only for now.** Linux and Windows keep the
+   existing terminal `--prompt` path unchanged; a portable consent window on the
+   other OSes is deferred to after the demo (a later P3-OPEN slice, not this
+   one). The macOS window lives in `adapter-macos`; the non-macOS build must
+   still compile and be exercised — the code path selecting native-vs-terminal
+   consent needs a stub or fallback that the Linux and Windows lanes actually
+   run (the off-macOS-stub gap has bitten this codebase twice; do not let a
+   macOS-only method be called unconditionally).
+5. Full CI matrix green on all three OS lanes. Because the native window is
+   macOS-only, the Linux CI proof exercises the consent *semantics* (grant set
+   equals what was allowed; a withheld required capability yields the same
+   structured denial and exit code) rather than the macOS window itself — the
+   proof must assert something real, not that a stub returned.
 
 Verification: extend the existing Xvfb proof so the Linux robot opens a bundle
 in consent mode, sees the dialog, allows it, and screenshots the running app;

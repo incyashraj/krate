@@ -4,6 +4,8 @@
 //! `krate-adapter-common`, while macOS-specific host wiring will land here.
 
 mod appkit;
+mod consent;
+mod open_document;
 
 use krate_adapter_common::{
     locale::{DateStyle, HostLocale, LocaleId, NumberStyle},
@@ -22,6 +24,9 @@ use std::net::ToSocketAddrs;
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::time::Duration;
+
+pub use consent::{present_consent_window, ConsentChoice, ConsentItem};
+pub use open_document::{choose_document, wait_for_opened_documents};
 
 pub use appkit::{
     AppKitColor, AppKitDrawFrame, AppKitDrawSurfaceState, AppKitDrawViewSurface,
@@ -493,7 +498,8 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
                     placement.height,
                 )?
                 .with_clickable(placement.clickable)
-                .with_checked(placement.checked),
+                .with_checked(placement.checked)
+                .with_role(placement.role.clone()),
             );
         }
 
@@ -801,6 +807,7 @@ mod tests {
             selection: None,
             clip: None,
             clickable: false,
+            role: None,
             x: 10.0,
             y: 10.0,
             width: 100.0,

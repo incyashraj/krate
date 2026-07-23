@@ -143,6 +143,7 @@ impl Phase3GuiHost {
                 width: rect.width,
                 height: rect.height,
                 clickable,
+                role: node.role.clone(),
             });
         }
         drop(offsets);

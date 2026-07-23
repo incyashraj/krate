@@ -82,6 +82,13 @@ enum Command {
         #[arg(long)]
         prompt: bool,
 
+        /// Ask for missing capabilities in a native consent window instead of
+        /// the terminal. macOS only today; on other platforms this falls back
+        /// to the terminal prompt. This is the path a double-clicked `.krate`
+        /// uses, where there is no terminal to answer.
+        #[arg(long)]
+        consent: bool,
+
         /// Use the opt-in native window prototype for Phase 3 GUI apps
         /// (macOS AppKit today). The default GUI path stays headless.
         #[arg(long)]
@@ -138,6 +145,13 @@ enum Command {
         #[command(subcommand)]
         command: ManifestCommand,
     },
+
+    /// Entry point used inside Krate.app: wait for the document Finder asked
+    /// us to open, then run it behind the consent wall. Not intended for
+    /// direct use; double-click a .krate instead.
+    #[cfg(target_os = "macos")]
+    #[command(hide = true)]
+    OpenApp,
 
     /// Pack a component and its manifest into one shareable .krate bundle.
     Pack {
@@ -257,6 +271,7 @@ fn run() -> Result<u8> {
             grant,
             auto_grant,
             prompt,
+            consent,
             native_window,
             insecure_http,
             json,
@@ -281,6 +296,7 @@ fn run() -> Result<u8> {
             grants: grant,
             auto_grant,
             prompt,
+            consent,
             native_window,
             json,
             dump_caps,
@@ -292,6 +308,8 @@ fn run() -> Result<u8> {
             test_timezone,
             app_args,
         }),
+        #[cfg(target_os = "macos")]
+        Command::OpenApp => open_app(),
         Command::Pack {
             file,
             manifest,
@@ -341,6 +359,7 @@ struct RunRequest {
     grants: Vec<String>,
     auto_grant: bool,
     prompt: bool,
+    consent: bool,
     native_window: bool,
     insecure_http: bool,
     json: bool,
@@ -450,10 +469,17 @@ fn run_component(request: RunRequest) -> Result<u8> {
     let mut policy = resolve_session_policy(manifest, &request.grants, request.auto_grant)?;
 
     if let Some(manifest) = manifest {
-        let can_prompt = request.prompt || io::stdin().is_terminal();
+        let can_prompt = request.prompt || request.consent || io::stdin().is_terminal();
         let missing = policy.missing_required_for_manifest(manifest)?;
         if !missing.is_empty() && can_prompt && !request.auto_grant {
-            policy = prompt_for_session_grants(manifest, &policy)?;
+            // A double-clicked bundle asks in a native window; a terminal run
+            // asks in the terminal. The two paths fold the same grant set into
+            // the same SessionPolicy, so enforcement downstream is identical.
+            policy = if request.consent {
+                consent_for_session_grants(manifest, &policy)?
+            } else {
+                prompt_for_session_grants(manifest, &policy)?
+            };
         }
 
         let missing = policy.missing_required_for_manifest(manifest)?;
@@ -709,6 +735,103 @@ fn validate_app_args(app_args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// The Krate.app entry point (P3-OPEN-03): receive the document Finder asked
+/// us to open, then run it through the ordinary consent + native-window flow.
+/// The sandbox root is the folder the `.krate` sits in, so an app that writes
+/// `./notes/**` keeps its data in a folder next to the document — visible,
+/// understandable, and identical to running it from a terminal in that folder.
+#[cfg(target_os = "macos")]
+fn open_app() -> Result<u8> {
+    // A document that arrives while this instance is already running an app
+    // (double-click in Finder mid-session) gets its own process, so every
+    // opened .krate behaves like its own application.
+    let late_open = Box::new(|path: PathBuf| {
+        spawn_open_run(&path);
+    });
+    let opened = krate_adapter_macos::wait_for_opened_documents(late_open)
+        .map_err(|error| anyhow::anyhow!("waiting for the opened document failed: {error}"))?;
+    // AppKit also feeds process arguments through application:openFiles:, so
+    // our own subcommand name can arrive as a "document". Only paths that
+    // actually exist on disk are documents.
+    let opened: Vec<PathBuf> = opened.into_iter().filter(|path| path.exists()).collect();
+    // Launched with no document (Krate.app opened directly): offer the native
+    // picker instead of dying silently — there is no terminal to print to.
+    let picked;
+    let target = match opened.first() {
+        Some(target) => target,
+        None => {
+            match krate_adapter_macos::choose_document()
+                .map_err(|error| anyhow::anyhow!("the document picker failed: {error}"))?
+            {
+                Some(path) => {
+                    picked = path;
+                    &picked
+                }
+                // Cancelled: quitting quietly is the correct outcome.
+                None => return Ok(0),
+            }
+        }
+    };
+    let sandbox_root = target
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    // Several documents opened at once: the first runs in this process, the
+    // rest each get their own.
+    for extra in opened.iter().skip(1) {
+        spawn_open_run(extra);
+    }
+
+    run_component(RunRequest {
+        target: target.display().to_string(),
+        file: PathBuf::new(),
+        insecure_http: false,
+        fuel: None,
+        mem_limit: 256,
+        max_http_response_bytes: DEFAULT_MAX_HTTP_RESPONSE_BYTES,
+        http_timeout_millis: DEFAULT_HTTP_TIMEOUT_MILLIS,
+        sandbox_root,
+        manifest_path: None,
+        grants: Vec::new(),
+        auto_grant: false,
+        prompt: false,
+        consent: true,
+        native_window: true,
+        json: false,
+        dump_caps: false,
+        dump_caps_format: OutputFormat::Text,
+        log_grants: None,
+        log_grants_format: GrantLogFormat::Text,
+        test_time_millis: None,
+        test_locale: None,
+        test_timezone: None,
+        app_args: Vec::new(),
+    })
+}
+
+/// Run one opened document in its own process, mirroring what open_app does
+/// for the first document. Fire-and-forget: the child owns its own consent
+/// window and lifetime.
+#[cfg(target_os = "macos")]
+fn spawn_open_run(path: &Path) {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let sandbox_root = path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let _ = ProcessCommand::new(exe)
+        .arg("run")
+        .arg(path)
+        .arg("--consent")
+        .arg("--native-window")
+        .arg("--sandbox-root")
+        .arg(sandbox_root)
+        .spawn();
+}
+
 fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Result<SessionPolicy> {
     let prompt_caps = manifest
         .declared_capabilities()?
@@ -744,6 +867,133 @@ fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Res
     let grants = policy.grants().iter().cloned().chain(selected);
 
     Ok(SessionPolicy::from_grants(grants))
+}
+
+/// Ask for missing capabilities in a native consent window instead of the
+/// terminal. This is the path a double-clicked `.krate` takes, where there is
+/// no terminal to answer. It mirrors `prompt_for_session_grants` exactly — same
+/// filter to non-default missing caps, same `SessionPolicy::from_grants` fold —
+/// so the native and terminal paths cannot diverge in what they enforce.
+///
+/// The rich window is macOS-only for now (founder decision, 2026-07-23). On
+/// other platforms this falls back to the terminal prompt, so a `--consent` run
+/// there still works; a portable window is a later P3-OPEN slice.
+fn consent_for_session_grants(
+    manifest: &Manifest,
+    policy: &SessionPolicy,
+) -> Result<SessionPolicy> {
+    let consent_caps = manifest
+        .declared_capabilities()?
+        .into_iter()
+        .filter(|cap| !policy.allows(cap) && !cap.is_default_granted())
+        .collect::<Vec<_>>();
+
+    if consent_caps.is_empty() {
+        return Ok(policy.clone());
+    }
+
+    let requests = consent_caps
+        .iter()
+        .map(|cap| {
+            let request = manifest.capabilities.iter().find(|request| {
+                request
+                    .cap
+                    .parse::<Capability>()
+                    .ok()
+                    .as_ref()
+                    .is_some_and(|parsed| parsed == cap)
+            });
+            ConsentCapability {
+                cap: cap.clone(),
+                display: cap.to_string(),
+                rationale: request
+                    .map(|request| request.rationale.clone())
+                    .unwrap_or_default(),
+                required: request.map(|request| request.required).unwrap_or(true),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    match show_consent_window(&manifest.app.name, &manifest.app.id, &requests)? {
+        ConsentOutcome::Allowed(selected) => {
+            let grants = policy.grants().iter().cloned().chain(selected);
+            Ok(SessionPolicy::from_grants(grants))
+        }
+        // Cancel leaves the policy unchanged; the missing-required check that
+        // follows this call then refuses the run with the standard denial.
+        ConsentOutcome::Cancelled => Ok(policy.clone()),
+        // No native window on this platform: fall back to the terminal prompt
+        // so `--consent` still works everywhere.
+        ConsentOutcome::Unsupported => prompt_for_session_grants(manifest, policy),
+    }
+}
+
+/// One capability shown in the consent window.
+///
+/// Off macOS the native window does not exist, so nothing reads these fields
+/// there — the terminal fallback re-derives what it needs from the manifest.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+struct ConsentCapability {
+    cap: Capability,
+    display: String,
+    rationale: String,
+    required: bool,
+}
+
+/// What the user decided in the consent window.
+///
+/// Which variants are constructed depends on the platform: macOS builds return
+/// `Allowed`/`Cancelled` from the native window and never `Unsupported`, while
+/// non-macOS builds only ever return `Unsupported`. Rather than cfg each
+/// variant, allow the unused ones per build — every variant is live on some
+/// platform.
+#[allow(dead_code)]
+enum ConsentOutcome {
+    /// They pressed Open; the vec is the capabilities they allowed.
+    Allowed(Vec<Capability>),
+    /// They pressed Cancel; nothing is granted and the run is refused.
+    Cancelled,
+    /// This platform has no native consent window; caller should fall back.
+    Unsupported,
+}
+
+#[cfg(target_os = "macos")]
+fn show_consent_window(
+    app_name: &str,
+    app_id: &str,
+    requests: &[ConsentCapability],
+) -> Result<ConsentOutcome> {
+    let items = requests
+        .iter()
+        .map(|item| krate_adapter_macos::ConsentItem {
+            display: item.display.clone(),
+            rationale: item.rationale.clone(),
+            required: item.required,
+        })
+        .collect::<Vec<_>>();
+
+    match krate_adapter_macos::present_consent_window(app_name, app_id, &items)? {
+        krate_adapter_macos::ConsentChoice::Open(allowed_indices) => {
+            let selected = allowed_indices
+                .into_iter()
+                .filter_map(|index| requests.get(index).map(|item| item.cap.clone()))
+                .collect();
+            Ok(ConsentOutcome::Allowed(selected))
+        }
+        krate_adapter_macos::ConsentChoice::Cancel => Ok(ConsentOutcome::Cancelled),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_consent_window(
+    _app_name: &str,
+    _app_id: &str,
+    _requests: &[ConsentCapability],
+) -> Result<ConsentOutcome> {
+    // No native window off macOS yet; the caller falls back to the terminal
+    // prompt. This arm keeps the Linux and Windows builds compiling and is
+    // exercised on those CI lanes, closing the off-macOS-stub gap by design.
+    Ok(ConsentOutcome::Unsupported)
 }
 
 fn parse_grant_response(input: &str, caps: &[Capability]) -> Result<Vec<Capability>> {

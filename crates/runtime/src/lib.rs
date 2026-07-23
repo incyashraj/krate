@@ -689,9 +689,23 @@ impl LocalPhase2Adapter {
                 if let Some(err) = map_existing_broken_leaf_error(&host_path, err)? {
                     return Err(err);
                 }
-                let parent = host_path.parent().ok_or(AdapterError::InvalidPath)?;
-                let real_parent = canonicalize_path_on_host(parent).map_err(map_io_error)?;
-                ensure_path_in_sandbox(&root, &real_parent)?;
+                // Parents may be missing too: a write-mode open materializes
+                // them (see FsAdapter::open), so validate the nearest ancestor
+                // that does exist against the sandbox. The missing segments
+                // between it and the leaf came from the normalized logical
+                // path, so traversal is unrepresentable in them, and
+                // ensure_no_symlink_segments already vetted the existing ones.
+                let mut ancestor = host_path.parent().ok_or(AdapterError::InvalidPath)?;
+                let real_ancestor = loop {
+                    match canonicalize_path_on_host(ancestor) {
+                        Ok(real) => break real,
+                        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                            ancestor = ancestor.parent().ok_or(AdapterError::InvalidPath)?;
+                        }
+                        Err(err) => return Err(map_io_error(err)),
+                    }
+                };
+                ensure_path_in_sandbox(&root, &real_ancestor)?;
                 Ok(host_path)
             }
             Err(err) => Err(map_io_error(err)),
@@ -902,7 +916,7 @@ fn ensure_no_symlink_segments(
     }
 
     let mut current = root.to_path_buf();
-    for (index, segment) in segments.iter().enumerate() {
+    for segment in segments.iter() {
         current.push(segment.as_os_str());
         match symlink_metadata_on_host(&current) {
             Ok(metadata) => {
@@ -911,8 +925,12 @@ fn ensure_no_symlink_segments(
                 }
             }
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
-                let is_leaf = index + 1 == segments.len();
-                if is_leaf && missing_leaf == MissingLeaf::Allow {
+                // Once any segment is missing, nothing beneath it exists, so
+                // no later segment can be a symlink. When the operation may
+                // create its target (write-mode opens), the missing tail is
+                // fine: every existing segment above was already vetted, and
+                // the write path materializes the rest as real directories.
+                if missing_leaf == MissingLeaf::Allow {
                     return Ok(());
                 }
                 return Err(map_io_error(err));
@@ -1116,6 +1134,17 @@ impl FsAdapter for LocalPhase2Adapter {
             OpenMode::Write | OpenMode::ReadWrite | OpenMode::Append => FsOperation::CreateLeaf,
         };
         let path = self.resolve_fs_path(path, missing_leaf)?;
+        // A write-mode open materializes missing parent directories. The
+        // resolved path is already validated to sit inside the sandbox and the
+        // capability policy was checked before dispatch, so a grant like
+        // `fs.write:./notes/**` lets the app create that tree on first save —
+        // a shared bundle must work from a fresh folder, not only one that
+        // happens to have its directories pre-made.
+        if !matches!(mode, OpenMode::Read) {
+            if let Some(parent) = path.as_path().parent() {
+                create_dir_all_on_host(parent).map_err(map_io_error)?;
+            }
+        }
         let mut opts = std::fs::OpenOptions::new();
         apply_no_follow_final_symlink_on_host(&mut opts);
         match mode {
@@ -2073,6 +2102,32 @@ mod tests {
         let err = normalize_fs_path("fixtures/../secret.txt").expect_err("path should be rejected");
 
         assert_eq!(err, AdapterError::InvalidPath);
+    }
+
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn write_open_creates_missing_parent_directories_inside_sandbox() {
+        let sandbox = tempfile::tempdir().expect("tempdir");
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            Some("en_US.UTF-8".to_string()),
+            Some("UTC".to_string()),
+            Vec::new(),
+            1024,
+            sandbox.path().to_path_buf(),
+        );
+
+        // A shared bundle runs from a fresh folder: nothing under the sandbox
+        // exists yet. A granted write must materialize its own directory tree.
+        let handle = FsAdapter::open(&adapter, "./notes/first.txt", OpenMode::Write)
+            .expect("write-open should create missing parent directories");
+        FsAdapter::write(&adapter, &handle, b"hello").expect("write");
+        drop(handle);
+
+        let on_disk =
+            std::fs::read_to_string(sandbox.path().join("notes/first.txt")).expect("read back");
+        assert_eq!(on_disk, "hello");
     }
 
     #[cfg(feature = "phase2-bindings")]

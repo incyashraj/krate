@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Krate — share software like a document. It asks before it runs.</title>
+<meta name="description" content="Krate turns software created by AI into one file you can share like a document. Double-click it, see exactly what it wants to touch, and it runs natively on macOS, Windows, and Linux — touching nothing you didn't allow." />
+<meta property="og:title" content="Krate — share software like a document" />
+<meta property="og:description" content="One file. Double-click it. It shows you what it wants, then runs — and can touch nothing you didn't allow." />
+<meta property="og:type" content="website" />
+<link rel="icon" href="data:image/png;base64,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" />
+<style>
+  :root {
+    --bg: #0b0e14;
+    --bg-soft: #121722;
+    --panel: #161c28;
+    --line: #232b3a;
+    --line-soft: #1b2230;
+    --ink: #eef2f8;
+    --ink-dim: #9aa7bd;
+    --ink-faint: #6b7688;
+    --blue: #2f8cff;
+    --blue-bright: #4c9dff;
+    --blue-deep: #0060d6;
+    --green: #35c07a;
+    --red: #e2564f;
+    --radius: 12px;
+    --maxw: 1080px;
+    --sans: "Krate Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: "Krate Mono", ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: var(--blue-bright); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+  /* ---- top bar ---- */
+  header.bar {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(11,14,20,0.82);
+    backdrop-filter: saturate(140%) blur(8px);
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .bar-inner { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; }
+  .brand img { width: 26px; height: 26px; display: block; }
+  .brand span { font-size: 18px; }
+  nav.links { display: flex; gap: 22px; align-items: center; }
+  nav.links a { color: var(--ink-dim); font-size: 15px; }
+  nav.links a:hover { color: var(--ink); text-decoration: none; }
+
+  /* ---- hero ---- */
+  .hero { padding: 92px 0 60px; position: relative; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: -40% 0 auto 0; height: 620px;
+    background: radial-gradient(60% 70% at 50% 0%, rgba(47,140,255,0.16), transparent 70%);
+    pointer-events: none;
+  }
+  .eyebrow {
+    display: inline-block; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--blue-bright); border: 1px solid var(--line);
+    background: var(--bg-soft); padding: 6px 12px; border-radius: 999px; margin-bottom: 26px;
+  }
+  h1.headline {
+    font-size: clamp(34px, 6vw, 62px); line-height: 1.04; letter-spacing: -0.03em;
+    font-weight: 680; margin: 0 0 22px; max-width: 15ch; text-wrap: balance;
+  }
+  h1.headline .accent { color: var(--blue-bright); }
+  .sub { font-size: clamp(17px, 2.4vw, 21px); color: var(--ink-dim); max-width: 56ch; margin: 0 0 34px; }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px; font-family: var(--sans);
+    font-size: 16px; font-weight: 560; padding: 13px 22px; border-radius: 10px;
+    border: 1px solid transparent; cursor: pointer; transition: transform .06s ease, background .15s ease;
+  }
+  .btn:hover { text-decoration: none; }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: var(--blue); color: #fff; }
+  .btn-primary:hover { background: var(--blue-bright); }
+  .btn-ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+  .btn-ghost:hover { border-color: #34405a; background: var(--bg-soft); }
+
+  .install {
+    margin-top: 30px; display: inline-flex; align-items: stretch; max-width: 100%;
+    border: 1px solid var(--line); border-radius: 10px; background: #0d1119; overflow: hidden;
+  }
+  .install code {
+    font-family: var(--mono); font-size: 14.5px; color: var(--ink); padding: 13px 16px;
+    white-space: nowrap; overflow-x: auto; display: block;
+  }
+  .install .prompt { color: var(--ink-faint); user-select: none; }
+  .copy {
+    border: none; border-left: 1px solid var(--line); background: var(--panel); color: var(--ink-dim);
+    font-family: var(--sans); font-size: 13px; padding: 0 16px; cursor: pointer;
+  }
+  .copy:hover { color: var(--ink); background: #1b2333; }
+
+  /* ---- section scaffolding ---- */
+  section { padding: 66px 0; border-top: 1px solid var(--line-soft); }
+  .kicker { font-size: 13px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 12px; }
+  h2 { font-size: clamp(24px, 3.6vw, 34px); letter-spacing: -0.02em; margin: 0 0 16px; font-weight: 640; text-wrap: balance; }
+  .lead { color: var(--ink-dim); max-width: 60ch; font-size: 18px; margin: 0 0 40px; }
+
+  /* ---- three steps ---- */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .step { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px 24px; }
+  .step .n { font-family: var(--mono); font-size: 13px; color: var(--blue-bright); margin-bottom: 14px; }
+  .step h3 { margin: 0 0 8px; font-size: 19px; letter-spacing: -0.01em; }
+  .step p { margin: 0; color: var(--ink-dim); font-size: 15.5px; }
+
+  /* ---- permission wall mock ---- */
+  .wall-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 44px; align-items: center; }
+  .consent {
+    background: #1b1f27; border: 1px solid #2a3140; border-radius: 14px; padding: 22px 22px 18px;
+    box-shadow: 0 24px 60px -30px rgba(0,0,0,0.8); max-width: 420px;
+  }
+  .consent .title { font-weight: 600; font-size: 16px; margin: 2px 0 2px; }
+  .consent .id { color: var(--ink-faint); font-size: 13px; margin-bottom: 18px; }
+  .cap { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid #242b38; }
+  .cap:first-of-type { border-top: none; }
+  .cap .box { width: 18px; height: 18px; border-radius: 5px; background: var(--blue); flex: 0 0 auto; margin-top: 2px; position: relative; }
+  .cap .box::after { content: "✓"; position: absolute; inset: 0; color: #fff; font-size: 12px; display: grid; place-items: center; }
+  .cap .grant { font-family: var(--mono); font-size: 13.5px; color: var(--ink); }
+  .cap .why { color: var(--ink-faint); font-size: 13px; }
+  .consent .actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+  .consent .b { font-size: 13.5px; padding: 8px 16px; border-radius: 8px; }
+  .consent .b.cancel { background: transparent; border: 1px solid #333c4c; color: var(--ink-dim); }
+  .consent .b.open { background: var(--blue); color: #fff; border: 1px solid var(--blue); }
+  .wall-copy h2 { margin-bottom: 14px; }
+  .wall-copy p { color: var(--ink-dim); margin: 0 0 14px; }
+  .wall-copy .pt { display: flex; gap: 10px; align-items: baseline; margin: 10px 0; font-size: 15.5px; }
+  .wall-copy .pt b { color: var(--ink); font-weight: 560; }
+  .dot { width: 7px; height: 7px; border-radius: 999px; flex: 0 0 auto; margin-top: 7px; }
+  .dot.g { background: var(--green); }
+  .dot.r { background: var(--red); }
+
+  /* ---- proof ---- */
+  .proof { background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--radius); padding: 30px 30px; }
+  .proof p { margin: 0; color: var(--ink-dim); font-size: 17px; }
+  .proof b { color: var(--ink); font-weight: 560; }
+  .proof .mono { font-family: var(--mono); color: var(--blue-bright); font-size: 15px; }
+
+  /* ---- who it's for ---- */
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+  .card h3 { margin: 0 0 8px; font-size: 18px; }
+  .card p { margin: 0; color: var(--ink-dim); font-size: 15.5px; }
+
+  /* ---- footer ---- */
+  footer { border-top: 1px solid var(--line-soft); padding: 40px 0 60px; color: var(--ink-faint); font-size: 14px; }
+  .foot-inner { display: flex; flex-wrap: wrap; gap: 20px; justify-content: space-between; align-items: center; }
+  .foot-links { display: flex; gap: 20px; flex-wrap: wrap; }
+  .foot-links a { color: var(--ink-dim); }
+
+  @media (max-width: 820px) {
+    .steps { grid-template-columns: 1fr; }
+    .wall-grid { grid-template-columns: 1fr; gap: 30px; }
+    .cols { grid-template-columns: 1fr; }
+    nav.links a:not(.gh) { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <div class="wrap bar-inner">
+    <div class="brand"><img src="data:image/png;base64,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" alt="" /><span>Krate</span></div>
+    <nav class="links">
+      <a href="./docs/">Docs</a>
+      <a href="./docs/try-krate-notes.html">Try it</a>
+      <a class="gh" href="https://github.com/incyashraj/krate">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <span class="eyebrow">A runtime for software created by AI</span>
+      <h1 class="headline">Share software like a document. <span class="accent">It asks before it runs.</span></h1>
+      <p class="sub">An agent packages an app as one file. You send it — or a link. The person double-clicks it, sees exactly what it wants to touch, and it runs natively on macOS, Windows, and Linux. It can touch nothing they didn't allow.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://github.com/incyashraj/krate/releases/latest">Download Krate</a>
+        <a class="btn btn-ghost" href="./docs/try-krate-notes.html">See it in two minutes →</a>
+      </div>
+      <div class="install" title="Install the runtime">
+        <code><span class="prompt">$ </span>curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh</code>
+        <button class="copy" id="copyBtn">Copy</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="kicker">How it works</p>
+      <h2>From an agent's output to a running app — in three steps.</h2>
+      <p class="lead">No installer to build, no operating system to pick, no source tree to trust. The file carries the app and its permissions together.</p>
+      <div class="steps">
+        <div class="step">
+          <div class="n">01</div>
+          <h3>Get one file</h3>
+          <p>An agent packages its output as a single <code>.krate</code> — the app plus the exact permissions it needs. Share it like any document, or link to it.</p>
+        </div>
+        <div class="step">
+          <div class="n">02</div>
+          <h3>Double-click it</h3>
+          <p>A window shows who's asking and everything it wants to touch — one folder, say. Nothing runs until you click Open. No terminal required.</p>
+        </div>
+        <div class="step">
+          <div class="n">03</div>
+          <h3>It runs, sandboxed</h3>
+          <p>The same file runs natively on macOS, Windows, and Linux. It starts with zero authority and gets only what you granted — nothing else on your machine is reachable.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap wall-grid">
+      <div>
+        <div class="consent" role="img" aria-label="A permission window showing an app named Krate Notes requesting read and write access to one notes folder, with Open and Cancel buttons.">
+          <div class="title">Krate Notes wants to open</div>
+          <div class="id">dev.krate.notes · it can only touch what you allow below</div>
+          <div class="cap"><span class="box"></span><div><div class="grant">fs.read:notes/**</div><div class="why">Load your saved notes</div></div></div>
+          <div class="cap"><span class="box"></span><div><div class="grant">fs.write:notes/**</div><div class="why">Save the note you are editing</div></div></div>
+          <div class="actions"><span class="b cancel">Cancel</span><span class="b open">Open</span></div>
+        </div>
+      </div>
+      <div class="wall-copy">
+        <p class="kicker">The permission wall</p>
+        <h2>Every capability is granted, never assumed.</h2>
+        <p>Software has always run with your full authority — every file, every credential, the whole network. That was a shaky default when a person wrote the code. When an agent writes it and nobody reads it, it stops being defensible.</p>
+        <div class="pt"><span class="dot g"></span><span><b>Grant</b> — the app gets exactly the capabilities you approve, for that session only.</span></div>
+        <div class="pt"><span class="dot r"></span><span><b>Deny</b> — a withheld capability stops the app before a single line of its code runs, and returns a structured answer an agent can act on.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="proof">
+        <p class="kicker" style="margin-bottom:14px;">Proof, not promises</p>
+        <p>Every push, a machine nobody has logged into opens the app, clicks it, types into it, withholds a permission to confirm it refuses to start, and photographs the screen — on <b>macOS, Windows, and Linux</b>. It's all public CI. <span class="mono">the same file, on every OS, unchanged.</span></p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <p class="kicker">Who it's for</p>
+      <h2>Built for the moment software started writing itself.</h2>
+      <div class="cols" style="margin-top:28px;">
+        <div class="card">
+          <h3>Agent platforms</h3>
+          <p>Your agents generate apps your users can't safely run on their own machines, so they stay trapped in cloud sandboxes and browser previews. Krate is the layer that lets you ship them locally, behind an enforced permission wall.</p>
+        </div>
+        <div class="card">
+          <h3>Anyone sharing a tool</h3>
+          <p>Send a colleague a small tool the way you'd send a doc. They open it, see what it wants, and use it — without installing anything or trusting code they can't read.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap" style="text-align:center;">
+      <h2 style="margin:0 auto 16px; max-width:20ch;">Try the sample app right now.</h2>
+      <p class="lead" style="margin:0 auto 30px;">Download the runtime, grab one 13&nbsp;KB file, and double-click it. Two minutes, start to finish.</p>
+      <div class="cta-row" style="justify-content:center;">
+        <a class="btn btn-primary" href="./docs/try-krate-notes.html">Get started</a>
+        <a class="btn btn-ghost" href="https://github.com/incyashraj/krate">Read the source</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div class="brand" style="font-size:15px; color:var(--ink-dim);"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAERlWElmTU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAAAQKADAAQAAAABAAAAQAAAAABGUUKwAAAMIElEQVR4Ae1abYxcVRl+78fc2c9Yrd1SoB90l0I/wmdrpK0IBROpCkZblUhUlIiASCn9gVEBJcoPNP4RbY2JRKJIgdDEhFgtCaHQEui2RUu/2HZbtlAo/aCt3Zm5nz7PuXN3Z5Z77s7MbhXCnmY7M3fuOed9nvd53/OeM1dkrI0xMMbAGANjDHx4GTAahx4ZUx+UaaHvnxvZRkfkh3bjYzXQ0zQDM7IORZHsOVCSvXKfETYwitRNwLRfR+Nc17vBEPN6ieQCMa02w2xk6pH3iQg59PvFMLZJZDwW2eaf3lxhHK5n5LoImPSL0pdM035AbHOGYPIoCGgB3tQz5Sjeq6w3xbAsETghCsLeKPR/cvCH+T/XOkuNBETGmQ/494hp3GuIZUSBW+v4/9v7rFw8X+D98s0u5275ikEPZbaa4vaMn7v3iO3cF3meRJGPAWvkLXPq0/ClD8cgHo2cs2LS7pJ5UOSu4WYZFsmZ95/6YpRrelKCwBQVdMMN+T743jAQFjmJ/NI3Dv64+ZEsizIJGHffsXFNdvMmDNb5vpW9Bp1hgoDQOxgawcWHftT2tuY2pg59a7Kav27k8p0RpcVE9wH6o8OMXNMkKzRu0iNUuVPz9dLIiiS8AZkVcR99AP/gLz+QMJLru25/La9BKdokOPGC4hSscBdEETP+/2ud05ld2/U4bI3zTk6YNAM9/p3WS0tAFLozDKu5JQq8tH4fkGuRGHbeDv3C+XUTIGJ1IJXC+e/TNb9WF2BZtAyZqLtdr4AotBD4KvZ1nUd63UOZwuBywPNpa8AQRvRketMSkH776Fx1fRCLoT451UJVbcgL+3xyLXk7c1VubHJOlFEPagkI0cnEOsAVYLSaS49juHmTTbllviPXzc6JiYX46e2+PLTBlY37Y0k4WqsasETZr2cgY6qytaNAQAJ87mRLbl3gyLUAXin7L8y25ZqZtjy9w5ffvlBSRJD2vFa4dRBB+zM2yhkE1DFJyq0EkEh93mRbboXHr51TDbyymw0lXAsiFisiPBDhygaEBpuD0DgNwaHG1hNAAdiNhYALu0kAPX7bgnwmcGVFxX8xETkQkYMiPHno+bIiMGBeb23FCEPeQgFhhgSyh6R86giBUjlq5k0h8Ka6gA8xG8mRiqgmQikCJjFH1KyIkYQAvci/zIYb3IBKQXKbAqkvzMt1c5yqGM/sP8yXVURs9+Q3zxdlI1cN9Mtjga+difSJMhQwfBIkaAueuny6LbctbJLFs8oHEulzjeiqIgI5hHlk3W4QsT4mgrUEdr/6phSsz4JaArAHEhOds5ZBZvez20zpmmDCK54828MDE/rm9DUDaBkCneNN2XvEkN4joeSyVgvYo4cv+s2QgkAsGjyU/ednO/K5WQ5OyiDHXNkNuF/TZcSscIbE28eLkZz5EVNe6PXln7tcydGItEZj4Chd0yqAiyf8r/6ldfaxz+z8uCmfnelICZVdq2PIR1s0RqQN0OA1Lq37joby1olQLCjvjeOBBLCFIZLest2RQQCGo5x1ksZ1bLcV+IIXSb8byeFTIm15ENFsSFOiiHSr6r5Kj+87EshbJ0M1L3MPS2eGamynZkhlv14CegLQJ0JsZeCvknoizZMw9D+laNSIOIHxeocAJ/iBVvaRzk5lZEYS0BOgZqB8NBLCjJQdqzQqIGmjRcTxAqUOj0PqPgBwxasCjglzmN82M2xURg3althY+aolgKLh2DpmbahjfU9JzuuwZOH0HDKxocIhGbxRIih15XECR6IlaBODKRhlLMz6CHt5ESvPxl5PkaOzkx3L3RLTql61BOAYHJSzd3r3EBZ0tJuybmdJVm8uyJKLmuTyLqdhIujxXuXxYCDGBz0e25AA39zny9odLvKMyPhWkEMb082M7Q/1MaAnADxlrgLwzowOW+68sgVKcOXR7qI8saUoSy4mEcMpopwsW0xsmATrOaWeBjx2FtUVAmQMvKSWwmtm5eUTU3Oy5l9F+ceOWClVrh34oGMmviGTAMVqRn8yT5leihJ47pR2efl1T/66qQAioAhFRLYiThQDef1YICUcO9Lbgx4fCtyVtdtxzI08QOAXnmWr9wyDgd9qdHbqrpcJ0hJA0RhKWukj4Gci2XfYl3ewLI1vNVX8z8W2dx6J2O/Jo5uK8vjmWBGfPhdEoFBhvZA0VgxUJgEwwVVKOPF4Nwhdu6OIHy+MKuBc+ngPw4YEMkPQ1NSGLxrbDfJIKIMAemsvCFjx1AmZBykuuahZ5QSCnDvFAREOFIHQoCKYIy5pliuQI+whybISeQxcZDP6/X1HSVWYi5XHc8rjLHhI5Ek3lGdQ/W054Kn6IyZQwwAx0JuaplUA79cMqYYi0KvPz8vXLm2Wh1/sl2VPHsdq4ED6JCL29lAiHgcRS/G9UgSsZvHERlIYTt0Evh3AQe41s5sGpE7gDoCfwP3P7CoqhZ2L/LNsUats2OvKtoNew+eJmQRkKYDfsSydAPkvX9QmB94NZHV3QZY98a4s7MzriXi5HzmiH0S0yEIowgKwl/czxssen8MYTzzOtT72+N8IfJ8rBH77Fa3YB1hKIR5yUGyn4vI9/w23OcsgIP5JTA3+nmE5Z+w9zs9CqAO7wuVXVRDxOIgAwC/D4xPbrThHMDSmIjQA5NFNMRElDMBktngOPU7gLG8rpL6zKC+BIK44P7iyTQHnRowKVKfICn92Dogf5EgBgUsZBKR3GLiKiVkJ0ogiCEgj4rHufrmTRFARyAEdCREgYS7+KPk+KGfmGbYqdmLgghiH1HcW5CXl8ZwCfhY8TuBFAE8ac4Z+E5Tclf2qJ2CYUpBFydrtBZk9yZb5AMgYpVdonw9CJqBIuuuqdhUaj8HbdwwQ0QJFxPdeeLYj45o94aGGifFOYg+xDsCV1CfS4+0yALyi3E5WiZd6S/Ls7mJ5FRkkpgpyWalV1yo+aAkg/qxlkJl32xue3PTIUblsel5unN8KyefhEUPlBi5V/ZAyiVh+9SARy1YfVfctuaQFyyd+GAHwdwvI6pQ6PD5jIjyOnBIDF3h8MIU7mJRK24rHwtZsLSgF8TP3BFqc/KLRSrCCqNS3VAHHX99TRDYuynxFRJssoCJgLJMkiSiACJbNd30GRBxrkdWbTsmy1cfUfaewpG3cQ+C23LGoXcU4E9tQqbMS3NLnyppX+gHcUwUYlUDwI2laBUiAI4+MvUDlpMmPHM+9BiL2lKoUUUUEYrujzVCK6EMB8+TmfjkB798O4GePS4/xAeBb+1V9QHJyyDskH/TrPZ8YCOKogeTj0FctAZjmkBGWD/gzK4LBIflLDqdbDyI27inKZVDCjfPblOSZI5QiYE2BREAR37+iHYccvvI2E2nSYqlHshVJcs0rp6QbqwAPX3KwVpFN2dXaUNCZYXhId7uWAJz19ES+VcRTV0014h+YY0ARSFAbEB7zO5sUEZ9ijiiHBsPSQ2gwcSYhmgDf0scYp9RdJEi4glKnx4G7DujxAaJfCgIr2jlg3JA3WgJKHX37nLenvWpY9qXS4HOB/CWHBj/3WgGhQSKoiPZYEQBFJfCOJKszxp/amng8lnpMZl2wByEaMCBwe7xTxq7Bi9XvuA3Rtvwte5ZHubZfiYfDvlFo3PpyD0EivrOgHSHSJK8f9eFpeBzVYff+kloSKfVMw2q1JdcKmfX/zP3dOffqumTPc9uB8U7obsFzJpPxTK5ujLqu05ceZM+nWxeCANYNXM8TqWcbVMdUKCxwivCOGdoXF1ZOfkPXc9j5nJv3XB/Zzl9EPSvUoBTTZsdQBM3GEBgdlycTYTwbD4b5he95K7tWJVfTXoclgJ2cm3sejHKtKyAnfBpFEtIsGvE1QMq14AfL/lXe76ffwnIua0htEqzs5B7tvNv+2F5TzNxydYIxSuFQOceovGc9zSdEAT7Ih3cMB55z1qSAxDjruz3fNE3r/sh0kBNwjqWIyCQ46XoaXwHBhB8BXEL3LSMKf+qt6lxZ64R1EaAG/VbvGbZjfBuzfRUr+EwxHexhR1iP1mrt0Pt4nha6Pp4f2Q1XPuG70R/kj119Q2/L+lw/AcloS191nPHtMwK/dD40MBGhVlM4Jd1H/GqYATZrh6DIXV4J6/zD5xRHPObYAGMMjDEwxsAYAx8yBv4LciWnCBQ9POMAAAAASUVORK5CYII=" alt="" style="width:20px;height:20px;opacity:.9;" /><span>Krate · by Krate Labs</span></div>
+    <div class="foot-links">
+      <a href="./docs/">Documentation</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+      <a href="https://github.com/incyashraj/krate/releases/latest">Releases</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var btn = document.getElementById('copyBtn');
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+      var cmd = 'curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh';
+      navigator.clipboard.writeText(cmd).then(function () {
+        var prev = btn.textContent; btn.textContent = 'Copied';
+        setTimeout(function () { btn.textContent = prev; }, 1400);
+      }).catch(function () {});
+    });
+  })();
+</script>
+</body>
+</html>

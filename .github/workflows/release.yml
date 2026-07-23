@@ -79,11 +79,25 @@ jobs:
           KRATE_VERSION: ${{ github.ref_name }}
         run: scripts/package.sh "${{ matrix.target }}" "${{ matrix.ext }}"
 
+      - name: Assemble Krate.app (macOS double-click entry point)
+        if: contains(matrix.target, 'apple-darwin')
+        shell: bash
+        env:
+          KRATE_VERSION: ${{ github.ref_name }}
+        run: |
+          # Pillow renders the app icon; ship without an icon rather than fail.
+          python3 -m pip install --quiet pillow || true
+          KRATE_BINARY="target/${{ matrix.target }}/release/krate"             scripts/make-macos-app.sh dist
+          version="${KRATE_VERSION#v}"
+          (cd dist && zip -qry "krate-app-${version}-${{ matrix.target }}.zip" Krate.app)
+
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v7
         with:
           name: krate-${{ matrix.target }}
-          path: dist/krate-*.${{ matrix.ext }}
+          path: |
+            dist/krate-*.${{ matrix.ext }}
+            dist/krate-app-*.zip
           if-no-files-found: error
 
   publish:

@@ -31,6 +31,8 @@ pub struct AppKitWidgetPlacement {
     clickable: bool,
     /// Selected state, used to tint the active list row.
     checked: Option<bool>,
+    /// Semantic role from the widget node; used to pick native typography.
+    role: Option<String>,
 }
 
 impl AppKitWidgetPlacement {
@@ -84,6 +86,7 @@ impl AppKitWidgetPlacement {
             height,
             clickable: false,
             checked: None,
+            role: None,
         })
     }
 
@@ -124,6 +127,17 @@ impl AppKitWidgetPlacement {
     /// Selected state for a list row, if any.
     pub fn checked(&self) -> Option<bool> {
         self.checked
+    }
+
+    /// Carry the node's semantic role so lowering can style natively.
+    pub fn with_role(mut self, role: Option<String>) -> Self {
+        self.role = role;
+        self
+    }
+
+    /// Semantic role, if the node declared one.
+    pub fn role(&self) -> Option<&str> {
+        self.role.as_deref()
     }
 
     /// Return the logical top-left rectangle as `(x, y, width, height)`.
@@ -1065,7 +1079,7 @@ mod platform {
     use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
         NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSButton, NSColor,
-        NSControl, NSEventMask, NSMenu, NSMenuItem, NSTextField, NSView, NSWindow,
+        NSControl, NSEventMask, NSFont, NSMenu, NSMenuItem, NSTextField, NSView, NSWindow,
         NSWindowDelegate, NSWindowStyleMask,
     };
     use objc2_foundation::{
@@ -1466,12 +1480,17 @@ mod platform {
                         // Left-align the title so a note row reads as a list
                         // item, not a centered button label.
                         button.setAlignment(objc2_app_kit::NSTextAlignment::Left);
+                        button.setFont(Some(&NSFont::systemFontOfSize(13.0)));
                         // The selected row (checked) glows in the accent color
-                        // so exactly one note reads as active.
+                        // so exactly one note reads as active. An action row
+                        // (role "button", e.g. "+ New note") reads quieter than
+                        // the content rows.
                         if placement.checked() == Some(true) {
                             let accent =
                                 NSColor::colorWithSRGBRed_green_blue_alpha(0.0, 0.48, 1.0, 1.0);
                             button.setContentTintColor(Some(&accent));
+                        } else if placement.role() == Some("button") {
+                            button.setContentTintColor(Some(&NSColor::secondaryLabelColor()));
                         }
                         Retained::into_super(button)
                     }
@@ -1480,6 +1499,21 @@ mod platform {
                         let label = NSTextField::labelWithString(&value, mtm);
                         label.setFrame(frame);
                         label.setTag(placement.widget().get() as isize);
+                        // Roles pick native typography: a heading is a bold
+                        // sidebar section label, a status line is small and
+                        // quiet. Styling lives here, in the host, never in
+                        // the guest contract.
+                        match placement.role() {
+                            Some("heading") => {
+                                label.setFont(Some(&NSFont::boldSystemFontOfSize(13.0)));
+                                label.setTextColor(Some(&NSColor::secondaryLabelColor()));
+                            }
+                            Some("status") => {
+                                label.setFont(Some(&NSFont::systemFontOfSize(11.0)));
+                                label.setTextColor(Some(&NSColor::tertiaryLabelColor()));
+                            }
+                            _ => {}
+                        }
                         Retained::into_super(label)
                     }
                     WidgetKind::TextArea => {
@@ -1494,6 +1528,16 @@ mod platform {
                         field.setTag(placement.widget().get() as isize);
                         field.setEditable(true);
                         field.setSelectable(true);
+                        // Borderless but with the system text background, so
+                        // it reads as a writing surface — a fully transparent
+                        // empty field is invisible on a dark window, which
+                        // left no cue where to type. The placeholder makes the
+                        // surface discoverable before the first keystroke.
+                        field.setBezeled(false);
+                        field.setDrawsBackground(true);
+                        field.setBackgroundColor(Some(&NSColor::textBackgroundColor()));
+                        field.setFont(Some(&NSFont::systemFontOfSize(15.0)));
+                        field.setPlaceholderString(Some(&NSString::from_str("Write your note…")));
                         Retained::into_super(field)
                     }
                     WidgetKind::ListView => {
@@ -1519,6 +1563,19 @@ mod platform {
                 controls.insert(placement.widget(), control);
                 kinds.insert(placement.widget(), placement.kind());
                 lowered.push(placement.widget());
+            }
+
+            // Focus the editor so typing works the moment the window opens —
+            // without this, an untouched window sends keystrokes nowhere and
+            // the app looks like it ignores input.
+            let first_editor = lowered
+                .iter()
+                .find(|id| kinds.get(id) == Some(&WidgetKind::TextArea));
+            if let Some(id) = first_editor {
+                if let Some(control) = controls.get(id) {
+                    let responder: &objc2_app_kit::NSResponder = control;
+                    self.window.makeFirstResponder(Some(responder));
+                }
             }
 
             Ok(AppKitWidgetSurface {

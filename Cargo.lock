@@ -1611,6 +1611,7 @@ version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "clap",
+ "krate-adapter-macos",
  "krate-bundle",
  "krate-manifest",
  "krate-policy",
@@ -1664,6 +1665,7 @@ dependencies = [
  "krate-manifest",
  "krate-policy",
  "libc",
+ "tempfile",
  "thiserror 2.0.18",
  "tracing",
  "wasmtime",
