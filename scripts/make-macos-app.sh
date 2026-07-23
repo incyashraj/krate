@@ -25,7 +25,9 @@ for arg in "$@"; do
   esac
 done
 
-BINARY="target/$PROFILE/krate"
+# KRATE_BINARY overrides the binary location (release builds use
+# target/<triple>/release/krate); default is the local cargo profile dir.
+BINARY="${KRATE_BINARY:-target/$PROFILE/krate}"
 if [ ! -x "$BINARY" ]; then
   echo "missing $BINARY — build it first (cargo build -p krate-cli${PROFILE:+ --$PROFILE})" >&2
   exit 1
@@ -47,6 +49,18 @@ cat > "$APP/Contents/MacOS/Krate" << 'SHIM'
 exec "$(dirname "$0")/krate-cli" open-app
 SHIM
 chmod +x "$APP/Contents/MacOS/Krate"
+
+# App icon: regenerate from source when the tooling is present; ship without
+# an icon rather than fail when it is not (CI runners without PIL).
+if python3 -c "import PIL" 2>/dev/null; then
+  python3 scripts/make-app-icon.py "$OUT_DIR/icon" >/dev/null 2>&1 || true
+fi
+if [ -f "$OUT_DIR/icon/Krate.icns" ]; then
+  cp "$OUT_DIR/icon/Krate.icns" "$APP/Contents/Resources/Krate.icns"
+fi
+if [ -f "$OUT_DIR/icon/KrateDoc.icns" ]; then
+  cp "$OUT_DIR/icon/KrateDoc.icns" "$APP/Contents/Resources/KrateDoc.icns"
+fi
 
 VERSION="$("$BINARY" --version | awk '{print $2}')"
 
@@ -71,11 +85,15 @@ cat > "$APP/Contents/Info.plist" << PLIST
     <string>Krate</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleIconFile</key>
+    <string>Krate</string>
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
             <key>CFBundleTypeName</key>
             <string>Krate App Bundle</string>
+            <key>CFBundleTypeIconFile</key>
+            <string>KrateDoc</string>
             <key>CFBundleTypeRole</key>
             <string>Viewer</string>
             <key>LSItemContentTypes</key>

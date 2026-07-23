@@ -5,6 +5,29 @@ and it can only touch the folder you allow it to.
 
 This page is written for someone who has never used Krate before.
 
+## The double-click way (macOS)
+
+The shortest path, no terminal involved:
+
+1. Download `Krate.app` from the [latest release](https://github.com/incyashraj/krate/releases/latest)
+   (the `krate-app-…-apple-darwin.zip` asset for your Mac — `aarch64` for
+   Apple silicon, `x86_64` for Intel) and unzip it.
+2. The first time only: **right-click Krate.app and choose Open.** The app is
+   not yet code-signed, so macOS warns about an unidentified developer;
+   right-click → Open is Apple's supported way past that warning. Signing is
+   on the roadmap and this step disappears with it.
+3. Download [notes.krate](https://github.com/incyashraj/krate/releases/download/notes-v0.1.0/notes.krate)
+   and double-click it.
+
+A permission window appears before anything runs: the app's identity, each
+capability it wants, and the author's reason for each — with a checkbox per
+capability. Nothing executes until you press Open, and the app gets exactly
+what you left checked, for that session only. Its notes are saved in a
+`notes/` folder next to the file, and it can touch nothing else on your Mac.
+
+Everything below is the terminal path: the same app, the same wall, and the
+way to run it on Linux and Windows today.
+
 ## What you need
 
 The Krate runtime. One command installs it on macOS and Linux:
