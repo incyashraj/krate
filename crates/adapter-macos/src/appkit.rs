@@ -26,6 +26,9 @@ pub struct AppKitWidgetPlacement {
     y: f32,
     width: f32,
     height: f32,
+    /// A passive kind (Text) that should still be clickable, because it is a
+    /// row inside a list. Lowered as a borderless button so clicks route back.
+    clickable: bool,
 }
 
 impl AppKitWidgetPlacement {
@@ -77,6 +80,7 @@ impl AppKitWidgetPlacement {
             y,
             width,
             height,
+            clickable: false,
         })
     }
 
@@ -99,6 +103,12 @@ impl AppKitWidgetPlacement {
     /// a re-lower rather than reverting the control to the guest's copy.
     pub fn with_label(mut self, label: String) -> Self {
         self.label = Some(label);
+        self
+    }
+
+    /// Mark a passive placement clickable (a list row) so it lowers as a button.
+    pub fn with_clickable(mut self, clickable: bool) -> Self {
+        self.clickable = clickable;
         self
     }
 
@@ -674,44 +684,14 @@ impl AppKitWindowSession {
             )
         })?;
 
-        // The guest now receives every native edit through text-changed and
-        // re-lowers with the current text, so the placement's label is the
-        // authority and no live-text preservation is needed. But a component
-        // that ignores those events (or has not processed the latest one yet)
-        // could still stomp an in-progress edit on an unrelated re-lower. Only
-        // carry the live text forward when the guest is asking for the value
-        // it already knows about, so a deliberate change (loading another note)
-        // still takes effect while a stale rebuild does not.
-        let live_text: std::collections::BTreeMap<WidgetId, String> = self
-            .widget_surface
-            .as_ref()
-            .map(|surface| {
-                surface
-                    .editable_widgets()
-                    .into_iter()
-                    .filter_map(|widget| surface.text(widget).ok().map(|text| (widget, text)))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let placements: Vec<AppKitWidgetPlacement> = placements
-            .iter()
-            .map(|placement| match live_text.get(&placement.widget()) {
-                // Keep the live text only when the guest is re-lowering with a
-                // value that is a prefix of what the control holds, i.e. it has
-                // not caught up to the newest keystrokes. A guest that loads a
-                // different note sends unrelated text and that wins.
-                Some(text)
-                    if placement.kind() == WidgetKind::TextArea
-                        && text.starts_with(placement.label().unwrap_or("")) =>
-                {
-                    placement.clone().with_label(text.clone())
-                }
-                _ => placement.clone(),
-            })
-            .collect();
-
-        let surface = self.window.lower_widget_placements(&placements, delegate)?;
+        // The guest owns editable text now: it receives every native edit via
+        // text-changed and re-lowers with the authoritative value, so the
+        // placement label always wins. An earlier "preserve the live control
+        // text across a re-lower" heuristic lived here; it caused typed text to
+        // ghost behind the control's own value, because both the guest label
+        // and the retained live text were applied. Trusting the guest label is
+        // correct precisely because text-changed keeps the guest in sync.
+        let surface = self.window.lower_widget_placements(placements, delegate)?;
         let snapshot = surface.snapshot();
         self.widget_surface = Some(surface);
         Ok(snapshot)
@@ -1430,6 +1410,29 @@ mod platform {
                         field.setFrame(frame);
                         field.setTag(placement.widget().get() as isize);
                         Retained::into_super(field)
+                    }
+                    WidgetKind::Text if placement.clickable => {
+                        // A list row: a borderless, left-aligned button that
+                        // reads as a label but routes clicks through the same
+                        // target-action path as a real button, so selecting a
+                        // note works.
+                        let title = NSString::from_str(placement.label().unwrap_or(""));
+                        let target_object: &AnyObject = &target;
+                        // SAFETY: the target outlives the button (both owned by
+                        // the returned surface) and the selector is implemented
+                        // by KrateWidgetTarget.
+                        let button = unsafe {
+                            NSButton::buttonWithTitle_target_action(
+                                &title,
+                                Some(target_object),
+                                Some(sel!(krateWidgetActivated:)),
+                                mtm,
+                            )
+                        };
+                        button.setFrame(frame);
+                        button.setTag(placement.widget().get() as isize);
+                        button.setBordered(false);
+                        Retained::into_super(button)
                     }
                     WidgetKind::Text => {
                         let value = NSString::from_str(placement.label().unwrap_or(""));

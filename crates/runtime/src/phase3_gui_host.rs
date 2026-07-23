@@ -112,6 +112,15 @@ impl Phase3GuiHost {
                     child_rect.height,
                 ))
             });
+            // A Text row directly inside a ListView is a selectable row, not a
+            // passive label, so mark it clickable. Native hosts lower clickable
+            // rows as buttons so a click routes back with the row's widget id;
+            // drawn hosts already hit-test every placement and ignore this.
+            let clickable = node.kind == WidgetKind::Text
+                && node
+                    .parent
+                    .and_then(|parent| tree.node(parent))
+                    .is_some_and(|parent| parent.kind == WidgetKind::ListView);
             placements.push(WidgetPlacement {
                 widget: *id,
                 kind: node.kind,
@@ -124,6 +133,7 @@ impl Phase3GuiHost {
                 y,
                 width: rect.width,
                 height: rect.height,
+                clickable,
             });
         }
         drop(offsets);

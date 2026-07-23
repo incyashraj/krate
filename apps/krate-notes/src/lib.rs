@@ -23,6 +23,7 @@ const ROOT_ID: u64 = 1;
 const SIDEBAR_ID: u64 = 2;
 const EDITOR_ID: u64 = 3;
 const STATUS_ID: u64 = 4;
+const EDITOR_COLUMN_ID: u64 = 5;
 const NOTE_ROW_BASE_ID: u64 = 10;
 
 /// How many notes the sample manages. Fixed so no allocation is needed.
@@ -118,11 +119,13 @@ fn pure_string_from_bytes(bytes: &[u8]) -> String {
     }
 }
 
+/// Root is a Grid, which lays out as a row: sidebar on the left, editor
+/// column on the right, the shape every note app has.
 fn stack_root() -> types::WidgetNode {
     types::WidgetNode {
         id: ROOT_ID,
         parent: None,
-        kind: types::WidgetKind::Stack,
+        kind: types::WidgetKind::Grid,
         label: None,
         role: None,
         style: types::Style {
@@ -130,6 +133,26 @@ fn stack_root() -> types::WidgetNode {
             height: Some(480.0),
             grow: 0.0,
             padding: 16.0,
+        },
+        checked: None,
+        value: None,
+        selected: None,
+    }
+}
+
+/// The right-hand column: editor above, status line below.
+fn editor_column() -> types::WidgetNode {
+    types::WidgetNode {
+        id: EDITOR_COLUMN_ID,
+        parent: Some(ROOT_ID),
+        kind: types::WidgetKind::Stack,
+        label: None,
+        role: None,
+        style: types::Style {
+            width: Some(460.0),
+            height: Some(448.0),
+            grow: 1.0,
+            padding: 0.0,
         },
         checked: None,
         value: None,
@@ -146,8 +169,8 @@ fn sidebar(selected: Option<u32>) -> types::WidgetNode {
         label: None,
         role: Some(pure_string("listbox")),
         style: types::Style {
-            width: Some(220.0),
-            height: Some(96.0),
+            width: Some(200.0),
+            height: Some(448.0),
             grow: 0.0,
             padding: 0.0,
         },
@@ -182,14 +205,14 @@ fn note_row(index: usize) -> types::WidgetNode {
 fn editor(text: &str) -> types::WidgetNode {
     types::WidgetNode {
         id: EDITOR_ID,
-        parent: Some(ROOT_ID),
+        parent: Some(EDITOR_COLUMN_ID),
         kind: types::WidgetKind::TextArea,
         label: Some(pure_string(text)),
         role: Some(pure_string("textbox")),
         style: types::Style {
-            width: Some(660.0),
-            height: Some(200.0),
-            grow: 0.0,
+            width: Some(460.0),
+            height: Some(400.0),
+            grow: 1.0,
             padding: 0.0,
         },
         checked: None,
@@ -201,13 +224,13 @@ fn editor(text: &str) -> types::WidgetNode {
 fn status(text: &str) -> types::WidgetNode {
     types::WidgetNode {
         id: STATUS_ID,
-        parent: Some(ROOT_ID),
+        parent: Some(EDITOR_COLUMN_ID),
         kind: types::WidgetKind::Text,
         label: Some(pure_string(text)),
         role: Some(pure_string("status")),
         style: types::Style {
-            width: Some(660.0),
-            height: Some(20.0),
+            width: Some(460.0),
+            height: Some(28.0),
             grow: 0.0,
             padding: 0.0,
         },
@@ -290,10 +313,12 @@ impl bindings::Guest for Component {
             buffer.push_str("saved by quick run");
         }
 
+        // The editor column must exist before its children (editor, status).
         if tree::set_root(win, &stack_root()).is_err()
             || tree::upsert_node(win, &sidebar(Some(selected))).is_err()
+            || tree::upsert_node(win, &editor_column()).is_err()
             || tree::upsert_node(win, &editor(buffer.as_str())).is_err()
-            || tree::upsert_node(win, &status("ready")).is_err()
+            || tree::upsert_node(win, &status("Cmd+S to save")).is_err()
         {
             let _ = window::close(win);
             return 32;
@@ -316,6 +341,9 @@ impl bindings::Guest for Component {
 
         let mut saved_any = false;
         let mut close_requested = false;
+        // A quick run seeds content above and must save it on exit to prove
+        // the write path in CI, so it starts dirty.
+        let mut dirty = quick;
 
         for _ in 0..rounds {
             match events::wait(Some(WAIT_ROUND_MILLIS)) {
@@ -341,10 +369,16 @@ impl bindings::Guest for Component {
                 // do not append, and do not re-lower the editor: the control
                 // already shows the truth, and re-lowering would fight it.
                 Some(types::Event::TextChanged(changed)) if changed.widget == EDITOR_ID => {
+                    // Mirror the control's authoritative text and touch nothing
+                    // else. Any upsert here would re-lower the whole tree,
+                    // rebuilding the control being typed into and dropping
+                    // characters. The editor shows the truth already; the status
+                    // updates only on save.
                     buffer.clear();
                     for byte in changed.text.as_bytes() {
                         buffer.push(*byte);
                     }
+                    dirty = true;
                 }
                 // A drawn host (Linux, Windows) sends the added characters and
                 // relies on the guest to render them, so this path appends and
@@ -357,6 +391,7 @@ impl bindings::Guest for Component {
                         }
                     }
                     let _ = tree::upsert_node(win, &editor(buffer.as_str()));
+                    let _ = tree::upsert_node(win, &status("editing"));
                 }
                 Some(types::Event::Key(key)) => {
                     if key.pressed && key.key.as_bytes() == b"Backspace" {
@@ -370,6 +405,7 @@ impl bindings::Guest for Component {
                     {
                         if save_note(selected as usize, &buffer) {
                             saved_any = true;
+                            dirty = false;
                             let _ = tree::upsert_node(win, &status("saved"));
                         } else {
                             let _ = tree::upsert_node(win, &status("save denied"));
@@ -384,10 +420,11 @@ impl bindings::Guest for Component {
             }
         }
 
-        // Save on the way out, so closing the window does not lose work, but
-        // never write an empty buffer over a file that has content: a run that
-        // only loaded and never edited must not erase the note it opened.
-        if !buffer.as_str().is_empty() && save_note(selected as usize, &buffer) {
+        // Save on the way out only when there are unsaved edits, so closing
+        // never loses work but a view-only session does not rewrite the file.
+        // The empty-buffer guard still stands: never erase a note by saving
+        // nothing over it.
+        if dirty && !buffer.as_str().is_empty() && save_note(selected as usize, &buffer) {
             saved_any = true;
         }
 

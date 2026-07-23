@@ -482,15 +482,18 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
             if !AppKitWidgetPlacement::kind_supported(placement.kind) {
                 continue;
             }
-            native.push(AppKitWidgetPlacement::new(
-                placement.widget,
-                placement.kind,
-                placement.label.clone(),
-                placement.x,
-                placement.y,
-                placement.width,
-                placement.height,
-            )?);
+            native.push(
+                AppKitWidgetPlacement::new(
+                    placement.widget,
+                    placement.kind,
+                    placement.label.clone(),
+                    placement.x,
+                    placement.y,
+                    placement.width,
+                    placement.height,
+                )?
+                .with_clickable(placement.clickable),
+            );
         }
 
         match self.lower_widget_placements(window, &native)? {
