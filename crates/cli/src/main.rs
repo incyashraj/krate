@@ -82,6 +82,13 @@ enum Command {
         #[arg(long)]
         prompt: bool,
 
+        /// Ask for missing capabilities in a native consent window instead of
+        /// the terminal. macOS only today; on other platforms this falls back
+        /// to the terminal prompt. This is the path a double-clicked `.krate`
+        /// uses, where there is no terminal to answer.
+        #[arg(long)]
+        consent: bool,
+
         /// Use the opt-in native window prototype for Phase 3 GUI apps
         /// (macOS AppKit today). The default GUI path stays headless.
         #[arg(long)]
@@ -257,6 +264,7 @@ fn run() -> Result<u8> {
             grant,
             auto_grant,
             prompt,
+            consent,
             native_window,
             insecure_http,
             json,
@@ -281,6 +289,7 @@ fn run() -> Result<u8> {
             grants: grant,
             auto_grant,
             prompt,
+            consent,
             native_window,
             json,
             dump_caps,
@@ -341,6 +350,7 @@ struct RunRequest {
     grants: Vec<String>,
     auto_grant: bool,
     prompt: bool,
+    consent: bool,
     native_window: bool,
     insecure_http: bool,
     json: bool,
@@ -450,10 +460,17 @@ fn run_component(request: RunRequest) -> Result<u8> {
     let mut policy = resolve_session_policy(manifest, &request.grants, request.auto_grant)?;
 
     if let Some(manifest) = manifest {
-        let can_prompt = request.prompt || io::stdin().is_terminal();
+        let can_prompt = request.prompt || request.consent || io::stdin().is_terminal();
         let missing = policy.missing_required_for_manifest(manifest)?;
         if !missing.is_empty() && can_prompt && !request.auto_grant {
-            policy = prompt_for_session_grants(manifest, &policy)?;
+            // A double-clicked bundle asks in a native window; a terminal run
+            // asks in the terminal. The two paths fold the same grant set into
+            // the same SessionPolicy, so enforcement downstream is identical.
+            policy = if request.consent {
+                consent_for_session_grants(manifest, &policy)?
+            } else {
+                prompt_for_session_grants(manifest, &policy)?
+            };
         }
 
         let missing = policy.missing_required_for_manifest(manifest)?;
@@ -744,6 +761,126 @@ fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Res
     let grants = policy.grants().iter().cloned().chain(selected);
 
     Ok(SessionPolicy::from_grants(grants))
+}
+
+/// Ask for missing capabilities in a native consent window instead of the
+/// terminal. This is the path a double-clicked `.krate` takes, where there is
+/// no terminal to answer. It mirrors `prompt_for_session_grants` exactly — same
+/// filter to non-default missing caps, same `SessionPolicy::from_grants` fold —
+/// so the native and terminal paths cannot diverge in what they enforce.
+///
+/// The rich window is macOS-only for now (founder decision, 2026-07-23). On
+/// other platforms this falls back to the terminal prompt, so a `--consent` run
+/// there still works; a portable window is a later P3-OPEN slice.
+fn consent_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Result<SessionPolicy> {
+    let consent_caps = manifest
+        .declared_capabilities()?
+        .into_iter()
+        .filter(|cap| !policy.allows(cap) && !cap.is_default_granted())
+        .collect::<Vec<_>>();
+
+    if consent_caps.is_empty() {
+        return Ok(policy.clone());
+    }
+
+    let requests = consent_caps
+        .iter()
+        .map(|cap| {
+            let request = manifest.capabilities.iter().find(|request| {
+                request
+                    .cap
+                    .parse::<Capability>()
+                    .ok()
+                    .as_ref()
+                    .is_some_and(|parsed| parsed == cap)
+            });
+            ConsentCapability {
+                cap: cap.clone(),
+                display: cap.to_string(),
+                rationale: request
+                    .map(|request| request.rationale.clone())
+                    .unwrap_or_default(),
+                required: request.map(|request| request.required).unwrap_or(true),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    match show_consent_window(&manifest.app.name, &manifest.app.id, &requests)? {
+        ConsentOutcome::Allowed(selected) => {
+            let grants = policy.grants().iter().cloned().chain(selected);
+            Ok(SessionPolicy::from_grants(grants))
+        }
+        // Cancel leaves the policy unchanged; the missing-required check that
+        // follows this call then refuses the run with the standard denial.
+        ConsentOutcome::Cancelled => Ok(policy.clone()),
+        // No native window on this platform: fall back to the terminal prompt
+        // so `--consent` still works everywhere.
+        ConsentOutcome::Unsupported => prompt_for_session_grants(manifest, policy),
+    }
+}
+
+/// One capability shown in the consent window.
+struct ConsentCapability {
+    cap: Capability,
+    display: String,
+    rationale: String,
+    required: bool,
+}
+
+/// What the user decided in the consent window.
+///
+/// Which variants are constructed depends on the platform: macOS builds return
+/// `Allowed`/`Cancelled` from the native window and never `Unsupported`, while
+/// non-macOS builds only ever return `Unsupported`. Rather than cfg each
+/// variant, allow the unused ones per build — every variant is live on some
+/// platform.
+#[allow(dead_code)]
+enum ConsentOutcome {
+    /// They pressed Open; the vec is the capabilities they allowed.
+    Allowed(Vec<Capability>),
+    /// They pressed Cancel; nothing is granted and the run is refused.
+    Cancelled,
+    /// This platform has no native consent window; caller should fall back.
+    Unsupported,
+}
+
+#[cfg(target_os = "macos")]
+fn show_consent_window(
+    app_name: &str,
+    app_id: &str,
+    requests: &[ConsentCapability],
+) -> Result<ConsentOutcome> {
+    let items = requests
+        .iter()
+        .map(|item| krate_adapter_macos::ConsentItem {
+            display: item.display.clone(),
+            rationale: item.rationale.clone(),
+            required: item.required,
+        })
+        .collect::<Vec<_>>();
+
+    match krate_adapter_macos::present_consent_window(app_name, app_id, &items)? {
+        krate_adapter_macos::ConsentChoice::Open(allowed_indices) => {
+            let selected = allowed_indices
+                .into_iter()
+                .filter_map(|index| requests.get(index).map(|item| item.cap.clone()))
+                .collect();
+            Ok(ConsentOutcome::Allowed(selected))
+        }
+        krate_adapter_macos::ConsentChoice::Cancel => Ok(ConsentOutcome::Cancelled),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_consent_window(
+    _app_name: &str,
+    _app_id: &str,
+    _requests: &[ConsentCapability],
+) -> Result<ConsentOutcome> {
+    // No native window off macOS yet; the caller falls back to the terminal
+    // prompt. This arm keeps the Linux and Windows builds compiling and is
+    // exercised on those CI lanes, closing the off-macOS-stub gap by design.
+    Ok(ConsentOutcome::Unsupported)
 }
 
 fn parse_grant_response(input: &str, caps: &[Capability]) -> Result<Vec<Capability>> {

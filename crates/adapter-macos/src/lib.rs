@@ -4,6 +4,7 @@
 //! `krate-adapter-common`, while macOS-specific host wiring will land here.
 
 mod appkit;
+mod consent;
 
 use krate_adapter_common::{
     locale::{DateStyle, HostLocale, LocaleId, NumberStyle},
@@ -22,6 +23,8 @@ use std::net::ToSocketAddrs;
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::time::Duration;
+
+pub use consent::{present_consent_window, ConsentChoice, ConsentItem};
 
 pub use appkit::{
     AppKitColor, AppKitDrawFrame, AppKitDrawSurfaceState, AppKitDrawViewSurface,

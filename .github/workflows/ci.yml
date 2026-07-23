@@ -446,6 +446,43 @@ jobs:
             exit 1
           fi
           echo "withholding fs.write stopped krate-notes before it ran (exit 5)"
+          # Consent path (P3-OPEN-01). The native window is macOS-only; on Linux
+          # --consent falls back to the terminal prompt, so this proves the
+          # consent semantics: allowing grants exactly what was requested and the
+          # app runs, and refusing yields the same structured denial (exit 5) as
+          # a withheld --grant. The two paths must agree on the grant set.
+          consent_dir="$RUNNER_TEMP/notes-consent"
+          rm -rf "$consent_dir" && mkdir -p "$consent_dir/notes"
+          cp "$notes_dir/notes.krate" "$consent_dir/notes.krate"
+          # Allow all: pipe "A" to the fallback prompt. The app should run and
+          # save, proving consent granted the same caps a direct --grant would.
+          ( cd "$consent_dir" && printf 'A\n' | "$GITHUB_WORKSPACE/target/debug/krate" \
+              run notes.krate --consent -- quick ) || {
+            echo "expected --consent (allow all) to run krate-notes" >&2
+            exit 1
+          }
+          if [ ! -s "$consent_dir/notes/first.txt" ]; then
+            echo "consent (allow all) should have saved a note" >&2
+            exit 1
+          fi
+          echo "consent allow-all granted the requested caps and the app saved"
+          # Refuse: pipe "N". The app must not run and must exit 5, the same
+          # denial a withheld grant produces.
+          rm -rf "$consent_dir/notes" && mkdir -p "$consent_dir/notes"
+          set +e
+          ( cd "$consent_dir" && printf 'N\n' | "$GITHUB_WORKSPACE/target/debug/krate" \
+              run notes.krate --consent -- quick )
+          consent_denied=$?
+          set -e
+          if [ "$consent_denied" != "5" ]; then
+            echo "expected exit 5 when consent is refused, got $consent_denied" >&2
+            exit 1
+          fi
+          if [ -s "$consent_dir/notes/first.txt" ]; then
+            echo "refused consent must not have let the app write" >&2
+            exit 1
+          fi
+          echo "refusing consent stopped krate-notes before it ran (exit 5)"
       - name: Upload Linux drawn-window screenshot
         if: always() && matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v7
