@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://incyashraj.github.io/krate/sitemap.xml
