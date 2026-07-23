@@ -23,7 +23,37 @@ Nothing architectural changes; portability stops being the headline and
 becomes how the property is achieved. The Adobe/Flash analogy is retired.
 Next implementation work is P3-SHARE-01, not further widget slices.
 
-Certification checkpoint 2026-07-23 (latest): sidebar note rows are
+Certification checkpoint 2026-07-23 (latest): a `.krate` opens like a
+document. Change Order 4's first arc is certified and merged (PR #9, merge
+`e61fa3f`, full matrix run `30001966785` green on all three OS lanes).
+P3-OPEN-01: opening a bundle with `--consent` shows a native macOS window
+naming the app and every requested capability with the author's rationale
+and a per-capability checkbox; Open grants exactly what was checked for the
+session, Cancel refuses and nothing runs; a withheld required capability
+yields the same exit-5 denial a withheld `--grant` produces. The rich
+window is macOS-only for now (founder decision); Linux/Windows fall back to
+the terminal prompt through the same `SessionPolicy` fold, and the Linux
+lane proves those semantics headlessly. P3-OPEN-03 (first slice): double-
+clicking a `.krate` in Finder opens it — `scripts/make-macos-app.sh`
+assembles `Krate.app` (shim execs `krate open-app`, which receives the
+open-document Apple event and runs the consent flow), the bundle declares
+the `.krate` document type via an exported UTI, and launching the app with
+no document opens a native file picker instead of exiting. App and document
+icons are generated from `scripts/make-app-icon.py`. Native styling is
+role-driven (heading/status/list typography, a borderless focused editor
+with a placeholder). One real runtime bug was found and fixed by running as
+a stranger would (fresh folder, no `notes/` dir): a granted write now
+materializes its own directory tree, so saving works from any folder a
+`.krate` is dropped in — locked in by a unit test. The published site root
+is now a landing page (docs nested under `/docs/`). CI gained a
+`timeout-minutes: 75` on the full-test job after a stuck-runner incident;
+the Windows lane legitimately runs ~53 minutes. Verified interactively on
+macOS by the founder across several rounds (double-click, consent, type,
+switch notes, quit, reopen, persistence). Evidence note: the consent window
+and double-click are macOS-native and founder-verified; the Linux CI proves
+the consent *semantics* and the write-directory fix.
+
+Previous checkpoint 2026-07-23: sidebar note rows are
 clickable and selectable on macOS, exactly one row glows, and a "+ New note"
 button grows the list. The `checked`/`selected` state is now threaded from
 the common `WidgetPlacement` into the macOS `AppKitWidgetPlacement` (the
