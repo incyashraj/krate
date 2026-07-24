@@ -25,7 +25,7 @@ use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 use std::time::Duration;
 
-pub use consent::{present_consent_window, ConsentChoice, ConsentItem};
+pub use consent::{present_consent_window, present_denied_alert, ConsentChoice, ConsentItem};
 pub use open_document::{choose_document, wait_for_opened_documents};
 
 pub use appkit::{

@@ -61,6 +61,17 @@ pub fn present_consent_window(
     ))
 }
 
+/// Show a native alert explaining the app was refused because a required
+/// permission was not granted. Used on the double-click path so the app does
+/// not just fail silently. `denied` lists the capability strings still missing.
+#[cfg(target_os = "macos")]
+pub fn present_denied_alert(app_name: &str, denied: &[String]) {
+    platform::denied_alert(app_name, denied);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn present_denied_alert(_app_name: &str, _denied: &[String]) {}
+
 #[cfg(target_os = "macos")]
 mod platform {
     use super::{ConsentChoice, ConsentItem};
@@ -69,12 +80,42 @@ mod platform {
     use objc2::runtime::AnyObject;
     use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
-        NSApplication, NSBackingStoreType, NSButton, NSColor, NSControlStateValueOff,
-        NSControlStateValueOn, NSFont, NSTextField, NSView, NSWindow, NSWindowStyleMask,
+        NSAlert, NSAlertStyle, NSApplication, NSBackingStoreType, NSButton, NSColor,
+        NSControlStateValueOff, NSControlStateValueOn, NSFont, NSTextField, NSView, NSWindow,
+        NSWindowStyleMask,
     };
     use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
     use std::cell::Cell;
     use std::rc::Rc;
+
+    /// A native alert shown when the app is refused for missing permissions.
+    pub(super) fn denied_alert(app_name: &str, denied: &[String]) {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        let list = denied
+            .iter()
+            .map(|cap| format!("• {cap}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let body = if list.is_empty() {
+            format!("{app_name} needs a permission you did not grant, so it will not run.")
+        } else {
+            format!(
+                "{app_name} will not run because it was not allowed to:\n\n{list}\n\n\
+                 Open it again and allow it to continue."
+            )
+        };
+        let alert = NSAlert::new(mtm);
+        alert.setAlertStyle(NSAlertStyle::Warning);
+        alert.setMessageText(&NSString::from_str("Permission needed"));
+        alert.setInformativeText(&NSString::from_str(&body));
+        alert.addButtonWithTitle(&NSString::from_str("OK"));
+        let app = NSApplication::sharedApplication(mtm);
+        #[allow(deprecated)]
+        app.activateIgnoringOtherApps(true);
+        alert.runModal();
+    }
 
     /// Modal return codes. Distinct so the caller can tell Open from Cancel;
     /// AppKit reserves nothing in this range for its own responses here.
