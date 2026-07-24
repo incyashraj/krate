@@ -33,6 +33,8 @@ pub const HOST_FAMILY: &str = "windows";
 /// the same UI contract as macOS and Linux before the winit or Win32 bridge lands.
 pub mod winit_native;
 
+mod clipboard;
+
 #[derive(Debug, Default)]
 pub struct WindowsUiAdapter {
     draft: DraftUiAdapter,
@@ -510,6 +512,17 @@ impl UiAdapter for WindowsWinitPrototypeUiAdapter {
 
     fn queue_text_changed(&self, event: TextChangedEvent) -> Result<(), UiAdapterError> {
         self.headless.queue_text_changed(event)
+    }
+
+    // The drawn path paints its own text, so Cut/Copy/Paste can only work if
+    // the guest reaches the real OS clipboard. Capability gating
+    // (`ui.clipboard:read`/`write`) happens in the runtime before dispatch.
+    fn read_clipboard_text(&self) -> Result<String, UiAdapterError> {
+        clipboard::read_text()
+    }
+
+    fn write_clipboard_text(&self, text: &str) -> Result<(), UiAdapterError> {
+        clipboard::write_text(text)
     }
 
     fn pump_event_loop_once(

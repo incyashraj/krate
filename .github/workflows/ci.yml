@@ -423,6 +423,17 @@ jobs:
           rm -rf "$notes_dir" && mkdir -p "$notes_dir/notes"
           cp krate-fixture/krate_notes.wasm "$notes_dir/code.wasm"
           cp apps/krate-notes/manifest.toml "$notes_dir/manifest.toml"
+          # Requirement #10: the SAME bytecode runs on every OS. The notes wasm
+          # is built once in the hello-fixture job and downloaded here, so its
+          # hash must match across the Linux, macOS, and Windows lanes. Record
+          # it in the log on each lane; a mismatch means the shared artifact was
+          # not what ran.
+          if command -v sha256sum >/dev/null 2>&1; then
+            code_sha="$(sha256sum "$notes_dir/code.wasm" | awk '{print $1}')"
+          else
+            code_sha="$(shasum -a 256 "$notes_dir/code.wasm" | awk '{print $1}')"
+          fi
+          echo "notes code.wasm sha256 on $RUNNER_OS: $code_sha"
           target/debug/krate pack "$notes_dir/code.wasm" \
             --manifest "$notes_dir/manifest.toml" \
             -o "$notes_dir/notes.krate" || exit 1

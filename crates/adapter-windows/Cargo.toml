@@ -17,3 +17,6 @@ winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
 # CPU framebuffer for the first drawn-widget pass; the Windows backend needs
 # no feature flags. Vello/wgpu replaces the presenter later (plan 7.5).
 softbuffer = { version = "0.4", default-features = false }
+# OS clipboard for the drawn path's Cut/Copy/Paste. Text-only (no image-data),
+# so it pulls only the Win32 clipboard backend.
+arboard.workspace = true

@@ -502,7 +502,10 @@ fn run_component(request: RunRequest) -> Result<u8> {
                 // vanishing. Terminal runs keep the text guidance below.
                 #[cfg(target_os = "macos")]
                 if request.consent {
-                    let denied = missing.iter().map(|cap| cap.to_string()).collect::<Vec<_>>();
+                    let denied = missing
+                        .iter()
+                        .map(|cap| cap.to_string())
+                        .collect::<Vec<_>>();
                     let app_name = manifest.app.name.as_str();
                     krate_adapter_macos::present_denied_alert(app_name, &denied);
                 }

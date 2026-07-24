@@ -24,3 +24,6 @@ winit = { version = "0.30", default-features = false, features = ["x11", "rwh_06
 # renderer behind the draw pass moves to vello/wgpu later (plan section 7.5);
 # softbuffer keeps the pipeline proof dependency-light.
 softbuffer = { version = "0.4", default-features = false, features = ["x11", "x11-dlopen"] }
+# OS clipboard for the drawn path's Cut/Copy/Paste. Text-only (no image-data),
+# so the X11 backend stays dependency-light and matches the Xvfb CI proof.
+arboard.workspace = true

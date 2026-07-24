@@ -805,6 +805,7 @@ mod tests {
             checked: Some(false),
             value: None,
             selection: None,
+            text_cursor: None,
             clip: None,
             clickable: false,
             role: None,

@@ -349,6 +349,10 @@ pub struct WidgetNode {
     /// Zero-based index of the selected child, for selectable container
     /// kinds (list view, tree view).
     pub selected: Option<u32>,
+    /// Caret and selection (byte offsets into `label`) for a text widget the
+    /// app edits itself. Painting hosts draw the caret and selection wash;
+    /// native-control hosts ignore it. `None` leaves the text a passive label.
+    pub text_cursor: Option<(u32, u32)>,
 }
 
 impl WidgetNode {
@@ -364,7 +368,21 @@ impl WidgetNode {
             checked: None,
             value: None,
             selected: None,
+            text_cursor: None,
         }
+    }
+
+    /// Attach a text caret and selection (cursor, anchor) for a text widget
+    /// the app edits itself. Only text kinds may carry one.
+    pub fn with_text_cursor(mut self, cursor: u32, anchor: u32) -> Result<Self, UiAdapterError> {
+        if !matches!(self.kind, WidgetKind::TextArea | WidgetKind::TextField) {
+            return Err(UiAdapterError::Unsupported(format!(
+                "widget kind {:?} cannot carry a text caret",
+                self.kind
+            )));
+        }
+        self.text_cursor = Some((cursor, anchor));
+        Ok(self)
     }
 
     /// Attach on/off state (checkbox, radio, switch).
@@ -1031,6 +1049,10 @@ pub struct WidgetPlacement {
     /// lowering time for selectable containers. Painters draw the
     /// selection highlight here; `None` means nothing is selected.
     pub selection: Option<(f32, f32, f32, f32)>,
+    /// Caret and selection (cursor, anchor) as byte offsets into `label`, for
+    /// a text widget the app edits itself. Painting hosts draw a caret bar at
+    /// `cursor` and a wash over `[min, max)`; `None` paints a passive label.
+    pub text_cursor: Option<(u32, u32)>,
     /// Clip rectangle (x, y, w, h) in logical pixels, set for widgets
     /// inside Scroll containers; painters must not draw outside it.
     pub clip: Option<(f32, f32, f32, f32)>,

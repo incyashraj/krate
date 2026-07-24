@@ -5494,6 +5494,33 @@ pub mod krate {
                     }
                 }
             }
+            /// Caret and selection inside a text widget, as byte offsets into its label.
+            ///
+            /// Hosts that paint their own text (Linux, Windows) have no native control to
+            /// hold a caret, so an app that implements editing itself reports where the
+            /// caret and selection sit and the painter draws them. `cursor` is the caret;
+            /// `anchor` is the other end of the selection. Equal offsets mean no
+            /// selection, just a caret. Hosts that lower to a real OS control ignore this:
+            /// the control owns its own caret.
+            #[repr(C)]
+            #[derive(Clone, Copy)]
+            pub struct TextCursor {
+                /// Caret position as a byte offset into the label, clamped to its length.
+                pub cursor: u32,
+                /// The other end of the selection. Equal to `cursor` means no selection.
+                pub anchor: u32,
+            }
+            impl ::core::fmt::Debug for TextCursor {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("TextCursor")
+                        .field("cursor", &self.cursor)
+                        .field("anchor", &self.anchor)
+                        .finish()
+                }
+            }
             /// Minimal style block for the first widget protocol draft.
             #[repr(C)]
             #[derive(Clone, Copy)]
@@ -5542,6 +5569,9 @@ pub mod krate {
                 /// Zero-based index of the selected child, for selectable container
                 /// kinds (list-view, tree-view). Out-of-range indices are rejected.
                 pub selected: Option<u32>,
+                /// Caret and selection for a text widget the app edits itself, drawn by
+                /// painting hosts. `none` leaves text caretless, as a passive label.
+                pub text_cursor: Option<TextCursor>,
             }
             impl ::core::fmt::Debug for WidgetNode {
                 fn fmt(
@@ -5558,6 +5588,7 @@ pub mod krate {
                         .field("checked", &self.checked)
                         .field("value", &self.value)
                         .field("selected", &self.selected)
+                        .field("text-cursor", &self.text_cursor)
                         .finish()
                 }
             }
@@ -6360,11 +6391,11 @@ pub mod krate {
                     struct RetArea(
                         [::core::mem::MaybeUninit<
                             u8,
-                        >; 72 + 8 * ::core::mem::size_of::<*const u8>()],
+                        >; 96 + 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit(); 72
-                            + 8 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 96
+                            + 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     *ptr0.add(0).cast::<i64>() = _rt::as_i64(&window);
@@ -6378,6 +6409,7 @@ pub mod krate {
                         checked: checked1,
                         value: value1,
                         selected: selected1,
+                        text_cursor: text_cursor1,
                     } = root;
                     *ptr0.add(8).cast::<i64>() = _rt::as_i64(id1);
                     match parent1 {
@@ -6522,79 +6554,101 @@ pub mod krate {
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
-                    let ptr5 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    match text_cursor1 {
+                        Some(e) => {
+                            *ptr0
+                                .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (1i32) as u8;
+                            let super::super::super::krate::ui::types::TextCursor {
+                                cursor: cursor5,
+                                anchor: anchor5,
+                            } = e;
+                            *ptr0
+                                .add(80 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<i32>() = _rt::as_i32(cursor5);
+                            *ptr0
+                                .add(84 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<i32>() = _rt::as_i32(anchor5);
+                        }
+                        None => {
+                            *ptr0
+                                .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (0i32) as u8;
+                        }
+                    };
+                    let ptr6 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
                     #[link(wasm_import_module = "krate:ui/tree@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "set-root"]
-                        fn wit_import6(_: *mut u8, _: *mut u8);
+                        fn wit_import7(_: *mut u8, _: *mut u8);
                     }
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import6(_: *mut u8, _: *mut u8) {
+                    unsafe extern "C" fn wit_import7(_: *mut u8, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import6(ptr0, ptr5) };
-                    let l7 = i32::from(*ptr5.add(0).cast::<u8>());
-                    let result16 = match l7 {
+                    unsafe { wit_import7(ptr0, ptr6) };
+                    let l8 = i32::from(*ptr6.add(0).cast::<u8>());
+                    let result17 = match l8 {
                         0 => {
                             let e = ();
                             Ok(e)
                         }
                         1 => {
                             let e = {
-                                let l8 = i32::from(
-                                    *ptr5.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                let l9 = i32::from(
+                                    *ptr6.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::krate::ui::types::UiError as V15;
-                                let v15 = match l8 {
-                                    0 => V15::PermissionDenied,
-                                    1 => V15::InvalidWindow,
-                                    2 => V15::InvalidWidget,
+                                use super::super::super::krate::ui::types::UiError as V16;
+                                let v16 = match l9 {
+                                    0 => V16::PermissionDenied,
+                                    1 => V16::InvalidWindow,
+                                    2 => V16::InvalidWidget,
                                     3 => {
-                                        let e15 = {
-                                            let l9 = *ptr5
+                                        let e16 = {
+                                            let l10 = *ptr6
                                                 .add(2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
-                                            let l10 = *ptr5
+                                            let l11 = *ptr6
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
-                                            let len11 = l10;
-                                            let bytes11 = _rt::Vec::from_raw_parts(
-                                                l9.cast(),
-                                                len11,
-                                                len11,
+                                            let len12 = l11;
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
                                             );
-                                            _rt::string_lift(bytes11)
+                                            _rt::string_lift(bytes12)
                                         };
-                                        V15::Unsupported(e15)
+                                        V16::Unsupported(e16)
                                     }
                                     n => {
                                         debug_assert_eq!(n, 4, "invalid enum discriminant");
-                                        let e15 = {
-                                            let l12 = *ptr5
+                                        let e16 = {
+                                            let l13 = *ptr6
                                                 .add(2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
-                                            let l13 = *ptr5
+                                            let l14 = *ptr6
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
-                                            let len14 = l13;
-                                            let bytes14 = _rt::Vec::from_raw_parts(
-                                                l12.cast(),
-                                                len14,
-                                                len14,
+                                            let len15 = l14;
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
                                             );
-                                            _rt::string_lift(bytes14)
+                                            _rt::string_lift(bytes15)
                                         };
-                                        V15::Platform(e15)
+                                        V16::Platform(e16)
                                     }
                                 };
-                                v15
+                                v16
                             };
                             Err(e)
                         }
                         _ => _rt::invalid_enum_discriminant(),
                     };
-                    result16
+                    result17
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
@@ -6605,11 +6659,11 @@ pub mod krate {
                     struct RetArea(
                         [::core::mem::MaybeUninit<
                             u8,
-                        >; 72 + 8 * ::core::mem::size_of::<*const u8>()],
+                        >; 96 + 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let mut ret_area = RetArea(
-                        [::core::mem::MaybeUninit::uninit(); 72
-                            + 8 * ::core::mem::size_of::<*const u8>()],
+                        [::core::mem::MaybeUninit::uninit(); 96
+                            + 6 * ::core::mem::size_of::<*const u8>()],
                     );
                     let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
                     *ptr0.add(0).cast::<i64>() = _rt::as_i64(&window);
@@ -6623,6 +6677,7 @@ pub mod krate {
                         checked: checked1,
                         value: value1,
                         selected: selected1,
+                        text_cursor: text_cursor1,
                     } = node;
                     *ptr0.add(8).cast::<i64>() = _rt::as_i64(id1);
                     match parent1 {
@@ -6767,79 +6822,101 @@ pub mod krate {
                                 .cast::<u8>() = (0i32) as u8;
                         }
                     };
-                    let ptr5 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    match text_cursor1 {
+                        Some(e) => {
+                            *ptr0
+                                .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (1i32) as u8;
+                            let super::super::super::krate::ui::types::TextCursor {
+                                cursor: cursor5,
+                                anchor: anchor5,
+                            } = e;
+                            *ptr0
+                                .add(80 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<i32>() = _rt::as_i32(cursor5);
+                            *ptr0
+                                .add(84 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<i32>() = _rt::as_i32(anchor5);
+                        }
+                        None => {
+                            *ptr0
+                                .add(76 + 7 * ::core::mem::size_of::<*const u8>())
+                                .cast::<u8>() = (0i32) as u8;
+                        }
+                    };
+                    let ptr6 = ret_area.0.as_mut_ptr().cast::<u8>();
                     #[cfg(target_arch = "wasm32")]
                     #[link(wasm_import_module = "krate:ui/tree@0.1.0")]
                     unsafe extern "C" {
                         #[link_name = "upsert-node"]
-                        fn wit_import6(_: *mut u8, _: *mut u8);
+                        fn wit_import7(_: *mut u8, _: *mut u8);
                     }
                     #[cfg(not(target_arch = "wasm32"))]
-                    unsafe extern "C" fn wit_import6(_: *mut u8, _: *mut u8) {
+                    unsafe extern "C" fn wit_import7(_: *mut u8, _: *mut u8) {
                         unreachable!()
                     }
-                    unsafe { wit_import6(ptr0, ptr5) };
-                    let l7 = i32::from(*ptr5.add(0).cast::<u8>());
-                    let result16 = match l7 {
+                    unsafe { wit_import7(ptr0, ptr6) };
+                    let l8 = i32::from(*ptr6.add(0).cast::<u8>());
+                    let result17 = match l8 {
                         0 => {
                             let e = ();
                             Ok(e)
                         }
                         1 => {
                             let e = {
-                                let l8 = i32::from(
-                                    *ptr5.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                let l9 = i32::from(
+                                    *ptr6.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
                                 );
-                                use super::super::super::krate::ui::types::UiError as V15;
-                                let v15 = match l8 {
-                                    0 => V15::PermissionDenied,
-                                    1 => V15::InvalidWindow,
-                                    2 => V15::InvalidWidget,
+                                use super::super::super::krate::ui::types::UiError as V16;
+                                let v16 = match l9 {
+                                    0 => V16::PermissionDenied,
+                                    1 => V16::InvalidWindow,
+                                    2 => V16::InvalidWidget,
                                     3 => {
-                                        let e15 = {
-                                            let l9 = *ptr5
+                                        let e16 = {
+                                            let l10 = *ptr6
                                                 .add(2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
-                                            let l10 = *ptr5
+                                            let l11 = *ptr6
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
-                                            let len11 = l10;
-                                            let bytes11 = _rt::Vec::from_raw_parts(
-                                                l9.cast(),
-                                                len11,
-                                                len11,
+                                            let len12 = l11;
+                                            let bytes12 = _rt::Vec::from_raw_parts(
+                                                l10.cast(),
+                                                len12,
+                                                len12,
                                             );
-                                            _rt::string_lift(bytes11)
+                                            _rt::string_lift(bytes12)
                                         };
-                                        V15::Unsupported(e15)
+                                        V16::Unsupported(e16)
                                     }
                                     n => {
                                         debug_assert_eq!(n, 4, "invalid enum discriminant");
-                                        let e15 = {
-                                            let l12 = *ptr5
+                                        let e16 = {
+                                            let l13 = *ptr6
                                                 .add(2 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<*mut u8>();
-                                            let l13 = *ptr5
+                                            let l14 = *ptr6
                                                 .add(3 * ::core::mem::size_of::<*const u8>())
                                                 .cast::<usize>();
-                                            let len14 = l13;
-                                            let bytes14 = _rt::Vec::from_raw_parts(
-                                                l12.cast(),
-                                                len14,
-                                                len14,
+                                            let len15 = l14;
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
                                             );
-                                            _rt::string_lift(bytes14)
+                                            _rt::string_lift(bytes15)
                                         };
-                                        V15::Platform(e15)
+                                        V16::Platform(e16)
                                     }
                                 };
-                                v15
+                                v16
                             };
                             Err(e)
                         }
                         _ => _rt::invalid_enum_discriminant(),
                     };
-                    result16
+                    result17
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
@@ -8548,8 +8625,8 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 6598] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xcc2\x01A\x02\x01AQ\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 6650] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x803\x01A\x02\x01AQ\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -8614,7 +8691,7 @@ ale/info@0.1.0\x05\x17\x02\x03\0\x0b\x0adate-style\x02\x03\0\x0b\x0cnumber-style
 \0\x0adate-style\x03\0\x02\x02\x03\x02\x01\x19\x04\0\x0cnumber-style\x03\0\x04\x01\
 @\x04\x06millisw\x02tzs\x05style\x03\x03loc\x01\0s\x04\0\x0bformat-date\x01\x06\x01\
 @\x03\x05valueu\x05style\x05\x03loc\x01\0s\x04\0\x0dformat-number\x01\x07\x03\0\x19\
-krate:locale/format@0.1.0\x05\x1a\x01B$\x01m\x04\x06normal\x09minimized\x09maxim\
+krate:locale/format@0.1.0\x05\x1a\x01B'\x01m\x04\x06normal\x09minimized\x09maxim\
 ized\x0afullscreen\x04\0\x0cwindow-state\x03\0\0\x01r\x02\x05widthy\x06heighty\x04\
 \0\x0bwindow-size\x03\0\x02\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04r\
 ect\x03\0\x04\x01m\x03\x05light\x04dark\x07unknown\x04\0\x05theme\x03\0\x06\x01m\
@@ -8628,14 +8705,15 @@ oww\x06widget\x0c\x03keys\x07pressed\x7f\x09modifiers\x0b\x04\0\x09key-event\x03
 \0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x08ui-error\x03\0\x14\x01m\x11\
 \x05stack\x04grid\x06scroll\x04tabs\x06button\x08checkbox\x05radio\x06switch\x06\
 slider\x08progress\x04text\x0atext-field\x09text-area\x09list-view\x09tree-view\x05\
-image\x06canvas\x04\0\x0bwidget-kind\x03\0\x16\x01kv\x01r\x04\x05width\x18\x06he\
-ight\x18\x04growv\x07paddingv\x04\0\x05style\x03\0\x19\x01ks\x01k\x7f\x01ky\x01r\
-\x09\x02idw\x06parent\x0c\x04kind\x17\x05label\x1b\x04role\x1b\x05style\x1a\x07c\
-hecked\x1c\x05value\x18\x08selected\x1d\x04\0\x0bwidget-node\x03\0\x1e\x01r\x03\x02\
-idw\x05labels\x07enabled\x7f\x04\0\x09menu-item\x03\0\x20\x01q\x0a\x0fclose-requ\
-ested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01w\0\x07pointer\x01\x0f\0\
-\x03key\x01\x13\0\x0atext-input\x01s\0\x0ctext-changed\x01\x11\0\x06action\x01w\0\
-\x0dfocus-changed\x01\x0c\0\x0dtheme-changed\x01\x07\0\x04\0\x05event\x03\0\"\x03\
+image\x06canvas\x04\0\x0bwidget-kind\x03\0\x16\x01r\x02\x06cursory\x06anchory\x04\
+\0\x0btext-cursor\x03\0\x18\x01kv\x01r\x04\x05width\x1a\x06height\x1a\x04growv\x07\
+paddingv\x04\0\x05style\x03\0\x1b\x01ks\x01k\x7f\x01ky\x01k\x19\x01r\x0a\x02idw\x06\
+parent\x0c\x04kind\x17\x05label\x1d\x04role\x1d\x05style\x1c\x07checked\x1e\x05v\
+alue\x1a\x08selected\x1f\x0btext-cursor\x20\x04\0\x0bwidget-node\x03\0!\x01r\x03\
+\x02idw\x05labels\x07enabled\x7f\x04\0\x09menu-item\x03\0#\x01q\x0a\x0fclose-req\
+uested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01w\0\x07pointer\x01\x0f\
+\0\x03key\x01\x13\0\x0atext-input\x01s\0\x0ctext-changed\x01\x11\0\x06action\x01\
+w\0\x0dfocus-changed\x01\x0c\0\x0dtheme-changed\x01\x07\0\x04\0\x05event\x03\0%\x03\
 \0\x14krate:ui/types@0.1.0\x05\x1b\x02\x03\0\x0e\x08ui-error\x02\x03\0\x0e\x0bwi\
 ndow-size\x02\x03\0\x0e\x0cwindow-state\x01B\x14\x02\x03\x02\x01\x1c\x04\0\x08ui\
 -error\x03\0\0\x02\x03\x02\x01\x1d\x04\0\x0bwindow-size\x03\0\x02\x02\x03\x02\x01\

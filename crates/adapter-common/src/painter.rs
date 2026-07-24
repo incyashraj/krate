@@ -248,7 +248,46 @@ pub fn paint_placements_bitmap(
                 let cell = drawtext::text_width("x", text_scale).max(1) as f32;
                 let per_line = (((pw - inset * 2.0) / cell).floor() as usize).max(1);
                 let line_h = th + 2.0 * scale;
-                let mut line_y = py + inset;
+                let origin_x = px + inset;
+                let origin_y = py + inset;
+
+                // Selection and caret ride on the same fixed-cell grid the text
+                // wraps on, so an offset in characters maps straight to a cell.
+                // The app reports byte offsets, which equal character offsets
+                // for the ASCII the drawn path accepts. Paint the selection wash
+                // first so the glyphs land on top of it.
+                if let Some((cursor, anchor)) = placement.text_cursor {
+                    let glyphs = label.chars().count();
+                    let cursor = (cursor as usize).min(glyphs);
+                    let anchor = (anchor as usize).min(glyphs);
+                    let (sel_start, sel_end) = (cursor.min(anchor), cursor.max(anchor));
+
+                    let cell_rect = |offset: usize| -> (f32, f32) {
+                        let row = offset / per_line;
+                        let col = offset - row * per_line;
+                        (origin_x + col as f32 * cell, origin_y + row as f32 * line_h)
+                    };
+
+                    // A wash cell per selected character keeps wrapping exact
+                    // without a per-row span calculation.
+                    let mut offset = sel_start;
+                    while offset < sel_end {
+                        let (cx, cy) = cell_rect(offset);
+                        if let Some(clipped) = clip_fill((cx, cy, cell, th)) {
+                            fill_rect(buffer, width, height, clipped, COLOR_SELECTION)
+                        };
+                        offset += 1;
+                    }
+
+                    // The caret is a thin bar at the cursor cell's left edge.
+                    let (caret_x, caret_y) = cell_rect(cursor);
+                    let caret_w = (scale).max(1.0);
+                    if let Some(clipped) = clip_fill((caret_x, caret_y, caret_w, th)) {
+                        fill_rect(buffer, width, height, clipped, COLOR_FIELD_TEXT)
+                    };
+                }
+
+                let mut line_y = origin_y;
                 let mut rest = label;
                 while !rest.is_empty() && line_y + th <= py + ph - inset {
                     let take = rest.chars().count().min(per_line);
@@ -262,7 +301,7 @@ pub fn paint_placements_bitmap(
                         buffer,
                         width,
                         height,
-                        ((px + inset) as i32, line_y as i32),
+                        ((origin_x) as i32, line_y as i32),
                         text_scale,
                         COLOR_FIELD_TEXT,
                         line,
@@ -399,6 +438,7 @@ mod tests {
             checked: None,
             value: None,
             selection: None,
+            text_cursor: None,
             clip: None,
             x,
             y,
@@ -446,6 +486,47 @@ mod tests {
         assert!((84..100u32)
             .flat_map(|y| (10..110u32).map(move |x| (x, y)))
             .any(|(x, y)| at(x, y) == COLOR_TEXT));
+    }
+
+    #[test]
+    fn text_area_paints_caret_and_selection_when_a_cursor_is_set() {
+        let (w, h) = (200u32, 80u32);
+        let mut buffer = vec![0u32; (w * h) as usize];
+        // A text area whose app selected "he" of "hello" with the caret at 2.
+        let mut area = placement(WidgetKind::TextArea, "hello", 10.0, 10.0, 180.0, 60.0);
+        area.text_cursor = Some((2, 0));
+        paint_placements_bitmap(&mut buffer, w, h, 1.0, &[area], PaintInteraction::default());
+        let at = |x: u32, y: u32| buffer[(y * w + x) as usize];
+        // The selection wash tints the first cells of the first text row.
+        let inset = 4u32;
+        let row = 14u32 + 2; // origin_y + a couple pixels into the glyph band
+        assert!(
+            (10 + inset..10 + inset + 6).any(|x| at(x, row) == COLOR_SELECTION),
+            "the selected characters must be washed with the selection color"
+        );
+        // Somewhere along the row a caret bar (field-text color) appears.
+        assert!(
+            (10 + inset..10 + inset + 40)
+                .flat_map(|x| (14..30u32).map(move |y| (x, y)))
+                .any(|(x, y)| at(x, y) == COLOR_FIELD_TEXT),
+            "a caret bar must be painted at the cursor"
+        );
+    }
+
+    #[test]
+    fn text_area_without_a_cursor_paints_no_selection_wash() {
+        let (w, h) = (200u32, 80u32);
+        let mut buffer = vec![0u32; (w * h) as usize];
+        let area = placement(WidgetKind::TextArea, "hello", 10.0, 10.0, 180.0, 60.0);
+        paint_placements_bitmap(&mut buffer, w, h, 1.0, &[area], PaintInteraction::default());
+        let at = |x: u32, y: u32| buffer[(y * w + x) as usize];
+        // A passive text area (no caret reported) must not tint any cell.
+        assert!(
+            !(10..190u32)
+                .flat_map(|x| (10..70u32).map(move |y| (x, y)))
+                .any(|(x, y)| at(x, y) == COLOR_SELECTION),
+            "no selection wash without a reported cursor"
+        );
     }
 
     #[test]

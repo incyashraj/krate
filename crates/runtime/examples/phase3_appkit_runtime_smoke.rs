@@ -61,6 +61,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             checked: None,
             value: None,
             selected: None,
+            text_cursor: None,
         },
     )?;
     dispatcher.upsert_node(
@@ -79,6 +80,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             checked: None,
             value: None,
             selected: None,
+            text_cursor: None,
         },
     )?;
     dispatcher.upsert_node(
@@ -97,6 +99,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             checked: None,
             value: None,
             selected: None,
+            text_cursor: None,
         },
     )?;
 

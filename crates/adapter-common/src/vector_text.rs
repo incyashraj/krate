@@ -65,6 +65,37 @@ impl TextEngine {
         layout.align(Alignment::Start, AlignmentOptions::default());
         layout
     }
+
+    /// Width of the first `chars` characters of `text`, laid out unwrapped.
+    /// Used to place the caret and selection edges: the note is short and
+    /// single line in practice, so an unwrapped prefix measures the exact x.
+    fn prefix_width(&mut self, text: &str, chars: usize, scale: f32) -> f32 {
+        if chars == 0 {
+            return 0.0;
+        }
+        let end = text
+            .char_indices()
+            .nth(chars)
+            .map(|(index, _)| index)
+            .unwrap_or(text.len());
+        let prefix = text.get(..end).unwrap_or(text);
+        if prefix.is_empty() {
+            return 0.0;
+        }
+        self.layout_text(prefix, scale, None).width()
+    }
+
+    /// Height of one text line at this scale, for sizing the caret and wash.
+    fn line_height(&mut self, scale: f32) -> f32 {
+        // "Xg" spans an ascender and descender, a stable line-box proxy.
+        self.layout_text("Xg", scale, None).height()
+    }
+}
+
+/// Clamp a character offset to a string's character count, so a caret past the
+/// end of the text lands at the end rather than out of range.
+fn clamp_char_offset(text: &str, offset: usize) -> usize {
+    offset.min(text.chars().count())
 }
 
 fn argb(color: u32) -> AlphaColor<vello_cpu::color::Srgb> {
@@ -266,9 +297,48 @@ pub fn try_paint_placements(
                         (ph - 2.0 * scale).max(0.0),
                         3.0 * scale,
                     );
+                    let inset = 4.0 * scale;
+                    let inner_width = (pw - inset * 2.0).max(1.0);
+
+                    // Selection wash and caret sit under the glyphs. Parley is
+                    // proportional, so positions come from measuring prefixes
+                    // rather than a fixed cell. The note is short and single
+                    // line in practice; measuring the prefix width places the
+                    // caret exactly there, and the selection spans between two
+                    // such measurements.
+                    if let Some((cursor, anchor)) = placement.text_cursor {
+                        let cursor = clamp_char_offset(label, cursor as usize);
+                        let anchor = clamp_char_offset(label, anchor as usize);
+                        let sel_start = cursor.min(anchor);
+                        let sel_end = cursor.max(anchor);
+                        let line_top = py + inset;
+                        let line_h = engine.line_height(scale);
+
+                        if sel_start != sel_end {
+                            let x0 = px + inset + engine.prefix_width(label, sel_start, scale);
+                            let x1 = px + inset + engine.prefix_width(label, sel_end, scale);
+                            fill(
+                                &mut ctx,
+                                COLOR_SELECTION,
+                                x0,
+                                line_top,
+                                (x1 - x0).max(1.0),
+                                line_h,
+                            );
+                        }
+
+                        let caret_x = px + inset + engine.prefix_width(label, cursor, scale);
+                        fill(
+                            &mut ctx,
+                            COLOR_FIELD_TEXT,
+                            caret_x,
+                            line_top,
+                            scale.max(1.0),
+                            line_h,
+                        );
+                    }
+
                     if !label.is_empty() {
-                        let inset = 4.0 * scale;
-                        let inner_width = (pw - inset * 2.0).max(1.0);
                         let layout = engine.layout_text(label, scale, Some(inner_width));
                         let _ = draw_layout(
                             &mut ctx,
@@ -470,6 +540,7 @@ mod tests {
             checked: None,
             value: None,
             selection: None,
+            text_cursor: None,
             clip: None,
             x: 10.0,
             y: 10.0,
@@ -529,6 +600,7 @@ mod tests {
             checked: None,
             value: None,
             selection: None,
+            text_cursor: None,
             clip: None,
             x: 10.0,
             y: 10.0,
@@ -590,6 +662,7 @@ mod text_area_tests {
             checked: None,
             value: None,
             selection: None,
+            text_cursor: None,
             clip: None,
             x: 0.0,
             y: 0.0,

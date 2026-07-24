@@ -34,6 +34,9 @@ rust-version = "1.91"
 
 [workspace.dependencies]
 anyhow = "1.0.102"
+# Cross-platform OS clipboard for the drawn path (Linux/Windows). macOS uses
+# the native NSTextField's own Cut/Copy/Paste, so it needs no clipboard crate.
+arboard = { version = "3.4", default-features = false }
 clap = { version = "4.6.1", features = ["derive"] }
 criterion = "0.8.2"
 libc = "0.2.177"

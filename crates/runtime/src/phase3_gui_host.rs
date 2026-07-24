@@ -137,6 +137,7 @@ impl Phase3GuiHost {
                 checked: row_selected.or(node.checked),
                 value: node.value,
                 selection,
+                text_cursor: node.text_cursor,
                 clip,
                 x: rect.x,
                 y,
@@ -434,6 +435,13 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
             "widget kind {kind:?} cannot carry a selected index"
         )));
     }
+    // A caret only means something on an editable text widget. Rejecting it
+    // elsewhere keeps a stray value from silently riding on, say, a button.
+    if node.text_cursor.is_some() && !matches!(kind, WidgetKind::TextArea | WidgetKind::TextField) {
+        return Err(ui::types::UiError::Unsupported(format!(
+            "widget kind {kind:?} cannot carry a text caret"
+        )));
+    }
 
     Ok(WidgetNode {
         id,
@@ -445,6 +453,7 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
         checked: node.checked,
         value: node.value,
         selected: node.selected,
+        text_cursor: node.text_cursor.map(|tc| (tc.cursor, tc.anchor)),
     })
 }
 
@@ -922,5 +931,44 @@ mod tests {
         assert!(!press_focuses(WidgetKind::Button));
         assert!(!press_focuses(WidgetKind::Text));
         assert!(!press_focuses(WidgetKind::Stack));
+    }
+
+    fn wit_node(kind: ui::types::WidgetKind, cursor: Option<(u32, u32)>) -> ui::types::WidgetNode {
+        ui::types::WidgetNode {
+            id: 1,
+            parent: None,
+            kind,
+            label: Some("hello".to_string()),
+            role: None,
+            style: ui::types::Style {
+                width: Some(100.0),
+                height: Some(30.0),
+                grow: 0.0,
+                padding: 0.0,
+            },
+            checked: None,
+            value: None,
+            selected: None,
+            text_cursor: cursor.map(|(c, a)| ui::types::TextCursor {
+                cursor: c,
+                anchor: a,
+            }),
+        }
+    }
+
+    #[test]
+    fn a_text_caret_lowers_onto_a_text_widget() {
+        let node = widget_node_from_wit(wit_node(ui::types::WidgetKind::TextArea, Some((2, 0))))
+            .expect("a text area may carry a caret");
+        assert_eq!(node.text_cursor, Some((2, 0)));
+    }
+
+    #[test]
+    fn a_text_caret_on_a_non_text_widget_is_rejected() {
+        // A caret only means something on editable text; carrying one on, say,
+        // a button is a guest bug and must not silently pass through.
+        let err = widget_node_from_wit(wit_node(ui::types::WidgetKind::Button, Some((1, 1))))
+            .expect_err("a button cannot carry a text caret");
+        assert!(matches!(err, ui::types::UiError::Unsupported(_)));
     }
 }
