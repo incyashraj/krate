@@ -32,6 +32,8 @@ pub const HOST_FAMILY: &str = "linux";
 /// the same UI contract as macOS and Windows before the winit bridge lands.
 pub mod winit_native;
 
+mod clipboard;
+
 #[derive(Debug, Default)]
 pub struct LinuxUiAdapter {
     draft: DraftUiAdapter,
@@ -511,6 +513,19 @@ impl UiAdapter for LinuxWinitPrototypeUiAdapter {
 
     fn queue_text_changed(&self, event: TextChangedEvent) -> Result<(), UiAdapterError> {
         self.headless.queue_text_changed(event)
+    }
+
+    // The drawn path paints its own text, so Cut/Copy/Paste can only work if
+    // the guest reaches the real OS clipboard. macOS never gets here — its
+    // NSTextField owns Cut/Copy/Paste natively — so this lives on the drawn
+    // adapters alone. Capability gating (`ui.clipboard:read`/`write`) happens
+    // in the runtime before either call is dispatched.
+    fn read_clipboard_text(&self) -> Result<String, UiAdapterError> {
+        clipboard::read_text()
+    }
+
+    fn write_clipboard_text(&self, text: &str) -> Result<(), UiAdapterError> {
+        clipboard::write_text(text)
     }
 
     fn pump_event_loop_once(

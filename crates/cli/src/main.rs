@@ -497,6 +497,18 @@ fn run_component(request: RunRequest) -> Result<u8> {
                 for cap in &missing {
                     eprintln!("  - {cap}");
                 }
+                // On the double-click path there is no terminal to read, so a
+                // native alert explains the refusal instead of the app just
+                // vanishing. Terminal runs keep the text guidance below.
+                #[cfg(target_os = "macos")]
+                if request.consent {
+                    let denied = missing
+                        .iter()
+                        .map(|cap| cap.to_string())
+                        .collect::<Vec<_>>();
+                    let app_name = manifest.app.name.as_str();
+                    krate_adapter_macos::present_denied_alert(app_name, &denied);
+                }
                 // Someone running a shared app for the first time hits this
                 // without knowing the vocabulary yet. Saying what is missing
                 // and stopping leaves them stuck, so name the two ways out and

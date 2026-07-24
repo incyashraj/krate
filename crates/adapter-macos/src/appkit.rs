@@ -1079,8 +1079,8 @@ mod platform {
     use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_app_kit::{
         NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSButton, NSColor,
-        NSControl, NSEventMask, NSFont, NSMenu, NSMenuItem, NSTextField, NSView, NSWindow,
-        NSWindowDelegate, NSWindowStyleMask,
+        NSControl, NSEventMask, NSEventModifierFlags, NSFont, NSMenu, NSMenuItem, NSTextField,
+        NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
     };
     use objc2_foundation::{
         NSDefaultRunLoopMode, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
@@ -1766,8 +1766,18 @@ mod platform {
                     &NSString::from_str(title),
                     Some(selector),
                     &NSString::from_str(key),
-                );
+                )
             };
+            // Undo/Redo route through the responder chain to the focused text
+            // field's field editor, which keeps its own undo stack. Without
+            // these menu items the Cmd+Z / Cmd+Shift+Z keystrokes reach nothing.
+            add("Undo", sel!(undo:), "z");
+            // Redo is Cmd+Shift+Z: same key equivalent, plus the Shift mask.
+            let redo_item = add("Redo", sel!(redo:), "z");
+            redo_item.setKeyEquivalentModifierMask(
+                NSEventModifierFlags::Command | NSEventModifierFlags::Shift,
+            );
+            edit_menu.addItem(&NSMenuItem::separatorItem(mtm));
             add("Cut", sel!(cut:), "x");
             add("Copy", sel!(copy:), "c");
             add("Paste", sel!(paste:), "v");
@@ -2265,6 +2275,7 @@ mod tests {
                 checked: None,
                 value: None,
                 selected: None,
+                text_cursor: None,
             },
         )
         .expect("set root widget");

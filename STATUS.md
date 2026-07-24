@@ -1,15 +1,16 @@
 # Krate Status (formerly Layer36)
 
-Last updated: 2026-07-23
+Last updated: 2026-07-25
 Naming: the project is Krate (company: Krate Labs, Inc.). The A9 rename is
 fully executed — CLI `krate`, WIT `krate:*`, schema `krate.run.v1`, env
 `KRATE_*`, repo `incyashraj/krate`, runner `krate-local`, future bundle
 format `.krate`. No legacy `layer36` identifiers remain in code or contracts.
 Repo: `incyashraj/krate`
 Branch: `main`
-Latest checked completed push before this status update: `8b1c9ec` (fast
-CI run `28740942296` green, then dispatched full matrix run `28741064867`
-green: all three OS lanes — certifying the vector-text renderer pass).
+Latest checked completed push before this status update: branch
+`slice/edit-parity` at `882c1cc`, full matrix run `30125544269` green on
+all three OS lanes — certifying full text-editing parity on the drawn path
+(the checkpoint below). Not yet merged to `main`.
 Direction change, 2026-07-23: shareability is now the wedge. Recorded in
 full as Change Order 2 in `Plan/Plan-Amendments-2026-07.md`, with the task
 spec as P3-SHARE-01 in `Plan/Phase-3-Plan.md` §19. Short version: Adam
@@ -23,7 +24,49 @@ Nothing architectural changes; portability stops being the headline and
 becomes how the property is achieved. The Adobe/Flash analogy is retired.
 Next implementation work is P3-SHARE-01, not further widget slices.
 
-Certification checkpoint 2026-07-23 (latest): a `.krate` opens like a
+Certification checkpoint 2026-07-25 (latest): the same `notes.krate`
+supports the full editing interaction on macOS, Linux, and Windows, not
+just macOS. Branch `slice/edit-parity`, commit `882c1cc`, full matrix run
+`30125544269` green on all three OS lanes. macOS already had
+Cut/Copy/Paste/Select All through the native NSTextField; the two missing
+pieces were Undo/Redo menu items (Cmd+Z / Cmd+Shift+Z now route through the
+field editor). The drawn path (Linux, Windows) paints its own text and has
+no native control, so the whole editor was built in the guest: `NoteBuffer`
+became a fixed-capacity, allocation-free, panic-free editor with a cursor, a
+selection anchor, and a 32-deep snapshot undo/redo stack — insert at caret
+(replacing any selection), backspace, forward delete, left/right/home/end
+movement (Shift extends), select-all, and delete-selection. A pure
+`classify_key()` maps key + modifiers to an action, so shortcut translation
+is one testable place: editing shortcuts fire on Control (Linux/Windows) or
+Meta (macOS), so the byte-identical guest honors each platform's native
+modifier. Cut/Copy/Paste round-trip through the real OS clipboard: the
+`krate:ui/clipboard` interface already existed end to end but the drawn
+adapters returned Unsupported; both now implement it via arboard (text-only,
+no image-data — clipboard-win's BSL-1.0 license was added to `deny.toml`).
+Clipboard is an optional capability — deny it and the app still opens,
+types, and saves; only Cut/Copy/Paste go quiet. A visible caret and
+selection required the one deliberate UAPI addition this change makes: a
+`krate:ui` `text-cursor` record on the widget node (a caret cannot ride an
+existing field), threaded through the placement and both painters (the
+bitmap painter uses its monospace cell grid, the vello painter measures
+prefix widths); a caret on a non-text widget is rejected at lowering. Tests:
+guest unit tests for shortcut translation, selection, editing, and
+undo/redo; painter tests for the caret and selection wash; runtime tests for
+the caret-lowering contract. The permission-denial behavior is unchanged —
+withholding `fs.write` still stops the app with exit 5 before any code runs,
+verified locally and on the Linux lane. Byte-identical bytecode everywhere
+is proven structurally: the notes `code.wasm` is built once in the
+fixtures job and downloaded by all three full-test lanes as the shared
+`phase-component-fixtures` artifact, so the same bytes run on every OS; the
+Linux notes proof logs its sha256 (`9cb8311a…`) for the record. Evidence
+note: the macOS editing (native control + Undo/Redo menu, Cmd shortcuts) is
+founder-verifiable interactively; the drawn-path editing, clipboard, and
+caret rendering are proven by the unit/painter/runtime tests plus the
+byte-identical `.krate` running headless on the Linux and Windows lanes. The
+rich drawn-path caret is not yet screenshot-verified in CI — that is the one
+thing a founder or a follow-up visual proof would still want to eyeball.
+
+Certification checkpoint 2026-07-23: a `.krate` opens like a
 document. Change Order 4's first arc is certified and merged (PR #9, merge
 `e61fa3f`, full matrix run `30001966785` green on all three OS lanes).
 P3-OPEN-01: opening a bundle with `--consent` shows a native macOS window

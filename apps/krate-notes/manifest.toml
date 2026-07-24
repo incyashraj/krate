@@ -29,3 +29,17 @@ required = true
 cap = "fs.write:./notes/**"
 rationale = "Save the note you are editing"
 required = true
+
+# Cut/Copy/Paste on the drawn hosts (Linux, Windows) round-trip through the OS
+# clipboard. Optional on purpose: deny it and the app still opens, types, and
+# saves — only Cut/Copy/Paste go quiet. macOS uses its native control's own
+# clipboard and does not need these.
+[[capabilities]]
+cap = "ui.clipboard:read"
+rationale = "Paste text into a note"
+required = false
+
+[[capabilities]]
+cap = "ui.clipboard:write"
+rationale = "Copy or cut text from a note"
+required = false

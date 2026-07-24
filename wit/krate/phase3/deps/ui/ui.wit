@@ -167,6 +167,21 @@ interface types {
     canvas,
   }
 
+  /// Caret and selection inside a text widget, as byte offsets into its label.
+  ///
+  /// Hosts that paint their own text (Linux, Windows) have no native control to
+  /// hold a caret, so an app that implements editing itself reports where the
+  /// caret and selection sit and the painter draws them. `cursor` is the caret;
+  /// `anchor` is the other end of the selection. Equal offsets mean no
+  /// selection, just a caret. Hosts that lower to a real OS control ignore this:
+  /// the control owns its own caret.
+  record text-cursor {
+    /// Caret position as a byte offset into the label, clamped to its length.
+    cursor: u32,
+    /// The other end of the selection. Equal to `cursor` means no selection.
+    anchor: u32,
+  }
+
   /// Minimal style block for the first widget protocol draft.
   record style {
     /// Optional width in logical pixels.
@@ -200,6 +215,9 @@ interface types {
     /// Zero-based index of the selected child, for selectable container
     /// kinds (list-view, tree-view). Out-of-range indices are rejected.
     selected: option<u32>,
+    /// Caret and selection for a text widget the app edits itself, drawn by
+    /// painting hosts. `none` leaves text caretless, as a passive label.
+    text-cursor: option<text-cursor>,
   }
 
   /// Top-level menu item.
