@@ -73,6 +73,7 @@ fn stack_root() -> types::WidgetNode {
         checked: None,
         value: None,
         selected: None,
+        text_cursor: None,
     }
 }
 
@@ -92,6 +93,7 @@ fn click_button() -> types::WidgetNode {
         checked: None,
         value: None,
         selected: None,
+        text_cursor: None,
     }
 }
 
@@ -111,6 +113,7 @@ fn text_field(label: &str) -> types::WidgetNode {
         checked: None,
         value: None,
         selected: None,
+        text_cursor: None,
     }
 }
 
@@ -130,6 +133,7 @@ fn scroll_area() -> types::WidgetNode {
         checked: None,
         value: None,
         selected: None,
+        text_cursor: None,
     }
 }
 
@@ -149,6 +153,7 @@ fn scroll_line(index: usize) -> types::WidgetNode {
         checked: None,
         value: None,
         selected: None,
+        text_cursor: None,
     }
 }
 
@@ -178,6 +183,7 @@ fn pick_list(selected: Option<u32>) -> types::WidgetNode {
         checked: None,
         value: None,
         selected,
+        text_cursor: None,
     }
 }
 
@@ -197,6 +203,7 @@ fn pick_row(index: usize) -> types::WidgetNode {
         checked: None,
         value: None,
         selected: None,
+        text_cursor: None,
     }
 }
 
@@ -216,6 +223,7 @@ fn robot_checkbox(checked: bool) -> types::WidgetNode {
         checked: Some(checked),
         value: None,
         selected: None,
+        text_cursor: None,
     }
 }
 
@@ -235,6 +243,7 @@ fn typing_progress(fraction: f32) -> types::WidgetNode {
         checked: None,
         value: Some(if fraction > 1.0 { 1.0 } else { fraction }),
         selected: None,
+        text_cursor: None,
     }
 }
 

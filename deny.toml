@@ -24,6 +24,10 @@ allow = [
     # code, and it arrives with the TLS stack that lets `krate run <https url>`
     # verify who it is downloading a bundle from.
     "CDLA-Permissive-2.0",
+    # clipboard-win (arboard's Windows clipboard backend, pulled in to give the
+    # drawn path Cut/Copy/Paste) is published under the Boost Software License,
+    # a permissive OSI-approved license with no copyleft or attribution burden.
+    "BSL-1.0",
 ]
 # Confidence threshold for license expression detection.
 confidence-threshold = 0.8
