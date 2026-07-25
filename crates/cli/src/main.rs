@@ -16,6 +16,8 @@ use krate_runtime::{
 };
 use serde::Serialize;
 
+mod sdk;
+
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
 const MAX_PHASE2_ARG_COUNT: usize = 1024;
 const PHASE3_GUI_UNIMPLEMENTED_EXIT: u8 = 6;
@@ -476,10 +478,13 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     use krate_author::{generate, AppKind, AppRequest};
 
     // Where the Krate SDK and WIT live, so a generated crate can build against
-    // them. In a repo checkout this is the workspace root; an installed binary
-    // is told via KRATE_SDK_ROOT.
-    let sdk_root = resolve_sdk_root()
-        .context("could not locate the Krate SDK; set KRATE_SDK_ROOT to a Krate checkout")?;
+    // them. By default the binary materializes the SDK it carries embedded, so
+    // no checkout is needed. KRATE_SDK_ROOT overrides that with a checkout, for
+    // development against local WIT changes.
+    let sdk_root = match std::env::var_os("KRATE_SDK_ROOT") {
+        Some(root) => PathBuf::from(root),
+        None => sdk::ensure_materialized().context("prepare the embedded Krate SDK")?,
+    };
 
     // Decide the app kind: an explicit --kind wins, otherwise infer from the
     // request text (e.g. "checklist" -> the GUI checklist).
@@ -653,26 +658,6 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         req.output.display()
     );
     Ok(0)
-}
-
-/// Locate a Krate checkout providing the SDK and WIT. Honors KRATE_SDK_ROOT,
-/// else walks up from the running binary to find a `wit/krate` directory.
-fn resolve_sdk_root() -> Option<PathBuf> {
-    if let Some(root) = std::env::var_os("KRATE_SDK_ROOT") {
-        let path = PathBuf::from(root);
-        if path.join("wit/krate").is_dir() {
-            return Some(path);
-        }
-    }
-    let exe = std::env::current_exe().ok()?;
-    let mut dir = exe.as_path();
-    while let Some(parent) = dir.parent() {
-        if parent.join("wit/krate").is_dir() {
-            return Some(parent.to_path_buf());
-        }
-        dir = parent;
-    }
-    None
 }
 
 /// The relative path from the app dir to the SDK root, for the generated
