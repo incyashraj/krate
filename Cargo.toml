@@ -21,6 +21,7 @@ exclude = [
     "apps/krate-clock",
     "apps/krate-hello-gui",
     "apps/krate-notes",
+    "apps/krate-checklist",
     "test/integration/hello-world",
     "test/integration/phase2-smoke",
     "test/integration/print-loop",
