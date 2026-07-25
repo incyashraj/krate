@@ -93,6 +93,26 @@ Phase 2's CLI path stays fully supported: UAPI modules for `io`, `fs`, `net`,
 
 ## Quickstart
 
+### Create an app from a request and share it
+
+One command turns a plain-English request into a shareable `.krate`: it writes
+the app (a built-in template, or a coding agent via `--author-cmd`), builds it,
+checks it imports only Krate APIs, packages it, and verifies its permission wall
+before writing the file.
+
+```bash
+cargo build --release -p krate-cli
+export KRATE_SDK_ROOT="$PWD"   # so the generated app can build against the SDK
+
+target/release/krate create "Make a checklist app that saves locally" \
+  --output checklist.krate
+```
+
+Send `checklist.krate` to someone; they double-click it, review the access it
+asks for, allow it, and use it. See
+[Create and Share an App](https://incyashraj.github.io/krate/create-and-share.html)
+for the full flow, including the AI-agent seam.
+
 ### Pack an app into one file and share it
 
 A `.krate` is a single file holding the component and the permissions it asks

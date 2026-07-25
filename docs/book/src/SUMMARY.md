@@ -27,6 +27,7 @@
 # Developer Guide
 
 - [Quickstart](quickstart.md)
+- [Create and Share an App](create-and-share.md)
 - [Try Krate Notes](try-krate-notes.md)
 - [Contributing](contributing/index.md)
   - [Your first PR](contributing/first-pr.md)
