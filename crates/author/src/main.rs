@@ -35,9 +35,10 @@ fn run() -> Result<(), String> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut out: Option<PathBuf> = None;
     let mut sdk_prefix: Option<String> = None;
-    let mut name = "word-count".to_string();
+    let mut name: Option<String> = None;
     let mut read_glob: Option<String> = None;
     let mut top_n: Option<u32> = None;
+    let mut kind: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -51,8 +52,9 @@ fn run() -> Result<(), String> {
         match flag.as_str() {
             "--out" => out = Some(PathBuf::from(take_value("--out")?)),
             "--sdk-prefix" => sdk_prefix = Some(take_value("--sdk-prefix")?),
-            "--name" => name = take_value("--name")?,
+            "--name" => name = Some(take_value("--name")?),
             "--read-glob" => read_glob = Some(take_value("--read-glob")?),
+            "--kind" => kind = Some(take_value("--kind")?),
             "--top-n" => {
                 let raw = take_value("--top-n")?;
                 top_n = Some(
@@ -68,7 +70,15 @@ fn run() -> Result<(), String> {
     let out = out.ok_or("--out <dir> is required")?;
     let sdk_prefix = sdk_prefix.ok_or("--sdk-prefix <rel> is required")?;
 
-    let mut request = AppRequest::word_frequency(&name);
+    // Build the request from the chosen kind, defaulting the name to something
+    // sensible per kind.
+    let mut request = match kind.as_deref() {
+        Some("checklist") => AppRequest::checklist(name.as_deref().unwrap_or("checklist")),
+        Some("word-frequency") | None => {
+            AppRequest::word_frequency(name.as_deref().unwrap_or("word-count"))
+        }
+        Some(other) => return Err(format!("unknown --kind {other}")),
+    };
     if let Some(glob) = read_glob {
         request.read_glob = glob;
     }

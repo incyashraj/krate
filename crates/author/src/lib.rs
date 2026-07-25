@@ -18,14 +18,33 @@
 
 use serde::{Deserialize, Serialize};
 
-/// What kind of app the agent was asked to build. One kind today; the enum is
-/// the seam where more request types (a line counter, an http fetcher) slot in
-/// without reshaping the pipeline around them.
+/// What kind of app the agent was asked to build. The enum is the seam where
+/// more request types slot in without reshaping the pipeline around them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AppKind {
-    /// Read a file and print its most frequent words.
+    /// A CLI app: read a file and print its most frequent words.
     WordFrequency,
+    /// A GUI app: a checklist with checkboxes that saves locally.
+    Checklist,
+}
+
+impl AppKind {
+    /// Infer the app kind from a free-text request, so `krate create "make a
+    /// checklist…"` picks the right template without an explicit flag. Falls
+    /// back to the word-frequency CLI app.
+    pub fn infer(request: &str) -> AppKind {
+        let lower = request.to_lowercase();
+        if lower.contains("checklist")
+            || lower.contains("todo")
+            || lower.contains("to-do")
+            || lower.contains("task list")
+        {
+            AppKind::Checklist
+        } else {
+            AppKind::WordFrequency
+        }
+    }
 }
 
 /// A request handed to the authoring harness — the plain description of the app
@@ -61,6 +80,19 @@ impl AppRequest {
         }
     }
 
+    /// A checklist GUI request: a list of checkboxes that saves locally.
+    pub fn checklist(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            description: "A checklist with checkboxes that saves to a local file.".to_string(),
+            kind: AppKind::Checklist,
+            // The checklist reads and writes its own data directory; the glob
+            // is the read half of that grant.
+            read_glob: "./checklist/**".to_string(),
+            top_n: 0,
+        }
+    }
+
     /// The crate name with hyphens turned into the underscore the wasm artifact
     /// and Rust package identifier use.
     fn snake_name(&self) -> String {
@@ -90,7 +122,7 @@ impl AppRequest {
                 self.read_glob
             ));
         }
-        if self.top_n == 0 {
+        if self.kind == AppKind::WordFrequency && self.top_n == 0 {
             return Err("top_n must be at least 1".to_string());
         }
         Ok(())
@@ -144,6 +176,20 @@ pub fn generate(request: &AppRequest, sdk_prefix: &str) -> Result<GeneratedApp, 
             GeneratedFile {
                 path: "manifest.toml".to_string(),
                 contents: manifest_toml(request),
+            },
+        ],
+        AppKind::Checklist => vec![
+            GeneratedFile {
+                path: "Cargo.toml".to_string(),
+                contents: checklist_cargo_toml(request, sdk_prefix),
+            },
+            GeneratedFile {
+                path: "src/lib.rs".to_string(),
+                contents: checklist_source(request),
+            },
+            GeneratedFile {
+                path: "manifest.toml".to_string(),
+                contents: checklist_manifest_toml(request),
             },
         ],
     };
@@ -493,6 +539,124 @@ krate::export!(Component);
     )
 }
 
+// ---- checklist (GUI) generation -------------------------------------------
+
+/// The canonical checklist app source is the in-tree `krate-checklist` sample,
+/// included verbatim so the generated app and the maintained sample can never
+/// drift apart: the sample *is* the template. Only the window title is
+/// substituted per request.
+const CHECKLIST_SOURCE: &str = include_str!("../../../apps/krate-checklist/src/lib.rs");
+
+fn checklist_source(request: &AppRequest) -> String {
+    // A human-facing window title from the kebab-case name (e.g. `my-list` ->
+    // `My list`). The sample hardcodes "Krate Checklist"; swap it out.
+    let title = title_case(&request.name);
+    CHECKLIST_SOURCE.replace("Krate Checklist", &title)
+}
+
+/// Turn a kebab-case name into a capitalized, spaced title.
+fn title_case(name: &str) -> String {
+    let spaced = name.replace('-', " ");
+    let mut chars = spaced.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        None => spaced,
+    }
+}
+
+fn checklist_cargo_toml(request: &AppRequest, sdk_prefix: &str) -> String {
+    let name = &request.name;
+    // The GUI world (phase3) needs the ui/gfx/audio WIT packages the CLI world
+    // does not. Mirrors apps/krate-checklist/Cargo.toml, only names and the
+    // path prefix change.
+    format!(
+        r#"# An empty [workspace] table makes the generated app its own workspace
+# root, so it builds standalone inside another workspace's directory tree.
+[workspace]
+
+[package]
+name = "{name}"
+version = "0.1.0-dev"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/incyashraj/krate"
+rust-version = "1.91"
+
+[dependencies]
+wit-bindgen-rt = {{ version = "0.44.0", features = ["bitflags"] }}
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "krate:{name}"
+
+[package.metadata.component.target]
+path = "{sdk_prefix}/wit/krate/phase3"
+world = "gui"
+
+[package.metadata.component.target.dependencies]
+"krate:io" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/io" }}
+"krate:fs" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/fs" }}
+"krate:net" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/net" }}
+"krate:time" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/time" }}
+"krate:locale" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/locale" }}
+"krate:ui" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/ui" }}
+"krate:gfx" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/gfx" }}
+"krate:audio" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/audio" }}
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = "s"
+"#
+    )
+}
+
+fn checklist_manifest_toml(request: &AppRequest) -> String {
+    let name = &request.name;
+    let snake = request.snake_name();
+    let title = title_case(name);
+    // The checklist needs a window and read+write on its own data directory.
+    // The write grant is the one that gates saving, so withholding it produces
+    // the standard exit-5 refusal.
+    format!(
+        r#"[app]
+id = "dev.krate.{snake}"
+name = "{title}"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/{snake}.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the checklist window"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report state on exit for automated runs"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated tests"
+required = true
+
+[[capabilities]]
+cap = "fs.read:./checklist/**"
+rationale = "Load your saved checklist"
+required = true
+
+[[capabilities]]
+cap = "fs.write:./checklist/**"
+rationale = "Save changes to your checklist"
+required = true
+"#
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -557,5 +721,53 @@ mod tests {
         let app = generate(&r, "../..").expect("generate");
         let source = app.file("src/lib.rs").expect("source");
         assert!(source.contains("while printed < 9"));
+    }
+
+    // ---- checklist (GUI) ----
+
+    #[test]
+    fn infers_the_checklist_kind_from_the_request_text() {
+        assert_eq!(
+            AppKind::infer("Make a checklist app that saves locally"),
+            AppKind::Checklist
+        );
+        assert_eq!(AppKind::infer("build me a todo list"), AppKind::Checklist);
+        assert_eq!(
+            AppKind::infer("count the words in a file"),
+            AppKind::WordFrequency
+        );
+    }
+
+    #[test]
+    fn generates_a_gui_checklist_crate() {
+        let app = generate(&AppRequest::checklist("my-list"), "../..").expect("generate");
+        let cargo = app.file("Cargo.toml").expect("cargo");
+        // The GUI world needs the phase3 target and the ui package.
+        assert!(cargo.contains(r#"path = "../../wit/krate/phase3""#));
+        assert!(cargo.contains("world = \"gui\""));
+        assert!(cargo.contains(r#""krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }"#));
+        let manifest = app.file("manifest.toml").expect("manifest");
+        assert!(manifest.contains(r#"cap = "ui.window:create""#));
+        assert!(manifest.contains(r#"cap = "fs.write:./checklist/**""#));
+        assert!(manifest.contains(r#"world = "krate:app/gui@0.2.0""#));
+    }
+
+    #[test]
+    fn checklist_source_is_the_maintained_sample_with_the_title_swapped() {
+        let app = generate(&AppRequest::checklist("my-list"), "../..").expect("generate");
+        let source = app.file("src/lib.rs").expect("source");
+        // The window title is title-cased from the name.
+        assert!(source.contains("My list"));
+        // And it is the real checklist app: the persistence format is there.
+        assert!(source.contains("[x] ") || source.contains("b\"[x] \""));
+        assert!(source.contains("bindings::export!(Component"));
+    }
+
+    #[test]
+    fn a_checklist_request_needs_no_top_n() {
+        // top_n is 0 for a checklist and validate must not reject it.
+        let req = AppRequest::checklist("my-list");
+        assert_eq!(req.top_n, 0);
+        assert!(req.validate().is_ok());
     }
 }
