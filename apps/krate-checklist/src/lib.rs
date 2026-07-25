@@ -22,6 +22,8 @@ use bindings::krate::ui::{events, tree, types, window};
 const ROOT_ID: u64 = 1;
 const HEADER_ID: u64 = 2;
 const STATUS_ID: u64 = 3;
+/// The text field where a new item is typed before it is added.
+const NEW_ITEM_FIELD_ID: u64 = 4;
 const ITEM_ROW_BASE_ID: u64 = 10;
 
 /// How many checklist items the app can ever hold. Fixed so nothing allocates.
@@ -112,6 +114,59 @@ impl Checklist {
     }
 }
 
+/// The text of the new item being typed, before it is added. A fixed buffer so
+/// nothing allocates; append and pop only, like the notes editor's buffer.
+struct Draft {
+    text: [u8; ITEM_TEXT_CAP],
+    len: usize,
+}
+
+impl Draft {
+    const fn new() -> Self {
+        Self {
+            text: [0; ITEM_TEXT_CAP],
+            len: 0,
+        }
+    }
+
+    fn as_str(&self) -> &str {
+        let slice = self.text.get(..self.len).unwrap_or(&[]);
+        core::str::from_utf8(slice).unwrap_or("")
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    /// Append one printable byte; ignored at capacity.
+    fn push(&mut self, byte: u8) {
+        if let Some(slot) = self.text.get_mut(self.len) {
+            *slot = byte;
+            self.len += 1;
+        }
+    }
+
+    fn pop(&mut self) {
+        self.len = self.len.saturating_sub(1);
+    }
+
+    /// Replace the whole draft, used when a native control reports its full
+    /// text after any edit.
+    fn set(&mut self, text: &str) {
+        self.len = 0;
+        for byte in text.as_bytes() {
+            let printable = byte.is_ascii_graphic() || *byte == b' ';
+            if printable {
+                self.push(*byte);
+            }
+        }
+    }
+}
+
 /// Build an owned `String` without touching std's allocation-error handler,
 /// which would drag the `wasi:*` import set into the component. Mirrors the
 /// raw-allocation path the generated bindings use.
@@ -163,7 +218,17 @@ fn number_string(mut value: u32) -> String {
 // ---- widget tree ----------------------------------------------------------
 
 fn stack_root() -> types::WidgetNode {
-    node(ROOT_ID, None, types::WidgetKind::Stack, None, None, 420.0, 520.0, 0.0, 16.0)
+    node(
+        ROOT_ID,
+        None,
+        types::WidgetKind::Stack,
+        None,
+        None,
+        420.0,
+        520.0,
+        0.0,
+        16.0,
+    )
 }
 
 fn header() -> types::WidgetNode {
@@ -200,7 +265,26 @@ fn item_row(index: usize, item: &Item) -> types::WidgetNode {
     n
 }
 
-/// The "+ Add item" affordance at the bottom of the list.
+/// The text field for a new item. Its label is the draft text so far; a native
+/// host lowers it to a real editable control, and a drawn host paints it and
+/// feeds typed characters back through TextInput/Key events.
+fn new_item_field(draft: &Draft) -> types::WidgetNode {
+    let mut n = node(
+        NEW_ITEM_FIELD_ID,
+        Some(ROOT_ID),
+        types::WidgetKind::TextField,
+        Some(pure_string(draft.as_str())),
+        Some(pure_string("textbox")),
+        388.0,
+        30.0,
+        0.0,
+        0.0,
+    );
+    n.role = Some(pure_string("textbox"));
+    n
+}
+
+/// The "+ Add item" affordance below the new-item field.
 fn add_item_row() -> types::WidgetNode {
     node(
         ADD_ITEM_ID,
@@ -341,11 +425,17 @@ fn save(list: &Checklist) -> bool {
         }
     };
     for i in 0..list.len {
-        let Some(item) = list.items.get(i) else { continue };
+        let Some(item) = list.items.get(i) else {
+            continue;
+        };
         if !item.used {
             continue;
         }
-        push(if item.done { b"[x] " } else { b"[ ] " }, &mut out, &mut len);
+        push(
+            if item.done { b"[x] " } else { b"[ ] " },
+            &mut out,
+            &mut len,
+        );
         push(item.text_str().as_bytes(), &mut out, &mut len);
         push(b"\n", &mut out, &mut len);
     }
@@ -373,9 +463,10 @@ impl bindings::Guest for Component {
                 list.push(seed, false);
             }
         }
+        let mut draft = Draft::new();
 
-        // A quick automated run toggles the first item and adds one, proving
-        // the edit + save path in CI, then exits.
+        // A quick automated run types an item, adds it, toggles the first item,
+        // and saves — proving the text-entry + edit + save path in CI.
         let raw = args::raw();
         let quick = raw
             .as_bytes()
@@ -383,7 +474,7 @@ impl bindings::Guest for Component {
             .next()
             .is_some_and(|first| first == b"quick");
 
-        if !rebuild(win, &list, "Click an item to mark it done") {
+        if !rebuild(win, &list, &draft, "Type an item, then Add") {
             let _ = window::close(win);
             return 32;
         }
@@ -391,16 +482,34 @@ impl bindings::Guest for Component {
         let mut saved_any = false;
         let mut close_requested = false;
 
+        // Commit the draft as a new item if there is room and text. Returns
+        // whether it saved.
+        let commit_draft = |list: &mut Checklist, draft: &mut Draft| -> bool {
+            if draft.is_empty() || list.len >= MAX_ITEMS {
+                return false;
+            }
+            list.push(draft.as_str(), false);
+            draft.clear();
+            save(list)
+        };
+
         if quick {
+            draft.set("Buy coffee");
+            if commit_draft(&mut list, &mut draft) {
+                saved_any = true;
+            }
             list.toggle(0);
-            list.push("Added by quick run", false);
             if save(&list) {
                 saved_any = true;
             }
-            let _ = rebuild(win, &list, "saved");
+            let _ = rebuild(win, &list, &draft, "saved");
         }
 
-        let rounds = if quick { QUICK_WAIT_ROUNDS } else { MAX_WAIT_ROUNDS };
+        let rounds = if quick {
+            QUICK_WAIT_ROUNDS
+        } else {
+            MAX_WAIT_ROUNDS
+        };
         for _ in 0..rounds {
             match events::wait(Some(WAIT_ROUND_MILLIS)) {
                 // Toggling an item flips its done state and saves.
@@ -412,41 +521,48 @@ impl bindings::Guest for Component {
                         if save(&list) {
                             saved_any = true;
                         }
-                        let _ = rebuild(win, &list, "saved");
+                        let _ = rebuild(win, &list, &draft, "saved");
                     }
                 }
-                // "+ Add item" appends a new item and saves.
+                // "+ Add item" commits whatever is typed in the field.
                 Some(types::Event::Pointer(pointer))
                     if pointer.pressed && pointer.widget == Some(ADD_ITEM_ID) =>
                 {
-                    if list.len < MAX_ITEMS {
-                        // Build "New item N" into a fixed buffer; growing a
-                        // std String would pull the wasi:* import set in.
-                        let mut label = [0u8; 24];
-                        let mut label_len = 0usize;
-                        let prefix = b"New item ";
-                        for byte in prefix {
-                            if let Some(slot) = label.get_mut(label_len) {
-                                *slot = *byte;
-                                label_len += 1;
-                            }
-                        }
-                        let number = number_string((list.len + 1) as u32);
-                        for byte in number.as_bytes() {
-                            if let Some(slot) = label.get_mut(label_len) {
-                                *slot = *byte;
-                                label_len += 1;
-                            }
-                        }
-                        let text = core::str::from_utf8(label.get(..label_len).unwrap_or(&[]))
-                            .unwrap_or("New item");
-                        list.push(text, false);
-                        if save(&list) {
-                            saved_any = true;
-                        }
-                        let _ = rebuild(win, &list, "added");
-                    } else {
+                    if list.len >= MAX_ITEMS {
                         let _ = tree::upsert_node(win, &status("checklist full"));
+                    } else if commit_draft(&mut list, &mut draft) {
+                        saved_any = true;
+                        let _ = rebuild(win, &list, &draft, "added");
+                    }
+                }
+                // A native control (macOS) reports the field's whole text after
+                // any edit. Mirror it into the draft without re-lowering, which
+                // would fight the control being typed into.
+                Some(types::Event::TextChanged(changed)) if changed.widget == NEW_ITEM_FIELD_ID => {
+                    draft.set(&changed.text);
+                }
+                // A drawn host (Linux, Windows) sends typed characters; append
+                // the printable ones to the draft and re-lower to show them.
+                Some(types::Event::TextInput(text)) => {
+                    for byte in text.as_bytes() {
+                        let printable = byte.is_ascii_graphic() || *byte == b' ';
+                        if printable {
+                            draft.push(*byte);
+                        }
+                    }
+                    let _ = rebuild(win, &list, &draft, "typing");
+                }
+                Some(types::Event::Key(key)) if key.pressed => {
+                    if key.key.as_bytes() == b"Backspace" {
+                        draft.pop();
+                        let _ = rebuild(win, &list, &draft, "typing");
+                    } else if key.key.as_bytes() == b"Enter" {
+                        if list.len >= MAX_ITEMS {
+                            let _ = tree::upsert_node(win, &status("checklist full"));
+                        } else if commit_draft(&mut list, &mut draft) {
+                            saved_any = true;
+                            let _ = rebuild(win, &list, &draft, "added");
+                        }
                     }
                 }
                 Some(types::Event::CloseRequested(_)) => {
@@ -475,14 +591,17 @@ impl bindings::Guest for Component {
     }
 }
 
-/// Rebuild the whole tree: root, header, one row per live item, the add
-/// button, and the status line. Returns false if any upsert fails.
-fn rebuild(win: u64, list: &Checklist, status_text: &str) -> bool {
+/// Rebuild the whole tree: root, header, one row per live item, the new-item
+/// text field, the add button, and the status line. Returns false if any
+/// upsert fails.
+fn rebuild(win: u64, list: &Checklist, draft: &Draft, status_text: &str) -> bool {
     if tree::set_root(win, &stack_root()).is_err() || tree::upsert_node(win, &header()).is_err() {
         return false;
     }
     for i in 0..list.len {
-        let Some(item) = list.items.get(i) else { continue };
+        let Some(item) = list.items.get(i) else {
+            continue;
+        };
         if !item.used {
             continue;
         }
@@ -490,7 +609,8 @@ fn rebuild(win: u64, list: &Checklist, status_text: &str) -> bool {
             return false;
         }
     }
-    tree::upsert_node(win, &add_item_row()).is_ok()
+    tree::upsert_node(win, &new_item_field(draft)).is_ok()
+        && tree::upsert_node(win, &add_item_row()).is_ok()
         && tree::upsert_node(win, &status(status_text)).is_ok()
 }
 
