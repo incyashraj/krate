@@ -97,15 +97,24 @@ need to trust you or read any code.
 
 ## Open it (on the other side)
 
-The recipient needs Krate installed the same way. Then:
+The recipient needs Krate installed the same way. Then, step by step:
 
-- **Double-click `checklist.krate`.** Before anything runs, Krate shows what the
-  app is asking for — here, a window and read/write access to its own
-  `checklist` folder — and nothing else on the machine is reachable.
-- **Allow it**, and the checklist opens as a normal app: check items off, add
-  new ones, close and reopen it with everything saved.
-- **Deny a permission it needs**, and it simply does not start. It never opens
-  half-working; the wall comes before the app's code runs.
+1. **Double-click `checklist.krate`.** Before anything runs, Krate shows a
+   window listing exactly what the app is asking for — a window, and read/write
+   access to its own `checklist` folder. Nothing else on the machine is
+   reachable.
+2. **Review and allow.** The requested access is right there to read. Allow it,
+   and the checklist window opens.
+3. **Use it.** Type a new item into the field and click **Add item** (or press
+   Enter) — it appears in the list. Click a checkbox to mark an item done.
+4. **Close the window.** Every change was saved to the app's folder as you made
+   it.
+5. **Reopen it** (double-click the file again, allow again). Your items are
+   still there, exactly as you left them — checked ones checked, added ones
+   present.
+6. **Try denying.** Open it once more and decline the folder-write access. The
+   app does not start at all — it never opens half-working, because the wall
+   comes before the app's code runs.
 
 From a terminal the same file runs with:
 
@@ -114,7 +123,9 @@ krate run checklist.krate
 ```
 
 Add `--consent` to get the permission review even without a double-click, or
-`--auto-grant` to grant everything for a quick local try.
+`--auto-grant` to grant everything for a quick local try. The whole round trip —
+create, open, edit, persist across a reopen, and refuse without its write
+grant — is also checked headlessly by `scripts/checklist-roundtrip.sh`.
 
 ## What just happened
 
