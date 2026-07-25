@@ -1629,6 +1629,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "krate-author"
+version = "0.1.0-dev"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "krate-bundle"
 version = "0.1.0-dev"
 dependencies = [
