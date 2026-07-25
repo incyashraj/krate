@@ -8,9 +8,10 @@ format `.krate`. No legacy `layer36` identifiers remain in code or contracts.
 Repo: `incyashraj/krate`
 Branch: `main`
 Latest checked completed push before this status update: branch
-`slice/edit-parity` at `882c1cc`, full matrix run `30125544269` green on
-all three OS lanes — certifying full text-editing parity on the drawn path
-(the checkpoint below). Not yet merged to `main`.
+`slice/ai-authoring-loop` at `90e7d71`, full matrix run `30147362391` green
+on all three OS lanes — certifying the AI authoring loop (the checkpoint
+below). Not yet merged to `main`. The prior checkpoint (full text-editing
+parity on the drawn path, run `30125544269`) merged to `main` via PR #10.
 Direction change, 2026-07-23: shareability is now the wedge. Recorded in
 full as Change Order 2 in `Plan/Plan-Amendments-2026-07.md`, with the task
 spec as P3-SHARE-01 in `Plan/Phase-3-Plan.md` §19. Short version: Adam
@@ -24,7 +25,37 @@ Nothing architectural changes; portability stops being the headline and
 becomes how the property is achieved. The Adobe/Flash analogy is retired.
 Next implementation work is P3-SHARE-01, not further widget slices.
 
-Certification checkpoint 2026-07-25 (latest): the same `notes.krate`
+Certification checkpoint 2026-07-25 (latest): an agent can create the
+shareable artifact directly, not just run one — the biggest gap in the story
+is closed. Branch `slice/ai-authoring-loop`, commit `90e7d71`, full matrix
+run `30147362391` green on all three OS lanes. The loop — request → author →
+build → pack → verify — lives in `crates/author` (the deterministic
+generator, 7 unit tests) and `scripts/author-krate.sh` (the end-to-end
+driver). Given a plain request it generates a complete Krate guest crate
+(`Cargo.toml`, `src/lib.rs`, `manifest.toml`) for a word-frequency reporter
+gated on `fs.read`, `cargo-component` builds it to a component that imports
+only `krate:*`, `krate pack` bundles it into one `.krate`, and the run proves
+the permission wall: with `fs.read` it prints its report and exits 0, without
+it it refuses before running and exits 5. Each of the Linux, macOS, and
+Windows lanes runs the whole authoring pipeline independently and uploads its
+`krate.author.v1` transcript, a `report.csv`, and the packaged `.krate`.
+Stronger than required: all three lanes produced the byte-identical authored
+`code.wasm` (sha256 `4a5928ac…`), so the loop is deterministic across
+platforms, not merely reproducible. The AI seam is the author step:
+`--author-cmd` lets a real LLM (or Claude Code) write the app source instead
+of the built-in generator, with build/pack/verify unchanged — verified
+locally; it is a documented demo hook and does not gate CI. The load-bearing
+knowledge the generator encodes is that a Krate component may import only
+`krate:*`: a growable `Vec`'s realloc, `HashMap`'s hasher, `format!`, and the
+`args::first`/`read_to_string` SDK helpers each drag the `wasi:*` import set
+in, and LTO cannot strip it — so the generated app uses the same
+fixed-capacity, panic-free discipline as the in-tree samples (fixed `[u8; N]`
+buffers, a fixed word table, `.get()`/`.get_mut()` only, output formatted by
+hand). Evidence note: this is machine-proven end to end on all three OSes;
+the only thing not yet done is a live recording of a real model driving the
+`--author-cmd` hook (the hook itself is verified with a stand-in command).
+
+Certification checkpoint 2026-07-25: the same `notes.krate`
 supports the full editing interaction on macOS, Linux, and Windows, not
 just macOS. Branch `slice/edit-parity`, commit `882c1cc`, full matrix run
 `30125544269` green on all three OS lanes. macOS already had
