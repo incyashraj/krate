@@ -102,8 +102,7 @@ before writing the file.
 
 ```bash
 cargo build --release -p krate-cli
-export KRATE_SDK_ROOT="$PWD"   # so the generated app can build against the SDK
-
+# the binary carries the SDK, so no checkout or env var is needed to create apps
 target/release/krate create "Make a checklist app that saves locally" \
   --output checklist.krate
 ```

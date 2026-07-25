@@ -100,12 +100,18 @@ mod tests {
     fn embeds_the_wit_and_bindings() {
         // The embedded set must at least carry both WIT worlds and the bindings.
         let paths: Vec<&str> = EMBEDDED_SDK.iter().map(|(p, _)| *p).collect();
-        assert!(paths.iter().any(|p| p.ends_with("wit/krate/phase2/world.wit")));
-        assert!(paths.iter().any(|p| p.ends_with("wit/krate/phase3/world.wit")));
+        assert!(paths
+            .iter()
+            .any(|p| p.ends_with("wit/krate/phase2/world.wit")));
+        assert!(paths
+            .iter()
+            .any(|p| p.ends_with("wit/krate/phase3/world.wit")));
         assert!(paths
             .iter()
             .any(|p| *p == "crates/bindings-rust/Cargo.toml"));
-        assert!(paths.iter().any(|p| *p == "crates/bindings-rust/src/lib.rs"));
+        assert!(paths
+            .iter()
+            .any(|p| *p == "crates/bindings-rust/src/lib.rs"));
     }
 
     #[test]

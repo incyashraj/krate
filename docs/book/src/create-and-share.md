@@ -17,21 +17,18 @@ The example builds a checklist app that saves its items to a local file.
   cargo install cargo-component --locked --version 0.21.1
   ```
 
-- **The `krate` CLI.** Build it from a Krate checkout and put it on your `PATH`:
+- **The `krate` CLI.** Build it once and put it on your `PATH`:
 
   ```bash
   git clone https://github.com/incyashraj/krate
   cd krate
   cargo build --release -p krate-cli
-  # the binary is target/release/krate
+  # the binary is target/release/krate — copy it anywhere on your PATH
   ```
 
-- **`KRATE_SDK_ROOT`** pointing at that checkout, so the generated app can build
-  against the Krate SDK and interface definitions:
-
-  ```bash
-  export KRATE_SDK_ROOT=/path/to/krate
-  ```
+  The binary carries the Krate SDK inside it, so once you have `krate` you do
+  not need the checkout anymore. `krate create` writes the SDK it needs to a
+  cache directory the first time it runs.
 
 > Krate is pre-alpha. This flow is for building and sharing your own apps, not
 > for running untrusted third-party code yet.

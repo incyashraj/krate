@@ -359,26 +359,34 @@ jobs:
       - name: Create the checklist app with `krate create` (self-service path)
         shell: bash
         run: |
-          # The self-service product path, proven on this OS: `krate create`
-          # authors a GUI checklist, builds it to a krate:*-only component,
-          # packs it, and verifies its permission wall (runs with fs.write,
-          # refuses without). Then the packed .krate is opened headlessly to
-          # prove it starts, and a run without fs.write is confirmed to exit 5.
-          bin=target/debug/krate
-          [ "$RUNNER_OS" = "Windows" ] && bin=target/debug/krate.exe
+          # The self-service product path, proven STANDALONE on this OS: the
+          # binary is copied outside the repo and run with no KRATE_SDK_ROOT, so
+          # `krate create` must materialize its embedded SDK to build. It authors
+          # a GUI checklist, builds it to a krate:*-only component, packs it, and
+          # verifies its permission wall (runs with fs.write, refuses without).
+          # Then the packed .krate is opened headlessly to prove it starts, and a
+          # run without fs.write is confirmed to exit 5.
+          exe=krate
+          [ "$RUNNER_OS" = "Windows" ] && exe=krate.exe
           cargo build -p krate-cli
+          # Copy the binary to a directory with no Krate checkout nearby.
+          standalone="$RUNNER_TEMP/standalone-$RUNNER_OS"
+          rm -rf "$standalone" && mkdir -p "$standalone"
+          cp "$GITHUB_WORKSPACE/target/debug/$exe" "$standalone/$exe"
+          bin="$standalone/$exe"
           out="$RUNNER_TEMP/checklist-$RUNNER_OS"
           rm -rf "$out" && mkdir -p "$out"
-          KRATE_SDK_ROOT="$GITHUB_WORKSPACE" "$GITHUB_WORKSPACE/$bin" create \
-            "Make a checklist app that saves locally" \
-            --output "$out/checklist.krate" \
-            --transcript "$out/transcript.json"
+          # No KRATE_SDK_ROOT: the embedded SDK is the only source.
+          ( cd "$out" && "$bin" create \
+              "Make a checklist app that saves locally" \
+              --output "checklist.krate" \
+              --transcript "transcript.json" )
           echo "---- checklist transcript ($RUNNER_OS) ----"
           cat "$out/transcript.json"
           # Prove the packed .krate opens: run it headless with grants, then
           # confirm withholding fs.write refuses with exit 5.
           mkdir -p "$out/checklist"
-          ( cd "$out" && "$GITHUB_WORKSPACE/$bin" run checklist.krate --auto-grant -- quick )
+          ( cd "$out" && "$bin" run checklist.krate --auto-grant -- quick )
           if [ ! -s "$out/checklist/items.txt" ]; then
             echo "checklist should have saved its items after a granted run" >&2
             exit 1
@@ -386,7 +394,7 @@ jobs:
           echo "checklist.krate opened, ran, and saved on $RUNNER_OS"
           rm -rf "$out/checklist" && mkdir -p "$out/checklist"
           set +e
-          ( cd "$out" && "$GITHUB_WORKSPACE/$bin" run checklist.krate \
+          ( cd "$out" && "$bin" run checklist.krate \
               --grant ui.window:create --grant io.stdout --grant io.args \
               --grant "fs.read:./checklist/**" -- quick ) >/dev/null 2>&1
           denied=$?
