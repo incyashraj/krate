@@ -8,10 +8,10 @@ format `.krate`. No legacy `layer36` identifiers remain in code or contracts.
 Repo: `incyashraj/krate`
 Branch: `main`
 Latest checked completed push before this status update: branch
-`slice/ai-authoring-loop` at `90e7d71`, full matrix run `30147362391` green
-on all three OS lanes — certifying the AI authoring loop (the checkpoint
-below). Not yet merged to `main`. The prior checkpoint (full text-editing
-parity on the drawn path, run `30125544269`) merged to `main` via PR #10.
+`slice/krate-create` at `3f39416`, full matrix run `30167554509` green on
+all three OS lanes — certifying the self-service `krate create` path (the
+checkpoint below). Not yet merged to `main`. The AI authoring loop it builds
+on merged to `main` via PR #11 (run `30125544269`).
 Direction change, 2026-07-23: shareability is now the wedge. Recorded in
 full as Change Order 2 in `Plan/Plan-Amendments-2026-07.md`, with the task
 spec as P3-SHARE-01 in `Plan/Phase-3-Plan.md` §19. Short version: Adam
@@ -25,7 +25,39 @@ Nothing architectural changes; portability stops being the headline and
 becomes how the property is achieved. The Adobe/Flash analogy is retired.
 Next implementation work is P3-SHARE-01, not further widget slices.
 
-Certification checkpoint 2026-07-25 (latest): an agent can create the
+Certification checkpoint 2026-07-26 (latest): the authoring proof became a
+self-service product path. A developer with only the installed binary turns a
+plain request into a shareable, editable, permission-gated GUI `.krate`, and
+the whole create -> open -> edit -> persist -> refuse round trip is proven.
+Branch `slice/krate-create`, commit `3f39416`, full matrix run `30167554509`
+green on all three OS lanes. `krate create "<request>" --output <file>.krate`
+is a first-class subcommand: it authors the app (built-in template or an agent
+via `--author-cmd`), builds it with cargo-component, checks it imports only
+`krate:*`, packs it, and verifies its permission wall (exit 0 with grants,
+exit 5 without the gating capability), writing a `krate.author.v1` transcript.
+The binary embeds the SDK (WIT + the Rust bindings crate) and materializes it
+to `~/.cache/krate/sdk/<sha>` on first use, so no repo checkout and no
+`KRATE_SDK_ROOT` are needed — proven by running the binary copied outside the
+repo with a cleared cache. A Windows path bug (a `\\?\` verbatim path breaking
+the generated Cargo.toml) is fixed by normalizing SDK paths. There are two app
+kinds: the word-frequency CLI and a checklist GUI (`apps/krate-checklist`) with
+real free-text item entry (a text field + fixed-capacity Draft, native
+TextChanged and drawn TextInput/Key), checkbox toggles, and byte-level
+persistence. `scripts/agent/claude-author.sh` drives the `claude` CLI as the
+`--author-cmd` agent; the seam is proven end to end with a stand-in
+(`evidence/authoring/checklist-transcript.json`). `scripts/checklist-roundtrip.sh`
+checks create -> open -> edit -> persist-across-reopen -> refuse headlessly.
+Docs: a developer guide (`create-and-share.md`) and a plain-English site page
+(`pages/make-an-app-with-ai.html`, linked from the landing page). Evidence
+notes: the live-model transcript needs a signed-in `claude` CLI (the token was
+expired on this box; the seam itself is proven); and the human double-click
+test on a truly separate clean machine needs a second physical machine, so the
+headless round trip is the machine-checkable stand-in and the guide gives the
+click-by-click steps. Not yet released: `krate create` ships to end users only
+once this branch is merged and a new release is cut for the one-line installer
+to pull.
+
+Certification checkpoint 2026-07-25: an agent can create the
 shareable artifact directly, not just run one — the biggest gap in the story
 is closed. Branch `slice/ai-authoring-loop`, commit `90e7d71`, full matrix
 run `30147362391` green on all three OS lanes. The loop — request → author →
