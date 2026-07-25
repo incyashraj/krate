@@ -1,0 +1,41 @@
+{
+  "app": {
+    "kind": "Checklist",
+    "name": "checklist"
+  },
+  "gating_permission": "fs.write:./checklist/**",
+  "krate_bytes": 12759,
+  "output": "/Users/yashrajpardeshi/Projects/layer6x6/target/real-model/checklist.krate",
+  "request": "Make a checklist app that saves items to a local file",
+  "requested_permissions": [
+    "ui.window:create",
+    "io.stdout",
+    "io.args",
+    "fs.read:./checklist/**",
+    "fs.write:./checklist/**"
+  ],
+  "schema": "krate.author.v1",
+  "steps": [
+    {
+      "detail": "external agent command: /Users/yashrajpardeshi/Projects/layer6x6/scripts/agent/standin-author.sh",
+      "step": "author"
+    },
+    {
+      "detail": "cargo-component build --release",
+      "step": "build"
+    },
+    {
+      "detail": "krate:* imports only",
+      "step": "check-imports"
+    },
+    {
+      "detail": "12759 bytes",
+      "step": "pack"
+    },
+    {
+      "detail": "runs with all grants (exit 0), refuses without fs.write:./checklist/** (exit 5)",
+      "step": "verify"
+    }
+  ],
+  "verdict": "authored a working, permission-gated .krate: runs with its grants, refuses without the gating one"
+}
