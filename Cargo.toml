@@ -13,6 +13,7 @@ members = [
     "crates/runtime",
     "crates/cli",
     "crates/tools",
+    "crates/author",
 ]
 exclude = [
     "apps/krate-curl",

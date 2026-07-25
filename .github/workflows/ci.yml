@@ -333,6 +333,29 @@ jobs:
           mkdir -p apps/krate-hello-gui/target/wasm32-wasip1/release
           cp krate-fixture/krate_hello_gui.wasm \
             apps/krate-hello-gui/target/wasm32-wasip1/release/krate_hello_gui.wasm
+      # The authoring loop builds a fresh app from generated source, so it needs
+      # the component toolchain (the sample fixtures above were prebuilt).
+      - name: Install cargo-component (for the authoring loop)
+        run: cargo install cargo-component --locked --version 0.21.1
+      - name: Run the AI authoring loop (author -> build -> pack -> permission wall)
+        shell: bash
+        run: |
+          # An agent-authored .krate, proven on this OS: the generator writes a
+          # word-frequency app, it builds to a krate:*-only component, packs to
+          # one .krate, runs with fs.read (exit 0) and refuses without it (exit
+          # 5). The transcript records the code.wasm sha256 so the same authored
+          # bytecode can be compared across the Linux, macOS, and Windows lanes.
+          bash scripts/author-krate.sh --evidence "$RUNNER_TEMP/authoring-$RUNNER_OS"
+          echo "---- transcript ($RUNNER_OS) ----"
+          cat "$RUNNER_TEMP/authoring-$RUNNER_OS/transcript.json"
+      - name: Upload authoring-loop evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: authoring-evidence-${{ matrix.os }}
+          path: ${{ runner.temp }}/authoring-${{ runner.os }}/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Run Phase 3 GUI component headless on this host
         shell: bash
         run: |

@@ -1,0 +1,17 @@
+{
+  "schema": "krate.author.v1",
+  "request": "Build a small app that reads a text file and reports its most common words.",
+  "app": {"name": "word-count", "kind": "word-frequency", "read_glob": "./input/**", "top_n": 5},
+  "os": "Darwin",
+  "code_wasm_sha256": "4a5928ac89db6d7189314d8470eb6540bd902497287c6fee4ba005d0017975a1",
+  "krate_bytes": 8365,
+  "steps": [
+    {"step": "author", "command": "krate-author --name word-count --top-n 5", "exit": 0, "note": "generated 3 files"},
+    {"step": "build", "command": "cargo-component build --release", "exit": 0, "note": "built word_count.wasm"},
+    {"step": "check-imports", "command": "check-component-imports", "exit": 0, "note": "krate:* imports only"},
+    {"step": "pack", "command": "krate pack -> word-count.krate", "exit": 0, "note": "code.wasm sha256 4a5928ac89db6d7189314d8470eb6540bd902497287c6fee4ba005d0017975a1"},
+    {"step": "verify-allow", "command": "krate run --auto-grant", "exit": 0, "note": "printed 6 lines"},
+    {"step": "verify-deny", "command": "krate run (no fs.read)", "exit": 5, "note": "refused before running"}
+  ],
+  "verdict": "authored a working, permission-gated .krate: runs with fs.read (exit 0), refuses without it (exit 5)"
+}

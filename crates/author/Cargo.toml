@@ -1,0 +1,22 @@
+[package]
+name = "krate-author"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+# The authoring harness: turn a plain-request into a complete, buildable Krate
+# guest crate. This is the "an agent wrote the app" step of the authoring loop,
+# made deterministic and testable. The build/pack/run steps that follow live in
+# scripts/author-krate.sh, which drives the real toolchain; a real LLM can stand
+# in for `generate` here without changing anything downstream.
+
+[[bin]]
+name = "krate-author"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
