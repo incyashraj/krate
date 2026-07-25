@@ -54,8 +54,7 @@ impl AppRequest {
     pub fn word_frequency(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            description: "Read a text file and print its most common words."
-                .to_string(),
+            description: "Read a text file and print its most common words.".to_string(),
             kind: AppKind::WordFrequency,
             read_glob: "./input/**".to_string(),
             top_n: 5,
@@ -365,9 +364,9 @@ impl Guest for Component {{
         let mut current = [0u8; MAX_WORD_LEN];
         let mut current_len = 0usize;
 
-        let mut tally = |current: &[u8],
-                         words: &mut [Word; MAX_WORDS],
-                         word_count: &mut usize| {{
+        let tally = |current: &[u8],
+                     words: &mut [Word; MAX_WORDS],
+                     word_count: &mut usize| {{
             if current.is_empty() {{
                 return;
             }}

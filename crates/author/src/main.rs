@@ -55,7 +55,10 @@ fn run() -> Result<(), String> {
             "--read-glob" => read_glob = Some(take_value("--read-glob")?),
             "--top-n" => {
                 let raw = take_value("--top-n")?;
-                top_n = Some(raw.parse().map_err(|_| format!("invalid --top-n {raw:?}"))?);
+                top_n = Some(
+                    raw.parse()
+                        .map_err(|_| format!("invalid --top-n {raw:?}"))?,
+                );
             }
             other => return Err(format!("unknown flag {other}")),
         }
