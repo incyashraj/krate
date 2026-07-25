@@ -106,12 +106,8 @@ mod tests {
         assert!(paths
             .iter()
             .any(|p| p.ends_with("wit/krate/phase3/world.wit")));
-        assert!(paths
-            .iter()
-            .any(|p| *p == "crates/bindings-rust/Cargo.toml"));
-        assert!(paths
-            .iter()
-            .any(|p| *p == "crates/bindings-rust/src/lib.rs"));
+        assert!(paths.contains(&"crates/bindings-rust/Cargo.toml"));
+        assert!(paths.contains(&"crates/bindings-rust/src/lib.rs"));
     }
 
     #[test]
