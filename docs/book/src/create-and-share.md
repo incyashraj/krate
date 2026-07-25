@@ -7,6 +7,10 @@ do not need to have written the app yourself — an AI agent can write it for yo
 
 The example builds a checklist app that saves its items to a local file.
 
+> Want the plain-English, no-jargon version first? See
+> [Make an app by asking](pages/make-an-app-with-ai.html) — the same flow
+> written for anyone, with big step-by-step pictures of what happens.
+
 ## What you need
 
 - **Rust**, via [`rustup`](https://rustup.rs). Krate pins its toolchain, so the

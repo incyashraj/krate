@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Make an app by asking — Krate</title>
+<meta name="description" content="Ask for a small app in plain words, get one file back, send it to someone, and they open it by double-clicking — and see exactly what it can touch first. A step-by-step guide anyone can follow." />
+<style>
+  :root {
+    --paper: #f7efe1;
+    --card: #fffaf0;
+    --ink: #191714;
+    --muted: #665f54;
+    --line: #d8cab5;
+    --blue: #2b5f91;
+    --green: #4f7d53;
+    --red: #b84739;
+    --yellow: #e8bd3d;
+    --purple: #6e5aa7;
+    --shadow: rgba(25, 23, 20, 0.12);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: ui-serif, Georgia, Cambria, "Times New Roman", serif;
+    font-size: 18px;
+    line-height: 1.7;
+    background-image:
+      radial-gradient(rgba(25, 23, 20, 0.045) 1px, transparent 1px),
+      radial-gradient(rgba(25, 23, 20, 0.03) 1px, transparent 1px);
+    background-size: 5px 5px, 11px 11px;
+    background-position: 0 0, 3px 2px;
+  }
+  a { color: inherit; text-decoration-thickness: 2px; text-underline-offset: 3px; }
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+    padding: 14px 28px;
+    border-bottom: 2px dashed var(--ink);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .badge {
+    display: inline-block;
+    background: var(--ink);
+    color: var(--paper);
+    padding: 5px 10px;
+    font-weight: 700;
+    transform: rotate(-1.4deg);
+  }
+  header, main, footer { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+  header { padding: 64px 0 36px; }
+  .eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--red);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  .eyebrow::before { content: ""; width: 42px; height: 3px; background: var(--red); }
+  h1, h2, h3 {
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    margin: 0;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: clamp(42px, 8vw, 88px); max-width: 920px; }
+  h2 { font-size: clamp(28px, 4vw, 48px); margin-bottom: 18px; }
+  h3 { font-size: 22px; margin-bottom: 8px; }
+  .lede {
+    max-width: 820px;
+    color: var(--muted);
+    font-size: clamp(21px, 2.4vw, 30px);
+    line-height: 1.35;
+    margin-top: 24px;
+  }
+  .highlight {
+    background: linear-gradient(transparent 58%, rgba(232, 189, 61, 0.72) 58%);
+    padding: 0 4px;
+  }
+  .section { padding: 46px 0; border-top: 2px dashed rgba(25, 23, 20, 0.18); }
+  .plain p, .plain li { color: var(--muted); }
+  .plain strong { color: var(--ink); }
+  .note {
+    border-left: 5px solid var(--yellow);
+    background: rgba(255, 250, 240, 0.72);
+    padding: 16px 18px;
+    color: var(--muted);
+    margin-top: 22px;
+  }
+  .note.safe { border-left-color: var(--green); }
+  .mini-title {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    color: var(--red);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  .pill {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 1.5px solid var(--ink);
+    padding: 4px 8px;
+    margin-bottom: 12px;
+    background: #fffdf7;
+  }
+  /* Big numbered steps for the non-technical path. */
+  .steps { display: grid; gap: 18px; margin-top: 12px; }
+  .step {
+    display: grid;
+    grid-template-columns: 64px 1fr;
+    gap: 20px;
+    align-items: start;
+    background: var(--card);
+    border: 1.5px solid var(--ink);
+    box-shadow: 5px 6px 0 var(--shadow);
+    padding: 22px 24px;
+  }
+  .step .num {
+    font-family: ui-sans-serif, system-ui, sans-serif;
+    font-weight: 800;
+    font-size: 40px;
+    line-height: 1;
+    color: var(--paper);
+    background: var(--ink);
+    width: 64px;
+    height: 64px;
+    display: grid;
+    place-items: center;
+    transform: rotate(-2deg);
+  }
+  .step h3 { margin-bottom: 6px; }
+  .step p { margin: 0; color: var(--muted); }
+  .step p + p { margin-top: 8px; }
+  .terminal {
+    background: #151515;
+    color: #f5ead4;
+    border: 1.5px solid var(--ink);
+    padding: 18px;
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    margin-top: 14px;
+  }
+  .terminal .good { color: #95d097; }
+  .terminal .deny { color: #ff9b8b; }
+  .terminal .cmd { color: #f0d06c; }
+  .terminal .muted { color: #b6ab97; }
+  .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
+  .card { background: var(--card); border: 1.5px solid var(--line); padding: 18px; }
+  .card b { display: block; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 17px; margin-bottom: 6px; }
+  .card span { color: var(--muted); font-size: 15px; }
+  .keycap {
+    display: inline-block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 13px;
+    border: 1.5px solid var(--ink);
+    border-bottom-width: 3px;
+    border-radius: 5px;
+    padding: 1px 7px;
+    background: #fffdf7;
+  }
+  footer { padding: 38px 0 70px; color: var(--muted); border-top: 2px dashed rgba(25, 23, 20, 0.2); }
+  @media (max-width: 850px) {
+    .cards { grid-template-columns: 1fr; }
+    .step { grid-template-columns: 1fr; }
+    .step .num { margin-bottom: 4px; }
+    header, main, footer { width: min(100% - 28px, 1120px); }
+  }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <span class="badge">Krate</span>
+  <span>make an app by asking</span>
+</div>
+
+<header>
+  <div class="eyebrow">A guide anyone can follow</div>
+  <h1>Ask for an app. Get <span class="highlight">one file</span> back. Share it.</h1>
+  <p class="lede">You describe the small app you want in one sentence. Krate has an AI write it, and hands you a single file. You send that file to someone. They double-click it, see exactly what it is allowed to touch, say yes, and use it. That is the whole idea.</p>
+</header>
+
+<main>
+  <!-- Plain-English what-and-why -->
+  <section class="section plain">
+    <div class="mini-title">What this actually is</div>
+    <h2>Software you can pass around like a document</h2>
+    <p>Today, getting a small custom tool usually means finding a developer, waiting, and installing something you have to trust. Krate changes the shape of that. You ask for what you want in plain words. The result is <strong>one file</strong> — like a PDF, but it is a real, working app.</p>
+    <p>The important part: before that app runs on anyone's computer, it has to <strong>show a list of what it wants access to</strong>, and the person decides. An app that only needs its own little folder can never quietly reach the rest of your machine. If someone declines what it needs, it simply does not open — it never runs half-way.</p>
+    <div class="note safe"><strong>No coding needed to use this.</strong> If you can type a sentence and send a file, you can do everything on this page. The one setup step (installing the <code>krate</code> tool) is a copy-paste, and we show it below.</div>
+  </section>
+
+  <!-- The three big ideas as cards -->
+  <section class="section">
+    <div class="mini-title">The three moving parts</div>
+    <div class="cards">
+      <div class="card">
+        <b>1. You ask</b>
+        <span>“Make a checklist app that saves my items.” One sentence, plain words.</span>
+      </div>
+      <div class="card">
+        <b>2. You get a file</b>
+        <span>A single <code>.krate</code> file — the finished app, checked and packaged for you.</span>
+      </div>
+      <div class="card">
+        <b>3. Anyone opens it</b>
+        <span>They double-click it, review what it can access, allow it, and use it. Same file works on Mac, Windows, and Linux.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- One-time setup -->
+  <section class="section plain">
+    <div class="pill">One-time setup</div>
+    <h2>Get the <code>krate</code> tool once</h2>
+    <p>You only do this once, on the computer where you will <em>make</em> apps. A developer friend can do this part for you if you would rather not touch a terminal — after that, making apps is a single command.</p>
+    <div class="terminal"><span class="muted"># download and build the tool (needs Rust, from rustup.rs)</span>
+git clone https://github.com/incyashraj/krate
+cd krate
+cargo build --release -p krate-cli
+<span class="muted"># the tool is now at target/release/krate — put it on your PATH</span></div>
+    <div class="note">The tool carries everything it needs inside it. Once you have <code>krate</code>, you do not need the download again to make apps.</div>
+  </section>
+
+  <!-- Make an app: the numbered steps -->
+  <section class="section">
+    <div class="mini-title">Make an app</div>
+    <h2>One command turns your sentence into a shareable file</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div>
+          <h3>Type what you want</h3>
+          <p>Open a terminal and run the command below, changing the sentence in quotes to describe your app. This example makes a checklist that saves its items.</p>
+          <div class="terminal"><span class="cmd">krate create</span> "Make a checklist app that saves my items" \
+  --output checklist.krate</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div>
+          <h3>Krate does the rest</h3>
+          <p>It writes the app, builds it, checks it can only touch what it says it will, packages it, and <strong>proves it works before the file even exists</strong>. You end up with <code>checklist.krate</code>.</p>
+          <div class="terminal">Created checklist.krate
+  requested access:
+    <span class="good">- a window</span>
+    <span class="good">- read and write its own "checklist" folder</span>
+
+Send checklist.krate to someone; they can double-click it to open it.</div>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div>
+          <h3>Send the file</h3>
+          <p><code>checklist.krate</code> is one ordinary file. Email it, message it, drop it in a shared folder — however you normally send a file. The person receiving it does not need to trust you or read any code.</p>
+        </div>
+      </div>
+    </div>
+    <div class="note">Prefer to have a real AI model write it, rather than the built-in template? Add <code>--author-cmd "&lt;your agent command&gt;"</code> and the model writes the app; Krate still checks and proves it the same way. Details are in the <a href="../create-and-share.html">developer guide</a>.</div>
+  </section>
+
+  <!-- Opening it: the recipient's steps -->
+  <section class="section">
+    <div class="mini-title">Open it — what the other person does</div>
+    <h2>Double-click, review, and use it</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <div>
+          <h3>Double-click the file</h3>
+          <p>Before anything runs, a window appears listing exactly what the app is asking for. Here: a window, and read/write to its own <code>checklist</code> folder — nothing else on the machine is reachable.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div>
+          <h3>Review and allow</h3>
+          <p>You can read the whole list of what it wants. If it looks right, allow it and the app opens. If it ever asks for more than it should, that is your cue to say no.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div>
+          <h3>Use it like any app</h3>
+          <p>Type a new item into the box and press <span class="keycap">Enter</span> or click <strong>Add item</strong>. Click a checkbox to mark something done.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="num">4</div>
+        <div>
+          <h3>Close it and open it again</h3>
+          <p>Everything you did was saved as you went. Open the file again and your list is exactly as you left it — checked items checked, new items still there.</p>
+        </div>
+      </div>
+    </div>
+    <div class="note safe"><strong>Try saying no.</strong> Open it once more and decline the folder access. The app does not start at all. It never opens half-working — the check happens before its code runs. That wall is the whole point.</div>
+  </section>
+
+  <!-- Why it's safe -->
+  <section class="section plain">
+    <div class="mini-title">Why this is safe to share</div>
+    <h2>An app can only touch what you allow</h2>
+    <p>Normally, running someone's app means trusting it with your whole computer. Krate flips that. Every app has to declare what it needs, that list is shown to you before it runs, and it can never reach beyond what you approve. A note app gets its notes folder. A checklist gets its checklist folder. Neither can read the rest of your machine or reach the internet unless it asked and you agreed.</p>
+    <p>And because the app was checked and its permission wall proven <strong>at the moment it was made</strong>, a broken or overreaching app never becomes a file you could send in the first place.</p>
+  </section>
+</main>
+
+<footer>
+  <p>Krate is pre-alpha. This page describes how making and sharing an app works today. Want the exact commands and the developer version? See the <a href="../create-and-share.html">Create and Share an App</a> guide.</p>
+</footer>
+</body>
+</html>
