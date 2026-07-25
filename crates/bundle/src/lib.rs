@@ -37,6 +37,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub mod imports;
+
 use krate_manifest::Manifest;
 use tempfile::TempDir;
 use thiserror::Error;

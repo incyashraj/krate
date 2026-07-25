@@ -1644,6 +1644,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "ureq",
+ "wasmparser 0.244.0",
  "zip",
 ]
 
@@ -1654,6 +1655,7 @@ dependencies = [
  "anyhow",
  "clap",
  "krate-adapter-macos",
+ "krate-author",
  "krate-bundle",
  "krate-manifest",
  "krate-policy",
