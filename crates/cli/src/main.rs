@@ -682,7 +682,21 @@ fn relative_sdk_prefix(app_dir: &Path, sdk_root: &Path) -> Result<String> {
         return Ok(vec![".."; up].join("/"));
     }
     // Otherwise use an absolute path to the SDK — always correct, less tidy.
-    Ok(sdk_abs.to_string_lossy().into_owned())
+    // Normalize it for use as a Cargo.toml path dependency: forward slashes
+    // (TOML needs no escaping then, and cargo accepts them on Windows) and no
+    // `\\?\` UNC verbatim prefix, which cargo cannot resolve in a manifest.
+    Ok(toml_path(&sdk_abs))
+}
+
+/// A path string safe to drop into a `Cargo.toml` `path = "..."` on any OS:
+/// forward slashes, and with Windows' `\\?\` verbatim prefix stripped.
+fn toml_path(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    let s = s
+        .strip_prefix(r"\\?\")
+        .map(str::to_string)
+        .unwrap_or_else(|| s.into_owned());
+    s.replace('\\', "/")
 }
 
 /// Run an agent's author command with the app context in the environment.
@@ -1993,4 +2007,26 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod create_tests {
+    use super::toml_path;
+    use std::path::Path;
+
+    #[test]
+    fn toml_path_uses_forward_slashes_and_strips_unc() {
+        // A Windows verbatim path becomes a clean forward-slash path.
+        assert_eq!(
+            toml_path(Path::new(r"\\?\C:\Users\a\wit\krate\phase3")),
+            "C:/Users/a/wit/krate/phase3"
+        );
+        // A plain backslash path is normalized too.
+        assert_eq!(
+            toml_path(Path::new(r"C:\cache\krate\sdk")),
+            "C:/cache/krate/sdk"
+        );
+        // A Unix path is unchanged.
+        assert_eq!(toml_path(Path::new("/home/a/wit")), "/home/a/wit");
+    }
 }
