@@ -1636,25 +1636,39 @@ fn consent_for_session_grants(
         // leave a clear message instead of a silent failure.
         ConsentOutcome::Unsupported => {
             if io::stdin().is_terminal() {
-                return prompt_for_session_grants(manifest, policy);
-            }
-            #[cfg(target_os = "linux")]
-            {
-                match linux_graphical_consent(manifest, &consent_caps)? {
-                    Some(selected) => {
-                        let grants = policy.grants().iter().cloned().chain(selected);
-                        return Ok(SessionPolicy::from_grants(grants));
-                    }
-                    // A dialog ran and the user declined: leave policy unchanged,
-                    // the run is refused downstream.
-                    None => return Ok(policy.clone()),
-                }
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
                 prompt_for_session_grants(manifest, policy)
+            } else {
+                consent_without_terminal(manifest, policy, &consent_caps)
             }
         }
+    }
+}
+
+/// The consent path when `--consent` is asked for but there is no terminal to
+/// prompt in — a double-clicked `.krate`. On Linux this tries a graphical
+/// dialog; on other platforms it falls back to the terminal prompt (which is a
+/// no-op read that refuses cleanly if nothing answers).
+fn consent_without_terminal(
+    manifest: &Manifest,
+    policy: &SessionPolicy,
+    consent_caps: &[Capability],
+) -> Result<SessionPolicy> {
+    #[cfg(target_os = "linux")]
+    {
+        match linux_graphical_consent(manifest, consent_caps)? {
+            Some(selected) => {
+                let grants = policy.grants().iter().cloned().chain(selected);
+                Ok(SessionPolicy::from_grants(grants))
+            }
+            // A dialog ran and the user declined, or none was available: leave
+            // the policy unchanged so the run is refused downstream.
+            None => Ok(policy.clone()),
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = consent_caps;
+        prompt_for_session_grants(manifest, policy)
     }
 }
 
