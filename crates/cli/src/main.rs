@@ -1570,7 +1570,24 @@ fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Res
     io::stderr().flush()?;
 
     let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
+    let read = io::stdin().read_line(&mut input)?;
+
+    // read == 0 is EOF with nothing typed or piped: there was no terminal and
+    // no answer to read — the double-click-with-no-terminal case. On Linux try
+    // a graphical dialog before giving up; elsewhere fall through to "none".
+    if read == 0 && input.is_empty() {
+        #[cfg(target_os = "linux")]
+        {
+            if let Some(selected) = linux_graphical_consent(manifest, &prompt_caps)? {
+                let grants = policy.grants().iter().cloned().chain(selected);
+                return Ok(SessionPolicy::from_grants(grants));
+            }
+            // A dialog ran and was declined, or none was available (a message
+            // was printed): grant nothing, and the run is refused downstream.
+            return Ok(policy.clone());
+        }
+    }
+
     let selected = parse_grant_response(input.trim(), &prompt_caps)?;
     let grants = policy.grants().iter().cloned().chain(selected);
 
@@ -1630,45 +1647,12 @@ fn consent_for_session_grants(
         // Cancel leaves the policy unchanged; the missing-required check that
         // follows this call then refuses the run with the standard denial.
         ConsentOutcome::Cancelled => Ok(policy.clone()),
-        // No native window on this platform. If there is a terminal to answer
-        // in, ask there. Otherwise (a double-clicked bundle on Linux with no
-        // controlling terminal) try a graphical dialog, and if none is present
-        // leave a clear message instead of a silent failure.
-        ConsentOutcome::Unsupported => {
-            if io::stdin().is_terminal() {
-                prompt_for_session_grants(manifest, policy)
-            } else {
-                consent_without_terminal(manifest, policy, &consent_caps)
-            }
-        }
-    }
-}
-
-/// The consent path when `--consent` is asked for but there is no terminal to
-/// prompt in — a double-clicked `.krate`. On Linux this tries a graphical
-/// dialog; on other platforms it falls back to the terminal prompt (which is a
-/// no-op read that refuses cleanly if nothing answers).
-fn consent_without_terminal(
-    manifest: &Manifest,
-    policy: &SessionPolicy,
-    consent_caps: &[Capability],
-) -> Result<SessionPolicy> {
-    #[cfg(target_os = "linux")]
-    {
-        match linux_graphical_consent(manifest, consent_caps)? {
-            Some(selected) => {
-                let grants = policy.grants().iter().cloned().chain(selected);
-                Ok(SessionPolicy::from_grants(grants))
-            }
-            // A dialog ran and the user declined, or none was available: leave
-            // the policy unchanged so the run is refused downstream.
-            None => Ok(policy.clone()),
-        }
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = consent_caps;
-        prompt_for_session_grants(manifest, policy)
+        // No native window on this platform: fall back to the terminal prompt.
+        // The prompt reads stdin, so an interactive tty and a piped answer
+        // (`printf 'A\n' | krate run ... --consent`, and CI) both work. Only
+        // when the prompt gets no input at all — a double-clicked bundle with
+        // no terminal — does it try a graphical dialog on Linux.
+        ConsentOutcome::Unsupported => prompt_for_session_grants(manifest, policy),
     }
 }
 
