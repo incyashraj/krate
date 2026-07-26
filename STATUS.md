@@ -29,7 +29,43 @@ Nothing architectural changes; portability stops being the headline and
 becomes how the property is achieved. The Adobe/Flash analogy is retired.
 Next implementation work is P3-SHARE-01, not further widget slices.
 
-Certification checkpoint 2026-07-26 (latest): the authoring proof became a
+Certification checkpoint 2026-07-26 (friction hardening, latest): no new
+milestone — this hardens the shipped `krate create` and double-click surface
+for the first users and agents, on top of the self-service path certified
+below. Branch `slice/friction-batch-a`, commit `57ad43b`, full matrix run
+`30203375871` green on all three OS lanes. Four batches, each its own commit:
+(A) `krate create` runs a toolchain preflight before authoring — if Rust,
+`cargo-component`, or the `wasm32-wasip1` target is missing it says so plainly
+and, in a terminal, offers to install what is missing (honoring `--yes` /
+`--no-install`); non-interactive and `--json` report the gap as data instead of
+failing mid-build.
+(B) agent enablement: the MCP server is now the built-in `krate mcp` subcommand
+(no separate binary; wire with `claude mcp add krate -- krate mcp`);
+`krate create --json` emits one `krate.author.v1` object on stdout (errors too)
+and no longer leaks the verified app's own stdout; and before an `--author-cmd`
+agent runs, create exports `KRATE_SDK_DIR`, drops a compiling starter, and
+writes a `CONTRACT.md` stating the one rule (import only `krate:*`). The
+transcript sidecar is now opt-in (`--transcript`).
+(C) an untrusted run gets a default fuel budget: `krate run --untrusted` (and
+the run create makes to verify what it just authored) caps execution so a
+generated runaway or infinite loop stops at exit 4 instead of hanging; an
+explicit `--fuel` still wins and a plain trusted run stays unlimited.
+(D) gentler edges: a corrupt or non-`.krate` file now says "this is not a Krate
+app, or the file is damaged" (once, no zip/EOCD jargon); permission prompts and
+denials read in plain words ("save files in checklist", "open a window on your
+screen") with the exact capability alongside; an empty or too-short create
+request is rejected up front; re-running the installer reports "already up to
+date" / "updating X -> Y"; and a double-clicked `.krate` on Linux with no
+terminal asks through a graphical dialog (zenity/kdialog), or prints a clear
+next step, instead of failing silently. The Linux full-test lane's own consent
+proof (`printf 'A' | krate run --consent`) still passes, so a piped or terminal
+answer works and only a true no-terminal double-click reaches the dialog.
+Proof: 16 CLI unit tests + 80 CLI integration tests (fuel budget, `human_label`
+mapping, empty-request rejection, friendly errors, the new prompt/denial
+wording), the full 3-OS matrix, and the mdBook build. Still not separately
+released: these ride the next release cut after this branch merges.
+
+Certification checkpoint 2026-07-26: the authoring proof became a
 self-service product path. A developer with only the installed binary turns a
 plain request into a shareable, editable, permission-gated GUI `.krate`, and
 the whole create -> open -> edit -> persist -> refuse round trip is proven.

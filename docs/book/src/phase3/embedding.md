@@ -101,13 +101,12 @@ Done now:
 
 ## The MCP server
 
-`krate-mcp-server` (a `crates/tools` binary) exposes two MCP tools over
+`krate mcp` (built into the `krate` binary) exposes MCP tools over
 newline-delimited JSON-RPC on stdio. Any MCP-capable agent framework can
 inspect and execute apps inside the sandbox without linking Rust:
 
 ```bash
-cargo build -p krate-tools --bin krate-mcp-server
-claude mcp add krate -- target/debug/krate-mcp-server
+claude mcp add krate -- krate mcp
 ```
 
 ### `inspect_bundle`

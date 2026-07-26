@@ -241,10 +241,14 @@ world = "cli"
 # abort on panic and let LTO strip the unreachable std/panic paths that would
 # otherwise leave dangling wasi:* import declarations in the component. A Krate
 # app may import only krate:*, so this profile is load-bearing, not a tuning.
+# opt-level = "s" is part of that: without it the dead-code elimination is not
+# aggressive enough to drop std's latent wasi:* imports, so the component leaks
+# them. The GUI template and the in-repo samples carry it for the same reason.
 [profile.release]
 panic = "abort"
 lto = true
 codegen-units = 1
+opt-level = "s"
 strip = true
 "#
     )

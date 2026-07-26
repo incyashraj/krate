@@ -43,6 +43,9 @@ This downloads the binary for your machine, verifies its checksum, and puts
 krate --version
 ```
 
+To update later, run the same install command again. It tells you whether you
+are already on the latest version or moves you up to it.
+
 Prefer to build from source? That works too:
 
 ```bash

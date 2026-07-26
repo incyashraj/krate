@@ -246,5 +246,5 @@ manual, including manual commands and troubleshooting, is on the
 Add `--json` to any run to get one `krate.run.v1` object describing it —
 app identity, granted capabilities with boundaries, denials, exit class,
 duration, and captured output. This is the same report AI agents receive
-through `krate-mcp-server`; see
+through `krate mcp`; see
 [Embedding & JSON Runs](phase3/embedding.md).

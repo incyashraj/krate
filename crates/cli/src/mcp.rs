@@ -12,7 +12,7 @@
 //!
 //! Transport: newline-delimited JSON-RPC 2.0 over stdio, per the MCP stdio
 //! transport. Wire an agent at it with e.g.
-//! `claude mcp add krate -- target/debug/krate-mcp-server`.
+//! `claude mcp add krate -- krate mcp`.
 
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
@@ -26,7 +26,7 @@ use serde_json::{json, Value};
 const SERVER_NAME: &str = "krate";
 const PROTOCOL_VERSION: &str = "2024-11-05";
 
-fn main() -> Result<()> {
+pub fn serve() -> Result<()> {
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut out = stdout.lock();

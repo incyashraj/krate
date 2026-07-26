@@ -138,7 +138,7 @@ Windows is next, and the component still will not change.
 
 ## 2026-07-03 — Krate speaks MCP
 
-The agent-embedding track is complete. `krate-mcp-server` is a small
+The agent-embedding track is complete. `krate mcp` is a small
 binary any MCP-capable agent framework can attach to: one `run_component`
 tool, executing portable components inside the capability sandbox and
 returning the full machine-readable report. In the first end-to-end run an

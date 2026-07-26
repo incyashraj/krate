@@ -68,7 +68,7 @@ distribution are still later work.
   component and the permissions it asks for; `krate run` takes that file or
   an https URL to one. Fetching grants nothing.
 - The agent surface: `krate_runtime::embed`, `krate run --json`
-  (schema `krate.run.v1`), and `krate-mcp-server` with two tools —
+  (schema `krate.run.v1`), and `krate mcp` with two tools —
   `inspect_bundle` to see what an app wants before running it, and
   `run_component` to run it, whose denials carry the exact retry that
   would succeed.

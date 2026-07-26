@@ -73,7 +73,7 @@ the Krate runtime, CLI, Wasmtime engine, and host OS are trusted.
 | Tampering | A component attempts to corrupt runtime memory or modify host state. | WebAssembly linear memory is sandboxed by Wasmtime. Phase 1 exposes no filesystem, network, environment, or process-spawning host imports. | Wasmtime bugs or unsafe host code could still be exploitable. Dependency advisories are tracked with `cargo-deny`. |
 | Repudiation | A component denies having printed output or exited with a code. | CLI stdout/stderr and process exit code are observable by the caller. | No durable audit log exists. Deferred to Phase 2 logging UAPI and later policy/audit work. |
 | Information Disclosure | A component reads host files, env vars, memory, network data, or secrets. | Phase 1 registers only `print` and `exit`; no WASI filesystem, network, env, or clock capabilities are linked. | Side channels, engine vulnerabilities, and terminal escape output are not fully mitigated. |
-| Denial of Service | A component loops forever or grows memory until the process/host is unhealthy. | `--fuel` enables Wasmtime fuel metering; `--mem-limit` uses a Wasmtime resource limiter; limit failures return exit code `4`. | Fuel is opt-in for now. CPU and wall-clock timeouts are not enforced by default. |
+| Denial of Service | A component loops forever or grows memory until the process/host is unhealthy. | `--fuel` enables Wasmtime fuel metering; `--untrusted` (and the run `krate create` makes to verify what it authored) applies a default fuel budget so a runaway loop is stopped; `--mem-limit` uses a Wasmtime resource limiter; limit failures return exit code `4`. | Fuel is unbounded only for a plain trusted run with no `--fuel`. CPU and wall-clock timeouts are not enforced by default. |
 | Elevation of Privilege | A component escapes the WASM sandbox and executes host code. | Krate relies on Wasmtime's sandbox and keeps the host import surface tiny. | A Wasmtime or codegen vulnerability could break this assumption. Security response depends on upstream patches. |
 
 ## Current Controls
@@ -87,6 +87,9 @@ the Krate runtime, CLI, Wasmtime engine, and host OS are trusted.
 - Wasmtime Component Model validation rejects invalid components.
 - `cargo-deny` checks advisories, licenses, bans, and sources.
 - `krate run --fuel N` can bound instruction execution.
+- `krate run --untrusted` applies a default fuel budget without a chosen `N`;
+  `krate create` runs the app it just authored this way, so a generated
+  infinite loop fails verification instead of hanging.
 - `krate run --mem-limit MB` bounds each linear memory.
 
 ## Required User Warning

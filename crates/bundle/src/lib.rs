@@ -87,6 +87,46 @@ pub enum BundleError {
     Fetch { url: String, message: String },
 }
 
+impl BundleError {
+    /// A plain, single-sentence explanation for a person, with no zip/EOCD/io
+    /// jargon and no repeated wrapped error. Callers print this at the process
+    /// boundary instead of the raw error chain. Returns `None` when the
+    /// variant's own message is already user-facing enough to print as-is.
+    pub fn user_message(&self) -> Option<String> {
+        match self {
+            // A missing/unreadable file: say which and why, once.
+            BundleError::Io { path, source } => Some(if source.kind() == io::ErrorKind::NotFound {
+                format!("no file at {}", path.display())
+            } else {
+                format!("could not read {}: {}", path.display(), plain_io(source))
+            }),
+            // A corrupt or non-.krate file surfaces from the zip layer as an
+            // "EOCD"/"invalid Zip archive" chain. None of that helps a person.
+            BundleError::Archive(_) => Some(
+                "this is not a Krate app, or the file is damaged. \
+                 A Krate app is a single .krate file made by `krate create`."
+                    .to_string(),
+            ),
+            BundleError::MissingEntry(_) => Some(
+                "this .krate file is incomplete or damaged; \
+                 try getting a fresh copy, or rebuild it with `krate create`."
+                    .to_string(),
+            ),
+            // The rest already read plainly (size limits, insecure URL, etc.).
+            _ => None,
+        }
+    }
+}
+
+/// The message part of an io error without a trailing "(os error N)" tail.
+fn plain_io(source: &io::Error) -> String {
+    let full = source.to_string();
+    match full.split_once(" (os error") {
+        Some((head, _)) => head.to_string(),
+        None => full,
+    }
+}
+
 type Result<T> = std::result::Result<T, BundleError>;
 
 fn io_err(path: &Path, source: io::Error) -> BundleError {
