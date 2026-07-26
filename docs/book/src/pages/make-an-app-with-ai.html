@@ -1087,21 +1087,47 @@
             <span class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></span>
           </div>
           <div class="path-body">
+            <p class="section-lead">New to Krate? This walks you through it from the very beginning. You type each line into a <strong>terminal</strong> (on a Mac it is called Terminal; on Windows it is called PowerShell). Do the steps in order.</p>
             <div class="steps">
               <article class="step">
                 <div class="step-number">1</div>
+                <h3>Get the <code>krate</code> tool</h3>
+                <p>You only do this once per computer. Paste this line into a terminal and press Enter. It downloads Krate and sets it up for you.</p>
+                <div class="terminal">
+                  <div class="terminal-bar">TERMINAL.EXE</div>
+                  <pre>curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh</pre>
+                </div>
+                <p>Check it worked. This should print a version number:</p>
+                <div class="terminal">
+                  <div class="terminal-bar">TERMINAL.EXE</div>
+                  <pre><span class="cmd">krate</span> --version</pre>
+                </div>
+              </article>
+              <article class="step">
+                <div class="step-number">2</div>
+                <h3>Let it set up the app-building tools</h3>
+                <p>Making an app also needs the Rust build tools. You do not have to know what those are. The first time you make an app, Krate checks for them, tells you what is missing, and offers to install it for you. Say yes when it asks.</p>
+                <p>Want to check first? This shows you what is ready and what is not:</p>
+                <div class="terminal">
+                  <div class="terminal-bar">TERMINAL.EXE</div>
+                  <pre><span class="cmd">krate</span> doctor</pre>
+                </div>
+              </article>
+              <article class="step">
+                <div class="step-number">3</div>
                 <h3>Say what you want</h3>
-                <p>The built-in creator currently knows how to make a checklist and a word frequency tool.</p>
+                <p>Describe your app in plain words. The built-in creator currently makes a checklist or a word-frequency tool. Pick a file name that ends in <code>.krate</code>.</p>
                 <div class="terminal">
                   <div class="terminal-bar">TERMINAL.EXE</div>
                   <pre><span class="cmd">krate create</span> "Make a checklist app that saves my items" \
   --output checklist.krate</pre>
                 </div>
+                <p>The first run may take a minute while the tools install and the app builds. That is normal.</p>
               </article>
               <article class="step">
-                <div class="step-number">2</div>
+                <div class="step-number">4</div>
                 <h3>Krate builds and checks it</h3>
-                <p>Krate generates the supported app, checks its imports, packages it, and tests that its permission wall behaves correctly.</p>
+                <p>Krate writes the app, checks it, packages it, and tests that its permission wall behaves correctly. When it finishes you have one file: <code>checklist.krate</code>.</p>
                 <div class="terminal">
                   <div class="terminal-bar">BUILD STATUS</div>
                   <pre><span class="good">Created checklist.krate</span>
@@ -1111,12 +1137,13 @@
                 </div>
               </article>
               <article class="step">
-                <div class="step-number">3</div>
-                <h3>Send the file</h3>
-                <p>Email it, message it, or put it in a shared folder. The next person opens the same file and reviews its access first.</p>
+                <div class="step-number">5</div>
+                <h3>Open it, and send it</h3>
+                <p>Double-click <code>checklist.krate</code> to use it yourself. To share it, email it, message it, or put it in a shared folder. The next person opens the same file and reviews its access first.</p>
               </article>
             </div>
-            <div class="note"><strong>Want to build something else?</strong> Write it with the Krate SDK and package it using <code>krate pack</code>. Follow the <a href="../create-and-share.html">Create and Share an App</a> guide.</div>
+            <div class="note"><strong>Prefer to use your own AI to write the app?</strong> That works too, and it removes the two-template limit. See <a href="#ai">Let your coding agent deliver a real app</a> just below.</div>
+            <div class="note"><strong>Want to build something else by hand?</strong> Write it with the Krate SDK and package it using <code>krate pack</code>. Follow the <a href="../create-and-share.html">Create and Share an App</a> guide.</div>
           </div>
         </div>
       </div>
@@ -1139,30 +1166,37 @@
             <span class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></span>
           </div>
           <div class="path-body">
+            <p class="section-lead">This uses your own AI coding tool to write the app, so you are not limited to the two built-in templates. You describe anything; your AI writes it; Krate builds and checks it.</p>
             <div class="steps">
               <article class="step">
                 <div class="step-number">1</div>
-                <h3>Connect your author command</h3>
-                <p>Point <code>krate create</code> at the command that invokes your coding agent. Krate hands it the request and a folder where it writes the app.</p>
-                <div class="terminal">
-                  <div class="terminal-bar">TERMINAL.EXE</div>
-                  <pre><span class="cmd">krate create</span> "Make a checklist app" \
-  --author-cmd "<span class="muted">your agent command</span>" \
-  --output checklist.krate</pre>
-                </div>
+                <h3>Have an AI coding tool ready</h3>
+                <p>You need a command-line AI coding tool that is already signed in on your computer, such as Claude Code (the <code>claude</code> command). If you can run it in a terminal, you are ready.</p>
               </article>
               <article class="step">
                 <div class="step-number">2</div>
-                <h3>Krate checks the result</h3>
-                <p>Krate builds the app, rejects raw operating system imports, packages it, and tests its declared permission wall.</p>
+                <h3>Point <code>krate create</code> at it</h3>
+                <p>Add <code>--author-cmd</code> with the command that runs your AI tool. Krate hands your AI the request and a folder to write the app into. Here it is with Claude Code:</p>
+                <div class="terminal">
+                  <div class="terminal-bar">TERMINAL.EXE</div>
+                  <pre><span class="cmd">krate create</span> "A tool that counts the words in a text file" \
+  --author-cmd "claude" \
+  --output word-counter.krate</pre>
+                </div>
+                <p>Using a different AI tool? Put its command in the quotes instead of <code>claude</code>.</p>
               </article>
               <article class="step">
                 <div class="step-number">3</div>
+                <h3>Krate checks the result</h3>
+                <p>Krate builds what your AI wrote, refuses anything that reaches outside the Krate rules, packages it, and tests its permission wall. If your AI writes something unsafe, Krate stops it here. It never reaches the user.</p>
+              </article>
+              <article class="step">
+                <div class="step-number">4</div>
                 <h3>Hand the user one file</h3>
                 <p>The user receives a <code>.krate</code> file, sees what it requests, and decides what it may access before it opens.</p>
               </article>
             </div>
-            <div class="note"><strong>The integration seam is available today.</strong> The author command has been proven with a stand-in author. A live third-party model run still depends on the model tool and credentials you connect.</div>
+            <div class="note"><strong>Building AI products?</strong> Your agent can also drive Krate directly over a standard connection with <code>krate mcp</code>, so it can inspect and run apps inside the sandbox on its own.</div>
           </div>
         </div>
       </div>
