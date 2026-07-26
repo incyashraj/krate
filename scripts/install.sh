@@ -57,6 +57,24 @@ if [ -z "$version" ]; then
   [ -n "$version" ] || die "could not find a release; set KRATE_VERSION to pin one"
 fi
 
+# ---- is a krate already installed, and is it this version? -----------------
+#
+# Re-running the installer is how you update, so say plainly whether this run
+# changes anything: already current, or moving from one version to another.
+installed_version=""
+if command -v krate >/dev/null 2>&1; then
+  # `krate --version` prints e.g. "krate 0.1.0-rc3"; take the last field.
+  installed_version="$(krate --version 2>/dev/null | awk '{print $NF}' || true)"
+fi
+if [ -n "$installed_version" ]; then
+  if [ "$installed_version" = "${version#v}" ] || [ "$installed_version" = "$version" ]; then
+    say "krate ${installed_version} is already installed and up to date."
+    say "Re-running will reinstall the same version."
+  else
+    say "Updating krate ${installed_version} -> ${version}."
+  fi
+fi
+
 # The release tag keeps its leading v (v0.1.0-rc2) but the packaging script
 # strips it from the archive name (krate-0.1.0-rc2-...), so match that.
 archive_version="${version#v}"
@@ -144,6 +162,8 @@ esac
 
 # ---- opening and making apps ------------------------------------------------
 
+say ""
+say "To update later, just run this installer again."
 say ""
 say "You can now open a .krate someone sends you."
 say "To *make* your own apps with 'krate create', you also need the Rust build"

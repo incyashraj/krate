@@ -65,7 +65,10 @@ cat > "$mime_dir/packages/krate.xml" <<XML
 XML
 
 # 2. The launcher. %f is the double-clicked file; --consent shows the
-#    permission review before the app runs.
+#    permission review before the app runs. Terminal=false because a
+#    double-click has no controlling terminal: `krate run --consent` asks for
+#    permission through a graphical dialog (zenity/kdialog) when there is no
+#    terminal, and prints a clear next step if neither is installed.
 cat > "$app_dir/$DESKTOP" <<DESK
 [Desktop Entry]
 Type=Application
@@ -73,7 +76,7 @@ Name=Krate
 Comment=Open a Krate app after reviewing what it can access
 Exec=$BINARY run %f --consent
 Icon=$ICON_NAME
-Terminal=true
+Terminal=false
 NoDisplay=true
 MimeType=$MIME;
 Categories=Utility;

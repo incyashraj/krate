@@ -336,10 +336,26 @@ fn main() -> ExitCode {
     match run() {
         Ok(code) => ExitCode::from(code),
         Err(err) => {
-            eprintln!("error: {err:#}");
+            eprintln!("error: {}", friendly_error(&err));
             ExitCode::from(1)
         }
     }
+}
+
+/// Turn an error chain into a single line a person can act on. When a known
+/// bundle problem is in the chain (a corrupt or non-.krate file, a missing
+/// file), print its plain sentence instead of the raw zip/io wording, and
+/// print it once rather than the doubled `{:#}` chain. Everything else keeps
+/// the full `{:#}` context, which is already useful for the CLI's own errors.
+fn friendly_error(err: &anyhow::Error) -> String {
+    for cause in err.chain() {
+        if let Some(bundle) = cause.downcast_ref::<krate_bundle::BundleError>() {
+            if let Some(message) = bundle.user_message() {
+                return message;
+            }
+        }
+    }
+    format!("{err:#}")
 }
 
 fn run() -> Result<u8> {
@@ -521,6 +537,27 @@ struct CreateRequest {
     json: bool,
 }
 
+/// Fewest characters a create request must have to be worth authoring from.
+const MIN_CREATE_REQUEST_CHARS: usize = 3;
+
+/// Check that a create request has enough to author from. Returns a plain,
+/// user-facing message on failure.
+fn validate_create_request(request: &str) -> std::result::Result<(), String> {
+    let trimmed = request.trim();
+    if trimmed.is_empty() {
+        return Err("please say what the app should do, for example: \
+                    krate create \"a checklist\" --output checklist.krate"
+            .to_string());
+    }
+    if trimmed.chars().count() < MIN_CREATE_REQUEST_CHARS {
+        return Err(format!(
+            "that request is too short to build an app from; \
+             please describe what you want in a few words (at least {MIN_CREATE_REQUEST_CHARS} characters)"
+        ));
+    }
+    Ok(())
+}
+
 /// Author a small app from a request and package it as one shareable `.krate`.
 ///
 /// The steps mirror the authoring loop: generate the source (built-in template
@@ -529,6 +566,22 @@ struct CreateRequest {
 /// with and without its gating capability. A transcript records every step.
 fn create_krate(req: CreateRequest) -> Result<u8> {
     use krate_author::{generate, AppKind, AppRequest};
+
+    // Reject an empty or too-short request before doing any work: authoring
+    // needs something to go on, and a blank request otherwise burns a full
+    // toolchain probe and build on nothing. In --json mode report it as data.
+    if let Err(message) = validate_create_request(&req.request) {
+        if req.json {
+            let report = serde_json::json!({
+                "schema": "krate.author.v1",
+                "ok": false,
+                "error": "empty-request",
+                "message": message,
+            });
+            println!("{}", serde_json::to_string(&report)?);
+        }
+        anyhow::bail!("{message}");
+    }
 
     // Building the app needs a Rust toolchain, cargo-component, and the wasm
     // target. Check for them before anything else and, when a terminal is
@@ -1085,9 +1138,10 @@ fn run_component(request: RunRequest) -> Result<u8> {
                     "",
                 );
             } else {
-                eprintln!("permission denied: missing required capabilities");
+                eprintln!("This app needs permission it was not given, so it did not run.");
+                eprintln!("It needs to:");
                 for cap in &missing {
-                    eprintln!("  - {cap}");
+                    eprintln!("  - {} ({cap})", human_label(cap));
                 }
                 // On the double-click path there is no terminal to read, so a
                 // native alert explains the refusal instead of the app just
@@ -1436,6 +1490,54 @@ fn spawn_open_run(path: &Path) {
         .spawn();
 }
 
+/// Render a capability as a short plain phrase for a person, e.g.
+/// `fs.write:./checklist/**` -> "save files in ./checklist". Falls back to the
+/// technical form for anything without a friendly phrasing, so the label is
+/// always at least as informative as the raw capability. The exact capability
+/// is still shown alongside this in prompts and denials.
+fn human_label(cap: &Capability) -> String {
+    let resource = cap.resource();
+    match (cap.module(), cap.action()) {
+        ("fs", "read") => match resource {
+            Some(r) => format!("read files in {}", tidy_resource(r)),
+            None => "read files".to_string(),
+        },
+        ("fs", "write") => match resource {
+            Some(r) => format!("save files in {}", tidy_resource(r)),
+            None => "save files".to_string(),
+        },
+        ("net", "connect") => match resource {
+            Some(r) => format!("connect to {r} over the network"),
+            None => "connect over the network".to_string(),
+        },
+        ("ui", "window") => "open a window on your screen".to_string(),
+        ("ui", "clipboard") if cap.resource() == Some("read") => {
+            "read from the clipboard".to_string()
+        }
+        ("ui", "clipboard") if cap.resource() == Some("write") => {
+            "copy to the clipboard".to_string()
+        }
+        ("time", "clock") => "read the current time".to_string(),
+        ("io", "stdout") => "print output".to_string(),
+        // Unknown module/action: the technical form is the honest fallback.
+        _ => cap.to_string(),
+    }
+}
+
+/// Trim a filesystem capability resource to something readable: drop a trailing
+/// glob so `./checklist/**` reads as `./checklist`.
+fn tidy_resource(resource: &str) -> String {
+    let trimmed = resource
+        .trim_end_matches("**")
+        .trim_end_matches('*')
+        .trim_end_matches('/');
+    if trimmed.is_empty() {
+        resource.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
 fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Result<SessionPolicy> {
     let prompt_caps = manifest
         .declared_capabilities()?
@@ -1448,9 +1550,11 @@ fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Res
     }
 
     eprintln!("App: {} ({})", manifest.app.name, manifest.app.id);
-    eprintln!("Requests the following capabilities:");
+    eprintln!("This app is asking to:");
     for (index, cap) in prompt_caps.iter().enumerate() {
-        eprintln!("  [{}] {cap}", index + 1);
+        // Lead with the plain phrase; show the exact capability in parentheses
+        // so a careful reader still sees precisely what is granted.
+        eprintln!("  [{}] {} ({cap})", index + 1, human_label(cap));
         if let Some(request) = manifest.capabilities.iter().find(|request| {
             request
                 .cap
@@ -1526,10 +1630,84 @@ fn consent_for_session_grants(
         // Cancel leaves the policy unchanged; the missing-required check that
         // follows this call then refuses the run with the standard denial.
         ConsentOutcome::Cancelled => Ok(policy.clone()),
-        // No native window on this platform: fall back to the terminal prompt
-        // so `--consent` still works everywhere.
-        ConsentOutcome::Unsupported => prompt_for_session_grants(manifest, policy),
+        // No native window on this platform. If there is a terminal to answer
+        // in, ask there. Otherwise (a double-clicked bundle on Linux with no
+        // controlling terminal) try a graphical dialog, and if none is present
+        // leave a clear message instead of a silent failure.
+        ConsentOutcome::Unsupported => {
+            if io::stdin().is_terminal() {
+                return prompt_for_session_grants(manifest, policy);
+            }
+            #[cfg(target_os = "linux")]
+            {
+                match linux_graphical_consent(manifest, &consent_caps)? {
+                    Some(selected) => {
+                        let grants = policy.grants().iter().cloned().chain(selected);
+                        return Ok(SessionPolicy::from_grants(grants));
+                    }
+                    // A dialog ran and the user declined: leave policy unchanged,
+                    // the run is refused downstream.
+                    None => return Ok(policy.clone()),
+                }
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                prompt_for_session_grants(manifest, policy)
+            }
+        }
     }
+}
+
+/// Ask for consent through a graphical dialog on Linux, for the case where a
+/// `.krate` was double-clicked and there is no terminal to prompt in. Uses
+/// `zenity` or `kdialog` if either is installed. Returns:
+/// - `Ok(Some(caps))` if the user approved (all requested caps granted),
+/// - `Ok(None)` if a dialog ran and the user declined,
+/// - and, when no dialog tool is available, prints a clear next step and
+///   returns `Ok(None)` so the run is refused rather than hanging.
+///
+/// This is deliberately all-or-nothing (approve everything or nothing): the
+/// per-capability window is the macOS native one, and a plain yes/no dialog is
+/// the honest shape of what zenity/kdialog can show without more machinery.
+#[cfg(target_os = "linux")]
+fn linux_graphical_consent(
+    manifest: &Manifest,
+    consent_caps: &[Capability],
+) -> Result<Option<Vec<Capability>>> {
+    let mut lines = vec![format!("{} wants permission to:", manifest.app.name)];
+    for cap in consent_caps {
+        lines.push(format!("  • {}", human_label(cap)));
+    }
+    lines.push(String::new());
+    lines.push("Allow this app to run?".to_string());
+    let message = lines.join("\n");
+
+    if has_tool("zenity", &["--version"]) {
+        let status = ProcessCommand::new("zenity")
+            .args(["--question", "--title", "Krate", "--text", &message])
+            .status();
+        if let Ok(status) = status {
+            // zenity --question exits 0 for Yes, non-zero for No/close.
+            return Ok(status.success().then(|| consent_caps.to_vec()));
+        }
+    }
+
+    if has_tool("kdialog", &["--version"]) {
+        let status = ProcessCommand::new("kdialog")
+            .args(["--title", "Krate", "--yesno", &message])
+            .status();
+        if let Ok(status) = status {
+            return Ok(status.success().then(|| consent_caps.to_vec()));
+        }
+    }
+
+    // No terminal and no dialog tool: don't hang on a prompt nobody can answer.
+    // Point the user at the way that always works.
+    eprintln!("This app needs your permission, but there is no terminal or dialog to ask in.");
+    eprintln!("Run it from a terminal to review and allow it:");
+    eprintln!("  krate run <the .krate file> --consent");
+    eprintln!("Or install `zenity` (or `kdialog`) so double-click can ask you.");
+    Ok(None)
 }
 
 /// One capability shown in the consent window.
@@ -1836,7 +2014,10 @@ fn check_manifest(file: &Path, format: OutputFormat) -> Result<u8> {
     println!("app name        {}", manifest.app.name);
     println!("entry           {}", manifest.app.entry.display());
     println!("world           {}", manifest.app.world);
-    println!("world status    {}", app_world_label(manifest.app_world()?));
+    println!(
+        "app type       {}",
+        app_world_human_label(manifest.app_world()?)
+    );
     println!("capabilities    {}", declared_caps.len());
     println!("required caps   {}", required_caps.len());
 
@@ -1859,7 +2040,10 @@ fn explain_manifest(file: &Path, format: OutputFormat) -> Result<u8> {
     println!("version         {}", manifest.app.version);
     println!("entry           {}", manifest.app.entry.display());
     println!("world           {}", manifest.app.world);
-    println!("world status    {}", app_world_label(manifest.app_world()?));
+    println!(
+        "app type       {}",
+        app_world_human_label(manifest.app_world()?)
+    );
     println!();
 
     if declared_caps.is_empty() {
@@ -2041,10 +2225,21 @@ fn print_manifest_capabilities(format: OutputFormat) -> Result<u8> {
     Ok(0)
 }
 
+/// A stable machine token for the app's world, used in the `--json` output's
+/// `world_kind`. Kept as-is so the schema does not shift under consumers.
 fn app_world_label(world: AppWorld) -> &'static str {
     match world {
         AppWorld::Phase2Cli => "Phase 2 CLI",
         AppWorld::Phase3Gui => "Phase 3 GUI draft",
+    }
+}
+
+/// A user-facing name for the kind of app a manifest describes, for the human
+/// `manifest explain` output. The internal phase/world terms stay out of it.
+fn app_world_human_label(world: AppWorld) -> &'static str {
+    match world {
+        AppWorld::Phase2Cli => "Command-line app",
+        AppWorld::Phase3Gui => "Graphical app",
     }
 }
 
@@ -2390,8 +2585,46 @@ fn home_dir() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod create_tests {
-    use super::{has_tool, toml_path};
+    use super::{has_tool, human_label, toml_path, validate_create_request};
+    use krate_manifest::Capability;
     use std::path::Path;
+
+    fn cap(s: &str) -> Capability {
+        s.parse().expect("parse capability")
+    }
+
+    #[test]
+    fn human_label_renders_common_capabilities_in_plain_words() {
+        // The parser normalizes a leading `./`, so the phrase reads cleanly.
+        assert_eq!(
+            human_label(&cap("fs.write:./checklist/**")),
+            "save files in checklist"
+        );
+        assert_eq!(human_label(&cap("fs.read:data/**")), "read files in data");
+        assert_eq!(
+            human_label(&cap("ui.window:create")),
+            "open a window on your screen"
+        );
+        assert_eq!(human_label(&cap("time.clock")), "read the current time");
+        assert_eq!(human_label(&cap("io.stdout")), "print output");
+    }
+
+    #[test]
+    fn human_label_never_drops_information() {
+        // Every friendly label must still convey what the capability does; a
+        // recognized one gets a plain phrase, and the resource survives it.
+        assert!(human_label(&cap("fs.read:notes/**")).contains("notes"));
+        assert!(human_label(&cap("net.connect:example.com:443")).contains("example.com:443"));
+    }
+
+    #[test]
+    fn empty_and_short_create_requests_are_rejected() {
+        assert!(validate_create_request("").is_err());
+        assert!(validate_create_request("   ").is_err());
+        assert!(validate_create_request("ab").is_err());
+        // A real request passes.
+        assert!(validate_create_request("a checklist for groceries").is_ok());
+    }
 
     #[test]
     fn toml_path_uses_forward_slashes_and_strips_unc() {

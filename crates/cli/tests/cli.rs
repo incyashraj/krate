@@ -179,7 +179,7 @@ fn manifest_check_accepts_phase_3_gui_draft_world() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Manifest OK"));
     assert!(stdout.contains("world           krate:app/gui@0.2.0"));
-    assert!(stdout.contains("world status    Phase 3 GUI draft"));
+    assert!(stdout.contains("app type       Graphical app"));
 }
 
 #[test]
@@ -2286,8 +2286,10 @@ fn run_with_manifest_denies_missing_required_capability() {
 
     assert_eq!(output.status.code(), Some(5));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("permission denied"));
+    assert!(stderr.contains("needs permission it was not given"));
+    // The exact capability is still named, alongside its plain phrase.
     assert!(stderr.contains("fs.read:data/**"));
+    assert!(stderr.contains("read files in data"));
 }
 
 #[test]
@@ -2637,7 +2639,9 @@ fn run_with_manifest_prompt_can_grant_required_capability() {
 
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Requests the following capabilities"));
+    assert!(stderr.contains("This app is asking to:"));
+    // The plain phrase leads, with the exact capability alongside it.
+    assert!(stderr.contains("read files in data"));
     assert!(stderr.contains("fs.read:data/**"));
     assert!(stderr.contains("Read data"));
     assert!(stderr.contains("invalid wasm component"));
@@ -3031,7 +3035,7 @@ fn a_denial_tells_you_how_to_grant_and_names_what_you_ran() {
         .output()
         .expect("run bundle without grants");
     let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("missing required capabilities") {
+    if stderr.contains("needs permission it was not given") {
         assert!(
             stderr.contains("--grant"),
             "should suggest --grant: {stderr}"
