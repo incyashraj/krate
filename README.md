@@ -63,7 +63,7 @@ opens a real native window (real `NSButton`, real `NSTextField`) on macOS and
 runs headless on the other hosts — the full CI matrix executes the
 byte-identical GUI artifact on all three OSes. Agents can drive all of it:
 an embedding API, `krate run --json`, and an MCP server
-(`krate-mcp-server`) expose sandboxed execution with permission decisions
+(`krate mcp`) expose sandboxed execution with permission decisions
 returned as data. Formal Phase 2 exit still needs final cross-host evidence,
 a UAPI freeze review, and an outside developer walkthrough.
 
@@ -81,7 +81,7 @@ Current work covers:
   macOS yet, so an AppKit window is clickable but not typable; Linux and
   Windows deliver keys and modifiers today.
 - **done:** the agent-embedding track — `krate_runtime::embed`,
-  `krate run --json` (schema `krate.run.v1`), and the `krate-mcp-server`
+  `krate run --json` (schema `krate.run.v1`), and the `krate mcp`
   MCP tool for agent frameworks
 - **done:** cross-OS artifact proof — full CI runs the byte-identical GUI
   component headless on Linux, macOS, and Windows

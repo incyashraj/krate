@@ -16,6 +16,7 @@ use krate_runtime::{
 };
 use serde::Serialize;
 
+mod mcp;
 mod sdk;
 
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
@@ -216,7 +217,18 @@ enum Command {
         /// install it and stop, instead of offering to install it.
         #[arg(long)]
         no_install: bool,
+
+        /// Print one machine-readable JSON object (schema `krate.author.v1`)
+        /// on stdout instead of the human progress lines. For agents and
+        /// scripts. Errors are reported as JSON too.
+        #[arg(long)]
+        json: bool,
     },
+
+    /// Run the Krate MCP server so an AI agent can execute components under the
+    /// capability sandbox. Speaks JSON-RPC 2.0 over stdio; wire an agent at it
+    /// with e.g. `claude mcp add krate -- krate mcp`.
+    Mcp,
 }
 
 /// The built-in app templates `krate create` can generate.
@@ -385,6 +397,7 @@ fn run() -> Result<u8> {
             work_dir,
             yes,
             no_install,
+            json,
         } => create_krate(CreateRequest {
             request,
             output,
@@ -395,7 +408,9 @@ fn run() -> Result<u8> {
             work_dir,
             yes,
             no_install,
+            json,
         }),
+        Command::Mcp => mcp::serve().map(|()| 0),
         Command::Version => {
             print_version();
             Ok(0)
@@ -482,6 +497,7 @@ struct CreateRequest {
     work_dir: Option<PathBuf>,
     yes: bool,
     no_install: bool,
+    json: bool,
 }
 
 /// Author a small app from a request and package it as one shareable `.krate`.
@@ -496,8 +512,13 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // Building the app needs a Rust toolchain, cargo-component, and the wasm
     // target. Check for them before anything else and, when a terminal is
     // present, offer to install what is missing — so a first run fails with a
-    // clear next step instead of a raw cargo error mid-build.
-    preflight_toolchain(req.yes, req.no_install)?;
+    // clear next step instead of a raw cargo error mid-build. In --json mode
+    // (agents/scripts) never prompt or install: report the gap as data.
+    if req.json {
+        preflight_toolchain_report_json(&req.output)?;
+    } else {
+        preflight_toolchain(req.yes, req.no_install)?;
+    }
 
     // Where the Krate SDK and WIT live, so a generated crate can build against
     // them. By default the binary materializes the SDK it carries embedded, so
@@ -544,9 +565,20 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
 
     // Step 1: author. Either an agent command writes the source, or the
     // built-in generator does.
-    println!("==> authoring \"{}\"", req.request);
+    if !req.json {
+        println!("==> authoring \"{}\"", req.request);
+    }
     let author_note = if let Some(cmd) = &req.author_cmd {
-        run_author_command(cmd, &app_dir, &name, &req.request)?;
+        let sdk_prefix = relative_sdk_prefix(&app_dir, &sdk_root)?;
+        run_author_command(AuthorContext {
+            cmd,
+            app_dir: &app_dir,
+            name: &name,
+            request: &req.request,
+            sdk_dir: &sdk_root,
+            sdk_prefix: &sdk_prefix,
+            kind,
+        })?;
         format!("external agent command: {cmd}")
     } else {
         let sdk_prefix = relative_sdk_prefix(&app_dir, &sdk_root)?;
@@ -568,7 +600,9 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     steps.push(serde_json::json!({"step": "author", "detail": author_note}));
 
     // Step 2: build to a wasm component.
-    println!("==> building the component");
+    if !req.json {
+        println!("==> building the component");
+    }
     let wasm = build_component(&app_dir)?;
     steps.push(serde_json::json!({"step": "build", "detail": "cargo-component build --release"}));
 
@@ -585,7 +619,9 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     steps.push(serde_json::json!({"step": "check-imports", "detail": "krate:* imports only"}));
 
     // Step 4: pack. Copy the manifest and point its entry at code.wasm.
-    println!("==> packing {}", req.output.display());
+    if !req.json {
+        println!("==> packing {}", req.output.display());
+    }
     let manifest_src = app_dir.join("manifest.toml");
     let manifest = krate_manifest::Manifest::parse_file(&manifest_src)
         .with_context(|| format!("read {}", manifest_src.display()))?;
@@ -600,7 +636,9 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
 
     // Step 5: verify the permission wall by running the packed bundle with all
     // grants (must succeed) and without the gating capability (must refuse).
-    println!("==> verifying the permission wall");
+    if !req.json {
+        println!("==> verifying the permission wall");
+    }
     let gating = gating_capability(&manifest);
     let verify_dir = tempfile::tempdir().context("verify dir")?;
     prepare_verify_dir(verify_dir.path(), &manifest)?;
@@ -658,18 +696,27 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         "steps": steps,
         "verdict": "authored a working, permission-gated .krate: runs with its grants, refuses without the gating one",
     });
-    let transcript_path = req
-        .transcript
-        .clone()
-        .unwrap_or_else(|| with_suffix(&req.output, ".transcript.json"));
-    fs::write(
-        &transcript_path,
-        serde_json::to_string_pretty(&transcript)? + "\n",
-    )?;
+    // The transcript sidecar is opt-in: written only when --transcript names a
+    // path, so a normal user's folder is not littered with a JSON file they did
+    // not ask for. --json emits the transcript on stdout instead.
+    let sidecar = req.transcript.clone();
+    if let Some(path) = &sidecar {
+        fs::write(path, serde_json::to_string_pretty(&transcript)? + "\n")?;
+    }
+
+    if req.json {
+        // One machine-readable object on stdout, and nothing else.
+        let mut out = transcript;
+        out["ok"] = serde_json::Value::Bool(true);
+        println!("{}", serde_json::to_string(&out)?);
+        return Ok(0);
+    }
 
     println!();
     println!("Created {}", req.output.display());
-    println!("  transcript: {}", transcript_path.display());
+    if let Some(path) = &sidecar {
+        println!("  transcript: {}", path.display());
+    }
     println!("  requested access:");
     for cap in &requested {
         println!("    - {cap}");
@@ -722,27 +769,95 @@ fn toml_path(path: &Path) -> String {
 }
 
 /// Run an agent's author command with the app context in the environment.
-fn run_author_command(cmd: &str, app_dir: &Path, name: &str, request: &str) -> Result<()> {
-    fs::create_dir_all(app_dir.join("src"))?;
+/// Everything an agent command is given to author an app.
+struct AuthorContext<'a> {
+    cmd: &'a str,
+    app_dir: &'a Path,
+    name: &'a str,
+    request: &'a str,
+    sdk_dir: &'a Path,
+    sdk_prefix: &'a str,
+    kind: krate_author::AppKind,
+}
+
+fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
+    use krate_author::{generate, AppKind, AppRequest};
+
+    fs::create_dir_all(ctx.app_dir.join("src"))?;
+
+    // Give the agent a running start rather than a blank page: a compiling
+    // starter (the built-in template for this kind) it can edit, and a CONTRACT
+    // stating the one hard rule. Both may be overwritten by the agent.
+    let mut request = match ctx.kind {
+        AppKind::Checklist => AppRequest::checklist(ctx.name),
+        AppKind::WordFrequency => AppRequest::word_frequency(ctx.name),
+    };
+    request.description = ctx.request.to_string();
+    if let Ok(app) = generate(&request, ctx.sdk_prefix) {
+        for file in &app.files {
+            let dest = ctx.app_dir.join(&file.path);
+            if let Some(parent) = dest.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let _ = fs::write(&dest, &file.contents);
+        }
+    }
+    fs::write(ctx.app_dir.join("CONTRACT.md"), author_contract(ctx.name))?;
+
     let shell = if cfg!(windows) { "bash" } else { "sh" };
     let status = std::process::Command::new(shell)
         .arg("-c")
-        .arg(cmd)
-        .env("KRATE_APP_DIR", app_dir)
-        .env("KRATE_APP_NAME", name)
-        .env("KRATE_REQUEST", request)
+        .arg(ctx.cmd)
+        .env("KRATE_APP_DIR", ctx.app_dir)
+        .env("KRATE_APP_NAME", ctx.name)
+        .env("KRATE_REQUEST", ctx.request)
+        // The materialized SDK: the agent resolves WIT/bindings from here.
+        .env("KRATE_SDK_DIR", ctx.sdk_dir)
         .status()
         .context("run --author-cmd")?;
     if !status.success() {
         anyhow::bail!("author command failed");
     }
-    // The agent must have written the three files.
+    // The agent must have (kept or written) the three files.
     for file in ["Cargo.toml", "src/lib.rs", "manifest.toml"] {
-        if !app_dir.join(file).exists() {
+        if !ctx.app_dir.join(file).exists() {
             anyhow::bail!("author command did not write {file}");
         }
     }
     Ok(())
+}
+
+/// The briefing dropped into the app dir for an agent. States the one hard rule
+/// and how the app is checked, so the agent gets it right the first time.
+fn author_contract(name: &str) -> String {
+    format!(
+        "# Krate app contract for `{name}`\n\
+\n\
+You are writing a Krate guest app in Rust. Three files must exist in this\n\
+directory when you finish: `Cargo.toml`, `src/lib.rs`, `manifest.toml`.\n\
+A compiling starter for each is already here — edit it to fit the request in\n\
+the `KRATE_REQUEST` environment variable.\n\
+\n\
+## The one hard rule\n\
+A Krate component may import ONLY `krate:*` interfaces. Ordinary std code\n\
+breaks this and the app will be rejected: a growable `Vec`'s reallocation,\n\
+`HashMap`, `format!`, and the `args::first` / `read_to_string` SDK helpers all\n\
+pull `wasi:*` imports in, which cannot be stripped. So:\n\
+- use fixed-capacity `[u8; N]` buffers and `.get()` / `.get_mut()` (never index),\n\
+- read args with `args::raw()` and split by hand,\n\
+- build strings by hand instead of `format!`.\n\
+The in-repo samples under `$KRATE_SDK_DIR` follow this discipline; copy it.\n\
+\n\
+## The manifest\n\
+Declare only the capabilities the app uses. Mark the one that gates it\n\
+(`fs.write` for a saving app) `required = true`.\n\
+\n\
+## What happens next\n\
+`krate create` builds what you write, checks it imports only `krate:*`, packs\n\
+it, and verifies its permission wall. If you reach for something unsafe, the\n\
+import check stops it here — it never ships. The SDK (WIT + Rust bindings) is\n\
+at `$KRATE_SDK_DIR`.\n"
+    )
 }
 
 /// Build the app dir to a wasm component with cargo-component, returning the
@@ -813,12 +928,15 @@ fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result
 /// code. Used to verify a packed bundle in isolation.
 fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
     let exe = std::env::current_exe().context("locate self")?;
-    let status = std::process::Command::new(exe)
+    // Capture the child's output rather than inherit it: the verified app's own
+    // stdout (e.g. its "saved" line) is noise to the create caller, and would
+    // corrupt the single-object stream under --json. Only the exit code matters.
+    let output = std::process::Command::new(exe)
         .args(args)
         .current_dir(dir)
-        .status()
+        .output()
         .context("re-invoke krate for verification")?;
-    Ok(status.code().unwrap_or(-1))
+    Ok(output.status.code().unwrap_or(-1))
 }
 
 /// Copy a manifest, replacing its `entry` line with a new path.
@@ -835,13 +953,6 @@ fn write_manifest_with_entry(src: &Path, dest: &Path, entry: &str) -> Result<()>
     }
     fs::write(dest, out).with_context(|| format!("write {}", dest.display()))?;
     Ok(())
-}
-
-/// Append a suffix to a path's file name (before writing a sidecar file).
-fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
-    let mut s = path.as_os_str().to_os_string();
-    s.push(suffix);
-    PathBuf::from(s)
 }
 
 /// Resolve what the user asked to run into a component on disk.
@@ -2089,6 +2200,28 @@ fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
 
     eprintln!("==> build tools ready");
     Ok(())
+}
+
+/// The `--json` counterpart of the preflight: never prompt or install. If the
+/// toolchain is complete, return Ok; otherwise print one `krate.author.v1`
+/// error object naming what is missing and the fix commands, and bail.
+fn preflight_toolchain_report_json(output: &Path) -> Result<()> {
+    let missing = missing_create_tools();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let report = serde_json::json!({
+        "schema": "krate.author.v1",
+        "ok": false,
+        "error": "missing-build-tools",
+        "output": output.to_string_lossy(),
+        "missing": missing.iter().map(|t| serde_json::json!({
+            "tool": t.what,
+            "install": t.install_cmd.join(" "),
+        })).collect::<Vec<_>>(),
+    });
+    println!("{}", serde_json::to_string(&report)?);
+    anyhow::bail!("missing build tools");
 }
 
 /// Run one install command, streaming its output. The rustup bootstrap is
