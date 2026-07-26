@@ -23,6 +23,13 @@ const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
 const MAX_PHASE2_ARG_COUNT: usize = 1024;
 const PHASE3_GUI_UNIMPLEMENTED_EXIT: u8 = 6;
 
+/// Fuel budget applied to an untrusted run (`run --untrusted`, and the run
+/// Krate makes when it verifies an app it just authored). Large enough that a
+/// real app finishing its work never trips it, small enough that a runaway or
+/// infinite loop is stopped in well under a second instead of hanging. An
+/// explicit `--fuel` always overrides this.
+const UNTRUSTED_FUEL_BUDGET: u64 = 5_000_000_000;
+
 /// Version shown by `krate --version`. The release workflow sets
 /// `KRATE_RELEASE_VERSION` to the git tag so a released binary reports its real
 /// version; local and CI builds fall back to the crate version from Cargo.toml.
@@ -52,6 +59,13 @@ enum Command {
         /// Max fuel units to allow. Omit for unlimited.
         #[arg(long)]
         fuel: Option<u64>,
+
+        /// Treat this app as untrusted: cap it with a default fuel budget so a
+        /// runaway or infinite loop stops instead of hanging. This is what
+        /// Krate uses when it verifies an app it just authored. An explicit
+        /// `--fuel` always wins over this default.
+        #[arg(long)]
+        untrusted: bool,
 
         /// Max memory in MiB.
         #[arg(long, default_value_t = 256)]
@@ -335,6 +349,7 @@ fn run() -> Result<u8> {
         Command::Run {
             target,
             fuel,
+            untrusted,
             mem_limit,
             max_http_response_bytes,
             http_timeout_millis,
@@ -359,7 +374,13 @@ fn run() -> Result<u8> {
             target,
             file: PathBuf::new(),
             insecure_http,
-            fuel,
+            // An explicit --fuel wins; otherwise --untrusted applies the default
+            // budget, and a plain trusted run stays unlimited (None).
+            fuel: fuel.or(if untrusted {
+                Some(UNTRUSTED_FUEL_BUDGET)
+            } else {
+                None
+            }),
             mem_limit,
             max_http_response_bytes,
             http_timeout_millis,
@@ -644,18 +665,25 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     prepare_verify_dir(verify_dir.path(), &manifest)?;
     let bundle_abs = fs::canonicalize(&req.output)?;
 
+    // Run the freshly authored app as untrusted during verification: it gets a
+    // finite fuel budget, so a generated runaway or infinite loop fails here
+    // (limit-exceeded) instead of hanging create.
     let allow_exit = run_self(
         verify_dir.path(),
         &[
             "run",
             bundle_abs.to_str().unwrap(),
+            "--untrusted",
             "--auto-grant",
             "--",
             "quick",
         ],
     )?;
     if allow_exit != 0 {
-        anyhow::bail!("the packed app failed to run with all grants (exit {allow_exit})");
+        anyhow::bail!(
+            "the packed app failed to run with all grants (exit {allow_exit}); \
+             exit 4 means it exhausted its fuel budget (a runaway or infinite loop)"
+        );
     }
 
     let mut deny_args = vec!["run".to_string(), bundle_abs.to_string_lossy().into_owned()];

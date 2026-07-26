@@ -960,6 +960,107 @@ fn configured_krate_clock_component_runs_with_sample_manifest_auto_grant() {
     assert!(stdout.contains("date=1970-01-15 06:56"));
 }
 
+// --- fuel budget / untrusted runs (S5) --------------------------------------
+//
+// A finite fuel budget must stop a run instead of letting it complete or hang.
+// `--untrusted` applies a generous default budget that real apps finish under,
+// and `krate create` uses that same untrusted run to verify what it authored,
+// so a generated infinite loop fails verification rather than hanging.
+
+/// Build the standard clock run args, granting the clock capability via the
+/// sample manifest and pinning the time so the run is deterministic.
+fn clock_run_args(path: &std::path::Path) -> Vec<String> {
+    vec![
+        "run".to_string(),
+        "--auto-grant".to_string(),
+        "--manifest".to_string(),
+        sample_manifest("krate-clock")
+            .to_str()
+            .expect("manifest path")
+            .to_string(),
+        "--test-time".to_string(),
+        "1234567890".to_string(),
+        path.to_string_lossy().into_owned(),
+    ]
+}
+
+#[test]
+fn untrusted_default_budget_lets_a_real_app_finish() {
+    let Some(path) = configured_krate_clock_component() else {
+        return;
+    };
+
+    let mut args = clock_run_args(&path);
+    // Insert the flag right after "run" so it applies to the run subcommand.
+    args.insert(1, "--untrusted".to_string());
+
+    let output = krate()
+        .args(&args)
+        .output()
+        .expect("run krate-clock as untrusted");
+
+    assert!(
+        output.status.success(),
+        "the default untrusted fuel budget must not break a real app\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("app=krate-clock"));
+}
+
+#[test]
+fn a_tiny_fuel_budget_stops_the_run_with_limit_exceeded() {
+    let Some(path) = configured_krate_clock_component() else {
+        return;
+    };
+
+    let mut args = clock_run_args(&path);
+    args.insert(1, "--fuel".to_string());
+    args.insert(2, "1".to_string());
+
+    let output = krate()
+        .args(&args)
+        .output()
+        .expect("run krate-clock with a tiny fuel budget");
+
+    // Exit 4 is Krate's limit-exceeded class: fuel ran out before completion.
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "a fuel budget of 1 must stop the run (exit 4)\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn explicit_fuel_overrides_the_untrusted_default() {
+    let Some(path) = configured_krate_clock_component() else {
+        return;
+    };
+
+    // With both flags the explicit --fuel 1 must win over the generous
+    // --untrusted default, so the run still stops at exit 4.
+    let mut args = clock_run_args(&path);
+    args.insert(1, "--untrusted".to_string());
+    args.insert(2, "--fuel".to_string());
+    args.insert(3, "1".to_string());
+
+    let output = krate()
+        .args(&args)
+        .output()
+        .expect("run krate-clock with explicit fuel over untrusted");
+
+    assert_eq!(
+        output.status.code(),
+        Some(4),
+        "explicit --fuel must override the --untrusted default\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
 #[test]
 fn configured_krate_cat_component_reads_granted_files() {
     let Some(path) = configured_krate_cat_component() else {
