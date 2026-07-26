@@ -34,9 +34,14 @@ construction — 8/8, not by DCE luck.
    templates start with `#![no_std]` + `extern crate alloc`, and the generated
    `Cargo.toml` keeps `panic = "abort"`, `lto = true`, `opt-level = "s"`.
 
-3. **Samples (`apps/krate-checklist`, `apps/krate-notes`, and the CLI samples)**
-   convert to `#![no_std]` so the shipped samples are the reference for the
-   discipline the SDK now enforces, not sidesteps.
+3. **Scope refinement (confirmed empirically):** only **CLI apps** (which link
+   the `krate` SDK crate) need `no_std` — that is where the leak was. **GUI
+   apps** (checklist, notes, clock-window) carry their own local `bindings.rs`
+   and were already `krate:*`-only clean under std (a GUI app strips cleanly);
+   forcing `no_std` on them only breaks working code for no benefit. So the CLI
+   generator template goes `no_std`; the GUI samples stay as they are. Verified:
+   all 7 CLI Tier B apps come out clean via no_std, and the GUI clock-window is
+   clean via its existing path — 8/8 overall.
 
 4. **The author CONTRACT.md** (in `crates/cli`): update the "one hard rule"
    text — the constraint is now structural (`#![no_std]` handles it), so the

@@ -316,9 +316,13 @@ fn word_frequency_source(request: &AppRequest) -> String {
 //! Reads the file named by the first argument, counts word frequencies, and
 //! prints the {top_n} most common words. Requires `fs.read` on its input; a
 //! denied read returns exit 5, the standard Krate permission refusal.
-//!
-//! No `HashMap`, `format!`, or other std facilities that would pull `wasi:*`
-//! imports into the component: a Krate app may import only `krate:*`.
+
+// A Krate guest links only `krate:*`. Building `no_std` means std's runtime —
+// whose latent `wasi:*` imports a component may not carry — is never linked, so
+// the app is `krate:*`-only by construction. The SDK owns the allocator, panic
+// handler, and mem intrinsics; an app just declares `no_std` + `alloc`.
+#![no_std]
+extern crate alloc;
 
 use krate::{{
     fs::{{self, FsError, OpenMode}},
@@ -326,10 +330,9 @@ use krate::{{
     Guest,
 }};
 
-/// Fixed capacities. A growable `Vec` reallocates, and realloc references std's
-/// allocation-error handler, which drags the whole `wasi:*` import set into a
-/// component that may import only `krate:*`. So, exactly like the in-tree
-/// samples, every buffer here is fixed and every access non-panicking.
+/// Fixed capacities keep the app simple and its memory bounded. `alloc` is
+/// available (the SDK provides an allocator), so this is a readability choice,
+/// not a constraint imposed by the import wall.
 const INPUT_CAP: usize = 65536;
 const MAX_WORDS: usize = 4096;
 const MAX_WORD_LEN: usize = 32;
