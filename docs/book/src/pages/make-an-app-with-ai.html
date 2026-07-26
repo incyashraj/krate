@@ -1,368 +1,1227 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Use Krate: for anyone, developers, and AI teams</title>
-<meta name="description" content="Three simple paths to Krate: open an app someone sent you, make an app by describing it, or ship apps from your AI agent. Every app is one file that can only touch what you allow." />
-<style>
-  :root {
-    --bg: #fbfcfe;
-    --bg-2: #f3f6fb;
-    --surface: #ffffff;
-    --ink: #101a2b;
-    --muted: #64728a;
-    --faint: #97a3b8;
-    --edge: rgba(16, 26, 43, 0.08);
-    --edge-2: rgba(16, 26, 43, 0.12);
-    --blue: #1e88ff;
-    --blue-deep: #1266d6;
-    --blue-tint: #eef4ff;
-    --good: #1a9e6a;
-    --shadow-xs: 0 1px 2px rgba(16,26,43,0.04);
-    --shadow-sm: 0 2px 4px rgba(16,26,43,0.04), 0 8px 24px rgba(16,26,43,0.05);
-    --shadow-md: 0 4px 10px rgba(16,26,43,0.05), 0 24px 60px rgba(16,26,43,0.08);
-    --radius: 18px;
-    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  }
-  @media (prefers-color-scheme: dark) {
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#1155ee" />
+  <meta name="description" content="Open a Krate app, make a shareable app from a request, or connect an AI coding agent. One file for Mac, Windows, and Linux with clear access before it runs." />
+  <title>Make and share a Krate app</title>
+  <link rel="icon" href="../../krate-app-icon.png" />
+  <style>
     :root {
-      --bg: #0a101c; --bg-2: #0d1524; --surface: #111a2c; --ink: #eef3fb; --muted: #9aa8c0; --faint: #6a7890;
-      --edge: rgba(255,255,255,0.08); --edge-2: rgba(255,255,255,0.14); --blue-tint: #15243f;
-      --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
-      --shadow-sm: 0 2px 6px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.4);
-      --shadow-md: 0 6px 16px rgba(0,0,0,0.45), 0 28px 70px rgba(0,0,0,0.5);
+      --blue: #1155ee;
+      --blue-dark: #0731a6;
+      --cyan: #00efc6;
+      --cyan-soft: #c8fff4;
+      --yellow: #fff26a;
+      --pink: #ff4faf;
+      --red: #ff3158;
+      --green: #00a968;
+      --ink: #10131a;
+      --paper: #fbfbf7;
+      --panel: #efefea;
+      --chrome: #d4d4cf;
+      --white: #fff;
+      --line: 2px solid var(--ink);
+      --inset: inset -2px -2px 0 #777771, inset 2px 2px 0 #fff;
+      --raised: 5px 5px 0 var(--ink);
+      --max: 1160px;
     }
-  }
-  :root[data-theme="dark"] {
-    --bg: #0a101c; --bg-2: #0d1524; --surface: #111a2c; --ink: #eef3fb; --muted: #9aa8c0; --faint: #6a7890;
-    --edge: rgba(255,255,255,0.08); --edge-2: rgba(255,255,255,0.14); --blue-tint: #15243f;
-    --shadow-xs: 0 1px 2px rgba(0,0,0,0.4);
-    --shadow-sm: 0 2px 6px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.4);
-    --shadow-md: 0 6px 16px rgba(0,0,0,0.45), 0 28px 70px rgba(0,0,0,0.5);
-  }
-  :root[data-theme="light"] {
-    --bg: #fbfcfe; --bg-2: #f3f6fb; --surface: #ffffff; --ink: #101a2b; --muted: #64728a; --faint: #97a3b8;
-    --edge: rgba(16,26,43,0.08); --edge-2: rgba(16,26,43,0.12); --blue-tint: #eef4ff;
-    --shadow-xs: 0 1px 2px rgba(16,26,43,0.04);
-    --shadow-sm: 0 2px 4px rgba(16,26,43,0.04), 0 8px 24px rgba(16,26,43,0.05);
-    --shadow-md: 0 4px 10px rgba(16,26,43,0.05), 0 24px 60px rgba(16,26,43,0.08);
-  }
 
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font-family: var(--sans); font-size: 17px; line-height: 1.65;
-    -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
-  }
-  a { color: inherit; }
-  .wrap { width: min(1080px, calc(100% - 44px)); margin: 0 auto; }
+    * { box-sizing: border-box; }
 
-  /* nav */
-  .nav { position: sticky; top: 0; z-index: 40; background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: saturate(1.3) blur(12px); border-bottom: 1px solid var(--edge); }
-  .nav-in { display: flex; align-items: center; justify-content: space-between; height: 66px; }
-  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: -0.01em; font-size: 17.5px; text-decoration: none; color: var(--ink); }
-  .brand img { width: 27px; height: 27px; display: block; }
-  .nav-links { display: flex; align-items: center; gap: 30px; font-size: 14.5px; color: var(--muted); font-weight: 500; }
-  .nav-links a { text-decoration: none; }
-  .nav-links a:hover { color: var(--ink); }
-  .btn { display: inline-flex; align-items: center; gap: 8px; font-family: var(--sans); font-weight: 600; font-size: 14.5px; border-radius: 999px; padding: 9px 18px; text-decoration: none; border: 1px solid transparent; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s, color .15s; }
-  .btn-primary { background: var(--blue); color: #fff; }
-  .btn-primary:hover { background: var(--blue-deep); }
-  .btn-ghost { background: var(--surface); color: var(--ink); border-color: var(--edge-2); box-shadow: var(--shadow-xs); }
-  .btn-ghost:hover { border-color: var(--blue); color: var(--blue-deep); }
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 90px;
+    }
 
-  /* hero */
-  .hero { position: relative; overflow: hidden; padding: 96px 0 30px; text-align: center; }
-  .glow { position: absolute; left: 50%; top: 54%; transform: translate(-50%,-50%); width: 1000px; height: 640px; z-index: 0; pointer-events: none;
-    background:
-      radial-gradient(closest-side, rgba(30,136,255,0.13), transparent 72%) -120px 20px / 560px 560px no-repeat,
-      radial-gradient(closest-side, rgba(90,190,255,0.11), transparent 72%) 200px 90px / 520px 520px no-repeat,
-      radial-gradient(closest-side, rgba(120,120,255,0.07), transparent 72%) 30px 150px / 560px 460px no-repeat;
-    filter: blur(26px); }
-  .hero-in { position: relative; z-index: 2; }
-  .eyebrow { display: inline-block; font-size: 14px; font-weight: 600; letter-spacing: 0.01em; color: var(--blue-deep); margin-bottom: 22px; }
-  h1 { font-family: var(--sans); font-weight: 750; letter-spacing: -0.038em; font-size: clamp(40px, 6.2vw, 68px); line-height: 1.03; margin: 0 auto; max-width: 16ch; text-wrap: balance; }
-  .kw { color: var(--blue); }
-  .sub { max-width: 600px; margin: 22px auto 0; color: var(--muted); font-size: clamp(17px, 1.9vw, 19px); }
-  .hero-cta { display: flex; gap: 12px; justify-content: center; margin-top: 30px; flex-wrap: wrap; }
-  .hero-cta .btn { padding: 12px 24px; font-size: 15.5px; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(rgba(17, 85, 238, .055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(17, 85, 238, .055) 1px, transparent 1px),
+        var(--paper);
+      background-size: 24px 24px;
+      font-family: Arial, "Helvetica Neue", sans-serif;
+      font-size: 16px;
+      line-height: 1.55;
+    }
 
-  /* logo stage */
-  .stage { position: relative; z-index: 2; width: 100%; max-width: 720px; margin: 26px auto 0; height: 380px; }
-  .stage svg { position: absolute; inset: 0; margin: auto; width: 300px; height: 300px; overflow: visible; }
-  .part { opacity: 0; will-change: transform, opacity; }
-  .lidp { animation: fly-top   .85s cubic-bezier(.22,.68,.24,1) .15s forwards; }
-  .lyr1 { animation: fly-left  .85s cubic-bezier(.22,.68,.24,1) .30s forwards; }
-  .lyr2 { animation: fly-right .85s cubic-bezier(.22,.68,.24,1) .44s forwards; }
-  .lyr3 { animation: fly-bot   .85s cubic-bezier(.22,.68,.24,1) .58s forwards; }
-  @keyframes fly-top   { from { opacity:0; transform: translateY(-120px) scale(.9);} to { opacity:1; transform:none;} }
-  @keyframes fly-left  { from { opacity:0; transform: translate(-140px,-30px) scale(.9);} to { opacity:1; transform:none;} }
-  @keyframes fly-right { from { opacity:0; transform: translate(140px,-6px) scale(.9);} to { opacity:1; transform:none;} }
-  @keyframes fly-bot   { from { opacity:0; transform: translateY(120px) scale(.9);} to { opacity:1; transform:none;} }
+    body::before {
+      content: "";
+      position: fixed;
+      z-index: 100;
+      inset: 0;
+      pointer-events: none;
+      opacity: .12;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(0, 0, 0, .1) 0,
+        rgba(0, 0, 0, .1) 1px,
+        transparent 1px,
+        transparent 4px
+      );
+    }
 
-  /* floating tiles */
-  .tile { position: absolute; z-index: 1; width: 88px; height: 88px; border-radius: 22px; background: var(--surface); box-shadow: var(--shadow-md); border: 1px solid var(--edge); display: grid; place-items: center; opacity: 0; will-change: transform, opacity; }
-  .tile img, .tile svg { width: 46px; height: 46px; }
-  .tile .cap { position: absolute; bottom: -24px; left: 50%; transform: translateX(-50%); font-size: 11.5px; font-weight: 500; color: var(--faint); white-space: nowrap; letter-spacing: 0.01em; }
-  .t1 { left: 3%;  top: 16%;   animation: pop .7s cubic-bezier(.22,.68,.24,1) .8s forwards, drift1 9s ease-in-out 1.6s infinite; }
-  .t2 { right: 4%; top: 10%;   animation: pop .7s cubic-bezier(.22,.68,.24,1) .94s forwards, drift2 10s ease-in-out 1.7s infinite; }
-  .t3 { left: 8%;  bottom: 16%;animation: pop .7s cubic-bezier(.22,.68,.24,1) 1.08s forwards, drift2 9.5s ease-in-out 1.8s infinite; }
-  .t4 { right: 3%; bottom: 12%;animation: pop .7s cubic-bezier(.22,.68,.24,1) 1.22s forwards, drift1 10.5s ease-in-out 1.9s infinite; }
-  @keyframes pop { from { opacity:0; transform: scale(.7);} to { opacity:1; transform: scale(1);} }
-  @keyframes drift1 { 0%,100%{ transform: translateY(0);} 50%{ transform: translateY(-6px);} }
-  @keyframes drift2 { 0%,100%{ transform: translateY(0);} 50%{ transform: translateY(5px);} }
-  @media (prefers-reduced-motion: reduce) { .part, .tile { opacity:1 !important; transform:none !important; animation:none !important; } }
+    body.menu-open { overflow: hidden; }
+    a { color: inherit; }
+    button { font: inherit; }
+    img { display: block; max-width: 100%; }
 
-  /* sections */
-  .section { padding: 60px 0; }
-  .section-head { text-align: center; max-width: 620px; margin: 0 auto 36px; }
-  .kicker { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; color: var(--blue-deep); margin-bottom: 12px; }
-  h2 { font-weight: 750; letter-spacing: -0.032em; font-size: clamp(26px, 3.2vw, 38px); line-height: 1.1; margin: 0; text-wrap: balance; }
-  .lead { color: var(--muted); font-size: 17.5px; margin-top: 14px; }
+    .skip {
+      position: fixed;
+      z-index: 999;
+      top: 8px;
+      left: 8px;
+      padding: 8px 12px;
+      color: #fff;
+      background: #000;
+      border: 2px solid #fff;
+      transform: translateY(-160%);
+    }
 
-  /* audience cards */
-  .paths { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-  .path { display: flex; flex-direction: column; text-decoration: none; color: inherit; background: var(--surface); border: 1px solid var(--edge); border-radius: var(--radius); padding: 28px; box-shadow: var(--shadow-sm); transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease; }
-  .path:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: color-mix(in srgb, var(--blue) 26%, transparent); }
-  .path .ic { width: 44px; height: 44px; border-radius: 12px; background: var(--blue-tint); display: grid; place-items: center; margin-bottom: 18px; }
-  .path .ic svg { width: 23px; height: 23px; }
-  .path .who { font-size: 12.5px; font-weight: 600; letter-spacing: 0.01em; color: var(--faint); margin-bottom: 7px; }
-  .path h3 { font-weight: 700; letter-spacing: -0.02em; font-size: 20px; margin: 0; }
-  .path p { color: var(--muted); font-size: 15px; margin: 11px 0 0; flex: 1; }
-  .path .go { margin-top: 20px; color: var(--blue-deep); font-weight: 650; font-size: 14.5px; }
+    .skip:focus { transform: translateY(0); }
 
-  /* steps */
-  .track { max-width: 860px; margin: 0 auto; }
-  .track-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 22px; flex-wrap: wrap; }
-  .track-head .pin { font-size: 12.5px; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--blue-deep); }
-  .steps { display: grid; gap: 16px; }
-  .step { display: grid; grid-template-columns: 46px 1fr; gap: 20px; align-items: start; background: var(--surface); border: 1px solid var(--edge); border-radius: var(--radius); padding: 24px 26px; box-shadow: var(--shadow-sm); }
-  .step .num { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--blue-tint); color: var(--blue-deep); font-weight: 750; font-size: 16px; }
-  .step h3 { font-weight: 700; font-size: 18.5px; letter-spacing: -0.015em; margin: 0; }
-  .step p { margin: 7px 0 0; color: var(--muted); font-size: 15.5px; }
+    .site-nav {
+      position: sticky;
+      z-index: 80;
+      top: 0;
+      border-bottom: var(--line);
+      background: rgba(251, 251, 247, .96);
+      backdrop-filter: blur(12px);
+    }
 
-  /* terminal */
-  .term { margin-top: 14px; border-radius: 12px; overflow: hidden; border: 1px solid var(--edge-2); box-shadow: var(--shadow-sm); background: #0d1524; }
-  .term-bar { display: flex; gap: 7px; padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,0.07); }
-  .term-bar i { width: 11px; height: 11px; border-radius: 50%; background: #2c3a54; }
-  .term pre { margin: 0; padding: 16px 18px; font-family: var(--mono); font-size: 13.5px; line-height: 1.7; color: #c9d6ea; overflow-x: auto; white-space: pre; }
-  .term .cmd { color: #ffd27a; } .term .good { color: #6fe0a6; } .term .mut { color: #7688a5; }
+    .nav-inner {
+      width: min(var(--max), calc(100% - 32px));
+      min-height: 72px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
 
-  /* note: no colored left bar. quiet card with a small dot marker. */
-  .note { max-width: 860px; margin: 24px auto 0; background: var(--bg-2); border: 1px solid var(--edge); border-radius: 14px; padding: 18px 20px 18px 46px; color: var(--muted); font-size: 15.5px; position: relative; }
-  .note::before { content: ""; position: absolute; left: 18px; top: 22px; width: 8px; height: 8px; border-radius: 50%; background: var(--blue); }
-  .note.safe::before { background: var(--good); }
-  .note strong { color: var(--ink); font-weight: 650; }
-  code { font-family: var(--mono); font-size: 0.88em; background: var(--blue-tint); color: var(--blue-deep); padding: 1.5px 6px; border-radius: 6px; }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--ink);
+      text-decoration: none;
+      font-family: "Arial Black", Arial, sans-serif;
+      font-size: 21px;
+      letter-spacing: -.04em;
+    }
 
-  /* safe band */
-  .safe-band { background: var(--bg-2); border-top: 1px solid var(--edge); border-bottom: 1px solid var(--edge); }
-  .safe-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 44px; align-items: center; }
-  .safe-grid p { color: var(--muted); }
-  .wall { display: grid; gap: 10px; }
-  .wall .row { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1px solid var(--edge); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow-xs); font-size: 14.5px; }
-  .wall .k { font-family: var(--mono); font-size: 13px; }
-  .wall .tag { margin-left: auto; font-weight: 650; font-size: 12.5px; }
-  .wall .ok .tag { color: var(--good); } .wall .no { color: var(--faint); } .wall .no .tag { color: var(--faint); }
-  .wall .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
-  .wall .ok .dot { background: var(--good); } .wall .no .dot { background: var(--edge-2); }
+    .brand img {
+      width: 42px;
+      height: 42px;
+    }
 
-  footer { padding: 44px 0 68px; color: var(--faint); font-size: 14.5px; text-align: center; border-top: 1px solid var(--edge); }
-  footer a { color: var(--blue-deep); text-decoration: none; }
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
 
-  @media (max-width: 900px) {
-    .paths { grid-template-columns: 1fr; }
-    .safe-grid { grid-template-columns: 1fr; gap: 26px; }
-    .tile { width: 68px; height: 68px; border-radius: 17px; }
-    .tile img, .tile svg { width: 36px; height: 36px; }
-    .t1,.t3 { left: -1%; } .t2,.t4 { right: -1%; }
-    .nav-links { display: none; }
-  }
-</style>
+    .nav-link,
+    .nav-cta,
+    .menu-button {
+      min-height: 38px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      border: 2px solid transparent;
+      color: var(--ink);
+      background: transparent;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .nav-link:hover,
+    .nav-link:focus-visible {
+      border-color: var(--ink);
+      background: var(--yellow);
+      outline: none;
+    }
+
+    .nav-cta {
+      border-color: var(--ink);
+      color: #fff;
+      background: var(--blue);
+      box-shadow: 3px 3px 0 var(--ink);
+    }
+
+    .nav-cta:hover,
+    .nav-cta:focus-visible {
+      color: var(--ink);
+      background: var(--cyan);
+      transform: translate(1px, 1px);
+      box-shadow: 2px 2px 0 var(--ink);
+      outline: none;
+    }
+
+    .menu-button {
+      display: none;
+      width: 42px;
+      padding: 0;
+      border-color: var(--ink);
+      background: var(--chrome);
+      box-shadow: var(--inset);
+      cursor: pointer;
+      font-size: 22px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border-bottom: var(--line);
+      background: linear-gradient(135deg, #fff 0 49%, var(--cyan-soft) 49% 100%);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      top: 38px;
+      right: -74px;
+      width: 220px;
+      height: 220px;
+      border: 34px solid var(--blue);
+      border-radius: 50%;
+      opacity: .13;
+    }
+
+    .hero-inner {
+      position: relative;
+      z-index: 2;
+      width: min(var(--max), calc(100% - 32px));
+      min-height: 690px;
+      margin: 0 auto;
+      padding: 72px 0 82px;
+      display: grid;
+      grid-template-columns: .92fr 1.08fr;
+      align-items: center;
+      gap: 56px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 22px;
+      padding: 7px 10px;
+      border: var(--line);
+      background: var(--yellow);
+      box-shadow: 3px 3px 0 var(--ink);
+      font-family: "Courier New", monospace;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .eyebrow::before {
+      content: "";
+      width: 9px;
+      height: 9px;
+      background: var(--red);
+      border: 1px solid var(--ink);
+    }
+
+    h1,
+    h2,
+    h3 {
+      margin: 0;
+      line-height: 1.05;
+      letter-spacing: -.04em;
+    }
+
+    h1 {
+      max-width: 680px;
+      font-family: "Arial Black", Arial, sans-serif;
+      font-size: clamp(46px, 6.3vw, 82px);
+    }
+
+    h2 {
+      font-family: "Arial Black", Arial, sans-serif;
+      font-size: clamp(34px, 4.5vw, 56px);
+    }
+
+    h3 {
+      font-size: 21px;
+      letter-spacing: -.025em;
+    }
+
+    .hero-copy > p {
+      max-width: 620px;
+      margin: 24px 0 0;
+      font-size: clamp(18px, 2vw, 22px);
+      line-height: 1.42;
+    }
+
+    .underline {
+      position: relative;
+      display: inline-block;
+      z-index: 0;
+    }
+
+    .underline::after {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      right: -4px;
+      bottom: 5px;
+      left: -4px;
+      height: 16px;
+      background: var(--pink);
+      transform: rotate(-1deg);
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 30px;
+    }
+
+    .button {
+      min-height: 46px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 18px;
+      border: var(--line);
+      color: var(--ink);
+      background: var(--chrome);
+      box-shadow: var(--raised);
+      text-decoration: none;
+      font-weight: 900;
+    }
+
+    .button.primary {
+      color: #fff;
+      background: var(--blue);
+    }
+
+    .button:hover,
+    .button:focus-visible {
+      color: var(--ink);
+      background: var(--cyan);
+      transform: translate(2px, 2px);
+      box-shadow: 3px 3px 0 var(--ink);
+      outline: none;
+    }
+
+    .micro-proof {
+      margin-top: 25px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 17px;
+      font-family: "Courier New", monospace;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .micro-proof span::before {
+      content: "✓";
+      width: 17px;
+      height: 17px;
+      margin-right: 6px;
+      display: inline-grid;
+      place-items: center;
+      color: #fff;
+      background: var(--blue);
+      border: 1px solid var(--ink);
+    }
+
+    .desktop-scene {
+      position: relative;
+      min-height: 500px;
+      padding: 34px 28px 46px;
+      border: var(--line);
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.2) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,.2) 1px, transparent 1px),
+        var(--blue);
+      background-size: 20px 20px;
+      box-shadow: 12px 12px 0 rgba(16,19,26,.25);
+    }
+
+    .desktop-label {
+      position: absolute;
+      right: 18px;
+      bottom: 12px;
+      color: #fff;
+      font-family: "Courier New", monospace;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .08em;
+    }
+
+    .window {
+      position: absolute;
+      border: var(--line);
+      background: var(--chrome);
+      box-shadow: 7px 7px 0 rgba(16,19,26,.62);
+    }
+
+    .window-title,
+    .panel-title,
+    .card-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: #fff;
+      background: linear-gradient(90deg, var(--blue-dark), var(--blue));
+      border-bottom: var(--line);
+      font-family: "Courier New", monospace;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .window-title {
+      height: 31px;
+      padding: 4px 6px 4px 9px;
+    }
+
+    .window-title.cyan,
+    .card-bar.cyan {
+      color: var(--ink);
+      background: var(--cyan);
+    }
+
+    .window-title.pink,
+    .card-bar.pink {
+      color: var(--ink);
+      background: var(--pink);
+    }
+
+    .window-controls {
+      display: flex;
+      gap: 3px;
+    }
+
+    .window-controls i {
+      width: 18px;
+      height: 18px;
+      display: grid;
+      place-items: center;
+      color: var(--ink);
+      background: var(--chrome);
+      border: 1px solid var(--ink);
+      box-shadow: inset 1px 1px 0 #fff, inset -1px -1px 0 #777;
+      font-style: normal;
+      font-size: 9px;
+      line-height: 1;
+    }
+
+    .window-body { padding: 18px; }
+
+    .request-window {
+      top: 34px;
+      left: 28px;
+      width: min(390px, calc(100% - 56px));
+    }
+
+    .prompt-label {
+      display: block;
+      margin-bottom: 6px;
+      font-family: "Courier New", monospace;
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .prompt-box {
+      min-height: 58px;
+      padding: 9px 10px;
+      border: 2px solid;
+      border-color: #777 #fff #fff #777;
+      background: #fff;
+      font-family: "Courier New", monospace;
+      font-size: 13px;
+    }
+
+    .prompt-box::after {
+      content: "▋";
+      color: var(--blue);
+      animation: blink 1s steps(1) infinite;
+    }
+
+    .file-window {
+      top: 224px;
+      right: 24px;
+      width: 260px;
+    }
+
+    .file-stage {
+      padding: 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      background: #fff;
+      font-family: "Courier New", monospace;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .file-stage img { width: 62px; }
+    .file-stage small { display: block; margin-top: 4px; color: var(--green); }
+
+    .access-window {
+      left: 46px;
+      bottom: 40px;
+      width: 322px;
+    }
+
+    .access-line {
+      display: grid;
+      grid-template-columns: 18px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 0;
+      border-bottom: 1px dotted #777;
+      font-family: "Courier New", monospace;
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .access-line:last-child { border: 0; }
+    .access-check { color: #fff; background: var(--green); text-align: center; }
+    .access-state { color: var(--green); }
+
+    .ticker {
+      overflow: hidden;
+      border-bottom: var(--line);
+      color: #fff;
+      background: var(--ink);
+      font-family: "Courier New", monospace;
+      font-size: 13px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .ticker-track {
+      display: flex;
+      width: max-content;
+      animation: ticker 26s linear infinite;
+    }
+
+    .ticker p { margin: 0; padding: 10px 0; }
+    .ticker b { color: var(--cyan); }
+
+    .section {
+      padding: 88px 0;
+      border-bottom: var(--line);
+    }
+
+    .section-inner {
+      width: min(var(--max), calc(100% - 32px));
+      margin: 0 auto;
+    }
+
+    .section-heading {
+      max-width: 800px;
+      margin-bottom: 36px;
+    }
+
+    .section-heading.center {
+      margin-right: auto;
+      margin-left: auto;
+      text-align: center;
+    }
+
+    .kicker {
+      margin: 0 0 12px;
+      font-family: "Courier New", monospace;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .section-heading > p:last-child,
+    .section-lead {
+      max-width: 760px;
+      margin: 18px 0 0;
+      font-size: 18px;
+      line-height: 1.55;
+    }
+
+    .path-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+    }
+
+    .path-card {
+      min-height: 100%;
+      border: var(--line);
+      background: var(--white);
+      box-shadow: var(--raised);
+    }
+
+    .card-bar {
+      min-height: 34px;
+      padding: 6px 9px;
+    }
+
+    .card-body {
+      padding: 25px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .retro-icon {
+      width: 48px;
+      height: 48px;
+      margin-bottom: 22px;
+      display: grid;
+      place-items: center;
+      border: var(--line);
+      background: var(--yellow);
+      box-shadow: 3px 3px 0 var(--ink);
+      font-family: "Courier New", monospace;
+      font-size: 24px;
+      font-weight: 900;
+    }
+
+    .path-card p {
+      flex: 1;
+      margin: 13px 0 20px;
+    }
+
+    .text-link {
+      font-family: "Courier New", monospace;
+      font-size: 13px;
+      font-weight: 900;
+      text-underline-offset: 4px;
+    }
+
+    .text-link:hover { background: var(--yellow); }
+
+    .setup-section { background: var(--cyan-soft); }
+
+    .setup-window,
+    .path-window {
+      border: var(--line);
+      background: var(--panel);
+      box-shadow: 9px 9px 0 var(--ink);
+    }
+
+    .panel-title {
+      min-height: 38px;
+      padding: 6px 8px 6px 12px;
+    }
+
+    .setup-body,
+    .path-body {
+      padding: clamp(24px, 5vw, 48px);
+    }
+
+    .setup-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 36px;
+      align-items: center;
+    }
+
+    .setup-copy p { margin: 16px 0 0; }
+
+    .terminal {
+      overflow: hidden;
+      border: var(--line);
+      background: #080c18;
+      box-shadow: 5px 5px 0 rgba(16,19,26,.35);
+    }
+
+    .terminal-bar {
+      min-height: 29px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      color: var(--ink);
+      background: var(--chrome);
+      border-bottom: var(--line);
+      font-family: "Courier New", monospace;
+      font-size: 10px;
+      font-weight: 900;
+    }
+
+    .terminal pre {
+      margin: 0;
+      padding: 17px;
+      color: #d9e5ff;
+      font-family: "Courier New", monospace;
+      font-size: 13px;
+      line-height: 1.65;
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .terminal .cmd { color: var(--yellow); }
+    .terminal .good { color: #62f3ad; }
+    .terminal .muted { color: #9eb1d8; }
+
+    code {
+      padding: 2px 6px;
+      color: #fff;
+      background: var(--blue-dark);
+      font-family: "Courier New", monospace;
+      font-size: .86em;
+    }
+
+    .note {
+      margin-top: 24px;
+      padding: 17px 18px;
+      border: var(--line);
+      background: var(--yellow);
+      box-shadow: 4px 4px 0 var(--ink);
+    }
+
+    .note strong { font-weight: 900; }
+
+    .path-section.alt { background: #fff; }
+    .path-section.blue { background: #dce9ff; }
+
+    .path-head {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 22px;
+      align-items: center;
+      margin-bottom: 30px;
+    }
+
+    .path-number {
+      width: 74px;
+      height: 74px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--blue);
+      border: var(--line);
+      box-shadow: 5px 5px 0 var(--ink);
+      font-family: "Courier New", monospace;
+      font-size: 28px;
+      font-weight: 900;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+
+    .step {
+      min-width: 0;
+      padding: 22px;
+      border: var(--line);
+      background: #fff;
+      box-shadow: 4px 4px 0 var(--ink);
+    }
+
+    .step-number {
+      width: 31px;
+      height: 31px;
+      margin-bottom: 17px;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: var(--ink);
+      font-family: "Courier New", monospace;
+      font-weight: 900;
+    }
+
+    .step p { margin: 10px 0 0; }
+    .step .terminal { margin-top: 16px; }
+
+    .safety-section {
+      color: #fff;
+      background: var(--blue);
+    }
+
+    .safety-layout {
+      display: grid;
+      grid-template-columns: .9fr 1.1fr;
+      gap: 54px;
+      align-items: center;
+    }
+
+    .safety-copy p {
+      max-width: 650px;
+      font-size: 18px;
+    }
+
+    .access-manager {
+      color: var(--ink);
+      border: var(--line);
+      background: var(--chrome);
+      box-shadow: 10px 10px 0 var(--ink);
+    }
+
+    .access-manager-body { padding: 24px; }
+
+    .manager-app {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      padding-bottom: 18px;
+      border-bottom: 2px dotted #777;
+    }
+
+    .manager-app img { width: 54px; }
+    .manager-app strong { display: block; }
+    .manager-app small { font-family: "Courier New", monospace; }
+
+    .manager-row {
+      display: grid;
+      grid-template-columns: 25px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 13px 0;
+      border-bottom: 1px dotted #777;
+      font-family: "Courier New", monospace;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .manager-row:last-child { border-bottom: 0; }
+
+    .state-ok {
+      padding: 2px 5px;
+      color: #fff;
+      background: var(--green);
+    }
+
+    .state-no {
+      padding: 2px 5px;
+      color: #fff;
+      background: var(--red);
+    }
+
+    footer {
+      color: #fff;
+      background: var(--ink);
+      border-top: var(--line);
+    }
+
+    .footer-inner {
+      width: min(var(--max), calc(100% - 32px));
+      margin: 0 auto;
+      padding: 34px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      font-size: 14px;
+    }
+
+    .footer-inner p { margin: 0; }
+    .footer-inner a { color: var(--cyan); }
+
+    @keyframes blink { 50% { opacity: 0; } }
+    @keyframes ticker { to { transform: translateX(-50%); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .prompt-box::after,
+      .ticker-track { animation: none; }
+    }
+
+    @media (max-width: 920px) {
+      .hero-inner,
+      .setup-layout,
+      .safety-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .hero-inner { padding-top: 54px; }
+      .desktop-scene { min-height: 520px; }
+      .path-grid,
+      .steps { grid-template-columns: 1fr; }
+      .menu-button { display: inline-flex; }
+
+      .nav-links {
+        position: fixed;
+        inset: 72px 0 auto;
+        padding: 18px 16px 24px;
+        display: none;
+        flex-direction: column;
+        align-items: stretch;
+        border-bottom: var(--line);
+        background: var(--paper);
+      }
+
+      .nav-links.open { display: flex; }
+      .nav-link, .nav-cta { width: 100%; }
+    }
+
+    @media (max-width: 620px) {
+      .section { padding: 64px 0; }
+      .hero-inner { min-height: auto; }
+      h1 { font-size: clamp(42px, 14vw, 60px); }
+      h2 { font-size: 36px; }
+      .desktop-scene { min-height: 610px; padding: 18px; }
+      .request-window { top: 20px; left: 18px; width: calc(100% - 36px); }
+      .file-window { top: 240px; right: 18px; width: calc(100% - 80px); }
+      .access-window { left: 18px; bottom: 34px; width: calc(100% - 36px); }
+      .path-head { grid-template-columns: 1fr; }
+      .path-number { width: 58px; height: 58px; }
+      .footer-inner { align-items: flex-start; flex-direction: column; }
+      .terminal pre { font-size: 11px; }
+    }
+  </style>
 </head>
 <body>
+  <a class="skip" href="#main">Skip to content</a>
 
-<div class="nav">
-  <div class="wrap nav-in">
-    <a class="brand" href="../../index.html"><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQACAYAAAB/HSuDAAAos0lEQVR4nO3dvZFkx5WG4ZoNOLEQaAkNGStGohkrwQoaMtRoAwQIwwg40SsMC93TU1V981b+nHPyeSQGBWIimDeT38sCebkAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEMff/u/lZfWfAQCY69PqPwAAMM+t4f/HPz75zwMAsAEPPgBs4Mh/4y8EAEBtHnoAKOzMT/2FAACoyQMPAAX1+Hv8hQAAqMXDDgCFjPgf9xMCAKAGDzoAFDDjf9VfCACA3DzkAJDYiv87PyEAAHLygANAQiuG/3tCAADk4uEGgEQiDP/3hAAAyMGDDQAJRBz+7wkBABCbhxoAAssw/N8TAgAgJg80AASUcfi/JwQAQCweZgAIpMLwf08IAIAYPMgAEEDF4f+eEAAAa3mIAWChHYb/e0IAAKzhAQaABXYc/u8JAQAwl4cXACYy/H8mBADAHB5cAJjA8P+YEAAAY3loAWAgw7+dEAAAY3hgAWAAw/95QgAA9OVhBYCODP/+hAAA6MODCgAdGP7jCQEA8BwPKQA8wfCfTwgAgHM8oABwguG/nhAAAG08nADQwPCPRwgAgGM8mABwgOEfnxAAAI95KAHgAcM/HyEAAG7zQALADYZ/fkIAAPzIwwgAbxj+9QgBAPCdBxEALob/DoQAAHbnIQRga4b/foQAAHblAQRgS4Y/QgAAu/HwAbAVw5/3hAAAduHBA2ALhj8fEQIAqM5DB0Bphj+thAAAqvLAAVCS4c+zhAAAqvGwAVCK4U9vQgAAVXjQACjB8Gc0IQCA7DxkAKRm+DObEABAVh4wAFIy/FlNCAAgGw8XAKkY/kQjBACQhQcLgBQMf6ITAgCIzkMFQGiGP9kIAQBE5YECICTDn+yEAACi8TABEIrhTzVCAABReJAACMHwpzohAIDVPEQALGX4sxshAIBVPEAALGH4szshAIDZPDwATGX4w4+EAABm8eAAMIXhD48JAQCM5qEBYCjDH9oIAQCM4oEBYAjDH54jBADQm4cFgK4Mf+hLCACgFw8KAF0Y/jCWEADAszwkADzF8Ie5hAAAzvKAAHCK4Q9rCQEAtPJwANDE8IdYhAAAjvJgAHCI4Q+xCQEAfMRDAcBDhj/kIgQAcI8HAoCbDH/ITQgA4D0PAwA/MPyhFiEAgCsPAgCXy8Xwh+qEAAA8BACbM/xhL0IAwL48AACbMvxhb0IAwH5c/ACbMfyBt4QAgH248AE2YfgDjwgBAPW56AGKM/yBFkIAQF0ueICiDH/gGUIAQD0udoBiDH+gJyEAoA4XOkARhj8wkhAAkJ+LHCA5wx+YSQgAyMsFDpCU4Q+sJAQA5OPiBkjG8AciEQIA8nBhAyRh+AORCQEA8bmoAYIz/IFMhACAuFzQAEEZ/kBmQgBAPC5mgGAMf6ASIQAgDhcyQBCGP1CZEACwnosYYDHDH9iJEACwjgsYYBHDH9iZEAAwn4sXYDLDH+CVEAAwjwsXYBLDH+A+IQBgPBctwGCGP8BxQgDAOC5YgEEMf4DzhACA/lysAJ0Z/gD9CAEA/bhQATox/AHGEQIAnuciBXiS4Q8wjxAAcJ4LFOAkwx9gHSEAoJ2LE6CR4Q8QhxAAcJwLE+Agwx8gLiEA4GMuSoAPGP4AeQgBAPe5IAHuMPwB8hICAH7mYgR4x/AHqEMIAHjlQgT4L8MfoC4hAEAAADD8ATYiBAA7cwEC2zL8AfYlBAA7cvEB2zH8AbgSAoCduPCAbRj+ANwjBAA7cNEB5Rn+ABwlBACVueCAsgx/AM4SAoCKXGxAOYY/AL0IAUAlLjSgDMMfgFGEAKACFxmQnuEPwCxCAJCZCwxIy/AHYBUhAMjIxQWkY/gDEIUQAGTiwgLSMPwBiEoIADJwUQHhGf4AZCEEAJG5oICwDH8AshICgIhcTEA4hj8AVQgBQCQuJCAMwx+AqoQAIAIXEbCc4Q/ALoQAYCUXELCM4Q/AroQAYAUXDzCd4Q8A3wkBwEwuHGAawx8AbhMCgBlcNMBwhj8AHCMEACO5YIBhDH8AOEcIAEZwsQDdGf4A0IcQAPTkQgG6MfwBYAwhAOjBRQI8zfAHgDmEAOAZLhDgNMMfANYQAoAzXBxAM8MfAGIQAoAWLgzgMMMfAGISAoAjXBTAhwx/AMhBCAAecUEAdxn+AJCTEADc4mIAfmL4A0ANQgDwlgsB+IvhDwA1CQHA5SIAABfDHwB2IQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAANDXp9V/AKCjL99env2X+Nvf/rfHnwQACOKPf//r+X+Rf/7dboACfln9BwBi+eOP/1wuFyEAALLrMvyBUgQA4CYhAAByMvyBewQA4CEhAAByMPyBjwgAwCFCAADEZPgDRwkAQBMhAABiMPyBVgIAcIoQAABrGP7AWQIA8BQhAADmMPyBZwkAQBdCAACMYfgDvQgAQFdCAAD0YfgDvQkAwBBCAACcY/gDowgAwFBCAAAcY/gDowkAwBRCAADcZvgDswgAwFRCAAB8Z/gDswkAwBJCAAC7MvyBVQQAYCkhAIBdGP7AagIAEIIQAEBVhj8QhQAAhCIEAFCF4Q9EIwAAIQkBAGRl+ANRCQBAaEIAAFkY/kB0AgCQghAAQFSGP5CFAACkIgQAEIXhD2QjAAApCQEArGL4A1kJAEBqQgAAsxj+QHYCAFCCEADAKIY/UIUAAJQiBADQi+EPVCMAACUJAQCcZfgDVQkAQGlCAABHGf5AdQIAsAUhAIB7DH9gFwIAsBUhAIArwx/YjQAAbEkIANiX4Q/sSgAAtiYEAOzD8Ad2JwAAXIQAgMoMf4DvBACAN4QAgDoMf4AfCQAANwgBAHkZ/gC3CQAADwgBAHkY/gCPCQAABwgBAHEZ/gDHCAAADYQAgDgMf4A2AgDACUIAwDqGP8A5AgDAE4QAgHkMf4DnCAAAHQgBAOMY/gB9CAAAHQkBAP0Y/gB9CQAAAwgBAOcZ/gBjCAAAAwkBAMcZ/gBjCQAAEwgBAPcZ/gBzCAAAEwkBAK8Mf4C5BACABYQAYGeGP8AaAgDAQkIAsBPDH2AtAQAgACEAqMzwB4hBAAAIRAgAKjH8AWIRAAACEgKAzAx/gJgEAIDAhAAgE8MfIDYBACABIQCIzPAHyEEAAEhECAAiMfwBchEAABISAoCVDH+AnAQAgMSEAGAmwx8gNwEAoAAhABjJ8AeoQQAAKEQIAHoy/AFqEQAAChICgGcY/gA1CQAAhQkBQAvDH6A2AQBgA0IA8IjhD7AHAQBgI0IA8JbhD7AXAQBgQ0IA7M3wB9iTAACwMSEA9mL4A+xNAABACIDiDH8ALhcBAIA3hACoxfAH4C0BAICfCAGQm+EPwC0CAAB3CQGQi+EPwCMCAAAfEgIgNsMfgCMEAAAOEwIgFsMfgBYCAADNhABYy/AH4AwBAIDThACYy/AH4BkCAABPEwJgLMMfgB4EAAC6EQKgL8MfgJ4EAAC6EwLgOYY/ACMIAAAMIwRAG8MfgJEEAACGEwLgMcMfgBkEAACmEQLgR4Y/ADMJAABMJwSwO8MfgBUEAACWEQLYjeEPwEoCAADLCQFUZ/gDEIEAAEAYQgDVGP4ARPI/q/8AwCC//fpp9R8Bzvrjj//8FQMgoz/+/S/jn9z++Xf/OQIK8mFDJV++vVwul5/H//Wfh6T8IoAsjH7Sez/8P399ufnPAyn5WwBgB9cgIASQlL81gOgMf9Iz8GELPnSo5Mu3l0M//RcCSE4IIArDn/SODP/PX18EAqjBLwBgR34RQHJ+EcBqhj/pGfSwJR8+IASQnhDALIY/6Rn+sDUXAPBKCCA5IYBRDH/SM/yBiwAA3CIEkJwQQC+GP+kZ/sAbLgTgPiGA5IQAzjL8Sc/wB25wMQAfEwJITgjgKMOf9Ax/4AEXBHCcEEByQgD3GP6kZ/gDB7gogHZCAMkJAVwZ/qRn+AMNXBjAeUIAyQkB+zL8Sc/wB05wcUAlX769XH77df53LQSQnBCwD8Of9FYM/89fXwQHqMGHDJW8HeJCADQTAuoy/Elv1fBf+dcHuvMhQyW3BrgQAM2EgDoMf9JbPfxX/jmA7nzIUMmj4S0EQDMhIC/Dn/SiDP8rAQBK8CFDJUcGtxAAzYSAPAx/0os2/K8EACjBhwyVtAxtIQCaCQFxGf6kF3X4XwkAUIIPGSo5M7CFAGgmBMRh+JNe9OF/JQBACT5kqOSZYS0EQDMhYB3Dn/SyDP8rAQBK8CFDJT0GtRAAzYSAeQx/0ss2/K8EACjBhwyV9BzSQgA0EwLGMfxJL+vwvxIAoAQfMlQyYkALAdBMCOjH8Ce97MP/SgCAEnzIUMnI4SwEQDMh4DzDn/SqDP8rAQBK8CFDJTMGsxAAzYSA4wx/0qs2/K8EACjBhwyVzBzKQgA0EwLuM/xJr+rwvxIAoAQfMlSyYiALAdBMCHhl+JNe9eF/JQBACT5kqGTlMBYCoNnOIcDwJ71dhv+VAAAl+JChkgiDWAiAZjuFAMOf9HYb/lcCAJTgQ4ZKIg1hIQCaVQ4Bhj/p7Tr8rwQAKMGHDJVEHMBCADSrFAIMf9LbffhfCQBQgg8ZKok8fIUAaJY5BBj+pGf4/0gAgBJ8yFBJhsErBECzTCHA8Cc9w/82AQBK8CFDJZmGrhAAzSKHAMOf9Az/xwQAKMGHDJVkHLhCADSLFAIMf9Iz/I8RAKAEHzJUknnYCgHQbGUIMPxJz/BvIwBACT5kqKTCoBUCoNnMEGD4k57hf44AACX4kKGSSkNWCIBmI0OA4U96hv9zBAAowYcMlVQcsEIANOsZAgx/0jP8+xAAoAQfMlRSebgKAdDsmRBg+JOe4d+XAAAl+JChkh0GqxAAzVpCgOFPeob/GAIAlOBDhkp2GqpCADR7FAIMf9Iz/McSAKAEHzJUsuNAFQKg2dsQYPiTnuE/hwAAJfiQoZKdh6kQAG3+/H31nwCeY/jPJQBACb+s/gMAdHEd4zNDwPWvJQQAzGP4A5wmAAC1CAEANRn+AE8TAICahACAGgx/gG4EAKA2IQAgJ8MfoDsBANiDEACQg+EPMIwAAOxFCACIyfAHGE4AAPYkBADEYPgDTCMAAHsTAgDWMPwBphMAAC4XIQBgFsMfYBkBAOAtIQBgDMMfYDkBAOAWIQCgD8MfIAwBAOARIQDgHMMfIBwBAOAIIQDgGMMfICwBAKCFEABwm+EPEJ4AAHCGEADwneEPkIYAAPAMIQDYleEPkI4AANCDEADswvAHSEsAAOhJCACqMvwB0hMAAEYQAoAqDH+AMgQAgJGEACArwx+gHAEAYAYhAMjC8AcoSwAAmEkIAKIy/AHKEwAAVhACgCgMf4BtCAAAKwkBwCqGP8B2BACACIQAYBbDH2BbAgBU9duvnwy7hIQAYBTDnxb//Psn//5BPfMfAmCce+PRsMtrZgi4cl728Ofvq/8EzGL40+L9ebn+e7niHAHd+QUA7MB/w5uXXwQAZxn+tDDwYQs+dKjky7eXQ0PRsMvLLwLoxS8A6jL8aXHkvHz++iIQQA1+AQA78t/w5uUXAcA9hj8tDHrYkg8fMOwy84sAzvILgDoMf1oY/rA1FwDwyrDLSwiglQCQn+FPC8MfuAgAwC2GXV5CAEcJAHkZ/rQw/IE3XAjAfYZdXkIAHxEA8jH8aWH4Aze4GICPGXZ5CQHcIwDkYfjTwvAHHnBBAMcZdnkJAbwnAMRn+NPC8AcOcFEA7Qy7vIQArgSAuAx/Whj+QAMXBnCeYZeXEIAAEI/hTwvDHzjBxQGVfPn2YtjRxHnZlwAQh+FPi1XnRXCAEnzIUMnbYWXY0cJ52Y8AsJ7hT4vV50UAgBJ8yFDJrUFl2NHCedmHALDO6iFHLlHOiwAAJfiQoZJHQ8qwo4XzUp8AMF+UIUcO0c6LAAAl+JChkiMDyrCjhfNSlwAwT7QhR2xRz4sAACX4kKGSluFk2NHCealHABgv6pAjpujnRQCAEnzIUMmZwWTY0cJ5qUMAGCf6kCOWLOdFAIASfMhQyTNDybCjhfOSnwDQX5YhRwzZzosAACX4kKGSHgPJsKOF85KXANBPtiHHWlnPiwAAJfiQoZKew8iwo4Xzko8A8LysQ441sp8XAQBK8CFDJSMGkWFHC+clDwHgvOxDjrmqnBcBAErwIUMlI4eQYUcL5yU+AaBdlSHHHNXOiwAAJfiQoZIZA8iwo4XzEpcAcFy1IcdYVc+LAAAl+JChkpnDx7CjhfMSjwDwsapDjjGqnxcBAErwIUMlKwaPYUcL5yUOAeC+6kOOvnY5LwIAlOBDhkpWDh3DjhbOy3oCwM92GXL0sdt5EQCgBB8yVBJh4Bh2tHBe1hEAXu025HjOrudFAIASfMhQSaRhY9jRwnmZTwDYd8hxzu7nRQCAEnzIUEnEQWPY0cJ5mWfnALD7kKON8/KdAAAl+JChkshDxrCjhfMy3o4BwJCjhfPyIwEASvAhQyUZBoxhRwvnZZydAoAhRwvn5TYBAErwIUMlmYaLYUcL56W/HQKAIUcL5+UxAQBK8CFDJRkHi2FHC+eln8oBwJCjhfNyjAAAJfiQoZLMQ8Wwo4Xz8ryKAcCQo4Xz0kYAgBJ8yFBJhYFi2NHCeTmvUgAw5GjhvJwjAEAJPmSopMowuVwMO9o4L+0qBABDjhbOy3MEACjBhwyVZB8ktxh2tHBejsscAAw5WjgvfQgAUIIPGSrJOkSOMOxo4bx8LGMAMORo4bz0JQBACT5kqCTbADnDsKOF83JfpgBgyNHCeRlDAIASfMhQSZbh0YNhRwvn5WcZAoAhRwvnZSwBAErwIUMl0QfHCIYdLZyXV5EDgCFHC+dlDgEASvAhQyVRh8YMhh0tnJeYAcCQo4XzMpcAACX4kKGSaANjBcOOFjufl0gBwJCjhfOyhgAAJfiQoZIowyKCnYcd7XY8LxECgCFHC+dlLQEASvAhQyWrB0VEOw47ztvpvKwMAIYcLZyXGAQAKMGHDJUYnvftNOx43g7nZUUAMORo4bzEIgBACT5kqMTg/NgOw45+Kp+XmQHAkKOF8xKTAAAl+JChEkPzuMrDjv4qnpcZAcCQo4XzEpsAACX4kKESA7NdxWHHOJXOy8gAYMjRwnnJQQCAEnzIUIlheV6lYcd4Fc7LiABgyNHCeclFAIASfMhQiUH5vArDjnkyn5eeAcCQo4XzkpMAACX4kKESQ7KfzMOO+TKelx4BwJCjhfOSmwAAJfiQoRIDsr+Mw451Mp2XZwKAIUcL56UGAQBK8CFDJYbjOJmGHetlOC9nAoAhRwvnpRYBAErwIUMlBuN4GYYdcUQ+Ly0BwJCjhfNSkwAAJfiQoRJDcZ7Iw454Ip6XIwHAkKOF81KbAAAl+JChEgNxvojDjrginZdHAcCQo4XzsgcBAErwIUMlhuE6kYYd8UU4L7cCgCFHC+dlLwIAlOBDhkoMwvUiDDvyWHle3gYAQ44WzsueBAAowYcMlRiCcQgBtFhxXj5/fTHkaOK87E0AgBJ8yFCJARiPEECLFedlFkMuL8Ofy0UAgCJ8yFCJ4ReXEECLSiHAkMvL8OctAQBK8CFDJQZffEIALTKHAEMuL8OfWwQAKMGHDJUYenkIAbTIFAIMubwMfx4RAKAEHzJUYuDlIwTQInIIMOTyMvw5QgCAEnzIUIlhl5cQQItIIcCQy8vwp4UAACX4kKESgy4/IYAWK0OAIZeX4c8ZAgCU4EOGSgy5OoQAWsw8L4ZcXoY/zxAAoAQfMlRiwNUjBNCi5bx8/vrS9B/oDbm8DH96EACghF9W/wEAeOA6xmeGgOtfSwjIZ8R5MeTyMvwBeEfJg0oMtvr8IoAW987Ll28vlz9///6P741EQy4vw58R/AIASvALAIBM/CKAFmfOiyGXl+EPwAeUPKjEQNuPXwTQ4rdfP/3179/1FwCXy/fhaMjlZfgzg18AQAk+ZKjEMNuXEECrtwGAnAx/ZhIAoAR/CwBABf7WANiH4Q/ASQIAQCVCANRl+APwJAEAoCIhAOow/AHoRAAAqEwIgLwMfwA6EwAAdiAEQB6GPwCDCAAAOxECIC7DH4DBBACAHQkBEIfhD8AkAgDAzoQAWMfwB2AyAQAAIQBmMvwBWEQAAOCVEADjGP4ALCYAAPAzIQD6MfwBCEIAAOA+IQDOM/wBCEYAAOBjQgAcZ/gDEJQAAMBxQgDcZ/gDENz8hwoYz1Bilpkh4Mr57uPP31f/Ceow/KlsxfkGhvFBQ2WGErMIAfkIAM8z/KnM8IeSfNiwA0OJWYSAPASA8wx/KjP8oTQfOOzEUGIWISA+AaCd4U9lhj9swYcOOzKUmEUIiEsAOM7wpzLDH7big4edGUrMIgTEIwB8zPCnMsMftuTDBwwl5hEC4hAA7jP8qczwh625AIBXhhKzCAHrCQA/M/ypzPAHLgIAcIuhxCxCwDoCwCvDn8oMf+ANFwJwn6HELELAfAKA4U9thj9wg4sB+NjuQ4l5hIB5dg4Ahj+VGf7AAy4I4LhdhxLzCQHj7RgADH8qM/yBA1wUQLvdhhLrCAHj7BQADH8qM/yBBi4M4LxdhhLrCQH97RAADH8qM/yBE1wcwPOqDyXiEAL6qRwADH8qM/yBJ7hAgH6qDiXiEQKeVzEAGP5UZvgDHbhIgP6qDSXiEgLOqxQADH8qM/yBjlwowDhVhhLxCQHtKgQAw5/KDH9gABcLMF72oUQeQsBxmQOA4U9lhj8wkAsGmCfrUCIfIeBjGQOA4U9lhj8wgYsGmC/bUCIvIeC+TAHA8Kcywx+YyIUDrJNlKJGfEPCzDAHA8Kcywx9YwMUDrBd9KFGHEPAqcgAw/KnM8AcWcgEBcUQdStQjBMQMAIY/lRn+QAAuIiCeaEOJunYOAZECgOFPZYY/EIgLCYgrylCivh1DQIQAYPhTmeEPBORiAuJbPZTYx04hYGUAMPypzPAHAnNBAXkIAcyyQwhYEQAMfyoz/IEEXFRAPkIAs1QOATMDgOFPZYY/kIgLC8hLCGCWiiFgRgAw/KnM8AcScnEB+QkBzFIpBIwMAIY/lRn+QGIuMKAOIYBZKoSAEQHA8Kcywx8owEUG1CMEMEvmENAzABj+VGb4A4W40IC6hABmyRgCegQAw5/KDH+gIBcbUJ8QwCyZQsAzAcDwpzLDHyjMBQfsQwhglgwh4EwAMPypzPAHNuCiA/YjBDBL5BDQEgAMfyoz/IGNuPCAfQkBzBIxBBwJAIY/lRn+wIZcfABCALNECgGPAoDhT2WGP7AxFyDAlRDALBFCwK0AYPhTmeEPIAAA/EQIYJaVIeBtADD8qczwB/iLCxHgHiGAWVaEgM9fXwx/SjP8AX7iYgT4iBDALCtCwCyGP7MY/gB3uSABjhICmKVSCDD8mcXwB/iQixKglRDALJlDgOHPLIY/wGEuTICzhABmyRQCDH9mMfwBmrk4AZ4lBDBL5BBg+DOL4Q9wmgsUoBchgFkihQDDn1kMf4CnuUgBehMCmGVlCDD8mcXwB+jGhQowihDALDNDgOHPLIY/QHcuVoDRhABmaQkBn7++NA0sw59ZDH+AYX5Z/QcAKO86yoQARruesZ6/CDD8mcXwBxjORQswmxDALPdCwJdvL5c/f//+j++NLsOfWQx/gGn8AgBgNr8IYJYzvwgw/JnF8AeYzsULsJoQwCy//frpr/N2/QXA5fJ9iBn+zGL4AyzjAgaIQghgprcBAGYw/AGWcxEDRCMEMIMAwCyGP0AYLmSAqIQARhIAGM3wBwjHxQwQnRDACAIAoxj+AGG5oAGyEALoSQCgN8MfIDwXNUA2QgA9CAD0YvgDpOHCBshKCOAZAgDPMvwB0nFxA2QnBHCGAMBZhj9AWi5wgCqEAFoIALQy/AHSc5EDVCMEcIQAwFGGP0AZLnSAqoQAHhEA+IjhD1COix2gOiGAWwQA7jH8AcpywQPsQgjgLQGA9wx/gPJc9AC7EQK4XAQAXhn+ANtw4QPsSgjYmwCA4Q+wHRc/wO6EgD0JAPsy/AG25QEA4DshYC8CwH4Mf4DteQgA+JEQsAcBYB+GPwD/5UEA4DYhoDYBoD7DH4B3PAwAPCYE1CQA1GX4A3CHBwKAY4SAWgSAegx/AD7goQCgjRBQgwBQh+EPwEEeDADOEQJyEwDyM/wBaOThAOA5QkBOAkBehj8AJ3lAAOhDCMhFAMjH8AfgSR4SAPoSAnIQAPIw/AHoxIMCwBhCQGwCQHyGPwCdeVgAGEsIiEkAiMvwB2AQDwwAcwgBsQgA8Rj+AAzmoQFgLiEgBgEgDsMfgEk8OACsIQSsJQCsZ/gDMJmHB4C1hIA1BIB1DH8AFvEAARCDEDCXADCf4Q/AYh4iAGIRAuYQAOYx/AEIwoMEQExCwFgCwHiGPwDBeJgAiE0IGEMAGMfwByAoDxQAOQgBfQkA/Rn+AATnoQIgFyGgDwGgH8MfgCQ8WADkJAQ8RwB4nuEPQDIeLgByEwLOEQDOM/wBSMoDBkANQkAbAaCd4Q9Ach4yAGoRAo4RAI4z/AEowoMGQE1CwGMCwMcMfwCK8bABUJsQcJsAcJ/hD0BRHjgA9iAE/EgA+JnhD0BxHjoA9iIEfCcAvDL8AdiEBw+APe0eAgQAwx+A7Xj4ANjbriFg5wBg+AOwKQ8gAFwu+4WAHQOA4Q/A5jyEAPDWLiFgpwBg+APA5XIRAADgtuohYIcAYPgDwA88jADwSNUQUDkAGP4AcJMHEgCOqBYCKgYAwx8AHvJQAkCLKiGgUgAw/AHgEA8mAJyRPQRUCACGPwA08XACwDOyhoDMAcDwB4BTPKAA0EO2EJAxABj+APAUDykA9JQlBGQKAIY/AHThQQWAEaKHgAwBwPAHgK48rAAwUtQQEDkAGP4AMIQHFgBmiBYCIgYAwx8AhvLQAsBMUUJApABg+APAFB5cAFhhdQiIEAAMfwCYysMLACutCgErA4DhDwBLeIABIILZIWBFADD8AWApDzEARDIrBMwMAIY/AITgQQaAiEaHgBkBwPAHgFA8zAAQ2agQMDIAGP4AEJIHGgAy6B0CRgQAwx8AQvNQA0AmvUJAzwBg+ANACh5sAMjo2RDQIwAY/gCQiocbADI7GwKeCQCGPwCk5AEHgApaQ8CZAGD4A0BqHnIAqORoCGgJAIY/AJTgQQeAij4KAUcCgOEPAKV42AGgsnsh4FEAMPwBoCQPPADs4H0IuBUADH8AKM1DDwA7uYaAtwHA8AcAAICiPn89938fCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwHT/DyGSZwHviNZiAAAAAElFTkSuQmCC" alt="" /><span>Krate</span></a>
-    <nav class="nav-links">
-      <a href="#use">Use an app</a>
-      <a href="#make">Make apps</a>
-      <a href="#ai">For AI teams</a>
-      <a href="../index.html">Docs</a>
-    </nav>
-    <a class="btn btn-primary" href="#setup">Get started</a>
-  </div>
-</div>
+  <nav class="site-nav" aria-label="Primary navigation">
+    <div class="nav-inner">
+      <a class="brand" href="../../index.html" aria-label="Krate home">
+        <img src="../../krate-app-icon.png" alt="" />
+        <span>Krate</span>
+      </a>
 
-<header class="hero">
-  <div class="glow"></div>
-  <div class="wrap hero-in">
-    <span class="eyebrow">One app. One file. Opens anywhere.</span>
-    <h1>Ask for an app. Get one file. <span class="kw">Share it anywhere.</span></h1>
-    <p class="sub">Every Krate app is a single file that shows exactly what it can touch before it runs. Make one by describing it, or have your AI agent build it.</p>
-    <div class="hero-cta">
-      <a class="btn btn-primary" href="#make">Make an app</a>
-      <a class="btn btn-ghost" href="#use">I was sent an app</a>
-    </div>
+      <button class="menu-button" id="menuButton" aria-expanded="false" aria-controls="navLinks" aria-label="Open navigation">☰</button>
 
-    <div class="stage">
-      <div class="tile t1"><svg viewBox="0 0 24 24" fill="none"><rect x="3.2" y="4.5" width="17.6" height="15" rx="2.6" fill="none" stroke="#1e88ff" stroke-width="1.5"/><path d="M3.2 8.4h17.6" stroke="#1e88ff" stroke-width="1.5"/><circle cx="5.8" cy="6.45" r="0.7" fill="#1e88ff"/><circle cx="7.9" cy="6.45" r="0.7" fill="#1e88ff"/><path d="M6.5 12.2h8M6.5 15.2h5.5" stroke="#8fb8f0" stroke-width="1.5" stroke-linecap="round"/></svg><span class="cap">permission</span></div>
-      <div class="tile t2"><img src="data:image/png;base64,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EEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEEAAAAAAgAACAAAAAAQQAAAAACCAAAAAAAABBAAAAAAIIAAAAABAAAEAAAAAAggAAAAAEODz2Q8A3O7rb7+b/QgAAEAx3gAAAACAAAIAAAAABBAAAAAAIIAAAAAAAAEEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYJb/A9BUlXfAJUBOAAAAAElFTkSuQmCC" alt="a .krate file" /><span class="cap">one file</span></div>
-      <div class="tile t3"><svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2.6" fill="none" stroke="#1e88ff" stroke-width="1.5"/><path d="M6.6 9.6l2.6 2.6-2.6 2.6" stroke="#1e88ff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M12.4 14.6h4.6" stroke="#8fb8f0" stroke-width="1.6" stroke-linecap="round"/></svg><span class="cap">your request</span></div>
-      <div class="tile t4"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.4" fill="none" stroke="#1a9e6a" stroke-width="1.6"/><path d="M8.2 12.3l2.5 2.5L15.8 9.3" stroke="#1a9e6a" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="cap">verified</span></div>
-
-      <!-- The real Krate mark: a separated lid floating above a 3-layer crate.
-           Isometric diamond: centre x=100, half-width 56, quarter-height 28.
-           Colours follow krate-glyph-blue.png (bright top, mid-blue left face,
-           dark-blue right face), with thin gaps between the three layers. -->
-      <svg viewBox="0 0 200 212" aria-label="Krate logo assembling">
-        <!-- lid: a flat bright diamond, floating above the crate with a gap -->
-        <g class="part lidp">
-          <polygon points="100,24 156,52 100,80 44,52" fill="#2b8bff"/>
-        </g>
-        <!-- layer 1: bright top face + left (mid) and right (dark) side faces -->
-        <g class="part lyr1">
-          <polygon points="100,90 156,118 100,146 44,118" fill="#2b8bff"/>
-          <polygon points="44,118 100,146 100,162 44,134" fill="#1a78ec"/>
-          <polygon points="156,118 100,146 100,162 156,134" fill="#0f66d6"/>
-        </g>
-        <!-- layer 2 -->
-        <g class="part lyr2">
-          <polygon points="44,140 100,168 100,184 44,156" fill="#1a78ec"/>
-          <polygon points="156,140 100,168 100,184 156,156" fill="#0f66d6"/>
-        </g>
-        <!-- layer 3 -->
-        <g class="part lyr3">
-          <polygon points="44,162 100,190 100,206 44,178" fill="#1a78ec"/>
-          <polygon points="156,162 100,190 100,206 156,178" fill="#0f66d6"/>
-        </g>
-      </svg>
-    </div>
-  </div>
-</header>
-
-<main>
-  <!-- three audience paths -->
-  <section class="section">
-    <div class="wrap">
-      <div class="section-head">
-        <div class="kicker">Pick your path</div>
-        <h2>Three ways in. Choose the one that is you.</h2>
-      </div>
-      <div class="paths">
-        <a class="path" href="#use">
-          <div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M7 3h7l4 4v14H7z" fill="none" stroke="#1e88ff" stroke-width="1.6" stroke-linejoin="round"/><path d="M14 3v4h4" stroke="#1e88ff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
-          <div class="who">Someone sent me an app</div>
-          <h3>Open and use an app</h3>
-          <p>You have a <code>.krate</code> file. Open it, see what it can access, allow it, and use it. No coding.</p>
-          <div class="go">How to open it &rarr;</div>
-        </a>
-        <a class="path" href="#make">
-          <div class="ic"><svg viewBox="0 0 24 24" fill="none"><path d="M4 7l8-4 8 4-8 4-8-4z" fill="none" stroke="#1e88ff" stroke-width="1.6" stroke-linejoin="round"/><path d="M4 12l8 4 8-4M4 17l8 4 8-4" stroke="#1e88ff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
-          <div class="who">I want to build something</div>
-          <h3>Make an app</h3>
-          <p>Describe an app in one sentence, or write your own. Get one file you can share with anyone.</p>
-          <div class="go">Start making &rarr;</div>
-        </a>
-        <a class="path" href="#ai">
-          <div class="ic"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="7.5" width="16" height="11" rx="3" fill="none" stroke="#1e88ff" stroke-width="1.6"/><circle cx="9.2" cy="13" r="1.2" fill="#1e88ff"/><circle cx="14.8" cy="13" r="1.2" fill="#1e88ff"/><path d="M12 4.2v3.3" stroke="#1e88ff" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="3.4" r="1.1" fill="#1e88ff"/></svg></div>
-          <div class="who">We build AI agents</div>
-          <h3>Ship apps from your agent</h3>
-          <p>Have your agent produce real apps that can only touch what the user allows, checked and packaged automatically.</p>
-          <div class="go">The agent path &rarr;</div>
-        </a>
+      <div class="nav-links" id="navLinks">
+        <a class="nav-link" href="#use">Open an app</a>
+        <a class="nav-link" href="#make">Make an app</a>
+        <a class="nav-link" href="#ai">For AI teams</a>
+        <a class="nav-link" href="../index.html">Docs</a>
+        <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
+        <a class="nav-cta" href="#setup">Get Krate</a>
       </div>
     </div>
-  </section>
+  </nav>
 
-  <!-- setup -->
-  <section id="setup" class="section" style="scroll-margin-top:80px;">
-    <div class="wrap"><div class="track">
-      <div class="section-head" style="margin-bottom:24px;">
-        <div class="kicker">Set up once</div>
-        <h2>Get the <code>krate</code> tool</h2>
-        <p class="lead">You need this on any computer where you want to open or make Krate apps. It is one line. Paste it into a terminal and press enter. On a Mac, Terminal is in Applications, under Utilities.</p>
+  <main id="main">
+    <section class="hero">
+      <div class="hero-inner">
+        <div class="hero-copy">
+          <div class="eyebrow">Krate app maker</div>
+          <h1>Ask for an app. Get one file. <span class="underline">Send it.</span></h1>
+          <p>Make a small app from a request, or connect your coding agent. Krate gives you one file that opens on Mac, Windows, and Linux and shows its access before it runs.</p>
+
+          <div class="hero-actions">
+            <a class="button primary" href="#make">Make an app</a>
+            <a class="button" href="#use">I received one</a>
+          </div>
+
+          <div class="micro-proof" aria-label="Product highlights">
+            <span>One app file</span>
+            <span>Three operating systems</span>
+            <span>Clear access</span>
+          </div>
+        </div>
+
+        <div class="desktop-scene" aria-label="A request becomes a Krate app with clear permissions">
+          <div class="window request-window">
+            <div class="window-title">
+              <span>MAKE_APP.EXE</span>
+              <span class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></span>
+            </div>
+            <div class="window-body">
+              <span class="prompt-label">What do you need?</span>
+              <div class="prompt-box">Make a checklist app that saves locally.</div>
+            </div>
+          </div>
+
+          <div class="window file-window">
+            <div class="window-title pink">
+              <span>YOUR_APP</span>
+              <span class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></span>
+            </div>
+            <div class="file-stage">
+              <img src="../../krate-document-icon.png" alt="" />
+              <span><strong>checklist.krate</strong><small>READY TO SHARE</small></span>
+            </div>
+          </div>
+
+          <div class="window access-window">
+            <div class="window-title cyan">
+              <span>ACCESS_MANAGER</span>
+              <span class="window-controls" aria-hidden="true"><i>×</i></span>
+            </div>
+            <div class="window-body">
+              <div class="access-line"><span class="access-check">✓</span><span>Show a window</span><span class="access-state">ALLOW</span></div>
+              <div class="access-line"><span class="access-check">✓</span><span>Save checklist items</span><span class="access-state">ALLOW</span></div>
+            </div>
+          </div>
+
+          <span class="desktop-label">KRATE DESKTOP 1.0</span>
+        </div>
       </div>
-      <div class="term"><div class="term-bar"><i></i><i></i><i></i></div><pre>curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh</pre></div>
-      <div class="note">That downloads the ready-made tool and sets it up for you. When it finishes you have a tool called <code>krate</code> and setup is done. It carries everything it needs inside it, so you never repeat this step. <strong>Building from source?</strong> Install <a href="https://rustup.rs">Rust</a>, then <code>cargo build --release -p krate-cli</code>.</div>
-    </div></div>
-  </section>
+    </section>
 
-  <!-- PATH 1 -->
-  <section id="use" class="section" style="scroll-margin-top:80px;">
-    <div class="wrap"><div class="track">
-      <div class="track-head"><span class="pin">For anyone</span><h2>Someone sent you a <code>.krate</code></h2></div>
-      <div class="steps">
-        <div class="step"><div class="num">1</div><div><h3>Double-click the file</h3><p>Before anything runs, a window appears listing exactly what the app wants to use. For example a window, and read and write to its own folder. Nothing else on your machine is reachable.</p></div></div>
-        <div class="step"><div class="num">2</div><div><h3>Read the list, then allow it</h3><p>You can see everything it is asking for. If it looks right, allow it and the app opens. If it ever asks for more than it should, that is your sign to say no.</p></div></div>
-        <div class="step"><div class="num">3</div><div><h3>Use it, close it, open it again</h3><p>It works like any normal app, and everything you do is saved as you go. Open the file again later and it is exactly as you left it. The same file works on Mac, Windows, and Linux.</p></div></div>
+    <div class="ticker" aria-hidden="true">
+      <div class="ticker-track">
+        <p>&nbsp; ASK FOR AN APP <b>✦</b> GET ONE FILE <b>✦</b> OPEN ON MAC, WINDOWS, AND LINUX <b>✦</b> REVIEW ACCESS FIRST <b>✦</b>&nbsp;</p>
+        <p>&nbsp; ASK FOR AN APP <b>✦</b> GET ONE FILE <b>✦</b> OPEN ON MAC, WINDOWS, AND LINUX <b>✦</b> REVIEW ACCESS FIRST <b>✦</b>&nbsp;</p>
       </div>
-      <div class="note safe"><strong>Try saying no.</strong> Open it again and decline what it needs. It does not start at all. It never opens half working. That check happens before the app's code runs, and that wall is the whole point.</div>
-    </div></div>
-  </section>
+    </div>
 
-  <!-- PATH 2 -->
-  <section id="make" class="section" style="scroll-margin-top:80px;">
-    <div class="wrap"><div class="track">
-      <div class="track-head"><span class="pin">For makers</span><h2>Describe an app. Get one file to share.</h2></div>
-      <div class="steps">
-        <div class="step"><div class="num">1</div><div><h3>Say what you want</h3><p>Open a terminal and run this, changing the sentence to describe your app.</p>
-          <div class="term"><div class="term-bar"><i></i><i></i><i></i></div><pre><span class="cmd">krate create</span> "Make a checklist app that saves my items" \
-  --output checklist.krate</pre></div></div></div>
-        <div class="step"><div class="num">2</div><div><h3>Krate does the rest</h3><p>It writes the app, builds it, checks it can only touch what it says, packages it, and proves it works before the file even exists.</p>
-          <div class="term"><div class="term-bar"><i></i><i></i><i></i></div><pre><span class="good">Created checklist.krate</span>
-  requested access:
-    <span class="mut">- a window</span>
-    <span class="mut">- read and write its own "checklist" folder</span></pre></div></div></div>
-        <div class="step"><div class="num">3</div><div><h3>Send the file</h3><p>It is one ordinary file. Email it, message it, or drop it in a shared folder. Whoever gets it opens it with the steps above. They do not need to trust you or read any code.</p></div></div>
+    <section class="section" id="start">
+      <div class="section-inner">
+        <div class="section-heading center">
+          <p class="kicker">Start menu</p>
+          <h2>Choose what you want to do.</h2>
+          <p>You do not need to understand runtimes or app packaging first. Pick your path and Krate will show you the next step.</p>
+        </div>
+
+        <div class="path-grid">
+          <article class="path-card">
+            <div class="card-bar"><span>OPEN_APP</span><span>□ ×</span></div>
+            <div class="card-body">
+              <div class="retro-icon" aria-hidden="true">↗</div>
+              <h3>I received a Krate app</h3>
+              <p>Install Krate once, double-click the file, review what it needs, and open it.</p>
+              <a class="text-link" href="#use">Show me how →</a>
+            </div>
+          </article>
+
+          <article class="path-card">
+            <div class="card-bar pink"><span>CREATE_APP</span><span>□ ×</span></div>
+            <div class="card-body">
+              <div class="retro-icon" aria-hidden="true">+</div>
+              <h3>I want to make an app</h3>
+              <p>Create a small app from a supported request, or build one yourself with the Krate SDK.</p>
+              <a class="text-link" href="#make">Make an app →</a>
+            </div>
+          </article>
+
+          <article class="path-card">
+            <div class="card-bar cyan"><span>CONNECT_AGENT</span><span>□ ×</span></div>
+            <div class="card-body">
+              <div class="retro-icon" aria-hidden="true">◎</div>
+              <h3>We build AI products</h3>
+              <p>Connect your coding agent so it can hand users a local app instead of loose code.</p>
+              <a class="text-link" href="#ai">See the integration →</a>
+            </div>
+          </article>
+        </div>
       </div>
-      <div class="note"><strong>Want to write the code yourself?</strong> You can. Write a Krate app and package it with <code>krate pack</code>. The full developer version is in the <a href="../create-and-share.html">Create and Share an App</a> guide.</div>
-    </div></div>
-  </section>
+    </section>
 
-  <!-- PATH 3 -->
-  <section id="ai" class="section" style="scroll-margin-top:80px;">
-    <div class="wrap"><div class="track">
-      <div class="track-head"><span class="pin">For AI teams</span><h2>Give your agent a safe way to hand people real apps</h2></div>
-      <p class="lead" style="max-width:740px;">Your agent already writes code. The hard part is letting a person run that code without handing it their whole machine. Krate is that missing piece: your agent writes the app, and the result is one file that can only touch what the user allows, checked and proven before it reaches them.</p>
-      <div class="steps" style="margin-top:22px;">
-        <div class="step"><div class="num">1</div><div><h3>Your agent writes the app</h3><p>Point <code>krate create</code> at your agent with <code>--author-cmd</code>. Your agent is handed the request and writes the app. Nothing about your model or stack has to change.</p>
-          <div class="term"><div class="term-bar"><i></i><i></i><i></i></div><pre><span class="cmd">krate create</span> "Make a checklist app that saves locally" \
-  --author-cmd "<span class="mut">your agent command</span>" \
-  --output checklist.krate</pre></div></div></div>
-        <div class="step"><div class="num">2</div><div><h3>Krate checks and proves it</h3><p>Krate builds what your agent wrote, confirms it uses only Krate's safe interfaces and never the raw machine, packages it, and proves its permission wall. If the agent reached for something unsafe, it is caught here, not on a user's computer.</p></div></div>
-        <div class="step"><div class="num">3</div><div><h3>You get a file and a record</h3><p>Out comes one <code>.krate</code> to hand to the user, plus a short transcript listing exactly what it may access and that its wall was verified.</p></div></div>
+    <section class="section setup-section" id="setup">
+      <div class="section-inner">
+        <div class="setup-window">
+          <div class="panel-title">
+            <span>KRATE SETUP WIZARD</span>
+            <span class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></span>
+          </div>
+          <div class="setup-body">
+            <div class="setup-layout">
+              <div class="setup-copy">
+                <p class="kicker">Set up once</p>
+                <h2>Get the <code>krate</code> tool.</h2>
+                <p>You need it on any computer where you want to open or make Krate apps. Paste this line into a terminal and press Enter.</p>
+              </div>
+              <div class="terminal">
+                <div class="terminal-bar">TERMINAL.EXE</div>
+                <pre>curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh</pre>
+              </div>
+            </div>
+            <div class="note"><strong>Making an app?</strong> <code>krate create</code> also needs the Rust build tools. It checks what is missing before it starts. Run <code>krate doctor</code> any time to see what is ready.</div>
+          </div>
+        </div>
       </div>
-      <div class="note"><strong>The safety contract is simple and machine-readable.</strong> A Krate app may use only <code>krate:*</code> interfaces, so it can never reach the raw operating system, and every capability it wants is declared up front. That is a wall your agent can build against and your users can trust.</div>
-    </div></div>
-  </section>
+    </section>
 
-  <!-- why safe -->
-  <section class="section safe-band">
-    <div class="wrap"><div class="safe-grid">
-      <div>
-        <div class="kicker">Why this is safe to share</div>
-        <h2>An app can only touch what you allow</h2>
-        <p style="margin-top:14px;">Running someone's app usually means trusting it with your whole computer. Krate turns that around. Every app declares what it needs, that list is shown to you before it runs, and it can never reach past what you approve.</p>
-        <p>Because the app was checked and its wall proven at the moment it was made, a broken or overreaching app never becomes a file you could send in the first place.</p>
+    <section class="section path-section alt" id="use">
+      <div class="section-inner">
+        <div class="path-head">
+          <div class="path-number">01</div>
+          <div>
+            <p class="kicker">For anyone</p>
+            <h2>Someone sent you a <code>.krate</code> file.</h2>
+          </div>
+        </div>
+
+        <div class="path-window">
+          <div class="panel-title">
+            <span>OPEN_APP.WIZ</span>
+            <span class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></span>
+          </div>
+          <div class="path-body">
+            <div class="steps">
+              <article class="step">
+                <div class="step-number">1</div>
+                <h3>Double-click the file</h3>
+                <p>Krate shows what the app wants before any app code runs. You might see a window and access to its own data folder.</p>
+              </article>
+              <article class="step">
+                <div class="step-number">2</div>
+                <h3>Review the list</h3>
+                <p>If the request makes sense, allow it. If it asks for something it should not need, say no.</p>
+              </article>
+              <article class="step">
+                <div class="step-number">3</div>
+                <h3>Use the app</h3>
+                <p>Close it and open it later. Its approved data stays saved, and the same app file works on Mac, Windows, and Linux.</p>
+              </article>
+            </div>
+            <div class="note"><strong>Try saying no.</strong> Withhold access the app requires and it does not start. The app cannot ignore your choice.</div>
+          </div>
+        </div>
       </div>
-      <div class="wall" aria-hidden="true">
-        <div class="row ok"><span class="dot"></span><span class="k">read / write ./checklist</span><span class="tag">allowed</span></div>
-        <div class="row ok"><span class="dot"></span><span class="k">show a window</span><span class="tag">allowed</span></div>
-        <div class="row no"><span class="dot"></span><span class="k">the rest of your files</span><span class="tag">blocked</span></div>
-        <div class="row no"><span class="dot"></span><span class="k">the internet</span><span class="tag">blocked</span></div>
+    </section>
+
+    <section class="section path-section blue" id="make">
+      <div class="section-inner">
+        <div class="path-head">
+          <div class="path-number">02</div>
+          <div>
+            <p class="kicker">For makers</p>
+            <h2>Describe a small app. Get one file.</h2>
+          </div>
+        </div>
+
+        <div class="path-window">
+          <div class="panel-title">
+            <span>CREATE_APP.WIZ</span>
+            <span class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></span>
+          </div>
+          <div class="path-body">
+            <div class="steps">
+              <article class="step">
+                <div class="step-number">1</div>
+                <h3>Say what you want</h3>
+                <p>The built-in creator currently knows how to make a checklist and a word frequency tool.</p>
+                <div class="terminal">
+                  <div class="terminal-bar">TERMINAL.EXE</div>
+                  <pre><span class="cmd">krate create</span> "Make a checklist app that saves my items" \
+  --output checklist.krate</pre>
+                </div>
+              </article>
+              <article class="step">
+                <div class="step-number">2</div>
+                <h3>Krate builds and checks it</h3>
+                <p>Krate generates the supported app, checks its imports, packages it, and tests that its permission wall behaves correctly.</p>
+                <div class="terminal">
+                  <div class="terminal-bar">BUILD STATUS</div>
+                  <pre><span class="good">Created checklist.krate</span>
+<span class="muted">requested access:
+  - show a window
+  - save checklist items</span></pre>
+                </div>
+              </article>
+              <article class="step">
+                <div class="step-number">3</div>
+                <h3>Send the file</h3>
+                <p>Email it, message it, or put it in a shared folder. The next person opens the same file and reviews its access first.</p>
+              </article>
+            </div>
+            <div class="note"><strong>Want to build something else?</strong> Write it with the Krate SDK and package it using <code>krate pack</code>. Follow the <a href="../create-and-share.html">Create and Share an App</a> guide.</div>
+          </div>
+        </div>
       </div>
-    </div></div>
-  </section>
-</main>
+    </section>
 
-<footer>
-  <div class="wrap">Krate is pre-alpha. Want the exact commands and the developer version? See the <a href="../create-and-share.html">Create and Share an App</a> guide.</div>
-</footer>
+    <section class="section path-section alt" id="ai">
+      <div class="section-inner">
+        <div class="path-head">
+          <div class="path-number">03</div>
+          <div>
+            <p class="kicker">For AI teams</p>
+            <h2>Let your coding agent deliver a real app.</h2>
+            <p class="section-lead">Your agent already writes code. Krate gives it a route from a request to one local app file with declared access.</p>
+          </div>
+        </div>
 
+        <div class="path-window">
+          <div class="panel-title">
+            <span>AGENT_CONNECT.WIZ</span>
+            <span class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></span>
+          </div>
+          <div class="path-body">
+            <div class="steps">
+              <article class="step">
+                <div class="step-number">1</div>
+                <h3>Connect your author command</h3>
+                <p>Point <code>krate create</code> at the command that invokes your coding agent. Krate hands it the request and a folder where it writes the app.</p>
+                <div class="terminal">
+                  <div class="terminal-bar">TERMINAL.EXE</div>
+                  <pre><span class="cmd">krate create</span> "Make a checklist app" \
+  --author-cmd "<span class="muted">your agent command</span>" \
+  --output checklist.krate</pre>
+                </div>
+              </article>
+              <article class="step">
+                <div class="step-number">2</div>
+                <h3>Krate checks the result</h3>
+                <p>Krate builds the app, rejects raw operating system imports, packages it, and tests its declared permission wall.</p>
+              </article>
+              <article class="step">
+                <div class="step-number">3</div>
+                <h3>Hand the user one file</h3>
+                <p>The user receives a <code>.krate</code> file, sees what it requests, and decides what it may access before it opens.</p>
+              </article>
+            </div>
+            <div class="note"><strong>The integration seam is available today.</strong> The author command has been proven with a stand-in author. A live third-party model run still depends on the model tool and credentials you connect.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section safety-section" id="safety">
+      <div class="section-inner safety-layout">
+        <div class="safety-copy">
+          <p class="kicker">Access control</p>
+          <h2>Know what an app wants before it opens.</h2>
+          <p>A Krate app declares what it needs. You see that list before it runs, and the runtime limits it to the access you approve.</p>
+          <p>Krate reduces the access you must trust an app with. It does not promise that every app is free of bugs.</p>
+        </div>
+
+        <div class="access-manager">
+          <div class="panel-title">
+            <span>KRATE ACCESS MANAGER</span>
+            <span class="window-controls" aria-hidden="true"><i>×</i></span>
+          </div>
+          <div class="access-manager-body">
+            <div class="manager-app">
+              <img src="../../krate-app-icon.png" alt="" />
+              <span><strong>Checklist wants to open</strong><small>app.krate.checklist</small></span>
+            </div>
+            <div class="manager-row"><span>✓</span><span>Show a window</span><span class="state-ok">ALLOWED</span></div>
+            <div class="manager-row"><span>✓</span><span>Read and write ./checklist</span><span class="state-ok">ALLOWED</span></div>
+            <div class="manager-row"><span>×</span><span>The rest of your files</span><span class="state-no">BLOCKED</span></div>
+            <div class="manager-row"><span>×</span><span>The internet</span><span class="state-no">BLOCKED</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="footer-inner">
+      <p>Krate is early software. Try it, break it, and tell us what should work better.</p>
+      <p><a href="../create-and-share.html">Developer guide</a> · <a href="https://github.com/incyashraj/krate">GitHub</a> · <a href="../../index.html">Krate home</a></p>
+    </div>
+  </footer>
+
+  <script>
+    const menuButton = document.getElementById("menuButton");
+    const navLinks = document.getElementById("navLinks");
+
+    menuButton.addEventListener("click", () => {
+      const open = navLinks.classList.toggle("open");
+      menuButton.setAttribute("aria-expanded", String(open));
+      menuButton.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+      document.body.classList.toggle("menu-open", open);
+    });
+
+    navLinks.addEventListener("click", event => {
+      if (!event.target.closest("a")) return;
+      navLinks.classList.remove("open");
+      menuButton.setAttribute("aria-expanded", "false");
+      menuButton.setAttribute("aria-label", "Open navigation");
+      document.body.classList.remove("menu-open");
+    });
+  </script>
 </body>
 </html>
