@@ -44,6 +44,7 @@ jobs:
           rm -rf _site
           mkdir -p _site
           cp docs/landing/index.html _site/index.html
+          cp docs/landing/*.png _site/
           cp -R docs/book/book _site/docs
       - name: Setup Pages
         uses: actions/configure-pages@v5
