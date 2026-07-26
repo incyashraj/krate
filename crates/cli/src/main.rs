@@ -206,6 +206,16 @@ enum Command {
         /// for inspecting or hand-editing what was authored.
         #[arg(long)]
         work_dir: Option<PathBuf>,
+
+        /// Answer yes to the toolchain-install prompt: if the Rust build tools
+        /// `create` needs are missing, install them without asking.
+        #[arg(long)]
+        yes: bool,
+
+        /// Never install anything: if a build tool is missing, print how to
+        /// install it and stop, instead of offering to install it.
+        #[arg(long)]
+        no_install: bool,
     },
 }
 
@@ -373,6 +383,8 @@ fn run() -> Result<u8> {
             name,
             transcript,
             work_dir,
+            yes,
+            no_install,
         } => create_krate(CreateRequest {
             request,
             output,
@@ -381,6 +393,8 @@ fn run() -> Result<u8> {
             name,
             transcript,
             work_dir,
+            yes,
+            no_install,
         }),
         Command::Version => {
             print_version();
@@ -466,6 +480,8 @@ struct CreateRequest {
     name: Option<String>,
     transcript: Option<PathBuf>,
     work_dir: Option<PathBuf>,
+    yes: bool,
+    no_install: bool,
 }
 
 /// Author a small app from a request and package it as one shareable `.krate`.
@@ -476,6 +492,12 @@ struct CreateRequest {
 /// with and without its gating capability. A transcript records every step.
 fn create_krate(req: CreateRequest) -> Result<u8> {
     use krate_author::{generate, AppKind, AppRequest};
+
+    // Building the app needs a Rust toolchain, cargo-component, and the wasm
+    // target. Check for them before anything else and, when a terminal is
+    // present, offer to install what is missing — so a first run fails with a
+    // clear next step instead of a raw cargo error mid-build.
+    preflight_toolchain(req.yes, req.no_install)?;
 
     // Where the Krate SDK and WIT live, so a generated crate can build against
     // them. By default the binary materializes the SDK it carries embedded, so
@@ -1904,6 +1926,202 @@ fn yes_no(value: bool) -> &'static str {
     }
 }
 
+// ---- build toolchain: shared checks + create's preflight -------------------
+
+/// The wasm target `krate create` compiles apps for.
+const CREATE_WASM_TARGET: &str = "wasm32-wasip1";
+/// The cargo-component version the samples and CI pin.
+const CARGO_COMPONENT_VERSION: &str = "0.21.1";
+
+/// Whether a program runs successfully (used as a presence check). Resolves the
+/// same way `doctor` does, so PATH and `~/.cargo/bin` are both considered.
+fn has_tool(program: &str, args: &[&str]) -> bool {
+    let command = resolve_tool(program).unwrap_or_else(|| PathBuf::from(program));
+    ProcessCommand::new(command)
+        .args(args)
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+/// Whether a rustup target is installed. Returns None when rustup itself is
+/// absent (we cannot tell), so callers can treat that distinctly.
+fn has_rust_target(target: &str) -> Option<bool> {
+    let output = ProcessCommand::new("rustup")
+        .args(["target", "list", "--installed"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let installed = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| line == target);
+    Some(installed)
+}
+
+/// One missing piece of the build toolchain, with how to install it.
+struct MissingTool {
+    what: &'static str,
+    install_cmd: Vec<String>,
+    note: &'static str,
+}
+
+/// Gather what `krate create` needs but does not have. Empty means ready.
+fn missing_create_tools() -> Vec<MissingTool> {
+    let mut missing = Vec::new();
+
+    let have_cargo = has_tool("cargo", &["--version"]);
+    if !have_cargo {
+        missing.push(MissingTool {
+            what: "Rust (cargo)",
+            // rustup is the supported installer; we print its official command
+            // and only run it with consent.
+            install_cmd: vec![
+                "curl".into(),
+                "--proto".into(),
+                "=https".into(),
+                "--tlsv1.2".into(),
+                "-sSf".into(),
+                "https://sh.rustup.rs".into(),
+            ],
+            note: "installs the Rust toolchain via rustup (https://rustup.rs)",
+        });
+    }
+
+    if !has_tool("cargo-component", &["--version"]) {
+        missing.push(MissingTool {
+            what: "cargo-component",
+            install_cmd: vec![
+                "cargo".into(),
+                "install".into(),
+                "cargo-component".into(),
+                "--locked".into(),
+                "--version".into(),
+                CARGO_COMPONENT_VERSION.into(),
+            ],
+            note: "the tool that builds a Rust app into a Krate component",
+        });
+    }
+
+    // Only meaningful when rustup is present; if rustup is missing the Rust row
+    // above already covers it.
+    if have_cargo && has_rust_target(CREATE_WASM_TARGET) == Some(false) {
+        missing.push(MissingTool {
+            what: CREATE_WASM_TARGET,
+            install_cmd: vec![
+                "rustup".into(),
+                "target".into(),
+                "add".into(),
+                CREATE_WASM_TARGET.into(),
+            ],
+            note: "the WebAssembly target Krate apps compile to",
+        });
+    }
+
+    missing
+}
+
+/// Ensure the build toolchain is present before `create` starts authoring.
+///
+/// When something is missing it explains what and how to fix it. If a terminal
+/// is attached (and `--no-install` was not passed) it offers to run the
+/// installs, honoring `--yes` to skip the prompt. A non-interactive run never
+/// installs or prompts: it prints the commands and returns an error, so an
+/// agent or CI pipeline gets a clear, actionable failure instead of a cargo
+/// stack trace part-way through the build.
+fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
+    let missing = missing_create_tools();
+    if missing.is_empty() {
+        return Ok(());
+    }
+
+    eprintln!("Krate needs a few build tools to create an app, and some are missing:");
+    for tool in &missing {
+        eprintln!("  - {} ({})", tool.what, tool.note);
+    }
+    eprintln!();
+
+    let interactive = io::stdin().is_terminal() && io::stderr().is_terminal();
+    let may_install = !no_install && (assume_yes || interactive);
+
+    if !may_install {
+        eprintln!("Install them, then run `krate create` again:");
+        for tool in &missing {
+            eprintln!("  {}", tool.install_cmd.join(" "));
+        }
+        eprintln!();
+        eprintln!("Or check your setup any time with `krate doctor`.");
+        anyhow::bail!("missing build tools; see the commands above");
+    }
+
+    if !assume_yes {
+        eprint!("Install them now? [Y/n] ");
+        io::stderr().flush().ok();
+        let mut answer = String::new();
+        io::stdin().read_line(&mut answer)?;
+        let answer = answer.trim().to_lowercase();
+        if !(answer.is_empty() || answer == "y" || answer == "yes") {
+            eprintln!("Not installing. To do it yourself:");
+            for tool in &missing {
+                eprintln!("  {}", tool.install_cmd.join(" "));
+            }
+            anyhow::bail!("build tools are required to create an app");
+        }
+    }
+
+    for tool in &missing {
+        eprintln!("==> installing {}", tool.what);
+        eprintln!("    {}", tool.install_cmd.join(" "));
+        run_install_command(&tool.install_cmd).with_context(|| format!("install {}", tool.what))?;
+    }
+
+    // Re-check: installing rustup does not put cargo on the current PATH, and a
+    // fresh target may still be needed, so verify and guide rather than fail
+    // opaquely later.
+    let still_missing = missing_create_tools();
+    if !still_missing.is_empty() {
+        eprintln!();
+        eprintln!("Some tools still are not on this shell's PATH. Open a new terminal");
+        eprintln!("(or run `source \"$HOME/.cargo/env\"`), then run `krate create` again.");
+        anyhow::bail!("finish the toolchain setup, then re-run");
+    }
+
+    eprintln!("==> build tools ready");
+    Ok(())
+}
+
+/// Run one install command, streaming its output. The rustup bootstrap is
+/// `curl … | sh`; everything else runs directly.
+fn run_install_command(cmd: &[String]) -> Result<()> {
+    let (program, args) = cmd.split_first().context("empty install command")?;
+
+    // The rustup bootstrap is a piped shell script; run it as `curl … | sh -s -- -y`.
+    let status = if program == "curl" {
+        let curl = ProcessCommand::new("curl")
+            .args(args)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .context("run curl for rustup")?;
+        let sh = ProcessCommand::new("sh")
+            .args(["-s", "--", "-y"])
+            .stdin(curl.stdout.context("curl produced no output")?)
+            .status()
+            .context("run the rustup installer")?;
+        sh
+    } else {
+        ProcessCommand::new(program)
+            .args(args)
+            .status()
+            .with_context(|| format!("run {program}"))?
+    };
+
+    if !status.success() {
+        anyhow::bail!("install command failed: {}", cmd.join(" "));
+    }
+    Ok(())
+}
+
 fn print_tool_status(program: &str, args: &[&str]) {
     if let Some(line) = tool_status_line(program, args) {
         println!("{line}");
@@ -2011,7 +2229,7 @@ fn home_dir() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod create_tests {
-    use super::toml_path;
+    use super::{has_tool, toml_path};
     use std::path::Path;
 
     #[test]
@@ -2028,5 +2246,17 @@ mod create_tests {
         );
         // A Unix path is unchanged.
         assert_eq!(toml_path(Path::new("/home/a/wit")), "/home/a/wit");
+    }
+
+    #[test]
+    fn has_tool_detects_present_and_absent_programs() {
+        // A program that always exists and reports a version cleanly.
+        // `cargo` is present in every build/test environment.
+        assert!(has_tool("cargo", &["--version"]));
+        // A program that certainly does not exist.
+        assert!(!has_tool(
+            "krate-definitely-not-a-real-tool-xyz",
+            &["--version"]
+        ));
     }
 }

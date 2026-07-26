@@ -288,7 +288,7 @@
         <p class="lead">You need this on any computer where you want to open or make Krate apps. It is one line. Paste it into a terminal and press enter. On a Mac, Terminal is in Applications, under Utilities.</p>
       </div>
       <div class="term"><div class="term-bar"><i></i><i></i><i></i></div><pre>curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh</pre></div>
-      <div class="note">That downloads the ready-made tool and sets it up for you. When it finishes you have a tool called <code>krate</code> and setup is done. It carries everything it needs inside it, so you never repeat this step. <strong>Building from source?</strong> Install <a href="https://rustup.rs">Rust</a>, then <code>cargo build --release -p krate-cli</code>.</div>
+      <div class="note">That downloads the ready-made tool and sets it up for you. Now you can open any <code>.krate</code> someone sends you. To <strong>make</strong> your own apps, <code>krate create</code> also needs the Rust build tools; the first time you run it, it checks for them and offers to install what is missing. You can see what is present any time with <code>krate doctor</code>. <strong>Building Krate from source instead?</strong> Install <a href="https://rustup.rs">Rust</a>, then <code>cargo build --release -p krate-cli</code>.</div>
     </div></div>
   </section>
 

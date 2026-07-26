@@ -110,6 +110,29 @@ jobs:
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
       - name: Run workspace tests
         run: cargo test --workspace --all-features
+      - name: krate create fails clearly when build tools are missing
+        shell: bash
+        run: |
+          # A first user without the Rust build tools must get a clear, actionable
+          # message and a non-zero exit, not a raw cargo error mid-build. Run
+          # create with a stripped PATH (no cargo/cargo-component) and no TTY.
+          cargo build -q -p krate-cli
+          bin="$PWD/target/debug/krate"
+          set +e
+          out="$(env -i HOME="$HOME" PATH=/usr/bin:/bin "$bin" \
+            create "make a checklist" --output /tmp/x.krate </dev/null 2>&1)"
+          code=$?
+          set -e
+          echo "$out"
+          if [ "$code" -eq 0 ]; then
+            echo "expected a non-zero exit when the toolchain is missing" >&2
+            exit 1
+          fi
+          echo "$out" | grep -q "needs a few build tools" \
+            || { echo "expected the friendly toolchain message" >&2; exit 1; }
+          echo "$out" | grep -q "krate doctor" \
+            || { echo "expected a pointer to krate doctor" >&2; exit 1; }
+          echo "create preflight failed clearly with the toolchain missing"
 
   # ──────────────────────────────────────────────
   # 5. Rust SDK package dry-run

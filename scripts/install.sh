@@ -141,3 +141,12 @@ case ":${PATH}:" in
     say "Then:  krate --version"
     ;;
 esac
+
+# ---- opening and making apps ------------------------------------------------
+
+say ""
+say "You can now open a .krate someone sends you."
+say "To *make* your own apps with 'krate create', you also need the Rust build"
+say "tools (Rust, cargo-component, and the wasm target). 'krate create' checks"
+say "for them and offers to install them on first use; 'krate doctor' shows what"
+say "is present at any time."
