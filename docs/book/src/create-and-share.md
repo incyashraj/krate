@@ -101,7 +101,21 @@ need to trust you or read any code.
 
 ## Open it (on the other side)
 
-The recipient needs Krate installed the same way. Then, step by step:
+The recipient needs Krate installed the same way.
+
+**Turn on double-click (one time).** On macOS this is set up automatically by
+`Krate.app`. On Linux and Windows, run the small registration script once so the
+file manager knows to open `.krate` files with Krate:
+
+- **Linux:** `scripts/install-krate-desktop.sh`
+- **Windows:** `powershell -ExecutionPolicy Bypass -File scripts\install-krate-desktop.ps1`
+
+Both need no administrator rights, register only for the current user, and can
+be undone with `--uninstall` (`-Uninstall` on Windows). After that, a
+double-clicked `.krate` opens through the same permission review as
+`krate run <file> --consent`.
+
+Then, step by step:
 
 1. **Double-click `checklist.krate`.** Before anything runs, Krate shows a
    window listing exactly what the app is asking for — a window, and read/write

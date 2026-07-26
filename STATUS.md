@@ -1,17 +1,21 @@
 # Krate Status (formerly Layer36)
 
-Last updated: 2026-07-25
+Last updated: 2026-07-26
 Naming: the project is Krate (company: Krate Labs, Inc.). The A9 rename is
 fully executed — CLI `krate`, WIT `krate:*`, schema `krate.run.v1`, env
 `KRATE_*`, repo `incyashraj/krate`, runner `krate-local`, future bundle
 format `.krate`. No legacy `layer36` identifiers remain in code or contracts.
 Repo: `incyashraj/krate`
 Branch: `main`
-Latest checked completed push before this status update: branch
-`slice/krate-create` at `3f39416`, full matrix run `30167554509` green on
-all three OS lanes — certifying the self-service `krate create` path (the
-checkpoint below). Not yet merged to `main`. The AI authoring loop it builds
-on merged to `main` via PR #11 (run `30125544269`).
+Latest checked completed push before this status update: the self-service
+`krate create` path is merged to `main` (PR #12, merge `6476bce`; full matrix
+run `30167554509` green on all three OS lanes) and shipped in release
+`v0.1.0-rc3`, so the installer serves a binary that has `krate create`. The
+same merge added double-click `.krate` handlers for Linux
+(`scripts/install-krate-desktop.sh`) and Windows
+(`scripts/install-krate-desktop.ps1`) alongside the existing macOS `Krate.app`,
+and the rebuilt landing page. The AI authoring loop it builds on merged
+earlier via PR #11 (run `30125544269`).
 Direction change, 2026-07-23: shareability is now the wedge. Recorded in
 full as Change Order 2 in `Plan/Plan-Amendments-2026-07.md`, with the task
 spec as P3-SHARE-01 in `Plan/Phase-3-Plan.md` §19. Short version: Adam
