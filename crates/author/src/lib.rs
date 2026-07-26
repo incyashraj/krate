@@ -10,11 +10,13 @@
 //! substitute for `generate` without touching the build/pack/verify steps that
 //! follow in `scripts/author-krate.sh`.
 //!
-//! The one app kind today is a word-frequency reporter: it reads a file and
-//! prints its most common words. It needs exactly one interesting capability —
-//! `fs.read` on its input — so the packaged `.krate` has a real permission wall
-//! to prove: run it with the grant and it works; withhold the grant and it
-//! refuses before doing anything, exactly like every other Krate app.
+//! Two app kinds today: a word-frequency reporter (a CLI app that reads a file
+//! and prints its most common words) and a checklist (a GUI app with checkboxes
+//! that saves locally). Each declares only the capabilities it uses, and each
+//! has a required capability whose grant gates it — `fs.read` for the reporter,
+//! `fs.write` for the checklist — so the packaged `.krate` has a real
+//! permission wall to prove: run it with the grant and it works; withhold the
+//! grant and it refuses before doing anything, like every other Krate app.
 
 use serde::{Deserialize, Serialize};
 

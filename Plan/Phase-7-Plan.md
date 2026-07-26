@@ -1576,6 +1576,12 @@ Started 30 days post-launch, not before. Lessons from v1.0 in production must in
 - In-app purchases (with revenue-share model).
 - Web host target.
 - Component/library registry.
+- AI-assisted source migration for selected existing application frameworks.
+  The tool would inspect source, map supported native or framework APIs to
+  Krate UAPI calls, derive the required capability manifest, and package the
+  result as a `.krate`. This is intentionally not generic binary conversion:
+  support must be added framework by framework, with compatibility tests and
+  human review of requested capabilities.
 
 ### 26.4 Why a clean v1.0.x phase matters
 
