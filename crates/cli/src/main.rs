@@ -1,4 +1,4 @@
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode};
@@ -15,6 +15,8 @@ use krate_runtime::{
     DEFAULT_MAX_HTTP_RESPONSE_BYTES,
 };
 use serde::Serialize;
+
+mod sdk;
 
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
 const MAX_PHASE2_ARG_COUNT: usize = 1024;
@@ -166,6 +168,54 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
     },
+
+    /// Author a small app from a request and package it as one shareable
+    /// .krate: generate the source, build it, check it imports only Krate
+    /// APIs, pack it, and verify its permission wall before writing the file.
+    Create {
+        /// What to build, in plain words, e.g.
+        /// "Make a checklist app that saves locally".
+        request: String,
+
+        /// Where to write the finished .krate.
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// A command that writes the app source instead of the built-in
+        /// generator — this is where an AI agent plugs in. It is handed
+        /// `KRATE_APP_DIR`, `KRATE_APP_NAME`, and `KRATE_REQUEST` and must
+        /// write Cargo.toml, src/lib.rs, and manifest.toml into the app dir.
+        #[arg(long)]
+        author_cmd: Option<String>,
+
+        /// Which built-in template to use when no --author-cmd is given.
+        /// Inferred from the request when omitted.
+        #[arg(long, value_enum)]
+        kind: Option<CreateKind>,
+
+        /// Kebab-case name for the generated app. Defaults per kind.
+        #[arg(long)]
+        name: Option<String>,
+
+        /// Where to write the authoring transcript (JSON). Defaults to the
+        /// output path with a `.transcript.json` suffix.
+        #[arg(long)]
+        transcript: Option<PathBuf>,
+
+        /// Keep the generated crate directory instead of using a temp dir,
+        /// for inspecting or hand-editing what was authored.
+        #[arg(long)]
+        work_dir: Option<PathBuf>,
+    },
+}
+
+/// The built-in app templates `krate create` can generate.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum CreateKind {
+    /// A CLI app: read a file and print its most frequent words.
+    WordFrequency,
+    /// A GUI app: a checklist with checkboxes that saves locally.
+    Checklist,
 }
 
 #[derive(Debug, Subcommand)]
@@ -315,6 +365,23 @@ fn run() -> Result<u8> {
             manifest,
             output,
         } => pack_bundle(&file, &manifest, &output),
+        Command::Create {
+            request,
+            output,
+            author_cmd,
+            kind,
+            name,
+            transcript,
+            work_dir,
+        } => create_krate(CreateRequest {
+            request,
+            output,
+            author_cmd,
+            kind,
+            name,
+            transcript,
+            work_dir,
+        }),
         Command::Version => {
             print_version();
             Ok(0)
@@ -389,6 +456,370 @@ fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
         .with_context(|| format!("could not pack {}", output.display()))?;
     println!("wrote {} ({size} bytes)", output.display());
     Ok(0)
+}
+
+struct CreateRequest {
+    request: String,
+    output: PathBuf,
+    author_cmd: Option<String>,
+    kind: Option<CreateKind>,
+    name: Option<String>,
+    transcript: Option<PathBuf>,
+    work_dir: Option<PathBuf>,
+}
+
+/// Author a small app from a request and package it as one shareable `.krate`.
+///
+/// The steps mirror the authoring loop: generate the source (built-in template
+/// or an agent command), build it to a component, check it imports only Krate
+/// APIs, pack it, and verify its permission wall by running the packed bundle
+/// with and without its gating capability. A transcript records every step.
+fn create_krate(req: CreateRequest) -> Result<u8> {
+    use krate_author::{generate, AppKind, AppRequest};
+
+    // Where the Krate SDK and WIT live, so a generated crate can build against
+    // them. By default the binary materializes the SDK it carries embedded, so
+    // no checkout is needed. KRATE_SDK_ROOT overrides that with a checkout, for
+    // development against local WIT changes.
+    let sdk_root = match std::env::var_os("KRATE_SDK_ROOT") {
+        Some(root) => PathBuf::from(root),
+        None => sdk::ensure_materialized().context("prepare the embedded Krate SDK")?,
+    };
+
+    // Decide the app kind: an explicit --kind wins, otherwise infer from the
+    // request text (e.g. "checklist" -> the GUI checklist).
+    let kind = match req.kind {
+        Some(CreateKind::Checklist) => AppKind::Checklist,
+        Some(CreateKind::WordFrequency) => AppKind::WordFrequency,
+        None => AppKind::infer(&req.request),
+    };
+    let default_name = match kind {
+        AppKind::Checklist => "checklist",
+        AppKind::WordFrequency => "word-count",
+    };
+    let name = req.name.clone().unwrap_or_else(|| default_name.to_string());
+
+    // The app is built inside a work dir. A temp dir is cleaned up; --work-dir
+    // keeps it for inspection.
+    let held_temp;
+    let app_dir = match &req.work_dir {
+        Some(dir) => {
+            fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
+            dir.join(&name)
+        }
+        None => {
+            let temp = tempfile::tempdir().context("create work dir")?;
+            let path = temp.path().join(&name);
+            held_temp = temp;
+            let _ = &held_temp;
+            path
+        }
+    };
+    let _ = fs::remove_dir_all(&app_dir);
+    fs::create_dir_all(&app_dir).with_context(|| format!("create {}", app_dir.display()))?;
+
+    let mut steps: Vec<serde_json::Value> = Vec::new();
+
+    // Step 1: author. Either an agent command writes the source, or the
+    // built-in generator does.
+    println!("==> authoring \"{}\"", req.request);
+    let author_note = if let Some(cmd) = &req.author_cmd {
+        run_author_command(cmd, &app_dir, &name, &req.request)?;
+        format!("external agent command: {cmd}")
+    } else {
+        let sdk_prefix = relative_sdk_prefix(&app_dir, &sdk_root)?;
+        let mut request = match kind {
+            AppKind::Checklist => AppRequest::checklist(&name),
+            AppKind::WordFrequency => AppRequest::word_frequency(&name),
+        };
+        request.description = req.request.clone();
+        let app = generate(&request, &sdk_prefix).map_err(|err| anyhow::anyhow!(err))?;
+        for file in &app.files {
+            let dest = app_dir.join(&file.path);
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&dest, &file.contents)?;
+        }
+        "built-in generator".to_string()
+    };
+    steps.push(serde_json::json!({"step": "author", "detail": author_note}));
+
+    // Step 2: build to a wasm component.
+    println!("==> building the component");
+    let wasm = build_component(&app_dir)?;
+    steps.push(serde_json::json!({"step": "build", "detail": "cargo-component build --release"}));
+
+    // Step 3: the component must import only krate:*.
+    let wasm_bytes = fs::read(&wasm).with_context(|| format!("read {}", wasm.display()))?;
+    let bad = krate_bundle::imports::non_krate_imports(&wasm_bytes)
+        .map_err(|err| anyhow::anyhow!(err))?;
+    if !bad.is_empty() {
+        anyhow::bail!(
+            "the generated app imports non-Krate host APIs, so it cannot run under Krate: {}",
+            bad.join(", ")
+        );
+    }
+    steps.push(serde_json::json!({"step": "check-imports", "detail": "krate:* imports only"}));
+
+    // Step 4: pack. Copy the manifest and point its entry at code.wasm.
+    println!("==> packing {}", req.output.display());
+    let manifest_src = app_dir.join("manifest.toml");
+    let manifest = krate_manifest::Manifest::parse_file(&manifest_src)
+        .with_context(|| format!("read {}", manifest_src.display()))?;
+    let pack_dir = tempfile::tempdir().context("pack dir")?;
+    let code = pack_dir.path().join("code.wasm");
+    fs::copy(&wasm, &code)?;
+    let packed_manifest = pack_dir.path().join("manifest.toml");
+    write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
+    let size = krate_bundle::pack(&packed_manifest, &code, &req.output)
+        .with_context(|| format!("pack {}", req.output.display()))?;
+    steps.push(serde_json::json!({"step": "pack", "detail": format!("{} bytes", size)}));
+
+    // Step 5: verify the permission wall by running the packed bundle with all
+    // grants (must succeed) and without the gating capability (must refuse).
+    println!("==> verifying the permission wall");
+    let gating = gating_capability(&manifest);
+    let verify_dir = tempfile::tempdir().context("verify dir")?;
+    prepare_verify_dir(verify_dir.path(), &manifest)?;
+    let bundle_abs = fs::canonicalize(&req.output)?;
+
+    let allow_exit = run_self(
+        verify_dir.path(),
+        &[
+            "run",
+            bundle_abs.to_str().unwrap(),
+            "--auto-grant",
+            "--",
+            "quick",
+        ],
+    )?;
+    if allow_exit != 0 {
+        anyhow::bail!("the packed app failed to run with all grants (exit {allow_exit})");
+    }
+
+    let mut deny_args = vec!["run".to_string(), bundle_abs.to_string_lossy().into_owned()];
+    for cap in manifest.capabilities.iter() {
+        let name = cap.cap.clone();
+        if name == gating {
+            continue;
+        }
+        deny_args.push("--grant".to_string());
+        deny_args.push(name);
+    }
+    deny_args.push("--".to_string());
+    deny_args.push("quick".to_string());
+    let deny_arg_refs: Vec<&str> = deny_args.iter().map(String::as_str).collect();
+    let deny_exit = run_self(verify_dir.path(), &deny_arg_refs)?;
+    if deny_exit != 5 {
+        anyhow::bail!("withholding {gating} should refuse with exit 5, got {deny_exit}");
+    }
+    steps.push(serde_json::json!({
+        "step": "verify",
+        "detail": format!("runs with all grants (exit 0), refuses without {gating} (exit 5)")
+    }));
+
+    // The transcript: request, app, requested permissions, verification.
+    let requested: Vec<String> = manifest
+        .capabilities
+        .iter()
+        .map(|cap| cap.cap.clone())
+        .collect();
+    let transcript = serde_json::json!({
+        "schema": "krate.author.v1",
+        "request": req.request,
+        "app": {"name": name, "kind": format!("{kind:?}")},
+        "requested_permissions": requested,
+        "gating_permission": gating,
+        "output": req.output.to_string_lossy(),
+        "krate_bytes": size,
+        "steps": steps,
+        "verdict": "authored a working, permission-gated .krate: runs with its grants, refuses without the gating one",
+    });
+    let transcript_path = req
+        .transcript
+        .clone()
+        .unwrap_or_else(|| with_suffix(&req.output, ".transcript.json"));
+    fs::write(
+        &transcript_path,
+        serde_json::to_string_pretty(&transcript)? + "\n",
+    )?;
+
+    println!();
+    println!("Created {}", req.output.display());
+    println!("  transcript: {}", transcript_path.display());
+    println!("  requested access:");
+    for cap in &requested {
+        println!("    - {cap}");
+    }
+    println!();
+    println!(
+        "Send {} to someone; they can double-click it to open it.",
+        req.output.display()
+    );
+    Ok(0)
+}
+
+/// The relative path from the app dir to the SDK root, for the generated
+/// Cargo.toml's path dependencies.
+fn relative_sdk_prefix(app_dir: &Path, sdk_root: &Path) -> Result<String> {
+    let app_abs = if app_dir.is_absolute() {
+        app_dir.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(app_dir)
+    };
+    let sdk_abs = fs::canonicalize(sdk_root)?;
+    // Count how many directories deep the app dir is, then walk up to the SDK.
+    // The generated crate is standalone (empty [workspace]), so a relative
+    // prefix that resolves at build time is all that is needed.
+    let common = fs::canonicalize(&app_abs).unwrap_or(app_abs);
+    let depth = common.components().count();
+    let sdk_depth = sdk_abs.components().count();
+    // Simple case used everywhere in practice: the app dir is under the SDK
+    // root, so the prefix is "../" repeated by how much deeper it sits.
+    if common.starts_with(&sdk_abs) {
+        let up = depth - sdk_depth;
+        return Ok(vec![".."; up].join("/"));
+    }
+    // Otherwise use an absolute path to the SDK — always correct, less tidy.
+    // Normalize it for use as a Cargo.toml path dependency: forward slashes
+    // (TOML needs no escaping then, and cargo accepts them on Windows) and no
+    // `\\?\` UNC verbatim prefix, which cargo cannot resolve in a manifest.
+    Ok(toml_path(&sdk_abs))
+}
+
+/// A path string safe to drop into a `Cargo.toml` `path = "..."` on any OS:
+/// forward slashes, and with Windows' `\\?\` verbatim prefix stripped.
+fn toml_path(path: &Path) -> String {
+    let s = path.to_string_lossy();
+    let s = s
+        .strip_prefix(r"\\?\")
+        .map(str::to_string)
+        .unwrap_or_else(|| s.into_owned());
+    s.replace('\\', "/")
+}
+
+/// Run an agent's author command with the app context in the environment.
+fn run_author_command(cmd: &str, app_dir: &Path, name: &str, request: &str) -> Result<()> {
+    fs::create_dir_all(app_dir.join("src"))?;
+    let shell = if cfg!(windows) { "bash" } else { "sh" };
+    let status = std::process::Command::new(shell)
+        .arg("-c")
+        .arg(cmd)
+        .env("KRATE_APP_DIR", app_dir)
+        .env("KRATE_APP_NAME", name)
+        .env("KRATE_REQUEST", request)
+        .status()
+        .context("run --author-cmd")?;
+    if !status.success() {
+        anyhow::bail!("author command failed");
+    }
+    // The agent must have written the three files.
+    for file in ["Cargo.toml", "src/lib.rs", "manifest.toml"] {
+        if !app_dir.join(file).exists() {
+            anyhow::bail!("author command did not write {file}");
+        }
+    }
+    Ok(())
+}
+
+/// Build the app dir to a wasm component with cargo-component, returning the
+/// path to the produced wasm.
+fn build_component(app_dir: &Path) -> Result<PathBuf> {
+    let status = std::process::Command::new("cargo-component")
+        .arg("build")
+        .arg("--release")
+        .current_dir(app_dir)
+        .status()
+        .context("run cargo-component (is it installed? `cargo install cargo-component`)")?;
+    if !status.success() {
+        anyhow::bail!("cargo-component build failed");
+    }
+    let release = app_dir.join("target/wasm32-wasip1/release");
+    for entry in fs::read_dir(&release).with_context(|| format!("read {}", release.display()))? {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("wasm") {
+            return Ok(path);
+        }
+    }
+    anyhow::bail!("no wasm produced in {}", release.display())
+}
+
+/// The capability whose grant gates the app — the required one the verify step
+/// withholds to prove the wall. Prefers fs.write, then fs.read, else the first
+/// required capability.
+fn gating_capability(manifest: &krate_manifest::Manifest) -> String {
+    let required: Vec<String> = manifest
+        .capabilities
+        .iter()
+        .filter(|c| c.required)
+        .map(|c| c.cap.clone())
+        .collect();
+    for prefer in ["fs.write", "fs.read"] {
+        if let Some(cap) = required.iter().find(|c| c.starts_with(prefer)) {
+            return cap.clone();
+        }
+    }
+    required
+        .into_iter()
+        .find(|c| !c.starts_with("io.") && !c.starts_with("ui.window"))
+        .unwrap_or_else(|| "fs.write".to_string())
+}
+
+/// Create the data directories the app expects under the verify dir, so a
+/// granted run has somewhere to write.
+fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result<()> {
+    for cap in manifest.capabilities.iter() {
+        let name = cap.cap.clone();
+        if let Some(rest) = name
+            .strip_prefix("fs.read:")
+            .or_else(|| name.strip_prefix("fs.write:"))
+        {
+            // Turn "./checklist/**" into the directory "checklist".
+            let trimmed = rest.trim_start_matches("./");
+            if let Some(first) = trimmed.split('/').next() {
+                if !first.is_empty() && first != "**" {
+                    let _ = fs::create_dir_all(dir.join(first));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Re-invoke this same `krate` binary in `dir` with `args`, returning its exit
+/// code. Used to verify a packed bundle in isolation.
+fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
+    let exe = std::env::current_exe().context("locate self")?;
+    let status = std::process::Command::new(exe)
+        .args(args)
+        .current_dir(dir)
+        .status()
+        .context("re-invoke krate for verification")?;
+    Ok(status.code().unwrap_or(-1))
+}
+
+/// Copy a manifest, replacing its `entry` line with a new path.
+fn write_manifest_with_entry(src: &Path, dest: &Path, entry: &str) -> Result<()> {
+    let text = fs::read_to_string(src).with_context(|| format!("read {}", src.display()))?;
+    let mut out = String::new();
+    for line in text.lines() {
+        if line.trim_start().starts_with("entry =") {
+            out.push_str(&format!("entry = \"{entry}\"\n"));
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    fs::write(dest, out).with_context(|| format!("write {}", dest.display()))?;
+    Ok(())
+}
+
+/// Append a suffix to a path's file name (before writing a sidecar file).
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut s = path.as_os_str().to_os_string();
+    s.push(suffix);
+    PathBuf::from(s)
 }
 
 /// Resolve what the user asked to run into a component on disk.
@@ -1576,4 +2007,26 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod create_tests {
+    use super::toml_path;
+    use std::path::Path;
+
+    #[test]
+    fn toml_path_uses_forward_slashes_and_strips_unc() {
+        // A Windows verbatim path becomes a clean forward-slash path.
+        assert_eq!(
+            toml_path(Path::new(r"\\?\C:\Users\a\wit\krate\phase3")),
+            "C:/Users/a/wit/krate/phase3"
+        );
+        // A plain backslash path is normalized too.
+        assert_eq!(
+            toml_path(Path::new(r"C:\cache\krate\sdk")),
+            "C:/cache/krate/sdk"
+        );
+        // A Unix path is unchanged.
+        assert_eq!(toml_path(Path::new("/home/a/wit")), "/home/a/wit");
+    }
 }

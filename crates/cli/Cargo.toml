@@ -19,6 +19,8 @@ krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
 krate-policy = { path = "../policy", version = "0.1.0-dev" }
 krate-bundle = { path = "../bundle", version = "0.1.0-dev" }
 krate-runtime = { path = "../runtime", version = "0.1.0-dev" }
+krate-author = { path = "../author", version = "0.1.0-dev" }
+tempfile = "3.27.0"
 serde.workspace = true
 serde_json.workspace = true
 tracing-subscriber.workspace = true

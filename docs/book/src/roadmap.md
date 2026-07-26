@@ -64,6 +64,19 @@ flowchart LR
 | 6 | Distribution | Add bundles, signing, updates, and identity. | est. 8 to 12 weeks | Planned |
 | 7 | v1.0 hardening | Migrate a real app and clean up for public launch. | est. after Phase 6 | Planned |
 
+## Later Authoring Direction
+
+After the SDK and core UAPI are stable, Krate plans to explore AI-assisted
+source migration for existing applications. Given an application's source, a
+porting tool could identify operating-system and framework APIs, replace
+supported calls with Krate UAPI calls, derive the capabilities the application
+must request, and package the result as a `.krate`.
+
+This is a source-porting workflow, not a promise that an arbitrary compiled
+`.app`, `.exe`, or other native binary can be wrapped automatically. It will be
+introduced framework by framework and must remain gated by compatibility tests
+and human review of the requested capabilities.
+
 ## What Must Happen Before Phase 2 Exits
 
 The code has moved well past Phase 1. Phase 2 should not be called closed until

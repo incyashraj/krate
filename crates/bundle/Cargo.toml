@@ -12,6 +12,7 @@ krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
 tempfile.workspace = true
 thiserror.workspace = true
 ureq.workspace = true
+wasmparser.workspace = true
 zip.workspace = true
 
 [dev-dependencies]

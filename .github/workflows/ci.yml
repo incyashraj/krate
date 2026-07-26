@@ -356,6 +356,62 @@ jobs:
           path: ${{ runner.temp }}/authoring-${{ runner.os }}/
           if-no-files-found: warn
           retention-days: 14
+      - name: Create the checklist app with `krate create` (self-service path)
+        shell: bash
+        run: |
+          # The self-service product path, proven STANDALONE on this OS: the
+          # binary is copied outside the repo and run with no KRATE_SDK_ROOT, so
+          # `krate create` must materialize its embedded SDK to build. It authors
+          # a GUI checklist, builds it to a krate:*-only component, packs it, and
+          # verifies its permission wall (runs with fs.write, refuses without).
+          # Then the packed .krate is opened headlessly to prove it starts, and a
+          # run without fs.write is confirmed to exit 5.
+          exe=krate
+          [ "$RUNNER_OS" = "Windows" ] && exe=krate.exe
+          cargo build -p krate-cli
+          # Copy the binary to a directory with no Krate checkout nearby.
+          standalone="$RUNNER_TEMP/standalone-$RUNNER_OS"
+          rm -rf "$standalone" && mkdir -p "$standalone"
+          cp "$GITHUB_WORKSPACE/target/debug/$exe" "$standalone/$exe"
+          bin="$standalone/$exe"
+          out="$RUNNER_TEMP/checklist-$RUNNER_OS"
+          rm -rf "$out" && mkdir -p "$out"
+          # No KRATE_SDK_ROOT: the embedded SDK is the only source.
+          ( cd "$out" && "$bin" create \
+              "Make a checklist app that saves locally" \
+              --output "checklist.krate" \
+              --transcript "transcript.json" )
+          echo "---- checklist transcript ($RUNNER_OS) ----"
+          cat "$out/transcript.json"
+          # Prove the packed .krate opens: run it headless with grants, then
+          # confirm withholding fs.write refuses with exit 5.
+          mkdir -p "$out/checklist"
+          ( cd "$out" && "$bin" run checklist.krate --auto-grant -- quick )
+          if [ ! -s "$out/checklist/items.txt" ]; then
+            echo "checklist should have saved its items after a granted run" >&2
+            exit 1
+          fi
+          echo "checklist.krate opened, ran, and saved on $RUNNER_OS"
+          rm -rf "$out/checklist" && mkdir -p "$out/checklist"
+          set +e
+          ( cd "$out" && "$bin" run checklist.krate \
+              --grant ui.window:create --grant io.stdout --grant io.args \
+              --grant "fs.read:./checklist/**" -- quick ) >/dev/null 2>&1
+          denied=$?
+          set -e
+          if [ "$denied" != "5" ]; then
+            echo "withholding fs.write should refuse the checklist (exit 5), got $denied" >&2
+            exit 1
+          fi
+          echo "withholding fs.write stopped the checklist before it ran (exit 5)"
+      - name: Upload checklist create evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: checklist-evidence-${{ matrix.os }}
+          path: ${{ runner.temp }}/checklist-${{ runner.os }}/
+          if-no-files-found: warn
+          retention-days: 14
       - name: Run Phase 3 GUI component headless on this host
         shell: bash
         run: |
