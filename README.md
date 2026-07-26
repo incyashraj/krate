@@ -1,282 +1,446 @@
-# Krate (formerly Layer36)
+<p align="center">
+  <img src="docs/landing/krate-app-icon.png" width="128" alt="Krate logo">
+</p>
 
-> Share software the way you share a document, without handing over your machine.
+<h1 align="center">Krate</h1>
 
-**Krate** — by Krate Labs — packs an application and the permissions it is
-asking for into a single file. Send someone a link to it. It opens on their
-Mac, Windows, or Linux machine as a real desktop app, and it cannot read a
-file, reach the network, or touch anything else unless they allow it.
+<p align="center">
+  <strong>Make apps with AI. Share them like documents.</strong>
+</p>
 
-```console
-$ krate pack app.wasm --manifest app.toml -o hello.krate
-wrote hello.krate (11080 bytes)
+<p align="center">
+  One app file that opens on Mac, Windows, and Linux.<br>
+  The user sees what it wants to access before it runs.
+</p>
 
-$ krate run https://example.com/hello.krate
+<p align="center">
+  <a href="https://github.com/incyashraj/krate/actions/workflows/ci.yml">
+    <img src="https://github.com/incyashraj/krate/actions/workflows/ci.yml/badge.svg" alt="CI status">
+  </a>
+  <a href="https://github.com/incyashraj/krate/releases">
+    <img src="https://img.shields.io/github/v/release/incyashraj/krate?include_prereleases&sort=semver" alt="Latest release">
+  </a>
+  <a href="LICENSE-MIT">
+    <img src="https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-2563eb" alt="MIT or Apache 2.0 license">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://incyashraj.github.io/krate/">Website</a>
+  ·
+  <a href="https://incyashraj.github.io/krate/docs/try-krate-notes.html">Try Notes</a>
+  ·
+  <a href="https://incyashraj.github.io/krate/docs/pages/make-an-app-with-ai.html">Make an app</a>
+  ·
+  <a href="https://incyashraj.github.io/krate/docs/quickstart.html">Docs</a>
+  ·
+  <a href="https://github.com/incyashraj/krate/releases">Releases</a>
+  ·
+  <a href="https://github.com/incyashraj/krate/discussions">Discussions</a>
+</p>
+
+<p align="center">
+  <a href="https://incyashraj.github.io/krate/">
+    <img src="docs/landing/og.png" width="900" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
+  </a>
+</p>
+
+## What is Krate?
+
+AI can make useful small apps for one person or one team. Sharing those apps is
+still hard.
+
+A browser link cannot handle every local use case. A normal desktop app can,
+but it is tied to an operating system and may reach more of the computer than
+the user expects.
+
+Krate uses a simpler app format:
+
+1. The app and the access it requests go into one `.krate` file.
+2. The same file opens on Mac, Windows, and Linux.
+3. Krate shows the requested access before the app runs.
+4. The app receives only the access the user allows.
+
+```text
+request
+   ↓
+checklist.krate
+   ↓
+review access
+   ↓
+open on Mac, Windows, or Linux
 ```
 
-**Why this matters now:** AI writes most new software, and nobody reads it.
-Software gets generated constantly and shared constantly, between people who
-did not write it and cannot audit it. So the thing that travels between people
-has to carry its own permissions. Running it on your own machine is how it stays
-useful — that is where your files and your work already are — and the capability
-model is what keeps that safe.
+Krate is open source and currently in pre-alpha.
 
-Underneath, a program compiles once to a WebAssembly component and runs
-natively on Linux, macOS, and Windows through one standard library (UAPI), with
-a capability system (UCap) enforcing every grant. That portability is how the
-sharing property is achieved, not the point of it.
+## Try it
 
-## Install
-
-macOS and Linux, one command:
+Install the command line tool on macOS or Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh
 ```
 
-Then try the note-taking sample, which is one 12 KB file:
+Check the installation:
 
 ```bash
+krate --version
+```
+
+Run the public Notes app:
+
+```bash
+krate run \
+  https://github.com/incyashraj/krate/releases/download/notes-v0.1.0/notes.krate \
+  --native-window \
+  --prompt
+```
+
+Krate fetches the file, shows what it requests, and runs it with the access you
+approve.
+
+For a guided walkthrough, use
+[Try Krate Notes](https://incyashraj.github.io/krate/docs/try-krate-notes.html).
+
+### macOS without a terminal
+
+Download the `krate-app` zip for your Mac from the
+[current release](https://github.com/incyashraj/krate/releases/tag/v0.1.0-rc3).
+Unzip `Krate.app`, then download
+[`notes.krate`](https://github.com/incyashraj/krate/releases/download/notes-v0.1.0/notes.krate).
+
+The current app is not signed. On first open:
+
+1. Right-click `Krate.app`.
+2. Choose **Open**.
+3. Double-click `notes.krate`.
+
+The macOS permission window appears before the Notes app runs.
+
+### Windows
+
+Download the newest `x86_64-pc-windows-msvc.zip` from
+[Releases](https://github.com/incyashraj/krate/releases), extract
+`krate.exe`, and place its folder on your `PATH`.
+
+Then:
+
+```powershell
+krate --version
 krate run https://github.com/incyashraj/krate/releases/download/notes-v0.1.0/notes.krate --native-window --prompt
 ```
 
-Full walkthrough: [Try Krate Notes](https://incyashraj.github.io/krate/try-krate-notes.html).
+Windows file association support is available through
+[`scripts/install-krate-desktop.ps1`](scripts/install-krate-desktop.ps1).
 
-**The long-term arc** is a universal application platform: the same portable
-file running natively on desktop, mobile, and the web, with distribution and
-identity built in. See [the full vision](https://incyashraj.github.io/krate/vision.html),
-[the roadmap](https://incyashraj.github.io/krate/roadmap.html), and
-[follow the build](https://incyashraj.github.io/krate/build-log.html).
+### Linux double-click support
 
-**Naming note:** The project was renamed from **Layer36** to **Krate** in
-July 2026 (company: Krate Labs). During the transition, the repository,
-code, commands, crate names, and `krate:*` API namespaces keep the legacy
-name — the code-level rename is a scheduled slice that lands before the
-UAPI freeze. Everything you run below therefore still says `krate`; the
-behavior is Krate.
-
-**Status:** Pre-alpha. The Krate runtime runs real CLI components — clock, cat,
-curl — from a single `.wasm` on Linux, macOS, and Windows, with
-manifest-declared capabilities, launch grants, and runtime permission checks,
-proven by cross-host CI. The first GUI component works too: one portable file
-opens a real native window (real `NSButton`, real `NSTextField`) on macOS and
-runs headless on the other hosts — the full CI matrix executes the
-byte-identical GUI artifact on all three OSes. Agents can drive all of it:
-an embedding API, `krate run --json`, and an MCP server
-(`krate-mcp-server`) expose sandboxed execution with permission decisions
-returned as data. Formal Phase 2 exit still needs final cross-host evidence,
-a UAPI freeze review, and an outside developer walkthrough.
-
----
-
-## Current phase
-
-**Phase 3 — desktop UI foundation** (with Phase 2 closeout tracked separately).
-Current work covers:
-
-- **done:** the P3-VS-01 vertical slice — one portable WASM component opens
-  a real native macOS window with native controls, and a human click flows
-  back into the component as a portable event
-  (`sh scripts/demo-hello-gui.sh` to see it). Keyboard input is not wired on
-  macOS yet, so an AppKit window is clickable but not typable; Linux and
-  Windows deliver keys and modifiers today.
-- **done:** the agent-embedding track — `krate_runtime::embed`,
-  `krate run --json` (schema `krate.run.v1`), and the `krate-mcp-server`
-  MCP tool for agent frameworks
-- **done:** cross-OS artifact proof — full CI runs the byte-identical GUI
-  component headless on Linux, macOS, and Windows
-- next milestone: real winit windows on Linux and Windows, so the same file
-  becomes *visible* everywhere (widgets drawn per ADR-0015 on Linux)
-
-Phase 2's CLI path stays fully supported: UAPI modules for `io`, `fs`, `net`,
-`time`, and `locale`, the sample apps, and the evidence harness are unchanged.
-
-## Quickstart
-
-### Create an app from a request and share it
-
-One command turns a plain-English request into a shareable `.krate`: it writes
-the app (a built-in template, or a coding agent via `--author-cmd`), builds it,
-checks it imports only Krate APIs, packages it, and verifies its permission wall
-before writing the file.
+After installing `krate`, register `.krate` files for your current user:
 
 ```bash
-cargo build --release -p krate-cli
-# the binary carries the SDK, so no checkout or env var is needed to create apps
-target/release/krate create "Make a checklist app that saves locally" \
+git clone https://github.com/incyashraj/krate
+cd krate
+scripts/install-krate-desktop.sh
+```
+
+You can then open a `.krate` file from your file manager.
+
+## Make an app
+
+The current release includes `krate create`. It turns a supported request into
+a complete `.krate` file:
+
+```bash
+krate create \
+  "Make a checklist app that saves locally" \
   --output checklist.krate
 ```
 
-Send `checklist.krate` to someone; they double-click it, review the access it
-asks for, allow it, and use it. See
-[Create and Share an App](https://incyashraj.github.io/krate/create-and-share.html)
-for the full flow, including the AI-agent seam.
+Krate writes the app, builds it, checks what system features it uses, packages
+it, and confirms that denied access is blocked before writing the file.
 
-### Pack an app into one file and share it
+The public release has two built-in examples:
 
-A `.krate` is a single file holding the component and the permissions it asks
-for. Packing changes how an app is delivered and nothing about what it may do:
-a bundle fetched from a URL gets exactly the authority a local one does, which
-is none until it is granted.
+- a checklist app with local saving;
+- a command line word-frequency app.
 
-```bash
-cargo build -p krate-cli
-scripts/build-krate-cat-component.sh
-
-mkdir -p /tmp/share/fixtures && cd /tmp/share
-# a bundle always runs code.wasm, so the manifest names that
-cp "$OLDPWD/apps/krate-cat/target/wasm32-wasip1/release/krate_cat.wasm" code.wasm
-sed 's|^entry.*|entry = "code.wasm"|' "$OLDPWD/apps/krate-cat/manifest.toml" > manifest.toml
-printf 'hello from a shared krate\n' > fixtures/hello.txt
-
-"$OLDPWD/target/debug/krate" pack code.wasm --manifest manifest.toml -o cat.krate
-"$OLDPWD/target/debug/krate" run cat.krate --auto-grant -- ./fixtures/hello.txt
-```
-
-```text
-hello from a shared krate
-```
-
-The app declared `fs.read:./fixtures/**`, so that is all it can read. Ask it for
-anything else and it is refused, even with `--auto-grant`:
-
-```console
-$ krate run cat.krate --auto-grant -- /etc/hosts
-krate-cat: permission denied: /etc/hosts
-```
-
-Put `cat.krate` behind any URL and it runs from there, with the same limits:
+Creating an app currently needs Rust, the `wasm32-wasip1` target, and
+`cargo-component`. Check your machine with:
 
 ```bash
-krate run https://example.com/cat.krate -- ./fixtures/hello.txt
+krate doctor
 ```
 
-Plain `http://` is refused unless you pass `--insecure-http`, which exists for
-local test servers.
+The full guide is
+[Make and share a Krate app](https://incyashraj.github.io/krate/docs/pages/make-an-app-with-ai.html).
 
-### The rest
+## Let an AI coding agent write the app
 
-Build the CLI and the Phase 2 sample components:
+The built-in examples prove the complete path, but an AI coding agent can
+replace the authoring step:
 
 ```bash
-cargo build -p krate-cli
-scripts/build-krate-clock-component.sh
-scripts/build-krate-cat-component.sh
-scripts/build-krate-curl-component.sh
+krate create \
+  "Make a small app that helps me review a text file" \
+  --author-cmd "<your agent command>" \
+  --output review.krate
 ```
 
-Explain the permissions for the file-reading sample:
+Krate gives the author command:
+
+| Variable | Meaning |
+| --- | --- |
+| `KRATE_REQUEST` | The user's request |
+| `KRATE_APP_NAME` | The generated app name |
+| `KRATE_APP_DIR` | The folder where the agent writes the app |
+
+Everything after authoring stays the same. Krate builds the result, refuses
+imports outside the Krate interfaces, packages the app, and verifies its
+requested access.
+
+The public release can also return output that AI tools and scripts can read:
 
 ```bash
-target/debug/krate manifest explain apps/krate-cat/manifest.toml
+krate run app.krate --json --auto-grant
 ```
 
-Run a deterministic clock component through the Phase 2 UAPI path:
+The output follows the `krate.run.v1` schema.
+
+## How a `.krate` file works
+
+A `.krate` file contains:
+
+- a WebAssembly component;
+- the app name and version;
+- the access the app requests;
+- the reason for each request.
+
+Opening the file does not grant access by itself. Krate creates a session from
+the user's decision and connects only the approved operations to the computer.
+
+Examples:
+
+- `fs.read:notes/**` can read only inside the `notes` folder;
+- `fs.write:checklist/**` can write only inside the `checklist` folder;
+- no network request works unless network access was declared and granted;
+- a downloaded app receives no extra access because it came from a URL.
+
+Inspect an app without running it:
 
 ```bash
-target/debug/krate run \
-  --auto-grant \
-  --manifest apps/krate-clock/manifest.toml \
-  --test-time 1234567890 \
-  --test-locale en-US \
-  --test-timezone UTC \
-  apps/krate-clock/target/wasm32-wasip1/release/krate_clock.wasm
+krate run app.krate --dump-caps
 ```
 
-Run the file sample with an explicit grant:
+Run it and review each request:
 
 ```bash
-mkdir -p apps/krate-cat/fixtures
-printf 'hello from Krate\n' > apps/krate-cat/fixtures/hello.txt
-cd apps/krate-cat
-../../target/debug/krate run \
-  --manifest manifest.toml \
-  --auto-grant \
-  target/wasm32-wasip1/release/krate_cat.wasm \
-  -- ./fixtures/hello.txt
-cd ../..
+krate run app.krate --prompt
 ```
 
-Expected file sample output:
+## What works today
 
-```text
-hello from Krate
-```
+| Capability | Current state |
+| --- | --- |
+| One `.krate` file | Working |
+| Mac, Windows, and Linux execution | Working |
+| Desktop windows on all three systems | Working |
+| Text input, editing, selection, and local saving | Working |
+| File and network capabilities | Working |
+| Permission checks before app execution | Working |
+| Run a `.krate` file from an HTTPS URL | Working |
+| Create a supported app from a request | Working |
+| Let an external AI command author the app | Working |
+| JSON output for agents and scripts | Working |
+| Convert an existing native app automatically | Not available yet |
+| Public app cloud, discovery, identity, and updates | Planned |
 
-Check the current Phase 2 exit status:
+The public CI runs the project on Linux, macOS, and Windows. See
+[CI](https://github.com/incyashraj/krate/actions/workflows/ci.yml) and the
+[current status](STATUS.md) for exact evidence.
 
-```bash
-scripts/phase2-exit-readiness.sh
-```
+## Current platform details
 
-See it with a window (macOS shows a real native window; other hosts run the
-same file headless):
+| | macOS | Windows | Linux |
+| --- | --- | --- | --- |
+| Runs `.krate` apps | Yes | Yes | Yes |
+| Opens desktop windows | Yes | Yes | Yes |
+| Notes editing and saving | Yes | Yes | Yes |
+| `.krate` file registration | `Krate.app` | Registration script | Registration script |
+| Permission review in `v0.1.0-rc3` | Native window | Terminal | Terminal |
 
-```bash
-sh scripts/demo-hello-gui.sh
-```
+The current macOS path uses AppKit controls. Windows and Linux use Krate's
+drawn widget path inside a native window.
 
-Exit codes are the assertions: `0` you clicked the native button, `1` clean
-run without a click, `2` window closed early. Full test manual:
-[Hello GUI Demo & Testing](https://incyashraj.github.io/krate/phase3/hello-gui-demo.html).
-
-Get a machine-readable run report (what agents consume):
-
-```bash
-target/debug/krate run --json --auto-grant \
-  --manifest apps/krate-clock/manifest.toml \
-  apps/krate-clock/target/wasm32-wasip1/release/krate_clock.wasm
-```
-
-For the full walkthrough, read the
-[Quickstart](https://incyashraj.github.io/krate/quickstart.html).
+Development has already improved the Linux no-terminal permission path, but
+that change is not part of `v0.1.0-rc3`. Release claims in this README describe
+the public release unless a section clearly says otherwise.
 
 ## Security
 
-Krate is pre-alpha. Do not run untrusted WebAssembly through `krate` yet.
-Phase 2 has real capability checks for the current UAPI slice, but the platform
-is not adversarially hardened and should still be treated as a developer proof.
+Krate gives an app no access to the user's files or network by default. It can
+use only the access approved for the current run.
 
-See the [Phase 2 threat model](docs/book/src/phase2/threat-model-v0-2.md).
+That boundary is useful, but it does not make every app bug-free or prove that
+every author is trustworthy.
 
-## Project structure
+Krate is pre-alpha:
 
+- use it for testing your own apps and the published examples;
+- do not treat it as ready for hostile third-party code;
+- expect file formats and interfaces to change before version 1.0;
+- report security problems privately through
+  [SECURITY.md](SECURITY.md).
+
+Read the current
+[threat model](https://incyashraj.github.io/krate/docs/phase2/threat-model-v0-2.html)
+for technical detail.
+
+## Current limitations
+
+- Krate does not convert an existing Swift, Electron, Tauri, or native app.
+- The built-in author currently creates a small supported set of applications.
+- A coding agent must use the current Krate APIs.
+- The public macOS app is not code-signed yet.
+- Permission review and desktop polish differ between operating systems.
+- Krate Cloud does not exist yet.
+- Signing, publisher identity, public discovery, managed updates, and a
+  transparency log are planned work.
+
+These limits are part of the product status, not hidden footnotes.
+
+## Why not use a browser link?
+
+A browser is the right answer for many applications.
+
+Some useful local apps need desktop windows, local files, keyboard shortcuts,
+devices, or operating system behavior that a browser cannot provide cleanly.
+Normal native apps can do those things, but sharing them means packaging for
+each system. The person opening one also has to trust code they did not write.
+
+Krate is for the space between those two choices.
+
+## Technical foundation
+
+Krate is written in Rust and uses:
+
+- [Wasmtime](https://wasmtime.dev/) to execute WebAssembly components;
+- the [WebAssembly Component Model](https://component-model.bytecodealliance.org/);
+- WIT interfaces for portable app behavior;
+- host adapters for macOS, Windows, and Linux;
+- a capability policy that checks every supported host operation.
+
+The portability is how one file works across operating systems. The capability
+model is how the user controls what that file can reach.
+
+## Repository map
+
+```text
+apps/       Sample apps and apps used to test Krate
+crates/     Runtime, CLI, policy, adapters, authoring, and SDK code
+docs/       Website, book, design records, and technical documentation
+Plan/       Current and future implementation plans
+scripts/    Build, install, test, evidence, and release tools
+test/       Integration fixtures and cross-language tests
+wit/        Krate interface definitions
 ```
-crates/         # Runtime, CLI, policy, manifest, adapters, SDK helpers
-wit/            # WebAssembly Interface Types definitions
-apps/           # Sample and dogfood apps
-docs/           # Documentation, ADRs, mdBook site source
-  adr/          # Architecture Decision Records
-  book/         # mdBook source
-  legal/        # Trademark, legal notes
-  rfc/          # Proposals
-Plan/           # Phase-by-phase build plans (living documents)
-src/            # Workspace sentinel
-test/           # Integration tests and component fixtures
-scripts/        # Dev tooling scripts
+
+## Build from source
+
+Requirements:
+
+- the Rust toolchain selected by `rust-toolchain.toml`;
+- Git;
+- platform build tools;
+- `cargo-component` when building Krate apps.
+
+```bash
+git clone https://github.com/incyashraj/krate
+cd krate
+
+cargo build --workspace
+cargo test --workspace
+cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --all -- --check
 ```
+
+Build the release CLI:
+
+```bash
+cargo build --release -p krate-cli
+target/release/krate --version
+```
+
+## Documentation
+
+| Start here | Link |
+| --- | --- |
+| Plain guide for making an app | [Make an app with AI](https://incyashraj.github.io/krate/docs/pages/make-an-app-with-ai.html) |
+| First app walkthrough | [Try Krate Notes](https://incyashraj.github.io/krate/docs/try-krate-notes.html) |
+| Developer quickstart | [Quickstart](https://incyashraj.github.io/krate/docs/quickstart.html) |
+| Product direction | [Vision](https://incyashraj.github.io/krate/docs/vision.html) |
+| Planned work | [Roadmap](https://incyashraj.github.io/krate/docs/roadmap.html) |
+| Public development history | [Build log](https://incyashraj.github.io/krate/docs/build-log.html) |
+| Exact current evidence | [Status](STATUS.md) |
+
+## Roadmap
+
+The immediate priority is external use:
+
+1. watch new users install, create, open, and share an app;
+2. repair the points where they get stuck;
+3. expand the apps an AI agent can author;
+4. make the permission experience clear on every operating system.
+
+Later work includes:
+
+- tools that help port existing source code to Krate interfaces;
+- signing and publisher identity;
+- Krate Cloud for publishing, finding, sharing, and updating apps;
+- organization policies and audit records;
+- more operating systems and device types.
+
+See the full [roadmap](https://incyashraj.github.io/krate/docs/roadmap.html).
 
 ## Contributing
 
-We want you. Read [CONTRIBUTING.md](CONTRIBUTING.md) and start with
-[GitHub Discussions](https://github.com/incyashraj/krate/discussions).
-The Discord invite will be added once the Phase 0 community server is live.
+Contributions are welcome across code, documentation, design, examples, and
+testing.
 
-Good first issues are labeled
-[`good first issue`](https://github.com/incyashraj/krate/labels/good%20first%20issue).
+Start with:
+
+1. [CONTRIBUTING.md](CONTRIBUTING.md)
+2. [Open issues](https://github.com/incyashraj/krate/issues)
+3. [Good first issues](https://github.com/incyashraj/krate/labels/good%20first%20issue)
+4. [GitHub Discussions](https://github.com/incyashraj/krate/discussions)
+5. [Code of Conduct](CODE_OF_CONDUCT.md)
+
+For a larger change, open an issue or discussion before writing the full
+implementation.
+
+## Project status
+
+- Stage: pre-alpha
+- Current public release:
+  [`v0.1.0-rc3`](https://github.com/incyashraj/krate/releases/tag/v0.1.0-rc3)
+- Company: Krate Labs
+- Maintainer: [Yashraj Pardeshi](https://github.com/incyashraj)
+- License: MIT OR Apache-2.0
+
+Krate was previously named Layer36. The rename is complete in the repository,
+commands, interfaces, and documentation.
 
 ## License
 
-Dual-licensed under either of:
+Choose either:
 
-- [Apache License, Version 2.0](LICENSE-APACHE)
 - [MIT License](LICENSE-MIT)
+- [Apache License 2.0](LICENSE-APACHE)
 
-at your option. Contributions are dual-licensed under the same terms.
+Contributions use the same dual license.
 
 ## Acknowledgements
 
-Krate stands on the shoulders of the
-[Bytecode Alliance](https://bytecodealliance.org/), the
-[Rust Foundation](https://foundation.rust-lang.org/), and everyone else
-building the open WebAssembly ecosystem.
+Krate builds on work from the
+[Bytecode Alliance](https://bytecodealliance.org/),
+[Wasmtime](https://wasmtime.dev/), the Rust community, and the wider
+WebAssembly community.
