@@ -1,3 +1,8 @@
+// A Krate guest is no_std: the SDK owns the allocator, panic handler, and
+// mem intrinsics, so this app cannot pull std's latent wasi:* imports.
+#![no_std]
+extern crate alloc;
+
 use krate::{
     fs::{self, FsError, OpenMode},
     io::{

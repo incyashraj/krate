@@ -17,14 +17,17 @@ extern crate alloc;
 extern crate std;
 
 // The SDK owns the guest's runtime essentials so no app has to write them: a
-// global allocator (for `alloc`'s Vec/String) and a panic handler. Both are
-// wasm-guest-only; host builds use std's. An app just writes `#![no_std]` and
-// `extern crate alloc;` and gets the rest here.
-#[cfg(all(target_arch = "wasm32", not(test)))]
+// global allocator (for `alloc`'s Vec/String) and a panic handler. These are
+// provided only for a `no_std` wasm guest — the shape every Krate app now uses.
+// A consumer that links `std` (or enables this crate's `std` feature) already
+// gets std's own allocator and panic handler, so gating on `not(feature =
+// "std")` avoids a duplicate-lang-item collision. `not(test)` keeps host unit
+// tests on std's. An app just writes `#![no_std]` + `extern crate alloc;`.
+#[cfg(all(target_arch = "wasm32", not(feature = "std"), not(test)))]
 #[global_allocator]
 static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
 
-#[cfg(all(target_arch = "wasm32", not(test)))]
+#[cfg(all(target_arch = "wasm32", not(feature = "std"), not(test)))]
 #[panic_handler]
 fn panic(_info: &core::panic::PanicInfo) -> ! {
     core::arch::wasm32::unreachable()
@@ -34,8 +37,8 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 // slice comparison). `std` supplies these on wasm; a `no_std` guest must, or
 // they surface as unresolved `env::mem*` imports that break componentization.
 // These are the standard, straightforward implementations, provided once here
-// so no app has to. Guest-only; host builds use std's.
-#[cfg(all(target_arch = "wasm32", not(test)))]
+// so no app has to. Guest-only (no_std wasm); a std consumer uses std's.
+#[cfg(all(target_arch = "wasm32", not(feature = "std"), not(test)))]
 mod mem_intrinsics {
     #[no_mangle]
     pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
