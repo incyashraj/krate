@@ -715,7 +715,11 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     }
     let gating = gating_capability(&manifest);
     let verify_dir = tempfile::tempdir().context("verify dir")?;
-    prepare_verify_dir(verify_dir.path(), &manifest)?;
+    // The verify arg is a seeded fixture path for read-gated apps (the
+    // word-frequency kind needs a real file to read), else a plain task word
+    // for the checklist kind.
+    let verify_arg =
+        prepare_verify_dir(verify_dir.path(), &manifest)?.unwrap_or_else(|| "quick".to_string());
     let bundle_abs = fs::canonicalize(&req.output)?;
 
     // Run the freshly authored app as untrusted during verification: it gets a
@@ -729,7 +733,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
             "--untrusted",
             "--auto-grant",
             "--",
-            "quick",
+            &verify_arg,
         ],
     )?;
     if allow_exit != 0 {
@@ -749,7 +753,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         deny_args.push(name);
     }
     deny_args.push("--".to_string());
-    deny_args.push("quick".to_string());
+    deny_args.push(verify_arg.clone());
     let deny_arg_refs: Vec<&str> = deny_args.iter().map(String::as_str).collect();
     let deny_exit = run_self(verify_dir.path(), &deny_arg_refs)?;
     if deny_exit != 5 {
@@ -985,10 +989,19 @@ fn gating_capability(manifest: &krate_manifest::Manifest) -> String {
 }
 
 /// Create the data directories the app expects under the verify dir, so a
-/// granted run has somewhere to write.
-fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result<()> {
+/// granted run has somewhere to write, and seed any read directory with a small
+/// fixture file.
+///
+/// Returns the argument the verify run should pass. An app whose gating
+/// capability is `fs.read` (the word-frequency kind) needs a real file to read,
+/// so a fixture is written under its declared read directory and its path
+/// returned. Apps that take a free-form task (the checklist kind) get `None`,
+/// and the caller falls back to a plain word like `quick`.
+fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result<Option<String>> {
+    let mut read_arg = None;
     for cap in manifest.capabilities.iter() {
         let name = cap.cap.clone();
+        let is_read = name.starts_with("fs.read:");
         if let Some(rest) = name
             .strip_prefix("fs.read:")
             .or_else(|| name.strip_prefix("fs.write:"))
@@ -997,12 +1010,21 @@ fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result
             let trimmed = rest.trim_start_matches("./");
             if let Some(first) = trimmed.split('/').next() {
                 if !first.is_empty() && first != "**" {
-                    let _ = fs::create_dir_all(dir.join(first));
+                    let subdir = dir.join(first);
+                    let _ = fs::create_dir_all(&subdir);
+                    // Drop a fixture the word-frequency app can read, so its
+                    // all-grants verify run has a real file to analyze.
+                    if is_read && read_arg.is_none() {
+                        let fixture = subdir.join("sample.txt");
+                        fs::write(&fixture, "the quick brown fox the lazy dog the fox\n")
+                            .with_context(|| format!("write {}", fixture.display()))?;
+                        read_arg = Some(format!("{first}/sample.txt"));
+                    }
                 }
             }
         }
     }
-    Ok(())
+    Ok(read_arg)
 }
 
 /// Re-invoke this same `krate` binary in `dir` with `args`, returning its exit
