@@ -947,11 +947,30 @@ at `$KRATE_SDK_DIR`.\n"
 
 /// Build the app dir to a wasm component with cargo-component, returning the
 /// path to the produced wasm.
+///
+/// `cargo-component` is resolved to its real path (PATH first, then the cargo
+/// bin dir) rather than spawned by bare name: a conda base env or a login shell
+/// that puts `~/.cargo/bin` last can leave a spawned process unable to find it
+/// even though the interactive shell and `krate doctor` can. When it resolves
+/// to the cargo bin dir, that dir is prepended to the child's PATH too, so the
+/// `cargo`/`rustc` cargo-component shells out to are found as well.
 fn build_component(app_dir: &Path) -> Result<PathBuf> {
-    let status = std::process::Command::new("cargo-component")
-        .arg("build")
-        .arg("--release")
-        .current_dir(app_dir)
+    let resolved = resolve_tool("cargo-component");
+    let program: std::ffi::OsString = match &resolved {
+        Some(path) => path.clone().into_os_string(),
+        None => "cargo-component".into(),
+    };
+    let mut command = std::process::Command::new(&program);
+    command.arg("build").arg("--release").current_dir(app_dir);
+    if let Some(dir) = resolved.as_deref().and_then(Path::parent) {
+        let existing = std::env::var_os("PATH").unwrap_or_default();
+        let mut paths = vec![dir.to_path_buf()];
+        paths.extend(std::env::split_paths(&existing));
+        if let Ok(joined) = std::env::join_paths(paths) {
+            command.env("PATH", joined);
+        }
+    }
+    let status = command
         .status()
         .context("run cargo-component (is it installed? `cargo install cargo-component`)")?;
     if !status.success() {
