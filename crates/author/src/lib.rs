@@ -33,19 +33,51 @@ pub enum AppKind {
 
 impl AppKind {
     /// Infer the app kind from a free-text request, so `krate create "make a
-    /// checklist…"` picks the right template without an explicit flag. Falls
-    /// back to the word-frequency CLI app.
+    /// grocery list…"` picks the right template without an explicit flag.
+    ///
+    /// The checklist is a GUI app that opens a window and manages a list of
+    /// items; the word-frequency app is a CLI file reporter. Most plain-English
+    /// "make me an app" requests are list/tracker style, so the checklist GUI is
+    /// matched broadly (any "list", "checklist", "todo", or tracking of items)
+    /// and the CLI reporter is reserved for requests that clearly want to read
+    /// or analyze a file. Matching the GUI broadly also gives an `--author-cmd`
+    /// agent the right starter to adapt, which is where authoring succeeds.
     pub fn infer(request: &str) -> AppKind {
         let lower = request.to_lowercase();
-        if lower.contains("checklist")
+
+        // Clear signals for the CLI file-analysis app.
+        let wants_file_report = lower.contains("word frequency")
+            || lower.contains("word count")
+            || lower.contains("most common words")
+            || lower.contains("count the words")
+            || lower.contains("analyze a file")
+            || lower.contains("read a text file")
+            || lower.contains("read a file");
+        if wants_file_report {
+            return AppKind::WordFrequency;
+        }
+
+        // Everything list/tracker/item shaped is the checklist GUI. This covers
+        // "grocery list", "shopping list", "reading list", "packing list",
+        // "to-do", "tasks", "track my …", and the bare "checklist".
+        let wants_list = lower.contains("checklist")
             || lower.contains("todo")
             || lower.contains("to-do")
-            || lower.contains("task list")
-        {
-            AppKind::Checklist
-        } else {
-            AppKind::WordFrequency
+            || lower.contains("to do")
+            || lower.contains("task")
+            || lower.contains("list")
+            || lower.contains("track")
+            || lower.contains("items")
+            || lower.contains("groceries")
+            || lower.contains("shopping");
+        if wants_list {
+            return AppKind::Checklist;
         }
+
+        // Default to the GUI checklist: a windowed, interactive app is the more
+        // useful and demo-friendly fallback than a CLI file reporter for an
+        // unclassified request.
+        AppKind::Checklist
     }
 }
 

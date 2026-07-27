@@ -41,6 +41,7 @@ impl AppKitWidgetPlacement {
         matches!(
             kind,
             WidgetKind::Button
+                | WidgetKind::Checkbox
                 | WidgetKind::TextField
                 | WidgetKind::Text
                 | WidgetKind::TextArea
@@ -1540,12 +1541,52 @@ mod platform {
                         field.setPlaceholderString(Some(&NSString::from_str("Write your note…")));
                         Retained::into_super(field)
                     }
-                    WidgetKind::ListView => {
-                        // The container itself paints nothing on macOS: its
-                        // rows are separate Text placements that lower to
-                        // labels. Lowering it as a non-editable, empty label
-                        // keeps ids and hit testing consistent without drawing
-                        // a box over the rows.
+                    WidgetKind::Checkbox => {
+                        // A checklist row, rendered the same reliable way as the
+                        // notes list rows (which are visible on the dark window):
+                        // a borderless, left-aligned NSButton whose title carries
+                        // a check glyph plus the item text. A plain switch-type
+                        // button's title inherits a color that is invisible on a
+                        // dark window — that is why an item could add (the layout
+                        // grew) yet show nothing. Clicking routes back through the
+                        // same target-action path so toggling reaches the guest.
+                        let done = placement.checked() == Some(true);
+                        let mark = if done { "☑︎  " } else { "☐  " };
+                        let mut text = String::from(mark);
+                        text.push_str(placement.label().unwrap_or(""));
+                        let title = NSString::from_str(&text);
+                        let target_object: &AnyObject = &target;
+                        // SAFETY: the target outlives the button (both owned by
+                        // the returned surface) and the selector is implemented
+                        // by KrateWidgetTarget.
+                        let button = unsafe {
+                            NSButton::buttonWithTitle_target_action(
+                                &title,
+                                Some(target_object),
+                                Some(sel!(krateWidgetActivated:)),
+                                mtm,
+                            )
+                        };
+                        button.setFrame(frame);
+                        button.setTag(placement.widget().get() as isize);
+                        button.setBordered(false);
+                        button.setAlignment(objc2_app_kit::NSTextAlignment::Left);
+                        button.setFont(Some(&NSFont::systemFontOfSize(14.0)));
+                        // A done item reads quieter (secondary), an open item in
+                        // full label color — both explicit so they paint on dark.
+                        let tint = if done {
+                            NSColor::secondaryLabelColor()
+                        } else {
+                            NSColor::labelColor()
+                        };
+                        button.setContentTintColor(Some(&tint));
+                        Retained::into_super(button)
+                    }
+                    WidgetKind::ListView | WidgetKind::Scroll | WidgetKind::Stack => {
+                        // A layout container paints nothing itself on macOS: its
+                        // children are separate placements. Lower it as an empty,
+                        // non-editable label so ids and hit testing stay
+                        // consistent without drawing a box over the children.
                         let empty = NSString::from_str("");
                         let label = NSTextField::labelWithString(&empty, mtm);
                         label.setFrame(frame);
