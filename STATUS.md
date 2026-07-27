@@ -1,6 +1,25 @@
 # Krate Status (formerly Layer36)
 
-Last updated: 2026-07-26
+Last updated: 2026-07-28
+
+Release `v0.1.0-rc4` (2026-07-28): main `97517db` shipped to the one-line
+installer. This release makes AI authoring reliable and hardens `krate create`
+for real machines. The guest SDK is now `#![no_std]`, so an AI-authored app
+cannot leak std's latent `wasi:*` imports by construction — arbitrary-app
+authoring is dependable rather than a coin flip. `krate create --agent claude`
+drives Claude Code to author an app from a plain request (proven on varied
+requests: grocery/reading/packing/habits lists, each correctly customized and
+building clean); `--author-cmd` remains the lower-level seam. Create-path
+robustness landed for the traps real testers hit: the TTY-prompt verify hang
+(verify runs non-interactively now), Homebrew-shadows-rustup and conda PATH,
+stale-cwd resolution, the macOS checkbox render fix (item rows were filtered out
+of the AppKit lowering), and broader app-kind inference. Verified end to end on
+the publicly-installed rc4 binary: the installer fetches rc4, `krate create`
+and `--agent claude` both produce a working `.krate`. Post-merge main CI
+`30302822151` and the rc4 release build both green; the merged code was green on
+the full 3-OS matrix at `f2bb345` (run `30286024116`).
+
+Last updated (prior): 2026-07-26
 Naming: the project is Krate (company: Krate Labs, Inc.). The A9 rename is
 fully executed — CLI `krate`, WIT `krate:*`, schema `krate.run.v1`, env
 `KRATE_*`, repo `incyashraj/krate`, runner `krate-local`, future bundle
