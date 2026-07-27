@@ -2414,19 +2414,47 @@ fn missing_create_tools() -> Vec<MissingTool> {
         });
     }
 
-    // Only meaningful when rustup is present; if rustup is missing the Rust row
-    // above already covers it.
-    if have_cargo && has_rust_target(CREATE_WASM_TARGET) == Some(false) {
-        missing.push(MissingTool {
-            what: CREATE_WASM_TARGET,
-            install_cmd: vec![
-                "rustup".into(),
-                "target".into(),
-                "add".into(),
-                CREATE_WASM_TARGET.into(),
-            ],
-            note: "the WebAssembly target Krate apps compile to",
-        });
+    // The wasm target. There are three cases:
+    //   1. rustup present and the target installed  -> fine.
+    //   2. rustup present but the target missing     -> add it (rustup target add).
+    //   3. cargo present but NOT rustup-managed (e.g. a Homebrew `cargo` with no
+    //      rustup)                                    -> the build cannot reach a
+    //      wasm target at all; point the user at rustup, which is the supported
+    //      toolchain, rather than letting the build fail later with a raw
+    //      "wasm32-wasip1 target not found / rustup is not available" error.
+    if have_cargo {
+        match has_rust_target(CREATE_WASM_TARGET) {
+            Some(true) => {}
+            Some(false) => missing.push(MissingTool {
+                what: CREATE_WASM_TARGET,
+                install_cmd: vec![
+                    "rustup".into(),
+                    "target".into(),
+                    "add".into(),
+                    CREATE_WASM_TARGET.into(),
+                ],
+                note: "the WebAssembly target Krate apps compile to",
+            }),
+            // `has_rust_target` returns None when rustup could not be run. If a
+            // rustup toolchain is not reachable either, the cargo on PATH is a
+            // non-rustup one (commonly `brew install rust`) that cannot build a
+            // wasm component. Installing rustup gives a toolchain that can.
+            None if rustup_toolchain_bin().is_none() => missing.push(MissingTool {
+                what: "a rustup-managed Rust toolchain",
+                install_cmd: vec![
+                    "curl".into(),
+                    "--proto".into(),
+                    "=https".into(),
+                    "--tlsv1.2".into(),
+                    "-sSf".into(),
+                    "https://sh.rustup.rs".into(),
+                ],
+                note: "the Rust on your PATH is not rustup-managed (for example \
+                       `brew install rust`) and cannot build the WebAssembly \
+                       target; rustup provides one that can",
+            }),
+            None => {}
+        }
     }
 
     missing
