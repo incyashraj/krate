@@ -196,10 +196,19 @@ enum Command {
         #[arg(short, long)]
         output: PathBuf,
 
+        /// Author the app with an AI coding agent instead of the built-in
+        /// generator. `--agent claude` drives Claude Code: Krate hands it the
+        /// request and a working starter, and it writes the app. This is the
+        /// clean, supported way to plug in an agent; `--author-cmd` below is the
+        /// lower-level escape hatch for any other tool.
+        #[arg(long, value_enum)]
+        agent: Option<AgentKind>,
+
         /// A command that writes the app source instead of the built-in
-        /// generator — this is where an AI agent plugs in. It is handed
+        /// generator — the lower-level agent seam. It is handed
         /// `KRATE_APP_DIR`, `KRATE_APP_NAME`, and `KRATE_REQUEST` and must
         /// write Cargo.toml, src/lib.rs, and manifest.toml into the app dir.
+        /// Prefer `--agent` for a supported agent.
         #[arg(long)]
         author_cmd: Option<String>,
 
@@ -243,6 +252,15 @@ enum Command {
     /// capability sandbox. Speaks JSON-RPC 2.0 over stdio; wire an agent at it
     /// with e.g. `claude mcp add krate -- krate mcp`.
     Mcp,
+
+    /// Internal: drive a supported AI agent to author the app. `krate create
+    /// --agent claude` runs this; it reads KRATE_REQUEST / KRATE_APP_DIR from
+    /// the environment create sets. Hidden because it is not a user entry point.
+    #[command(hide = true)]
+    AuthorAgent {
+        #[arg(value_enum)]
+        agent: AgentKind,
+    },
 }
 
 /// The built-in app templates `krate create` can generate.
@@ -252,6 +270,28 @@ enum CreateKind {
     WordFrequency,
     /// A GUI app: a checklist with checkboxes that saves locally.
     Checklist,
+}
+
+/// An AI coding agent Krate knows how to drive for `--agent`.
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum AgentKind {
+    /// Claude Code (the `claude` CLI), driven headlessly.
+    Claude,
+}
+
+impl AgentKind {
+    /// The `--author-cmd` string that drives this agent. Krate builds the
+    /// headless prompt and passes the request through the environment, so the
+    /// user never has to write agent glue — `--agent claude` just works.
+    fn author_command(self) -> &'static str {
+        match self {
+            // `krate author-agent claude` is a hidden subcommand that runs the
+            // agent with the right prompt and flags, reading KRATE_REQUEST etc.
+            // from the environment create already sets. Invoking our own binary
+            // keeps the prompt versioned with the tool instead of in a script.
+            AgentKind::Claude => "krate author-agent claude",
+        }
+    }
 }
 
 #[derive(Debug, Subcommand)]
@@ -427,6 +467,7 @@ fn run() -> Result<u8> {
         Command::Create {
             request,
             output,
+            agent,
             author_cmd,
             kind,
             name,
@@ -438,7 +479,10 @@ fn run() -> Result<u8> {
         } => create_krate(CreateRequest {
             request,
             output,
-            author_cmd,
+            // --agent is the clean front door; it resolves to the command that
+            // drives that agent. An explicit --author-cmd still wins for any
+            // other tool.
+            author_cmd: author_cmd.or_else(|| agent.map(|a| a.author_command().to_string())),
             kind,
             name,
             transcript,
@@ -448,6 +492,7 @@ fn run() -> Result<u8> {
             json,
         }),
         Command::Mcp => mcp::serve().map(|()| 0),
+        Command::AuthorAgent { agent } => run_author_agent(agent),
         Command::Version => {
             print_version();
             Ok(0)
@@ -715,8 +760,19 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     }
     let gating = gating_capability(&manifest);
     let verify_dir = tempfile::tempdir().context("verify dir")?;
-    prepare_verify_dir(verify_dir.path(), &manifest)?;
-    let bundle_abs = fs::canonicalize(&req.output)?;
+    // The verify arg is a seeded fixture path for read-gated apps (the
+    // word-frequency kind needs a real file to read), else a plain task word
+    // for the checklist kind.
+    let verify_arg =
+        prepare_verify_dir(verify_dir.path(), &manifest)?.unwrap_or_else(|| "quick".to_string());
+    // Resolve the bundle to an absolute path robustly. `fs::canonicalize` on a
+    // relative output path depends on the process's current directory, which can
+    // be stale or deleted (e.g. a shell that `rm -rf`'d the directory it was
+    // standing in) — that made the verify run against a wrong or missing path
+    // and hang or fail intermittently. Canonicalize the file's parent (which
+    // exists) and rejoin the file name, and fall back to a manual absolute join
+    // if the current directory itself is unreadable.
+    let bundle_abs = absolute_output_path(&req.output)?;
 
     // Run the freshly authored app as untrusted during verification: it gets a
     // finite fuel budget, so a generated runaway or infinite loop fails here
@@ -729,7 +785,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
             "--untrusted",
             "--auto-grant",
             "--",
-            "quick",
+            &verify_arg,
         ],
     )?;
     if allow_exit != 0 {
@@ -749,7 +805,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         deny_args.push(name);
     }
     deny_args.push("--".to_string());
-    deny_args.push("quick".to_string());
+    deny_args.push(verify_arg.clone());
     let deny_arg_refs: Vec<&str> = deny_args.iter().map(String::as_str).collect();
     let deny_exit = run_self(verify_dir.path(), &deny_arg_refs)?;
     if deny_exit != 5 {
@@ -861,6 +917,96 @@ struct AuthorContext<'a> {
     kind: krate_author::AppKind,
 }
 
+/// Drive a supported AI agent to author the app (the `--agent` path). Reads the
+/// request and app dir from the environment `create` set, builds the agent
+/// prompt here — versioned with the tool, not in an external script — and runs
+/// the agent headless. Today the one supported agent is Claude Code.
+fn run_author_agent(agent: AgentKind) -> Result<u8> {
+    let app_dir = std::env::var("KRATE_APP_DIR")
+        .context("KRATE_APP_DIR is not set; run this through `krate create --agent`")?;
+    let request =
+        std::env::var("KRATE_REQUEST").unwrap_or_else(|_| "a small useful app".to_string());
+
+    match agent {
+        AgentKind::Claude => run_claude_author(&app_dir, &request),
+    }
+}
+
+/// The prompt handed to Claude Code. It points the model at the compiling
+/// starter `create` already dropped in the app dir and states the rules, then
+/// asks it to make the app match the request. Editing a known-good, rendering,
+/// non-hanging base is what makes AI authoring dependable rather than a coin
+/// flip: the model adapts real working code instead of writing the strict
+/// no_std/`krate:*` discipline from a blank page.
+fn claude_author_prompt(app_dir: &str, request: &str) -> String {
+    format!(
+        "You are writing a Krate desktop app in Rust, from the user's request.\n\
+\n\
+A COMPILING, WORKING starter is already in {app_dir} (Cargo.toml, src/lib.rs,\n\
+manifest.toml): a checklist GUI that opens a window, shows checkbox rows, lets\n\
+the user add and toggle items, and saves them to its granted folder. Read it\n\
+first. It already follows every rule below and renders correctly, so it is the\n\
+safest base to build from.\n\
+\n\
+Your job: make the app match the request. If the request is list or tracker\n\
+shaped, adapt the starter (window title, on-screen heading, seed items,\n\
+wording). If it is genuinely different, rewrite src/lib.rs following the same\n\
+structure and rules.\n\
+\n\
+Request: {request}\n\
+\n\
+HARD RULES (the starter obeys all of these; do not break them):\n\
+- The app is no_std plus alloc. Do not add any std usage.\n\
+- Import only from the same bindings modules the starter uses (its ui, io, and\n\
+  fs imports). Never import wasi interfaces or std io.\n\
+- Build strings with the starter's pure_string and number_string helpers,\n\
+  never with the format macro.\n\
+- Keep the same window, tree, event, and save structure so it renders and\n\
+  saves the same way.\n\
+- A GUI app must still exit promptly when its first argument is the literal\n\
+  word quick. The starter already does this; keep it.\n\
+\n\
+After editing, the app must still open a window, show its rows, add and toggle\n\
+items, save to the granted folder, and exit on quick. Use the Read and Edit\n\
+(or Write) tools. Do not explain; just make the app."
+    )
+}
+
+fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
+    let prompt = claude_author_prompt(app_dir, request);
+    let transcript = Path::new(app_dir).join(".agent-transcript.txt");
+    let file = fs::File::create(&transcript).ok();
+
+    let mut command = ProcessCommand::new("claude");
+    command
+        .arg("-p")
+        .arg(&prompt)
+        .arg("--allowed-tools")
+        .arg("Read,Edit,Write")
+        .arg("--permission-mode")
+        .arg("acceptEdits");
+    // Send the model's own chatter to the transcript, not the create output.
+    if let Some(file) = &file {
+        if let Ok(clone) = file.try_clone() {
+            command.stdout(std::process::Stdio::from(file.try_clone().unwrap_or(clone)));
+        }
+        if let Ok(clone) = file.try_clone() {
+            command.stderr(std::process::Stdio::from(clone));
+        }
+    }
+
+    let status = command
+        .status()
+        .context("run the `claude` CLI (is Claude Code installed and signed in?)")?;
+    if !status.success() {
+        anyhow::bail!(
+            "the Claude agent did not finish successfully; see {}",
+            transcript.display()
+        );
+    }
+    Ok(0)
+}
+
 fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
     use krate_author::{generate, AppKind, AppRequest};
 
@@ -941,17 +1087,73 @@ at `$KRATE_SDK_DIR`.\n"
     )
 }
 
+/// The directory holding a rustup-managed `cargo`/`rustc` that has the wasm
+/// target, if rustup is present.
+///
+/// On many Macs `brew install rust` puts a Homebrew `cargo`/`rustc` first on
+/// PATH. That toolchain is NOT rustup-managed and has no `wasm32-wasip1`
+/// target, so `cargo-component` picks it up and fails with "failed to find the
+/// `wasm32-wasip1` target and rustup is not available" even though a rustup
+/// toolchain with the target is installed. Prepending rustup's own toolchain
+/// bin to the child PATH makes the right cargo/rustc win.
+fn rustup_toolchain_bin() -> Option<PathBuf> {
+    let out = ProcessCommand::new("rustup")
+        .args(["which", "cargo"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let path = String::from_utf8(out.stdout).ok()?;
+    PathBuf::from(path.trim()).parent().map(Path::to_path_buf)
+}
+
 /// Build the app dir to a wasm component with cargo-component, returning the
 /// path to the produced wasm.
+///
+/// The child's PATH is made robust against two common local setups:
+/// - `cargo-component` is resolved to its real path (PATH, then the cargo bin
+///   dir) rather than spawned by bare name, so a conda base env or a login
+///   shell that puts `~/.cargo/bin` last still finds it.
+/// - rustup's active-toolchain bin is prepended, so a Homebrew `cargo`/`rustc`
+///   that shadows rustup (and lacks the wasm target) does not get used.
 fn build_component(app_dir: &Path) -> Result<PathBuf> {
-    let status = std::process::Command::new("cargo-component")
-        .arg("build")
-        .arg("--release")
-        .current_dir(app_dir)
+    let resolved = resolve_tool("cargo-component");
+    let program: std::ffi::OsString = match &resolved {
+        Some(path) => path.clone().into_os_string(),
+        None => "cargo-component".into(),
+    };
+    let mut command = std::process::Command::new(&program);
+    command.arg("build").arg("--release").current_dir(app_dir);
+
+    // Build the child PATH: rustup's toolchain bin first (so a rustup cargo/rustc
+    // with the wasm target wins over a Homebrew one), then the cargo bin dir that
+    // holds cargo-component, then the inherited PATH.
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let mut prefix: Vec<PathBuf> = Vec::new();
+    if let Some(bin) = rustup_toolchain_bin() {
+        prefix.push(bin);
+    }
+    if let Some(dir) = resolved.as_deref().and_then(Path::parent) {
+        prefix.push(dir.to_path_buf());
+    }
+    if !prefix.is_empty() {
+        prefix.extend(std::env::split_paths(&existing));
+        if let Ok(joined) = std::env::join_paths(prefix) {
+            command.env("PATH", joined);
+        }
+    }
+
+    let status = command
         .status()
         .context("run cargo-component (is it installed? `cargo install cargo-component`)")?;
     if !status.success() {
-        anyhow::bail!("cargo-component build failed");
+        anyhow::bail!(
+            "cargo-component build failed. If it reported it could not find the \
+             `wasm32-wasip1` target, install it with `rustup target add wasm32-wasip1`; \
+             if it reported rustup is not available, a non-rustup Rust (for example \
+             `brew install rust`) may be shadowing rustup on your PATH."
+        );
     }
     let release = app_dir.join("target/wasm32-wasip1/release");
     for entry in fs::read_dir(&release).with_context(|| format!("read {}", release.display()))? {
@@ -985,10 +1187,28 @@ fn gating_capability(manifest: &krate_manifest::Manifest) -> String {
 }
 
 /// Create the data directories the app expects under the verify dir, so a
-/// granted run has somewhere to write.
-fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result<()> {
+/// granted run has somewhere to write, and seed a read directory with a small
+/// fixture file when the app reads a file argument.
+///
+/// Returns the argument the verify run should pass. A file-reading CLI app (the
+/// word-frequency kind) needs a real file path to read, so a fixture is written
+/// and its path returned. A GUI app (the checklist, which declares `ui.window`)
+/// must instead be given the plain `quick` token so it exits promptly rather
+/// than opening a window and waiting — passing it a file path would leave it
+/// blocked on its window, which the caller returns `None` for so the plain
+/// `quick` fallback is used.
+fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result<Option<String>> {
+    // A GUI app opens a window and honors `quick` to exit; it must not be handed
+    // a file-path argument. Detect it by its window capability.
+    let is_gui = manifest
+        .capabilities
+        .iter()
+        .any(|cap| cap.cap.starts_with("ui.window"));
+
+    let mut read_arg = None;
     for cap in manifest.capabilities.iter() {
         let name = cap.cap.clone();
+        let is_read = name.starts_with("fs.read:");
         if let Some(rest) = name
             .strip_prefix("fs.read:")
             .or_else(|| name.strip_prefix("fs.write:"))
@@ -997,27 +1217,129 @@ fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result
             let trimmed = rest.trim_start_matches("./");
             if let Some(first) = trimmed.split('/').next() {
                 if !first.is_empty() && first != "**" {
-                    let _ = fs::create_dir_all(dir.join(first));
+                    let subdir = dir.join(first);
+                    let _ = fs::create_dir_all(&subdir);
+                    // Drop a fixture only for a file-reading CLI app, so its
+                    // all-grants verify run has a real file to analyze. A GUI app
+                    // gets `quick` instead (read_arg stays None).
+                    if is_read && !is_gui && read_arg.is_none() {
+                        let fixture = subdir.join("sample.txt");
+                        fs::write(&fixture, "the quick brown fox the lazy dog the fox\n")
+                            .with_context(|| format!("write {}", fixture.display()))?;
+                        read_arg = Some(format!("{first}/sample.txt"));
+                    }
                 }
             }
         }
     }
-    Ok(())
+    Ok(read_arg)
 }
 
 /// Re-invoke this same `krate` binary in `dir` with `args`, returning its exit
 /// code. Used to verify a packed bundle in isolation.
+/// How long the verification run may take before it is treated as hung and
+/// killed. Generous for a real app finishing its work under `quick`, but bounded
+/// so `create` can never hang a user's terminal indefinitely — e.g. if a
+/// generated GUI app fails to honor `quick` and waits on a window that never
+/// closes.
+const VERIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Resolve a possibly-relative output path to an absolute one without depending
+/// on a healthy current directory. `fs::canonicalize` on a relative path reads
+/// the process cwd, which a shell can invalidate (deleting the directory it is
+/// in). We canonicalize the file's parent — which was just written and exists —
+/// and rejoin the file name; if even that fails we fall back to joining the file
+/// onto the current dir manually. The bundle was already written to `output`, so
+/// its parent is guaranteed to exist here.
+fn absolute_output_path(output: &Path) -> Result<PathBuf> {
+    if output.is_absolute() {
+        return Ok(output.to_path_buf());
+    }
+    let parent = output.parent().filter(|p| !p.as_os_str().is_empty());
+    let file = output.file_name().context("output path has no file name")?;
+    match parent {
+        Some(parent) => {
+            let parent_abs = fs::canonicalize(parent)
+                .or_else(|_| std::env::current_dir().map(|cwd| cwd.join(parent)))
+                .with_context(|| format!("resolve output directory {}", parent.display()))?;
+            Ok(parent_abs.join(file))
+        }
+        None => {
+            // Bare file name in the current directory.
+            let cwd = std::env::current_dir()
+                .context("the current directory is unavailable; pass an absolute --output path")?;
+            Ok(cwd.join(file))
+        }
+    }
+}
+
 fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
     let exe = std::env::current_exe().context("locate self")?;
     // Capture the child's output rather than inherit it: the verified app's own
     // stdout (e.g. its "saved" line) is noise to the create caller, and would
     // corrupt the single-object stream under --json. Only the exit code matters.
-    let output = std::process::Command::new(exe)
+    //
+    // KRATE_VERIFY_LOG, when set to a path, streams the child's output there
+    // instead of discarding it — a diagnostic for when verification hangs, so
+    // the last thing the verified app printed is visible.
+    let (out, err) = match std::env::var_os("KRATE_VERIFY_LOG") {
+        Some(path) => {
+            let file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .ok();
+            match file {
+                Some(file) => {
+                    let clone = file.try_clone().ok();
+                    (
+                        std::process::Stdio::from(file),
+                        clone
+                            .map(std::process::Stdio::from)
+                            .unwrap_or_else(std::process::Stdio::null),
+                    )
+                }
+                None => (std::process::Stdio::null(), std::process::Stdio::null()),
+            }
+        }
+        None => (std::process::Stdio::null(), std::process::Stdio::null()),
+    };
+    let mut child = std::process::Command::new(exe)
         .args(args)
+        // Null stdin so the verification run is non-interactive. Otherwise it
+        // inherits the caller's terminal, and the deny half — which withholds a
+        // required capability — sees a TTY, shows the interactive "Grant
+        // [A]ll/[N]one" prompt, and blocks forever waiting for a keypress that
+        // never comes (the create hangs until the watchdog fires). With no TTY
+        // it refuses immediately with exit 5, which is exactly what verify wants.
+        .stdin(std::process::Stdio::null())
         .current_dir(dir)
-        .output()
+        .stdout(out)
+        .stderr(err)
+        .spawn()
         .context("re-invoke krate for verification")?;
-    Ok(output.status.code().unwrap_or(-1))
+
+    // Poll for completion up to VERIFY_TIMEOUT, then kill a hung run so create
+    // fails cleanly instead of blocking forever.
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait().context("wait for verification run")? {
+            Some(status) => return Ok(status.code().unwrap_or(-1)),
+            None => {
+                if start.elapsed() >= VERIFY_TIMEOUT {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    anyhow::bail!(
+                        "the app did not finish its verification run within {} seconds and was \
+                         stopped. A generated app should exit promptly when run with `quick`; \
+                         if it opens a window and waits, it cannot be verified automatically.",
+                        VERIFY_TIMEOUT.as_secs()
+                    );
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+    }
 }
 
 /// Copy a manifest, replacing its `entry` line with a new path.
@@ -2336,19 +2658,47 @@ fn missing_create_tools() -> Vec<MissingTool> {
         });
     }
 
-    // Only meaningful when rustup is present; if rustup is missing the Rust row
-    // above already covers it.
-    if have_cargo && has_rust_target(CREATE_WASM_TARGET) == Some(false) {
-        missing.push(MissingTool {
-            what: CREATE_WASM_TARGET,
-            install_cmd: vec![
-                "rustup".into(),
-                "target".into(),
-                "add".into(),
-                CREATE_WASM_TARGET.into(),
-            ],
-            note: "the WebAssembly target Krate apps compile to",
-        });
+    // The wasm target. There are three cases:
+    //   1. rustup present and the target installed  -> fine.
+    //   2. rustup present but the target missing     -> add it (rustup target add).
+    //   3. cargo present but NOT rustup-managed (e.g. a Homebrew `cargo` with no
+    //      rustup)                                    -> the build cannot reach a
+    //      wasm target at all; point the user at rustup, which is the supported
+    //      toolchain, rather than letting the build fail later with a raw
+    //      "wasm32-wasip1 target not found / rustup is not available" error.
+    if have_cargo {
+        match has_rust_target(CREATE_WASM_TARGET) {
+            Some(true) => {}
+            Some(false) => missing.push(MissingTool {
+                what: CREATE_WASM_TARGET,
+                install_cmd: vec![
+                    "rustup".into(),
+                    "target".into(),
+                    "add".into(),
+                    CREATE_WASM_TARGET.into(),
+                ],
+                note: "the WebAssembly target Krate apps compile to",
+            }),
+            // `has_rust_target` returns None when rustup could not be run. If a
+            // rustup toolchain is not reachable either, the cargo on PATH is a
+            // non-rustup one (commonly `brew install rust`) that cannot build a
+            // wasm component. Installing rustup gives a toolchain that can.
+            None if rustup_toolchain_bin().is_none() => missing.push(MissingTool {
+                what: "a rustup-managed Rust toolchain",
+                install_cmd: vec![
+                    "curl".into(),
+                    "--proto".into(),
+                    "=https".into(),
+                    "--tlsv1.2".into(),
+                    "-sSf".into(),
+                    "https://sh.rustup.rs".into(),
+                ],
+                note: "the Rust on your PATH is not rustup-managed (for example \
+                       `brew install rust`) and cannot build the WebAssembly \
+                       target; rustup provides one that can",
+            }),
+            None => {}
+        }
     }
 
     missing

@@ -1,5 +1,98 @@
 #![doc = include_str!("../README.md")]
 #![warn(rustdoc::broken_intra_doc_links)]
+// A Krate guest links only `krate:*`. `std` on wasm32-wasip1 carries latent
+// `wasi:*` imports (its runtime, panicking, and `std::io`) that dead-code
+// elimination only sometimes strips, so a `std` guest leaks them intermittently.
+// Building the SDK `no_std` means there is no std runtime to leak: every app is
+// `krate:*`-only by construction. `alloc` (Vec/String) is still available.
+#![no_std]
+
+extern crate alloc;
+
+// When the `std` feature is on (host builds, docs, unit tests) link std so the
+// generated `impl std::error::Error` blocks — which wit-bindgen gates behind
+// `cfg(feature = "std")` — resolve. A guest never enables this feature, so it
+// stays `no_std`.
+#[cfg(feature = "std")]
+extern crate std;
+
+// The SDK owns the guest's runtime essentials so no app has to write them: a
+// global allocator (for `alloc`'s Vec/String) and a panic handler. These are
+// provided only for a `no_std` wasm guest — the shape every Krate app now uses.
+// A consumer that links `std` (or enables this crate's `std` feature) already
+// gets std's own allocator and panic handler, so gating on `not(feature =
+// "std")` avoids a duplicate-lang-item collision. `not(test)` keeps host unit
+// tests on std's. An app just writes `#![no_std]` + `extern crate alloc;`.
+#[cfg(all(target_arch = "wasm32", not(feature = "std"), not(test)))]
+#[global_allocator]
+static ALLOC: dlmalloc::GlobalDlmalloc = dlmalloc::GlobalDlmalloc;
+
+#[cfg(all(target_arch = "wasm32", not(feature = "std"), not(test)))]
+#[panic_handler]
+fn panic(_info: &core::panic::PanicInfo) -> ! {
+    core::arch::wasm32::unreachable()
+}
+
+// The compiler emits calls to the C mem* intrinsics (e.g. `memcmp` for a byte
+// slice comparison). `std` supplies these on wasm; a `no_std` guest must, or
+// they surface as unresolved `env::mem*` imports that break componentization.
+// These are the standard, straightforward implementations, provided once here
+// so no app has to. Guest-only (no_std wasm); a std consumer uses std's.
+#[cfg(all(target_arch = "wasm32", not(feature = "std"), not(test)))]
+mod mem_intrinsics {
+    #[no_mangle]
+    pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+        let mut i = 0;
+        while i < n {
+            *dest.add(i) = *src.add(i);
+            i += 1;
+        }
+        dest
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn memmove(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+        if (dest as usize) < (src as usize) {
+            let mut i = 0;
+            while i < n {
+                *dest.add(i) = *src.add(i);
+                i += 1;
+            }
+        } else {
+            let mut i = n;
+            while i > 0 {
+                i -= 1;
+                *dest.add(i) = *src.add(i);
+            }
+        }
+        dest
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn memset(dest: *mut u8, value: i32, n: usize) -> *mut u8 {
+        let byte = value as u8;
+        let mut i = 0;
+        while i < n {
+            *dest.add(i) = byte;
+            i += 1;
+        }
+        dest
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn memcmp(a: *const u8, b: *const u8, n: usize) -> i32 {
+        let mut i = 0;
+        while i < n {
+            let av = *a.add(i);
+            let bv = *b.add(i);
+            if av != bv {
+                return av as i32 - bv as i32;
+            }
+            i += 1;
+        }
+        0
+    }
+}
 
 #[allow(warnings)]
 #[doc(hidden)]
@@ -42,6 +135,8 @@ pub mod io {
 
     /// App arguments passed to `krate run app.wasm -- ...`.
     pub mod args {
+        use alloc::string::{String, ToString};
+        use alloc::vec::Vec;
         /// Return all app arguments as owned strings.
         ///
         /// This is the easiest helper for normal apps. It parses the current
@@ -87,6 +182,8 @@ pub mod io {
     pub mod streams {
         pub use crate::bindings::krate::io::streams::{InputStream, OutputStream};
         pub use crate::bindings::krate::io::types::IoError;
+        use alloc::string::String;
+        use alloc::vec::Vec;
 
         /// Convenience methods for generated Krate input streams.
         pub trait InputStreamExt {
@@ -184,6 +281,8 @@ pub mod io {
 pub mod fs {
     pub use crate::bindings::krate::fs::files::File;
     pub use crate::bindings::krate::fs::types::{FileStat, FsError, OpenMode};
+    use alloc::string::{String, ToString};
+    use alloc::vec::Vec;
 
     /// Open a file through the Krate filesystem UAPI.
     ///
@@ -295,6 +394,8 @@ pub mod fs {
 /// Capability-checked HTTP client access.
 pub mod net {
     pub use crate::bindings::krate::net::types::{Header, HttpMethod, NetError, Request, Response};
+    use alloc::string::{String, ToString};
+    use alloc::vec::Vec;
 
     /// Fetch a URL with a simple HTTP GET and return the response body.
     pub fn get(url: &str) -> Result<Vec<u8>, NetError> {
@@ -360,6 +461,7 @@ pub mod time {
 /// Locale, timezone, date, and number formatting helpers.
 pub mod locale {
     pub use crate::bindings::krate::locale::types::{DateStyle, LocaleId, NumberStyle};
+    use alloc::string::String;
 
     /// Return the user's current locale.
     pub fn current() -> LocaleId {
@@ -396,6 +498,8 @@ pub mod locale {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
+    use alloc::vec::Vec;
 
     #[test]
     fn sdk_reexports_core_phase2_types() {

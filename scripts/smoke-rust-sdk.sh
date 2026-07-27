@@ -68,6 +68,12 @@ panic = "abort"
 EOF
 
 cat > "$smoke_root/src/lib.rs" <<'EOF'
+// A Krate guest is no_std, exactly like the apps `krate create` writes: the SDK
+// owns the allocator, panic handler, and mem intrinsics, so this app declares
+// no_std and gets them for free. This is what keeps a guest krate:*-only.
+#![no_std]
+extern crate alloc;
+
 use krate::{io::stdio, Guest};
 
 struct Component;

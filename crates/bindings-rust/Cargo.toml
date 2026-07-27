@@ -17,5 +17,18 @@ include = [
     "src/**/*.rs",
 ]
 
+[features]
+# Off by default so a guest links no `std` (and cannot leak std's latent
+# `wasi:*` imports). Host builds — this crate's unit tests, docs — enable it to
+# get the `std::error::Error` impls. Guests never turn it on.
+default = []
+std = []
+
 [dependencies]
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
+# The global allocator for a `no_std` guest. This is the same allocator `std`
+# uses on wasm32-wasip1, so it is a known-good, no-surprises choice; the guest
+# gets `alloc` (Vec/String) with zero boilerplate and the SDK owns the wiring so
+# no app has to. Only linked into the wasm guest.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+dlmalloc = { version = "0.2", features = ["global"] }

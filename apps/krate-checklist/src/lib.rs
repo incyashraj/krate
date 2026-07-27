@@ -43,7 +43,6 @@ const SEED_ITEMS: [&str; 3] = ["Buy milk", "Write the pitch", "Ship the demo"];
 /// Interactive runs stay open until the person closes the window; automated
 /// runs pass `quick` and exit promptly.
 const MAX_WAIT_ROUNDS: u32 = 600_000;
-const QUICK_WAIT_ROUNDS: u32 = 40;
 const WAIT_ROUND_MILLIS: u32 = 50;
 
 struct Component;
@@ -224,12 +223,13 @@ fn stack_root() -> types::WidgetNode {
         types::WidgetKind::Stack,
         None,
         None,
-        420.0,
-        520.0,
+        440.0,
+        560.0,
         0.0,
-        16.0,
+        20.0,
     )
 }
+
 
 fn header() -> types::WidgetNode {
     let mut n = node(
@@ -256,8 +256,8 @@ fn item_row(index: usize, item: &Item) -> types::WidgetNode {
         types::WidgetKind::Checkbox,
         Some(pure_string(item.text_str())),
         Some(pure_string("checkbox")),
-        388.0,
-        30.0,
+        392.0,
+        34.0,
         0.0,
         0.0,
     );
@@ -447,10 +447,10 @@ fn save(list: &Checklist) -> bool {
 impl bindings::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize {
-            width: 420,
-            height: 520,
+            width: 440,
+            height: 560,
         };
-        let Ok(win) = window::create("Krate Checklist", size) else {
+        let Ok(win) = window::create("Checklist", size) else {
             return 30;
         };
         if window::show(win).is_err() {
@@ -494,6 +494,10 @@ impl bindings::Guest for Component {
         };
 
         if quick {
+            // The automated verification path: exercise add + toggle + save,
+            // then exit immediately. It must NOT enter the event-wait loop —
+            // waiting on window events during a headless/verify run is exactly
+            // what makes create's verification hang. Prove the paths and return.
             draft.set("Buy coffee");
             if commit_draft(&mut list, &mut draft) {
                 saved_any = true;
@@ -503,13 +507,18 @@ impl bindings::Guest for Component {
                 saved_any = true;
             }
             let _ = rebuild(win, &list, &draft, "saved");
+            let _ = window::close(win);
+            let out = stdio::stdout();
+            let _ = out.write(b"items:");
+            let _ = out.write(number_string(list.len as u32).as_bytes());
+            let _ = out.write(b"\n");
+            if saved_any {
+                let _ = out.write(b"saved:yes\n");
+            }
+            return 0;
         }
 
-        let rounds = if quick {
-            QUICK_WAIT_ROUNDS
-        } else {
-            MAX_WAIT_ROUNDS
-        };
+        let rounds = MAX_WAIT_ROUNDS;
         for _ in 0..rounds {
             match events::wait(Some(WAIT_ROUND_MILLIS)) {
                 // Toggling an item flips its done state and saves.
@@ -595,6 +604,9 @@ impl bindings::Guest for Component {
 /// text field, the add button, and the status line. Returns false if any
 /// upsert fails.
 fn rebuild(win: u64, list: &Checklist, draft: &Draft, status_text: &str) -> bool {
+    // Root, then header, then the scrollable list container. Item rows are
+    // children of the list container, so a growing list scrolls inside it while
+    // the input row and status line below always stay on screen.
     if tree::set_root(win, &stack_root()).is_err() || tree::upsert_node(win, &header()).is_err() {
         return false;
     }
