@@ -177,16 +177,20 @@ The full guide is
 ## Let an AI coding agent write the app
 
 The built-in examples prove the complete path, but an AI coding agent can
-replace the authoring step:
+write the app from your request instead. With Claude Code installed and signed
+in:
 
 ```bash
 krate create \
-  "Make a small app that helps me review a text file" \
-  --author-cmd "<your agent command>" \
-  --output review.krate
+  "A grocery list app called My Groceries" \
+  --agent claude \
+  --output groceries.krate
 ```
 
-Krate gives the author command:
+Krate hands the request to the agent, then builds, checks, packages, and
+verifies exactly as with the built-in path — a broken app is caught, not
+shipped. For any other tool, `--author-cmd "<your command>"` is the lower-level
+seam; it receives:
 
 | Variable | Meaning |
 | --- | --- |

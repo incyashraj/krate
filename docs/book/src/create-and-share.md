@@ -72,9 +72,26 @@ Two files are written:
 ### Letting an AI agent write the app
 
 The command above uses a built-in template. To have a coding agent write the
-app instead, pass `--author-cmd`. Krate hands your command three environment
-variables and expects it to write `Cargo.toml`, `src/lib.rs`, and
-`manifest.toml` into the app directory:
+app from your request instead, pass `--agent`. With Claude Code installed and
+signed in:
+
+```bash
+krate create "Make a checklist app that saves locally" \
+  --agent claude \
+  --output checklist.krate
+```
+
+Krate hands the request to the agent, which writes the app; then Krate builds
+it, checks that it imports only Krate's capabilities, packages it, and runs the
+same allow/deny verification. If the agent reaches for anything outside those
+capabilities, `krate create` stops before packaging and tells you what it tried
+to import — a broken app is caught, not shipped.
+
+#### Wiring a different agent
+
+For any other tool, `--author-cmd` is the lower-level seam: it runs a command
+you supply, handing it three environment variables, and expects it to write
+`Cargo.toml`, `src/lib.rs`, and `manifest.toml` into the app directory.
 
 | Variable         | Meaning                                             |
 | ---------------- | --------------------------------------------------- |
@@ -88,10 +105,8 @@ krate create "Make a checklist app that saves locally" \
   --output checklist.krate
 ```
 
-Everything after the agent writes the source — build, import check, packaging,
-and the allow/deny verification — is identical. If the agent produces an app
-that reaches for anything outside Krate's capabilities, `krate create` stops
-before packaging it and tells you what it tried to import.
+Everything after the agent writes the source is identical to the `--agent`
+path.
 
 ## Share it
 

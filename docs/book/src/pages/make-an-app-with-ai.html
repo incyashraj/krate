@@ -1176,14 +1176,14 @@
               <article class="step">
                 <div class="step-number">2</div>
                 <h3>Point <code>krate create</code> at it</h3>
-                <p>Add <code>--author-cmd</code> with the command that runs your AI tool. Krate hands your AI the request and a folder to write the app into. Here it is with Claude Code:</p>
+                <p>Add <code>--agent claude</code>. Krate hands Claude Code your request and a folder, and it writes the app. Here it makes a grocery list:</p>
                 <div class="terminal">
                   <div class="terminal-bar">TERMINAL.EXE</div>
-                  <pre><span class="cmd">krate create</span> "A tool that counts the words in a text file" \
-  --author-cmd "claude" \
-  --output word-counter.krate</pre>
+                  <pre><span class="cmd">krate create</span> "A grocery list app called My Groceries" \
+  --agent claude \
+  --output groceries.krate</pre>
                 </div>
-                <p>Using a different AI tool? Put its command in the quotes instead of <code>claude</code>.</p>
+                <p>Using a different AI tool? Use <code>--author-cmd "&lt;your command&gt;"</code> instead of <code>--agent</code>.</p>
               </article>
               <article class="step">
                 <div class="step-number">3</div>
