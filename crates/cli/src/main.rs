@@ -945,15 +945,36 @@ at `$KRATE_SDK_DIR`.\n"
     )
 }
 
+/// The directory holding a rustup-managed `cargo`/`rustc` that has the wasm
+/// target, if rustup is present.
+///
+/// On many Macs `brew install rust` puts a Homebrew `cargo`/`rustc` first on
+/// PATH. That toolchain is NOT rustup-managed and has no `wasm32-wasip1`
+/// target, so `cargo-component` picks it up and fails with "failed to find the
+/// `wasm32-wasip1` target and rustup is not available" even though a rustup
+/// toolchain with the target is installed. Prepending rustup's own toolchain
+/// bin to the child PATH makes the right cargo/rustc win.
+fn rustup_toolchain_bin() -> Option<PathBuf> {
+    let out = ProcessCommand::new("rustup")
+        .args(["which", "cargo"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let path = String::from_utf8(out.stdout).ok()?;
+    PathBuf::from(path.trim()).parent().map(Path::to_path_buf)
+}
+
 /// Build the app dir to a wasm component with cargo-component, returning the
 /// path to the produced wasm.
 ///
-/// `cargo-component` is resolved to its real path (PATH first, then the cargo
-/// bin dir) rather than spawned by bare name: a conda base env or a login shell
-/// that puts `~/.cargo/bin` last can leave a spawned process unable to find it
-/// even though the interactive shell and `krate doctor` can. When it resolves
-/// to the cargo bin dir, that dir is prepended to the child's PATH too, so the
-/// `cargo`/`rustc` cargo-component shells out to are found as well.
+/// The child's PATH is made robust against two common local setups:
+/// - `cargo-component` is resolved to its real path (PATH, then the cargo bin
+///   dir) rather than spawned by bare name, so a conda base env or a login
+///   shell that puts `~/.cargo/bin` last still finds it.
+/// - rustup's active-toolchain bin is prepended, so a Homebrew `cargo`/`rustc`
+///   that shadows rustup (and lacks the wasm target) does not get used.
 fn build_component(app_dir: &Path) -> Result<PathBuf> {
     let resolved = resolve_tool("cargo-component");
     let program: std::ffi::OsString = match &resolved {
@@ -962,19 +983,35 @@ fn build_component(app_dir: &Path) -> Result<PathBuf> {
     };
     let mut command = std::process::Command::new(&program);
     command.arg("build").arg("--release").current_dir(app_dir);
+
+    // Build the child PATH: rustup's toolchain bin first (so a rustup cargo/rustc
+    // with the wasm target wins over a Homebrew one), then the cargo bin dir that
+    // holds cargo-component, then the inherited PATH.
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let mut prefix: Vec<PathBuf> = Vec::new();
+    if let Some(bin) = rustup_toolchain_bin() {
+        prefix.push(bin);
+    }
     if let Some(dir) = resolved.as_deref().and_then(Path::parent) {
-        let existing = std::env::var_os("PATH").unwrap_or_default();
-        let mut paths = vec![dir.to_path_buf()];
-        paths.extend(std::env::split_paths(&existing));
-        if let Ok(joined) = std::env::join_paths(paths) {
+        prefix.push(dir.to_path_buf());
+    }
+    if !prefix.is_empty() {
+        prefix.extend(std::env::split_paths(&existing));
+        if let Ok(joined) = std::env::join_paths(prefix) {
             command.env("PATH", joined);
         }
     }
+
     let status = command
         .status()
         .context("run cargo-component (is it installed? `cargo install cargo-component`)")?;
     if !status.success() {
-        anyhow::bail!("cargo-component build failed");
+        anyhow::bail!(
+            "cargo-component build failed. If it reported it could not find the \
+             `wasm32-wasip1` target, install it with `rustup target add wasm32-wasip1`; \
+             if it reported rustup is not available, a non-rustup Rust (for example \
+             `brew install rust`) may be shadowing rustup on your PATH."
+        );
     }
     let release = app_dir.join("target/wasm32-wasip1/release");
     for entry in fs::read_dir(&release).with_context(|| format!("read {}", release.display()))? {
