@@ -1045,15 +1045,24 @@ fn gating_capability(manifest: &krate_manifest::Manifest) -> String {
 }
 
 /// Create the data directories the app expects under the verify dir, so a
-/// granted run has somewhere to write, and seed any read directory with a small
-/// fixture file.
+/// granted run has somewhere to write, and seed a read directory with a small
+/// fixture file when the app reads a file argument.
 ///
-/// Returns the argument the verify run should pass. An app whose gating
-/// capability is `fs.read` (the word-frequency kind) needs a real file to read,
-/// so a fixture is written under its declared read directory and its path
-/// returned. Apps that take a free-form task (the checklist kind) get `None`,
-/// and the caller falls back to a plain word like `quick`.
+/// Returns the argument the verify run should pass. A file-reading CLI app (the
+/// word-frequency kind) needs a real file path to read, so a fixture is written
+/// and its path returned. A GUI app (the checklist, which declares `ui.window`)
+/// must instead be given the plain `quick` token so it exits promptly rather
+/// than opening a window and waiting — passing it a file path would leave it
+/// blocked on its window, which the caller returns `None` for so the plain
+/// `quick` fallback is used.
 fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result<Option<String>> {
+    // A GUI app opens a window and honors `quick` to exit; it must not be handed
+    // a file-path argument. Detect it by its window capability.
+    let is_gui = manifest
+        .capabilities
+        .iter()
+        .any(|cap| cap.cap.starts_with("ui.window"));
+
     let mut read_arg = None;
     for cap in manifest.capabilities.iter() {
         let name = cap.cap.clone();
@@ -1068,9 +1077,10 @@ fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result
                 if !first.is_empty() && first != "**" {
                     let subdir = dir.join(first);
                     let _ = fs::create_dir_all(&subdir);
-                    // Drop a fixture the word-frequency app can read, so its
-                    // all-grants verify run has a real file to analyze.
-                    if is_read && read_arg.is_none() {
+                    // Drop a fixture only for a file-reading CLI app, so its
+                    // all-grants verify run has a real file to analyze. A GUI app
+                    // gets `quick` instead (read_arg stays None).
+                    if is_read && !is_gui && read_arg.is_none() {
                         let fixture = subdir.join("sample.txt");
                         fs::write(&fixture, "the quick brown fox the lazy dog the fox\n")
                             .with_context(|| format!("write {}", fixture.display()))?;
@@ -1085,17 +1095,47 @@ fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result
 
 /// Re-invoke this same `krate` binary in `dir` with `args`, returning its exit
 /// code. Used to verify a packed bundle in isolation.
+/// How long the verification run may take before it is treated as hung and
+/// killed. Generous for a real app finishing its work under `quick`, but bounded
+/// so `create` can never hang a user's terminal indefinitely — e.g. if a
+/// generated GUI app fails to honor `quick` and waits on a window that never
+/// closes.
+const VERIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
 fn run_self(dir: &Path, args: &[&str]) -> Result<i32> {
     let exe = std::env::current_exe().context("locate self")?;
     // Capture the child's output rather than inherit it: the verified app's own
     // stdout (e.g. its "saved" line) is noise to the create caller, and would
     // corrupt the single-object stream under --json. Only the exit code matters.
-    let output = std::process::Command::new(exe)
+    let mut child = std::process::Command::new(exe)
         .args(args)
         .current_dir(dir)
-        .output()
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
         .context("re-invoke krate for verification")?;
-    Ok(output.status.code().unwrap_or(-1))
+
+    // Poll for completion up to VERIFY_TIMEOUT, then kill a hung run so create
+    // fails cleanly instead of blocking forever.
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait().context("wait for verification run")? {
+            Some(status) => return Ok(status.code().unwrap_or(-1)),
+            None => {
+                if start.elapsed() >= VERIFY_TIMEOUT {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    anyhow::bail!(
+                        "the app did not finish its verification run within {} seconds and was \
+                         stopped. A generated app should exit promptly when run with `quick`; \
+                         if it opens a window and waits, it cannot be verified automatically.",
+                        VERIFY_TIMEOUT.as_secs()
+                    );
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+    }
 }
 
 /// Copy a manifest, replacing its `entry` line with a new path.
