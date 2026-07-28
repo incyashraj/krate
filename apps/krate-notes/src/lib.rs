@@ -74,6 +74,15 @@ const MAX_WAIT_ROUNDS: u32 = 600_000;
 const QUICK_WAIT_ROUNDS: u32 = 40;
 const WAIT_ROUND_MILLIS: u32 = 50;
 
+/// Consecutive quiet rounds before the app stops waiting, about ten seconds.
+///
+/// The ceiling above assumes a window someone can come back to and click. With
+/// no window there is nothing to come back to and every round is guaranteed to
+/// stay quiet, so waiting the ceiling out sits there for eight hours looking
+/// like a hang. Any click or keystroke resets this, so someone using the window
+/// never reaches it.
+const MAX_IDLE_ROUNDS: u32 = 200;
+
 struct Component;
 
 /// How many edit states undo/redo can walk back through. Fixed so the editor
@@ -980,8 +989,20 @@ impl bindings::Guest for Component {
         // the write path in CI, so it starts dirty.
         let mut dirty = quick;
 
+        let mut idle_rounds = 0u32;
         for _ in 0..rounds {
-            match events::wait(Some(WAIT_ROUND_MILLIS)) {
+            let event = events::wait(Some(WAIT_ROUND_MILLIS));
+            // Quiet rounds are normal while someone reads or thinks, but an
+            // unbroken run of them means nobody is there to type at all.
+            if event.is_none() {
+                idle_rounds += 1;
+                if idle_rounds >= MAX_IDLE_ROUNDS {
+                    break;
+                }
+                continue;
+            }
+            idle_rounds = 0;
+            match event {
                 // Selecting a note saves the one being edited, then loads the
                 // new one. Losing edits on click would be the first thing a
                 // real user noticed.
