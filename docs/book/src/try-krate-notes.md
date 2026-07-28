@@ -1,6 +1,6 @@
 # Try Krate Notes
 
-Krate Notes is a small note taking app. It is one file, about 12 kilobytes,
+Krate Notes is a small note taking app. It is one file, about 15 kilobytes,
 and it can only touch the folder you allow it to.
 
 This page is written for someone who has never used Krate before.
