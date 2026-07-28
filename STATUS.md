@@ -21,12 +21,16 @@ generated app was named `checklist` regardless of the request, so a reading list
 asked to "save files in checklist"; an app is now named from its request and
 gets a folder to match, which is what the permission prompt shows. The guide
 promised a transcript sidecar that was made opt-in and never written, and the
-README still pointed at rc3. The published `notes.krate` the README front-pages
-is stale and fails on the current runtime; it rebuilds and runs clean from
-source, so it needs republishing — the one item left open, since republishing an
-asset is a public action.
+README still pointed at rc3.
 
-Green on the full 3-OS matrix at `de45c91` (run `30342960905`, all of Linux,
+The published `notes.krate` the README front-pages was stale and failed to
+instantiate on the current runtime — the front-page demo, broken, after 31
+downloads. It carried the same eight-hour idle ceiling too, so it was rebuilt
+from fixed source and republished to `notes-v0.1.0` (15027 bytes, sha256
+`1581c96c…`). Verified from the live URL afterwards: inspect, refuse, allow,
+save, and no hang all pass, and the same command that failed now runs clean.
+
+Green on the full 3-OS matrix at `372b35d` (run `30376026388`, all of Linux,
 macOS, and Windows), with regression tests added for each fix: the idle-close
 rule and its bounded-wait exception, `--dump-caps` on a fully ungranted app, and
 the name an app derives from its request.
