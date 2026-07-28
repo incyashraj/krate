@@ -2425,7 +2425,12 @@ fn run_dump_caps_inspects_a_gated_app_without_granting_anything() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Effective capabilities"));
     // Inspecting must not hand out the grant it is reporting on.
-    assert!(!stdout.contains("fs.write:notes/**"));
+    assert!(!stdout.contains("\n  - fs.write:notes/**"));
+    // But it must say what is coming. Listing only the default grants showed no
+    // file access at all for an app whose whole purpose is saving files, so the
+    // first permission prompt arrived as a surprise.
+    assert!(stdout.contains("This app will ask for"));
+    assert!(stdout.contains("save files in notes"));
 }
 
 #[test]

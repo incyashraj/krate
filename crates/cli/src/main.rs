@@ -2249,6 +2249,11 @@ fn print_effective_capabilities(
             wasm: wasm_file.display().to_string(),
             app: manifest.map(RunCapsApp::from_manifest),
             capabilities: policy.grants().iter().map(ToString::to_string).collect(),
+            // What the app declares it needs, granted or not, so a tool reading
+            // this sees the whole ask and not just the default grants.
+            requested: manifest
+                .map(|m| m.capabilities.iter().map(|c| c.cap.to_string()).collect())
+                .unwrap_or_default(),
         };
         println!("{}", serde_json::to_string_pretty(&dump)?);
         return Ok(());
@@ -2259,6 +2264,26 @@ fn print_effective_capabilities(
         println!("  - {cap}");
     }
 
+    // The grants above are the ones a run starts with, which for a shared app
+    // is everything except the interesting part. What someone inspecting a file
+    // wants to know is what it will ask them for, so say that too -- otherwise
+    // the listing shows no file access at all on an app whose whole point is
+    // saving files, and the first prompt comes as a surprise.
+    if let Some(manifest) = manifest {
+        let asks: Vec<Capability> = manifest
+            .required_capabilities()?
+            .into_iter()
+            .filter(|cap| !policy.grants().iter().any(|grant| grant == cap))
+            .collect();
+        if !asks.is_empty() {
+            println!();
+            println!("This app will ask for");
+            for cap in &asks {
+                println!("  - {} ({cap})", human_label(cap));
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -2267,6 +2292,9 @@ struct RunCapsDump {
     wasm: String,
     app: Option<RunCapsApp>,
     capabilities: Vec<String>,
+    /// Everything the manifest declares, whether or not it is granted yet.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    requested: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
