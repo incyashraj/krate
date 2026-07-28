@@ -24,6 +24,13 @@ use crate::{
 /// How long `events.wait` sleeps between polls.
 const WAIT_POLL_INTERVAL_MILLIS: u64 = 10;
 
+/// How many idle `events.wait` calls a headless run tolerates before the host
+/// reports the window closed. Small enough that `krate run` on a GUI app
+/// finishes in about a second instead of spinning out the app's wait budget,
+/// large enough that an app doing a few no-event waits during start-up still
+/// reaches its event loop. Only ever consulted on the headless path.
+const HEADLESS_IDLE_WAIT_LIMIT: u32 = 8;
+
 /// Host state for the Phase 3 `gui` world imports.
 pub struct Phase3GuiHost {
     runtime: Phase3UiRuntime,
@@ -36,6 +43,16 @@ pub struct Phase3GuiHost {
     /// AppKit keeps typed characters inside the control, so the guest only
     /// learns about them by the host reading the control back and comparing.
     native_text: std::cell::RefCell<std::collections::BTreeMap<(WindowId, WidgetId), String>>,
+    /// True when no window on this host can ever receive human input, i.e. the
+    /// headless draft path. A GUI app's normal shape is "loop until the person
+    /// closes the window", so with no such window the loop has nothing to end
+    /// it and the app spins out its whole wait budget. See [`idle_waits`].
+    headless: bool,
+    /// Consecutive `wait` calls that timed out with no event, used only when
+    /// [`headless`] is set. Once this passes [`HEADLESS_IDLE_WAIT_LIMIT`] the
+    /// host synthesises a close request so the guest exits the way it would if
+    /// a person had closed the window.
+    idle_waits: std::cell::Cell<u32>,
 }
 
 impl Phase3GuiHost {
@@ -47,11 +64,36 @@ impl Phase3GuiHost {
             windows: Vec::new(),
             scroll_offsets: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             native_text: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            headless: matches!(mode, Phase3HostUiMode::HeadlessDraft),
+            idle_waits: std::cell::Cell::new(0),
         })
     }
 
     fn dispatcher(&self) -> Phase3UiDispatcher<'_> {
         self.runtime.dispatcher()
+    }
+
+    /// On a headless host, report a window close once the guest has waited
+    /// [`HEADLESS_IDLE_WAIT_LIMIT`] times with nothing to show for it.
+    ///
+    /// A GUI app is written as "keep going until the window closes", which on a
+    /// real desktop ends when the person closes it. Headless has no window and
+    /// no person, so without this the app waits out its entire budget — the
+    /// checklist app's is over eight hours — looking to anyone watching like a
+    /// hang. Reporting the close is both truthful (there is no window to keep
+    /// open) and the one signal every GUI app already handles, so apps shut
+    /// down through their normal path and still save their work on the way out.
+    fn headless_close_request(&self) -> Option<ui::types::Event> {
+        if !self.headless {
+            return None;
+        }
+        let waits = self.idle_waits.get().saturating_add(1);
+        self.idle_waits.set(waits);
+        if waits < HEADLESS_IDLE_WAIT_LIMIT {
+            return None;
+        }
+        let window = self.windows.first().map(|id| id.get()).unwrap_or(0);
+        Some(ui::types::Event::CloseRequested(window))
     }
 
     /// Recompute layout and re-lower supported widgets to native controls.
@@ -743,12 +785,20 @@ impl ui::events::Host for Phase3GuiHost {
                 .poll_one_event()
                 .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
             if event.is_some() {
+                self.idle_waits.set(0);
                 return Ok(event);
             }
             if let Some(deadline) = deadline {
                 if std::time::Instant::now() >= deadline {
+                    if let Some(close) = self.headless_close_request() {
+                        return Ok(Some(close));
+                    }
                     return Ok(None);
                 }
+            } else if let Some(close) = self.headless_close_request() {
+                // An unbounded wait on a headless host would never return:
+                // nothing can ever deliver an event. Close instead of hanging.
+                return Ok(Some(close));
             }
             std::thread::sleep(std::time::Duration::from_millis(WAIT_POLL_INTERVAL_MILLIS));
         }
@@ -922,6 +972,53 @@ mod tests {
         assert_eq!(clamped_scroll_offset(10.0, -30.0, 192.0, 120.0), 0.0);
         // Content shorter than the viewport never scrolls.
         assert_eq!(clamped_scroll_offset(0.0, 30.0, 80.0, 120.0), 0.0);
+    }
+
+    fn headless_host() -> Phase3GuiHost {
+        Phase3GuiHost::new(
+            UapiGuard::new(Default::default()),
+            Phase3HostUiMode::HeadlessDraft,
+        )
+        .expect("headless host")
+    }
+
+    #[test]
+    fn headless_waits_report_a_close_once_idle() {
+        let host = headless_host();
+        // The app gets a grace period to reach its event loop...
+        for _ in 1..HEADLESS_IDLE_WAIT_LIMIT {
+            assert!(host.headless_close_request().is_none());
+        }
+        // ...and then is told the window closed, so its loop can end instead of
+        // spinning out a wait budget that nothing will ever interrupt.
+        assert!(matches!(
+            host.headless_close_request(),
+            Some(ui::types::Event::CloseRequested(_))
+        ));
+    }
+
+    #[test]
+    fn a_real_event_resets_the_headless_idle_count() {
+        let host = headless_host();
+        for _ in 0..(HEADLESS_IDLE_WAIT_LIMIT - 1) {
+            assert!(host.headless_close_request().is_none());
+        }
+        // An app that is doing work keeps its window: the counter only counts
+        // *consecutive* empty waits, and `wait` clears it on every real event.
+        host.idle_waits.set(0);
+        assert!(host.headless_close_request().is_none());
+    }
+
+    #[test]
+    fn a_windowed_host_is_never_closed_by_the_idle_rule() {
+        let mut host = headless_host();
+        host.headless = false;
+        for _ in 0..(HEADLESS_IDLE_WAIT_LIMIT * 4) {
+            assert!(
+                host.headless_close_request().is_none(),
+                "a host with a real window must stay open until the person closes it"
+            );
+        }
     }
 
     #[test]

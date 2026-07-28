@@ -105,7 +105,7 @@ For a guided walkthrough, use
 ### macOS without a terminal
 
 Download the `krate-app` zip for your Mac from the
-[current release](https://github.com/incyashraj/krate/releases/tag/v0.1.0-rc3).
+[current release](https://github.com/incyashraj/krate/releases/tag/v0.1.0-rc4).
 Unzip `Krate.app`, then download
 [`notes.krate`](https://github.com/incyashraj/krate/releases/download/notes-v0.1.0/notes.krate).
 
@@ -270,13 +270,13 @@ The public CI runs the project on Linux, macOS, and Windows. See
 | Opens desktop windows | Yes | Yes | Yes |
 | Notes editing and saving | Yes | Yes | Yes |
 | `.krate` file registration | `Krate.app` | Registration script | Registration script |
-| Permission review in `v0.1.0-rc3` | Native window | Terminal | Terminal |
+| Permission review in `v0.1.0-rc4` | Native window | Terminal | Terminal |
 
 The current macOS path uses AppKit controls. Windows and Linux use Krate's
 drawn widget path inside a native window.
 
 Development has already improved the Linux no-terminal permission path, but
-that change is not part of `v0.1.0-rc3`. Release claims in this README describe
+that change is not part of `v0.1.0-rc4`. Release claims in this README describe
 the public release unless a section clearly says otherwise.
 
 ## Security
@@ -425,7 +425,7 @@ implementation.
 
 - Stage: pre-alpha
 - Current public release:
-  [`v0.1.0-rc3`](https://github.com/incyashraj/krate/releases/tag/v0.1.0-rc3)
+  [`v0.1.0-rc4`](https://github.com/incyashraj/krate/releases/tag/v0.1.0-rc4)
 - Company: Krate Labs
 - Maintainer: [Yashraj Pardeshi](https://github.com/incyashraj)
 - License: MIT OR Apache-2.0

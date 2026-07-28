@@ -2287,7 +2287,10 @@ fn manifest_entry_matches(file: &Path, loaded: &LoadedManifest) -> Result<bool> 
 }
 
 fn print_version() {
-    println!("krate   {}", env!("CARGO_PKG_VERSION"));
+    // KRATE_VERSION, not CARGO_PKG_VERSION: a released binary is stamped with
+    // its tag, and reporting the crate's in-repo `-dev` version here made
+    // `krate version` contradict `krate --version` on the very same binary.
+    println!("krate   {KRATE_VERSION}");
     println!("wasmtime  43.0.2");
     println!("rustc     {}", env!("KRATE_RUSTC_VERSION"));
     println!("commit    {}", env!("KRATE_GIT_SHA"));
