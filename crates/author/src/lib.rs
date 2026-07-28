@@ -120,9 +120,9 @@ impl AppRequest {
             name: name.to_string(),
             description: "A checklist with checkboxes that saves to a local file.".to_string(),
             kind: AppKind::Checklist,
-            // The checklist reads and writes its own data directory; the glob
-            // is the read half of that grant.
-            read_glob: "./checklist/**".to_string(),
+            // The checklist reads and writes its own data directory, named for
+            // the app; the glob is the read half of that grant.
+            read_glob: format!("./{name}/**"),
             top_n: 0,
         }
     }
@@ -592,7 +592,23 @@ fn checklist_source(request: &AppRequest) -> String {
     // A human-facing window title from the kebab-case name (e.g. `my-list` ->
     // `My list`). The sample hardcodes "Krate Checklist"; swap it out.
     let title = title_case(&request.name);
-    CHECKLIST_SOURCE.replace("Krate Checklist", &title)
+    CHECKLIST_SOURCE
+        .replace("Krate Checklist", &title)
+        // Give the app its own folder too. The permission wall names this
+        // directory to the person deciding whether to allow it, so a reading
+        // list asking to "save files in checklist" reads as though it came from
+        // somewhere else. It must stay in step with [`checklist_data_dir`],
+        // which writes the matching fs grants into the manifest.
+        .replace(
+            "./checklist/",
+            &format!("./{}/", checklist_data_dir(request)),
+        )
+}
+
+/// The folder a generated checklist-style app keeps its data in: its own name,
+/// so the grant the person reviews matches the app that is asking.
+fn checklist_data_dir(request: &AppRequest) -> String {
+    request.name.clone()
 }
 
 /// Turn a kebab-case name into a capitalized, spaced title.
@@ -659,6 +675,9 @@ fn checklist_manifest_toml(request: &AppRequest) -> String {
     let name = &request.name;
     let snake = request.snake_name();
     let title = title_case(name);
+    // Must match the directory baked into the source by `checklist_source`,
+    // or the app would ask for one folder and write to another.
+    let data_dir = checklist_data_dir(request);
     // The checklist needs a window and read+write on its own data directory.
     // The write grant is the one that gates saving, so withholding it produces
     // the standard exit-5 refusal.
@@ -686,13 +705,13 @@ rationale = "Read the quick-run flag used by automated tests"
 required = true
 
 [[capabilities]]
-cap = "fs.read:./checklist/**"
-rationale = "Load your saved checklist"
+cap = "fs.read:./{data_dir}/**"
+rationale = "Load your saved {title}"
 required = true
 
 [[capabilities]]
-cap = "fs.write:./checklist/**"
-rationale = "Save changes to your checklist"
+cap = "fs.write:./{data_dir}/**"
+rationale = "Save changes to your {title}"
 required = true
 "#
     )
@@ -789,8 +808,25 @@ mod tests {
         assert!(cargo.contains(r#""krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }"#));
         let manifest = app.file("manifest.toml").expect("manifest");
         assert!(manifest.contains(r#"cap = "ui.window:create""#));
-        assert!(manifest.contains(r#"cap = "fs.write:./checklist/**""#));
+        // The app asks for a folder named after itself, so the person reading
+        // the permission wall sees the app that is asking, not "checklist".
+        assert!(manifest.contains(r#"cap = "fs.write:./my-list/**""#));
+        assert!(manifest.contains(r#"cap = "fs.read:./my-list/**""#));
+        assert!(!manifest.contains("./checklist/**"));
         assert!(manifest.contains(r#"world = "krate:app/gui@0.2.0""#));
+    }
+
+    #[test]
+    fn the_folder_an_app_asks_for_is_the_folder_it_writes() {
+        // A grant that does not match the path the code uses would either leak
+        // a folder the person never approved or refuse a run they did approve,
+        // so the manifest and the source have to name the same directory.
+        let app = generate(&AppRequest::checklist("reading-list"), "../..").expect("generate");
+        let manifest = app.file("manifest.toml").expect("manifest");
+        let source = app.file("src/lib.rs").expect("source");
+        assert!(manifest.contains(r#"cap = "fs.write:./reading-list/**""#));
+        assert!(source.contains("./reading-list/"));
+        assert!(!source.contains("./checklist/"));
     }
 
     #[test]

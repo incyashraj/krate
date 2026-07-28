@@ -45,6 +45,16 @@ const SEED_ITEMS: [&str; 3] = ["Buy milk", "Write the pitch", "Ship the demo"];
 const MAX_WAIT_ROUNDS: u32 = 600_000;
 const WAIT_ROUND_MILLIS: u32 = 50;
 
+/// Consecutive quiet rounds before the app stops waiting, about ten seconds.
+///
+/// On a desktop the window itself is the reason to keep waiting: the person can
+/// always come back and click. With no window there is nothing to come back to,
+/// and every round is guaranteed to stay quiet, so waiting out `MAX_WAIT_ROUNDS`
+/// would sit there for over eight hours looking like a hang. A person who is
+/// actually using the window resets this on their first click or keystroke, so
+/// the bound is only ever reached when nothing is there at all.
+const MAX_IDLE_ROUNDS: u32 = 200;
+
 struct Component;
 
 /// One checklist item: its text (fixed capacity), whether it is done, and
@@ -519,8 +529,20 @@ impl bindings::Guest for Component {
         }
 
         let rounds = MAX_WAIT_ROUNDS;
+        let mut idle_rounds = 0u32;
         for _ in 0..rounds {
-            match events::wait(Some(WAIT_ROUND_MILLIS)) {
+            let event = events::wait(Some(WAIT_ROUND_MILLIS));
+            // Quiet rounds are normal while someone reads the window, but an
+            // unbroken run of them means no one is there to click at all.
+            if event.is_none() {
+                idle_rounds += 1;
+                if idle_rounds >= MAX_IDLE_ROUNDS {
+                    break;
+                }
+                continue;
+            }
+            idle_rounds = 0;
+            match event {
                 // Toggling an item flips its done state and saves.
                 Some(types::Event::Pointer(pointer))
                     if pointer.pressed && is_item_row(pointer.widget).is_some() =>

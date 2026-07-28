@@ -585,6 +585,82 @@ struct CreateRequest {
 /// Fewest characters a create request must have to be worth authoring from.
 const MIN_CREATE_REQUEST_CHARS: usize = 3;
 
+/// Longest kebab-case app name derived from a request. Long enough for
+/// "reading-list" or "packing-list", short enough to stay a readable folder.
+const MAX_DERIVED_NAME_WORDS: usize = 3;
+
+/// Derive a kebab-case app name from the subject of a plain-English request,
+/// e.g. "A reading list app to track books" -> `reading-list`.
+///
+/// The name becomes the window title and the data folder, and the folder is
+/// what the permission wall shows, so it should say what the app is. Returns
+/// `None` when the request has no subject worth naming, leaving the caller's
+/// default in place rather than inventing something worse.
+fn name_from_request(request: &str) -> Option<String> {
+    // Words that describe the act of asking, not the thing being asked for.
+    const SKIP: &[&str] = &[
+        "a",
+        "an",
+        "the",
+        "make",
+        "build",
+        "create",
+        "write",
+        "me",
+        "my",
+        "app",
+        "application",
+        "simple",
+        "small",
+        "basic",
+        "little",
+        "some",
+        "please",
+        "that",
+        "which",
+        "for",
+        "to",
+        "with",
+        "and",
+        "of",
+        "called",
+        "named",
+        "new",
+        "i",
+        "want",
+    ];
+
+    let mut words: Vec<String> = Vec::new();
+    for raw in request.split_whitespace() {
+        let word: String = raw
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .collect::<String>()
+            .to_lowercase();
+        if word.is_empty() {
+            continue;
+        }
+        // Leading filler is dropped, but once the subject starts, a stop word
+        // means the subject ended: "reading list app to track books" stops at
+        // "to" rather than running on into the explanation.
+        if SKIP.contains(&word.as_str()) {
+            if words.is_empty() {
+                continue;
+            }
+            break;
+        }
+        words.push(word);
+        if words.len() == MAX_DERIVED_NAME_WORDS {
+            break;
+        }
+    }
+
+    if words.is_empty() {
+        return None;
+    }
+    Some(words.join("-"))
+}
+
 /// Check that a create request has enough to author from. Returns a plain,
 /// user-facing message on failure.
 fn validate_create_request(request: &str) -> std::result::Result<(), String> {
@@ -659,7 +735,17 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         AppKind::Checklist => "checklist",
         AppKind::WordFrequency => "word-count",
     };
-    let name = req.name.clone().unwrap_or_else(|| default_name.to_string());
+    // Prefer a name taken from the request itself. The app's name becomes its
+    // window title and its data folder, and the data folder is what the
+    // permission wall shows the person deciding whether to allow it -- so a
+    // reading list that asks to "save files in checklist" reads as though it
+    // came from somewhere else. Fall back to the kind's name when the request
+    // has no usable subject of its own.
+    let name = req
+        .name
+        .clone()
+        .or_else(|| name_from_request(&req.request))
+        .unwrap_or_else(|| default_name.to_string());
 
     // The app is built inside a work dir. A temp dir is cleaned up; --work-dir
     // keeps it for inspection.
@@ -2950,7 +3036,10 @@ fn home_dir() -> Option<PathBuf> {
 
 #[cfg(test)]
 mod create_tests {
-    use super::{has_tool, human_label, toml_path, validate_create_request};
+    use super::{
+        has_tool, human_label, name_from_request, toml_path, validate_create_request,
+        MAX_DERIVED_NAME_WORDS,
+    };
     use krate_manifest::Capability;
     use std::path::Path;
 
@@ -3005,6 +3094,49 @@ mod create_tests {
         );
         // A Unix path is unchanged.
         assert_eq!(toml_path(Path::new("/home/a/wit")), "/home/a/wit");
+    }
+
+    #[test]
+    fn an_app_is_named_for_what_was_asked_for() {
+        // The name becomes the data folder, and the folder is what the
+        // permission wall shows, so it has to say what the app actually is.
+        assert_eq!(
+            name_from_request("A reading list app to track books I want to read").as_deref(),
+            Some("reading-list")
+        );
+        assert_eq!(
+            name_from_request("A grocery list app").as_deref(),
+            Some("grocery-list")
+        );
+        assert_eq!(
+            name_from_request("build me a todo list").as_deref(),
+            Some("todo-list")
+        );
+        assert_eq!(
+            name_from_request("Make a checklist app that saves locally").as_deref(),
+            Some("checklist")
+        );
+    }
+
+    #[test]
+    fn a_request_with_no_subject_keeps_the_default_name() {
+        // Nothing worth naming: the caller's per-kind default is better than
+        // anything that could be invented from filler words alone.
+        assert_eq!(name_from_request("Make an app"), None);
+        assert_eq!(name_from_request("please build me the app"), None);
+        assert_eq!(name_from_request(""), None);
+    }
+
+    #[test]
+    fn a_derived_name_is_a_usable_folder_name() {
+        // It ends up on disk and inside a capability string, so punctuation and
+        // runaway length both have to be gone by this point.
+        let name = name_from_request("Make a \"Reading List!!\" app for tracking everything")
+            .expect("a name");
+        assert!(name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
+        assert!(name.split('-').count() <= MAX_DERIVED_NAME_WORDS);
     }
 
     #[test]

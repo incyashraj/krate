@@ -78,11 +78,18 @@ impl Phase3GuiHost {
     ///
     /// A GUI app is written as "keep going until the window closes", which on a
     /// real desktop ends when the person closes it. Headless has no window and
-    /// no person, so without this the app waits out its entire budget — the
-    /// checklist app's is over eight hours — looking to anyone watching like a
-    /// hang. Reporting the close is both truthful (there is no window to keep
-    /// open) and the one signal every GUI app already handles, so apps shut
-    /// down through their normal path and still save their work on the way out.
+    /// no person, so an app that waits with no timeout can never be released,
+    /// and the run hangs with nothing on screen to explain why.
+    ///
+    /// This only ever fires for an unbounded wait, where the alternative is
+    /// waiting forever. A wait that carries a timeout is left alone to time out
+    /// on its own: the guest asked to be given back control after a set time
+    /// and it will be, so there is no need to tell it anything happened. That
+    /// distinction matters because "the window closed" means a person closed
+    /// it, and apps report it as such — `krate-hello-gui` exits 2 for "user
+    /// closed the window" versus 1 for "finished without one". Synthesising the
+    /// close on every idle timeout made those runs claim a person acted when
+    /// nobody had.
     fn headless_close_request(&self) -> Option<ui::types::Event> {
         if !self.headless {
             return None;
@@ -790,14 +797,18 @@ impl ui::events::Host for Phase3GuiHost {
             }
             if let Some(deadline) = deadline {
                 if std::time::Instant::now() >= deadline {
-                    if let Some(close) = self.headless_close_request() {
-                        return Ok(Some(close));
-                    }
+                    // The guest asked for a timeout and it has arrived. Hand
+                    // control back exactly as asked; it is the guest's own loop
+                    // bound that ends the run, and it stays free to treat the
+                    // quiet round however it likes.
                     return Ok(None);
                 }
             } else if let Some(close) = self.headless_close_request() {
-                // An unbounded wait on a headless host would never return:
-                // nothing can ever deliver an event. Close instead of hanging.
+                // An unbounded wait on a headless host can never return on its
+                // own: nothing exists that could deliver an event. Reporting
+                // the close is the only honest way out, and every GUI app
+                // already handles it, so the app shuts down through its normal
+                // path and still saves on the way out.
                 return Ok(Some(close));
             }
             std::thread::sleep(std::time::Duration::from_millis(WAIT_POLL_INTERVAL_MILLIS));
@@ -1007,6 +1018,22 @@ mod tests {
         // *consecutive* empty waits, and `wait` clears it on every real event.
         host.idle_waits.set(0);
         assert!(host.headless_close_request().is_none());
+    }
+
+    #[test]
+    fn a_wait_with_a_timeout_is_left_to_time_out_on_its_own() {
+        // Only an unbounded wait gets the synthetic close. A guest that asked
+        // for a timeout is handed control back with no event, because "the
+        // window closed" states that a person closed it -- krate-hello-gui
+        // reports exactly that as exit 2 -- and on a quiet round nobody did.
+        let mut host = headless_host();
+        for _ in 0..(HEADLESS_IDLE_WAIT_LIMIT * 3) {
+            let event = ui::events::Host::wait(&mut host, Some(0)).expect("bounded wait");
+            assert!(
+                event.is_none(),
+                "a bounded wait must report no event, never a close nobody asked for"
+            );
+        }
     }
 
     #[test]
