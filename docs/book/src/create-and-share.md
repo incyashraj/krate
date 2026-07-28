@@ -51,7 +51,6 @@ You will see it work through the steps, and finish with:
 
 ```text
 Created checklist.krate
-  transcript: checklist.krate.transcript.json
   requested access:
     - ui.window:create
     - io.stdout
@@ -62,12 +61,24 @@ Created checklist.krate
 Send checklist.krate to someone; they can double-click it to open it.
 ```
 
-Two files are written:
+One file is written: **`checklist.krate`**, the whole app. This is what you
+share.
 
-- **`checklist.krate`** — the whole app in one file. This is what you share.
-- **`checklist.krate.transcript.json`** — a record of the request, the app, the
-  permissions it asks for, and the verification that it runs with those grants
-  and refuses without the one that gates it.
+The app is named from your request, and it gets a folder of that name to save
+into — ask for a reading list and it asks to read and write `./reading-list/**`,
+so the folder the person is approving says what the app is.
+
+If you want the evidence behind that summary, ask for a transcript:
+
+```bash
+krate create "Make a checklist app that saves locally" \
+  --transcript checklist.transcript.json \
+  --output checklist.krate
+```
+
+It records the request, the app, the permissions it asks for, and the
+verification that it runs with those grants and refuses without the one that
+gates it. `--json` prints the same record to stdout instead.
 
 ### Letting an AI agent write the app
 

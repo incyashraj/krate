@@ -221,8 +221,10 @@ enum Command {
         #[arg(long)]
         name: Option<String>,
 
-        /// Where to write the authoring transcript (JSON). Defaults to the
-        /// output path with a `.transcript.json` suffix.
+        /// Write the authoring transcript (JSON) to this path: the request, the
+        /// permissions the app asks for, and the verification that it runs with
+        /// its grants and refuses without the gating one. Off unless asked for;
+        /// `--json` prints the same record to stdout instead.
         #[arg(long)]
         transcript: Option<PathBuf>,
 
