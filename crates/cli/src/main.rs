@@ -1435,6 +1435,25 @@ fn run_component(request: RunRequest) -> Result<u8> {
     let manifest = loaded_manifest.as_ref().map(|loaded| &loaded.manifest);
     let mut policy = resolve_session_policy(manifest, &request.grants, request.auto_grant)?;
 
+    // Before the wall, not after it: --dump-caps answers "what would this app
+    // ask for?" without running a single instruction, and it is the safe way to
+    // look at a file someone sent you. Behind the wall it refused with exit 5
+    // on exactly the apps a person most wants to inspect first. --log-grants
+    // is written first so pairing the two still records what was inspected.
+    if request.dump_caps {
+        if let Some(log_path) = &request.log_grants {
+            write_grant_log(
+                log_path,
+                &request.file,
+                manifest,
+                &policy,
+                request.log_grants_format,
+            )?;
+        }
+        print_effective_capabilities(&request.file, manifest, &policy, request.dump_caps_format)?;
+        return Ok(0);
+    }
+
     if let Some(manifest) = manifest {
         let can_prompt = request.prompt || request.consent || io::stdin().is_terminal();
         let missing = policy.missing_required_for_manifest(manifest)?;
@@ -1503,11 +1522,6 @@ fn run_component(request: RunRequest) -> Result<u8> {
             &policy,
             request.log_grants_format,
         )?;
-    }
-
-    if request.dump_caps {
-        print_effective_capabilities(&request.file, manifest, &policy, request.dump_caps_format)?;
-        return Ok(0);
     }
 
     if let Some(manifest) = manifest {

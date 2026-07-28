@@ -2378,6 +2378,57 @@ fn run_dump_caps_prints_effective_policy_without_running_component() {
 }
 
 #[test]
+fn run_dump_caps_inspects_a_gated_app_without_granting_anything() {
+    // Looking at an app you were sent is the safe first move, and it is the
+    // case where every required capability is still ungranted. Dumping ran
+    // behind the permission wall once, so precisely these apps answered with
+    // "it did not run" and exit 5 instead of the capability list.
+    let dir = tempfile::tempdir().expect("create temp dir");
+    let wasm_path = dir.path().join("app.wasm");
+    let manifest_path = dir.path().join("manifest.toml");
+    std::fs::write(&wasm_path, b"not actually wasm").expect("write wasm placeholder");
+    std::fs::write(
+        &manifest_path,
+        r#"
+            [app]
+            id = "com.example.gated"
+            name = "Gated"
+            version = "1.0.0"
+            entry = "app.wasm"
+            world = "krate:app/cli@0.1.0"
+
+            [[capabilities]]
+            cap = "fs.write:./notes/**"
+            rationale = "Save notes"
+            required = true
+        "#,
+    )
+    .expect("write manifest");
+
+    let output = krate()
+        .args([
+            "run",
+            "--dump-caps",
+            "--manifest",
+            manifest_path.to_str().expect("manifest path"),
+        ])
+        .arg(&wasm_path)
+        .output()
+        .expect("run krate dump caps on a gated app");
+
+    assert!(
+        output.status.success(),
+        "--dump-caps must inspect without enforcing the wall\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Effective capabilities"));
+    // Inspecting must not hand out the grant it is reporting on.
+    assert!(!stdout.contains("fs.write:notes/**"));
+}
+
+#[test]
 fn run_dump_caps_json_reports_effective_policy_without_running_component() {
     let dir = tempfile::tempdir().expect("create temp dir");
     let wasm_path = dir.path().join("app.wasm");
