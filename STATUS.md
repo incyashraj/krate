@@ -2,6 +2,35 @@
 
 Last updated: 2026-07-28
 
+Post-submission audit (2026-07-28, `de45c91`): the public path was walked end to
+end the way a reviewer would — install from the one-line installer, inspect an
+app, refuse it, allow it, reopen it — and six defects were found and fixed, all
+in what already existed rather than in anything new.
+
+The worst was a GUI app run without a native window waiting on events that
+nothing could deliver, burning a budget of over eight hours; `krate run
+app.krate --auto-grant` looked like a hang. A quiet headless run now ends in
+about twelve seconds. The first attempt at that fix reported a window close on
+every idle wait, which told apps a person had acted when nobody had — CI caught
+it on all three lanes, and the close is now reserved for an unbounded wait,
+where there is no other honest way out. `--dump-caps` ran behind the permission
+wall, so inspecting an app before granting it anything — the one thing that flag
+is for — refused with exit 5. `krate version` reported the crate's `-dev`
+version, contradicting `krate --version` on the same released binary. Every
+generated app was named `checklist` regardless of the request, so a reading list
+asked to "save files in checklist"; an app is now named from its request and
+gets a folder to match, which is what the permission prompt shows. The guide
+promised a transcript sidecar that was made opt-in and never written, and the
+README still pointed at rc3. The published `notes.krate` the README front-pages
+is stale and fails on the current runtime; it rebuilds and runs clean from
+source, so it needs republishing — the one item left open, since republishing an
+asset is a public action.
+
+Green on the full 3-OS matrix at `de45c91` (run `30342960905`, all of Linux,
+macOS, and Windows), with regression tests added for each fix: the idle-close
+rule and its bounded-wait exception, `--dump-caps` on a fully ungranted app, and
+the name an app derives from its request.
+
 Release `v0.1.0-rc4` (2026-07-28): main `97517db` shipped to the one-line
 installer. This release makes AI authoring reliable and hardens `krate create`
 for real machines. The guest SDK is now `#![no_std]`, so an AI-authored app
@@ -20,7 +49,7 @@ and `--agent claude` both produce a working `.krate`. Post-merge main CI
 the full 3-OS matrix at `f2bb345` (run `30286024116`).
 
 Last updated (prior): 2026-07-26
-Naming: the project is Krate (company: Krate Labs, Inc.). The A9 rename is
+Naming: the project is Krate (company name: Krate Labs). The A9 rename is
 fully executed — CLI `krate`, WIT `krate:*`, schema `krate.run.v1`, env
 `KRATE_*`, repo `incyashraj/krate`, runner `krate-local`, future bundle
 format `.krate`. No legacy `layer36` identifiers remain in code or contracts.
