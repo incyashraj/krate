@@ -35,6 +35,8 @@ const EXPECTED_IMPORTS: &[&str] = &[
     "krate:ui/dialog@0.1.0",
     "krate:ui/events@0.1.0",
     "krate:ui/menu@0.1.0",
+    "krate:ui/launcher@0.1.0",
+    "krate:ui/notify@0.1.0",
     "krate:ui/tree@0.1.0",
     "krate:ui/types@0.1.0",
     "krate:ui/window@0.1.0",

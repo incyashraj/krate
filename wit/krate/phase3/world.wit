@@ -26,6 +26,8 @@ world gui {
   import krate:ui/dialog@0.1.0;
   import krate:ui/clipboard@0.1.0;
   import krate:ui/menu@0.1.0;
+  import krate:ui/launcher@0.1.0;
+  import krate:ui/notify@0.1.0;
 
   import krate:gfx/canvas2d@0.1.0;
   import krate:gfx/gpu3d@0.1.0;

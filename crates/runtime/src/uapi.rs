@@ -160,7 +160,13 @@ pub enum UiCall {
     WindowCreate,
     ClipboardRead,
     ClipboardWrite,
-    Dialog { resource: UiDialogResource },
+    Dialog {
+        resource: UiDialogResource,
+    },
+    /// Handing a link to the person's browser.
+    OpenUrl,
+    /// Showing a desktop notification.
+    Notify,
 }
 
 impl UiCall {
@@ -169,6 +175,8 @@ impl UiCall {
             Self::WindowCreate => "ui.window:create".to_string(),
             Self::ClipboardRead => "ui.clipboard:read".to_string(),
             Self::ClipboardWrite => "ui.clipboard:write".to_string(),
+            Self::OpenUrl => "ui.open-url".to_string(),
+            Self::Notify => "ui.notify".to_string(),
             Self::Dialog { resource } => format!("ui.dialog:{resource}"),
         }
     }

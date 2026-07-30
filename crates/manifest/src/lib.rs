@@ -62,6 +62,11 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "clipboard", "read", false),
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "clipboard", "write", false),
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "menu", "system", false),
+    // Handing a link to the person's browser. Not default-granted: opening a
+    // URL is an outward action, and an app that does it unasked is spam.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase3, "ui", "open-url", false),
+    // Desktop notifications, for the same reason.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase3, "ui", "notify", false),
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase3,
         "ui",

@@ -342,3 +342,59 @@ interface menu {
   /// Set the simple top-level menu for a window.
   set-items: func(window: u64, items: list<menu-item>) -> result<_, ui-error>;
 }
+
+/// Opening a link in the person's browser.
+///
+/// An app that shows documentation, a sign-in page, or a "learn more" link
+/// needs this, and without it the only alternative is a process capability --
+/// which is far broader authority than opening a URL.
+///
+/// This hands a URL to the operating system's own handler. The app cannot
+/// choose which program runs, cannot pass arguments to it, and cannot read
+/// anything back, so this stays a request to the system rather than a way to
+/// execute something. Schemes are restricted to `https` and `mailto`: `file://`
+/// would read the user's disk through the browser, and a custom scheme can
+/// launch another installed application with attacker-chosen text.
+interface launcher {
+  /// Why a URL could not be opened.
+  variant launch-error {
+    /// The app did not receive the `ui.open-url` capability.
+    denied,
+    /// The URL was malformed, or used a scheme this interface does not allow.
+    invalid-url(string),
+    /// The operating system refused or had no handler for it.
+    unavailable(string),
+  }
+
+  /// Ask the operating system to open a URL in whatever the person uses.
+  ///
+  /// Returns once the request is handed over, not when the page has loaded:
+  /// the app gets no signal about what the browser then did, which is what
+  /// keeps this from becoming a channel back into the app.
+  open-url: func(url: string) -> result<_, launch-error>;
+}
+
+/// Desktop notifications.
+///
+/// An app that finishes a long task, receives a message, or hits a timer needs
+/// to say so when its window is not in front. Without it, an app can only speak
+/// while the person is already looking at it.
+interface notify {
+  /// Why a notification could not be shown.
+  variant notify-error {
+    /// The app did not receive the `ui.notify` capability.
+    denied,
+    /// The title or body was empty or longer than the host allows.
+    invalid-content(string),
+    /// The operating system has no notification service available.
+    unavailable(string),
+  }
+
+  /// Show one notification.
+  ///
+  /// The host attributes it to the app, so an app cannot post a notification
+  /// that appears to come from somewhere else. There is no reply channel: an
+  /// app learns nothing about whether the notification was seen or clicked,
+  /// which keeps this from becoming a way to watch the person.
+  show: func(title: string, body: string) -> result<_, notify-error>;
+}

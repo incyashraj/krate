@@ -3098,6 +3098,8 @@ fn human_label(cap: &Capability) -> String {
         ("store", "kv") => "save its own settings and data".to_string(),
         ("store", "sql") => "keep its own database".to_string(),
         ("store", "secret") => "save sign-in details for itself".to_string(),
+        ("ui", "open-url") => "open links in your browser".to_string(),
+        ("ui", "notify") => "send you notifications".to_string(),
         ("audio", "capture") => "listen through your microphone".to_string(),
         ("audio", "playback") => "play sound through your speakers".to_string(),
         ("time", "clock") => "read the current time".to_string(),

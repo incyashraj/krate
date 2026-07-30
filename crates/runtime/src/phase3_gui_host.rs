@@ -20,7 +20,7 @@ use crate::{
     phase3_gui_bindings::krate::{audio, gfx, speech, ui},
     phase3_ui::{Phase3HostUiMode, Phase3UiDispatcher, Phase3UiRuntime, UiDispatchError},
     speech_transcription::{LocalSpeechRuntime, SpeechError},
-    uapi::{AudioCall, UapiCall, UapiGuard},
+    uapi::{AudioCall, UapiCall, UapiGuard, UiCall},
 };
 
 /// How long `events.wait` sleeps between polls.
@@ -826,6 +826,56 @@ impl ui::events::Host for Phase3GuiHost {
             }
             std::thread::sleep(std::time::Duration::from_millis(WAIT_POLL_INTERVAL_MILLIS));
         }
+    }
+}
+
+impl ui::launcher::Host for Phase3GuiHost {
+    fn open_url(&mut self, url: String) -> wasmtime::Result<Result<(), ui::launcher::LaunchError>> {
+        // Checked before the URL is even looked at, so a denied app cannot use
+        // the difference between error messages to probe what would be allowed.
+        let granted = self
+            .runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::OpenUrl))
+            .is_ok();
+        Ok(
+            crate::desktop_host::open_url(&url, granted).map_err(|err| match err {
+                crate::desktop_host::LaunchError::Denied => ui::launcher::LaunchError::Denied,
+                crate::desktop_host::LaunchError::InvalidUrl(m) => {
+                    ui::launcher::LaunchError::InvalidUrl(m)
+                }
+                crate::desktop_host::LaunchError::Unavailable(m) => {
+                    ui::launcher::LaunchError::Unavailable(m)
+                }
+            }),
+        )
+    }
+}
+
+impl ui::notify::Host for Phase3GuiHost {
+    fn show(
+        &mut self,
+        title: String,
+        body: String,
+    ) -> wasmtime::Result<Result<(), ui::notify::NotifyError>> {
+        let granted = self
+            .runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Notify))
+            .is_ok();
+        // The app's own title is used for attribution, so a notification cannot
+        // be made to look like it came from somewhere else.
+        Ok(
+            crate::desktop_host::notify(&title, &body, &title, granted).map_err(|err| match err {
+                crate::desktop_host::NotifyError::Denied => ui::notify::NotifyError::Denied,
+                crate::desktop_host::NotifyError::InvalidContent(m) => {
+                    ui::notify::NotifyError::InvalidContent(m)
+                }
+                crate::desktop_host::NotifyError::Unavailable(m) => {
+                    ui::notify::NotifyError::Unavailable(m)
+                }
+            }),
+        )
     }
 }
 

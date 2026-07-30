@@ -27,6 +27,7 @@ pub mod uapi;
 pub mod uapi_dispatch;
 
 mod audio_capture;
+pub mod desktop_host;
 pub mod embed;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_bindings;
@@ -511,6 +512,8 @@ impl Runtime {
         link_gui!(ui::dialog);
         link_gui!(ui::clipboard);
         link_gui!(ui::menu);
+        link_gui!(ui::launcher);
+        link_gui!(ui::notify);
         link_gui!(gfx::types);
         link_gui!(gfx::canvas2d);
         link_gui!(gfx::gpu3d);
