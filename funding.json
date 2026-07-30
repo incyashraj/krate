@@ -1,0 +1,65 @@
+{
+  "$schema": "https://fundingjson.org/schema/v1.1.0.json",
+  "version": "v1.1.0",
+  "entity": {
+    "type": "individual",
+    "role": "maintainer",
+    "name": "Yashraj Pardeshi",
+    "email": "incyashraj@gmail.com",
+    "description": "Yashraj Pardeshi is the Indian maintainer and original author of Krate. He has built the runtime, file format, permission enforcement, AI authoring path, cross-platform host support, tests, documentation, and public examples. He is working full-time to make AI-created software easy to share without requiring users to trust it blindly.",
+    "webpageUrl": {
+      "url": "https://incyashraj.github.io/"
+    }
+  },
+  "projects": [
+    {
+      "guid": "krate",
+      "name": "Krate",
+      "description": "Krate is an open-source runtime and file format for software created by AI. Claude or another authoring tool can turn a request into one .krate file. The same file opens locally on macOS, Windows, and Linux. Before any app code runs, Krate shows the files, network access, and other capabilities the app requests. The runtime grants only what the user approves and refuses to start an app when a required capability is denied. The runtime, AI authoring flow, double-click opening, local persistence, and sample apps work today. This grant supports only the public runtime, SDK, authoring tools, documentation, security testing, and community work. It does not fund the planned commercial Krate Cloud.",
+      "webpageUrl": {
+        "url": "https://incyashraj.github.io/krate/"
+      },
+      "repositoryUrl": {
+        "url": "https://github.com/incyashraj/krate"
+      },
+      "licenses": [
+        "spdx:MIT",
+        "spdx:Apache-2.0"
+      ],
+      "tags": [
+        "developer-tools",
+        "runtime",
+        "webassembly",
+        "security",
+        "capabilities",
+        "ai",
+        "cross-platform",
+        "open-source"
+      ]
+    }
+  ],
+  "funding": {
+    "channels": [
+      {
+        "guid": "bank-transfer",
+        "type": "bank",
+        "address": "",
+        "description": "Please contact the maintainer by email for bank transfer details."
+      }
+    ],
+    "plans": [
+      {
+        "guid": "open-runtime-2026",
+        "status": "active",
+        "name": "Twelve months of open Krate runtime development",
+        "description": "INR 7,00,000 supports twelve months of public Krate work. Q1: stabilize installation and AI authoring on three operating systems and fix user failures. Q2: expand the SDK and capabilities, add security tests, and publish a threat model. Q3: recruit contributors, improve contributor docs, and run a workshop. Q4: publish a stable release, compatibility evidence, and a sustainable release process. Covers maintainer time, testing, release infrastructure, docs, and review. Excludes Krate Cloud.",
+        "amount": 700000,
+        "currency": "INR",
+        "frequency": "one-time",
+        "channels": [
+          "bank-transfer"
+        ]
+      }
+    ]
+  }
+}
