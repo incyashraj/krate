@@ -4510,6 +4510,18 @@ pub mod krate {
             impl std::error::Error for NetError {}
         }
         /// HTTP client calls for CLI components.
+        /// Buffered HTTP requests to hosts the person allowed.
+        ///
+        /// **Redirects are not followed.** A 3xx comes back with its `location` header
+        /// for the app to act on, and following it means making another request -- one
+        /// that is checked against `net.connect` for the new host.
+        ///
+        /// That is deliberate rather than unfinished. `net.connect` is granted per
+        /// host, so a client that followed redirects itself would let a granted
+        /// `api.example.com` send the app's request anywhere it liked, with the
+        /// person's permission prompt saying only "api.example.com". Leaving the
+        /// decision to the app keeps every host the request reaches one the person
+        /// actually approved.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod http_client {
             #[used]

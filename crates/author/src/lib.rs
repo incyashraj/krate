@@ -632,27 +632,15 @@ fn checklist_source(request: &AppRequest) -> String {
     // A human-facing window title from the kebab-case name (e.g. `my-list` ->
     // `My list`). The sample hardcodes "Krate Checklist"; swap it out.
     let title = title_case(&request.name);
-    CHECKLIST_SOURCE
-        .replace("Krate Checklist", &title)
-        // Give the app its own folder too. The permission wall names this
-        // directory to the person deciding whether to allow it, so a reading
-        // list asking to "save files in checklist" reads as though it came from
-        // somewhere else. It must stay in step with [`checklist_data_dir`],
-        // which writes the matching fs grants into the manifest.
-        .replace(
-            "./checklist/",
-            &format!("./{}/", checklist_data_dir(request)),
-        )
+    // Only the title needs rewriting now. The app keeps its items in its own
+    // store under a key, so there is no longer a folder name to keep in step
+    // with the manifest -- which is the point of the store: an app names a key,
+    // never a location.
+    CHECKLIST_SOURCE.replace("Krate Checklist", &title)
 }
 
 fn voice_prompter_source(request: &AppRequest) -> String {
     VOICE_PROMPTER_SOURCE.replace("Voice Prompter", &title_case(&request.name))
-}
-
-/// The folder a generated checklist-style app keeps its data in: its own name,
-/// so the grant the person reviews matches the app that is asking.
-fn checklist_data_dir(request: &AppRequest) -> String {
-    request.name.clone()
 }
 
 /// Turn a kebab-case name into a capitalized, spaced title.
@@ -724,7 +712,6 @@ fn checklist_manifest_toml(request: &AppRequest) -> String {
     let title = title_case(name);
     // Must match the directory baked into the source by `checklist_source`,
     // or the app would ask for one folder and write to another.
-    let data_dir = checklist_data_dir(request);
     // The checklist needs a window and read+write on its own data directory.
     // The write grant is the one that gates saving, so withholding it produces
     // the standard exit-5 refusal.
@@ -752,13 +739,8 @@ rationale = "Read the quick-run flag used by automated tests"
 required = true
 
 [[capabilities]]
-cap = "fs.read:./{data_dir}/**"
-rationale = "Load your saved {title}"
-required = true
-
-[[capabilities]]
-cap = "fs.write:./{data_dir}/**"
-rationale = "Save changes to your {title}"
+cap = "store.kv"
+rationale = "Save your {title} items"
 required = true
 "#
     )
@@ -907,25 +889,37 @@ mod tests {
         assert!(cargo.contains(r#""krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }"#));
         let manifest = app.file("manifest.toml").expect("manifest");
         assert!(manifest.contains(r#"cap = "ui.window:create""#));
-        // The app asks for a folder named after itself, so the person reading
-        // the permission wall sees the app that is asking, not "checklist".
-        assert!(manifest.contains(r#"cap = "fs.write:./my-list/**""#));
-        assert!(manifest.contains(r#"cap = "fs.read:./my-list/**""#));
-        assert!(!manifest.contains("./checklist/**"));
+        // The app keeps its items in its own store, so it asks to remember
+        // things rather than for access to a folder. That is both a smaller
+        // grant and a more honest sentence in the permission prompt.
+        assert!(manifest.contains(r#"cap = "store.kv""#));
+        assert!(
+            !manifest.contains("fs.read:"),
+            "no filesystem grant is needed"
+        );
+        assert!(
+            !manifest.contains("fs.write:"),
+            "no filesystem grant is needed"
+        );
         assert!(manifest.contains(r#"world = "krate:app/gui@0.2.0""#));
     }
 
     #[test]
-    fn the_folder_an_app_asks_for_is_the_folder_it_writes() {
-        // A grant that does not match the path the code uses would either leak
-        // a folder the person never approved or refuse a run they did approve,
-        // so the manifest and the source have to name the same directory.
+    fn a_generated_app_keeps_its_data_without_touching_the_filesystem() {
+        // The mismatch this used to guard against -- a grant naming one folder
+        // while the code wrote to another -- cannot happen now: the app names a
+        // key, and the runtime decides where that lives. What is worth
+        // asserting instead is that no filesystem authority is requested at all.
         let app = generate(&AppRequest::checklist("reading-list"), "../..").expect("generate");
         let manifest = app.file("manifest.toml").expect("manifest");
         let source = app.file("src/lib.rs").expect("source");
-        assert!(manifest.contains(r#"cap = "fs.write:./reading-list/**""#));
-        assert!(source.contains("./reading-list/"));
-        assert!(!source.contains("./checklist/"));
+        assert!(manifest.contains(r#"cap = "store.kv""#));
+        assert!(!manifest.contains("fs.read:"));
+        assert!(!manifest.contains("fs.write:"));
+        assert!(
+            !source.contains("files::open"),
+            "the generated app should not open files to keep its own data"
+        );
     }
 
     #[test]

@@ -15,8 +15,8 @@
 #[allow(warnings)]
 mod bindings;
 
-use bindings::krate::fs::files::{self, OpenMode};
 use bindings::krate::io::{args, stdio};
+use bindings::krate::store::kv as store_kv;
 use bindings::krate::ui::{events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
@@ -35,7 +35,8 @@ const ADD_ITEM_ID: u64 = ITEM_ROW_BASE_ID + MAX_ITEMS as u64;
 /// Bytes of text one item can hold. Fixed for the same no-allocation reason.
 const ITEM_TEXT_CAP: usize = 128;
 /// The file the checklist is saved to, inside the granted directory.
-const DATA_FILE: &str = "./checklist/items.txt";
+/// The one key this app keeps its items under.
+const DATA_KEY: &str = "items";
 
 /// The items seeded on the very first run, so a fresh open is not empty.
 const SEED_ITEMS: [&str; 3] = ["Buy milk", "Write the pitch", "Ship the demo"];
@@ -370,37 +371,29 @@ fn is_item_row(widget: Option<u64>) -> Option<usize> {
 
 /// Load the checklist from the granted file. Each line is `[x] text` (done) or
 /// `[ ] text` (not done). A missing file is an empty checklist, not an error.
+/// Load the checklist from the app's own store.
+///
+/// The store, not a file: the app names a key and never a path, so it needs no
+/// filesystem grant and the permission prompt says "save its own settings and
+/// data" rather than naming a folder. This replaced about a hundred lines of
+/// hand-written buffering and parsing that every app would otherwise repeat.
 fn load(list: &mut Checklist) -> bool {
     *list = Checklist::new();
-    let Ok(file) = files::open(DATA_FILE, OpenMode::Read) else {
+    let Ok(Some(data)) = store_kv::get(DATA_KEY) else {
         return false;
     };
-    // Read the whole file into a fixed buffer.
-    let mut buf = [0u8; MAX_ITEMS * (ITEM_TEXT_CAP + 8)];
-    let mut len = 0usize;
-    while let Ok(chunk) = file.read(4096) {
-        if chunk.is_empty() {
-            break;
-        }
-        for byte in &chunk {
-            if let Some(slot) = buf.get_mut(len) {
-                *slot = *byte;
-                len += 1;
-            }
-        }
-    }
-    // Split on newlines and parse each line.
-    let data = buf.get(..len).unwrap_or(&[]);
+    // Split on newlines by hand. `str::lines` and a growable `String` would
+    // reach std's allocation-error handler, which drags the whole `wasi:*`
+    // import set into an otherwise pure component.
     let mut start = 0usize;
-    for i in 0..len {
-        let is_newline = data.get(i).copied() == Some(b'\n');
-        if is_newline {
+    for i in 0..data.len() {
+        if data.get(i).copied() == Some(b'\n') {
             parse_line(data.get(start..i).unwrap_or(&[]), list);
             start = i + 1;
         }
     }
-    if start < len {
-        parse_line(data.get(start..len).unwrap_or(&[]), list);
+    if start < data.len() {
+        parse_line(data.get(start..).unwrap_or(&[]), list);
     }
     true
 }
@@ -419,14 +412,16 @@ fn parse_line(line: &[u8], list: &mut Checklist) {
     }
 }
 
-/// Save the checklist back to the granted file, one `[x]/[ ] text` line each.
+/// Save the checklist, one `[x]/[ ] text` line each.
+///
+/// The same on-disk shape as before, so a person who looks at their data still
+/// sees something readable -- what changed is that the app no longer needs
+/// access to a folder to keep it.
 fn save(list: &Checklist) -> bool {
-    let Ok(file) = files::open(DATA_FILE, OpenMode::Write) else {
-        return false;
-    };
+    // A fixed buffer for the same no-allocation reason as `load`.
     let mut out = [0u8; MAX_ITEMS * (ITEM_TEXT_CAP + 8)];
     let mut len = 0usize;
-    let push = |bytes: &[u8], out: &mut [u8], len: &mut usize| {
+    let mut push = |bytes: &[u8], out: &mut [u8], len: &mut usize| {
         for byte in bytes {
             if let Some(slot) = out.get_mut(*len) {
                 *slot = *byte;
@@ -449,7 +444,7 @@ fn save(list: &Checklist) -> bool {
         push(item.text_str().as_bytes(), &mut out, &mut len);
         push(b"\n", &mut out, &mut len);
     }
-    file.write(out.get(..len).unwrap_or(&[])).is_ok()
+    store_kv::set(DATA_KEY, out.get(..len).unwrap_or(&[])).is_ok()
 }
 
 // ---- the app --------------------------------------------------------------

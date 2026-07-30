@@ -21,11 +21,6 @@ rationale = "Read the quick-run flag used by automated tests"
 required = true
 
 [[capabilities]]
-cap = "fs.read:./checklist/**"
-rationale = "Load your saved checklist"
-required = true
-
-[[capabilities]]
-cap = "fs.write:./checklist/**"
-rationale = "Save changes to your checklist"
+cap = "store.kv"
+rationale = "Save your checklist items"
 required = true
