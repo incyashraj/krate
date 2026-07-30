@@ -32,6 +32,10 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // scope: the app cannot name a location, so the grant is simply "may this
     // app remember things" rather than "may this app read this folder".
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "store", "kv", false),
+    // The app's own database. Resource-free for the same reason as kv: the app
+    // names tables, never a file, so the grant is "may this app keep a
+    // database" rather than access to a location.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase2, "store", "sql", false),
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase2,
         "fs",

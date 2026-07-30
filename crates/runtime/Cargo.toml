@@ -12,6 +12,7 @@ default = ["phase2-bindings"]
 phase2-bindings = []
 
 [dependencies]
+rusqlite.workspace = true
 krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
 krate-layout = { path = "../layout", version = "0.1.0-dev" }
 krate-manifest = { path = "../manifest", version = "0.1.0-dev" }

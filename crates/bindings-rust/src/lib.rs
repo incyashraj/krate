@@ -327,6 +327,63 @@ pub mod store {
     }
 }
 
+/// The app's own database.
+///
+/// Tables, not files: the app writes SQL against a database the runtime keeps
+/// for it, and never learns a path. Requires the `store.sql` capability.
+/// Statements that would reach outside that database -- attaching another one,
+/// pragmas, the file-reading functions -- are refused by the host.
+pub mod sql {
+    pub use crate::bindings::krate::store::sql::{QueryResult, Row, SqlError, Value};
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    /// Run a statement that returns rows.
+    ///
+    /// Pass values as `params` rather than building them into the text; they
+    /// are bound all the way to the database, so user input cannot become SQL.
+    pub fn query(statement: &str, params: &[Value]) -> Result<QueryResult, SqlError> {
+        crate::bindings::krate::store::sql::query(statement, params)
+    }
+
+    /// Run a statement that changes data, returning the rows affected.
+    pub fn execute(statement: &str, params: &[Value]) -> Result<u64, SqlError> {
+        crate::bindings::krate::store::sql::execute(statement, params)
+    }
+
+    /// Run several statements as one unit. Any failure rolls the batch back, so
+    /// a half-applied migration cannot survive a crash.
+    pub fn transaction(statements: &[String]) -> Result<(), SqlError> {
+        crate::bindings::krate::store::sql::transaction(statements)
+    }
+
+    /// The text of the first column of the first row, which is the shape of
+    /// most one-answer queries ("what is the current schema version?").
+    pub fn query_one_text(statement: &str, params: &[Value]) -> Result<Option<String>, SqlError> {
+        let result = query(statement, params)?;
+        Ok(result
+            .rows
+            .first()
+            .and_then(|row| row.values.first())
+            .and_then(|value| match value {
+                Value::Text(text) => Some(text.clone()),
+                _ => None,
+            }))
+    }
+
+    /// Every row's first column as text, the shape of "list the things".
+    pub fn query_texts(statement: &str, params: &[Value]) -> Result<Vec<String>, SqlError> {
+        let result = query(statement, params)?;
+        let mut out = Vec::new();
+        for row in &result.rows {
+            if let Some(Value::Text(text)) = row.values.first() {
+                out.push(text.clone());
+            }
+        }
+        Ok(out)
+    }
+}
+
 /// Capability-checked file access.
 pub mod fs {
     pub use crate::bindings::krate::fs::files::File;

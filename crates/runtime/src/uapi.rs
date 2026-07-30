@@ -53,12 +53,14 @@ pub enum AudioCall {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StoreCall {
     Kv,
+    Sql,
 }
 
 impl fmt::Display for StoreCall {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Kv => "kv",
+            Self::Sql => "sql",
         })
     }
 }
@@ -390,6 +392,7 @@ mod tests {
             UapiCall::Io(IoCall::Args),
             UapiCall::Io(IoCall::Log),
             UapiCall::Store(StoreCall::Kv),
+            UapiCall::Store(StoreCall::Sql),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),
             }),

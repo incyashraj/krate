@@ -32,6 +32,8 @@ pub struct Phase2Host<'a> {
     /// in which case every store call refuses -- an app cannot conjure storage
     /// the runtime did not give it.
     store: Option<crate::store_host::AppStore>,
+    /// The app's own database, on the same terms as the store above.
+    database: Option<crate::sql_host::AppDatabase>,
 }
 
 impl<'a> Phase2Host<'a> {
@@ -50,6 +52,7 @@ impl<'a> Phase2Host<'a> {
             resources: Phase2ResourceTable::default(),
             asset_root: None,
             store: None,
+            database: None,
             default_http_timeout_millis,
         }
     }
@@ -67,6 +70,14 @@ impl<'a> Phase2Host<'a> {
     /// explicit rather than looking like a missing feature.
     pub fn with_store(mut self, path: Option<PathBuf>, granted: bool) -> Self {
         self.store = path.map(|path| crate::store_host::AppStore::open(path, granted));
+        self
+    }
+
+    /// Give this run its database, on the same terms as the key-value store:
+    /// the grant is resolved once from the session policy, and the file is not
+    /// opened until the app actually runs a statement.
+    pub fn with_database(mut self, path: Option<PathBuf>, granted: bool) -> Self {
+        self.database = path.map(|path| crate::sql_host::AppDatabase::new(path, granted));
         self
     }
 
@@ -183,6 +194,87 @@ impl store::kv::Host for Phase2Host<'_> {
             Some(store) => store.clear().map_err(store_error_to_wit),
             None => Err(store::kv::StoreError::Denied),
         })
+    }
+}
+
+impl store::sql::Host for Phase2Host<'_> {
+    fn query(
+        &mut self,
+        statement: String,
+        params: Vec<store::sql::Value>,
+    ) -> wasmtime::Result<Result<store::sql::QueryResult, store::sql::SqlError>> {
+        let Some(db) = self.database.as_mut() else {
+            return Ok(Err(store::sql::SqlError::Denied));
+        };
+        let params: Vec<_> = params.into_iter().map(value_from_wit).collect();
+        Ok(db
+            .query(&statement, &params)
+            .map(|result| store::sql::QueryResult {
+                columns: result.columns,
+                rows: result
+                    .rows
+                    .into_iter()
+                    .map(|values| store::sql::Row {
+                        values: values.into_iter().map(value_to_wit).collect(),
+                    })
+                    .collect(),
+            })
+            .map_err(sql_error_to_wit))
+    }
+
+    fn execute(
+        &mut self,
+        statement: String,
+        params: Vec<store::sql::Value>,
+    ) -> wasmtime::Result<Result<u64, store::sql::SqlError>> {
+        let Some(db) = self.database.as_mut() else {
+            return Ok(Err(store::sql::SqlError::Denied));
+        };
+        let params: Vec<_> = params.into_iter().map(value_from_wit).collect();
+        Ok(db.execute(&statement, &params).map_err(sql_error_to_wit))
+    }
+
+    fn transaction(
+        &mut self,
+        statements: Vec<String>,
+    ) -> wasmtime::Result<Result<(), store::sql::SqlError>> {
+        let Some(db) = self.database.as_mut() else {
+            return Ok(Err(store::sql::SqlError::Denied));
+        };
+        Ok(db.transaction(&statements).map_err(sql_error_to_wit))
+    }
+}
+
+fn value_from_wit(value: store::sql::Value) -> crate::sql_host::SqlValue {
+    use crate::sql_host::SqlValue;
+    match value {
+        store::sql::Value::Null => SqlValue::Null,
+        store::sql::Value::Integer(n) => SqlValue::Integer(n),
+        store::sql::Value::Real(n) => SqlValue::Real(n),
+        store::sql::Value::Text(text) => SqlValue::Text(text),
+        store::sql::Value::Blob(bytes) => SqlValue::Blob(bytes),
+    }
+}
+
+fn value_to_wit(value: crate::sql_host::SqlValue) -> store::sql::Value {
+    use crate::sql_host::SqlValue;
+    match value {
+        SqlValue::Null => store::sql::Value::Null,
+        SqlValue::Integer(n) => store::sql::Value::Integer(n),
+        SqlValue::Real(n) => store::sql::Value::Real(n),
+        SqlValue::Text(text) => store::sql::Value::Text(text),
+        SqlValue::Blob(bytes) => store::sql::Value::Blob(bytes),
+    }
+}
+
+fn sql_error_to_wit(error: crate::sql_host::SqlError) -> store::sql::SqlError {
+    use crate::sql_host::SqlError;
+    match error {
+        SqlError::Denied => store::sql::SqlError::Denied,
+        SqlError::InvalidStatement(message) => store::sql::SqlError::InvalidStatement(message),
+        SqlError::Forbidden(message) => store::sql::SqlError::Forbidden(message),
+        SqlError::TooLarge => store::sql::SqlError::TooLarge,
+        SqlError::Io(message) => store::sql::SqlError::Io(message),
     }
 }
 

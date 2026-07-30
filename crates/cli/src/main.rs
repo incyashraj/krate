@@ -2765,6 +2765,7 @@ fn run_component(request: RunRequest) -> Result<u8> {
         // than the file: renaming or moving the `.krate` keeps the same store,
         // and two different apps can never read each other's.
         app_store_path: manifest.map(|manifest| app_store_path(&manifest.app.id)),
+        app_database_path: manifest.map(|manifest| app_database_path(&manifest.app.id)),
         phase3_ui_mode: if request.native_window {
             krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype
         } else {
@@ -3079,6 +3080,7 @@ fn human_label(cap: &Capability) -> String {
         // checklist" described the mechanism and made saving a preference sound
         // like reading the user's folders.
         ("store", "kv") => "save its own settings and data".to_string(),
+        ("store", "sql") => "keep its own database".to_string(),
         ("audio", "capture") => "listen through your microphone".to_string(),
         ("audio", "playback") => "play sound through your speakers".to_string(),
         ("time", "clock") => "read the current time".to_string(),
@@ -4225,6 +4227,13 @@ fn app_store_path(app_id: &str) -> PathBuf {
         safe
     };
     krate_home().join("store").join(format!("{safe}.kv"))
+}
+
+/// Where one app's database lives. Same directory and the same sanitising as
+/// the key-value store, so both follow the app rather than the file.
+fn app_database_path(app_id: &str) -> PathBuf {
+    let kv = app_store_path(app_id);
+    kv.with_extension("sqlite")
 }
 
 fn home_dir() -> Option<PathBuf> {

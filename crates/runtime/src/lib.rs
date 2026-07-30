@@ -39,6 +39,7 @@ pub mod phase3_gui_bindings;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase3_gui_host;
 mod speech_transcription;
+pub mod sql_host;
 pub mod store_host;
 
 #[cfg(feature = "phase2-bindings")]
@@ -119,6 +120,9 @@ pub struct Config {
     /// the app: an app names keys, not locations, so storage cannot widen into
     /// reading the user's files.
     pub app_store_path: Option<PathBuf>,
+    /// Where this app's database lives, chosen by the runtime on the same
+    /// terms as the key-value store.
+    pub app_database_path: Option<PathBuf>,
     /// Host UI backend mode for Phase 3 `gui` world runs.
     pub phase3_ui_mode: phase3_ui::Phase3HostUiMode,
 }
@@ -138,6 +142,7 @@ impl Default for Config {
             sandbox_root: PathBuf::from("."),
             bundle_assets_root: None,
             app_store_path: None,
+            app_database_path: None,
             phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
         }
     }
@@ -575,6 +580,12 @@ impl HostState {
                 // talked into a different answer mid-run.
                 config.session_policy.allows(
                     &krate_manifest::Capability::new("store", "kv", None).expect("store.kv"),
+                ),
+            )
+            .with_database(
+                config.app_database_path.clone(),
+                config.session_policy.allows(
+                    &krate_manifest::Capability::new("store", "sql", None).expect("store.sql"),
                 ),
             ),
             #[cfg(feature = "phase2-bindings")]

@@ -22,6 +22,7 @@ The current world imports these interfaces:
 - `krate:locale/format@0.1.0`
 - `krate:resources/assets@0.1.0`
 - `krate:store/kv@0.1.0`
+- `krate:store/sql@0.1.0`
 
 The app exports:
 
@@ -751,6 +752,92 @@ Shared network request, response, and error types.
 > The store could not be read or written.
 
 - `io`: `string`
+
+
+## `krate:store/sql@0.1.0`
+
+### Functions
+
+> Run a statement that returns rows.
+> 
+> Parameters are bound, never substituted into the text, so an app cannot
+> build an injection out of its own user's input by accident.
+
+- `query(statement: string, params: list<value>) -> result<query-result, sql-error>`
+> Run a statement that changes data, returning the number of rows affected.
+
+- `execute(statement: string, params: list<value>) -> result<u64, sql-error>`
+> Run several statements as one unit, so a half-applied change cannot
+> survive a crash. Any failure rolls the whole batch back.
+
+- `transaction(statements: list<string>) -> result<_, sql-error>`
+
+### Types
+
+#### `value` variant
+
+> One value in a row or a query parameter.
+> 
+> A closed set rather than an open one: every value crossing the boundary
+> has a known shape, so the host never has to interpret app-supplied text as
+> a type declaration.
+
+> SQL NULL.
+
+- `null`
+> A 64-bit signed integer.
+
+- `integer`: `s64`
+> A double-precision float.
+
+- `real`: `f64`
+> Text.
+
+- `text`: `string`
+> Arbitrary bytes.
+
+- `blob`: `list<u8>`
+
+#### `sql-error` variant
+
+> Error returned by a database operation.
+
+> The app did not receive the `store.sql` capability.
+
+- `denied`
+> The statement could not be parsed or refers to something missing.
+
+- `invalid-statement`: `string`
+> The statement is one this interface does not permit, such as attaching
+> another database or reading a file from the host.
+
+- `forbidden`: `string`
+> The result, or the database as a whole, exceeded its bound.
+
+- `too-large`
+> The database could not be read or written.
+
+- `io`: `string`
+
+#### `row` record
+
+> One returned row, in the column order of the query.
+
+> The row's values, in the column order of the query.
+
+- `values`: `list<value>`
+
+#### `query-result` record
+
+> The result of a query.
+
+> Column names in the order the values appear, so a caller can address
+> results by name without a second round trip.
+
+- `columns`: `list<string>`
+> The rows the query matched, in the order the database returned them.
+
+- `rows`: `list<row>`
 
 
 ## `krate:time/clock@0.1.0`

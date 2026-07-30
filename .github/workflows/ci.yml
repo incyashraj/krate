@@ -705,6 +705,20 @@ jobs:
             exit 1
           fi
           echo "hello-gui opened a real winit window on Windows and exited cleanly"
+      - name: Warm the cargo cache for the offline port tests
+        shell: bash
+        run: |
+          # Same reason as the quick lane: the port tests build a guest
+          # with CARGO_NET_OFFLINE, so the guest SDK's wasm32 deps have to
+          # already be cached. Windows hit this first because its cache
+          # starts cold more often.
+          tmp="$(mktemp -d)/krate-port-cache-warm"
+          cargo new --lib "$tmp" >/dev/null
+          {
+            printf '[target.'"'"'cfg(target_arch = "wasm32")'"'"'.dependencies]\n'
+            printf 'dlmalloc = { version = "0.2", features = ["global"] }\n'
+          } >> "$tmp/Cargo.toml"
+          cargo fetch --manifest-path "$tmp/Cargo.toml" --target wasm32-wasip1
       - name: Run Phase 1 tests
         shell: bash
         env:
