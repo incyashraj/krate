@@ -998,6 +998,98 @@
       font-size: 10px;
     }
 
+    .faq-list {
+      border-top: 1px solid var(--line);
+    }
+
+    .faq-item {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .faq-item summary {
+      min-height: 78px;
+      display: grid;
+      grid-template-columns: 82px 1fr 28px;
+      align-items: center;
+      gap: 18px;
+      padding: 15px 0;
+      color: var(--text);
+      cursor: pointer;
+      list-style: none;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+
+    .faq-item summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .faq-item summary::after {
+      content: "+";
+      color: var(--blue-soft);
+      font-size: 23px;
+      font-weight: 400;
+      text-align: right;
+    }
+
+    .faq-item[open] summary::after {
+      content: "×";
+      color: var(--cyan);
+    }
+
+    .faq-item summary:hover,
+    .faq-item summary:focus-visible {
+      color: var(--cyan);
+      outline: none;
+    }
+
+    .faq-index {
+      color: var(--quiet);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+
+    .faq-answer {
+      max-width: 880px;
+      padding: 0 46px 28px 100px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    .faq-answer p {
+      margin-bottom: 12px;
+    }
+
+    .faq-answer p:last-child {
+      margin-bottom: 0;
+    }
+
+    .faq-answer strong {
+      color: var(--text);
+      font-weight: 650;
+    }
+
+    .faq-answer code {
+      color: var(--blue-soft);
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+
+    .faq-answer a {
+      color: var(--blue-soft);
+    }
+
+    .faq-answer a:hover,
+    .faq-answer a:focus-visible {
+      color: var(--cyan);
+      outline: none;
+    }
+
     .public-links {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -1242,6 +1334,17 @@
         grid-template-columns: 1fr;
       }
 
+      .faq-item summary {
+        grid-template-columns: 46px 1fr 22px;
+        gap: 10px;
+        font-size: 14px;
+      }
+
+      .faq-answer {
+        padding: 0 22px 25px 56px;
+        font-size: 15px;
+      }
+
       .footer-inner {
         align-items: flex-start;
         flex-direction: column;
@@ -1279,6 +1382,7 @@
         <a class="nav-link" href="#how">How it works</a>
         <a class="nav-link" href="#start">Start</a>
         <a class="nav-link" href="#cloud">Krate Cloud</a>
+        <a class="nav-link" href="#faq">FAQ</a>
         <a class="nav-link" href="./docs/">Docs</a>
         <a class="nav-link" href="./docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
         <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
@@ -1441,6 +1545,98 @@
             <strong>Control its access</strong>
             <small>User choice</small>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="faq">
+      <div class="wrap">
+        <div class="section-heading">
+          <p class="label">Questions people asked</p>
+          <h2>Direct answers about Krate.</h2>
+          <p>These questions came from developers seeing Krate for the first time. The short answer is first, with the technical boundary underneath it.</p>
+        </div>
+
+        <div class="faq-list">
+          <details class="faq-item" open>
+            <summary><span class="faq-index">01 / Docker</span><span>Is Krate just Docker for desktop apps?</span></summary>
+            <div class="faq-answer">
+              <p><strong>No.</strong> Docker packages a process with an operating environment. It is excellent for servers, development, and isolated workloads. Krate packages an application and the access it requests into one file a person can open locally.</p>
+              <p>A container mainly answers where code runs. Krate also answers what that specific app may access. Files, network addresses, windows, and other host features stay behind explicit capabilities.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary><span class="faq-index">02 / Web</span><span>Why not use an HTML file, browser link, or Electron?</span></summary>
+            <div class="faq-answer">
+              <p>A browser link is the right answer when an app fits inside the browser. Krate is for local software that needs files, desktop behavior, or other host features that a web page cannot use cleanly.</p>
+              <p>An Electron app ships a browser engine and still needs platform packaging. A Krate app is a WebAssembly component. It does not bundle a browser per app, and the shared runtime controls its access to the computer.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary><span class="faq-index">03 / Portable</span><span>How can the same .krate file open on Mac, Windows, and Linux?</span></summary>
+            <div class="faq-answer">
+              <p>The app does not call AppKit, Win32, or Linux APIs directly. It calls Krate interfaces described with WIT. The Krate host on each operating system translates approved calls into local behavior.</p>
+              <p>The <code>.krate</code> file carries the WebAssembly component and its requested access. It is one portable app artifact, not three native installers hidden in one download.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary><span class="faq-index">04 / AI</span><span>How does Krate make an AI-created app safer?</span></summary>
+            <div class="faq-answer">
+              <p>AI-generated code receives no special trust. During authoring, Krate rejects an app if it imports system interfaces outside the Krate capability boundary. At runtime, the app begins without access to the user’s files or network.</p>
+              <p>The app requests specific capabilities, the user reviews them, and the runtime enforces the decision before approved host operations happen. This limits what the app can reach. It does not prove that the app is bug-free.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary><span class="faq-index">05 / Access</span><span>Can an app hide what it accesses or ignore the permission screen?</span></summary>
+            <div class="faq-answer">
+              <p>The permission list is not only a label written by the app. Krate checks supported host operations at the runtime boundary. If the app tries an operation that was not granted, the call is denied before the host adapter performs it.</p>
+              <p>If a required permission is denied, the current app flow refuses to start and explains what is missing.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary><span class="faq-index">06 / Security</span><span>Is Krate ready for any untrusted app from the internet?</span></summary>
+            <div class="faq-answer">
+              <p><strong>Not yet.</strong> Krate is pre-alpha. The capability boundary is working and useful, but the project is not claiming production hardening against hostile third-party code today.</p>
+              <p>Use the published examples or apps you are testing yourself. The current limits and <a href="./docs/phase2/threat-model-v0-2.html">threat model</a> are public.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary><span class="faq-index">07 / Runtime</span><span>Why does the person receiving an app need the Krate runtime?</span></summary>
+            <div class="faq-answer">
+              <p>The runtime is the stable layer that makes one app file portable and enforces its access. Without it, every app would need to bring a separate engine and separate operating-system code.</p>
+              <p>You install Krate once. After that, each <code>.krate</code> file can use the same host, permission model, and opening flow.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary><span class="faq-index">08 / Today</span><span>What can Krate apps do today, and can it convert my existing app?</span></summary>
+            <div class="faq-answer">
+              <p>Today Krate is best for small apps that fit its current UI and capability set, such as notes, lists, text entry, buttons, local persistence, and portable command-line tools.</p>
+              <p>It does not automatically convert an existing Swift, Electron, Tauri, or native application yet. Current apps must use Krate APIs. AI-assisted porting is a planned development target, and it will reimplement supported behavior rather than pretend an incompatible binary became portable.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary><span class="faq-index">09 / Cloud</span><span>Does Krate Cloud run the app on someone else’s server?</span></summary>
+            <div class="faq-answer">
+              <p>That is not the plan. Krate Cloud is the planned publishing and distribution layer for discovery, publisher identity, signing, sharing, and updates.</p>
+              <p>The app still opens through the Krate runtime on the user’s own computer, where the user reviews and controls local access. Krate Cloud is planned and is not available today.</p>
+            </div>
+          </details>
+
+          <details class="faq-item">
+            <summary><span class="faq-index">10 / Name</span><span>Does the name collide with a Rust “crate”?</span></summary>
+            <div class="faq-answer">
+              <p>Rust calls a package a crate, so the similarity is real. Krate uses a different spelling and refers to the portable container that carries an application and its requested access.</p>
+              <p>We will keep making the distinction explicit wherever Rust developers could reasonably confuse the two.</p>
+            </div>
+          </details>
         </div>
       </div>
     </section>
