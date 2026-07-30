@@ -3437,9 +3437,19 @@ fn a_bundle_grants_exactly_what_the_sidecar_manifest_grants() {
         .output()
         .expect("run bundle");
 
+    // Compare the capability lists rather than the whole screen: a packaged
+    // bundle also reports its content identity, which a loose .wasm has no way
+    // to have. What must not change is the authority the app ends up with.
+    let capabilities = |output: &[u8]| -> Vec<String> {
+        String::from_utf8_lossy(output)
+            .lines()
+            .skip_while(|line| !line.starts_with("Effective capabilities"))
+            .map(str::to_string)
+            .collect()
+    };
     assert_eq!(
-        String::from_utf8_lossy(&from_sidecar.stdout),
-        String::from_utf8_lossy(&from_bundle.stdout),
+        capabilities(&from_sidecar.stdout),
+        capabilities(&from_bundle.stdout),
         "packaging must not change the effective capability set"
     );
 }

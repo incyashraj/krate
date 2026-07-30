@@ -48,6 +48,8 @@ use thiserror::Error;
 use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 
 /// The manifest entry name inside a bundle.
+pub mod provenance;
+
 pub const MANIFEST_ENTRY: &str = "manifest.toml";
 /// The component entry name inside a bundle.
 pub const COMPONENT_ENTRY: &str = "code.wasm";
@@ -257,6 +259,37 @@ impl OpenBundle {
     /// The parsed manifest.
     pub fn manifest(&self) -> &Manifest {
         &self.manifest
+    }
+
+    /// This bundle's content identity.
+    ///
+    /// Computed from the extracted contents rather than the archive file, so
+    /// two archives holding the same app agree on its identity even if they
+    /// differ in timestamps, compression, or entry order. Re-packing an app
+    /// therefore does not invalidate a reference to it.
+    pub fn digest(&self) -> Result<provenance::BundleDigest> {
+        let mut entries = std::collections::BTreeMap::new();
+        entries.insert(
+            MANIFEST_ENTRY.to_string(),
+            fs::read(&self.manifest_path).map_err(|err| io_err(&self.manifest_path, err))?,
+        );
+        entries.insert(
+            COMPONENT_ENTRY.to_string(),
+            fs::read(&self.component_path).map_err(|err| io_err(&self.component_path, err))?,
+        );
+        if let Some(root) = self.assets_path.as_deref() {
+            // Reuse the packing walk, so the names in a digest are exactly the
+            // names the bundle stores -- already forward-slashed and already
+            // refusing symlinks, rather than a second traversal that could
+            // disagree with the first.
+            for (entry_name, source) in collect_assets(root)? {
+                entries.insert(
+                    entry_name,
+                    fs::read(&source).map_err(|err| io_err(&source, err))?,
+                );
+            }
+        }
+        Ok(provenance::digest_entries(&entries))
     }
 }
 

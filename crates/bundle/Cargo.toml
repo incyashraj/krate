@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
+sha2 = "0.10.9"
 tempfile.workspace = true
 thiserror.workspace = true
 ureq.workspace = true
