@@ -187,10 +187,10 @@ krate create \
   --output groceries.krate
 ```
 
-Krate hands the request to the agent, then builds, checks, packages, and
-verifies exactly as with the built-in path — a broken app is caught, not
-shipped. For any other tool, `--author-cmd "<your command>"` is the lower-level
-seam; it receives:
+Krate hands the request to the agent, then uses the same checked pipeline as
+the built-in path. Build failures, forbidden imports, and permission-wall
+failures stop the package from being produced. For any other tool,
+`--author-cmd "<your command>"` is the lower-level seam; it receives:
 
 | Variable | Meaning |
 | --- | --- |
@@ -256,11 +256,22 @@ krate run app.krate --prompt
 | Let an external AI command author the app | Working |
 | JSON output for agents and scripts | Working |
 | Convert an existing native app automatically | Not available yet |
-| Public app cloud, discovery, identity, and updates | Planned |
+| Krate Cloud for publishing, discovery, publisher identity, signing, updates, and distribution | Planned |
 
 The public CI runs the project on Linux, macOS, and Windows. See
 [CI](https://github.com/incyashraj/krate/actions/workflows/ci.yml) and the
 [current status](STATUS.md) for exact evidence.
+
+## Planned: Krate Cloud
+
+Krate Cloud is planned work, not part of the current release. It will let
+people publish, find, share, and update small apps made with AI. It will also
+add publisher identity and signing, so people can see where an app came from
+before they open it.
+
+The Cloud will distribute `.krate` files. The apps will still run locally, and
+the Krate runtime will still show their requested access and enforce only what
+the user approves.
 
 ## Current platform details
 
@@ -398,8 +409,8 @@ The immediate priority is external use:
 Later work includes:
 
 - tools that help port existing source code to Krate interfaces;
-- signing and publisher identity;
-- Krate Cloud for publishing, finding, sharing, and updating apps;
+- Krate Cloud for publishing, finding, sharing, publisher identity, signing,
+  updates, and distribution;
 - organization policies and audit records;
 - more operating systems and device types.
 
