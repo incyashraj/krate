@@ -21,6 +21,7 @@ The current world imports these interfaces:
 - `krate:locale/info@0.1.0`
 - `krate:locale/format@0.1.0`
 - `krate:resources/assets@0.1.0`
+- `krate:store/kv@0.1.0`
 
 The app exports:
 
@@ -704,6 +705,50 @@ Shared network request, response, and error types.
 
 - `too-large`
 > The host could not read the asset.
+
+- `io`: `string`
+
+
+## `krate:store/kv@0.1.0`
+
+### Functions
+
+> Read one value. A key that was never set reads as `none` rather than an
+> error, because "nothing saved yet" is the normal first run.
+
+- `get(key: string) -> result<option<list<u8>>, store-error>`
+> Write one value, replacing whatever was there.
+
+- `set(key: string, value: list<u8>) -> result<_, store-error>`
+> Remove one key. Removing a key that is not present succeeds: the caller
+> wanted it gone, and it is gone.
+
+- `delete(key: string) -> result<_, store-error>`
+> Every key currently set, in sorted order so a listing is stable across
+> runs and across operating systems.
+
+- `keys() -> result<list<string>, store-error>`
+> Remove everything. Separate from `delete` because "forget all of it" is a
+> deliberate action an app should have to name.
+
+- `clear() -> result<_, store-error>`
+
+### Types
+
+#### `store-error` variant
+
+> Error returned by a store operation.
+
+> The app did not receive the `store.kv` capability.
+
+- `denied`
+> The key was empty, too long, or used unsupported syntax.
+
+- `invalid-key`
+> The value is larger than the runtime's bounded write limit.
+
+- `too-large`
+> The store could not be read or written.
 
 - `io`: `string`
 

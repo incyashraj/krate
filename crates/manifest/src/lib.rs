@@ -28,6 +28,10 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase2, "fs", "read", "<path-glob>", false),
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase2, "fs", "write", "<path-glob>", false),
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase2, "fs", "list", "<path-glob>", false),
+    // The app's own key-value store. Resource-free because there is no path to
+    // scope: the app cannot name a location, so the grant is simply "may this
+    // app remember things" rather than "may this app read this folder".
+    CapabilitySpec::resource_free(CapabilityPhase::Phase2, "store", "kv", false),
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase2,
         "fs",

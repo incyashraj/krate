@@ -307,6 +307,7 @@ world = "cli"
 "krate:time" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/time" }}
 "krate:locale" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/locale" }}
 "krate:resources" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/resources" }}
+"krate:store" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/store" }}
 
 # abort on panic and let LTO strip the unreachable std/panic paths that would
 # otherwise leave dangling wasi:* import declarations in the component. A Krate
@@ -702,6 +703,7 @@ world = "gui"
 "krate:time" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/time" }}
 "krate:locale" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/locale" }}
 "krate:resources" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/resources" }}
+"krate:store" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/store" }}
 "krate:ui" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/ui" }}
 "krate:gfx" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/gfx" }}
 "krate:audio" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/audio" }}

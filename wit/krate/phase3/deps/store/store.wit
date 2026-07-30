@@ -1,0 +1,47 @@
+package krate:store@0.1.0;
+
+/// Durable key-value storage scoped to one application.
+///
+/// Every app that remembers anything -- a window size, a signed-in name, a
+/// list of items, the last folder you opened -- needs this, and today the only
+/// way to have it is `fs.read` and `fs.write` plus hand-written parsing. That
+/// costs an app real code to get right, and it makes the permission prompt say
+/// "read files in checklist" when the honest answer is "remember your settings".
+///
+/// The store is the app's own. It is not a path on the user's computer: the app
+/// never learns where the data lives and cannot name a location outside it, so
+/// granting storage cannot become a way to read the user's documents. That is
+/// why this is a separate capability from the filesystem rather than a
+/// convenience built on top of one.
+interface kv {
+  /// Error returned by a store operation.
+  variant store-error {
+    /// The app did not receive the `store.kv` capability.
+    denied,
+    /// The key was empty, too long, or used unsupported syntax.
+    invalid-key,
+    /// The value is larger than the runtime's bounded write limit.
+    too-large,
+    /// The store could not be read or written.
+    io(string),
+  }
+
+  /// Read one value. A key that was never set reads as `none` rather than an
+  /// error, because "nothing saved yet" is the normal first run.
+  get: func(key: string) -> result<option<list<u8>>, store-error>;
+
+  /// Write one value, replacing whatever was there.
+  set: func(key: string, value: list<u8>) -> result<_, store-error>;
+
+  /// Remove one key. Removing a key that is not present succeeds: the caller
+  /// wanted it gone, and it is gone.
+  delete: func(key: string) -> result<_, store-error>;
+
+  /// Every key currently set, in sorted order so a listing is stable across
+  /// runs and across operating systems.
+  keys: func() -> result<list<string>, store-error>;
+
+  /// Remove everything. Separate from `delete` because "forget all of it" is a
+  /// deliberate action an app should have to name.
+  clear: func() -> result<_, store-error>;
+}

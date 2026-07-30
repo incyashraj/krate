@@ -26,6 +26,7 @@ world = "gui"
 "krate:time" = { path = "../../wit/krate/phase3/deps/time" }
 "krate:locale" = { path = "../../wit/krate/phase3/deps/locale" }
 "krate:resources" = { path = "../../wit/krate/phase3/deps/resources" }
+"krate:store" = { path = "../../wit/krate/phase3/deps/store" }
 "krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }
 "krate:gfx" = { path = "../../wit/krate/phase3/deps/gfx" }
 "krate:audio" = { path = "../../wit/krate/phase3/deps/audio" }

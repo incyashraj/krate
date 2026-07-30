@@ -24,7 +24,32 @@ fn phase_3_gui_wit_package_parses() {
         "gui world should expose Phase 2 plus Phase 3 imports"
     );
     assert_eq!(gui.exports.len(), 1);
-    assert_eq!(resolve.packages.len(), 11);
+    // Named rather than counted: a bare number says something changed without
+    // saying what, and adding a capability moves it for a good reason.
+    let packages: std::collections::BTreeSet<String> = resolve
+        .packages
+        .iter()
+        .map(|(_, package)| package.name.to_string())
+        .collect();
+    for expected in [
+        "krate:app@0.2.0",
+        "krate:io@0.1.0",
+        "krate:fs@0.1.0",
+        "krate:net@0.1.0",
+        "krate:time@0.1.0",
+        "krate:locale@0.1.0",
+        "krate:resources@0.1.0",
+        "krate:store@0.1.0",
+        "krate:ui@0.1.0",
+        "krate:gfx@0.1.0",
+        "krate:audio@0.1.0",
+        "krate:speech@0.1.0",
+    ] {
+        assert!(
+            packages.contains(expected),
+            "the gui world lost {expected}; packages are {packages:?}"
+        );
+    }
 }
 
 fn workspace_root() -> PathBuf {

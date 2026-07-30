@@ -15,6 +15,7 @@ world cli {
   import krate:locale/info@0.1.0;
   import krate:locale/format@0.1.0;
   import krate:resources/assets@0.1.0;
+  import krate:store/kv@0.1.0;
 
   export run: func() -> s32;
 }

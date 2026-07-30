@@ -277,6 +277,56 @@ pub mod io {
     }
 }
 
+/// The app's own durable key-value store.
+///
+/// Keys, not paths: an app cannot name a location, so this can never widen into
+/// reading the person's files. Requires the `store.kv` capability, and every
+/// call refuses with `Denied` without it.
+pub mod store {
+    pub use crate::bindings::krate::store::kv::StoreError;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    /// Read one value. A key that was never set reads as `None`, because
+    /// "nothing saved yet" is the normal first run rather than a failure.
+    pub fn get(key: &str) -> Result<Option<Vec<u8>>, StoreError> {
+        crate::bindings::krate::store::kv::get(key)
+    }
+
+    /// Read one value as UTF-8 text, which is what most settings are.
+    pub fn get_text(key: &str) -> Result<Option<String>, StoreError> {
+        match get(key)? {
+            Some(bytes) => Ok(String::from_utf8(bytes).ok()),
+            None => Ok(None),
+        }
+    }
+
+    /// Write one value, replacing whatever was there.
+    pub fn set(key: &str, value: &[u8]) -> Result<(), StoreError> {
+        crate::bindings::krate::store::kv::set(key, value)
+    }
+
+    /// Write one value as UTF-8 text.
+    pub fn set_text(key: &str, value: &str) -> Result<(), StoreError> {
+        set(key, value.as_bytes())
+    }
+
+    /// Remove one key. Removing a key that is not there succeeds.
+    pub fn delete(key: &str) -> Result<(), StoreError> {
+        crate::bindings::krate::store::kv::delete(key)
+    }
+
+    /// Every key currently set, sorted, so a listing is stable between runs.
+    pub fn keys() -> Result<Vec<String>, StoreError> {
+        crate::bindings::krate::store::kv::keys()
+    }
+
+    /// Remove everything this app has saved.
+    pub fn clear() -> Result<(), StoreError> {
+        crate::bindings::krate::store::kv::clear()
+    }
+}
+
 /// Capability-checked file access.
 pub mod fs {
     pub use crate::bindings::krate::fs::files::File;

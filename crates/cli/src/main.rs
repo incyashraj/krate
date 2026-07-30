@@ -2761,6 +2761,10 @@ fn run_component(request: RunRequest) -> Result<u8> {
         bundle_assets_root: bundle
             .as_ref()
             .and_then(|bundle| bundle.assets_path().map(Path::to_path_buf)),
+        // Keyed on the app's declared id, so its data follows the app rather
+        // than the file: renaming or moving the `.krate` keeps the same store,
+        // and two different apps can never read each other's.
+        app_store_path: manifest.map(|manifest| app_store_path(&manifest.app.id)),
         phase3_ui_mode: if request.native_window {
             krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype
         } else {
@@ -3071,6 +3075,10 @@ fn human_label(cap: &Capability) -> String {
         ("ui", "clipboard") if cap.resource() == Some("write") => {
             "copy to the clipboard".to_string()
         }
+        // Say what the app gains, not how it is stored. "read files in
+        // checklist" described the mechanism and made saving a preference sound
+        // like reading the user's folders.
+        ("store", "kv") => "save its own settings and data".to_string(),
         ("audio", "capture") => "listen through your microphone".to_string(),
         ("audio", "playback") => "play sound through your speakers".to_string(),
         ("time", "clock") => "read the current time".to_string(),
@@ -4190,6 +4198,35 @@ fn krate_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".krate"))
 }
 
+/// Where one app's key-value store lives.
+///
+/// Under the user's `~/.krate/store/`, keyed on the app's declared id so the
+/// data follows the app rather than the file it arrived in. The id is
+/// sanitised rather than trusted: it comes from a manifest an app author wrote,
+/// so an id containing `..` or a path separator must not be able to place the
+/// store outside this directory or over another app's.
+fn app_store_path(app_id: &str) -> PathBuf {
+    let safe: String = app_id
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    // A run of dots cannot become a traversal, and an empty id still lands
+    // somewhere deterministic rather than at the directory root.
+    let safe = safe.replace("..", "__");
+    let safe = if safe.trim_matches(['.', '_'].as_slice()).is_empty() {
+        "unnamed-app".to_string()
+    } else {
+        safe
+    };
+    krate_home().join("store").join(format!("{safe}.kv"))
+}
+
 fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
@@ -4304,6 +4341,49 @@ mod create_tests {
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'));
         assert!(name.split('-').count() <= MAX_DERIVED_NAME_WORDS);
+    }
+
+    #[test]
+    fn an_app_id_cannot_place_its_store_outside_the_store_directory() {
+        // The id comes from a manifest the app author wrote, so it is input,
+        // not a fact. A traversal here would let one app read or overwrite
+        // another's saved data, or write anywhere in the user's home.
+        let root = super::krate_home().join("store");
+        for hostile in [
+            "../../etc/passwd",
+            "..",
+            "../other-app",
+            "a/b/c",
+            "a\\b",
+            "",
+            "...",
+        ] {
+            let path = super::app_store_path(hostile);
+            assert!(
+                path.starts_with(&root),
+                "{hostile:?} escaped to {}",
+                path.display()
+            );
+            assert!(
+                !path.to_string_lossy().contains(".."),
+                "{hostile:?} kept a traversal: {}",
+                path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn two_apps_get_two_stores_and_one_app_keeps_the_same_one() {
+        assert_ne!(
+            super::app_store_path("dev.krate.notes"),
+            super::app_store_path("dev.krate.checklist")
+        );
+        // Stable across runs: the same id must always resolve to the same file,
+        // or an app would lose its data on the next launch.
+        assert_eq!(
+            super::app_store_path("dev.krate.notes"),
+            super::app_store_path("dev.krate.notes")
+        );
     }
 
     #[test]

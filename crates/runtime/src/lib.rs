@@ -39,6 +39,7 @@ pub mod phase3_gui_bindings;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase3_gui_host;
 mod speech_transcription;
+pub mod store_host;
 
 #[cfg(feature = "phase2-bindings")]
 use krate_adapter_common::locale::{
@@ -114,6 +115,10 @@ pub struct Config {
     pub sandbox_root: PathBuf,
     /// Read-only resources extracted from the `.krate` bundle itself.
     pub bundle_assets_root: Option<PathBuf>,
+    /// Where this app's key-value store lives. The runtime chooses it, never
+    /// the app: an app names keys, not locations, so storage cannot widen into
+    /// reading the user's files.
+    pub app_store_path: Option<PathBuf>,
     /// Host UI backend mode for Phase 3 `gui` world runs.
     pub phase3_ui_mode: phase3_ui::Phase3HostUiMode,
 }
@@ -132,6 +137,7 @@ impl Default for Config {
             default_http_timeout_millis: Some(DEFAULT_HTTP_TIMEOUT_MILLIS),
             sandbox_root: PathBuf::from("."),
             bundle_assets_root: None,
+            app_store_path: None,
             phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
         }
     }
@@ -437,7 +443,7 @@ impl Runtime {
         config: &Config,
         output: OutputMode,
     ) -> Result<RunOutcome> {
-        use phase2_bindings::krate::{fs, io, locale, net, resources, time};
+        use phase2_bindings::krate::{fs, io, locale, net, resources, store, time};
         use phase3_gui_bindings::krate::{audio, gfx, speech, ui};
 
         let mut store = self.new_store(config, output)?;
@@ -484,6 +490,7 @@ impl Runtime {
         link_phase2!(locale::info);
         link_phase2!(locale::format);
         link_phase2!(resources::assets);
+        link_phase2!(store::kv);
 
         link_gui!(ui::types);
         link_gui!(ui::window);
@@ -560,7 +567,16 @@ impl HostState {
                 )),
                 config.default_http_timeout_millis,
             )
-            .with_asset_root(config.bundle_assets_root.clone()),
+            .with_asset_root(config.bundle_assets_root.clone())
+            .with_store(
+                config.app_store_path.clone(),
+                // The grant is resolved from the session policy here, once, so
+                // the store itself never has to consult it again and cannot be
+                // talked into a different answer mid-run.
+                config.session_policy.allows(
+                    &krate_manifest::Capability::new("store", "kv", None).expect("store.kv"),
+                ),
+            ),
             #[cfg(feature = "phase2-bindings")]
             phase3_gui: None,
         })

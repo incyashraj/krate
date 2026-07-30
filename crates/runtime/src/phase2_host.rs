@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    phase2_bindings::krate::{fs, io, locale, net, resources, time},
+    phase2_bindings::krate::{fs, io, locale, net, resources, store, time},
     phase2_bridge as bridge,
     uapi::UapiGuard,
     uapi_dispatch::{FileHandle, HostAdapter, UapiDispatcher},
@@ -28,6 +28,10 @@ pub struct Phase2Host<'a> {
     resources: Phase2ResourceTable,
     asset_root: Option<PathBuf>,
     default_http_timeout_millis: Option<u32>,
+    /// The app's own key-value store. `None` until a run supplies a location,
+    /// in which case every store call refuses -- an app cannot conjure storage
+    /// the runtime did not give it.
+    store: Option<crate::store_host::AppStore>,
 }
 
 impl<'a> Phase2Host<'a> {
@@ -45,12 +49,24 @@ impl<'a> Phase2Host<'a> {
             adapter,
             resources: Phase2ResourceTable::default(),
             asset_root: None,
+            store: None,
             default_http_timeout_millis,
         }
     }
 
     pub fn with_asset_root(mut self, asset_root: Option<PathBuf>) -> Self {
         self.asset_root = asset_root;
+        self
+    }
+
+    /// Give this run its key-value store.
+    ///
+    /// `granted` comes from the resolved session policy rather than from the
+    /// app, so an app that was refused `store.kv` gets a store that answers
+    /// `Denied` to everything instead of no store at all -- the refusal is
+    /// explicit rather than looking like a missing feature.
+    pub fn with_store(mut self, path: Option<PathBuf>, granted: bool) -> Self {
+        self.store = path.map(|path| crate::store_host::AppStore::open(path, granted));
         self
     }
 
@@ -123,6 +139,60 @@ impl resources::assets::Host for Phase2Host<'_> {
         }
         names.sort();
         Ok(Ok(names))
+    }
+}
+
+impl store::kv::Host for Phase2Host<'_> {
+    fn get(
+        &mut self,
+        key: String,
+    ) -> wasmtime::Result<Result<Option<Vec<u8>>, store::kv::StoreError>> {
+        Ok(match self.store.as_ref() {
+            Some(store) => store.get(&key).map_err(store_error_to_wit),
+            None => Err(store::kv::StoreError::Denied),
+        })
+    }
+
+    fn set(
+        &mut self,
+        key: String,
+        value: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), store::kv::StoreError>> {
+        Ok(match self.store.as_mut() {
+            Some(store) => store.set(&key, value).map_err(store_error_to_wit),
+            None => Err(store::kv::StoreError::Denied),
+        })
+    }
+
+    fn delete(&mut self, key: String) -> wasmtime::Result<Result<(), store::kv::StoreError>> {
+        Ok(match self.store.as_mut() {
+            Some(store) => store.delete(&key).map_err(store_error_to_wit),
+            None => Err(store::kv::StoreError::Denied),
+        })
+    }
+
+    fn keys(&mut self) -> wasmtime::Result<Result<Vec<String>, store::kv::StoreError>> {
+        Ok(match self.store.as_ref() {
+            Some(store) => store.keys().map_err(store_error_to_wit),
+            None => Err(store::kv::StoreError::Denied),
+        })
+    }
+
+    fn clear(&mut self) -> wasmtime::Result<Result<(), store::kv::StoreError>> {
+        Ok(match self.store.as_mut() {
+            Some(store) => store.clear().map_err(store_error_to_wit),
+            None => Err(store::kv::StoreError::Denied),
+        })
+    }
+}
+
+fn store_error_to_wit(error: crate::store_host::StoreError) -> store::kv::StoreError {
+    use crate::store_host::StoreError;
+    match error {
+        StoreError::Denied => store::kv::StoreError::Denied,
+        StoreError::InvalidKey => store::kv::StoreError::InvalidKey,
+        StoreError::TooLarge => store::kv::StoreError::TooLarge,
+        StoreError::Io(message) => store::kv::StoreError::Io(message),
     }
 }
 

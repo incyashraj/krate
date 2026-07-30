@@ -19,6 +19,7 @@ pub enum UapiCall {
     Locale(LocaleCall),
     Ui(UiCall),
     Audio(AudioCall),
+    Store(StoreCall),
 }
 
 impl UapiCall {
@@ -35,6 +36,7 @@ impl UapiCall {
             Self::Locale(call) => format!("locale.{call}"),
             Self::Ui(call) => call.to_capability_string(),
             Self::Audio(call) => format!("audio.{call}"),
+            Self::Store(call) => format!("store.{call}"),
         }
     }
 }
@@ -43,6 +45,22 @@ impl UapiCall {
 pub enum AudioCall {
     Playback,
     Capture,
+}
+
+/// The app's own key-value store. One capability covers reading and writing:
+/// an app that may remember a setting may also read it back, and splitting the
+/// two would ask the person a question with only one sensible answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoreCall {
+    Kv,
+}
+
+impl fmt::Display for StoreCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Kv => "kv",
+        })
+    }
 }
 
 impl fmt::Display for AudioCall {
@@ -371,6 +389,7 @@ mod tests {
             UapiCall::Io(IoCall::Stderr),
             UapiCall::Io(IoCall::Args),
             UapiCall::Io(IoCall::Log),
+            UapiCall::Store(StoreCall::Kv),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),
             }),
