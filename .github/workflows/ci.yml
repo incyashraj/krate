@@ -116,6 +116,19 @@ jobs:
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
       - name: Install cargo-component (the port tests build a real component)
         run: cargo install cargo-component --locked --version 0.21.1
+      - name: Warm the cargo cache for the offline port tests
+        run: |
+          # The port tests build a guest with CARGO_NET_OFFLINE so they
+          # never reach the network mid-test. That only works if the guest
+          # SDK's wasm32 dependencies are already in the cache, so fetch
+          # them once here rather than loosening the tests.
+          tmp="$(mktemp -d)/krate-port-cache-warm"
+          cargo new --lib "$tmp" >/dev/null
+          {
+            printf '[target.'"'"'cfg(target_arch = "wasm32")'"'"'.dependencies]\n'
+            printf 'dlmalloc = { version = "0.2", features = ["global"] }\n'
+          } >> "$tmp/Cargo.toml"
+          cargo fetch --manifest-path "$tmp/Cargo.toml" --target wasm32-wasip1
       - name: Run workspace tests
         run: cargo test --workspace --all-features
       - name: krate create fails clearly when build tools are missing
