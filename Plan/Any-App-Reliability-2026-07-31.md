@@ -295,6 +295,62 @@ in practice.
 
 ---
 
+## 4a. What has landed since this audit
+
+Written as it shipped, so the plan does not drift from the tree.
+
+**Widget parity (`0096803`).** macOS accepted six widget kinds and refused the
+rest before lowering, so an app using a radio button worked on Linux and Windows
+and failed when shared with a Mac. macOS now lowers fourteen. **13 of 17 work
+everywhere, with no widget left working on one host and not another** —
+`grid`, `image`, and `tabs` remain unimplemented on all three, which is a
+limitation rather than a broken promise. A generated parity table (`--check` in
+CI) reads each host's own support gate, so the published claim cannot flatter
+us; building it corrected two errors in this document's first draft.
+
+**`store.kv` (`913fa40`).** An app can remember things. The app addresses values
+by key and never names a path — the runtime derives one from the app's declared
+id — so storage cannot widen into reading the user's documents, and the prompt
+reads "save its own settings and data" instead of naming a folder. Writes are
+atomic; keys, values, and the store are bounded. Proven with an app that counts
+its own launches across three processes.
+
+**`store.sql` (`e65f512`).** An app can keep a real database. SQLite, bundled so
+the same engine runs on all three systems and cross-compiling still works.
+SQLite's own routes out of a sandbox are closed deliberately: `ATTACH`, pragmas,
+`VACUUM INTO`, `readfile`/`writefile`. Parameters bind rather than paste, so an
+app cannot build an injection out of its user's input by accident.
+
+**Bundle identity (`778a6ef`) — the Krate Cloud primitive.** A `.krate` now has
+a digest over its contents rather than its archive bytes, so re-packing the same
+app yields the same identity and a verification survives re-packaging.
+`--dump-caps` shows it above the capability list. This is what distribution
+rests on: a registry keys on it, a signature signs it, an update points from one
+to another, a revocation names one. It is useful before any of that exists — a
+person can check today that the file they received is the file that was
+verified.
+
+**Analyzer (`ac7196c`).** `krate port` maps the settings APIs every framework
+has onto `store.kv` with file and line, instead of dead-ending.
+
+**`store.secret` (`819416d`).** An app can keep a sign-in token. Encrypted at
+rest, per machine and per app, rather than the OS keychain -- Linux's needs a
+running daemon that servers and CI do not have, and building on it would give an
+app that works where it was written and fails when shared. It protects secrets
+at rest, not from code already running as the user, and says so.
+
+**Windows shell (`d5586ad`).** The author and port paths asked for a bare `bash`
+on Windows, which resolves to the WSL stub and fails on any machine that never
+asked for WSL. That, not the cargo cache, is why the port tests failed on the
+Windows lane while the other two passed.
+
+The three storage capabilities together are what change "any app" in practice:
+settings, a real database, and a sign-in are most of what a small or medium
+application needs beyond a window.
+
+Still missing for "medium-sized app": notifications, menus, open-url, and a
+production-grade HTTP client.
+
 ## 5. What I recommend we do first, this week
 
 **Item 1, then item 2.** They are unglamorous and they are the reason everything
