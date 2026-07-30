@@ -1397,7 +1397,7 @@ fn run_port_author_command(
     task: &Path,
     repair: Option<(u8, &Path)>,
 ) -> Result<()> {
-    let shell = if cfg!(windows) { "bash" } else { "sh" };
+    let shell = author_shell();
     let mut child = ProcessCommand::new(shell);
     child
         .arg("-c")
@@ -2205,7 +2205,7 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
     }
     fs::write(ctx.app_dir.join("CONTRACT.md"), author_contract(ctx.name))?;
 
-    let shell = if cfg!(windows) { "bash" } else { "sh" };
+    let shell = author_shell();
     let status = std::process::Command::new(shell)
         .arg("-c")
         .arg(ctx.cmd)
@@ -4216,6 +4216,28 @@ fn cargo_home() -> Option<PathBuf> {
     home_dir().map(|home| home.join(".cargo"))
 }
 
+/// The shell used to run an author or port command.
+///
+/// On Windows, a bare `bash` resolves to the Windows Subsystem for Linux stub,
+/// which prints "has no installed distributions" and fails on a machine that
+/// never asked for WSL -- including CI. Git for Windows ships a real POSIX bash
+/// and is present wherever git is, so prefer it and fall back to `bash` only
+/// when it is missing.
+fn author_shell() -> String {
+    if !cfg!(windows) {
+        return "sh".to_string();
+    }
+    for candidate in [
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+    ] {
+        if Path::new(candidate).is_file() {
+            return candidate.to_string();
+        }
+    }
+    "bash".to_string()
+}
+
 fn krate_home() -> PathBuf {
     home_dir()
         .map(|home| home.join(".krate"))
@@ -4415,6 +4437,23 @@ mod create_tests {
             super::app_store_path("dev.krate.notes"),
             super::app_store_path("dev.krate.notes")
         );
+    }
+
+    #[test]
+    fn the_author_shell_is_never_the_wsl_stub() {
+        // On Windows a bare `bash` resolves to the WSL stub, which fails with
+        // "has no installed distributions" on any machine that never asked for
+        // WSL. That is what broke the port tests on the Windows lane while both
+        // other systems passed.
+        let shell = super::author_shell();
+        if cfg!(windows) {
+            assert!(
+                shell.ends_with("bash.exe") || shell == "bash",
+                "unexpected Windows shell: {shell}"
+            );
+        } else {
+            assert_eq!(shell, "sh");
+        }
     }
 
     #[test]
