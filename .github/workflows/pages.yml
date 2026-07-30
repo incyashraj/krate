@@ -50,6 +50,12 @@ jobs:
           # it has to be copied on every deploy. Without it Pages forgets the
           # domain and krate.tech stops resolving to this site.
           cp docs/landing/CNAME _site/CNAME
+          # Crawlers only read robots.txt and sitemap.xml from the site root.
+          # mdBook emits them under /docs/, where nothing looks for them, and
+          # robots.txt itself advertises the sitemap at the root -- so without
+          # this copy that link is a 404 and the sitemap goes unread.
+          cp docs/book/book/robots.txt _site/robots.txt
+          cp docs/book/book/sitemap.xml _site/sitemap.xml
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
