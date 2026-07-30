@@ -780,8 +780,32 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         text,
         Severity::Change,
         "Database dependency",
-        "Krate does not yet expose a certified structured storage capability. Use app-scoped files now or add the planned storage interface.",
-        Some("planned: storage.database:<name>"),
+        "Krate has an app-scoped key-value store (store.kv) that covers settings and small collections. A relational schema, queries, or a server database still needs replacing.",
+        Some("store.kv"),
+    );
+    detect_pattern(
+        analysis,
+        "settings",
+        &[
+            // Every desktop framework's "remember this between launches" API.
+            // These are the single most common reason a small app touches
+            // storage at all, and they map exactly onto store.kv.
+            "userdefaults",
+            "nsuserdefaults",
+            "localstorage",
+            "electron-store",
+            "confy",
+            "preferences",
+            "app.config",
+            "settings.json",
+            "configparser",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Saved settings or preferences",
+        "Krate's app-scoped key-value store covers this. The app addresses values by key and never names a path, so it does not need a filesystem grant.",
+        Some("store.kv"),
     );
     detect_pattern(
         analysis,
@@ -1437,6 +1461,36 @@ mod tests {
             );
             assert_eq!(plan.verdict, Verdict::NeedsChanges);
         }
+    }
+
+    #[test]
+    fn saved_settings_map_onto_the_key_value_store() {
+        // Remembering preferences between launches is the most common reason a
+        // small app touches storage at all. Before store.kv existed this could
+        // only be answered with a filesystem grant, which both overstated what
+        // the app needed and made the permission prompt describe a folder.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"prefs\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(
+            dir.path().join("src/main.rs"),
+            "fn main() { let _: String = confy::load(\"prefs\", None).unwrap(); }",
+        )
+        .unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        assert!(plan.findings.iter().any(|f| f.id == "settings"));
+        assert!(
+            plan.suggested_capabilities
+                .iter()
+                .any(|cap| cap == "store.kv"),
+            "expected store.kv, got {:?}",
+            plan.suggested_capabilities
+        );
     }
 
     #[test]
