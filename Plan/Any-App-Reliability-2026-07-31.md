@@ -39,18 +39,23 @@ Every number here came from reading the current tree, not from the plan docs.
 | --- | --- |
 | Declared in WIT | 17 |
 | Rendered on macOS (AppKit) | 9 |
-| Rendered on Linux/Windows (drawn path) | 7 |
-| **Working on all three** | **6** |
+| Rendered on Linux/Windows (drawn path) | 13 |
+| **Working on all three** | **8** |
 
-The six that work everywhere: `button`, `list-view`, `stack`, `text`,
-`text-area`, `text-field`.
+The eight that work everywhere: `button`, `checkbox`, `list-view`, `slider`,
+`stack`, `text`, `text-area`, `text-field`.
 
 Worse than the count is the **asymmetry**, which is invisible to an app author:
 
-- macOS only: `checkbox`, `scroll`, `slider`
-- Linux/Windows only: `tree-view`
-- Implemented nowhere: `canvas`, `grid`, `image`, `progress`, `radio`,
-  `switch`, `tabs`
+- Linux/Windows draw five that macOS does not lower: `canvas`, `progress`,
+  `radio`, `switch`, `tree-view`
+- macOS lowers one that the drawn path lacks: `scroll`
+- Implemented nowhere: `grid`, `image`, `tabs`
+
+**macOS is the weaker platform for widgets, not the stronger one.** The drawn
+path shared by Linux and Windows already covers 13 of 17; the native AppKit path
+covers 9. This is the opposite of the usual assumption, and it decides where the
+work goes: the gap is five AppKit lowerings, not a general widget shortage.
 
 An app that uses a checkbox works on the machine it was built on and silently
 degrades elsewhere. That is precisely the failure mode Krate exists to abolish,
@@ -154,10 +159,11 @@ The contents, chosen by what real apps use rather than what is easy:
   gets a query API scoped to its own database; it never learns a path.
 - `store.secret` — OS keychain behind a capability, so sign-in becomes possible.
 
-**Tier 2 — the widget set finished and made symmetric.** Complete the 11 missing
-widgets on **all three** systems: `checkbox`, `radio`, `switch`, `slider`,
-`progress`, `tabs`, `grid`, `scroll`, `image`, `tree-view`, `canvas`. Symmetry is
-the deliverable, not count.
+**Tier 2 — the widget set made symmetric.** This is cheaper than it first looked.
+Five AppKit lowerings (`canvas`, `progress`, `radio`, `switch`, `tree-view`)
+bring macOS level with the drawn path; `scroll` on the drawn path brings the
+other two level with macOS; then `grid`, `image`, and `tabs` are the only
+genuinely new work. Symmetry is the deliverable, not count.
 
 **Tier 3 — desktop integration.**
 - `ui.menu`, `ui.notify`, `ui.open-url`, window state, dialogs, `ui.tray`.

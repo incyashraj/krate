@@ -17,6 +17,7 @@
 
 - [Overview](uapi/overview.md)
 - [Generated Reference](reference/uapi/index.md)
+- [Widget parity](reference/widget-parity.md)
 - [Rust SDK](uapi/rust-sdk.md)
 - [First Rust CLI](uapi/first-rust-cli.md)
 - [Go SDK](uapi/go-sdk.md)
