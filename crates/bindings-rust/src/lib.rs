@@ -327,6 +327,50 @@ pub mod store {
     }
 }
 
+/// Secrets the app keeps for itself, such as a sign-in token.
+///
+/// Encrypted at rest with a key derived per machine and per app, so a copied
+/// file does not carry usable secrets elsewhere and one app cannot read
+/// another's. Requires the `store.secret` capability.
+pub mod secret {
+    pub use crate::bindings::krate::store::secret::SecretError;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+
+    /// Read one secret. A name never set reads as `None`.
+    pub fn get(name: &str) -> Result<Option<Vec<u8>>, SecretError> {
+        crate::bindings::krate::store::secret::get(name)
+    }
+
+    /// Read one secret as text, which is what a token usually is.
+    pub fn get_text(name: &str) -> Result<Option<String>, SecretError> {
+        match get(name)? {
+            Some(bytes) => Ok(String::from_utf8(bytes).ok()),
+            None => Ok(None),
+        }
+    }
+
+    /// Store one secret, replacing whatever was there.
+    pub fn set(name: &str, secret: &[u8]) -> Result<(), SecretError> {
+        crate::bindings::krate::store::secret::set(name, secret)
+    }
+
+    /// Store one secret given as text.
+    pub fn set_text(name: &str, secret: &str) -> Result<(), SecretError> {
+        set(name, secret.as_bytes())
+    }
+
+    /// Remove one secret. Removing one that is absent succeeds.
+    pub fn delete(name: &str) -> Result<(), SecretError> {
+        crate::bindings::krate::store::secret::delete(name)
+    }
+
+    /// The names of stored secrets, never their values.
+    pub fn names() -> Result<Vec<String>, SecretError> {
+        crate::bindings::krate::store::secret::names()
+    }
+}
+
 /// The app's own database.
 ///
 /// Tables, not files: the app writes SQL against a database the runtime keeps

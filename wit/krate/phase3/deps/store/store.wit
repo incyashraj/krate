@@ -119,3 +119,43 @@ interface sql {
   /// survive a crash. Any failure rolls the whole batch back.
   transaction: func(statements: list<string>) -> result<_, sql-error>;
 }
+
+/// Secrets an app keeps for itself, such as a sign-in token.
+///
+/// Without this an app that signs in has to write its token to a plain file
+/// behind an `fs.write` grant, which puts the token beside the user's documents
+/// in the permission prompt and in the clear on disk.
+///
+/// Secrets are encrypted at rest with a key the runtime derives per machine and
+/// per app, so a backup or a copied file does not carry usable secrets to
+/// another computer, and one app cannot read another's. This is not the
+/// operating system's keychain: Linux's requires a running daemon that servers
+/// and minimal desktops do not have, and an app that works on one computer and
+/// fails on another is the failure Krate exists to remove. It protects secrets
+/// at rest, not from code already running as the same user.
+interface secret {
+  /// Error returned by a secret operation.
+  variant secret-error {
+    /// The app did not receive the `store.secret` capability.
+    denied,
+    /// The name was empty, too long, or used unsupported syntax.
+    invalid-name,
+    /// The secret is larger than the runtime's bounded limit.
+    too-large,
+    /// The secret store could not be read or written.
+    io(string),
+  }
+
+  /// Read one secret. A name that was never set reads as `none`.
+  get: func(name: string) -> result<option<list<u8>>, secret-error>;
+
+  /// Store one secret, replacing whatever was there.
+  set: func(name: string, secret: list<u8>) -> result<_, secret-error>;
+
+  /// Remove one secret. Removing one that is absent succeeds.
+  delete: func(name: string) -> result<_, secret-error>;
+
+  /// The names of stored secrets, never their values, so a listing cannot
+  /// become a way to read everything at once.
+  names: func() -> result<list<string>, secret-error>;
+}

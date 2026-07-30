@@ -17,6 +17,7 @@ world cli {
   import krate:resources/assets@0.1.0;
   import krate:store/kv@0.1.0;
   import krate:store/sql@0.1.0;
+  import krate:store/secret@0.1.0;
 
   export run: func() -> s32;
 }

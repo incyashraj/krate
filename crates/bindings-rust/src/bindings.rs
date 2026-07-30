@@ -3779,6 +3779,7 @@ pub mod krate {
             /// One returned row, in the column order of the query.
             #[derive(Clone)]
             pub struct Row {
+                /// The row's values, in the column order of the query.
                 pub values: _rt::Vec<Value>,
             }
             impl ::core::fmt::Debug for Row {
@@ -3792,6 +3793,7 @@ pub mod krate {
                 /// Column names in the order the values appear, so a caller can address
                 /// results by name without a second round trip.
                 pub columns: _rt::Vec<_rt::String>,
+                /// The rows the query matched, in the order the database returned them.
                 pub rows: _rt::Vec<Row>,
             }
             impl ::core::fmt::Debug for QueryResult {
@@ -4419,6 +4421,412 @@ pub mod krate {
                 }
             }
         }
+
+        /// Secrets an app keeps for itself, such as a sign-in token.
+        ///
+        /// Without this an app that signs in has to write its token to a plain file
+        /// behind an `fs.write` grant, which puts the token beside the user's documents
+        /// in the permission prompt and in the clear on disk.
+        ///
+        /// Secrets are encrypted at rest with a key the runtime derives per machine and
+        /// per app, so a backup or a copied file does not carry usable secrets to
+        /// another computer, and one app cannot read another's. This is not the
+        /// operating system's keychain: Linux's requires a running daemon that servers
+        /// and minimal desktops do not have, and an app that works on one computer and
+        /// fails on another is the failure Krate exists to remove. It protects secrets
+        /// at rest, not from code already running as the same user.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod secret {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            /// Error returned by a secret operation.
+            #[derive(Clone)]
+            pub enum SecretError {
+                /// The app did not receive the `store.secret` capability.
+                Denied,
+                /// The name was empty, too long, or used unsupported syntax.
+                InvalidName,
+                /// The secret is larger than the runtime's bounded limit.
+                TooLarge,
+                /// The secret store could not be read or written.
+                Io(_rt::String),
+            }
+            impl ::core::fmt::Debug for SecretError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        SecretError::Denied => f.debug_tuple("SecretError::Denied").finish(),
+                        SecretError::InvalidName => {
+                            f.debug_tuple("SecretError::InvalidName").finish()
+                        }
+                        SecretError::TooLarge => f.debug_tuple("SecretError::TooLarge").finish(),
+                        SecretError::Io(e) => f.debug_tuple("SecretError::Io").field(e).finish(),
+                    }
+                }
+            }
+            impl ::core::fmt::Display for SecretError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+
+            #[cfg(feature = "std")]
+            impl std::error::Error for SecretError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// Read one secret. A name that was never set reads as `none`.
+            pub fn get(name: &str) -> Result<Option<_rt::Vec<u8>>, SecretError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = name;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/secret@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result13 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+
+                                match l4 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+
+                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7)
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l8 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v12 = match l8 {
+                                    0 => SecretError::Denied,
+                                    1 => SecretError::InvalidName,
+                                    2 => SecretError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e12 = {
+                                            let l9 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 =
+                                                _rt::Vec::from_raw_parts(l9.cast(), len11, len11);
+
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        SecretError::Io(e12)
+                                    }
+                                };
+
+                                v12
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result13
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Store one secret, replacing whatever was there.
+            pub fn set(name: &str, secret: &[u8]) -> Result<(), SecretError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = name;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let vec1 = secret;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/secret@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "set"]
+                        fn wit_import3(_: *mut u8, _: usize, _: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import3(
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import3(ptr0.cast_mut(), len0, ptr1.cast_mut(), len1, ptr2) };
+                    let l4 = i32::from(*ptr2.add(0).cast::<u8>());
+                    let result10 = match l4 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v9 = match l5 {
+                                    0 => SecretError::Denied,
+                                    1 => SecretError::InvalidName,
+                                    2 => SecretError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e9 = {
+                                            let l6 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 =
+                                                _rt::Vec::from_raw_parts(l6.cast(), len8, len8);
+
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        SecretError::Io(e9)
+                                    }
+                                };
+
+                                v9
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result10
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Remove one secret. Removing one that is absent succeeds.
+            pub fn delete(name: &str) -> Result<(), SecretError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = name;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/secret@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "delete"]
+                        fn wit_import2(_: *mut u8, _: usize, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(_: *mut u8, _: usize, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import2(ptr0.cast_mut(), len0, ptr1) };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result9 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v8 = match l4 {
+                                    0 => SecretError::Denied,
+                                    1 => SecretError::InvalidName,
+                                    2 => SecretError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        SecretError::Io(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// The names of stored secrets, never their values, so a listing cannot
+            /// become a way to read everything at once.
+            pub fn names() -> Result<_rt::Vec<_rt::String>, SecretError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:store/secret@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "names"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result14 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base8 = l3;
+                                let len8 = l4;
+                                let mut result8 = _rt::Vec::with_capacity(len8);
+                                for i in 0..len8 {
+                                    let base =
+                                        base8.add(i * (2 * ::core::mem::size_of::<*const u8>()));
+                                    let e8 = {
+                                        let l5 = *base.add(0).cast::<*mut u8>();
+                                        let l6 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len7 = l6;
+                                        let bytes7 =
+                                            _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                        _rt::string_lift(bytes7)
+                                    };
+                                    result8.push(e8);
+                                }
+                                _rt::cabi_dealloc(
+                                    base8,
+                                    len8 * (2 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+
+                                result8
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l9 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v13 = match l9 {
+                                    0 => SecretError::Denied,
+                                    1 => SecretError::InvalidName,
+                                    2 => SecretError::TooLarge,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e13 = {
+                                            let l10 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l11 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len12 = l11;
+                                            let bytes12 =
+                                                _rt::Vec::from_raw_parts(l10.cast(), len12, len12);
+
+                                            _rt::string_lift(bytes12)
+                                        };
+                                        SecretError::Io(e13)
+                                    }
+                                };
+
+                                v13
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result14
+                }
+            }
+        }
     }
     pub mod time {
         /// Host clock reads.
@@ -4791,9 +5199,9 @@ pub(crate) use __export_cli_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.1.0:cli:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 3664] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd6\x1b\x01A\x02\x01\
-A1\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-lev\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 3868] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa2\x1d\x01A\x02\x01\
+A3\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-lev\
 el\x03\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cin\
 valid-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/typ\
 es@0.1.0\x05\0\x02\x03\0\0\x08io-error\x01B\x15\x02\x03\x02\x01\x01\x04\0\x08io-\
@@ -4875,9 +5283,14 @@ olumns\x08\x04rows\x09\x04\0\x0cquery-result\x03\0\x0a\x01j\x01\x0b\x01\x04\x01@
 \x02\x09statements\x06params\x05\0\x0c\x04\0\x05query\x01\x0d\x01j\x01w\x01\x04\x01\
 @\x02\x09statements\x06params\x05\0\x0e\x04\0\x07execute\x01\x0f\x01j\0\x01\x04\x01\
 @\x01\x0astatements\x08\0\x10\x04\0\x0btransaction\x01\x11\x03\0\x15krate:store/\
-sql@0.1.0\x05\x1d\x01@\0\0z\x04\0\x03run\x01\x1e\x04\0\x13krate:app/cli@0.1.0\x04\
-\0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09producers\x01\x0cprocessed-by\x02\x0dwit-c\
-omponent\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+sql@0.1.0\x05\x1d\x01B\x10\x01q\x04\x06denied\0\0\x0cinvalid-name\0\0\x09too-lar\
+ge\0\0\x02io\x01s\0\x04\0\x0csecret-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\
+\x01\x01@\x01\x04names\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x04nam\
+es\x06secret\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x04names\0\x06\x04\0\x06del\
+ete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x05names\x01\x0b\x03\0\
+\x18krate:store/secret@0.1.0\x05\x1e\x01@\0\0z\x04\0\x03run\x01\x1f\x04\0\x13kra\
+te:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09producers\x01\x0cproce\
+ssed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 
 #[inline(never)]
 #[doc(hidden)]

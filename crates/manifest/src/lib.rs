@@ -36,6 +36,8 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // names tables, never a file, so the grant is "may this app keep a
     // database" rather than access to a location.
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "store", "sql", false),
+    // Sign-in tokens and keys the app keeps for itself, encrypted at rest.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase2, "store", "secret", false),
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase2,
         "fs",

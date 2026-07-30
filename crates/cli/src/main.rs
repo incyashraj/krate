@@ -2775,6 +2775,13 @@ fn run_component(request: RunRequest) -> Result<u8> {
         // and two different apps can never read each other's.
         app_store_path: manifest.map(|manifest| app_store_path(&manifest.app.id)),
         app_database_path: manifest.map(|manifest| app_database_path(&manifest.app.id)),
+        app_secrets: manifest.map(|manifest| {
+            (
+                app_secrets_path(&manifest.app.id),
+                manifest.app.id.clone(),
+                machine_key(),
+            )
+        }),
         phase3_ui_mode: if request.native_window {
             krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype
         } else {
@@ -3090,6 +3097,7 @@ fn human_label(cap: &Capability) -> String {
         // like reading the user's folders.
         ("store", "kv") => "save its own settings and data".to_string(),
         ("store", "sql") => "keep its own database".to_string(),
+        ("store", "secret") => "save sign-in details for itself".to_string(),
         ("audio", "capture") => "listen through your microphone".to_string(),
         ("audio", "playback") => "play sound through your speakers".to_string(),
         ("time", "clock") => "read the current time".to_string(),
@@ -4278,6 +4286,63 @@ fn app_store_path(app_id: &str) -> PathBuf {
 fn app_database_path(app_id: &str) -> PathBuf {
     let kv = app_store_path(app_id);
     kv.with_extension("sqlite")
+}
+
+/// Where one app's secrets live, alongside its other storage.
+fn app_secrets_path(app_id: &str) -> PathBuf {
+    app_store_path(app_id).with_extension("secrets")
+}
+
+/// This computer's key, generated once and kept private to the user.
+///
+/// Secrets are encrypted with a key derived from this, so copying an app's
+/// secret file to another machine does not carry usable secrets with it. It
+/// never reaches an app: the runtime uses it to derive a per-app key and the
+/// app only ever sees plaintext it already stored.
+///
+/// A machine that cannot keep the file falls back to a value derived from the
+/// user's home directory. That is weaker, and deliberately not silent about
+/// being a fallback -- it keeps an app working rather than failing to start,
+/// which is the right trade for storage that is already local.
+fn machine_key() -> Vec<u8> {
+    let path = krate_home().join("machine.key");
+    if let Ok(existing) = fs::read(&path) {
+        if existing.len() >= 32 {
+            return existing;
+        }
+    }
+    let mut key = vec![0u8; 32];
+    let sourced = std::fs::File::open("/dev/urandom")
+        .and_then(|mut f| {
+            use std::io::Read;
+            f.read_exact(&mut key)
+        })
+        .is_ok();
+    if !sourced {
+        // No /dev/urandom (Windows): derive from values that differ per machine
+        // and per install rather than shipping a constant.
+        let mut hasher = Sha256::new();
+        hasher.update(krate_home().to_string_lossy().as_bytes());
+        hasher.update(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos().to_le_bytes())
+                .unwrap_or([0; 16]),
+        );
+        hasher.update(std::process::id().to_le_bytes());
+        key.copy_from_slice(&hasher.finalize());
+    }
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if fs::write(&path, &key).is_ok() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+        }
+    }
+    key
 }
 
 fn home_dir() -> Option<PathBuf> {

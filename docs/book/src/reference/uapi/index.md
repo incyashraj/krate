@@ -23,6 +23,7 @@ The current world imports these interfaces:
 - `krate:resources/assets@0.1.0`
 - `krate:store/kv@0.1.0`
 - `krate:store/sql@0.1.0`
+- `krate:store/secret@0.1.0`
 
 The app exports:
 
@@ -750,6 +751,44 @@ Shared network request, response, and error types.
 
 - `too-large`
 > The store could not be read or written.
+
+- `io`: `string`
+
+
+## `krate:store/secret@0.1.0`
+
+### Functions
+
+> Read one secret. A name that was never set reads as `none`.
+
+- `get(name: string) -> result<option<list<u8>>, secret-error>`
+> Store one secret, replacing whatever was there.
+
+- `set(name: string, secret: list<u8>) -> result<_, secret-error>`
+> Remove one secret. Removing one that is absent succeeds.
+
+- `delete(name: string) -> result<_, secret-error>`
+> The names of stored secrets, never their values, so a listing cannot
+> become a way to read everything at once.
+
+- `names() -> result<list<string>, secret-error>`
+
+### Types
+
+#### `secret-error` variant
+
+> Error returned by a secret operation.
+
+> The app did not receive the `store.secret` capability.
+
+- `denied`
+> The name was empty, too long, or used unsupported syntax.
+
+- `invalid-name`
+> The secret is larger than the runtime's bounded limit.
+
+- `too-large`
+> The secret store could not be read or written.
 
 - `io`: `string`
 

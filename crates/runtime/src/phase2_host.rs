@@ -34,6 +34,8 @@ pub struct Phase2Host<'a> {
     store: Option<crate::store_host::AppStore>,
     /// The app's own database, on the same terms as the store above.
     database: Option<crate::sql_host::AppDatabase>,
+    /// The app's own secrets, encrypted at rest.
+    secrets: Option<crate::secret_host::AppSecrets>,
 }
 
 impl<'a> Phase2Host<'a> {
@@ -53,6 +55,7 @@ impl<'a> Phase2Host<'a> {
             asset_root: None,
             store: None,
             database: None,
+            secrets: None,
             default_http_timeout_millis,
         }
     }
@@ -78,6 +81,20 @@ impl<'a> Phase2Host<'a> {
     /// opened until the app actually runs a statement.
     pub fn with_database(mut self, path: Option<PathBuf>, granted: bool) -> Self {
         self.database = path.map(|path| crate::sql_host::AppDatabase::new(path, granted));
+        self
+    }
+
+    /// Give this run its secret store. The machine key never reaches the app;
+    /// it only ever derives the key the runtime encrypts with.
+    pub fn with_secrets(
+        mut self,
+        path: Option<PathBuf>,
+        app_id: &str,
+        machine_key: &[u8],
+        granted: bool,
+    ) -> Self {
+        self.secrets = path
+            .map(|path| crate::secret_host::AppSecrets::open(path, app_id, machine_key, granted));
         self
     }
 
@@ -242,6 +259,53 @@ impl store::sql::Host for Phase2Host<'_> {
             return Ok(Err(store::sql::SqlError::Denied));
         };
         Ok(db.transaction(&statements).map_err(sql_error_to_wit))
+    }
+}
+
+impl store::secret::Host for Phase2Host<'_> {
+    fn get(
+        &mut self,
+        name: String,
+    ) -> wasmtime::Result<Result<Option<Vec<u8>>, store::secret::SecretError>> {
+        Ok(match self.secrets.as_ref() {
+            Some(secrets) => secrets.get(&name).map_err(secret_error_to_wit),
+            None => Err(store::secret::SecretError::Denied),
+        })
+    }
+
+    fn set(
+        &mut self,
+        name: String,
+        secret: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), store::secret::SecretError>> {
+        Ok(match self.secrets.as_mut() {
+            Some(secrets) => secrets.set(&name, secret).map_err(secret_error_to_wit),
+            None => Err(store::secret::SecretError::Denied),
+        })
+    }
+
+    fn delete(&mut self, name: String) -> wasmtime::Result<Result<(), store::secret::SecretError>> {
+        Ok(match self.secrets.as_mut() {
+            Some(secrets) => secrets.delete(&name).map_err(secret_error_to_wit),
+            None => Err(store::secret::SecretError::Denied),
+        })
+    }
+
+    fn names(&mut self) -> wasmtime::Result<Result<Vec<String>, store::secret::SecretError>> {
+        Ok(match self.secrets.as_ref() {
+            Some(secrets) => secrets.names().map_err(secret_error_to_wit),
+            None => Err(store::secret::SecretError::Denied),
+        })
+    }
+}
+
+fn secret_error_to_wit(error: crate::secret_host::SecretError) -> store::secret::SecretError {
+    use crate::secret_host::SecretError;
+    match error {
+        SecretError::Denied => store::secret::SecretError::Denied,
+        SecretError::InvalidName => store::secret::SecretError::InvalidName,
+        SecretError::TooLarge => store::secret::SecretError::TooLarge,
+        SecretError::Io(message) => store::secret::SecretError::Io(message),
     }
 }
 

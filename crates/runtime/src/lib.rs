@@ -38,6 +38,7 @@ pub mod phase2_host;
 pub mod phase3_gui_bindings;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase3_gui_host;
+pub mod secret_host;
 mod speech_transcription;
 pub mod sql_host;
 pub mod store_host;
@@ -123,6 +124,9 @@ pub struct Config {
     /// Where this app's database lives, chosen by the runtime on the same
     /// terms as the key-value store.
     pub app_database_path: Option<PathBuf>,
+    /// Where this app's secrets live, and the machine key they are encrypted
+    /// with. The key is the runtime's, never the app's.
+    pub app_secrets: Option<(PathBuf, String, Vec<u8>)>,
     /// Host UI backend mode for Phase 3 `gui` world runs.
     pub phase3_ui_mode: phase3_ui::Phase3HostUiMode,
 }
@@ -143,6 +147,7 @@ impl Default for Config {
             bundle_assets_root: None,
             app_store_path: None,
             app_database_path: None,
+            app_secrets: None,
             phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
         }
     }
@@ -496,6 +501,8 @@ impl Runtime {
         link_phase2!(locale::format);
         link_phase2!(resources::assets);
         link_phase2!(store::kv);
+        link_phase2!(store::sql);
+        link_phase2!(store::secret);
 
         link_gui!(ui::types);
         link_gui!(ui::window);
@@ -586,6 +593,23 @@ impl HostState {
                 config.app_database_path.clone(),
                 config.session_policy.allows(
                     &krate_manifest::Capability::new("store", "sql", None).expect("store.sql"),
+                ),
+            )
+            .with_secrets(
+                config.app_secrets.as_ref().map(|(path, _, _)| path.clone()),
+                config
+                    .app_secrets
+                    .as_ref()
+                    .map(|(_, id, _)| id.as_str())
+                    .unwrap_or_default(),
+                config
+                    .app_secrets
+                    .as_ref()
+                    .map(|(_, _, key)| key.as_slice())
+                    .unwrap_or_default(),
+                config.session_policy.allows(
+                    &krate_manifest::Capability::new("store", "secret", None)
+                        .expect("store.secret"),
                 ),
             ),
             #[cfg(feature = "phase2-bindings")]

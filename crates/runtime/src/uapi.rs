@@ -54,6 +54,7 @@ pub enum AudioCall {
 pub enum StoreCall {
     Kv,
     Sql,
+    Secret,
 }
 
 impl fmt::Display for StoreCall {
@@ -61,6 +62,7 @@ impl fmt::Display for StoreCall {
         f.write_str(match self {
             Self::Kv => "kv",
             Self::Sql => "sql",
+            Self::Secret => "secret",
         })
     }
 }
@@ -393,6 +395,7 @@ mod tests {
             UapiCall::Io(IoCall::Log),
             UapiCall::Store(StoreCall::Kv),
             UapiCall::Store(StoreCall::Sql),
+            UapiCall::Store(StoreCall::Secret),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),
             }),
