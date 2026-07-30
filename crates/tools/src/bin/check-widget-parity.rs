@@ -98,6 +98,16 @@ fn repo_root() -> Option<PathBuf> {
     }
 }
 
+/// Widgets that hold other widgets rather than drawing anything themselves.
+///
+/// Both hosts treat these the same way, and correctly: the children are separate
+/// placements that get drawn on their own, so painting the container would put a
+/// box over its own contents. They are listed here because "the painter does not
+/// paint it" is the right behaviour for a container and the wrong reading of
+/// support -- without this the table reported `stack`, the most basic layout
+/// widget in the system, as unsupported on Linux and Windows.
+const CONTAINERS: &[&str] = &["stack", "grid", "scroll", "tabs", "canvas"];
+
 struct Report {
     declared: BTreeSet<String>,
     macos: BTreeSet<String>,
@@ -115,9 +125,31 @@ impl Report {
             return Err("no widget-kind enum found in the UI WIT contract".to_string());
         }
 
+        // Read each host's own gate rather than counting mentions. These two
+        // functions are what an app actually hits -- a kind missing from them is
+        // refused before any lowering or painting happens -- so they are the
+        // only honest source. Counting mentions across the file previously
+        // reported macOS as supporting a widget named only in a test that
+        // asserted it was refused.
+        let macos = gate_widgets(&appkit, "fn kind_supported", &declared);
+        let painted = gate_widgets(&painter, "fn drawn_kind", &declared);
+
+        // A container is supported by whichever hosts lay it out, and layout is
+        // the shared host-independent engine in crates/layout. Asking the
+        // painter about a container always answers no, because painting one over
+        // its own children is the wrong thing to do.
+        let layout = read(root, "crates/layout/src/lib.rs")?;
+        let laid_out = handled_widgets(&layout, &declared);
+        let mut drawn = painted;
+        for widget in &declared {
+            if CONTAINERS.contains(&widget.as_str()) && laid_out.contains(widget) {
+                drawn.insert(widget.clone());
+            }
+        }
+
         Ok(Self {
-            macos: handled_widgets(&appkit, &declared),
-            drawn: handled_widgets(&painter, &declared),
+            macos,
+            drawn,
             declared,
         })
     }
@@ -239,18 +271,55 @@ fn declared_widgets(wit: &str) -> BTreeSet<String> {
 
 /// Which declared widgets a host source file names.
 ///
-/// Matching is on `WidgetKind::Variant` in the adapter source. A host that
-/// mentions a widget only to reject it would be counted as supporting it, so
-/// the catch-all arms are deliberately not written that way -- they use `_` or
-/// `other`, which this never matches.
+/// Matching is on `WidgetKind::Variant` in the adapter source, **excluding the
+/// test module**. That exclusion is not a detail: macOS has a test asserting
+/// that `Slider` is unsupported, and counting the whole file reported macOS as
+/// supporting the very widget it refuses. A parity table that can be fooled by
+/// a test name is worse than none, because it reports parity we do not have.
+///
+/// The catch-all arms use `_` or `other`, which this never matches, so a widget
+/// only counts when a host names it deliberately.
 fn handled_widgets(source: &str, declared: &BTreeSet<String>) -> BTreeSet<String> {
+    let code = strip_test_module(source);
     let mut out = BTreeSet::new();
     for widget in declared {
-        if source.contains(&format!("WidgetKind::{}", to_pascal(widget))) {
+        if code.contains(&format!("WidgetKind::{}", to_pascal(widget))) {
             out.insert(widget.clone());
         }
     }
     out
+}
+
+/// Everything before `#[cfg(test)]`, so test fixtures never count as support.
+fn strip_test_module(source: &str) -> &str {
+    match source.find("#[cfg(test)]") {
+        Some(at) => &source[..at],
+        None => source,
+    }
+}
+
+/// Read the widget list out of a host's own support gate.
+///
+/// Both hosts answer "can I render this?" from a single `matches!` over
+/// `WidgetKind`, and that function -- not the rest of the file -- decides what
+/// an app is allowed to use. Reading it directly means the table cannot be
+/// fooled by a mention somewhere else in the file.
+fn gate_widgets(source: &str, signature: &str, declared: &BTreeSet<String>) -> BTreeSet<String> {
+    let code = strip_test_module(source);
+    let Some(start) = code.find(signature) else {
+        return BTreeSet::new();
+    };
+    let body = &code[start..];
+    // The gate is one `matches!` expression; stop at the end of that statement
+    // so a later function's arms cannot leak in.
+    let end = body.find(")\n    }").map(|e| e + 1).unwrap_or(body.len());
+    let gate = &body[..end];
+
+    declared
+        .iter()
+        .filter(|widget| gate.contains(&format!("WidgetKind::{}", to_pascal(widget))))
+        .cloned()
+        .collect()
 }
 
 /// `text-field` -> `TextField`, matching the generated Rust binding names.
@@ -300,6 +369,25 @@ interface types {
         assert!(handled.contains("text-field"));
         // The catch-all arm must not be read as support for everything else.
         assert!(!handled.contains("canvas"));
+    }
+
+    #[test]
+    fn a_widget_named_only_in_tests_does_not_count_as_supported() {
+        // The real case this guards: macOS asserts in a test that Slider is
+        // unsupported. Counting the whole file reported macOS as supporting the
+        // widget it explicitly refuses.
+        let declared: BTreeSet<String> =
+            ["button", "slider"].into_iter().map(String::from).collect();
+        let source = "\
+match kind { WidgetKind::Button => (), other => unsupported(other) }
+#[cfg(test)]
+mod tests {
+    fn refuses() { assert!(matches!(place(WidgetKind::Slider), Err(Unsupported))) }
+}
+";
+        let handled = handled_widgets(source, &declared);
+        assert!(handled.contains("button"));
+        assert!(!handled.contains("slider"));
     }
 
     #[test]

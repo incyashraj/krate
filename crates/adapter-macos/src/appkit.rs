@@ -37,15 +37,30 @@ pub struct AppKitWidgetPlacement {
 
 impl AppKitWidgetPlacement {
     /// Widget kinds the first AppKit lowering pass supports natively.
+    /// Widget kinds this host will accept for lowering.
+    ///
+    /// This is the gate an app actually hits: a kind missing here is refused
+    /// before the lowering match is ever reached, so it must stay in step with
+    /// the arms below. `docs/book/src/reference/widget-parity.md` is generated
+    /// from this list and the drawn painter's equivalent, and CI fails when the
+    /// published table drifts from either.
     pub fn kind_supported(kind: WidgetKind) -> bool {
         matches!(
             kind,
             WidgetKind::Button
                 | WidgetKind::Checkbox
+                | WidgetKind::Radio
+                | WidgetKind::Switch
+                | WidgetKind::Progress
+                | WidgetKind::Slider
                 | WidgetKind::TextField
                 | WidgetKind::Text
                 | WidgetKind::TextArea
                 | WidgetKind::ListView
+                | WidgetKind::TreeView
+                | WidgetKind::Canvas
+                | WidgetKind::Scroll
+                | WidgetKind::Stack
         )
     }
 
@@ -1582,6 +1597,79 @@ mod platform {
                         button.setContentTintColor(Some(&tint));
                         Retained::into_super(button)
                     }
+                    WidgetKind::Radio | WidgetKind::Switch => {
+                        // Same construction as the checkbox above, and for the
+                        // same reason: a bordered switch-type button's title
+                        // inherits a colour that disappears on a dark window, so
+                        // the state lives in the title glyph where it is always
+                        // legible. Only the glyph pair differs -- a radio reads
+                        // as one-of-many, a switch as on/off.
+                        let on = placement.checked() == Some(true);
+                        let mark = match placement.kind() {
+                            WidgetKind::Radio if on => "◉  ",
+                            WidgetKind::Radio => "◯  ",
+                            _ if on => "◼︎  ",
+                            _ => "◻︎  ",
+                        };
+                        let mut text = String::from(mark);
+                        text.push_str(placement.label().unwrap_or(""));
+                        let title = NSString::from_str(&text);
+                        let target_object: &AnyObject = &target;
+                        // SAFETY: the target outlives the button (both owned by
+                        // the returned surface) and the selector is implemented
+                        // by KrateWidgetTarget.
+                        let button = unsafe {
+                            NSButton::buttonWithTitle_target_action(
+                                &title,
+                                Some(target_object),
+                                Some(sel!(krateWidgetActivated:)),
+                                mtm,
+                            )
+                        };
+                        button.setFrame(frame);
+                        button.setTag(placement.widget().get() as isize);
+                        button.setBordered(false);
+                        button.setAlignment(objc2_app_kit::NSTextAlignment::Left);
+                        button.setFont(Some(&NSFont::systemFontOfSize(14.0)));
+                        let tint = if on {
+                            NSColor::labelColor()
+                        } else {
+                            NSColor::secondaryLabelColor()
+                        };
+                        button.setContentTintColor(Some(&tint));
+                        Retained::into_super(button)
+                    }
+                    WidgetKind::Progress | WidgetKind::Slider => {
+                        // The drawn painter renders these two through one arm as
+                        // well, since both are a fraction along a groove.
+                        //
+                        // Lowered as a label rather than NSProgressIndicator or
+                        // NSSlider: both are NSViews and cannot join this
+                        // NSControl match. The fraction does not reach this layer
+                        // either -- the macOS placement carries no value field --
+                        // so the label shows the widget's own text, and the
+                        // groove arrives once that value is plumbed through.
+                        // Drawing a fixed bar would invent a number the guest
+                        // never sent, which is worse than showing none.
+                        let text = NSString::from_str(placement.label().unwrap_or(""));
+                        let label = NSTextField::labelWithString(&text, mtm);
+                        label.setFrame(frame);
+                        label.setTag(placement.widget().get() as isize);
+                        label.setFont(Some(&NSFont::systemFontOfSize(13.0)));
+                        label.setTextColor(Some(&NSColor::secondaryLabelColor()));
+                        Retained::into_super(label)
+                    }
+                    WidgetKind::TreeView | WidgetKind::Canvas => {
+                        // Containers whose children are separate placements, or
+                        // whose contents the guest draws itself. Lower as an
+                        // empty label so ids and hit testing stay consistent
+                        // without painting a box over what is inside.
+                        let empty = NSString::from_str("");
+                        let label = NSTextField::labelWithString(&empty, mtm);
+                        label.setFrame(frame);
+                        label.setTag(placement.widget().get() as isize);
+                        Retained::into_super(label)
+                    }
                     WidgetKind::ListView | WidgetKind::Scroll | WidgetKind::Stack => {
                         // A layout container paints nothing itself on macOS: its
                         // children are separate placements. Lower it as an empty,
@@ -2251,8 +2339,14 @@ mod tests {
         )
         .is_ok());
 
+        // Slider, radio, switch, and progress lower now, so the refusal case is
+        // one of the kinds still genuinely unimplemented on every host.
+        assert!(
+            AppKitWidgetPlacement::new(widget, WidgetKind::Slider, None, 0.0, 0.0, 10.0, 10.0)
+                .is_ok()
+        );
         assert!(matches!(
-            AppKitWidgetPlacement::new(widget, WidgetKind::Slider, None, 0.0, 0.0, 10.0, 10.0),
+            AppKitWidgetPlacement::new(widget, WidgetKind::Tabs, None, 0.0, 0.0, 10.0, 10.0),
             Err(UiAdapterError::Unsupported(_))
         ));
         assert!(matches!(
