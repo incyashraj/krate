@@ -780,8 +780,8 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         text,
         Severity::Change,
         "Database dependency",
-        "Krate has an app-scoped key-value store (store.kv) that covers settings and small collections. A relational schema, queries, or a server database still needs replacing.",
-        Some("store.kv"),
+        "Krate has an app-scoped SQLite database (store.sql): tables, queries, and transactions, addressed as SQL and never as a file. A server database (Postgres, MySQL, MongoDB) still needs replacing with local storage or a network call.",
+        Some("store.sql"),
     );
     detect_pattern(
         analysis,
@@ -812,6 +812,7 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         "notifications",
         &[
             "notify-rust",
+            "notify_rust",
             "unusernotification",
             "toastnotification",
             "new notification(",
@@ -821,8 +822,29 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         text,
         Severity::Change,
         "System notifications",
-        "Krate does not yet expose a cross-platform notification capability.",
-        Some("planned: system.notification"),
+        "Krate has a notification capability (ui.notify). It shows a title and body attributed to the app, and carries no reply channel, so code that reacts to a click needs replacing.",
+        Some("ui.notify"),
+    );
+    detect_pattern(
+        analysis,
+        "open-url",
+        &[
+            // Every framework's "open this link in the browser".
+            "webbrowser::open",
+            "shell.openexternal",
+            "nsworkspace.*openurl",
+            "start_process",
+            "xdg-open",
+            "webbrowser.open",
+            "opener::open",
+            "open::that",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Opening links in a browser",
+        "Krate can hand a link to the person's browser (ui.open-url). It accepts https and mailto; file:// and custom schemes are refused because they read files or start other programs.",
+        Some("ui.open-url"),
     );
     detect_pattern(
         analysis,
@@ -1461,6 +1483,42 @@ mod tests {
             );
             assert_eq!(plan.verdict, Verdict::NeedsChanges);
         }
+    }
+
+    #[test]
+    fn a_realistic_app_maps_onto_the_capabilities_that_now_exist() {
+        // Settings, a database, a notification, and a link: most of what a
+        // small desktop app does beyond drawing a window. Before these
+        // capabilities existed every one of these was a dead end.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"tracker\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(
+            dir.path().join("src/main.rs"),
+            "use rusqlite::Connection;\n\
+             use confy;\n\
+             use notify_rust::Notification;\n\
+             fn main() { webbrowser::open(\"https://example.com\").unwrap(); }\n",
+        )
+        .unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        for expected in ["store.kv", "store.sql", "ui.notify", "ui.open-url"] {
+            assert!(
+                plan.suggested_capabilities.iter().any(|c| c == expected),
+                "expected {expected}, got {:?}",
+                plan.suggested_capabilities
+            );
+        }
+        // Everything it needs now exists, so nothing here should be a blocker.
+        assert!(!plan
+            .findings
+            .iter()
+            .any(|f| matches!(f.severity, crate::Severity::Blocker)));
     }
 
     #[test]
