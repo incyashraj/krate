@@ -26,13 +26,13 @@
 </p>
 
 <p align="center">
-  <a href="https://incyashraj.github.io/krate/">Website</a>
+  <a href="https://krate.tech/">Website</a>
   ·
-  <a href="https://incyashraj.github.io/krate/docs/try-krate-notes.html">Try Notes</a>
+  <a href="https://krate.tech/docs/try-krate-notes.html">Try Notes</a>
   ·
-  <a href="https://incyashraj.github.io/krate/docs/pages/make-an-app-with-ai.html">Make an app</a>
+  <a href="https://krate.tech/docs/pages/make-an-app-with-ai.html">Make an app</a>
   ·
-  <a href="https://incyashraj.github.io/krate/docs/quickstart.html">Docs</a>
+  <a href="https://krate.tech/docs/quickstart.html">Docs</a>
   ·
   <a href="https://github.com/incyashraj/krate/releases">Releases</a>
   ·
@@ -40,7 +40,7 @@
 </p>
 
 <p align="center">
-  <a href="https://incyashraj.github.io/krate/">
+  <a href="https://krate.tech/">
     <img src="docs/landing/og.png" width="900" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
   </a>
 </p>
@@ -78,7 +78,7 @@ Krate is open source and currently in pre-alpha.
 Install the command line tool on macOS or Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh
+curl -fsSL https://krate.tech/install.sh | sh
 ```
 
 Check the installation:
@@ -100,7 +100,7 @@ Krate fetches the file, shows what it requests, and runs it with the access you
 approve.
 
 For a guided walkthrough, use
-[Try Krate Notes](https://incyashraj.github.io/krate/docs/try-krate-notes.html).
+[Try Krate Notes](https://krate.tech/docs/try-krate-notes.html).
 
 ### macOS without a terminal
 
@@ -119,9 +119,14 @@ The macOS permission window appears before the Notes app runs.
 
 ### Windows
 
-Download the newest `x86_64-pc-windows-msvc.zip` from
-[Releases](https://github.com/incyashraj/krate/releases), extract
-`krate.exe`, and place its folder on your `PATH`.
+One command in PowerShell:
+
+```powershell
+irm https://krate.tech/install.ps1 | iex
+```
+
+It downloads the binary for your machine, verifies its checksum, installs it
+under your own profile, and puts it on your `PATH`. No administrator rights.
 
 Then:
 
@@ -186,7 +191,7 @@ krate doctor
 ```
 
 The full guide is
-[Make and share a Krate app](https://incyashraj.github.io/krate/docs/pages/make-an-app-with-ai.html).
+[Make and share a Krate app](https://krate.tech/docs/pages/make-an-app-with-ai.html).
 
 ## Let an AI coding agent write the app
 
@@ -383,7 +388,7 @@ Krate is pre-alpha:
   [SECURITY.md](SECURITY.md).
 
 Read the current
-[threat model](https://incyashraj.github.io/krate/docs/phase2/threat-model-v0-2.html)
+[threat model](https://krate.tech/docs/phase2/threat-model-v0-2.html)
 for technical detail.
 
 ## Current limitations
@@ -469,12 +474,12 @@ target/release/krate --version
 
 | Start here | Link |
 | --- | --- |
-| Plain guide for making an app | [Make an app with AI](https://incyashraj.github.io/krate/docs/pages/make-an-app-with-ai.html) |
-| First app walkthrough | [Try Krate Notes](https://incyashraj.github.io/krate/docs/try-krate-notes.html) |
-| Developer quickstart | [Quickstart](https://incyashraj.github.io/krate/docs/quickstart.html) |
-| Product direction | [Vision](https://incyashraj.github.io/krate/docs/vision.html) |
-| Planned work | [Roadmap](https://incyashraj.github.io/krate/docs/roadmap.html) |
-| Public development history | [Build log](https://incyashraj.github.io/krate/docs/build-log.html) |
+| Plain guide for making an app | [Make an app with AI](https://krate.tech/docs/pages/make-an-app-with-ai.html) |
+| First app walkthrough | [Try Krate Notes](https://krate.tech/docs/try-krate-notes.html) |
+| Developer quickstart | [Quickstart](https://krate.tech/docs/quickstart.html) |
+| Product direction | [Vision](https://krate.tech/docs/vision.html) |
+| Planned work | [Roadmap](https://krate.tech/docs/roadmap.html) |
+| Public development history | [Build log](https://krate.tech/docs/build-log.html) |
 | Exact current evidence | [Status](STATUS.md) |
 
 ## Roadmap
@@ -494,7 +499,7 @@ Later work includes:
 - organization policies and audit records;
 - more operating systems and device types.
 
-See the full [roadmap](https://incyashraj.github.io/krate/docs/roadmap.html).
+See the full [roadmap](https://krate.tech/docs/roadmap.html).
 
 ## Contributing
 

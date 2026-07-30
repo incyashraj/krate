@@ -56,6 +56,14 @@ jobs:
           # this copy that link is a 404 and the sitemap goes unread.
           cp docs/book/book/robots.txt _site/robots.txt
           cp docs/book/book/sitemap.xml _site/sitemap.xml
+          # Serve the installers from the domain, so the command someone pastes
+          # into a terminal is `curl -fsSL https://krate.tech/install.sh | sh`
+          # rather than a raw.githubusercontent URL with a branch name in it.
+          # Same file either way; the short one is the one people can retype.
+          cp scripts/install.sh _site/install.sh
+          cp scripts/install.ps1 _site/install.ps1
+          # A trailing-slash-free alias, so `krate.tech/install` works too.
+          cp scripts/install.sh _site/install
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact

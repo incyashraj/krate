@@ -33,7 +33,7 @@ way to run it on Linux and Windows today.
 The Krate runtime. One command installs it on macOS and Linux:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh
+curl -fsSL https://krate.tech/install.sh | sh
 ```
 
 This downloads the binary for your machine, verifies its checksum, and puts
