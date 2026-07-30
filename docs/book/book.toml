@@ -7,7 +7,11 @@ multilingual = false
 src = "src"
 
 [output.html]
-site-url = "/krate/docs/"
+# The site is served from the root of krate.tech, so the book lives at /docs/.
+# It was "/krate/docs/" while the only home was the project page at
+# incyashraj.github.io/krate/, which is a subpath. Leaving that prefix in place
+# would make every generated link resolve to krate.tech/krate/docs/... and 404.
+site-url = "/docs/"
 git-repository-url = "https://github.com/incyashraj/krate"
 git-repository-icon = "fa-github"
 edit-url-template = "https://github.com/incyashraj/krate/edit/main/docs/book/{path}"
