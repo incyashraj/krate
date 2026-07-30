@@ -6,7 +6,7 @@
     "role": "maintainer",
     "name": "Yashraj Pardeshi",
     "email": "incyashraj@gmail.com",
-    "description": "Yashraj Pardeshi is the Indian maintainer and original author of Krate. He has built the runtime, file format, permission enforcement, AI authoring path, cross-platform host support, tests, documentation, and public examples. He is working full-time to make AI-created software easy to share without requiring users to trust it blindly.",
+    "description": "Yashraj Pardeshi is the Indian maintainer and original author of Krate, currently based in Singapore. He has built the runtime, file format, permission enforcement, AI authoring path, cross-platform host support, tests, documentation, and public examples. Krate is his primary project, and grant support would let him work on its public open-source components full-time.",
     "webpageUrl": {
       "url": "https://incyashraj.github.io/"
     }
@@ -15,7 +15,7 @@
     {
       "guid": "krate",
       "name": "Krate",
-      "description": "Krate is an open-source runtime and file format for software created by AI. Claude or another authoring tool can turn a request into one .krate file. The same file opens locally on macOS, Windows, and Linux. Before any app code runs, Krate shows the files, network access, and other capabilities the app requests. The runtime grants only what the user approves and refuses to start an app when a required capability is denied. The runtime, AI authoring flow, double-click opening, local persistence, and sample apps work today. This grant supports only the public runtime, SDK, authoring tools, documentation, security testing, and community work. It does not fund the planned commercial Krate Cloud.",
+      "description": "Krate is an open-source runtime and file format for software created by AI. Claude or another authoring tool can turn a request into one .krate file. The same file opens locally on macOS, Windows, and Linux. Before any app code runs, Krate shows the files, network access, and other capabilities the app requests. The runtime grants only what the user approves and refuses to start an app when a required capability is denied. The runtime, AI authoring flow, double-click opening, local persistence, and sample apps work today. External adoption has just begun, so the first grant milestone measures real outside use rather than assuming it. This grant supports only the public runtime, SDK, authoring tools, documentation, security testing, accessibility work, and community participation. It does not fund the planned commercial Krate Cloud.",
       "webpageUrl": {
         "url": "https://incyashraj.github.io/krate/"
       },
@@ -52,7 +52,7 @@
         "guid": "open-runtime-2026",
         "status": "active",
         "name": "Twelve months of open Krate runtime development",
-        "description": "INR 7,00,000 supports twelve months of public Krate work. Q1: stabilize installation and AI authoring on three operating systems and fix user failures. Q2: expand the SDK and capabilities, add security tests, and publish a threat model. Q3: recruit contributors, improve contributor docs, and run a workshop. Q4: publish a stable release, compatibility evidence, and a sustainable release process. Covers maintainer time, testing, release infrastructure, docs, and review. Excludes Krate Cloud.",
+        "description": "Request: INR 7,00,000 as a one-time twelve-month project grant, disbursed against public milestones. Planned use: INR 4,80,000 maintainer support at INR 40,000 per month; INR 90,000 for independent security and accessibility review and testing; INR 60,000 for cross-platform CI, release infrastructure, and test-device access; INR 70,000 for documentation, workshops, and contributor support. Months 1-3: publish a simpler install and AI-authoring path on macOS, Windows, and Linux; complete and document 10 external create-and-open journeys; fix every recorded critical blocker. Months 4-6: publish Krate's threat model and adversarial test suite; expand SDK capabilities from recorded user needs; complete one independent security review. Months 7-9: publish a reproducible contributor setup; support at least 3 first-time contributors and 5 independently created Krate apps. Months 10-12: publish a stable versioned file-format and SDK release, three-OS compatibility evidence, a reproducible release process, and 25 completed external journeys. Community commitments: publish a milestone report and complete at least one FOSS United talk, workshop, guest post, or forum update each quarter. Sustainability: the runtime and format remain MIT and Apache-2.0 licensed. A future hosted discovery, identity, and update service is planned separately to fund long-term maintenance; this grant does not fund or depend on Krate Cloud.",
         "amount": 700000,
         "currency": "INR",
         "frequency": "one-time",
