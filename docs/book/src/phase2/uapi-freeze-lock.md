@@ -9,8 +9,8 @@ This file records the exact Phase 2 WIT files being reviewed for UAPI v0.1. It d
 ## Summary
 
 - Package root: `wit/krate/phase2`
-- WIT files: 6
-- Aggregate SHA-256: `2067782f444d0831fb8633212795dc2b18e57466d4948ce04b2f94228742ed58`
+- WIT files: 7
+- Aggregate SHA-256: `3f4f4b8841d49074685d1c26e2951d44df981d2b1f7a93a1d6d0ee1aa82757fa`
 
 ## Files
 
@@ -20,8 +20,9 @@ This file records the exact Phase 2 WIT files being reviewed for UAPI v0.1. It d
 | `wit/krate/phase2/deps/io/io.wit` | 92 | 2599 | `61efe9abd8f86899aed66d3cc01c959a8a3e8982004af09ac0edac853cdb40a2` |
 | `wit/krate/phase2/deps/locale/locale.wit` | 63 | 1467 | `3278729cfe72935fe4621750214cdd024740e8f07e63e9fc1c9390385d2e423c` |
 | `wit/krate/phase2/deps/net/net.wit` | 86 | 2280 | `720ecc62ba371ca3faf7e241a3aae28326b0eeb5ee63360c96ceffe0cda53066` |
+| `wit/krate/phase2/deps/resources/resources.wit` | 25 | 948 | `1614005a85f5ac7632bcc095bf68655a9f4e5cfeb6153629828d9ccca919d91a` |
 | `wit/krate/phase2/deps/time/time.wit` | 17 | 482 | `5a8f5bb2f2967ae817b166f22b0865f98171c25acfc7475f66b0ebb210bc2770` |
-| `wit/krate/phase2/world.wit` | 19 | 523 | `6a7cc928a9ffc0d3af2a9c00ba50932c91670b08a742240edee6d8089c287f2b` |
+| `wit/krate/phase2/world.wit` | 20 | 562 | `675ac7754f1edfbc6750b2e5ed7a90c15592bd9ca329c327e6645a2008a46ed1` |
 
 ## Review Rule
 

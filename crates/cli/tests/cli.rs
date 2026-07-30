@@ -29,6 +29,22 @@ fn has_cargo_component() -> bool {
         .unwrap_or(false)
 }
 
+/// Serializes the tests that invoke a real cargo build.
+///
+/// Cargo takes an exclusive lock on the package cache, so two of these running
+/// at once leave one blocked on "waiting for file lock". The port pipeline
+/// gives its build a bounded number of attempts, and on a cold CI cache that
+/// wait outlasts them, which surfaces as a build failure that has nothing to do
+/// with the code under test. Holding this lock keeps them one at a time.
+static CARGO_BUILD_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn cargo_build_guard() -> std::sync::MutexGuard<'static, ()> {
+    // A previous test panicking must not poison the run for the rest.
+    CARGO_BUILD_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[test]
 fn help_lists_phase_1_commands() {
     let output = krate().arg("--help").output().expect("run krate help");
@@ -211,6 +227,7 @@ fn port_author_command_builds_packages_and_permission_tests_a_candidate() {
         eprintln!("skipping: cargo-component is not installed");
         return;
     }
+    let _build_lock = cargo_build_guard();
     let root = tempfile::tempdir().expect("create temp dir");
     let source = root.path().join("tiny-reader");
     std::fs::create_dir_all(source.join("src")).expect("create source");
@@ -294,6 +311,7 @@ fn port_repairs_a_failed_candidate_with_the_exact_build_error() {
         eprintln!("skipping: cargo-component is not installed");
         return;
     }
+    let _build_lock = cargo_build_guard();
     let root = tempfile::tempdir().expect("create temp dir");
     let source = root.path().join("repair-reader");
     std::fs::create_dir_all(source.join("src")).expect("create source");
@@ -374,6 +392,7 @@ fn port_agent_cannot_write_through_the_read_only_source_snapshot() {
         eprintln!("skipping: cargo-component is not installed");
         return;
     }
+    let _build_lock = cargo_build_guard();
     let root = tempfile::tempdir().expect("create temp dir");
     let source = root.path().join("source");
     std::fs::create_dir_all(source.join("src")).expect("create source");
