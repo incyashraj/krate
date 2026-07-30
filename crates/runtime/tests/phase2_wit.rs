@@ -18,7 +18,7 @@ fn phase_2_uapi_wit_package_parses() {
         "cli world should expose the Phase 2 UAPI imports"
     );
     assert_eq!(cli.exports.len(), 1);
-    assert_eq!(resolve.packages.len(), 6);
+    assert_eq!(resolve.packages.len(), 7);
 }
 
 fn workspace_root() -> PathBuf {

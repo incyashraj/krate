@@ -74,6 +74,9 @@ fn run() -> Result<(), String> {
     // sensible per kind.
     let mut request = match kind.as_deref() {
         Some("checklist") => AppRequest::checklist(name.as_deref().unwrap_or("checklist")),
+        Some("voice-prompter") => {
+            AppRequest::voice_prompter(name.as_deref().unwrap_or("voice-prompter"))
+        }
         Some("word-frequency") | None => {
             AppRequest::word_frequency(name.as_deref().unwrap_or("word-count"))
         }

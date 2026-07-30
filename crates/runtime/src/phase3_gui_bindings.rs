@@ -26,6 +26,7 @@ wasmtime::component::bindgen!({
         "krate:time/sleep@0.1.0": crate::phase2_bindings::krate::time::sleep,
         "krate:locale/info@0.1.0": crate::phase2_bindings::krate::locale::info,
         "krate:locale/format@0.1.0": crate::phase2_bindings::krate::locale::format,
+        "krate:resources/assets@0.1.0": crate::phase2_bindings::krate::resources::assets,
     },
 });
 

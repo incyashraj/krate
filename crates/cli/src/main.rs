@@ -11,18 +11,18 @@ use krate_manifest::{
 };
 use krate_policy::{resolve_session_policy, SessionPolicy};
 use krate_runtime::{
-    Config, RunOutcome, Runtime, RuntimeError, DEFAULT_HTTP_TIMEOUT_MILLIS,
+    Config, RunOutcome, Runtime, RuntimeError, RuntimeWorld, DEFAULT_HTTP_TIMEOUT_MILLIS,
     DEFAULT_MAX_HTTP_RESPONSE_BYTES,
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 mod mcp;
 mod sdk;
+mod speech_model;
 
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
 const MAX_PHASE2_ARG_COUNT: usize = 1024;
-const PHASE3_GUI_UNIMPLEMENTED_EXIT: u8 = 6;
-
 /// Fuel budget applied to an untrusted run (`run --untrusted`, and the run
 /// Krate makes when it verifies an app it just authored). Large enough that a
 /// real app finishing its work never trips it, small enough that a runaway or
@@ -250,6 +250,69 @@ enum Command {
         json: bool,
     },
 
+    /// Analyze an existing source project and explain how it can become a
+    /// portable Krate app. This command is read-only: it does not build,
+    /// execute, or edit the source.
+    Port {
+        /// Source project directory to analyze.
+        source: PathBuf,
+
+        /// Produce a porting plan. This is optional while planning is the only
+        /// port operation, so both `krate port app` and
+        /// `krate port app --plan` are accepted.
+        #[arg(long)]
+        plan: bool,
+
+        /// Output format for the plan.
+        #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
+        format: OutputFormat,
+
+        /// Also write the JSON plan to this path.
+        #[arg(long)]
+        output: Option<PathBuf>,
+
+        /// Create an isolated, reviewable porting workspace containing the
+        /// plan, an AI task, and a compiling Krate candidate. The source
+        /// project is never copied, run, or changed.
+        #[arg(long, value_name = "DIR")]
+        prepare: Option<PathBuf>,
+
+        /// Ask a supported AI coding agent to transform the prepared candidate.
+        /// Requires --to. The original source is re-analyzed after the agent
+        /// runs and the command stops if its scanned contents changed.
+        #[arg(long, value_enum)]
+        agent: Option<AgentKind>,
+
+        /// Lower-level agent seam. The command runs inside the prepared
+        /// workspace with KRATE_PORT_SOURCE, KRATE_PORT_PLAN,
+        /// KRATE_PORT_CANDIDATE, and KRATE_PORT_TASK set. Requires --to.
+        #[arg(long, conflicts_with = "agent")]
+        author_cmd: Option<String>,
+
+        /// Build, inspect, package, and permission-test the transformed
+        /// candidate into this .krate file.
+        #[arg(long, value_name = "FILE")]
+        to: Option<PathBuf>,
+
+        /// Keep the completed port transcript at this path.
+        #[arg(long, value_name = "FILE")]
+        transcript: Option<PathBuf>,
+
+        /// Let the selected agent repair a candidate that fails to build,
+        /// imports unsupported host APIs, or has an invalid manifest. Each
+        /// attempt receives the exact validation error. Capped at 5.
+        #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(0..=5))]
+        repair_attempts: u8,
+
+        /// Answer yes to any required toolchain installation prompt.
+        #[arg(long)]
+        yes: bool,
+
+        /// Do not offer to install missing build tools.
+        #[arg(long)]
+        no_install: bool,
+    },
+
     /// Run the Krate MCP server so an AI agent can execute components under the
     /// capability sandbox. Speaks JSON-RPC 2.0 over stdio; wire an agent at it
     /// with e.g. `claude mcp add krate -- krate mcp`.
@@ -272,6 +335,8 @@ enum CreateKind {
     WordFrequency,
     /// A GUI app: a checklist with checkboxes that saves locally.
     Checklist,
+    /// A GUI app: a microphone-driven teleprompter.
+    VoicePrompter,
 }
 
 /// An AI coding agent Krate knows how to drive for `--agent`.
@@ -493,6 +558,32 @@ fn run() -> Result<u8> {
             no_install,
             json,
         }),
+        Command::Port {
+            source,
+            plan: _,
+            format,
+            output,
+            prepare,
+            agent,
+            author_cmd,
+            to,
+            transcript,
+            repair_attempts,
+            yes,
+            no_install,
+        } => port_project(PortRequest {
+            source,
+            plan_format: format,
+            plan_output: output,
+            prepare,
+            agent,
+            author_cmd,
+            to,
+            transcript,
+            repair_attempts,
+            yes,
+            no_install,
+        }),
         Command::Mcp => mcp::serve().map(|()| 0),
         Command::AuthorAgent { agent } => run_author_agent(agent),
         Command::Version => {
@@ -523,6 +614,958 @@ fn run() -> Result<u8> {
             ManifestCommand::Capabilities { format } => print_manifest_capabilities(format),
         },
     }
+}
+
+struct PortRequest {
+    source: PathBuf,
+    plan_format: OutputFormat,
+    plan_output: Option<PathBuf>,
+    prepare: Option<PathBuf>,
+    agent: Option<AgentKind>,
+    author_cmd: Option<String>,
+    to: Option<PathBuf>,
+    transcript: Option<PathBuf>,
+    repair_attempts: u8,
+    yes: bool,
+    no_install: bool,
+}
+
+fn port_project(req: PortRequest) -> Result<u8> {
+    let report = krate_port::analyze(&req.source)
+        .with_context(|| format!("could not analyze {}", req.source.display()))?;
+    let json = serde_json::to_string_pretty(&report)?;
+
+    if let Some(path) = req.plan_output.as_deref() {
+        if path.exists() {
+            anyhow::bail!(
+                "{} already exists; choose another --output path",
+                path.display()
+            );
+        }
+        fs::write(path, format!("{json}\n"))
+            .with_context(|| format!("write {}", path.display()))?;
+    }
+
+    let wants_transform = req.agent.is_some() || req.author_cmd.is_some() || req.to.is_some();
+    if wants_transform && req.to.is_none() {
+        anyhow::bail!("--agent or --author-cmd requires --to <app.krate>");
+    }
+    if req.to.is_some() && req.agent.is_none() && req.author_cmd.is_none() {
+        anyhow::bail!("--to requires --agent <agent> or --author-cmd <command>");
+    }
+    if req.yes && req.no_install {
+        anyhow::bail!("--yes and --no-install cannot be used together");
+    }
+
+    let held_temp = if req.prepare.is_none() && wants_transform {
+        Some(tempfile::tempdir().context("create port work dir")?)
+    } else {
+        None
+    };
+    let workspace_path = req.prepare.clone().unwrap_or_else(|| {
+        held_temp
+            .as_ref()
+            .map(|temp| temp.path().join("workspace"))
+            .unwrap_or_default()
+    });
+    let workspace = workspace_path.as_path();
+
+    if req.prepare.is_some() || wants_transform {
+        prepare_port_workspace(&report, workspace)?;
+    }
+
+    match req.plan_format {
+        OutputFormat::Json => println!("{json}"),
+        OutputFormat::Text => print!("{}", report.to_text()),
+    }
+
+    if req.prepare.is_some() {
+        println!();
+        println!("Prepared {}", workspace.display());
+        println!("  review: {}", workspace.join("PORTING.md").display());
+        println!("  AI task: {}", workspace.join("AGENT_TASK.md").display());
+        println!("  candidate: {}", workspace.join("candidate").display());
+        println!();
+        println!("The original source was not changed.");
+    }
+
+    if let Some(output) = req.to.as_deref() {
+        preflight_toolchain(req.yes, req.no_install)?;
+        let command = match (req.agent, req.author_cmd.as_deref()) {
+            (Some(AgentKind::Claude), None) => PortAuthor::Claude,
+            (None, Some(command)) => PortAuthor::Command(command),
+            _ => anyhow::bail!("choose exactly one of --agent or --author-cmd"),
+        };
+        complete_port(
+            &report,
+            workspace,
+            output,
+            command,
+            req.transcript.as_deref(),
+            req.repair_attempts,
+        )?;
+    }
+
+    Ok(0)
+}
+
+#[derive(Clone, Copy)]
+enum PortAuthor<'a> {
+    Claude,
+    Command(&'a str),
+}
+
+/// Build the deterministic handoff between analysis and source transformation.
+///
+/// This intentionally stops before running an AI model. The workspace makes
+/// every input visible first: the exact plan, a candidate that already obeys
+/// Krate's strict component rules, and a task that forbids silent feature
+/// deletion. A later agent run edits only `candidate/`; the original project
+/// remains outside the workspace and untouched.
+fn prepare_port_workspace(plan: &krate_port::PortPlan, workspace: &Path) -> Result<()> {
+    use krate_author::{generate, AppKind, AppRequest};
+
+    if workspace.exists() {
+        anyhow::bail!(
+            "{} already exists; choose a new --prepare directory",
+            workspace.display()
+        );
+    }
+
+    let sdk_root = match std::env::var_os("KRATE_SDK_ROOT") {
+        Some(root) => PathBuf::from(root),
+        None => sdk::ensure_materialized().context("prepare the embedded Krate SDK")?,
+    };
+
+    fs::create_dir_all(workspace).with_context(|| format!("create {}", workspace.display()))?;
+    let source_snapshot = workspace.join("reference-source");
+    let snapshot = krate_port::snapshot(&plan.source, &source_snapshot)
+        .with_context(|| format!("create {}", source_snapshot.display()))?;
+    let candidate = workspace.join("candidate");
+    fs::create_dir_all(&candidate).with_context(|| format!("create {}", candidate.display()))?;
+
+    let name = port_candidate_name(Path::new(&plan.source));
+    let kind = if plan.profile == "krate-cli-v1-candidate" {
+        AppKind::WordFrequency
+    } else if plan
+        .suggested_capabilities
+        .iter()
+        .any(|capability| capability == "audio.capture")
+    {
+        AppKind::VoicePrompter
+    } else {
+        AppKind::Checklist
+    };
+    let mut request = match kind {
+        AppKind::WordFrequency => AppRequest::word_frequency(&name),
+        AppKind::Checklist => AppRequest::checklist(&name),
+        AppKind::VoicePrompter => AppRequest::voice_prompter(&name),
+    };
+    request.description = format!("Port the existing {name} application to Krate.");
+    let sdk_prefix = relative_sdk_prefix(&candidate, &sdk_root)?;
+    let generated = generate(&request, &sdk_prefix).map_err(anyhow::Error::msg)?;
+    for file in generated.files {
+        let destination = candidate.join(file.path);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&destination, file.contents)?;
+    }
+    fs::write(candidate.join("CONTRACT.md"), author_contract(&name))?;
+    let mut workspace_plan = plan.clone();
+    workspace_plan.source = "reference-source".to_string();
+    fs::write(
+        workspace.join("port-plan.json"),
+        serde_json::to_string_pretty(&workspace_plan)? + "\n",
+    )?;
+    fs::write(
+        workspace.join("snapshot-summary.json"),
+        serde_json::to_string_pretty(&snapshot)? + "\n",
+    )?;
+    fs::write(workspace.join("PORTING.md"), porting_readme(plan, &name))?;
+    fs::write(
+        workspace.join("AGENT_TASK.md"),
+        port_agent_task(&workspace_plan, &name),
+    )?;
+    let journeys = port_behavior_journeys(&workspace_plan);
+    fs::write(
+        workspace.join("journeys.json"),
+        serde_json::to_string_pretty(&journeys)? + "\n",
+    )?;
+    fs::write(
+        workspace.join("JOURNEYS.md"),
+        port_behavior_journeys_markdown(&journeys),
+    )?;
+    Ok(())
+}
+
+fn port_candidate_name(source: &Path) -> String {
+    let raw = source
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("ported-app");
+    let mut name = String::new();
+    let mut previous_dash = false;
+    for character in raw.chars() {
+        if character.is_ascii_alphanumeric() {
+            name.push(character.to_ascii_lowercase());
+            previous_dash = false;
+        } else if !name.is_empty() && !previous_dash {
+            name.push('-');
+            previous_dash = true;
+        }
+    }
+    while name.ends_with('-') {
+        name.pop();
+    }
+    if name.is_empty() {
+        "ported-app".to_string()
+    } else {
+        name
+    }
+}
+
+fn porting_readme(plan: &krate_port::PortPlan, name: &str) -> String {
+    format!(
+        "# Krate port workspace for `{name}`\n\
+\n\
+This directory was generated from a read-only analysis of:\n\
+\n\
+`{source}`\n\
+\n\
+The original project was not executed or changed. `reference-source/` is a\n\
+read-only snapshot for the agent. Common credential files, dependency caches,\n\
+build outputs, symlinks, and oversized files are excluded.\n\
+\n\
+## Files\n\
+\n\
+- `port-plan.json` is the machine-readable analysis.\n\
+- `snapshot-summary.json` records what the safe snapshot included or excluded.\n\
+- `reference-source/` is the read-only source snapshot.\n\
+- `AGENT_TASK.md` is the bounded task for an AI coding agent.\n\
+- `journeys.json` and `JOURNEYS.md` define the behavior that must be checked.\n\
+- `candidate/` is a compiling Krate app that the agent may edit.\n\
+- `candidate/CONTRACT.md` explains the component and permission rules.\n\
+\n\
+## Current assessment\n\
+\n\
+- Verdict: `{verdict:?}`\n\
+- Profile: `{profile}`\n\
+- Languages: {languages}\n\
+- Frameworks: {frameworks}\n\
+\n\
+Review every blocker and planned behavior change before asking an agent to\n\
+edit the candidate. A successful compile is not enough. The result must retain\n\
+the accepted user journeys, import only `krate:*` interfaces, declare precise\n\
+capabilities, and pass allow, deny, persistence, close, and reopen checks on\n\
+Mac, Windows, and Linux.\n",
+        source = plan.source,
+        verdict = plan.verdict,
+        profile = plan.profile,
+        languages = if plan.languages.is_empty() {
+            "not detected".to_string()
+        } else {
+            plan.languages.join(", ")
+        },
+        frameworks = if plan.frameworks.is_empty() {
+            "not detected".to_string()
+        } else {
+            plan.frameworks.join(", ")
+        },
+    )
+}
+
+fn port_behavior_journeys(plan: &krate_port::PortPlan) -> serde_json::Value {
+    let entry_points = if plan.entry_points.is_empty() {
+        serde_json::json!([])
+    } else {
+        serde_json::json!(plan.entry_points)
+    };
+    let evidence = plan
+        .findings
+        .iter()
+        .flat_map(|finding| {
+            finding.evidence.iter().map(move |item| {
+                serde_json::json!({
+                    "finding": finding.id,
+                    "path": item.path,
+                    "line": item.line
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut journeys = vec![
+        serde_json::json!({
+            "id": "launch",
+            "title": "Open the application",
+            "kind": "automated",
+            "steps": ["Open the .krate file with all requested access granted"],
+            "expected": "The app starts successfully and its bounded quick path exits with code 0",
+            "source_evidence": entry_points
+        }),
+        serde_json::json!({
+            "id": "primary-task",
+            "title": "Complete the source application's primary task",
+            "kind": "manual",
+            "steps": [
+                "Run the original application and complete its main user task",
+                "Run the ported application and repeat the same task",
+                "Compare inputs, visible results, saved data, and errors"
+            ],
+            "expected": "The port preserves the accepted primary behavior or records the difference explicitly",
+            "source_evidence": evidence
+        }),
+        serde_json::json!({
+            "id": "same-bundle-three-systems",
+            "title": "Open the same bundle on all supported systems",
+            "kind": "ci",
+            "steps": [
+                "Use the exact same .krate bundle on macOS, Windows, and Linux",
+                "Run its bounded quick path on each system"
+            ],
+            "expected": "The same bundle exits successfully on all three systems",
+            "source_evidence": []
+        }),
+    ];
+
+    if !plan.suggested_capabilities.is_empty() {
+        journeys.push(serde_json::json!({
+            "id": "permission-denial",
+            "title": "Refuse required access",
+            "kind": "automated",
+            "steps": [
+                "Open the ported app without one required capability",
+                "Confirm the protected operation does not run"
+            ],
+            "expected": "Krate refuses the required operation with exit code 5 and does not grant ambient access",
+            "capabilities": plan.suggested_capabilities,
+            "source_evidence": []
+        }));
+    }
+    if plan
+        .suggested_capabilities
+        .iter()
+        .any(|capability| capability.starts_with("fs.write"))
+    {
+        journeys.push(serde_json::json!({
+            "id": "persistence",
+            "title": "Save, close, and reopen",
+            "kind": "manual",
+            "steps": [
+                "Create or change a unique value",
+                "Close the app",
+                "Open the same .krate file again"
+            ],
+            "expected": "The saved value is visible after reopening when file access is granted",
+            "source_evidence": []
+        }));
+    }
+
+    serde_json::json!({
+        "schema": "krate.port.journeys.v1",
+        "source": plan.source,
+        "profile": plan.profile,
+        "journeys": journeys
+    })
+}
+
+fn port_behavior_journeys_markdown(journeys: &serde_json::Value) -> String {
+    let mut out = String::from(
+        "# Port behavior journeys\n\n\
+These checks prevent a successful compile from being mistaken for a successful\n\
+port. Automated checks run during packaging. Manual and CI checks remain open\n\
+until evidence is recorded.\n\n",
+    );
+    if let Some(items) = journeys["journeys"].as_array() {
+        for item in items {
+            let id = item["id"].as_str().unwrap_or("journey");
+            let title = item["title"].as_str().unwrap_or("Untitled journey");
+            let kind = item["kind"].as_str().unwrap_or("manual");
+            out.push_str(&format!("## {title}\n\nID: `{id}`  \nKind: `{kind}`\n\n"));
+            if let Some(steps) = item["steps"].as_array() {
+                for (index, step) in steps.iter().enumerate() {
+                    if let Some(step) = step.as_str() {
+                        out.push_str(&format!("{}. {step}\n", index + 1));
+                    }
+                }
+            }
+            out.push_str(&format!(
+                "\nExpected: {}\n\nStatus: not yet verified\n\n",
+                item["expected"].as_str().unwrap_or("Record the result")
+            ));
+        }
+    }
+    out
+}
+
+fn port_agent_task(plan: &krate_port::PortPlan, name: &str) -> String {
+    let findings = if plan.findings.is_empty() {
+        "No source-level blockers were detected.".to_string()
+    } else {
+        plan.findings
+            .iter()
+            .map(|finding| {
+                format!(
+                    "- [{:?}] {}: {}",
+                    finding.severity, finding.title, finding.detail
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let entry_points = if plan.entry_points.is_empty() {
+        "not detected".to_string()
+    } else {
+        plan.entry_points.join(", ")
+    };
+
+    format!(
+        "# Port `{name}` to Krate\n\
+\n\
+Read-only source snapshot: `{source}`\n\
+Candidate to edit: `candidate/`\n\
+Portability profile: `{profile}`\n\
+Detected entry points: {entry_points}\n\
+\n\
+Read `port-plan.json`, `journeys.json`, `reference-source/`, and\n\
+`candidate/CONTRACT.md` before editing. Edit files only inside `candidate/`.\n\
+\n\
+Do not change `reference-source/`. Do not remove, replace, or defer behavior\n\
+silently.\n\
+\n\
+## Detected work\n\
+\n\
+{findings}\n\
+\n\
+## Required result\n\
+\n\
+1. Preserve the app's accepted user journeys using interfaces the selected\n\
+   Krate profile supports.\n\
+2. Record every behavior that cannot be preserved in `PORT_RESULT.md`.\n\
+3. Import only `krate:*` interfaces. Do not add WASI or ambient host access.\n\
+4. Declare only the precise capabilities the candidate needs.\n\
+5. Keep the candidate's bounded `quick` verification path.\n\
+6. Do not claim completion until the candidate builds, its imports pass, and\n\
+   its permission wall has been tested.\n",
+        source = plan.source,
+        profile = plan.profile,
+    )
+}
+
+fn complete_port(
+    original_plan: &krate_port::PortPlan,
+    workspace: &Path,
+    output: &Path,
+    author: PortAuthor<'_>,
+    transcript_path: Option<&Path>,
+    repair_attempts: u8,
+) -> Result<()> {
+    if original_plan.verdict == krate_port::Verdict::Unsupported {
+        anyhow::bail!(
+            "this source has blocking behavior; review {} before attempting a port",
+            workspace.join("PORTING.md").display()
+        );
+    }
+    if output.exists() {
+        anyhow::bail!(
+            "{} already exists; choose another --to path",
+            output.display()
+        );
+    }
+
+    let candidate = workspace.join("candidate");
+    let original_source = Path::new(&original_plan.source);
+    let source_snapshot = workspace.join("reference-source");
+    let plan_path = workspace.join("port-plan.json");
+    let task_path = workspace.join("AGENT_TASK.md");
+
+    println!();
+    println!("==> transforming the candidate");
+    let author_name = match author {
+        PortAuthor::Claude => {
+            run_claude_port(workspace, &source_snapshot, &candidate, &task_path)?;
+            "claude"
+        }
+        PortAuthor::Command(command) => {
+            run_port_author_command(
+                command,
+                workspace,
+                &source_snapshot,
+                &candidate,
+                &plan_path,
+                &task_path,
+                None,
+            )?;
+            "external-command"
+        }
+    };
+
+    // The agent receives read access to the source in order to understand it,
+    // but it must edit only the isolated candidate. Re-analyze the source and
+    // compare the complete deterministic plan before building anything.
+    let after_plan = krate_port::analyze(original_source)
+        .with_context(|| format!("re-check original source {}", original_source.display()))?;
+    if serde_json::to_vec(original_plan)? != serde_json::to_vec(&after_plan)? {
+        anyhow::bail!(
+            "the original source changed while the port agent was running; \
+             Krate stopped before packaging. Review the source and workspace."
+        );
+    }
+
+    let mut repairs_used = 0_u8;
+    let validated = loop {
+        println!("==> validating the port candidate");
+        match validate_port_candidate(&candidate) {
+            Ok(validated) => break validated,
+            Err(error) if repairs_used < repair_attempts => {
+                repairs_used += 1;
+                let repair_dir = workspace.join("repair");
+                fs::create_dir_all(&repair_dir)?;
+                let error_path = repair_dir.join(format!("attempt-{repairs_used}.txt"));
+                fs::write(&error_path, format!("{error}\n"))?;
+                println!(
+                    "==> repair attempt {repairs_used}/{repair_attempts}: {}",
+                    first_error_line(&error)
+                );
+                run_port_repair(
+                    author,
+                    workspace,
+                    &source_snapshot,
+                    &candidate,
+                    &plan_path,
+                    &task_path,
+                    PortRepair {
+                        attempt: repairs_used,
+                        error_path: &error_path,
+                    },
+                )?;
+                ensure_original_source_unchanged(original_plan, original_source)?;
+            }
+            Err(error) => {
+                anyhow::bail!(
+                    "the port candidate did not pass validation after {} repair attempt(s):\n{}",
+                    repairs_used,
+                    error
+                )
+            }
+        }
+    };
+    let wasm = validated.wasm;
+    let manifest = validated.manifest;
+
+    println!("==> packing {}", output.display());
+    let manifest_src = candidate.join("manifest.toml");
+    let pack_dir = tempfile::tempdir().context("create port pack dir")?;
+    let code = pack_dir.path().join("code.wasm");
+    fs::copy(&wasm, &code)?;
+    let packed_manifest = pack_dir.path().join("manifest.toml");
+    write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
+    let assets = candidate.join("assets");
+    let size = krate_bundle::pack_with_assets(
+        &packed_manifest,
+        &code,
+        assets.is_dir().then_some(assets.as_path()),
+        output,
+    )
+    .with_context(|| format!("pack {}", output.display()))?;
+
+    println!("==> verifying the permission wall");
+    let gating = verify_packed_app(output, &manifest)?;
+    let bundle_sha256 = sha256_file(output)?;
+    let plan_sha256 = sha256_file(&workspace.join("port-plan.json"))?;
+    let permissions: Vec<String> = manifest
+        .capabilities
+        .iter()
+        .map(|capability| capability.cap.clone())
+        .collect();
+    let port_result = workspace.join("PORT_RESULT.md");
+    let result_note = if port_result.is_file() {
+        Some(
+            fs::read_to_string(&port_result)
+                .with_context(|| format!("read {}", port_result.display()))?,
+        )
+    } else {
+        None
+    };
+    let journey_results = serde_json::json!({
+        "schema": "krate.port.journey-results.v1",
+        "bundle_sha256": bundle_sha256,
+        "results": [
+            {
+                "id": "launch",
+                "status": "passed",
+                "evidence": "bounded quick path exited with code 0"
+            },
+            {
+                "id": "permission-denial",
+                "status": "passed",
+                "evidence": format!("withholding {gating} exited with code 5")
+            },
+            {
+                "id": "primary-task",
+                "status": "not-verified",
+                "evidence": "manual comparison with the source application is required"
+            },
+            {
+                "id": "same-bundle-three-systems",
+                "status": "not-verified",
+                "evidence": "the exact bundle must run on macOS, Windows, and Linux"
+            }
+        ]
+    });
+    fs::write(
+        workspace.join("journey-results.json"),
+        serde_json::to_string_pretty(&journey_results)? + "\n",
+    )?;
+    let artifact = serde_json::json!({
+        "schema": "krate.port.artifact.v1",
+        "bundle": output.to_string_lossy(),
+        "bundle_sha256": bundle_sha256,
+        "bundle_bytes": size,
+        "port_plan_sha256": plan_sha256,
+        "profile": original_plan.profile,
+        "requested_permissions": permissions,
+        "source_unchanged": true
+    });
+    fs::write(
+        workspace.join("artifact.json"),
+        serde_json::to_string_pretty(&artifact)? + "\n",
+    )?;
+    let transcript = serde_json::json!({
+        "schema": "krate.port.result.v1",
+        "source": original_plan.source,
+        "profile": original_plan.profile,
+        "plan_verdict": original_plan.verdict,
+        "author": author_name,
+        "repair_attempts_allowed": repair_attempts,
+        "repair_attempts_used": repairs_used,
+        "source_unchanged": true,
+        "output": output.to_string_lossy(),
+        "bundle_sha256": bundle_sha256,
+        "port_plan_sha256": plan_sha256,
+        "krate_bytes": size,
+        "requested_permissions": permissions,
+        "gating_permission": gating,
+        "agent_result": result_note,
+        "checks": [
+            "candidate built as a WebAssembly component",
+            "component imports only krate:* interfaces",
+            "bundle runs with all declared grants",
+            "bundle refuses when its required gating permission is withheld"
+        ],
+        "behavior_journeys": workspace.join("journeys.json").to_string_lossy(),
+        "journey_results": workspace.join("journey-results.json").to_string_lossy(),
+        "artifact_evidence": workspace.join("artifact.json").to_string_lossy(),
+        "remaining_verification": [
+            "compare the original and ported user journeys",
+            "test interactive behavior and persistence",
+            "run the same bundle on Mac, Windows, and Linux"
+        ]
+    });
+    let transcript_json = serde_json::to_string_pretty(&transcript)? + "\n";
+    fs::write(workspace.join("port-result.json"), &transcript_json)?;
+    if let Some(path) = transcript_path {
+        if path.exists() {
+            anyhow::bail!(
+                "{} already exists; choose another --transcript path",
+                path.display()
+            );
+        }
+        fs::write(path, &transcript_json).with_context(|| format!("write {}", path.display()))?;
+    }
+
+    println!();
+    println!("Created {}", output.display());
+    println!("  source unchanged: yes");
+    println!("  sha256: {bundle_sha256}");
+    println!("  repair attempts used: {repairs_used}");
+    println!("  requested access:");
+    for permission in &permissions {
+        println!("    - {permission}");
+    }
+    println!();
+    println!(
+        "Build and permission checks passed. Compare the original and ported \
+         user journeys before sharing this app."
+    );
+    Ok(())
+}
+
+fn sha256_file(path: &Path) -> Result<String> {
+    let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+struct ValidatedPortCandidate {
+    wasm: PathBuf,
+    manifest: krate_manifest::Manifest,
+}
+
+fn validate_port_candidate(
+    candidate: &Path,
+) -> std::result::Result<ValidatedPortCandidate, String> {
+    for required in ["Cargo.toml", "src/lib.rs", "manifest.toml"] {
+        if !candidate.join(required).is_file() {
+            return Err(format!("candidate/{required} is missing"));
+        }
+    }
+
+    let wasm = build_component_captured(candidate)?;
+    let wasm_bytes =
+        fs::read(&wasm).map_err(|error| format!("could not read {}: {error}", wasm.display()))?;
+    let bad = krate_bundle::imports::non_krate_imports(&wasm_bytes)
+        .map_err(|error| format!("could not inspect component imports: {error}"))?;
+    if !bad.is_empty() {
+        return Err(format!(
+            "the component imports unsupported host APIs: {}",
+            bad.join(", ")
+        ));
+    }
+
+    let manifest_src = candidate.join("manifest.toml");
+    let manifest = krate_manifest::Manifest::parse_file(&manifest_src)
+        .map_err(|error| format!("invalid candidate/manifest.toml: {error:#}"))?;
+    Ok(ValidatedPortCandidate { wasm, manifest })
+}
+
+fn first_error_line(error: &str) -> &str {
+    error
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("candidate validation failed")
+}
+
+fn ensure_original_source_unchanged(
+    original_plan: &krate_port::PortPlan,
+    original_source: &Path,
+) -> Result<()> {
+    let after_plan = krate_port::analyze(original_source)
+        .with_context(|| format!("re-check original source {}", original_source.display()))?;
+    if serde_json::to_vec(original_plan)? != serde_json::to_vec(&after_plan)? {
+        anyhow::bail!(
+            "the original source changed while the port agent was running; \
+             Krate stopped before packaging. Review the source and workspace."
+        );
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct PortRepair<'a> {
+    attempt: u8,
+    error_path: &'a Path,
+}
+
+fn run_port_repair(
+    author: PortAuthor<'_>,
+    workspace: &Path,
+    source: &Path,
+    candidate: &Path,
+    plan: &Path,
+    task: &Path,
+    repair: PortRepair<'_>,
+) -> Result<()> {
+    match author {
+        PortAuthor::Claude => run_claude_port_repair(
+            workspace,
+            source,
+            candidate,
+            task,
+            repair.attempt,
+            repair.error_path,
+        ),
+        PortAuthor::Command(command) => run_port_author_command(
+            command,
+            workspace,
+            source,
+            candidate,
+            plan,
+            task,
+            Some((repair.attempt, repair.error_path)),
+        ),
+    }
+}
+
+fn run_port_author_command(
+    command: &str,
+    workspace: &Path,
+    source: &Path,
+    candidate: &Path,
+    plan: &Path,
+    task: &Path,
+    repair: Option<(u8, &Path)>,
+) -> Result<()> {
+    let shell = if cfg!(windows) { "bash" } else { "sh" };
+    let mut child = ProcessCommand::new(shell);
+    child
+        .arg("-c")
+        .arg(command)
+        .current_dir(workspace)
+        .env("KRATE_PORT_SOURCE", source)
+        .env("KRATE_PORT_CANDIDATE", candidate)
+        .env("KRATE_PORT_PLAN", plan)
+        .env("KRATE_PORT_TASK", task);
+    if let Some((attempt, error_path)) = repair {
+        child
+            .env("KRATE_PORT_REPAIR_ATTEMPT", attempt.to_string())
+            .env("KRATE_PORT_REPAIR_LOG", error_path);
+    }
+    let status = child.status().context("run --author-cmd")?;
+    if !status.success() {
+        anyhow::bail!("port author command failed");
+    }
+    Ok(())
+}
+
+fn run_claude_port(workspace: &Path, source: &Path, candidate: &Path, task: &Path) -> Result<()> {
+    let task_text = fs::read_to_string(task).with_context(|| format!("read {}", task.display()))?;
+    let prompt = format!(
+        "{task_text}\n\
+\n\
+The source path and candidate path are absolute:\n\
+- source, read only: {source}\n\
+- candidate, edit here: {candidate}\n\
+\n\
+Use Read to understand the source. Use Edit or Write only inside the candidate\n\
+directory. When finished, write a short PORT_RESULT.md in the workspace listing\n\
+what was preserved, changed, and not yet supported. Do not explain in chat;\n\
+perform the port.",
+        source = source.display(),
+        candidate = candidate.display(),
+    );
+    let transcript = workspace.join(".agent-transcript.txt");
+    let file = fs::File::create(&transcript).ok();
+    let mut command = ProcessCommand::new("claude");
+    command
+        .arg("-p")
+        .arg(prompt)
+        .arg("--allowed-tools")
+        .arg("Read,Edit,Write")
+        .arg("--permission-mode")
+        .arg("acceptEdits")
+        .current_dir(workspace);
+    if let Some(file) = &file {
+        if let Ok(clone) = file.try_clone() {
+            command.stdout(std::process::Stdio::from(clone));
+        }
+        if let Ok(clone) = file.try_clone() {
+            command.stderr(std::process::Stdio::from(clone));
+        }
+    }
+    let status = command
+        .status()
+        .context("run the `claude` CLI (is Claude Code installed and signed in?)")?;
+    if !status.success() {
+        anyhow::bail!(
+            "the Claude port agent did not finish successfully; see {}",
+            transcript.display()
+        );
+    }
+    Ok(())
+}
+
+fn run_claude_port_repair(
+    workspace: &Path,
+    source: &Path,
+    candidate: &Path,
+    task: &Path,
+    attempt: u8,
+    error_path: &Path,
+) -> Result<()> {
+    let task_text = fs::read_to_string(task).with_context(|| format!("read {}", task.display()))?;
+    let error_text =
+        fs::read_to_string(error_path).with_context(|| format!("read {}", error_path.display()))?;
+    let prompt = format!(
+        "{task_text}\n\
+\n\
+The previous candidate failed Krate validation. This is repair attempt\n\
+{attempt}. Read the candidate and fix only the reported failure. Do not weaken\n\
+the manifest, remove behavior, add WASI imports, or edit the source snapshot.\n\
+\n\
+Source snapshot, read only: {source}\n\
+Candidate, edit here: {candidate}\n\
+\n\
+Validation error:\n\
+{error_text}\n\
+\n\
+Use Read to inspect files and Edit or Write only inside the candidate. Do not\n\
+explain in chat. Make the smallest complete repair.",
+        source = source.display(),
+        candidate = candidate.display(),
+    );
+    let transcript = workspace.join(format!(".agent-repair-{attempt}.txt"));
+    let file = fs::File::create(&transcript).ok();
+    let mut command = ProcessCommand::new("claude");
+    command
+        .arg("-p")
+        .arg(prompt)
+        .arg("--allowed-tools")
+        .arg("Read,Edit,Write")
+        .arg("--permission-mode")
+        .arg("acceptEdits")
+        .current_dir(workspace);
+    if let Some(file) = &file {
+        if let Ok(clone) = file.try_clone() {
+            command.stdout(std::process::Stdio::from(clone));
+        }
+        if let Ok(clone) = file.try_clone() {
+            command.stderr(std::process::Stdio::from(clone));
+        }
+    }
+    let status = command
+        .status()
+        .context("run the `claude` CLI for a port repair")?;
+    if !status.success() {
+        anyhow::bail!(
+            "the Claude repair attempt did not finish successfully; see {}",
+            transcript.display()
+        );
+    }
+    Ok(())
+}
+
+fn verify_packed_app(output: &Path, manifest: &krate_manifest::Manifest) -> Result<String> {
+    let gating = gating_capability(manifest);
+    let verify_dir = tempfile::tempdir().context("create port verification dir")?;
+    let verify_arg =
+        prepare_verify_dir(verify_dir.path(), manifest)?.unwrap_or_else(|| "quick".to_string());
+    let bundle = absolute_output_path(output)?;
+
+    let allow_exit = run_self(
+        verify_dir.path(),
+        &[
+            "run",
+            bundle.to_str().context("bundle path is not valid UTF-8")?,
+            "--untrusted",
+            "--auto-grant",
+            "--",
+            &verify_arg,
+        ],
+    )?;
+    if allow_exit != 0 {
+        anyhow::bail!("the ported app failed with all grants (exit {allow_exit})");
+    }
+
+    let mut deny_args = vec!["run".to_string(), bundle.to_string_lossy().into_owned()];
+    for capability in &manifest.capabilities {
+        if capability.cap == gating {
+            continue;
+        }
+        deny_args.push("--grant".to_string());
+        deny_args.push(capability.cap.clone());
+    }
+    deny_args.push("--".to_string());
+    deny_args.push(verify_arg);
+    let deny_refs: Vec<&str> = deny_args.iter().map(String::as_str).collect();
+    let deny_exit = run_self(verify_dir.path(), &deny_refs)?;
+    if deny_exit != 5 {
+        anyhow::bail!(
+            "withholding {gating} should refuse the ported app with exit 5, got {deny_exit}"
+        );
+    }
+    Ok(gating)
 }
 
 struct RunRequest {
@@ -565,9 +1608,16 @@ struct ManifestInitRequest {
 
 /// Write a `.krate` bundle from a component and its manifest.
 fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
-    let size = krate_bundle::pack(manifest, file, output)
+    let assets = manifest
+        .parent()
+        .map(|parent| parent.join("assets"))
+        .filter(|path| path.is_dir());
+    let size = krate_bundle::pack_with_assets(manifest, file, assets.as_deref(), output)
         .with_context(|| format!("could not pack {}", output.display()))?;
     println!("wrote {} ({size} bytes)", output.display());
+    if let Some(assets) = assets {
+        println!("included portable assets from {}", assets.display());
+    }
     Ok(0)
 }
 
@@ -731,11 +1781,13 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     let kind = match req.kind {
         Some(CreateKind::Checklist) => AppKind::Checklist,
         Some(CreateKind::WordFrequency) => AppKind::WordFrequency,
+        Some(CreateKind::VoicePrompter) => AppKind::VoicePrompter,
         None => AppKind::infer(&req.request),
     };
     let default_name = match kind {
         AppKind::Checklist => "checklist",
         AppKind::WordFrequency => "word-count",
+        AppKind::VoicePrompter => "voice-prompter",
     };
     // Prefer a name taken from the request itself. The app's name becomes its
     // window title and its data folder, and the data folder is what the
@@ -792,6 +1844,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         let mut request = match kind {
             AppKind::Checklist => AppRequest::checklist(&name),
             AppKind::WordFrequency => AppRequest::word_frequency(&name),
+            AppKind::VoicePrompter => AppRequest::voice_prompter(&name),
         };
         request.description = req.request.clone();
         let app = generate(&request, &sdk_prefix).map_err(|err| anyhow::anyhow!(err))?;
@@ -805,6 +1858,15 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         "built-in generator".to_string()
     };
     steps.push(serde_json::json!({"step": "author", "detail": author_note}));
+
+    if matches!(kind, AppKind::VoicePrompter) {
+        let model = speech_model::provision(&app_dir, req.json)
+            .context("prepare the self-contained local speech model")?;
+        steps.push(serde_json::json!({
+            "step": "asset",
+            "detail": format!("verified local speech model: {}", model.display()),
+        }));
+    }
 
     // Step 2: build to a wasm component.
     if !req.json {
@@ -837,8 +1899,14 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     fs::copy(&wasm, &code)?;
     let packed_manifest = pack_dir.path().join("manifest.toml");
     write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
-    let size = krate_bundle::pack(&packed_manifest, &code, &req.output)
-        .with_context(|| format!("pack {}", req.output.display()))?;
+    let assets = app_dir.join("assets");
+    let size = krate_bundle::pack_with_assets(
+        &packed_manifest,
+        &code,
+        assets.is_dir().then_some(assets.as_path()),
+        &req.output,
+    )
+    .with_context(|| format!("pack {}", req.output.display()))?;
     steps.push(serde_json::json!({"step": "pack", "detail": format!("{} bytes", size)}));
 
     // Step 5: verify the permission wall by running the packed bundle with all
@@ -1014,9 +2082,10 @@ fn run_author_agent(agent: AgentKind) -> Result<u8> {
         .context("KRATE_APP_DIR is not set; run this through `krate create --agent`")?;
     let request =
         std::env::var("KRATE_REQUEST").unwrap_or_else(|_| "a small useful app".to_string());
+    let kind = std::env::var("KRATE_APP_KIND").unwrap_or_else(|_| "checklist".to_string());
 
     match agent {
-        AgentKind::Claude => run_claude_author(&app_dir, &request),
+        AgentKind::Claude => run_claude_author(&app_dir, &request, &kind),
     }
 }
 
@@ -1026,42 +2095,58 @@ fn run_author_agent(agent: AgentKind) -> Result<u8> {
 /// non-hanging base is what makes AI authoring dependable rather than a coin
 /// flip: the model adapts real working code instead of writing the strict
 /// no_std/`krate:*` discipline from a blank page.
-fn claude_author_prompt(app_dir: &str, request: &str) -> String {
+fn claude_author_prompt(app_dir: &str, request: &str, kind: &str) -> String {
+    let starter = match kind {
+        "voice-prompter" => {
+            "a voice prompter GUI that opens a window, displays a script, requests \
+microphone access, transcribes each spoken phrase locally with its bundled model, and \
+advances when the words match the current line. Preserve its audio.capture calls, \
+streaming local speech match, visible listening state, manual controls, and quick \
+verification path"
+        }
+        "word-frequency" => {
+            "a command-line word-frequency app that reads only its granted input file \
+and prints a report. Preserve its bounded input handling and quick verification path"
+        }
+        _ => {
+            "a checklist GUI that opens a window, shows checkbox rows, lets the user \
+add and toggle items, and saves them to its granted folder. Preserve its window, event, \
+save, and quick verification paths"
+        }
+    };
     format!(
         "You are writing a Krate desktop app in Rust, from the user's request.\n\
 \n\
 A COMPILING, WORKING starter is already in {app_dir} (Cargo.toml, src/lib.rs,\n\
-manifest.toml): a checklist GUI that opens a window, shows checkbox rows, lets\n\
-the user add and toggle items, and saves them to its granted folder. Read it\n\
-first. It already follows every rule below and renders correctly, so it is the\n\
-safest base to build from.\n\
+manifest.toml): {starter}. Read it first. It already follows every rule below\n\
+and works, so it is the safest base to build from.\n\
 \n\
-Your job: make the app match the request. If the request is list or tracker\n\
-shaped, adapt the starter (window title, on-screen heading, seed items,\n\
-wording). If it is genuinely different, rewrite src/lib.rs following the same\n\
-structure and rules.\n\
+Your job: make the app match the request. Adapt the starter's title, content,\n\
+controls, and behavior while keeping every capability the resulting app really\n\
+needs in manifest.toml. If the request is genuinely different, rewrite\n\
+src/lib.rs following the same structure and rules.\n\
 \n\
 Request: {request}\n\
 \n\
 HARD RULES (the starter obeys all of these; do not break them):\n\
 - The app is no_std plus alloc. Do not add any std usage.\n\
-- Import only from the same bindings modules the starter uses (its ui, io, and\n\
-  fs imports). Never import wasi interfaces or std io.\n\
+- Import only from the Krate bindings modules already used by the starter.\n\
+  Never import wasi interfaces or std io.\n\
 - Build strings with the starter's pure_string and number_string helpers,\n\
   never with the format macro.\n\
-- Keep the same window, tree, event, and save structure so it renders and\n\
-  saves the same way.\n\
-- A GUI app must still exit promptly when its first argument is the literal\n\
+- Keep the starter's working host calls and event structure unless the request\n\
+  genuinely requires a change.\n\
+- The app must still exit promptly when its first argument is the literal\n\
   word quick. The starter already does this; keep it.\n\
 \n\
-After editing, the app must still open a window, show its rows, add and toggle\n\
-items, save to the granted folder, and exit on quick. Use the Read and Edit\n\
-(or Write) tools. Do not explain; just make the app."
+After editing, the app must build, match the request, request only the access it\n\
+uses, and exit on quick. Use the Read and Edit (or Write) tools. Do not explain;\n\
+just make the app."
     )
 }
 
-fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
-    let prompt = claude_author_prompt(app_dir, request);
+fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
+    let prompt = claude_author_prompt(app_dir, request, kind);
     let transcript = Path::new(app_dir).join(".agent-transcript.txt");
     let file = fs::File::create(&transcript).ok();
 
@@ -1106,6 +2191,7 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
     let mut request = match ctx.kind {
         AppKind::Checklist => AppRequest::checklist(ctx.name),
         AppKind::WordFrequency => AppRequest::word_frequency(ctx.name),
+        AppKind::VoicePrompter => AppRequest::voice_prompter(ctx.name),
     };
     request.description = ctx.request.to_string();
     if let Ok(app) = generate(&request, ctx.sdk_prefix) {
@@ -1126,6 +2212,7 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
         .env("KRATE_APP_DIR", ctx.app_dir)
         .env("KRATE_APP_NAME", ctx.name)
         .env("KRATE_REQUEST", ctx.request)
+        .env("KRATE_APP_KIND", app_kind_name(ctx.kind))
         // The materialized SDK: the agent resolves WIT/bindings from here.
         .env("KRATE_SDK_DIR", ctx.sdk_dir)
         .status()
@@ -1140,6 +2227,14 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn app_kind_name(kind: krate_author::AppKind) -> &'static str {
+    match kind {
+        krate_author::AppKind::Checklist => "checklist",
+        krate_author::AppKind::WordFrequency => "word-frequency",
+        krate_author::AppKind::VoicePrompter => "voice-prompter",
+    }
 }
 
 /// The briefing dropped into the app dir for an agent. States the one hard rule
@@ -1205,13 +2300,13 @@ fn rustup_toolchain_bin() -> Option<PathBuf> {
 ///   shell that puts `~/.cargo/bin` last still finds it.
 /// - rustup's active-toolchain bin is prepended, so a Homebrew `cargo`/`rustc`
 ///   that shadows rustup (and lacks the wasm target) does not get used.
-fn build_component(app_dir: &Path) -> Result<PathBuf> {
+fn component_build_command(app_dir: &Path) -> ProcessCommand {
     let resolved = resolve_tool("cargo-component");
     let program: std::ffi::OsString = match &resolved {
         Some(path) => path.clone().into_os_string(),
         None => "cargo-component".into(),
     };
-    let mut command = std::process::Command::new(&program);
+    let mut command = ProcessCommand::new(&program);
     command.arg("build").arg("--release").current_dir(app_dir);
 
     // Build the child PATH: rustup's toolchain bin first (so a rustup cargo/rustc
@@ -1231,7 +2326,22 @@ fn build_component(app_dir: &Path) -> Result<PathBuf> {
             command.env("PATH", joined);
         }
     }
+    command
+}
 
+fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
+    let release = app_dir.join("target/wasm32-wasip1/release");
+    for entry in fs::read_dir(&release).with_context(|| format!("read {}", release.display()))? {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("wasm") {
+            return Ok(path);
+        }
+    }
+    anyhow::bail!("no wasm produced in {}", release.display())
+}
+
+fn build_component(app_dir: &Path) -> Result<PathBuf> {
+    let mut command = component_build_command(app_dir);
     let status = command
         .status()
         .context("run cargo-component (is it installed? `cargo install cargo-component`)")?;
@@ -1243,14 +2353,33 @@ fn build_component(app_dir: &Path) -> Result<PathBuf> {
              `brew install rust`) may be shadowing rustup on your PATH."
         );
     }
-    let release = app_dir.join("target/wasm32-wasip1/release");
-    for entry in fs::read_dir(&release).with_context(|| format!("read {}", release.display()))? {
-        let path = entry?.path();
-        if path.extension().and_then(|e| e.to_str()) == Some("wasm") {
-            return Ok(path);
+    find_built_component(app_dir)
+}
+
+fn build_component_captured(app_dir: &Path) -> std::result::Result<PathBuf, String> {
+    let mut command = component_build_command(app_dir);
+    let output = command.output().map_err(|error| {
+        format!(
+            "could not run cargo-component: {error}. Is it installed with `cargo install cargo-component`?"
+        )
+    })?;
+    if !output.status.success() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let mut detail = format!(
+            "cargo-component build failed with {}\n\nstdout:\n{}\n\nstderr:\n{}",
+            output.status,
+            stdout.trim(),
+            stderr.trim()
+        );
+        const MAX_REPAIR_ERROR_BYTES: usize = 24 * 1024;
+        if detail.len() > MAX_REPAIR_ERROR_BYTES {
+            detail.truncate(MAX_REPAIR_ERROR_BYTES);
+            detail.push_str("\n[build output truncated]");
         }
+        return Err(detail);
     }
-    anyhow::bail!("no wasm produced in {}", release.display())
+    find_built_component(app_dir).map_err(|error| format!("{error:#}"))
 }
 
 /// The capability whose grant gates the app — the required one the verify step
@@ -1488,7 +2617,7 @@ fn run_component(request: RunRequest) -> Result<u8> {
     validate_app_args(&request.app_args)?;
 
     // Held for the whole run: dropping it removes the extracted bundle.
-    let (file, bundle_manifest, _bundle) =
+    let (file, bundle_manifest, bundle) =
         resolve_run_target(&request.target, request.insecure_http)?;
 
     if !file.exists() {
@@ -1612,14 +2741,6 @@ fn run_component(request: RunRequest) -> Result<u8> {
         )?;
     }
 
-    if let Some(manifest) = manifest {
-        let world = manifest.app_world()?;
-        if !world.is_runnable() && !matches!(world, AppWorld::Phase3Gui) {
-            eprintln!("unsupported app world for run: {}", world.world_name());
-            return Ok(PHASE3_GUI_UNIMPLEMENTED_EXIT);
-        }
-    }
-
     let config = Config {
         fuel: request.fuel,
         memory_bytes: request
@@ -1637,6 +2758,9 @@ fn run_component(request: RunRequest) -> Result<u8> {
             millis => Some(millis),
         },
         sandbox_root: request.sandbox_root,
+        bundle_assets_root: bundle
+            .as_ref()
+            .and_then(|bundle| bundle.assets_path().map(Path::to_path_buf)),
         phase3_ui_mode: if request.native_window {
             krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype
         } else {
@@ -1644,27 +2768,33 @@ fn run_component(request: RunRequest) -> Result<u8> {
         },
     };
     let runtime = Runtime::new(&config)?;
+    let runtime_world = match manifest.map(Manifest::app_world).transpose()? {
+        Some(AppWorld::Phase2Cli) => RuntimeWorld::Cli,
+        Some(AppWorld::Phase3Gui) => RuntimeWorld::Gui,
+        None => RuntimeWorld::Auto,
+    };
 
     if request.json {
         let started = std::time::Instant::now();
-        let (exit, stdout, cli_code) = match runtime.run_file_captured(&request.file, &config) {
-            Ok((RunOutcome::Exited(code), stdout)) => {
-                let cli_code = code.clamp(0, 255) as u8;
-                (RunJsonExit::exited(code), stdout, cli_code)
-            }
-            Ok((RunOutcome::LimitExceeded(message), stdout)) => {
-                (RunJsonExit::failure("limit-exceeded", &message), stdout, 4)
-            }
-            Err(RuntimeError::InvalidComponent(message)) => (
-                RunJsonExit::failure("invalid-component", &message),
-                Vec::new(),
-                2,
-            ),
-            Err(RuntimeError::Trap(message)) => {
-                (RunJsonExit::failure("trap", &message), Vec::new(), 3)
-            }
-            Err(err) => return Err(err.into()),
-        };
+        let (exit, stdout, cli_code) =
+            match runtime.run_file_captured_for_world(&request.file, &config, runtime_world) {
+                Ok((RunOutcome::Exited(code), stdout)) => {
+                    let cli_code = code.clamp(0, 255) as u8;
+                    (RunJsonExit::exited(code), stdout, cli_code)
+                }
+                Ok((RunOutcome::LimitExceeded(message), stdout)) => {
+                    (RunJsonExit::failure("limit-exceeded", &message), stdout, 4)
+                }
+                Err(RuntimeError::InvalidComponent(message)) => (
+                    RunJsonExit::failure("invalid-component", &message),
+                    Vec::new(),
+                    2,
+                ),
+                Err(RuntimeError::Trap(message)) => {
+                    (RunJsonExit::failure("trap", &message), Vec::new(), 3)
+                }
+                Err(err) => return Err(err.into()),
+            };
         let duration_ms = started.elapsed().as_millis();
         print_run_json(
             manifest,
@@ -1676,7 +2806,7 @@ fn run_component(request: RunRequest) -> Result<u8> {
         return Ok(cli_code);
     }
 
-    match runtime.run_file(&request.file, &config) {
+    match runtime.run_file_for_world(&request.file, &config, runtime_world) {
         Ok(RunOutcome::Exited(code)) => Ok(code.clamp(0, 255) as u8),
         Ok(RunOutcome::LimitExceeded(message)) => {
             eprintln!("limit exceeded: {message}");
@@ -1941,6 +3071,8 @@ fn human_label(cap: &Capability) -> String {
         ("ui", "clipboard") if cap.resource() == Some("write") => {
             "copy to the clipboard".to_string()
         }
+        ("audio", "capture") => "listen through your microphone".to_string(),
+        ("audio", "playback") => "play sound through your speakers".to_string(),
         ("time", "clock") => "read the current time".to_string(),
         ("io", "stdout") => "print output".to_string(),
         // Unknown module/action: the technical form is the honest fallback.
@@ -3067,9 +4199,10 @@ fn home_dir() -> Option<PathBuf> {
 #[cfg(test)]
 mod create_tests {
     use super::{
-        has_tool, human_label, name_from_request, toml_path, validate_create_request,
-        MAX_DERIVED_NAME_WORDS,
+        app_kind_name, claude_author_prompt, has_tool, human_label, name_from_request, toml_path,
+        validate_create_request, MAX_DERIVED_NAME_WORDS,
     };
+    use krate_author::AppKind;
     use krate_manifest::Capability;
     use std::path::Path;
 
@@ -3090,6 +4223,10 @@ mod create_tests {
             "open a window on your screen"
         );
         assert_eq!(human_label(&cap("time.clock")), "read the current time");
+        assert_eq!(
+            human_label(&cap("audio.capture")),
+            "listen through your microphone"
+        );
         assert_eq!(human_label(&cap("io.stdout")), "print output");
     }
 
@@ -3179,5 +4316,29 @@ mod create_tests {
             "krate-definitely-not-a-real-tool-xyz",
             &["--version"]
         ));
+    }
+
+    #[test]
+    fn claude_gets_the_starter_for_the_requested_app_kind() {
+        let voice = claude_author_prompt(
+            "/tmp/app",
+            "make a voice prompter that follows me",
+            "voice-prompter",
+        );
+        assert!(voice.contains("microphone access"));
+        assert!(voice.contains("audio.capture"));
+        assert!(voice.contains("streaming local speech match"));
+        assert!(!voice.contains("a checklist GUI"));
+
+        let checklist = claude_author_prompt("/tmp/app", "make a grocery list", "checklist");
+        assert!(checklist.contains("a checklist GUI"));
+        assert!(!checklist.contains("streaming local speech match"));
+    }
+
+    #[test]
+    fn app_kinds_have_stable_agent_environment_names() {
+        assert_eq!(app_kind_name(AppKind::Checklist), "checklist");
+        assert_eq!(app_kind_name(AppKind::WordFrequency), "word-frequency");
+        assert_eq!(app_kind_name(AppKind::VoicePrompter), "voice-prompter");
     }
 }

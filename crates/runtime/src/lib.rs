@@ -1,7 +1,9 @@
-//! Krate runtime: Phase 1 proof of concept.
+//! Krate component runtime.
 //!
-//! Phase 1 intentionally exposes only one temporary host interface:
-//! `krate:phase1/host` with `print(string)` and `exit(s32)`.
+//! The runtime serves the current CLI and GUI worlds through capability-checked
+//! host adapters. Raw components may still use automatic legacy world
+//! detection, while manifest-backed `.krate` runs select their declared world
+//! explicitly.
 
 use std::{
     cell::RefCell,
@@ -24,6 +26,7 @@ pub mod phase3_ui;
 pub mod uapi;
 pub mod uapi_dispatch;
 
+mod audio_capture;
 pub mod embed;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_bindings;
@@ -35,6 +38,7 @@ pub mod phase2_host;
 pub mod phase3_gui_bindings;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase3_gui_host;
+mod speech_transcription;
 
 #[cfg(feature = "phase2-bindings")]
 use krate_adapter_common::locale::{
@@ -108,6 +112,8 @@ pub struct Config {
     pub default_http_timeout_millis: Option<u32>,
     /// Root directory used to resolve relative Phase 2 filesystem paths.
     pub sandbox_root: PathBuf,
+    /// Read-only resources extracted from the `.krate` bundle itself.
+    pub bundle_assets_root: Option<PathBuf>,
     /// Host UI backend mode for Phase 3 `gui` world runs.
     pub phase3_ui_mode: phase3_ui::Phase3HostUiMode,
 }
@@ -125,6 +131,7 @@ impl Default for Config {
             max_http_response_bytes: DEFAULT_MAX_HTTP_RESPONSE_BYTES,
             default_http_timeout_millis: Some(DEFAULT_HTTP_TIMEOUT_MILLIS),
             sandbox_root: PathBuf::from("."),
+            bundle_assets_root: None,
             phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
         }
     }
@@ -135,6 +142,19 @@ impl Default for Config {
 pub enum RunOutcome {
     Exited(i32),
     LimitExceeded(String),
+}
+
+/// Component world selected by a caller.
+///
+/// `Auto` exists for raw `.wasm` compatibility. A `.krate` bundle has a
+/// validated manifest and should select `Cli` or `Gui` so an instantiation
+/// error is reported against the declared contract rather than being used as
+/// a world-detection signal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeWorld {
+    Auto,
+    Cli,
+    Gui,
 }
 
 /// Errors surfaced by the Phase 1 runtime.
@@ -177,16 +197,34 @@ impl Runtime {
     }
 
     pub fn run_file(&self, path: impl AsRef<Path>, config: &Config) -> Result<RunOutcome> {
+        self.run_file_for_world(path, config, RuntimeWorld::Auto)
+    }
+
+    pub fn run_file_for_world(
+        &self,
+        path: impl AsRef<Path>,
+        config: &Config,
+        world: RuntimeWorld,
+    ) -> Result<RunOutcome> {
         let bytes = read_path_on_host(path.as_ref())?;
-        self.run_bytes(&bytes, config)
+        self.run_bytes_for_world(&bytes, config, world)
     }
 
     pub fn run_bytes(&self, bytes: &[u8], config: &Config) -> Result<RunOutcome> {
-        self.run_bytes_with_output(bytes, config, OutputMode::Stdout)
+        self.run_bytes_for_world(bytes, config, RuntimeWorld::Auto)
+    }
+
+    pub fn run_bytes_for_world(
+        &self,
+        bytes: &[u8],
+        config: &Config,
+        world: RuntimeWorld,
+    ) -> Result<RunOutcome> {
+        self.run_bytes_with_output(bytes, config, OutputMode::Stdout, world)
     }
 
     pub fn run_bytes_silent(&self, bytes: &[u8], config: &Config) -> Result<RunOutcome> {
-        self.run_bytes_with_output(bytes, config, OutputMode::Sink)
+        self.run_bytes_with_output(bytes, config, OutputMode::Sink, RuntimeWorld::Auto)
     }
 
     /// Run a component while capturing everything it writes to stdout.
@@ -198,9 +236,18 @@ impl Runtime {
         bytes: &[u8],
         config: &Config,
     ) -> Result<(RunOutcome, Vec<u8>)> {
+        self.run_bytes_captured_for_world(bytes, config, RuntimeWorld::Auto)
+    }
+
+    pub fn run_bytes_captured_for_world(
+        &self,
+        bytes: &[u8],
+        config: &Config,
+        world: RuntimeWorld,
+    ) -> Result<(RunOutcome, Vec<u8>)> {
         let buffer = Rc::new(RefCell::new(Vec::new()));
         let outcome =
-            self.run_bytes_with_output(bytes, config, OutputMode::Capture(buffer.clone()))?;
+            self.run_bytes_with_output(bytes, config, OutputMode::Capture(buffer.clone()), world)?;
         let captured = buffer.borrow().clone();
         Ok((outcome, captured))
     }
@@ -211,8 +258,17 @@ impl Runtime {
         path: impl AsRef<Path>,
         config: &Config,
     ) -> Result<(RunOutcome, Vec<u8>)> {
+        self.run_file_captured_for_world(path, config, RuntimeWorld::Auto)
+    }
+
+    pub fn run_file_captured_for_world(
+        &self,
+        path: impl AsRef<Path>,
+        config: &Config,
+        world: RuntimeWorld,
+    ) -> Result<(RunOutcome, Vec<u8>)> {
         let bytes = read_path_on_host(path.as_ref())?;
-        self.run_bytes_captured(&bytes, config)
+        self.run_bytes_captured_for_world(&bytes, config, world)
     }
 
     pub fn load_component(&self, bytes: &[u8]) -> Result<LoadedComponent> {
@@ -227,7 +283,7 @@ impl Runtime {
         component: &LoadedComponent,
         config: &Config,
     ) -> Result<RunOutcome> {
-        self.run_component_with_output(component, config, OutputMode::Sink)
+        self.run_component_with_output(component, config, OutputMode::Sink, RuntimeWorld::Auto)
     }
 
     fn run_bytes_with_output(
@@ -235,12 +291,33 @@ impl Runtime {
         bytes: &[u8],
         config: &Config,
         output: OutputMode,
+        world: RuntimeWorld,
     ) -> Result<RunOutcome> {
         let component = self.load_component(bytes)?;
-        self.run_component_with_output(&component, config, output)
+        self.run_component_with_output(&component, config, output, world)
     }
 
     fn run_component_with_output(
+        &self,
+        component: &LoadedComponent,
+        config: &Config,
+        output: OutputMode,
+        world: RuntimeWorld,
+    ) -> Result<RunOutcome> {
+        match world {
+            RuntimeWorld::Auto => self.run_component_auto(component, config, output),
+            #[cfg(feature = "phase2-bindings")]
+            RuntimeWorld::Cli => self.run_phase2_component(component, config, output),
+            #[cfg(feature = "phase2-bindings")]
+            RuntimeWorld::Gui => self.run_phase3_gui_component(component, config, output),
+            #[cfg(not(feature = "phase2-bindings"))]
+            RuntimeWorld::Cli | RuntimeWorld::Gui => Err(RuntimeError::Instantiate(
+                "the runtime was built without current Krate world bindings".to_string(),
+            )),
+        }
+    }
+
+    fn run_component_auto(
         &self,
         component: &LoadedComponent,
         config: &Config,
@@ -360,15 +437,16 @@ impl Runtime {
         config: &Config,
         output: OutputMode,
     ) -> Result<RunOutcome> {
-        use phase2_bindings::krate::{fs, io, locale, net, time};
-        use phase3_gui_bindings::krate::{audio, gfx, ui};
+        use phase2_bindings::krate::{fs, io, locale, net, resources, time};
+        use phase3_gui_bindings::krate::{audio, gfx, speech, ui};
 
         let mut store = self.new_store(config, output)?;
         let gui_host = phase3_gui_host::Phase3GuiHost::new(
             UapiGuard::new(config.session_policy.clone()),
             config.phase3_ui_mode,
         )
-        .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
+        .map_err(|err| RuntimeError::Instantiate(err.to_string()))?
+        .with_asset_root(config.bundle_assets_root.clone());
         store.data_mut().phase3_gui = Some(gui_host);
 
         let mut linker = wasmtime::component::Linker::new(&self.engine);
@@ -405,6 +483,7 @@ impl Runtime {
         link_phase2!(time::sleep);
         link_phase2!(locale::info);
         link_phase2!(locale::format);
+        link_phase2!(resources::assets);
 
         link_gui!(ui::types);
         link_gui!(ui::window);
@@ -419,6 +498,7 @@ impl Runtime {
         link_gui!(audio::types);
         link_gui!(audio::playback);
         link_gui!(audio::capture);
+        link_gui!(speech::transcription);
 
         let bindings =
             phase3_gui_bindings::Gui::instantiate(&mut store, &component.component, &linker)
@@ -479,7 +559,8 @@ impl HostState {
                     config.sandbox_root.clone(),
                 )),
                 config.default_http_timeout_millis,
-            ),
+            )
+            .with_asset_root(config.bundle_assets_root.clone()),
             #[cfg(feature = "phase2-bindings")]
             phase3_gui: None,
         })

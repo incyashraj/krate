@@ -159,6 +159,20 @@ krate create \
 Krate writes the app, builds it, checks what system features it uses, packages
 it, and confirms that denied access is blocked before writing the file.
 
+The development build can also make a self-contained voice prompter:
+
+```bash
+krate create \
+  "Make a voice prompter that listens to my voice and follows my script" \
+  --output voice-prompter.krate
+```
+
+On the first voice app, Krate downloads a pinned local speech model, verifies
+its SHA-256 hash, and places it inside the `.krate` file. The recipient does not
+need a speech service or network connection. Microphone audio stays in the
+local runtime, and the app receives only a bounded match score for the current
+line.
+
 The public release has two built-in examples:
 
 - a checklist app with local saving;
@@ -201,6 +215,61 @@ failures stop the package from being produced. For any other tool,
 Everything after authoring stays the same. Krate builds the result, refuses
 imports outside the Krate interfaces, packages the app, and verifies its
 requested access.
+
+## Check an existing app before porting it
+
+Krate can now inspect a source project without running or changing it:
+
+```bash
+krate port ./my-app --plan
+```
+
+The plan detects the languages and application frameworks, points to operating
+system dependencies in the source, maps supported behavior to Krate
+capabilities, and lists what must change before the app can become portable.
+Use JSON when an AI coding agent or another tool will consume the plan:
+
+```bash
+krate port ./my-app --plan --format json --output port-plan.json
+```
+
+Prepare a reviewable migration workspace before changing code:
+
+```bash
+krate port ./my-app --prepare ./my-app-port
+```
+
+The workspace contains the exact plan, a bounded AI task, a credential-filtered
+read-only source snapshot, and a compiling Krate candidate. The agent reads the
+snapshot and edits only the candidate. It is never pointed at the live project.
+
+For projects without a blocking unsupported dependency, Claude Code can
+transform that candidate and take it through Krate's build and permission
+checks:
+
+```bash
+krate port ./my-app \
+  --agent claude \
+  --prepare ./my-app-port \
+  --to my-app.krate
+```
+
+Krate rechecks the original source after the agent finishes, rejects components
+that import anything outside `krate:*`, and gives the agent the exact compiler
+or validation error for up to two bounded repair attempts. It then packages the
+result, runs it with its declared grants, and proves that withholding a required
+grant stops it.
+
+The workspace keeps:
+
+- `journeys.json`, which defines the source behavior that still needs comparison;
+- `journey-results.json`, which separates passed automated checks from unverified checks;
+- `artifact.json`, which records the bundle hash, plan hash, size, profile, and permissions;
+- `port-result.json`, which records the complete porting result and repair count.
+
+The result still needs its original user journeys tested on Mac, Windows, and
+Linux. Krate does not claim that an opaque `.app`, `.exe`, or Linux binary can
+be converted safely without its source.
 
 The public release can also return output that AI tools and scripts can read:
 
@@ -246,16 +315,23 @@ krate run app.krate --prompt
 | Capability | Current state |
 | --- | --- |
 | One `.krate` file | Working |
+| Carry and read nested app assets inside that file | Working in the development tree |
 | Mac, Windows, and Linux execution | Working |
 | Desktop windows on all three systems | Working |
 | Text input, editing, selection, and local saving | Working |
+| Microphone permission enforcement and native PCM capture | Working in the development tree |
 | File and network capabilities | Working |
 | Permission checks before app execution | Working |
 | Run a `.krate` file from an HTTPS URL | Working |
 | Create a supported app from a request | Working |
 | Let an external AI command author the app | Working |
 | JSON output for agents and scripts | Working |
-| Convert an existing native app automatically | Not available yet |
+| Analyze an existing source project and produce a port plan | Working in the development tree |
+| Prepare an isolated, reviewable source-port workspace | Working in the development tree |
+| AI-assisted source port with build, import, and permission checks | Working in the development tree for profiles without blockers |
+| Generate a voice-activated teleprompter from a request | Working in the development tree |
+| Local speech transcription and word matching | Implemented in the development tree; live model inference proof pending |
+| Convert every existing app or opaque native binary automatically | Not available |
 | Krate Cloud for publishing, discovery, publisher identity, signing, updates, and distribution | Planned |
 
 The public CI runs the project on Linux, macOS, and Windows. See
@@ -312,8 +388,12 @@ for technical detail.
 
 ## Current limitations
 
-- Krate does not convert an existing Swift, Electron, Tauri, or native app.
+- The development porting path can analyze and rewrite supported source
+  projects, but it does not yet preserve every Swift, Electron, Tauri, or
+  native application behavior.
 - The built-in author currently creates a small supported set of applications.
+- Voice apps currently carry a roughly 75 MB local English speech model. Model
+  selection and shared runtime model storage are not implemented yet.
 - A coding agent must use the current Krate APIs.
 - The public macOS app is not code-signed yet.
 - Permission review and desktop polish differ between operating systems.

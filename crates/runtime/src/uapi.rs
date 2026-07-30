@@ -18,6 +18,7 @@ pub enum UapiCall {
     Time(TimeCall),
     Locale(LocaleCall),
     Ui(UiCall),
+    Audio(AudioCall),
 }
 
 impl UapiCall {
@@ -33,7 +34,23 @@ impl UapiCall {
             Self::Time(call) => format!("time.{call}"),
             Self::Locale(call) => format!("locale.{call}"),
             Self::Ui(call) => call.to_capability_string(),
+            Self::Audio(call) => format!("audio.{call}"),
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AudioCall {
+    Playback,
+    Capture,
+}
+
+impl fmt::Display for AudioCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Playback => "playback",
+            Self::Capture => "capture",
+        })
     }
 }
 
@@ -285,6 +302,28 @@ mod tests {
             .expect_err("clipboard read should need an explicit grant");
 
         assert!(matches!(err, UapiError::Policy(PolicyError::Denied { .. })));
+    }
+
+    #[test]
+    fn phase3_microphone_capture_is_denied_by_default() {
+        let guard = UapiGuard::default();
+        let err = guard
+            .check(&UapiCall::Audio(AudioCall::Capture))
+            .expect_err("microphone capture should need an explicit grant");
+
+        assert!(matches!(err, UapiError::Policy(PolicyError::Denied { .. })));
+    }
+
+    #[test]
+    fn explicit_microphone_grant_allows_capture_calls() {
+        let policy =
+            SessionPolicy::from_cli_grants(&["audio.capture".to_string()]).expect("policy");
+        let guard = UapiGuard::new(policy);
+        let cap = guard
+            .check(&UapiCall::Audio(AudioCall::Capture))
+            .expect("capture grant should allow the call");
+
+        assert_eq!(cap.to_string(), "audio.capture");
     }
 
     #[test]

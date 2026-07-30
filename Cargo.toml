@@ -14,6 +14,7 @@ members = [
     "crates/cli",
     "crates/tools",
     "crates/author",
+    "crates/port",
 ]
 exclude = [
     "apps/krate-curl",

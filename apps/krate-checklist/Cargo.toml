@@ -25,9 +25,11 @@ world = "gui"
 "krate:net" = { path = "../../wit/krate/phase3/deps/net" }
 "krate:time" = { path = "../../wit/krate/phase3/deps/time" }
 "krate:locale" = { path = "../../wit/krate/phase3/deps/locale" }
+"krate:resources" = { path = "../../wit/krate/phase3/deps/resources" }
 "krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }
 "krate:gfx" = { path = "../../wit/krate/phase3/deps/gfx" }
 "krate:audio" = { path = "../../wit/krate/phase3/deps/audio" }
+"krate:speech" = { path = "../../wit/krate/phase3/deps/speech" }
 
 [profile.release]
 panic = "abort"

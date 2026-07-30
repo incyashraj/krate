@@ -1,4 +1,5 @@
 use std::fs;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -57,6 +58,19 @@ fn embed_sdk() {
         "crates/bindings-rust/Cargo.toml".to_string(),
         standalone.into_bytes(),
     ));
+
+    // Cache identity must follow SDK contents, including uncommitted local WIT
+    // changes. A git SHA alone reused a stale materialized SDK while developing
+    // a new interface.
+    let mut sdk_hasher = DefaultHasher::new();
+    for (path, bytes) in &files {
+        path.hash(&mut sdk_hasher);
+        bytes.hash(&mut sdk_hasher);
+    }
+    println!(
+        "cargo:rustc-env=KRATE_SDK_FINGERPRINT={:016x}",
+        sdk_hasher.finish()
+    );
 
     // Emit the embedded-file table, one include_bytes! per file.
     let mut out = String::new();

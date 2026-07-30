@@ -16,9 +16,11 @@ use krate_adapter_common::ui::{
 use krate_layout::{absolute_rect, LayoutViewport};
 
 use crate::{
-    phase3_gui_bindings::krate::{audio, gfx, ui},
+    audio_capture::{AudioCaptureRuntime, CaptureConfig, CaptureError, CaptureSampleFormat},
+    phase3_gui_bindings::krate::{audio, gfx, speech, ui},
     phase3_ui::{Phase3HostUiMode, Phase3UiDispatcher, Phase3UiRuntime, UiDispatchError},
-    uapi::UapiGuard,
+    speech_transcription::{LocalSpeechRuntime, SpeechError},
+    uapi::{AudioCall, UapiCall, UapiGuard},
 };
 
 /// How long `events.wait` sleeps between polls.
@@ -53,6 +55,10 @@ pub struct Phase3GuiHost {
     /// host synthesises a close request so the guest exits the way it would if
     /// a person had closed the window.
     idle_waits: std::cell::Cell<u32>,
+    /// Native microphone streams owned by this one sandboxed app session.
+    audio_capture: AudioCaptureRuntime,
+    /// Local speech model contexts, scoped to this one sandboxed app session.
+    speech: LocalSpeechRuntime,
 }
 
 impl Phase3GuiHost {
@@ -66,7 +72,14 @@ impl Phase3GuiHost {
             native_text: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             headless: matches!(mode, Phase3HostUiMode::HeadlessDraft),
             idle_waits: std::cell::Cell::new(0),
+            audio_capture: AudioCaptureRuntime::default(),
+            speech: LocalSpeechRuntime::default(),
         })
+    }
+
+    pub fn with_asset_root(mut self, root: Option<std::path::PathBuf>) -> Self {
+        self.speech = LocalSpeechRuntime::default().with_asset_root(root);
+        self
     }
 
     fn dispatcher(&self) -> Phase3UiDispatcher<'_> {
@@ -919,6 +932,31 @@ fn audio_unsupported() -> audio::types::AudioError {
     audio::types::AudioError::Unsupported("audio is not implemented yet".to_string())
 }
 
+fn audio_permission_denied() -> audio::types::AudioError {
+    audio::types::AudioError::PermissionDenied
+}
+
+fn capture_config(config: audio::types::StreamConfig) -> CaptureConfig {
+    CaptureConfig {
+        sample_rate: config.sample_rate,
+        channels: config.channels,
+        format: match config.format {
+            audio::types::SampleFormat::PcmS16 => CaptureSampleFormat::PcmS16,
+            audio::types::SampleFormat::Float32 => CaptureSampleFormat::Float32,
+        },
+        buffer_frames: config.buffer_frames,
+    }
+}
+
+fn capture_error(error: CaptureError) -> audio::types::AudioError {
+    match error {
+        CaptureError::InvalidStream => audio::types::AudioError::InvalidStream,
+        CaptureError::DeviceUnavailable => audio::types::AudioError::DeviceUnavailable,
+        CaptureError::InvalidConfig(message) => audio::types::AudioError::Unsupported(message),
+        CaptureError::Platform(message) => audio::types::AudioError::Platform(message),
+    }
+}
+
 impl audio::types::Host for Phase3GuiHost {}
 
 impl audio::playback::Host for Phase3GuiHost {
@@ -926,14 +964,38 @@ impl audio::playback::Host for Phase3GuiHost {
         &mut self,
         _config: audio::types::StreamConfig,
     ) -> wasmtime::Result<Result<u64, audio::types::AudioError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Playback))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
         Ok(Err(audio_unsupported()))
     }
 
     fn start(&mut self, _stream_id: u64) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Playback))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
         Ok(Err(audio_unsupported()))
     }
 
     fn stop(&mut self, _stream_id: u64) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Playback))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
         Ok(Err(audio_unsupported()))
     }
 
@@ -942,6 +1004,14 @@ impl audio::playback::Host for Phase3GuiHost {
         _stream_id: u64,
         _bytes: Vec<u8>,
     ) -> wasmtime::Result<Result<u32, audio::types::AudioError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Playback))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
         Ok(Err(audio_unsupported()))
     }
 }
@@ -949,25 +1019,149 @@ impl audio::playback::Host for Phase3GuiHost {
 impl audio::capture::Host for Phase3GuiHost {
     fn open(
         &mut self,
-        _config: audio::types::StreamConfig,
+        config: audio::types::StreamConfig,
     ) -> wasmtime::Result<Result<u64, audio::types::AudioError>> {
-        Ok(Err(audio_unsupported()))
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Capture))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
+        Ok(self
+            .audio_capture
+            .open(capture_config(config))
+            .map_err(capture_error))
     }
 
-    fn start(&mut self, _stream_id: u64) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
-        Ok(Err(audio_unsupported()))
+    fn start(&mut self, stream_id: u64) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Capture))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
+        Ok(self.audio_capture.start(stream_id).map_err(capture_error))
     }
 
-    fn stop(&mut self, _stream_id: u64) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
-        Ok(Err(audio_unsupported()))
+    fn stop(&mut self, stream_id: u64) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Capture))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
+        Ok(self.audio_capture.stop(stream_id).map_err(capture_error))
     }
 
     fn read(
         &mut self,
-        _stream_id: u64,
-        _max_bytes: u32,
+        stream_id: u64,
+        max_bytes: u32,
     ) -> wasmtime::Result<Result<Vec<u8>, audio::types::AudioError>> {
-        Ok(Err(audio_unsupported()))
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Capture))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
+        Ok(self
+            .audio_capture
+            .read(stream_id, max_bytes)
+            .map_err(capture_error))
+    }
+}
+
+impl speech::transcription::Host for Phase3GuiHost {
+    fn transcribe(
+        &mut self,
+        model_asset: String,
+        pcm_s16_le: Vec<u8>,
+        sample_rate: u32,
+        language: Option<String>,
+    ) -> wasmtime::Result<
+        Result<speech::transcription::Transcript, speech::transcription::SpeechError>,
+    > {
+        Ok(self
+            .speech
+            .transcribe(&model_asset, &pcm_s16_le, sample_rate, language.as_deref())
+            .map(|text| speech::transcription::Transcript { text })
+            .map_err(speech_error))
+    }
+
+    fn match_line(
+        &mut self,
+        model_asset: String,
+        pcm_s16_le: Vec<u8>,
+        sample_rate: u32,
+        language: Option<String>,
+        expected: String,
+    ) -> wasmtime::Result<Result<u8, speech::transcription::MatchError>> {
+        Ok(self
+            .speech
+            .match_line(
+                &model_asset,
+                &pcm_s16_le,
+                sample_rate,
+                language.as_deref(),
+                &expected,
+            )
+            .map_err(match_error))
+    }
+
+    fn match_line_stream(
+        &mut self,
+        model_asset: String,
+        pcm_s16_le: Vec<u8>,
+        sample_rate: u32,
+        language: Option<String>,
+        expected: String,
+        finish: bool,
+    ) -> wasmtime::Result<Result<Option<u8>, speech::transcription::MatchError>> {
+        Ok(self
+            .speech
+            .match_line_stream(
+                &model_asset,
+                &pcm_s16_le,
+                sample_rate,
+                language.as_deref(),
+                &expected,
+                finish,
+            )
+            .map_err(match_error))
+    }
+}
+
+fn speech_error(error: SpeechError) -> speech::transcription::SpeechError {
+    match error {
+        SpeechError::InvalidRequest(message) => {
+            speech::transcription::SpeechError::InvalidRequest(message)
+        }
+        SpeechError::ModelNotFound => speech::transcription::SpeechError::ModelNotFound,
+        SpeechError::ModelInvalid(message) => {
+            speech::transcription::SpeechError::ModelInvalid(message)
+        }
+        SpeechError::Unsupported(message) => {
+            speech::transcription::SpeechError::Unsupported(message)
+        }
+        SpeechError::Inference(message) => speech::transcription::SpeechError::Inference(message),
+    }
+}
+
+fn match_error(error: SpeechError) -> speech::transcription::MatchError {
+    match error {
+        SpeechError::InvalidRequest(_) => speech::transcription::MatchError::InvalidRequest,
+        SpeechError::ModelNotFound => speech::transcription::MatchError::ModelNotFound,
+        SpeechError::ModelInvalid(_) => speech::transcription::MatchError::ModelInvalid,
+        SpeechError::Unsupported(_) => speech::transcription::MatchError::Unsupported,
+        SpeechError::Inference(_) => speech::transcription::MatchError::Inference,
     }
 }
 
@@ -991,6 +1185,48 @@ mod tests {
             Phase3HostUiMode::HeadlessDraft,
         )
         .expect("headless host")
+    }
+
+    fn capture_config() -> audio::types::StreamConfig {
+        audio::types::StreamConfig {
+            sample_rate: 16_000,
+            channels: 1,
+            format: audio::types::SampleFormat::PcmS16,
+            buffer_frames: 1_600,
+        }
+    }
+
+    #[test]
+    fn microphone_open_denies_before_reaching_the_audio_adapter() {
+        let mut host = headless_host();
+        let result = <Phase3GuiHost as audio::capture::Host>::open(&mut host, capture_config())
+            .expect("host call");
+
+        assert!(matches!(
+            result,
+            Err(audio::types::AudioError::PermissionDenied)
+        ));
+    }
+
+    #[test]
+    fn granted_microphone_open_reaches_capture_validation() {
+        let policy = krate_policy::SessionPolicy::from_cli_grants(&["audio.capture".to_string()])
+            .expect("capture policy");
+        let mut host = Phase3GuiHost::new(UapiGuard::new(policy), Phase3HostUiMode::HeadlessDraft)
+            .expect("headless host");
+        let result = <Phase3GuiHost as audio::capture::Host>::open(
+            &mut host,
+            audio::types::StreamConfig {
+                sample_rate: 0,
+                ..capture_config()
+            },
+        )
+        .expect("host call");
+
+        assert!(matches!(
+            result,
+            Err(audio::types::AudioError::Unsupported(_))
+        ));
     }
 
     #[test]

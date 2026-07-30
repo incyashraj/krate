@@ -15,6 +15,7 @@ world gui {
   import krate:time/sleep@0.1.0;
   import krate:locale/info@0.1.0;
   import krate:locale/format@0.1.0;
+  import krate:resources/assets@0.1.0;
 
   import krate:ui/window@0.1.0;
   import krate:ui/tree@0.1.0;
@@ -28,6 +29,7 @@ world gui {
 
   import krate:audio/playback@0.1.0;
   import krate:audio/capture@0.1.0;
+  import krate:speech/transcription@0.1.0;
 
   export run: func() -> s32;
 }

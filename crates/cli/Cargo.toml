@@ -20,9 +20,12 @@ krate-policy = { path = "../policy", version = "0.1.0-dev" }
 krate-bundle = { path = "../bundle", version = "0.1.0-dev" }
 krate-runtime = { path = "../runtime", version = "0.1.0-dev" }
 krate-author = { path = "../author", version = "0.1.0-dev" }
+krate-port = { path = "../port", version = "0.1.0-dev" }
 tempfile = "3.27.0"
 serde.workspace = true
 serde_json.workspace = true
+sha2 = "0.10.9"
+ureq.workspace = true
 tracing-subscriber.workspace = true
 
 # The native consent window is macOS-only today (P3-OPEN-01). Gated by target
@@ -32,5 +35,4 @@ tracing-subscriber.workspace = true
 krate-adapter-macos = { path = "../adapter-macos", version = "0.1.0-dev" }
 
 [dev-dependencies]
-sha2 = "0.10.9"
 tempfile = "3.27.0"

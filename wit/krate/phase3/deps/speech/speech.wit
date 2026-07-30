@@ -1,0 +1,75 @@
+package krate:speech@0.1.0;
+
+/// Local speech recognition over audio the app already received.
+///
+/// The model path resolves inside the app's bundled `assets/` directory. The
+/// host never resolves it against the user's filesystem.
+interface transcription {
+  /// A successful bounded transcription.
+  record transcript {
+    /// Recognized UTF-8 text.
+    text: string,
+  }
+
+  /// Error returned while validating or transcribing audio.
+  variant speech-error {
+    /// The PCM shape, sample rate, or language was invalid.
+    invalid-request(string),
+    /// The requested model is not present in the app bundle.
+    model-not-found,
+    /// The bundled model could not be loaded.
+    model-invalid(string),
+    /// The host build does not provide local transcription.
+    unsupported(string),
+    /// The local model could not transcribe this audio.
+    inference(string),
+  }
+
+  /// Compact error for latency-sensitive script matching.
+  enum match-error {
+    /// The PCM shape, sample rate, language, or line was invalid.
+    invalid-request,
+    /// The requested model is not present in the app bundle.
+    model-not-found,
+    /// The bundled model could not be loaded.
+    model-invalid,
+    /// The host build does not provide local transcription.
+    unsupported,
+    /// The local model could not recognize this audio.
+    inference,
+  }
+
+  /// Transcribe mono signed 16-bit little-endian PCM with a bundled model.
+  transcribe: func(
+    model-asset: string,
+    pcm-s16-le: list<u8>,
+    sample-rate: u32,
+    language: option<string>,
+  ) -> result<transcript, speech-error>;
+
+  /// Return a 0 to 100 word-overlap score for one expected script line.
+  ///
+  /// The transcript stays inside the runtime and the guest receives only a
+  /// bounded score.
+  match-line: func(
+    model-asset: string,
+    pcm-s16-le: list<u8>,
+    sample-rate: u32,
+    language: option<string>,
+    expected: string,
+  ) -> result<u8, match-error>;
+
+  /// Add one bounded audio chunk to the current utterance.
+  ///
+  /// The runtime owns the growing buffer, so a portable guest does not need a
+  /// large allocation. When `finish` is true, the runtime transcribes the
+  /// accumulated audio, returns its match score, and clears the utterance.
+  match-line-stream: func(
+    model-asset: string,
+    pcm-s16-le: list<u8>,
+    sample-rate: u32,
+    language: option<string>,
+    expected: string,
+    finish: bool,
+  ) -> result<option<u8>, match-error>;
+}

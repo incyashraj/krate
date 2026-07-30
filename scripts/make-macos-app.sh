@@ -85,6 +85,8 @@ cat > "$APP/Contents/Info.plist" << PLIST
     <string>Krate</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Krate uses the microphone only for apps that request audio capture and only after you allow it.</string>
     <key>CFBundleIconFile</key>
     <string>Krate</string>
     <key>CFBundleDocumentTypes</key>

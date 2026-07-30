@@ -4,10 +4,13 @@
 //! runtime dispatcher. Path-level filesystem calls, HTTP, time, locale, log, and
 //! stdio handles flow through UCap before reaching a host adapter.
 
-use std::collections::BTreeMap;
+use std::{
+    collections::BTreeMap,
+    path::{Component, Path, PathBuf},
+};
 
 use crate::{
-    phase2_bindings::krate::{fs, io, locale, net, time},
+    phase2_bindings::krate::{fs, io, locale, net, resources, time},
     phase2_bridge as bridge,
     uapi::UapiGuard,
     uapi_dispatch::{FileHandle, HostAdapter, UapiDispatcher},
@@ -17,11 +20,13 @@ use wasmtime::component::Resource;
 
 const MAX_PHASE2_HOST_RESOURCES: usize = 1024;
 const DEFAULT_HTTP_CLIENT_GET_TIMEOUT_MILLIS: u32 = 5_000;
+const MAX_BUNDLED_RESOURCE_BYTES: u64 = 64 * 1024 * 1024;
 
 pub struct Phase2Host<'a> {
     guard: UapiGuard,
     adapter: Box<dyn HostAdapter + 'a>,
     resources: Phase2ResourceTable,
+    asset_root: Option<PathBuf>,
     default_http_timeout_millis: Option<u32>,
 }
 
@@ -39,8 +44,14 @@ impl<'a> Phase2Host<'a> {
             guard,
             adapter,
             resources: Phase2ResourceTable::default(),
+            asset_root: None,
             default_http_timeout_millis,
         }
+    }
+
+    pub fn with_asset_root(mut self, asset_root: Option<PathBuf>) -> Self {
+        self.asset_root = asset_root;
+        self
     }
 
     fn dispatcher(&self) -> UapiDispatcher<'_> {
@@ -60,6 +71,96 @@ impl io::args::Host for Phase2Host<'_> {
 impl fs::types::Host for Phase2Host<'_> {}
 impl net::types::Host for Phase2Host<'_> {}
 impl locale::types::Host for Phase2Host<'_> {}
+
+impl resources::assets::Host for Phase2Host<'_> {
+    fn read(
+        &mut self,
+        path: String,
+    ) -> wasmtime::Result<Result<Vec<u8>, resources::assets::ResourceError>> {
+        let Some(root) = self.asset_root.as_deref() else {
+            return Ok(Err(resources::assets::ResourceError::NotFound));
+        };
+        let path = match bundled_resource_path(root, &path) {
+            Ok(path) => path,
+            Err(error) => return Ok(Err(error)),
+        };
+        let metadata = match std::fs::metadata(&path) {
+            Ok(metadata) if metadata.is_file() => metadata,
+            Ok(_) => return Ok(Err(resources::assets::ResourceError::NotFound)),
+            Err(error) => return Ok(Err(resource_io_error(error))),
+        };
+        if metadata.len() > MAX_BUNDLED_RESOURCE_BYTES {
+            return Ok(Err(resources::assets::ResourceError::TooLarge));
+        }
+        Ok(std::fs::read(path).map_err(resource_io_error))
+    }
+
+    fn list(
+        &mut self,
+        path: String,
+    ) -> wasmtime::Result<Result<Vec<String>, resources::assets::ResourceError>> {
+        let Some(root) = self.asset_root.as_deref() else {
+            return Ok(Err(resources::assets::ResourceError::NotFound));
+        };
+        let path = match bundled_resource_path_allow_root(root, &path) {
+            Ok(path) => path,
+            Err(error) => return Ok(Err(error)),
+        };
+        let entries = match std::fs::read_dir(path) {
+            Ok(entries) => entries,
+            Err(error) => return Ok(Err(resource_io_error(error))),
+        };
+        let mut names = Vec::new();
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) => return Ok(Err(resource_io_error(error))),
+            };
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                return Ok(Err(resources::assets::ResourceError::InvalidPath));
+            };
+            names.push(name);
+        }
+        names.sort();
+        Ok(Ok(names))
+    }
+}
+
+fn bundled_resource_path(
+    root: &Path,
+    requested: &str,
+) -> Result<PathBuf, resources::assets::ResourceError> {
+    if requested.is_empty() {
+        return Err(resources::assets::ResourceError::InvalidPath);
+    }
+    bundled_resource_path_allow_root(root, requested)
+}
+
+fn bundled_resource_path_allow_root(
+    root: &Path,
+    requested: &str,
+) -> Result<PathBuf, resources::assets::ResourceError> {
+    if requested.contains('\\') || requested.chars().any(char::is_control) {
+        return Err(resources::assets::ResourceError::InvalidPath);
+    }
+    let requested = Path::new(requested);
+    if requested.is_absolute()
+        || requested
+            .components()
+            .any(|part| !matches!(part, Component::Normal(_)))
+            && !requested.as_os_str().is_empty()
+    {
+        return Err(resources::assets::ResourceError::InvalidPath);
+    }
+    Ok(root.join(requested))
+}
+
+fn resource_io_error(error: std::io::Error) -> resources::assets::ResourceError {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => resources::assets::ResourceError::NotFound,
+        _ => resources::assets::ResourceError::Io(error.to_string()),
+    }
+}
 
 impl fs::files::Host for Phase2Host<'_> {
     fn open(
@@ -1124,5 +1225,35 @@ mod tests {
         assert!(
             matches!(err, io::types::IoError::Other(message) if message.contains("unknown stream"))
         );
+    }
+
+    #[test]
+    fn bundled_resources_are_read_without_filesystem_authority() {
+        let dir = tempfile::tempdir().expect("assets dir");
+        std::fs::create_dir_all(dir.path().join("prompts")).expect("nested dir");
+        std::fs::write(dir.path().join("prompts/welcome.txt"), b"hello from bundle")
+            .expect("write asset");
+        let mut host = Phase2Host::new(UapiGuard::default(), Box::new(RecordingAdapter::default()))
+            .with_asset_root(Some(dir.path().to_path_buf()));
+
+        let bytes = resources::assets::Host::read(&mut host, "prompts/welcome.txt".to_string())
+            .expect("host call")
+            .expect("resource read");
+        assert_eq!(bytes, b"hello from bundle");
+    }
+
+    #[test]
+    fn bundled_resources_reject_paths_outside_the_asset_root() {
+        let dir = tempfile::tempdir().expect("assets dir");
+        let mut host = Phase2Host::new(UapiGuard::default(), Box::new(RecordingAdapter::default()))
+            .with_asset_root(Some(dir.path().to_path_buf()));
+
+        let error = resources::assets::Host::read(&mut host, "../secret".to_string())
+            .expect("host call")
+            .expect_err("parent traversal");
+        assert!(matches!(
+            error,
+            resources::assets::ResourceError::InvalidPath
+        ));
     }
 }

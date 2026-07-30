@@ -22,6 +22,362 @@ fn help_lists_phase_1_commands() {
     assert!(stdout.contains("version"));
     assert!(stdout.contains("doctor"));
     assert!(stdout.contains("manifest"));
+    assert!(stdout.contains("port"));
+}
+
+#[test]
+fn port_plan_is_read_only_and_reports_source_evidence() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"existing-app\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::create_dir(dir.path().join("src")).expect("create src");
+    std::fs::write(
+        dir.path().join("src/main.rs"),
+        "fn main() { let _ = std::fs::read(\"notes.txt\"); }",
+    )
+    .expect("write source");
+
+    let output = krate()
+        .arg("port")
+        .arg(dir.path())
+        .arg("--plan")
+        .output()
+        .expect("run port plan");
+
+    assert!(
+        output.status.success(),
+        "port plan failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Verdict: needs changes"));
+    assert!(stdout.contains("Profile: krate-cli-v1-candidate"));
+    assert!(stdout.contains("Local filesystem use"));
+    assert!(stdout.contains("src/main.rs:1"));
+    assert!(!dir.path().join("manifest.toml").exists());
+}
+
+#[test]
+fn port_plan_can_write_machine_readable_json() {
+    let dir = tempfile::tempdir().expect("create temp dir");
+    std::fs::write(
+        dir.path().join("go.mod"),
+        "module example.com/existing\n\ngo 1.24\n",
+    )
+    .expect("write go.mod");
+    let report_path = dir.path().join("port-plan.json");
+
+    let output = krate()
+        .arg("port")
+        .arg(dir.path())
+        .args(["--plan", "--format", "json", "--output"])
+        .arg(&report_path)
+        .output()
+        .expect("run JSON port plan");
+
+    assert!(
+        output.status.success(),
+        "JSON port plan failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(report_path).expect("read port plan"))
+            .expect("parse port plan");
+    assert_eq!(report["schema"], "krate.port.plan.v1");
+    assert_eq!(report["profile"], "krate-cli-v1-candidate");
+    assert_eq!(report["verdict"], "needs-changes");
+}
+
+#[test]
+fn port_prepare_creates_an_agent_workspace_without_changing_source() {
+    let root = tempfile::tempdir().expect("create temp dir");
+    let source = root.path().join("Existing Notes");
+    std::fs::create_dir_all(source.join("src")).expect("create source");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname = \"existing-notes\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write Cargo.toml");
+    let original = "fn main() { let _ = std::fs::read(\"notes.txt\"); }\n";
+    std::fs::write(source.join("src/main.rs"), original).expect("write source");
+    let workspace = root.path().join("port-work");
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .output()
+        .expect("prepare port workspace");
+
+    assert!(
+        output.status.success(),
+        "port prepare failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(source.join("src/main.rs")).expect("read original"),
+        original
+    );
+    assert!(workspace.join("port-plan.json").is_file());
+    assert!(workspace.join("PORTING.md").is_file());
+    assert!(workspace.join("AGENT_TASK.md").is_file());
+    assert!(workspace.join("journeys.json").is_file());
+    assert!(workspace.join("JOURNEYS.md").is_file());
+    assert!(workspace.join("snapshot-summary.json").is_file());
+    assert!(workspace.join("reference-source/src/main.rs").is_file());
+    assert!(workspace.join("candidate/Cargo.toml").is_file());
+    assert!(workspace.join("candidate/src/lib.rs").is_file());
+    assert!(workspace.join("candidate/manifest.toml").is_file());
+    assert!(workspace.join("candidate/CONTRACT.md").is_file());
+
+    let task =
+        std::fs::read_to_string(workspace.join("AGENT_TASK.md")).expect("read generated task");
+    assert!(task.contains("Edit files only inside `candidate/`"));
+    assert!(task.contains("Do not change `reference-source/`"));
+    assert!(task.contains("Local filesystem use"));
+    assert!(task.contains("existing-notes"));
+    assert!(task.contains("journeys.json"));
+
+    let journeys: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("journeys.json")).expect("read journeys"),
+    )
+    .expect("parse journeys");
+    assert_eq!(journeys["schema"], "krate.port.journeys.v1");
+    assert!(journeys["journeys"]
+        .as_array()
+        .expect("journeys array")
+        .iter()
+        .any(|journey| journey["id"] == "primary-task"));
+
+    let candidate_manifest = std::fs::read_to_string(workspace.join("candidate/manifest.toml"))
+        .expect("read candidate manifest");
+    assert!(candidate_manifest.contains("existing-notes"));
+}
+
+#[test]
+fn port_prepare_refuses_to_overwrite_an_existing_workspace() {
+    let root = tempfile::tempdir().expect("create temp dir");
+    let source = root.path().join("source");
+    let workspace = root.path().join("port-work");
+    std::fs::create_dir_all(&source).expect("create source");
+    std::fs::create_dir_all(&workspace).expect("create workspace");
+    std::fs::write(workspace.join("keep.txt"), "keep me").expect("write sentinel");
+    std::fs::write(source.join("go.mod"), "module example.com/source\n").expect("write go.mod");
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .output()
+        .expect("run port prepare");
+
+    assert!(!output.status.success());
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("keep.txt")).expect("read sentinel"),
+        "keep me"
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("already exists"));
+}
+
+#[test]
+fn port_author_command_builds_packages_and_permission_tests_a_candidate() {
+    let root = tempfile::tempdir().expect("create temp dir");
+    let source = root.path().join("tiny-reader");
+    std::fs::create_dir_all(source.join("src")).expect("create source");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname = \"tiny-reader\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write Cargo.toml");
+    let original = "fn main() { println!(\"reader\"); }\n";
+    std::fs::write(source.join("src/main.rs"), original).expect("write source");
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("tiny-reader.krate");
+    let transcript = root.path().join("port-result.json");
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--author-cmd")
+        .arg("printf 'Preserved the file-reading journey.\\n' > PORT_RESULT.md")
+        .arg("--to")
+        .arg(&bundle)
+        .arg("--transcript")
+        .arg(&transcript)
+        .arg("--no-install")
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run port pipeline");
+
+    assert!(
+        output.status.success(),
+        "port pipeline failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(bundle.is_file());
+    assert_eq!(
+        std::fs::read_to_string(source.join("src/main.rs")).expect("read original"),
+        original
+    );
+    let result: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&transcript).expect("read transcript"))
+            .expect("parse transcript");
+    assert_eq!(result["schema"], "krate.port.result.v1");
+    assert_eq!(result["source_unchanged"], true);
+    assert_eq!(result["author"], "external-command");
+    assert_eq!(result["repair_attempts_used"], 0);
+    assert_eq!(
+        result["bundle_sha256"]
+            .as_str()
+            .expect("bundle sha256")
+            .len(),
+        64
+    );
+    assert!(workspace.join("artifact.json").is_file());
+    assert!(workspace.join("journey-results.json").is_file());
+    let journey_results: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(workspace.join("journey-results.json")).expect("read journey results"),
+    )
+    .expect("parse journey results");
+    assert!(journey_results["results"]
+        .as_array()
+        .expect("results array")
+        .iter()
+        .any(|result| result["id"] == "launch" && result["status"] == "passed"));
+    assert!(result["agent_result"]
+        .as_str()
+        .expect("agent result text")
+        .contains("file-reading journey"));
+    assert!(result["checks"]
+        .as_array()
+        .expect("checks")
+        .iter()
+        .any(|check| check == "component imports only krate:* interfaces"));
+}
+
+#[test]
+fn port_repairs_a_failed_candidate_with_the_exact_build_error() {
+    let root = tempfile::tempdir().expect("create temp dir");
+    let source = root.path().join("repair-reader");
+    std::fs::create_dir_all(source.join("src")).expect("create source");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname = \"repair-reader\"\nversion = \"0.1.0\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::write(source.join("src/main.rs"), "fn main() {}\n").expect("write source");
+    let workspace = root.path().join("port-work");
+    let bundle = root.path().join("repair-reader.krate");
+    let transcript = root.path().join("port-result.json");
+    let repair_command = "if [ -n \"$KRATE_PORT_REPAIR_LOG\" ]; then \
+        grep -q 'cargo-component build failed' \"$KRATE_PORT_REPAIR_LOG\" && \
+        cp \"$KRATE_PORT_CANDIDATE/src/lib.rs.good\" \"$KRATE_PORT_CANDIDATE/src/lib.rs\"; \
+        else cp \"$KRATE_PORT_CANDIDATE/src/lib.rs\" \"$KRATE_PORT_CANDIDATE/src/lib.rs.good\" && \
+        printf '\\nthis is not valid rust\\n' >> \"$KRATE_PORT_CANDIDATE/src/lib.rs\"; fi";
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .arg("--author-cmd")
+        .arg(repair_command)
+        .arg("--repair-attempts")
+        .arg("2")
+        .arg("--to")
+        .arg(&bundle)
+        .arg("--transcript")
+        .arg(&transcript)
+        .arg("--no-install")
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .expect("run repairing port pipeline");
+
+    assert!(
+        output.status.success(),
+        "repairing port pipeline failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(bundle.is_file());
+    assert!(workspace.join("repair/attempt-1.txt").is_file());
+    let repair_log =
+        std::fs::read_to_string(workspace.join("repair/attempt-1.txt")).expect("read repair log");
+    assert!(repair_log.contains("cargo-component build failed"));
+    let result: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&transcript).expect("read transcript"))
+            .expect("parse transcript");
+    assert_eq!(result["repair_attempts_allowed"], 2);
+    assert_eq!(result["repair_attempts_used"], 1);
+}
+
+#[test]
+fn port_to_requires_an_agent() {
+    let root = tempfile::tempdir().expect("create temp dir");
+    let source = root.path().join("source");
+    std::fs::create_dir_all(&source).expect("create source");
+    std::fs::write(source.join("go.mod"), "module example.com/source\n").expect("write go.mod");
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--to")
+        .arg(root.path().join("app.krate"))
+        .output()
+        .expect("run invalid port");
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr)
+        .contains("--to requires --agent <agent> or --author-cmd <command>"));
+}
+
+#[test]
+fn port_agent_cannot_write_through_the_read_only_source_snapshot() {
+    let root = tempfile::tempdir().expect("create temp dir");
+    let source = root.path().join("source");
+    std::fs::create_dir_all(source.join("src")).expect("create source");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname='source'\nversion='0.1.0'\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::write(source.join("src/main.rs"), "fn main() {}\n").expect("write source");
+    let bundle = root.path().join("must-not-exist.krate");
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--author-cmd")
+        .arg("printf 'fn changed() {}\\n' > \"$KRATE_PORT_SOURCE/src/main.rs\"")
+        .arg("--to")
+        .arg(&bundle)
+        .arg("--no-install")
+        .output()
+        .expect("run source integrity test");
+
+    assert!(!output.status.success());
+    assert!(!bundle.exists());
+    assert_eq!(
+        std::fs::read_to_string(source.join("src/main.rs")).expect("read original"),
+        "fn main() {}\n"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("port author command failed"),
+        "unexpected stderr:\n{stderr}\nstdout:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 }
 
 #[test]

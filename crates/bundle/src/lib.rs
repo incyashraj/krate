@@ -1,12 +1,14 @@
 //! The `.krate` bundle: one file that carries an application and the
 //! permissions it is asking for.
 //!
-//! A bundle is a zip container holding exactly two entries at the root:
+//! A bundle is a zip container holding two required entries and, optionally,
+//! read-only application assets:
 //!
 //! ```text
 //! app.krate
 //! ├── manifest.toml   # krate-manifest schema, unchanged
-//! └── code.wasm       # the component
+//! ├── code.wasm       # the component
+//! └── assets/         # optional portable app resources
 //! ```
 //!
 //! This is the minimal subset of the Phase 6 bundle format (Phase-6-Plan §8.1)
@@ -17,9 +19,9 @@
 //!
 //! Opening a bundle means writing attacker-influenced bytes to disk, so:
 //!
-//! * entry names are matched exactly against the two permitted names, which
-//!   makes zip path traversal (`../../etc/passwd`) unrepresentable rather than
-//!   merely filtered;
+//! * required entry names are matched exactly, and asset paths accept only
+//!   normal relative components under `assets/`, so path traversal
+//!   (`../../etc/passwd`) is unrepresentable;
 //! * both the compressed archive and each decompressed entry are size-capped,
 //!   so a zip bomb fails loudly instead of filling the disk;
 //! * the manifest's declared entry must match the contained component, so a
@@ -32,9 +34,10 @@
 //! a local one would: none, until granted.
 
 use std::{
+    collections::BTreeSet,
     fs::{self, File},
     io::{self, Read, Write},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 pub mod imports;
@@ -48,6 +51,8 @@ use zip::{write::SimpleFileOptions, CompressionMethod, ZipArchive, ZipWriter};
 pub const MANIFEST_ENTRY: &str = "manifest.toml";
 /// The component entry name inside a bundle.
 pub const COMPONENT_ENTRY: &str = "code.wasm";
+/// Root for optional portable resources inside the bundle.
+pub const ASSETS_PREFIX: &str = "assets/";
 /// Conventional file extension.
 pub const BUNDLE_EXTENSION: &str = "krate";
 
@@ -58,6 +63,12 @@ pub const MAX_BUNDLE_BYTES: u64 = 256 * 1024 * 1024;
 /// Largest single entry we will decompress. Bounds the classic zip bomb, where
 /// a small archive expands to an enormous file.
 pub const MAX_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
+/// Largest individual bundled asset after decompression.
+pub const MAX_ASSET_BYTES: u64 = 96 * 1024 * 1024;
+/// Largest total asset payload after decompression.
+pub const MAX_TOTAL_ASSET_BYTES: u64 = 512 * 1024 * 1024;
+/// Maximum number of asset files in one bundle.
+pub const MAX_ASSET_COUNT: usize = 4096;
 
 #[derive(Debug, Error)]
 pub enum BundleError {
@@ -81,6 +92,14 @@ pub enum BundleError {
     TooLarge { size: u64 },
     #[error("bundle entry `{entry}` expands to more than {MAX_ENTRY_BYTES} bytes")]
     EntryTooLarge { entry: String },
+    #[error("asset path `{path}` is not a safe relative path")]
+    UnsafeAssetPath { path: String },
+    #[error("asset `{path}` is a symbolic link; bundle assets must be regular files")]
+    AssetSymlink { path: PathBuf },
+    #[error("bundle contains more than {MAX_ASSET_COUNT} asset files")]
+    TooManyAssets,
+    #[error("bundle assets expand to more than {MAX_TOTAL_ASSET_BYTES} bytes")]
+    AssetsTooLarge,
     #[error("refusing to fetch over plain HTTP: {url}\nuse https, or pass --insecure-http for a local test server")]
     InsecureUrl { url: String },
     #[error("could not fetch {url}: {message}")]
@@ -152,6 +171,20 @@ pub fn is_url(target: &str) -> bool {
 /// The manifest is parsed and validated first, so `pack` cannot produce a
 /// bundle that `open` would reject.
 pub fn pack(manifest_path: &Path, component_path: &Path, output_path: &Path) -> Result<u64> {
+    pack_with_assets(manifest_path, component_path, None, output_path)
+}
+
+/// Write a bundle with an optional directory of portable, read-only assets.
+///
+/// Every regular file below `assets_dir` is stored below `assets/` using a
+/// normalized forward-slash path. Symlinks are rejected so packing cannot
+/// silently include files outside the selected directory.
+pub fn pack_with_assets(
+    manifest_path: &Path,
+    component_path: &Path,
+    assets_dir: Option<&Path>,
+    output_path: &Path,
+) -> Result<u64> {
     let manifest_text =
         fs::read_to_string(manifest_path).map_err(|err| io_err(manifest_path, err))?;
     let manifest =
@@ -177,6 +210,13 @@ pub fn pack(manifest_path: &Path, component_path: &Path, output_path: &Path) -> 
     zip.start_file(COMPONENT_ENTRY, options)?;
     zip.write_all(&component)
         .map_err(|err| io_err(output_path, err))?;
+    if let Some(assets_dir) = assets_dir.filter(|path| path.is_dir()) {
+        for (entry_name, source) in collect_assets(assets_dir)? {
+            zip.start_file(entry_name, options)?;
+            let mut input = File::open(&source).map_err(|err| io_err(&source, err))?;
+            io::copy(&mut input, &mut zip).map_err(|err| io_err(output_path, err))?;
+        }
+    }
     zip.finish()?;
 
     let size = fs::metadata(output_path)
@@ -194,6 +234,7 @@ pub struct OpenBundle {
     _dir: TempDir,
     manifest_path: PathBuf,
     component_path: PathBuf,
+    assets_path: Option<PathBuf>,
     manifest: Manifest,
 }
 
@@ -206,6 +247,11 @@ impl OpenBundle {
     /// Path to the extracted component.
     pub fn component_path(&self) -> &Path {
         &self.component_path
+    }
+
+    /// Root of the extracted portable assets, when the bundle contains any.
+    pub fn assets_path(&self) -> Option<&Path> {
+        self.assets_path.as_deref()
     }
 
     /// The parsed manifest.
@@ -233,12 +279,28 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
     let dir = TempDir::new().map_err(|err| io_err(Path::new("<tempdir>"), err))?;
     let manifest_path = dir.path().join(MANIFEST_ENTRY);
     let component_path = dir.path().join(COMPONENT_ENTRY);
+    let assets_path = dir.path().join("assets");
 
     // Reading by exact name rather than iterating entries is what makes path
     // traversal unrepresentable: any other entry in the archive is ignored, and
     // neither name can escape the temp directory.
     extract_entry(&mut archive, MANIFEST_ENTRY, &manifest_path)?;
     extract_entry(&mut archive, COMPONENT_ENTRY, &component_path)?;
+    let asset_names = asset_entry_names(&mut archive)?;
+    let mut total_asset_bytes = 0_u64;
+    for name in &asset_names {
+        let relative = safe_asset_relative_path(name)?;
+        let destination = assets_path.join(relative);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|err| io_err(parent, err))?;
+        }
+        total_asset_bytes = total_asset_bytes
+            .checked_add(extract_asset_entry(&mut archive, name, &destination)?)
+            .ok_or(BundleError::AssetsTooLarge)?;
+        if total_asset_bytes > MAX_TOTAL_ASSET_BYTES {
+            return Err(BundleError::AssetsTooLarge);
+        }
+    }
 
     let manifest_text =
         fs::read_to_string(&manifest_path).map_err(|err| io_err(&manifest_path, err))?;
@@ -254,8 +316,161 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
         _dir: dir,
         manifest_path,
         component_path,
+        assets_path: (!asset_names.is_empty()).then_some(assets_path),
         manifest,
     })
+}
+
+fn collect_assets(root: &Path) -> Result<Vec<(String, PathBuf)>> {
+    fn visit(
+        root: &Path,
+        current: &Path,
+        assets: &mut Vec<(String, PathBuf)>,
+        total: &mut u64,
+    ) -> Result<()> {
+        let mut entries = fs::read_dir(current)
+            .map_err(|err| io_err(current, err))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|err| io_err(current, err))?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            let metadata = fs::symlink_metadata(&path).map_err(|err| io_err(&path, err))?;
+            if metadata.file_type().is_symlink() {
+                return Err(BundleError::AssetSymlink { path });
+            }
+            if metadata.is_dir() {
+                visit(root, &path, assets, total)?;
+                continue;
+            }
+            if !metadata.is_file() {
+                continue;
+            }
+            if metadata.len() > MAX_ASSET_BYTES {
+                return Err(BundleError::EntryTooLarge {
+                    entry: path.display().to_string(),
+                });
+            }
+            *total = total
+                .checked_add(metadata.len())
+                .ok_or(BundleError::AssetsTooLarge)?;
+            if *total > MAX_TOTAL_ASSET_BYTES {
+                return Err(BundleError::AssetsTooLarge);
+            }
+            if assets.len() == MAX_ASSET_COUNT {
+                return Err(BundleError::TooManyAssets);
+            }
+            let relative = path
+                .strip_prefix(root)
+                .map_err(|_| BundleError::UnsafeAssetPath {
+                    path: path.display().to_string(),
+                })?;
+            let name = asset_entry_name(relative)?;
+            assets.push((name, path));
+        }
+        Ok(())
+    }
+
+    let mut assets = Vec::new();
+    let mut total = 0;
+    visit(root, root, &mut assets, &mut total)?;
+    Ok(assets)
+}
+
+fn asset_entry_name(relative: &Path) -> Result<String> {
+    let mut parts = Vec::new();
+    for component in relative.components() {
+        match component {
+            Component::Normal(part) => {
+                let part = part.to_str().ok_or_else(|| BundleError::UnsafeAssetPath {
+                    path: relative.display().to_string(),
+                })?;
+                if part.is_empty() || part.contains('\\') {
+                    return Err(BundleError::UnsafeAssetPath {
+                        path: relative.display().to_string(),
+                    });
+                }
+                parts.push(part);
+            }
+            _ => {
+                return Err(BundleError::UnsafeAssetPath {
+                    path: relative.display().to_string(),
+                });
+            }
+        }
+    }
+    if parts.is_empty() {
+        return Err(BundleError::UnsafeAssetPath {
+            path: relative.display().to_string(),
+        });
+    }
+    Ok(format!("{ASSETS_PREFIX}{}", parts.join("/")))
+}
+
+fn safe_asset_relative_path(name: &str) -> Result<PathBuf> {
+    let relative =
+        name.strip_prefix(ASSETS_PREFIX)
+            .ok_or_else(|| BundleError::UnsafeAssetPath {
+                path: name.to_string(),
+            })?;
+    if relative.is_empty() || relative.contains('\\') {
+        return Err(BundleError::UnsafeAssetPath {
+            path: name.to_string(),
+        });
+    }
+    let path = Path::new(relative);
+    if path
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(BundleError::UnsafeAssetPath {
+            path: name.to_string(),
+        });
+    }
+    Ok(path.to_path_buf())
+}
+
+fn asset_entry_names<R: Read + io::Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<String>> {
+    let mut names = BTreeSet::new();
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index)?;
+        let name = entry.name().to_string();
+        if !name.starts_with(ASSETS_PREFIX) || name.ends_with('/') {
+            continue;
+        }
+        safe_asset_relative_path(&name)?;
+        if !names.insert(name) {
+            return Err(BundleError::UnsafeAssetPath {
+                path: "duplicate asset entry".to_string(),
+            });
+        }
+        if names.len() > MAX_ASSET_COUNT {
+            return Err(BundleError::TooManyAssets);
+        }
+    }
+    Ok(names.into_iter().collect())
+}
+
+fn extract_asset_entry<R: Read + io::Seek>(
+    archive: &mut ZipArchive<R>,
+    name: &str,
+    destination: &Path,
+) -> Result<u64> {
+    let mut entry = archive.by_name(name)?;
+    if entry.size() > MAX_ASSET_BYTES {
+        return Err(BundleError::EntryTooLarge {
+            entry: name.to_string(),
+        });
+    }
+    let mut out = File::create(destination).map_err(|err| io_err(destination, err))?;
+    let mut limited = entry.by_ref().take(MAX_ASSET_BYTES + 1);
+    let written = io::copy(&mut limited, &mut out).map_err(|err| io_err(destination, err))?;
+    if written > MAX_ASSET_BYTES {
+        return Err(BundleError::EntryTooLarge {
+            entry: name.to_string(),
+        });
+    }
+    Ok(written)
 }
 
 fn extract_entry<R: Read + io::Seek>(
@@ -368,6 +583,53 @@ required = true
             fs::read(opened.component_path()).expect("read component"),
             b"\0asm\x01\0\0\0"
         );
+        assert!(opened.assets_path().is_none());
+    }
+
+    #[test]
+    fn pack_then_open_round_trips_nested_assets() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let assets = dir.path().join("assets");
+        fs::create_dir_all(assets.join("prompts")).expect("create assets");
+        fs::write(assets.join("prompts/welcome.txt"), b"Welcome to Krate").expect("write asset");
+        fs::write(assets.join("icon.bin"), [1_u8, 2, 3]).expect("write asset");
+        let bundle = dir.path().join("demo.krate");
+
+        pack_with_assets(&manifest, &component, Some(&assets), &bundle).expect("pack assets");
+        let opened = open(&bundle).expect("open");
+        let extracted = opened.assets_path().expect("assets root");
+        assert_eq!(
+            fs::read_to_string(extracted.join("prompts/welcome.txt")).expect("read nested asset"),
+            "Welcome to Krate"
+        );
+        assert_eq!(
+            fs::read(extracted.join("icon.bin")).expect("read binary asset"),
+            [1, 2, 3]
+        );
+    }
+
+    #[test]
+    fn open_rejects_traversal_inside_the_asset_namespace() {
+        let mut buffer = Cursor::new(Vec::new());
+        {
+            let mut zip = ZipWriter::new(&mut buffer);
+            let opts = SimpleFileOptions::default();
+            zip.start_file(MANIFEST_ENTRY, opts)
+                .expect("start manifest");
+            zip.write_all(MANIFEST.as_bytes()).expect("write manifest");
+            zip.start_file(COMPONENT_ENTRY, opts).expect("start wasm");
+            zip.write_all(b"\0asm\x01\0\0\0").expect("write wasm");
+            zip.start_file("assets/../../evil", opts)
+                .expect("start hostile asset");
+            zip.write_all(b"pwned").expect("write hostile asset");
+            zip.finish().expect("finish");
+        }
+        buffer.set_position(0);
+
+        let err = open_reader(buffer).expect_err("asset traversal must fail");
+        assert!(matches!(err, BundleError::UnsafeAssetPath { .. }));
     }
 
     #[test]

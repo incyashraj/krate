@@ -1,0 +1,25 @@
+package krate:resources@0.1.0;
+
+/// Read-only files carried inside the `.krate` application itself.
+///
+/// These are application resources, not files from the user's computer, so
+/// reading them does not require a filesystem capability grant.
+interface assets {
+  /// Error returned while resolving an application-bundled resource.
+  variant resource-error {
+    /// No bundled asset exists at the requested path.
+    not-found,
+    /// The path was absolute, escaped the asset root, or used unsupported syntax.
+    invalid-path,
+    /// The asset is larger than the runtime's bounded read limit.
+    too-large,
+    /// The host could not read the asset.
+    io(string),
+  }
+
+  /// Read one asset by its path relative to the bundle's `assets/` directory.
+  read: func(path: string) -> result<list<u8>, resource-error>;
+
+  /// List direct children below a relative directory.
+  %list: func(path: string) -> result<list<string>, resource-error>;
+}

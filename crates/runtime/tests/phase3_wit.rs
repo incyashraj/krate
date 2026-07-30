@@ -24,7 +24,7 @@ fn phase_3_gui_wit_package_parses() {
         "gui world should expose Phase 2 plus Phase 3 imports"
     );
     assert_eq!(gui.exports.len(), 1);
-    assert_eq!(resolve.packages.len(), 9);
+    assert_eq!(resolve.packages.len(), 11);
 }
 
 fn workspace_root() -> PathBuf {

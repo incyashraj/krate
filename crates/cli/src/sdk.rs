@@ -16,9 +16,11 @@ include!(concat!(env!("OUT_DIR"), "/embedded_sdk.rs"));
 /// The SDK version tag the cache directory is keyed on, so a new binary lays
 /// down a fresh SDK rather than reusing a stale one.
 fn sdk_version() -> &'static str {
-    // Distinct SDK contents get a distinct cache dir. The git sha embedded by
-    // build.rs changes whenever the tree does, which is a safe over-invalidation.
-    option_env!("KRATE_GIT_SHA").unwrap_or("dev")
+    // Distinct SDK contents get a distinct cache dir, including uncommitted WIT
+    // changes during development.
+    option_env!("KRATE_SDK_FINGERPRINT")
+        .or(option_env!("KRATE_GIT_SHA"))
+        .unwrap_or("dev")
 }
 
 /// The directory the SDK is materialized into for this binary's version.

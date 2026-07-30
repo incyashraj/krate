@@ -28,6 +28,9 @@ allow = [
     # drawn path Cut/Copy/Paste) is published under the Boost Software License,
     # a permissive OSI-approved license with no copyleft or attribution burden.
     "BSL-1.0",
+    # whisper-rs and its whisper.cpp bindings use the Unlicense. It is an
+    # OSI-approved public-domain dedication and permissive fallback license.
+    "Unlicense",
 ]
 # Confidence threshold for license expression detection.
 confidence-threshold = 0.8

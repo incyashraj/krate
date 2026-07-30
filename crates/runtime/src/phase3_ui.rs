@@ -136,6 +136,11 @@ impl Phase3UiRuntime {
     pub fn host_mode(&self) -> Phase3HostUiMode {
         self.host_mode
     }
+
+    /// Return the capability guard shared by every Phase 3 host interface.
+    pub fn guard(&self) -> &UapiGuard {
+        &self.guard
+    }
 }
 
 impl<'a> Phase3UiDispatcher<'a> {

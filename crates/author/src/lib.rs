@@ -10,9 +10,8 @@
 //! substitute for `generate` without touching the build/pack/verify steps that
 //! follow in `scripts/author-krate.sh`.
 //!
-//! Two app kinds today: a word-frequency reporter (a CLI app that reads a file
-//! and prints its most common words) and a checklist (a GUI app with checkboxes
-//! that saves locally). Each declares only the capabilities it uses, and each
+//! Built-in kinds include a word-frequency reporter, a persistent checklist,
+//! and a voice-activated teleprompter. Each declares only the capabilities it uses, and each
 //! has a required capability whose grant gates it — `fs.read` for the reporter,
 //! `fs.write` for the checklist — so the packaged `.krate` has a real
 //! permission wall to prove: run it with the grant and it works; withhold the
@@ -29,6 +28,8 @@ pub enum AppKind {
     WordFrequency,
     /// A GUI app: a checklist with checkboxes that saves locally.
     Checklist,
+    /// A GUI app: a microphone-driven teleprompter.
+    VoicePrompter,
 }
 
 impl AppKind {
@@ -44,6 +45,15 @@ impl AppKind {
     /// agent the right starter to adapt, which is where authoring succeeds.
     pub fn infer(request: &str) -> AppKind {
         let lower = request.to_lowercase();
+
+        let wants_voice_prompter = lower.contains("voice prompter")
+            || lower.contains("voice-prompter")
+            || lower.contains("teleprompter")
+            || (lower.contains("microphone")
+                && (lower.contains("prompt") || lower.contains("script")));
+        if wants_voice_prompter {
+            return AppKind::VoicePrompter;
+        }
 
         // Clear signals for the CLI file-analysis app.
         let wants_file_report = lower.contains("word frequency")
@@ -123,6 +133,19 @@ impl AppRequest {
             // The checklist reads and writes its own data directory, named for
             // the app; the glob is the read half of that grant.
             read_glob: format!("./{name}/**"),
+            top_n: 0,
+        }
+    }
+
+    /// A native teleprompter that advances after a spoken phrase.
+    pub fn voice_prompter(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            description:
+                "A voice-activated teleprompter that listens only with explicit permission."
+                    .to_string(),
+            kind: AppKind::VoicePrompter,
+            read_glob: "./unused/**".to_string(),
             top_n: 0,
         }
     }
@@ -226,6 +249,20 @@ pub fn generate(request: &AppRequest, sdk_prefix: &str) -> Result<GeneratedApp, 
                 contents: checklist_manifest_toml(request),
             },
         ],
+        AppKind::VoicePrompter => vec![
+            GeneratedFile {
+                path: "Cargo.toml".to_string(),
+                contents: checklist_cargo_toml(request, sdk_prefix),
+            },
+            GeneratedFile {
+                path: "src/lib.rs".to_string(),
+                contents: voice_prompter_source(request),
+            },
+            GeneratedFile {
+                path: "manifest.toml".to_string(),
+                contents: voice_prompter_manifest_toml(request),
+            },
+        ],
     };
     Ok(GeneratedApp { files })
 }
@@ -269,6 +306,7 @@ world = "cli"
 "krate:net" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/net" }}
 "krate:time" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/time" }}
 "krate:locale" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/locale" }}
+"krate:resources" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/resources" }}
 
 # abort on panic and let LTO strip the unreachable std/panic paths that would
 # otherwise leave dangling wasi:* import declarations in the component. A Krate
@@ -587,6 +625,7 @@ krate::export!(Component);
 /// drift apart: the sample *is* the template. Only the window title is
 /// substituted per request.
 const CHECKLIST_SOURCE: &str = include_str!("../../../apps/krate-checklist/src/lib.rs");
+const VOICE_PROMPTER_SOURCE: &str = include_str!("voice_prompter_template.rs");
 
 fn checklist_source(request: &AppRequest) -> String {
     // A human-facing window title from the kebab-case name (e.g. `my-list` ->
@@ -603,6 +642,10 @@ fn checklist_source(request: &AppRequest) -> String {
             "./checklist/",
             &format!("./{}/", checklist_data_dir(request)),
         )
+}
+
+fn voice_prompter_source(request: &AppRequest) -> String {
+    VOICE_PROMPTER_SOURCE.replace("Voice Prompter", &title_case(&request.name))
 }
 
 /// The folder a generated checklist-style app keeps its data in: its own name,
@@ -658,9 +701,11 @@ world = "gui"
 "krate:net" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/net" }}
 "krate:time" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/time" }}
 "krate:locale" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/locale" }}
+"krate:resources" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/resources" }}
 "krate:ui" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/ui" }}
 "krate:gfx" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/gfx" }}
 "krate:audio" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/audio" }}
+"krate:speech" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/speech" }}
 
 [profile.release]
 panic = "abort"
@@ -712,6 +757,41 @@ required = true
 [[capabilities]]
 cap = "fs.write:./{data_dir}/**"
 rationale = "Save changes to your {title}"
+required = true
+"#
+    )
+}
+
+fn voice_prompter_manifest_toml(request: &AppRequest) -> String {
+    let name = &request.name;
+    let snake = request.snake_name();
+    let title = title_case(name);
+    format!(
+        r#"[app]
+id = "dev.krate.{snake}"
+name = "{title}"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/{snake}.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the teleprompter window"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report readiness during automated verification"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated verification"
+required = true
+
+[[capabilities]]
+cap = "audio.capture"
+rationale = "Listen for your voice to advance the teleprompter"
 required = true
 "#
     )
@@ -796,6 +876,23 @@ mod tests {
             AppKind::infer("count the words in a file"),
             AppKind::WordFrequency
         );
+    }
+
+    #[test]
+    fn infers_and_generates_a_voice_prompter_with_microphone_permission() {
+        assert_eq!(
+            AppKind::infer("Make a voice prompter that listens to my microphone"),
+            AppKind::VoicePrompter
+        );
+        let app =
+            generate(&AppRequest::voice_prompter("voice-prompter"), "../..").expect("generate");
+        let source = app.file("src/lib.rs").expect("source");
+        let manifest = app.file("manifest.toml").expect("manifest");
+        assert!(source.contains("capture::open"));
+        assert!(source.contains("transcription::match_line_stream"));
+        assert!(source.contains("Voice prompter"));
+        assert!(manifest.contains(r#"cap = "audio.capture""#));
+        assert!(manifest.contains("Listen for your voice"));
     }
 
     #[test]

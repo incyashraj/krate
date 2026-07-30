@@ -24,6 +24,8 @@ const EXPECTED_IMPORTS: &[&str] = &[
     "krate:locale/types@0.1.0",
     "krate:net/http-client@0.1.0",
     "krate:net/types@0.1.0",
+    "krate:resources/assets@0.1.0",
+    "krate:speech/transcription@0.1.0",
     "krate:time/clock@0.1.0",
     "krate:time/sleep@0.1.0",
     "krate:ui/clipboard@0.1.0",
@@ -43,6 +45,8 @@ const EXPECTED_PACKAGES: &[&str] = &[
     "krate:io@0.1.0",
     "krate:locale@0.1.0",
     "krate:net@0.1.0",
+    "krate:resources@0.1.0",
+    "krate:speech@0.1.0",
     "krate:time@0.1.0",
     "krate:ui@0.1.0",
 ];

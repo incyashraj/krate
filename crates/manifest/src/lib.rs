@@ -181,10 +181,6 @@ impl AppWorld {
             Self::Phase3Gui => PHASE3_GUI_WORLD,
         }
     }
-
-    pub fn is_runnable(self) -> bool {
-        matches!(self, Self::Phase2Cli)
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
