@@ -11,6 +11,24 @@ fn krate() -> Command {
     Command::new(env!("CARGO_BIN_EXE_krate"))
 }
 
+/// True when `cargo-component` is on PATH.
+///
+/// The port pipeline compiles a real component, so the tests that run it need
+/// the same build tools `krate create` asks for. Lanes that only run the
+/// workspace tests do not install them, and there the honest outcome is to skip
+/// rather than to fail on a missing tool or, worse, to weaken the assertions so
+/// the test passes without building anything. The lanes that do install the
+/// toolchain still run these tests in full.
+fn has_cargo_component() -> bool {
+    Command::new("cargo-component")
+        .arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 #[test]
 fn help_lists_phase_1_commands() {
     let output = krate().arg("--help").output().expect("run krate help");
@@ -189,6 +207,10 @@ fn port_prepare_refuses_to_overwrite_an_existing_workspace() {
 
 #[test]
 fn port_author_command_builds_packages_and_permission_tests_a_candidate() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
     let root = tempfile::tempdir().expect("create temp dir");
     let source = root.path().join("tiny-reader");
     std::fs::create_dir_all(source.join("src")).expect("create source");
@@ -268,6 +290,10 @@ fn port_author_command_builds_packages_and_permission_tests_a_candidate() {
 
 #[test]
 fn port_repairs_a_failed_candidate_with_the_exact_build_error() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
     let root = tempfile::tempdir().expect("create temp dir");
     let source = root.path().join("repair-reader");
     std::fs::create_dir_all(source.join("src")).expect("create source");
@@ -344,6 +370,10 @@ fn port_to_requires_an_agent() {
 
 #[test]
 fn port_agent_cannot_write_through_the_read_only_source_snapshot() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component is not installed");
+        return;
+    }
     let root = tempfile::tempdir().expect("create temp dir");
     let source = root.path().join("source");
     std::fs::create_dir_all(source.join("src")).expect("create source");

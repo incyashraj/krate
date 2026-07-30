@@ -114,6 +114,8 @@ jobs:
             ~/.cargo/git
             target/
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-component (the port tests build a real component)
+        run: cargo install cargo-component --locked --version 0.21.1
       - name: Run workspace tests
         run: cargo test --workspace --all-features
       - name: krate create fails clearly when build tools are missing

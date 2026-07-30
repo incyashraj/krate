@@ -20,6 +20,7 @@ The current world imports these interfaces:
 - `krate:locale/types@0.1.0`
 - `krate:locale/info@0.1.0`
 - `krate:locale/format@0.1.0`
+- `krate:resources/assets@0.1.0`
 
 The app exports:
 
@@ -674,6 +675,37 @@ Shared network request, response, and error types.
 > Host-specific network error text.
 
 - `other`: `string`
+
+
+## `krate:resources/assets@0.1.0`
+
+### Functions
+
+> Read one asset by its path relative to the bundle's `assets/` directory.
+
+- `read(path: string) -> result<list<u8>, resource-error>`
+> List direct children below a relative directory.
+
+- `list(path: string) -> result<list<string>, resource-error>`
+
+### Types
+
+#### `resource-error` variant
+
+> Error returned while resolving an application-bundled resource.
+
+> No bundled asset exists at the requested path.
+
+- `not-found`
+> The path was absolute, escaped the asset root, or used unsupported syntax.
+
+- `invalid-path`
+> The asset is larger than the runtime's bounded read limit.
+
+- `too-large`
+> The host could not read the asset.
+
+- `io`: `string`
 
 
 ## `krate:time/clock@0.1.0`
