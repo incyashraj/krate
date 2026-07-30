@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#1155ee" />
+  <meta name="theme-color" content="#0b0d12" />
   <meta name="description" content="Open a Krate app, make a shareable app from a request, or connect an AI coding agent. One file for Mac, Windows, and Linux with clear access before it runs." />
   <title>Make and share a Krate app</title>
-  <link rel="icon" href="../../krate-app-icon.png" />
+  <link rel="icon" href="../../krate-glyph-blue.png" />
   <style>
     :root {
       --blue: #1155ee;
@@ -875,6 +875,445 @@
       .terminal pre { font-size: 11px; }
     }
   </style>
+  <style>
+    :root {
+      color-scheme: dark;
+      --blue: #6291ff;
+      --blue-dark: #3156aa;
+      --cyan: #6cf4d7;
+      --cyan-soft: #111a1d;
+      --yellow: #f4dc74;
+      --pink: #ff87bc;
+      --red: #ff7f95;
+      --green: #62f3ad;
+      --ink: #f5f7fb;
+      --paper: #0b0d12;
+      --panel: #11141b;
+      --chrome: #171b24;
+      --white: #11141b;
+      --line: 1px solid #2a303d;
+      --inset: none;
+      --raised: 0 24px 64px rgba(0, 0, 0, .24);
+      --muted-dark: #98a1b3;
+      --quiet-dark: #687185;
+      --line-dark: #2a303d;
+      --line-strong-dark: #414a5c;
+      --bg-dark: #0b0d12;
+      --mono: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 50% -20%, rgba(98, 145, 255, .13), transparent 34rem),
+        var(--bg-dark);
+      font-family: var(--mono);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    body::before {
+      opacity: .035;
+      background: repeating-linear-gradient(
+        to bottom,
+        #fff 0,
+        #fff 1px,
+        transparent 1px,
+        transparent 4px
+      );
+    }
+
+    ::selection {
+      color: var(--bg-dark);
+      background: var(--cyan);
+    }
+
+    .skip {
+      color: var(--bg-dark);
+      background: var(--cyan);
+      border: 0;
+    }
+
+    .site-nav {
+      border-bottom: 1px solid rgba(65, 74, 92, .55);
+      background: rgba(11, 13, 18, .88);
+      backdrop-filter: blur(18px);
+    }
+
+    .nav-inner {
+      min-height: 68px;
+    }
+
+    .brand {
+      font-family: var(--mono);
+      font-size: 16px;
+      letter-spacing: -.02em;
+    }
+
+    .brand img {
+      width: 34px;
+      height: 34px;
+    }
+
+    .nav-links {
+      gap: 3px;
+    }
+
+    .nav-link,
+    .nav-cta {
+      min-height: auto;
+      padding: 8px 10px;
+      color: var(--muted-dark);
+      border: 0;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .nav-link:hover,
+    .nav-link:focus-visible {
+      color: var(--ink);
+      background: var(--chrome);
+      border-color: transparent;
+    }
+
+    .nav-cta {
+      margin-left: 10px;
+      color: var(--ink);
+      border: 1px solid var(--line-strong-dark);
+      background: transparent;
+      box-shadow: none;
+    }
+
+    .nav-cta:hover,
+    .nav-cta:focus-visible {
+      color: var(--bg-dark);
+      background: var(--cyan);
+      border-color: var(--cyan);
+      box-shadow: none;
+      transform: none;
+    }
+
+    .menu-button {
+      color: var(--ink);
+      border: 1px solid var(--line-dark);
+      border-radius: 6px;
+      background: var(--panel);
+      box-shadow: none;
+    }
+
+    .hero {
+      border-bottom: 1px solid var(--line-dark);
+      background:
+        radial-gradient(circle at 78% 40%, rgba(98, 145, 255, .14), transparent 26rem),
+        transparent;
+    }
+
+    .hero::after {
+      border-color: var(--blue);
+      opacity: .08;
+    }
+
+    .hero-inner {
+      min-height: 720px;
+    }
+
+    .eyebrow {
+      color: var(--cyan);
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      letter-spacing: .11em;
+    }
+
+    .eyebrow::before {
+      background: var(--cyan);
+      border: 0;
+      box-shadow: 0 0 18px rgba(108, 244, 215, .5);
+    }
+
+    h1,
+    h2,
+    h3 {
+      font-family: var(--mono);
+    }
+
+    h1 {
+      font-size: clamp(46px, 6.3vw, 78px);
+      letter-spacing: -.065em;
+    }
+
+    .hero-copy > p,
+    .section-heading > p:last-child,
+    .section-lead,
+    .setup-copy p,
+    .path-card p,
+    .step p,
+    .safety-copy p {
+      color: var(--muted-dark);
+      font-family: var(--sans);
+    }
+
+    .underline::after {
+      height: 8px;
+      bottom: 3px;
+      background: rgba(98, 145, 255, .65);
+    }
+
+    .button {
+      color: var(--ink);
+      border: 1px solid var(--line-strong-dark);
+      border-radius: 6px;
+      background: transparent;
+      box-shadow: none;
+      font-weight: 700;
+    }
+
+    .button.primary {
+      color: var(--bg-dark);
+      border-color: var(--ink);
+      background: var(--ink);
+    }
+
+    .button:hover,
+    .button:focus-visible {
+      color: var(--bg-dark);
+      border-color: var(--cyan);
+      background: var(--cyan);
+      box-shadow: none;
+      transform: none;
+    }
+
+    .micro-proof {
+      color: var(--muted-dark);
+      font-weight: 600;
+    }
+
+    .micro-proof span::before {
+      color: var(--bg-dark);
+      border: 0;
+      border-radius: 3px;
+      background: var(--cyan);
+    }
+
+    .desktop-scene {
+      border: 1px solid var(--line-strong-dark);
+      border-radius: 10px;
+      background:
+        linear-gradient(90deg, rgba(98, 145, 255, .055) 1px, transparent 1px),
+        linear-gradient(rgba(98, 145, 255, .055) 1px, transparent 1px),
+        #0d1016;
+      background-size: 20px 20px;
+      box-shadow: 0 34px 90px rgba(0, 0, 0, .3);
+    }
+
+    .desktop-label {
+      color: var(--quiet-dark);
+    }
+
+    .window,
+    .setup-window,
+    .path-window,
+    .access-manager {
+      color: var(--ink);
+      border: 1px solid var(--line-strong-dark);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 22px 58px rgba(0, 0, 0, .28);
+    }
+
+    .window {
+      overflow: hidden;
+    }
+
+    .window-title,
+    .panel-title,
+    .card-bar {
+      color: var(--muted-dark);
+      border-bottom: 1px solid var(--line-dark);
+      background: var(--chrome);
+      font-weight: 700;
+    }
+
+    .window-title.cyan,
+    .window-title.pink,
+    .card-bar.cyan,
+    .card-bar.pink {
+      color: var(--muted-dark);
+      background: var(--chrome);
+    }
+
+    .window-controls i {
+      color: var(--muted-dark);
+      border: 1px solid var(--line-strong-dark);
+      border-radius: 2px;
+      background: var(--panel);
+      box-shadow: none;
+    }
+
+    .prompt-label,
+    .prompt-box,
+    .file-stage,
+    .access-line {
+      font-family: var(--mono);
+    }
+
+    .prompt-box,
+    .file-stage {
+      color: var(--ink);
+      border-color: var(--line-strong-dark);
+      background: #0d1016;
+    }
+
+    .file-stage small,
+    .access-state {
+      color: var(--green);
+    }
+
+    .access-line {
+      color: var(--muted-dark);
+      border-bottom-color: var(--line-strong-dark);
+    }
+
+    .access-check {
+      color: var(--bg-dark);
+      border-radius: 2px;
+    }
+
+    .ticker {
+      color: var(--muted-dark);
+      border-bottom: 1px solid var(--line-dark);
+      background: #0d1016;
+    }
+
+    .ticker b,
+    .kicker {
+      color: var(--cyan);
+    }
+
+    .section {
+      border-bottom: 1px solid var(--line-dark);
+    }
+
+    .path-card,
+    .step {
+      color: var(--ink);
+      border: 1px solid var(--line-dark);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: none;
+    }
+
+    .retro-icon,
+    .path-number,
+    .step-number {
+      color: var(--bg-dark);
+      border: 0;
+      border-radius: 5px;
+      background: var(--blue);
+      box-shadow: none;
+    }
+
+    .text-link {
+      color: var(--blue);
+    }
+
+    .text-link:hover {
+      color: var(--bg-dark);
+      background: var(--cyan);
+    }
+
+    .setup-section,
+    .path-section.alt,
+    .path-section.blue {
+      background: transparent;
+    }
+
+    .terminal {
+      border: 1px solid var(--line-strong-dark);
+      border-radius: 7px;
+      background: #080b10;
+      box-shadow: none;
+    }
+
+    .terminal-bar {
+      color: var(--muted-dark);
+      border-bottom: 1px solid var(--line-dark);
+      background: var(--chrome);
+    }
+
+    .terminal pre {
+      color: #dbe5ff;
+    }
+
+    code {
+      color: var(--blue);
+      border: 1px solid var(--line-dark);
+      border-radius: 4px;
+      background: #0d1016;
+    }
+
+    .note {
+      color: var(--muted-dark);
+      border: 1px solid var(--line-strong-dark);
+      border-left: 3px solid var(--yellow);
+      border-radius: 6px;
+      background: var(--panel);
+      box-shadow: none;
+    }
+
+    .note strong {
+      color: var(--ink);
+    }
+
+    .note a {
+      color: var(--blue);
+    }
+
+    .safety-section {
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 22% 50%, rgba(98, 145, 255, .13), transparent 27rem),
+        transparent;
+    }
+
+    .manager-app {
+      border-bottom-color: var(--line-strong-dark);
+    }
+
+    .manager-row {
+      color: var(--muted-dark);
+      border-bottom-color: var(--line-strong-dark);
+    }
+
+    .state-ok,
+    .state-no {
+      color: var(--bg-dark);
+      border-radius: 3px;
+    }
+
+    footer {
+      color: var(--muted-dark);
+      border-top: 1px solid var(--line-dark);
+      background: #080a0e;
+    }
+
+    .footer-inner a {
+      color: var(--blue);
+    }
+
+    @media (max-width: 920px) {
+      .nav-links {
+        border-bottom: 1px solid var(--line-dark);
+        background: rgba(11, 13, 18, .98);
+      }
+
+      .nav-cta {
+        margin-left: 0;
+      }
+    }
+  </style>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -882,7 +1321,7 @@
   <nav class="site-nav" aria-label="Primary navigation">
     <div class="nav-inner">
       <a class="brand" href="../../index.html" aria-label="Krate home">
-        <img src="../../krate-app-icon.png" alt="" />
+        <img src="../../krate-glyph-blue.png" alt="" />
         <span>Krate</span>
       </a>
 
@@ -1218,7 +1657,7 @@
           </div>
           <div class="access-manager-body">
             <div class="manager-app">
-              <img src="../../krate-app-icon.png" alt="" />
+              <img src="../../krate-glyph-blue.png" alt="" />
               <span><strong>Checklist wants to open</strong><small>app.krate.checklist</small></span>
             </div>
             <div class="manager-row"><span>✓</span><span>Show a window</span><span class="state-ok">ALLOWED</span></div>
