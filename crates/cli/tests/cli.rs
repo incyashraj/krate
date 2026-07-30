@@ -1629,6 +1629,44 @@ fn configured_krate_cat_component_denies_file_outside_granted_glob() {
 }
 
 #[test]
+fn a_redirect_does_not_carry_a_request_to_an_ungranted_host() {
+    // The property: net.connect is granted per host, so the client must not
+    // follow a redirect on the app's behalf. If it did, one granted host could
+    // send the request anywhere while the permission prompt named only that
+    // first host.
+    let Some(path) = configured_krate_curl_component() else {
+        return;
+    };
+    let Some((addr, server)) = spawn_redirect_fixture("http://evil.example.com/stolen") else {
+        return;
+    };
+    let url = format!("http://{addr}/start");
+
+    let output = krate()
+        .args(["run", "--grant", &format!("net.connect:{addr}")])
+        .arg(path)
+        .args(["--", &url])
+        .output()
+        .expect("run krate-curl component");
+    let accepted = server.join().expect("redirect fixture thread completed");
+    if !accepted {
+        eprintln!(
+            "skipping redirect fixture: runtime could not connect to localhost in this environment"
+        );
+        return;
+    }
+
+    // Whatever the app does with the 302, the bytes of the redirect target must
+    // never appear: reaching evil.example.com would have needed a grant nobody
+    // gave.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("stolen"),
+        "the redirect must not have been followed\nstdout:\n{stdout}"
+    );
+}
+
+#[test]
 fn configured_krate_curl_component_fetches_granted_http_url() {
     let Some(path) = configured_krate_curl_component() else {
         return;
@@ -3200,6 +3238,50 @@ fn bind_local_fixture_listener(label: &str) -> Option<TcpListener> {
         }
         Err(err) => panic!("bind {label}: {err}"),
     }
+}
+
+/// An HTTP fixture that answers every request with a redirect elsewhere.
+///
+/// Used to prove the client does not follow it. `net.connect` is granted per
+/// host, so a client that followed redirects itself would let one granted host
+/// send the app's request anywhere, while the person's prompt named only the
+/// first.
+fn spawn_redirect_fixture(
+    location: &'static str,
+) -> Option<(SocketAddr, thread::JoinHandle<bool>)> {
+    let listener = bind_local_fixture_listener("redirect fixture")?;
+    listener
+        .set_nonblocking(true)
+        .expect("set redirect fixture nonblocking");
+    let addr = listener
+        .local_addr()
+        .expect("read redirect fixture address");
+    let handle = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(err) if err.kind() == std::io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        return false;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(err) => panic!("accept redirect fixture connection: {err}"),
+            }
+        };
+        stream
+            .set_nonblocking(false)
+            .expect("set redirect fixture stream blocking");
+        let mut request = [0_u8; 1024];
+        let _ = stream.read(&mut request).expect("read redirect request");
+        let wrote = write!(
+            stream,
+            "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        );
+        !http_fixture_client_closed(wrote, "redirect headers")
+    });
+    Some((addr, handle))
 }
 
 fn spawn_http_fixture(body: &'static [u8]) -> Option<(SocketAddr, thread::JoinHandle<bool>)> {
