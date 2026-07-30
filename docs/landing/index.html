@@ -521,6 +521,210 @@
       font-size: 11px;
     }
 
+    .demo-panel {
+      min-height: 500px;
+    }
+
+    .demo-layout {
+      display: grid;
+      grid-template-columns: minmax(240px, .72fr) minmax(0, 1.28fr);
+      gap: 46px;
+      align-items: stretch;
+    }
+
+    .demo-copy {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 8px 0;
+    }
+
+    .demo-state {
+      margin-bottom: 20px;
+      padding: 5px 8px;
+      color: var(--bg);
+      background: var(--cyan);
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .demo-state.planned {
+      color: var(--yellow);
+      background: rgba(244, 220, 116, .1);
+      border: 1px solid rgba(244, 220, 116, .34);
+    }
+
+    .demo-copy h3 {
+      margin-bottom: 15px;
+      font-size: clamp(24px, 3vw, 34px);
+      line-height: 1.16;
+      letter-spacing: -.045em;
+    }
+
+    .demo-copy p {
+      margin-bottom: 24px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.65;
+    }
+
+    .demo-copy .demo-note {
+      margin-top: auto;
+      margin-bottom: 0;
+      color: var(--quiet);
+      font-family: var(--mono);
+      font-size: 11px;
+      line-height: 1.65;
+    }
+
+    .demo-terminal {
+      min-width: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      background: #080a0e;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      box-shadow: 0 24px 58px rgba(0, 0, 0, .22);
+    }
+
+    .demo-terminal-bar {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 0 14px;
+      color: var(--quiet);
+      background: #151820;
+      border-bottom: 1px solid var(--line);
+      font-size: 10px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .demo-terminal-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+    }
+
+    .demo-terminal-status::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      background: var(--cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 12px rgba(108, 244, 215, .5);
+    }
+
+    .demo-output {
+      min-height: 350px;
+      flex: 1;
+      padding: 20px;
+      overflow: auto;
+      color: #dce4f7;
+      font-size: 11px;
+      line-height: 1.7;
+    }
+
+    .demo-line {
+      min-height: 19px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .demo-line.command {
+      margin: 4px 0 8px;
+      color: var(--text);
+    }
+
+    .demo-line.command::before {
+      content: "$ ";
+      color: var(--cyan);
+    }
+
+    .demo-line.label {
+      margin-top: 5px;
+      color: var(--blue-soft);
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .demo-line.muted {
+      color: var(--quiet);
+    }
+
+    .demo-line.info {
+      color: var(--blue-soft);
+    }
+
+    .demo-line.success {
+      color: var(--yellow);
+    }
+
+    .demo-line.planned {
+      color: var(--muted);
+    }
+
+    .demo-line.gap {
+      min-height: 14px;
+    }
+
+    .demo-controls {
+      min-height: 45px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 8px 12px;
+      color: var(--quiet);
+      background: #0d1016;
+      border-top: 1px solid var(--line);
+      font-size: 10px;
+    }
+
+    .demo-replay {
+      padding: 6px 9px;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 10px;
+    }
+
+    .demo-replay:hover,
+    .demo-replay:focus-visible {
+      color: var(--text);
+      border-color: var(--line-strong);
+      outline: none;
+    }
+
+    .demo-link {
+      color: var(--blue-soft);
+      text-decoration: none;
+    }
+
+    .demo-link:hover,
+    .demo-link:focus-visible {
+      color: var(--cyan);
+      outline: none;
+    }
+
+    .tab-planned {
+      margin-left: 5px;
+      color: var(--yellow);
+      font-size: 9px;
+      text-transform: uppercase;
+    }
+
     .file-object {
       width: 220px;
       margin: 0 auto;
@@ -918,12 +1122,21 @@
       }
 
       .panel-grid,
+      .demo-layout,
       .cloud-layout {
         grid-template-columns: 1fr;
       }
 
       .panel-grid {
         gap: 35px;
+      }
+
+      .demo-layout {
+        gap: 30px;
+      }
+
+      .demo-copy .demo-note {
+        margin-top: 0;
       }
 
       .path-grid,
@@ -1006,6 +1219,21 @@
         white-space: nowrap;
       }
 
+      .demo-panel {
+        min-height: 0;
+      }
+
+      .demo-output {
+        min-height: 390px;
+        padding: 16px;
+        font-size: 10px;
+      }
+
+      .demo-controls {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+
       .file-object {
         width: 190px;
       }
@@ -1079,24 +1307,24 @@
     <section class="section" id="how">
       <div class="wrap">
         <div class="section-heading">
-          <p class="label">How Krate works</p>
-          <h2>From a plain request to an app someone else can open.</h2>
-          <p>Three steps. No separate Mac, Windows, and Linux projects. No asking someone to trust an unknown app blindly.</p>
+          <p class="label">Interactive walkthrough</p>
+          <h2>See exactly where Krate fits.</h2>
+          <p>Watch the current creation and opening flows run step by step. The Cloud tab shows what comes next and is clearly marked as planned.</p>
         </div>
 
         <div class="product-window">
           <div class="window-bar">
             <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            <span class="window-name">krate journey</span>
+            <span class="window-name">krate / product walkthrough</span>
           </div>
 
-          <div class="journey-tabs" role="tablist" aria-label="Krate product journey">
-            <button class="journey-tab active" type="button" role="tab" aria-selected="true" aria-controls="journeyPanel" data-step="make"><strong>01</strong> Make with AI</button>
-            <button class="journey-tab" type="button" role="tab" aria-selected="false" aria-controls="journeyPanel" data-step="send"><strong>02</strong> Send one file</button>
-            <button class="journey-tab" type="button" role="tab" aria-selected="false" aria-controls="journeyPanel" data-step="open"><strong>03</strong> Open with control</button>
+          <div class="journey-tabs" role="tablist" aria-label="Krate product walkthrough">
+            <button class="journey-tab active" id="demoTabCreate" type="button" role="tab" aria-selected="true" aria-controls="terminalDemoPanel" tabindex="0" data-demo="create"><strong>01</strong> Make an app</button>
+            <button class="journey-tab" id="demoTabOpen" type="button" role="tab" aria-selected="false" aria-controls="terminalDemoPanel" tabindex="-1" data-demo="open"><strong>02</strong> Open a .krate</button>
+            <button class="journey-tab" id="demoTabCloud" type="button" role="tab" aria-selected="false" aria-controls="terminalDemoPanel" tabindex="-1" data-demo="cloud"><strong>03</strong> Krate Cloud <span class="tab-planned">planned</span></button>
           </div>
 
-          <div class="journey-panel" id="journeyPanel" role="tabpanel" aria-live="polite"></div>
+          <div class="journey-panel demo-panel" id="terminalDemoPanel" role="tabpanel" aria-labelledby="demoTabCreate"></div>
         </div>
       </div>
     </section>
@@ -1269,92 +1497,174 @@
   </footer>
 
   <script>
-    const command = 'krate create "Make a checklist app that saves locally" --agent claude --output checklist.krate';
-
-    const panels = {
-      make: `
-        <div class="panel-grid">
-          <div class="panel-copy">
-            <h3>Tell AI what you need.</h3>
-            <p>Krate gives Claude a constrained authoring path, then builds, checks, packages, and verifies the result.</p>
-            <div class="copy-row">
-              <button class="copy-button" type="button" data-copy-command>Copy command</button>
-              <span class="copy-status" aria-live="polite"></span>
-            </div>
-          </div>
-          <div class="terminal" aria-label="Krate create command">
-            <span class="prompt">$</span> <span class="command">${command}</span><br /><br />
-            <span class="muted">authoring the app</span><br />
-            <span class="muted">checking imports</span><br />
-            <span class="muted">verifying requested access</span><br />
-            <span class="success">Created checklist.krate</span>
-          </div>
-        </div>
-      `,
-      send: `
-        <div class="panel-grid">
-          <div class="panel-copy">
-            <h3>Send one file.</h3>
-            <p>The app and the access it requests travel together inside <code>checklist.krate</code>. The same file can go to a Mac, Windows, or Linux user.</p>
-            <p class="journey-note">No separate build for each operating system.</p>
-          </div>
-          <div class="file-object">
-            <img src="./krate-document-icon.png" alt="" />
-            <strong>checklist.krate</strong>
-            <span>one app file</span>
-            <span>Mac · Windows · Linux</span>
-          </div>
-        </div>
-      `,
-      open: `
-        <div class="panel-grid">
-          <div class="panel-copy">
-            <h3>See what it wants first.</h3>
-            <p>Before the app runs, Krate shows the access it requests. The runtime gives it only what the user approves.</p>
-            <p class="journey-note">If a required permission is denied, the app does not start and Krate explains why.</p>
-          </div>
-          <div class="permission-box">
-            <div class="permission-title">Open checklist.krate?</div>
-            <div class="permission-body">
-              <div class="permission-row"><span class="permission-check">✓</span><span>Create an app window</span></div>
-              <div class="permission-row"><span class="permission-check">✓</span><span>Read and write ./checklist/</span></div>
-              <div class="permission-row"><span class="permission-check">✓</span><span>Network access: none</span></div>
-              <div class="permission-actions">
-                <span class="mini-button">Cancel</span>
-                <span class="mini-button open">Open</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      `
+    const terminalDemos = {
+      create: {
+        state: "Working today",
+        stateClass: "",
+        title: "Make an app from one request.",
+        description: "Use your coding agent for an open-ended request, or use Krate’s built-in create flow for a supported app. Both finish with one .krate file.",
+        note: "This walkthrough uses the same commands documented in Krate today.",
+        terminalTitle: "create two apps",
+        linkLabel: "Try it for real →",
+        linkHref: "./docs/pages/make-an-app-with-ai.html",
+        lines: [
+          { type: "label", text: "AI authors the app" },
+          { type: "command", text: 'krate create "Make a grocery list app called My Groceries" --agent claude --output groceries.krate' },
+          { type: "muted", text: "handing the request to Claude" },
+          { type: "muted", text: "checking generated imports" },
+          { type: "muted", text: "building and packaging the app" },
+          { type: "muted", text: "verifying the permission wall" },
+          { type: "success", text: "Created groceries.krate" },
+          { type: "gap", text: "" },
+          { type: "label", text: "Krate creates a supported app directly" },
+          { type: "command", text: 'krate create "Make a checklist app that saves locally" --output checklist.krate' },
+          { type: "muted", text: "building the component" },
+          { type: "muted", text: "packing checklist.krate" },
+          { type: "muted", text: "verifying the permission wall" },
+          { type: "success", text: "Created checklist.krate" },
+          { type: "info", text: "Send either file to a Mac, Windows, or Linux user." }
+        ]
+      },
+      open: {
+        state: "Working today",
+        stateClass: "",
+        title: "Install once. Open a .krate file.",
+        description: "The receiver installs the runtime once. Krate then shows what each app requests before it runs and enforces the receiver’s choice.",
+        note: "Double-click opening is available on Mac, Windows, and Linux. The terminal path shown here does the same job.",
+        terminalTitle: "open groceries.krate",
+        linkLabel: "See the opening guide →",
+        linkHref: "./docs/try-krate-notes.html",
+        lines: [
+          { type: "label", text: "Install Krate on macOS or Linux" },
+          { type: "command", text: "curl -fsSL https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install.sh | sh" },
+          { type: "success", text: "Krate is ready" },
+          { type: "gap", text: "" },
+          { type: "label", text: "Open the app" },
+          { type: "command", text: "krate run groceries.krate --native-window --prompt" },
+          { type: "muted", text: "review requested access in the Krate window" },
+          { type: "info", text: "✓ create an app window" },
+          { type: "info", text: "✓ read and write ./my-groceries/" },
+          { type: "muted", text: "network access is not requested" },
+          { type: "success", text: "The app opens only after you approve." },
+          { type: "info", text: "Close and reopen it. Your saved items remain." }
+        ]
+      },
+      cloud: {
+        state: "Planned next",
+        stateClass: "planned",
+        title: "Publish and share through Krate Cloud.",
+        description: "Krate Cloud will add publisher identity, discovery, sharing, signing, and updates. Apps will still open locally through the Krate runtime.",
+        note: "This is the planned product direction. Krate Cloud is not available yet.",
+        terminalTitle: "planned cloud flow",
+        linkLabel: "Read the Cloud plan →",
+        linkHref: "https://github.com/incyashraj/krate#planned-krate-cloud",
+        lines: [
+          { type: "label", text: "Planned Krate Cloud flow" },
+          { type: "planned", text: "01  Creator publishes a .krate app" },
+          { type: "muted", text: "    attach publisher identity and signature" },
+          { type: "planned", text: "02  Krate Cloud creates a page people can find and share" },
+          { type: "muted", text: "    show the app, publisher, version, and requested access" },
+          { type: "planned", text: "03  A user downloads or opens the app" },
+          { type: "muted", text: "    the .krate file still carries its requested access" },
+          { type: "planned", text: "04  Krate Runtime opens it on the user’s computer" },
+          { type: "muted", text: "    the user reviews access before any app code runs" },
+          { type: "planned", text: "05  Updates stay connected to the same trusted publisher" },
+          { type: "success", text: "Cloud for distribution. Local runtime for execution and control." }
+        ]
+      }
     };
 
-    const panel = document.getElementById("journeyPanel");
-    const tabs = Array.from(document.querySelectorAll(".journey-tab"));
+    const demoPanel = document.getElementById("terminalDemoPanel");
+    const demoTabs = Array.from(document.querySelectorAll("[data-demo]"));
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    let demoTimers = [];
+    let activeDemo = "create";
 
-    function showStep(step) {
-      panel.innerHTML = panels[step];
-      tabs.forEach((tab) => {
-        const active = tab.dataset.step === step;
-        tab.classList.toggle("active", active);
-        tab.setAttribute("aria-selected", String(active));
+    function clearDemoTimers() {
+      demoTimers.forEach((timer) => window.clearTimeout(timer));
+      demoTimers = [];
+    }
+
+    function appendDemoLine(output, line) {
+      const element = document.createElement("div");
+      element.className = `demo-line ${line.type}`;
+      element.textContent = line.text;
+      output.appendChild(element);
+      output.scrollTop = output.scrollHeight;
+    }
+
+    function playDemo(key) {
+      clearDemoTimers();
+      const output = demoPanel.querySelector("[data-demo-output]");
+      if (!output) return;
+      output.replaceChildren();
+
+      const lines = terminalDemos[key].lines;
+      if (reducedMotion.matches) {
+        lines.forEach((line) => appendDemoLine(output, line));
+        return;
+      }
+
+      lines.forEach((line, index) => {
+        const timer = window.setTimeout(() => appendDemoLine(output, line), 170 + index * 245);
+        demoTimers.push(timer);
       });
     }
 
-    tabs.forEach((tab) => {
-      tab.addEventListener("click", () => showStep(tab.dataset.step));
+    function showDemo(key) {
+      const demo = terminalDemos[key];
+      activeDemo = key;
+      demoPanel.setAttribute("aria-labelledby", `demoTab${key[0].toUpperCase()}${key.slice(1)}`);
+      demoPanel.innerHTML = `
+        <div class="demo-layout">
+          <div class="demo-copy">
+            <span class="demo-state ${demo.stateClass}">${demo.state}</span>
+            <h3>${demo.title}</h3>
+            <p>${demo.description}</p>
+            <p class="demo-note">${demo.note}</p>
+          </div>
+          <div class="demo-terminal">
+            <div class="demo-terminal-bar">
+              <span>${demo.terminalTitle}</span>
+              <span class="demo-terminal-status">walkthrough</span>
+            </div>
+            <div class="demo-output" data-demo-output role="log" aria-live="polite" aria-label="${demo.terminalTitle} output"></div>
+            <div class="demo-controls">
+              <button class="demo-replay" type="button" data-replay>↻ Replay walkthrough</button>
+              <a class="demo-link" href="${demo.linkHref}">${demo.linkLabel}</a>
+            </div>
+          </div>
+        </div>
+      `;
+
+      demoTabs.forEach((tab) => {
+        const active = tab.dataset.demo === key;
+        tab.classList.toggle("active", active);
+        tab.setAttribute("aria-selected", String(active));
+        tab.setAttribute("tabindex", active ? "0" : "-1");
+      });
+
+      playDemo(key);
+    }
+
+    demoTabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => showDemo(tab.dataset.demo));
+      tab.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        let nextIndex = index;
+        if (event.key === "ArrowLeft") nextIndex = (index - 1 + demoTabs.length) % demoTabs.length;
+        if (event.key === "ArrowRight") nextIndex = (index + 1) % demoTabs.length;
+        if (event.key === "Home") nextIndex = 0;
+        if (event.key === "End") nextIndex = demoTabs.length - 1;
+        demoTabs[nextIndex].focus();
+        showDemo(demoTabs[nextIndex].dataset.demo);
+      });
     });
 
-    panel.addEventListener("click", async (event) => {
-      const button = event.target.closest("[data-copy-command]");
-      if (!button) return;
-      const status = panel.querySelector(".copy-status");
-      try {
-        await navigator.clipboard.writeText(command);
-        status.textContent = "Copied";
-      } catch {
-        status.textContent = "Select and copy the command above";
-      }
+    demoPanel.addEventListener("click", (event) => {
+      if (!event.target.closest("[data-replay]")) return;
+      playDemo(activeDemo);
     });
 
     const menuButton = document.getElementById("menuButton");
@@ -1375,7 +1685,7 @@
       menuButton.textContent = "☰";
     });
 
-    showStep("make");
+    showDemo("create");
   </script>
 </body>
 </html>
