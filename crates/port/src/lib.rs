@@ -1001,7 +1001,7 @@ fn detect_framework(path: &str, text: &str, lower: &str, analysis: &mut Analysis
         "rs" | "py" | "swift" | "m" | "mm" | "cs" | "xml" | "c" | "cc" | "cpp" | "h" | "hpp"
     );
 
-    let frameworks: [(&str, &[&str], bool); 11] = [
+    let frameworks: [(&str, &[&str], bool); 16] = [
         (
             "electron",
             &["\"electron\"", "from 'electron'", "from \"electron\""],
@@ -1049,6 +1049,25 @@ fn detect_framework(path: &str, text: &str, lower: &str, analysis: &mut Analysis
             is_native_source,
         ),
         ("winui", &["microsoft.ui.xaml", "winui"], is_native_source),
+        // The Rust-native GUI toolkits. Missing these meant a real eframe app
+        // was reported as "Frameworks: not detected" and handed the CLI
+        // profile -- the analyzer could not see it drew a window at all, which
+        // is the first thing a port of it has to know.
+        (
+            "egui",
+            &["eframe::", "egui::", "eframe =", "egui ="],
+            is_native_source,
+        ),
+        ("iced", &["iced::", "iced ="], is_native_source),
+        (
+            "slint",
+            &["slint::", "slint =", "slint_build"],
+            is_native_source,
+        ),
+        ("dioxus", &["dioxus::", "dioxus ="], is_native_source),
+        // winit is the window layer the others sit on, and some apps use it
+        // directly. Listed last so a more specific toolkit is named first.
+        ("winit", &["winit::", "winit ="], is_native_source),
     ];
     for (framework, patterns, relevant_file) in frameworks {
         if relevant_file && patterns.iter().any(|pattern| lower.contains(pattern)) {
@@ -1085,6 +1104,11 @@ fn framework_label(framework: &str) -> &str {
         "react" => "React",
         "vite" => "Vite",
         "electron" => "Electron",
+        "egui" => "egui/eframe",
+        "iced" => "Iced",
+        "slint" => "Slint",
+        "dioxus" => "Dioxus",
+        "winit" => "winit",
         _ => framework,
     }
 }
@@ -1099,6 +1123,9 @@ fn framework_advice(framework: &str) -> &str {
         }
         "appkit" | "swiftui" | "wpf" | "winui" | "qt" | "gtk" => {
             "This native UI must be translated to Krate's certified widget profile. Unsupported widgets and platform integrations need explicit replacements."
+        }
+        "egui" | "iced" | "slint" | "dioxus" | "winit" => {
+            "This is an immediate-mode or declarative Rust UI. The layout and business logic usually port well; the draw loop becomes a Krate widget tree, and anything drawn to a raw canvas needs an explicit replacement."
         }
         _ => "Map this framework to a supported Krate portability profile.",
     }
@@ -1246,10 +1273,24 @@ fn select_profile(analysis: &Analysis) -> String {
     {
         return "web-local-v1-planned".to_string();
     }
+    // Anything that opens a real window. The Rust-native toolkits belong here
+    // for the same reason as the platform ones: the port has to translate a UI
+    // boundary, not just host calls, and handing one the CLI profile prepares
+    // a candidate with no window at all.
     if analysis.frameworks.iter().any(|framework| {
         matches!(
             framework.as_str(),
-            "appkit" | "swiftui" | "wpf" | "winui" | "qt" | "gtk"
+            "appkit"
+                | "swiftui"
+                | "wpf"
+                | "winui"
+                | "qt"
+                | "gtk"
+                | "egui"
+                | "iced"
+                | "slint"
+                | "dioxus"
+                | "winit"
         )
     }) {
         return "desktop-native-source-port".to_string();
@@ -1355,6 +1396,68 @@ mod tests {
         assert_eq!(plan.verdict, Verdict::NeedsChanges);
         assert_eq!(plan.profile, "desktop-native-source-port");
         assert!(plan.frameworks.contains(&"swiftui".to_string()));
+    }
+
+    #[test]
+    fn a_rust_gui_app_is_not_mistaken_for_a_command_line_one() {
+        // A real eframe app reported "Frameworks: not detected" and was handed
+        // the CLI profile, which prepares a candidate with no window at all.
+        // The detector knew Qt, GTK, and WPF but none of the Rust-native
+        // toolkits -- the ones a Rust developer would actually reach for.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"budget\"\n\n[dependencies]\neframe = \"0.35.0\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("main.rs"),
+            "use eframe::egui;\nfn main() { eframe::run_native(); }\n",
+        )
+        .unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        assert!(
+            plan.frameworks.contains(&"egui".to_string()),
+            "expected egui to be detected, got {:?}",
+            plan.frameworks
+        );
+        assert_eq!(
+            plan.profile, "desktop-native-source-port",
+            "a windowed app must not get the CLI profile"
+        );
+    }
+
+    #[test]
+    fn every_rust_gui_toolkit_routes_to_the_desktop_profile() {
+        // One entry missing from either the detector or the profile match is a
+        // silent wrong answer, so check the whole set rather than a sample.
+        for (dep, name) in [
+            ("eframe", "egui"),
+            ("iced", "iced"),
+            ("slint", "slint"),
+            ("dioxus", "dioxus"),
+            ("winit", "winit"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            fs::write(
+                dir.path().join("Cargo.toml"),
+                format!("[package]\nname = \"a\"\n\n[dependencies]\n{dep} = \"1\"\n"),
+            )
+            .unwrap();
+            fs::write(dir.path().join("main.rs"), format!("use {dep}::x;\n")).unwrap();
+
+            let plan = analyze(dir.path()).unwrap();
+            assert!(
+                plan.frameworks.contains(&name.to_string()),
+                "{dep} was not detected as {name}: {:?}",
+                plan.frameworks
+            );
+            assert_eq!(
+                plan.profile, "desktop-native-source-port",
+                "{dep} should route to the desktop profile"
+            );
+        }
     }
 
     #[test]
