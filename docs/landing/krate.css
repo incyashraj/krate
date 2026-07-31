@@ -1740,3 +1740,34 @@
         animation-iteration-count: 1 !important;
       }
     }
+
+/* Answer pages: one question, answered completely. Set narrow and large so a
+   long read stays readable, with transcripts that scroll rather than pushing
+   the page sideways. */
+    .answer-title {
+      max-width: 18ch;
+      font-size: clamp(32px, 5.4vw, 56px);
+      letter-spacing: -.04em;
+      line-height: 1.06;
+    }
+
+    .answer-lead {
+      max-width: 48ch;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: clamp(16px, 2vw, 20px);
+      line-height: 1.6;
+    }
+
+    .answer-cmd {
+      margin: 0 0 18px;
+      padding: 16px 18px;
+      overflow-x: auto;
+      color: var(--blue-soft);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.65;
+      white-space: pre;
+    }

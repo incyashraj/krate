@@ -49,6 +49,10 @@ jobs:
           mkdir -p _site
           cp docs/landing/index.html _site/index.html
           cp docs/landing/krate.css _site/krate.css
+          # One page per question people actually search, generated from one
+          # template so they cannot drift the way four copies of a stylesheet did.
+          python3 scripts/build-answer-pages.py
+          cp docs/answers/*.html _site/
           cp docs/landing/faq.html _site/faq.html
           cp docs/landing/*.png _site/
           cp -R docs/book/book _site/docs

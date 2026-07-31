@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b0d12" />
+  <meta name="description" content="You asked AI to build something and it works on your machine. Here is how to send it to someone else so it opens on their Mac, Windows, or Linux computer without a build step." />
+  <!-- The github.io project page redirects here, so name the canonical home
+       once. Without it the same page is reachable at two hosts and search
+       engines have to guess which one is real. -->
+  <link rel="canonical" href="https://krate.tech/share-an-app-made-with-ai.html" />
+  <meta property="og:title" content="Krate — The cloud for AI-made software" />
+  <meta property="og:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://krate.tech/" />
+  <meta property="og:image" content="https://krate.tech/og-v2.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Krate turns an AI request into one app file for Mac, Windows, and Linux." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Krate — The cloud for AI-made software" />
+  <meta name="twitter:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
+  <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
+  <title>How to share an app you made with AI — Krate</title>
+  <link rel="icon" href="/krate-glyph-blue.png" />
+  <link rel="stylesheet" href="/krate.css" />
+  <style>
+/* The command reads as something you could type, not a slogan. It shrinks
+       hard on small screens because a wrapped command looks broken. */
+    /* One file, three machines. The file lifts out of the middle and settles
+       on each in turn: the claim of the page, drawn once, quietly. */
+    .hero-travel {
+      position: relative;
+      width: 260px;
+      height: 74px;
+      margin: 0 auto 34px;
+    }
+
+    .travel-machine {
+      position: absolute;
+      bottom: 0;
+      width: 54px;
+      height: 38px;
+      border: 1px solid var(--line-strong);
+      border-radius: 5px;
+      background: var(--panel);
+    }
+
+    /* The screen glow, so each shape reads as a computer rather than a box. */
+    .travel-machine::after {
+      content: "";
+      position: absolute;
+      inset: 6px 6px 10px;
+      border-radius: 2px;
+      background: rgba(98, 145, 255, .16);
+      transition: background .4s ease;
+    }
+
+    .travel-machine[data-os="mac"] { left: 0; }
+    .travel-machine[data-os="win"] { left: 103px; }
+    .travel-machine[data-os="linux"] { right: 0; }
+
+    /* Each machine lights as the file lands on it, on the same 9s cycle. */
+    .travel-machine::after { animation: travel-lit 9s ease-in-out infinite; }
+    .travel-machine[data-os="mac"]::after { animation-delay: 0s; }
+    .travel-machine[data-os="win"]::after { animation-delay: 3s; }
+    .travel-machine[data-os="linux"]::after { animation-delay: 6s; }
+
+    @keyframes travel-lit {
+      0%, 8% { background: rgba(108, 244, 215, .55); }
+      26%, 100% { background: rgba(98, 145, 255, .16); }
+    }
+
+    /* The file: three stacked bars, the Krate mark, travelling between them. */
+    .travel-file {
+      position: absolute;
+      top: 8px;
+      left: 14px;
+      width: 26px;
+      height: 26px;
+      background:
+        linear-gradient(var(--cyan), var(--cyan)) 0 0 / 100% 6px no-repeat,
+        linear-gradient(rgba(108, 244, 215, .6), rgba(108, 244, 215, .6)) 0 10px / 100% 6px no-repeat,
+        linear-gradient(rgba(108, 244, 215, .3), rgba(108, 244, 215, .3)) 0 20px / 100% 6px no-repeat;
+      animation: travel-move 9s ease-in-out infinite;
+    }
+
+    @keyframes travel-move {
+      0%, 6% { transform: translate(0, 14px); }
+      17% { transform: translate(52px, -6px); }
+      28%, 39% { transform: translate(103px, 14px); }
+      50% { transform: translate(155px, -6px); }
+      61%, 72% { transform: translate(206px, 14px); }
+      86% { transform: translate(103px, -6px); }
+      94%, 100% { transform: translate(0, 14px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .travel-file,
+      .travel-machine::after {
+        animation: none;
+      }
+    }
+
+    .hero-command {
+      max-width: 15ch;
+      margin-inline: auto;
+      font-size: clamp(34px, 6vw, 68px);
+      letter-spacing: -.045em;
+      line-height: 1.04;
+    }
+
+    .hero-lead {
+      max-width: 540px;
+      margin: 18px auto 38px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: clamp(13px, 1.5vw, 15px);
+      line-height: 1.6;
+    }
+  </style>
+  <script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "How do I share an app I made with AI?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Package it into a single .krate file with `krate create`, then send that file however you send any file. The person who receives it installs Krate once, double-clicks the file, and the app opens on Mac, Windows, or Linux from that same file."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Do I need to build it separately for each operating system?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "No. A .krate file contains a WebAssembly component that calls Krate interfaces rather than operating system APIs, so one file runs on all three. There is no per-platform build and no installer to sign."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does the person receiving it need to trust me?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Less than you might think. Before the app runs, Krate shows them exactly what it is asking for, in plain words, and gives it nothing else. An app that asks to save a list cannot read the rest of their computer."
+      }
+    }
+  ]
+}
+  </script>
+</head>
+<body>
+<nav class="site-nav" aria-label="Primary navigation">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/#" aria-label="Krate home">
+        <img src="./krate-glyph-blue.png" alt="" />
+        <span>Krate</span>
+      </a>
+
+      <button class="menu-button" id="menuButton" type="button" aria-expanded="false" aria-controls="navLinks" aria-label="Open navigation">☰</button>
+
+      <div class="nav-links" id="navLinks">
+        <!-- Four links. Eight made a first-time visitor choose before they
+             knew what any of them meant. -->
+        <a class="nav-link" href="/#start">Start</a>
+        <a class="nav-link" href="/cloud/">Store</a>
+        <a class="nav-link" href="/#faq">FAQ</a>
+        <a class="nav-link" href="/docs/">Docs</a>
+        <a class="nav-link" href="/docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
+        <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
+        <a class="nav-cta" href="/docs/pages/make-an-app-with-ai.html">Make an app</a>
+      </div>
+    </div>
+  </nav>
+    <main id="main">
+    <section class="section">
+      <div class="wrap plain-block">
+        <h1 class="answer-title">How to share an app you made with AI</h1>
+        <p class="answer-lead">It works on your machine. Getting it onto someone else's is the part nobody solved &mdash; until the app becomes one file.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap plain-block">
+        <h2>The problem with sharing what AI builds</h2>
+        <p>AI is good at writing a small useful app. The trouble starts after that. A script needs the right language installed. A web app needs hosting and cannot touch local files. A desktop app needs a separate build for each operating system, and on Mac it needs signing before anyone can open it without a warning.</p>
+        <p>So the app that took ten minutes to write takes an afternoon to give away, and usually does not get given away at all.</p>
+      </div>
+    </section>
+    <section class="section">
+      <div class="wrap plain-block">
+        <h2>Make it one file</h2>
+        <p>Describe the app, and Krate has AI write it, checks it, and packages the result:</p>
+        <pre class="answer-cmd">krate create "a checklist app that saves locally" --agent claude</pre>
+        <p>What comes out is <code>checklist.krate</code> &mdash; around 12 KB, containing the app and the list of what it needs to be allowed to do.</p>
+      </div>
+    </section>
+    <section class="section">
+      <div class="wrap plain-block">
+        <h2>Send it like a document</h2>
+        <p>Email it, drop it in a shared folder, put it in a chat. There is nothing else to install alongside it and no link that stops working.</p>
+        <p>On the other end they install Krate once with a single command, then double-click the file. It opens on Mac, Windows, and Linux from that same file &mdash; not three downloads.</p>
+      </div>
+    </section>
+    <section class="section">
+      <div class="wrap plain-block">
+        <h2>They see what it wants before it runs</h2>
+        <p>This is what makes sending AI-written software reasonable rather than reckless. Before any of the app's code runs, Krate shows what it is asking for:</p>
+        <pre class="answer-cmd">This app is asking to:
+  [1] read files in notes (fs.read:notes/**)
+      Load your saved notes
+  [2] save files in notes (fs.write:notes/**)
+      Save the note you are editing
+
+Grant [A]ll / [N]one / numbers (for example 1,2):</pre>
+        <p>They decide. The app gets what they allow and nothing more, and if they refuse something it needs, it does not start half-working &mdash; it does not start at all.</p>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="wrap plain-block">
+        <h2>Try it</h2>
+        <p>Krate is open source and installs with one command. Nothing to sign up for.</p>
+        <div class="actions">
+          <a class="button primary" href="/#start">Get Krate</a>
+          <a class="button" href="/cloud/">Open the store</a>
+        </div>
+      </div>
+    </section>
+    </main>
+<footer>
+    <div class="wrap footer-inner">
+      <span>© 2026 Krate Labs</span>
+      <div class="footer-links">
+        <a href="/docs/">Docs</a>
+        <a href="/docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
+        <a href="https://github.com/incyashraj/krate">GitHub</a>
+        <a href="https://github.com/incyashraj/krate/discussions">Ask a question</a>
+        <a href="https://github.com/incyashraj/krate/releases">Releases</a>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>
