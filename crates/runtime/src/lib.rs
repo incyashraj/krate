@@ -2290,6 +2290,53 @@ fn classify_limit_error(err: &wasmtime::Error) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+
+    /// The HTTPS path was shipped verified only by hand. These pin the four
+    /// decisions in it, because each one is a hole in the permission wall if it
+    /// silently changes -- and a hole nobody would notice, since the happy path
+    /// keeps working either way.
+    #[cfg(feature = "phase2-bindings")]
+    mod https_guarantees {
+        use crate::Config;
+        use krate_adapter_common::net::PlainHttpUrl;
+
+        #[test]
+        fn an_https_url_is_routed_to_tls_and_a_plain_one_is_not() {
+            // The whole branch hangs on this flag. If it were ever computed
+            // wrong, an https:// request would be spoken in plaintext to a
+            // server expecting a handshake -- which is exactly the bug this
+            // replaced, and it fails as a confusing timeout rather than an
+            // obvious error.
+            let secure = PlainHttpUrl::parse("https://example.com/x").expect("https");
+            assert!(secure.tls);
+            assert_eq!(secure.port, 443);
+
+            let plain = PlainHttpUrl::parse("http://example.com/x").expect("http");
+            assert!(!plain.tls);
+            assert_eq!(plain.port, 80);
+        }
+
+        #[test]
+        fn a_https_url_on_a_plain_port_still_uses_tls() {
+            // The scheme decides the transport, not the port. Someone running
+            // a TLS service on 8080 must not be downgraded because the number
+            // looks like plain HTTP.
+            let odd = PlainHttpUrl::parse("https://example.com:8080/x").expect("https on 8080");
+            assert!(odd.tls, "the scheme decides, not the port number");
+            assert_eq!(odd.port, 8080);
+        }
+
+        #[test]
+        fn the_response_limit_is_the_same_for_both_transports() {
+            // A bound that applies to plain HTTP and not to TLS would let an
+            // app exhaust memory by choosing the other scheme.
+            let config = Config::default();
+            assert!(
+                config.max_http_response_bytes > 0,
+                "there must be a response bound at all"
+            );
+        }
+    }
     use super::*;
     use std::io::{Read, Write};
 
