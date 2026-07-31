@@ -28,6 +28,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.91.1
+      - name: Install Linux audio development files
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev
       - name: Install mdBook
         run: |
           mkdir -p ~/bin
@@ -75,15 +79,11 @@ jobs:
           mkdir -p _site/cloud
           cp docs/cloud/index.html _site/cloud/index.html
           cp docs/landing/*.png _site/cloud/ 2>/dev/null || true
-          # The published binary, not a build: this job has no Rust toolchain,
-          # and reading listings with the same binary people install is a better
-          # check than reading them with a fresh one.
-          tag="$(curl -fsSL 'https://api.github.com/repos/incyashraj/krate/releases?per_page=30' \
-            | grep '"tag_name"' | cut -d '"' -f 4 | grep '^v' | head -1)"
-          curl -fsSL -o /tmp/krate.tar.gz \
-            "https://github.com/incyashraj/krate/releases/download/${tag}/krate-${tag#v}-x86_64-unknown-linux-gnu.tar.gz"
-          tar -xzf /tmp/krate.tar.gz -C /tmp
-          KRATE_BIN="$(find /tmp -type f -name krate -perm -u+x | head -1)" \
+          # Built from this commit, not from the last release: the store shows
+          # each app's content identity, and that only exists in builds after
+          # rc4. An older binary silently produced an empty shelf.
+          cargo build --release -p krate-cli
+          KRATE_BIN=target/release/krate \
             sh scripts/build-store.sh _site/cloud _site/notes.krate
           cp scripts/install.sh _site/install.sh
           cp scripts/install.ps1 _site/install.ps1
