@@ -102,3 +102,41 @@ krate port <source> --prepare <workspace> --agent claude --to <app.krate>
 ```
 
 Both runs used that command with no manual edits to the candidate.
+
+
+## 5. rss-forwarder — the network shape, and a repair-loop finding
+
+[morphy2k/rss-forwarder](https://github.com/morphy2k/rss-forwarder), 1,590
+lines, `reqwest` over HTTPS.
+
+**Not counted as proven.** The port builds, packs, and does the hard parts: it
+parses RSS and Atom, sorts newest-first, and builds both Discord and Slack
+payloads. It fails its own self-check on one thing:
+
+```
+parsed RSS feed "Example Feed" with 2 items
+rssfwd: quick check failed: RSS description not cleaned
+parsed Atom feed "Atom Example" with 1 items
+built discord payload (232 bytes) and slack payload (589 bytes)
+```
+
+The bug is an ordering mistake in `clean_text`: it strips tags first and decodes
+entities second. The input is `&lt;p&gt;Newer entry&lt;/p&gt;`, so at strip time
+there are no tags to strip -- they are still encoded -- and decoding then
+produces `<p>Newer entry</p>` with the markup intact. Reversed, it gives
+`Newer entry`.
+
+This is the first port defect today that is genuinely the agent's code rather
+than something the tooling failed to tell it. Worth having: it means the
+tooling is no longer the limiting factor on this shape.
+
+### What it exposed about the repair loop
+
+**The port got zero repair attempts.** The loop wraps
+`validate_port_candidate` -- build and import checks -- and verification runs
+after packing, outside it. So a candidate that compiles cleanly and computes
+the wrong answer is never sent back, even though that is the most repairable
+failure there is: the app's own self-check names the problem in one line.
+
+A build error gets two attempts. A wrong answer gets none. That is backwards,
+and it is the next thing to fix on this path.
