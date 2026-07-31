@@ -8,7 +8,7 @@
   <!-- The github.io project page redirects here, so name the canonical home
        once. Without it the same page is reachable at two hosts and search
        engines have to guess which one is real. -->
-  <link rel="canonical" href="https://krate.tech/" />
+  <link rel="canonical" href="https://krate.tech/faq.html" />
   <meta property="og:title" content="Krate | AI apps, built to travel." />
   <meta property="og:description" content="Create AI-made apps as one portable file for Mac, Windows, and Linux. Krate shows what each app wants to access before it runs." />
   <meta property="og:type" content="website" />
@@ -21,7 +21,7 @@
   <meta name="twitter:title" content="Krate | AI apps, built to travel." />
   <meta name="twitter:description" content="Create AI-made apps as one portable file for Mac, Windows, and Linux. Krate shows what each app wants to access before it runs." />
   <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
-  <title>Krate | AI apps, built to travel.</title>
+  <title>Krate | Questions</title>
   <link rel="icon" href="./krate-glyph-blue.png" />
   <style>
     :root {
@@ -1579,11 +1579,9 @@
   </style>
 </head>
 <body>
-  <a class="skip" href="#main">Skip to content</a>
-
-  <nav class="site-nav" aria-label="Primary navigation">
+<nav class="site-nav" aria-label="Primary navigation">
     <div class="wrap nav-inner">
-      <a class="brand" href="#" aria-label="Krate home">
+      <a class="brand" href="./index.html#" aria-label="Krate home">
         <img src="./krate-glyph-blue.png" alt="" />
         <span>Krate</span>
       </a>
@@ -1593,9 +1591,9 @@
       <div class="nav-links" id="navLinks">
         <!-- Four links. Eight made a first-time visitor choose before they
              knew what any of them meant. -->
-        <a class="nav-link" href="#start">Start</a>
-        <a class="nav-link" href="#cloud">Store</a>
-        <a class="nav-link" href="#faq">FAQ</a>
+        <a class="nav-link" href="./index.html#start">Start</a>
+        <a class="nav-link" href="./index.html#cloud">Store</a>
+        <a class="nav-link" href="./index.html#faq">FAQ</a>
         <a class="nav-link" href="./docs/">Docs</a>
         <a class="nav-link" href="./docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
         <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
@@ -1603,304 +1601,63 @@
       </div>
     </div>
   </nav>
-
-  <main id="main">
-    <section class="hero">
-      <div class="wrap hero-inner">
-        <img class="hero-logo" src="./krate-glyph-blue.png" alt="Krate" />
-        <!-- The command is the headline. Someone landing here should be able to
-             copy one line and have an app, without reading a paragraph first. -->
-        <h1 class="hero-command">krate create "a checklist app"</h1>
-        <p class="hero-lead">One app file. Opens on Mac, Windows, and Linux.</p>
-        <div class="actions">
-          <a class="button primary" href="#start">Get Krate</a>
-          <a class="button" href="./docs/try-krate-notes.html">Try an app first</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="how">
-      <div class="wrap">
-        <div class="section-heading">
-          <p class="label">Interactive walkthrough</p>
-          <h2>See exactly where Krate fits.</h2>
-          <p>Watch the current creation and opening flows run step by step. The Cloud tab shows what comes next and is clearly marked as planned.</p>
-        </div>
-
-        <div class="product-window">
-          <div class="window-bar">
-            <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-            <span class="window-name">krate / product walkthrough</span>
-          </div>
-
-          <div class="journey-tabs" role="tablist" aria-label="Krate product walkthrough">
-            <button class="journey-tab active" id="demoTabCreate" type="button" role="tab" aria-selected="true" aria-controls="terminalDemoPanel" tabindex="0" data-demo="create"><strong>01</strong> Make an app</button>
-            <button class="journey-tab" id="demoTabOpen" type="button" role="tab" aria-selected="false" aria-controls="terminalDemoPanel" tabindex="-1" data-demo="open"><strong>02</strong> Open a .krate</button>
-            <button class="journey-tab" id="demoTabCloud" type="button" role="tab" aria-selected="false" aria-controls="terminalDemoPanel" tabindex="-1" data-demo="cloud"><strong>03</strong> Krate Cloud <span class="tab-planned">planned</span></button>
-          </div>
-
-          <div class="journey-panel demo-panel" id="terminalDemoPanel" role="tabpanel" aria-labelledby="demoTabCreate"></div>
-        </div>
-      </div>
-    </section>
-
+    <main id="main">
     <section class="section">
       <div class="wrap">
         <div class="section-heading">
-          <p class="label">See the product</p>
-          <h2>A real app, from request to reopen.</h2>
-          <p>This demo creates a Krate app, opens it, checks its requested access, saves local data, and opens it again.</p>
-        </div>
-
-        <div class="video-frame">
-          <iframe
-            src="https://www.youtube-nocookie.com/embed/i1ksbR-kPgc"
-            title="Krate product demo"
-            loading="lazy"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowfullscreen>
-          </iframe>
-        </div>
-      </div>
-    </section>
-
-    <!-- What an app is actually allowed to do. The site explained portability
-         and permissions but never capability, which is the question someone
-         asking "can I port my app?" is really asking. -->
-        <!-- exe.dev's "It's just a computer" move: say the whole thing in plain
-         sentences instead of a feature grid. Someone non-technical should be
-         able to read this once and know what they get. -->
-    <section class="section" id="capabilities">
-      <div class="wrap plain-block">
-        <h2>It's just an app</h2>
-        <p>You get a real app. It opens a window, keeps your settings, saves your things in its own database, remembers your sign-in, and can send you a notification or open a link.</p>
-        <p>What it cannot do is help itself. Before it opens, Krate shows you what it wants &mdash; in plain words, not permissions jargon &mdash; and it gets only what you allow. An app that keeps a list never sees your folders.</p>
-        <p>The same file works on Mac, Windows, and Linux. Not three downloads. One.</p>
-      </div>
-    </section>
-
-
-    <section class="section" id="start">
-      <div class="wrap">
-        <div class="section-heading">
-          <p class="label">Start here</p>
-          <h2>Choose the path that fits you.</h2>
-          <p>You do not need to understand the runtime before you begin.</p>
-        </div>
-
-        <div class="path-grid">
-          <a class="path-card" href="./docs/try-krate-notes.html">
-            <span class="path-number">01 / OPEN</span>
-            <h3>I received a Krate app</h3>
-            <p>Install Krate once, review what the app needs, and open it like a normal file.</p>
-            <span class="path-link">Try Krate Notes →</span>
-          </a>
-
-          <a class="path-card" href="./docs/pages/make-an-app-with-ai.html">
-            <span class="path-number">02 / CREATE</span>
-            <h3>I want to make an app</h3>
-            <p>Ask Claude or use Krate’s own create command. You finish with one file you can send.</p>
-            <span class="path-link">Make your first app →</span>
-          </a>
-
-          <a class="path-card" href="https://github.com/incyashraj/krate/discussions">
-            <span class="path-number">03 / INTEGRATE</span>
-            <h3>We build AI products</h3>
-            <p>Use the CLI, SDK, or MCP server to explore Krate as an output format for your agents.</p>
-            <span class="path-link">Discuss an integration →</span>
-          </a>
-        </div>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="wrap">
-        <div class="section-heading">
-          <p class="label">What works today</p>
-          <h2>The useful parts are already real.</h2>
-          <p>Krate is early, but the core product journey works now and is built in public.</p>
-        </div>
-
-        <div class="proof-grid">
-          <div class="proof">
-            <strong>One file, three systems</strong>
-            <p>The same <code>.krate</code> app opens on Mac, Windows, and Linux.</p>
-          </div>
-          <div class="proof">
-            <strong>AI authoring</strong>
-            <p><code>krate create --agent claude</code> lets Claude author the app from your request.</p>
-          </div>
-          <div class="proof">
-            <strong>Clear requested access</strong>
-            <p>The app carries the access it requests. Krate shows it before the app runs and enforces the user’s choice.</p>
-          </div>
-          <div class="proof">
-            <strong>Local app behavior</strong>
-            <p>Windowed apps can save locally, keep their state, and reopen later.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section cloud-section" id="cloud">
-      <div class="wrap">
-        <div class="section-heading">
-          <span class="future-pill soon">Releasing soon</span>
-          <h2>A store for apps that show their hands.</h2>
-          <p>Krate Cloud is where small apps get published, found, and updated. Every listing shows what the app wants to access before you open it, and the app still runs on your own computer &mdash; a store, not a cloud you send your work to.</p>
-        </div>
-
-        <!-- A shelf rather than a flow diagram: the point of a marketplace is
-             that you can see what is on it, and what each app is asking for. -->
-        <div class="store-shelf" aria-label="Example Krate Cloud listings">
-          <article class="store-card">
-            <div class="store-top">
-              <div class="store-icon" aria-hidden="true">&#9635;</div>
-              <div>
-                <h3>Checklist</h3>
-                <p class="store-by">by krate &middot; 12 KB</p>
-              </div>
-              <span class="store-verified" title="Contents match the identity that was verified">verified</span>
-            </div>
-            <p class="store-desc">A list that saves what you add and remembers it next time.</p>
-            <ul class="store-asks">
-              <li><span>&#9679;</span> open a window</li>
-              <li><span>&#9679;</span> save its own settings and data</li>
-            </ul>
-            <div class="store-foot"><code>krate open checklist</code></div>
-          </article>
-
-          <article class="store-card">
-            <div class="store-top">
-              <div class="store-icon" aria-hidden="true">&#9636;</div>
-              <div>
-                <h3>Notes</h3>
-                <p class="store-by">by krate &middot; 15 KB</p>
-              </div>
-              <span class="store-verified" title="Contents match the identity that was verified">verified</span>
-            </div>
-            <p class="store-desc">Write notes, switch between them, and keep them on your machine.</p>
-            <ul class="store-asks">
-              <li><span>&#9679;</span> open a window</li>
-              <li><span>&#9679;</span> read and save files in <code>notes</code></li>
-            </ul>
-            <div class="store-foot"><code>krate open notes</code></div>
-          </article>
-
-          <article class="store-card">
-            <div class="store-top">
-              <div class="store-icon" aria-hidden="true">&#9673;</div>
-              <div>
-                <h3>Voice Prompter</h3>
-                <p class="store-by">by krate &middot; 79 MB</p>
-              </div>
-              <span class="store-verified" title="Contents match the identity that was verified">verified</span>
-            </div>
-            <p class="store-desc">A teleprompter that follows your script as you speak it. Recognition runs on your machine.</p>
-            <ul class="store-asks">
-              <li><span>&#9679;</span> open a window</li>
-              <li><span class="warn">&#9679;</span> listen through your microphone</li>
-            </ul>
-            <div class="store-foot"><code>krate open voice-prompter</code></div>
-          </article>
-        </div>
-
-        <div class="store-why">
-          <div>
-            <h4>You see the ask before you open it</h4>
-            <p>A listing is not a download button with a description. It names every capability the app requests, in the same plain words the permission window uses.</p>
-          </div>
-          <div>
-            <h4>The file is checked, not trusted</h4>
-            <p><strong>This part already works.</strong> Every <code>.krate</code> carries an identity computed from its contents, so what you receive can be checked against what was verified. Try <code>krate run app.krate --dump-caps</code> today &mdash; no service involved.</p>
-          </div>
-          <div>
-            <h4>It runs on your computer</h4>
-            <p>Publishing goes through the Cloud. Running does not. The app opens locally through the Krate runtime with exactly the access you allowed, online or off.</p>
-          </div>
-        </div>
-
-        <div class="store-actions">
-          <a class="button primary" href="https://github.com/incyashraj/krate/discussions">Tell us what you would publish</a>
-          <a class="button" href="https://github.com/incyashraj/krate#planned-krate-cloud">Read the plan</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="section" id="faq">
-      <div class="wrap">
-        <div class="section-heading">
-          <p class="label">Questions people asked</p>
+          <p class="label">Questions</p>
           <h2>Direct answers about Krate.</h2>
-          <p>These questions came from developers seeing Krate for the first time. The short answer is first, with the technical boundary underneath it.</p>
+          <p>These came from people seeing Krate for the first time. The short answer is first, with the technical boundary underneath.</p>
         </div>
-
         <div class="faq-list">
 <details class="faq-item">
-            <summary><span class="faq-index">04 / AI</span><span>How does Krate make an AI-created app safer?</span></summary>
+            <summary><span class="faq-index">03 / Portable</span><span>How can the same .krate file open on Mac, Windows, and Linux?</span></summary>
             <div class="faq-answer">
-              <p>AI-generated code receives no special trust. During authoring, Krate rejects an app if it imports system interfaces outside the Krate capability boundary. At runtime, the app begins without access to the user’s files or network.</p>
-              <p>The app requests specific capabilities, the user reviews them, and the runtime enforces the decision before approved host operations happen. This limits what the app can reach. It does not prove that the app is bug-free.</p>
+              <p>The app does not call AppKit, Win32, or Linux APIs directly. It calls Krate interfaces described with WIT. The Krate host on each operating system translates approved calls into local behavior.</p>
+              <p>The <code>.krate</code> file carries the WebAssembly component and its requested access. It is one portable app artifact, not three native installers hidden in one download.</p>
             </div>
           </details>
 <details class="faq-item">
-            <summary><span class="faq-index">08 / Today</span><span>What can Krate apps do today, and can it convert my existing app?</span></summary>
+            <summary><span class="faq-index">10 / Name</span><span>Does the name collide with a Rust “crate”?</span></summary>
             <div class="faq-answer">
-              <p>Today Krate is best for small apps that fit its current UI and capability set, such as notes, lists, text entry, buttons, local persistence, and portable command-line tools.</p>
-              <p>It does not automatically convert an existing Swift, Electron, Tauri, or native application yet. Current apps must use Krate APIs. AI-assisted porting is a planned development target, and it will reimplement supported behavior rather than pretend an incompatible binary became portable.</p>
+              <p>Rust calls a package a crate, so the similarity is real. Krate uses a different spelling and refers to the portable container that carries an application and its requested access.</p>
+              <p>We will keep making the distinction explicit wherever Rust developers could reasonably confuse the two.</p>
             </div>
           </details>
 <details class="faq-item">
-            <summary><span class="faq-index">09 / Cloud</span><span>Does Krate Cloud run the app on someone else’s server?</span></summary>
+            <summary><span class="faq-index">02 / Web</span><span>Why not use an HTML file, browser link, or Electron?</span></summary>
             <div class="faq-answer">
-              <p>That is not the plan. Krate Cloud is the planned publishing and distribution layer for discovery, publisher identity, signing, sharing, and updates.</p>
-              <p>The app still opens through the Krate runtime on the user’s own computer, where the user reviews and controls local access. Krate Cloud is planned and is not available today.</p>
+              <p>A browser link is the right answer when an app fits inside the browser. Krate is for local software that needs files, desktop behavior, or other host features that a web page cannot use cleanly.</p>
+              <p>An Electron app ships a browser engine and still needs platform packaging. A Krate app is a WebAssembly component. It does not bundle a browser per app, and the shared runtime controls its access to the computer.</p>
+            </div>
+          </details>
+<details class="faq-item">
+            <summary><span class="faq-index">05 / Access</span><span>Can an app hide what it accesses or ignore the permission screen?</span></summary>
+            <div class="faq-answer">
+              <p>The permission list is not only a label written by the app. Krate checks supported host operations at the runtime boundary. If the app tries an operation that was not granted, the call is denied before the host adapter performs it.</p>
+              <p>If a required permission is denied, the current app flow refuses to start and explains what is missing.</p>
+            </div>
+          </details>
+<details class="faq-item">
+            <summary><span class="faq-index">06 / Security</span><span>Is Krate ready for any untrusted app from the internet?</span></summary>
+            <div class="faq-answer">
+              <p><strong>Not yet.</strong> Krate is pre-alpha. The capability boundary is working and useful, but the project is not claiming production hardening against hostile third-party code today.</p>
+              <p>Use the published examples or apps you are testing yourself. The current limits and <a href="./docs/phase2/threat-model-v0-2.html">threat model</a> are public.</p>
+            </div>
+          </details>
+<details class="faq-item">
+            <summary><span class="faq-index">07 / Runtime</span><span>Why does the person receiving an app need the Krate runtime?</span></summary>
+            <div class="faq-answer">
+              <p>The runtime is the stable layer that makes one app file portable and enforces its access. Without it, every app would need to bring a separate engine and separate operating-system code.</p>
+              <p>You install Krate once. After that, each <code>.krate</code> file can use the same host, permission model, and opening flow.</p>
             </div>
           </details>
         </div>
-        <p class="faq-more"><a href="./faq.html">More questions &rarr;</a></p>
-        </div>
-    </section>
-
-    <section class="section">
-      <div class="wrap">
-        <div class="section-heading">
-          <p class="label">Built in public</p>
-          <h2>Look at the product, not a promise.</h2>
-          <p>The runtime is open source. The builds and current limitations are public too.</p>
-        </div>
-
-        <div class="public-links">
-          <a class="public-link" href="https://github.com/incyashraj/krate">
-            <strong>GitHub</strong>
-            <span>Read the code and current README →</span>
-          </a>
-          <a class="public-link" href="https://github.com/incyashraj/krate/actions">
-            <strong>Three-system CI</strong>
-            <span>See the Mac, Windows, and Linux runs →</span>
-          </a>
-          <a class="public-link" href="https://www.producthunt.com/products/krate-3?launch=krate-3">
-            <strong>Product Hunt</strong>
-            <span>Join the launch discussion →</span>
-          </a>
-        </div>
+        <p class="faq-more"><a href="./index.html">&larr; Back to Krate</a></p>
       </div>
     </section>
-
-    <section class="final">
-      <div class="wrap">
-        <img src="./krate-glyph-blue.png" alt="" />
-        <h2>Make something useful. Send it to someone.</h2>
-        <p>Krate is ready for its first users. Start with a small app and tell us the first place the experience becomes unclear.</p>
-        <div class="actions">
-          <a class="button primary" href="./docs/pages/make-an-app-with-ai.html">Make an app with AI</a>
-          <a class="button" href="./docs/try-krate-notes.html">Open Krate Notes</a>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <footer>
+    </main>
+<footer>
     <div class="wrap footer-inner">
       <span>© 2026 Krate Labs</span>
       <div class="footer-links">
@@ -1912,198 +1669,5 @@
       </div>
     </div>
   </footer>
-
-  <script>
-    const terminalDemos = {
-      create: {
-        state: "Working today",
-        stateClass: "",
-        title: "Make an app from one request.",
-        description: "Use your coding agent for an open-ended request, or use Krate’s built-in create flow for a supported app. Both finish with one .krate file.",
-        note: "This walkthrough uses the same commands documented in Krate today.",
-        terminalTitle: "create two apps",
-        linkLabel: "Try it for real →",
-        linkHref: "./docs/pages/make-an-app-with-ai.html",
-        lines: [
-          { type: "label", text: "AI authors the app" },
-          { type: "command", text: 'krate create "Make a grocery list app called My Groceries" --agent claude --output groceries.krate' },
-          { type: "muted", text: "handing the request to Claude" },
-          { type: "muted", text: "checking generated imports" },
-          { type: "muted", text: "building and packaging the app" },
-          { type: "muted", text: "verifying the permission wall" },
-          { type: "success", text: "Created groceries.krate" },
-          { type: "gap", text: "" },
-          { type: "label", text: "Krate creates a supported app directly" },
-          { type: "command", text: 'krate create "Make a checklist app that saves locally" --output checklist.krate' },
-          { type: "muted", text: "building the component" },
-          { type: "muted", text: "packing checklist.krate" },
-          { type: "muted", text: "verifying the permission wall" },
-          { type: "success", text: "Created checklist.krate" },
-          { type: "info", text: "Send either file to a Mac, Windows, or Linux user." }
-        ]
-      },
-      open: {
-        state: "Working today",
-        stateClass: "",
-        title: "Install once. Open a .krate file.",
-        description: "The receiver installs the runtime once. Krate then shows what each app requests before it runs and enforces the receiver’s choice.",
-        note: "Double-click opening is available on Mac, Windows, and Linux. The terminal path shown here does the same job.",
-        terminalTitle: "open groceries.krate",
-        linkLabel: "See the opening guide →",
-        linkHref: "./docs/try-krate-notes.html",
-        lines: [
-          { type: "label", text: "Install Krate on macOS or Linux" },
-          { type: "command", text: "curl -fsSL https://krate.tech/install.sh | sh" },
-          { type: "success", text: "Krate is ready" },
-          { type: "gap", text: "" },
-          { type: "label", text: "Open the app" },
-          { type: "command", text: "krate run groceries.krate --native-window --prompt" },
-          { type: "muted", text: "review requested access in the Krate window" },
-          { type: "info", text: "✓ create an app window" },
-          { type: "info", text: "✓ read and write ./my-groceries/" },
-          { type: "muted", text: "network access is not requested" },
-          { type: "success", text: "The app opens only after you approve." },
-          { type: "info", text: "Close and reopen it. Your saved items remain." }
-        ]
-      },
-      cloud: {
-        state: "Releasing soon",
-        stateClass: "planned",
-        title: "A store for apps that show their hands.",
-        description: "Krate Cloud is where apps get published, found, and updated. Every listing shows what the app asks for before you open it, and the app still runs on your own computer.",
-        note: "The store is not open yet. The identity step below already works today.",
-        terminalTitle: "planned cloud flow",
-        linkLabel: "Read the Cloud plan →",
-        linkHref: "https://github.com/incyashraj/krate#planned-krate-cloud",
-        lines: [
-          { type: "label", text: "Krate Cloud, listing to open" },
-          { type: "planned", text: "01  A maker publishes a .krate to the store" },
-          { type: "muted", text: "    listed under the publisher, with its version" },
-          { type: "planned", text: "02  The listing shows what the app asks for" },
-          { type: "muted", text: "    open a window · save its own settings and data" },
-          { type: "success", text: "03  The file is checked against its identity" },
-          { type: "info", text: "    krate run app.krate --dump-caps   (works today)" },
-          { type: "muted", text: "    Identity  b8243d1fd518677d41fb679c1ec5d93e…" },
-          { type: "planned", text: "04  You open it, and review the ask" },
-          { type: "muted", text: "    the same permission window as any .krate" },
-          { type: "planned", text: "05  Updates arrive from the same publisher" },
-          { type: "success", text: "The store distributes. Your computer runs it, and decides." }
-        ]
-      }
-    };
-
-    const demoPanel = document.getElementById("terminalDemoPanel");
-    const demoTabs = Array.from(document.querySelectorAll("[data-demo]"));
-    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-    let demoTimers = [];
-    let activeDemo = "create";
-
-    function clearDemoTimers() {
-      demoTimers.forEach((timer) => window.clearTimeout(timer));
-      demoTimers = [];
-    }
-
-    function appendDemoLine(output, line) {
-      const element = document.createElement("div");
-      element.className = `demo-line ${line.type}`;
-      element.textContent = line.text;
-      output.appendChild(element);
-      output.scrollTop = output.scrollHeight;
-    }
-
-    function playDemo(key) {
-      clearDemoTimers();
-      const output = demoPanel.querySelector("[data-demo-output]");
-      if (!output) return;
-      output.replaceChildren();
-
-      const lines = terminalDemos[key].lines;
-      if (reducedMotion.matches) {
-        lines.forEach((line) => appendDemoLine(output, line));
-        return;
-      }
-
-      lines.forEach((line, index) => {
-        const timer = window.setTimeout(() => appendDemoLine(output, line), 170 + index * 245);
-        demoTimers.push(timer);
-      });
-    }
-
-    function showDemo(key) {
-      const demo = terminalDemos[key];
-      activeDemo = key;
-      demoPanel.setAttribute("aria-labelledby", `demoTab${key[0].toUpperCase()}${key.slice(1)}`);
-      demoPanel.innerHTML = `
-        <div class="demo-layout">
-          <div class="demo-copy">
-            <span class="demo-state ${demo.stateClass}">${demo.state}</span>
-            <h3>${demo.title}</h3>
-            <p>${demo.description}</p>
-            <p class="demo-note">${demo.note}</p>
-          </div>
-          <div class="demo-terminal">
-            <div class="demo-terminal-bar">
-              <span>${demo.terminalTitle}</span>
-              <span class="demo-terminal-status">walkthrough</span>
-            </div>
-            <div class="demo-output" data-demo-output role="log" aria-live="polite" aria-label="${demo.terminalTitle} output"></div>
-            <div class="demo-controls">
-              <button class="demo-replay" type="button" data-replay>↻ Replay walkthrough</button>
-              <a class="demo-link" href="${demo.linkHref}">${demo.linkLabel}</a>
-            </div>
-          </div>
-        </div>
-      `;
-
-      demoTabs.forEach((tab) => {
-        const active = tab.dataset.demo === key;
-        tab.classList.toggle("active", active);
-        tab.setAttribute("aria-selected", String(active));
-        tab.setAttribute("tabindex", active ? "0" : "-1");
-      });
-
-      playDemo(key);
-    }
-
-    demoTabs.forEach((tab, index) => {
-      tab.addEventListener("click", () => showDemo(tab.dataset.demo));
-      tab.addEventListener("keydown", (event) => {
-        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-        event.preventDefault();
-        let nextIndex = index;
-        if (event.key === "ArrowLeft") nextIndex = (index - 1 + demoTabs.length) % demoTabs.length;
-        if (event.key === "ArrowRight") nextIndex = (index + 1) % demoTabs.length;
-        if (event.key === "Home") nextIndex = 0;
-        if (event.key === "End") nextIndex = demoTabs.length - 1;
-        demoTabs[nextIndex].focus();
-        showDemo(demoTabs[nextIndex].dataset.demo);
-      });
-    });
-
-    demoPanel.addEventListener("click", (event) => {
-      if (!event.target.closest("[data-replay]")) return;
-      playDemo(activeDemo);
-    });
-
-    const menuButton = document.getElementById("menuButton");
-    const navLinks = document.getElementById("navLinks");
-
-    menuButton.addEventListener("click", () => {
-      const open = navLinks.classList.toggle("open");
-      menuButton.setAttribute("aria-expanded", String(open));
-      menuButton.setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
-      menuButton.textContent = open ? "×" : "☰";
-    });
-
-    navLinks.addEventListener("click", (event) => {
-      if (!event.target.closest("a")) return;
-      navLinks.classList.remove("open");
-      menuButton.setAttribute("aria-expanded", "false");
-      menuButton.setAttribute("aria-label", "Open navigation");
-      menuButton.textContent = "☰";
-    });
-
-    showDemo("create");
-  </script>
 </body>
 </html>
