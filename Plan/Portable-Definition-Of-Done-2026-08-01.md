@@ -89,8 +89,8 @@ is proven — never shrink.
 
 - [x] command line, byte-oriented (hexyl)
 - [x] GUI, form and list (savings)
-- [ ] something that talks to the network — **blocked**: a Krate app cannot
-      make an HTTPS request at all, see `Plan/HTTPS-Gap-2026-08-01.md`
+- [ ] something that talks to the network — unblocked: HTTPS works as of
+      2026-08-01, see `Plan/HTTPS-Gap-2026-08-01.md`
 - [ ] something with a real database
 - [ ] something that reads and writes many files
 - [ ] something genuinely medium — **5,000+ lines**

@@ -12,6 +12,9 @@ default = ["phase2-bindings"]
 phase2-bindings = []
 
 [dependencies]
+# HTTPS for guest apps. Same TLS stack the CLI and bundle crates already use,
+# so there is one certificate story in the workspace rather than two.
+ureq.workspace = true
 rusqlite.workspace = true
 sha2 = "0.10.9"
 krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }

@@ -1744,6 +1744,13 @@ fn open_path_on_host(
 impl NetAdapter for LocalPhase2Adapter {
     fn fetch(&self, req: HttpRequest) -> std::result::Result<HttpResponse, AdapterError> {
         let url = PlainHttpUrl::parse(&req.url).map_err(map_plain_http_error)?;
+        // HTTPS goes through a real TLS stack. The hand-written framing below
+        // speaks plaintext, so before this an https:// URL connected to port
+        // 443 and then said "GET / HTTP/1.1" to a server waiting for a
+        // handshake -- every API worth calling was unreachable.
+        if url.tls {
+            return fetch_over_tls(&req, &url, self.max_http_response_bytes);
+        }
         let plain_req = plain_http_request_from_dispatch(&req);
         let request = build_plain_http_request(&plain_req, &url).map_err(map_plain_http_error)?;
 
@@ -1771,6 +1778,109 @@ impl NetAdapter for LocalPhase2Adapter {
             body: response.body,
         })
     }
+}
+
+/// Make an HTTPS request on behalf of a guest app.
+///
+/// Four things are decided here rather than left to the library's defaults,
+/// because each one is a hole in the permission wall if it goes the other way:
+///
+/// - **Certificates are verified, always.** There is no way for an app to ask
+///   for this to be skipped, because an app that can disable verification can
+///   be told to disable it.
+/// - **Redirects are not followed.** A redirect can move a request to a host
+///   the person never granted, and following one silently would let any
+///   granted host hand the app somewhere else. The response is returned as-is
+///   and the app can ask again for a host it does hold.
+/// - **The response is bounded** by the same limit as plain HTTP, so a large
+///   reply cannot exhaust memory through the TLS path when it could not
+///   through the other one.
+/// - **The timeout is the caller's**, not a default, so a guest cannot be made
+///   to wait longer than the run allows.
+#[cfg(feature = "phase2-bindings")]
+fn fetch_over_tls(
+    req: &HttpRequest,
+    url: &PlainHttpUrl,
+    max_response_bytes: usize,
+) -> std::result::Result<HttpResponse, AdapterError> {
+    use std::io::Read;
+
+    let mut builder = ureq::AgentBuilder::new()
+        // A redirect to a host the app was not granted would walk straight
+        // through the capability check that happened before this call.
+        .redirects(0);
+    if let Some(millis) = req.timeout_millis {
+        if millis == 0 {
+            return Err(AdapterError::Timeout);
+        }
+        let timeout = Duration::from_millis(u64::from(millis));
+        builder = builder.timeout_connect(timeout).timeout_read(timeout);
+    }
+    let agent = builder.build();
+
+    // A closed set, so only methods the boundary already knows about can be
+    // sent -- an app cannot smuggle an arbitrary verb through.
+    use crate::uapi_dispatch::HttpMethod;
+    let method = match req.method {
+        HttpMethod::Get => "GET",
+        HttpMethod::Post => "POST",
+        HttpMethod::Put => "PUT",
+        HttpMethod::Delete => "DELETE",
+        HttpMethod::Patch => "PATCH",
+        HttpMethod::Head => "HEAD",
+        HttpMethod::Options => "OPTIONS",
+    };
+    let target = format!("https://{}:{}{}", url.host, url.port, url.path_and_query);
+    let mut request = agent.request(method, &target);
+    for header in &req.headers {
+        request = request.set(&header.name, &header.value);
+    }
+
+    let response = match if req.body.is_empty() {
+        request.call()
+    } else {
+        request.send_bytes(&req.body)
+    } {
+        Ok(response) => response,
+        // A non-2xx answer is a real answer, not a transport failure: an app
+        // asking for something that returns 404 should see the 404.
+        Err(ureq::Error::Status(_, response)) => response,
+        Err(ureq::Error::Transport(err)) => {
+            return Err(AdapterError::Io(format!("https request failed: {err}")));
+        }
+    };
+
+    let status = response.status();
+    let headers: Vec<Header> = response
+        .headers_names()
+        .iter()
+        .filter_map(|name| {
+            response.header(name).map(|value| Header {
+                name: name.clone(),
+                value: value.to_string(),
+            })
+        })
+        .collect();
+
+    // Bounded by the same limit the plain path uses, and read one byte past it
+    // so an oversized body is refused rather than silently truncated.
+    let mut body = Vec::new();
+    response
+        .into_reader()
+        .take(max_response_bytes.saturating_add(1) as u64)
+        .read_to_end(&mut body)
+        .map_err(map_io_error)?;
+    if body.len() > max_response_bytes {
+        return Err(AdapterError::Io(format!(
+            "https response is larger than the {max_response_bytes} byte limit"
+        )));
+    }
+
+    Ok(HttpResponse {
+        status,
+        headers,
+        body,
+    })
 }
 
 #[cfg(feature = "phase2-bindings")]
@@ -3041,6 +3151,8 @@ mod tests {
             host: "127.0.0.1".to_string(),
             port,
             path_and_query: "/".to_string(),
+            // This exercises the plain-HTTP connect path specifically.
+            tls: false,
         };
         let err = connect_plain_http_stream(&url, None).expect_err("connection should fail");
         assert!(matches!(err, AdapterError::Network(_)));

@@ -589,12 +589,11 @@ mod wit_dependency_lists {
                     continue;
                 }
                 collect(&path, out);
-            } else if path.file_name().is_some_and(|n| n == "Cargo.toml") {
-                if std::fs::read_to_string(&path)
+            } else if path.file_name().is_some_and(|n| n == "Cargo.toml")
+                && std::fs::read_to_string(&path)
                     .is_ok_and(|t| t.contains("component.target.dependencies"))
-                {
-                    out.push(path);
-                }
+            {
+                out.push(path);
             }
         }
     }

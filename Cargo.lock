@@ -1925,6 +1925,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tracing",
+ "ureq",
  "wasmtime",
  "whisper-rs",
  "wit-parser 0.244.0",

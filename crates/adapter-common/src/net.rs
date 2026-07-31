@@ -8,24 +8,36 @@ pub struct PlainHttpUrl {
     pub host: String,
     pub port: u16,
     pub path_and_query: String,
+    /// Whether this URL asked for TLS.
+    ///
+    /// The parser used to refuse anything that was not `http://`, so a guest
+    /// app could reach a local development server and nothing else on the
+    /// internet. Recording the scheme lets the host pick a transport instead of
+    /// the parser deciding the question by rejecting the URL.
+    pub tls: bool,
 }
 
 impl PlainHttpUrl {
-    /// Parse an `http://` URL into host, port, and request target.
+    /// Parse an `http://` or `https://` URL into host, port, and target.
     ///
-    /// HTTPS, auth info, and fragments are intentionally outside this early
-    /// helper. HTTPS lands after we choose the shared TLS stack.
+    /// Auth info in the authority is still refused: a URL that carries a
+    /// password is a credential in a place nobody expects one.
     pub fn parse(input: &str) -> Result<Self, PlainHttpError> {
         if contains_http_unsafe_ascii(input) {
             return Err(PlainHttpError::InvalidUrl);
         }
 
-        let Some(rest) = strip_ascii_case_prefix(input, "http://") else {
-            return Err(PlainHttpError::UnsupportedScheme);
-        };
+        let (rest, tls, default_port) =
+            if let Some(rest) = strip_ascii_case_prefix(input, "https://") {
+                (rest, true, 443)
+            } else if let Some(rest) = strip_ascii_case_prefix(input, "http://") {
+                (rest, false, 80)
+            } else {
+                return Err(PlainHttpError::UnsupportedScheme);
+            };
         let rest = rest.split_once('#').map_or(rest, |(before, _)| before);
-        let endpoint =
-            parse_url_endpoint_with_default(rest, 80).map_err(|_| PlainHttpError::InvalidUrl)?;
+        let endpoint = parse_url_endpoint_with_default(rest, default_port)
+            .map_err(|_| PlainHttpError::InvalidUrl)?;
         let (authority, path) = match rest.find(['/', '?']) {
             Some(index) => rest.split_at(index),
             None => (rest, "/"),
@@ -47,6 +59,7 @@ impl PlainHttpUrl {
             host: endpoint.host,
             port: endpoint.port,
             path_and_query,
+            tls,
         })
     }
 }
@@ -562,6 +575,44 @@ mod tests {
         assert_eq!(parsed.host, "example.com");
         assert_eq!(parsed.port, 8080);
         assert_eq!(parsed.path_and_query, "/path");
+    }
+
+    #[test]
+    fn the_parser_accepts_https_and_records_that_it_wants_tls() {
+        // It used to refuse everything that was not http://, so a guest app
+        // could reach a local development server and nothing else on the
+        // internet. Every API worth calling is https.
+        let secure = PlainHttpUrl::parse("https://example.com/path").expect("https parses");
+        assert_eq!(secure.host, "example.com");
+        assert_eq!(secure.port, 443, "https defaults to 443");
+        assert_eq!(secure.path_and_query, "/path");
+        assert!(secure.tls, "the host has to know to use TLS");
+
+        let plain = PlainHttpUrl::parse("http://example.com/path").expect("http parses");
+        assert_eq!(plain.port, 80);
+        assert!(!plain.tls, "plain http must not be marked as TLS");
+
+        // An explicit port wins over the scheme default, either way round.
+        let odd = PlainHttpUrl::parse("https://example.com:8443/x").expect("explicit port");
+        assert_eq!(odd.port, 8443);
+        assert!(odd.tls);
+
+        // Case is not part of the decision.
+        let shouty = PlainHttpUrl::parse("HTTPS://Example.COM/").expect("mixed case");
+        assert!(shouty.tls);
+        assert_eq!(shouty.host, "example.com");
+    }
+
+    #[test]
+    fn an_unknown_scheme_is_still_refused() {
+        // Adding https must not have turned the parser into something that
+        // accepts anything with a :// in it.
+        for url in ["ftp://example.com/x", "file:///etc/passwd", "example.com/x"] {
+            assert!(
+                PlainHttpUrl::parse(url).is_err(),
+                "{url} should not parse as an HTTP URL"
+            );
+        }
     }
 
     #[test]
