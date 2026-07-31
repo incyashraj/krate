@@ -102,10 +102,21 @@ gate is currently green without verifying anything**. Skipping loudly beats
 failing every night for a reason that is not a regression, but neither is
 coverage.
 
-Closing it needs one of: an agent available to CI, a recorded transcript the
-job can replay without a live agent, or a scheduled run somewhere that has one.
-Until then the honest statement is that porting is reproducible by hand and
-unwatched by machine.
+**Half of it is now closed.** `scripts/replay-ported-apps.sh` runs every ported
+bundle -- they are committed under `evidence/ported/`, 64 KB for four -- and
+checks each still produces its real answer. No agent involved, so it runs on
+every push, on all three systems.
+
+That splits the gate cleanly:
+
+- **Does a ported app still work?** Covered, everywhere, every push. A runtime
+  or bundle-format change that would break every existing app is caught the day
+  it lands.
+- **Does porting still produce one?** Not covered. That needs the agent, and it
+  is the half that skips.
+
+The remaining half needs an agent available to CI, a recorded transcript to
+replay, or a scheduled run on a machine that has one.
 
 The set should start at the two we have and grow by one every time a new shape
 is proven — never shrink.

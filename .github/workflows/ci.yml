@@ -1012,6 +1012,44 @@ jobs:
   #
   # Nightly rather than per-push: it clones, drives an AI agent, and builds
   # three components, so it is minutes rather than seconds.
+  # ──────────────────────────────────────────────
+  # Every app we have ported must keep working
+  # ──────────────────────────────────────────────
+  #
+  # The full port regression needs an AI agent to redo the transform and a
+  # runner does not have one, so that job skips and verifies nothing. This is
+  # the half that runs anywhere: the ported bundles are committed, so a runtime
+  # or bundle-format change that would break every existing app is caught the
+  # day it lands, on all three systems.
+  replay-ported-apps:
+    name: Replay ported apps (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.91.1
+      - name: Install Linux audio development files
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-replay-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build the runtime
+        run: cargo build --release -p krate-cli
+      - name: Replay every ported app
+        shell: bash
+        run: sh scripts/replay-ported-apps.sh
+
   port-regression:
     name: Re-port the proven programs
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) }}
