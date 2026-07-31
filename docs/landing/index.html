@@ -1610,8 +1610,8 @@
         <img class="hero-logo" src="./krate-glyph-blue.png" alt="Krate" />
         <!-- The command is the headline. Someone landing here should be able to
              copy one line and have an app, without reading a paragraph first. -->
-        <h1 class="hero-command">krate create "a checklist app"</h1>
-        <p class="hero-lead">One app file. Opens on Mac, Windows, and Linux.</p>
+        <h1 class="hero-command">One file. Any computer.</h1>
+        <p class="hero-lead">Apps made with AI, shared like documents.</p>
         <div class="actions">
           <a class="button primary" href="#start">Get Krate</a>
           <a class="button" href="./docs/try-krate-notes.html">Try an app first</a>
@@ -1622,9 +1622,9 @@
     <section class="section" id="how">
       <div class="wrap">
         <div class="section-heading">
-          <p class="label">Interactive walkthrough</p>
-          <h2>See exactly where Krate fits.</h2>
-          <p>Watch the current creation and opening flows run step by step. The Cloud tab shows what comes next and is clearly marked as planned.</p>
+          <p class="label">See it work</p>
+          <h2>Two minutes, start to finish.</h2>
+          <p>Making an app, and opening one someone sent you. Both are real commands.</p>
         </div>
 
         <div class="product-window">
@@ -1634,9 +1634,9 @@
           </div>
 
           <div class="journey-tabs" role="tablist" aria-label="Krate product walkthrough">
-            <button class="journey-tab active" id="demoTabCreate" type="button" role="tab" aria-selected="true" aria-controls="terminalDemoPanel" tabindex="0" data-demo="create"><strong>01</strong> Make an app</button>
-            <button class="journey-tab" id="demoTabOpen" type="button" role="tab" aria-selected="false" aria-controls="terminalDemoPanel" tabindex="-1" data-demo="open"><strong>02</strong> Open a .krate</button>
-            <button class="journey-tab" id="demoTabCloud" type="button" role="tab" aria-selected="false" aria-controls="terminalDemoPanel" tabindex="-1" data-demo="cloud"><strong>03</strong> Krate Cloud <span class="tab-planned">planned</span></button>
+            <button class="journey-tab active" id="demoTabCreate" type="button" role="tab" aria-selected="true" aria-controls="terminalDemoPanel" tabindex="0" data-demo="create"><strong>01</strong> Making an app</button>
+            <button class="journey-tab" id="demoTabOpen" type="button" role="tab" aria-selected="false" aria-controls="terminalDemoPanel" tabindex="-1" data-demo="open"><strong>02</strong> Opening one</button>
+            <button class="journey-tab" id="demoTabCloud" type="button" role="tab" aria-selected="false" aria-controls="terminalDemoPanel" tabindex="-1" data-demo="cloud"><strong>03</strong> The store <span class="tab-planned">soon</span></button>
           </div>
 
           <div class="journey-panel demo-panel" id="terminalDemoPanel" role="tabpanel" aria-labelledby="demoTabCreate"></div>
@@ -1918,52 +1918,48 @@
       create: {
         state: "Working today",
         stateClass: "",
-        title: "Make an app from one request.",
-        description: "Use your coding agent for an open-ended request, or use Krate’s built-in create flow for a supported app. Both finish with one .krate file.",
-        note: "This walkthrough uses the same commands documented in Krate today.",
-        terminalTitle: "create two apps",
-        linkLabel: "Try it for real →",
+        title: "Ask for an app. Get a file.",
+        description: "You describe what you want. Krate has AI write it, then checks it before you ever see it.",
+        note: "These are the real commands, with the real output.",
+        terminalTitle: "making an app",
+        linkLabel: "Make one yourself →",
         linkHref: "./docs/pages/make-an-app-with-ai.html",
         lines: [
-          { type: "label", text: "AI authors the app" },
-          { type: "command", text: 'krate create "Make a grocery list app called My Groceries" --agent claude --output groceries.krate' },
-          { type: "muted", text: "handing the request to Claude" },
-          { type: "muted", text: "checking generated imports" },
-          { type: "muted", text: "building and packaging the app" },
-          { type: "muted", text: "verifying the permission wall" },
-          { type: "success", text: "Created groceries.krate" },
+          { type: "label", text: "You type this" },
+          { type: "command", text: 'krate create "a grocery list app" --agent claude' },
           { type: "gap", text: "" },
-          { type: "label", text: "Krate creates a supported app directly" },
-          { type: "command", text: 'krate create "Make a checklist app that saves locally" --output checklist.krate' },
-          { type: "muted", text: "building the component" },
-          { type: "muted", text: "packing checklist.krate" },
-          { type: "muted", text: "verifying the permission wall" },
-          { type: "success", text: "Created checklist.krate" },
-          { type: "info", text: "Send either file to a Mac, Windows, or Linux user." }
+          { type: "label", text: "Krate does this" },
+          { type: "muted", text: "AI writes the app" },
+          { type: "muted", text: "checks it only uses what Krate allows" },
+          { type: "muted", text: "tries running it without permission, to be sure it stops" },
+          { type: "gap", text: "" },
+          { type: "success", text: "Created groceries.krate  (12 KB)" },
+          { type: "info", text: "Send that one file to anyone, on any of the three systems." }
         ]
       },
       open: {
         state: "Working today",
         stateClass: "",
-        title: "Install once. Open a .krate file.",
-        description: "The receiver installs the runtime once. Krate then shows what each app requests before it runs and enforces the receiver’s choice.",
-        note: "Double-click opening is available on Mac, Windows, and Linux. The terminal path shown here does the same job.",
-        terminalTitle: "open groceries.krate",
-        linkLabel: "See the opening guide →",
+        title: "You get sent a file. You open it.",
+        description: "Krate shows you what the app wants before it starts. You decide, and it gets nothing else.",
+        note: "You can also just double-click the file on Mac, Windows, and Linux.",
+        terminalTitle: "opening an app",
+        linkLabel: "Try one now →",
         linkHref: "./docs/try-krate-notes.html",
         lines: [
-          { type: "label", text: "Install Krate on macOS or Linux" },
+          { type: "label", text: "Install Krate, once" },
           { type: "command", text: "curl -fsSL https://krate.tech/install.sh | sh" },
-          { type: "success", text: "Krate is ready" },
           { type: "gap", text: "" },
-          { type: "label", text: "Open the app" },
-          { type: "command", text: "krate run groceries.krate --native-window --prompt" },
-          { type: "muted", text: "review requested access in the Krate window" },
-          { type: "info", text: "✓ create an app window" },
-          { type: "info", text: "✓ read and write ./my-groceries/" },
-          { type: "muted", text: "network access is not requested" },
-          { type: "success", text: "The app opens only after you approve." },
-          { type: "info", text: "Close and reopen it. Your saved items remain." }
+          { type: "label", text: "Open the file someone sent you" },
+          { type: "command", text: "krate run groceries.krate" },
+          { type: "gap", text: "" },
+          { type: "label", text: "Krate asks first" },
+          { type: "info", text: "This app wants to:" },
+          { type: "info", text: "   show a window" },
+          { type: "info", text: "   save its own list" },
+          { type: "muted", text: "   it did not ask for the internet, or your files" },
+          { type: "gap", text: "" },
+          { type: "success", text: "You say yes. It opens. It gets nothing else." }
         ]
       },
       cloud: {
