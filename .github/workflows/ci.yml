@@ -811,6 +811,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
+      - name: Install Linux audio development files
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev
       - name: Download Linux language-variant evidence
         uses: actions/download-artifact@v8
         with:
@@ -846,6 +848,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
+      - name: Install Linux audio development files
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev
       - name: Download Linux UCap evidence
         uses: actions/download-artifact@v8
         with:
@@ -881,6 +885,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
+      - name: Install Linux audio development files
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev
       - name: Download Linux adapter evidence
         uses: actions/download-artifact@v8
         with:
@@ -916,6 +922,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1
+      - name: Install Linux audio development files
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev
       - name: Download Linux sample evidence
         uses: actions/download-artifact@v8
         with:
