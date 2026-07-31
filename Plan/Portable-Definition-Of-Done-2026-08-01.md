@@ -83,11 +83,29 @@ honest form of the claim is "one file, two of three computers, proven".
 source and asserts each one builds, packs, runs, and produces expected output.
 A regression in the SDK, the analyzer, or the runtime fails that job.
 
-**Status: 2 ports, both by hand, neither repeatable.**
+**Status: script written, wired nightly, and it skips on CI.**
 
-Both current ports were run manually and their results written down. Nothing
-re-runs them. If a change broke porting tomorrow, we would find out from a
-user.
+`scripts/port-regression.sh` clones three proven programs at pinned commits,
+ports each with the real pipeline, and checks the output still matches. It is
+wired into the nightly run.
+
+But the transform step drives an AI agent, and a GitHub runner does not have
+one, so the nightly job prints this and exits 0:
+
+```
+no 'claude' on PATH, so the transform step cannot run.
+Skipping without failing; run it where the agent is installed.
+```
+
+That is honest -- it says exactly what it did not do -- and it means **this
+gate is currently green without verifying anything**. Skipping loudly beats
+failing every night for a reason that is not a regression, but neither is
+coverage.
+
+Closing it needs one of: an agent available to CI, a recorded transcript the
+job can replay without a live agent, or a scheduled run somewhere that has one.
+Until then the honest statement is that porting is reproducible by hand and
+unwatched by machine.
 
 The set should start at the two we have and grow by one every time a new shape
 is proven — never shrink.
