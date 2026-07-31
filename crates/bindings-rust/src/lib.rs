@@ -624,6 +624,64 @@ pub mod time {
 }
 
 /// Locale, timezone, date, and number formatting helpers.
+/// Random bytes from the operating system.
+///
+/// Requires the `random.bytes` capability; every call refuses with `Denied`
+/// without it. There is no seeded generator and no way to ask for one -- an app
+/// handed a predictable stream while believing it is random has no way to tell.
+pub mod random {
+    pub use crate::bindings::krate::random::bytes::RandomError;
+    use alloc::vec::Vec;
+
+    /// Return exactly `count` random bytes.
+    pub fn bytes(count: u32) -> Result<Vec<u8>, RandomError> {
+        crate::bindings::krate::random::bytes::get(count)
+    }
+
+    /// A uniformly distributed 64-bit value.
+    pub fn u64() -> Result<u64, RandomError> {
+        crate::bindings::krate::random::bytes::next_u64()
+    }
+
+    /// A uniform integer in `[0, bound)`.
+    ///
+    /// Prefer this over `u64()? % bound`. Taking a remainder skews the result
+    /// toward the low end whenever `bound` does not divide the range evenly:
+    /// a shuffled deck deals some cards more often than others, and nothing in
+    /// the output looks wrong. The host draws again instead.
+    pub fn below(bound: u64) -> Result<u64, RandomError> {
+        crate::bindings::krate::random::bytes::below(bound)
+    }
+
+    /// Fill a fixed-size buffer with random bytes.
+    ///
+    /// Takes a slice the caller already owns, so an app following the
+    /// fixed-capacity discipline can draw entropy without allocating.
+    pub fn fill(buf: &mut [u8]) -> Result<(), RandomError> {
+        let drawn = bytes(buf.len() as u32)?;
+        buf.copy_from_slice(&drawn);
+        Ok(())
+    }
+
+    /// Shuffle a slice into a uniformly random order.
+    ///
+    /// Provided because writing this by hand is where shuffles go wrong: the
+    /// obvious loop that swaps each item with any other position does not
+    /// produce a uniform permutation. This is Fisher-Yates, which does.
+    pub fn shuffle<T>(items: &mut [T]) -> Result<(), RandomError> {
+        if items.len() < 2 {
+            return Ok(());
+        }
+        let mut i = items.len() - 1;
+        while i > 0 {
+            let j = below(i as u64 + 1)? as usize;
+            items.swap(i, j);
+            i -= 1;
+        }
+        Ok(())
+    }
+}
+
 pub mod locale {
     pub use crate::bindings::krate::locale::types::{DateStyle, LocaleId, NumberStyle};
     use alloc::string::String;

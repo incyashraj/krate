@@ -130,7 +130,12 @@ impl AppSecrets {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| SecretError::Io(e.to_string()))?;
         }
-        let encoded = encrypt_all(&self.entries, &self.key);
+        // No entropy means no nonce, and a stream cipher reusing or exposing a
+        // predictable nonce is a real break. Refuse the write and say so: the
+        // caller keeps its secret and knows it was not saved.
+        let encoded = encrypt_all(&self.entries, &self.key).ok_or_else(|| {
+            SecretError::Io("no random source available to encrypt the store".to_string())
+        })?;
         // Temp file and rename, so an interrupted write cannot leave the store
         // truncated -- losing a sign-in because a write was cut short is the
         // kind of failure that makes software feel unreliable.
@@ -193,7 +198,10 @@ fn validate_name(name: &str) -> Result<(), SecretError> {
 /// the same secret written twice does not produce the same bytes, and a MAC
 /// over the ciphertext means tampering is detected rather than silently
 /// decrypting to garbage.
-fn encrypt_all(entries: &BTreeMap<String, Vec<u8>>, key: &[u8; 32]) -> Vec<u8> {
+/// Returns `None` when no nonce could be drawn, in which case nothing is
+/// written. Refusing to save is recoverable; saving under a guessable nonce
+/// quietly weakens every secret in the file.
+fn encrypt_all(entries: &BTreeMap<String, Vec<u8>>, key: &[u8; 32]) -> Option<Vec<u8>> {
     let mut plain = Vec::new();
     for (name, secret) in entries {
         plain.extend_from_slice(&(name.len() as u32).to_le_bytes());
@@ -202,7 +210,7 @@ fn encrypt_all(entries: &BTreeMap<String, Vec<u8>>, key: &[u8; 32]) -> Vec<u8> {
         plain.extend_from_slice(secret);
     }
 
-    let nonce = random_nonce();
+    let nonce = random_nonce()?;
     let mut out = Vec::with_capacity(plain.len() + 48);
     out.extend_from_slice(b"KRS1");
     out.extend_from_slice(&nonce);
@@ -212,7 +220,7 @@ fn encrypt_all(entries: &BTreeMap<String, Vec<u8>>, key: &[u8; 32]) -> Vec<u8> {
 
     let mac = mac(key, &nonce, &out[start..]);
     out.extend_from_slice(&mac);
-    out
+    Some(out)
 }
 
 fn decrypt_all(bytes: &[u8], key: &[u8; 32]) -> Option<BTreeMap<String, Vec<u8>>> {
@@ -285,37 +293,18 @@ fn mac(key: &[u8; 32], nonce: &[u8; 16], ciphertext: &[u8]) -> Vec<u8> {
 /// Sourced from the operating system rather than a clock: two writes in the
 /// same millisecond must not reuse a nonce, which for a stream cipher would
 /// leak the difference between the two plaintexts.
-fn random_nonce() -> [u8; 16] {
+/// Returns `None` when the OS has no entropy to give.
+///
+/// This used to hash the clock, the process id, and a stack address when the
+/// OS source failed, which on Windows was every time -- there was no
+/// `/dev/urandom` and no platform call. A nonce derived from those is guessable,
+/// and for a stream cipher a repeated or predicted nonce leaks the difference
+/// between two plaintexts. `random_host` now reads real entropy on Windows too,
+/// so the weaker path is gone: no nonce is better than a guessable one.
+fn random_nonce() -> Option<[u8; 16]> {
     let mut nonce = [0u8; 16];
-    if getrandom(&mut nonce).is_err() {
-        // Never silently fall back to something predictable: a guessable nonce
-        // is a real break, so mix several independent sources instead.
-        let mut hasher = Sha256::new();
-        hasher.update(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos().to_le_bytes())
-                .unwrap_or([0; 16]),
-        );
-        hasher.update(std::process::id().to_le_bytes());
-        hasher.update((&nonce as *const _ as usize).to_le_bytes());
-        nonce.copy_from_slice(&hasher.finalize()[..16]);
-    }
-    nonce
-}
-
-#[cfg(unix)]
-fn getrandom(buf: &mut [u8]) -> std::io::Result<()> {
-    use std::io::Read;
-    std::fs::File::open("/dev/urandom")?.read_exact(buf)
-}
-
-#[cfg(not(unix))]
-fn getrandom(buf: &mut [u8]) -> std::io::Result<()> {
-    // Windows has no /dev/urandom; the fallback above covers it until a
-    // platform call is wired in.
-    let _ = buf;
-    Err(std::io::Error::other("no random source"))
+    crate::random_host::fill(&mut nonce).ok()?;
+    Some(nonce)
 }
 
 fn load(path: &Path, key: &[u8; 32]) -> Option<BTreeMap<String, Vec<u8>>> {

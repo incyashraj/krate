@@ -2522,6 +2522,18 @@ pub mod krate {
         }
 
         /// HTTP client calls for CLI components.
+        /// Buffered HTTP requests to hosts the person allowed.
+        ///
+        /// **Redirects are not followed.** A 3xx comes back with its `location` header
+        /// for the app to act on, and following it means making another request -- one
+        /// that is checked against `net.connect` for the new host.
+        ///
+        /// That is deliberate rather than unfinished. `net.connect` is granted per
+        /// host, so a client that followed redirects itself would let a granted
+        /// `api.example.com` send the app's request anywhere it liked, with the
+        /// person's permission prompt saying only "api.example.com". Leaving the
+        /// decision to the app keeps every host the request reaches one the person
+        /// actually approved.
         #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
         pub mod http_client {
             #[used]
@@ -2968,6 +2980,311 @@ pub mod krate {
                         _rt::alloc::dealloc(result5.cast(), layout5);
                     }
                     result41
+                }
+            }
+        }
+    }
+    pub mod random {
+        /// Random bytes from the operating system.
+        ///
+        /// `getrandom` is the third most-downloaded crate in all of Rust, and `rand`
+        /// and `uuid` sit directly on top of it. A great many ordinary programs need
+        /// this -- anything that shuffles a list, picks a sample, generates an id, or
+        /// assigns a colour -- and without it those programs cannot be ported at all.
+        /// It was the largest single gap between what real apps need and what Krate
+        /// offered.
+        ///
+        /// Every byte comes from the operating system's entropy pool. There is no
+        /// seeded generator and no way to ask for one: an app handed a predictable
+        /// stream while believing it is random is worse off than an app that cannot get
+        /// random numbers at all, because nothing in its output looks wrong.
+        ///
+        /// This is its own capability rather than something every app receives.
+        /// Entropy is cheap to grant and safe to refuse, but an app that wants it
+        /// should have to say so, and a person reading the permission list should see
+        /// it named.
+        #[allow(dead_code, async_fn_in_trait, unused_imports, clippy::all)]
+        pub mod bytes {
+            #[used]
+            #[doc(hidden)]
+            static __FORCE_SECTION_REF: fn() =
+                super::super::super::__link_custom_section_describing_imports;
+
+            use super::super::super::_rt;
+            /// Error returned by a request for random bytes.
+            #[derive(Clone)]
+            pub enum RandomError {
+                /// The app did not receive the `random.bytes` capability.
+                Denied,
+                /// More bytes were asked for than one call may return.
+                TooLarge,
+                /// `below` was given a bound of zero, which names an empty range.
+                ///
+                /// Its own variant rather than reusing `too-large`, which would say the
+                /// opposite of what happened, or returning zero, which is indistinguishable
+                /// from a legitimate draw.
+                EmptyRange,
+                /// The operating system had no entropy to give.
+                ///
+                /// Reported rather than worked around. A caller that receives this knows
+                /// it got nothing; a caller handed weak bytes it believes are strong has no
+                /// way to find out.
+                Unavailable(_rt::String),
+            }
+            impl ::core::fmt::Debug for RandomError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    match self {
+                        RandomError::Denied => f.debug_tuple("RandomError::Denied").finish(),
+                        RandomError::TooLarge => f.debug_tuple("RandomError::TooLarge").finish(),
+                        RandomError::EmptyRange => {
+                            f.debug_tuple("RandomError::EmptyRange").finish()
+                        }
+                        RandomError::Unavailable(e) => {
+                            f.debug_tuple("RandomError::Unavailable").field(e).finish()
+                        }
+                    }
+                }
+            }
+            impl ::core::fmt::Display for RandomError {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
+            }
+
+            #[cfg(feature = "std")]
+            impl std::error::Error for RandomError {}
+            #[allow(unused_unsafe, clippy::all)]
+            /// Return exactly `count` random bytes.
+            ///
+            /// A request for zero bytes succeeds and returns nothing, so a caller
+            /// computing a length does not have to special-case the empty case.
+            pub fn get(count: u32) -> Result<_rt::Vec<u8>, RandomError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:random/bytes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "get"]
+                        fn wit_import1(_: i32, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i32, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i32(&count), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result11 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0
+                                    .add(::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len5 = l4;
+
+                                _rt::Vec::from_raw_parts(l3.cast(), len5, len5)
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l6 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                let v10 = match l6 {
+                                    0 => RandomError::Denied,
+                                    1 => RandomError::TooLarge,
+                                    2 => RandomError::EmptyRange,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e10 = {
+                                            let l7 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l8 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len9 = l8;
+                                            let bytes9 =
+                                                _rt::Vec::from_raw_parts(l7.cast(), len9, len9);
+
+                                            _rt::string_lift(bytes9)
+                                        };
+                                        RandomError::Unavailable(e10)
+                                    }
+                                };
+
+                                v10
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result11
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// A uniformly distributed 64-bit value.
+            ///
+            /// Offered alongside `get` because drawing a number is the common case, and
+            /// assembling one from bytes by hand is somewhere an app can get the byte
+            /// order wrong without ever noticing.
+            pub fn next_u64() -> Result<u64, RandomError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>;
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:random/bytes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "next-u64"]
+                        fn wit_import1(_: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result9 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0.add(8).cast::<i64>();
+
+                                l3 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(*ptr0.add(8).cast::<u8>());
+                                let v8 = match l4 {
+                                    0 => RandomError::Denied,
+                                    1 => RandomError::TooLarge,
+                                    2 => RandomError::EmptyRange,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr0
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr0
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        RandomError::Unavailable(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// A uniform integer in `[0, bound)`, or an error when `bound` is zero.
+            ///
+            /// Provided because the obvious way to write this -- take a random number
+            /// modulo `bound` -- is subtly wrong whenever `bound` does not divide the
+            /// range evenly: the low values come up more often. A shuffled deck would
+            /// deal some cards more than others and the output would still look random.
+            /// The host draws again instead of taking a remainder.
+            pub fn below(bound: u64) -> Result<u64, RandomError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<u8>;
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit();
+                            16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:random/bytes@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "below"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&bound), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    let result9 = match l2 {
+                        0 => {
+                            let e = {
+                                let l3 = *ptr0.add(8).cast::<i64>();
+
+                                l3 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(*ptr0.add(8).cast::<u8>());
+                                let v8 = match l4 {
+                                    0 => RandomError::Denied,
+                                    1 => RandomError::TooLarge,
+                                    2 => RandomError::EmptyRange,
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e8 = {
+                                            let l5 = *ptr0
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr0
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 =
+                                                _rt::Vec::from_raw_parts(l5.cast(), len7, len7);
+
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        RandomError::Unavailable(e8)
+                                    }
+                                };
+
+                                v8
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result9
                 }
             }
         }
@@ -5199,9 +5516,9 @@ pub(crate) use __export_cli_impl as export;
 #[unsafe(link_section = "component-type:wit-bindgen:0.41.0:krate:app@0.1.0:cli:encoded world")]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 3868] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xa2\x1d\x01A\x02\x01\
-A3\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-lev\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 4046] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xd4\x1e\x01A\x02\x01\
+A5\x01B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-lev\
 el\x03\0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cin\
 valid-utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/typ\
 es@0.1.0\x05\0\x02\x03\0\0\x08io-error\x01B\x15\x02\x03\x02\x01\x01\x04\0\x08io-\
@@ -5288,9 +5605,14 @@ ge\0\0\x02io\x01s\0\x04\0\x0csecret-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x0
 \x01\x01@\x01\x04names\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x04nam\
 es\x06secret\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x04names\0\x06\x04\0\x06del\
 ete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x05names\x01\x0b\x03\0\
-\x18krate:store/secret@0.1.0\x05\x1e\x01@\0\0z\x04\0\x03run\x01\x1f\x04\0\x13kra\
-te:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09producers\x01\x0cproce\
-ssed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+\x18krate:store/secret@0.1.0\x05\x1e\x01B\x0b\x01q\x04\x06denied\0\0\x09too-larg\
+e\0\0\x0bempty-range\0\0\x0bunavailable\x01s\0\x04\0\x0crandom-error\x03\0\0\x01\
+p}\x01j\x01\x02\x01\x01\x01@\x01\x05county\0\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\
+\x01\x01@\0\0\x05\x04\0\x08next-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\0\x05be\
+low\x01\x07\x03\0\x18krate:random/bytes@0.1.0\x05\x1f\x01@\0\0z\x04\0\x03run\x01\
+\x20\x04\0\x13krate:app/cli@0.1.0\x04\0\x0b\x09\x01\0\x03cli\x03\0\0\0G\x09produ\
+cers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x06\
+0.41.0";
 
 #[inline(never)]
 #[doc(hidden)]

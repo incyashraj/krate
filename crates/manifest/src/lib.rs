@@ -38,6 +38,13 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "store", "sql", false),
     // Sign-in tokens and keys the app keeps for itself, encrypted at rest.
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "store", "secret", false),
+    // Random bytes from the OS. Resource-free because there is nothing to
+    // scope -- entropy has no location and reveals nothing about the machine.
+    //
+    // Not default-granted even so. It costs an app one line to declare, and a
+    // person reading the permission list learns that this app draws random
+    // numbers, which is worth knowing for anything that generates keys or ids.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase2, "random", "bytes", false),
     CapabilitySpec::resource_scoped(
         CapabilityPhase::Phase2,
         "fs",

@@ -1,0 +1,63 @@
+package krate:random@0.1.0;
+
+/// Random bytes from the operating system.
+///
+/// `getrandom` is the third most-downloaded crate in all of Rust, and `rand`
+/// and `uuid` sit directly on top of it. A great many ordinary programs need
+/// this -- anything that shuffles a list, picks a sample, generates an id, or
+/// assigns a colour -- and without it those programs cannot be ported at all.
+/// It was the largest single gap between what real apps need and what Krate
+/// offered.
+///
+/// Every byte comes from the operating system's entropy pool. There is no
+/// seeded generator and no way to ask for one: an app handed a predictable
+/// stream while believing it is random is worse off than an app that cannot get
+/// random numbers at all, because nothing in its output looks wrong.
+///
+/// This is its own capability rather than something every app receives.
+/// Entropy is cheap to grant and safe to refuse, but an app that wants it
+/// should have to say so, and a person reading the permission list should see
+/// it named.
+interface bytes {
+  /// Error returned by a request for random bytes.
+  variant random-error {
+    /// The app did not receive the `random.bytes` capability.
+    denied,
+    /// More bytes were asked for than one call may return.
+    too-large,
+    /// `below` was given a bound of zero, which names an empty range.
+    ///
+    /// Its own variant rather than reusing `too-large`, which would say the
+    /// opposite of what happened, or returning zero, which is indistinguishable
+    /// from a legitimate draw.
+    empty-range,
+    /// The operating system had no entropy to give.
+    ///
+    /// Reported rather than worked around. A caller that receives this knows
+    /// it got nothing; a caller handed weak bytes it believes are strong has no
+    /// way to find out.
+    unavailable(string),
+  }
+
+  /// Return exactly `count` random bytes.
+  ///
+  /// A request for zero bytes succeeds and returns nothing, so a caller
+  /// computing a length does not have to special-case the empty case.
+  get: func(count: u32) -> result<list<u8>, random-error>;
+
+  /// A uniformly distributed 64-bit value.
+  ///
+  /// Offered alongside `get` because drawing a number is the common case, and
+  /// assembling one from bytes by hand is somewhere an app can get the byte
+  /// order wrong without ever noticing.
+  next-u64: func() -> result<u64, random-error>;
+
+  /// A uniform integer in `[0, bound)`, or an error when `bound` is zero.
+  ///
+  /// Provided because the obvious way to write this -- take a random number
+  /// modulo `bound` -- is subtly wrong whenever `bound` does not divide the
+  /// range evenly: the low values come up more often. A shuffled deck would
+  /// deal some cards more than others and the output would still look random.
+  /// The host draws again instead of taking a remainder.
+  below: func(bound: u64) -> result<u64, random-error>;
+}

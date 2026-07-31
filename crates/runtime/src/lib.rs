@@ -39,6 +39,7 @@ pub mod phase2_host;
 pub mod phase3_gui_bindings;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase3_gui_host;
+pub mod random_host;
 pub mod secret_host;
 mod speech_transcription;
 pub mod sql_host;
@@ -598,6 +599,9 @@ impl HostState {
                     &krate_manifest::Capability::new("store", "sql", None).expect("store.sql"),
                 ),
             )
+            .with_random(config.session_policy.allows(
+                &krate_manifest::Capability::new("random", "bytes", None).expect("random.bytes"),
+            ))
             .with_secrets(
                 config.app_secrets.as_ref().map(|(path, _, _)| path.clone()),
                 config

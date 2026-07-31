@@ -20,6 +20,7 @@ pub enum UapiCall {
     Ui(UiCall),
     Audio(AudioCall),
     Store(StoreCall),
+    Random(RandomCall),
 }
 
 impl UapiCall {
@@ -37,6 +38,7 @@ impl UapiCall {
             Self::Ui(call) => call.to_capability_string(),
             Self::Audio(call) => format!("audio.{call}"),
             Self::Store(call) => format!("store.{call}"),
+            Self::Random(call) => format!("random.{call}"),
         }
     }
 }
@@ -63,6 +65,23 @@ impl fmt::Display for StoreCall {
             Self::Kv => "kv",
             Self::Sql => "sql",
             Self::Secret => "secret",
+        })
+    }
+}
+
+/// Random bytes from the operating system. One capability covers every way of
+/// asking: a caller allowed a random number is allowed a random byte, and
+/// splitting them would ask the person a question with only one sensible
+/// answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RandomCall {
+    Bytes,
+}
+
+impl fmt::Display for RandomCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Bytes => "bytes",
         })
     }
 }
@@ -404,6 +423,7 @@ mod tests {
             UapiCall::Store(StoreCall::Kv),
             UapiCall::Store(StoreCall::Sql),
             UapiCall::Store(StoreCall::Secret),
+            UapiCall::Random(RandomCall::Bytes),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),
             }),

@@ -10,7 +10,7 @@ use std::{
 };
 
 use crate::{
-    phase2_bindings::krate::{fs, io, locale, net, resources, store, time},
+    phase2_bindings::krate::{fs, io, locale, net, random, resources, store, time},
     phase2_bridge as bridge,
     uapi::UapiGuard,
     uapi_dispatch::{FileHandle, HostAdapter, UapiDispatcher},
@@ -36,6 +36,12 @@ pub struct Phase2Host<'a> {
     database: Option<crate::sql_host::AppDatabase>,
     /// The app's own secrets, encrypted at rest.
     secrets: Option<crate::secret_host::AppSecrets>,
+    /// Whether this run may draw random bytes.
+    ///
+    /// A plain flag rather than an `Option` holding state: entropy comes from
+    /// the OS on every call, so there is nothing to open, nothing to keep, and
+    /// nothing to close.
+    random_granted: bool,
 }
 
 impl<'a> Phase2Host<'a> {
@@ -56,12 +62,23 @@ impl<'a> Phase2Host<'a> {
             store: None,
             database: None,
             secrets: None,
+            random_granted: false,
             default_http_timeout_millis,
         }
     }
 
     pub fn with_asset_root(mut self, asset_root: Option<PathBuf>) -> Self {
         self.asset_root = asset_root;
+        self
+    }
+
+    /// Say whether this run may draw random bytes.
+    ///
+    /// Resolved from the session policy like every other grant, so an app that
+    /// was refused `random.bytes` is told `Denied` rather than quietly handed
+    /// something weaker.
+    pub fn with_random(mut self, granted: bool) -> Self {
+        self.random_granted = granted;
         self
     }
 
@@ -211,6 +228,45 @@ impl store::kv::Host for Phase2Host<'_> {
             Some(store) => store.clear().map_err(store_error_to_wit),
             None => Err(store::kv::StoreError::Denied),
         })
+    }
+}
+
+impl random::bytes::Host for Phase2Host<'_> {
+    fn get(&mut self, count: u32) -> wasmtime::Result<Result<Vec<u8>, random::bytes::RandomError>> {
+        if !self.random_granted {
+            return Ok(Err(random::bytes::RandomError::Denied));
+        }
+        Ok(crate::random_host::bytes(count).map_err(random_error_to_wit))
+    }
+
+    fn next_u64(&mut self) -> wasmtime::Result<Result<u64, random::bytes::RandomError>> {
+        if !self.random_granted {
+            return Ok(Err(random::bytes::RandomError::Denied));
+        }
+        Ok(crate::random_host::next_u64().map_err(random_error_to_wit))
+    }
+
+    fn below(&mut self, bound: u64) -> wasmtime::Result<Result<u64, random::bytes::RandomError>> {
+        if !self.random_granted {
+            return Ok(Err(random::bytes::RandomError::Denied));
+        }
+        Ok(match crate::random_host::below(bound) {
+            Ok(Some(value)) => Ok(value),
+            // A bound of zero names an empty range, so there is no value to
+            // return. Reported as such rather than silently as zero, which is
+            // indistinguishable from a legitimate draw.
+            Ok(None) => Err(random::bytes::RandomError::EmptyRange),
+            Err(err) => Err(random_error_to_wit(err)),
+        })
+    }
+}
+
+fn random_error_to_wit(err: crate::random_host::RandomError) -> random::bytes::RandomError {
+    use crate::random_host::RandomError;
+    match err {
+        RandomError::Denied => random::bytes::RandomError::Denied,
+        RandomError::TooLarge => random::bytes::RandomError::TooLarge,
+        RandomError::Unavailable(why) => random::bytes::RandomError::Unavailable(why),
     }
 }
 

@@ -308,6 +308,7 @@ world = "cli"
 "krate:locale" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/locale" }}
 "krate:resources" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/resources" }}
 "krate:store" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/store" }}
+"krate:random" = {{ path = "{sdk_prefix}/wit/krate/phase2/deps/random" }}
 
 # abort on panic and let LTO strip the unreachable std/panic paths that would
 # otherwise leave dangling wasi:* import declarations in the component. A Krate
@@ -692,6 +693,7 @@ world = "gui"
 "krate:locale" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/locale" }}
 "krate:resources" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/resources" }}
 "krate:store" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/store" }}
+"krate:random" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/random" }}
 "krate:ui" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/ui" }}
 "krate:gfx" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/gfx" }}
 "krate:audio" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/audio" }}
@@ -787,6 +789,53 @@ mod tests {
 
     fn req() -> AppRequest {
         AppRequest::word_frequency("word-count")
+    }
+
+    /// Every WIT package a world imports must also be listed as a component
+    /// target dependency, or `cargo-component` cannot resolve it.
+    ///
+    /// Both lists are written by hand, and the second one is easy to forget:
+    /// adding `krate:random` to the worlds without adding it here broke every
+    /// port with "package 'krate:random@0.1.0' not found", which points at the
+    /// world file rather than at the list that is actually missing an entry.
+    /// This compares the two directly so the next addition cannot rot the same
+    /// way.
+    #[test]
+    fn every_imported_wit_package_is_a_declared_dependency() {
+        let cargo_toml = generate(&req(), "../..")
+            .expect("generate")
+            .file("Cargo.toml")
+            .expect("Cargo.toml")
+            .to_string();
+
+        for phase in ["phase2", "phase3"] {
+            let world = std::fs::read_to_string(format!("../../wit/krate/{phase}/world.wit"))
+                .unwrap_or_else(|e| panic!("read {phase} world: {e}"));
+
+            for line in world.lines() {
+                let line = line.trim();
+                let Some(rest) = line.strip_prefix("import krate:") else {
+                    continue;
+                };
+                let package: String = rest
+                    .chars()
+                    .take_while(|c| c.is_alphanumeric() || *c == '-')
+                    .collect();
+
+                // The CLI template targets phase2; the GUI template phase3.
+                // Only the phase this generated app uses has to be present.
+                if phase != "phase2" {
+                    continue;
+                }
+                assert!(
+                    cargo_toml.contains(&format!("\"krate:{package}\"")),
+                    "{phase}/world.wit imports krate:{package}, but the generated \
+                     Cargo.toml does not list it under \
+                     [package.metadata.component.target.dependencies]. Add it, or \
+                     cargo-component cannot resolve the world."
+                );
+            }
+        }
     }
 
     #[test]

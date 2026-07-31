@@ -91,6 +91,13 @@ fn embed_sdk() {
 }
 
 /// Walk `dir`, recording every file with a path relative to `root`.
+///
+/// Every file is watched individually, not just the directory holding it.
+/// Watching only directories misses a whole new subdirectory: adding
+/// `wit/krate/phase2/deps/random/` created a path this walk had never seen, so
+/// cargo saw nothing changed, skipped the rebuild, and left a materialized SDK
+/// whose world imported a package its own deps tree did not contain. Every
+/// build after that failed with "package 'krate:random@0.1.0' not found".
 fn collect_dir(root: &Path, dir: &Path, files: &mut Vec<(String, Vec<u8>)>) {
     println!("cargo:rerun-if-changed={}", dir.display());
     let entries = fs::read_dir(dir).unwrap_or_else(|e| panic!("read dir {}: {e}", dir.display()));
@@ -99,6 +106,7 @@ fn collect_dir(root: &Path, dir: &Path, files: &mut Vec<(String, Vec<u8>)>) {
         if path.is_dir() {
             collect_dir(root, &path, files);
         } else {
+            println!("cargo:rerun-if-changed={}", path.display());
             let rel = path
                 .strip_prefix(root)
                 .expect("under root")
