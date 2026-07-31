@@ -79,8 +79,9 @@ run_case() {
   # for -- everything else is caught by the build.
   rundir="$WORK/$name-run"
   mkdir -p "$rundir"
-  # A file to read, for the cases that take one. The ported app is granted
-  # `input/**`, so the fixture has to live where that grant points.
+  # The granted subtree, and a file inside it. Ports are granted `input/**`, so
+  # the fixture lives where the grant points -- and the directory has to exist
+  # before the app runs, because `fs.mkdir` does not create parents.
   mkdir -p "$rundir/input"
   printf 'Hello, Krate!' > "$rundir/input/sample.bin"
   # shellcheck disable=SC2086
@@ -120,6 +121,15 @@ run_case "hexyl" \
   "6ecc29b9c8c84d08a7e860f7f69c22b113b480ea" \
   "input/sample.bin" \
   "48 65 6c 6c 6f" \
+  "--auto-grant"
+
+# Filesystem-heavy: walks a directory, reads many files, compares them. The
+# case that proved fs.list is a separate grant from fs.read.
+run_case "ddh" \
+  "https://github.com/darakian/ddh.git" \
+  "aac9046fbfe302c64e180a8a88de3c262cd1a1a0" \
+  "quick" \
+  "Total files" \
   "--auto-grant"
 
 echo ""
