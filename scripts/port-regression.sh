@@ -1,0 +1,139 @@
+#!/usr/bin/env sh
+# Re-port the programs we have already proven, and check they still work.
+#
+# Two real third-party programs were ported by hand and the results written
+# down. Nothing re-ran them, so a change that broke porting would have been
+# found by a user rather than by us -- and the sources only existed in /tmp,
+# which a reboot clears.
+#
+# This clones each one at a pinned commit, ports it, and asserts the result
+# builds, packs, runs, and prints what it printed before. A regression anywhere
+# in the SDK, the analyzer, the runtime, or the contract fails this script.
+#
+#   sh scripts/port-regression.sh [workdir]
+#
+# Needs a network (it clones) and an AI agent for the transform step, so it is
+# a nightly job rather than something on every push.
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+WORK="${1:-${TMPDIR:-/tmp}/krate-port-regression}"
+KRATE="${KRATE_BIN:-$ROOT/target/release/krate}"
+AGENT="${KRATE_PORT_AGENT:-claude}"
+
+if [ ! -x "$KRATE" ]; then
+  echo "no krate binary at $KRATE; run: cargo build --release -p krate-cli" >&2
+  exit 1
+fi
+
+rm -rf "$WORK"
+mkdir -p "$WORK"
+
+failures=0
+passed=0
+
+# Each case: name, repository, pinned commit, arguments, and a string the
+# output must contain. Pinned rather than tracking main, so a change upstream
+# cannot turn our regression test red for a reason that is not ours.
+run_case() {
+  name="$1"
+  repo="$2"
+  commit="$3"
+  run_args="$4"
+  expect="$5"
+  grants="$6"
+
+  echo ""
+  echo "=== $name ==="
+  src="$WORK/$name-src"
+  if ! git clone -q "$repo" "$src" 2>/dev/null; then
+    echo "  SKIP: could not clone $repo (no network?)"
+    return 0
+  fi
+  ( cd "$src" && git checkout -q "$commit" 2>/dev/null ) || {
+    echo "  SKIP: pinned commit $commit not found in $repo"
+    return 0
+  }
+
+  bundle="$WORK/$name.krate"
+  if ! "$KRATE" port "$src" \
+      --prepare "$WORK/$name-work" \
+      --agent "$AGENT" \
+      --to "$bundle" > "$WORK/$name.log" 2>&1; then
+    echo "  FAIL: the port did not complete"
+    tail -15 "$WORK/$name.log" | sed 's/^/    /'
+    failures=$((failures + 1))
+    return 0
+  fi
+
+  # The bundle has to exist and be a real size, not an empty file.
+  bytes="$(wc -c < "$bundle" | tr -d ' ')"
+  if [ "$bytes" -lt 1000 ]; then
+    echo "  FAIL: bundle is only $bytes bytes"
+    failures=$((failures + 1))
+    return 0
+  fi
+
+  # And it has to run and produce what it produced before. A port that builds
+  # but computes something different is the failure this is really watching
+  # for -- everything else is caught by the build.
+  rundir="$WORK/$name-run"
+  mkdir -p "$rundir"
+  # A file to read, for the cases that take one. The ported app is granted
+  # `input/**`, so the fixture has to live where that grant points.
+  mkdir -p "$rundir/input"
+  printf 'Hello, Krate!' > "$rundir/input/sample.bin"
+  # shellcheck disable=SC2086
+  if ! out="$( cd "$rundir" && "$KRATE" run $grants "$bundle" -- $run_args 2>&1 )"; then
+    echo "  FAIL: the ported app did not run"
+    echo "$out" | tail -8 | sed 's/^/    /'
+    failures=$((failures + 1))
+    return 0
+  fi
+  case "$out" in
+    *"$expect"*)
+      echo "  ok: ported, packed, ran ($bytes bytes), output contains '$expect'"
+      passed=$((passed + 1))
+      ;;
+    *)
+      echo "  FAIL: output did not contain '$expect'"
+      echo "$out" | head -8 | sed 's/^/    /'
+      failures=$((failures + 1))
+      ;;
+  esac
+}
+
+# The two shapes proven so far. Add a case every time a new shape is proven;
+# never remove one.
+# A GUI app: window, text field, button, computed list, saved state.
+run_case "savings" \
+  "https://github.com/ahtalbi/bank-savings-calculator.git" \
+  "376dc0d053ad36eb7215ea26b10ac8b38c371e6e" \
+  "quick" \
+  "Rent" \
+  "--auto-grant"
+
+# A command-line app that writes bytes, not text: the case that forced
+# stdio::write into the SDK.
+run_case "hexyl" \
+  "https://github.com/sharkdp/hexyl.git" \
+  "6ecc29b9c8c84d08a7e860f7f69c22b113b480ea" \
+  "input/sample.bin" \
+  "48 65 6c 6c 6f" \
+  "--auto-grant"
+
+echo ""
+echo "================================"
+echo "ported and verified: $passed"
+echo "failed:              $failures"
+if [ "$failures" -gt 0 ]; then
+  exit 1
+fi
+# Skipping every case and reporting success would be a green light that
+# verified nothing, which is worse than a red one. If nothing could be cloned,
+# say so and fail: the job exists to check that porting still works, and it
+# did not check.
+if [ "$passed" -eq 0 ]; then
+  echo "no case could be ported -- nothing was verified" >&2
+  exit 1
+fi
