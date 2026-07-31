@@ -2480,6 +2480,17 @@ The in-repo samples under `$KRATE_SDK_DIR` follow this discipline; copy it.\n\
 Declare only the capabilities the app uses. Mark the one that gates it\n\
 (`fs.write` for a saving app) `required = true`.\n\
 \n\
+## The verification run\n\
+After building, Krate runs the app once with every capability granted, passing\n\
+a single bare argument: `quick`. Not `--quick`, and not a flag -- the exact\n\
+string `quick` as the first argument. The app must recognise it, do its real\n\
+work once against a small fixture, print something, and exit 0 without waiting\n\
+for input or opening a window that nobody will close.\n\
+\n\
+An app that parses arguments strictly will reject an unknown `quick` and exit\n\
+non-zero, and the port then fails at the last step having built and packed\n\
+correctly. Check for it before any other argument handling.\n\
+\n\
 ## What happens next\n\
 `krate create` builds what you write, checks it imports only `krate:*`, packs\n\
 it, and verifies its permission wall. If you reach for something unsafe, the\n\
@@ -4707,6 +4718,16 @@ mod create_tests {
 
         // The specific call that was invented now exists and is named.
         assert!(contract.contains("io::stdio::write(bytes: &[u8])"));
+
+        // And the verification convention, which the agent was previously
+        // expected to guess. A port of a duplicate-file finder built, packed,
+        // and then failed its verification run because the app parsed
+        // arguments strictly and rejected a bare `quick` it had never been
+        // told to expect.
+        assert!(
+            contract.contains("`quick`") && contract.contains("Not `--quick`"),
+            "the contract must say how the verification argument arrives"
+        );
         // And the instruction for what to do when something is genuinely absent.
         assert!(contract.contains("do not invent a call"));
     }
