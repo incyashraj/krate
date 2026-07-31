@@ -81,6 +81,15 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
         "<mime-type>",
         false,
     ),
+    // System file dialogs. Default-granted, and the interface refuses every
+    // call on every host -- so today this grants nothing, and the permission
+    // list a person reads names something the app cannot do.
+    //
+    // Kept default-granted rather than promoted to an explicit ask: making an
+    // app request a capability that does not work would put a line in front of
+    // a person that means nothing. When dialogs land on all three systems this
+    // should become an explicit request, because choosing a file is a real
+    // decision. See docs/book/src/reference/interface-parity.md.
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "*", true),
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "file-open", true),
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "file-save", true),
