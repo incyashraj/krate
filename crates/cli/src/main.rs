@@ -1724,19 +1724,29 @@ fn verify_packed_app(output: &Path, manifest: &krate_manifest::Manifest) -> Resu
         prepare_verify_dir(verify_dir.path(), manifest)?.unwrap_or_else(|| "quick".to_string());
     let bundle = absolute_output_path(output)?;
 
-    let allow_exit = run_self(
-        verify_dir.path(),
-        &[
-            "run",
-            bundle.to_str().context("bundle path is not valid UTF-8")?,
-            "--untrusted",
-            "--auto-grant",
-            "--",
-            &verify_arg,
-        ],
-    )?;
+    let bundle_str = bundle.to_str().context("bundle path is not valid UTF-8")?;
+    let run_with = |arg: &str| -> Result<i32> {
+        run_self(
+            verify_dir.path(),
+            &["run", bundle_str, "--untrusted", "--auto-grant", "--", arg],
+        )
+    };
+
+    // The contract asks a ported app to accept both a file path and the bare
+    // word `quick`, so either one working is proof the app runs. Trying only
+    // the path failed two real ports that were working correctly: a duplicate
+    // finder that takes directories and a database CLI that takes subcommands,
+    // both handed `input/sample.txt` because they declared an `fs.read` grant.
+    let allow_exit = match run_with(&verify_arg)? {
+        0 => 0,
+        _ if verify_arg != "quick" => run_with("quick")?,
+        other => other,
+    };
     if allow_exit != 0 {
-        anyhow::bail!("the ported app failed with all grants (exit {allow_exit})");
+        anyhow::bail!(
+            "the ported app failed with all grants (exit {allow_exit}); \
+             it was run with `{verify_arg}` and then with `quick`"
+        );
     }
 
     // Nothing suitable to withhold: the app asks only for what every app gets
@@ -2691,6 +2701,9 @@ fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result
                     // all-grants verify run has a real file to analyze. A GUI app
                     // gets `quick` instead (read_arg stays None).
                     if is_read && !is_gui && read_arg.is_none() {
+                        // Write the fixture either way: an app handed `quick`
+                        // still needs something real inside its granted subtree
+                        // to do its work against.
                         let fixture = subdir.join("sample.txt");
                         fs::write(&fixture, "the quick brown fox the lazy dog the fox\n")
                             .with_context(|| format!("write {}", fixture.display()))?;
