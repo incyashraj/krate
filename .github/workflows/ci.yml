@@ -982,6 +982,38 @@ jobs:
           fi
           echo "all $found bundles opened on $RUNNER_OS, each with its own identity"
 
+  # ──────────────────────────────────────────────
+  # The path a stranger walks, using only what is published
+  # ──────────────────────────────────────────────
+  #
+  # Nothing tested this. The installer was copied to the site and never run, so
+  # the first command a new person types had no coverage -- and it depends on
+  # things outside this repository: the release assets, the domain, the GitHub
+  # API, the app file served from the site. Any of those can break without a
+  # commit, and nothing here would notice.
+  #
+  # Uses the published URLs on purpose. Building from source proves the source
+  # works; it does not prove that what a person can download works.
+  cold-install:
+    name: Cold install from krate.tech (${{ matrix.os }})
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is missing on purpose, not by oversight: it installs through
+        # install.ps1, which is a different script and needs its own walk. That
+        # is a real gap in this gate and it is written down in
+        # Plan/Portable-Definition-Of-Done-2026-08-01.md rather than hidden by
+        # a matrix that looks complete.
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Walk the published install path
+        shell: bash
+        run: sh scripts/test-cold-install.sh "$RUNNER_TEMP/cold-install"
+
   language-variant-evidence-compare:
     name: Language variant evidence compare
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}

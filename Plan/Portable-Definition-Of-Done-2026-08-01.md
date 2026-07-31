@@ -166,11 +166,20 @@ than our guesses, and this is the only path by which they reach us.
 followed by the published first-run command works, verified nightly against the
 real published artifacts rather than a local build.
 
-**Status: partly.** The installer is tested; the full cold path from
-`krate.tech` on a machine that has never seen Krate is not.
+**Status: two of three systems.** `scripts/test-cold-install.sh` walks the
+published path nightly on Linux and macOS: fetch the installer from krate.tech,
+run it, confirm it still suggests a command, run that command and require the
+permission wall to refuse with exit 5 in plain words, then grant and require
+the app to work. Verified by hand on macOS: install, refuse, grant, run,
+`note:first note`.
 
-This is the gate people actually hit first, and it is the one most easily
-broken by something outside the repository.
+**Windows is not covered.** It installs through `install.ps1`, a different
+script that needs its own walk. That is the remaining piece of this gate.
+
+This is the gate people actually hit first, and the one most easily broken by
+something outside the repository -- the release assets, the domain, the GitHub
+API, the app file on the site. Any of those can break with no commit, which is
+why the test uses the published URLs rather than a local build.
 
 ## What "stable" means here
 
