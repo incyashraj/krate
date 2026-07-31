@@ -1072,6 +1072,13 @@ fn detect_framework(path: &str, text: &str, lower: &str, analysis: &mut Analysis
     for (framework, patterns, relevant_file) in frameworks {
         if relevant_file && patterns.iter().any(|pattern| lower.contains(pattern)) {
             analysis.frameworks.insert(framework.to_string());
+            // A windowed app needs a window. Capabilities were only ever
+            // suggested from host-call patterns, so an app the analyzer had
+            // just identified as a GUI toolkit came back with an empty list --
+            // not even the one capability its whole category requires.
+            if is_windowed_framework(framework) {
+                analysis.capabilities.insert("ui.window:create".to_string());
+            }
             add_evidence_finding(
                 analysis,
                 FindingSpec {
@@ -1089,6 +1096,25 @@ fn detect_framework(path: &str, text: &str, lower: &str, analysis: &mut Analysis
             );
         }
     }
+}
+
+/// Whether this framework draws its own window, and therefore needs
+/// `ui.window:create` no matter what else the app does.
+fn is_windowed_framework(framework: &str) -> bool {
+    matches!(
+        framework,
+        "appkit"
+            | "swiftui"
+            | "wpf"
+            | "winui"
+            | "qt"
+            | "gtk"
+            | "egui"
+            | "iced"
+            | "slint"
+            | "dioxus"
+            | "winit"
+    )
 }
 
 fn framework_label(framework: &str) -> &str {
@@ -1277,22 +1303,15 @@ fn select_profile(analysis: &Analysis) -> String {
     // for the same reason as the platform ones: the port has to translate a UI
     // boundary, not just host calls, and handing one the CLI profile prepares
     // a candidate with no window at all.
-    if analysis.frameworks.iter().any(|framework| {
-        matches!(
-            framework.as_str(),
-            "appkit"
-                | "swiftui"
-                | "wpf"
-                | "winui"
-                | "qt"
-                | "gtk"
-                | "egui"
-                | "iced"
-                | "slint"
-                | "dioxus"
-                | "winit"
-        )
-    }) {
+    //
+    // Same predicate that decides the app needs `ui.window:create`, so the
+    // profile and the suggested capability cannot disagree about whether this
+    // app draws a window.
+    if analysis
+        .frameworks
+        .iter()
+        .any(|framework| is_windowed_framework(framework))
+    {
         return "desktop-native-source-port".to_string();
     }
     if analysis.has_krate_manifest {
@@ -1456,6 +1475,16 @@ mod tests {
             assert_eq!(
                 plan.profile, "desktop-native-source-port",
                 "{dep} should route to the desktop profile"
+            );
+            // A windowed app needs a window. The analyzer used to identify the
+            // toolkit and then suggest nothing at all, leaving the one
+            // capability its whole category requires for someone else to work
+            // out.
+            assert!(
+                plan.suggested_capabilities
+                    .contains(&"ui.window:create".to_string()),
+                "{dep} is a windowed toolkit but ui.window:create was not suggested: {:?}",
+                plan.suggested_capabilities
             );
         }
     }
