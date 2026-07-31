@@ -975,6 +975,22 @@
       border-radius: 9px;
     }
 
+    .cloud-note {
+      padding: 14px 16px;
+      border-left: 2px solid var(--cyan);
+      background: rgba(108, 244, 215, .05);
+      color: var(--muted);
+      font-size: 13.5px;
+    }
+
+    .cloud-note strong {
+      color: var(--text);
+    }
+
+    .cloud-note code {
+      color: var(--cyan);
+    }
+
     .cloud-step {
       display: grid;
       grid-template-columns: 40px 1fr auto;
@@ -1384,6 +1400,7 @@
 
       <div class="nav-links" id="navLinks">
         <a class="nav-link" href="#how">How it works</a>
+        <a class="nav-link" href="#capabilities">What apps can do</a>
         <a class="nav-link" href="#start">Start</a>
         <a class="nav-link" href="#cloud">Krate Cloud</a>
         <a class="nav-link" href="#faq">FAQ</a>
@@ -1457,6 +1474,63 @@
       </div>
     </section>
 
+    <!-- What an app is actually allowed to do. The site explained portability
+         and permissions but never capability, which is the question someone
+         asking "can I port my app?" is really asking. -->
+    <section class="section" id="capabilities">
+      <div class="wrap">
+        <div class="section-heading">
+          <p class="label">What an app can do</p>
+          <h2>Enough for a real app, and nothing more.</h2>
+          <p>Every one of these is a separate permission the person sees before the app runs. An app that keeps a list does not get your folders, and an app that signs in does not get your files.</p>
+        </div>
+
+        <div class="path-grid">
+          <div class="path-card">
+            <span class="path-number">SETTINGS &amp; DATA</span>
+            <h3>Remember things</h3>
+            <p>An app keeps its own settings and items under names it chooses. It never learns a path on your computer, so this can never widen into reading your documents.</p>
+            <span class="path-link">store.kv</span>
+          </div>
+
+          <div class="path-card">
+            <span class="path-number">DATABASE</span>
+            <h3>Keep real data</h3>
+            <p>A full SQLite database, addressed as tables and queries rather than a file. Lists that grow, searches, and transactions work the way an app expects.</p>
+            <span class="path-link">store.sql</span>
+          </div>
+
+          <div class="path-card">
+            <span class="path-number">SIGN-IN</span>
+            <h3>Stay signed in</h3>
+            <p>Tokens are encrypted where they rest, per app and per machine, so a copied file carries nothing usable to another computer.</p>
+            <span class="path-link">store.secret</span>
+          </div>
+
+          <div class="path-card">
+            <span class="path-number">DESKTOP</span>
+            <h3>Belong on the desktop</h3>
+            <p>A window with real controls, notifications when something finishes, and links that open in your browser. Links are limited to web and mail addresses, so a link cannot start another program.</p>
+            <span class="path-link">ui.window · ui.notify · ui.open-url</span>
+          </div>
+
+          <div class="path-card">
+            <span class="path-number">FILES &amp; NETWORK</span>
+            <h3>Reach out, narrowly</h3>
+            <p>Read and write folders you choose, and connect to hosts you name. A redirect to somewhere you did not allow is not followed.</p>
+            <span class="path-link">fs.read · fs.write · net.connect</span>
+          </div>
+
+          <div class="path-card">
+            <span class="path-number">MICROPHONE &amp; SPEECH</span>
+            <h3>Listen, only when allowed</h3>
+            <p>Microphone input, and speech recognition that runs on your own machine with no service behind it. The app receives a match score, never your audio.</p>
+            <span class="path-link">audio.capture · speech</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="section" id="start">
       <div class="wrap">
         <div class="section-heading">
@@ -1525,6 +1599,7 @@
           <span class="future-pill">Planned next</span>
           <h2>Krate Cloud</h2>
           <p>People will be able to publish, find, share, and update small apps through Krate Cloud. The app still opens locally through the Krate runtime, with its requested access visible before it runs.</p>
+          <p class="cloud-note"><strong>The first piece already works.</strong> Every <code>.krate</code> has an identity computed from what is inside it, so the file you receive can be checked against the one that was verified. Run <code>krate run app.krate --dump-caps</code> and it is the first thing shown. A registry stores apps by that identity, a signature signs it, and an update points from one to the next &mdash; and you can check it today with no service involved.</p>
           <a class="button" href="https://github.com/incyashraj/krate#planned-krate-cloud">Read the plan</a>
         </div>
 
