@@ -17,9 +17,26 @@ same number, translated.
 | 1.00x on sustained compute | **Full speed once it is running** |
 | 0.6 µs per capability check | **Safety that costs six ten-thousandths of a millisecond** |
 
-The size one is the strongest because everyone has a full phone. If you need
-the comparison to land in one breath: *a photo is 3 MB, a Krate app is 6 KB --
-you could fit 500 of them inside one photo.*
+## The line that lands
+
+Measured on this machine, both real files:
+
+> **Obsidian, a note-taking app, is 482 MB. A Krate checklist app is 12 KB.
+> You could fit 39,000 of ours inside one of theirs.**
+
+This works because it is checkable in ten seconds and the reader already
+resents how much space their apps take.
+
+One warning that matters: the first version of this comparison was going to be
+"reminder apps are over 100 MB". Apple's Reminders is 12 MB. The claim would
+have been wrong and someone would have checked. **Electron apps are the honest
+target** -- Obsidian 482 MB, Discord 431 MB, Signal 394 MB, VS Code 1.4 GB --
+because most of that size is a copy of a web browser shipped inside the app,
+which is exactly the problem Krate does not have.
+
+Say the caveat before someone else does: Obsidian does far more than keep a
+checklist. The comparison is still fair, because the 482 MB is not what makes
+it a better notes app.
 
 ## What to lead with
 
