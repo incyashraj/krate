@@ -32,9 +32,10 @@ upgrade with breaking changes to work through, not `cargo update`.
 
 Three options, in the order I would rank them:
 
-1. **Upgrade to 46.x or 47.x.** Correct, and it removes the advisory rather
-   than annotating it. Costs a day or two of API churn in the runtime, plus a
-   full three-OS run to prove nothing regressed. Recommended.
+1. **Bump rustc to 1.94, then upgrade Wasmtime.** Correct, and it removes the
+   advisory rather than annotating it. Two changes, not one -- see the measured
+   cost below. Still recommended, but it is a two-step job rather than an
+   afternoon.
 2. **Assess exploitability first, then schedule.** The bug involves values
    crossing between two engines. `crates/runtime` has exactly one
    `Engine::new` call site (`lib.rs:212`), which is a reason to think Krate may
@@ -58,3 +59,28 @@ secret, desktop, and random capability work.
 
 Worth fixing separately from the advisory itself: an audit nobody runs is an
 audit nobody has.
+
+
+## What it actually costs, measured
+
+Tried both patched versions on 2026-08-01. Neither compiles:
+
+```
+wasmtime 47.0.3 -> cranelift-assembler-x64 0.134.3 requires rustc 1.94.0
+wasmtime 46.0.2 -> cranelift-assembler-x64 0.133.2 requires rustc 1.94.0
+```
+
+The workspace is pinned to **rustc 1.91.1**, and every CI job pins
+`dtolnay/rust-toolchain@1.91.1`. So this is not "upgrade a dependency" -- it is
+a Rust toolchain bump first, then the Wasmtime API changes on top.
+
+That is bigger than it looked, and it touches every lane: the three-OS matrix,
+the cross-system bundle job, the cold install, and the generated-doc freshness
+checks all build with that pinned toolchain. A toolchain bump is exactly the
+kind of change that should land on its own, with a full nightly behind it,
+rather than riding along with a security fix.
+
+The Wasmtime API surface itself is small, which is the good news. The runtime
+touches about a dozen real call sites -- `Linker`, `Store`, `Config`,
+`component::bindgen`, `Resource` -- and 99 of the mentions are the
+`wasmtime::Result` type alias, which does not change.
