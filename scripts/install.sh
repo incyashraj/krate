@@ -165,8 +165,11 @@ esac
 say ""
 say "To update later, just run this installer again."
 say ""
-say "You can now open a .krate someone sends you."
-say "To *make* your own apps with 'krate create', you also need the Rust build"
-say "tools (Rust, cargo-component, and the wasm target). 'krate create' checks"
-say "for them and offers to install them on first use; 'krate doctor' shows what"
-say "is present at any time."
+# End on something the person can do, not on what they cannot do yet. The old
+# ending listed the build tools `krate create` needs, which reads as homework
+# to someone who has just installed and has nothing to open.
+say "Try it now:"
+say ""
+say "  krate run https://krate.tech/notes.krate"
+say ""
+say "That opens a real app. Krate will show you what it wants first."

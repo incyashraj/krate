@@ -61,6 +61,14 @@ jobs:
           # into a terminal is `curl -fsSL https://krate.tech/install.sh | sh`
           # rather than a raw.githubusercontent URL with a branch name in it.
           # Same file either way; the short one is the one people can retype.
+          # The app the installer tells a new person to open. Served from the
+          # domain so the first command is short: krate.tech/notes.krate
+          #
+          # Always the published release, never a local copy: a stale file here
+          # is the first thing a new person would run, and an old bundle fails
+          # to instantiate against the current runtime.
+          curl -fsSL -o _site/notes.krate \
+            https://github.com/incyashraj/krate/releases/download/notes-v0.1.0/notes.krate
           cp scripts/install.sh _site/install.sh
           cp scripts/install.ps1 _site/install.ps1
           # A trailing-slash-free alias, so `krate.tech/install` works too.

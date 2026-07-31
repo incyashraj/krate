@@ -4037,7 +4037,7 @@ fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
     if !may_install {
         eprintln!("Install them, then run `krate create` again:");
         for tool in &missing {
-            eprintln!("  {}", tool.install_cmd.join(" "));
+            eprintln!("  {}", install_command_line(&tool.install_cmd));
         }
         eprintln!();
         eprintln!("Or check your setup any time with `krate doctor`.");
@@ -4053,7 +4053,7 @@ fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
         if !(answer.is_empty() || answer == "y" || answer == "yes") {
             eprintln!("Not installing. To do it yourself:");
             for tool in &missing {
-                eprintln!("  {}", tool.install_cmd.join(" "));
+                eprintln!("  {}", install_command_line(&tool.install_cmd));
             }
             anyhow::bail!("build tools are required to create an app");
         }
@@ -4061,7 +4061,7 @@ fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
 
     for tool in &missing {
         eprintln!("==> installing {}", tool.what);
-        eprintln!("    {}", tool.install_cmd.join(" "));
+        eprintln!("    {}", install_command_line(&tool.install_cmd));
         run_install_command(&tool.install_cmd).with_context(|| format!("install {}", tool.what))?;
     }
 
@@ -4104,6 +4104,22 @@ fn preflight_toolchain_report_json(output: &Path) -> Result<()> {
 
 /// Run one install command, streaming its output. The rustup bootstrap is
 /// `curl … | sh`; everything else runs directly.
+/// The install command as a person would type it.
+///
+/// `install_cmd` is an argv array because the runner spawns it directly, and
+/// the rustup bootstrap is a script that must be piped into a shell. Joining
+/// the array with spaces produced `curl … https://sh.rustup.rs` with no `| sh`,
+/// so anyone who copied the line printed the script to their terminal instead
+/// of installing anything -- and the next `krate create` failed the same way.
+fn install_command_line(cmd: &[String]) -> String {
+    let joined = cmd.join(" ");
+    if cmd.first().map(String::as_str) == Some("curl") {
+        format!("{joined} | sh")
+    } else {
+        joined
+    }
+}
+
 fn run_install_command(cmd: &[String]) -> Result<()> {
     let (program, args) = cmd.split_first().context("empty install command")?;
 
@@ -4521,6 +4537,29 @@ mod create_tests {
         } else {
             assert_eq!(shell, "sh");
         }
+    }
+
+    #[test]
+    fn a_printed_install_command_can_be_pasted() {
+        // The rustup bootstrap is a script that has to be piped into a shell.
+        // Printing the argv array verbatim dropped the pipe, so anyone who
+        // copied the line printed the installer to their terminal and then hit
+        // the same missing-tools error again.
+        let curl: Vec<String> = ["curl", "-sSf", "https://sh.rustup.rs"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert!(super::install_command_line(&curl).ends_with("| sh"));
+
+        // An ordinary command is unchanged; only the piped one is special.
+        let cargo: Vec<String> = ["cargo", "install", "cargo-component"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        assert_eq!(
+            super::install_command_line(&cargo),
+            "cargo install cargo-component"
+        );
     }
 
     #[test]
