@@ -745,6 +745,12 @@ fn prepare_port_workspace(plan: &krate_port::PortPlan, workspace: &Path) -> Resu
     fs::create_dir_all(&candidate).with_context(|| format!("create {}", candidate.display()))?;
 
     let name = port_candidate_name(Path::new(&plan.source));
+    // The starter is scaffolding the agent replaces, not a description of the
+    // app being ported. Seeding a hex viewer with a word-frequency counter left
+    // the candidate's own doc comment claiming it counts words while the task
+    // said port hexyl -- a contradiction the agent has to notice and undo. The
+    // choice is by shape (does it keep data? does it listen?), and the header
+    // is rewritten below to say what it actually is.
     let kind = if plan.profile == "krate-cli-v1-candidate" {
         AppKind::WordFrequency
     } else if plan
@@ -764,7 +770,13 @@ fn prepare_port_workspace(plan: &krate_port::PortPlan, workspace: &Path) -> Resu
     request.description = format!("Port the existing {name} application to Krate.");
     let sdk_prefix = relative_sdk_prefix(&candidate, &sdk_root)?;
     let generated = generate(&request, &sdk_prefix).map_err(anyhow::Error::msg)?;
-    for file in generated.files {
+    for mut file in generated.files {
+        // Replace the starter's own description so the candidate does not claim
+        // to be something it is not. An agent opening src/lib.rs was told it
+        // counts word frequencies while its task said port a hex viewer.
+        if file.path == "src/lib.rs" {
+            file.contents = rewrite_candidate_header(&file.contents, &name, &plan.source);
+        }
         let destination = candidate.join(file.path);
         if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent)?;
@@ -797,6 +809,40 @@ fn prepare_port_workspace(plan: &krate_port::PortPlan, workspace: &Path) -> Resu
         port_behavior_journeys_markdown(&journeys),
     )?;
     Ok(())
+}
+
+/// Replace a generated starter's doc header with one that says what the
+/// candidate actually is: scaffolding to be rewritten into a port of a specific
+/// project. The starters are real working apps, so their headers describe those
+/// apps -- accurate for `krate create`, actively misleading for `krate port`.
+fn rewrite_candidate_header(source: &str, name: &str, origin: &str) -> String {
+    // The header runs to the first line that is not a `//!` doc comment or
+    // blank, which is where the starter's real code begins.
+    let body_start = source
+        .lines()
+        .position(|line| {
+            let trimmed = line.trim();
+            !trimmed.is_empty() && !trimmed.starts_with("//!")
+        })
+        .unwrap_or(0);
+    let body: Vec<&str> = source.lines().skip(body_start).collect();
+
+    let mut header = String::new();
+    header.push_str(&format!("//! Port candidate for `{name}`.\n"));
+    header.push_str("//!\n");
+    header.push_str("//! This is a starting point, not the ported app. It is a working Krate\n");
+    header.push_str("//! app of a similar shape, here so the crate compiles and the build,\n");
+    header.push_str("//! import, and permission checks can run from the first attempt.\n");
+    header.push_str("//!\n");
+    header.push_str("//! Replace this with the behaviour of the original project:\n");
+    header.push_str(&format!("//!   {origin}\n"));
+    header.push_str("//!\n");
+    header.push_str("//! Read `../PORTING.md` for what was found in that source and which\n");
+    header.push_str("//! capabilities it maps onto. Keep the `no_std` discipline below: a\n");
+    header.push_str("//! Krate component may import only `krate:*`, and a growable `String`\n");
+    header.push_str("//! or `format!` pulls in the `wasi:*` set that packaging rejects.\n");
+
+    format!("{header}\n{}", body.join("\n"))
 }
 
 fn port_candidate_name(source: &Path) -> String {
@@ -4556,6 +4602,27 @@ mod create_tests {
         } else {
             assert_eq!(shell, "sh");
         }
+    }
+
+    #[test]
+    fn a_port_candidate_does_not_claim_to_be_the_starter() {
+        // The starters are real working apps, so their doc headers describe
+        // those apps -- right for `krate create`, actively misleading for
+        // `krate port`. A hex viewer's candidate opened by saying it counts
+        // word frequencies, contradicting the task beside it.
+        let starter = "//! Krate Word Count.\n                       //!\n                       //! Counts the most common words in a file.\n                       \n                       #![no_std]\n                       fn main() {}\n";
+        let rewritten = super::rewrite_candidate_header(starter, "hexyl", "/src/hexyl");
+
+        assert!(rewritten.contains("Port candidate for `hexyl`"));
+        assert!(rewritten.contains("/src/hexyl"));
+        assert!(
+            !rewritten.contains("Counts the most common words"),
+            "the starter's description must not survive"
+        );
+        // The code below the header is untouched, including the no_std line the
+        // whole component depends on.
+        assert!(rewritten.contains("#![no_std]"));
+        assert!(rewritten.contains("fn main() {}"));
     }
 
     #[test]
