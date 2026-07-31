@@ -975,6 +975,161 @@
       border-radius: 9px;
     }
 
+    /* The store shelf. Cards are the product here, so they carry the weight:
+       a real listing shows what an app is asking for, not just a name and a
+       download button. */
+    .future-pill.soon {
+      color: var(--cyan);
+      border-color: rgba(108, 244, 215, .4);
+    }
+
+    .store-shelf {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 16px;
+      margin-bottom: 34px;
+    }
+
+    .store-card {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 20px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      transition: border-color .15s ease, transform .15s ease;
+    }
+
+    .store-card:hover {
+      border-color: var(--line-strong);
+      transform: translateY(-2px);
+    }
+
+    .store-top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .store-icon {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      flex: none;
+      color: var(--blue-soft);
+      background: var(--panel-raised);
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      font-size: 19px;
+    }
+
+    .store-top h3 {
+      margin: 0;
+      font-size: 16px;
+    }
+
+    .store-by {
+      margin: 2px 0 0;
+      color: var(--quiet);
+      font-size: 11.5px;
+    }
+
+    .store-verified {
+      margin-left: auto;
+      align-self: flex-start;
+      padding: 3px 7px;
+      color: var(--cyan);
+      background: rgba(108, 244, 215, .08);
+      border-radius: 99px;
+      font-size: 10px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+
+    .store-desc {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13.5px;
+      line-height: 1.55;
+    }
+
+    /* The list that makes this a Krate store rather than any store: every
+       listing states its asks in the same words the permission window uses. */
+    .store-asks {
+      margin: 0;
+      padding: 12px 0 0;
+      list-style: none;
+      border-top: 1px solid var(--line);
+    }
+
+    .store-asks li {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 3px 0;
+      color: var(--text);
+      font-size: 12.5px;
+    }
+
+    .store-asks span {
+      color: var(--cyan);
+      font-size: 8px;
+    }
+
+    .store-asks span.warn {
+      color: var(--yellow);
+    }
+
+    .store-foot {
+      margin-top: auto;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      color: var(--quiet);
+      font-size: 12px;
+    }
+
+    .store-foot code {
+      color: var(--blue-soft);
+    }
+
+    .store-why {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 22px;
+      margin-bottom: 30px;
+      padding-top: 28px;
+      border-top: 1px solid var(--line);
+    }
+
+    .store-why h4 {
+      margin: 0 0 7px;
+      font-size: 14px;
+    }
+
+    .store-why p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .store-why strong {
+      color: var(--cyan);
+    }
+
+    .store-why code {
+      color: var(--blue-soft);
+      font-size: 12px;
+    }
+
+    .store-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
     .cloud-note {
       padding: 14px 16px;
       border-left: 2px solid var(--cyan);
@@ -1594,36 +1749,86 @@
     </section>
 
     <section class="section cloud-section" id="cloud">
-      <div class="wrap cloud-layout">
-        <div class="cloud-copy">
-          <span class="future-pill">Planned next</span>
-          <h2>Krate Cloud</h2>
-          <p>People will be able to publish, find, share, and update small apps through Krate Cloud. The app still opens locally through the Krate runtime, with its requested access visible before it runs.</p>
-          <p class="cloud-note"><strong>The first piece already works.</strong> Every <code>.krate</code> has an identity computed from what is inside it, so the file you receive can be checked against the one that was verified. Run <code>krate run app.krate --dump-caps</code> and it is the first thing shown. A registry stores apps by that identity, a signature signs it, and an update points from one to the next &mdash; and you can check it today with no service involved.</p>
-          <a class="button" href="https://github.com/incyashraj/krate#planned-krate-cloud">Read the plan</a>
+      <div class="wrap">
+        <div class="section-heading">
+          <span class="future-pill soon">Releasing soon</span>
+          <h2>A store for apps that show their hands.</h2>
+          <p>Krate Cloud is where small apps get published, found, and updated. Every listing shows what the app wants to access before you open it, and the app still runs on your own computer &mdash; a store, not a cloud you send your work to.</p>
         </div>
 
-        <div class="cloud-map" aria-label="Planned Krate Cloud flow">
-          <div class="cloud-step">
-            <span>01</span>
-            <strong>Publish an app</strong>
-            <small>Krate Cloud</small>
+        <!-- A shelf rather than a flow diagram: the point of a marketplace is
+             that you can see what is on it, and what each app is asking for. -->
+        <div class="store-shelf" aria-label="Example Krate Cloud listings">
+          <article class="store-card">
+            <div class="store-top">
+              <div class="store-icon" aria-hidden="true">&#9635;</div>
+              <div>
+                <h3>Checklist</h3>
+                <p class="store-by">by krate &middot; 12 KB</p>
+              </div>
+              <span class="store-verified" title="Contents match the identity that was verified">verified</span>
+            </div>
+            <p class="store-desc">A list that saves what you add and remembers it next time.</p>
+            <ul class="store-asks">
+              <li><span>&#9679;</span> open a window</li>
+              <li><span>&#9679;</span> save its own settings and data</li>
+            </ul>
+            <div class="store-foot"><code>krate open checklist</code></div>
+          </article>
+
+          <article class="store-card">
+            <div class="store-top">
+              <div class="store-icon" aria-hidden="true">&#9636;</div>
+              <div>
+                <h3>Notes</h3>
+                <p class="store-by">by krate &middot; 15 KB</p>
+              </div>
+              <span class="store-verified" title="Contents match the identity that was verified">verified</span>
+            </div>
+            <p class="store-desc">Write notes, switch between them, and keep them on your machine.</p>
+            <ul class="store-asks">
+              <li><span>&#9679;</span> open a window</li>
+              <li><span>&#9679;</span> read and save files in <code>notes</code></li>
+            </ul>
+            <div class="store-foot"><code>krate open notes</code></div>
+          </article>
+
+          <article class="store-card">
+            <div class="store-top">
+              <div class="store-icon" aria-hidden="true">&#9673;</div>
+              <div>
+                <h3>Voice Prompter</h3>
+                <p class="store-by">by krate &middot; 79 MB</p>
+              </div>
+              <span class="store-verified" title="Contents match the identity that was verified">verified</span>
+            </div>
+            <p class="store-desc">A teleprompter that follows your script as you speak it. Recognition runs on your machine.</p>
+            <ul class="store-asks">
+              <li><span>&#9679;</span> open a window</li>
+              <li><span class="warn">&#9679;</span> listen through your microphone</li>
+            </ul>
+            <div class="store-foot"><code>krate open voice-prompter</code></div>
+          </article>
+        </div>
+
+        <div class="store-why">
+          <div>
+            <h4>You see the ask before you open it</h4>
+            <p>A listing is not a download button with a description. It names every capability the app requests, in the same plain words the permission window uses.</p>
           </div>
-          <div class="cloud-step">
-            <span>02</span>
-            <strong>Find and share it</strong>
-            <small>One link or file</small>
+          <div>
+            <h4>The file is checked, not trusted</h4>
+            <p><strong>This part already works.</strong> Every <code>.krate</code> carries an identity computed from its contents, so what you receive can be checked against what was verified. Try <code>krate run app.krate --dump-caps</code> today &mdash; no service involved.</p>
           </div>
-          <div class="cloud-step">
-            <span>03</span>
-            <strong>Open it locally</strong>
-            <small>Krate Runtime</small>
+          <div>
+            <h4>It runs on your computer</h4>
+            <p>Publishing goes through the Cloud. Running does not. The app opens locally through the Krate runtime with exactly the access you allowed, online or off.</p>
           </div>
-          <div class="cloud-step">
-            <span>04</span>
-            <strong>Control its access</strong>
-            <small>User choice</small>
-          </div>
+        </div>
+
+        <div class="store-actions">
+          <a class="button primary" href="https://github.com/incyashraj/krate/discussions">Tell us what you would publish</a>
+          <a class="button" href="https://github.com/incyashraj/krate#planned-krate-cloud">Read the plan</a>
         </div>
       </div>
     </section>
@@ -1825,26 +2030,27 @@
         ]
       },
       cloud: {
-        state: "Planned next",
+        state: "Releasing soon",
         stateClass: "planned",
-        title: "Publish and share through Krate Cloud.",
-        description: "Krate Cloud will add publisher identity, discovery, sharing, signing, and updates. Apps will still open locally through the Krate runtime.",
-        note: "This is the planned product direction. Krate Cloud is not available yet.",
+        title: "A store for apps that show their hands.",
+        description: "Krate Cloud is where apps get published, found, and updated. Every listing shows what the app asks for before you open it, and the app still runs on your own computer.",
+        note: "The store is not open yet. The identity step below already works today.",
         terminalTitle: "planned cloud flow",
         linkLabel: "Read the Cloud plan →",
         linkHref: "https://github.com/incyashraj/krate#planned-krate-cloud",
         lines: [
-          { type: "label", text: "Planned Krate Cloud flow" },
-          { type: "planned", text: "01  Creator publishes a .krate app" },
-          { type: "muted", text: "    attach publisher identity and signature" },
-          { type: "planned", text: "02  Krate Cloud creates a page people can find and share" },
-          { type: "muted", text: "    show the app, publisher, version, and requested access" },
-          { type: "planned", text: "03  A user downloads or opens the app" },
-          { type: "muted", text: "    the .krate file still carries its requested access" },
-          { type: "planned", text: "04  Krate Runtime opens it on the user’s computer" },
-          { type: "muted", text: "    the user reviews access before any app code runs" },
-          { type: "planned", text: "05  Updates stay connected to the same trusted publisher" },
-          { type: "success", text: "Cloud for distribution. Local runtime for execution and control." }
+          { type: "label", text: "Krate Cloud, listing to open" },
+          { type: "planned", text: "01  A maker publishes a .krate to the store" },
+          { type: "muted", text: "    listed under the publisher, with its version" },
+          { type: "planned", text: "02  The listing shows what the app asks for" },
+          { type: "muted", text: "    open a window · save its own settings and data" },
+          { type: "success", text: "03  The file is checked against its identity" },
+          { type: "info", text: "    krate run app.krate --dump-caps   (works today)" },
+          { type: "muted", text: "    Identity  b8243d1fd518677d41fb679c1ec5d93e…" },
+          { type: "planned", text: "04  You open it, and review the ask" },
+          { type: "muted", text: "    the same permission window as any .krate" },
+          { type: "planned", text: "05  Updates arrive from the same publisher" },
+          { type: "success", text: "The store distributes. Your computer runs it, and decides." }
         ]
       }
     };
