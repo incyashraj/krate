@@ -70,10 +70,11 @@ fn native_comparison(c: &mut Criterion) {
 }
 
 fn bench_config() -> Config {
-    let mut config = Config::default();
-    // A fixed clock keeps runs comparable; nothing here depends on wall time.
-    config.test_time_millis = Some(1_700_000_000_000);
-    config
+    Config {
+        // A fixed clock keeps runs comparable; nothing here depends on wall time.
+        test_time_millis: Some(1_700_000_000_000),
+        ..Config::default()
+    }
 }
 
 fn wasm_path(env_var: &str, default_path: &str) -> PathBuf {

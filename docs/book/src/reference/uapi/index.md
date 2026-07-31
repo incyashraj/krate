@@ -24,6 +24,7 @@ The current world imports these interfaces:
 - `krate:store/kv@0.1.0`
 - `krate:store/sql@0.1.0`
 - `krate:store/secret@0.1.0`
+- `krate:random/bytes@0.1.0`
 
 The app exports:
 
@@ -678,6 +679,61 @@ Shared network request, response, and error types.
 > Host-specific network error text.
 
 - `other`: `string`
+
+
+## `krate:random/bytes@0.1.0`
+
+### Functions
+
+> Return exactly `count` random bytes.
+> 
+> A request for zero bytes succeeds and returns nothing, so a caller
+> computing a length does not have to special-case the empty case.
+
+- `get(count: u32) -> result<list<u8>, random-error>`
+> A uniformly distributed 64-bit value.
+> 
+> Offered alongside `get` because drawing a number is the common case, and
+> assembling one from bytes by hand is somewhere an app can get the byte
+> order wrong without ever noticing.
+
+- `next-u64() -> result<u64, random-error>`
+> A uniform integer in `[0, bound)`, or an error when `bound` is zero.
+> 
+> Provided because the obvious way to write this -- take a random number
+> modulo `bound` -- is subtly wrong whenever `bound` does not divide the
+> range evenly: the low values come up more often. A shuffled deck would
+> deal some cards more than others and the output would still look random.
+> The host draws again instead of taking a remainder.
+
+- `below(bound: u64) -> result<u64, random-error>`
+
+### Types
+
+#### `random-error` variant
+
+> Error returned by a request for random bytes.
+
+> The app did not receive the `random.bytes` capability.
+
+- `denied`
+> More bytes were asked for than one call may return.
+
+- `too-large`
+> `below` was given a bound of zero, which names an empty range.
+> 
+> Its own variant rather than reusing `too-large`, which would say the
+> opposite of what happened, or returning zero, which is indistinguishable
+> from a legitimate draw.
+
+- `empty-range`
+> The operating system had no entropy to give.
+> 
+> Reported rather than worked around. A caller that receives this knows
+> it got nothing; a caller handed weak bytes it believes are strong has no
+> way to find out.
+
+- `unavailable`: `string`
 
 
 ## `krate:resources/assets@0.1.0`
