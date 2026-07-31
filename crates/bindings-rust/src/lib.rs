@@ -562,7 +562,11 @@ pub mod net {
     use alloc::string::{String, ToString};
     use alloc::vec::Vec;
 
-    /// Fetch a URL with a simple HTTP GET and return the response body.
+    /// Fetch a URL with a simple GET and return the response body.
+    ///
+    /// Both `http://` and `https://` work. HTTPS verifies the certificate and
+    /// there is no way to ask it not to; redirects are not followed, because a
+    /// redirect can move the request to a host the person never granted.
     pub fn get(url: &str) -> Result<Vec<u8>, NetError> {
         crate::bindings::krate::net::http_client::get(url)
     }
@@ -573,11 +577,10 @@ pub mod net {
             .map_err(|_| NetError::Other("response body is not valid UTF-8".to_string()))
     }
 
-    /// Send a lower-level HTTP request record.
+    /// Send a lower-level HTTP or HTTPS request record.
     ///
-    /// The current local adapter supports plain HTTP request framing. It sends
-    /// the selected method, app headers, and buffered body while keeping
-    /// transport headers such as `Host`, `Connection`, and `Content-Length`
+    /// It sends the selected method, app headers, and buffered body while
+    /// keeping transport headers such as `Host`, `Connection`, and `Content-Length`
     /// under host control.
     pub fn fetch(req: Request) -> Result<Response, NetError> {
         crate::bindings::krate::net::http_client::fetch(&req)
