@@ -28,6 +28,7 @@ world = "cli"
 "krate:locale" = { path = "../../wit/krate/phase2/deps/locale" }
 "krate:resources" = { path = "../../wit/krate/phase2/deps/resources" }
 "krate:store" = { path = "../../wit/krate/phase2/deps/store" }
+"krate:random" = { path = "../../wit/krate/phase2/deps/random" }
 
 [profile.release]
 panic = "abort"

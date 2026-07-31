@@ -512,3 +512,90 @@ mod tests {
         assert!(!is_kebab_case("http--client"));
     }
 }
+
+#[cfg(test)]
+mod wit_dependency_lists {
+    use std::path::{Path, PathBuf};
+
+    fn repo_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .expect("repo root")
+            .to_path_buf()
+    }
+
+    /// Every WIT package a world imports must be listed as a component target
+    /// dependency in every project that builds against that world.
+    ///
+    /// The list is written by hand in eight places. Adding `krate:random` to
+    /// the worlds left seven of them stale, and because those only build in the
+    /// `[full-ci]` path, nothing said so for weeks -- the error when it finally
+    /// appeared pointed at the world file rather than at the list missing the
+    /// entry.
+    #[test]
+    fn every_project_lists_every_wit_package_its_world_imports() {
+        let root = repo_root();
+
+        for phase in ["phase2", "phase3"] {
+            let world = std::fs::read_to_string(root.join(format!("wit/krate/{phase}/world.wit")))
+                .unwrap_or_else(|e| panic!("read {phase} world: {e}"));
+            let imported: Vec<String> = world
+                .lines()
+                .filter_map(|l| l.trim().strip_prefix("import krate:"))
+                .map(|rest| {
+                    rest.chars()
+                        .take_while(|c| c.is_alphanumeric() || *c == '-')
+                        .collect()
+                })
+                .collect();
+
+            for manifest in project_manifests(&root) {
+                let text = std::fs::read_to_string(&manifest).expect("read manifest");
+                // Only projects that target this phase's world.
+                if !text.contains(&format!("wit/krate/{phase}")) {
+                    continue;
+                }
+                for package in &imported {
+                    assert!(
+                        text.contains(&format!("\"krate:{package}\"")),
+                        "{} targets {phase} but does not list krate:{package} under \
+                         [package.metadata.component.target.dependencies]; \
+                         cargo-component cannot resolve the world without it",
+                        manifest.display()
+                    );
+                }
+            }
+        }
+    }
+
+    /// Every Cargo.toml that declares component target dependencies.
+    fn project_manifests(root: &Path) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        for dir in ["apps", "test"] {
+            collect(&root.join(dir), &mut out);
+        }
+        out
+    }
+
+    fn collect(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if path.file_name().is_some_and(|n| n == "target") {
+                    continue;
+                }
+                collect(&path, out);
+            } else if path.file_name().is_some_and(|n| n == "Cargo.toml") {
+                if std::fs::read_to_string(&path)
+                    .is_ok_and(|t| t.contains("component.target.dependencies"))
+                {
+                    out.push(path);
+                }
+            }
+        }
+    }
+}
