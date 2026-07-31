@@ -101,8 +101,25 @@ tried" stops being the likely explanation. Two ports of two shapes is a
 promising signal and nothing more, and saying "any app" on it would be
 disproved by the third person who tries.
 
-Note the last row: "medium sized" is currently an untested word. hexyl at 2,400
+Note the last row: "medium sized" is currently an untested word. hexyl at 2,392
 lines is our largest, and nobody has tried 5,000.
+
+What the two ports cost, measured:
+
+| | Source | Ported | Ratio |
+|---|---|---|---|
+| hexyl (CLI) | 2,392 | 1,133 | **0.47x** |
+| savings (GUI) | 490 | 810 | **1.65x** |
+
+A command-line program shrinks: argument parsing, colour crates, and terminal
+detection all fall away because Krate supplies them or the app no longer needs
+them. A GUI grows: an immediate-mode draw loop becomes an explicit widget tree,
+which is more code saying the same thing.
+
+That matters for the 5,000-line gate. A 5,000-line CLI is plausibly a
+2,400-line port, which is a size already proven. A 5,000-line GUI is plausibly
+8,000 lines of output, which is a different question and probably the harder
+half of "medium sized".
 
 ### Gate 5 — The tooling can see what it needs to
 
