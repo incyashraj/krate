@@ -5,8 +5,19 @@ on:
     branches:
       - main
     paths:
+      # Every source the site is assembled from. Missing one means editing that
+      # page changes nothing on the live site and nothing says so -- which is
+      # exactly what happened to docs/open and docs/cloud.
       - "docs/book/**"
       - "docs/landing/**"
+      - "docs/open/**"
+      - "docs/cloud/**"
+      - "docs/answers/**"
+      - "scripts/build-store.sh"
+      - "scripts/store-listing.py"
+      - "scripts/build-answer-pages.py"
+      - "scripts/install.sh"
+      - "scripts/install.ps1"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
