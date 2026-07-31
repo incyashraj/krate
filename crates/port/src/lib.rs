@@ -807,6 +807,71 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         "Krate's app-scoped key-value store covers this. The app addresses values by key and never names a path, so it does not need a filesystem grant.",
         Some("store.kv"),
     );
+    // Random numbers. getrandom is the third most-downloaded crate in Rust and
+    // rand and uuid sit on it, so this is one of the most common things a real
+    // program does -- and the analyzer could not see any of it.
+    detect_pattern(
+        analysis,
+        "random",
+        &[
+            "getrandom",
+            "rand::",
+            "use rand",
+            "uuid::",
+            "thread_rng",
+            "os_rng",
+            "secrets.token",
+            "crypto.getrandomvalues",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Random numbers",
+        "Krate draws random bytes from the operating system behind the `random.bytes` capability. There is no seeded generator: an app handed a predictable stream while believing it is random has no way to find out.",
+        Some("random.bytes"),
+    );
+    // Copy and paste. Supported on all three systems, and an app that reaches
+    // for it needs to say so, because reading the clipboard reads whatever the
+    // person last copied.
+    detect_pattern(
+        analysis,
+        "clipboard",
+        &[
+            "arboard",
+            "clipboard::",
+            "nspasteboard",
+            "setclipboarddata",
+            "navigator.clipboard",
+            "gtk_clipboard",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Clipboard access",
+        "Krate splits this into `ui.clipboard:read` and `ui.clipboard:write`, because reading the clipboard sees whatever the person last copied and writing to it does not.",
+        Some("ui.clipboard:read / ui.clipboard:write"),
+    );
+    // Tokens and keys. Distinct from settings: these are the things that must
+    // not sit in a plain file, and the store that holds them is encrypted.
+    detect_pattern(
+        analysis,
+        "secrets",
+        &[
+            "keyring",
+            "keychain",
+            "secret_service",
+            "credential_manager",
+            "api_key",
+            "access_token",
+            "refresh_token",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Sign-in tokens or keys",
+        "Krate's `store.secret` capability keeps these encrypted at rest, per app and per machine, so a copied file does not carry usable secrets to another computer. It is separate from `store.kv` because a token is not a setting.",
+        Some("store.secret"),
+    );
     detect_pattern(
         analysis,
         "notifications",
@@ -1415,6 +1480,38 @@ mod tests {
         assert_eq!(plan.verdict, Verdict::NeedsChanges);
         assert_eq!(plan.profile, "desktop-native-source-port");
         assert!(plan.frameworks.contains(&"swiftui".to_string()));
+    }
+
+    #[test]
+    fn the_analyzer_suggests_the_capabilities_it_actually_has() {
+        // The analyzer could suggest seven capabilities while the runtime
+        // supported thirty-four. Three of the gaps mattered: random (getrandom
+        // is the third most-downloaded crate in Rust), the clipboard, and
+        // secrets -- all supported, none detectable.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"app\"\n\n[dependencies]\nrand = \"0.9\"\narboard = \"3\"\nkeyring = \"3\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("main.rs"),
+            "use rand::thread_rng;\nuse arboard::Clipboard;\nlet access_token = keyring::Entry::new();\n",
+        )
+        .unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        for expected in [
+            "random.bytes",
+            "ui.clipboard:read / ui.clipboard:write",
+            "store.secret",
+        ] {
+            assert!(
+                plan.suggested_capabilities.iter().any(|c| c == expected),
+                "expected {expected}, got {:?}",
+                plan.suggested_capabilities
+            );
+        }
     }
 
     #[test]
