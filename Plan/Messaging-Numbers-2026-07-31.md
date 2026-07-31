@@ -19,24 +19,31 @@ same number, translated.
 
 ## The line that lands
 
-Measured on this machine, both real files:
+> **246 Krate apps fit inside one photo on your phone.**
 
-> **Obsidian, a note-taking app, is 482 MB. A Krate checklist app is 12 KB.
-> You could fit 39,000 of ours inside one of theirs.**
+This is the one to lead with. A photo cannot argue back. Compare against an app
+and a fair reader says "but that app does more"; compare against a photo and
+there is nothing to dispute -- and everyone already resents how much space their
+photos take. Same move as "1000 songs in your pocket": the fact is unchanged,
+the unit is one they already feel.
 
-This works because it is checkable in ten seconds and the reader already
-resents how much space their apps take.
+### The app comparison, and why Reminders beats Obsidian
 
-One warning that matters: the first version of this comparison was going to be
-"reminder apps are over 100 MB". Apple's Reminders is 12 MB. The claim would
-have been wrong and someone would have checked. **Electron apps are the honest
-target** -- Obsidian 482 MB, Discord 431 MB, Signal 394 MB, VS Code 1.4 GB --
-because most of that size is a copy of a web browser shipped inside the app,
-which is exactly the problem Krate does not have.
+> **A Krate checklist app takes 925 times less space than the Reminders app on
+> your Mac.** 12,759 bytes against 11.8 MB, both measured.
 
-Say the caveat before someone else does: Obsidian does far more than keep a
-checklist. The comparison is still fair, because the 482 MB is not what makes
-it a better notes app.
+The instinct was to say "reminder apps are over 100 MB". They are not -- Apple's
+Reminders is 11.8 MB, checkable in ten seconds by anyone with a Mac, and one
+wrong number makes every right number suspect.
+
+But the honest version is *better*, not worse. Reminders is one of the leanest
+apps on a Mac: Apple ships it against system frameworks rather than bundling a
+browser inside it. Beating the strong case by 925x is a stronger claim than
+beating a weak one by 39,000x, and it cannot be dismissed as cherry-picking.
+
+Keep Obsidian (482 MB) as the follow-up, not the headline: *that* is what the
+common way of building costs, and it is 39,000x ours. Leading with it invites
+"you picked the fattest app you could find", which is exactly what we did.
 
 ## What to lead with
 
