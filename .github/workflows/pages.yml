@@ -69,6 +69,22 @@ jobs:
           # to instantiate against the current runtime.
           curl -fsSL -o _site/notes.krate \
             https://github.com/incyashraj/krate/releases/download/notes-v0.1.0/notes.krate
+          # Krate Cloud, served under /cloud/. Listings are generated from the
+          # .krate files themselves, so a listing cannot describe an app
+          # differently from what the file actually asks for.
+          mkdir -p _site/cloud
+          cp docs/cloud/index.html _site/cloud/index.html
+          cp docs/landing/*.png _site/cloud/ 2>/dev/null || true
+          # The published binary, not a build: this job has no Rust toolchain,
+          # and reading listings with the same binary people install is a better
+          # check than reading them with a fresh one.
+          tag="$(curl -fsSL 'https://api.github.com/repos/incyashraj/krate/releases?per_page=30' \
+            | grep '"tag_name"' | cut -d '"' -f 4 | grep '^v' | head -1)"
+          curl -fsSL -o /tmp/krate.tar.gz \
+            "https://github.com/incyashraj/krate/releases/download/${tag}/krate-${tag#v}-x86_64-unknown-linux-gnu.tar.gz"
+          tar -xzf /tmp/krate.tar.gz -C /tmp
+          KRATE_BIN="$(find /tmp -type f -name krate -perm -u+x | head -1)" \
+            sh scripts/build-store.sh _site/cloud _site/notes.krate
           cp scripts/install.sh _site/install.sh
           cp scripts/install.ps1 _site/install.ps1
           # A trailing-slash-free alias, so `krate.tech/install` works too.
