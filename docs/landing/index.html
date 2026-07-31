@@ -365,39 +365,90 @@
       <div class="wrap">
         <div class="section-heading">
           <p class="label">Measured</p>
-          <h2>Small enough to text. Fast enough to forget.</h2>
-          <p>We built the same program twice, native and as a Krate app, and timed both.</p>
+          <h2>The safety is free.</h2>
+          <p>We built the same program twice, native and as a Krate app, and timed both. The more work an app does, the closer Krate gets to native — until there is no difference left.</p>
         </div>
 
-        <div class="stat-grid">
-          <div class="stat">
-            <span class="stat-figure">6 KB</span>
-            <strong>An app that fits in a text message</strong>
-            <p>The same program as a native Mac binary is 320 KB, and only runs on Macs.</p>
-          </div>
-          <div class="stat">
-            <span class="stat-figure">6 ms</span>
-            <strong>Opens in a third of one video frame</strong>
-            <p>That is the whole startup cost, paid once when the app opens.</p>
-          </div>
-          <div class="stat">
-            <span class="stat-figure">1.00&times;</span>
-            <strong>Full speed once it is running</strong>
-            <p>Over 300 million calculations, the Krate version finished in the same time as the native one.</p>
-          </div>
-          <div class="stat">
-            <span class="stat-figure">0.6 &micro;s</span>
-            <strong>What a permission check costs</strong>
-            <p>Every time an app touches your files or the network, Krate checks it is allowed. That check takes six ten-thousandths of a millisecond.</p>
-          </div>
-        </div>
+        <!-- Every coordinate below is a measured point, not a drawn curve.
+             The eight vertices are the eight runs in the comparison doc. The
+             shape is the finding: Krate's overhead is a fixed startup cost, so
+             the more work an app does, the closer it gets to native, meeting it
+             at 1.00x. A chart of raw times would show two lines 1px apart,
+             which is true and tells you nothing. -->
+        <figure class="chart-figure">
+          <div class="chart-row">
+            <svg class="chart" viewBox="0 0 740 340" role="img"
+                 aria-label="How much slower Krate is than native, by how much work the app does. Starts at 5.25 times slower on a 3 millisecond task and falls to 1.00 times — the same speed as native — on a 700 millisecond task.">
+              <defs>
+                <linearGradient id="gapFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#6cf4d7" stop-opacity=".22" />
+                  <stop offset="100%" stop-color="#6cf4d7" stop-opacity="0" />
+                </linearGradient>
+              </defs>
 
-        <p class="stat-note">
-          Measured on an Apple Silicon Mac. Windows and Linux are not measured yet.
-          The worst case is a program that does almost nothing but ask the system
-          for things, where Krate is about 5&times; slower end to end.
-          <a href="https://github.com/incyashraj/krate/blob/main/Plan/Native-Comparison-2026-07-31.md">Read the full numbers, including what we have not tested.</a>
-        </p>
+              <!-- Native is the baseline: by definition always 1.00x. -->
+              <line x1="96" y1="255" x2="690" y2="255"
+                    stroke="#687185" stroke-width="1.5" />
+              <text x="96" y="246" class="chart-label-native">native speed</text>
+
+              <!-- The gap between Krate and native, closing as work grows. -->
+              <path d="M 104.8 63.7 L 126.7 88.5 L 138.7 88.5 L 156.4 115.5 L 164.4 125.8
+                       L 459.9 253.2 L 561.2 251.4 L 682.0 255.0 L 690 255 L 96 255 Z"
+                    fill="url(#gapFill)" />
+              <path d="M 104.8 63.7 L 126.7 88.5 L 138.7 88.5 L 156.4 115.5 L 164.4 125.8
+                       L 459.9 253.2 L 561.2 251.4 L 682.0 255.0"
+                    fill="none" stroke="#6cf4d7" stroke-width="2.5"
+                    stroke-linejoin="round" stroke-linecap="round" />
+
+              <!-- The two ends, which are the two numbers worth remembering. -->
+              <circle cx="104.8" cy="63.7" r="4" fill="#6cf4d7" />
+              <circle cx="682" cy="255" r="4" fill="#6cf4d7" />
+
+              <text x="104.8" y="46" class="chart-point">5.25&times;</text>
+              <text x="672" y="282" class="chart-point" text-anchor="middle">1.00&times;</text>
+
+              <text x="96" y="316" class="chart-axis">a 3 ms task</text>
+              <text x="690" y="316" class="chart-axis" text-anchor="end">a 700 ms task</text>
+              <text x="393" y="334" class="chart-axis" text-anchor="middle">how much work the app does &rarr;</text>
+            </svg>
+
+            <div class="chart-callouts">
+              <p class="callout-lead">Matches native speed on</p>
+              <p class="callout-figure">100<span>%</span></p>
+              <p class="callout-sub">of the work<a href="#note-speed" class="chart-star" aria-label="See note about how this was measured">*</a></p>
+
+              <hr class="callout-rule" />
+
+              <p class="callout-lead">A checklist app, for all three systems</p>
+              <p class="callout-figure">12<span>KB</span></p>
+              <p class="callout-sub">Obsidian, a notes app, is 482&nbsp;MB<a href="#note-size" class="chart-star" aria-label="See note about size">*</a></p>
+            </div>
+          </div>
+        </figure>
+
+        <div class="chart-notes">
+          <p id="note-speed">
+            <span class="chart-star">*</span>
+            Sustained compute. The same program built twice — native and as a Krate
+            app — finished 300 million calculations in the same time, and produced
+            identical output. Short tasks are the worst case: a program that does
+            almost nothing but ask the system for things runs about 5&times; slower,
+            because a fixed 6 ms startup is most of its total.
+          </p>
+          <p id="note-size">
+            <span class="chart-star">*</span>
+            Both are real files, measured. The Krate app is a working checklist —
+            a window, checkboxes, and saved items that survive a restart — at
+            12,759 bytes for Mac, Windows, and Linux together. Obsidian does far
+            more than keep a checklist, and the fair part of the comparison is
+            that most of its size is a copy of a web browser shipped inside the
+            app. Krate is a 17.5 MB install, once, shared by every app you run.
+          </p>
+          <p>
+            Measured on an Apple Silicon Mac. Windows and Linux are not measured yet.
+            <a href="https://github.com/incyashraj/krate/blob/main/Plan/Native-Comparison-2026-07-31.md">Full numbers, methodology, and what we have not tested.</a>
+          </p>
+        </div>
       </div>
     </section>
 

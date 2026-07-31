@@ -1038,32 +1038,132 @@
     }
 
 
-    /* Measured numbers. Same bordered grid as .proof so the page reads as one
-       thing, with the figure leading -- the number is the point, and the
-       sentence under it is what makes the number mean anything. */
-    /* Four figures, so the layout goes 4, then 2+2, then 1. `auto-fit` would
-       pass through three across and leave a single card orphaned on its own
-       row, which reads like something failed to load. */
-    .stat-grid {
+    /* The measured chart. Every vertex in the SVG is a real run, so the shape
+       is a result rather than an illustration: the line falls from 5.25x to
+       1.00x because Krate's overhead is a fixed startup cost that a longer
+       job amortizes away. */
+    .chart-figure {
+      margin: 0;
+    }
+
+
+    .chart-row {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: minmax(0, 1fr) 260px;
+      align-items: center;
+      gap: 40px;
+      padding: 30px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+    }
+
+
+    .chart {
+      width: 100%;
+      height: auto;
+      overflow: visible;
+    }
+
+
+    .chart-label-native,
+    .chart-axis {
+      fill: var(--quiet);
+      font-family: var(--sans);
+      font-size: 13px;
+    }
+
+
+    .chart-point {
+      fill: var(--cyan);
+      font-family: var(--mono);
+      font-size: 19px;
+      font-variant-numeric: tabular-nums;
+    }
+
+
+    /* The big numbers, set beside the chart rather than inside it, so the
+       chart proves the claim and the claim stays readable on its own. */
+    .callout-lead {
+      margin-bottom: 2px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 14px;
+    }
+
+
+    .callout-figure {
+      margin-bottom: 2px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 62px;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+      letter-spacing: -.05em;
+    }
+
+
+    .callout-figure span {
+      margin-left: 3px;
+      font-size: 26px;
+      letter-spacing: 0;
+    }
+
+
+    .callout-sub {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 14px;
+    }
+
+
+    .callout-rule {
+      height: 0;
+      margin: 26px 0;
+      border: 0;
       border-top: 1px solid var(--line);
-      border-left: 1px solid var(--line);
     }
 
 
-    @media (max-width: 1000px) {
-      .stat-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
+    /* The asterisk. It marks where the claim is qualified, and the note it
+       points at is on the same page -- a star that hides a weakness is a lie
+       with extra steps, a star that shows the method is how you get believed. */
+    .chart-star {
+      color: var(--cyan);
+      text-decoration: none;
+      font-size: .85em;
+      vertical-align: super;
     }
 
 
-    @media (max-width: 560px) {
-      .stat-grid {
-        grid-template-columns: 1fr;
-      }
+    .chart-notes {
+      max-width: 74ch;
+      margin-top: 26px;
     }
+
+
+    .chart-notes p {
+      margin-bottom: 12px;
+      color: var(--quiet);
+      font-family: var(--sans);
+      font-size: 13.5px;
+      line-height: 1.6;
+    }
+
+
+    .chart-notes p:last-child {
+      margin-bottom: 0;
+    }
+
+
+    .chart-notes .chart-star {
+      margin-right: 4px;
+      vertical-align: baseline;
+    }
+
+
+
 
 
     .stat {
@@ -1636,6 +1736,17 @@
 
 
     @media (max-width: 840px) {
+      /* The callouts need ~260px to hold a 62px figure and its caption. Below
+         this the chart is squeezed to nothing, so stack them instead. */
+      .chart-row {
+        grid-template-columns: 1fr;
+        gap: 28px;
+      }
+
+      .callout-figure {
+        font-size: 52px;
+      }
+
       .nav-links {
         position: fixed;
         top: 69px;
@@ -1789,9 +1900,6 @@
         grid-template-columns: 1fr;
       }
 
-      .stat-figure {
-        font-size: 30px;
-      }
 
       .faq-item summary {
         grid-template-columns: 46px 1fr 22px;
