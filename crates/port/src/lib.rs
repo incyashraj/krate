@@ -762,14 +762,21 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         analysis,
         "file-drop",
         &[
+            // Deliberately specific. `on_drop` alone matched Rust's own
+            // `kill_on_drop`, which is the Drop trait and has nothing to do
+            // with dragging a file onto a window -- so a headless RSS tool was
+            // told to declare a capability it could not use. A false positive
+            // is worse than a miss here: it puts a permission in front of a
+            // person that the app never needed.
             "droppedfile",
             "dropped_file",
-            "on_drop",
-            "ondrop",
+            "ondrop=",
+            "on_file_drop",
             "dragenter",
             "draggingentered",
             "wm_dropfiles",
             "drag_and_drop",
+            "hovered_files",
         ],
         path,
         text,
@@ -1712,6 +1719,62 @@ mod tests {
             missing.is_empty(),
             "the runtime supports these but the analyzer cannot spot them in source, \
              so a port of an app that uses one gets a plan that does not mention it: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn rusts_own_drop_trait_is_not_mistaken_for_drag_and_drop() {
+        // `kill_on_drop` is tokio's process API. It matched an `on_drop`
+        // pattern and told a headless RSS forwarder to declare ui.dropzone --
+        // a window capability, for an app with no window. A false positive is
+        // worse than a miss: it puts a permission in front of a person that the
+        // app never needed and cannot use.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"feeds\"\n\n[dependencies]\ntokio = \"1\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("main.rs"),
+            "let mut p = Command::new(&cmd).kill_on_drop(true).spawn()?;\n",
+        )
+        .unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        assert!(
+            !plan
+                .suggested_capabilities
+                .iter()
+                .any(|c| c == "ui.dropzone"),
+            "kill_on_drop is the Drop trait, not a file drop: {:?}",
+            plan.suggested_capabilities
+        );
+    }
+
+    #[test]
+    fn a_real_file_drop_is_still_detected() {
+        // The other half: tightening the patterns must not have turned the
+        // detection off entirely.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"viewer\"\n\n[dependencies]\neframe = \"0.35\"\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("main.rs"),
+            "for file in &ctx.input(|i| i.raw.dropped_files.clone()) { open(file); }\n",
+        )
+        .unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        assert!(
+            plan.suggested_capabilities
+                .iter()
+                .any(|c| c == "ui.dropzone"),
+            "a real dropped_files read should still suggest ui.dropzone: {:?}",
+            plan.suggested_capabilities
         );
     }
 
