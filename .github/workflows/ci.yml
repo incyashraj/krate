@@ -162,6 +162,42 @@ jobs:
           echo "create preflight failed clearly with the toolchain missing"
 
   # ──────────────────────────────────────────────
+  # 4b. The library tests, on every system we claim to run on
+  # ──────────────────────────────────────────────
+  #
+  # `cargo test --workspace` above runs on Ubuntu only, so every capability
+  # host was verified on one operating system while the product claims three.
+  # That is the wrong way round for the parts that are written per-platform:
+  # `random_host` reads /dev/urandom on Unix and calls RtlGenRandom on Windows,
+  # and a mistake in the Windows branch is a weak random source rather than a
+  # crash -- the kind of bug that passes a Linux CI forever.
+  #
+  # Deliberately narrower than the Ubuntu job: `--lib` only, no cargo-component
+  # install and no port tests, because those are slow and are not what differs
+  # between systems.
+  cross-platform-lib-tests:
+    name: Library tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.91.1
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-libtest-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run the library tests
+        run: cargo test --workspace --lib
+
+  # ──────────────────────────────────────────────
   # 5. Rust SDK package dry-run
   # ──────────────────────────────────────────────
   rust-sdk-package:
