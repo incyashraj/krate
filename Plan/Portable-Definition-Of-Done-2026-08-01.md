@@ -61,13 +61,21 @@ OS*, so a broken lane invalidates all of them at once.
 lanes, opened there, and produces byte-identical output. Same for a bundle
 built on each of the other two. Nine runs, three bundles.
 
-**Status: NEVER TESTED.** Every lane today builds a bundle on its own OS and
-runs it on that same OS. The single most-repeated sentence about this product
-— one file, any computer — has no test behind it.
+**Status: PROVEN on macOS and Linux, 2026-08-01.** Six of the nine openings
+are green, from the run's own logs rather than a claim:
 
-The mechanism already exists: `phase-component-fixtures` shares artifacts
-between jobs. This is a day of work, not a project, and it is the highest-value
-missing test in the repository.
+```
+bundle from macos-latest   opened and saved on Linux
+bundle from ubuntu-latest  opened and saved on Linux
+bundle from windows-latest opened and saved on Linux
+all 3 bundles opened on Linux, each with its own identity
+```
+
+and the same three on macOS. A `.krate` authored on Windows runs on Linux and
+saves its data — a sentence that had never been true in a test before today.
+
+The Windows lane of this job is the remaining third. Until it is green, the
+honest form of the claim is "one file, two of three computers, proven".
 
 ### Gate 3 — Ports keep working, not just worked once
 
