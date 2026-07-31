@@ -1239,7 +1239,62 @@ fn complete_port(
     .with_context(|| format!("pack {}", output.display()))?;
 
     println!("==> verifying the permission wall");
-    let gating = verify_packed_app(output, &manifest)?;
+    // Verification is inside the repair budget too. It used to sit outside it,
+    // so a candidate that compiled cleanly and computed the wrong answer got
+    // zero attempts while a build error got two -- backwards, because a failing
+    // self-check names the problem in one line and is the most repairable
+    // failure there is. A ported RSS reader stripped tags before decoding
+    // entities, said so in its own output, and was never asked to try again.
+    let gating = loop {
+        match verify_packed_app(output, &manifest) {
+            Ok(gating) => break gating,
+            Err(error) if repairs_used < repair_attempts => {
+                repairs_used += 1;
+                let repair_dir = workspace.join("repair");
+                fs::create_dir_all(&repair_dir)?;
+                let error_path = repair_dir.join(format!("verify-{repairs_used}.txt"));
+                fs::write(&error_path, format!("{error}\n"))?;
+                println!(
+                    "==> repair attempt {repairs_used}/{repair_attempts}: {}",
+                    first_error_line(&error.to_string())
+                );
+                run_port_repair(
+                    author,
+                    workspace,
+                    &source_snapshot,
+                    &candidate,
+                    &plan_path,
+                    &task_path,
+                    PortRepair {
+                        attempt: repairs_used,
+                        error_path: &error_path,
+                    },
+                )?;
+                ensure_original_source_unchanged(original_plan, original_source)?;
+                // The repair changed the source, so rebuild and repack before
+                // asking again -- otherwise the next attempt verifies the same
+                // bundle and fails identically.
+                let revalidated = validate_port_candidate(&candidate).map_err(|err| {
+                    anyhow::anyhow!("the repaired candidate no longer builds:\n{err}")
+                })?;
+                fs::copy(&revalidated.wasm, &code)?;
+                write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
+                krate_bundle::pack_with_assets(
+                    &packed_manifest,
+                    &code,
+                    assets.is_dir().then_some(assets.as_path()),
+                    output,
+                )
+                .with_context(|| format!("repack {}", output.display()))?;
+            }
+            Err(error) => {
+                let report_path =
+                    write_port_failure_report(workspace, &error.to_string(), original_source);
+                print_port_failure_guidance(&error.to_string(), report_path.as_deref());
+                return Err(error);
+            }
+        }
+    };
     let bundle_sha256 = sha256_file(output)?;
     let plan_sha256 = sha256_file(&workspace.join("port-plan.json"))?;
     let permissions: Vec<String> = manifest
