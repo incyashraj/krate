@@ -48,6 +48,7 @@ jobs:
           rm -rf _site
           mkdir -p _site
           cp docs/landing/index.html _site/index.html
+          cp docs/landing/krate.css _site/krate.css
           cp docs/landing/faq.html _site/faq.html
           cp docs/landing/*.png _site/
           cp -R docs/book/book _site/docs
