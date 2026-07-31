@@ -300,7 +300,17 @@ Examples:
 
 - `fs.read:notes/**` can read only inside the `notes` folder;
 - `fs.write:checklist/**` can write only inside the `checklist` folder;
-- no network request works unless network access was declared and granted;
+- `store.kv` keeps the app's own settings and data, addressed by name rather
+  than by path, so an app that remembers things needs no access to your folders;
+- `store.sql` gives the app its own SQLite database, addressed as tables and
+  queries; it can never attach another database or read a file through SQL;
+- `store.secret` keeps sign-in tokens encrypted at rest, per app and per
+  machine, so a copied file carries nothing usable to another computer;
+- `ui.open-url` hands a link to your browser, limited to web and mail addresses
+  so a link cannot start another program or read a file;
+- `ui.notify` shows a notification with no way to learn whether you saw it;
+- no network request works unless network access was declared and granted, and
+  a redirect to a host you did not allow is not followed;
 - a downloaded app receives no extra access because it came from a URL.
 
 Inspect an app without running it:
@@ -451,7 +461,15 @@ Requirements:
 - the Rust toolchain selected by `rust-toolchain.toml`;
 - Git;
 - platform build tools;
-- `cargo-component` when building Krate apps.
+- `cargo-component` when building Krate apps;
+- **on Linux, the ALSA development headers.** The runtime records audio for the
+  microphone capability, and without them the build stops in `alsa-sys` with a
+  `pkg-config` error that does not say why:
+
+  ```bash
+  sudo apt-get install libasound2-dev    # Debian and Ubuntu
+  sudo dnf install alsa-lib-devel        # Fedora
+  ```
 
 ```bash
 git clone https://github.com/incyashraj/krate
