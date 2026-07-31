@@ -1049,7 +1049,7 @@
 
     .chart-row {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 260px;
+      grid-template-columns: minmax(0, 1fr) 300px;
       align-items: center;
       gap: 40px;
       padding: 30px;
@@ -1096,7 +1096,9 @@
       margin-bottom: 2px;
       color: var(--text);
       font-family: var(--mono);
-      font-size: 62px;
+      /* Headline-sized, not caption-sized. These are the two facts the page
+         exists to deliver, and they compete with a 51px h2 above them. */
+      font-size: clamp(58px, 6vw, 84px);
       font-variant-numeric: tabular-nums;
       line-height: 1;
       letter-spacing: -.05em;
@@ -1105,7 +1107,7 @@
 
     .callout-figure span {
       margin-left: 3px;
-      font-size: 26px;
+      font-size: .4em;
       letter-spacing: 0;
     }
 
