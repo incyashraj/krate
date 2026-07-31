@@ -706,6 +706,122 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         "Map each path to an app-scoped Krate file capability and remove ambient filesystem access.",
         Some("fs.read:<path> / fs.write:<path>"),
     );
+    // Listing, creating, and deleting are separate grants from reading and
+    // writing, because "may read the files I picked" and "may delete things"
+    // are different questions to put in front of a person.
+    detect_pattern(
+        analysis,
+        "directory-management",
+        &[
+            "read_dir",
+            "create_dir",
+            "remove_dir",
+            "remove_file",
+            "walkdir",
+            "os.listdir",
+            "os.makedirs",
+            "shutil.rmtree",
+            "fs.readdir",
+            "fs.mkdir",
+            "fs.unlink",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Listing, creating, or deleting files",
+        "These are separate Krate capabilities from reading and writing: `fs.list`, `fs.mkdir`, and `fs.remove`. Scope each to the narrowest path the app actually needs.",
+        Some("fs.list:<path> / fs.mkdir:<path> / fs.remove:<path>"),
+    );
+    // Playing sound. Distinct from capturing it: a person granting a metronome
+    // permission to make noise is not granting it the microphone.
+    detect_pattern(
+        analysis,
+        "audio-playback",
+        &[
+            "rodio",
+            "cpal::",
+            "audio_output",
+            "play_sound",
+            "avaudioplayer",
+            "mediaplayer",
+            "new audio(",
+            "playsound",
+            "pygame.mixer",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Playing sound",
+        "Krate's `audio.playback` capability covers this, and it is separate from `audio.capture` -- an app that makes noise is not asking for the microphone.",
+        Some("audio.playback"),
+    );
+    // Files dragged onto the window. Worth naming because it is the one way an
+    // app receives a file without a dialog, and people do not think of a drop
+    // as a permission at all.
+    detect_pattern(
+        analysis,
+        "file-drop",
+        &[
+            "droppedfile",
+            "dropped_file",
+            "on_drop",
+            "ondrop",
+            "dragenter",
+            "draggingentered",
+            "wm_dropfiles",
+            "drag_and_drop",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Files dragged onto the window",
+        "Krate's `ui.dropzone` capability covers this. It is worth declaring separately from a file dialog: a drop hands the app a file without the person opening a picker.",
+        Some("ui.dropzone"),
+    );
+    // Running work on the GPU, as opposed to drawing with it. Basic drawing is
+    // granted to every app; compute is not, because it is a general-purpose
+    // processor an app can keep busy.
+    detect_pattern(
+        analysis,
+        "gpu-compute",
+        &[
+            "compute_shader",
+            "computepipeline",
+            "dispatch_workgroups",
+            "wgpu::computepass",
+            "cuda",
+            "opencl",
+            "metalperformanceshaders",
+            "torch.cuda",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "GPU compute",
+        "Drawing with the GPU is granted to every Krate app; running compute work on it is `gfx.gpu:compute` and has to be asked for, because it is a general-purpose processor the app can keep busy.",
+        Some("gfx.gpu:compute"),
+    );
+    // A system menu bar. Declared in the WIT but not implemented on any host
+    // yet, so this is a heads-up rather than a mapping.
+    detect_pattern(
+        analysis,
+        "menu-bar",
+        &[
+            "nsmenu",
+            "menubar",
+            "menu_bar",
+            "setmenu",
+            "gtk_menu",
+            "qmenubar",
+            "createmenu",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "System menu bar",
+        "Krate declares `ui.menu` but no host implements it yet, because the three systems disagree about where a menu bar lives. Move these actions into the window -- buttons or a list -- or the port will lose them.",
+        Some("ui.menu"),
+    );
     detect_pattern(
         analysis,
         "network",
@@ -1561,6 +1677,42 @@ mod tests {
             .findings
             .iter()
             .any(|f| f.id == "language-not-buildable"));
+    }
+
+    /// Every capability an app must ask for should be one the analyzer can spot
+    /// in source, or the plan quietly leaves work for someone else to find.
+    ///
+    /// Enumerates the runtime's own capability list rather than sampling it, so
+    /// adding a capability without teaching the analyzer to see it fails here
+    /// rather than in a user's port. Capabilities granted by default are
+    /// excluded: suggesting `io.stdout` would be noise, not information.
+    #[test]
+    fn every_requestable_capability_is_one_the_analyzer_can_detect() {
+        let suggestable: String = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs"),
+        )
+        .expect("read this file");
+
+        let mut missing = Vec::new();
+        for spec in krate_manifest::supported_capability_specs() {
+            if spec.default_granted() {
+                continue;
+            }
+            let name = spec.name();
+            // The suggestion strings pair related grants ("fs.read:<path> /
+            // fs.write:<path>"), so a substring match is the honest check.
+            if !suggestable.contains(&format!("Some(\"{name}"))
+                && !suggestable.contains(&format!("/ {name}"))
+            {
+                missing.push(name.to_string());
+            }
+        }
+
+        assert!(
+            missing.is_empty(),
+            "the runtime supports these but the analyzer cannot spot them in source, \
+             so a port of an app that uses one gets a plan that does not mention it: {missing:?}"
+        );
     }
 
     #[test]
