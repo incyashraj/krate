@@ -77,6 +77,24 @@ jobs:
             cargo build --release --target "${{ matrix.target }}" -p krate-cli
           fi
 
+      # Building an app needs cargo-component, and upstream publishes no
+      # binaries for it -- every user compiles it from source, which is three to
+      # six minutes of the wait before their first app exists. We already have a
+      # cross-compiling matrix for exactly these targets, so build it once here
+      # and ship it beside the runtime. A download replaces the compile.
+      - name: Build cargo-component for this target
+        shell: bash
+        continue-on-error: true
+        run: |
+          if [[ "${{ matrix.cross }}" == "true" ]]; then
+            cross install cargo-component --locked --version 0.21.1 \
+              --target "${{ matrix.target }}" --root "$PWD/tooling" || exit 0
+          else
+            cargo install cargo-component --locked --version 0.21.1 \
+              --target "${{ matrix.target }}" --root "$PWD/tooling" || exit 0
+          fi
+          ls -la "$PWD/tooling/bin" || true
+
       - name: Package
         shell: bash
         env:

@@ -36,6 +36,19 @@ mkdir -p "$package_dir"
 cp "$binary_path" "$package_dir/"
 cp README.md LICENSE-MIT LICENSE-APACHE "$package_dir/"
 
+# Ship cargo-component beside the runtime when the release build produced one.
+# Upstream publishes no binaries for it, so without this every person who wants
+# to make an app compiles it from source first -- minutes of waiting before
+# anything of theirs exists. Optional so a source build still packages fine.
+tooling_binary="tooling/bin/cargo-component"
+if [[ "$target" == *windows* ]]; then
+  tooling_binary="tooling/bin/cargo-component.exe"
+fi
+if [[ -f "$tooling_binary" ]]; then
+  cp "$tooling_binary" "$package_dir/"
+  echo "packaged cargo-component alongside krate"
+fi
+
 case "$ext" in
   tar.gz)
     tar -C "$dist_root" -czf "${dist_root}/${name}.tar.gz" "$name"

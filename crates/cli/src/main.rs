@@ -4209,6 +4209,18 @@ fn resolve_tool(program: &str) -> Option<PathBuf> {
         return Some(path);
     }
 
+    // Beside our own binary. The installer places cargo-component next to
+    // `krate`, and that directory is not always on PATH -- someone who ran the
+    // installer and then invoked krate by its full path would otherwise be told
+    // to spend minutes compiling a tool that is already sitting right there.
+    if let Some(sibling) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(executable_name(program))))
+        .filter(|candidate| candidate.exists())
+    {
+        return Some(sibling);
+    }
+
     cargo_home().and_then(|home| {
         let candidate = home.join("bin").join(executable_name(program));
         candidate.exists().then_some(candidate)

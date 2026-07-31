@@ -46,6 +46,59 @@ fn cargo_build_guard() -> std::sync::MutexGuard<'static, ()> {
 }
 
 #[test]
+fn a_tool_next_to_the_krate_binary_is_found() {
+    // The installer places cargo-component beside krate, and that directory is
+    // not always on PATH. Someone who ran the installer and then invoked krate
+    // by its full path would otherwise be told to spend minutes compiling a
+    // tool already sitting next to it.
+    let dir = tempfile::tempdir().expect("temp dir");
+    let bin = dir.path().join("bin");
+    std::fs::create_dir_all(&bin).expect("create bin");
+
+    let krate_exe = bin.join(if cfg!(windows) { "krate.exe" } else { "krate" });
+    std::fs::copy(env!("CARGO_BIN_EXE_krate"), &krate_exe).expect("copy krate");
+
+    // A stand-in that answers --version the way the real tool does.
+    let tool = bin.join(if cfg!(windows) {
+        "cargo-component.exe"
+    } else {
+        "cargo-component"
+    });
+    if cfg!(windows) {
+        // A .exe cannot be faked with a script, so only assert the Unix path.
+        return;
+    }
+    std::fs::write(&tool, "#!/bin/sh\necho 'cargo-component 0.21.1'\n").expect("write tool");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+
+    // An empty HOME so the cargo-home fallback cannot find it instead, and a
+    // PATH without the install directory.
+    let empty_home = dir.path().join("home");
+    std::fs::create_dir_all(&empty_home).expect("create home");
+    let output = Command::new(&krate_exe)
+        .arg("doctor")
+        .env_clear()
+        .env("HOME", &empty_home)
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .expect("run krate doctor");
+
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        text.contains("0.21.1"),
+        "doctor should have found the sibling tool:\n{text}"
+    );
+}
+
+#[test]
 fn help_lists_phase_1_commands() {
     let output = krate().arg("--help").output().expect("run krate help");
 

@@ -146,6 +146,23 @@ fi
 say ""
 say "Installed ${BINARY} ${version} to ${dir}/${BINARY}"
 
+# Newer releases carry cargo-component beside the runtime. Placing it here is
+# what turns "make an app" from a multi-minute compile into something that just
+# works: upstream ships no binaries for it, so otherwise every person builds it
+# from source before their first app exists. Absent in older archives, which is
+# why this is quiet when there is nothing to place.
+tooling_path="$(find "$tmp" -type f -name 'cargo-component*' | head -1)"
+if [ -n "$tooling_path" ]; then
+  chmod +x "$tooling_path"
+  tooling_name="$(basename "$tooling_path")"
+  if [ -w "$dir" ]; then
+    cp "$tooling_path" "${dir}/${tooling_name}"
+  else
+    sudo cp "$tooling_path" "${dir}/${tooling_name}"
+  fi
+  say "Installed ${tooling_name} too, so you can make apps without a long build."
+fi
+
 # ---- tell them if it is not on PATH ----------------------------------------
 
 case ":${PATH}:" in
