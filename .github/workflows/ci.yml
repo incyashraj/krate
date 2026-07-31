@@ -5,6 +5,17 @@ on:
     branches:
       - main
   pull_request:
+  # The cross-host proofs, the evidence comparisons, and the dependency audit
+  # are gated behind a `[full-ci]` commit tag. That tag has been typed once in
+  # this repository's history, so those nine jobs did not run for four weeks --
+  # long enough for seven projects to break and a security advisory in the
+  # engine to go unnoticed. A verification that only runs when someone
+  # remembers it is not a verification.
+  #
+  # 03:00 UTC, two hours off the nightly fuzz run so the two do not queue
+  # against each other for runners.
+  schedule:
+    - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       full:
@@ -73,7 +84,7 @@ jobs:
   # ──────────────────────────────────────────────
   phase2-bindings:
     name: Phase 2 bindings
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -290,7 +301,7 @@ jobs:
   # ──────────────────────────────────────────────
   hello-fixture:
     name: Build shared component fixtures
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     outputs:
       sha256: ${{ steps.hash.outputs.sha256 }}
@@ -378,7 +389,7 @@ jobs:
   # ──────────────────────────────────────────────
   full-test:
     name: Full test (${{ matrix.os }})
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ${{ matrix.os }}
     needs: hello-fixture
     # A stuck runner (a hung evidence step, a stalled GUI proof) must fail the
@@ -854,7 +865,7 @@ jobs:
   # ──────────────────────────────────────────────
   language-variant-evidence-compare:
     name: Language variant evidence compare
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     needs: full-test
     steps:
@@ -891,7 +902,7 @@ jobs:
   # ──────────────────────────────────────────────
   ucap-enforcement-evidence-compare:
     name: UCap enforcement evidence compare
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     needs: full-test
     steps:
@@ -928,7 +939,7 @@ jobs:
   # ──────────────────────────────────────────────
   adapter-evidence-compare:
     name: Adapter evidence compare
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     needs: full-test
     steps:
@@ -965,7 +976,7 @@ jobs:
   # ──────────────────────────────────────────────
   sample-evidence-compare:
     name: Sample evidence compare
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     needs: full-test
     steps:
@@ -1024,7 +1035,7 @@ jobs:
   # ──────────────────────────────────────────────
   benchmarks:
     name: Benchmarks (Phase 2 baseline, warning only)
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -1069,7 +1080,7 @@ jobs:
   # ──────────────────────────────────────────────
   deny:
     name: Dependency audit (cargo-deny)
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
