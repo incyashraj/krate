@@ -149,8 +149,14 @@ jobs:
             echo "expected a non-zero exit when the toolchain is missing" >&2
             exit 1
           fi
-          echo "$out" | grep -q "needs a few build tools" \
-            || { echo "expected the friendly toolchain message" >&2; exit 1; }
+          # Assert the properties, not the phrasing: someone stuck here needs
+          # to know how long it takes and get a command they can actually paste.
+          echo "$out" | grep -q "needs a compiler" \
+            || { echo "expected the message to say what is needed" >&2; exit 1; }
+          echo "$out" | grep -q "five minutes" \
+            || { echo "expected the message to bound the wait" >&2; exit 1; }
+          echo "$out" | grep -q "sh.rustup.rs | sh" \
+            || { echo "the printed install command must be pasteable" >&2; exit 1; }
           echo "$out" | grep -q "krate doctor" \
             || { echo "expected a pointer to krate doctor" >&2; exit 1; }
           echo "create preflight failed clearly with the toolchain missing"

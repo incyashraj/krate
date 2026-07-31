@@ -4025,7 +4025,14 @@ fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
         return Ok(());
     }
 
-    eprintln!("Krate needs a few build tools to create an app, and some are missing:");
+    // Lead with what the wait buys and roughly how long it takes. Naming the
+    // tools first told someone who does not write Rust that they were in the
+    // wrong place, at the exact moment they had already committed and had
+    // nothing of their own working yet.
+    eprintln!("Making your own apps needs a compiler. It sets up once, in about");
+    eprintln!("five minutes, and then every app you make is fast.");
+    eprintln!();
+    eprintln!("Still to install:");
     for tool in &missing {
         eprintln!("  - {} ({})", tool.what, tool.note);
     }
@@ -4035,7 +4042,7 @@ fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
     let may_install = !no_install && (assume_yes || interactive);
 
     if !may_install {
-        eprintln!("Install them, then run `krate create` again:");
+        eprintln!("Set it up, then run `krate create` again:");
         for tool in &missing {
             eprintln!("  {}", install_command_line(&tool.install_cmd));
         }
@@ -4045,7 +4052,7 @@ fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
     }
 
     if !assume_yes {
-        eprint!("Install them now? [Y/n] ");
+        eprint!("Set it up now? [Y/n] ");
         io::stderr().flush().ok();
         let mut answer = String::new();
         io::stdin().read_line(&mut answer)?;
