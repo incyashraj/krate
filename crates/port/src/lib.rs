@@ -1316,6 +1316,38 @@ fn finish_plan(source: PathBuf, mut analysis: Analysis) -> Result<PortPlan> {
         );
     }
 
+    // A language the port pipeline cannot build. `krate port --to` builds the
+    // candidate with cargo-component, so today that means Rust and nothing
+    // else. Saying "needs changes" about a Python project put it in the same
+    // category as a Rust project that ports cleanly, and `--prepare` then laid
+    // down a Rust scaffold without ever mentioning that the language has to
+    // change -- which someone would only discover by reading the file.
+    if !analysis.languages.is_empty() && !analysis.languages.contains("rust") {
+        let found: Vec<String> = analysis.languages.iter().cloned().collect();
+        add_evidence_finding(
+            &mut analysis,
+            FindingSpec {
+                id: "language-not-buildable".to_string(),
+                severity: Severity::Blocker,
+                confidence: Confidence::High,
+                title: format!("Krate cannot build {} yet", found.join(", ")),
+                detail: format!(
+                    "The port pipeline compiles the candidate with cargo-component, so it can \
+                     build Rust today and nothing else. This project is {}. Its logic can still \
+                     be ported by rewriting it in Rust against the Krate SDK -- the analysis \
+                     above still says which capabilities it would need -- but `krate port --to` \
+                     cannot do that step for you.",
+                    found.join(" and ")
+                ),
+                capability: None,
+            },
+            Evidence {
+                path: ".".to_string(),
+                line: None,
+            },
+        );
+    }
+
     let has_blocker = analysis
         .findings
         .values()
@@ -1477,9 +1509,58 @@ mod tests {
         .unwrap();
 
         let plan = analyze(dir.path()).unwrap();
-        assert_eq!(plan.verdict, Verdict::NeedsChanges);
+        // Swift, which the pipeline cannot build -- the point of the test is that
+        // it is not reported as ready, and unsupported is the stronger form of that.
+        assert_eq!(plan.verdict, Verdict::Unsupported);
         assert_eq!(plan.profile, "desktop-native-source-port");
         assert!(plan.frameworks.contains(&"swiftui".to_string()));
+    }
+
+    #[test]
+    fn a_language_the_pipeline_cannot_build_is_a_blocker_not_a_to_do() {
+        // A Python project came back "needs changes" -- the same verdict a Rust
+        // project that ports cleanly gets -- and `--prepare` then wrote a Rust
+        // scaffold without ever saying the language has to change.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("main.py"), "import random\nprint(1)\n").unwrap();
+        fs::write(dir.path().join("requirements.txt"), "requests==2.31.0\n").unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        assert_eq!(plan.verdict, Verdict::Unsupported);
+        let blocker = plan
+            .findings
+            .iter()
+            .find(|f| f.id == "language-not-buildable")
+            .expect("a blocker naming the language");
+        assert!(blocker.title.contains("python"), "{}", blocker.title);
+        // It must say what is still possible, not only what is refused.
+        assert!(
+            blocker.detail.contains("rewriting it in Rust"),
+            "the blocker should name the way forward: {}",
+            blocker.detail
+        );
+    }
+
+    #[test]
+    fn a_rust_project_is_not_blocked_by_a_second_language_beside_it() {
+        // Plenty of Rust projects carry a build script or a web frontend. The
+        // blocker is for projects with no Rust at all, not for mixed ones.
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+        fs::write(dir.path().join("src/main.rs"), "fn main() {}\n").unwrap();
+        fs::write(dir.path().join("build.js"), "console.log(1)\n").unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        assert_ne!(
+            plan.verdict,
+            Verdict::Unsupported,
+            "a Rust project with a JS file beside it is still portable"
+        );
+        assert!(!plan
+            .findings
+            .iter()
+            .any(|f| f.id == "language-not-buildable"));
     }
 
     #[test]
@@ -1597,7 +1678,9 @@ mod tests {
         fs::write(dir.path().join("main.tsx"), "import React from 'react';").unwrap();
 
         let plan = analyze(dir.path()).unwrap();
-        assert_eq!(plan.verdict, Verdict::NeedsChanges);
+        // No Rust in this project, so the pipeline cannot build it -- the
+        // profile is still the right one for the eventual rewrite.
+        assert_eq!(plan.verdict, Verdict::Unsupported);
         assert_eq!(plan.profile, "tauri-source-port");
         assert!(plan.frameworks.contains(&"tauri".to_string()));
     }
@@ -1617,7 +1700,9 @@ mod tests {
         .unwrap();
 
         let plan = analyze(dir.path()).unwrap();
-        assert_eq!(plan.verdict, Verdict::NeedsChanges);
+        // TypeScript, so the project as a whole cannot be built; the microphone
+        // finding below is what this test is actually about.
+        assert_eq!(plan.verdict, Verdict::Unsupported);
         assert!(plan
             .suggested_capabilities
             .contains(&"audio.capture".to_string()));
@@ -1710,7 +1795,8 @@ mod tests {
                 plan.languages.contains(&language.to_string()),
                 "{marker} should detect {language}"
             );
-            assert_eq!(plan.verdict, Verdict::NeedsChanges);
+            // None of these languages can be built by the pipeline yet.
+            assert_eq!(plan.verdict, Verdict::Unsupported);
         }
     }
 

@@ -177,7 +177,9 @@ fn port_plan_can_write_machine_readable_json() {
             .expect("parse port plan");
     assert_eq!(report["schema"], "krate.port.plan.v1");
     assert_eq!(report["profile"], "krate-cli-v1-candidate");
-    assert_eq!(report["verdict"], "needs-changes");
+    // Go, which the pipeline cannot build. This test is about the JSON being
+    // machine readable at all; the verdict just has to be the honest one.
+    assert_eq!(report["verdict"], "unsupported");
 }
 
 #[test]
