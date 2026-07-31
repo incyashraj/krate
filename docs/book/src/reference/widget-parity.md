@@ -3,7 +3,7 @@
 Generated from the code that renders, not written by hand. Run
 `cargo run -p krate-tools --bin check-widget-parity -- --write` to refresh it.
 
-**13 of 17 declared widgets work on all three systems.**
+**15 of 17 declared widgets work on all three systems.**
 
 A widget that renders on one system and not another is the failure this
 table exists to make visible: an app built on the machine that supports it
@@ -12,9 +12,9 @@ will not work when it is shared with someone on another.
 | Widget | macOS | Windows | Linux | Everywhere |
 | --- | --- | --- | --- | --- |
 | `button` | yes | yes | yes | **yes** |
-| `canvas` | yes | no | no | no |
+| `canvas` | yes | yes | yes | **yes** |
 | `checkbox` | yes | yes | yes | **yes** |
-| `grid` | no | no | no | no |
+| `grid` | yes | yes | yes | **yes** |
 | `image` | no | no | no | no |
 | `list-view` | yes | yes | yes | **yes** |
 | `progress` | yes | yes | yes | **yes** |
@@ -31,6 +31,6 @@ will not work when it is shared with someone on another.
 
 ## Gaps
 
-- macOS only: `canvas`
+- macOS only: none
 - Windows and Linux only: none
-- Not implemented anywhere: `grid`, `image`, `tabs`
+- Not implemented anywhere: `image`, `tabs`

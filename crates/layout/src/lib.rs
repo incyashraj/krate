@@ -353,6 +353,7 @@ fn taffy_style_from_parts(
     Style {
         display: Display::Flex,
         flex_direction: flex_direction_for(kind),
+        flex_wrap: flex_wrap_for(kind),
         flex_grow: widget_style.grow,
         // Widgets with an explicit height keep it: Taffy's default
         // flex_shrink of 1 would compress Scroll children to fit their
@@ -375,12 +376,43 @@ fn taffy_style_from_parts(
 }
 
 fn flex_direction_for(kind: WidgetKind) -> FlexDirection {
+    if is_region_container(kind) {
+        // A region the guest paints into stacks its children like any other
+        // column container; the host simply never draws over them.
+        return FlexDirection::Column;
+    }
     match kind {
         WidgetKind::Stack | WidgetKind::Scroll | WidgetKind::ListView | WidgetKind::TreeView => {
             FlexDirection::Column
         }
         _ => FlexDirection::Row,
     }
+}
+
+/// Whether a container lets its children flow onto another line.
+///
+/// Only `grid` does. It was declared in the widget set and implemented by no
+/// host, so an app that asked for one was refused on every system -- a promise
+/// sitting in the codebase with nothing behind it. A grid is a row that wraps,
+/// which the same layout engine and the same host container code already
+/// handle, so it needs no new drawing anywhere.
+fn flex_wrap_for(kind: WidgetKind) -> FlexWrap {
+    match kind {
+        WidgetKind::Grid => FlexWrap::Wrap,
+        _ => FlexWrap::NoWrap,
+    }
+}
+
+/// Containers that hold a region rather than painting one.
+///
+/// `canvas` is here because the guest draws its contents itself: the host gives
+/// it a rectangle and stays out of it. It was accepted on macOS and refused on
+/// Windows and Linux, which is worse than refusing it everywhere -- an app
+/// built on the machine that allowed it would fail when it was shared, which is
+/// the exact failure Krate exists to remove. Laying it out like any other
+/// container is all three hosts need, because none of them paint it.
+fn is_region_container(kind: WidgetKind) -> bool {
+    matches!(kind, WidgetKind::Canvas)
 }
 
 fn dimension_from_option(value: Option<f32>) -> Dimension {
@@ -501,6 +533,60 @@ mod tests {
                 height: 60.0,
             })
         );
+    }
+
+    #[test]
+    fn a_grid_wraps_its_children_onto_the_next_row() {
+        // `grid` was declared in the widget set and implemented by no host, so
+        // an app that asked for one was refused everywhere. It is a row that
+        // wraps, which the layout engine already does -- this proves the
+        // children actually move to a second row rather than the kind merely
+        // being accepted.
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Grid);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        // Three 40-wide children in a 100-wide viewport: two fit, the third wraps.
+        for id in 2..=4 {
+            tree.upsert(fixed_child(id, tree.root(), 40.0, 20.0))
+                .expect("child");
+        }
+
+        let layout = compute_layout(&tree, LayoutViewport::new(100.0, 200.0).expect("viewport"))
+            .expect("layout");
+
+        let first = layout.rect(WidgetId::new(2).expect("id")).expect("first");
+        let second = layout.rect(WidgetId::new(3).expect("id")).expect("second");
+        let third = layout.rect(WidgetId::new(4).expect("id")).expect("third");
+
+        assert_eq!(first.y, second.y, "the first two share a row");
+        assert!(
+            third.y > first.y,
+            "the third child should wrap to a second row, got y={} against {}",
+            third.y,
+            first.y
+        );
+        assert_eq!(third.x, first.x, "a wrapped child starts a new row");
+    }
+
+    #[test]
+    fn a_stack_does_not_wrap() {
+        // The other half of the same claim: wrapping is specific to grid, not
+        // something the change turned on for every container.
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        for id in 2..=4 {
+            tree.upsert(fixed_child(id, tree.root(), 40.0, 20.0))
+                .expect("child");
+        }
+
+        let layout = compute_layout(&tree, LayoutViewport::new(100.0, 200.0).expect("viewport"))
+            .expect("layout");
+
+        // A stack is a column, so every child is on its own row already and
+        // they share a left edge.
+        let first = layout.rect(WidgetId::new(2).expect("id")).expect("first");
+        let second = layout.rect(WidgetId::new(3).expect("id")).expect("second");
+        assert_eq!(first.x, second.x);
+        assert!(second.y > first.y);
     }
 
     #[test]

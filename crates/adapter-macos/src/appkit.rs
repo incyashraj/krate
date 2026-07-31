@@ -61,6 +61,7 @@ impl AppKitWidgetPlacement {
                 | WidgetKind::Canvas
                 | WidgetKind::Scroll
                 | WidgetKind::Stack
+                | WidgetKind::Grid
         )
     }
 
@@ -1670,7 +1671,10 @@ mod platform {
                         label.setTag(placement.widget().get() as isize);
                         Retained::into_super(label)
                     }
-                    WidgetKind::ListView | WidgetKind::Scroll | WidgetKind::Stack => {
+                    WidgetKind::ListView
+                    | WidgetKind::Scroll
+                    | WidgetKind::Stack
+                    | WidgetKind::Grid => {
                         // A layout container paints nothing itself on macOS: its
                         // children are separate placements. Lower it as an empty,
                         // non-editable label so ids and hit testing stay
