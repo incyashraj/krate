@@ -34,6 +34,16 @@
       text-align: center;
     }
 
+    /* No rule between the hero and step 1. The shared .section border assumes
+       two blocks that need separating; here the numbered track already does
+       that, and the line landed hard against the file card and the first step.
+       The steps also start closer, so the page reads as one movement from
+       "you were sent a file" into "here is what to do with it". */
+    .open-steps-section {
+      padding-top: 52px;
+      border-top: 0;
+    }
+
     .open-title {
       max-width: 17ch;
       margin-inline: auto;
@@ -297,7 +307,7 @@
       </div>
     </section>
 
-    <section class="section">
+    <section class="section open-steps-section">
       <div class="wrap">
         <ol class="open-track">
           <li>
