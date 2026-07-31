@@ -3703,6 +3703,19 @@ fn a_failed_port_says_what_kind_of_failure_it_was() {
     // A port that fails should leave the person knowing whether this is our
     // gap or their code, and roughly how long. The classification is what makes
     // an honest promise possible, so it has to reach the terminal.
+    //
+    // Unix only. The test drives the port through `--author-cmd`, which hands
+    // the command to a shell, and a Windows temp path is full of backslashes
+    // that bash reads as escapes: `C:\Users\RUNNER~1\...` arrives as
+    // `C:UsersRUNNER~1...` and the script is never found. That is this
+    // fixture's problem, not the pipeline's -- the real port path resolves its
+    // shell through `author_shell()` and is covered on Windows elsewhere. The
+    // other --author-cmd tests pass an inline command rather than a script
+    // path, which is why they run everywhere; this one needs a file because it
+    // has to append to the candidate.
+    if cfg!(windows) {
+        return;
+    }
     let dir = tempfile::tempdir().expect("tempdir");
     let source = dir.path().join("src-project");
     std::fs::create_dir_all(source.join("src")).expect("mkdir");
