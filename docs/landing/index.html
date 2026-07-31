@@ -137,14 +137,31 @@
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
         "license": "https://github.com/incyashraj/krate/blob/main/LICENSE-MIT",
         "softwareHelp": "https://krate.tech/docs/",
-        "downloadUrl": "https://krate.tech/install.sh"
+        "downloadUrl": "https://krate.tech/install.sh",
+        "author": { "@id": "https://krate.tech/#yashraj" },
+        "publisher": { "@id": "https://krate.tech/#krate-labs" }
       },
       {
         "@type": "Organization",
+        "@id": "https://krate.tech/#krate-labs",
         "name": "Krate Labs",
         "url": "https://krate.tech/",
         "logo": "https://krate.tech/krate-glyph-blue.png",
-        "sameAs": ["https://github.com/incyashraj/krate"]
+        "sameAs": ["https://github.com/incyashraj/krate"],
+        "founder": { "@id": "https://krate.tech/#yashraj" }
+      },
+      {
+        "@type": "Person",
+        "@id": "https://krate.tech/#yashraj",
+        "name": "Yashraj Pardeshi",
+        "jobTitle": "Founder and builder",
+        "description": "Founder and builder of Krate, a runtime that makes an app one file that opens on Mac, Windows, and Linux and shows what it is allowed to do before it runs. Building it solo since April 2026, in public, from Singapore.",
+        "url": "https://incyashraj.github.io",
+        "worksFor": { "@id": "https://krate.tech/#krate-labs" },
+        "sameAs": [
+          "https://github.com/incyashraj",
+          "https://incyashraj.github.io"
+        ]
       },
       {
         "@type": "FAQPage",
@@ -541,6 +558,47 @@
       </div>
     </section>
 
+    <!-- Who is behind this. Marked up as a Person linked to the Organization
+         (see the JSON-LD in <head>), so a search engine can answer "who founded
+         Krate" rather than only matching the words on the page. -->
+    <section class="section" id="about">
+      <div class="wrap">
+        <div class="section-heading">
+          <p class="label">About</p>
+          <h2>Who is building this.</h2>
+        </div>
+
+        <div class="about-block" itemscope itemtype="https://schema.org/Person">
+          <p class="about-lead">
+            Krate is built by <strong itemprop="name">Yashraj Pardeshi</strong>,
+            its <span itemprop="jobTitle">founder and builder</span>. He has been
+            building it solo since April 2026, in public, from
+            <span itemprop="homeLocation">Singapore</span>.
+          </p>
+          <p class="about-body">
+            The problem it answers has not been solved: software still cannot
+            move between computers the way a file can, and you cannot tell what
+            a program does before you run it. Krate is one answer to both — a
+            single app file that opens on Mac, Windows, and Linux, and carries
+            the list of what it is allowed to do on the outside, where you can
+            read it before anything runs.
+          </p>
+          <p class="about-body">
+            Every claim here is checkable. Machines he has never touched open the
+            app, type into it, and photograph the result on every push; the
+            evidence is in the
+            <a href="https://github.com/incyashraj/krate/actions">build logs</a>.
+            It is early, and the limits are published alongside the product.
+          </p>
+          <p class="about-body">
+            More at <a href="https://incyashraj.github.io" itemprop="url" rel="me">incyashraj.github.io</a>
+            and <a href="https://github.com/incyashraj" itemprop="sameAs" rel="me">GitHub</a>.
+          </p>
+          <link itemprop="worksFor" href="#krate-labs" />
+        </div>
+      </div>
+    </section>
+
     <section class="final">
       <div class="wrap">
         <img src="./krate-glyph-blue.png" alt="" />
@@ -558,6 +616,7 @@
     <div class="wrap footer-inner">
       <span>© 2026 Krate Labs</span>
       <div class="footer-links">
+        <a href="#about">About</a>
         <a href="./docs/">Docs</a>
         <a href="./docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
         <a href="https://github.com/incyashraj/krate">GitHub</a>

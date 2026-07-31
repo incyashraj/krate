@@ -1165,6 +1165,55 @@
     }
 
 
+    /* Who built this. Set as reading text rather than a card, because it is
+       the one part of the page that is a person talking rather than a product
+       claiming. */
+    .about-block {
+      max-width: 68ch;
+    }
+
+
+    .about-lead {
+      margin-bottom: 20px;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 20px;
+      line-height: 1.55;
+    }
+
+
+    .about-lead strong {
+      font-weight: 600;
+    }
+
+
+    .about-body {
+      margin-bottom: 16px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+
+    .about-body:last-of-type {
+      margin-bottom: 0;
+    }
+
+
+    .about-block a {
+      color: var(--blue-soft);
+      text-decoration-color: rgba(169, 194, 255, .4);
+      text-underline-offset: 3px;
+    }
+
+
+    .about-block a:hover,
+    .about-block a:focus-visible {
+      text-decoration-color: var(--blue-soft);
+    }
+
+
 
 
 
