@@ -46,3 +46,7 @@ harness = false
 [[bench]]
 name = "uapi_dispatch"
 harness = false
+
+[[bench]]
+name = "native_comparison"
+harness = false
