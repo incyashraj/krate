@@ -1038,6 +1038,86 @@
     }
 
 
+    /* Measured numbers. Same bordered grid as .proof so the page reads as one
+       thing, with the figure leading -- the number is the point, and the
+       sentence under it is what makes the number mean anything. */
+    /* Four figures, so the layout goes 4, then 2+2, then 1. `auto-fit` would
+       pass through three across and leave a single card orphaned on its own
+       row, which reads like something failed to load. */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-top: 1px solid var(--line);
+      border-left: 1px solid var(--line);
+    }
+
+
+    @media (max-width: 1000px) {
+      .stat-grid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+
+    @media (max-width: 560px) {
+      .stat-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+
+    .stat {
+      padding: 27px;
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+
+
+    .stat-figure {
+      display: block;
+      margin-bottom: 12px;
+      color: var(--blue-soft);
+      font-family: var(--mono);
+      /* Tabular figures so the four numbers sit on a common baseline grid
+         rather than drifting with digit widths. */
+      font-variant-numeric: tabular-nums;
+      font-size: 34px;
+      line-height: 1;
+    }
+
+
+    .stat strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 16px;
+      /* These are short sentences in a narrow column, so let the browser even
+         out the line lengths rather than leaving one word stranded. */
+      text-wrap: balance;
+      line-height: 1.35;
+    }
+
+
+    .stat p {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 14px;
+    }
+
+
+    /* The caveats. Deliberately not hidden in small grey type -- someone
+       technical will ask for the worst case, and the answer should be on the
+       same page as the good numbers. */
+    .stat-note {
+      max-width: 62ch;
+      margin-top: 22px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+
     .cloud-section {
       background:
         linear-gradient(120deg, rgba(98, 145, 255, .08), transparent 50%),
@@ -1707,6 +1787,10 @@
 
       .proof-grid {
         grid-template-columns: 1fr;
+      }
+
+      .stat-figure {
+        font-size: 30px;
       }
 
       .faq-item summary {
