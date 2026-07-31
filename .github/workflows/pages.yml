@@ -16,6 +16,7 @@ on:
       - "scripts/build-store.sh"
       - "scripts/store-listing.py"
       - "scripts/build-answer-pages.py"
+      - "scripts/fingerprint-css.py"
       - "scripts/install.sh"
       - "scripts/install.ps1"
       - ".github/workflows/pages.yml"
@@ -108,6 +109,12 @@ jobs:
           cp scripts/install.ps1 _site/install.ps1
           # A trailing-slash-free alias, so `krate.tech/install` works too.
           cp scripts/install.sh _site/install
+          # Last, once every page is in place: name the stylesheet after a hash
+          # of its contents and repoint every reference at it. Pages serves CSS
+          # with max-age=600, so a deploy that changed the stylesheet shipped
+          # new HTML against whatever copy the visitor already had -- the page
+          # rendered unstyled and nothing on the server was wrong.
+          python3 scripts/fingerprint-css.py _site
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
