@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0b0d12" />
-  <meta name="description" content="Create AI-made apps as one portable file for Mac, Windows, and Linux with controlled access. Krate Cloud will add publishing and distribution." />
+  <meta name="description" content="Make an app by asking AI, then share it as one file that opens on Mac, Windows, and Linux. Every app shows exactly what it wants to access before it runs. Publish to the Krate store." />
   <!-- The github.io project page redirects here, so name the canonical home
        once. Without it the same page is reachable at two hosts and search
        engines have to guess which one is real. -->
   <link rel="canonical" href="https://krate.tech/" />
-  <meta property="og:title" content="Krate | AI apps, built to travel." />
-  <meta property="og:description" content="Create AI-made apps as one portable file for Mac, Windows, and Linux. Krate shows what each app wants to access before it runs." />
+  <meta property="og:title" content="Krate — The cloud for AI-made software" />
+  <meta property="og:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/" />
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
@@ -18,10 +18,10 @@
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Krate turns an AI request into one app file for Mac, Windows, and Linux." />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Krate | AI apps, built to travel." />
-  <meta name="twitter:description" content="Create AI-made apps as one portable file for Mac, Windows, and Linux. Krate shows what each app wants to access before it runs." />
+  <meta name="twitter:title" content="Krate — The cloud for AI-made software" />
+  <meta name="twitter:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
   <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
-  <title>Krate | AI apps, built to travel.</title>
+  <title>Krate — The cloud for AI-made software | One app file for Mac, Windows, Linux</title>
   <link rel="icon" href="./krate-glyph-blue.png" />
   <style>
     :root {
@@ -249,6 +249,81 @@
 
     /* The command reads as something you could type, not a slogan. It shrinks
        hard on small screens because a wrapped command looks broken. */
+    /* One file, three machines. The file lifts out of the middle and settles
+       on each in turn: the claim of the page, drawn once, quietly. */
+    .hero-travel {
+      position: relative;
+      width: 260px;
+      height: 74px;
+      margin: 0 auto 34px;
+    }
+
+    .travel-machine {
+      position: absolute;
+      bottom: 0;
+      width: 54px;
+      height: 38px;
+      border: 1px solid var(--line-strong);
+      border-radius: 5px;
+      background: var(--panel);
+    }
+
+    /* The screen glow, so each shape reads as a computer rather than a box. */
+    .travel-machine::after {
+      content: "";
+      position: absolute;
+      inset: 6px 6px 10px;
+      border-radius: 2px;
+      background: rgba(98, 145, 255, .16);
+      transition: background .4s ease;
+    }
+
+    .travel-machine[data-os="mac"] { left: 0; }
+    .travel-machine[data-os="win"] { left: 103px; }
+    .travel-machine[data-os="linux"] { right: 0; }
+
+    /* Each machine lights as the file lands on it, on the same 9s cycle. */
+    .travel-machine::after { animation: travel-lit 9s ease-in-out infinite; }
+    .travel-machine[data-os="mac"]::after { animation-delay: 0s; }
+    .travel-machine[data-os="win"]::after { animation-delay: 3s; }
+    .travel-machine[data-os="linux"]::after { animation-delay: 6s; }
+
+    @keyframes travel-lit {
+      0%, 8% { background: rgba(108, 244, 215, .55); }
+      26%, 100% { background: rgba(98, 145, 255, .16); }
+    }
+
+    /* The file: three stacked bars, the Krate mark, travelling between them. */
+    .travel-file {
+      position: absolute;
+      top: 8px;
+      left: 14px;
+      width: 26px;
+      height: 26px;
+      background:
+        linear-gradient(var(--cyan), var(--cyan)) 0 0 / 100% 6px no-repeat,
+        linear-gradient(rgba(108, 244, 215, .6), rgba(108, 244, 215, .6)) 0 10px / 100% 6px no-repeat,
+        linear-gradient(rgba(108, 244, 215, .3), rgba(108, 244, 215, .3)) 0 20px / 100% 6px no-repeat;
+      animation: travel-move 9s ease-in-out infinite;
+    }
+
+    @keyframes travel-move {
+      0%, 6% { transform: translate(0, 14px); }
+      17% { transform: translate(52px, -6px); }
+      28%, 39% { transform: translate(103px, 14px); }
+      50% { transform: translate(155px, -6px); }
+      61%, 72% { transform: translate(206px, 14px); }
+      86% { transform: translate(103px, -6px); }
+      94%, 100% { transform: translate(0, 14px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .travel-file,
+      .travel-machine::after {
+        animation: none;
+      }
+    }
+
     .hero-command {
       max-width: 15ch;
       margin-inline: auto;
@@ -1578,6 +1653,72 @@
       }
     }
   </style>
+  <!-- Structured data. Search engines read this to show a rich result rather
+       than a plain blue link, and to answer questions directly. Every claim
+       here is one the site actually makes. -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "Krate",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Windows, Linux",
+        "url": "https://krate.tech/",
+        "description": "Make an app by asking AI, then share it as one file that opens on Mac, Windows, and Linux. Every app shows exactly what it wants to access before it runs.",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "license": "https://github.com/incyashraj/krate/blob/main/LICENSE-MIT",
+        "softwareHelp": "https://krate.tech/docs/",
+        "downloadUrl": "https://krate.tech/install.sh"
+      },
+      {
+        "@type": "Organization",
+        "name": "Krate Labs",
+        "url": "https://krate.tech/",
+        "logo": "https://krate.tech/krate-glyph-blue.png",
+        "sameAs": ["https://github.com/incyashraj/krate"]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How do I share an app I made with AI?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Krate packages the app into one .krate file. Send that file however you send any file. The person who receives it installs Krate once, and the app opens on Mac, Windows, or Linux without a separate build for each."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does Krate make an AI-created app safer to run?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "AI-generated code receives no special trust. Krate rejects an app that imports anything outside its capability boundary, and at runtime the app starts with no access to files or the network. It must request each capability, you review them before any code runs, and the runtime enforces your decision."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How can the same file run on Mac, Windows, and Linux?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "The app is a WebAssembly component that calls Krate interfaces rather than operating system APIs directly. The Krate runtime on each system translates approved calls into local behaviour, so one file works everywhere instead of three installers."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I convert an existing app to Krate?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "krate port reads a source project without building or running it and reports whether it can become a Krate app, what must change, and what is not supported yet. Apps can keep settings, a database, a sign-in, notifications, and links."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
@@ -1608,9 +1749,15 @@
   <main id="main">
     <section class="hero">
       <div class="wrap hero-inner">
-        <img class="hero-logo" src="./krate-glyph-blue.png" alt="Krate" />
-        <!-- The command is the headline. Someone landing here should be able to
-             copy one line and have an app, without reading a paragraph first. -->
+        <!-- One file reaching three machines: the whole product in a drawing.
+             A static logo said nothing a visitor did not already assume from
+             the wordmark. This stops for anyone who asked for less motion. -->
+        <div class="hero-travel" aria-hidden="true">
+          <span class="travel-machine" data-os="mac"></span>
+          <span class="travel-machine" data-os="win"></span>
+          <span class="travel-machine" data-os="linux"></span>
+          <span class="travel-file"></span>
+        </div>
         <h1 class="hero-command">The cloud for AI-made software.</h1>
         <p class="hero-lead">Make an app by asking. Publish it. It opens on any computer, and shows what it wants before it runs.</p>
         <div class="actions">

@@ -193,6 +193,153 @@
       opacity: .13;
     }
 
+
+    /* The request-to-file flow. Three steps, drawn in sequence, so the page
+       shows the thing it is about instead of describing it. */
+    .make-flow {
+      display: grid;
+      gap: 14px;
+      align-content: center;
+    }
+
+    .flow-step {
+      opacity: 0;
+      transform: translateY(8px);
+      animation: flow-in .5s ease forwards;
+    }
+
+    .flow-step[data-step="1"] { animation-delay: .1s; }
+    .flow-step[data-step="2"] { animation-delay: 1.5s; }
+    .flow-step[data-step="3"] { animation-delay: 4.2s; }
+
+    @keyframes flow-in {
+      to { opacity: 1; transform: none; }
+    }
+
+    .flow-label {
+      display: block;
+      margin-bottom: 7px;
+      color: var(--cyan);
+      font-size: 11px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    .flow-box {
+      padding: 15px 16px;
+      background: rgba(255, 255, 255, .04);
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+
+    .flow-prompt {
+      display: flex;
+      align-items: center;
+      min-height: 50px;
+    }
+
+    /* A caret that blinks while the request types itself in. */
+    .flow-caret {
+      width: 8px;
+      height: 16px;
+      margin-left: 2px;
+      background: var(--cyan);
+      animation: flow-blink 1s steps(2) infinite;
+    }
+
+    @keyframes flow-blink {
+      50% { opacity: 0; }
+    }
+
+    .flow-arrow {
+      height: 22px;
+      display: grid;
+      place-items: center;
+    }
+
+    .flow-arrow span {
+      width: 1px;
+      height: 100%;
+      background: linear-gradient(rgba(255, 255, 255, .35), transparent);
+    }
+
+    .flow-checks {
+      margin: 0;
+      padding: 4px 0 0;
+      list-style: none;
+    }
+
+    .flow-checks li {
+      padding: 5px 0 5px 22px;
+      position: relative;
+      color: rgba(255, 255, 255, .68);
+      font-size: 13.5px;
+      opacity: 0;
+      animation: flow-in .4s ease forwards;
+    }
+
+    /* Each check lands in turn, so it reads as work happening rather than a
+       list that was always there. */
+    .flow-checks li[data-check="1"] { animation-delay: 1.9s; }
+    .flow-checks li[data-check="2"] { animation-delay: 2.6s; }
+    .flow-checks li[data-check="3"] { animation-delay: 3.3s; }
+
+    .flow-checks li::before {
+      content: "";
+      position: absolute;
+      left: 2px;
+      top: 11px;
+      width: 9px;
+      height: 5px;
+      border-left: 2px solid var(--cyan);
+      border-bottom: 2px solid var(--cyan);
+      transform: rotate(-45deg);
+    }
+
+    .flow-file {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      padding: 15px 16px;
+      background: rgba(0, 239, 198, .07);
+      border: 1px solid rgba(0, 239, 198, .3);
+      border-radius: 8px;
+    }
+
+    .flow-file strong {
+      display: block;
+      font-size: 14.5px;
+    }
+
+    .flow-file small {
+      color: rgba(255, 255, 255, .55);
+      font-size: 12px;
+    }
+
+    /* The file itself: three stacked layers, the shape of the Krate mark. */
+    .flow-file-glyph {
+      width: 30px;
+      height: 30px;
+      flex: none;
+      background:
+        linear-gradient(var(--cyan), var(--cyan)) 0 0 / 100% 7px no-repeat,
+        linear-gradient(rgba(0, 239, 198, .65), rgba(0, 239, 198, .65)) 0 11px / 100% 7px no-repeat,
+        linear-gradient(rgba(0, 239, 198, .35), rgba(0, 239, 198, .35)) 0 22px / 100% 7px no-repeat;
+    }
+
+    /* Someone who asked for less motion gets the finished state, not a blank
+       column: the information matters more than the animation. */
+    @media (prefers-reduced-motion: reduce) {
+      .flow-step,
+      .flow-checks li {
+        opacity: 1;
+        transform: none;
+        animation: none;
+      }
+      .flow-caret { animation: none; }
+    }
+
     .hero-inner {
       position: relative;
       z-index: 2;
@@ -1342,56 +1489,47 @@
     <section class="hero">
       <div class="hero-inner">
         <div class="hero-copy">
-          <h1>Ask for an app. Get .krate file. <span class="underline">Use it anywhere.</span></h1>
-          <p>Make a small app from a request, or connect your coding agent. Krate gives you one file that opens on Mac, Windows, and Linux and shows its access before it runs.</p>
-
+          <h1>Ask. Then send the file.</h1>
+          <p>Describe the app you want. Krate has AI write it, checks it, and hands you one file that opens on Mac, Windows, and Linux.</p>
           <div class="hero-actions">
-            <a class="button primary" href="#make">Make an app</a>
-            <a class="button" href="#use">I received one</a>
-          </div>
-
-          <div class="micro-proof" aria-label="Product highlights">
-            <span>One app file</span>
-            <span>Three operating systems</span>
-            <span>Clear access</span>
+            <a class="button primary" href="#setup">Make an app</a>
+            <a class="button" href="../try-krate-notes.html">I received one</a>
           </div>
         </div>
 
-        <div class="desktop-scene" aria-label="A request becomes a Krate app with clear permissions">
-          <div class="window request-window">
-            <div class="window-title">
-              <span>MAKE_APP.EXE</span>
-              <span class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></span>
-            </div>
-            <div class="window-body">
-              <span class="prompt-label">What do you need?</span>
-              <div class="prompt-box">Make a checklist app that saves locally.</div>
-            </div>
+        <!-- The request becoming a file, drawn rather than described. A static
+             mockup of a fake app window looked like a product screenshot of
+             something that does not exist; this shows the one thing the page is
+             about, and stops when someone prefers reduced motion. -->
+        <div class="make-flow" aria-label="A request becomes one app file">
+          <div class="flow-step" data-step="1">
+            <span class="flow-label">you ask</span>
+            <div class="flow-box flow-prompt"><span class="flow-typed"></span><i class="flow-caret"></i></div>
           </div>
 
-          <div class="window file-window">
-            <div class="window-title pink">
-              <span>YOUR_APP</span>
-              <span class="window-controls" aria-hidden="true"><i>_</i><i>□</i><i>×</i></span>
-            </div>
-            <div class="file-stage">
-              <img src="../../krate-document-icon.png" alt="" />
-              <span><strong>checklist.krate</strong><small>READY TO SHARE</small></span>
-            </div>
+          <div class="flow-arrow" aria-hidden="true"><span></span></div>
+
+          <div class="flow-step" data-step="2">
+            <span class="flow-label">krate checks</span>
+            <ul class="flow-checks">
+              <li data-check="1">writes the app</li>
+              <li data-check="2">uses only what Krate allows</li>
+              <li data-check="3">stops without permission</li>
+            </ul>
           </div>
 
-          <div class="window access-window">
-            <div class="window-title cyan">
-              <span>ACCESS_MANAGER</span>
-              <span class="window-controls" aria-hidden="true"><i>×</i></span>
-            </div>
-            <div class="window-body">
-              <div class="access-line"><span class="access-check">✓</span><span>Show a window</span><span class="access-state">ALLOW</span></div>
-              <div class="access-line"><span class="access-check">✓</span><span>Save checklist items</span><span class="access-state">ALLOW</span></div>
+          <div class="flow-arrow" aria-hidden="true"><span></span></div>
+
+          <div class="flow-step" data-step="3">
+            <span class="flow-label">you get</span>
+            <div class="flow-file">
+              <div class="flow-file-glyph" aria-hidden="true"></div>
+              <div>
+                <strong>checklist.krate</strong>
+                <small>12 KB &middot; mac, windows, linux</small>
+              </div>
             </div>
           </div>
-
-          <span class="desktop-label">KRATE DESKTOP 1.0</span>
         </div>
       </div>
     </section>
@@ -1694,6 +1832,36 @@
       menuButton.setAttribute("aria-label", "Open navigation");
       document.body.classList.remove("menu-open");
     });
+  </script>
+
+  <script>
+    // Type the request in, then leave it. The point is to show that a plain
+    // sentence is the whole input -- so it types once and stops, rather than
+    // looping and turning into decoration.
+    (function () {
+      const target = document.querySelector(".flow-typed");
+      if (!target) return;
+
+      const request = "a checklist app that saves locally";
+      const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      if (reduced) {
+        target.textContent = request;
+        return;
+      }
+
+      let i = 0;
+      const start = () => {
+        const tick = () => {
+          target.textContent = request.slice(0, ++i);
+          if (i < request.length) setTimeout(tick, 42);
+        };
+        tick();
+      };
+      // Starts after the first panel has faded in, so the typing is the first
+      // motion a reader notices rather than competing with the panel arriving.
+      setTimeout(start, 600);
+    })();
   </script>
 </body>
 </html>

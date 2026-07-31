@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://krate.tech/</loc></url>
+  <url><loc>https://krate.tech/faq.html</loc></url>
+  <url><loc>https://krate.tech/cloud/</loc></url>
   <url><loc>https://krate.tech/docs/404.html</loc></url>
   <url><loc>https://krate.tech/docs/architecture.html</loc></url>
   <url><loc>https://krate.tech/docs/blog/0001-announcing-krate.html</loc></url>
