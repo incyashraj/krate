@@ -54,7 +54,33 @@ if [ -z "$version" ]; then
   # do not. Querying the list avoids a guaranteed 404 on /latest.
   version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=30" \
     | grep '"tag_name"' | cut -d '"' -f 4 | grep '^v' | head -1 || true)"
-  [ -n "$version" ] || die "could not find a release; set KRATE_VERSION to pin one"
+
+  # The API is rate limited to 60 requests an hour per address and does not
+  # care that you are only reading. Anyone behind a shared address -- an
+  # office, a university, a cafe -- can hit that without having run this
+  # before, and the raw failure is a 403 that explains nothing.
+  #
+  # The releases page itself is plain HTML and is not rate limited the same
+  # way, so fall back to reading a tag out of it.
+  if [ -z "$version" ]; then
+    say "The GitHub API did not answer; reading the releases page instead..."
+    version="$(curl -fsSL "https://github.com/${REPO}/releases" \
+      | grep -o "/${REPO}/releases/tag/v[0-9][^\"]*" \
+      | cut -d / -f 6 | head -1 || true)"
+  fi
+
+  if [ -z "$version" ]; then
+    echo "Could not work out the latest version." >&2
+    echo "" >&2
+    echo "This usually means GitHub is rate limiting your address, which happens" >&2
+    echo "on shared networks and clears within the hour." >&2
+    echo "" >&2
+    echo "To install right now, pin a version:" >&2
+    echo "  KRATE_VERSION=v0.1.0-rc4 curl -fsSL https://krate.tech/install.sh | sh" >&2
+    echo "" >&2
+    echo "Versions are listed at https://github.com/${REPO}/releases" >&2
+    exit 1
+  fi
 fi
 
 # ---- is a krate already installed, and is it this version? -----------------

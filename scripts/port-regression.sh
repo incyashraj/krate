@@ -26,6 +26,16 @@ if [ ! -x "$KRATE" ]; then
   exit 1
 fi
 
+# The transform step drives an AI agent, which a CI runner does not have. Say so
+# and stop, rather than failing every night for a reason that is not a
+# regression -- a job that is always red is a job everyone learns to ignore.
+if ! command -v "$AGENT" >/dev/null 2>&1; then
+  echo "no '$AGENT' on PATH, so the transform step cannot run."
+  echo "This checks that porting still works end to end and needs an agent."
+  echo "Skipping without failing; run it where the agent is installed."
+  exit 0
+fi
+
 rm -rf "$WORK"
 mkdir -p "$WORK"
 

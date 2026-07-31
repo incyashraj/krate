@@ -994,6 +994,46 @@ jobs:
   #
   # Uses the published URLs on purpose. Building from source proves the source
   # works; it does not prove that what a person can download works.
+  # ──────────────────────────────────────────────
+  # The ports that already worked must keep working
+  # ──────────────────────────────────────────────
+  #
+  # Three real third-party programs were ported by hand and the results written
+  # down, and nothing re-ran them -- so a change that broke porting would have
+  # been found by a user rather than by us. This clones each at a pinned commit,
+  # ports it with the real pipeline, and checks it still builds, packs, runs,
+  # and prints what it printed before.
+  #
+  # Nightly rather than per-push: it clones, drives an AI agent, and builds
+  # three components, so it is minutes rather than seconds.
+  port-regression:
+    name: Re-port the proven programs
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.91.1
+        with:
+          targets: wasm32-wasip1
+      - name: Install Linux audio development files
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-portregression-${{ hashFiles('**/Cargo.lock') }}
+      - name: Install cargo-component
+        run: cargo install cargo-component --locked --version 0.21.1
+      - name: Build the runtime
+        run: cargo build --release -p krate-cli
+      - name: Re-port every proven program
+        run: sh scripts/port-regression.sh "$RUNNER_TEMP/port-regression"
+
   cold-install:
     name: Cold install from krate.tech (${{ matrix.os }})
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
