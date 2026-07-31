@@ -3652,3 +3652,112 @@ fn a_denial_tells_you_how_to_grant_and_names_what_you_ran() {
         );
     }
 }
+
+#[test]
+fn a_failure_report_is_shown_in_full_and_never_sent_on_its_own() {
+    // The privacy guarantee, as a test. A failure report can hold someone's
+    // source and paths, so `krate report` must show the whole file and stop.
+    // If this ever starts uploading, this test is what should fail first.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let report = dir.path().join("FAILURE-REPORT.md");
+    let secret_line = "let api_key = \"sk-do-not-transmit\";";
+    std::fs::write(
+        &report,
+        format!(
+            "# Krate port failure report\n\n\
+             - What kind: unknown API\n\n\
+             ## The full error\n\n```\n{secret_line}\n```\n"
+        ),
+    )
+    .expect("write report");
+
+    let output = krate()
+        .arg("report")
+        .arg(&report)
+        .output()
+        .expect("run report");
+    assert!(output.status.success(), "report command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // The whole file, so a person can find anything they would rather not send.
+    assert!(
+        stdout.contains(secret_line),
+        "the report must be shown in full before anything is offered: {stdout}"
+    );
+    // And it must say plainly that nothing has left the machine.
+    assert!(
+        stdout.contains("only on your computer") || stdout.contains("has not been sent"),
+        "the report must say it was not sent: {stdout}"
+    );
+    // Sending is the person's own action, in their own browser.
+    assert!(
+        stdout.contains("will not upload it for you"),
+        "the report must not imply Krate transmits it: {stdout}"
+    );
+}
+
+#[test]
+fn a_failed_port_says_what_kind_of_failure_it_was() {
+    // A port that fails should leave the person knowing whether this is our
+    // gap or their code, and roughly how long. The classification is what makes
+    // an honest promise possible, so it has to reach the terminal.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let source = dir.path().join("src-project");
+    std::fs::create_dir_all(source.join("src")).expect("mkdir");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname = \"reportcase\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::write(
+        source.join("src/main.rs"),
+        "fn main() { let d = std::fs::read(\"in.bin\").unwrap(); println!(\"{}\", d.len()); }\n",
+    )
+    .expect("write main.rs");
+
+    // An agent that invents a function, which is the failure this classifies.
+    let agent = dir.path().join("agent.sh");
+    std::fs::write(
+        &agent,
+        "#!/bin/sh\n\
+         f=\"$KRATE_PORT_CANDIDATE/src/lib.rs\"\n\
+         printf 'fn never_compiles() { stdio::write_hex(b\"x\"); }\\n' >> \"$f\"\n",
+    )
+    .expect("write agent");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&agent, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod agent");
+    }
+
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(dir.path().join("ws"))
+        .arg("--author-cmd")
+        .arg(&agent)
+        .arg("--to")
+        .arg(dir.path().join("out.krate"))
+        .output()
+        .expect("run port");
+
+    assert!(!output.status.success(), "this port is meant to fail");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("This port failed:"),
+        "a failed port must say what kind of failure it was: {stderr}"
+    );
+    assert!(
+        stderr.contains("stdio::write_hex"),
+        "it must name the API that does not exist: {stderr}"
+    );
+    // The report exists locally and the person is told where, not that it went
+    // anywhere.
+    assert!(
+        stderr.contains("has not been sent anywhere"),
+        "it must say the report stayed local: {stderr}"
+    );
+}

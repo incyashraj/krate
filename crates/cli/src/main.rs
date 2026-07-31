@@ -18,6 +18,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 mod mcp;
+mod port_report;
 mod sdk;
 mod sdk_reference;
 mod speech_model;
@@ -254,6 +255,20 @@ enum Command {
     /// Analyze an existing source project and explain how it can become a
     /// portable Krate app. This command is read-only: it does not build,
     /// execute, or edit the source.
+    /// Send us a port failure report, after showing you exactly what it says.
+    ///
+    /// Nothing is sent until you have seen the whole file and agreed. A report
+    /// can contain your source and your paths, so the default is that it stays
+    /// on your computer.
+    Report {
+        /// The FAILURE-REPORT.md a failed port wrote.
+        report: PathBuf,
+
+        /// Print the report and stop, without offering to send it.
+        #[arg(long)]
+        show: bool,
+    },
+
     Port {
         /// Source project directory to analyze.
         source: PathBuf,
@@ -559,6 +574,7 @@ fn run() -> Result<u8> {
             no_install,
             json,
         }),
+        Command::Report { report, show } => run_report_command(&report, show),
         Command::Port {
             source,
             plan: _,
@@ -1189,6 +1205,12 @@ fn complete_port(
                 ensure_original_source_unchanged(original_plan, original_source)?;
             }
             Err(error) => {
+                // The port is over. Before the error goes to the terminal and
+                // is lost, say what kind of failure it was and what that means
+                // for the person waiting -- and write the report they can
+                // choose to send us. Nothing leaves this machine here.
+                let report_path = write_port_failure_report(workspace, &error, original_source);
+                print_port_failure_guidance(&error, report_path.as_deref());
                 anyhow::bail!(
                     "the port candidate did not pass validation after {} repair attempt(s):\n{}",
                     repairs_used,
@@ -1375,6 +1397,121 @@ fn validate_port_candidate(
     let manifest = krate_manifest::Manifest::parse_file(&manifest_src)
         .map_err(|error| format!("invalid candidate/manifest.toml: {error:#}"))?;
     Ok(ValidatedPortCandidate { wasm, manifest })
+}
+
+/// Show a failure report and, with consent, help send it.
+///
+/// The whole file is printed first. Someone deciding whether to share their
+/// source with us has to be able to see what "the report" actually contains,
+/// and a summary is not that -- the point of showing it is that they can find
+/// anything in it they would rather not send.
+///
+/// There is no automatic upload. Krate does not send anything from this
+/// machine; it opens the issue form with the report ready to paste, so the last
+/// action is theirs, in their own browser, where they can still edit it.
+fn run_report_command(report: &Path, show_only: bool) -> Result<u8> {
+    let text = fs::read_to_string(report)
+        .with_context(|| format!("read the report at {}", report.display()))?;
+
+    println!("{text}");
+    println!("---");
+
+    if show_only {
+        return Ok(0);
+    }
+
+    println!();
+    println!("Everything above is what would be sent. It is still only on your computer.");
+    println!();
+    println!("Krate will not upload it for you. To send it:");
+    println!("  1. Copy the text above.");
+    println!("  2. Open https://github.com/incyashraj/krate/issues/new");
+    println!("  3. Paste it, edit out anything you would rather not share, and post.");
+    println!();
+    println!("Anything you leave in is public on that page, so read it once more first.");
+
+    Ok(0)
+}
+
+/// Write a report about a failed port, next to the workspace it failed in.
+///
+/// Local only. Nothing is transmitted here and nothing is transmitted later
+/// without the person choosing to send it: a failure report can contain their
+/// source, their paths, and their project's name, and taking that quietly is
+/// the kind of thing a developer tool does not come back from.
+///
+/// Returns the path so the caller can tell them where it is. A failure to write
+/// the report is not a failure of the port -- the port already failed -- so it
+/// returns `None` rather than compounding one error with another.
+fn write_port_failure_report(
+    workspace: &Path,
+    error: &str,
+    source: &Path,
+) -> Option<std::path::PathBuf> {
+    let failure = port_report::classify(error);
+    let path = workspace.join("FAILURE-REPORT.md");
+
+    let mut text = String::new();
+    text.push_str("# Krate port failure report\n\n");
+    text.push_str(
+        "This file is on your computer and has not been sent anywhere. Read it, and\n\
+         send it only if you want to.\n\n",
+    );
+    text.push_str(&format!("- What kind: {}\n", failure.kind.label()));
+    text.push_str(&format!("- Source: {}\n", source.display()));
+    text.push_str(&format!("- Krate: {}\n", env!("CARGO_PKG_VERSION")));
+    text.push_str(&format!("- Platform: {}\n\n", std::env::consts::OS));
+
+    if !failure.unknown_names.is_empty() {
+        text.push_str("## Names the AI used that Krate does not have\n\n");
+        for name in &failure.unknown_names {
+            text.push_str(&format!("- `{name}`\n"));
+        }
+        text.push('\n');
+    }
+    if !failure.foreign_imports.is_empty() {
+        text.push_str("## Imports outside krate:*\n\n");
+        for import in &failure.foreign_imports {
+            text.push_str(&format!("- `{import}`\n"));
+        }
+        text.push('\n');
+    }
+
+    text.push_str("## What this means\n\n");
+    text.push_str(failure.kind.promise());
+    text.push_str("\n\n## The full error\n\n```\n");
+    text.push_str(error.trim());
+    text.push_str("\n```\n");
+
+    fs::write(&path, text).ok().map(|()| path)
+}
+
+/// Tell the person what kind of failure this was and what happens next.
+///
+/// Printed before the error itself, because the error is long and the part they
+/// need -- is this our gap or their code, and how long -- is one line.
+fn print_port_failure_guidance(error: &str, report_path: Option<&Path>) {
+    let failure = port_report::classify(error);
+
+    eprintln!();
+    eprintln!("This port failed: {}.", failure.kind.label());
+    eprintln!("{}", failure.kind.promise());
+
+    if !failure.unknown_names.is_empty() {
+        eprintln!();
+        eprintln!("The AI used names that do not exist:");
+        for name in &failure.unknown_names {
+            eprintln!("  - {name}");
+        }
+    }
+
+    if let Some(path) = report_path {
+        eprintln!();
+        eprintln!("A report is saved at {}.", path.display());
+        eprintln!("It has not been sent anywhere. To send it to us, run:");
+        eprintln!("  krate report {}", path.display());
+    }
+    eprintln!();
 }
 
 fn first_error_line(error: &str) -> &str {
