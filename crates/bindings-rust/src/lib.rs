@@ -268,6 +268,20 @@ pub mod io {
         pub fn eprintln(value: &str) -> Result<(), IoError> {
             stderr().write_line(value)
         }
+
+        /// Write raw bytes to stdout, with no newline and no UTF-8 requirement.
+        ///
+        /// Not every program's output is text. A hex viewer, an image filter, or
+        /// anything piping binary through stdout needs this; the text helpers
+        /// above cannot express it, because `&str` must be valid UTF-8.
+        pub fn write(bytes: &[u8]) -> Result<(), IoError> {
+            stdout().write_bytes(bytes)
+        }
+
+        /// Write raw bytes to stderr.
+        pub fn ewrite(bytes: &[u8]) -> Result<(), IoError> {
+            stderr().write_bytes(bytes)
+        }
     }
 
     /// Structured log records emitted through the runtime.

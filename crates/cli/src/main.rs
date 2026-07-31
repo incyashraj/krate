@@ -19,6 +19,7 @@ use sha2::{Digest, Sha256};
 
 mod mcp;
 mod sdk;
+mod sdk_reference;
 mod speech_model;
 
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
@@ -2286,6 +2287,12 @@ fn app_kind_name(kind: krate_author::AppKind) -> &'static str {
 /// The briefing dropped into the app dir for an agent. States the one hard rule
 /// and how the app is checked, so the agent gets it right the first time.
 fn author_contract(name: &str) -> String {
+    // The contract used to state rules and prohibitions without ever listing
+    // what exists. An agent porting a hex viewer invented `stdio::write`,
+    // because nothing it had been given said the API was text-only. The list
+    // is generated from the SDK source, so it cannot drift out of date.
+    let reference =
+        sdk_reference::render_reference(&sdk_reference::parse_sdk(sdk_reference::GUEST_SDK_SOURCE));
     format!(
         "# Krate app contract for `{name}`\n\
 \n\
@@ -2312,7 +2319,9 @@ Declare only the capabilities the app uses. Mark the one that gates it\n\
 `krate create` builds what you write, checks it imports only `krate:*`, packs\n\
 it, and verifies its permission wall. If you reach for something unsafe, the\n\
 import check stops it here — it never ships. The SDK (WIT + Rust bindings) is\n\
-at `$KRATE_SDK_DIR`.\n"
+at `$KRATE_SDK_DIR`.\n\
+\n\
+{reference}"
     )
 }
 
@@ -4437,12 +4446,32 @@ fn home_dir() -> Option<PathBuf> {
 #[cfg(test)]
 mod create_tests {
     use super::{
-        app_kind_name, claude_author_prompt, has_tool, human_label, name_from_request, toml_path,
-        validate_create_request, MAX_DERIVED_NAME_WORDS,
+        app_kind_name, author_contract, claude_author_prompt, has_tool, human_label,
+        name_from_request, toml_path, validate_create_request, MAX_DERIVED_NAME_WORDS,
     };
     use krate_author::AppKind;
     use krate_manifest::Capability;
     use std::path::Path;
+
+    #[test]
+    fn the_contract_hands_the_agent_the_api_it_must_write_against() {
+        let contract = author_contract("demo");
+
+        // The contract used to state rules without listing a single function,
+        // so an agent porting a hex viewer invented `stdio::write`. If the
+        // generator ever silently produces nothing, the contract goes back to
+        // exactly that state -- and nothing else would catch it.
+        let listed = contract.lines().filter(|l| l.starts_with("- `")).count();
+        assert!(
+            listed > 40,
+            "the contract lists only {listed} functions; the agent is guessing again"
+        );
+
+        // The specific call that was invented now exists and is named.
+        assert!(contract.contains("io::stdio::write(bytes: &[u8])"));
+        // And the instruction for what to do when something is genuinely absent.
+        assert!(contract.contains("do not invent a call"));
+    }
 
     fn cap(s: &str) -> Capability {
         s.parse().expect("parse capability")
