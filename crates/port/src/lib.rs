@@ -752,7 +752,7 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         text,
         Severity::Change,
         "Playing sound",
-        "Krate's `audio.playback` capability covers this, and it is separate from `audio.capture` -- an app that makes noise is not asking for the microphone.",
+        "`audio.playback` is declared but the runtime refuses every call to it today, so a ported app cannot make a sound. Remove the audio, or wait for it. `audio.capture` -- the microphone -- does work, and is a separate capability.",
         Some("audio.playback"),
     );
     // Files dragged onto the window. Worth naming because it is the one way an

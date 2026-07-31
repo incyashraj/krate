@@ -2481,11 +2481,17 @@ Declare only the capabilities the app uses. Mark the one that gates it\n\
 (`fs.write` for a saving app) `required = true`.\n\
 \n\
 ## The verification run\n\
-After building, Krate runs the app once with every capability granted, passing\n\
-a single bare argument: `quick`. Not `--quick`, and not a flag -- the exact\n\
-string `quick` as the first argument. The app must recognise it, do its real\n\
-work once against a small fixture, print something, and exit 0 without waiting\n\
-for input or opening a window that nobody will close.\n\
+After building, Krate runs the app once with every capability granted and one\n\
+argument, then requires exit 0.\n\
+\n\
+The argument is `quick` -- bare, not `--quick`, not a flag -- unless the app\n\
+declares an `fs.read:` grant and no window, in which case it is instead a path\n\
+to a sample text file inside the granted directory. So a file-reading CLI must\n\
+accept **both**: a path as its first positional argument, and the bare word\n\
+`quick`. Handle `quick` before any other argument parsing.\n\
+\n\
+Whichever it gets, the app must do its real work once, print something, and\n\
+exit 0 without waiting for input or opening a window nobody will close.\n\
 \n\
 An app that parses arguments strictly will reject an unknown `quick` and exit\n\
 non-zero, and the port then fails at the last step having built and packed\n\
@@ -4725,8 +4731,18 @@ mod create_tests {
         // arguments strictly and rejected a bare `quick` it had never been
         // told to expect.
         assert!(
-            contract.contains("`quick`") && contract.contains("Not `--quick`"),
-            "the contract must say how the verification argument arrives"
+            contract.contains("`quick`") && contract.contains("not `--quick`"),
+            "the contract must say the verification argument is bare, not a flag"
+        );
+        // And that a file-reading CLI gets a path instead, which is what
+        // actually broke a duplicate-file finder: it handled `quick` correctly
+        // and was handed `input/sample.txt`.
+        assert!(
+            contract.contains(
+                "must\n\
+             accept **both**"
+            ) || contract.contains("accept **both**"),
+            "the contract must say a file-reading app gets a path, not `quick`"
         );
         // And the instruction for what to do when something is genuinely absent.
         assert!(contract.contains("do not invent a call"));
