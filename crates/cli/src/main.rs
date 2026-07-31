@@ -1510,6 +1510,13 @@ fn print_port_failure_guidance(error: &str, report_path: Option<&Path>) {
         eprintln!("A report is saved at {}.", path.display());
         eprintln!("It has not been sent anywhere. To send it to us, run:");
         eprintln!("  krate report {}", path.display());
+        // Only ask for a report where one changes what we do. A borrow error in
+        // generated code is the agent having an off day, and asking for it
+        // trains people to ignore the request for the failures that matter.
+        if failure.kind.is_quick_fix() {
+            eprintln!();
+            eprintln!("Sending it is what tells us to close this gap.");
+        }
     }
     eprintln!();
 }
