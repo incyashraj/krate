@@ -30,7 +30,13 @@ on:
         default: optional
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  # Keyed on the event, not only the branch. A push should cancel the previous
+  # push's quick lanes -- that is the point -- but it must not cancel a nightly
+  # or a manually dispatched full run, which takes forty minutes and is the only
+  # thing that exercises three operating systems. That happened three times in
+  # one afternoon: every push threw away the run that was proving the product's
+  # core claim, and the claim went unverified because someone kept working.
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 env:
