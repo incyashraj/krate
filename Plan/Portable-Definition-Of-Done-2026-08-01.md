@@ -24,13 +24,13 @@ Measured, not estimated:
 
 | | |
 |---|---|
-| Real third-party ports | **2** — hexyl (CLI, 2,400 lines), savings (GUI, 490 lines) |
+| Real third-party ports | **3** — hexyl (CLI), savings (GUI), ddh (filesystem) |
 | Capability keys | 34 |
 | Capabilities the analyzer can suggest | 18 of 18 requestable (13 more are default-granted) |
 | Widgets working on all three systems | 13 of 17 |
 | Languages the pipeline can build | 1 (Rust) |
 | **Bundles built on one OS and opened on another** | **0** |
-| Three-OS lanes green | **no** — Windows failing as of today |
+| Three-OS lanes green | **yes** — all three pass |
 
 The last two rows are the ones that matter. Everything else is progress; those
 two are the claim itself.
@@ -47,8 +47,9 @@ broke and a security advisory in the wasm engine went unnoticed.
 
 **Check:** the full matrix passes on macOS, Windows, and Linux, nightly.
 
-**Status: FAILING.** Windows fails `cargo test --workspace` as of 2026-08-01.
-The same commit passes on macOS locally, so it is genuinely platform-specific.
+**Status: GREEN as of 2026-08-01.** All three lanes pass. The Windows failure
+that surfaced on the first nightly run was a test fixture handing a Windows
+temp path to bash, which eats backslashes as escapes; fixed the same day.
 
 Nothing else on this list means anything until this is green. A portability
 claim with a red lane is not a claim, and every gate below is measured *per
@@ -92,10 +93,10 @@ is proven — never shrink.
 - [ ] something that talks to the network — unblocked: HTTPS works as of
       2026-08-01, see `Plan/HTTPS-Gap-2026-08-01.md`
 - [ ] something with a real database
-- [ ] something that reads and writes many files
+- [x] something that reads and writes many files (ddh, duplicate finder)
 - [ ] something genuinely medium — **5,000+ lines**
 
-**Status: 2 of 6.**
+**Status: 3 of 6.**
 
 Six is not magic. It is the smallest number where "it works on the shape I
 tried" stops being the likely explanation. Two ports of two shapes is a

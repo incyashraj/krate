@@ -48,11 +48,30 @@ The agent chose to add `store.kv` on its own so the budget persists across
 runs, which was verified, and marked it required — so withholding it correctly
 refuses the app.
 
-## What the two ports have in common
+## 3. ddh — a duplicate file finder
+
+| | |
+|---|---|
+| Source | [darakian/ddh](https://github.com/darakian/ddh), 756 lines, filesystem-heavy |
+| Result | 17,778 byte `.krate` |
+| Repair attempts | 0 |
+| Imports | 6 `krate:*`, **0 `wasi:*`** |
+
+Walks a directory, reads every file in it, and compares them. Correctly reports
+two identical 8,220-byte files as one shared instance and a third as unique.
+
+This is the shape that showed `fs.list` is a separate grant from `fs.read` --
+listing a directory and reading a file are different questions to put in front
+of a person, and the analyzer could not see the difference until this port.
+
+## What the ports have in common
 
 Both were the wrong shape for the tooling in some way, and each exposed a
 defect that was ours rather than the agent's:
 
+- **ddh** was handed `input/sample.txt` when the contract had promised it
+  `quick`. It handled `quick` correctly and takes directories, so it failed
+  after building, packing, and passing every other check.
 - **hexyl** invented `stdio::write` because the contract listed rules and
   prohibitions but not a single function. The SDK reference generator came out
   of that, and the byte-write it reached for turned out to be a genuine gap.
@@ -61,7 +80,7 @@ defect that was ours rather than the agent's:
   Rust-native toolkits. Then it failed its permission wall against `fs.write`,
   a capability a budget calculator never requests.
 
-The pattern across both, and across `random.bytes` before them: **the
+The pattern across all three, and across `random.bytes` before them: **the
 bottleneck has never been what the runtime can do. It has been what the tooling
 could see.** Three findings, three times the same shape.
 
