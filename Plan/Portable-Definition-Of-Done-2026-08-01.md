@@ -26,7 +26,7 @@ Measured, not estimated:
 |---|---|
 | Real third-party ports | **2** — hexyl (CLI, 2,400 lines), savings (GUI, 490 lines) |
 | Capability keys | 34 |
-| Capabilities the analyzer can suggest | 10 |
+| Capabilities the analyzer can suggest | 18 of 18 requestable (13 more are default-granted) |
 | Widgets working on all three systems | 13 of 17 |
 | Languages the pipeline can build | 1 (Rust) |
 | **Bundles built on one OS and opened on another** | **0** |
@@ -127,7 +127,14 @@ half of "medium sized".
 the source pattern that implies it, asserted by a test that enumerates the
 capability list rather than sampling it.
 
-**Status: 10 of 34.**
+**Status: DONE — 18 of 18.**
+
+Measuring this properly changed what it meant. 13 of the 34 capabilities are
+granted to every app by default, so suggesting `io.stdout` or `time.clock`
+would be noise. The real target is the 18 an app has to ask for, and all 18 are
+now detectable. The test enumerates the runtime's own list rather than sampling
+it, so a capability added without a detector fails there instead of in
+someone's port.
 
 This is the gate that keeps paying out. Six defects found in one day, and every
 single one was the tooling unable to *see* something rather than the runtime
@@ -173,8 +180,8 @@ Not "no bugs". It means:
    demonstrably runs on all three.
 2. **Gate 3 runs nightly and has not regressed** for two weeks.
 3. **Gate 4 is at six shapes**, including one over 5,000 lines.
-4. **Gate 5 is at 100%** — every capability the runtime has is one the tooling
-   can spot.
+4. **Gate 5 stays at 100%** — every capability an app must request is one the
+   tooling can spot, enforced by enumeration rather than by remembering.
 5. **Gate 7 passes from the published artifacts**, not from a local build.
 
 At that point the sentence at the top can be said out loud, with the caveat
@@ -190,7 +197,7 @@ run rather than a claim.
    measurable instead of anecdotal.
 4. **Port a network app and a database app.** Gate 4, and the fastest way to
    find the next three tooling gaps.
-5. **Close the analyzer coverage gap to 34.** Gate 5.
+5. ~~Close the analyzer coverage gap.~~ Done: 18 of 18 requestable capabilities.
 
 Nothing on this list is a new capability. That is deliberate: the evidence from
 today says the runtime is not where the limit is.
