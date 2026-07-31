@@ -530,6 +530,18 @@ jobs:
           path: ${{ runner.temp }}/checklist-${{ runner.os }}/
           if-no-files-found: warn
           retention-days: 14
+      # The bundle itself, not just the evidence about it. Every lane so far
+      # builds a .krate on one operating system and opens it on that same one,
+      # so "one file, any computer" -- the single most repeated sentence about
+      # this product -- has never actually been tested. Uploading the artifact
+      # is what lets the job below open each OS's bundle on every other OS.
+      - name: Upload the checklist bundle for cross-system opening
+        uses: actions/upload-artifact@v7
+        with:
+          name: bundle-${{ matrix.os }}
+          path: ${{ runner.temp }}/checklist-${{ runner.os }}/checklist.krate
+          if-no-files-found: error
+          retention-days: 7
       - name: Create a microphone-aware voice prompter on this host
         shell: bash
         run: |
@@ -863,6 +875,113 @@ jobs:
   # ──────────────────────────────────────────────
   # 9. Compare language-variant evidence across hosts
   # ──────────────────────────────────────────────
+  # ──────────────────────────────────────────────
+  # One file, three computers -- the actual claim
+  # ──────────────────────────────────────────────
+  #
+  # Every other lane builds a .krate on an operating system and opens it on
+  # that same operating system, which proves the toolchain works there and
+  # says nothing at all about portability. This takes the bundle each lane
+  # built and opens it on all three, so a bundle authored on Windows has to
+  # run on macOS and Linux and produce the same answer.
+  #
+  # If this job is red, the sentence "one file, any computer" is not true and
+  # nothing else on the board matters.
+  cross-system-bundles:
+    name: Open every bundle on ${{ matrix.os }}
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    runs-on: ${{ matrix.os }}
+    needs: full-test
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.91.1
+      - name: Install Linux audio development files
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev
+      - name: Cache cargo registry
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/
+          key: ${{ runner.os }}-cargo-crossbundle-${{ hashFiles('**/Cargo.lock') }}
+      - name: Build the runtime
+        run: cargo build --release -p krate-cli
+      - name: Download every operating system's bundle
+        uses: actions/download-artifact@v6
+        with:
+          pattern: bundle-*
+          path: bundles
+      - name: Open each bundle on this system
+        shell: bash
+        run: |
+          set -eu
+          exe=target/release/krate
+          [ "$RUNNER_OS" = "Windows" ] && exe=target/release/krate.exe
+
+          found=0
+          # Fresh each run: a leftover file from a retry would make the
+          # identity count disagree with the bundles actually opened.
+          : > "$RUNNER_TEMP/identities.txt"
+          for dir in bundles/bundle-*; do
+            [ -d "$dir" ] || continue
+            bundle="$dir/checklist.krate"
+            [ -f "$bundle" ] || { echo "no bundle in $dir" >&2; exit 1; }
+            origin="$(basename "$dir" | sed 's/^bundle-//')"
+            found=$((found + 1))
+
+            work="$RUNNER_TEMP/open-$origin"
+            rm -rf "$work" && mkdir -p "$work"
+            cp "$bundle" "$work/app.krate"
+
+            # A bundle built elsewhere has to run here, with its grants, and
+            # produce the same answer it produces at home.
+            out="$( cd "$work" && "$GITHUB_WORKSPACE/$exe" run app.krate --auto-grant -- quick 2>&1 )" || {
+              echo "bundle from $origin FAILED to open on $RUNNER_OS:" >&2
+              echo "$out" >&2
+              exit 1
+            }
+            case "$out" in
+              *saved*) echo "bundle from $origin opened and saved on $RUNNER_OS" ;;
+              *) echo "bundle from $origin ran on $RUNNER_OS but did not save: $out" >&2; exit 1 ;;
+            esac
+
+            # The same bundle must have the same identity on every system. A
+            # digest that changes with the reader means the file was rewritten
+            # in transit, and then it is not the same app any more.
+            id="$( cd "$work" && "$GITHUB_WORKSPACE/$exe" run app.krate --dump-caps \
+              | grep -A 1 '^Identity' | tail -1 | tr -d ' -' )"
+            if [ -z "$id" ]; then
+              echo "bundle from $origin reported no identity on $RUNNER_OS" >&2
+              exit 1
+            fi
+            echo "$origin $id" >> "$RUNNER_TEMP/identities.txt"
+            echo "  identity: $id"
+          done
+
+          if [ "$found" -lt 3 ]; then
+            echo "expected three bundles (one per operating system), found $found" >&2
+            exit 1
+          fi
+
+          # Three distinct bundles, so three distinct identities is expected --
+          # what would be wrong is two bundles reporting the same digest, which
+          # would mean the identity is not actually derived from the contents.
+          distinct="$(cut -d' ' -f2 "$RUNNER_TEMP/identities.txt" | sort -u | wc -l | tr -d ' ')"
+          if [ "$distinct" -ne "$found" ]; then
+            echo "expected $found distinct identities, got $distinct:" >&2
+            cat "$RUNNER_TEMP/identities.txt" >&2
+            exit 1
+          fi
+          echo "all $found bundles opened on $RUNNER_OS, each with its own identity"
+
   language-variant-evidence-compare:
     name: Language variant evidence compare
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
