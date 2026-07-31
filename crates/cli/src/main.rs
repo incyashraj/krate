@@ -1739,6 +1739,15 @@ fn verify_packed_app(output: &Path, manifest: &krate_manifest::Manifest) -> Resu
         anyhow::bail!("the ported app failed with all grants (exit {allow_exit})");
     }
 
+    // Nothing suitable to withhold: the app asks only for what every app gets
+    // plus its own window. Say so rather than inventing a capability it never
+    // requested and calling the result a failure.
+    let Some(gating) = gating else {
+        return Ok(
+            "(nothing to withhold: the app asks only for defaults and its window)".to_string(),
+        );
+    };
+
     let mut deny_args = vec!["run".to_string(), bundle.to_string_lossy().into_owned()];
     for capability in &manifest.capabilities {
         if capability.cap == gating {
@@ -2142,26 +2151,38 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         );
     }
 
-    let mut deny_args = vec!["run".to_string(), bundle_abs.to_string_lossy().into_owned()];
-    for cap in manifest.capabilities.iter() {
-        let name = cap.cap.clone();
-        if name == gating {
-            continue;
+    // An app that asks only for the defaults and its own window has no
+    // capability whose absence would stop it, so there is nothing to withhold.
+    // Record that honestly instead of testing against a capability it never
+    // requested -- which is what made a ported GUI app fail after building,
+    // packing, and passing its import check.
+    if let Some(gating) = gating.as_deref() {
+        let mut deny_args = vec!["run".to_string(), bundle_abs.to_string_lossy().into_owned()];
+        for cap in manifest.capabilities.iter() {
+            let name = cap.cap.clone();
+            if name == gating {
+                continue;
+            }
+            deny_args.push("--grant".to_string());
+            deny_args.push(name);
         }
-        deny_args.push("--grant".to_string());
-        deny_args.push(name);
+        deny_args.push("--".to_string());
+        deny_args.push(verify_arg.clone());
+        let deny_arg_refs: Vec<&str> = deny_args.iter().map(String::as_str).collect();
+        let deny_exit = run_self(verify_dir.path(), &deny_arg_refs)?;
+        if deny_exit != 5 {
+            anyhow::bail!("withholding {gating} should refuse with exit 5, got {deny_exit}");
+        }
+        steps.push(serde_json::json!({
+            "step": "verify",
+            "detail": format!("runs with all grants (exit 0), refuses without {gating} (exit 5)")
+        }));
+    } else {
+        steps.push(serde_json::json!({
+            "step": "verify",
+            "detail": "runs with all grants (exit 0); asks only for defaults and its own window, so there is no capability to withhold"
+        }));
     }
-    deny_args.push("--".to_string());
-    deny_args.push(verify_arg.clone());
-    let deny_arg_refs: Vec<&str> = deny_args.iter().map(String::as_str).collect();
-    let deny_exit = run_self(verify_dir.path(), &deny_arg_refs)?;
-    if deny_exit != 5 {
-        anyhow::bail!("withholding {gating} should refuse with exit 5, got {deny_exit}");
-    }
-    steps.push(serde_json::json!({
-        "step": "verify",
-        "detail": format!("runs with all grants (exit 0), refuses without {gating} (exit 5)")
-    }));
 
     // The transcript: request, app, requested permissions, verification.
     let requested: Vec<String> = manifest
@@ -2584,22 +2605,36 @@ fn build_component_captured(app_dir: &Path) -> std::result::Result<PathBuf, Stri
 /// The capability whose grant gates the app — the required one the verify step
 /// withholds to prove the wall. Prefers fs.write, then fs.read, else the first
 /// required capability.
-fn gating_capability(manifest: &krate_manifest::Manifest) -> String {
+/// The capability to withhold when proving an app's permission wall works.
+///
+/// Returns `None` when the app declares nothing suitable to withhold. That is a
+/// real state, not a failure: a GUI app whose required set is a window and its
+/// own output has no capability that gates it, because the runtime grants
+/// stdout and stdin by default and refusing the window is refusing the app.
+///
+/// It used to fall back to `fs.write` regardless. A ported budget app that
+/// never touches a file was then tested by withholding a capability it had
+/// never asked for, which of course did not refuse it, and the port failed at
+/// the last step after building and packaging correctly.
+fn gating_capability(manifest: &krate_manifest::Manifest) -> Option<String> {
     let required: Vec<String> = manifest
         .capabilities
         .iter()
         .filter(|c| c.required)
         .map(|c| c.cap.clone())
         .collect();
+    // Filesystem access first: it is the clearest thing for a person reading
+    // the evidence to understand being withheld.
     for prefer in ["fs.write", "fs.read"] {
         if let Some(cap) = required.iter().find(|c| c.starts_with(prefer)) {
-            return cap.clone();
+            return Some(cap.clone());
         }
     }
+    // Otherwise any capability that is not granted by default and is not the
+    // window itself, since withholding the window just closes the app.
     required
         .into_iter()
         .find(|c| !c.starts_with("io.") && !c.starts_with("ui.window"))
-        .unwrap_or_else(|| "fs.write".to_string())
 }
 
 /// Create the data directories the app expects under the verify dir, so a
@@ -4600,6 +4635,61 @@ mod create_tests {
     use krate_author::AppKind;
     use krate_manifest::Capability;
     use std::path::Path;
+
+    #[test]
+    fn an_app_with_nothing_to_withhold_is_not_tested_against_a_capability_it_never_asked_for() {
+        fn manifest(caps: &str) -> krate_manifest::Manifest {
+            krate_manifest::Manifest::parse(&format!(
+                "[app]\nid = \"dev.krate.budget\"\nname = \"Budget\"\n\
+                 version = \"0.1.0\"\nentry = \"code.wasm\"\n\
+                 world = \"krate:app/gui@0.2.0\"\n{caps}"
+            ))
+            .expect("manifest parses")
+        }
+
+        fn entry(cap: &str) -> String {
+            format!("\n[[capabilities]]\ncap = \"{cap}\"\nrationale = \"t\"\nrequired = true\n")
+        }
+
+        // A ported GUI app: a window and its own output, nothing else. This
+        // used to fall back to `fs.write`, so the permission wall was proven by
+        // withholding something the app had never requested -- which of course
+        // did not refuse it, and the port failed after building and packing
+        // correctly.
+        let gui = manifest(&format!(
+            "{}{}{}",
+            entry("ui.window:create"),
+            entry("io.stdout"),
+            entry("io.args")
+        ));
+        assert_eq!(
+            super::gating_capability(&gui),
+            None,
+            "an app asking only for defaults and its window has nothing to withhold"
+        );
+
+        // An app that does touch files still gets a real gate.
+        let writer = manifest(&format!(
+            "{}{}",
+            entry("ui.window:create"),
+            entry("fs.write:./data/**")
+        ));
+        assert_eq!(
+            super::gating_capability(&writer).as_deref(),
+            Some("fs.write:./data/**")
+        );
+
+        // And so does one whose only real ask is storage.
+        let saver = manifest(&format!(
+            "{}{}",
+            entry("ui.window:create"),
+            entry("store.kv")
+        ));
+        assert_eq!(
+            super::gating_capability(&saver).as_deref(),
+            Some("store.kv")
+        );
+    }
 
     #[test]
     fn the_contract_hands_the_agent_the_api_it_must_write_against() {
