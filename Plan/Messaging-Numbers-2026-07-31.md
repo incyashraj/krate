@@ -30,10 +30,10 @@ the unit is one they already feel.
 ### The app comparison, and why Reminders beats Obsidian
 
 > **A Krate checklist app takes 925 times less space than the Reminders app on
-> your Mac.** 12,759 bytes against 11.8 MB, both measured.
+> your Mac.** 12,759 bytes against 11.2 MB, both measured.
 
 The instinct was to say "reminder apps are over 100 MB". They are not -- Apple's
-Reminders is 11.8 MB, checkable in ten seconds by anyone with a Mac, and one
+Reminders is 11.2 MB, checkable in ten seconds by anyone with a Mac, and one
 wrong number makes every right number suspect.
 
 But the honest version is *better*, not worse. Reminders is one of the leanest
