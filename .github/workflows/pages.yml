@@ -76,6 +76,9 @@ jobs:
           # Krate Cloud, served under /cloud/. Listings are generated from the
           # .krate files themselves, so a listing cannot describe an app
           # differently from what the file actually asks for.
+          # The page a non-technical person lands on after "I received one".
+          mkdir -p _site/open
+          cp docs/open/index.html _site/open/index.html
           mkdir -p _site/cloud
           cp docs/cloud/index.html _site/cloud/index.html
           cp docs/landing/*.png _site/cloud/ 2>/dev/null || true
