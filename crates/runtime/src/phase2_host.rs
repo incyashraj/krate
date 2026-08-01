@@ -36,6 +36,12 @@ pub struct Phase2Host<'a> {
     database: Option<crate::sql_host::AppDatabase>,
     /// The app's own secrets, encrypted at rest.
     secrets: Option<crate::secret_host::AppSecrets>,
+    /// Files the person chose in a dialog this run.
+    ///
+    /// Shared with the GUI host, which is what shows the dialog: the picker
+    /// puts a path in, and `open_chosen` takes it out. Empty for a CLI app,
+    /// which has no window to show a dialog from.
+    chosen_files: std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>>,
     /// Whether this run may draw random bytes.
     ///
     /// A plain flag rather than an `Option` holding state: entropy comes from
@@ -62,6 +68,7 @@ impl<'a> Phase2Host<'a> {
             store: None,
             database: None,
             secrets: None,
+            chosen_files: Default::default(),
             random_granted: false,
             default_http_timeout_millis,
         }
@@ -456,6 +463,31 @@ impl fs::files::Host for Phase2Host<'_> {
             Err(err) => return Ok(Err(bridge::fs_error_to_wit(err))),
         };
 
+        Ok(Ok(self.resources.insert_file(handle)?))
+    }
+
+    fn open_chosen(
+        &mut self,
+        token: String,
+        mode: fs::types::OpenMode,
+    ) -> wasmtime::Result<Result<Resource<fs::files::File>, fs::types::FsError>> {
+        // The token is the only way in. An app cannot name a path here, so it
+        // cannot open a file it was never handed -- and a token from a previous
+        // run resolves to nothing, because the store lives and dies with the
+        // run that issued it.
+        let Some(path) = self
+            .chosen_files
+            .borrow()
+            .resolve(&token)
+            .map(Path::to_path_buf)
+        else {
+            return Ok(Err(fs::types::FsError::NotFound));
+        };
+        let mode = bridge::open_mode_from_wit(mode);
+        let handle = match self.dispatcher().fs_open_chosen(&path, mode) {
+            Ok(handle) => handle,
+            Err(err) => return Ok(Err(bridge::fs_error_to_wit(err))),
+        };
         Ok(Ok(self.resources.insert_file(handle)?))
     }
 

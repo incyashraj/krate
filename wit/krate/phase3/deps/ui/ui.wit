@@ -323,6 +323,34 @@ interface dialog {
   message: func(window: u64, title: string, body: string) -> result<_, ui-error>;
   /// Ask a yes/no question and return true for yes.
   confirm: func(window: u64, title: string, body: string) -> result<bool, ui-error>;
+
+  /// Ask the person to choose a file, and return what they chose.
+  ///
+  /// The one grant that is decided while the app runs rather than before it.
+  /// Every other capability comes from a list somebody reads first; this one
+  /// comes from a click, and the click *is* the grant -- choosing a file in a
+  /// native dialog says "this app may have this file" more directly and more
+  /// comprehensibly than any manifest line.
+  ///
+  /// So it returns a name and a token, never a path. The app can open what it
+  /// was handed and cannot learn where the file lives, cannot walk to its
+  /// folder, and cannot come back for it on a later run. `ui.dialog:file-open`
+  /// buys the right to ask; the person's click decides the answer.
+  ///
+  /// `none` means they cancelled, which is a normal outcome and not an error.
+  record chosen-file {
+    /// The file's own name, for showing in the app. Never a path.
+    name: string,
+    /// An opaque token for this run only. Pass it to `fs.files.open-chosen`.
+    token: string,
+  }
+
+  /// Show the system's open-file dialog.
+  ///
+  /// `filter` is a comma-separated extension list such as `"png,jpg"`, or an
+  /// empty string for any file. It is a hint to the dialog, not a rule the
+  /// runtime enforces -- what the person picks is what the app gets.
+  open-file: func(window: u64, title: string, filter: string) -> result<option<chosen-file>, ui-error>;
 }
 
 /// Clipboard calls.

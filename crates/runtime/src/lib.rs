@@ -27,6 +27,7 @@ pub mod uapi;
 pub mod uapi_dispatch;
 
 mod audio_capture;
+pub mod chosen_files;
 pub mod desktop_host;
 pub mod embed;
 #[cfg(feature = "phase2-bindings")]

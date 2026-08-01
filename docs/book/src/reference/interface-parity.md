@@ -21,7 +21,7 @@ lays out on all three systems, so the widget table says it works, and
 | `gfx.gpu3d` | 2 | **not implemented** |
 | `speech.transcription` | 16 | partly — 5 of 16 refuse |
 | `ui.clipboard` | 2 | **works** |
-| `ui.dialog` | 2 | **not implemented** |
+| `ui.dialog` | 3 | **not implemented** |
 | `ui.events` | 2 | **works** |
 | `ui.launcher` | 1 | **works** |
 | `ui.menu` | 1 | **not implemented** |

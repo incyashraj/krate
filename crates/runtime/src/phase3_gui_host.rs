@@ -37,6 +37,12 @@ const HEADLESS_IDLE_WAIT_LIMIT: u32 = 8;
 pub struct Phase3GuiHost {
     runtime: Phase3UiRuntime,
     windows: Vec<WindowId>,
+    /// Files the person chose in a dialog this run.
+    ///
+    /// The picker writes here and `fs.open-chosen` reads, so the two halves of
+    /// one grant share a store that lives and dies with the run. An app cannot
+    /// carry a token across runs because this is gone when the run ends.
+    chosen_files: std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>>,
     /// Host-side vertical scroll offsets per (window, Scroll widget).
     /// Scrolling never involves the guest: wheel input adjusts these and
     /// re-lowers placements, matching native platform feel.
@@ -67,6 +73,7 @@ impl Phase3GuiHost {
         let runtime = Phase3UiRuntime::try_with_host_adapter_mode(guard, mode)?;
         Ok(Self {
             runtime,
+            chosen_files: Default::default(),
             windows: Vec::new(),
             scroll_offsets: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             native_text: std::cell::RefCell::new(std::collections::BTreeMap::new()),
@@ -880,6 +887,34 @@ impl ui::notify::Host for Phase3GuiHost {
 }
 
 impl ui::dialog::Host for Phase3GuiHost {
+    /// Show the system's open-file dialog and remember what was chosen.
+    ///
+    /// The app gets a name and a token, never a path. That is what makes the
+    /// click a grant rather than a hole: it can open the one file the person
+    /// picked, and cannot read its siblings, walk to its folder, or store the
+    /// location for a later run.
+    fn open_file(
+        &mut self,
+        _window: u64,
+        _title: String,
+        _filter: String,
+    ) -> wasmtime::Result<Result<Option<ui::dialog::ChosenFile>, ui::types::UiError>> {
+        let chosen = match choose_file_on_host() {
+            Ok(Some(path)) => path,
+            // Cancelling is a normal answer, not a failure.
+            Ok(None) => return Ok(Ok(None)),
+            Err(err) => return Ok(Err(ui::types::UiError::Unsupported(err))),
+        };
+
+        let name = crate::chosen_files::ChosenFiles::display_name(&chosen);
+        let Some(token) = self.chosen_files.borrow_mut().remember(chosen) else {
+            return Ok(Err(ui::types::UiError::Unsupported(
+                "too many files chosen in one run".to_string(),
+            )));
+        };
+        Ok(Ok(Some(ui::dialog::ChosenFile { name, token })))
+    }
+
     fn message(
         &mut self,
         _window: u64,
@@ -1213,6 +1248,23 @@ fn match_error(error: SpeechError) -> speech::transcription::MatchError {
         SpeechError::Unsupported(_) => speech::transcription::MatchError::Unsupported,
         SpeechError::Inference(_) => speech::transcription::MatchError::Inference,
     }
+}
+
+/// Ask the operating system to show its open-file dialog.
+///
+/// macOS has a real `NSOpenPanel`. Windows and Linux do not have one wired up
+/// yet, and they say so rather than pretending -- a picker that works on the
+/// machine an app was built on and fails when it is shared is the exact failure
+/// Krate exists to remove, so refusing loudly is the honest state until all
+/// three can show one.
+#[cfg(target_os = "macos")]
+fn choose_file_on_host() -> Result<Option<std::path::PathBuf>, String> {
+    krate_adapter_macos::choose_document().map_err(|err| err.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn choose_file_on_host() -> Result<Option<std::path::PathBuf>, String> {
+    Err("the file picker is not implemented on this system yet".to_string())
 }
 
 #[cfg(test)]

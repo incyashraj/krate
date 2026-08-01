@@ -6,6 +6,7 @@
 
 use crate::uapi::{FsCall, IoCall, LocaleCall, NetCall, TimeCall, UapiCall, UapiError, UapiGuard};
 use krate_adapter_common::net::parse_url_endpoint;
+use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenMode {
@@ -329,6 +330,31 @@ impl<'a> UapiDispatcher<'a> {
     pub fn log(&self, level: &str, message: &str) -> DispatchResult<()> {
         self.check(&UapiCall::Io(IoCall::Log))?;
         self.adapter.io().log(level, message).map_err(Into::into)
+    }
+
+    /// Open a file the person chose in a dialog, without a path check.
+    ///
+    /// Deliberately skips the `fs.read` / `fs.write` globs, and that is the
+    /// point rather than a hole: the person picked this exact file in a native
+    /// dialog, which is a more direct grant than any glob a manifest could
+    /// carry. Checking it against the globs would make the picker useless --
+    /// the chosen file is by definition outside whatever the app declared.
+    ///
+    /// The safety is upstream: the caller only reaches this with a path that
+    /// came out of this run's own token store, so an app cannot name a file it
+    /// was never offered. There is no path argument here for exactly that
+    /// reason.
+    pub fn fs_open_chosen(
+        &self,
+        path: &Path,
+        mode: OpenMode,
+    ) -> std::result::Result<FileHandle, FsDispatchError> {
+        let path = path.to_string_lossy().into_owned();
+        self.adapter
+            .fs()
+            .open(&path, mode)
+            .map(|handle| handle.with_opened_file(&path, mode))
+            .map_err(Into::into)
     }
 
     pub fn fs_open(
