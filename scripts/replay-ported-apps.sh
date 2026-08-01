@@ -116,6 +116,10 @@ check "mdview" "quick" "rendered:yes"
 # only nightly check that a guest's draw calls reach real pixels on all three
 # systems.
 check "chart" "quick" "drawn:yes"
+# The first app that moves on its own: sixty frames of time-based physics
+# through the redraw path. `animated:yes` failing means an app can no longer
+# drive its own frames, which is the difference between a viewer and a game.
+check "bounce" "quick" "animated:yes"
 # A network app: fetches feeds over HTTPS with per-host grants.
 #
 # Deliberately not run here. Its work is a real HTTPS request, so a check that

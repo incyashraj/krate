@@ -2707,11 +2707,22 @@ imports in, and the app is rejected. So never use:\n\
 Ordinary in-memory std is fine: `String`, `format!`, `Vec`, `HashMap`, and\n\
 iterators do not reach the operating system and do not leak.\n\
 \n\
-One exception, and it is sharp: in a `#![no_std]` guest, `.to_string()` and\n\
-`String::from` route through std's out-of-memory handler, which pulls the whole\n\
-`wasi:*` surface in. Two widget labels took a clean component from zero imports\n\
-to thirty-three. Copy `pure_string` from the in-repo samples -- it allocates the\n\
-bytes directly -- and use it for every literal that becomes a `String`. Keep\n\
+The sharp exception is **anything that can panic**. A reachable panic makes\n\
+std's failure path reachable, and that path formats a message, writes it to\n\
+stderr, and exits -- which is `wasi:cli`, `wasi:filesystem`, and `wasi:io`\n\
+arriving together. It is all-or-nothing: one panic site takes a component from\n\
+zero wasi imports to thirty-three.\n\
+\n\
+The two that catch people, both measured:\n\
+\n\
+- **Indexing.** `buf[i]` carries a bounds check that can panic, even when the\n\
+  index is provably fine. Use `.get(i)` / `.get_mut(i)` and handle the `None`.\n\
+- **`.to_string()` and `format!`** on a literal, which route through the\n\
+  allocator's out-of-memory handler. Copy `pure_string` from the in-repo\n\
+  samples; it allocates the bytes directly.\n\
+\n\
+When a component that looks clean still imports `wasi:*`, do not re-read the\n\
+Krate calls -- look for the nearest `[` and the nearest `to_string`. Keep\n\
 `panic = \"abort\"` and `opt-level = \"s\"` in the release profile, which is what\n\
 stops std's unwinding and formatting machinery dragging its own I/O in.\n\
 \n\
