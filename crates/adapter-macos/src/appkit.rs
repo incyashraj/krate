@@ -1780,6 +1780,20 @@ mod platform {
                         }
                         control_view(view)
                     }
+                    WidgetKind::Canvas if placement.pixels().is_some() => {
+                        // A canvas someone has drawn on shows its raster the
+                        // same way an image widget does. An untouched canvas
+                        // falls through to the container arm below.
+                        let view = NSImageView::new(mtm);
+                        view.setFrame(frame);
+                        view.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
+                        if let Some(pixels) = placement.pixels() {
+                            if let Some(image) = ns_image_from_rgba(pixels) {
+                                view.setImage(Some(&image));
+                            }
+                        }
+                        control_view(view)
+                    }
                     WidgetKind::TreeView | WidgetKind::Canvas => {
                         // Containers whose children are separate placements, or
                         // whose contents the guest draws itself. Lower as an

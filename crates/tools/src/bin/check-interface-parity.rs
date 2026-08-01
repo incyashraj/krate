@@ -110,9 +110,11 @@ impl Report {
             "An interface that is declared but not implemented refuses every call with\n\
              `Unsupported`. That is the honest failure -- nothing pretends to work -- but a\n\
              person only finds out after building on it, which is why this table exists.\n\n\
-             Read it alongside the widget table. They answer different questions: `canvas`\n\
-             lays out on all three systems, so the widget table says it works, and\n\
-             `gfx.canvas2d` refuses every call, so nothing can draw into it.\n\n",
+             Read it alongside the widget table. They answer different questions: the\n\
+             widget table says a kind lays out and draws, this one says whether the calls\n\
+             behind an interface do anything. For a while `canvas` laid out everywhere\n\
+             while `gfx.canvas2d` refused every call -- a widget that existed and could\n\
+             not be drawn into. That pair reads `works` on both tables now.\n\n",
         );
 
         out.push_str("| Interface | Functions | State |\n");

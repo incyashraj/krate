@@ -21,6 +21,7 @@ use std::sync::Arc;
 use crate::{
     audio_capture::{AudioCaptureRuntime, CaptureConfig, CaptureError, CaptureSampleFormat},
     audio_playback::{AudioPlaybackRuntime, PlaybackConfig, PlaybackError, PlaybackSampleFormat},
+    canvas_raster::{pack_color, CanvasSurface},
     phase3_gui_bindings::krate::{audio, gfx, speech, ui},
     phase3_ui::{Phase3HostUiMode, Phase3UiDispatcher, Phase3UiRuntime, UiDispatchError},
     speech_transcription::{LocalSpeechRuntime, SpeechError},
@@ -72,6 +73,13 @@ pub struct Phase3GuiHost {
     /// that record's type and stop every GUI app already built from
     /// instantiating at all.
     images: std::cell::RefCell<std::collections::BTreeMap<(WindowId, WidgetId), Arc<ImagePixels>>>,
+    /// Bound 2D canvases, keyed by the id handed to the guest. Each remembers
+    /// which widget it publishes to; the pixels land in [`Self::images`] and
+    /// travel the image widget's proven path to all three systems.
+    canvases:
+        std::cell::RefCell<std::collections::BTreeMap<u64, (WindowId, WidgetId, CanvasSurface)>>,
+    /// The next canvas id to hand out; ids are never reused within a run.
+    next_canvas_id: std::cell::Cell<u64>,
     /// Native microphone streams owned by this one sandboxed app session.
     audio_capture: AudioCaptureRuntime,
     /// Native speaker streams owned by this one sandboxed app session.
@@ -93,6 +101,8 @@ impl Phase3GuiHost {
             headless: matches!(mode, Phase3HostUiMode::HeadlessDraft),
             idle_waits: std::cell::Cell::new(0),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            canvases: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            next_canvas_id: std::cell::Cell::new(1),
             audio_capture: AudioCaptureRuntime::default(),
             audio_playback: AudioPlaybackRuntime::default(),
             speech: LocalSpeechRuntime::default(),
@@ -419,6 +429,64 @@ fn dispatch_error_to_ui_error(err: UiDispatchError) -> ui::types::UiError {
 impl Phase3GuiHost {
     /// Resolve a guest-supplied raw window id against the windows this
     /// component created. Guests cannot reference windows they do not own.
+    /// The laid-out size of a canvas widget, in logical pixels.
+    fn canvas_widget_rect(
+        &self,
+        window: WindowId,
+        widget: WidgetId,
+    ) -> Result<(f32, f32), gfx::types::GfxError> {
+        let dispatcher = self.dispatcher();
+        let tree = match dispatcher.widget_tree(window) {
+            Ok(Some(tree)) => tree,
+            _ => return Err(gfx::types::GfxError::InvalidTarget),
+        };
+        match tree.nodes().iter().find(|(id, _)| **id == widget) {
+            Some((_, node)) if node.kind == WidgetKind::Canvas => {}
+            Some(_) => {
+                return Err(gfx::types::GfxError::Unsupported(
+                    "canvas2d binds to a widget of kind canvas".to_string(),
+                ))
+            }
+            None => return Err(gfx::types::GfxError::InvalidTarget),
+        }
+        let record = match dispatcher.window(window) {
+            Ok(Some(record)) => record,
+            _ => return Err(gfx::types::GfxError::InvalidTarget),
+        };
+        let viewport =
+            match LayoutViewport::new(record.size.width as f32, record.size.height as f32) {
+                Ok(viewport) => viewport,
+                Err(error) => return Err(gfx::types::GfxError::Platform(error.to_string())),
+            };
+        let layout = match dispatcher.compute_layout(window, viewport) {
+            Ok(layout) => layout,
+            Err(error) => return Err(gfx::types::GfxError::Platform(error.to_string())),
+        };
+        match absolute_rect(&tree, &layout, widget) {
+            Some(rect) => Ok((rect.width, rect.height)),
+            None => Err(gfx::types::GfxError::InvalidTarget),
+        }
+    }
+
+    /// Push a canvas's pixels through the image path and re-lower.
+    fn publish_canvas(&self, canvas: u64) -> Result<(), gfx::types::GfxError> {
+        let (window, widget, image) = {
+            let canvases = self.canvases.borrow();
+            let Some((window, widget, surface)) = canvases.get(&canvas) else {
+                return Err(gfx::types::GfxError::InvalidTarget);
+            };
+            let image = surface
+                .to_image()
+                .map_err(|error| gfx::types::GfxError::Platform(error.to_string()))?;
+            (*window, *widget, image)
+        };
+        self.images
+            .borrow_mut()
+            .insert((window, widget), Arc::new(image));
+        self.sync_native_widgets(window)
+            .map_err(|error| gfx::types::GfxError::Platform(error.to_string()))
+    }
+
     fn window_id(&self, raw: u64) -> Result<WindowId, ui::types::UiError> {
         self.windows
             .iter()
@@ -1085,26 +1153,100 @@ impl gfx::types::Host for Phase3GuiHost {}
 impl gfx::canvas2d::Host for Phase3GuiHost {
     fn bind(
         &mut self,
-        _window: u64,
-        _widget: u64,
+        window: u64,
+        widget: u64,
     ) -> wasmtime::Result<Result<u64, gfx::types::GfxError>> {
-        Ok(Err(gfx_unsupported()))
+        let window_id = match self.window_id(window) {
+            Ok(id) => id,
+            Err(_) => return Ok(Err(gfx::types::GfxError::InvalidTarget)),
+        };
+        let Ok(widget_id) = WidgetId::new(widget) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+
+        // The canvas takes the widget's laid-out size, so what the app draws
+        // is what the layout gave it -- the same rect every host will show.
+        let rect = match self.canvas_widget_rect(window_id, widget_id) {
+            Ok(rect) => rect,
+            Err(error) => return Ok(Err(error)),
+        };
+        let surface = match CanvasSurface::new(rect.0.max(1.0) as u32, rect.1.max(1.0) as u32) {
+            Ok(surface) => surface,
+            Err(error) => return Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
+        };
+
+        let canvas_id = self.next_canvas_id.get();
+        self.next_canvas_id.set(canvas_id.saturating_add(1));
+        self.canvases
+            .borrow_mut()
+            .insert(canvas_id, (window_id, widget_id, surface));
+        Ok(Ok(canvas_id))
     }
 
     fn clear(
         &mut self,
-        _canvas: u64,
-        _color: gfx::types::Color,
+        canvas: u64,
+        color: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        Ok(Err(gfx_unsupported()))
+        {
+            let mut canvases = self.canvases.borrow_mut();
+            let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+                return Ok(Err(gfx::types::GfxError::InvalidTarget));
+            };
+            surface.clear(pack_color(color.r, color.g, color.b, color.a));
+        }
+        Ok(self.publish_canvas(canvas))
     }
 
     fn submit(
         &mut self,
-        _canvas: u64,
-        _commands: Vec<gfx::types::DrawCommand>,
+        canvas: u64,
+        commands: Vec<gfx::types::DrawCommand>,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        Ok(Err(gfx_unsupported()))
+        {
+            let mut canvases = self.canvases.borrow_mut();
+            let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+                return Ok(Err(gfx::types::GfxError::InvalidTarget));
+            };
+            for command in &commands {
+                match command {
+                    gfx::types::DrawCommand::FillRect(fill) => {
+                        surface.fill_rect(
+                            fill.rect.x,
+                            fill.rect.y,
+                            fill.rect.width,
+                            fill.rect.height,
+                            pack_color(fill.color.r, fill.color.g, fill.color.b, fill.color.a),
+                        );
+                    }
+                    gfx::types::DrawCommand::StrokeRect(stroke) => {
+                        surface.stroke_rect(
+                            stroke.rect.x,
+                            stroke.rect.y,
+                            stroke.rect.width,
+                            stroke.rect.height,
+                            stroke.width,
+                            pack_color(
+                                stroke.color.r,
+                                stroke.color.g,
+                                stroke.color.b,
+                                stroke.color.a,
+                            ),
+                        );
+                    }
+                    gfx::types::DrawCommand::Text(run) => {
+                        surface.text(
+                            &run.text,
+                            run.origin.x,
+                            run.origin.y,
+                            run.font_size,
+                            pack_color(run.color.r, run.color.g, run.color.b, run.color.a),
+                        );
+                    }
+                }
+            }
+        }
+        Ok(self.publish_canvas(canvas))
     }
 }
 
@@ -1595,6 +1737,113 @@ mod tests {
             .expect("set_root call")
             .expect("an image widget may be the root");
         (host, window, widget)
+    }
+
+    /// A window with one canvas widget as its root.
+    fn host_with_canvas_widget() -> (Phase3GuiHost, u64, u64) {
+        use ui::window::Host as _;
+        let mut host = headless_host();
+        let window = host
+            .create(
+                "sketch".to_string(),
+                ui::types::WindowSize {
+                    width: 200,
+                    height: 200,
+                },
+            )
+            .expect("create call")
+            .expect("a window");
+        let node = wit_node(ui::types::WidgetKind::Canvas, None);
+        let widget = node.id;
+        ui::tree::Host::set_root(&mut host, window, node)
+            .expect("set_root call")
+            .expect("a canvas may be the root");
+        (host, window, widget)
+    }
+
+    #[test]
+    fn canvas_commands_become_pixels_on_the_widget() {
+        // The whole gfx.canvas2d path: bind, clear, draw, and the raster lands
+        // in the same per-widget image store every host already reads. If this
+        // holds, all three systems show the drawing without any adapter code
+        // of their own.
+        let (mut host, window, widget) = host_with_canvas_widget();
+        let canvas = gfx::canvas2d::Host::bind(&mut host, window, widget)
+            .expect("bind call")
+            .expect("a canvas widget binds");
+
+        gfx::canvas2d::Host::clear(
+            &mut host,
+            canvas,
+            gfx::types::Color {
+                r: 0.0,
+                g: 0.0,
+                b: 1.0,
+                a: 1.0,
+            },
+        )
+        .expect("clear call")
+        .expect("clear succeeds");
+
+        gfx::canvas2d::Host::submit(
+            &mut host,
+            canvas,
+            vec![gfx::types::DrawCommand::FillRect(
+                gfx::types::FillRectCommand {
+                    rect: gfx::types::Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 10.0,
+                        height: 10.0,
+                    },
+                    color: gfx::types::Color {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    },
+                },
+            )],
+        )
+        .expect("submit call")
+        .expect("submit succeeds");
+
+        let id = host.window_id(window).expect("window");
+        let widget_id = WidgetId::new(widget).expect("widget");
+        let images = host.images.borrow();
+        let image = images
+            .get(&(id, widget_id))
+            .expect("the raster must be published for this widget");
+        // Top-left corner: the red fill. Far corner: the blue clear.
+        assert_eq!(&image.rgba[0..4], &[255, 0, 0, 255]);
+        let last = image.rgba.len() - 4;
+        assert_eq!(&image.rgba[last..], &[0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn a_canvas_refuses_to_bind_to_a_button() {
+        use ui::window::Host as _;
+        let mut host = headless_host();
+        let window = host
+            .create(
+                "app".to_string(),
+                ui::types::WindowSize {
+                    width: 100,
+                    height: 100,
+                },
+            )
+            .expect("create call")
+            .expect("a window");
+        let node = wit_node(ui::types::WidgetKind::Button, None);
+        let widget = node.id;
+        ui::tree::Host::set_root(&mut host, window, node)
+            .expect("set_root call")
+            .expect("a button root");
+
+        let err = gfx::canvas2d::Host::bind(&mut host, window, widget)
+            .expect("bind call")
+            .expect_err("a button is not a canvas");
+        assert!(matches!(err, gfx::types::GfxError::Unsupported(_)));
     }
 
     #[test]

@@ -3,23 +3,25 @@
 Generated from the runtime host, not written by hand. Run
 `cargo run -p krate-tools --bin check-interface-parity -- --write` to refresh it.
 
-**9 of 14 declared interfaces are fully implemented. 3 are declared and do nothing yet.**
+**10 of 14 declared interfaces are fully implemented. 2 are declared and do nothing yet.**
 
 An interface that is declared but not implemented refuses every call with
 `Unsupported`. That is the honest failure -- nothing pretends to work -- but a
 person only finds out after building on it, which is why this table exists.
 
-Read it alongside the widget table. They answer different questions: `canvas`
-lays out on all three systems, so the widget table says it works, and
-`gfx.canvas2d` refuses every call, so nothing can draw into it.
+Read it alongside the widget table. They answer different questions: the
+widget table says a kind lays out and draws, this one says whether the calls
+behind an interface do anything. For a while `canvas` laid out everywhere
+while `gfx.canvas2d` refused every call -- a widget that existed and could
+not be drawn into. That pair reads `works` on both tables now.
 
 | Interface | Functions | State |
 | --- | --- | --- |
 | `audio.capture` | 4 | **works** |
 | `audio.playback` | 4 | **works** |
-| `gfx.canvas2d` | 3 | **not implemented** |
+| `gfx.canvas2d` | 3 | **works** |
 | `gfx.gpu3d` | 2 | **not implemented** |
-| `speech.transcription` | 20 | **works** |
+| `speech.transcription` | 23 | **works** |
 | `ui.clipboard` | 2 | **works** |
 | `ui.dialog` | 3 | **works** |
 | `ui.events` | 2 | **works** |

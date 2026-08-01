@@ -59,6 +59,10 @@ pub fn drawn_kind(kind: WidgetKind) -> bool {
             | WidgetKind::ListView
             | WidgetKind::TreeView
             | WidgetKind::Image
+            // Canvas joined when gfx.canvas2d became real: its pixels arrive
+            // exactly like an image widget's, drawn beneath any children the
+            // canvas positions.
+            | WidgetKind::Canvas
     )
 }
 
@@ -392,13 +396,19 @@ pub fn paint_placements_bitmap(
                     line_y += line_h;
                 }
             }
-            WidgetKind::Image => {
-                // A widget with no picture yet -- a viewer before a file is
-                // chosen -- draws its frame and nothing else, rather than
-                // leaving whatever was behind it on screen.
-                if let Some(clipped) = clip_fill((px, py, pw, ph)) {
-                    fill_rect(buffer, width, height, clipped, COLOR_IMAGE_BACKDROP)
-                };
+            WidgetKind::Image | WidgetKind::Canvas => {
+                // An image widget with no picture yet -- a viewer before a
+                // file is chosen -- draws its dark frame rather than leaving
+                // whatever was behind it on screen. A canvas is different: it
+                // doubled as a plain layout container long before gfx.canvas2d
+                // existed, so an undrawn canvas must stay invisible or every
+                // app that positions children with one grows a dark slab.
+                let backdrop = placement.kind == WidgetKind::Image || placement.pixels.is_some();
+                if backdrop {
+                    if let Some(clipped) = clip_fill((px, py, pw, ph)) {
+                        fill_rect(buffer, width, height, clipped, COLOR_IMAGE_BACKDROP)
+                    }
+                }
                 if let Some(image) = placement.pixels.as_deref() {
                     draw_image(buffer, width, height, (px, py, pw, ph), image, clip_px);
                 }
@@ -672,6 +682,32 @@ mod tests {
         assert_eq!(buffer[15 * 30 + 15], 0xFFFF_0000);
     }
 
+    #[test]
+    fn an_undrawn_canvas_stays_invisible_and_a_drawn_one_paints() {
+        // Canvas was a layout container before gfx.canvas2d existed. Apps
+        // position children with one and expect it to paint nothing; giving
+        // every canvas the image backdrop would put a dark slab behind them.
+        let mut buffer = vec![0u32; 30 * 30];
+        let mut p = placement(WidgetKind::Canvas, "", 0.0, 0.0, 30.0, 30.0);
+        p.pixels = None;
+        paint_placements_bitmap(&mut buffer, 30, 30, 1.0, &[p], PaintInteraction::default());
+        assert_eq!(
+            buffer[15 * 30 + 15],
+            COLOR_BACKGROUND,
+            "undrawn canvas is invisible"
+        );
+
+        let mut buffer = vec![0u32; 30 * 30];
+        let mut p = placement(WidgetKind::Canvas, "", 0.0, 0.0, 30.0, 30.0);
+        p.pixels = Some(std::sync::Arc::new(solid(30, 30, [0, 0, 255, 255])));
+        paint_placements_bitmap(&mut buffer, 30, 30, 1.0, &[p], PaintInteraction::default());
+        assert_eq!(
+            buffer[15 * 30 + 15],
+            0xFF00_00FF,
+            "drawn canvas shows its raster"
+        );
+    }
+
     fn placement(kind: WidgetKind, label: &str, x: f32, y: f32, w: f32, h: f32) -> WidgetPlacement {
         WidgetPlacement {
             widget: crate::ui::WidgetId::new(1).unwrap(),
@@ -831,7 +867,11 @@ mod tests {
             assert!(drawn_kind(kind), "{kind:?} must be drawable");
         }
         assert!(!drawn_kind(WidgetKind::Stack));
-        assert!(!drawn_kind(WidgetKind::Canvas));
+        // Canvas crossed over when gfx.canvas2d became real: it still lays out
+        // children like a container, and it can now also carry a raster the
+        // way an image widget carries a photo.
+        assert!(drawn_kind(WidgetKind::Canvas));
+        assert!(drawn_kind(WidgetKind::Image));
     }
 
     #[test]

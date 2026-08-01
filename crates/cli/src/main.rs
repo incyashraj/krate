@@ -2031,6 +2031,18 @@ fn name_from_request(request: &str) -> Option<String> {
         if word.is_empty() {
             continue;
         }
+        // A word that starts with a digit cannot appear in the name: it flows
+        // into the WIT package label, whose dash-separated words must begin
+        // with a lowercase letter. "pomodoro timer: 25 minute sessions" was
+        // slugged to `pomodoro-timer-25`, and the build died on "invalid
+        // label" long after the person's request looked accepted. A number is
+        // detail, not subject -- it ends the name the way a stop word does.
+        if !word.starts_with(|c: char| c.is_ascii_lowercase()) {
+            if words.is_empty() {
+                continue;
+            }
+            break;
+        }
         // Leading filler is dropped, but once the subject starts, a stop word
         // means the subject ended: "reading list app to track books" stops at
         // "to" rather than running on into the explanation.
@@ -2503,8 +2515,7 @@ fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
     // agent that answers in chat and edits nothing would hand the person a
     // checklist app wearing their request's name. The port pipeline shipped
     // exactly that once; the same snapshot-compare closes it here.
-    let starter_lib =
-        fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
+    let starter_lib = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
     let file = fs::File::create(&transcript).ok();
 
     let mut command = ProcessCommand::new("claude");
@@ -2534,8 +2545,7 @@ fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
             transcript.display()
         );
     }
-    let lib_after =
-        fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
+    let lib_after = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
     if lib_after == starter_lib {
         anyhow::bail!(
             "the agent finished without changing the app: src/lib.rs is byte-identical \
@@ -2850,16 +2860,32 @@ fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
 
 fn build_component(app_dir: &Path) -> Result<PathBuf> {
     let mut command = component_build_command(app_dir);
-    let status = command
-        .status()
+    let output = command
+        .output()
         .context("run cargo-component (is it installed? `cargo install cargo-component`)")?;
-    if !status.success() {
-        anyhow::bail!(
-            "cargo-component build failed. If it reported it could not find the \
-             `wasm32-wasip1` target, install it with `rustup target add wasm32-wasip1`; \
-             if it reported rustup is not available, a non-rustup Rust (for example \
-             `brew install rust`) may be shadowing rustup on your PATH."
+    // The compiler's own words reach the person either way.
+    std::io::Write::write_all(&mut std::io::stdout(), &output.stdout).ok();
+    std::io::Write::write_all(&mut std::io::stderr(), &output.stderr).ok();
+    if !output.status.success() {
+        // The old message appended toolchain advice to every failure, so a
+        // WIT naming error surfaced as "install the wasm32-wasip1 target" --
+        // advice that had nothing to do with the cause and pointed the person
+        // away from it. The hint appears only when the output mentions the
+        // thing the hint is about.
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         );
+        if text.contains("wasm32-wasip1") {
+            anyhow::bail!(
+                "cargo-component build failed: the `wasm32-wasip1` target looks missing. \
+                 Install it with `rustup target add wasm32-wasip1`. If rustup itself was \
+                 not found, a non-rustup Rust (for example `brew install rust`) may be \
+                 shadowing it on your PATH."
+            );
+        }
+        anyhow::bail!("cargo-component build failed; the compiler's message above is the cause");
     }
     find_built_component(app_dir)
 }
@@ -5177,6 +5203,18 @@ mod create_tests {
         // Nothing worth naming: the caller's per-kind default is better than
         // anything that could be invented from filler words alone.
         assert_eq!(name_from_request("Make an app"), None);
+
+        // A digit-led word must never reach the name: it becomes a WIT package
+        // label, and label words must begin with a lowercase letter. This
+        // exact request produced `pomodoro-timer-25` and an "invalid label"
+        // build failure that surfaced as toolchain advice.
+        assert_eq!(
+            name_from_request("Make a pomodoro timer: 25 minute work sessions and 5 minute breaks")
+                .as_deref(),
+            Some("pomodoro-timer")
+        );
+        // A request that is nothing but numbers derives no name at all.
+        assert_eq!(name_from_request("Make a 2048 clone"), None);
         assert_eq!(name_from_request("please build me the app"), None);
         assert_eq!(name_from_request(""), None);
     }
