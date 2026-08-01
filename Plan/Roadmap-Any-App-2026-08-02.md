@@ -19,19 +19,21 @@ one number per track that says whether we moved.
 
 ## Track 1 — The runtime (both pipelines land here)
 
-**The number: 17 of 17 widgets and 10 of 14 interfaces work on all three
-systems.** No platform-only widgets, for the first time.
+**The number: 17 of 17 widgets and 9 of 14 interfaces fully implemented on all
+three systems** (the generated parity table is the authority; two more are
+partial). No platform-only widgets, for the first time.
 
 | Still hollow | What it blocks |
 |---|---|
-| `audio.playback` | music/podcast players, games with sound — **next up: cpal is already in the runtime and capture (375 lines) is the working mirror, so this is hours, not the weeks the failure report promises** |
 | `gfx.canvas2d` | drawing apps, charts drawn by the app itself |
 | `gfx.gpu3d` | 3D anything |
 | `ui.menu` | apps that expect a system menu bar (degrades to buttons) |
 
 Everything else — windows, 17 widget kinds, images, file picker with
 token-based grants, clipboard, notifications, HTTPS, SQL, KV store, secrets,
-random, speech-to-text — is real and tested nightly by replaying committed
+random, speech-to-text, and as of today audio playback (a real tone through
+real speakers, verified by an ignored-by-default device test) — is real and
+tested nightly by replaying committed
 bundles on all three OSes.
 
 ## Track 2 — Porting existing apps
@@ -82,7 +84,7 @@ real dependencies without tripping the import wall.
 
 | Track | Today | "Done" looks like |
 |---|---|---|
-| Runtime | 10/14 interfaces, 17/17 widgets | 14/14, or the 4 hollow ones removed from the contract |
+| Runtime | 9/14 interfaces full, 17/17 widgets | 14/14, or the hollow ones removed from the contract |
 | Porting | 7 apps, 1 for non-programmers | a stranger's app ports with 0–1 repairs, unattended |
 | Creating | 5/8 valid (pre-fix) | 8/8 on re-run, then novel requests |
 | Trust | sandbox verified by test | an external person fails to escape it |

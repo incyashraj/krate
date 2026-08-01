@@ -5,8 +5,9 @@
 //! after every tree change the host recomputes layout and re-lowers the
 //! supported widgets to native controls when the selected adapter can (the
 //! opt-in macOS AppKit prototype today — headless adapters lower nothing and
-//! that is a valid state). The `gfx`, `audio`, `dialog`, and `menu` surfaces
-//! return honest `unsupported` errors until their runtimes exist.
+//! that is a valid state). Audio capture and playback drive real CPAL streams.
+//! The `gfx` and `menu` surfaces return honest `unsupported` errors until
+//! their runtimes exist.
 
 use krate_adapter_common::painter::drawn_kind;
 use krate_adapter_common::ui::{
@@ -19,6 +20,7 @@ use std::sync::Arc;
 
 use crate::{
     audio_capture::{AudioCaptureRuntime, CaptureConfig, CaptureError, CaptureSampleFormat},
+    audio_playback::{AudioPlaybackRuntime, PlaybackConfig, PlaybackError, PlaybackSampleFormat},
     phase3_gui_bindings::krate::{audio, gfx, speech, ui},
     phase3_ui::{Phase3HostUiMode, Phase3UiDispatcher, Phase3UiRuntime, UiDispatchError},
     speech_transcription::{LocalSpeechRuntime, SpeechError},
@@ -72,6 +74,8 @@ pub struct Phase3GuiHost {
     images: std::cell::RefCell<std::collections::BTreeMap<(WindowId, WidgetId), Arc<ImagePixels>>>,
     /// Native microphone streams owned by this one sandboxed app session.
     audio_capture: AudioCaptureRuntime,
+    /// Native speaker streams owned by this one sandboxed app session.
+    audio_playback: AudioPlaybackRuntime,
     /// Local speech model contexts, scoped to this one sandboxed app session.
     speech: LocalSpeechRuntime,
 }
@@ -90,6 +94,7 @@ impl Phase3GuiHost {
             idle_waits: std::cell::Cell::new(0),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             audio_capture: AudioCaptureRuntime::default(),
+            audio_playback: AudioPlaybackRuntime::default(),
             speech: LocalSpeechRuntime::default(),
         })
     }
@@ -1118,10 +1123,6 @@ impl gfx::gpu3d::Host for Phase3GuiHost {
     }
 }
 
-fn audio_unsupported() -> audio::types::AudioError {
-    audio::types::AudioError::Unsupported("audio is not implemented yet".to_string())
-}
-
 fn audio_permission_denied() -> audio::types::AudioError {
     audio::types::AudioError::PermissionDenied
 }
@@ -1147,12 +1148,33 @@ fn capture_error(error: CaptureError) -> audio::types::AudioError {
     }
 }
 
+fn playback_config(config: audio::types::StreamConfig) -> PlaybackConfig {
+    PlaybackConfig {
+        sample_rate: config.sample_rate,
+        channels: config.channels,
+        format: match config.format {
+            audio::types::SampleFormat::PcmS16 => PlaybackSampleFormat::PcmS16,
+            audio::types::SampleFormat::Float32 => PlaybackSampleFormat::Float32,
+        },
+        buffer_frames: config.buffer_frames,
+    }
+}
+
+fn playback_error(error: PlaybackError) -> audio::types::AudioError {
+    match error {
+        PlaybackError::InvalidStream => audio::types::AudioError::InvalidStream,
+        PlaybackError::DeviceUnavailable => audio::types::AudioError::DeviceUnavailable,
+        PlaybackError::InvalidConfig(message) => audio::types::AudioError::Unsupported(message),
+        PlaybackError::Platform(message) => audio::types::AudioError::Platform(message),
+    }
+}
+
 impl audio::types::Host for Phase3GuiHost {}
 
 impl audio::playback::Host for Phase3GuiHost {
     fn open(
         &mut self,
-        _config: audio::types::StreamConfig,
+        config: audio::types::StreamConfig,
     ) -> wasmtime::Result<Result<u64, audio::types::AudioError>> {
         if self
             .runtime
@@ -1162,10 +1184,13 @@ impl audio::playback::Host for Phase3GuiHost {
         {
             return Ok(Err(audio_permission_denied()));
         }
-        Ok(Err(audio_unsupported()))
+        Ok(self
+            .audio_playback
+            .open(playback_config(config))
+            .map_err(playback_error))
     }
 
-    fn start(&mut self, _stream_id: u64) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
+    fn start(&mut self, stream_id: u64) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
         if self
             .runtime
             .guard()
@@ -1174,10 +1199,10 @@ impl audio::playback::Host for Phase3GuiHost {
         {
             return Ok(Err(audio_permission_denied()));
         }
-        Ok(Err(audio_unsupported()))
+        Ok(self.audio_playback.start(stream_id).map_err(playback_error))
     }
 
-    fn stop(&mut self, _stream_id: u64) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
+    fn stop(&mut self, stream_id: u64) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
         if self
             .runtime
             .guard()
@@ -1186,13 +1211,13 @@ impl audio::playback::Host for Phase3GuiHost {
         {
             return Ok(Err(audio_permission_denied()));
         }
-        Ok(Err(audio_unsupported()))
+        Ok(self.audio_playback.stop(stream_id).map_err(playback_error))
     }
 
     fn write(
         &mut self,
-        _stream_id: u64,
-        _bytes: Vec<u8>,
+        stream_id: u64,
+        bytes: Vec<u8>,
     ) -> wasmtime::Result<Result<u32, audio::types::AudioError>> {
         if self
             .runtime
@@ -1202,7 +1227,10 @@ impl audio::playback::Host for Phase3GuiHost {
         {
             return Ok(Err(audio_permission_denied()));
         }
-        Ok(Err(audio_unsupported()))
+        Ok(self
+            .audio_playback
+            .write(stream_id, &bytes)
+            .map_err(playback_error))
     }
 }
 
