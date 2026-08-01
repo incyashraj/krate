@@ -19,21 +19,20 @@ one number per track that says whether we moved.
 
 ## Track 1 — The runtime (both pipelines land here)
 
-**The number: 17 of 17 widgets and 9 of 14 interfaces fully implemented on all
-three systems** (the generated parity table is the authority; two more are
-partial). No platform-only widgets, for the first time.
+**The number: 17 of 17 widgets and 10 of 14 interfaces fully implemented on
+all three systems** (the generated parity table is the authority; two more are
+partial). No platform-only widgets.
 
 | Still hollow | What it blocks |
 |---|---|
-| `gfx.canvas2d` | drawing apps, charts drawn by the app itself |
 | `gfx.gpu3d` | 3D anything |
 | `ui.menu` | apps that expect a system menu bar (degrades to buttons) |
 
 Everything else — windows, 17 widget kinds, images, file picker with
 token-based grants, clipboard, notifications, HTTPS, SQL, KV store, secrets,
-random, speech-to-text, and as of today audio playback (a real tone through
-real speakers, verified by an ignored-by-default device test) — is real and
-tested nightly by replaying committed
+random, speech-to-text, audio playback (a real tone through real speakers),
+and 2D drawing (a bar chart drawn by a guest through the WIT boundary) — is
+real and tested nightly by replaying committed
 bundles on all three OSes.
 
 ## Track 2 — Porting existing apps
@@ -63,9 +62,16 @@ scaffold. The trend on the app that drove the fixes: 5 → 3 → 1.
 
 ## Track 3 — Generating new apps
 
-**The number: 5 of 8 AI-authored apps came out valid in the July experiment;
-the 3 failures shared one cause (std linkage) that is now fixed SDK-side.**
-Not re-measured since — that re-run is the next real datum here.
+**The number: 6 of 8, re-measured 2026-08-02** (`Create-Batch-2026-08-02.md`).
+Both failures were Krate's own checks refusing to ship something inconsistent,
+not the AI writing bad code, and both causes are fixed. Every pass was run and
+its output checked by hand.
+
+The finding that matters is not the score: a password keeper came out working
+and storing passwords in ordinary app data rather than the OS keychain. The
+sandbox guarantees an app cannot exceed its permissions; it cannot yet
+guarantee good judgment inside them. The contract now spells out which store
+means what.
 
 `krate create` works two ways: built-in templates (checklist, voice prompter)
 with no AI needed, and `--agent claude` for arbitrary requests. The GUI
@@ -86,9 +92,9 @@ real dependencies without tripping the import wall.
 
 | Track | Today | "Done" looks like |
 |---|---|---|
-| Runtime | 9/14 interfaces full, 17/17 widgets | 14/14, or the hollow ones removed from the contract |
+| Runtime | 10/14 interfaces full, 17/17 widgets | 14/14, or the hollow ones removed from the contract |
 | Porting | 8 apps, 2 for non-programmers | a stranger's app ports with 0–1 repairs, unattended |
-| Creating | 5/8 valid (pre-fix) | 8/8 on re-run, then novel requests |
+| Creating | 6/8, both failures now fixed | 8/8 on re-run, and sound judgment inside the sandbox |
 | Trust | sandbox verified by test | an external person fails to escape it |
 
 The honest one-sentence status: **the shape of the dream is built — picker,
