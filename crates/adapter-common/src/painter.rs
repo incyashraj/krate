@@ -543,6 +543,72 @@ mod tests {
     }
 
     #[test]
+    fn a_downscaled_picture_samples_the_whole_source() {
+        // The solid-colour tests above cannot catch a sampling bug: every pixel
+        // is the same, so an off-by-one in the row or column index looks
+        // identical to correct code. A gradient does catch it. Downscale 16x16
+        // to 4x4 and every destination pixel must come from a different part of
+        // the source, which is what stops a photo rendering as four copies of
+        // its top-left corner.
+        let mut rgba = Vec::with_capacity(16 * 16 * 4);
+        for y in 0..16u8 {
+            for x in 0..16u8 {
+                // Red rises across, green rises down: every source pixel is
+                // distinguishable from every other.
+                rgba.extend_from_slice(&[x * 16, y * 16, 0, 255]);
+            }
+        }
+        let image = ImagePixels::new(16, 16, rgba).expect("gradient");
+
+        let mut buffer = vec![0u32; 4 * 4];
+        draw_image(&mut buffer, 4, 4, (0.0, 0.0, 4.0, 4.0), &image, None);
+
+        // Red must increase left to right, green top to bottom. A flipped or
+        // stuck index breaks one of these.
+        let red = |i: usize| (buffer[i] >> 16) & 0xFF;
+        let green = |i: usize| (buffer[i] >> 8) & 0xFF;
+        assert!(
+            red(0) < red(3),
+            "red must rise across the row: {:?}",
+            (red(0), red(3))
+        );
+        assert!(
+            green(0) < green(12),
+            "green must rise down the column: {:?}",
+            (green(0), green(12))
+        );
+        // And no two corners are the same pixel, which they would be if the
+        // sampler always read the source origin.
+        assert_ne!(buffer[0], buffer[3]);
+        assert_ne!(buffer[0], buffer[12]);
+        assert_ne!(buffer[0], buffer[15]);
+    }
+
+    #[test]
+    fn an_upscaled_picture_covers_its_whole_rect() {
+        // A 2x2 image blown up to 20x20 must fill the rect. An earlier version
+        // of the clamp could leave the last row or column unwritten, which on a
+        // real photo shows as a hairline of background along two edges.
+        let mut rgba = Vec::new();
+        for i in 0..4u8 {
+            rgba.extend_from_slice(&[10 + i * 60, 20, 30, 255]);
+        }
+        let image = ImagePixels::new(2, 2, rgba).expect("tiny image");
+
+        let mut buffer = vec![0u32; 20 * 20];
+        draw_image(&mut buffer, 20, 20, (0.0, 0.0, 20.0, 20.0), &image, None);
+        for (index, pixel) in buffer.iter().enumerate() {
+            assert_ne!(
+                *pixel,
+                0,
+                "pixel {} of {} was never written",
+                index,
+                buffer.len()
+            );
+        }
+    }
+
+    #[test]
     fn a_picture_never_writes_outside_the_buffer_or_its_clip() {
         // The blit indexes a buffer by row and column with no bounds check in
         // the inner loop, so the clamping above it is the only thing between a
