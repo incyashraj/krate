@@ -38,9 +38,9 @@ bundles on all three OSes.
 
 ## Track 2 — Porting existing apps
 
-**The number: 7 proven ports, all replaying green nightly.** hexyl, savings,
-ddh, rssfwd, envelope, grex, eo2 — and eo2 (image viewer) is the first whose
-audience is not programmers.
+**The number: 8 proven ports, all replaying green nightly.** hexyl, savings,
+ddh, rssfwd, envelope, grex, eo2, mdview — and the last two (an image viewer
+and a markdown viewer) are apps whose audience is not programmers.
 
 Repair attempts on the same app, as causes were found and fixed: **5 → 3 → in
 progress**. Every cause so far was wrong guidance handed to the agent, not a
@@ -56,8 +56,10 @@ runtime limit. Each one now has a test:
 - analyzer read generated packaging files as app source (twice) → excluded,
   tested
 
-**Next:** port a second useful app (md-viewer, 4,863 lines, analyzer now says
-portable) to prove the fixes generalize beyond the app that shaped them.
+**Generalization datum:** md-viewer (4,863 lines, an app none of the fixes
+were shaped around) ported with **zero repair attempts** under the honest
+pipeline — after its first "zero-repair success" was exposed as the untouched
+scaffold. The trend on the app that drove the fixes: 5 → 3 → 1.
 
 ## Track 3 — Generating new apps
 
@@ -85,7 +87,7 @@ real dependencies without tripping the import wall.
 | Track | Today | "Done" looks like |
 |---|---|---|
 | Runtime | 9/14 interfaces full, 17/17 widgets | 14/14, or the hollow ones removed from the contract |
-| Porting | 7 apps, 1 for non-programmers | a stranger's app ports with 0–1 repairs, unattended |
+| Porting | 8 apps, 2 for non-programmers | a stranger's app ports with 0–1 repairs, unattended |
 | Creating | 5/8 valid (pre-fix) | 8/8 on re-run, then novel requests |
 | Trust | sandbox verified by test | an external person fails to escape it |
 

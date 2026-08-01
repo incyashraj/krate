@@ -106,6 +106,11 @@ check "grex" "quick" "^a(?:bc?)?"
 # is the decoder turning real bytes into pixels, which is the part that was
 # impossible this morning -- there was no way to put a picture in a window.
 check "eo2" "quick" "rgba-widen:ok"
+# The port that exposed the no-op agent: its first "success" was the untouched
+# scaffold, packaged as if it were the app. This bundle is the honest retry --
+# 3,203 lines, zero repair attempts -- and `rendered:yes` is its own markdown
+# fixture surviving the parse-layout-render path.
+check "mdview" "quick" "rendered:yes"
 # A network app: fetches feeds over HTTPS with per-host grants.
 #
 # Deliberately not run here. Its work is a real HTTPS request, so a check that
