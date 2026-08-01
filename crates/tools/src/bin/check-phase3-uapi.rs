@@ -527,6 +527,42 @@ mod tests {
     }
 
     #[test]
+    fn every_interface_in_the_gui_world_is_wired_into_the_linker() {
+        // An interface declared in the world but missing from the linker fails
+        // at instantiate with "a matching implementation was not found", which
+        // reads as a broken bundle rather than a missing line in lib.rs. The
+        // image viewer hit it twice in one run -- krate:random/bytes had been
+        // missing since the world was written, and krate:ui/image since I added
+        // it that morning. Neither had a test.
+        let world = std::fs::read_to_string(workspace_root().join("wit/krate/phase3/world.wit"))
+            .expect("read the gui world");
+        let linker = std::fs::read_to_string(workspace_root().join("crates/runtime/src/lib.rs"))
+            .expect("read the runtime");
+
+        for line in world.lines() {
+            let Some(rest) = line.trim().strip_prefix("import krate:") else {
+                continue;
+            };
+            let Some(path) = rest.split('@').next() else {
+                continue;
+            };
+            let Some((package, interface)) = path.split_once('/') else {
+                continue;
+            };
+            // `krate:ui/tree` is linked as `link_gui!(ui::tree)`, and phase2
+            // interfaces as `link_phase2!(io::args)`; the snake_case form
+            // covers `http-client` becoming `http_client`.
+            let snake = interface.replace('-', "_");
+            let wired = format!("{package}::{snake})");
+            assert!(
+                linker.contains(&wired),
+                "krate:{package}/{interface} is imported by the gui world but never \
+                 added to the linker; any app using it fails to instantiate"
+            );
+        }
+    }
+
+    #[test]
     fn widget_node_keeps_the_shape_shipped_bundles_were_built_against() {
         // The Component Model matches interfaces structurally, so a record an
         // app was compiled against must keep exactly the fields it had. Adding

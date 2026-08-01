@@ -2,8 +2,9 @@
 
 An image viewer can now be expressed in Krate: the file picker exists, the
 image widget draws on all three systems, and the contract documents both. The
-port still does not build, and the reason is worth writing down because it is
-not about the app.
+port then failed to build for a reason that had nothing to do with the app,
+and the diagnosis is worth keeping even though the fix turned out to be one
+line of configuration.
 
 ## What happens
 
@@ -67,9 +68,8 @@ format for one app.
 ## What this does not block
 
 Everything else in the viewer works: the picker returns a token, the widget
-accepts pixels, all three hosts draw them, and the app builds and passes the
-import check once the decoder is removed. The gap is one dependency, in one
-direction, for one reason.
+accepts pixels, and all three hosts draw them. With `std_feature` set the
+decoder stays too -- the component builds with zero `wasi:*` imports.
 
 ## The cost of finding out
 

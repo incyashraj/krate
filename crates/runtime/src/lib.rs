@@ -456,7 +456,7 @@ impl Runtime {
         config: &Config,
         output: OutputMode,
     ) -> Result<RunOutcome> {
-        use phase2_bindings::krate::{fs, io, locale, net, resources, store, time};
+        use phase2_bindings::krate::{fs, io, locale, net, random, resources, store, time};
         use phase3_gui_bindings::krate::{audio, gfx, speech, ui};
 
         let mut store = self.new_store(config, output)?;
@@ -507,9 +507,15 @@ impl Runtime {
         link_phase2!(store::sql);
         link_phase2!(store::secret);
 
+        // Declared in the gui world, so a guest may import it. An interface in
+        // the world and not in the linker fails at instantiate with "a matching
+        // implementation was not found", which reads as a broken bundle rather
+        // than a missing line here. An image viewer hit exactly that on random.
+        link_phase2!(random::bytes);
         link_gui!(ui::types);
         link_gui!(ui::window);
         link_gui!(ui::tree);
+        link_gui!(ui::image);
         link_gui!(ui::events);
         link_gui!(ui::dialog);
         link_gui!(ui::clipboard);

@@ -102,6 +102,10 @@ check "envelope" "quick" "quick"
 # The largest port: 5,396 lines of regex generator. Its answer is checkable --
 # ^a(?:bc?)?$ matches a, ab, abc and nothing else.
 check "grex" "quick" "^a(?:bc?)?"
+# The first ported app a non-programmer would open on purpose. `rgba-widen:ok`
+# is the decoder turning real bytes into pixels, which is the part that was
+# impossible this morning -- there was no way to put a picture in a window.
+check "eo2" "quick" "rgba-widen:ok"
 # A network app: fetches feeds over HTTPS with per-host grants.
 #
 # Deliberately not run here. Its work is a real HTTPS request, so a check that
