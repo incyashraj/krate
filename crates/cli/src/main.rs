@@ -1480,23 +1480,41 @@ fn validate_port_candidate(
         // own code, and the leak was `image` in Cargo.toml, which requires
         // `std` and pulls the whole wasi surface in no matter how the app is
         // written. Naming the usual cause turns four guesses into one edit.
+        // This exact message is what a repair attempt is handed, so it carries
+        // the cause and not just the symptom. Two ports burned every attempt
+        // here: one on `image` in Cargo.toml, one on a `buf[i]` whose bounds
+        // check kept std's panic path reachable. Both look like the Krate
+        // calls are wrong, and neither is.
+        let mut hints = panic_site_hints(candidate);
+        if hints.is_empty() {
+            hints.push_str(
+                "\n  (no obvious panic site found in src/lib.rs -- check dependencies next)",
+            );
+        }
         return Err(format!(
             "the component imports unsupported host APIs: {}\n\
              \n\
-             These come from something linked into the component, not from a call \
-             the code makes directly. Check the dependencies in candidate/Cargo.toml \
-             first: a crate that needs `std` brings all of this with it, and no \
-             rewriting of the app's own code removes it. `image` is the usual \
-             culprit -- `zune-png` and `zune-jpeg` (with `default-features = false`, \
-             plus `zune-core` for `ZCursor`) decode the same formats under `no_std`. \
-             If every dependency is clean, it is the app's own code reaching the \
-             operating system through std rather than through Krate: `std::fs`, \
-             `std::io` (including `println!` and `dbg!`), `std::time`, `std::env`, \
-             `std::process`, `std::net`, `std::thread`. In-memory std is fine -- \
-             `String`, `format!`, `Vec` and `HashMap` do not leak. Do not reach for \
-             `#![no_std]` in a windowed app: the generated bindings need std, so it \
-             cannot compile, and the error looks like your own code is at fault.",
-            bad.join(", ")
+             This is almost always one reachable panic, not a Krate call. std's \
+             failure path formats a message, writes it, and exits, which is \
+             wasi:cli, wasi:filesystem, and wasi:io arriving together -- so it is \
+             all-or-nothing: one panic site is the whole list above.\n\
+             \n\
+             The two usual causes, in order:\n\
+             \n\
+             1. Indexing. `buf[i]` carries a bounds check that can panic even when \
+             the index is provably fine. Use `.get(i)` / `.get_mut(i)` and handle \
+             the `None`.\n\
+             2. `.to_string()` or `format!`, which route through the allocator's \
+             out-of-memory handler. Copy `pure_string` from the samples.\n\
+             \n\
+             Then dependencies: a crate needing `std` brings all of this with it \
+             whatever the app does. `image` is the usual culprit -- `zune-png` and \
+             `zune-jpeg` (with `default-features = false`, plus `zune-core`) decode \
+             the same formats cleanly.\n\
+             \n\
+             Places in this candidate worth looking at first:{}",
+            bad.join(", "),
+            hints
         ));
     }
 
@@ -2961,6 +2979,47 @@ fn build_component(app_dir: &Path) -> Result<PathBuf> {
         anyhow::bail!("cargo-component build failed; the compiler's message above is the cause");
     }
     find_built_component(app_dir)
+}
+
+/// Point at the lines in a candidate most likely to be the reachable panic.
+///
+/// Not a proof -- a grep. But the failure it explains is one where the compiler
+/// says nothing useful and the honest debugging technique is a bisect that
+/// takes an hour, so naming three candidate lines is worth far more than its
+/// false-positive rate.
+fn panic_site_hints(candidate: &Path) -> String {
+    let Ok(source) = fs::read_to_string(candidate.join("src/lib.rs")) else {
+        return String::new();
+    };
+    let mut hints = String::new();
+    let mut found = 0;
+    for (number, line) in source.lines().enumerate() {
+        if found >= 5 {
+            break;
+        }
+        let trimmed = line.trim();
+        if trimmed.starts_with("//") {
+            continue;
+        }
+        // An index expression: `name[` where the name is not a type parameter
+        // or an attribute. Crude on purpose; a false hint costs one glance.
+        let indexes = trimmed.contains('[')
+            && trimmed.contains(']')
+            && !trimmed.starts_with('#')
+            && !trimmed.contains(": [")
+            && !trimmed.contains("= [");
+        let allocates = trimmed.contains(".to_string()") || trimmed.contains("format!");
+        if indexes || allocates {
+            let why = if allocates {
+                "allocates a String"
+            } else {
+                "indexes, so it can panic"
+            };
+            hints.push_str(&format!("\n  src/lib.rs:{}: {why}", number + 1));
+            found += 1;
+        }
+    }
+    hints
 }
 
 fn build_component_captured(app_dir: &Path) -> std::result::Result<PathBuf, String> {
@@ -5247,6 +5306,43 @@ mod create_tests {
         );
         // A Unix path is unchanged.
         assert_eq!(toml_path(Path::new("/home/a/wit")), "/home/a/wit");
+    }
+
+    #[test]
+    fn the_import_diagnostic_points_at_real_panic_sites() {
+        // An animated sample leaked all thirty-three wasi imports, and finding
+        // the cause took an hour of bisecting because nothing in the compiler
+        // output mentioned it. It was three array indexes, whose bounds checks
+        // keep std's panic path reachable. This names those lines instead.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            "fn f(buf: &mut [u8; 4], v: u64) {\n\
+             \x20   // digits[0] = 1; this comment must not be flagged\n\
+             \x20   buf[0] = b'0';\n\
+             \x20   let name = \"x\".to_string();\n\
+             \x20   let _ = (name, v);\n\
+             }\n",
+        )
+        .unwrap();
+
+        let hints = super::panic_site_hints(dir.path());
+        assert!(hints.contains("src/lib.rs:3"), "the index line: {hints}");
+        assert!(hints.contains("indexes"), "{hints}");
+        assert!(
+            hints.contains("src/lib.rs:4"),
+            "the to_string line: {hints}"
+        );
+        assert!(hints.contains("allocates"), "{hints}");
+        assert!(
+            !hints.contains("src/lib.rs:2"),
+            "a comment must not be reported: {hints}"
+        );
+
+        // No source, no guesses.
+        let empty = tempfile::tempdir().unwrap();
+        assert!(super::panic_site_hints(empty.path()).is_empty());
     }
 
     #[test]
