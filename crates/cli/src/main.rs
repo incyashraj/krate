@@ -1150,6 +1150,14 @@ fn complete_port(
 
     println!();
     println!("==> transforming the candidate");
+    // Snapshot the app body before the agent runs. The scaffold compiles and
+    // passes every check by design -- that is what makes the repair loop able
+    // to start -- which also means an agent that does nothing produces a
+    // "successful" port of the wrong program. It happened: an agent answered
+    // with a thoughtful analysis in chat, edited nothing, exited 0, and a
+    // 4,863-line markdown viewer "ported with zero repairs" as the checklist
+    // starter. The exit code cannot catch that; comparing the code can.
+    let scaffold_lib = fs::read_to_string(candidate.join("src/lib.rs")).unwrap_or_default();
     let author_name = match author {
         PortAuthor::Claude => {
             run_claude_port(workspace, &source_snapshot, &candidate, &task_path)?;
@@ -1168,6 +1176,24 @@ fn complete_port(
             "external-command"
         }
     };
+
+    let lib_after = fs::read_to_string(candidate.join("src/lib.rs")).unwrap_or_default();
+    if lib_after == scaffold_lib {
+        anyhow::bail!(
+            "the port agent finished without changing the candidate: src/lib.rs is \
+             byte-identical to the starter, so this would package the scaffold as if \
+             it were the app. The agent's transcript is at {} -- it usually means the \
+             agent explained the port instead of performing it.",
+            workspace.join(".agent-transcript.txt").display()
+        );
+    }
+    if lib_after.contains("This is a starting point, not the ported app") {
+        anyhow::bail!(
+            "the candidate still carries the starter's own header, so the app body \
+             was not replaced. See the transcript at {}.",
+            workspace.join(".agent-transcript.txt").display()
+        );
+    }
 
     // The agent receives read access to the source in order to understand it,
     // but it must edit only the isolated candidate. Re-analyze the source and
