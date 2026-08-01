@@ -28,6 +28,11 @@ partial). No platform-only widgets.
 | `gfx.gpu3d` | 3D anything |
 | `ui.menu` | apps that expect a system menu bar (degrades to buttons) |
 
+**Animation works.** `krate-bounce` runs a real game loop — measure elapsed
+time, advance physics, draw, request the next frame — and the quick run
+measured over twelve thousand frames a second. Whatever eventually limits
+games here, it is not the draw path.
+
 Everything else — windows, 17 widget kinds, images, file picker with
 token-based grants, clipboard, notifications, HTTPS, SQL, KV store, secrets,
 random, speech-to-text, audio playback (a real tone through real speakers),
@@ -97,6 +102,23 @@ real dependencies without tripping the import wall.
 | Creating | 6/8, both failures now fixed | 8/8 on re-run, and sound judgment inside the sandbox |
 | Trust | sandbox verified by test | an external person fails to escape it |
 
+## The longer horizon, with honest distances
+
+What "everything you can think of" breaks into, nearest first:
+
+| Ambition | Distance | What is actually missing |
+|---|---|---|
+| 2D games | **close** | Canvas and a frame loop both work at speed. Needs sprites (images into a canvas), and key-repeat/held-key state for smooth control. |
+| Modern UI feel | **close** | Layout, widgets, and per-frame redraw exist. Needs an animation curve helper and rounded/translucent fills — the canvas has square edges and no gradients today. |
+| Sound in games | **done for playback** | Tones and streams work. Mixing several sounds at once is app-side today; a mixer could move host-side later. |
+| Web APIs / online apps | **partly there** | HTTPS with per-host scoping works and is proven by a ported RSS forwarder and a generated quote fetcher. Missing: streaming responses and WebSockets, so live feeds and multiplayer are out. |
+| 3D | **far** | `gfx.gpu3d` is declared and hollow. This is a real GPU abstraction across three systems — weeks, and the one place the "weeks not days" warning is honest. |
+| Video | **far** | No decode interface. Same shape as images (decode in the sandbox, pixels to the host) but needs a frame clock and audio sync. |
+
+The nearest three share a property worth noticing: none needs a new
+capability or a new host adapter. Sprites, rounded fills, and key-state all
+extend surfaces that already reach all three systems.
+
 The honest one-sentence status: **the shape of the dream is built — picker,
-pictures, sandbox, three OSes — and the work now is making the pipelines
-boringly reliable instead of heroically debuggable.**
+pictures, sound, drawing, animation, sandbox, three OSes — and the work now is
+making the pipelines boringly reliable instead of heroically debuggable.**
