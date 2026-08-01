@@ -2499,6 +2499,12 @@ just make the app."
 fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
     let prompt = claude_author_prompt(app_dir, request, kind);
     let transcript = Path::new(app_dir).join(".agent-transcript.txt");
+    // The template compiles and passes every downstream check by design, so an
+    // agent that answers in chat and edits nothing would hand the person a
+    // checklist app wearing their request's name. The port pipeline shipped
+    // exactly that once; the same snapshot-compare closes it here.
+    let starter_lib =
+        fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
     let file = fs::File::create(&transcript).ok();
 
     let mut command = ProcessCommand::new("claude");
@@ -2525,6 +2531,18 @@ fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
     if !status.success() {
         anyhow::bail!(
             "the Claude agent did not finish successfully; see {}",
+            transcript.display()
+        );
+    }
+    let lib_after =
+        fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
+    if lib_after == starter_lib {
+        anyhow::bail!(
+            "the agent finished without changing the app: src/lib.rs is byte-identical \
+             to the starter template, so this would package the template as if it were \
+             \"{request}\". The agent's transcript is at {} -- it usually means the \
+             agent explained the app instead of writing it. Even a request the template \
+             already satisfies needs its titles and labels made real.",
             transcript.display()
         );
     }
