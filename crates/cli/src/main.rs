@@ -2592,6 +2592,21 @@ person chose: their click is the grant. Prefer this over asking someone to put\n
 files in a folder before starting -- an app that opens with \"choose a file\" is\n\
 one anybody can use.\n\
 \n\
+## Showing a picture\n\
+A widget of kind `Image` draws one, and the picture travels in the node's\n\
+`pixels` field as `ImagePixels {{ width, height, rgba }}` -- straight RGBA bytes,\n\
+four per pixel, top row first, exactly `width * height * 4` of them.\n\
+\n\
+Not PNG or JPEG. Decode the file yourself and send the result: the `image`\n\
+crate with `default-features = false` and only the pure-Rust decoders you need\n\
+(`png`, `jpeg`, `gif`, `bmp`) builds for this target. Do not enable a feature\n\
+that ends in `-native` -- those pull a C library and nothing will build.\n\
+\n\
+Every host scales the picture to fit the widget and centres it, keeping the\n\
+original proportions, so a photo looks the same on macOS, Windows, and Linux.\n\
+An image widget with no pixels yet draws an empty frame, which is what a viewer\n\
+should show before anybody has chosen a file.\n\
+\n\
 ## The verification run\n\
 After building, Krate runs the app once with every capability granted and one\n\
 argument, then requires exit 0.\n\
