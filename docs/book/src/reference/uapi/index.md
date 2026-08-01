@@ -61,6 +61,18 @@ krate::io::stdio::println(&text)?;
 - `open(path: string, mode: open-mode) -> result<own<file>, fs-error>`
   - Opens a host file through Krate and returns a `file` handle.
   - `read` needs `fs.read:PATH`; `write`, `append`, and `read-write` also need the matching write grant.
+> Open a file the person chose in a dialog, by its token.
+> 
+> The counterpart to `ui.dialog.open-file`. It takes a token rather than a
+> path because the app never learns the path: the person's click granted
+> this one file, not the folder it happens to sit in, and handing over a
+> path would let the app walk to its siblings.
+> 
+> A token belongs to one run. It is refused after the run that produced it,
+> so an app cannot store one and come back later for a file nobody offered
+> again.
+
+- `open-chosen(token: string, mode: open-mode) -> result<own<file>, fs-error>`
 > Read metadata for a path without opening it as a file resource.
 
 - `stat(path: string) -> result<file-stat, fs-error>`
