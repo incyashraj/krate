@@ -1987,6 +1987,32 @@ const MAX_DERIVED_NAME_WORDS: usize = 3;
 /// what the permission wall shows, so it should say what the app is. Returns
 /// `None` when the request has no subject worth naming, leaving the caller's
 /// default in place rather than inventing something worse.
+/// Whether a name can survive becoming a WIT package label and a crate name.
+fn validate_app_name(name: &str) -> std::result::Result<(), String> {
+    if name.is_empty() {
+        return Err("it is empty".to_string());
+    }
+    for word in name.split('-') {
+        if word.is_empty() {
+            return Err("it has an empty word between dashes".to_string());
+        }
+        if !word.starts_with(|c: char| c.is_ascii_lowercase()) {
+            return Err(format!(
+                "the word `{word}` does not start with a lowercase letter"
+            ));
+        }
+        if !word
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        {
+            return Err(format!(
+                "the word `{word}` contains something other than lowercase letters and digits"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn name_from_request(request: &str) -> Option<String> {
     // Words that describe the act of asking, not the thing being asked for.
     const SKIP: &[&str] = &[
@@ -2151,6 +2177,17 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         .clone()
         .or_else(|| name_from_request(&req.request))
         .unwrap_or_else(|| default_name.to_string());
+    // The name flows into the WIT package label and the crate name, both of
+    // which reject anything but dash-separated words that begin with a
+    // lowercase letter. `--name 2048` used to sail past this point and die
+    // mid-build with "failed to load cargo metadata", which names neither the
+    // rule nor the flag. Refuse it here, where the message can.
+    if let Err(reason) = validate_app_name(&name) {
+        anyhow::bail!(
+            "the app name `{name}` cannot be used: {reason}. Use dash-separated \
+             words that each start with a lowercase letter, like `tile-game`."
+        );
+    }
 
     // The app is built inside a work dir. A temp dir is cleaned up; --work-dir
     // keeps it for inspection.
@@ -5185,6 +5222,28 @@ mod create_tests {
         );
         // A Unix path is unchanged.
         assert_eq!(toml_path(Path::new("/home/a/wit")), "/home/a/wit");
+    }
+
+    #[test]
+    fn an_explicit_name_is_checked_before_anything_is_built() {
+        // `--name 2048` used to die mid-build with "failed to load cargo
+        // metadata". The rule lives where the message can name the flag.
+        assert!(super::validate_app_name("tile-game").is_ok());
+        assert!(super::validate_app_name("mp3-tagger").is_ok());
+        for bad in [
+            "2048",
+            "Tile-Game",
+            "tile_game",
+            "tile--game",
+            "",
+            "-x",
+            "x-",
+        ] {
+            assert!(
+                super::validate_app_name(bad).is_err(),
+                "`{bad}` must be refused"
+            );
+        }
     }
 
     #[test]
