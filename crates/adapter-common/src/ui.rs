@@ -291,6 +291,15 @@ pub enum WidgetKind {
     TextArea,
     ListView,
     TreeView,
+    /// An image view.
+    ///
+    /// The one declared widget no host accepts, and deliberately. The other
+    /// three that were unimplemented -- `grid`, `canvas`, `tabs` -- each turned
+    /// out to be a layout rule the engine already had, so none needed new
+    /// drawing. This is not that shape: the node model carries no image data at
+    /// all, so an app cannot say which image to show even if a host were ready
+    /// to draw one. Making it real means a WIT change to carry the data, a
+    /// decoder, and three hosts agreeing about scaling and colour.
     Image,
     Canvas,
 }
