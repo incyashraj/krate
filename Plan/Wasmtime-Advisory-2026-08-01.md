@@ -84,3 +84,18 @@ The Wasmtime API surface itself is small, which is the good news. The runtime
 touches about a dozen real call sites -- `Linker`, `Store`, `Config`,
 `component::bindgen`, `Resource` -- and 99 of the mentions are the
 `wasmtime::Result` type alias, which does not change.
+
+
+## Nothing upstream is blocking this
+
+Checked on 2026-08-01: **Rust stable is 1.97.1**. The 1.94 that wasmtime 46 and
+47 require has been out for a long time. We are pinned to 1.91.1 by choice --
+`rust-version = "1.91"` in the workspace and `dtolnay/rust-toolchain@1.91.1` in
+every CI job -- not by anything the ecosystem is missing.
+
+So this is not "wait for the toolchain". It is a decision about when to spend a
+toolchain bump, and the answer should probably be soon: the advisory is the only
+failing job left in the whole system, and every other gate is green.
+
+The sequencing still holds. Bump rustc on its own, with a full nightly behind
+it, then upgrade Wasmtime. Two changes, each provable.
