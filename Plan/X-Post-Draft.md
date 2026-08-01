@@ -1,13 +1,13 @@
 # X post drafts
 
-**Read this first.** The current public release is `v0.1.0-rc4`, tagged before
-today's work. Anyone who installs it and opens the 2D game gets an error,
-because `gfx.canvas2d` did not exist when it was cut.
+**Status, 2026-08-02.** `v0.1.0-rc5` is tagged and building. It is the first
+release that can run the apps below — rc4 predated drawing, animation and
+sound, so it refused the 2D game outright.
 
-So there are two versions of every draft below: one to post **now**, which
-shows the work and points at measurements, and one to post **after a release is
-tagged**, which invites people to install. Posting the second one first is the
-mistake that costs you the audience you just earned.
+`krate.tech/reports` is live and verified: styled, three charts, and the limits
+section. Post the build-in-public version now. Before posting the "install it"
+version, download rc5 on a machine you have not built on and open the game
+yourself. The value of the first post is that the second one can be trusted.
 
 ---
 
@@ -115,9 +115,10 @@ second one can be trusted.
   benchmark said Krate was *faster than native*, we found the harness bug, and
   we published both the fix and the 5.14× worst case. Point at the methodology
   paragraph.
-- **Someone says it does not work.** Ask which release. If they are on rc4 and
-  tried the game, that is the known gap — thank them publicly and say when the
-  next release lands. Do not argue.
+- **Someone says it does not work.** Ask which release and which app. Anyone
+  on rc4 or older cannot run the game, the chart, or anything with sound —
+  those interfaces landed in rc5. Thank them, name the version, do not argue.
+  A person who tried it and reported back is worth more than one who scrolled.
 
 ---
 
