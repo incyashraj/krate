@@ -114,6 +114,28 @@ gate is currently green without verifying anything**. Skipping loudly beats
 failing every night for a reason that is not a regression, but neither is
 coverage.
 
+**Update, 2026-08-01: the half that does run has now caught two real
+regressions.** `scripts/replay-ported-apps.sh` runs the committed bundles on
+all three systems with no agent involved, and in one day it caught:
+
+- A WIT change that stopped every shipped GUI app from instantiating. Adding a
+  field to `widget-node` changed the record's type, and the Component Model
+  matches structurally, so `savings` refused to open. Not degraded -- refused.
+- A manifest grant that could never match. The ported image viewer declared
+  `fs.read:~/Pictures/**`, which resolved to a folder literally named `~`.
+
+Neither was found by a unit test, and both would have shipped. The lesson is
+that the agent-free half is not a consolation prize: a runtime or format
+regression breaks every app at once, and that is the failure worth catching
+nightly. The agent-driven half still measures something different -- whether
+porting still *produces* these bundles -- and remains uncovered on CI.
+
+What the agent-driven half measures locally, on the same app and pipeline:
+repair attempts fell from 5 to 3 as the causes were fixed. Every one of those
+causes was wrong documentation rather than a limit of the system: a decoder
+crate that cannot build for the target, a rule about memory that was false, an
+API path with no module, and a grant syntax that was accepted and unusable.
+
 **Half of it is now closed.** `scripts/replay-ported-apps.sh` runs every ported
 bundle -- they are committed under `evidence/ported/`, 64 KB for four -- and
 checks each still produces its real answer. No agent involved, so it runs on
