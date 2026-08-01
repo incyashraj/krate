@@ -24,15 +24,16 @@ import pathlib, sys
 root = pathlib.Path(sys.argv[1])
 bundles = sorted(root.joinpath("evidence/ported").glob("*.krate"))
 total = 0
-# Apple's Reminders on macOS 26, the comparison the claims file uses.
-reminders = 12 * 1024 * 1024
+# Apple's Reminders on macOS 26: `du -sk` reports 11,520 KB. The landing page
+# quotes 11.2 MB from the same measurement, and the two must not drift apart.
+reminders = 11_520 * 1024
 for bundle in bundles:
     size = bundle.stat().st_size
     total += size
     print(f"  {bundle.stem:<12} {size:>7} bytes   {reminders/size:>6.0f}x smaller than Reminders")
 print()
 print(f"  all {len(bundles)} bundles together: {total} bytes ({total/1024:.0f} KB)")
-print(f"  Reminders (12 MB) is {reminders/total:.1f}x that total")
+print(f"  Reminders (11.2 MB) is {reminders/total:.1f}x that total")
 PY
 
 echo

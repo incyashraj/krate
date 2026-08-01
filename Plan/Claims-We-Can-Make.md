@@ -23,23 +23,26 @@ Everything below is a way of making that concrete.
 
 ## Size: the number people feel
 
-| What it is | Size | Compared to Apple's Reminders (12 MB) |
+| What it is | Size | Compared to Apple's Reminders (11.2 MB) |
 |---|---|---|
-| A 2D game with physics and sprites | **11 KB** | **1,146× smaller** |
-| A markdown viewer (ported from 4,863 lines) | **51 KB** | 242× smaller |
-| An image viewer (ported from 2,677 lines) | **77 KB** | 162× smaller |
+| A 2D game with physics and sprites | **11 KB** | **1,074× smaller** |
+| A markdown viewer (ported from 4,863 lines) | **51 KB** | 227× smaller |
+| An image viewer (ported from 2,677 lines) | **77 KB** | 152× smaller |
 
 Ways to say it:
 
 - **"A complete 2D game, smaller than the icon of most apps."**
 - **"One photo from your phone holds 318 copies of our game."**
 - **"Everything Krate has ever shipped — ten complete apps — is 283 KB
-  together. Apple's Reminders app, which does one thing, is 43× that."**
+  together. Apple's Reminders app, which does one thing, is 41× that."**
 - **"Nine of those ten are re-run every night on all three operating systems,
   and we check the answers they print, not just that they started."**
 
-*Verified:* `ls -la evidence/ported/*.krate`, and `du -sm` on
-`/System/Applications/Reminders.app` on macOS 26.
+*Verified:* `ls -la evidence/ported/*.krate`, and `du -sk` on
+`/System/Applications/Reminders.app` on macOS 26 (11,520 KB = 11.2 MB). The
+site's existing comparison uses the same figure, deliberately: two pages of
+ours disagreeing about Apple's app size is the detail a careful reader
+catches.
 
 ---
 
