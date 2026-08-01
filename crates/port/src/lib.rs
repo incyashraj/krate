@@ -829,6 +829,33 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         "Krate declares `ui.menu` but no host implements it yet, because the three systems disagree about where a menu bar lives. Move these actions into the window -- buttons or a list -- or the port will lose them.",
         Some("ui.menu"),
     );
+    // Rust crates that wrap a C library. These do not compile to wasm at all --
+    // there is no C toolchain in the target, and the library they bind is a
+    // native object file. An image compressor that pulls mozjpeg-sys looks
+    // ordinary in its own Cargo.toml and fails at the first build, an hour in.
+    detect_pattern(
+        analysis,
+        "native-library-binding",
+        &[
+            // Named crates rather than a `-sys` suffix rule: `wasm-bindgen` is
+            // a WebAssembly tool and matched a bare `bindgen`, marking a port
+            // that works as unsupported. A false blocker is worse than a miss
+            // -- it tells someone not to try something that would have worked.
+            "mozjpeg-sys",
+            "openssl-sys",
+            "libgit2-sys",
+            "ffmpeg-sys",
+            "alsa-sys",
+            "\nbindgen = ",
+            "cc::Build::new",
+        ],
+        path,
+        text,
+        Severity::Blocker,
+        "Binds a native C library",
+        "A crate that wraps a C library cannot be built for Krate: the target has no C toolchain, and the library it binds is a native object file. Replace it with a pure-Rust equivalent -- `image` for decoding, `zune-jpeg` and `oxipng` for compression, `rusqlite` bundled or Krate's own `store.sql` for databases -- or the port cannot start.",
+        None,
+    );
     detect_pattern(
         analysis,
         "network",
@@ -1719,6 +1746,49 @@ mod tests {
             missing.is_empty(),
             "the runtime supports these but the analyzer cannot spot them in source, \
              so a port of an app that uses one gets a plan that does not mention it: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn a_c_library_binding_blocks_the_port_and_wasm_bindgen_does_not() {
+        // A crate wrapping a C library cannot build for wasm at all, and that
+        // is worth knowing before an hour is spent finding out. But the first
+        // version of this matched a bare `bindgen`, which caught `wasm-bindgen`
+        // -- a WebAssembly tool -- and marked a port that works as unsupported.
+        // A false blocker is worse than a miss: it tells someone not to try
+        // something that would have succeeded.
+        let native = tempfile::tempdir().unwrap();
+        fs::write(
+            native.path().join("Cargo.toml"),
+            "[package]\nname = \"squish\"\n\n[dependencies]\nmozjpeg-sys = \"2\"\n",
+        )
+        .unwrap();
+        fs::write(native.path().join("main.rs"), "fn main() {}\n").unwrap();
+        let plan = analyze(native.path()).unwrap();
+        assert_eq!(plan.verdict, Verdict::Unsupported);
+        assert!(plan
+            .findings
+            .iter()
+            .any(|f| f.id == "native-library-binding"));
+
+        let wasm = tempfile::tempdir().unwrap();
+        fs::write(
+            wasm.path().join("Cargo.toml"),
+            "[package]\nname = \"web\"\n\n[dependencies]\nwasm-bindgen = \"0.2\"\n",
+        )
+        .unwrap();
+        fs::write(
+            wasm.path().join("main.rs"),
+            "use wasm_bindgen::prelude::*;\n",
+        )
+        .unwrap();
+        let plan = analyze(wasm.path()).unwrap();
+        assert!(
+            !plan
+                .findings
+                .iter()
+                .any(|f| f.id == "native-library-binding"),
+            "wasm-bindgen is a WebAssembly tool, not a C binding"
         );
     }
 
