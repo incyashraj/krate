@@ -5213,8 +5213,12 @@ mod create_tests {
                 .as_deref(),
             Some("pomodoro-timer")
         );
-        // A request that is nothing but numbers derives no name at all.
-        assert_eq!(name_from_request("Make a 2048 clone"), None);
+        // A digit-led word before the subject starts is simply skipped: the
+        // name picks up at the first word a WIT label can begin with.
+        assert_eq!(
+            name_from_request("Make a 2048 clone").as_deref(),
+            Some("clone")
+        );
         assert_eq!(name_from_request("please build me the app"), None);
         assert_eq!(name_from_request(""), None);
     }
