@@ -51,6 +51,45 @@ combined.*
 
 ---
 
+## The speed section
+
+### Apps open in 16 milliseconds.
+
+Median cold start, measured five times each on an Apple Silicon Mac:
+
+| App | Opens in |
+|---|---|
+| A budget splitter | 16 ms |
+| A 2D game | 18 ms |
+| A markdown viewer (4,863 lines ported) | 28 ms |
+| An image viewer (2,677 lines ported) | 30 ms |
+
+*A single frame of 60 fps video is 16.7 milliseconds. Most Krate apps are fully
+open before your screen has finished drawing one frame.*
+
+### And the sandbox is free.
+
+The question every engineer asks: what does the safety cost?
+
+| Work | Native | Krate | Difference |
+|---|---|---|---|
+| 300 million integer operations | 703.9 ms | 706.3 ms | **1.00×** |
+| 100 million | 220.0 ms | 236.6 ms | 1.08× |
+
+**Sandboxed code running at native speed.** Not "close to" — at 300 million
+operations the difference is inside measurement noise.
+
+The honest caveat, which we publish: an app that crosses the sandbox boundary
+constantly and computes almost nothing in between pays up to 5.14×. That is
+the cost of checking permissions, and it is the trade we chose.
+
+*Verified:* output was checked identical before every timing. The first version
+of this benchmark reported Krate as **faster than native**, which was a bug in
+the harness — the output check is what caught it. Full method:
+`Plan/Native-Comparison-2026-07-31.md`.
+
+---
+
 ## The proof section
 
 ### We publish the receipts.
@@ -97,6 +136,34 @@ sandbox it cannot escape.**
 
 ---
 
+## For early adopters: the "will this still exist next year" section
+
+### The whole thing is open, and the tests are the proof.
+
+- **795 tests** run on every change
+- **23 separate checks** on every push — build, lint, security audit, and the
+  nine apps re-run on all three operating systems
+- **64,837 lines of Rust**, in the open, readable today
+
+### Nothing here is a demo that only works on the demo machine.
+
+The tables on our documentation site are **generated from the runtime itself**,
+not written by hand, and CI fails if they drift. When we say 17 of 17 interface
+elements work everywhere, that sentence is produced by the code it describes.
+
+### We publish what does not work.
+
+Our own repository contains the list of things Krate cannot do, the bugs we
+shipped and caught, and the one measurement that embarrassed us. Early adopters
+can read it before committing a line of code.
+
+### One install, shared by every app.
+
+Krate is a 17.5 MB install, once. Every app after that is kilobytes. Compare
+with the current norm, where each app brings its own copy of a browser.
+
+---
+
 ## For the investor deck
 
 Three slides, in this order:
@@ -111,6 +178,26 @@ Three slides, in this order:
 **3. The moat, in one demonstration.**
 > Run the escape test live. It takes eight seconds and it ends the "but is it
 > really secure" conversation, because the audience watches the app fail.
+
+### If they ask what stops someone copying this
+
+The answer is not the idea — it is the surface. Krate is a contract between an
+app and three operating systems, and every one of the following had to work
+identically on all three before any of it counted:
+
+> windows · 17 widget kinds · layout · file dialogs that hand over tokens
+> instead of paths · images · a drawing surface · sound in and out · HTTPS ·
+> SQL · secure storage · speech-to-text · a permission wall that is tested by
+> attacking it
+
+Each one is easy alone. The value is that no app has to care which computer it
+is running on — and that is only true once *all* of them are done, on *all*
+three systems, and stay done. Nine apps re-run nightly to prove they stay done.
+
+The second moat is subtler and shows up in our own history: **we keep catching
+ourselves.** A change that would have broken every existing app was caught the
+day it was made, by a test that runs real apps rather than checking a
+signature. That discipline is what a buyer is actually purchasing.
 
 ### The slide that earns trust
 

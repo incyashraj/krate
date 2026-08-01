@@ -164,6 +164,12 @@ Kept here so nobody accidentally promises it:
 - **WebSockets / live connections.** HTTPS works; streaming does not. No
   multiplayer, no live feeds.
 - **System menu bars.** Apps degrade to in-window buttons.
+- **"Write apps in any language."** The JavaScript toolchain
+  (`componentize-js`, `jco`) is in the tree, and the only committed
+  TypeScript sample fixtures are from before the project rename and no longer
+  instantiate. Until a JS app is built and replayed nightly, the honest
+  statement is "Rust today, and the component model makes other languages
+  possible" -- not a capability claim.
 - **"The AI always makes good choices."** It does not. A generated password
   keeper stored passwords in ordinary app storage until we told the AI which
   store meant what. Krate guarantees an app cannot exceed its permissions; it
