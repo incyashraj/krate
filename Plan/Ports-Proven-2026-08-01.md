@@ -183,3 +183,38 @@ failure there is: the app's own self-check names the problem in one line.
 
 A build error gets two attempts. A wrong answer gets none. That is backwards,
 and it is the next thing to fix on this path.
+
+
+## 5. envelope — the database shape
+
+| | |
+|---|---|
+| Source | [mattrighetti/envelope](https://github.com/mattrighetti/envelope), 3,795 lines, sqlx + tokio |
+| Result | 19,495 byte `.krate` |
+| Imports | 6 `krate:*`, **0 `wasi:*`** |
+
+An environment-variable manager backed by SQLite. Three capabilities working
+together in one program:
+
+```
+envelope quick check
+added 2 variables to quick-a
+  API_KEY=sk_test_123
+  DEBUG_MODE=true
+diff quick-a quick-b: 1 differing key(s)
+soft-deleted DEBUG_MODE from quick-a
+reverted DEBUG_MODE in quick-a
+random and secret round-trip ok
+```
+
+Real SQL through `store.sql`, encrypted values through `store.secret`, and
+`random.bytes` -- the capability that did not exist this morning.
+
+It was blocked for a while by the harness rather than by the app: the
+verification run hands a file path to anything declaring `fs.read`, which fits a
+file reader and does not fit a subcommand CLI. The app printed its usage and
+exited non-zero having passed every other check. The harness now tries `quick`
+as well, and this port passes unchanged.
+
+At 3,795 lines it is also the largest source ported so far, though still short
+of the 5,000-line bar the gate sets for "medium".
