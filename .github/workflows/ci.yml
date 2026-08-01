@@ -1049,6 +1049,16 @@ jobs:
       - name: Replay every ported app
         shell: bash
         run: sh scripts/replay-ported-apps.sh
+      # The contract tells the porting agent which crates to use, and untested
+      # advice sent one port into four repair attempts against a dependency
+      # that could never build. This compiles each recommended crate the way a
+      # guest does and inspects the module for wasi imports.
+      - name: Check the crates the contract recommends
+        shell: bash
+        run: |
+          rustup target add wasm32-wasip1
+          command -v wasm-tools >/dev/null || cargo install wasm-tools --locked
+          sh scripts/check-recommended-crates.sh
 
   port-regression:
     name: Re-port the proven programs
