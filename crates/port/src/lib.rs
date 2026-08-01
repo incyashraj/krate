@@ -257,7 +257,99 @@ pub fn analyze(source: impl AsRef<Path>) -> Result<PortPlan> {
     })?;
     let mut analysis = Analysis::default();
     scan_dir(&canonical, &canonical, &mut analysis)?;
+    scan_cargo_lock(&canonical, &mut analysis);
     finish_plan(canonical, analysis)
+}
+
+/// Read `Cargo.lock` for crates that link a library the operating system
+/// must already have installed.
+///
+/// The lockfile is skipped by the pattern scan for good reason: it is large,
+/// generated, and every crate in the tree appears in it, so ordinary patterns
+/// produce noise there rather than findings. It is also the only place a
+/// transitive native binding is visible -- an image viewer's own `Cargo.toml`
+/// says `image = { features = ["avif-native"] }`, which looks like a pure-Rust
+/// dependency, and the `dav1d-sys` it pulls appears two levels down.
+///
+/// The test is not the `-sys` suffix. That convention marks a crate that binds
+/// to something outside Rust, which includes plenty that build for wasm
+/// perfectly well: `js-sys` and `web-sys` are WebAssembly's own bindings,
+/// `windows-sys` and `linux-raw-sys` are generated syscall declarations. Every
+/// proven port already carries several. Flagging the suffix marked all six as
+/// unsupported.
+///
+/// What actually marks a native binding is a build dependency on `system-deps`
+/// or `pkg-config`: those exist to locate a library already installed on the
+/// machine, and the wasm target has none. `dav1d-sys` has one; none of the
+/// harmless `-sys` crates do.
+///
+/// It is a change, not a blocker, and the six proven ports are why. Every one
+/// of them carries a native binding: `openssl-sys` under a HTTP client,
+/// `libsqlite3-sys` under a database layer, `x11-dl` and `wayland-sys` under
+/// egui's windowing. All six ported anyway, because each binding sits beneath
+/// a dependency the port replaces outright -- the HTTP client becomes Krate's
+/// `net`, the database becomes `store.sql`, the windowing becomes Krate's own
+/// UI. Calling that a blocker would have told six people not to try six ports
+/// that work.
+///
+/// It stays a blocker only when the binding is the app's actual job, which the
+/// caller decides: a JPEG compressor built on `mozjpeg-sys` has nothing left
+/// once that crate is gone.
+fn scan_cargo_lock(root: &Path, analysis: &mut Analysis) {
+    let lock = root.join("Cargo.lock");
+    let Ok(text) = fs::read_to_string(&lock) else {
+        return;
+    };
+
+    let mut found: Vec<String> = Vec::new();
+    let mut name: Option<String> = None;
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("name = \"") {
+            name = rest.strip_suffix('"').map(str::to_string);
+            continue;
+        }
+        // Inside a package's `dependencies = [...]`, entries are quoted and
+        // indented. A package that pulls one of these is asking the build to
+        // find a library on the host.
+        let entry = line.trim().trim_matches(|c| c == '"' || c == ',');
+        if matches!(entry, "system-deps" | "pkg-config") {
+            if let Some(package) = name.clone() {
+                if !found.iter().any(|f| *f == package) {
+                    found.push(package);
+                }
+            }
+        }
+    }
+    if found.is_empty() {
+        return;
+    }
+
+    found.sort();
+    let named = found.join(", ");
+    let line = text
+        .lines()
+        .position(|l| found.iter().any(|f| l == format!("name = \"{f}\"")))
+        .map(|index| index + 1);
+    add_evidence_finding(
+        analysis,
+        FindingSpec {
+            id: "native-library-binding".to_string(),
+            severity: Severity::Change,
+            // High, not medium: this is not a keyword in prose. The crate is in
+            // the resolved dependency graph, and it asks the build to go
+            // looking for a native library that the wasm target does not have.
+            confidence: Confidence::High,
+            title: "Binds a native C library".to_string(),
+            detail: format!(
+                "The dependency tree pulls {named}, which locate and link a library already installed on the machine. Nothing here builds for Krate: the target has no C toolchain and no system libraries to find. Usually these sit under a dependency the port replaces anyway -- an HTTP client becomes `net`, a database becomes `store.sql`, a windowing crate becomes Krate's own UI -- and the binding leaves with it. Sometimes one feature flag is the whole cause: `image`'s `avif-native` pulls `dav1d-sys` while the same crate's pure-Rust decoders do not. Check which case this is before starting, because if the native library is what the app actually does, the port has nothing left to build on."
+            ),
+            capability: None,
+        },
+        Evidence {
+            path: "Cargo.lock".to_string(),
+            line,
+        },
+    );
 }
 
 /// Copy a bounded, credential-filtered, read-only source snapshot for an AI
@@ -1747,6 +1839,70 @@ mod tests {
             "the runtime supports these but the analyzer cannot spot them in source, \
              so a port of an app that uses one gets a plan that does not mention it: {missing:?}"
         );
+    }
+
+    #[test]
+    fn the_lockfile_names_a_native_binding_without_condemning_every_sys_crate() {
+        // The `-sys` suffix is not the signal. `js-sys` and `web-sys` are
+        // WebAssembly's own bindings and `windows-sys` is generated syscall
+        // declarations; every proven port carries several, and matching the
+        // suffix marked all six as unsupported. What marks a real binding is a
+        // build dependency on system-deps or pkg-config: those go looking for a
+        // library already installed on the machine, and wasm has none.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"viewer\"\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("main.rs"), "fn main() {}\n").unwrap();
+        fs::write(
+            dir.path().join("Cargo.lock"),
+            r#"
+[[package]]
+name = "js-sys"
+version = "0.3"
+
+[[package]]
+name = "windows-sys"
+version = "0.52"
+
+[[package]]
+name = "dav1d-sys"
+version = "0.8.3"
+dependencies = [
+ "libc",
+ "system-deps",
+]
+"#,
+        )
+        .unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        let finding = plan
+            .findings
+            .iter()
+            .find(|f| f.id == "native-library-binding")
+            .expect("dav1d-sys links a system library");
+        assert!(
+            finding.detail.contains("dav1d-sys"),
+            "the finding must name the crate: {}",
+            finding.detail
+        );
+        for harmless in ["js-sys", "windows-sys"] {
+            assert!(
+                !finding.detail.contains(harmless),
+                "{harmless} builds for wasm and must not be named: {}",
+                finding.detail
+            );
+        }
+
+        // A change, not a blocker. Every proven port carries one of these under
+        // a dependency the port replaces outright -- openssl-sys under an HTTP
+        // client, libsqlite3-sys under a database. Blocking would have told six
+        // people not to attempt six ports that work.
+        assert_eq!(finding.severity, crate::Severity::Change);
+        assert_ne!(plan.verdict, Verdict::Unsupported);
     }
 
     #[test]
