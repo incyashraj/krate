@@ -1545,6 +1545,126 @@ mod tests {
         assert_eq!(node.text_cursor, Some((2, 0)));
     }
 
+    /// A window with one image widget as its root, ready to be given a picture.
+    fn host_with_image_widget() -> (Phase3GuiHost, u64, u64) {
+        use ui::window::Host as _;
+        let mut host = headless_host();
+        let window = host
+            .create(
+                "viewer".to_string(),
+                ui::types::WindowSize {
+                    width: 200,
+                    height: 200,
+                },
+            )
+            .expect("create call")
+            .expect("a window");
+
+        let mut node = wit_node(ui::types::WidgetKind::Image, None);
+        node.label = None;
+        let widget = node.id;
+        ui::tree::Host::set_root(&mut host, window, node)
+            .expect("set_root call")
+            .expect("an image widget may be the root");
+        (host, window, widget)
+    }
+
+    #[test]
+    fn a_picture_reaches_the_widget_it_was_sent_for() {
+        // The whole path: an app sets pixels through krate:ui/image, and they
+        // arrive on the placement the painters draw from. Without this, a
+        // picture could be accepted and stored and never reach a window.
+        let (mut host, window, widget) = host_with_image_widget();
+        ui::image::Host::set_pixels(
+            &mut host,
+            window,
+            widget,
+            ui::image::ImagePixels {
+                width: 2,
+                height: 2,
+                rgba: vec![255u8; 16],
+            },
+        )
+        .expect("set_pixels call")
+        .expect("an image widget accepts a picture");
+
+        let id = host.window_id(window).expect("the window exists");
+        let widget_id = WidgetId::new(widget).expect("a real widget id");
+        let stored = host.images.borrow();
+        let picture = stored
+            .get(&(id, widget_id))
+            .expect("the picture must be held for this widget");
+        assert_eq!((picture.width, picture.height), (2, 2));
+        drop(stored);
+
+        // And clearing takes it away, leaving the empty frame a viewer shows
+        // before anybody has chosen a file.
+        ui::image::Host::clear(&mut host, window, widget)
+            .expect("clear call")
+            .expect("clearing succeeds");
+        assert!(host.images.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_picture_is_refused_for_a_widget_that_cannot_show_one() {
+        // Storing pixels for a button would leave the app believing it had
+        // shown something while nothing ever drew.
+        use ui::window::Host as _;
+        let mut host = headless_host();
+        let window = host
+            .create(
+                "app".to_string(),
+                ui::types::WindowSize {
+                    width: 100,
+                    height: 100,
+                },
+            )
+            .expect("create call")
+            .expect("a window");
+        let node = wit_node(ui::types::WidgetKind::Button, None);
+        let widget = node.id;
+        ui::tree::Host::set_root(&mut host, window, node)
+            .expect("set_root call")
+            .expect("a button root");
+
+        let err = ui::image::Host::set_pixels(
+            &mut host,
+            window,
+            widget,
+            ui::image::ImagePixels {
+                width: 1,
+                height: 1,
+                rgba: vec![0u8; 4],
+            },
+        )
+        .expect("set_pixels call")
+        .expect_err("a button cannot show a picture");
+        assert!(matches!(err, ui::types::UiError::Unsupported(_)));
+    }
+
+    #[test]
+    fn a_picture_whose_bytes_do_not_match_its_size_is_refused() {
+        // Every host indexes this buffer by row and column. A buffer shorter
+        // than its stated size would read past the end on the last row, and
+        // the guest is the untrusted side of this boundary.
+        let (mut host, window, widget) = host_with_image_widget();
+        let err = ui::image::Host::set_pixels(
+            &mut host,
+            window,
+            widget,
+            ui::image::ImagePixels {
+                width: 4,
+                height: 4,
+                // A 4x4 image needs 64 bytes, not 8.
+                rgba: vec![0u8; 8],
+            },
+        )
+        .expect("set_pixels call")
+        .expect_err("the byte count must match the size");
+        assert!(matches!(err, ui::types::UiError::Unsupported(_)));
+        assert!(host.images.borrow().is_empty(), "nothing may be stored");
+    }
+
     #[test]
     fn a_text_caret_on_a_non_text_widget_is_rejected() {
         // A caret only means something on editable text; carrying one on, say,
