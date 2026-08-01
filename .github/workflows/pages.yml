@@ -66,6 +66,11 @@ jobs:
           python3 scripts/build-answer-pages.py
           cp docs/answers/*.html _site/
           cp docs/landing/faq.html _site/faq.html
+          # Regenerated on every deploy so the published numbers are the
+          # repository's, not whatever was true when someone last edited HTML.
+          python3 scripts/build-progress-page.py
+          mkdir -p _site/progress
+          cp docs/landing/progress.html _site/progress/index.html
           cp docs/landing/*.png _site/
           cp -R docs/book/book _site/docs
           # The custom domain lives in the built artifact, not in the branch, so
