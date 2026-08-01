@@ -378,7 +378,12 @@ fn port_author_command_builds_packages_and_permission_tests_a_candidate() {
         .arg("--prepare")
         .arg(&workspace)
         .arg("--author-cmd")
-        .arg("printf 'Preserved the file-reading journey.\\n' > PORT_RESULT.md")
+        .arg(
+            "grep -v 'starting point' \"$KRATE_PORT_CANDIDATE/src/lib.rs\" \
+             > \"$KRATE_PORT_CANDIDATE/src/lib.rs.ported\" \
+             && mv \"$KRATE_PORT_CANDIDATE/src/lib.rs.ported\" \"$KRATE_PORT_CANDIDATE/src/lib.rs\" \
+             && printf 'Preserved the file-reading journey.\\n' > PORT_RESULT.md",
+        )
         .arg("--to")
         .arg(&bundle)
         .arg("--transcript")
@@ -457,7 +462,9 @@ fn port_repairs_a_failed_candidate_with_the_exact_build_error() {
     let repair_command = "if [ -n \"$KRATE_PORT_REPAIR_LOG\" ]; then \
         grep -q 'cargo-component build failed' \"$KRATE_PORT_REPAIR_LOG\" && \
         cp \"$KRATE_PORT_CANDIDATE/src/lib.rs.good\" \"$KRATE_PORT_CANDIDATE/src/lib.rs\"; \
-        else cp \"$KRATE_PORT_CANDIDATE/src/lib.rs\" \"$KRATE_PORT_CANDIDATE/src/lib.rs.good\" && \
+        else grep -v 'starting point' \"$KRATE_PORT_CANDIDATE/src/lib.rs\" \
+        > \"$KRATE_PORT_CANDIDATE/src/lib.rs.good\" && \
+        cp \"$KRATE_PORT_CANDIDATE/src/lib.rs.good\" \"$KRATE_PORT_CANDIDATE/src/lib.rs\" && \
         printf '\\nthis is not valid rust\\n' >> \"$KRATE_PORT_CANDIDATE/src/lib.rs\"; fi";
 
     let output = krate()
@@ -3811,6 +3818,7 @@ fn a_failed_port_says_what_kind_of_failure_it_was() {
         &agent,
         "#!/bin/sh\n\
          f=\"$KRATE_PORT_CANDIDATE/src/lib.rs\"\n\
+         grep -v 'starting point' \"$f\" > \"$f.edited\" && mv \"$f.edited\" \"$f\"\n\
          printf 'fn never_compiles() { stdio::write_hex(b\"x\"); }\\n' >> \"$f\"\n",
     )
     .expect("write agent");

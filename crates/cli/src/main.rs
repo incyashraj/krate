@@ -1177,6 +1177,18 @@ fn complete_port(
         }
     };
 
+    // The agent receives read access to the source in order to understand it,
+    // but it must edit only the isolated candidate. Re-analyze the source and
+    // compare the complete deterministic plan before building anything.
+    let after_plan = krate_port::analyze(original_source)
+        .with_context(|| format!("re-check original source {}", original_source.display()))?;
+    if serde_json::to_vec(original_plan)? != serde_json::to_vec(&after_plan)? {
+        anyhow::bail!(
+            "the original source changed while the port agent was running; \
+             Krate stopped before packaging. Review the source and workspace."
+        );
+    }
+
     let lib_after = fs::read_to_string(candidate.join("src/lib.rs")).unwrap_or_default();
     if lib_after == scaffold_lib {
         anyhow::bail!(
@@ -1192,18 +1204,6 @@ fn complete_port(
             "the candidate still carries the starter's own header, so the app body \
              was not replaced. See the transcript at {}.",
             workspace.join(".agent-transcript.txt").display()
-        );
-    }
-
-    // The agent receives read access to the source in order to understand it,
-    // but it must edit only the isolated candidate. Re-analyze the source and
-    // compare the complete deterministic plan before building anything.
-    let after_plan = krate_port::analyze(original_source)
-        .with_context(|| format!("re-check original source {}", original_source.display()))?;
-    if serde_json::to_vec(original_plan)? != serde_json::to_vec(&after_plan)? {
-        anyhow::bail!(
-            "the original source changed while the port agent was running; \
-             Krate stopped before packaging. Review the source and workspace."
         );
     }
 

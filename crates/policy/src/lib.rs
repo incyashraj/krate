@@ -99,6 +99,20 @@ fn capability_allows(grant: &Capability, required: &Capability) -> bool {
             if grant.module() == "net" {
                 return net_resource_pattern_matches(&grant_resource, &required_resource);
             }
+            // `fs.list:images/**` must cover listing `images` itself. The glob
+            // matches paths *inside* the folder, so the one operation the
+            // person obviously meant to allow -- reading the folder's contents
+            // -- was refused, and an image viewer reported an empty library
+            // with a granted folder full of pictures. Listing is the only
+            // action widened this way: `fs.remove:images/**` covering removal
+            // of the folder itself would delete more than was granted.
+            if grant.module() == "fs" && grant.action() == "list" {
+                if let Some(prefix) = grant_resource.strip_suffix("/**") {
+                    if required_resource == prefix {
+                        return true;
+                    }
+                }
+            }
             resource_pattern_matches(&grant_resource, &required_resource)
         }
         _ => false,
@@ -234,6 +248,32 @@ pub type Result<T> = std::result::Result<T, PolicyError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_list_glob_covers_the_folder_itself_and_a_remove_glob_does_not() {
+        // `fs.list:images/**` grants "see what is in images". Listing the
+        // folder is that exact operation, and refusing it made an image viewer
+        // report an empty library with a granted folder full of pictures. But
+        // `fs.remove:images/**` grants deleting things *inside* the folder --
+        // widening it to the folder itself would delete more than was granted.
+        let list_grant = Capability::from_str("fs.list:images/**").expect("grant");
+        let list_folder = Capability::from_str("fs.list:images").expect("required");
+        assert!(capability_allows(&list_grant, &list_folder));
+
+        let list_inside = Capability::from_str("fs.list:images/holiday").expect("required");
+        assert!(capability_allows(&list_grant, &list_inside));
+
+        let remove_grant = Capability::from_str("fs.remove:images/**").expect("grant");
+        let remove_folder = Capability::from_str("fs.remove:images").expect("required");
+        assert!(
+            !capability_allows(&remove_grant, &remove_folder),
+            "a remove glob must not extend to the folder itself"
+        );
+
+        // And an unrelated folder stays refused.
+        let other = Capability::from_str("fs.list:secrets").expect("required");
+        assert!(!capability_allows(&list_grant, &other));
+    }
 
     const MANIFEST: &str = r#"
         [app]
