@@ -102,6 +102,9 @@ check "envelope" "quick" "quick"
 # The largest port: 5,396 lines of regex generator. Its answer is checkable --
 # ^a(?:bc?)?$ matches a, ab, abc and nothing else.
 check "grex" "quick" "^a(?:bc?)?"
+# rssfwd is deliberately absent. Given a real feed file it reaches the
+# internet, and a nightly check that depends on someone else's server reports
+# their uptime rather than our runtime. Its bundle still ships and still opens.
 # The first ported app a non-programmer would open on purpose. `rgba-widen:ok`
 # is the decoder turning real bytes into pixels, which is the part that was
 # impossible this morning -- there was no way to put a picture in a window.

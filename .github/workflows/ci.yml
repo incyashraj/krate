@@ -1056,6 +1056,12 @@ jobs:
       - name: Replay every ported app
         shell: bash
         run: sh scripts/replay-ported-apps.sh
+      # The website's numbers come from these bundles, and the fastest way to
+      # make a public claim wrong is to improve the code. Printed on every run
+      # so a stale claim is visible before it reaches a pitch deck.
+      - name: Print the numbers behind the public claims
+        shell: bash
+        run: sh scripts/check-claims.sh
       # The contract tells the porting agent which crates to use, and untested
       # advice sent one port into four repair attempts against a dependency
       # that could never build. This compiles each recommended crate the way a
