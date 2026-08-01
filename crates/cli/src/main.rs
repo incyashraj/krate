@@ -2724,6 +2724,17 @@ person chose: their click is the grant. Prefer this over asking someone to put\n
 files in a folder before starting -- an app that opens with \"choose a file\" is\n\
 one anybody can use.\n\
 \n\
+## Choosing where data lives\n\
+Three stores exist and the choice is meaning, not preference:\n\
+\n\
+- `store.kv` -- settings, lists, app state. Plain storage.\n\
+- `store.secret` -- anything a person would call a password, token, key, or\n\
+  PIN. It is backed by the operating system's own keychain. A \"password\n\
+  keeper\" built on `store.kv` stores passwords in plain app data, which is\n\
+  the one thing its user asked it not to do.\n\
+- `store.sql` -- rows you filter, join, or sum. If the request says\n\
+  \"between runs\" and \"running total\", this is usually it.\n\
+\n\
 ## Showing a picture\n\
 Build a widget of kind `Image`, then call\n\
 `bindings::krate::ui::image::set_pixels(window, widget, pixels)` with\n\
