@@ -24,7 +24,7 @@ systems.** No platform-only widgets, for the first time.
 
 | Still hollow | What it blocks |
 |---|---|
-| `audio.playback` | music/podcast players, games with sound |
+| `audio.playback` | music/podcast players, games with sound — **next up: cpal is already in the runtime and capture (375 lines) is the working mirror, so this is hours, not the weeks the failure report promises** |
 | `gfx.canvas2d` | drawing apps, charts drawn by the app itself |
 | `gfx.gpu3d` | 3D anything |
 | `ui.menu` | apps that expect a system menu bar (degrades to buttons) |
