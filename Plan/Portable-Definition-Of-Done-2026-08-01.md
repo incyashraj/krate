@@ -27,7 +27,7 @@ Measured, not estimated:
 | Real third-party ports | **6** — hexyl, savings, ddh, rssfwd, envelope, grex |
 | Capability keys | 34 |
 | Capabilities the analyzer can suggest | 18 of 18 requestable (13 more are default-granted) |
-| Widgets working on all three systems | 13 of 17 |
+| Widgets working on all three systems | 16 of 17 |
 | Languages the pipeline can build | 1 (Rust) |
 | **Bundles built on one OS and opened on another** | **9 of 9** |
 | Three-OS lanes green | **yes** — all three pass |
@@ -78,16 +78,16 @@ before today.
 Nine of nine. "One file, any computer" is now a checked claim rather than a
 description.
 
-### The nightly itself is not yet proven
+### The nightly has fired
 
-The schedule (`cron: "0 3 * * *"`) is live on main and the workflow is active,
-but **no scheduled run has fired yet** -- it landed a few hours before the first
-window and GitHub commonly delays scheduled runs. Every full run so far has been
-a manual dispatch.
+A scheduled run happened on its own on 2026-08-01 -- run `30683245755`, event
+`schedule`, no manual dispatch. That was the precondition for the two-week
+clean-nightly condition, so the clock can start counting from the first
+scheduled run that comes back green.
 
-That matters for the two-week clean-nightly condition: the clock cannot start
-until a scheduled run has actually happened on its own. Check for one before
-counting any days.
+Worth having checked rather than assumed: a correct cron in a correct workflow
+is not evidence that a schedule runs, and treating it as evidence is how nine
+jobs went four weeks without executing.
 
 ### Gate 3 — Ports keep working, not just worked once
 
