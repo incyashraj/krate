@@ -78,6 +78,17 @@ before today.
 Nine of nine. "One file, any computer" is now a checked claim rather than a
 description.
 
+### The nightly itself is not yet proven
+
+The schedule (`cron: "0 3 * * *"`) is live on main and the workflow is active,
+but **no scheduled run has fired yet** -- it landed a few hours before the first
+window and GitHub commonly delays scheduled runs. Every full run so far has been
+a manual dispatch.
+
+That matters for the two-week clean-nightly condition: the clock cannot start
+until a scheduled run has actually happened on its own. Check for one before
+counting any days.
+
 ### Gate 3 — Ports keep working, not just worked once
 
 **Check:** a nightly job ports a fixed set of real third-party programs from
