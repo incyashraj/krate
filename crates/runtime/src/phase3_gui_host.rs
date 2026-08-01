@@ -38,6 +38,20 @@ const WAIT_POLL_INTERVAL_MILLIS: u64 = 10;
 /// reaches its event loop. Only ever consulted on the headless path.
 const HEADLESS_IDLE_WAIT_LIMIT: u32 = 8;
 
+/// How long a headless GUI run may keep waiting for events before the host
+/// reports the window closed.
+///
+/// The idle-wait limit above only counts *unbounded* waits. An animation loop
+/// always passes a timeout -- that is how it gets a frame every 16 ms -- so it
+/// never reaches that limit and never ends. A person who runs an animated app
+/// with no window watches a frozen terminal, which is what happened to the
+/// bouncing-ball sample: ten minutes of nothing.
+///
+/// Wall-clock is the honest bound because it does not care how the guest
+/// waits. Five seconds is far longer than any verification run needs and short
+/// enough that a person who runs an app by mistake gets their prompt back.
+const HEADLESS_RUN_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Host state for the Phase 3 `gui` world imports.
 pub struct Phase3GuiHost {
     runtime: Phase3UiRuntime,
@@ -66,6 +80,10 @@ pub struct Phase3GuiHost {
     /// host synthesises a close request so the guest exits the way it would if
     /// a person had closed the window.
     idle_waits: std::cell::Cell<u32>,
+    /// When this headless run began waiting for events, for [`HEADLESS_RUN_BUDGET`].
+    /// Set on the first wait rather than at construction, so time spent
+    /// building the window tree is not charged against the budget.
+    headless_started: std::cell::Cell<Option<std::time::Instant>>,
     /// Pictures for image widgets, keyed by the widget they belong to.
     ///
     /// Held here rather than on the widget node because a picture arrives
@@ -100,6 +118,7 @@ impl Phase3GuiHost {
             native_text: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             headless: matches!(mode, Phase3HostUiMode::HeadlessDraft),
             idle_waits: std::cell::Cell::new(0),
+            headless_started: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             canvases: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             next_canvas_id: std::cell::Cell::new(1),
@@ -135,6 +154,30 @@ impl Phase3GuiHost {
     /// closed the window" versus 1 for "finished without one". Synthesising the
     /// close on every idle timeout made those runs claim a person acted when
     /// nobody had.
+    /// Report a window close once a headless run has spent its whole budget.
+    ///
+    /// Independent of how the guest waits, which is the point: the idle-wait
+    /// counter is defeated by any timeout, and an animated app always passes
+    /// one.
+    fn headless_budget_close_request(&self) -> Option<ui::types::Event> {
+        if !self.headless {
+            return None;
+        }
+        let now = std::time::Instant::now();
+        let started = match self.headless_started.get() {
+            Some(started) => started,
+            None => {
+                self.headless_started.set(Some(now));
+                return None;
+            }
+        };
+        if now.duration_since(started) < HEADLESS_RUN_BUDGET {
+            return None;
+        }
+        let window = self.windows.first().map(|id| id.get()).unwrap_or(0);
+        Some(ui::types::Event::CloseRequested(window))
+    }
+
     fn headless_close_request(&self) -> Option<ui::types::Event> {
         if !self.headless {
             return None;
@@ -896,6 +939,17 @@ impl ui::events::Host for Phase3GuiHost {
     fn wait(&mut self, timeout_millis: Option<u32>) -> wasmtime::Result<Option<ui::types::Event>> {
         let deadline = timeout_millis
             .map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(u64::from(ms)));
+
+        // Checked before polling, deliberately. An animation loop calls
+        // `request-redraw` every frame and immediately receives that redraw
+        // back, so the queue is never empty and the app looks busy forever --
+        // but nothing is happening that a person would recognise as activity.
+        // The budget is wall-clock precisely so a loop cannot feed itself past
+        // it.
+        if let Some(close) = self.headless_budget_close_request() {
+            self.idle_waits.set(0);
+            return Ok(Some(close));
+        }
 
         loop {
             let event = self
@@ -1799,6 +1853,50 @@ mod tests {
             .expect("set_root call")
             .expect("a canvas may be the root");
         (host, window, widget)
+    }
+
+    #[test]
+    fn a_headless_animation_loop_cannot_run_forever() {
+        // The demo path: someone is sent a .krate and opens it with no
+        // arguments. An animated app calls request-redraw every frame and
+        // immediately receives that redraw back, so the event queue is never
+        // empty and every "is it idle" check says no. Before the wall-clock
+        // budget, that was a terminal frozen for as long as the person waited.
+        let mut host = headless_host();
+        use ui::window::Host as _;
+        let window = host
+            .create(
+                "loop".to_string(),
+                ui::types::WindowSize {
+                    width: 100,
+                    height: 100,
+                },
+            )
+            .expect("create call")
+            .expect("a window");
+
+        // First wait starts the clock rather than ending the run: an app is
+        // entitled to its budget, not merely to one call.
+        let first = ui::events::Host::wait(&mut host, Some(1)).expect("wait call");
+        assert!(
+            !matches!(first, Some(ui::types::Event::CloseRequested(_))),
+            "the budget must not fire on the very first wait"
+        );
+
+        // Pretend the run began long ago, exactly as a real one would after
+        // five seconds of frames.
+        host.headless_started.set(Some(
+            std::time::Instant::now() - HEADLESS_RUN_BUDGET - std::time::Duration::from_millis(1),
+        ));
+
+        // Now feed the queue the way an animation loop does, then wait. The
+        // close must win over the app's own redraw.
+        let _ = ui::window::Host::request_redraw(&mut host, window);
+        let event = ui::events::Host::wait(&mut host, Some(16)).expect("wait call");
+        assert!(
+            matches!(event, Some(ui::types::Event::CloseRequested(_))),
+            "a spent budget must end the run even with events queued: {event:?}"
+        );
     }
 
     #[test]
