@@ -29,7 +29,7 @@ Measured, not estimated:
 | Capabilities the analyzer can suggest | 18 of 18 requestable (13 more are default-granted) |
 | Widgets working on all three systems | 13 of 17 |
 | Languages the pipeline can build | 1 (Rust) |
-| **Bundles built on one OS and opened on another** | **0** |
+| **Bundles built on one OS and opened on another** | **9 of 9** |
 | Three-OS lanes green | **yes** — all three pass |
 
 The last two rows are the ones that matter. Everything else is progress; those
@@ -61,8 +61,8 @@ OS*, so a broken lane invalidates all of them at once.
 lanes, opened there, and produces byte-identical output. Same for a bundle
 built on each of the other two. Nine runs, three bundles.
 
-**Status: PROVEN on macOS and Linux, 2026-08-01.** Six of the nine openings
-are green, from the run's own logs rather than a claim:
+**Status: PROVEN, all nine openings, 2026-08-01.** Every bundle opens on every
+system, from the run's own logs rather than a claim:
 
 ```
 bundle from macos-latest   opened and saved on Linux
@@ -71,11 +71,12 @@ bundle from windows-latest opened and saved on Linux
 all 3 bundles opened on Linux, each with its own identity
 ```
 
-and the same three on macOS. A `.krate` authored on Windows runs on Linux and
-saves its data — a sentence that had never been true in a test before today.
+and the same three on macOS and on Windows. A `.krate` authored on Windows runs
+on Linux and saves its data — a sentence that had never been true in a test
+before today.
 
-The Windows lane of this job is the remaining third. Until it is green, the
-honest form of the claim is "one file, two of three computers, proven".
+Nine of nine. "One file, any computer" is now a checked claim rather than a
+description.
 
 ### Gate 3 — Ports keep working, not just worked once
 
