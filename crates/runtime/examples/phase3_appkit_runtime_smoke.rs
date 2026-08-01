@@ -62,6 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             value: None,
             selected: None,
             text_cursor: None,
+            pixels: None,
         },
     )?;
     dispatcher.upsert_node(
@@ -81,6 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             value: None,
             selected: None,
             text_cursor: None,
+            pixels: None,
         },
     )?;
     dispatcher.upsert_node(
@@ -100,6 +102,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             value: None,
             selected: None,
             text_cursor: None,
+            pixels: None,
         },
     )?;
 

@@ -10,10 +10,12 @@
 
 use krate_adapter_common::painter::drawn_kind;
 use krate_adapter_common::ui::{
-    kind_is_selectable, Modifiers, PointerButton, Theme, UiAdapterError, UiEvent, WidgetId,
-    WidgetKind, WidgetNode, WidgetPlacement, WidgetStyle, WindowId, WindowOptions, WindowSize,
+    kind_is_selectable, ImagePixels, Modifiers, PointerButton, Theme, UiAdapterError, UiEvent,
+    WidgetId, WidgetKind, WidgetNode, WidgetPlacement, WidgetStyle, WindowId, WindowOptions,
+    WindowSize,
 };
 use krate_layout::{absolute_rect, LayoutViewport};
+use std::sync::Arc;
 
 use crate::{
     audio_capture::{AudioCaptureRuntime, CaptureConfig, CaptureError, CaptureSampleFormat},
@@ -214,6 +216,9 @@ impl Phase3GuiHost {
                 height: rect.height,
                 clickable,
                 role: node.role.clone(),
+                // Shared, not copied: this runs once per widget per frame, and
+                // a photograph is a quarter-gigabyte of pixels.
+                pixels: node.pixels.clone().map(Arc::new),
             });
         }
         drop(offsets);
@@ -512,6 +517,22 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
         )));
     }
 
+    // Pixels on anything but an image widget mean the app is confused about
+    // what it built. Better to say so than to carry a buffer nothing will draw.
+    let pixels = match node.pixels {
+        Some(p) if kind != WidgetKind::Image => {
+            let _ = p;
+            return Err(ui::types::UiError::Unsupported(format!(
+                "widget kind {kind:?} cannot carry an image"
+            )));
+        }
+        Some(p) => Some(
+            ImagePixels::new(p.width, p.height, p.rgba)
+                .map_err(|e| ui::types::UiError::Unsupported(e.to_string()))?,
+        ),
+        None => None,
+    };
+
     Ok(WidgetNode {
         id,
         parent,
@@ -523,6 +544,7 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
         value: node.value,
         selected: node.selected,
         text_cursor: node.text_cursor.map(|tc| (tc.cursor, tc.anchor)),
+        pixels,
     })
 }
 
@@ -1441,6 +1463,7 @@ mod tests {
                 cursor: c,
                 anchor: a,
             }),
+            pixels: None,
         }
     }
 

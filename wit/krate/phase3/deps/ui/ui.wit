@@ -194,6 +194,25 @@ interface types {
     padding: f32,
   }
 
+  /// Decoded picture data for an image widget.
+  ///
+  /// Straight RGBA bytes, four per pixel, top row first -- not PNG or JPEG.
+  /// An app decodes its own file and sends the result. That is more work for
+  /// the app than handing over the file, and it is the point: a decoder for
+  /// untrusted image files is one of the most attacked pieces of code there
+  /// is, and putting one in the runtime would mean every app's malformed
+  /// download runs against the host. Here the decoding happens inside the
+  /// sandbox, and what crosses the boundary is pixels, which cannot carry an
+  /// exploit for a parser that is no longer in the path.
+  record image-pixels {
+    /// Width in pixels.
+    width: u32,
+    /// Height in pixels.
+    height: u32,
+    /// RGBA bytes, row-major from the top, exactly width * height * 4 long.
+    rgba: list<u8>,
+  }
+
   /// One node in the portable widget tree.
   record widget-node {
     /// Stable app-owned widget id.
@@ -218,6 +237,8 @@ interface types {
     /// Caret and selection for a text widget the app edits itself, drawn by
     /// painting hosts. `none` leaves text caretless, as a passive label.
     text-cursor: option<text-cursor>,
+    /// Picture for an image widget. Any other kind rejects it.
+    pixels: option<image-pixels>,
   }
 
   /// Top-level menu item.

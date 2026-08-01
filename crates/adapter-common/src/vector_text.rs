@@ -548,6 +548,7 @@ mod tests {
             height: 32.0,
             clickable: false,
             role: None,
+            pixels: None,
         }];
         if !try_paint_placements(
             &mut buffer,
@@ -608,6 +609,7 @@ mod tests {
             height: 32.0,
             clickable: false,
             role: None,
+            pixels: None,
         };
         let placements = [button];
         let mut plain = vec![0u32; (w * h) as usize];
@@ -670,6 +672,7 @@ mod text_area_tests {
             height: h,
             clickable: false,
             role: None,
+            pixels: None,
         }
     }
 

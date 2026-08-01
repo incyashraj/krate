@@ -4,6 +4,7 @@
 //! windows yet. It gives the Linux, macOS, and Windows adapter work a shared
 //! shape for ids, size validation, lifecycle state, and early event routing.
 
+use std::sync::Arc;
 use std::{
     collections::{BTreeMap, VecDeque},
     sync::{Mutex, MutexGuard},
@@ -291,17 +292,63 @@ pub enum WidgetKind {
     TextArea,
     ListView,
     TreeView,
-    /// An image view.
-    ///
-    /// The one declared widget no host accepts, and deliberately. The other
-    /// three that were unimplemented -- `grid`, `canvas`, `tabs` -- each turned
-    /// out to be a layout rule the engine already had, so none needed new
-    /// drawing. This is not that shape: the node model carries no image data at
-    /// all, so an app cannot say which image to show even if a host were ready
-    /// to draw one. Making it real means a WIT change to carry the data, a
-    /// decoder, and three hosts agreeing about scaling and colour.
+    /// An image view, carrying decoded pixels in `WidgetNode::pixels`.
     Image,
     Canvas,
+}
+
+/// The largest picture one image widget may carry.
+///
+/// 64 megapixels is past any photograph a person would open and still a bound:
+/// without one, a width and height multiplied together overflow into an
+/// allocation that takes the host down, and the app that sent them is the one
+/// we do not trust.
+pub const MAX_IMAGE_PIXELS: u64 = 64 * 1024 * 1024;
+
+/// Decoded picture data for an image widget: RGBA, four bytes per pixel,
+/// top row first.
+///
+/// Not PNG or JPEG. The app decodes its own file inside the sandbox and sends
+/// the result, so no image parser sits in the host where a malformed download
+/// would reach it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImagePixels {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+impl ImagePixels {
+    /// Build a picture, checking that the bytes match the size claimed.
+    ///
+    /// Every host indexes this buffer by row and column. A buffer shorter than
+    /// its stated width and height would read past the end on the last row, so
+    /// the check happens once here rather than three times in three languages.
+    pub fn new(width: u32, height: u32, rgba: Vec<u8>) -> Result<Self, UiAdapterError> {
+        if width == 0 || height == 0 {
+            return Err(UiAdapterError::Unsupported(format!(
+                "an image must have a non-zero width and height, got {width}x{height}"
+            )));
+        }
+        let count = u64::from(width) * u64::from(height);
+        if count > MAX_IMAGE_PIXELS {
+            return Err(UiAdapterError::Unsupported(format!(
+                "an image may be at most {MAX_IMAGE_PIXELS} pixels, got {width}x{height}"
+            )));
+        }
+        let expected = count * 4;
+        if rgba.len() as u64 != expected {
+            return Err(UiAdapterError::Unsupported(format!(
+                "a {width}x{height} image needs exactly {expected} RGBA bytes, got {}",
+                rgba.len()
+            )));
+        }
+        Ok(Self {
+            width,
+            height,
+            rgba,
+        })
+    }
 }
 
 /// Minimal layout hints attached to a widget node.
@@ -368,6 +415,8 @@ pub struct WidgetNode {
     /// app edits itself. Painting hosts draw the caret and selection wash;
     /// native-control hosts ignore it. `None` leaves the text a passive label.
     pub text_cursor: Option<(u32, u32)>,
+    /// Decoded picture for an image widget. Every other kind rejects one.
+    pub pixels: Option<ImagePixels>,
 }
 
 impl WidgetNode {
@@ -384,6 +433,7 @@ impl WidgetNode {
             value: None,
             selected: None,
             text_cursor: None,
+            pixels: None,
         }
     }
 
@@ -397,6 +447,18 @@ impl WidgetNode {
             )));
         }
         self.text_cursor = Some((cursor, anchor));
+        Ok(self)
+    }
+
+    /// Attach a decoded picture. Only an image widget may carry one.
+    pub fn with_pixels(mut self, pixels: ImagePixels) -> Result<Self, UiAdapterError> {
+        if self.kind != WidgetKind::Image {
+            return Err(UiAdapterError::Unsupported(format!(
+                "widget kind {:?} cannot carry an image",
+                self.kind
+            )));
+        }
+        self.pixels = Some(pixels);
         Ok(self)
     }
 
@@ -1087,6 +1149,13 @@ pub struct WidgetPlacement {
     /// "textbox", "option", "button"). Styling stays out of the guest
     /// contract; hosts may use the role to pick native typography.
     pub role: Option<String>,
+    /// Decoded picture for an image widget, shared rather than copied.
+    ///
+    /// Placements are rebuilt every frame. A full-size photograph is a
+    /// quarter of a gigabyte of pixels, so cloning one per frame would burn
+    /// more time and memory than drawing it; the `Arc` makes a frame cost a
+    /// refcount instead.
+    pub pixels: Option<Arc<ImagePixels>>,
 }
 
 /// One raw pointer sample from a native backend, before hit testing.

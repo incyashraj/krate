@@ -499,7 +499,8 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
                 )?
                 .with_clickable(placement.clickable)
                 .with_checked(placement.checked)
-                .with_role(placement.role.clone()),
+                .with_role(placement.role.clone())
+                .with_pixels(placement.pixels.clone()),
             );
         }
 
@@ -813,6 +814,7 @@ mod tests {
             y: 10.0,
             width: 100.0,
             height: 20.0,
+            pixels: None,
         };
         // No native session exists in tests; the call used to fail while
         // converting the unsupported kind, before even reaching a session.

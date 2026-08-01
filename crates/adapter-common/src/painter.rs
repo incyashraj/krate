@@ -9,10 +9,13 @@
 //! softbuffer presents on both hosts.
 
 use crate::drawtext;
-use crate::ui::{WidgetId, WidgetKind, WidgetPlacement};
+use crate::ui::{ImagePixels, WidgetId, WidgetKind, WidgetPlacement};
 
 /// Widget palette for the drawn pass (0xAARRGGBB).
 pub const COLOR_BACKGROUND: u32 = 0xFFF2F2F2;
+/// Behind a picture: darker than the window so a letterboxed photo reads as
+/// framed rather than as a gap in the layout.
+pub const COLOR_IMAGE_BACKDROP: u32 = 0xFF1E1E1E;
 pub const COLOR_BUTTON: u32 = 0xFF3B82F6;
 pub const COLOR_BUTTON_HOVER: u32 = 0xFF5C93F8;
 pub const COLOR_BUTTON_PRESSED: u32 = 0xFF2563EB;
@@ -55,7 +58,86 @@ pub fn drawn_kind(kind: WidgetKind) -> bool {
             | WidgetKind::Progress
             | WidgetKind::ListView
             | WidgetKind::TreeView
+            | WidgetKind::Image
     )
+}
+
+/// Draw a picture into a rect, scaled to fit and centred.
+///
+/// Fit rather than fill: a photograph stretched to the widget's aspect ratio
+/// is visibly wrong, and cropping to fill hides part of what somebody asked to
+/// see. The letterbox is the honest option.
+///
+/// Nearest-neighbour sampling. A smooth filter would look better on a
+/// downscaled photo and would also be the third pixel-processing loop to
+/// maintain; this one is correct and small, and every host gets the same
+/// output because they all call it.
+pub fn draw_image(
+    buffer: &mut [u32],
+    width: u32,
+    height: u32,
+    rect: (f32, f32, f32, f32),
+    image: &ImagePixels,
+    clip: Option<(f32, f32, f32, f32)>,
+) {
+    let (rx, ry, rw, rh) = rect;
+    if rw <= 0.0 || rh <= 0.0 || image.width == 0 || image.height == 0 {
+        return;
+    }
+
+    // Fit inside, preserving the picture's own proportions.
+    let scale = (rw / image.width as f32).min(rh / image.height as f32);
+    let draw_w = image.width as f32 * scale;
+    let draw_h = image.height as f32 * scale;
+    let ox = rx + (rw - draw_w) / 2.0;
+    let oy = ry + (rh - draw_h) / 2.0;
+
+    // Clamp to the buffer and to any scroll clip before touching a pixel, so
+    // the sampling loop never has to bounds-check.
+    let mut x0 = ox.max(0.0);
+    let mut y0 = oy.max(0.0);
+    let mut x1 = (ox + draw_w).min(width as f32);
+    let mut y1 = (oy + draw_h).min(height as f32);
+    if let Some((cx, cy, cw, ch)) = clip {
+        x0 = x0.max(cx);
+        y0 = y0.max(cy);
+        x1 = x1.min(cx + cw);
+        y1 = y1.min(cy + ch);
+    }
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+
+    let (x0, y0, x1, y1) = (x0 as u32, y0 as u32, x1 as u32, y1 as u32);
+    for py in y0..y1 {
+        // Which source row this destination row samples.
+        let sy = (((py as f32 - oy) / scale) as u32).min(image.height - 1);
+        let src_row = sy as usize * image.width as usize * 4;
+        let dst_row = py as usize * width as usize;
+        for px in x0..x1 {
+            let sx = (((px as f32 - ox) / scale) as u32).min(image.width - 1);
+            let i = src_row + sx as usize * 4;
+            let (r, g, b, a) = (
+                image.rgba[i] as u32,
+                image.rgba[i + 1] as u32,
+                image.rgba[i + 2] as u32,
+                image.rgba[i + 3] as u32,
+            );
+            let dst = dst_row + px as usize;
+            buffer[dst] = if a == 255 {
+                0xFF00_0000 | (r << 16) | (g << 8) | b
+            } else {
+                // Blend over what is already there, so a transparent PNG shows
+                // the window behind it rather than a black box.
+                let under = buffer[dst];
+                let blend = |s: u32, d: u32| ((s * a + d * (255 - a)) / 255) & 0xFF;
+                0xFF00_0000
+                    | (blend(r, (under >> 16) & 0xFF) << 16)
+                    | (blend(g, (under >> 8) & 0xFF) << 8)
+                    | blend(b, under & 0xFF)
+            };
+        }
+    }
 }
 
 /// Resolve the fill color for a button under the given interaction.
@@ -310,6 +392,17 @@ pub fn paint_placements_bitmap(
                     line_y += line_h;
                 }
             }
+            WidgetKind::Image => {
+                // A widget with no picture yet -- a viewer before a file is
+                // chosen -- draws its frame and nothing else, rather than
+                // leaving whatever was behind it on screen.
+                if let Some(clipped) = clip_fill((px, py, pw, ph)) {
+                    fill_rect(buffer, width, height, clipped, COLOR_IMAGE_BACKDROP)
+                };
+                if let Some(image) = placement.pixels.as_deref() {
+                    draw_image(buffer, width, height, (px, py, pw, ph), image, clip_px);
+                }
+            }
             WidgetKind::Text => {
                 drawtext::draw_text(
                     buffer,
@@ -430,6 +523,89 @@ pub fn paint_placements_bitmap(
 mod tests {
     use super::*;
 
+    fn solid(w: u32, h: u32, rgba: [u8; 4]) -> ImagePixels {
+        ImagePixels::new(w, h, rgba.repeat((w * h) as usize)).expect("valid image")
+    }
+
+    #[test]
+    fn a_picture_keeps_its_shape_rather_than_stretching_to_the_widget() {
+        // A wide photo in a square widget must letterbox. Stretching it is the
+        // difference between a photo viewer and a funhouse mirror.
+        let mut buffer = vec![0u32; 40 * 40];
+        let image = solid(20, 10, [255, 0, 0, 255]);
+        draw_image(&mut buffer, 40, 40, (0.0, 0.0, 40.0, 40.0), &image, None);
+
+        let red = 0xFFFF_0000;
+        // Scaled 2x: 40 wide, 20 tall, centred vertically at rows 10..30.
+        assert_eq!(buffer[20 * 40 + 20], red, "middle should be the picture");
+        assert_eq!(buffer[2 * 40 + 20], 0, "top must stay untouched backdrop");
+        assert_eq!(buffer[37 * 40 + 20], 0, "bottom must stay untouched");
+    }
+
+    #[test]
+    fn a_picture_never_writes_outside_the_buffer_or_its_clip() {
+        // The blit indexes a buffer by row and column with no bounds check in
+        // the inner loop, so the clamping above it is the only thing between a
+        // large image in a small window and a panic.
+        let mut buffer = vec![0u32; 10 * 10];
+        let image = solid(100, 100, [0, 255, 0, 255]);
+        draw_image(
+            &mut buffer,
+            10,
+            10,
+            (-50.0, -50.0, 200.0, 200.0),
+            &image,
+            None,
+        );
+        assert_eq!(buffer.len(), 100, "the buffer must not have been resized");
+
+        // Inside a scroll container, the clip is what keeps a picture from
+        // painting over the rows above it.
+        let mut clipped = vec![0u32; 20 * 20];
+        let image = solid(20, 20, [0, 0, 255, 255]);
+        draw_image(
+            &mut clipped,
+            20,
+            20,
+            (0.0, 0.0, 20.0, 20.0),
+            &image,
+            Some((0.0, 10.0, 20.0, 10.0)),
+        );
+        assert_eq!(clipped[5 * 20 + 5], 0, "above the clip must stay clear");
+        assert_ne!(clipped[15 * 20 + 5], 0, "inside the clip must be drawn");
+    }
+
+    #[test]
+    fn a_transparent_pixel_shows_what_is_behind_it() {
+        // A logo saved with transparency should sit on the backdrop, not in a
+        // black rectangle.
+        let mut buffer = vec![0xFFFF_FFFFu32; 4 * 4];
+        let image = solid(4, 4, [0, 0, 0, 0]);
+        draw_image(&mut buffer, 4, 4, (0.0, 0.0, 4.0, 4.0), &image, None);
+        assert_eq!(
+            buffer[5], 0xFFFF_FFFF,
+            "a fully transparent pixel must leave the background as it was"
+        );
+    }
+
+    #[test]
+    fn an_image_widget_with_no_picture_draws_a_frame_not_a_hole() {
+        let mut buffer = vec![0u32; 30 * 30];
+        let mut p = placement(WidgetKind::Image, "", 0.0, 0.0, 30.0, 30.0);
+        p.pixels = None;
+        paint_placements_bitmap(&mut buffer, 30, 30, 1.0, &[p], PaintInteraction::default());
+        assert_eq!(buffer[15 * 30 + 15], COLOR_IMAGE_BACKDROP);
+    }
+
+    #[test]
+    fn a_picture_reaches_the_screen_through_a_placement() {
+        let mut buffer = vec![0u32; 30 * 30];
+        let mut p = placement(WidgetKind::Image, "", 0.0, 0.0, 30.0, 30.0);
+        p.pixels = Some(std::sync::Arc::new(solid(30, 30, [255, 0, 0, 255])));
+        paint_placements_bitmap(&mut buffer, 30, 30, 1.0, &[p], PaintInteraction::default());
+        assert_eq!(buffer[15 * 30 + 15], 0xFFFF_0000);
+    }
+
     fn placement(kind: WidgetKind, label: &str, x: f32, y: f32, w: f32, h: f32) -> WidgetPlacement {
         WidgetPlacement {
             widget: crate::ui::WidgetId::new(1).unwrap(),
@@ -446,6 +622,7 @@ mod tests {
             height: h,
             clickable: false,
             role: None,
+            pixels: None,
         }
     }
 

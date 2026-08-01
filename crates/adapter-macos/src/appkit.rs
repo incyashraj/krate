@@ -6,9 +6,11 @@
 //! stable Krate `WindowId`.
 
 use krate_adapter_common::ui::{
-    Modifiers, NativeWindowHandle, PointerButton, PointerEvent, UiAdapter, UiAdapterError,
-    WidgetId, WidgetKind, WindowAdapter, WindowBackendKind, WindowId, WindowOptions, WindowSize,
+    ImagePixels, Modifiers, NativeWindowHandle, PointerButton, PointerEvent, UiAdapter,
+    UiAdapterError, WidgetId, WidgetKind, WindowAdapter, WindowBackendKind, WindowId,
+    WindowOptions, WindowSize,
 };
+use std::sync::Arc;
 
 use crate::MacosUiAdapter;
 
@@ -33,6 +35,8 @@ pub struct AppKitWidgetPlacement {
     checked: Option<bool>,
     /// Semantic role from the widget node; used to pick native typography.
     role: Option<String>,
+    /// Decoded picture for an image widget, shared rather than copied.
+    pixels: Option<Arc<ImagePixels>>,
 }
 
 impl AppKitWidgetPlacement {
@@ -59,6 +63,7 @@ impl AppKitWidgetPlacement {
                 | WidgetKind::ListView
                 | WidgetKind::TreeView
                 | WidgetKind::Canvas
+                | WidgetKind::Image
                 | WidgetKind::Scroll
                 | WidgetKind::Stack
                 | WidgetKind::Grid
@@ -105,6 +110,7 @@ impl AppKitWidgetPlacement {
             clickable: false,
             checked: None,
             role: None,
+            pixels: None,
         })
     }
 
@@ -140,6 +146,17 @@ impl AppKitWidgetPlacement {
     pub fn with_checked(mut self, checked: Option<bool>) -> Self {
         self.checked = checked;
         self
+    }
+
+    /// Carry a decoded picture for an image widget.
+    pub fn with_pixels(mut self, pixels: Option<Arc<ImagePixels>>) -> Self {
+        self.pixels = pixels;
+        self
+    }
+
+    /// The picture this placement draws, if it is an image widget.
+    pub fn pixels(&self) -> Option<&ImagePixels> {
+        self.pixels.as_deref()
     }
 
     /// Selected state for a list row, if any.
@@ -1091,14 +1108,77 @@ impl AppKitWindowBackend {
 
 #[cfg(target_os = "macos")]
 mod platform {
+
+    /// Build an NSImage from the guest's RGBA bytes.
+    ///
+    /// The plane pointer is deliberately null. Handing `NSBitmapImageRep` a
+    /// pointer to our own buffer makes it *borrow* those bytes rather than copy
+    /// them, and the rep outlives the frame that produced them -- AppKit would
+    /// be reading freed memory the next time the window repainted. A null plane
+    /// makes the rep allocate and own its buffer, which the pixels are then
+    /// copied into, so nothing here depends on how long the guest's `Vec` lives.
+    pub(super) fn ns_image_from_rgba(pixels: &ImagePixels) -> Option<Retained<NSImage>> {
+        let width = pixels.width as isize;
+        let height = pixels.height as isize;
+        let stride = width * 4;
+
+        // SAFETY: a null plane is explicitly allowed and asks the rep to own
+        // its storage. The dimensions and stride are the ones `ImagePixels`
+        // validated against the buffer length.
+        let rep = unsafe {
+            NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
+                NSBitmapImageRep::alloc(),
+                core::ptr::null_mut(),
+                width,
+                height,
+                8,
+                4,
+                true,
+                false,
+                objc2_app_kit::NSDeviceRGBColorSpace,
+                stride,
+                32,
+            )
+        }?;
+
+        let dst = rep.bitmapData();
+        if dst.is_null() {
+            return None;
+        }
+        // SAFETY: `dst` is the rep's own buffer, allocated for exactly
+        // height * stride bytes by the call above, and `pixels.rgba` is exactly
+        // that long -- `ImagePixels::new` rejects any other length. The two
+        // allocations are distinct, so the copy cannot overlap.
+        unsafe {
+            core::ptr::copy_nonoverlapping(pixels.rgba.as_ptr(), dst, pixels.rgba.len());
+        }
+
+        let image =
+            NSImage::initWithSize(NSImage::alloc(), NSSize::new(width as f64, height as f64));
+        image.addRepresentation(&rep);
+        Some(image)
+    }
+
+    /// Climb a lowered AppKit widget up to the NSView the surface map holds.
+    ///
+    /// The map used to hold NSControl, because every widget was one. An image
+    /// is an NSImageView -- a plain NSView, since nobody clicks a photo or
+    /// types into it -- so the map holds the type they all share. `AsRef`
+    /// walks the whole superclass chain, unlike `into_super`'s single step.
+    fn control_view<T: AsRef<NSView> + objc2::Message>(control: Retained<T>) -> Retained<NSView> {
+        Retained::from(control.as_ref())
+    }
     use super::*;
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, ProtocolObject};
-    use objc2::{define_class, msg_send, sel, DefinedClass, MainThreadMarker, MainThreadOnly};
+    use objc2::{
+        define_class, msg_send, sel, AllocAnyThread, DefinedClass, MainThreadMarker, MainThreadOnly,
+    };
     use objc2_app_kit::{
-        NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSButton, NSColor,
-        NSControl, NSEventMask, NSEventModifierFlags, NSFont, NSMenu, NSMenuItem, NSTextField,
-        NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
+        NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSBitmapImageRep,
+        NSButton, NSColor, NSControl, NSEventMask, NSEventModifierFlags, NSFont, NSImage,
+        NSImageScaling, NSImageView, NSMenu, NSMenuItem, NSTextField, NSView, NSWindow,
+        NSWindowDelegate, NSWindowStyleMask,
     };
     use objc2_foundation::{
         NSDefaultRunLoopMode, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
@@ -1161,7 +1241,14 @@ mod platform {
     pub struct AppKitWidgetSurface {
         window: WindowId,
         _target: Retained<KrateWidgetTarget>,
-        controls: BTreeMap<WidgetId, Retained<NSControl>>,
+        /// Lowered surfaces, held as NSView rather than NSControl.
+        ///
+        /// Every widget before the image was some kind of NSControl, so this
+        /// map was typed to one. NSImageView is a plain NSView, and a photo
+        /// is not a control -- nobody clicks it or types into it. The two
+        /// places that genuinely need NSControl (reading and writing text)
+        /// downcast, and they already check the widget kind first.
+        controls: BTreeMap<WidgetId, Retained<NSView>>,
         kinds: BTreeMap<WidgetId, WidgetKind>,
         lowered: Vec<WidgetId>,
     }
@@ -1187,7 +1274,7 @@ mod platform {
                 .map(|control| Retained::as_ptr(control) as usize as u64)
         }
 
-        fn control(&self, widget: WidgetId) -> Result<&Retained<NSControl>, UiAdapterError> {
+        fn control(&self, widget: WidgetId) -> Result<&Retained<NSView>, UiAdapterError> {
             self.controls.get(&widget).ok_or_else(|| {
                 UiAdapterError::Unsupported(format!(
                     "widget {} has no lowered AppKit control",
@@ -1212,7 +1299,13 @@ mod platform {
         pub fn set_text(&self, widget: WidgetId, text: &str) -> Result<(), UiAdapterError> {
             match self.kinds.get(&widget) {
                 Some(WidgetKind::TextField) | Some(WidgetKind::Text) => {
-                    let control = self.control(widget)?;
+                    let view = self.control(widget)?;
+                    let control = view.downcast_ref::<NSControl>().ok_or_else(|| {
+                        UiAdapterError::Unsupported(format!(
+                            "widget {} is not a control that holds text",
+                            widget.get()
+                        ))
+                    })?;
                     control.setStringValue(&NSString::from_str(text));
                     Ok(())
                 }
@@ -1225,7 +1318,13 @@ mod platform {
 
         /// Read the current text content of a lowered control.
         pub fn text(&self, widget: WidgetId) -> Result<String, UiAdapterError> {
-            let control = self.control(widget)?;
+            let view = self.control(widget)?;
+            let control = view.downcast_ref::<NSControl>().ok_or_else(|| {
+                UiAdapterError::Unsupported(format!(
+                    "widget {} is not a control that holds text",
+                    widget.get()
+                ))
+            })?;
             Ok(control.stringValue().to_string())
         }
 
@@ -1253,7 +1352,10 @@ mod platform {
                     // SAFETY: The control is a retained NSButton created by the
                     // lowering path on the main thread, and performClick takes
                     // an optional sender.
-                    unsafe { control.performClick(None) };
+                    // Only a control can be clicked; an image is not one.
+                    if let Some(control) = control.downcast_ref::<NSControl>() {
+                        unsafe { control.performClick(None) };
+                    }
                     Ok(())
                 }
                 _ => Err(UiAdapterError::Unsupported(format!(
@@ -1448,7 +1550,7 @@ mod platform {
                     NSSize::new(f64::from(width), f64::from(height)),
                 );
 
-                let control: Retained<NSControl> = match placement.kind() {
+                let control: Retained<NSView> = match placement.kind() {
                     WidgetKind::Button => {
                         let title = NSString::from_str(placement.label().unwrap_or("Button"));
                         let target_object: &AnyObject = &target;
@@ -1465,14 +1567,14 @@ mod platform {
                         };
                         button.setFrame(frame);
                         button.setTag(placement.widget().get() as isize);
-                        Retained::into_super(button)
+                        control_view(button)
                     }
                     WidgetKind::TextField => {
                         let value = NSString::from_str(placement.label().unwrap_or(""));
                         let field = NSTextField::textFieldWithString(&value, mtm);
                         field.setFrame(frame);
                         field.setTag(placement.widget().get() as isize);
-                        Retained::into_super(field)
+                        control_view(field)
                     }
                     WidgetKind::Text if placement.clickable => {
                         // A list row: a borderless, left-aligned button that
@@ -1510,7 +1612,7 @@ mod platform {
                         } else if placement.role() == Some("button") {
                             button.setContentTintColor(Some(&NSColor::secondaryLabelColor()));
                         }
-                        Retained::into_super(button)
+                        control_view(button)
                     }
                     WidgetKind::Text => {
                         let value = NSString::from_str(placement.label().unwrap_or(""));
@@ -1532,7 +1634,7 @@ mod platform {
                             }
                             _ => {}
                         }
-                        Retained::into_super(label)
+                        control_view(label)
                     }
                     WidgetKind::TextArea => {
                         // A multi-line editable NSTextField rather than an
@@ -1556,7 +1658,7 @@ mod platform {
                         field.setBackgroundColor(Some(&NSColor::textBackgroundColor()));
                         field.setFont(Some(&NSFont::systemFontOfSize(15.0)));
                         field.setPlaceholderString(Some(&NSString::from_str("Write your note…")));
-                        Retained::into_super(field)
+                        control_view(field)
                     }
                     WidgetKind::Checkbox => {
                         // A checklist row, rendered the same reliable way as the
@@ -1597,7 +1699,7 @@ mod platform {
                             NSColor::labelColor()
                         };
                         button.setContentTintColor(Some(&tint));
-                        Retained::into_super(button)
+                        control_view(button)
                     }
                     WidgetKind::Radio | WidgetKind::Switch => {
                         // Same construction as the checkbox above, and for the
@@ -1639,7 +1741,7 @@ mod platform {
                             NSColor::secondaryLabelColor()
                         };
                         button.setContentTintColor(Some(&tint));
-                        Retained::into_super(button)
+                        control_view(button)
                     }
                     WidgetKind::Progress | WidgetKind::Slider => {
                         // The drawn painter renders these two through one arm as
@@ -1659,7 +1761,24 @@ mod platform {
                         label.setTag(placement.widget().get() as isize);
                         label.setFont(Some(&NSFont::systemFontOfSize(13.0)));
                         label.setTextColor(Some(&NSColor::secondaryLabelColor()));
-                        Retained::into_super(label)
+                        control_view(label)
+                    }
+                    WidgetKind::Image => {
+                        // The one widget on this host that is not a control.
+                        // NSImageView scales proportionally and centres, which
+                        // is exactly what the drawn painter does on the other
+                        // two hosts, so a picture lands the same way on all
+                        // three rather than letterboxed here and stretched
+                        // there.
+                        let view = NSImageView::new(mtm);
+                        view.setFrame(frame);
+                        view.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
+                        if let Some(pixels) = placement.pixels() {
+                            if let Some(image) = ns_image_from_rgba(pixels) {
+                                view.setImage(Some(&image));
+                            }
+                        }
+                        control_view(view)
                     }
                     WidgetKind::TreeView | WidgetKind::Canvas => {
                         // Containers whose children are separate placements, or
@@ -1670,7 +1789,7 @@ mod platform {
                         let label = NSTextField::labelWithString(&empty, mtm);
                         label.setFrame(frame);
                         label.setTag(placement.widget().get() as isize);
-                        Retained::into_super(label)
+                        control_view(label)
                     }
                     WidgetKind::ListView
                     | WidgetKind::Scroll
@@ -1685,12 +1804,7 @@ mod platform {
                         let label = NSTextField::labelWithString(&empty, mtm);
                         label.setFrame(frame);
                         label.setTag(placement.widget().get() as isize);
-                        Retained::into_super(label)
-                    }
-                    other => {
-                        return Err(UiAdapterError::Unsupported(format!(
-                            "AppKit lowering does not support {other:?} yet"
-                        )));
+                        control_view(label)
                     }
                 };
 
@@ -2357,10 +2471,14 @@ mod tests {
             AppKitWidgetPlacement::new(widget, WidgetKind::Tabs, None, 0.0, 0.0, 10.0, 10.0)
                 .is_ok()
         );
-        assert!(matches!(
-            AppKitWidgetPlacement::new(widget, WidgetKind::Image, None, 0.0, 0.0, 10.0, 10.0),
-            Err(UiAdapterError::Unsupported(_))
-        ));
+        // Image used to be refused here: the node model carried no picture, so
+        // accepting one would have lowered an empty box. It carries pixels now
+        // and NSImageView draws them, so the refusal is the thing that would be
+        // wrong.
+        assert!(
+            AppKitWidgetPlacement::new(widget, WidgetKind::Image, None, 0.0, 0.0, 10.0, 10.0)
+                .is_ok()
+        );
         assert!(matches!(
             AppKitWidgetPlacement::new(widget, WidgetKind::Button, None, -1.0, 0.0, 10.0, 10.0),
             Err(UiAdapterError::Unsupported(_))
@@ -2373,6 +2491,22 @@ mod tests {
             AppKitWidgetPlacement::new(widget, WidgetKind::Button, None, f32::NAN, 0.0, 10.0, 10.0),
             Err(UiAdapterError::Unsupported(_))
         ));
+    }
+
+    #[test]
+    fn a_picture_survives_the_buffer_it_was_built_from() {
+        // The rep is asked to own its storage precisely so it does not borrow
+        // the guest's Vec. If that ever regressed to a borrow, the picture
+        // would read freed memory on the next repaint -- so the buffer is
+        // dropped here before the image is used.
+        use krate_adapter_common::ui::ImagePixels;
+        let image = {
+            let pixels = ImagePixels::new(2, 2, vec![255u8; 16]).expect("valid image");
+            platform::ns_image_from_rgba(&pixels)
+        };
+        let image = image.expect("a 2x2 image should convert");
+        assert_eq!(image.size().width, 2.0);
+        assert_eq!(image.size().height, 2.0);
     }
 
     #[test]
@@ -2423,6 +2557,7 @@ mod tests {
                 value: None,
                 selected: None,
                 text_cursor: None,
+                pixels: None,
             },
         )
         .expect("set root widget");
