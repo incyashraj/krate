@@ -2538,6 +2538,24 @@ fn app_kind_name(kind: krate_author::AppKind) -> &'static str {
 
 /// The briefing dropped into the app dir for an agent. States the one hard rule
 /// and how the app is checked, so the agent gets it right the first time.
+/// Every `.wit` file under a root, for checking documented paths are real.
+#[cfg(test)]
+fn walkdir_wit(root: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut found = Vec::new();
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return found;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(walkdir_wit(&path));
+        } else if path.extension().is_some_and(|e| e == "wit") {
+            found.push(path);
+        }
+    }
+    found
+}
+
 fn author_contract(name: &str) -> String {
     // The contract used to state rules and prohibitions without ever listing
     // what exists. An agent porting a hex viewer invented `stdio::write`,
@@ -2595,7 +2613,9 @@ one anybody can use.\n\
 ## Showing a picture\n\
 Build a widget of kind `Image`, then call\n\
 `bindings::krate::ui::image::set_pixels(window, widget, pixels)` with\n\
-`ImagePixels {{ width, height, rgba }}` -- straight RGBA bytes, four per pixel,\n\
+`bindings::krate::ui::image::ImagePixels {{ width, height, rgba }}` -- note the\n\
+record lives in `ui::image`, not in `ui::types` where most records are --\n\
+straight RGBA bytes, four per pixel,\n\
 top row first, exactly `width * height * 4` of them. `image::clear(window,\n\
 widget)` takes the picture away again.\n\
 \n\
@@ -4878,6 +4898,60 @@ mod create_tests {
         );
         // And the instruction for what to do when something is genuinely absent.
         assert!(contract.contains("do not invent a call"));
+
+        // Every `bindings::krate::` path the contract spells out must exist in
+        // the WIT. The image record was documented as bare `ImagePixels`, so
+        // the agent reached for `types::ImagePixels` -- the module every other
+        // record lives in -- and burned a repair cycle finding out it is in
+        // `ui::image`. A path the contract names and the contract alone is
+        // worse than no path at all: it reads as authoritative.
+        let wit_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../wit/krate");
+        let mut wit = String::new();
+        for entry in crate::walkdir_wit(&wit_root) {
+            wit.push_str(&std::fs::read_to_string(&entry).unwrap_or_default());
+        }
+        for line in contract.lines() {
+            for path in line.split('`') {
+                let Some(rest) = path.strip_prefix("bindings::krate::") else {
+                    continue;
+                };
+                let parts: Vec<&str> = rest.split("::").collect();
+                let Some(last) = parts.last() else { continue };
+                // Trim a call's arguments or a record literal's fields, so
+                // `set_pixels(window, ..)` and `ImagePixels { width, .. }`
+                // both reduce to the bare name the WIT declares.
+                let name = last
+                    .split(['(', ' ', '{'])
+                    .next()
+                    .unwrap_or(last)
+                    .trim_end_matches(',');
+                if name.is_empty() {
+                    continue;
+                }
+                // WIT is kebab-case throughout: `set_pixels` is `set-pixels`
+                // and `ImagePixels` is `image-pixels`, so both an underscore
+                // and a capital start a new word.
+                let mut kebab = String::new();
+                for (index, ch) in name.chars().enumerate() {
+                    if ch == '_' {
+                        kebab.push('-');
+                    } else if ch.is_ascii_uppercase() {
+                        if index > 0 {
+                            kebab.push('-');
+                        }
+                        kebab.push(ch.to_ascii_lowercase());
+                    } else {
+                        kebab.push(ch);
+                    }
+                }
+                assert!(
+                    wit.contains(&format!("{kebab}:")) || wit.contains(&format!("{kebab} ")),
+                    "the contract names `bindings::krate::{rest}`, but `{kebab}` is \
+                     nowhere in the WIT -- an agent following it writes a call that \
+                     does not compile"
+                );
+            }
+        }
 
         // Every capability an app must ask for, by name. The contract listed
         // sixty-three functions and exactly one capability, so an agent knew
