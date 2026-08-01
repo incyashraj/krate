@@ -1488,6 +1488,28 @@ fn run_report_command(report: &Path, show_only: bool) -> Result<u8> {
     Ok(0)
 }
 
+/// Every capability an app has to ask for, in the form a manifest writes it.
+///
+/// Generated from the runtime's capability registry rather than typed out, so a
+/// capability added without being listed here cannot happen. Default-granted
+/// ones are left out on purpose: declaring `io.stdout` is noise, and an app
+/// that lists it is telling a person something that is true of every app.
+fn requestable_capability_list() -> String {
+    let mut out = String::from("These are the capability names a manifest may use:\n\n");
+    for spec in krate_manifest::supported_capability_specs() {
+        if spec.default_granted() {
+            continue;
+        }
+        out.push_str(&format!("- `{}`\n", spec.display_pattern()));
+    }
+    out.push_str(
+        "\nA name outside this list is refused when the app is packed. Where a\n\
+         pattern shows `<path-glob>` or `<host>:<port>`, scope it to the\n\
+         narrowest thing the app actually needs.\n",
+    );
+    out
+}
+
 /// Write a report about a failed port, next to the workspace it failed in.
 ///
 /// Local only. Nothing is transmitted here and nothing is transmitted later
@@ -2523,6 +2545,11 @@ fn author_contract(name: &str) -> String {
     // is generated from the SDK source, so it cannot drift out of date.
     let reference =
         sdk_reference::render_reference(&sdk_reference::parse_sdk(sdk_reference::GUEST_SDK_SOURCE));
+    // The capability names a manifest may use, generated from the runtime's own
+    // registry. The contract listed sixty-three functions and exactly one
+    // capability name, so an agent knew how to call `store::set` and had to
+    // guess that the manifest needs `store.kv`.
+    let capabilities = requestable_capability_list();
     format!(
         "# Krate app contract for `{name}`\n\
 \n\
@@ -2543,7 +2570,10 @@ The in-repo samples under `$KRATE_SDK_DIR` follow this discipline; copy it.\n\
 \n\
 ## The manifest\n\
 Declare only the capabilities the app uses. Mark the one that gates it\n\
-(`fs.write` for a saving app) `required = true`.\n\
+(`fs.write` for a saving app) `required = true`. Anything not listed here is\n\
+granted to every app and must not be declared.\n\
+\n\
+{capabilities}\n\
 \n\
 ## The verification run\n\
 After building, Krate runs the app once with every capability granted and one\n\
@@ -4814,6 +4844,23 @@ mod create_tests {
         );
         // And the instruction for what to do when something is genuinely absent.
         assert!(contract.contains("do not invent a call"));
+
+        // Every capability an app must ask for, by name. The contract listed
+        // sixty-three functions and exactly one capability, so an agent knew
+        // how to call `store::set` and had to guess that the manifest needs
+        // `store.kv`. Enumerated from the runtime's own registry rather than
+        // sampled, so a capability added without being listed fails here.
+        let missing: Vec<String> = krate_manifest::supported_capability_specs()
+            .iter()
+            .filter(|spec| !spec.default_granted())
+            .map(|spec| spec.name())
+            .filter(|name| !contract.contains(name.as_str()))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "the contract does not name these capabilities, so an agent would \
+             have to guess them: {missing:?}"
+        );
     }
 
     fn cap(s: &str) -> Capability {
