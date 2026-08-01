@@ -63,6 +63,13 @@ pub struct Phase3GuiHost {
     /// host synthesises a close request so the guest exits the way it would if
     /// a person had closed the window.
     idle_waits: std::cell::Cell<u32>,
+    /// Pictures for image widgets, keyed by the widget they belong to.
+    ///
+    /// Held here rather than on the widget node because a picture arrives
+    /// through its own interface: adding a field to `widget-node` would change
+    /// that record's type and stop every GUI app already built from
+    /// instantiating at all.
+    images: std::cell::RefCell<std::collections::BTreeMap<(WindowId, WidgetId), Arc<ImagePixels>>>,
     /// Native microphone streams owned by this one sandboxed app session.
     audio_capture: AudioCaptureRuntime,
     /// Local speech model contexts, scoped to this one sandboxed app session.
@@ -81,6 +88,7 @@ impl Phase3GuiHost {
             native_text: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             headless: matches!(mode, Phase3HostUiMode::HeadlessDraft),
             idle_waits: std::cell::Cell::new(0),
+            images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             audio_capture: AudioCaptureRuntime::default(),
             speech: LocalSpeechRuntime::default(),
         })
@@ -218,7 +226,7 @@ impl Phase3GuiHost {
                 role: node.role.clone(),
                 // Shared, not copied: this runs once per widget per frame, and
                 // a photograph is a quarter-gigabyte of pixels.
-                pixels: node.pixels.clone().map(Arc::new),
+                pixels: self.images.borrow().get(&(window, *id)).cloned(),
             });
         }
         drop(offsets);
@@ -517,22 +525,6 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
         )));
     }
 
-    // Pixels on anything but an image widget mean the app is confused about
-    // what it built. Better to say so than to carry a buffer nothing will draw.
-    let pixels = match node.pixels {
-        Some(p) if kind != WidgetKind::Image => {
-            let _ = p;
-            return Err(ui::types::UiError::Unsupported(format!(
-                "widget kind {kind:?} cannot carry an image"
-            )));
-        }
-        Some(p) => Some(
-            ImagePixels::new(p.width, p.height, p.rgba)
-                .map_err(|e| ui::types::UiError::Unsupported(e.to_string()))?,
-        ),
-        None => None,
-    };
-
     Ok(WidgetNode {
         id,
         parent,
@@ -544,7 +536,10 @@ fn widget_node_from_wit(node: ui::types::WidgetNode) -> Result<WidgetNode, ui::t
         value: node.value,
         selected: node.selected,
         text_cursor: node.text_cursor.map(|tc| (tc.cursor, tc.anchor)),
-        pixels,
+        // A picture arrives through `krate:ui/image`, keyed by widget id, not
+        // as a field here. The node the app sends must stay the exact record
+        // it was compiled against.
+        pixels: None,
     })
 }
 
@@ -968,6 +963,83 @@ impl ui::dialog::Host for Phase3GuiHost {
             .set_buttons(rfd::MessageButtons::YesNo)
             .show();
         Ok(Ok(answer == rfd::MessageDialogResult::Yes))
+    }
+}
+
+impl ui::image::Host for Phase3GuiHost {
+    fn set_pixels(
+        &mut self,
+        window: u64,
+        widget: u64,
+        pixels: ui::image::ImagePixels,
+    ) -> wasmtime::Result<Result<(), ui::types::UiError>> {
+        let window_id = match self.window_id(window) {
+            Ok(id) => id,
+            Err(err) => return Ok(Err(err)),
+        };
+        let widget_id = match WidgetId::new(widget) {
+            Ok(id) => id,
+            Err(err) => return Ok(Err(ui::types::UiError::Unsupported(err.to_string()))),
+        };
+
+        // A picture only means something on an image widget. Accepting one for
+        // a button would store a buffer nothing ever draws and leave the app
+        // believing it had shown something.
+        match self.dispatcher().widget_tree(window_id) {
+            Ok(Some(tree)) => match tree.nodes().iter().find(|(id, _)| **id == widget_id) {
+                Some((_, node)) if node.kind == WidgetKind::Image => {}
+                Some((_, node)) => {
+                    return Ok(Err(ui::types::UiError::Unsupported(format!(
+                        "widget kind {:?} cannot show a picture",
+                        node.kind
+                    ))))
+                }
+                None => {
+                    return Ok(Err(ui::types::UiError::Unsupported(format!(
+                        "window {window} has no widget {widget}"
+                    ))))
+                }
+            },
+            Ok(None) => {
+                return Ok(Err(ui::types::UiError::Unsupported(format!(
+                    "window {window} has no widgets yet"
+                ))))
+            }
+            Err(err) => return Ok(Err(dispatch_error_to_ui_error(err))),
+        }
+
+        let image = match ImagePixels::new(pixels.width, pixels.height, pixels.rgba) {
+            Ok(image) => image,
+            Err(err) => return Ok(Err(ui::types::UiError::Unsupported(err.to_string()))),
+        };
+        self.images
+            .borrow_mut()
+            .insert((window_id, widget_id), Arc::new(image));
+        Ok(self
+            .sync_native_widgets(window_id)
+            .map_err(dispatch_error_to_ui_error))
+    }
+
+    fn clear(
+        &mut self,
+        window: u64,
+        widget: u64,
+    ) -> wasmtime::Result<Result<(), ui::types::UiError>> {
+        let window_id = match self.window_id(window) {
+            Ok(id) => id,
+            Err(err) => return Ok(Err(err)),
+        };
+        let widget_id = match WidgetId::new(widget) {
+            Ok(id) => id,
+            Err(err) => return Ok(Err(ui::types::UiError::Unsupported(err.to_string()))),
+        };
+        // Clearing a widget that has no picture is not an error: an app
+        // resetting its view should not have to remember whether it ever set
+        // one.
+        self.images.borrow_mut().remove(&(window_id, widget_id));
+        Ok(self
+            .sync_native_widgets(window_id)
+            .map_err(dispatch_error_to_ui_error))
     }
 }
 
@@ -1463,7 +1535,6 @@ mod tests {
                 cursor: c,
                 anchor: a,
             }),
-            pixels: None,
         }
     }
 

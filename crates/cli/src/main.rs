@@ -2593,9 +2593,11 @@ files in a folder before starting -- an app that opens with \"choose a file\" is
 one anybody can use.\n\
 \n\
 ## Showing a picture\n\
-A widget of kind `Image` draws one, and the picture travels in the node's\n\
-`pixels` field as `ImagePixels {{ width, height, rgba }}` -- straight RGBA bytes,\n\
-four per pixel, top row first, exactly `width * height * 4` of them.\n\
+Build a widget of kind `Image`, then call\n\
+`bindings::krate::ui::image::set_pixels(window, widget, pixels)` with\n\
+`ImagePixels {{ width, height, rgba }}` -- straight RGBA bytes, four per pixel,\n\
+top row first, exactly `width * height * 4` of them. `image::clear(window,\n\
+widget)` takes the picture away again.\n\
 \n\
 Not PNG or JPEG. Decode the file yourself and send the result: the `image`\n\
 crate with `default-features = false` and only the pure-Rust decoders you need\n\

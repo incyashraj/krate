@@ -408,7 +408,7 @@ fn render_widget_kinds() -> String {
         ),
         (
             WidgetKind::Image,
-            "a picture; `pixels` carries RGBA, see \"Showing a picture\"",
+            "a picture; fill it with `image::set_pixels`, see \"Showing a picture\"",
         ),
         (WidgetKind::Canvas, "a region the app positions children in"),
     ];

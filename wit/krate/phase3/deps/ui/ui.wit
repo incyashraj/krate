@@ -194,25 +194,6 @@ interface types {
     padding: f32,
   }
 
-  /// Decoded picture data for an image widget.
-  ///
-  /// Straight RGBA bytes, four per pixel, top row first -- not PNG or JPEG.
-  /// An app decodes its own file and sends the result. That is more work for
-  /// the app than handing over the file, and it is the point: a decoder for
-  /// untrusted image files is one of the most attacked pieces of code there
-  /// is, and putting one in the runtime would mean every app's malformed
-  /// download runs against the host. Here the decoding happens inside the
-  /// sandbox, and what crosses the boundary is pixels, which cannot carry an
-  /// exploit for a parser that is no longer in the path.
-  record image-pixels {
-    /// Width in pixels.
-    width: u32,
-    /// Height in pixels.
-    height: u32,
-    /// RGBA bytes, row-major from the top, exactly width * height * 4 long.
-    rgba: list<u8>,
-  }
-
   /// One node in the portable widget tree.
   record widget-node {
     /// Stable app-owned widget id.
@@ -237,8 +218,6 @@ interface types {
     /// Caret and selection for a text widget the app edits itself, drawn by
     /// painting hosts. `none` leaves text caretless, as a passive label.
     text-cursor: option<text-cursor>,
-    /// Picture for an image widget. Any other kind rejects it.
-    pixels: option<image-pixels>,
   }
 
   /// Top-level menu item.
@@ -318,6 +297,50 @@ interface tree {
   focus-node: func(window: u64, widget: u64) -> result<_, ui-error>;
   /// Enable or disable a widget.
   set-enabled: func(window: u64, widget: u64, enabled: bool) -> result<_, ui-error>;
+}
+
+/// Host event delivery calls.
+///
+/// Events are delivered one at a time in FIFO order. The single-event shape
+/// matches the runtime dispatcher's `poll_event` path, and it keeps guest
+/// bindings free of list-of-variant lifting, which current guest toolchains
+/// cannot compile without dragging WASI panic machinery into otherwise pure
+/// components.
+/// Pictures for image widgets.
+///
+/// Deliberately not a field on `widget-node`. The Component Model matches
+/// interfaces structurally, so adding a field to that record changes its type
+/// and every app already built against the old one stops instantiating --
+/// which is the one promise Krate makes about a bundle. A separate interface is
+/// additive: an app that shows no pictures never imports this, and its
+/// `krate:ui/tree` is exactly the one it was compiled against.
+interface image {
+  use types.{ui-error};
+
+  /// Decoded picture data.
+  ///
+  /// Straight RGBA bytes, four per pixel, top row first -- not PNG or JPEG.
+  /// An app decodes its own file and sends the result. That is more work for
+  /// the app than handing over the file, and it is the point: a decoder for
+  /// untrusted image files is one of the most attacked pieces of code there
+  /// is, and putting one in the runtime would mean every app's malformed
+  /// download runs against the host. Here the decoding happens inside the
+  /// sandbox, and what crosses the boundary is pixels, which cannot carry an
+  /// exploit for a parser that is no longer in the path.
+  record image-pixels {
+    /// Width in pixels.
+    width: u32,
+    /// Height in pixels.
+    height: u32,
+    /// RGBA bytes, row-major from the top, exactly width * height * 4 long.
+    rgba: list<u8>,
+  }
+
+  /// Give an image widget its picture. Replaces any picture it already had.
+  set-pixels: func(window: u64, widget: u64, pixels: image-pixels) -> result<_, ui-error>;
+
+  /// Take a picture away, leaving an empty frame.
+  clear: func(window: u64, widget: u64) -> result<_, ui-error>;
 }
 
 /// Host event delivery calls.

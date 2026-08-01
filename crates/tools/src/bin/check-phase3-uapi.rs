@@ -35,6 +35,10 @@ const EXPECTED_IMPORTS: &[&str] = &[
     "krate:ui/clipboard@0.1.0",
     "krate:ui/dialog@0.1.0",
     "krate:ui/events@0.1.0",
+    // Pictures ride their own interface rather than a field on widget-node:
+    // adding a field changes that record's type and stops every GUI app
+    // already built from instantiating at all.
+    "krate:ui/image@0.1.0",
     "krate:ui/menu@0.1.0",
     "krate:ui/launcher@0.1.0",
     "krate:ui/notify@0.1.0",
@@ -520,5 +524,52 @@ mod tests {
     #[test]
     fn phase3_uapi_contract_check_passes() {
         check_phase3_uapi().expect("Phase 3 UAPI check");
+    }
+
+    #[test]
+    fn widget_node_keeps_the_shape_shipped_bundles_were_built_against() {
+        // The Component Model matches interfaces structurally, so a record an
+        // app was compiled against must keep exactly the fields it had. Adding
+        // `pixels` to `widget-node` for the image widget changed its type, and
+        // the savings bundle -- already built, already shipped -- stopped
+        // instantiating with "component imports instance krate:ui/tree, but a
+        // matching implementation was not found". Every GUI app in the world
+        // would have broken on that release.
+        //
+        // The picture moved to its own interface instead, which is additive:
+        // an app that shows none never imports it. This pins the fields so the
+        // next person to reach for "just one more field" finds out here rather
+        // than from somebody whose app stopped opening.
+        let wit = std::fs::read_to_string(workspace_root().join("wit/krate/phase3/deps/ui/ui.wit"))
+            .expect("read the UI contract");
+        let start = wit
+            .find("record widget-node {")
+            .expect("widget-node must exist");
+        let end = wit[start..].find("\n  }").expect("widget-node must close") + start;
+        let record = &wit[start..end];
+
+        for field in [
+            "id:",
+            "parent:",
+            "kind:",
+            "label:",
+            "role:",
+            "style:",
+            "checked:",
+            "value:",
+            "selected:",
+            "text-cursor:",
+        ] {
+            assert!(
+                record.contains(field),
+                "widget-node lost `{field}`; every shipped GUI app would stop instantiating"
+            );
+        }
+        assert!(
+            !record.contains("pixels:"),
+            "a picture belongs in `krate:ui/image`, not on widget-node: adding a \
+             field here changes the record's type and every GUI app already built \
+             against it stops instantiating"
+        );
     }
 }
