@@ -314,7 +314,7 @@ fn scan_cargo_lock(root: &Path, analysis: &mut Analysis) {
         let entry = line.trim().trim_matches(|c| c == '"' || c == ',');
         if matches!(entry, "system-deps" | "pkg-config") {
             if let Some(package) = name.clone() {
-                if !found.iter().any(|f| *f == package) {
+                if !found.contains(&package) {
                     found.push(package);
                 }
             }
