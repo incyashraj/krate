@@ -177,6 +177,40 @@ def main():
       that is the cost of checking permissions on every crossing.
     </p>
 
+    <h2>How an app is kept in its box</h2>
+    <p>
+      Every request an app makes for something outside itself passes through one
+      check. There is no second path — that is what makes the escape test above
+      possible to write.
+    </p>
+    <svg viewBox="0 0 560 190" role="img" class="chart" aria-label="An app's request passes through a capability check before reaching the operating system.">
+      <rect x="8" y="70" width="120" height="52" rx="6" fill="#1b2130" stroke="#3a4356"/>
+      <text x="68" y="92" class="bl" text-anchor="middle">Your app</text>
+      <text x="68" y="109" class="bv" text-anchor="middle">11 KB</text>
+
+      <line x1="128" y1="96" x2="196" y2="96" stroke="#5c93f8" stroke-width="2"/>
+      <polygon points="196,91 208,96 196,101" fill="#5c93f8"/>
+      <text x="168" y="86" class="bv" text-anchor="middle">asks</text>
+
+      <rect x="208" y="52" width="136" height="88" rx="6" fill="#1b2130" stroke="#5c93f8" stroke-width="2"/>
+      <text x="276" y="80" class="bl" text-anchor="middle">Permission</text>
+      <text x="276" y="98" class="bl" text-anchor="middle">check</text>
+      <text x="276" y="120" class="bv" text-anchor="middle">granted, or refused</text>
+
+      <line x1="344" y1="80" x2="412" y2="80" stroke="#7cc4a4" stroke-width="2"/>
+      <polygon points="412,75 424,80 412,85" fill="#7cc4a4"/>
+      <text x="378" y="70" class="bv" text-anchor="middle">allowed</text>
+      <rect x="424" y="58" width="128" height="44" rx="6" fill="#1b2130" stroke="#3a4356"/>
+      <text x="488" y="85" class="bl" text-anchor="middle">Your computer</text>
+
+      <line x1="344" y1="118" x2="412" y2="118" stroke="#8a919e" stroke-width="2" stroke-dasharray="5 4"/>
+      <text x="378" y="136" class="bv" text-anchor="middle">everything else</text>
+      <line x1="416" y1="110" x2="432" y2="126" stroke="#c26a6a" stroke-width="2"/>
+      <line x1="432" y1="110" x2="416" y2="126" stroke="#c26a6a" stroke-width="2"/>
+
+      <text x="8" y="176" class="bv">The app never gets a path it was not given — a file dialog returns a token for one file.</text>
+    </svg>
+
     <h2>How much of the system is real?</h2>
     <ul>
       <li>{interfaces}</li>
