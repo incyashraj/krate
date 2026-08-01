@@ -49,8 +49,12 @@ impl FailureKind {
             }
             Self::ImportViolation => {
                 "The ported code reached outside Krate's own APIs, which a Krate app \
-                 may not do. This is usually a small change to how the code is \
-                 written, not a missing feature."
+                 may not do. Look at the dependencies before the code: a crate that \
+                 requires `std` pulls the whole `wasi:*` surface in no matter how the \
+                 app is written, and no amount of rewriting removes it. `image` is \
+                 the common one -- `zune-png` and `zune-jpeg` decode the same formats \
+                 under `no_std`. If every dependency already works without `std`, then \
+                 it is the app's own code, and that is a small change."
             }
             Self::MissingCapability => {
                 "This app needs something Krate does not offer yet. Adding it means a \

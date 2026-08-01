@@ -945,7 +945,7 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         text,
         Severity::Blocker,
         "Binds a native C library",
-        "A crate that wraps a C library cannot be built for Krate: the target has no C toolchain, and the library it binds is a native object file. Replace it with a pure-Rust equivalent -- `image` for decoding, `zune-jpeg` and `oxipng` for compression, `rusqlite` bundled or Krate's own `store.sql` for databases -- or the port cannot start.",
+        "A crate that wraps a C library cannot be built for Krate: the target has no C toolchain, and the library it binds is a native object file. Replace it with a pure-Rust equivalent -- `zune-png` and `zune-jpeg` for decoding (not `image`, which requires std and drags the whole `wasi:*` surface in), `oxipng` for compression, `rusqlite` bundled or Krate's own `store.sql` for databases -- or the port cannot start.",
         None,
     );
     detect_pattern(

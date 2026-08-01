@@ -1442,8 +1442,24 @@ fn validate_port_candidate(
     let bad = krate_bundle::imports::non_krate_imports(&wasm_bytes)
         .map_err(|error| format!("could not inspect component imports: {error}"))?;
     if !bad.is_empty() {
+        // This exact message is what a repair attempt is handed, so it has to
+        // carry the cause and not just the symptom. A port of an image viewer
+        // spent all four attempts on this list: the agent kept rewriting its
+        // own code, and the leak was `image` in Cargo.toml, which requires
+        // `std` and pulls the whole wasi surface in no matter how the app is
+        // written. Naming the usual cause turns four guesses into one edit.
         return Err(format!(
-            "the component imports unsupported host APIs: {}",
+            "the component imports unsupported host APIs: {}\n\
+             \n\
+             These come from something linked into the component, not from a call \
+             the code makes directly. Check the dependencies in candidate/Cargo.toml \
+             first: a crate that needs `std` brings all of this with it, and no \
+             rewriting of the app's own code removes it. `image` is the usual \
+             culprit -- `zune-png` and `zune-jpeg` (with `default-features = false`, \
+             plus `zune-core` for `ZCursor`) decode the same formats under `no_std`. \
+             Only if every dependency already builds without `std` is it the app's \
+             own code, where the causes are `format!`, `HashMap`, a growable `Vec`, \
+             and the `read_to_string` / `args::first` helpers.",
             bad.join(", ")
         ));
     }
@@ -2619,10 +2635,23 @@ straight RGBA bytes, four per pixel,\n\
 top row first, exactly `width * height * 4` of them. `image::clear(window,\n\
 widget)` takes the picture away again.\n\
 \n\
-Not PNG or JPEG. Decode the file yourself and send the result: the `image`\n\
-crate with `default-features = false` and only the pure-Rust decoders you need\n\
-(`png`, `jpeg`, `gif`, `bmp`) builds for this target. Do not enable a feature\n\
-that ends in `-native` -- those pull a C library and nothing will build.\n\
+Not PNG or JPEG. Decode the file yourself and send the result.\n\
+\n\
+Use `zune-png` and `zune-jpeg`, both with `default-features = false`, plus\n\
+`zune-core` for its `ZCursor`. They decode under `#![no_std]`, which is what\n\
+this target needs.\n\
+\n\
+Do **not** reach for the `image` crate. It is the obvious choice and it cannot\n\
+work here: it requires `std` unconditionally, so linking it drags in the whole\n\
+`wasi:*` surface and the component is rejected for importing host APIs that are\n\
+not `krate:*`. That failure appears at the import check, long after the build\n\
+succeeds, and it looks like a Krate bug rather than a dependency choice.\n\
+\n\
+The shape that works:\n\
+\n\
+    let mut d = zune_png::PngDecoder::new(zune_core::bytestream::ZCursor::new(bytes));\n\
+    let rgba = d.decode_raw()?;      // already RGBA, four bytes per pixel\n\
+    let (w, h) = d.dimensions()?;    // usize, cast to u32\n\
 \n\
 Every host scales the picture to fit the widget and centres it, keeping the\n\
 original proportions, so a photo looks the same on macOS, Windows, and Linux.\n\
