@@ -71,6 +71,9 @@ jobs:
           python3 scripts/build-progress-page.py
           mkdir -p _site/progress
           cp docs/landing/progress.html _site/progress/index.html
+          python3 scripts/build-reports-page.py
+          mkdir -p _site/reports
+          cp docs/landing/reports.html _site/reports/index.html
           cp docs/landing/*.png _site/
           cp -R docs/book/book _site/docs
           # The custom domain lives in the built artifact, not in the branch, so

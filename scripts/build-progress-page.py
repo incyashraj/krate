@@ -137,6 +137,16 @@ def main():
       their uptime rather than our runtime.
     </p>
 
+    <h2>What the current public release can run</h2>
+    <p>
+      The apps above are built from the latest source. Anything using drawing,
+      animation, or sound needs a release newer than <code>v0.1.0-rc4</code>,
+      because those interfaces landed after it was tagged &mdash; installing
+      today and opening the 2D game gives an honest error rather than a game.
+      If you are reading this before the next release, the viewers, the budget
+      splitter and the command-line tools work; the game and the chart do not.
+    </p>
+
     <h2>How much of the system is real</h2>
     <ul>
       <li>{interfaces}</li>
