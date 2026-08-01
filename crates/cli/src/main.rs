@@ -2575,6 +2575,23 @@ granted to every app and must not be declared.\n\
 \n\
 {capabilities}\n\
 \n\
+## Getting a file from the person (GUI apps)\n\
+A windowed app does not have to be handed a path. Call\n\
+`bindings::krate::ui::dialog::open_file(window, title, filter)` and the system's\n\
+own file dialog opens. `filter` is a comma-separated extension list such as\n\
+`\"png,jpg\"`, or an empty string for any file.\n\
+\n\
+It returns a name and a token, never a path, and `none` when the person\n\
+cancelled -- which is a normal answer, not an error. Pass the token to\n\
+`bindings::krate::fs::files::open_chosen(token, mode)` to read or write that\n\
+one file. The app never learns where the file lives, and the token stops working\n\
+when the run ends.\n\
+\n\
+Declare `ui.dialog:file-open`. You do not need an `fs.read` grant for a file the\n\
+person chose: their click is the grant. Prefer this over asking someone to put\n\
+files in a folder before starting -- an app that opens with \"choose a file\" is\n\
+one anybody can use.\n\
+\n\
 ## The verification run\n\
 After building, Krate runs the app once with every capability granted and one\n\
 argument, then requires exit 0.\n\

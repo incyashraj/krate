@@ -14,6 +14,7 @@ phase2-bindings = []
 [dependencies]
 # HTTPS for guest apps. Same TLS stack the CLI and bundle crates already use,
 # so there is one certificate story in the workspace rather than two.
+rfd.workspace = true
 ureq.workspace = true
 rusqlite.workspace = true
 sha2 = "0.10.9"

@@ -896,10 +896,10 @@ impl ui::dialog::Host for Phase3GuiHost {
     fn open_file(
         &mut self,
         _window: u64,
-        _title: String,
-        _filter: String,
+        title: String,
+        filter: String,
     ) -> wasmtime::Result<Result<Option<ui::dialog::ChosenFile>, ui::types::UiError>> {
-        let chosen = match choose_file_on_host() {
+        let chosen = match choose_file_on_host(&title, &filter) {
             Ok(Some(path)) => path,
             // Cancelling is a normal answer, not a failure.
             Ok(None) => return Ok(Ok(None)),
@@ -915,26 +915,37 @@ impl ui::dialog::Host for Phase3GuiHost {
         Ok(Ok(Some(ui::dialog::ChosenFile { name, token })))
     }
 
+    /// Show a message and wait for the person to dismiss it.
     fn message(
         &mut self,
         _window: u64,
-        _title: String,
-        _body: String,
+        title: String,
+        body: String,
     ) -> wasmtime::Result<Result<(), ui::types::UiError>> {
-        Ok(Err(ui::types::UiError::Unsupported(
-            "system dialogs are not implemented yet".to_string(),
-        )))
+        rfd::MessageDialog::new()
+            .set_title(&title)
+            .set_description(&body)
+            .set_buttons(rfd::MessageButtons::Ok)
+            .show();
+        Ok(Ok(()))
     }
 
+    /// Ask a yes/no question and return what the person chose.
+    ///
+    /// A dismissed dialog counts as "no": an app that treats silence as consent
+    /// is doing something the person did not agree to.
     fn confirm(
         &mut self,
         _window: u64,
-        _title: String,
-        _body: String,
+        title: String,
+        body: String,
     ) -> wasmtime::Result<Result<bool, ui::types::UiError>> {
-        Ok(Err(ui::types::UiError::Unsupported(
-            "system dialogs are not implemented yet".to_string(),
-        )))
+        let answer = rfd::MessageDialog::new()
+            .set_title(&title)
+            .set_description(&body)
+            .set_buttons(rfd::MessageButtons::YesNo)
+            .show();
+        Ok(Ok(answer == rfd::MessageDialogResult::Yes))
     }
 }
 
@@ -1252,19 +1263,34 @@ fn match_error(error: SpeechError) -> speech::transcription::MatchError {
 
 /// Ask the operating system to show its open-file dialog.
 ///
-/// macOS has a real `NSOpenPanel`. Windows and Linux do not have one wired up
-/// yet, and they say so rather than pretending -- a picker that works on the
-/// machine an app was built on and fails when it is shared is the exact failure
-/// Krate exists to remove, so refusing loudly is the honest state until all
-/// three can show one.
-#[cfg(target_os = "macos")]
-fn choose_file_on_host() -> Result<Option<std::path::PathBuf>, String> {
-    krate_adapter_macos::choose_document().map_err(|err| err.to_string())
-}
+/// One implementation for all three systems, through `rfd`, which uses the
+/// native dialog on each: NSOpenPanel on macOS, the common item dialog on
+/// Windows, and the XDG desktop portal on Linux. A picker that worked on the
+/// machine an app was built on and failed when it was shared would be the exact
+/// failure Krate exists to remove, so there is deliberately no per-platform
+/// branch here to drift.
+///
+/// `filter` is a comma-separated extension list. It narrows what the dialog
+/// offers and is not a rule the runtime enforces -- whatever the person picks
+/// is what the app gets, because the click is the grant.
+fn choose_file_on_host(title: &str, filter: &str) -> Result<Option<std::path::PathBuf>, String> {
+    let mut dialog = rfd::FileDialog::new();
+    if !title.is_empty() {
+        dialog = dialog.set_title(title);
+    }
 
-#[cfg(not(target_os = "macos"))]
-fn choose_file_on_host() -> Result<Option<std::path::PathBuf>, String> {
-    Err("the file picker is not implemented on this system yet".to_string())
+    let extensions: Vec<&str> = filter
+        .split(',')
+        .map(str::trim)
+        .filter(|ext| !ext.is_empty())
+        .collect();
+    if !extensions.is_empty() {
+        dialog = dialog.add_filter("Supported files", &extensions);
+    }
+
+    // `None` is a cancelled dialog, which is a normal answer rather than a
+    // failure, and the caller reports it as such.
+    Ok(dialog.pick_file())
 }
 
 #[cfg(test)]

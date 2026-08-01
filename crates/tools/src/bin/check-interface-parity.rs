@@ -157,7 +157,15 @@ fn parse_host(source: &str) -> BTreeMap<String, Interface> {
         let end = starts.get(i + 1).map_or(source.len(), |(p, _)| *p);
         let body = &source[*pos..end];
         let functions = body.matches("\n    fn ").count();
-        let refusing = body.matches("Unsupported(").count() + body.matches("unsupported()").count();
+        // Only a function whose *whole* answer is a refusal counts. An
+        // implemented function may still return `Unsupported` on an error path
+        // -- the file picker does, when the dialog fails or a run holds too
+        // many files -- and counting those made a working interface look
+        // unimplemented. The marker is the phrase these stubs share: they say
+        // the feature is not implemented yet, rather than what went wrong.
+        let refusing = body.matches("are not implemented yet").count()
+            + body.matches("is not implemented yet").count()
+            + body.matches("unsupported()").count();
         if functions > 0 {
             // A path like `ui::window` becomes `ui.window`, which is how the
             // capability and the WIT both name it.
