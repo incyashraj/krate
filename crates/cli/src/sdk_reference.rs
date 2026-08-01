@@ -1,7 +1,7 @@
 //! The list of functions a guest app can actually call.
 //!
 //! An agent asked to port a program was given rules and prohibitions -- no
-//! growable `Vec`, no `format!`, only `krate:*` imports -- but never a list of
+//! no `std::fs` or `std::io`, only `krate:*` imports -- but never a list of
 //! what exists. So it guessed. Porting hexyl, Claude wrote `stdio::write(bytes)`
 //! three times; there is no such function, and the build failed on all three.
 //!

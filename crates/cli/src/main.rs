@@ -1096,6 +1096,12 @@ Read `port-plan.json`, `journeys.json`, `reference-source/`, and\n\
 Do not change `reference-source/`. Do not remove, replace, or defer behavior\n\
 silently.\n\
 \n\
+Do not edit `candidate/src/bindings.rs`. It is generated from the WIT on every\n\
+build, so edits there are overwritten, and a half-edited copy fails to compile\n\
+in ways that look like your own code is wrong. A port spent two repair attempts\n\
+stripping `std::` prefixes out of that file. If a name in it looks wrong, the\n\
+call site is wrong, not the bindings.\n\
+\n\
 ## Detected work\n\
 \n\
 {findings}\n\
@@ -1457,9 +1463,13 @@ fn validate_port_candidate(
              rewriting of the app's own code removes it. `image` is the usual \
              culprit -- `zune-png` and `zune-jpeg` (with `default-features = false`, \
              plus `zune-core` for `ZCursor`) decode the same formats under `no_std`. \
-             Only if every dependency already builds without `std` is it the app's \
-             own code, where the causes are `format!`, `HashMap`, a growable `Vec`, \
-             and the `read_to_string` / `args::first` helpers.",
+             If every dependency is clean, it is the app's own code reaching the \
+             operating system through std rather than through Krate: `std::fs`, \
+             `std::io` (including `println!` and `dbg!`), `std::time`, `std::env`, \
+             `std::process`, `std::net`, `std::thread`. In-memory std is fine -- \
+             `String`, `format!`, `Vec` and `HashMap` do not leak. Do not reach for \
+             `#![no_std]` in a windowed app: the generated bindings need std, so it \
+             cannot compile, and the error looks like your own code is at fault.",
             bad.join(", ")
         ));
     }
@@ -2593,14 +2603,26 @@ A compiling starter for each is already here — edit it to fit the request in\n
 the `KRATE_REQUEST` environment variable.\n\
 \n\
 ## The one hard rule\n\
-A Krate component may import ONLY `krate:*` interfaces. Ordinary std code\n\
-breaks this and the app will be rejected: a growable `Vec`'s reallocation,\n\
-`HashMap`, `format!`, and the `args::first` / `read_to_string` SDK helpers all\n\
-pull `wasi:*` imports in, which cannot be stripped. So:\n\
-- use fixed-capacity `[u8; N]` buffers and `.get()` / `.get_mut()` (never index),\n\
-- read args with `args::raw()` and split by hand,\n\
-- build strings by hand instead of `format!`.\n\
-The in-repo samples under `$KRATE_SDK_DIR` follow this discipline; copy it.\n\
+A Krate component may import ONLY `krate:*` interfaces. Anything that reaches\n\
+the operating system through std instead of through Krate pulls `wasi:*`\n\
+imports in, and the app is rejected. So never use:\n\
+\n\
+- `std::fs` -- use `krate::fs`\n\
+- `std::io` (including `println!`, `eprintln!`, and `dbg!`) -- use `krate::io`\n\
+- `std::time` -- use `krate::time`\n\
+- `std::env` -- use `krate::io::args`\n\
+- `std::process`, `std::net`, `std::thread`\n\
+\n\
+Ordinary in-memory std is fine: `String`, `format!`, `Vec`, `HashMap`, and\n\
+iterators do not reach the operating system and do not leak. Keep\n\
+`panic = \"abort\"` and `opt-level = \"s\"` in the release profile, which is what\n\
+stops std's unwinding and formatting machinery dragging its own I/O in.\n\
+\n\
+Do **not** add `#![no_std]` to a windowed app. The generated bindings in\n\
+`src/bindings.rs` contain `impl std::error::Error`, so the crate cannot compile\n\
+without std, and trying leaves a build error that looks like your own code is\n\
+at fault. `krate-notes` is a shipped GUI app: it uses std, uses `format!`, and\n\
+imports zero `wasi:*`. Copy that.\n\
 \n\
 ## The manifest\n\
 Declare only the capabilities the app uses. Mark the one that gates it\n\
