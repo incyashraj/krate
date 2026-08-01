@@ -1,16 +1,17 @@
-# Why every ported app is a developer utility
+# Why every ported app was a developer utility
 
 Six ports proven: a hex viewer, a budget splitter, a duplicate finder, an RSS
 forwarder, an environment-variable manager, a regex generator.
 
-Every one is a tool for programmers. That is not a coincidence and it is not
-about which repositories were picked. It is what Krate can currently express.
+Every one is a tool for programmers. That was not a coincidence and not about
+which repositories were picked. It was what Krate could express.
 
-## The actual blocker
+Two things were missing, and both are fixed now. This is the record of what
+they were, because the diagnosis is worth more than the fix.
 
-**A Krate app cannot ask a person to choose a file.**
+## Blocker one: an app could not ask a person to choose a file
 
-Look at how the ports get their input:
+Every port read from a hardcoded `input/` folder:
 
 ```
 hexyl      fs.read:input/**
@@ -18,70 +19,80 @@ ddh        fs.list:input/**
 grex       fs.read:input/**
 ```
 
-Every one reads from a hardcoded `input/` folder. Not because the agent was
-lazy -- because there is no other way to get a file into a Krate app.
+Not because the agent was lazy -- there was no other way to get a file into a
+Krate app. A real desktop app opens with "choose a photo". Ours said: *first
+make a folder called `input`, put the file in it, then run this.* That is a
+shape only a programmer tolerates.
 
-A real desktop app opens with "choose a photo", "open your spreadsheet",
-"select the folder to organise". Ours says: *first make a folder called
-`input`, put the file in it, then run this.* That is a shape only a programmer
-tolerates, and it is why every port that succeeded was a programmer's tool.
+**Fixed.** `ui.dialog.open-file` opens the system's own dialog and returns a
+name and a token, never a path. `fs.files.open-chosen` takes the token. The
+click is the grant, which fits the capability model rather than fighting it:
+the app never learns where the file lives, and the token dies with the run.
 
-## Three things are wrong at once
+## Blocker two: a window could not show a picture
 
-1. **The WIT has no file picker.** `interface dialog` declares `message` and
-   `confirm` and nothing else. There is no `open-file`, no `choose-folder`. An
-   app cannot ask, because the question does not exist in the contract.
+Once apps could open files, the honest candidates were all viewers -- of
+photos, of documents, of anything. None could be ported.
 
-2. **The capability exists anyway.** `ui.dialog:file-open` is in the capability
-   registry, default-granted, gating an operation that was never declared. Every
-   app's permission list says it can open a file picker. None can.
+`image` was in the contract and passed through the runtime, and `widget-node`
+had no field for image data. An app could ask for an image widget and had no
+way to say which picture. It drew an empty box on every host.
 
-3. **macOS has a working picker, unused.** `crates/adapter-macos/src/open_document.rs`
-   is 197 lines of real `NSOpenPanel`. Windows and Linux have nothing.
+This was not "unimplemented". It was declared, plumbed, and hollow, which is
+worse: an agent reading the contract would use it and get nothing.
 
-## Why this has not been fixed
+**Fixed.** `krate:ui/image` carries decoded RGBA to a widget by id. All three
+hosts draw it, and the widget parity table now reports 17 of 17 on macOS,
+Windows, and Linux with no platform-only entries -- the first time that has
+been true.
 
-Wiring up the macOS one alone would rebuild the exact trap the `canvas` widget
-was in this morning: works on the machine it was built on, fails when the app is
-shared. That is the failure Krate exists to remove, so a one-host picker is
-worse than none.
+Two decisions inside that are worth keeping:
 
-`rfd` (0.17.2) does native file dialogs on all three systems and would remove
-that objection. It is one dependency.
+- **Pixels cross the boundary, not PNG bytes.** Decoding untrusted images is
+  one of the most attacked pieces of code there is. A decoder in the runtime
+  would mean every app's malformed download runs against the host. Each app
+  carries its own decoder inside its own sandbox instead. More work for the
+  app, and the right side to put the cost on.
 
-## The part that needs deciding, not coding
+- **A separate interface, not a field.** Adding `pixels` to `widget-node`
+  changed that record's type, and the Component Model matches structurally --
+  so `savings`, already built and shipped, stopped instantiating. Not
+  degraded: refusing to open. Every GUI app would have broken on release.
+  `scripts/replay-ported-apps.sh` caught it, which is the first time that
+  script has earned its keep. Adding to a contract is not automatically
+  additive.
 
-A file picker is not a normal capability. Every other grant is decided **before**
-the app runs, from a list a person reads. A picker decides **during** the run,
-from a click.
+## Blocker three, found on the way: the agent was told widgets do not exist
 
-That inverts the model, and the inversion is the whole point: choosing a file in
-a native dialog *is* the person granting access to that file, more directly and
-more comprehensibly than any manifest line. The design question is how the
-runtime represents that:
+CONTRACT.md says *"this is the whole guest API -- if something you want is not
+here, it does not exist, do not invent a call"*, and listed every file and
+network call and zero widgets. The reference generates from the Rust guest SDK,
+which is phase2 and has no UI.
 
-- **The dialog returns a path the app can then read.** Simple, and wrong: the
-  app now holds a path outside every granted glob, so either the read is
-  refused (the picker is useless) or the glob is widened (the wall has a hole).
-- **The dialog returns a handle, not a path.** The app can read and write that
-  one file and never learns where it lives. The grant is the click. This fits
-  the capability model rather than fighting it, and it is what `store.kv`
-  already does for storage -- the app addresses a thing it cannot name.
-- **The dialog widens the session policy for exactly the chosen path.** Honest
-  and inspectable: `--log-grants` would show the file the person picked. More
-  machinery, but it keeps one representation of authority.
+An agent following that instruction correctly would conclude a windowed app
+cannot be ported at all. Seventeen widget kinds are listed now, generated from
+the same enum the hosts match on.
 
-The second is the one that matches everything else in the system. It also means
-`fs.read` and the picker are genuinely different capabilities rather than one
-being a way around the other.
+## What is still true
 
-## What this is worth
+The analyzer learned two things from candidates that failed:
 
-This is the difference between "ports developer utilities" and "ports software
-people want". Not a capability count -- a shape. Until an app can say *open
-your file*, the honest description of Krate is a runtime for command-line tools
-that happen to run everywhere.
+- **A disk cleaner with 357 stars was correctly refused** for spawning
+  processes to move folders. That is the sandbox working, not a gap.
+- **A C library binding is a change, not a blocker** -- but only after getting
+  it wrong twice. Matching the `-sys` suffix marked all six proven ports
+  unsupported (`js-sys` and `web-sys` are WebAssembly's own bindings). Keeping
+  it a blocker marked three unsupported, because they carry real bindings under
+  dependencies the port replaces anyway.
 
-Recommended as the next real piece of work, ahead of any remaining widget or
-interface, because it is the one that changes which apps are possible rather
-than which ones are prettier.
+  A false blocker is worse than a miss. It tells someone not to try something
+  that would have worked, and they never find out it was wrong.
+
+## What this was worth
+
+The difference between "ports developer utilities" and "ports software people
+want" was never a capability count. It was two shapes: *open your file*, and
+*here is what it looks like*. Both exist now.
+
+The honest test is not that the pieces exist -- it is an app somebody outside
+this repository would open on purpose. That is the port in flight.
