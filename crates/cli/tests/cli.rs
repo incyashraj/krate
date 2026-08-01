@@ -183,6 +183,81 @@ fn port_plan_can_write_machine_readable_json() {
 }
 
 #[test]
+fn the_prepared_workspace_tells_the_agent_what_it_needs_to_know() {
+    // Every port failure today traced back to one of these files being wrong
+    // or incomplete rather than missing: the contract listed no functions, so
+    // an agent invented `stdio::write`; it never said how the verification
+    // argument arrives, so a duplicate finder implemented `--quick`; it said
+    // HTTPS did not work months after it did.
+    //
+    // The existing prepare test checks these files exist. Existing is not the
+    // failure mode. This checks they say the things an agent cannot work out
+    // for itself, which is the half of Gate 3 that can be covered without an
+    // AI agent on the runner.
+    let root = tempfile::tempdir().expect("tempdir");
+    let source = root.path().join("src-project");
+    std::fs::create_dir_all(source.join("src")).expect("mkdir");
+    std::fs::write(
+        source.join("Cargo.toml"),
+        "[package]\nname = \"probe\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::write(
+        source.join("src/main.rs"),
+        "fn main() { let d = std::fs::read(\"in.bin\").unwrap(); println!(\"{}\", d.len()); }\n",
+    )
+    .expect("write main.rs");
+
+    let workspace = root.path().join("port-work");
+    let output = krate()
+        .arg("port")
+        .arg(&source)
+        .arg("--prepare")
+        .arg(&workspace)
+        .output()
+        .expect("run port --prepare");
+    assert!(output.status.success(), "prepare failed");
+
+    let contract =
+        std::fs::read_to_string(workspace.join("candidate/CONTRACT.md")).expect("read CONTRACT.md");
+
+    // The API list. Without it an agent guesses names, which is exactly what
+    // happened: `stdio::write` was invented three times in one port.
+    let listed = contract.lines().filter(|l| l.starts_with("- `")).count();
+    assert!(
+        listed > 40,
+        "the contract lists only {listed} functions; an agent would be guessing"
+    );
+
+    // How the verification argument arrives. A file-reading CLI gets a path,
+    // everything else gets the bare word, and an app that handles only one of
+    // them fails after building and packing correctly.
+    assert!(
+        contract.contains("`quick`"),
+        "the contract must name the verification argument"
+    );
+    assert!(
+        contract.contains("accept **both**"),
+        "the contract must say a file-reading app is handed a path, not `quick`"
+    );
+
+    // The import rule, which is the one hard constraint on a Krate guest.
+    assert!(
+        contract.contains("krate:*"),
+        "the contract must state the import rule"
+    );
+
+    // And the task file has to name the source it is porting, or the agent is
+    // working from the candidate alone.
+    let task =
+        std::fs::read_to_string(workspace.join("AGENT_TASK.md")).expect("read AGENT_TASK.md");
+    assert!(
+        task.contains("probe") || task.contains("src-project"),
+        "the agent task should name the project being ported"
+    );
+}
+
+#[test]
 fn port_prepare_creates_an_agent_workspace_without_changing_source() {
     let root = tempfile::tempdir().expect("create temp dir");
     let source = root.path().join("Existing Notes");
