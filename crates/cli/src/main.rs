@@ -2635,6 +2635,12 @@ dependencies, and getting this wrong is the most expensive mistake here:\n\
 alone. A `no_std` crate must own its allocator, `#[panic_handler]`, and the\n\
 `mem*` intrinsics -- the starter already has all three.\n\
 \n\
+If you write a fixed-size arena allocator, keep it well under 256 MB. That is\n\
+the runtime's whole memory limit, and the module's own code and stack come out\n\
+of the same budget -- an arena of exactly 256 MB fails at startup with \"memory\n\
+limit exceeded\" before a line of the app runs. 192 MB leaves room; far less is\n\
+usually plenty.\n\
+\n\
 ## The manifest\n\
 Declare only the capabilities the app uses. Mark the one that gates it\n\
 (`fs.write` for a saving app) `required = true`. Anything not listed here is\n\
