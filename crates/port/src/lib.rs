@@ -1277,6 +1277,21 @@ fn should_analyze_content(path: &str) -> bool {
     ) {
         return false;
     }
+    // Generated packaging manifests list every crate in the dependency tree by
+    // name and download URL, so any pattern matched there describes something
+    // a dependency might do rather than anything the app does. A markdown
+    // viewer was reported as loading native libraries at run time because the
+    // string `libloading` appeared in a crates.io URL inside its Flatpak
+    // sources file. The app itself never loads a library.
+    if matches!(
+        name,
+        "cargo-sources.json"
+            | "generated-sources.json"
+            | "flatpak-sources.json"
+            | "cargo-lock.json"
+    ) {
+        return false;
+    }
     if name == "bindings.rs"
         || name.ends_with(".generated.rs")
         || name.ends_with(".g.rs")
@@ -1839,6 +1854,38 @@ mod tests {
             "the runtime supports these but the analyzer cannot spot them in source, \
              so a port of an app that uses one gets a plan that does not mention it: {missing:?}"
         );
+    }
+
+    #[test]
+    fn a_generated_packaging_manifest_is_not_read_as_the_app_source() {
+        // A markdown viewer was reported as loading native libraries at run
+        // time -- a blocker -- because the string `libloading` appeared in a
+        // crates.io download URL inside its Flatpak sources file. That file
+        // lists every crate in the dependency tree, so any pattern matched
+        // there describes something a dependency might do, not the app.
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"viewer\"\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("main.rs"), "fn main() {}\n").unwrap();
+        fs::create_dir(dir.path().join("flatpak")).unwrap();
+        fs::write(
+            dir.path().join("flatpak/cargo-sources.json"),
+            r#"[{"type":"archive","url":"https://static.crates.io/crates/libloading/libloading-0.8.9.crate"}]"#,
+        )
+        .unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        assert!(
+            !plan
+                .findings
+                .iter()
+                .any(|f| f.id == "native-dynamic-loading"),
+            "a download URL in a generated manifest is not the app loading a library"
+        );
+        assert_ne!(plan.verdict, Verdict::Unsupported);
     }
 
     #[test]
