@@ -563,6 +563,16 @@ fn validate_capability_resource(
         //
         // Refused here, where the fix is one line in a manifest, rather than
         // silently at run time.
+        // `$HOME/x` and `%USERPROFILE%\\x` are the same mistake wearing a
+        // different hat: a shell would expand them, Krate does not, and the
+        // grant ends up naming a folder literally called `$HOME`.
+        if resource.starts_with('$') || resource.starts_with('%') {
+            return Err(format!(
+                "filesystem resource `{resource}` looks like a shell variable, which Krate \
+                 does not expand: it would match a folder literally named that. Use a path \
+                 relative to the app's sandbox instead."
+            ));
+        }
         if resource.starts_with('~') {
             return Err(format!(
                 "filesystem resource `{resource}` starts with `~`, which Krate does not \
@@ -815,6 +825,27 @@ mod tests {
         // And it points at the way an app legitimately reaches a file outside
         // its sandbox: the person choosing one.
         assert!(text.contains("ui.dialog:file-open"), "{text}");
+
+        // A shell variable is the same mistake wearing a different hat: it
+        // would be expanded by a shell and is a literal folder name here.
+        for shell in ["fs.read:$HOME/x", "fs.read:%USERPROFILE%/x"] {
+            let manifest = format!(
+                "{EXAMPLE}\n[[capabilities]]\ncap = \"{shell}\"\n\
+                 rationale = \"r\"\nrequired = true\n"
+            );
+            assert!(
+                Manifest::parse(&manifest).is_err(),
+                "{shell} must be refused"
+            );
+        }
+
+        // And an ordinary sandbox-relative path still works, which is the
+        // whole point -- this must not become a wall around normal paths.
+        let ok = format!(
+            "{EXAMPLE}\n[[capabilities]]\ncap = \"fs.read:images/**\"\n\
+             rationale = \"r\"\nrequired = true\n"
+        );
+        assert!(Manifest::parse(&ok).is_ok());
     }
 
     #[test]
