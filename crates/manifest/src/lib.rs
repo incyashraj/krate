@@ -554,6 +554,24 @@ fn validate_capability_resource(
     resource: &str,
 ) -> std::result::Result<(), String> {
     if module == "fs" {
+        // `~` is not a path Krate can honour, and accepting it produced the
+        // worst kind of failure: a manifest saying `fs.read:~/Pictures/**`
+        // packed fine, and the app then reported "not found" for a folder the
+        // person could see in their file manager. Every app path resolves
+        // inside the sandbox root, so a home directory is not reachable by
+        // design -- `~` would have to be either a lie or a hole in that.
+        //
+        // Refused here, where the fix is one line in a manifest, rather than
+        // silently at run time.
+        if resource.starts_with('~') {
+            return Err(format!(
+                "filesystem resource `{resource}` starts with `~`, which Krate does not \
+                 expand: every app path resolves inside the sandbox the app was given, \
+                 so a home directory is not reachable. Use a path relative to that \
+                 sandbox instead -- `images/**` rather than `~/Pictures/**` -- and let \
+                 the person choose files outside it with `ui.dialog:file-open`."
+            ));
+        }
         LogicalPath::parse(resource)
             .map(|_| ())
             .map_err(|err| format!("invalid filesystem resource pattern: {err}"))?;
@@ -766,7 +784,7 @@ mod tests {
         world = "krate:app/cli@0.1.0"
 
         [[capabilities]]
-        cap = "fs.read:~/Documents/notes/**"
+        cap = "fs.read:documents/notes/**"
         rationale = "Read saved notes"
         required = true
 
@@ -775,6 +793,29 @@ mod tests {
         rationale = "Sync to cloud"
         required = false
     "#;
+
+    #[test]
+    fn a_home_relative_path_is_refused_where_it_is_written() {
+        // An image viewer was ported with `fs.read:~/Pictures/**`. It packed,
+        // it ran, and it reported "not found" for a folder the person could
+        // see in their file manager -- because every app path resolves inside
+        // the sandbox root, so `~` was matched as a directory literally named
+        // that. Expanding it would be a hole in the containment rather than a
+        // fix, so it is refused at pack time where it costs one line.
+        let manifest = format!(
+            "{EXAMPLE}\n[[capabilities]]\ncap = \"fs.read:~/Pictures/**\"\n\
+             rationale = \"show photos\"\nrequired = true\n"
+        );
+        let err = Manifest::parse(&manifest).expect_err("`~` must be refused");
+        let text = err.to_string();
+        assert!(
+            text.contains('~') && text.contains("sandbox"),
+            "the error must say why and what to do instead: {text}"
+        );
+        // And it points at the way an app legitimately reaches a file outside
+        // its sandbox: the person choosing one.
+        assert!(text.contains("ui.dialog:file-open"), "{text}");
+    }
 
     #[test]
     fn parses_phase_2_manifest_schema() {
@@ -789,7 +830,7 @@ mod tests {
             .expect("declared capabilities");
         assert_eq!(caps[0].module(), "fs");
         assert_eq!(caps[0].action(), "read");
-        assert_eq!(caps[0].resource(), Some("~/Documents/notes/**"));
+        assert_eq!(caps[0].resource(), Some("documents/notes/**"));
     }
 
     #[test]
@@ -814,7 +855,7 @@ mod tests {
     #[test]
     fn rejects_duplicate_capabilities() {
         let input = format!(
-            "{EXAMPLE}\n[[capabilities]]\ncap = \"fs.read:~/Documents/notes/**\"\nrationale = \"again\"\nrequired = true\n"
+            "{EXAMPLE}\n[[capabilities]]\ncap = \"fs.read:documents/notes/**\"\nrationale = \"again\"\nrequired = true\n"
         );
         let err = Manifest::parse(&input).expect_err("reject duplicate capability");
 

@@ -2648,6 +2648,11 @@ granted to every app and must not be declared.\n\
 \n\
 {capabilities}\n\
 \n\
+Paths are relative to the sandbox the app is given, and `~` is refused: a home\n\
+directory is not reachable, by design. Declare `fs.read:images/**`, not\n\
+`fs.read:~/Pictures/**`. To reach anything outside that sandbox, ask the person\n\
+-- see below.\n\
+\n\
 ## Getting a file from the person (GUI apps)\n\
 A windowed app does not have to be handed a path. Call\n\
 `bindings::krate::ui::dialog::open_file(window, title, filter)` and the system's\n\
@@ -2676,9 +2681,14 @@ widget)` takes the picture away again.\n\
 \n\
 Not PNG or JPEG. Decode the file yourself and send the result.\n\
 \n\
-Use `zune-png` and `zune-jpeg`, both with `default-features = false`, plus\n\
-`zune-core` for its `ZCursor`. They decode under `#![no_std]`, which is what\n\
-this target needs.\n\
+Use these exact versions, all with `default-features = false`:\n\
+\n\
+    zune-png = {{ version = \"0.5\", default-features = false }}\n\
+    zune-jpeg = {{ version = \"0.5\", default-features = false }}\n\
+    zune-core = {{ version = \"0.5\", default-features = false }}\n\
+\n\
+The version matters: `ZCursor` below is 0.5 only. On 0.4 the decoders take a\n\
+byte slice directly and the import fails to resolve.\n\
 \n\
 Do **not** reach for the `image` crate. It is the obvious choice and it cannot\n\
 work here: it requires `std` unconditionally, so linking it drags in the whole\n\
