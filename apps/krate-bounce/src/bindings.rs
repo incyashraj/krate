@@ -3065,6 +3065,150 @@ pub mod krate {
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
+            /// Draw decoded RGBA pixels into a rectangle, scaled to fit and centred.
+            ///
+            /// The same straight-RGBA bytes an image widget takes, so a sprite sheet is
+            /// decoded once in the sandbox and drawn many times. Transparent pixels blend
+            /// over what is already on the canvas, which is what makes a sprite a sprite
+            /// rather than a rectangle with a picture in it.
+            pub fn draw_pixels(
+                canvas: u64,
+                area: Rect,
+                width: u32,
+                height: u32,
+                rgba: &[u8],
+            ) -> Result<(), GfxError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let super::super::super::krate::gfx::types::Rect {
+                        x: x0,
+                        y: y0,
+                        width: width0,
+                        height: height0,
+                    } = area;
+                    let vec1 = rgba;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let ptr2 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:gfx/canvas2d@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "draw-pixels"]
+                        fn wit_import3(
+                            _: i64,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: f32,
+                            _: i32,
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                        );
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import3(
+                        _: i64,
+                        _: f32,
+                        _: f32,
+                        _: f32,
+                        _: f32,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import3(
+                            _rt::as_i64(&canvas),
+                            _rt::as_f32(x0),
+                            _rt::as_f32(y0),
+                            _rt::as_f32(width0),
+                            _rt::as_f32(height0),
+                            _rt::as_i32(&width),
+                            _rt::as_i32(&height),
+                            ptr1.cast_mut(),
+                            len1,
+                            ptr2,
+                        )
+                    };
+                    let l4 = i32::from(*ptr2.add(0).cast::<u8>());
+                    let result13 = match l4 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l5 = i32::from(
+                                    *ptr2.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::gfx::types::GfxError as V12;
+                                let v12 = match l5 {
+                                    0 => V12::PermissionDenied,
+                                    1 => V12::InvalidTarget,
+                                    2 => {
+                                        let e12 = {
+                                            let l6 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l7 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len8 = l7;
+                                            let bytes8 = _rt::Vec::from_raw_parts(
+                                                l6.cast(),
+                                                len8,
+                                                len8,
+                                            );
+                                            _rt::string_lift(bytes8)
+                                        };
+                                        V12::Unsupported(e12)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e12 = {
+                                            let l9 = *ptr2
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l10 = *ptr2
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len11 = l10;
+                                            let bytes11 = _rt::Vec::from_raw_parts(
+                                                l9.cast(),
+                                                len11,
+                                                len11,
+                                            );
+                                            _rt::string_lift(bytes11)
+                                        };
+                                        V12::Platform(e12)
+                                    }
+                                };
+                                v12
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result13
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
             /// Publish the raster to the widget. Until this, nothing is shown.
             pub fn present(canvas: u64) -> Result<(), GfxError> {
                 unsafe {
@@ -12519,8 +12663,8 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 8747] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xb1C\x01A\x02\x01Ad\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 8806] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xecC\x01A\x02\x01Ad\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -12680,47 +12824,49 @@ hv\x06heightv\x04\0\x04size\x03\0\x04\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\
 unsupported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\0\x08\x01r\x03\x05w\
 idthy\x06heighty\x05vsync\x7f\x04\0\x0fsurface-options\x03\0\x0a\x03\0\x15krate:\
 gfx/types@0.1.0\x050\x02\x03\0\x1d\x05color\x02\x03\0\x1d\x05point\x02\x03\0\x1d\
-\x04rect\x02\x03\0\x1d\x09gfx-error\x01B\x16\x02\x03\x02\x011\x04\0\x05color\x03\
+\x04rect\x02\x03\0\x1d\x09gfx-error\x01B\x19\x02\x03\x02\x011\x04\0\x05color\x03\
 \0\0\x02\x03\x02\x012\x04\0\x05point\x03\0\x02\x02\x03\x02\x013\x04\0\x04rect\x03\
 \0\x04\x02\x03\x02\x014\x04\0\x09gfx-error\x03\0\x06\x01j\x01w\x01\x07\x01@\x02\x06\
 windoww\x06widgetw\0\x08\x04\0\x04bind\x01\x09\x01j\0\x01\x07\x01@\x02\x06canvas\
 w\x04fill\x01\0\x0a\x04\0\x05clear\x01\x0b\x01@\x03\x06canvasw\x04area\x05\x04fi\
 ll\x01\0\x0a\x04\0\x09fill-rect\x01\x0c\x01@\x04\x06canvasw\x04area\x05\x06strok\
 e\x01\x05widthv\0\x0a\x04\0\x0bstroke-rect\x01\x0d\x01@\x05\x06canvasw\x04texts\x06\
-origin\x03\x09font-sizev\x03ink\x01\0\x0a\x04\0\x09draw-text\x01\x0e\x01@\x01\x06\
-canvasw\0\x0a\x04\0\x07present\x01\x0f\x03\0\x18krate:gfx/canvas2d@0.1.0\x055\x02\
-\x03\0\x1d\x0fsurface-options\x01B\x0a\x02\x03\x02\x014\x04\0\x09gfx-error\x03\0\
-\0\x02\x03\x02\x016\x04\0\x0fsurface-options\x03\0\x02\x01j\x01w\x01\x01\x01@\x03\
-\x06windoww\x06widgetw\x07options\x03\0\x04\x04\0\x0ecreate-surface\x01\x05\x01j\
-\0\x01\x01\x01@\x01\x07surfacew\0\x06\x04\0\x07present\x01\x07\x03\0\x15krate:gf\
-x/gpu3d@0.1.0\x057\x01B\x06\x01m\x02\x07pcm-s16\x07float32\x04\0\x0dsample-forma\
-t\x03\0\0\x01r\x04\x0bsample-ratey\x08channels{\x06format\x01\x0dbuffer-framesy\x04\
-\0\x0dstream-config\x03\0\x02\x01q\x05\x11permission-denied\0\0\x0einvalid-strea\
-m\0\0\x12device-unavailable\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x0b\
-audio-error\x03\0\x04\x03\0\x17krate:audio/types@0.1.0\x058\x02\x03\0\x20\x0baud\
-io-error\x02\x03\0\x20\x0dstream-config\x01B\x0f\x02\x03\x02\x019\x04\0\x0baudio\
--error\x03\0\0\x02\x03\x02\x01:\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\
-\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09s\
-tream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\
-\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\0\x05write\x01\x0a\x03\0\x1ak\
-rate:audio/playback@0.1.0\x05;\x01B\x0f\x02\x03\x02\x019\x04\0\x0baudio-error\x03\
-\0\0\x02\x03\x02\x01:\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\
-\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\
-\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\x01\x01\
-@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19krate:aud\
-io/capture@0.1.0\x05<\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\x01\
-q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01s\0\x0b\
-unsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01m\x05\x0f\
-invalid-request\x0fmodel-not-found\x0dmodel-invalid\x0bunsupported\x09inference\x04\
-\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\x01@\x04\x0bmodel-a\
-ssets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0atranscrib\
-e\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample\
--ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k}\x01j\
-\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08l\
-anguage\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11match-line-stream\x01\x0e\x03\
-\0\x20krate:speech/transcription@0.1.0\x05=\x01@\0\0z\x04\0\x03run\x01>\x04\0\x13\
-krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cpr\
-ocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+origin\x03\x09font-sizev\x03ink\x01\0\x0a\x04\0\x09draw-text\x01\x0e\x01p}\x01@\x05\
+\x06canvasw\x04area\x05\x05widthy\x06heighty\x04rgba\x0f\0\x0a\x04\0\x0bdraw-pix\
+els\x01\x10\x01@\x01\x06canvasw\0\x0a\x04\0\x07present\x01\x11\x03\0\x18krate:gf\
+x/canvas2d@0.1.0\x055\x02\x03\0\x1d\x0fsurface-options\x01B\x0a\x02\x03\x02\x014\
+\x04\0\x09gfx-error\x03\0\0\x02\x03\x02\x016\x04\0\x0fsurface-options\x03\0\x02\x01\
+j\x01w\x01\x01\x01@\x03\x06windoww\x06widgetw\x07options\x03\0\x04\x04\0\x0ecrea\
+te-surface\x01\x05\x01j\0\x01\x01\x01@\x01\x07surfacew\0\x06\x04\0\x07present\x01\
+\x07\x03\0\x15krate:gfx/gpu3d@0.1.0\x057\x01B\x06\x01m\x02\x07pcm-s16\x07float32\
+\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0bsample-ratey\x08channels{\x06format\x01\
+\x0dbuffer-framesy\x04\0\x0dstream-config\x03\0\x02\x01q\x05\x11permission-denie\
+d\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0bunsupported\x01s\0\x08p\
+latform\x01s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\x17krate:audio/types@0.1.0\x05\
+8\x02\x03\0\x20\x0baudio-error\x02\x03\0\x20\x0dstream-config\x01B\x0f\x02\x03\x02\
+\x019\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01:\x04\0\x0dstream-config\x03\0\
+\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\
+\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\
+\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\0\x05writ\
+e\x01\x0a\x03\0\x1akrate:audio/playback@0.1.0\x05;\x01B\x0f\x02\x03\x02\x019\x04\
+\0\x0baudio-error\x03\0\0\x02\x03\x02\x01:\x04\0\x0dstream-config\x03\0\x02\x01j\
+\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01\
+@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01\
+j\x01\x08\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\
+\x03\0\x19krate:audio/capture@0.1.0\x05<\x01B\x12\x01r\x01\x04texts\x04\0\x0atra\
+nscript\x03\0\0\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\x0dmod\
+el-invalid\x01s\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspeech-erro\
+r\x03\0\x02\x01m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-invalid\x0bu\
+nsupported\x09inference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\
+\x03\x01@\x04\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\0\
+\x08\x04\0\x0atranscribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0ap\
+cm-s16-le\x06\x0bsample-ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0amatch-\
+line\x01\x0b\x01k}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\
+\x0bsample-ratey\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11match\
+-line-stream\x01\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05=\x01@\0\0z\x04\
+\0\x03run\x01>\x04\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0\
+G\x09producers\x01\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindge\
+n-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

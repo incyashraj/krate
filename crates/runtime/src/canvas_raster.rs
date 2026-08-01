@@ -10,7 +10,7 @@
 //! `fill_rect` and 5x7 `drawtext` are used directly rather than reimplemented.
 
 use krate_adapter_common::drawtext;
-use krate_adapter_common::painter::fill_rect;
+use krate_adapter_common::painter::{draw_image, fill_rect};
 use krate_adapter_common::ui::{ImagePixels, UiAdapterError};
 
 /// Largest canvas edge, in logical pixels. Same spirit as the image widget's
@@ -100,6 +100,23 @@ impl CanvasSurface {
         );
     }
 
+    /// Draw decoded RGBA into a rectangle, scaled to fit and centred.
+    ///
+    /// Reuses the painter's own `draw_image`, the same routine that puts a
+    /// photo in an image widget -- so a sprite lands with identical scaling
+    /// and alpha blending on all three systems, and there is one place where
+    /// that behaviour can ever drift.
+    pub fn draw_pixels(&mut self, x: f32, y: f32, w: f32, h: f32, image: &ImagePixels) {
+        draw_image(
+            &mut self.buffer,
+            self.width,
+            self.height,
+            (x, y, w, h),
+            image,
+            None,
+        );
+    }
+
     /// The canvas as the image pipeline's pixel format.
     pub fn to_image(&self) -> Result<ImagePixels, UiAdapterError> {
         let mut rgba = Vec::with_capacity(self.buffer.len() * 4);
@@ -143,6 +160,31 @@ mod tests {
         assert_eq!(at(0, 0), &[0, 255, 0, 255], "corner is stroked");
         assert_eq!(at(5, 0), &[0, 255, 0, 255], "top edge is stroked");
         assert_eq!(at(5, 5), &[0, 0, 0, 255], "the middle is untouched");
+    }
+
+    #[test]
+    fn a_sprite_blends_over_the_canvas_instead_of_covering_it() {
+        // A sprite's transparent pixels must show what is behind them. If they
+        // did not, every sprite would be a rectangle with a picture in it --
+        // which is the difference between a game and a slideshow.
+        let mut canvas = CanvasSurface::new(8, 8).expect("canvas");
+        canvas.clear(pack_color(0.0, 1.0, 0.0, 1.0));
+
+        // 2x2 sprite: fully transparent except one opaque red pixel.
+        let mut rgba = vec![0_u8; 16];
+        rgba[0] = 255; // R of the first pixel
+        rgba[3] = 255; // A of the first pixel
+        let sprite = ImagePixels::new(2, 2, rgba).expect("sprite");
+        canvas.draw_pixels(0.0, 0.0, 8.0, 8.0, &sprite);
+
+        let image = canvas.to_image().expect("image");
+        let at = |x: usize, y: usize| &image.rgba[(y * 8 + x) * 4..(y * 8 + x) * 4 + 4];
+        assert_eq!(at(1, 1), &[255, 0, 0, 255], "the opaque pixel is drawn");
+        assert_eq!(
+            at(6, 6),
+            &[0, 255, 0, 255],
+            "a transparent pixel leaves the canvas showing through"
+        );
     }
 
     #[test]

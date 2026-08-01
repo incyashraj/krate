@@ -95,6 +95,13 @@ interface canvas2d {
   stroke-rect: func(canvas: u64, area: rect, stroke: color, width: f32) -> result<_, gfx-error>;
   /// Draw one text run with the host's built-in face; `origin` is the baseline.
   draw-text: func(canvas: u64, text: string, origin: point, font-size: f32, ink: color) -> result<_, gfx-error>;
+  /// Draw decoded RGBA pixels into a rectangle, scaled to fit and centred.
+  ///
+  /// The same straight-RGBA bytes an image widget takes, so a sprite sheet is
+  /// decoded once in the sandbox and drawn many times. Transparent pixels blend
+  /// over what is already on the canvas, which is what makes a sprite a sprite
+  /// rather than a rectangle with a picture in it.
+  draw-pixels: func(canvas: u64, area: rect, width: u32, height: u32, rgba: list<u8>) -> result<_, gfx-error>;
   /// Publish the raster to the widget. Until this, nothing is shown.
   present: func(canvas: u64) -> result<_, gfx-error>;
 }

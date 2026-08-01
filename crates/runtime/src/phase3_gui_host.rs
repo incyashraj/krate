@@ -1260,6 +1260,29 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         Ok(Ok(()))
     }
 
+    fn draw_pixels(
+        &mut self,
+        canvas: u64,
+        area: gfx::types::Rect,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        // The guest is the untrusted side: a buffer shorter than its stated
+        // size would read past the end on the last row. ImagePixels checks
+        // that once, here, rather than in the sampling loop.
+        let image = match ImagePixels::new(width, height, rgba) {
+            Ok(image) => image,
+            Err(error) => return Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
+        };
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.draw_pixels(area.x, area.y, area.width, area.height, &image);
+        Ok(Ok(()))
+    }
+
     fn present(&mut self, canvas: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         // The one call that reaches the widget. Draw calls mutate the raster;
         // this publishes it, so a hundred fills cost one render.

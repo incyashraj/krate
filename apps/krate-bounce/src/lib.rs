@@ -94,31 +94,55 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
     }
 }
 
-/// Draw one frame: sky, then the ball as a square of stacked rows.
+/// An 8x8 sprite: a round yellow blob with transparent corners.
 ///
-/// The canvas has rectangles and text, so a circle is drawn as rows of
-/// varying width. Ten rows is enough to read as round at this size, and it
-/// keeps the per-frame call count honest and small.
+/// Built once at startup rather than decoded from a file, so the sample stays
+/// dependency-free -- the point is that `draw-pixels` blends a sprite over the
+/// canvas, not where the bytes came from. A real game decodes a sprite sheet
+/// with `zune-png` and slices it the same way.
+fn ball_sprite() -> [u8; 8 * 8 * 4] {
+    let mut rgba = [0_u8; 8 * 8 * 4];
+    for y in 0..8_i32 {
+        for x in 0..8_i32 {
+            // Distance from centre, in half-pixels, without sqrt.
+            let dx = x * 2 - 7;
+            let dy = y * 2 - 7;
+            let inside = dx * dx + dy * dy <= 7 * 7;
+            let at = ((y * 8 + x) * 4) as usize;
+            if inside {
+                if let Some(px) = rgba.get_mut(at..at + 4) {
+                    px[0] = 253;
+                    px[1] = 191;
+                    px[2] = 45;
+                    px[3] = 255;
+                }
+            }
+            // Outside stays fully transparent, which is what the canvas must
+            // show through.
+        }
+    }
+    rgba
+}
+
+/// Draw one frame: sky, then the ball as a sprite.
 fn draw(canvas: u64, ball: &Ball) -> Result<(), gfx::GfxError> {
     canvas2d::clear(canvas, color(0.09, 0.11, 0.16))?;
 
-    const ROWS: i32 = 10;
-    for row in 0..ROWS {
-        // Half-height offset of this row, from -RADIUS to +RADIUS.
-        let t = (row as f32 + 0.5) / ROWS as f32 * 2.0 - 1.0;
-        // Circle half-width at that offset: r * sqrt(1 - t^2).
-        let half = RADIUS * (1.0 - t * t).max(0.0).sqrt();
-        canvas2d::fill_rect(
-            canvas,
-            gfx::Rect {
-                x: ball.x - half,
-                y: ball.y + t * RADIUS,
-                width: half * 2.0,
-                height: (2.0 * RADIUS) / ROWS as f32 + 1.0,
-            },
-            color(0.99, 0.75, 0.18),
-        )?;
-    }
+    // The ball is a sprite now: transparent corners let the sky show through,
+    // which a filled rectangle could never do.
+    let sprite = ball_sprite();
+    canvas2d::draw_pixels(
+        canvas,
+        gfx::Rect {
+            x: ball.x - RADIUS,
+            y: ball.y - RADIUS,
+            width: RADIUS * 2.0,
+            height: RADIUS * 2.0,
+        },
+        8,
+        8,
+        &sprite,
+    )?;
 
     // The floor line, so the bounce has something to bounce against.
     canvas2d::fill_rect(
