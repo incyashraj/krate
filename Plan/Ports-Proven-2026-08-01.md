@@ -104,12 +104,55 @@ krate port <source> --prepare <workspace> --agent claude --to <app.krate>
 Both runs used that command with no manual edits to the candidate.
 
 
-## 5. rss-forwarder — the network shape, and a repair-loop finding
+## 4. rss-forwarder — the network shape
 
-[morphy2k/rss-forwarder](https://github.com/morphy2k/rss-forwarder), 1,590
-lines, `reqwest` over HTTPS.
+| | |
+|---|---|
+| Source | [morphy2k/rss-forwarder](https://github.com/morphy2k/rss-forwarder), 1,590 lines, `reqwest` over HTTPS |
+| Result | 18,084 byte `.krate` |
+| Repair attempts | 1 |
+| Imports | 9 `krate:*`, **0 `wasi:*`** |
 
-**Not counted as proven.** The port builds, packs, and does the hard parts: it
+Reads a TOML feed table, fetches over HTTPS, parses RSS and Atom, and forwards
+to a Discord or Slack webhook:
+
+```
+rssfwd: watching 1 feed
+  rust -> discord (every 3600s)
+rssfwd: rust: recorded baseline, no items forwarded
+```
+
+The interesting part is the permission list. It declared **a grant per host**
+rather than a wildcard:
+
+```
+net.connect:blog.rust-lang.org:443
+net.connect:github.blog:443
+net.connect:discord.com:443
+net.connect:hooks.slack.com:443
+```
+
+Withholding one of them refuses the run and names exactly which hosts are
+missing. That is per-host network permission working end to end on a real
+program, and it is the thing a wildcard `net.connect:*` would have thrown away.
+
+### The first attempt, and what it fixed
+
+The first run of this port failed after building and packing: `clean_text`
+stripped tags before decoding entities, so `&lt;p&gt;Newer entry&lt;/p&gt;` came
+out as `<p>Newer entry</p>` with the markup intact rather than as `Newer entry`.
+The app's own self-check said so in one line.
+
+**It got zero repair attempts**, because the repair loop wrapped only the build
+and import checks -- verification ran after packing, outside it. A syntax error
+got two attempts and a wrong answer got none.
+
+Verification is now inside the same budget. This port then took **one** attempt
+and passed, which is the fix working on the case that exposed it.
+
+### An older note, kept
+
+**Not counted as proven** on the first attempt. The port builds, packs, and does the hard parts: it
 parses RSS and Atom, sorts newest-first, and builds both Discord and Slack
 payloads. It fails its own self-check on one thing:
 

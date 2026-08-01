@@ -142,6 +142,16 @@ run_case "ddh" \
   "Total files" \
   "--auto-grant"
 
+# Network: fetches feeds over HTTPS with a grant per host. Nightly rather than
+# per-push, because its work is a real request and a runner without network
+# would fail for a reason that is not a regression.
+run_case "rssfwd" \\
+  "https://github.com/morphy2k/rss-forwarder.git" \\
+  "aa0412134687629e415a263536cfb6b6c1207cb4" \\
+  "quick" \\
+  "rssfwd" \\
+  "--auto-grant"
+
 echo ""
 echo "================================"
 echo "ported and verified: $passed"

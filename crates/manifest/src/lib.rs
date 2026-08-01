@@ -93,7 +93,16 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "*", true),
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "file-open", true),
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "file-save", true),
+    // Drawing with the GPU. Default-granted, and it currently gates nothing:
+    // the only two gfx interfaces are canvas2d and gpu3d, and both refuse every
+    // call, so this name appears in every app's permission list and controls
+    // no behaviour. Kept rather than removed because the widget layer will need
+    // it once canvas2d lands, and churning a capability name that apps already
+    // declare would break their manifests for no gain today.
+    // See docs/book/src/reference/interface-parity.md.
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "gfx", "gpu", "basic", true),
+    // GPU compute, which is a general-purpose processor an app can keep busy,
+    // so it is asked for rather than granted. Also not implemented yet.
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "gfx", "gpu", "compute", false),
     CapabilitySpec::resource_free(CapabilityPhase::Phase3, "audio", "playback", false),
     CapabilitySpec::resource_free(CapabilityPhase::Phase3, "audio", "capture", false),

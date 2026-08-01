@@ -50,6 +50,17 @@ check() {
   mkdir -p "$work/input" "$work/output" "$work/scan"
   printf 'Hello, Krate!' > "$work/input/sample.bin"
   printf 'the quick brown fox the lazy dog the fox\n' > "$work/input/sample.txt"
+  # A feed table for the network app, so it resolves a feed and a sink rather
+  # than reporting an empty config and exiting early.
+  cat > "$work/input/feeds.toml" <<'TOML'
+[feeds.rust]
+url = "https://blog.rust-lang.org/feed.xml"
+interval = "1h"
+
+[feeds.rust.sink]
+type = "discord"
+url = "https://discord.com/api/webhooks/test"
+TOML
 
   set +e
   out="$( cd "$work" && "$KRATE" run --auto-grant "$bundle" -- "$arg" 2>&1 )"
@@ -88,6 +99,16 @@ check "savings" "quick" "Rent"
 check "ddh" "quick" "Total files"
 # A database CLI: SQL, secrets, and random together.
 check "envelope" "quick" "quick"
+# A network app: fetches feeds over HTTPS with per-host grants.
+#
+# Deliberately not run here. Its work is a real HTTPS request, so a check that
+# exercised it would fail whenever a runner has no network or the feed host is
+# slow -- and this script runs on every push. A test that goes red for reasons
+# unrelated to the change is a test people learn to re-run rather than read.
+#
+# It is covered by the nightly port regression instead, where a network
+# dependency is acceptable, and by the cross-system bundle job which opens it
+# on all three operating systems.
 
 echo ""
 echo "passed: $passed   failed: $failed"

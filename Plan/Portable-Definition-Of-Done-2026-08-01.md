@@ -24,7 +24,7 @@ Measured, not estimated:
 
 | | |
 |---|---|
-| Real third-party ports | **3** — hexyl (CLI), savings (GUI), ddh (filesystem) |
+| Real third-party ports | **4** — hexyl (CLI), savings (GUI), ddh (filesystem), rssfwd (network) |
 | Capability keys | 34 |
 | Capabilities the analyzer can suggest | 18 of 18 requestable (13 more are default-granted) |
 | Widgets working on all three systems | 13 of 17 |
@@ -128,13 +128,12 @@ is proven — never shrink.
 
 - [x] command line, byte-oriented (hexyl)
 - [x] GUI, form and list (savings)
-- [ ] something that talks to the network — unblocked: HTTPS works as of
-      2026-08-01, see `Plan/HTTPS-Gap-2026-08-01.md`
+- [x] something that talks to the network (rss-forwarder, per-host HTTPS)
 - [ ] something with a real database
 - [x] something that reads and writes many files (ddh, duplicate finder)
 - [ ] something genuinely medium — **5,000+ lines**
 
-**Status: 3 of 6.**
+**Status: 4 of 6.**
 
 Six is not magic. It is the smallest number where "it works on the shape I
 tried" stops being the likely explanation. Two ports of two shapes is a
