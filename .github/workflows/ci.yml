@@ -285,6 +285,13 @@ jobs:
         run: cargo run -p krate-tools --bin check-widget-parity -- --write
       - name: Check the widget parity table is current
         run: git diff --exit-code -- docs/book/src/reference/widget-parity.md
+      # The widget table was guarded and the interface table was not, so adding
+      # krate:ui/image left the published page claiming one fewer interface
+      # than the runtime has. Both are generated; both are checked now.
+      - name: Regenerate the interface parity table
+        run: cargo run -p krate-tools --bin check-interface-parity -- --write
+      - name: Check the interface parity table is current
+        run: git diff --exit-code -- docs/book/src/reference/interface-parity.md
       - name: Regenerate UAPI freeze evidence
         run: sh scripts/generate-uapi-freeze-evidence.sh
       - name: Check generated UAPI freeze evidence is current
