@@ -2618,11 +2618,22 @@ iterators do not reach the operating system and do not leak. Keep\n\
 `panic = \"abort\"` and `opt-level = \"s\"` in the release profile, which is what\n\
 stops std's unwinding and formatting machinery dragging its own I/O in.\n\
 \n\
-Do **not** add `#![no_std]` to a windowed app. The generated bindings in\n\
-`src/bindings.rs` contain `impl std::error::Error`, so the crate cannot compile\n\
-without std, and trying leaves a build error that looks like your own code is\n\
-at fault. `krate-notes` is a shipped GUI app: it uses std, uses `format!`, and\n\
-imports zero `wasi:*`. Copy that.\n\
+Both `#![no_std]` and plain std work. Which one you need depends on your\n\
+dependencies, and getting this wrong is the most expensive mistake here:\n\
+\n\
+- **No dependencies beyond the bindings?** Use std. `krate-notes` is a shipped\n\
+  GUI app that does exactly this and imports zero `wasi:*`.\n\
+- **Any real dependency -- a decoder, a parser?** Use `#![no_std]`. A crate\n\
+  that never touches the operating system still leaks through std's panic\n\
+  path: one reachable panic pulls in `fd_write`, `environ_get`, and\n\
+  `proc_exit` to format the message and exit. `zune-png` imports nothing under\n\
+  `no_std` and four wasi functions with std linked.\n\
+\n\
+`no_std` works here because `Cargo.toml` sets `std_feature = true` under\n\
+`[package.metadata.component.bindings]`, which puts the generated\n\
+`impl std::error::Error` behind a feature nobody turns on. Leave that line\n\
+alone. A `no_std` crate must own its allocator, `#[panic_handler]`, and the\n\
+`mem*` intrinsics -- the starter already has all three.\n\
 \n\
 ## The manifest\n\
 Declare only the capabilities the app uses. Mark the one that gates it\n\

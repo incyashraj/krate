@@ -678,6 +678,14 @@ wit-bindgen-rt = {{ version = "0.44.0", features = ["bitflags"] }}
 [lib]
 crate-type = ["cdylib"]
 
+# Gate the generated `impl std::error::Error` behind a `std` feature nobody
+# turns on. Without this a windowed app cannot be `#![no_std]`, because the
+# bindings themselves need std -- and linking std brings a dependency's panic
+# path with it. An image viewer failed on exactly that: the decoder was clean
+# under no_std and pulled four wasi imports the moment std was linked.
+[package.metadata.component.bindings]
+std_feature = true
+
 [package.metadata.component]
 package = "krate:{name}"
 
