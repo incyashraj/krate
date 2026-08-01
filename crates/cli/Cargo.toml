@@ -21,6 +21,9 @@ krate-bundle = { path = "../bundle", version = "0.1.0-dev" }
 krate-runtime = { path = "../runtime", version = "0.1.0-dev" }
 krate-author = { path = "../author", version = "0.1.0-dev" }
 krate-port = { path = "../port", version = "0.1.0-dev" }
+# For the widget list in the generated agent reference, so a widget cannot be
+# added to the system and stay missing from the page the agent reads.
+krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
 tempfile = "3.27.0"
 serde.workspace = true
 serde_json.workspace = true

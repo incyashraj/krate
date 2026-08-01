@@ -1859,6 +1859,7 @@ version = "0.1.0-dev"
 dependencies = [
  "anyhow",
  "clap",
+ "krate-adapter-common",
  "krate-adapter-macos",
  "krate-author",
  "krate-bundle",

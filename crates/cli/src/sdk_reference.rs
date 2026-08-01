@@ -366,6 +366,64 @@ fn collapse_whitespace(text: &str) -> String {
 }
 
 /// Render the reference an agent reads, grouped by module.
+/// List the widget kinds a window can build, for the porting agent.
+///
+/// These are not functions, so the SDK parser above never sees them -- it reads
+/// the Rust guest SDK, which is phase2 and has no UI. That left the reference
+/// listing every file and network call and not one widget, directly above a
+/// line telling the agent that anything unlisted does not exist. An agent
+/// following that instruction correctly would decide a windowed app cannot be
+/// ported.
+///
+/// Generated from the same enum the hosts match on, so a widget cannot be added
+/// to the system and stay missing from the page the agent reads.
+fn render_widget_kinds() -> String {
+    use krate_adapter_common::ui::WidgetKind;
+
+    // Named individually rather than iterated: the enum carries no iterator,
+    // and an explicit list means adding a kind fails to compile here until it
+    // is documented. Each note says what the kind is *for*, which is the part
+    // an agent cannot infer from the name.
+    const KINDS: &[(WidgetKind, &str)] = &[
+        (WidgetKind::Stack, "flex row or column; the usual root"),
+        (WidgetKind::Grid, "wrapping grid"),
+        (WidgetKind::Scroll, "scrolls its children"),
+        (
+            WidgetKind::Tabs,
+            "tab strip; `selected` picks the visible panel",
+        ),
+        (WidgetKind::Button, "`label` is the title"),
+        (WidgetKind::Checkbox, "`checked` is the state"),
+        (WidgetKind::Radio, "one of a set; `checked` is the state"),
+        (WidgetKind::Switch, "on/off; `checked` is the state"),
+        (WidgetKind::Slider, "`value` is 0.0..=1.0"),
+        (WidgetKind::Progress, "`value` is 0.0..=1.0"),
+        (WidgetKind::Text, "static label"),
+        (WidgetKind::TextField, "one line the person can type in"),
+        (WidgetKind::TextArea, "many lines the person can type in"),
+        (WidgetKind::ListView, "rows; `selected` is the chosen index"),
+        (
+            WidgetKind::TreeView,
+            "nested rows; `selected` is the chosen index",
+        ),
+        (
+            WidgetKind::Image,
+            "a picture; `pixels` carries RGBA, see \"Showing a picture\"",
+        ),
+        (WidgetKind::Canvas, "a region the app positions children in"),
+    ];
+
+    let mut out = String::from("\n### Widget kinds\n\n");
+    out.push_str(
+        "Build a window from `types::WidgetNode` values. Every kind here draws on\n\
+         macOS, Windows, and Linux -- there is no kind that works on one system only.\n\n",
+    );
+    for (kind, note) in KINDS {
+        out.push_str(&format!("- `{kind:?}` -- {note}\n"));
+    }
+    out
+}
+
 pub fn render_reference(functions: &[SdkFunction]) -> String {
     let mut out = String::new();
     out.push_str("## Every function you can call\n\n");
@@ -374,6 +432,7 @@ pub fn render_reference(functions: &[SdkFunction]) -> String {
          exist -- do not invent a call. Work with what is listed, or say in your report\n\
          that the behaviour cannot be ported.\n\n",
     );
+    out.push_str(&render_widget_kinds());
 
     let mut current = String::new();
     for func in functions.iter().filter(|f| !f.is_method) {
@@ -460,6 +519,41 @@ pub mod store {
         );
         // The parent's own function still belongs to the parent.
         assert!(fns.iter().any(|f| f.module == "io" && f.name == "flush"));
+    }
+
+    #[test]
+    fn the_reference_lists_every_widget_a_window_can_use() {
+        // The reference is generated from the Rust guest SDK, which is phase2
+        // and has no UI, so widgets were absent -- directly under a line
+        // telling the agent that anything unlisted does not exist. An agent
+        // reading that correctly would conclude a windowed app is unportable.
+        let rendered = render_reference(&[]);
+        for kind in [
+            "Stack",
+            "Grid",
+            "Scroll",
+            "Tabs",
+            "Button",
+            "Checkbox",
+            "Radio",
+            "Switch",
+            "Slider",
+            "Progress",
+            "Text",
+            "TextField",
+            "TextArea",
+            "ListView",
+            "TreeView",
+            "Image",
+            "Canvas",
+        ] {
+            assert!(
+                rendered.contains(&format!("`{kind}`")),
+                "the agent reference must list the {kind} widget"
+            );
+        }
+        // The picture field is the part an agent cannot guess from a kind name.
+        assert!(rendered.contains("pixels"));
     }
 
     #[test]
