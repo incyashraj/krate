@@ -24,7 +24,7 @@ Measured, not estimated:
 
 | | |
 |---|---|
-| Real third-party ports | **5** — hexyl (CLI), savings (GUI), ddh (filesystem), rssfwd (network), envelope (database) |
+| Real third-party ports | **6** — hexyl, savings, ddh, rssfwd, envelope, grex |
 | Capability keys | 34 |
 | Capabilities the analyzer can suggest | 18 of 18 requestable (13 more are default-granted) |
 | Widgets working on all three systems | 13 of 17 |
@@ -142,17 +142,17 @@ is proven — never shrink.
 - [x] something that talks to the network (rss-forwarder, per-host HTTPS)
 - [x] something with a real database (envelope, SQL + secrets + random)
 - [x] something that reads and writes many files (ddh, duplicate finder)
-- [ ] something genuinely medium — **5,000+ lines**
+- [x] something genuinely medium — **5,000+ lines** (grex, 5,396 lines)
 
-**Status: 5 of 6.**
+**Status: DONE — 6 of 6.**
 
 Six is not magic. It is the smallest number where "it works on the shape I
 tried" stops being the likely explanation. Two ports of two shapes is a
 promising signal and nothing more, and saying "any app" on it would be
 disproved by the third person who tries.
 
-Note the last row: "medium sized" is currently an untested word. hexyl at 2,392
-lines is our largest, and nobody has tried 5,000.
+"Medium sized" is no longer an untested word. grex is 5,396 lines of someone
+else's Rust and it ports, builds, and produces correct output.
 
 What the two ports cost, measured:
 

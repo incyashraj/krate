@@ -330,7 +330,13 @@ impl WidgetStyle {
 /// Selection belongs to container kinds that present a list of choices;
 /// every other kind rejects it at construction time.
 pub fn kind_is_selectable(kind: WidgetKind) -> bool {
-    matches!(kind, WidgetKind::ListView | WidgetKind::TreeView)
+    // Tabs belongs here for the same reason as a list: a tab strip without a
+    // selected tab is not a tab strip. It is what decides which panel is laid
+    // out and which takes no space.
+    matches!(
+        kind,
+        WidgetKind::ListView | WidgetKind::TreeView | WidgetKind::Tabs
+    )
 }
 
 /// One node in the portable widget tree.

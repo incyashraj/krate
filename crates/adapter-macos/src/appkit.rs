@@ -62,6 +62,7 @@ impl AppKitWidgetPlacement {
                 | WidgetKind::Scroll
                 | WidgetKind::Stack
                 | WidgetKind::Grid
+                | WidgetKind::Tabs
         )
     }
 
@@ -1674,7 +1675,8 @@ mod platform {
                     WidgetKind::ListView
                     | WidgetKind::Scroll
                     | WidgetKind::Stack
-                    | WidgetKind::Grid => {
+                    | WidgetKind::Grid
+                    | WidgetKind::Tabs => {
                         // A layout container paints nothing itself on macOS: its
                         // children are separate placements. Lower it as an empty,
                         // non-editable label so ids and hit testing stay
@@ -2343,14 +2345,20 @@ mod tests {
         )
         .is_ok());
 
-        // Slider, radio, switch, and progress lower now, so the refusal case is
-        // one of the kinds still genuinely unimplemented on every host.
+        // Slider, radio, switch, progress, grid, canvas, and tabs all lower now,
+        // so the refusal case is `image` -- the one kind still genuinely
+        // unimplemented on every host, because it needs decoding and drawing
+        // rather than a layout rule.
         assert!(
             AppKitWidgetPlacement::new(widget, WidgetKind::Slider, None, 0.0, 0.0, 10.0, 10.0)
                 .is_ok()
         );
+        assert!(
+            AppKitWidgetPlacement::new(widget, WidgetKind::Tabs, None, 0.0, 0.0, 10.0, 10.0)
+                .is_ok()
+        );
         assert!(matches!(
-            AppKitWidgetPlacement::new(widget, WidgetKind::Tabs, None, 0.0, 0.0, 10.0, 10.0),
+            AppKitWidgetPlacement::new(widget, WidgetKind::Image, None, 0.0, 0.0, 10.0, 10.0),
             Err(UiAdapterError::Unsupported(_))
         ));
         assert!(matches!(

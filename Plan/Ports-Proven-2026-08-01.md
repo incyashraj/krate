@@ -218,3 +218,29 @@ as well, and this port passes unchanged.
 
 At 3,795 lines it is also the largest source ported so far, though still short
 of the 5,000-line bar the gate sets for "medium".
+
+
+## 6. grex — genuinely medium, 5,396 lines
+
+| | |
+|---|---|
+| Source | [pemistahl/grex](https://github.com/pemistahl/grex), **5,396 lines** |
+| Result | 54,084 byte `.krate` |
+| Repair attempts | 1 |
+| Imports | 6 `krate:*`, **0 `wasi:*`** |
+
+A regular-expression generator: give it example strings, it produces a regex
+matching exactly those. The hardest algorithm of any port so far, and it works.
+
+```
+$ krate run grex.krate -- quick
+^a(?:bc?)?$
+```
+
+That regex is correct, checked rather than eyeballed: it matches `a`, `ab`, and
+`abc`, and rejects `abcd`, `b`, and the empty string. Producing a
+correctly-factored alternation from example strings is the whole point of the
+program, and the port does it.
+
+This closes the "medium sized" question, which had been an untested word in
+every claim we made. 5,396 lines in, 2,333 out, 54 KB packed.

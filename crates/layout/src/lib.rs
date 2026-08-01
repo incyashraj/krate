@@ -316,7 +316,13 @@ fn build_taffy_node(
         .flatten()
         .map(|&child| build_taffy_node(tree, child, viewport, child_index, taffy, node_map))
         .collect::<Result<Vec<_>, _>>()?;
-    let style = taffy_style_for(node, widget == tree.root(), viewport);
+    // A tab strip shows one panel at a time. Everything else in the tree is
+    // always laid out, so this is the only place visibility is decided.
+    let hidden = parent_hides_this_child(tree, child_index, node);
+    let mut style = taffy_style_for(node, widget == tree.root(), viewport);
+    if hidden {
+        style.display = Display::None;
+    }
     let taffy_node = if children.is_empty() {
         taffy.new_leaf(style).map_err(map_taffy)?
     } else {
@@ -327,6 +333,40 @@ fn build_taffy_node(
 
     node_map.insert(widget, taffy_node);
     Ok(taffy_node)
+}
+
+/// Whether this node is a `tabs` panel that is not the selected one.
+///
+/// `tabs` was declared in the widget set and implemented by no host, so an app
+/// that asked for one was refused everywhere. The only thing it needs beyond
+/// any other container is that unselected panels take no space -- the node
+/// model already carries `selected`, and Taffy already has `Display::None`, so
+/// the widget is a visibility rule rather than new drawing on three hosts.
+///
+/// A `tabs` with no `selected` shows its first panel, because a tab strip that
+/// shows nothing looks broken rather than empty.
+fn parent_hides_this_child(
+    tree: &WidgetTree,
+    child_index: &BTreeMap<WidgetId, Vec<WidgetId>>,
+    node: &WidgetNode,
+) -> bool {
+    let Some(parent_id) = node.parent else {
+        return false;
+    };
+    let Some(parent) = tree.node(parent_id) else {
+        return false;
+    };
+    if parent.kind != WidgetKind::Tabs {
+        return false;
+    }
+    let Some(siblings) = child_index.get(&parent_id) else {
+        return false;
+    };
+    let Some(position) = siblings.iter().position(|id| *id == node.id) else {
+        return false;
+    };
+    let selected = parent.selected.unwrap_or(0) as usize;
+    position != selected
 }
 
 fn taffy_style_for(node: &WidgetNode, is_root: bool, viewport: LayoutViewport) -> Style {
@@ -565,6 +605,57 @@ mod tests {
             first.y
         );
         assert_eq!(third.x, first.x, "a wrapped child starts a new row");
+    }
+
+    #[test]
+    fn a_tab_strip_lays_out_only_the_selected_panel() {
+        // `tabs` was declared and implemented by no host. The only thing it
+        // needs beyond any other container is that unselected panels take no
+        // space -- the node model already carries `selected`, so this is a
+        // visibility rule rather than new drawing on three hosts.
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Tabs)
+            .with_selected(1)
+            .expect("selected");
+        let mut tree = WidgetTree::new(root).expect("tree");
+        for id in 2..=4 {
+            tree.upsert(fixed_child(id, tree.root(), 40.0, 20.0))
+                .expect("panel");
+        }
+
+        let layout = compute_layout(&tree, LayoutViewport::new(200.0, 200.0).expect("viewport"))
+            .expect("layout");
+
+        let first = layout.rect(WidgetId::new(2).expect("id")).expect("first");
+        let second = layout.rect(WidgetId::new(3).expect("id")).expect("second");
+        let third = layout.rect(WidgetId::new(4).expect("id")).expect("third");
+
+        // Panel index 1 is selected, so it is the one with size.
+        assert!(
+            second.width > 0.0 && second.height > 0.0,
+            "the selected panel is laid out"
+        );
+        assert_eq!(first.width, 0.0, "an unselected panel takes no width");
+        assert_eq!(third.width, 0.0, "an unselected panel takes no width");
+    }
+
+    #[test]
+    fn a_tab_strip_with_no_selection_shows_its_first_panel() {
+        // A tab strip that shows nothing looks broken rather than empty, so
+        // the absence of a selection means the first panel.
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Tabs);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        for id in 2..=3 {
+            tree.upsert(fixed_child(id, tree.root(), 40.0, 20.0))
+                .expect("panel");
+        }
+
+        let layout = compute_layout(&tree, LayoutViewport::new(200.0, 200.0).expect("viewport"))
+            .expect("layout");
+
+        let first = layout.rect(WidgetId::new(2).expect("id")).expect("first");
+        let second = layout.rect(WidgetId::new(3).expect("id")).expect("second");
+        assert!(first.width > 0.0, "the first panel shows by default");
+        assert_eq!(second.width, 0.0, "the rest do not");
     }
 
     #[test]

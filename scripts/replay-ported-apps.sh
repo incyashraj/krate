@@ -99,6 +99,9 @@ check "savings" "quick" "Rent"
 check "ddh" "quick" "Total files"
 # A database CLI: SQL, secrets, and random together.
 check "envelope" "quick" "quick"
+# The largest port: 5,396 lines of regex generator. Its answer is checkable --
+# ^a(?:bc?)?$ matches a, ab, abc and nothing else.
+check "grex" "quick" "^a(?:bc?)?"
 # A network app: fetches feeds over HTTPS with per-host grants.
 #
 # Deliberately not run here. Its work is a real HTTPS request, so a check that
