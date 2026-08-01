@@ -2,5 +2,8 @@
 pre-build = [
   "dpkg --add-architecture $CROSS_DEB_ARCH",
   "apt-get update",
-  "apt-get --assume-yes install libasound2-dev:$CROSS_DEB_ARCH",
+  # The file picker (rfd) needs the window-system headers, not just audio.
+  # Without them this target fails to build and the release publishes with one
+  # platform missing -- which nobody notices until an arm64 Linux user asks.
+  "apt-get --assume-yes install libasound2-dev:$CROSS_DEB_ARCH libwayland-dev:$CROSS_DEB_ARCH libxkbcommon-dev:$CROSS_DEB_ARCH",
 ]
