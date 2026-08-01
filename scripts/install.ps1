@@ -32,11 +32,47 @@ if (-not $version) {
     Write-Say 'Finding the latest release...'
     # /releases/latest excludes pre-releases and Krate is pre-release only, so
     # query the list and take the newest v-tag instead.
-    $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=30" `
-        -Headers @{ 'User-Agent' = 'krate-installer' }
-    $version = ($releases | Where-Object { $_.tag_name -like 'v*' } | Select-Object -First 1).tag_name
+    try {
+        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=30" `
+            -Headers @{ 'User-Agent' = 'krate-installer' }
+        $version = ($releases | Where-Object { $_.tag_name -like 'v*' } | Select-Object -First 1).tag_name
+    } catch {
+        $version = $null
+    }
+
+    # The API is rate limited to 60 requests an hour per address and does not
+    # care that you are only reading. Anyone behind a shared address -- an
+    # office, a university, a cafe -- can hit that without having run this
+    # before, and the raw failure explains nothing. The releases page is plain
+    # HTML and is not limited the same way, so read a tag out of it instead.
     if (-not $version) {
-        Stop-Install 'could not find a release; set KRATE_VERSION to pin one'
+        Write-Say 'The GitHub API did not answer; reading the releases page instead...'
+        try {
+            $page = Invoke-WebRequest -Uri "https://github.com/$repo/releases" `
+                -Headers @{ 'User-Agent' = 'krate-installer' } -UseBasicParsing
+            # Built by concatenation with a single-quoted pattern, so the
+            # quote inside the character class needs no backtick escape --
+            # that escaping is easy to get wrong and fails as a parse error
+            # rather than a wrong answer.
+            $pattern = '/' + $repo + '/releases/tag/(v[0-9][^"]*)'
+            $match = [regex]::Match($page.Content, $pattern)
+            if ($match.Success) { $version = $match.Groups[1].Value }
+        } catch {
+            $version = $null
+        }
+    }
+
+    if (-not $version) {
+        Write-Host 'Could not work out the latest version.'
+        Write-Host ''
+        Write-Host 'This usually means GitHub is rate limiting your address, which happens'
+        Write-Host 'on shared networks and clears within the hour.'
+        Write-Host ''
+        Write-Host 'To install right now, pin a version:'
+        Write-Host '  $env:KRATE_VERSION="v0.1.0-rc4"; irm https://krate.tech/install.ps1 | iex'
+        Write-Host ''
+        Write-Host "Versions are listed at https://github.com/$repo/releases"
+        exit 1
     }
 }
 

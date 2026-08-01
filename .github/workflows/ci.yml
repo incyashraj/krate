@@ -1098,6 +1098,59 @@ jobs:
         shell: bash
         run: sh scripts/test-cold-install.sh "$RUNNER_TEMP/cold-install"
 
+  # Windows installs through install.ps1, a different script with its own
+  # release lookup -- and the same GitHub rate limit that broke the Unix path.
+  # Its own walk, because a shell script cannot test a PowerShell one.
+  cold-install-windows:
+    name: Cold install from krate.tech (windows)
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Walk the published install path
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $work = Join-Path $env:RUNNER_TEMP 'cold-install-win'
+          Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $work | Out-Null
+          $env:KRATE_INSTALL_DIR = Join-Path $work 'bin'
+
+          Write-Host '1. fetching the installer from krate.tech'
+          $script = Join-Path $work 'install.ps1'
+          Invoke-WebRequest -Uri 'https://krate.tech/install.ps1' -OutFile $script -UseBasicParsing
+          if (-not (Test-Path $script)) { throw 'COLD PATH BROKEN: installer did not download' }
+
+          Write-Host '2. running it'
+          & pwsh -NoProfile -File $script
+          if ($LASTEXITCODE -ne 0) { throw "COLD PATH BROKEN: installer exited $LASTEXITCODE" }
+
+          $krate = Join-Path $env:KRATE_INSTALL_DIR 'krate.exe'
+          if (-not (Test-Path $krate)) { throw "COLD PATH BROKEN: no krate.exe at $krate" }
+          Write-Host "   installed: $(& $krate --version)"
+
+          Write-Host '3. running the app it suggests, with no grants'
+          Push-Location $work
+          $out = & $krate run 'https://krate.tech/notes.krate' 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 5) { throw "COLD PATH BROKEN: expected exit 5 without grants, got $code" }
+          if ($out -notmatch 'needs permission') { throw "COLD PATH BROKEN: refusal did not explain itself" }
+          Write-Host '   refused, in plain words'
+
+          Write-Host '4. running it with grants'
+          Push-Location $work
+          $out = & $krate run --grant 'fs.read:notes/**' --grant 'fs.write:notes/**' 'https://krate.tech/notes.krate' 2>&1 | Out-String
+          $code = $LASTEXITCODE
+          Pop-Location
+          if ($code -ne 0) { throw "COLD PATH BROKEN: the app failed with its grants: $out" }
+          if ($out -notmatch 'note') { throw "COLD PATH BROKEN: app ran but produced nothing: $out" }
+          Write-Host "   ran: $($out.Trim())"
+
+          Write-Host ''
+          Write-Host 'the cold path works on Windows: install, refuse, grant, run'
+
   language-variant-evidence-compare:
     name: Language variant evidence compare
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) || (github.event_name == 'push' && contains(github.event.head_commit.message, '[full-ci]')) }}

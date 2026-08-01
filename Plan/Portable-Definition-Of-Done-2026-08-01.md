@@ -223,8 +223,15 @@ permission wall to refuse with exit 5 in plain words, then grant and require
 the app to work. Verified by hand on macOS: install, refuse, grant, run,
 `note:first note`.
 
-**Windows is not covered.** It installs through `install.ps1`, a different
-script that needs its own walk. That is the remaining piece of this gate.
+**Windows is now covered too**, by its own PowerShell walk -- a shell script
+cannot test a PowerShell one. Same journey: fetch install.ps1 from krate.tech,
+run it, require exit 5 without grants with a refusal in plain words, then grant
+and require the app to work.
+
+The Windows installer had the same GitHub rate-limit hole the Unix one did: it
+queried the same API and died with the same unhelpful message. It now falls
+back to reading the releases page and, failing that, says what happened and
+gives a pinned command.
 
 This is the gate people actually hit first, and the one most easily broken by
 something outside the repository -- the release assets, the domain, the GitHub
