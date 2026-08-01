@@ -2705,7 +2705,13 @@ imports in, and the app is rejected. So never use:\n\
 - `std::process`, `std::net`, `std::thread`\n\
 \n\
 Ordinary in-memory std is fine: `String`, `format!`, `Vec`, `HashMap`, and\n\
-iterators do not reach the operating system and do not leak. Keep\n\
+iterators do not reach the operating system and do not leak.\n\
+\n\
+One exception, and it is sharp: in a `#![no_std]` guest, `.to_string()` and\n\
+`String::from` route through std's out-of-memory handler, which pulls the whole\n\
+`wasi:*` surface in. Two widget labels took a clean component from zero imports\n\
+to thirty-three. Copy `pure_string` from the in-repo samples -- it allocates the\n\
+bytes directly -- and use it for every literal that becomes a `String`. Keep\n\
 `panic = \"abort\"` and `opt-level = \"s\"` in the release profile, which is what\n\
 stops std's unwinding and formatting machinery dragging its own I/O in.\n\
 \n\
@@ -2736,6 +2742,14 @@ usually plenty.\n\
 Declare only the capabilities the app uses. Mark the one that gates it\n\
 (`fs.write` for a saving app) `required = true`. Anything not listed here is\n\
 granted to every app and must not be declared.\n\
+\n\
+`required = true` is a promise the verification run tests: it withholds that\n\
+one capability and the app must refuse to start, exiting 5. So mark required\n\
+only what the app cannot begin without. A photo frame needs the file dialog to\n\
+be *useful*, but it can still open its window and wait -- so `ui.dialog` is\n\
+`required = false` and `ui.window:create` is the one that gates it. Marking a\n\
+capability the `quick` path never reaches makes the app fail its own wall test\n\
+after building and packaging correctly.\n\
 \n\
 {capabilities}\n\
 \n\

@@ -19,7 +19,7 @@ not be drawn into. That pair reads `works` on both tables now.
 | --- | --- | --- |
 | `audio.capture` | 4 | **works** |
 | `audio.playback` | 4 | **works** |
-| `gfx.canvas2d` | 3 | **works** |
+| `gfx.canvas2d` | 6 | **works** |
 | `gfx.gpu3d` | 2 | **not implemented** |
 | `speech.transcription` | 23 | **works** |
 | `ui.clipboard` | 2 | **works** |

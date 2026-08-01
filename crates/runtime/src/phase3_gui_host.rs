@@ -1186,66 +1186,83 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
     fn clear(
         &mut self,
         canvas: u64,
-        color: gfx::types::Color,
+        fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        {
-            let mut canvases = self.canvases.borrow_mut();
-            let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
-                return Ok(Err(gfx::types::GfxError::InvalidTarget));
-            };
-            surface.clear(pack_color(color.r, color.g, color.b, color.a));
-        }
-        Ok(self.publish_canvas(canvas))
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.clear(pack_color(fill.r, fill.g, fill.b, fill.a));
+        Ok(Ok(()))
     }
 
-    fn submit(
+    fn fill_rect(
         &mut self,
         canvas: u64,
-        commands: Vec<gfx::types::DrawCommand>,
+        area: gfx::types::Rect,
+        fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        {
-            let mut canvases = self.canvases.borrow_mut();
-            let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
-                return Ok(Err(gfx::types::GfxError::InvalidTarget));
-            };
-            for command in &commands {
-                match command {
-                    gfx::types::DrawCommand::FillRect(fill) => {
-                        surface.fill_rect(
-                            fill.rect.x,
-                            fill.rect.y,
-                            fill.rect.width,
-                            fill.rect.height,
-                            pack_color(fill.color.r, fill.color.g, fill.color.b, fill.color.a),
-                        );
-                    }
-                    gfx::types::DrawCommand::StrokeRect(stroke) => {
-                        surface.stroke_rect(
-                            stroke.rect.x,
-                            stroke.rect.y,
-                            stroke.rect.width,
-                            stroke.rect.height,
-                            stroke.width,
-                            pack_color(
-                                stroke.color.r,
-                                stroke.color.g,
-                                stroke.color.b,
-                                stroke.color.a,
-                            ),
-                        );
-                    }
-                    gfx::types::DrawCommand::Text(run) => {
-                        surface.text(
-                            &run.text,
-                            run.origin.x,
-                            run.origin.y,
-                            run.font_size,
-                            pack_color(run.color.r, run.color.g, run.color.b, run.color.a),
-                        );
-                    }
-                }
-            }
-        }
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.fill_rect(
+            area.x,
+            area.y,
+            area.width,
+            area.height,
+            pack_color(fill.r, fill.g, fill.b, fill.a),
+        );
+        Ok(Ok(()))
+    }
+
+    fn stroke_rect(
+        &mut self,
+        canvas: u64,
+        area: gfx::types::Rect,
+        stroke: gfx::types::Color,
+        width: f32,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.stroke_rect(
+            area.x,
+            area.y,
+            area.width,
+            area.height,
+            width,
+            pack_color(stroke.r, stroke.g, stroke.b, stroke.a),
+        );
+        Ok(Ok(()))
+    }
+
+    fn draw_text(
+        &mut self,
+        canvas: u64,
+        text: String,
+        origin: gfx::types::Point,
+        font_size: f32,
+        ink: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.text(
+            &text,
+            origin.x,
+            origin.y,
+            font_size,
+            pack_color(ink.r, ink.g, ink.b, ink.a),
+        );
+        Ok(Ok(()))
+    }
+
+    fn present(&mut self, canvas: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        // The one call that reaches the widget. Draw calls mutate the raster;
+        // this publishes it, so a hundred fills cost one render.
         Ok(self.publish_canvas(canvas))
     }
 }
@@ -1762,11 +1779,11 @@ mod tests {
     }
 
     #[test]
-    fn canvas_commands_become_pixels_on_the_widget() {
-        // The whole gfx.canvas2d path: bind, clear, draw, and the raster lands
-        // in the same per-widget image store every host already reads. If this
-        // holds, all three systems show the drawing without any adapter code
-        // of their own.
+    fn canvas_drawing_reaches_the_widget_only_at_present() {
+        // The whole gfx.canvas2d path: bind, draw, present -- and the raster
+        // lands in the same per-widget image store every host already reads.
+        // Present is the only publisher: a hundred fills must not re-render
+        // the window a hundred times, so before it the store stays empty.
         let (mut host, window, widget) = host_with_canvas_widget();
         let canvas = gfx::canvas2d::Host::bind(&mut host, window, widget)
             .expect("bind call")
@@ -1784,40 +1801,43 @@ mod tests {
         )
         .expect("clear call")
         .expect("clear succeeds");
-
-        gfx::canvas2d::Host::submit(
+        gfx::canvas2d::Host::fill_rect(
             &mut host,
             canvas,
-            vec![gfx::types::DrawCommand::FillRect(
-                gfx::types::FillRectCommand {
-                    rect: gfx::types::Rect {
-                        x: 0.0,
-                        y: 0.0,
-                        width: 10.0,
-                        height: 10.0,
-                    },
-                    color: gfx::types::Color {
-                        r: 1.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 1.0,
-                    },
-                },
-            )],
+            gfx::types::Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 10.0,
+                height: 10.0,
+            },
+            gfx::types::Color {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
         )
-        .expect("submit call")
-        .expect("submit succeeds");
+        .expect("fill call")
+        .expect("fill succeeds");
 
         let id = host.window_id(window).expect("window");
         let widget_id = WidgetId::new(widget).expect("widget");
+        assert!(
+            host.images.borrow().get(&(id, widget_id)).is_none(),
+            "nothing may reach the widget before present"
+        );
+
+        gfx::canvas2d::Host::present(&mut host, canvas)
+            .expect("present call")
+            .expect("present succeeds");
+
         let images = host.images.borrow();
         let image = images
             .get(&(id, widget_id))
-            .expect("the raster must be published for this widget");
-        // Top-left corner: the red fill. Far corner: the blue clear.
-        assert_eq!(&image.rgba[0..4], &[255, 0, 0, 255]);
+            .expect("present publishes the raster");
+        assert_eq!(&image.rgba[0..4], &[255, 0, 0, 255], "the red fill");
         let last = image.rgba.len() - 4;
-        assert_eq!(&image.rgba[last..], &[0, 0, 255, 255]);
+        assert_eq!(&image.rgba[last..], &[0, 0, 255, 255], "the blue clear");
     }
 
     #[test]

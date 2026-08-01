@@ -1,0 +1,21 @@
+[app]
+id = "dev.krate.chart"
+name = "krate-chart"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_chart.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the chart window"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report what was drawn for automated verification"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run argument used by automated verification"
+required = true

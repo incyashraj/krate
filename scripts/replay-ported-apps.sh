@@ -111,6 +111,11 @@ check "eo2" "quick" "rgba-widen:ok"
 # 3,203 lines, zero repair attempts -- and `rendered:yes` is its own markdown
 # fixture surviving the parse-layout-render path.
 check "mdview" "quick" "rendered:yes"
+# The first guest ever to draw through gfx.canvas2d. Not a port -- an in-repo
+# sample -- but it belongs here for the same reason the others do: it is the
+# only nightly check that a guest's draw calls reach real pixels on all three
+# systems.
+check "chart" "quick" "drawn:yes"
 # A network app: fetches feeds over HTTPS with per-host grants.
 #
 # Deliberately not run here. Its work is a real HTTPS request, so a check that
