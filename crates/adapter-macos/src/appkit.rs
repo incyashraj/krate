@@ -2493,6 +2493,9 @@ mod tests {
         ));
     }
 
+    // `platform` is macOS-only, so this test cannot even compile elsewhere --
+    // the Windows job caught it as "cannot find function ns_image_from_rgba".
+    #[cfg(target_os = "macos")]
     #[test]
     fn a_picture_survives_the_buffer_it_was_built_from() {
         // The rep is asked to own its storage precisely so it does not borrow

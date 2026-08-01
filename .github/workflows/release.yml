@@ -43,7 +43,7 @@ jobs:
 
       - name: Install Linux audio development files
         if: matrix.os == 'ubuntu-latest' && matrix.cross != true
-        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev
+        run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.91.1

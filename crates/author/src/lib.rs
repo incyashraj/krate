@@ -942,6 +942,17 @@ mod tests {
         let cargo = app.file("Cargo.toml").expect("cargo");
         // The GUI world needs the phase3 target and the ui package.
         assert!(cargo.contains(r#"path = "../../wit/krate/phase3""#));
+        // Without this, a GUI app cannot be `#![no_std]` -- the generated
+        // bindings carry `impl std::error::Error` and so require std, and
+        // linking std brings a dependency's panic path with it. An image
+        // viewer's decoder was clean under no_std and pulled four wasi imports
+        // the moment std was linked, which is a failure at the import check
+        // long after the build succeeds.
+        assert!(
+            cargo.contains("std_feature = true"),
+            "a GUI scaffold without std_feature cannot use no_std, and a windowed \
+             app with any real dependency needs it"
+        );
         assert!(cargo.contains("world = \"gui\""));
         assert!(cargo.contains(r#""krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }"#));
         let manifest = app.file("manifest.toml").expect("manifest");
