@@ -143,8 +143,15 @@ is proven — never shrink.
 - [x] something with a real database (envelope, SQL + secrets + random)
 - [x] something that reads and writes many files (ddh, duplicate finder)
 - [x] something genuinely medium — **5,000+ lines** (grex, 5,396 lines)
+- [x] something a non-programmer would open on purpose (eo2, image viewer)
 
-**Status: DONE — 6 of 6.**
+**Status: DONE — 7 of 7.**
+
+The seventh was added after the first six, because six developer utilities is
+not the same claim as "any small app". An image viewer is the first port whose
+audience is not programmers: it opens a picture and shows it, which needed two
+things that did not exist this morning -- a way to ask a person to choose a
+file, and a way to put a picture in a window.
 
 Six is not magic. It is the smallest number where "it works on the shape I
 tried" stops being the likely explanation. Two ports of two shapes is a
@@ -160,6 +167,7 @@ What the two ports cost, measured:
 |---|---|---|---|
 | hexyl (CLI) | 2,392 | 1,133 | **0.47x** |
 | savings (GUI) | 490 | 810 | **1.65x** |
+| eo2 (GUI) | 2,677 | 1,819 | **0.68x** |
 
 A command-line program shrinks: argument parsing, colour crates, and terminal
 detection all fall away because Krate supplies them or the app no longer needs
@@ -170,6 +178,14 @@ That matters for the 5,000-line gate. A 5,000-line CLI is plausibly a
 2,400-line port, which is a size already proven. A 5,000-line GUI is plausibly
 8,000 lines of output, which is a different question and probably the harder
 half of "medium sized".
+
+eo2 complicates that neatly: a 2,677-line GUI came out at 1,819, well under
+1x. savings grew because it was tiny to begin with -- 490 lines, where the
+fixed cost of an explicit widget tree dominates. At a couple of thousand lines
+that cost is already amortised, and the parts that fall away (a windowing
+framework, a file dialog, a settings crate) outweigh it. The honest reading is
+that the ratio depends more on what the app delegated to its framework than on
+whether it has a window.
 
 ### Gate 5 — The tooling can see what it needs to
 
