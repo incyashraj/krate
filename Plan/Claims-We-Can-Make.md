@@ -34,7 +34,7 @@ Measured with `du -sk` on this Mac, 2026-08-02.
 
 | What it is | Size | vs Discord (431 MB) | vs VS Code (1.4 GB) |
 |---|---|---|---|
-| A 2D game with physics and sprites | **11 KB** | **41,000× smaller** | **140,000× smaller** |
+| A playable 2D game, a Breakout with paddle, bricks, lives and a win | **13 KB** | **34,000× smaller** | **117,000× smaller** |
 | A markdown viewer (ported from 4,863 lines) | **51 KB** | 8,697× smaller | 28,929× smaller |
 | An image viewer (ported from 2,677 lines) | **77 KB** | 5,833× smaller | 19,401× smaller |
 
@@ -63,7 +63,10 @@ catches.
 
 ## What Krate can build (each proven by a running app)
 
-- **2D games.** Real game loop, gravity, collision, sprites with transparency.
+- **2D games.** A Breakout you actually play: arrow keys or a gamepad move
+  the paddle, bricks break, lives run out, the wall can be cleared. The
+  nightly replay pins `playable:yes`, which the app only prints after its
+  scripted paddle has broken real bricks.
   Measured at **over 12,000 frames per second** in the draw path.
 - **Animation.** Time-based, so the same file runs at the same speed on a
   gaming desktop and a tired laptop.

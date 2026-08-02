@@ -82,7 +82,7 @@ COMPUTE = [
 
 # What each app demonstrates. Ordered by what a stranger finds most surprising.
 APPS = {
-    "bounce": ("2D game", "Gravity, collision, sprites, its own frame loop"),
+    "bounce": ("2D game", "A playable Breakout: paddle, bricks, lives, a win"),
     "chart": ("Drawing", "Draws its own bar chart, with no image files"),
     "savings": ("Everyday app", "A window, a form, state that survives a restart"),
     "eo2": ("Ported", "Image viewer, from 2,677 lines of desktop source"),
@@ -248,6 +248,10 @@ def main():
     total = sum(s for _, s in sizes)
     tested = nightly()
     smallest_name, smallest = min(sizes, key=lambda pair: pair[1])
+    # The game, by name. The smallest bundle stopped being the game when the
+    # game grew a paddle, and a headline that says "a complete 2D game" must
+    # be measuring the game.
+    game_size = next((size for name, size in sizes if name == "bounce"), smallest)
 
     startup = measure_startup([n for n, _ in sizes])
     interfaces = parity("interface-parity.md", r"\*\*\d+ of \d+ declared interfaces[^*]*\*\*")
@@ -267,11 +271,11 @@ def main():
     peer_block = ""
     if peers:
         biggest_name, _, biggest_bytes = peers[0]
-        multiple = biggest_bytes / smallest
+        multiple = biggest_bytes / game_size
         peer_rows = "".join(
             f'        <tr><td>{name}</td><td>{kind}</td>'
             f'<td class="num">{size / (1024 * 1024):,.0f} MB</td>'
-            f'<td class="num">{size / smallest:,.0f}&times;</td></tr>'
+            f'<td class="num">{size / game_size:,.0f}&times;</td></tr>'
             for name, kind, size in peers
         )
         peer_block = f"""
@@ -296,8 +300,8 @@ def main():
       <p class="method">
         Measured with <code>du -sk</code> on this machine while the page was
         generated, against <code>bounce.krate</code> at
-        {smallest:,} bytes, a complete 2D game with gravity, collision
-        and its own frame loop. Installed sizes, not download sizes. These are
+        {game_size:,} bytes, a playable Breakout with a paddle, bricks,
+        lives and a win. Installed sizes, not download sizes. These are
         large applications and a game is not one; the point is the floor each
         approach starts from, which is a browser copy for one and nothing for
         the other.
@@ -406,10 +410,11 @@ def main():
 
     <section>
       <p class="eyebrow">Size</p>
-      <p class="headline-number">{smallest / 1024:.0f} KB</p>
+      <p class="headline-number">{game_size / 1024:.0f} KB</p>
       <h2>A complete 2D game.</h2>
       <p>
-        Gravity, collision, sprites, and its own frame loop, all in one file that
+        A Breakout you play: a paddle steered by arrow keys or a gamepad,
+        bricks, lives, a score, a win. One file that
         opens on Mac, Windows and Linux. It is that small because nothing is
         bundled inside it that your computer already has: no browser, no
         framework, no runtime copy.
@@ -563,7 +568,8 @@ def main():
       <p class="eyebrow">Today</p>
       <h2>What you can build right now.</h2>
       <ul class="limits">
-        <li><strong>2D games</strong>: gravity, collision, sprites, an app's own
+        <li><strong>2D games</strong>: a playable Breakout with a paddle you
+            steer, collision, sprites, an app's own
             frame loop.</li>
         <li><strong>Drawing</strong>: charts and graphics an app renders itself,
             through one rasterizer shared by all three systems.</li>

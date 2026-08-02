@@ -24,16 +24,18 @@ import pathlib, sys
 root = pathlib.Path(sys.argv[1])
 bundles = sorted(root.joinpath("evidence/ported").glob("*.krate"))
 total = 0
-# Apple's Reminders on macOS 26: `du -sk` reports 11,520 KB. The landing page
-# quotes 11.2 MB from the same measurement, and the two must not drift apart.
-reminders = 11_520 * 1024
+# Discord on this Mac: `du -sk` reports 440,944 KB. The like-for-like peer
+# every public page compares against; Reminders was dropped because a
+# single-platform first-party app measures nothing. Re-measure with
+# scripts/measure-peer-apps.sh, and keep this in step with the pages.
+discord = 440_944 * 1024
 for bundle in bundles:
     size = bundle.stat().st_size
     total += size
-    print(f"  {bundle.stem:<12} {size:>7} bytes   {reminders/size:>6.0f}x smaller than Reminders")
+    print(f"  {bundle.stem:<12} {size:>7} bytes   {discord/size:>6.0f}x smaller than Discord")
 print()
 print(f"  all {len(bundles)} bundles together: {total} bytes ({total/1024:.0f} KB)")
-print(f"  Reminders (11.2 MB) is {reminders/total:.1f}x that total")
+print(f"  Discord (431 MB) is {discord/total:.1f}x that total")
 PY
 
 echo

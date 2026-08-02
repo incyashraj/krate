@@ -61,10 +61,11 @@
 
     <section>
       <p class="eyebrow">Size</p>
-      <p class="headline-number">11 KB</p>
+      <p class="headline-number">13 KB</p>
       <h2>A complete 2D game.</h2>
       <p>
-        Gravity, collision, sprites, and its own frame loop, all in one file that
+        A Breakout you play: a paddle steered by arrow keys or a gamepad,
+        bricks, lives, a score, a win. One file that
         opens on Mac, Windows and Linux. It is that small because nothing is
         bundled inside it that your computer already has: no browser, no
         framework, no runtime copy.
@@ -78,12 +79,12 @@
   <text x="0" y="187" class="bl">ddh</text><rect x="132" y="175" width="94.7" height="18" rx="4" fill="#5c93f8"/><text x="236.7" y="189" class="bv">17.4 KB</text>
   <text x="0" y="221" class="bl">hexyl</text><rect x="132" y="209" width="78.9" height="18" rx="4" fill="#5c93f8"/><text x="220.9" y="223" class="bv">14.5 KB</text>
   <text x="0" y="255" class="bl">savings</text><rect x="132" y="243" width="73.5" height="18" rx="4" fill="#5c93f8"/><text x="215.5" y="257" class="bv">13.5 KB</text>
-  <text x="0" y="289" class="bl">cubes</text><rect x="132" y="277" width="68.0" height="18" rx="4" fill="#5c93f8"/><text x="210.0" y="291" class="bv">12.5 KB</text>
-  <text x="0" y="323" class="bl">chart</text><rect x="132" y="311" width="59.3" height="18" rx="4" fill="#5c93f8"/><text x="201.3" y="325" class="bv">10.9 KB</text>
-  <text x="0" y="357" class="bl">bounce</text><rect x="132" y="345" width="58.2" height="18" rx="4" fill="#5c93f8"/><text x="200.2" y="359" class="bv">10.7 KB</text>
+  <text x="0" y="289" class="bl">bounce</text><rect x="132" y="277" width="70.2" height="18" rx="4" fill="#5c93f8"/><text x="212.2" y="291" class="bv">12.9 KB</text>
+  <text x="0" y="323" class="bl">cubes</text><rect x="132" y="311" width="68.0" height="18" rx="4" fill="#5c93f8"/><text x="210.0" y="325" class="bv">12.5 KB</text>
+  <text x="0" y="357" class="bl">chart</text><rect x="132" y="345" width="59.3" height="18" rx="4" fill="#5c93f8"/><text x="201.3" y="359" class="bv">10.9 KB</text>
 </svg>
       <p>
-        All 11 apps together come to <strong>295&nbsp;KB</strong>.
+        All 11 apps together come to <strong>298&nbsp;KB</strong>.
       </p>
       <p class="method">
         Sizes read from the packaged <code>.krate</code> files in the public
@@ -94,7 +95,7 @@
 
     <section>
       <p class="eyebrow">The same job, done differently</p>
-      <p class="headline-number">140,384&times;</p>
+      <p class="headline-number">117,142&times;</p>
       <h2>Smaller than the way it is done today.</h2>
       <p>
         Every app below solves the problem Krate solves: one codebase, shipped
@@ -107,14 +108,14 @@
               <th class="num">vs a Krate game</th></tr>
         </thead>
         <tbody>
-        <tr><td>Visual Studio Code</td><td>Electron</td><td class="num">1,470 MB</td><td class="num">140,384&times;</td></tr>        <tr><td>Discord</td><td>Electron</td><td class="num">431 MB</td><td class="num">41,115&times;</td></tr>        <tr><td>Spotify</td><td>Electron</td><td class="num">351 MB</td><td class="num">33,497&times;</td></tr>
+        <tr><td>Visual Studio Code</td><td>Electron</td><td class="num">1,470 MB</td><td class="num">117,142&times;</td></tr>        <tr><td>Discord</td><td>Electron</td><td class="num">431 MB</td><td class="num">34,308&times;</td></tr>        <tr><td>Spotify</td><td>Electron</td><td class="num">351 MB</td><td class="num">27,951&times;</td></tr>
         </tbody>
       </table>
       <p class="method">
         Measured with <code>du -sk</code> on this machine while the page was
         generated, against <code>bounce.krate</code> at
-        10,982 bytes, a complete 2D game with gravity, collision
-        and its own frame loop. Installed sizes, not download sizes. These are
+        13,161 bytes, a playable Breakout with a paddle, bricks,
+        lives and a win. Installed sizes, not download sizes. These are
         large applications and a game is not one; the point is the floor each
         approach starts from, which is a browser copy for one and nothing for
         the other.
@@ -124,23 +125,23 @@
 
     <section>
       <p class="eyebrow">Speed</p>
-      <h2>An app opens in 26&ndash;79 milliseconds.</h2>
+      <h2>An app opens in 11&ndash;98 milliseconds.</h2>
       <p>
         One frame of 60&nbsp;fps video lasts 16.7&nbsp;ms. Most Krate apps have
         finished opening before a screen finishes drawing a single frame. The
         slowest here are the two ported desktop applications, which do real
         work on startup.
       </p>
-      <svg viewBox="0 0 640 306" role="img" class="chart" aria-label="Bar chart, longest bar is 79.3 ms">
-  <text x="0" y="17" class="bl">chart</text><rect x="132" y="5" width="137.7" height="18" rx="4" fill="#7cc4a4"/><text x="279.7" y="19" class="bv">26.5 ms</text>
-  <text x="0" y="51" class="bl">savings</text><rect x="132" y="39" width="160.0" height="18" rx="4" fill="#7cc4a4"/><text x="302.0" y="53" class="bv">30.8 ms</text>
-  <text x="0" y="85" class="bl">envelope</text><rect x="132" y="73" width="208.3" height="18" rx="4" fill="#7cc4a4"/><text x="350.3" y="87" class="bv">40.1 ms</text>
-  <text x="0" y="119" class="bl">bounce</text><rect x="132" y="107" width="209.4" height="18" rx="4" fill="#7cc4a4"/><text x="351.4" y="121" class="bv">40.3 ms</text>
-  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="242.6" height="18" rx="4" fill="#7cc4a4"/><text x="384.6" y="155" class="bv">46.7 ms</text>
-  <text x="0" y="187" class="bl">cubes</text><rect x="132" y="175" width="280.6" height="18" rx="4" fill="#7cc4a4"/><text x="422.6" y="189" class="bv">54 ms</text>
-  <text x="0" y="221" class="bl">eo2</text><rect x="132" y="209" width="306.0" height="18" rx="4" fill="#7cc4a4"/><text x="448.0" y="223" class="bv">58.9 ms</text>
-  <text x="0" y="255" class="bl">mdview</text><rect x="132" y="243" width="337.2" height="18" rx="4" fill="#7cc4a4"/><text x="479.2" y="257" class="bv">64.9 ms</text>
-  <text x="0" y="289" class="bl">grex</text><rect x="132" y="277" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="291" class="bv">79.3 ms</text>
+      <svg viewBox="0 0 640 306" role="img" class="chart" aria-label="Bar chart, longest bar is 98.5 ms">
+  <text x="0" y="17" class="bl">chart</text><rect x="132" y="5" width="44.3" height="18" rx="4" fill="#7cc4a4"/><text x="186.3" y="19" class="bv">10.6 ms</text>
+  <text x="0" y="51" class="bl">savings</text><rect x="132" y="39" width="47.7" height="18" rx="4" fill="#7cc4a4"/><text x="189.7" y="53" class="bv">11.4 ms</text>
+  <text x="0" y="85" class="bl">envelope</text><rect x="132" y="73" width="61.9" height="18" rx="4" fill="#7cc4a4"/><text x="203.9" y="87" class="bv">14.8 ms</text>
+  <text x="0" y="119" class="bl">cubes</text><rect x="132" y="107" width="67.8" height="18" rx="4" fill="#7cc4a4"/><text x="209.8" y="121" class="bv">16.2 ms</text>
+  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="71.1" height="18" rx="4" fill="#7cc4a4"/><text x="213.1" y="155" class="bv">17 ms</text>
+  <text x="0" y="187" class="bl">mdview</text><rect x="132" y="175" width="102.9" height="18" rx="4" fill="#7cc4a4"/><text x="244.9" y="189" class="bv">24.6 ms</text>
+  <text x="0" y="221" class="bl">eo2</text><rect x="132" y="209" width="103.3" height="18" rx="4" fill="#7cc4a4"/><text x="245.3" y="223" class="bv">24.7 ms</text>
+  <text x="0" y="255" class="bl">grex</text><rect x="132" y="243" width="123.0" height="18" rx="4" fill="#7cc4a4"/><text x="265.0" y="257" class="bv">29.4 ms</text>
+  <text x="0" y="289" class="bl">bounce</text><rect x="132" y="277" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="291" class="bv">98.5 ms</text>
 </svg>
       <p class="method">
         Measured while this page was generated: five runs of each app on this
@@ -305,9 +306,9 @@
         <tr><td><code>ddh</code></td><td>Filesystem</td><td class="num">17,778</td><td>Duplicate-file finder</td><td class="mid">Nightly</td></tr>
         <tr><td><code>hexyl</code></td><td>Command line</td><td class="num">14,872</td><td>Hex viewer with byte-identical output to the original</td><td class="mid">Nightly</td></tr>
         <tr><td><code>savings</code></td><td>Everyday app</td><td class="num">13,791</td><td>A window, a form, state that survives a restart</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>bounce</code></td><td>2D game</td><td class="num">13,161</td><td>A playable Breakout: paddle, bricks, lives, a win</td><td class="mid">Nightly</td></tr>
         <tr><td><code>cubes</code></td><td></td><td class="num">12,785</td><td></td><td class="mid">Nightly</td></tr>
         <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,147</td><td>Draws its own bar chart, with no image files</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>bounce</code></td><td>2D game</td><td class="num">10,982</td><td>Gravity, collision, sprites, its own frame loop</td><td class="mid">Nightly</td></tr>
         </tbody>
       </table>
       </div>
@@ -339,7 +340,8 @@
       <p class="eyebrow">Today</p>
       <h2>What you can build right now.</h2>
       <ul class="limits">
-        <li><strong>2D games</strong>: gravity, collision, sprites, an app's own
+        <li><strong>2D games</strong>: a playable Breakout with a paddle you
+            steer, collision, sprites, an app's own
             frame loop.</li>
         <li><strong>Drawing</strong>: charts and graphics an app renders itself,
             through one rasterizer shared by all three systems.</li>

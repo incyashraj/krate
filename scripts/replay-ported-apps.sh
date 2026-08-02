@@ -139,7 +139,10 @@ check "chart" "quick" "drawn:yes"
 # The first app that moves on its own: sixty frames of time-based physics
 # through the redraw path. `animated:yes` failing means an app can no longer
 # drive its own frames, which is the difference between a viewer and a game.
-check "bounce" "quick" "animated:yes"
+# playable, not animated: the pinned line only prints when the scripted
+# paddle actually broke bricks, so this proves input, collision and score --
+# the game loop -- not merely that pixels moved.
+check "bounce" "quick" "playable:yes"
 # The first app that draws in 3D: nine cubes, one mesh, depth-tested and lit.
 # `rendered3d:yes` failing means the 3D path is broken on some system, which is
 # the one thing no unit test can tell us about all three at once.

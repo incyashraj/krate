@@ -17,9 +17,11 @@ import subprocess
 import datetime
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-# Apple's Reminders on macOS 26: `du -sk` reports 11,520 KB. The landing page
-# and the claims file quote the same figure; they must not drift apart.
-REMINDERS_BYTES = 11_520 * 1024
+# Discord on this Mac: `du -sk` reports 440,944 KB. The same like-for-like
+# comparison the reports page makes: one codebase shipped to Mac, Windows and
+# Linux, done by putting a browser in every copy. Re-measure with
+# scripts/measure-peer-apps.sh.
+DISCORD_BYTES = 440_944 * 1024
 
 
 def bundles():
@@ -62,7 +64,7 @@ DESCRIPTIONS = {
     "hexyl": "Hex viewer, byte-identical output to the original",
     "savings": "Budget splitter with a window and saved state",
     "chart": "Draws its own bar chart, no image files",
-    "bounce": "2D game: gravity, collision, sprites, own frame loop",
+    "bounce": "2D game: a playable Breakout with paddle, bricks, lives, a win",
 }
 
 
@@ -77,7 +79,7 @@ def main():
         rows.append(
             f'          <tr><td><code>{name}</code></td>'
             f'<td class="num">{size:,}</td>'
-            f'<td class="num">{REMINDERS_BYTES / size:,.0f}&times;</td>'
+            f'<td class="num">{DISCORD_BYTES / size:,.0f}&times;</td>'
             f'<td>{note}</td><td>{tested}</td></tr>'
         )
 
@@ -121,7 +123,7 @@ def main():
     <h2>Apps that exist and run</h2>
     <table>
       <thead>
-        <tr><th>App</th><th class="num">Bytes</th><th class="num">vs Reminders</th><th>What it is</th><th>Nightly</th></tr>
+        <tr><th>App</th><th class="num">Bytes</th><th class="num">vs Discord</th><th>What it is</th><th>Nightly</th></tr>
       </thead>
       <tbody>
 {chr(10).join(rows)}
@@ -129,7 +131,8 @@ def main():
     </table>
     <p>
       <strong>All {len(bundles())} apps together: {total:,} bytes ({total / 1024:,.0f}&nbsp;KB).</strong>
-      Apple's Reminders app, which keeps lists, is {REMINDERS_BYTES / total:,.1f}&times; that on its own.
+      Discord, which solves the same one-codebase-three-systems problem with a
+      browser inside the app, is {DISCORD_BYTES / total:,.1f}&times; that on its own.
     </p>
     <p class="generated">
       One app is not re-run nightly on purpose: <code>rssfwd</code> reaches the
