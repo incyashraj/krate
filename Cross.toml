@@ -22,5 +22,9 @@ pre-build = [
   "apt-get update",
   "apt-get --assume-yes install libclang-9-dev clang-9",
   "ln -sf /usr/lib/llvm-9/lib/libclang.so.1 /usr/lib/libclang.so",
-  "apt-get --assume-yes install libasound2-dev:$CROSS_DEB_ARCH libwayland-dev:$CROSS_DEB_ARCH libxkbcommon-dev:$CROSS_DEB_ARCH",
+  # libudev is for gamepads (gilrs -> libudev-sys), and it is Linux-only:
+  # udev is how Linux enumerates input devices, so there is no feature that
+  # avoids it. Like the others it is a target-architecture package, found
+  # through pkg-config rather than a hardcoded path.
+  "apt-get --assume-yes install libasound2-dev:$CROSS_DEB_ARCH libwayland-dev:$CROSS_DEB_ARCH libxkbcommon-dev:$CROSS_DEB_ARCH libudev-dev:$CROSS_DEB_ARCH",
 ]
