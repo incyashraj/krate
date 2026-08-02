@@ -32,6 +32,9 @@ const HEIGHT: f32 = 240.0;
 const QUICK_FRAMES: u32 = 30;
 /// How fast the camera orbits, in degrees a second, when a key is held.
 const TURN_RATE: f32 = 70.0;
+/// How far a stick must move before it counts, so a worn controller resting at
+/// 0.02 does not slowly spin the camera on its own.
+const STICK_DEADZONE: f32 = 0.15;
 
 struct Component;
 
@@ -250,6 +253,26 @@ impl bindings::Guest for Component {
             }
             if events::key_held("ArrowDown") {
                 height -= 3.0 * dt;
+            }
+
+            // The same camera, driven by a stick when somebody has one. Asking
+            // first and falling back to the keyboard is the pattern every app
+            // should copy: a person without a controller is the common case,
+            // and the sticks read centred for them rather than drifting.
+            if events::gamepad_connected() {
+                let turn = events::gamepad_axis("left-x");
+                let rise = events::gamepad_axis("left-y");
+                if turn > STICK_DEADZONE || turn < -STICK_DEADZONE {
+                    angle += TURN_RATE.to_radians() * turn * dt;
+                }
+                if rise > STICK_DEADZONE || rise < -STICK_DEADZONE {
+                    height += 3.0 * rise * dt;
+                }
+                // South is A on an Xbox pad and B on a Nintendo one. The app
+                // asks for the button under the thumb and gets it on both.
+                if events::gamepad_held("south") {
+                    spin += 60.0 * dt;
+                }
             }
             if height < 0.5 {
                 height = 0.5;

@@ -32,6 +32,7 @@ mod canvas_raster;
 pub mod chosen_files;
 pub mod desktop_host;
 pub mod embed;
+mod gamepad;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase2_bindings;
 #[cfg(feature = "phase2-bindings")]

@@ -97,6 +97,8 @@ pub struct Phase3GuiHost {
     /// travel the image widget's proven path to all three systems.
     canvases:
         std::cell::RefCell<std::collections::BTreeMap<u64, (WindowId, WidgetId, CanvasSurface)>>,
+    /// Connected gamepads, polled on demand.
+    gamepads: std::cell::RefCell<crate::gamepad::Gamepads>,
     /// Keys currently held down, for `events.key-held`.
     ///
     /// Tracked here rather than left to the app because the host is the only
@@ -132,6 +134,7 @@ impl Phase3GuiHost {
             headless_started: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             canvases: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            gamepads: std::cell::RefCell::new(crate::gamepad::Gamepads::new()),
             held_keys: std::cell::RefCell::new(std::collections::BTreeSet::new()),
             scenes: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             next_canvas_id: std::cell::Cell::new(1),
@@ -984,6 +987,18 @@ impl ui::events::Host for Phase3GuiHost {
         // whatever arrived before the last `poll`.
         let _ = self.poll_one_event();
         Ok(self.held_keys.borrow().contains(&key))
+    }
+
+    fn gamepad_connected(&mut self) -> wasmtime::Result<bool> {
+        Ok(self.gamepads.borrow().connected())
+    }
+
+    fn gamepad_held(&mut self, button: String) -> wasmtime::Result<bool> {
+        Ok(self.gamepads.borrow().held(&button))
+    }
+
+    fn gamepad_axis(&mut self, axis: String) -> wasmtime::Result<f32> {
+        Ok(self.gamepads.borrow().axis(&axis))
     }
 
     fn wait(&mut self, timeout_millis: Option<u32>) -> wasmtime::Result<Option<ui::types::Event>> {

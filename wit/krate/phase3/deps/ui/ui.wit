@@ -369,6 +369,36 @@ interface events {
   ///
   /// Key names are the same ones `key-event` reports.
   key-held: func(key: string) -> bool;
+
+  /// Whether a gamepad is connected and usable.
+  ///
+  /// An app should ask before showing "press A to start", and fall back to the
+  /// keyboard when this is false rather than leaving somebody staring at a
+  /// prompt for a controller they do not own.
+  gamepad-connected: func() -> bool;
+
+  /// Whether a gamepad button is held down right now.
+  ///
+  /// Names are the ones every controller shares regardless of what is printed
+  /// on it: `south`, `east`, `west`, `north` for the face buttons, `l1`, `r1`,
+  /// `l2`, `r2` for the shoulders, `start`, `select`, and `dpad-up`,
+  /// `dpad-down`, `dpad-left`, `dpad-right`.
+  ///
+  /// Positional rather than lettered because the same physical button is A on
+  /// an Xbox pad and B on a Nintendo one. An app that asks for `south` gets
+  /// the button under the player's thumb on both.
+  gamepad-held: func(button: string) -> bool;
+
+  /// A stick or trigger position, from -1 to 1.
+  ///
+  /// Axis names: `left-x`, `left-y`, `right-x`, `right-y`, `l2`, `r2`. Up and
+  /// right are positive. Triggers report 0 to 1 rather than -1 to 1, because
+  /// a trigger has no negative direction and reporting one would mean every
+  /// app remapping it.
+  ///
+  /// Returns 0 when no gamepad is connected, so an app that never checks still
+  /// behaves as though the sticks are centred rather than drifting.
+  gamepad-axis: func(axis: string) -> f32;
 }
 
 /// System dialog calls.

@@ -26,6 +26,19 @@ if [ ! -x "$KRATE" ]; then
   exit 1
 fi
 
+# Say which binary is being used, and warn when the runtime source is newer
+# than it. A stale binary makes this script replay the host you built an hour
+# ago against the bundles you built an hour ago, and report every app green
+# while the change you are actually testing is in neither -- which is exactly
+# how a real interface break got a clean run here once.
+echo "using: $KRATE"
+newest_source="$(find "$ROOT/crates" "$ROOT/wit" -name '*.rs' -o -name '*.wit' 2>/dev/null \
+  | while read -r f; do [ "$f" -nt "$KRATE" ] && echo "$f"; done | head -1)"
+if [ -n "$newest_source" ]; then
+  echo "warning: $newest_source is newer than the binary above." >&2
+  echo "         rebuild first, or this replays a host that predates your change." >&2
+fi
+
 passed=0
 failed=0
 
