@@ -1358,6 +1358,16 @@ jobs:
         run: mdbook build docs/book
       - name: Check TypeScript SDK shape
         run: npm --prefix packages/sdk-ts run check:shape
+      # The installers print an example command when GitHub's API is rate
+      # limited, and that example pins a version. It suggested rc4 for two
+      # releases after rc5 shipped, so the one instruction offered to somebody
+      # already having a bad time installed something old. Nothing else catches
+      # this: the installers are not compiled and that line only runs on a
+      # rate-limited network.
+      - name: Fetch tags for the installer version check
+        run: git fetch --tags --force --depth=1
+      - name: Check the installers do not suggest a stale version
+        run: sh scripts/check-installer-versions.sh
       - name: Check Go SDK shape
         run: node packages/sdk-go/scripts/check-shape.mjs
 

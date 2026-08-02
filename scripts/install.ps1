@@ -68,10 +68,9 @@ if (-not $version) {
         Write-Host 'This usually means GitHub is rate limiting your address, which happens'
         Write-Host 'on shared networks and clears within the hour.'
         Write-Host ''
-        Write-Host 'To install right now, pin a version:'
-        Write-Host '  $env:KRATE_VERSION="v0.1.0-rc4"; irm https://krate.tech/install.ps1 | iex'
-        Write-Host ''
-        Write-Host "Versions are listed at https://github.com/$repo/releases"
+        Write-Host 'To install right now, pin a version. Take the newest tag from'
+        Write-Host "https://github.com/$repo/releases and use it like this:"
+        Write-Host '  $env:KRATE_VERSION="v0.1.0-rc6"; irm https://krate.tech/install.ps1 | iex'
         exit 1
     }
 }
