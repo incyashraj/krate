@@ -98,6 +98,18 @@ jobs:
           # to instantiate against the current runtime.
           curl -fsSL -o _site/notes.krate \
             https://github.com/incyashraj/krate/releases/download/notes-v0.1.0/notes.krate
+          # Every other app, straight from the repository, so `krate run
+          # krate.tech/cubes.krate` works the same way notes does. These are the
+          # same bundles the nightly replay runs on all three systems, so a file
+          # served here is one that is known to work rather than one that was
+          # built once and forgotten.
+          #
+          # The 3D app is the point of this: somebody who has just installed
+          # Krate can see a lit, textured, spinning scene render on the CPU in
+          # one command, without downloading anything first.
+          for bundle in evidence/ported/*.krate; do
+            cp "$bundle" "_site/$(basename "$bundle")"
+          done
           # Krate Cloud, served under /cloud/. Listings are generated from the
           # .krate files themselves, so a listing cannot describe an app
           # differently from what the file actually asks for.
@@ -112,7 +124,7 @@ jobs:
           # rc4. An older binary silently produced an empty shelf.
           cargo build --release -p krate-cli
           KRATE_BIN=target/release/krate \
-            sh scripts/build-store.sh _site/cloud _site/notes.krate
+            sh scripts/build-store.sh _site/cloud _site/*.krate
           cp scripts/install.sh _site/install.sh
           cp scripts/install.ps1 _site/install.ps1
           # A trailing-slash-free alias, so `krate.tech/install` works too.

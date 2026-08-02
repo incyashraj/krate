@@ -1,6 +1,6 @@
 [app]
 id = "dev.krate.chart"
-name = "krate-chart"
+name = "Chart"
 version = "0.1.0-dev"
 entry = "target/wasm32-wasip1/release/krate_chart.wasm"
 world = "krate:app/gui@0.2.0"
