@@ -990,15 +990,15 @@ impl ui::events::Host for Phase3GuiHost {
     }
 
     fn gamepad_connected(&mut self) -> wasmtime::Result<bool> {
-        Ok(self.gamepads.borrow().connected())
+        Ok(self.gamepads.borrow_mut().connected())
     }
 
     fn gamepad_held(&mut self, button: String) -> wasmtime::Result<bool> {
-        Ok(self.gamepads.borrow().held(&button))
+        Ok(self.gamepads.borrow_mut().held(&button))
     }
 
     fn gamepad_axis(&mut self, axis: String) -> wasmtime::Result<f32> {
-        Ok(self.gamepads.borrow().axis(&axis))
+        Ok(self.gamepads.borrow_mut().axis(&axis))
     }
 
     fn wait(&mut self, timeout_millis: Option<u32>) -> wasmtime::Result<Option<ui::types::Event>> {

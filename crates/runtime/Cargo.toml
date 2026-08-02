@@ -28,6 +28,9 @@ tracing.workspace = true
 wasmtime.workspace = true
 cpal = "0.18.1"
 whisper-rs = "0.16.0"
+# Gamepads. Pulls libudev-sys on Linux, which is why every Linux build got the
+# udev headers in the change before this one.
+gilrs = "0.11.0"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 krate-adapter-linux = { path = "../adapter-linux", version = "0.1.0-dev" }

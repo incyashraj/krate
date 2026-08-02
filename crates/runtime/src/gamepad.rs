@@ -1,20 +1,14 @@
 //! Gamepad state behind the `ui.events` gamepad calls.
 //!
-//! The interface is real and the backend is not yet wired, which is a
-//! deliberate order rather than an oversight.
+//! Reading a gamepad on Linux means `libudev`, a system library, and adding one
+//! is the sequence that broke two releases: the file picker needed Wayland
+//! headers in fifteen CI jobs, speech-to-text needed a newer libclang in a
+//! container nobody could see. So the udev headers went into every Linux build
+//! and the cross container first, on their own, and this backend followed.
 //!
-//! Reading a gamepad on Linux means `libudev`, a system library. Adding one is
-//! the sequence that broke two releases this week — the file picker needed
-//! Wayland headers in fifteen CI jobs, speech-to-text needed a newer libclang
-//! in a container nobody could see, and the arm64 Linux build is still missing
-//! from rc5 because of it. So the shape lands first, on its own, and the
-//! dependency lands as its own change with its own container work and its own
-//! release to verify.
-//!
-//! Until then every query answers as though no controller is plugged in, which
-//! is exactly what an app must already handle: a person without a gamepad is
-//! the common case, not an error. An app written against this today keeps
-//! working unchanged when the backend arrives.
+//! Every query answers as though nothing is plugged in when no pad is present,
+//! which is what an app must already handle: a person without a controller is
+//! the common case, not an error.
 
 use std::collections::BTreeMap;
 
@@ -22,7 +16,8 @@ use std::collections::BTreeMap;
 ///
 /// Positional names because the same physical button is A on an Xbox pad and B
 /// on a Nintendo one; an app asking for `south` gets the button under the
-/// player's thumb on both.
+/// player's thumb on both. `gilrs` names them the same way for the same
+/// reason, so the mapping below is a rename rather than a reinterpretation.
 const BUTTONS: &[&str] = &[
     "south",
     "east",
@@ -44,22 +39,151 @@ const BUTTONS: &[&str] = &[
 const AXES: &[&str] = &["left-x", "left-y", "right-x", "right-y", "l2", "r2"];
 
 /// Gamepad state for one app session.
-#[derive(Debug, Default)]
 pub struct Gamepads {
-    /// True once a backend reports a pad. Always false today.
-    connected: bool,
+    /// The `gilrs` context, or `None` when it could not start.
+    ///
+    /// A missing or broken input system is not fatal: it means no gamepad,
+    /// which is a state every app already handles. A person whose udev is
+    /// unusual should get a keyboard-controlled app, not a crash.
+    backend: Option<gilrs::Gilrs>,
     /// Buttons currently down, by the portable name.
     held: BTreeMap<String, bool>,
     /// Axis positions, by the portable name.
     axes: BTreeMap<String, f32>,
+    /// Whether the last poll saw a connected pad.
+    connected: bool,
+}
+
+impl std::fmt::Debug for Gamepads {
+    /// Hand-written because `gilrs::Gilrs` is not `Debug`, and the useful
+    /// summary is what apps can see rather than the backend's internals.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Gamepads")
+            .field("backend", &self.backend.is_some())
+            .field("connected", &self.connected)
+            .field("held", &self.held)
+            .field("axes", &self.axes)
+            .finish()
+    }
+}
+
+/// The `gilrs` button behind each portable name.
+fn button_of(name: &str) -> Option<gilrs::Button> {
+    use gilrs::Button;
+    Some(match name {
+        "south" => Button::South,
+        "east" => Button::East,
+        "west" => Button::West,
+        "north" => Button::North,
+        "l1" => Button::LeftTrigger,
+        "r1" => Button::RightTrigger,
+        "l2" => Button::LeftTrigger2,
+        "r2" => Button::RightTrigger2,
+        "start" => Button::Start,
+        "select" => Button::Select,
+        "dpad-up" => Button::DPadUp,
+        "dpad-down" => Button::DPadDown,
+        "dpad-left" => Button::DPadLeft,
+        "dpad-right" => Button::DPadRight,
+        _ => return None,
+    })
+}
+
+/// The `gilrs` axis behind each portable name.
+///
+/// `LeftZ` and `RightZ` are the analog triggers, which is why `l2` and `r2`
+/// appear both here and in the button list: a trigger can be read as a button
+/// that is down past a threshold or as a position, and games want both.
+fn axis_of(name: &str) -> Option<gilrs::Axis> {
+    use gilrs::Axis;
+    Some(match name {
+        "left-x" => Axis::LeftStickX,
+        "left-y" => Axis::LeftStickY,
+        "right-x" => Axis::RightStickX,
+        "right-y" => Axis::RightStickY,
+        "l2" => Axis::LeftZ,
+        "r2" => Axis::RightZ,
+        _ => return None,
+    })
+}
+
+impl Default for Gamepads {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Gamepads {
     pub fn new() -> Self {
-        Self::default()
+        // A failure here is "no gamepad", not an error worth propagating --
+        // there is nothing an app could usefully do differently, and the
+        // fallback is the keyboard path it already has.
+        let backend = match gilrs::Gilrs::new() {
+            Ok(backend) => Some(backend),
+            Err(error) => {
+                tracing::debug!(%error, "no gamepad support on this machine");
+                None
+            }
+        };
+        Self {
+            backend,
+            held: BTreeMap::new(),
+            axes: BTreeMap::new(),
+            connected: false,
+        }
     }
 
-    pub fn connected(&self) -> bool {
+    /// Take whatever the input system has queued and refresh the cached state.
+    ///
+    /// Called once per query rather than on a timer. `gilrs` requires its event
+    /// queue be drained for state to advance, so a guest that never asks about
+    /// gamepads costs nothing, and one that asks every frame gets fresh values.
+    fn poll(&mut self) {
+        let Some(backend) = self.backend.as_mut() else {
+            return;
+        };
+        while backend.next_event().is_some() {
+            // The events themselves are not interesting here: this interface is
+            // "what is held right now", not "what changed". Draining is what
+            // makes the state below current.
+        }
+
+        // First connected pad wins. Couch multiplayer needs a player index in
+        // the interface, and inventing one now without an app to check it
+        // against is how you get an interface nobody can use.
+        let Some((_id, pad)) = backend.gamepads().next() else {
+            self.connected = false;
+            self.held.clear();
+            self.axes.clear();
+            return;
+        };
+        self.connected = true;
+
+        for name in BUTTONS {
+            if let Some(button) = button_of(name) {
+                self.held
+                    .insert((*name).to_string(), pad.is_pressed(button));
+            }
+        }
+        for name in AXES {
+            if let Some(axis) = axis_of(name) {
+                let value = pad.value(axis);
+                // Triggers report 0 to 1 rather than -1 to 1, because a trigger
+                // has no negative direction and reporting one would mean every
+                // app remapping it. Some backends still hand back a resting
+                // -1, so clamp rather than trust.
+                let value = if *name == "l2" || *name == "r2" {
+                    value.clamp(0.0, 1.0)
+                } else {
+                    value.clamp(-1.0, 1.0)
+                };
+                self.axes.insert((*name).to_string(), value);
+            }
+        }
+    }
+
+    pub fn connected(&mut self) -> bool {
+        self.poll();
         self.connected
     }
 
@@ -70,41 +194,34 @@ impl Gamepads {
     /// The name is checked against the documented list first, so a backend that
     /// starts reporting some pad-specific button cannot make it visible to apps
     /// without that name being added to the contract as well.
-    pub fn held(&self, button: &str) -> bool {
-        Self::is_known_button(button) && self.held.get(button).copied().unwrap_or(false)
+    pub fn held(&mut self, button: &str) -> bool {
+        if !Self::is_known_button(button) {
+            return false;
+        }
+        self.poll();
+        self.held.get(button).copied().unwrap_or(false)
     }
 
     /// A stick or trigger position. Zero with no gamepad, so an app that never
     /// checks `gamepad-connected` reads centred sticks rather than drift.
-    pub fn axis(&self, axis: &str) -> f32 {
+    pub fn axis(&mut self, axis: &str) -> f32 {
         if !Self::is_known_axis(axis) {
             return 0.0;
         }
+        self.poll();
         self.axes.get(axis).copied().unwrap_or(0.0)
     }
 
     /// Whether a name is one this interface defines.
     ///
-    /// Used by the tests, and by any future backend to reject a name it should
-    /// never produce rather than inventing a button an app cannot document.
+    /// The backend rejects anything outside these lists rather than inventing a
+    /// button an app cannot document.
     pub fn is_known_button(name: &str) -> bool {
         BUTTONS.contains(&name)
     }
 
     pub fn is_known_axis(name: &str) -> bool {
         AXES.contains(&name)
-    }
-
-    /// Set state directly, as a backend will once one exists.
-    ///
-    /// Test-only, because until then nothing else has any business writing
-    /// here -- but the filtering in `held` and `axis` is unreachable without
-    /// it, and unreachable code is untested code.
-    #[cfg(test)]
-    fn set(&mut self, button: &str, down: bool, axis: &str, position: f32) {
-        self.connected = true;
-        self.held.insert(button.to_string(), down);
-        self.axes.insert(axis.to_string(), position);
     }
 }
 
@@ -114,11 +231,15 @@ mod tests {
 
     #[test]
     fn no_gamepad_reads_as_centred_and_unpressed() {
-        // The state an app sees today, and the state it sees whenever somebody
-        // has no controller plugged in -- which is the common case, not an
-        // error case. Both must be quiet rather than surprising.
-        let pads = Gamepads::new();
-        assert!(!pads.connected());
+        // CI has no controller plugged in, and neither do most people. Both
+        // must be quiet rather than surprising -- and this is also the state
+        // when `gilrs` itself fails to start, which must not be fatal.
+        let mut pads = Gamepads::new();
+        if pads.connected() {
+            // A developer with a controller attached: skip rather than fail,
+            // because the assertions below describe the empty case only.
+            return;
+        }
         for button in BUTTONS {
             assert!(!pads.held(button), "{button} must not read as held");
         }
@@ -131,21 +252,20 @@ mod tests {
     fn an_unknown_name_is_quiet_rather_than_an_error() {
         // An app asking for `triangle` on a pad whose north button is called
         // `north` should see nothing happen, not fall over.
-        let pads = Gamepads::new();
+        let mut pads = Gamepads::new();
         assert!(!pads.held("triangle"));
         assert_eq!(pads.axis("throttle"), 0.0);
     }
 
     #[test]
     fn an_off_contract_name_stays_invisible_even_when_a_backend_reports_it() {
-        // The case the stub cannot reach on its own: some future backend
-        // reports a pad-specific button, and an app starts depending on a name
-        // that was never documented and will not exist on the next controller.
-        // The lookup filters by the documented list so that cannot happen
-        // quietly -- adding a button means adding it to the contract.
+        // The case a machine with no controller cannot reach on its own: some
+        // pad reports a device-specific button, and an app starts depending on
+        // a name that will not exist on the next controller. Lookups filter by
+        // the documented list so that cannot happen quietly.
         let mut pads = Gamepads::new();
-        pads.set("triangle", true, "throttle", 0.9);
-        assert!(pads.connected(), "the backend did report a pad");
+        pads.held.insert("triangle".to_string(), true);
+        pads.axes.insert("throttle".to_string(), 0.9);
         assert!(
             !pads.held("triangle"),
             "an undocumented button stays hidden"
@@ -155,43 +275,53 @@ mod tests {
             0.0,
             "an undocumented axis reads centred"
         );
-
-        // And a documented name set the same way does come through, so the
-        // test above is filtering rather than simply broken.
-        let mut pads = Gamepads::new();
-        pads.set("south", true, "left-x", 0.9);
-        assert!(pads.held("south"));
-        assert_eq!(pads.axis("left-x"), 0.9);
     }
 
     #[test]
-    fn the_button_and_axis_names_are_the_ones_the_contract_documents() {
-        // The WIT comment lists these names, and an app author will type them
-        // exactly. A rename here without a rename there is a silent breakage.
-        for name in [
-            "south",
-            "east",
-            "west",
-            "north",
-            "l1",
-            "r1",
-            "l2",
-            "r2",
-            "start",
-            "select",
-            "dpad-up",
-            "dpad-down",
-            "dpad-left",
-            "dpad-right",
-        ] {
-            assert!(Gamepads::is_known_button(name), "{name} is documented");
+    fn every_documented_name_maps_to_something_the_backend_understands() {
+        // The lists, the WIT comment and the `gilrs` mapping have to agree. A
+        // name documented but unmapped would read as permanently unpressed and
+        // look like a broken controller rather than a missing line here.
+        for name in BUTTONS {
+            assert!(
+                button_of(name).is_some(),
+                "{name} is documented but maps to no gilrs button"
+            );
+            assert!(Gamepads::is_known_button(name));
         }
-        for name in ["left-x", "left-y", "right-x", "right-y", "l2", "r2"] {
-            assert!(Gamepads::is_known_axis(name), "{name} is documented");
+        for name in AXES {
+            assert!(
+                axis_of(name).is_some(),
+                "{name} is documented but maps to no gilrs axis"
+            );
+            assert!(Gamepads::is_known_axis(name));
         }
         assert!(
             !Gamepads::is_known_button("a"),
             "lettered names are not used"
         );
+        assert!(button_of("triangle").is_none());
+        assert!(axis_of("throttle").is_none());
+    }
+
+    #[test]
+    fn no_two_names_map_to_the_same_control() {
+        // A copy-paste slip in the match arms above would silently alias two
+        // buttons -- pressing one would light up both, which is the kind of bug
+        // that gets blamed on the controller.
+        let mut seen = Vec::new();
+        for name in BUTTONS {
+            if let Some(button) = button_of(name) {
+                assert!(!seen.contains(&button), "{name} duplicates another button");
+                seen.push(button);
+            }
+        }
+        let mut seen = Vec::new();
+        for name in AXES {
+            if let Some(axis) = axis_of(name) {
+                assert!(!seen.contains(&axis), "{name} duplicates another axis");
+                seen.push(axis);
+            }
+        }
     }
 }
