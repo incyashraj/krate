@@ -9,6 +9,18 @@ pre-build = [
   # the whisper.cpp headers. It is a host tool, so it is installed for the
   # build machine's architecture rather than the target's -- asking for
   # libclang-dev:$CROSS_DEB_ARCH gets the wrong one and the build still fails.
-  "apt-get --assume-yes install libclang-dev clang",
+  #
+  # It has to come from LLVM's own archive, not Ubuntu's. The cross 0.2.5
+  # image is Ubuntu 16.04, whose libclang-dev is 3.8, and bindgen calls
+  # clang_getTranslationUnitTargetInfo which needs 9 or newer -- so installing
+  # the distribution package succeeds and then panics at build time with
+  # "a libclang function was called that is not supported by the loaded
+  # libclang instance".
+  "apt-get --assume-yes install wget gnupg software-properties-common",
+  "wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -",
+  "add-apt-repository -y 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-9 main'",
+  "apt-get update",
+  "apt-get --assume-yes install libclang-9-dev clang-9",
+  "ln -sf /usr/lib/llvm-9/lib/libclang.so.1 /usr/lib/libclang.so",
   "apt-get --assume-yes install libasound2-dev:$CROSS_DEB_ARCH libwayland-dev:$CROSS_DEB_ARCH libxkbcommon-dev:$CROSS_DEB_ARCH",
 ]
