@@ -25,16 +25,22 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             ext: tar.gz
-          # Allowed to fail without blocking the release. It builds inside a
-          # cross container based on Ubuntu 16.04, whose libclang is 3.8, and
-          # whisper-rs-sys runs bindgen, which needs 9 or newer. Three attempts
-          # at provisioning that container from CI have not landed it, and it
-          # cannot be reproduced locally without a Docker daemon.
+          # Still allowed to fail without blocking the release, but the reason
+          # has changed and is worth recording accurately.
           #
-          # It has zero downloads across every release so far, while the other
-          # four targets cover every machine anyone has installed on. Holding a
-          # release for it costs more than shipping without it -- and shipping
-          # four platforms plus a note beats shipping none.
+          # This builds inside a cross container based on Ubuntu 16.04, whose
+          # libclang is 3.8, while whisper-rs-sys runs bindgen and needs 9 or
+          # newer. The fix -- installing clang 9 from LLVM's own archive -- is
+          # in Cross.toml, but it has never actually run: it was committed in
+          # the same minute the rc5 build started, so that build used the commit
+          # before it and failed on the old container. Three "attempts" were
+          # really two, and the third was never tried.
+          #
+          # Kept optional for one more release because it cannot be reproduced
+          # locally (no Docker daemon) and a release that blocks on an unproven
+          # container fix helps nobody. Cross.toml now fails loudly the moment
+          # clang 9 is missing rather than dying inside bindgen three minutes
+          # later, so the next run either works or says exactly why.
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             ext: tar.gz

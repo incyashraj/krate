@@ -22,6 +22,14 @@ pre-build = [
   "apt-get update",
   "apt-get --assume-yes install libclang-9-dev clang-9",
   "ln -sf /usr/lib/llvm-9/lib/libclang.so.1 /usr/lib/libclang.so",
+  # Fail here rather than three minutes later inside bindgen. This target has
+  # now failed a release three times, twice with an error that pointed at the
+  # wrong thing: apt happily installs Ubuntu's libclang 3.8 when the LLVM
+  # repository is unreachable or its key is rejected, so the build proceeds and
+  # dies later with "a libclang function was called that is not supported".
+  # Checking the file exists turns that into a one-line failure naming the
+  # cause.
+  "test -e /usr/lib/llvm-9/lib/libclang.so.1 || (echo 'FATAL: clang 9 did not install; apt.llvm.org unreachable or its key was rejected. Ubuntu 16.04 ships libclang 3.8, which bindgen cannot use.' >&2; exit 1)",
   # libudev is for gamepads (gilrs -> libudev-sys), and it is Linux-only:
   # udev is how Linux enumerates input devices, so there is no feature that
   # avoids it. Like the others it is a target-architecture package, found

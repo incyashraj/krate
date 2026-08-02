@@ -658,6 +658,26 @@
   </footer>
 
   <script>
+    // The install line has to match the shell the reader is actually looking
+    // at. Showing `curl ... | sh` to somebody on Windows sends them to
+    // PowerShell, where `sh` does not exist and the first thing Krate ever
+    // does is throw an error. That happened, on a first install, on a clean
+    // Windows machine.
+    const INSTALL_COMMAND = (() => {
+      const platform = (navigator.platform || "").toLowerCase();
+      const agent = (navigator.userAgent || "").toLowerCase();
+      const windows = platform.includes("win") || agent.includes("windows");
+      return windows
+        ? "irm https://krate.tech/install.ps1 | iex"
+        : "curl -fsSL https://krate.tech/install.sh | sh";
+    })();
+
+    // Naming the shell matters as much as the command. A Windows reader who
+    // knows to open PowerShell cannot paste this into the wrong place.
+    const INSTALL_LABEL = INSTALL_COMMAND.startsWith("irm")
+      ? "Install Krate, once, in PowerShell"
+      : "Install Krate, once, in a terminal";
+
     const terminalDemos = {
       create: {
         state: "Working today",
@@ -691,8 +711,8 @@
         linkLabel: "Try one now →",
         linkHref: "/open/",
         lines: [
-          { type: "label", text: "Install Krate, once" },
-          { type: "command", text: "curl -fsSL https://krate.tech/install.sh | sh" },
+          { type: "label", text: INSTALL_LABEL },
+          { type: "command", text: INSTALL_COMMAND },
           { type: "gap", text: "" },
           { type: "label", text: "Open the file someone sent you" },
           { type: "command", text: "krate run groceries.krate" },
