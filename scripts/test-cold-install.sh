@@ -56,7 +56,11 @@ app="$SITE/notes.krate"
 
 echo "4. running it without grants: the permission wall must stop it"
 set +e
-denied_out="$("$krate" run "$app" 2>&1)"
+# --headless throughout: this walk captures output and compares it, so a
+# window that opens and waits for somebody to close it would hang the script
+# forever on any machine with a display. What is under test here is the
+# permission wall and the app's answer, not the window.
+denied_out="$("$krate" run --headless "$app" 2>&1)"
 denied="$?"
 set -e
 [ "$denied" -eq 5 ] || fail "expected exit 5 without grants, got $denied"
@@ -72,7 +76,7 @@ echo "   refused, in plain words, with a way forward"
 
 echo "5. running it with grants: the app must work"
 cd "$WORK"
-out="$("$krate" run --grant 'fs.read:notes/**' --grant 'fs.write:notes/**' "$app" 2>&1)" \
+out="$("$krate" run --headless --grant 'fs.read:notes/**' --grant 'fs.write:notes/**' "$app" 2>&1)" \
   || fail "the app failed with its grants: $out"
 case "$out" in
   *note*) : ;;

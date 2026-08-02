@@ -1202,7 +1202,10 @@ jobs:
 
           Write-Host '3. running the app it suggests, with no grants'
           Push-Location $work
-          $out = krate run 'https://krate.tech/notes.krate' 2>&1 | Out-String
+          # --headless: this captures and compares output, so a window that
+          # opens and waits to be closed would hang the job. The wall and the
+          # app's answer are what is under test here, not the window.
+          $out = krate run --headless 'https://krate.tech/notes.krate' 2>&1 | Out-String
           $code = $LASTEXITCODE
           Pop-Location
           if ($code -ne 5) { throw "COLD PATH BROKEN: expected exit 5 without grants, got $code" }
@@ -1211,7 +1214,7 @@ jobs:
 
           Write-Host '4. running it with grants'
           Push-Location $work
-          $out = krate run --grant 'fs.read:notes/**' --grant 'fs.write:notes/**' 'https://krate.tech/notes.krate' 2>&1 | Out-String
+          $out = krate run --headless --grant 'fs.read:notes/**' --grant 'fs.write:notes/**' 'https://krate.tech/notes.krate' 2>&1 | Out-String
           $code = $LASTEXITCODE
           Pop-Location
           if ($code -ne 0) { throw "COLD PATH BROKEN: the app failed with its grants: $out" }

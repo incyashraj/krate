@@ -108,10 +108,20 @@ enum Command {
         #[arg(long)]
         consent: bool,
 
-        /// Use the opt-in native window prototype for Phase 3 GUI apps
-        /// (macOS AppKit today). The default GUI path stays headless.
+        /// Force the native window path, failing rather than falling back if
+        /// this machine has no display.
+        ///
+        /// GUI apps open a window by default now, so this is only needed to
+        /// turn a missing display into an error instead of a headless run.
         #[arg(long)]
         native_window: bool,
+
+        /// Run a GUI app without opening a window.
+        ///
+        /// For scripts, tests and servers, where a window would be in the way
+        /// or impossible. The app still runs and still prints what it prints.
+        #[arg(long, conflicts_with = "native_window")]
+        headless: bool,
 
         /// Allow fetching a bundle over plain http. Intended for a local test
         /// server; https is required otherwise.
@@ -499,6 +509,7 @@ fn run() -> Result<u8> {
             prompt,
             consent,
             native_window,
+            headless,
             insecure_http,
             json,
             dump_caps,
@@ -529,7 +540,13 @@ fn run() -> Result<u8> {
             auto_grant,
             prompt,
             consent,
-            native_window,
+            ui_mode: if headless {
+                krate_runtime::phase3_ui::Phase3HostUiMode::HeadlessDraft
+            } else if native_window {
+                krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype
+            } else {
+                krate_runtime::phase3_ui::Phase3HostUiMode::NativeWithHeadlessFallback
+            },
             json,
             dump_caps,
             dump_caps_format,
@@ -1946,7 +1963,9 @@ struct RunRequest {
     auto_grant: bool,
     prompt: bool,
     consent: bool,
-    native_window: bool,
+    /// How this run should present a GUI: a real window, headless, or a
+    /// window with a headless fallback when the machine has no display.
+    ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode,
     insecure_http: bool,
     json: bool,
     dump_caps: bool,
@@ -3471,11 +3490,7 @@ fn run_component(request: RunRequest) -> Result<u8> {
                 machine_key(),
             )
         }),
-        phase3_ui_mode: if request.native_window {
-            krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype
-        } else {
-            krate_runtime::phase3_ui::Phase3HostUiMode::HeadlessDraft
-        },
+        phase3_ui_mode: request.ui_mode,
     };
     let runtime = Runtime::new(&config)?;
     let runtime_world = match manifest.map(Manifest::app_world).transpose()? {
@@ -3719,7 +3734,7 @@ fn open_app() -> Result<u8> {
         auto_grant: false,
         prompt: false,
         consent: true,
-        native_window: true,
+        ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype,
         json: false,
         dump_caps: false,
         dump_caps_format: OutputFormat::Text,

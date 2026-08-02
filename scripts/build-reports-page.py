@@ -141,7 +141,10 @@ def measure_startup(names, runs=5):
         for _ in range(runs):
             start = datetime.datetime.now()
             result = subprocess.run(
-                [str(KRATE), "run", "--auto-grant", str(bundle), "--", "quick"],
+                # --headless: these are timings, and a window appearing would
+                # measure the window manager rather than Krate -- besides
+                # popping nine windows every time the page is generated.
+                [str(KRATE), "run", "--headless", "--auto-grant", str(bundle), "--", "quick"],
                 capture_output=True,
                 cwd=work,
             )

@@ -69,6 +69,20 @@ pub enum Phase3HostUiMode {
     HeadlessDraft,
     /// Use the first opt-in native prototype path when the host supports it.
     NativePrototype,
+    /// Open a real window when this machine can, and fall back to headless
+    /// when it cannot.
+    ///
+    /// The default for GUI apps, because "run this app" should show the app.
+    /// It was opt-in while native windows were unproven, which meant somebody
+    /// running a 3D game saw a frame count print in their terminal and
+    /// reasonably concluded Krate does not draw anything -- that happened on a
+    /// first install. Windows are now covered by CI on Linux and Windows and
+    /// used daily on macOS.
+    ///
+    /// The fallback is what makes this safe to default: a server, an SSH
+    /// session or a CI runner has no display, and an app that refused to start
+    /// there would be worse than one that runs quietly.
+    NativeWithHeadlessFallback,
 }
 
 /// Owns the Phase 3 UI guard and host adapter for one runtime session.
@@ -473,6 +487,18 @@ fn discover_host_ui_adapter_for_mode(
     match host_mode {
         Phase3HostUiMode::HeadlessDraft => Ok(discover_host_ui_adapter()),
         Phase3HostUiMode::NativePrototype => discover_native_prototype_ui_adapter(),
+        Phase3HostUiMode::NativeWithHeadlessFallback => {
+            match discover_native_prototype_ui_adapter() {
+                Ok(adapter) => Ok(adapter),
+                // No display is an ordinary situation, not an error: a server,
+                // an SSH session, a CI runner. Say so once at debug level and
+                // carry on headless rather than refusing to run.
+                Err(error) => {
+                    tracing::debug!(?error, "no native window on this machine; running headless");
+                    Ok(discover_host_ui_adapter())
+                }
+            }
+        }
     }
 }
 

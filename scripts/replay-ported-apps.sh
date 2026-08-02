@@ -76,7 +76,11 @@ url = "https://discord.com/api/webhooks/test"
 TOML
 
   set +e
-  out="$( cd "$work" && "$KRATE" run --auto-grant "$bundle" -- "$arg" 2>&1 )"
+  # --headless on purpose. GUI apps open a real window by default now, and a
+  # regression harness that pops eleven windows is both slow and different from
+  # what it does on a CI runner with no display. What this checks is that each
+  # app still computes the right answer.
+  out="$( cd "$work" && "$KRATE" run --headless --auto-grant "$bundle" -- "$arg" 2>&1 )"
   code="$?"
   set -e
 
