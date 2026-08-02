@@ -57,3 +57,7 @@ harness = false
 [[bench]]
 name = "native_comparison"
 harness = false
+
+[[bench]]
+name = "scene3d"
+harness = false

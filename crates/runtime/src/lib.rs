@@ -44,7 +44,7 @@ pub mod phase3_gui_bindings;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase3_gui_host;
 pub mod random_host;
-mod scene3d;
+pub mod scene3d;
 pub mod secret_host;
 mod speech_transcription;
 pub mod sql_host;

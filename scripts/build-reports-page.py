@@ -219,7 +219,6 @@ def main():
         rows.append(
             f'        <tr><td><code>{name}</code></td><td>{kind}</td>'
             f'<td class="num">{size:,}</td>'
-            f'<td class="num">{REMINDERS_BYTES / size:,.0f}&times;</td>'
             f'<td>{note}</td><td class="mid">{mark}</td></tr>'
         )
 
@@ -245,6 +244,15 @@ def main():
         within a day, so the page now runs the apps instead of remembering them.
         Two of the ten are missing from this chart because they take a file path
         rather than a fixed argument, and one command cannot start every app.
+      </p>
+      <p class="method">
+        Every run here uses <code>--auto-grant</code>, which reads the app's
+        manifest and grants each capability it declares. That costs about
+        <strong>10&nbsp;ms</strong>: the same apps start in roughly
+        15&ndash;18&nbsp;ms without it. We report the slower figure because the
+        faster one measures an app that has not been given permission to do its
+        work, and quoting that as the startup time would be flattering rather
+        than true.
       </p>
     </section>
 """
@@ -328,15 +336,23 @@ def main():
       {bars([(n, round(s / 1024, 1)) for n, s in sizes], " KB")}
       <p>
         All {len(sizes)} apps together come to <strong>{total / 1024:,.0f}&nbsp;KB</strong>.
-        Apple's Reminders app, which keeps lists, is {REMINDERS_BYTES / total:,.0f}&times;
-        that on its own.
       </p>
       <p class="method">
         Sizes read from the packaged <code>.krate</code> files in the public
         repository. Each one contains the whole app for all three operating
-        systems. Reminders measured with <code>du -sk</code> on macOS 26:
-        {REMINDERS_LABEL}.
+        systems.
       </p>
+      <div class="callout">
+        <p style="margin:0">
+          <strong>What this is not.</strong> It is tempting to put these next to
+          Apple's Reminders ({REMINDERS_LABEL}) and quote a multiple. We have
+          done it and stopped, because the comparison measures nothing: Reminders
+          syncs across devices, keeps a database, sends notifications, and is
+          translated into dozens of languages. These are small utilities. They
+          are small partly because Krate is efficient and partly because they do
+          far less. Both are true and only the first is to our credit.
+        </p>
+      </div>
     </section>
 {startup_block}
     <section>
@@ -359,6 +375,47 @@ def main():
         every crossing. Full method in
         <code>Plan/Native-Comparison-2026-07-31.md</code>.
       </p>
+    </section>
+
+    <section>
+      <p class="eyebrow">Same file, same picture</p>
+      <p class="headline-number">1 pixel</p>
+      <h2>The bug that proves the testing works.</h2>
+      <p>
+        &ldquo;Runs on all three&rdquo; is easy to claim and hard to mean. Here is
+        what it cost us to mean it.
+      </p>
+      <p>
+        A spinning cube drew <strong>256 pixels on a Mac and 255 on Linux</strong>.
+        One pixel, on one frame. A test caught it and the Linux build went red.
+      </p>
+      <p>
+        The cause is real, not a flaky test. A pixel sitting exactly on the edge
+        of a triangle is a tie, and the maths for breaking that tie lands on a
+        number too small for a computer to represent exactly. Whether it rounds
+        up or down depends on the processor. Apple's chips and Intel's chips
+        choose differently, and the outline of a cube is made entirely of those
+        edges.
+      </p>
+      <p>
+        We measured how often it matters instead of guessing:
+        <strong>16.5% of edge pixels</strong> disagreed between the two. The fix
+        was to treat anything within a millionth of an edge as inside, which
+        takes the disagreement to zero. A looser guess of one ten-millionth
+        would have left 109 pixels in 20,000 still wrong.
+      </p>
+      <div class="callout">
+        <p style="margin:0">
+          <strong>Why this is on a page about results.</strong> A one-pixel
+          difference is invisible. It would never have been reported by a user
+          and would never have been noticed in a demo. It was caught because the
+          same test runs on all three systems on every change, and because it
+          asserts the picture is identical rather than roughly similar. The new
+          test also measures both rounding behaviours on whichever machine you
+          are sitting at, so the next bug of this kind is catchable without
+          owning three computers.
+        </p>
+      </div>
     </section>
 
     <section>
@@ -400,7 +457,7 @@ def main():
       <table>
         <thead>
           <tr><th>App</th><th>Kind</th><th class="num">Bytes</th>
-              <th class="num">vs Reminders</th><th>What it is</th><th>Re-tested</th></tr>
+              <th>What it is</th><th>Re-tested</th></tr>
         </thead>
         <tbody>
 {chr(10).join(rows)}
@@ -443,11 +500,17 @@ def main():
             decoding, scrolling text, search.</li>
         <li><strong>Internet apps</strong> — HTTPS scoped to a single host and
             port, not &ldquo;the internet&rdquo;.</li>
-        <li><strong>3D</strong> &mdash; triangles with depth and lighting,
-            rendered on the CPU so it works without a graphics card. Measured
-            on a laptop: 207&nbsp;fps at 320&times;240, 54&nbsp;fps at
-            640&times;480. Enough for a stylised game; not yet enough for a
-            modern one, which needs the GPU path.</li>
+        <li><strong>3D</strong> &mdash; textured triangles with depth and
+            lighting, rendered on the CPU so it works without a graphics card.
+            A complete frame of the sample scene takes <strong>1.29&nbsp;ms at
+            640&times;480</strong> in the renderer, and the whole app sustains
+            <strong>89&nbsp;fps</strong> at that size once the sandbox boundary
+            and the screen handoff are counted. Enough for a stylised game; not
+            enough for a modern one, which needs the GPU path.</li>
+        <li><strong>Gamepads</strong> &mdash; sticks, triggers and buttons named
+            by position rather than letter, so an app asking for the button
+            under your thumb gets it on an Xbox pad and a Nintendo one alike.
+            <em>Not yet tested with a controller physically attached.</em></li>
         <li><strong>Databases, secure storage, speech-to-text.</strong></li>
       </ul>
     </section>
@@ -457,7 +520,15 @@ def main():
       <h2>What Krate cannot do.</h2>
       <p>Published for the same reason as everything above it.</p>
       <ul class="limits">
-
+        <li><strong>Nobody uses it yet.</strong> This is the honest headline and
+            it belongs above the rest. Every number on this page was produced by
+            the people who built Krate, on their own machines and in their own
+            test harness. No outside person has shipped anything with it. The
+            apps here are small and medium utilities, a 2D game and a 3D sample
+            &mdash; not a spreadsheet, not a photo editor, not a modern game.
+            Until somebody who did not build this uses it for something real,
+            treat all of it as a working prototype that measures itself
+            carefully.</li>
         <li><strong>Heavy 3D.</strong> Software rendering carries a stylised
             game today. A modern one needs the GPU, which is a real graphics
             abstraction across three systems and is planned rather than

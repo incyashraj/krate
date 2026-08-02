@@ -78,42 +78,50 @@
   <text x="0" y="187" class="bl">ddh</text><rect x="132" y="175" width="94.7" height="18" rx="4" fill="#5c93f8"/><text x="236.7" y="189" class="bv">17.4 KB</text>
   <text x="0" y="221" class="bl">hexyl</text><rect x="132" y="209" width="78.9" height="18" rx="4" fill="#5c93f8"/><text x="220.9" y="223" class="bv">14.5 KB</text>
   <text x="0" y="255" class="bl">savings</text><rect x="132" y="243" width="73.5" height="18" rx="4" fill="#5c93f8"/><text x="215.5" y="257" class="bv">13.5 KB</text>
-  <text x="0" y="289" class="bl">cubes</text><rect x="132" y="277" width="66.4" height="18" rx="4" fill="#5c93f8"/><text x="208.4" y="291" class="bv">12.2 KB</text>
+  <text x="0" y="289" class="bl">cubes</text><rect x="132" y="277" width="68.0" height="18" rx="4" fill="#5c93f8"/><text x="210.0" y="291" class="bv">12.5 KB</text>
   <text x="0" y="323" class="bl">chart</text><rect x="132" y="311" width="59.3" height="18" rx="4" fill="#5c93f8"/><text x="201.3" y="325" class="bv">10.9 KB</text>
   <text x="0" y="357" class="bl">bounce</text><rect x="132" y="345" width="58.2" height="18" rx="4" fill="#5c93f8"/><text x="200.2" y="359" class="bv">10.7 KB</text>
 </svg>
       <p>
         All 11 apps together come to <strong>295&nbsp;KB</strong>.
-        Apple's Reminders app, which keeps lists, is 39&times;
-        that on its own.
       </p>
       <p class="method">
         Sizes read from the packaged <code>.krate</code> files in the public
         repository. Each one contains the whole app for all three operating
-        systems. Reminders measured with <code>du -sk</code> on macOS 26:
-        11.2 MB.
+        systems.
       </p>
+      <div class="callout">
+        <p style="margin:0">
+          <strong>What this is not.</strong> It is tempting to put these next to
+          Apple's Reminders (11.2 MB) and quote a multiple. We have
+          done it and stopped, because the comparison measures nothing: Reminders
+          syncs across devices, keeps a database, sends notifications, and is
+          translated into dozens of languages. These are small utilities. They
+          are small partly because Krate is efficient and partly because they do
+          far less. Both are true and only the first is to our credit.
+        </p>
+      </div>
     </section>
 
     <section>
       <p class="eyebrow">Speed</p>
-      <h2>An app opens in 17&ndash;49 milliseconds.</h2>
+      <h2>An app opens in 31&ndash;88 milliseconds.</h2>
       <p>
         One frame of 60&nbsp;fps video lasts 16.7&nbsp;ms. Most Krate apps have
         finished opening before a screen finishes drawing a single frame. The
         slowest here are the two ported desktop applications, which do real
         work on startup.
       </p>
-      <svg viewBox="0 0 640 306" role="img" class="chart" aria-label="Bar chart, longest bar is 49.3 ms">
-  <text x="0" y="17" class="bl">chart</text><rect x="132" y="5" width="144.6" height="18" rx="4" fill="#7cc4a4"/><text x="286.6" y="19" class="bv">17.3 ms</text>
-  <text x="0" y="51" class="bl">savings</text><rect x="132" y="39" width="155.4" height="18" rx="4" fill="#7cc4a4"/><text x="297.4" y="53" class="bv">18.6 ms</text>
-  <text x="0" y="85" class="bl">bounce</text><rect x="132" y="73" width="199.7" height="18" rx="4" fill="#7cc4a4"/><text x="341.7" y="87" class="bv">23.9 ms</text>
-  <text x="0" y="119" class="bl">rssfwd</text><rect x="132" y="107" width="248.2" height="18" rx="4" fill="#7cc4a4"/><text x="390.2" y="121" class="bv">29.7 ms</text>
-  <text x="0" y="153" class="bl">envelope</text><rect x="132" y="141" width="257.4" height="18" rx="4" fill="#7cc4a4"/><text x="399.4" y="155" class="bv">30.8 ms</text>
-  <text x="0" y="187" class="bl">cubes</text><rect x="132" y="175" width="318.4" height="18" rx="4" fill="#7cc4a4"/><text x="460.4" y="189" class="bv">38.1 ms</text>
-  <text x="0" y="221" class="bl">eo2</text><rect x="132" y="209" width="341.0" height="18" rx="4" fill="#7cc4a4"/><text x="483.0" y="223" class="bv">40.8 ms</text>
-  <text x="0" y="255" class="bl">mdview</text><rect x="132" y="243" width="343.5" height="18" rx="4" fill="#7cc4a4"/><text x="485.5" y="257" class="bv">41.1 ms</text>
-  <text x="0" y="289" class="bl">grex</text><rect x="132" y="277" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="291" class="bv">49.3 ms</text>
+      <svg viewBox="0 0 640 306" role="img" class="chart" aria-label="Bar chart, longest bar is 88.3 ms">
+  <text x="0" y="17" class="bl">chart</text><rect x="132" y="5" width="146.5" height="18" rx="4" fill="#7cc4a4"/><text x="288.5" y="19" class="bv">31.4 ms</text>
+  <text x="0" y="51" class="bl">savings</text><rect x="132" y="39" width="168.4" height="18" rx="4" fill="#7cc4a4"/><text x="310.4" y="53" class="bv">36.1 ms</text>
+  <text x="0" y="85" class="bl">bounce</text><rect x="132" y="73" width="209.5" height="18" rx="4" fill="#7cc4a4"/><text x="351.5" y="87" class="bv">44.9 ms</text>
+  <text x="0" y="119" class="bl">envelope</text><rect x="132" y="107" width="224.9" height="18" rx="4" fill="#7cc4a4"/><text x="366.9" y="121" class="bv">48.2 ms</text>
+  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="257.1" height="18" rx="4" fill="#7cc4a4"/><text x="399.1" y="155" class="bv">55.1 ms</text>
+  <text x="0" y="187" class="bl">cubes</text><rect x="132" y="175" width="265.5" height="18" rx="4" fill="#7cc4a4"/><text x="407.5" y="189" class="bv">56.9 ms</text>
+  <text x="0" y="221" class="bl">eo2</text><rect x="132" y="209" width="330.8" height="18" rx="4" fill="#7cc4a4"/><text x="472.8" y="223" class="bv">70.9 ms</text>
+  <text x="0" y="255" class="bl">mdview</text><rect x="132" y="243" width="343.4" height="18" rx="4" fill="#7cc4a4"/><text x="485.4" y="257" class="bv">73.6 ms</text>
+  <text x="0" y="289" class="bl">grex</text><rect x="132" y="277" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="291" class="bv">88.3 ms</text>
 </svg>
       <p class="method">
         Measured while this page was generated: five runs of each app on this
@@ -122,6 +130,15 @@
         within a day, so the page now runs the apps instead of remembering them.
         Two of the ten are missing from this chart because they take a file path
         rather than a fixed argument, and one command cannot start every app.
+      </p>
+      <p class="method">
+        Every run here uses <code>--auto-grant</code>, which reads the app's
+        manifest and grants each capability it declares. That costs about
+        <strong>10&nbsp;ms</strong>: the same apps start in roughly
+        15&ndash;18&nbsp;ms without it. We report the slower figure because the
+        faster one measures an app that has not been given permission to do its
+        work, and quoting that as the startup time would be flattering rather
+        than true.
       </p>
     </section>
 
@@ -149,6 +166,47 @@
         every crossing. Full method in
         <code>Plan/Native-Comparison-2026-07-31.md</code>.
       </p>
+    </section>
+
+    <section>
+      <p class="eyebrow">Same file, same picture</p>
+      <p class="headline-number">1 pixel</p>
+      <h2>The bug that proves the testing works.</h2>
+      <p>
+        &ldquo;Runs on all three&rdquo; is easy to claim and hard to mean. Here is
+        what it cost us to mean it.
+      </p>
+      <p>
+        A spinning cube drew <strong>256 pixels on a Mac and 255 on Linux</strong>.
+        One pixel, on one frame. A test caught it and the Linux build went red.
+      </p>
+      <p>
+        The cause is real, not a flaky test. A pixel sitting exactly on the edge
+        of a triangle is a tie, and the maths for breaking that tie lands on a
+        number too small for a computer to represent exactly. Whether it rounds
+        up or down depends on the processor. Apple's chips and Intel's chips
+        choose differently, and the outline of a cube is made entirely of those
+        edges.
+      </p>
+      <p>
+        We measured how often it matters instead of guessing:
+        <strong>16.5% of edge pixels</strong> disagreed between the two. The fix
+        was to treat anything within a millionth of an edge as inside, which
+        takes the disagreement to zero. A looser guess of one ten-millionth
+        would have left 109 pixels in 20,000 still wrong.
+      </p>
+      <div class="callout">
+        <p style="margin:0">
+          <strong>Why this is on a page about results.</strong> A one-pixel
+          difference is invisible. It would never have been reported by a user
+          and would never have been noticed in a demo. It was caught because the
+          same test runs on all three systems on every change, and because it
+          asserts the picture is identical rather than roughly similar. The new
+          test also measures both rounding behaviours on whichever machine you
+          are sitting at, so the next bug of this kind is catchable without
+          owning three computers.
+        </p>
+      </div>
     </section>
 
     <section>
@@ -217,20 +275,20 @@
       <table>
         <thead>
           <tr><th>App</th><th>Kind</th><th class="num">Bytes</th>
-              <th class="num">vs Reminders</th><th>What it is</th><th>Re-tested</th></tr>
+              <th>What it is</th><th>Re-tested</th></tr>
         </thead>
         <tbody>
-        <tr><td><code>eo2</code></td><td>Ported</td><td class="num">77,484</td><td class="num">152&times;</td><td>Image viewer, from 2,677 lines of desktop source</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>grex</code></td><td>Ported</td><td class="num">54,084</td><td class="num">218&times;</td><td>Regex builder, from 5,396 lines</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>mdview</code></td><td>Ported</td><td class="num">51,963</td><td class="num">227&times;</td><td>Markdown viewer, from 4,863 lines</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>envelope</code></td><td>Database</td><td class="num">19,495</td><td class="num">605&times;</td><td>Budgeting, with real SQL and secure storage</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>rssfwd</code></td><td>Internet</td><td class="num">18,084</td><td class="num">652&times;</td><td>Feed forwarder over scoped HTTPS</td><td class="mid">—</td></tr>
-        <tr><td><code>ddh</code></td><td>Filesystem</td><td class="num">17,778</td><td class="num">664&times;</td><td>Duplicate-file finder</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>hexyl</code></td><td>Command line</td><td class="num">14,872</td><td class="num">793&times;</td><td>Hex viewer — byte-identical output to the original</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>savings</code></td><td>Everyday app</td><td class="num">13,791</td><td class="num">855&times;</td><td>A window, a form, state that survives a restart</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>cubes</code></td><td></td><td class="num">12,462</td><td class="num">947&times;</td><td></td><td class="mid">Nightly</td></tr>
-        <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,148</td><td class="num">1,058&times;</td><td>Draws its own bar chart — no image files</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>bounce</code></td><td>2D game</td><td class="num">10,982</td><td class="num">1,074&times;</td><td>Gravity, collision, sprites, its own frame loop</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>eo2</code></td><td>Ported</td><td class="num">77,484</td><td>Image viewer, from 2,677 lines of desktop source</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>grex</code></td><td>Ported</td><td class="num">54,084</td><td>Regex builder, from 5,396 lines</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>mdview</code></td><td>Ported</td><td class="num">51,963</td><td>Markdown viewer, from 4,863 lines</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>envelope</code></td><td>Database</td><td class="num">19,495</td><td>Budgeting, with real SQL and secure storage</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>rssfwd</code></td><td>Internet</td><td class="num">18,084</td><td>Feed forwarder over scoped HTTPS</td><td class="mid">—</td></tr>
+        <tr><td><code>ddh</code></td><td>Filesystem</td><td class="num">17,778</td><td>Duplicate-file finder</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>hexyl</code></td><td>Command line</td><td class="num">14,872</td><td>Hex viewer — byte-identical output to the original</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>savings</code></td><td>Everyday app</td><td class="num">13,791</td><td>A window, a form, state that survives a restart</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>cubes</code></td><td></td><td class="num">12,780</td><td></td><td class="mid">Nightly</td></tr>
+        <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,148</td><td>Draws its own bar chart — no image files</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>bounce</code></td><td>2D game</td><td class="num">10,982</td><td>Gravity, collision, sprites, its own frame loop</td><td class="mid">Nightly</td></tr>
         </tbody>
       </table>
       </div>
@@ -272,11 +330,17 @@
             decoding, scrolling text, search.</li>
         <li><strong>Internet apps</strong> — HTTPS scoped to a single host and
             port, not &ldquo;the internet&rdquo;.</li>
-        <li><strong>3D</strong> &mdash; triangles with depth and lighting,
-            rendered on the CPU so it works without a graphics card. Measured
-            on a laptop: 207&nbsp;fps at 320&times;240, 54&nbsp;fps at
-            640&times;480. Enough for a stylised game; not yet enough for a
-            modern one, which needs the GPU path.</li>
+        <li><strong>3D</strong> &mdash; textured triangles with depth and
+            lighting, rendered on the CPU so it works without a graphics card.
+            A complete frame of the sample scene takes <strong>1.29&nbsp;ms at
+            640&times;480</strong> in the renderer, and the whole app sustains
+            <strong>89&nbsp;fps</strong> at that size once the sandbox boundary
+            and the screen handoff are counted. Enough for a stylised game; not
+            enough for a modern one, which needs the GPU path.</li>
+        <li><strong>Gamepads</strong> &mdash; sticks, triggers and buttons named
+            by position rather than letter, so an app asking for the button
+            under your thumb gets it on an Xbox pad and a Nintendo one alike.
+            <em>Not yet tested with a controller physically attached.</em></li>
         <li><strong>Databases, secure storage, speech-to-text.</strong></li>
       </ul>
     </section>
@@ -286,7 +350,15 @@
       <h2>What Krate cannot do.</h2>
       <p>Published for the same reason as everything above it.</p>
       <ul class="limits">
-
+        <li><strong>Nobody uses it yet.</strong> This is the honest headline and
+            it belongs above the rest. Every number on this page was produced by
+            the people who built Krate, on their own machines and in their own
+            test harness. No outside person has shipped anything with it. The
+            apps here are small and medium utilities, a 2D game and a 3D sample
+            &mdash; not a spreadsheet, not a photo editor, not a modern game.
+            Until somebody who did not build this uses it for something real,
+            treat all of it as a working prototype that measures itself
+            carefully.</li>
         <li><strong>Heavy 3D.</strong> Software rendering carries a stylised
             game today. A modern one needs the GPU, which is a real graphics
             abstraction across three systems and is planned rather than
