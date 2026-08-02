@@ -16,6 +16,18 @@ pre-build = [
   # the distribution package succeeds and then panics at build time with
   # "a libclang function was called that is not supported by the loaded
   # libclang instance".
+  #
+  # SOLVED as of rc6: the LLVM repository loads and bindgen runs. What this
+  # target now fails on is one layer deeper and is not fixable from here.
+  # whisper-rs-sys compiles whisper.cpp, which uses `if constexpr` -- C++17 --
+  # and Ubuntu 16.04 ships g++ 5.4, which only reaches C++14:
+  #
+  #   gguf.cpp:960:12: error: expected '(' before 'constexpr'
+  #
+  # Installing a newer g++ here is possible but means a third compiler in a
+  # container already carrying two. The real answer is that a speech-to-text
+  # model runtime should not be a mandatory dependency of every Krate build on
+  # every platform. Making it optional is the fix; see Plan/.
   "apt-get --assume-yes install wget gnupg software-properties-common",
   "wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -",
   "add-apt-repository -y 'deb http://apt.llvm.org/xenial/ llvm-toolchain-xenial-9 main'",

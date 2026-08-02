@@ -84,6 +84,16 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
+      # --all-features never exercises a feature being absent, and the arm64
+      # Linux release ships exactly that build: no speech, because its cross
+      # container cannot compile whisper.cpp. Without this, a change that only
+      # compiles with the engine present would pass every check here and break
+      # that platform at release time, which is where it is most expensive.
+      - name: Run clippy without speech, the way arm64 Linux ships
+        run: |
+          cargo clippy -p krate-runtime --all-targets \
+            --no-default-features --features phase2-bindings -- -D warnings
+          cargo clippy -p krate-cli --all-targets --no-default-features -- -D warnings
 
   # ──────────────────────────────────────────────
   # 3. Phase 2 binding checkpoint

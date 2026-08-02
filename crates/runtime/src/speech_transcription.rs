@@ -5,14 +5,17 @@
 //! before calling whisper.cpp. No subprocess, ambient filesystem path, or
 //! network service is exposed to the guest.
 
+#[cfg(feature = "speech")]
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
+#[cfg(feature = "speech")]
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 const REQUIRED_SAMPLE_RATE: u32 = 16_000;
 const MAX_AUDIO_BYTES: usize = REQUIRED_SAMPLE_RATE as usize * 2 * 60;
 const MAX_MODEL_BYTES: u64 = 512 * 1024 * 1024;
+#[cfg(feature = "speech")]
 const MAX_TRANSCRIPT_BYTES: usize = 32 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,12 +24,17 @@ pub enum SpeechError {
     ModelNotFound,
     ModelInvalid(String),
     Unsupported(String),
+    /// Only produced when the engine is compiled in, but present in both
+    /// builds: the error type must not change shape with a feature, or every
+    /// match on it would need its own cfg.
+    #[cfg_attr(not(feature = "speech"), allow(dead_code))]
     Inference(String),
 }
 
 #[derive(Default)]
 pub struct LocalSpeechRuntime {
     asset_root: Option<PathBuf>,
+    #[cfg(feature = "speech")]
     contexts: BTreeMap<PathBuf, WhisperContext>,
     pending_pcm_s16_le: Vec<u8>,
 }
@@ -44,67 +52,83 @@ impl LocalSpeechRuntime {
         sample_rate: u32,
         language: Option<&str>,
     ) -> Result<String, SpeechError> {
+        // Validation runs either way. A guest that sends malformed audio should
+        // get the same answer on a build without the engine as on one with it,
+        // so the only difference between them is whether transcription itself
+        // is available -- not what counts as a valid request.
         validate_audio(pcm_s16_le, sample_rate)?;
         let language = validate_language(language)?;
         let model_path = self.model_path(model_asset)?;
 
-        if !self.contexts.contains_key(&model_path) {
-            let context =
-                WhisperContext::new_with_params(&model_path, WhisperContextParameters::default())
-                    .map_err(|error| SpeechError::ModelInvalid(error.to_string()))?;
-            self.contexts.insert(model_path.clone(), context);
+        #[cfg(not(feature = "speech"))]
+        {
+            let _ = (language, model_path);
+            Err(SpeechError::Unsupported(
+                "this build of Krate was compiled without speech-to-text".to_string(),
+            ))
         }
 
-        let context = self
-            .contexts
-            .get(&model_path)
-            .ok_or_else(|| SpeechError::ModelInvalid("model cache was unavailable".to_string()))?;
-        let mut state = context
-            .create_state()
-            .map_err(|error| SpeechError::Inference(error.to_string()))?;
-        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-        params.set_n_threads(
-            std::thread::available_parallelism()
-                .map(|count| count.get().min(4) as i32)
-                .unwrap_or(1),
-        );
-        params.set_language(language);
-        params.set_translate(false);
-        params.set_no_context(true);
-        params.set_single_segment(false);
-        params.set_print_special(false);
-        params.set_print_progress(false);
-        params.set_print_realtime(false);
-        params.set_print_timestamps(false);
+        #[cfg(feature = "speech")]
+        {
+            if !self.contexts.contains_key(&model_path) {
+                let context = WhisperContext::new_with_params(
+                    &model_path,
+                    WhisperContextParameters::default(),
+                )
+                .map_err(|error| SpeechError::ModelInvalid(error.to_string()))?;
+                self.contexts.insert(model_path.clone(), context);
+            }
 
-        let samples = pcm_s16_le
-            .chunks_exact(2)
-            .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]) as f32 / i16::MAX as f32)
-            .collect::<Vec<_>>();
-        state
-            .full(params, &samples)
-            .map_err(|error| SpeechError::Inference(error.to_string()))?;
-
-        let mut transcript = String::new();
-        for segment in state.as_iter() {
-            let text = segment
-                .to_str_lossy()
+            let context = self.contexts.get(&model_path).ok_or_else(|| {
+                SpeechError::ModelInvalid("model cache was unavailable".to_string())
+            })?;
+            let mut state = context
+                .create_state()
                 .map_err(|error| SpeechError::Inference(error.to_string()))?;
-            let text = text.trim();
-            if text.is_empty() {
-                continue;
+            let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+            params.set_n_threads(
+                std::thread::available_parallelism()
+                    .map(|count| count.get().min(4) as i32)
+                    .unwrap_or(1),
+            );
+            params.set_language(language);
+            params.set_translate(false);
+            params.set_no_context(true);
+            params.set_single_segment(false);
+            params.set_print_special(false);
+            params.set_print_progress(false);
+            params.set_print_realtime(false);
+            params.set_print_timestamps(false);
+
+            let samples = pcm_s16_le
+                .chunks_exact(2)
+                .map(|bytes| i16::from_le_bytes([bytes[0], bytes[1]]) as f32 / i16::MAX as f32)
+                .collect::<Vec<_>>();
+            state
+                .full(params, &samples)
+                .map_err(|error| SpeechError::Inference(error.to_string()))?;
+
+            let mut transcript = String::new();
+            for segment in state.as_iter() {
+                let text = segment
+                    .to_str_lossy()
+                    .map_err(|error| SpeechError::Inference(error.to_string()))?;
+                let text = text.trim();
+                if text.is_empty() {
+                    continue;
+                }
+                if !transcript.is_empty() {
+                    transcript.push(' ');
+                }
+                if transcript.len().saturating_add(text.len()) > MAX_TRANSCRIPT_BYTES {
+                    return Err(SpeechError::Inference(
+                        "transcript exceeded the runtime limit".to_string(),
+                    ));
+                }
+                transcript.push_str(text);
             }
-            if !transcript.is_empty() {
-                transcript.push(' ');
-            }
-            if transcript.len().saturating_add(text.len()) > MAX_TRANSCRIPT_BYTES {
-                return Err(SpeechError::Inference(
-                    "transcript exceeded the runtime limit".to_string(),
-                ));
-            }
-            transcript.push_str(text);
+            Ok(transcript)
         }
-        Ok(transcript)
     }
 
     pub fn match_line(

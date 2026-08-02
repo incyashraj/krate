@@ -8,8 +8,14 @@ rust-version.workspace = true
 publish = false
 
 [features]
-default = ["phase2-bindings"]
+# Speech is on by default so every normal build has it, and can be turned off
+# for a platform whose toolchain cannot compile it. whisper-rs-sys builds
+# whisper.cpp, which needs a C++17 compiler; the arm64 Linux cross container is
+# Ubuntu 16.04 with g++ 5.4, which reaches only C++14, and that one dependency
+# is why that platform has been missing from every release.
+default = ["phase2-bindings", "speech"]
 phase2-bindings = []
+speech = ["dep:whisper-rs"]
 
 [dependencies]
 # HTTPS for guest apps. Same TLS stack the CLI and bundle crates already use,
@@ -27,7 +33,7 @@ thiserror.workspace = true
 tracing.workspace = true
 wasmtime.workspace = true
 cpal = "0.18.1"
-whisper-rs = "0.16.0"
+whisper-rs = { version = "0.16.0", optional = true }
 # Gamepads. Pulls libudev-sys on Linux, which is why every Linux build got the
 # udev headers in the change before this one.
 gilrs = "0.11.0"

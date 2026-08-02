@@ -12,13 +12,20 @@ build = "build.rs"
 name = "krate"
 path = "src/main.rs"
 
+[features]
+# Speech is on by default and can be dropped for a platform whose toolchain
+# cannot build whisper.cpp. Kept as a passthrough so `cargo build -p krate-cli
+# --no-default-features` reaches the runtime rather than silently keeping it.
+default = ["speech"]
+speech = ["krate-runtime/speech"]
+
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
 krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
 krate-policy = { path = "../policy", version = "0.1.0-dev" }
 krate-bundle = { path = "../bundle", version = "0.1.0-dev" }
-krate-runtime = { path = "../runtime", version = "0.1.0-dev" }
+krate-runtime = { path = "../runtime", version = "0.1.0-dev", default-features = false, features = ["phase2-bindings"] }
 krate-author = { path = "../author", version = "0.1.0-dev" }
 krate-port = { path = "../port", version = "0.1.0-dev" }
 # For the widget list in the generated agent reference, so a widget cannot be
