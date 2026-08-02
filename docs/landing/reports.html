@@ -4,182 +4,301 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0b0d12" />
-  <meta name="description" content="Krate's measured results: app sizes, startup times, sandbox overhead, and what the runtime can do today. Every chart is drawn from a real measurement." />
+  <meta name="description" content="Krate's measured results: app sizes, startup times, sandbox cost, and what the runtime can and cannot do. Every chart is drawn from a real measurement." />
   <link rel="canonical" href="https://krate.tech/reports/" />
   <meta property="og:title" content="Krate — the measurements" />
-  <meta property="og:description" content="App sizes, startup times, sandbox overhead. Every chart drawn from a real measurement, and the limits published beside them." />
+  <meta property="og:description" content="A 2D game in 11 KB. Sandboxed code at native speed. Every chart drawn from a real measurement, with the limits published beside them." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/reports/" />
+  <meta property="og:image" content="https://krate.tech/og-v2.png" />
+  <meta name="twitter:card" content="summary_large_image" />
   <title>Krate — the measurements</title>
   <link rel="stylesheet" href="/krate.css" />
   <style>
-    .chart { width: 100%; max-width: 620px; margin: 1.25rem 0 2rem; }
-    .chart .bl { fill: #c7ccd6; font: 500 13px system-ui, sans-serif; }
-    .chart .bv { fill: #8a919e; font: 500 12px system-ui, sans-serif; }
-    .lede { font-size: 1.15em; line-height: 1.6; }
-    .method { opacity: 0.62; font-size: 0.92em; border-left: 2px solid rgba(255,255,255,0.14);
-               padding-left: 0.9rem; margin: 0.75rem 0 2.5rem; }
-    .big { font-size: 2.6em; font-weight: 700; line-height: 1.1; margin: 0.2rem 0; }
+    .report { max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
+    .report section { margin: 0 0 4.5rem; }
+    .report h1 { font-size: clamp(2.1rem, 5vw, 3rem); line-height: 1.1; margin: 0.4rem 0 1rem; }
+    .report h2 { font-size: clamp(1.4rem, 3.2vw, 1.9rem); line-height: 1.2; margin: 0.3rem 0 0.9rem; }
+    .eyebrow { text-transform: uppercase; letter-spacing: 0.09em; font-size: 0.75rem;
+                font-weight: 600; opacity: 0.55; margin: 0; }
+    .lede { font-size: 1.12rem; line-height: 1.65; opacity: 0.9; }
+    .chart { width: 100%; max-width: 680px; margin: 1.5rem 0 1.25rem; display: block; }
+    .chart .bl { fill: #ccd2dd; font: 500 13px system-ui, -apple-system, sans-serif; }
+    .chart .bv { fill: #8a919e; font: 500 12px system-ui, -apple-system, sans-serif; }
+    .method { opacity: 0.6; font-size: 0.9rem; line-height: 1.55;
+               border-left: 2px solid rgba(255,255,255,0.13); padding-left: 1rem; margin: 1rem 0 0; }
+    .headline-number { font-size: clamp(2.6rem, 8vw, 4rem); font-weight: 700;
+                        line-height: 1; letter-spacing: -0.02em; margin: 0 0 0.15rem;
+                        background: linear-gradient(180deg, #eaf0ff, #92b4f4);
+                        -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .report table { border-collapse: collapse; width: 100%; margin: 1.5rem 0 0.75rem; font-size: 0.94rem; }
+    .report th, .report td { padding: 0.6rem 0.7rem; text-align: left;
+                              border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .report th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.55; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; }
+    .mid { opacity: 0.72; }
+    .table-scroll { overflow-x: auto; }
+    .callout { background: rgba(92,147,248,0.07); border: 1px solid rgba(92,147,248,0.22);
+                border-radius: 10px; padding: 1.1rem 1.25rem; margin: 1.5rem 0; }
+    .callout pre { margin: 0.6rem 0 0; overflow-x: auto; font-size: 0.88rem; }
+    .limits li { margin-bottom: 0.55rem; line-height: 1.55; }
+    .page-links { display: flex; flex-wrap: wrap; gap: 1.25rem; margin-top: 3.5rem;
+                   padding-top: 1.75rem; border-top: 1px solid rgba(255,255,255,0.1); }
   </style>
 </head>
 <body>
-  <main class="wrap" style="max-width: 46rem; margin: 0 auto; padding: 3rem 1.5rem;">
-    <p class="label">Reports</p>
+  <main class="report">
+    <p class="eyebrow">Reports</p>
     <h1>The measurements.</h1>
     <p class="lede">
-      Every chart on this page is drawn from a number we measured, not one we
-      chose. The script that builds the page reads the app files and the
-      benchmark results directly, so a chart cannot show something the
-      repository does not contain.
+      Every chart here is drawn from a number we measured, not one we chose. The
+      script that builds this page reads the app files directly and re-runs the
+      apps to time them, so a chart cannot show something the repository does
+      not contain. Where a number cannot be re-measured automatically, the method
+      is written underneath it.
     </p>
-    <p class="method">Generated 2026-08-02. Re-run with <code>python3 scripts/build-reports-page.py</code>.</p>
+    <p class="method">Generated 2026-08-02. Anyone can reproduce it: <code>python3 scripts/build-reports-page.py</code>.</p>
 
-    <h2>How big is a Krate app?</h2>
-    <p class="big">11 KB</p>
-    <p>
-      That is the smallest complete app we ship — a 2D game with gravity,
-      collision and sprites. Every app we have ever built, all 10 of
-      them, comes to 283&nbsp;KB together. Apple's Reminders app,
-      which keeps lists, is 41&times; that on its own.
-    </p>
-    <svg viewBox="0 0 560 300" role="img" class="chart">
-    <text x="0" y="15" class="bl">eo2</text><rect x="130" y="4" width="340.0" height="16" rx="3" fill="#5c93f8"/><text x="478.0" y="16" class="bv">75.7 KB</text>
-    <text x="0" y="45" class="bl">grex</text><rect x="130" y="34" width="237.1" height="16" rx="3" fill="#5c93f8"/><text x="375.1" y="46" class="bv">52.8 KB</text>
-    <text x="0" y="75" class="bl">mdview</text><rect x="130" y="64" width="227.7" height="16" rx="3" fill="#5c93f8"/><text x="365.7" y="76" class="bv">50.7 KB</text>
-    <text x="0" y="105" class="bl">envelope</text><rect x="130" y="94" width="85.3" height="16" rx="3" fill="#5c93f8"/><text x="223.3" y="106" class="bv">19 KB</text>
-    <text x="0" y="135" class="bl">rssfwd</text><rect x="130" y="124" width="79.5" height="16" rx="3" fill="#5c93f8"/><text x="217.5" y="136" class="bv">17.7 KB</text>
-    <text x="0" y="165" class="bl">ddh</text><rect x="130" y="154" width="78.2" height="16" rx="3" fill="#5c93f8"/><text x="216.2" y="166" class="bv">17.4 KB</text>
-    <text x="0" y="195" class="bl">hexyl</text><rect x="130" y="184" width="65.1" height="16" rx="3" fill="#5c93f8"/><text x="203.1" y="196" class="bv">14.5 KB</text>
-    <text x="0" y="225" class="bl">savings</text><rect x="130" y="214" width="60.6" height="16" rx="3" fill="#5c93f8"/><text x="198.6" y="226" class="bv">13.5 KB</text>
-    <text x="0" y="255" class="bl">chart</text><rect x="130" y="244" width="49.0" height="16" rx="3" fill="#5c93f8"/><text x="187.0" y="256" class="bv">10.9 KB</text>
-    <text x="0" y="285" class="bl">bounce</text><rect x="130" y="274" width="48.1" height="16" rx="3" fill="#5c93f8"/><text x="186.1" y="286" class="bv">10.7 KB</text>
+    <section>
+      <p class="eyebrow">Size</p>
+      <p class="headline-number">11 KB</p>
+      <h2>A complete 2D game.</h2>
+      <p>
+        Gravity, collision, sprites, and its own frame loop — in one file that
+        opens on Mac, Windows and Linux. It is that small because nothing is
+        bundled inside it that your computer already has: no browser, no
+        framework, no runtime copy.
+      </p>
+      <svg viewBox="0 0 640 340" role="img" class="chart" aria-label="Bar chart, longest bar is 75.7 KB">
+  <text x="0" y="17" class="bl">eo2</text><rect x="132" y="5" width="412.0" height="18" rx="4" fill="#5c93f8"/><text x="554.0" y="19" class="bv">75.7 KB</text>
+  <text x="0" y="51" class="bl">grex</text><rect x="132" y="39" width="287.4" height="18" rx="4" fill="#5c93f8"/><text x="429.4" y="53" class="bv">52.8 KB</text>
+  <text x="0" y="85" class="bl">mdview</text><rect x="132" y="73" width="275.9" height="18" rx="4" fill="#5c93f8"/><text x="417.9" y="87" class="bv">50.7 KB</text>
+  <text x="0" y="119" class="bl">envelope</text><rect x="132" y="107" width="103.4" height="18" rx="4" fill="#5c93f8"/><text x="245.4" y="121" class="bv">19 KB</text>
+  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="96.3" height="18" rx="4" fill="#5c93f8"/><text x="238.3" y="155" class="bv">17.7 KB</text>
+  <text x="0" y="187" class="bl">ddh</text><rect x="132" y="175" width="94.7" height="18" rx="4" fill="#5c93f8"/><text x="236.7" y="189" class="bv">17.4 KB</text>
+  <text x="0" y="221" class="bl">hexyl</text><rect x="132" y="209" width="78.9" height="18" rx="4" fill="#5c93f8"/><text x="220.9" y="223" class="bv">14.5 KB</text>
+  <text x="0" y="255" class="bl">savings</text><rect x="132" y="243" width="73.5" height="18" rx="4" fill="#5c93f8"/><text x="215.5" y="257" class="bv">13.5 KB</text>
+  <text x="0" y="289" class="bl">chart</text><rect x="132" y="277" width="59.3" height="18" rx="4" fill="#5c93f8"/><text x="201.3" y="291" class="bv">10.9 KB</text>
+  <text x="0" y="323" class="bl">bounce</text><rect x="132" y="311" width="58.2" height="18" rx="4" fill="#5c93f8"/><text x="200.2" y="325" class="bv">10.7 KB</text>
 </svg>
-    <p class="method">
-      Measured with <code>ls -l</code> on the packaged <code>.krate</code> files in
-      the repository. Each file contains the whole app for all three operating
-      systems.
-    </p>
+      <p>
+        All 10 apps together come to <strong>283&nbsp;KB</strong>.
+        Apple's Reminders app, which keeps lists, is 41&times;
+        that on its own.
+      </p>
+      <p class="method">
+        Sizes read from the packaged <code>.krate</code> files in the public
+        repository. Each one contains the whole app for all three operating
+        systems. Reminders measured with <code>du -sk</code> on macOS 26:
+        11.2 MB.
+      </p>
+    </section>
 
-    <h2>How fast does an app open?</h2>
-    <p class="big">16 ms</p>
-    <p>
-      Median cold start. A single frame of 60&nbsp;fps video lasts 16.7&nbsp;ms,
-      so most Krate apps have finished opening before a screen finishes drawing
-      one frame. The two slowest are ported desktop applications.
-    </p>
-    <svg viewBox="0 0 560 180" role="img" class="chart">
-    <text x="0" y="15" class="bl">chart</text><rect x="130" y="4" width="151.7" height="16" rx="3" fill="#7cc4a4"/><text x="289.7" y="16" class="bv">13.3 ms</text>
-    <text x="0" y="45" class="bl">savings</text><rect x="130" y="34" width="182.6" height="16" rx="3" fill="#7cc4a4"/><text x="320.6" y="46" class="bv">16 ms</text>
-    <text x="0" y="75" class="bl">hexyl</text><rect x="130" y="64" width="190.5" height="16" rx="3" fill="#7cc4a4"/><text x="328.5" y="76" class="bv">16.7 ms</text>
-    <text x="0" y="105" class="bl">bounce</text><rect x="130" y="94" width="201.9" height="16" rx="3" fill="#7cc4a4"/><text x="339.9" y="106" class="bv">17.7 ms</text>
-    <text x="0" y="135" class="bl">mdview</text><rect x="130" y="124" width="317.2" height="16" rx="3" fill="#7cc4a4"/><text x="455.2" y="136" class="bv">27.8 ms</text>
-    <text x="0" y="165" class="bl">eo2</text><rect x="130" y="154" width="340.0" height="16" rx="3" fill="#7cc4a4"/><text x="478.0" y="166" class="bv">29.8 ms</text>
+    <section>
+      <p class="eyebrow">Speed</p>
+      <h2>An app opens in 18&ndash;48 milliseconds.</h2>
+      <p>
+        One frame of 60&nbsp;fps video lasts 16.7&nbsp;ms. Most Krate apps have
+        finished opening before a screen finishes drawing a single frame. The
+        slowest here are the two ported desktop applications, which do real
+        work on startup.
+      </p>
+      <svg viewBox="0 0 640 272" role="img" class="chart" aria-label="Bar chart, longest bar is 47.7 ms">
+  <text x="0" y="17" class="bl">chart</text><rect x="132" y="5" width="157.2" height="18" rx="4" fill="#7cc4a4"/><text x="299.2" y="19" class="bv">18.2 ms</text>
+  <text x="0" y="51" class="bl">savings</text><rect x="132" y="39" width="165.0" height="18" rx="4" fill="#7cc4a4"/><text x="307.0" y="53" class="bv">19.1 ms</text>
+  <text x="0" y="85" class="bl">bounce</text><rect x="132" y="73" width="222.8" height="18" rx="4" fill="#7cc4a4"/><text x="364.8" y="87" class="bv">25.8 ms</text>
+  <text x="0" y="119" class="bl">envelope</text><rect x="132" y="107" width="258.3" height="18" rx="4" fill="#7cc4a4"/><text x="400.3" y="121" class="bv">29.9 ms</text>
+  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="259.1" height="18" rx="4" fill="#7cc4a4"/><text x="401.1" y="155" class="bv">30 ms</text>
+  <text x="0" y="187" class="bl">eo2</text><rect x="132" y="175" width="327.4" height="18" rx="4" fill="#7cc4a4"/><text x="469.4" y="189" class="bv">37.9 ms</text>
+  <text x="0" y="221" class="bl">mdview</text><rect x="132" y="209" width="331.7" height="18" rx="4" fill="#7cc4a4"/><text x="473.7" y="223" class="bv">38.4 ms</text>
+  <text x="0" y="255" class="bl">grex</text><rect x="132" y="243" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="257" class="bv">47.7 ms</text>
 </svg>
-    <p class="method">
-      Median of five runs each, on an Apple Silicon Mac, measured from process
-      start to exit including the app's own work.
-    </p>
+      <p class="method">
+        Measured while this page was generated: five runs of each app on this
+        machine, median reported, whole-process time including everything the
+        app itself does. These numbers were hardcoded once and had drifted
+        within a day, so the page now runs the apps instead of remembering them.
+        Two of the ten are missing from this chart because they take a file path
+        rather than a fixed argument, and one command cannot start every app.
+      </p>
+    </section>
 
-    <h2>What does the sandbox cost?</h2>
-    <p class="big">1.00&times;</p>
-    <p>
-      The question every engineer asks. At 300 million integer operations, the
-      difference between native code and the same code inside Krate's sandbox is
-      inside measurement noise.
-    </p>
-    <svg viewBox="0 0 560 126" role="img" class="chart">
-    <text x="0" y="14" class="bl">30M operations</text><rect x="130" y="2" width="37.6" height="13" rx="3" fill="#8a919e"/><text x="175.6" y="13" class="bv">83 ms native</text><rect x="130" y="19" width="39.3" height="13" rx="3" fill="#5c93f8"/><text x="177.3" y="30" class="bv">86.7 ms Krate</text>
-    <text x="0" y="56" class="bl">100M operations</text><rect x="130" y="44" width="99.7" height="13" rx="3" fill="#8a919e"/><text x="237.7" y="55" class="bv">220 ms native</text><rect x="130" y="61" width="107.2" height="13" rx="3" fill="#5c93f8"/><text x="245.2" y="72" class="bv">236.6 ms Krate</text>
-    <text x="0" y="98" class="bl">300M operations</text><rect x="130" y="86" width="318.9" height="13" rx="3" fill="#8a919e"/><text x="456.9" y="97" class="bv">703.9 ms native</text><rect x="130" y="103" width="320.0" height="13" rx="3" fill="#5c93f8"/><text x="458.0" y="114" class="bv">706.3 ms Krate</text>
+    <section>
+      <p class="eyebrow">Cost of safety</p>
+      <p class="headline-number">1.00&times;</p>
+      <h2>The sandbox is free where it matters.</h2>
+      <p>
+        The question every engineer asks. At 300 million integer operations, the
+        difference between native code and the same code inside Krate's sandbox
+        is inside measurement noise.
+      </p>
+      <svg viewBox="0 0 640 156" role="img" class="chart" aria-label="Native and Krate timings side by side at the same scale">
+  <text x="0" y="18" class="bl">30 million operations</text><rect x="150" y="4" width="43.5" height="15" rx="3" fill="#8a919e"/><text x="203.5" y="16" class="bv">83 ms native</text><rect x="150" y="23" width="45.4" height="15" rx="3" fill="#5c93f8"/><text x="205.4" y="35" class="bv">86.7 ms Krate</text>
+  <text x="0" y="70" class="bl">100 million operations</text><rect x="150" y="56" width="115.2" height="15" rx="3" fill="#8a919e"/><text x="275.2" y="68" class="bv">220 ms native</text><rect x="150" y="75" width="123.9" height="15" rx="3" fill="#5c93f8"/><text x="283.9" y="87" class="bv">236.6 ms Krate</text>
+  <text x="0" y="122" class="bl">300 million operations</text><rect x="150" y="108" width="368.7" height="15" rx="3" fill="#8a919e"/><text x="528.7" y="120" class="bv">703.9 ms native</text><rect x="150" y="127" width="370.0" height="15" rx="3" fill="#5c93f8"/><text x="530.0" y="139" class="bv">706.3 ms Krate</text>
 </svg>
-    <p class="method">
-      Output was checked identical before every timing. The first version of this
-      benchmark reported Krate as <em>faster</em> than native, which was a bug in
-      the harness rebuilding one side and not the other — the output check is what
-      caught it. The honest worst case is 5.14&times;, for a program that crosses
-      the sandbox boundary constantly and computes almost nothing in between;
-      that is the cost of checking permissions on every crossing.
-    </p>
+      <p class="method">
+        Output was checked identical before every timing. The first version of
+        this benchmark reported Krate as <em>faster</em> than native, which was a
+        bug in the harness rebuilding one side and not the other — the output
+        check is what caught it. The honest worst case is <strong>5.14&times;</strong>,
+        for a program that crosses the sandbox boundary constantly and computes
+        almost nothing in between; that is the price of checking a permission on
+        every crossing. Full method in
+        <code>Plan/Native-Comparison-2026-07-31.md</code>.
+      </p>
+    </section>
 
-    <h2>How an app is kept in its box</h2>
-    <p>
-      Every request an app makes for something outside itself passes through one
-      check. There is no second path — that is what makes the escape test above
-      possible to write.
-    </p>
-    <svg viewBox="0 0 560 190" role="img" class="chart" aria-label="An app's request passes through a capability check before reaching the operating system.">
-      <rect x="8" y="70" width="120" height="52" rx="6" fill="#1b2130" stroke="#3a4356"/>
-      <text x="68" y="92" class="bl" text-anchor="middle">Your app</text>
-      <text x="68" y="109" class="bv" text-anchor="middle">11 KB</text>
+    <section>
+      <p class="eyebrow">Safety</p>
+      <h2>An app can only touch what you allowed.</h2>
+      <p>
+        Every request for something outside the app passes through one check.
+      </p>
+      <svg viewBox="0 0 640 210" role="img" class="chart"
+     aria-label="An app's request passes through one permission check; allowed requests reach the computer, everything else is refused.">
+  <rect x="10" y="78" width="140" height="58" rx="8" fill="#161b26" stroke="#39425a"/>
+  <text x="80" y="103" class="bl" text-anchor="middle">Your app</text>
+  <text x="80" y="121" class="bv" text-anchor="middle">11 KB</text>
 
-      <line x1="128" y1="96" x2="196" y2="96" stroke="#5c93f8" stroke-width="2"/>
-      <polygon points="196,91 208,96 196,101" fill="#5c93f8"/>
-      <text x="168" y="86" class="bv" text-anchor="middle">asks</text>
+  <line x1="150" y1="107" x2="222" y2="107" stroke="#5c93f8" stroke-width="2"/>
+  <polygon points="222,101 236,107 222,113" fill="#5c93f8"/>
+  <text x="186" y="96" class="bv" text-anchor="middle">asks for a file</text>
 
-      <rect x="208" y="52" width="136" height="88" rx="6" fill="#1b2130" stroke="#5c93f8" stroke-width="2"/>
-      <text x="276" y="80" class="bl" text-anchor="middle">Permission</text>
-      <text x="276" y="98" class="bl" text-anchor="middle">check</text>
-      <text x="276" y="120" class="bv" text-anchor="middle">granted, or refused</text>
+  <rect x="236" y="58" width="152" height="98" rx="8" fill="#161b26" stroke="#5c93f8" stroke-width="2"/>
+  <text x="312" y="90" class="bl" text-anchor="middle">Permission check</text>
+  <text x="312" y="112" class="bv" text-anchor="middle">the one way out</text>
+  <text x="312" y="130" class="bv" text-anchor="middle">of the sandbox</text>
 
-      <line x1="344" y1="80" x2="412" y2="80" stroke="#7cc4a4" stroke-width="2"/>
-      <polygon points="412,75 424,80 412,85" fill="#7cc4a4"/>
-      <text x="378" y="70" class="bv" text-anchor="middle">allowed</text>
-      <rect x="424" y="58" width="128" height="44" rx="6" fill="#1b2130" stroke="#3a4356"/>
-      <text x="488" y="85" class="bl" text-anchor="middle">Your computer</text>
+  <line x1="388" y1="86" x2="462" y2="86" stroke="#7cc4a4" stroke-width="2"/>
+  <polygon points="462,80 476,86 462,92" fill="#7cc4a4"/>
+  <text x="425" y="75" class="bv" text-anchor="middle">granted</text>
+  <rect x="476" y="62" width="152" height="48" rx="8" fill="#161b26" stroke="#39425a"/>
+  <text x="552" y="91" class="bl" text-anchor="middle">Your computer</text>
 
-      <line x1="344" y1="118" x2="412" y2="118" stroke="#8a919e" stroke-width="2" stroke-dasharray="5 4"/>
-      <text x="378" y="136" class="bv" text-anchor="middle">everything else</text>
-      <line x1="416" y1="110" x2="432" y2="126" stroke="#c26a6a" stroke-width="2"/>
-      <line x1="432" y1="110" x2="416" y2="126" stroke="#c26a6a" stroke-width="2"/>
+  <line x1="388" y1="130" x2="458" y2="130" stroke="#8a919e" stroke-width="2" stroke-dasharray="6 5"/>
+  <text x="425" y="152" class="bv" text-anchor="middle">everything else</text>
+  <line x1="462" y1="121" x2="480" y2="139" stroke="#c9736f" stroke-width="2.5"/>
+  <line x1="480" y1="121" x2="462" y2="139" stroke="#c9736f" stroke-width="2.5"/>
 
-      <text x="8" y="176" class="bv">The app never gets a path it was not given — a file dialog returns a token for one file.</text>
-    </svg>
+  <text x="10" y="192" class="bv">There is no second path. That is what makes the escape test below possible to write.</text>
+</svg>
+      <div class="callout">
+        <p style="margin:0">
+          <strong>We attack it to prove it.</strong> An app is granted permission
+          to read <code>/etc</code> — where a Unix system keeps its account list —
+          and asked for the password file.
+        </p>
+        <pre><code>$ krate run --grant "fs.read:/etc/**" hexyl.krate -- /etc/passwd
+00000000  73 61 6e 64 62 6f 78 20  63 6f 70 79</code></pre>
+        <p style="margin:0.7rem 0 0">
+          Those bytes spell <strong>sandbox copy</strong>. The app believes it
+          succeeded. The real file was never reachable.
+        </p>
+      </div>
+      <ul>
+        <li><strong>A file picker returns a token, not a path.</strong> The app
+            can read the one file a person chose, and never learns where it
+            lives or what sits beside it. The click is the permission.</li>
+        <li><strong>A token dies with the run.</strong> An app cannot store one
+            and come back for the same file later.</li>
+        <li><strong>Image decoding happens inside the sandbox.</strong> A
+            malformed photo attacks the app, not the operating system. Pixels
+            cross the boundary; parsers do not.</li>
+      </ul>
+    </section>
 
-    <h2>How much of the system is real?</h2>
-    <ul>
+    <section>
+      <p class="eyebrow">Every app we have shipped</p>
+      <h2>Ten apps, and where each one runs.</h2>
+      <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>App</th><th>Kind</th><th class="num">Bytes</th>
+              <th class="num">vs Reminders</th><th>What it is</th><th>Re-tested</th></tr>
+        </thead>
+        <tbody>
+        <tr><td><code>eo2</code></td><td>Ported</td><td class="num">77,484</td><td class="num">152&times;</td><td>Image viewer, from 2,677 lines of desktop source</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>grex</code></td><td>Ported</td><td class="num">54,084</td><td class="num">218&times;</td><td>Regex builder, from 5,396 lines</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>mdview</code></td><td>Ported</td><td class="num">51,963</td><td class="num">227&times;</td><td>Markdown viewer, from 4,863 lines</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>envelope</code></td><td>Database</td><td class="num">19,495</td><td class="num">605&times;</td><td>Budgeting, with real SQL and secure storage</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>rssfwd</code></td><td>Internet</td><td class="num">18,084</td><td class="num">652&times;</td><td>Feed forwarder over scoped HTTPS</td><td class="mid">—</td></tr>
+        <tr><td><code>ddh</code></td><td>Filesystem</td><td class="num">17,778</td><td class="num">664&times;</td><td>Duplicate-file finder</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>hexyl</code></td><td>Command line</td><td class="num">14,872</td><td class="num">793&times;</td><td>Hex viewer — byte-identical output to the original</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>savings</code></td><td>Everyday app</td><td class="num">13,791</td><td class="num">855&times;</td><td>A window, a form, state that survives a restart</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,148</td><td class="num">1,058&times;</td><td>Draws its own bar chart — no image files</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>bounce</code></td><td>2D game</td><td class="num">10,982</td><td class="num">1,074&times;</td><td>Gravity, collision, sprites, its own frame loop</td><td class="mid">Nightly</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="method">
+        &ldquo;Nightly&rdquo; means the app is re-run on macOS, Windows and Linux
+        every night and its real output is checked — not that it started, but
+        that the answers it prints are still right. <code>rssfwd</code> is
+        excluded on purpose: it reaches the internet, and a nightly test that
+        depends on someone else's server reports their uptime rather than our
+        runtime.
+      </p>
+    </section>
+
+    <section>
+      <p class="eyebrow">Coverage</p>
+      <h2>How much of the system is real.</h2>
+      <ul>
       <li>10 of 14 declared interfaces are fully implemented. 2 are declared and do nothing yet.</li>
       <li>17 of 17 declared widgets work on all three systems.</li>
-    </ul>
-    <p>
-      Both lines are generated from the runtime itself and the build fails if
-      they drift from what the code does. There is no "supported on Mac only"
-      footnote anywhere in the widget table.
-    </p>
+      </ul>
+      <p>
+        Both lines are generated from the runtime itself, not written by hand,
+        and the build fails if they drift from what the code does. There is no
+        &ldquo;supported on Mac only&rdquo; footnote anywhere in the widget table.
+      </p>
+    </section>
 
-    <h2>What Krate can do today</h2>
-    <ul>
-      <li><strong>2D games</strong> — gravity, collision, sprites, and an app's
-          own frame loop.</li>
-      <li><strong>Drawing</strong> — apps draw their own charts and graphics
-          with one rasterizer shared by all three systems.</li>
-      <li><strong>Sound</strong> — verified by a test that plays a tone through
-          real hardware.</li>
-      <li><strong>Photo and document viewers</strong> — file dialogs, image
-          decoding, scrolling text, search.</li>
-      <li><strong>Internet apps</strong> — HTTPS scoped to a single host and
-          port, not "the internet".</li>
-      <li><strong>Databases, secure storage, speech-to-text.</strong></li>
-    </ul>
+    <section>
+      <p class="eyebrow">Today</p>
+      <h2>What you can build right now.</h2>
+      <ul class="limits">
+        <li><strong>2D games</strong> — gravity, collision, sprites, an app's own
+            frame loop.</li>
+        <li><strong>Drawing</strong> — charts and graphics an app renders itself,
+            through one rasterizer shared by all three systems.</li>
+        <li><strong>Sound</strong> — verified by a test that plays a tone through
+            real hardware.</li>
+        <li><strong>Photo and document viewers</strong> — file dialogs, image
+            decoding, scrolling text, search.</li>
+        <li><strong>Internet apps</strong> — HTTPS scoped to a single host and
+            port, not &ldquo;the internet&rdquo;.</li>
+        <li><strong>Databases, secure storage, speech-to-text.</strong></li>
+      </ul>
+    </section>
 
-    <h2>What it cannot do yet</h2>
-    <p>Published for the same reason as everything above.</p>
-    <ul>
-      <li><strong>3D graphics.</strong> The interface exists and does nothing.</li>
-      <li><strong>Video.</strong> No decoder, no frame clock.</li>
-      <li><strong>Live connections.</strong> HTTPS works; streaming and
-          WebSockets do not, so no multiplayer and no live feeds.</li>
-      <li><strong>System menu bars.</strong> Apps use in-window buttons instead.</li>
-      <li><strong>Judgment inside the sandbox.</strong> When an AI builds an app,
-          Krate guarantees it cannot exceed the permissions you granted. It does
-          not guarantee it chose well inside them — we caught our own generated
-          password manager storing passwords in ordinary storage and fixed the
-          instructions that led it there.</li>
-    </ul>
+    <section>
+      <p class="eyebrow">Not yet</p>
+      <h2>What Krate cannot do.</h2>
+      <p>Published for the same reason as everything above it.</p>
+      <ul class="limits">
+        <li><strong>3D graphics.</strong> The interface is declared and does
+            nothing.</li>
+        <li><strong>Video.</strong> No decoder, no frame clock.</li>
+        <li><strong>Live connections.</strong> HTTPS works; streaming and
+            WebSockets do not — so no multiplayer and no live feeds.</li>
+        <li><strong>System menu bars.</strong> Apps use in-window buttons.</li>
+        <li><strong>Judgment inside the sandbox.</strong> When an AI writes the
+            app, Krate guarantees it cannot exceed the permissions you granted.
+            It does not guarantee it chose well inside them. We caught our own
+            generated password manager storing passwords in ordinary app data
+            rather than the system keychain, and fixed the instructions that led
+            it there.</li>
+      </ul>
+    </section>
 
-    <p style="margin-top:3rem">
-      <a href="/progress/">Every app, with sizes and nightly test status</a> ·
+    <div class="page-links">
+      <a href="/progress/">Where we are today</a>
+      <a href="https://github.com/incyashraj/krate">The code</a>
+      <a href="https://github.com/incyashraj/krate/actions">Three-system CI</a>
       <a href="/">Back to krate.tech</a>
-    </p>
+    </div>
   </main>
 </body>
 </html>
