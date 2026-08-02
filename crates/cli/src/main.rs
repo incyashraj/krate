@@ -1504,6 +1504,12 @@ fn validate_port_candidate(
              1. Indexing. `buf[i]` carries a bounds check that can panic even when \
              the index is provably fine. Use `.get(i)` / `.get_mut(i)` and handle \
              the `None`.\n\
+             1b. A `Vec` grown inside a loop -- `push` or `extend_from_slice` \
+             repeatedly -- keeps std's reallocation path reachable, and that path \
+             ends at the out-of-memory handler. `.get()` everywhere does not save \
+             it. If the size is known, build a fixed `[T; N]` instead; a mesh \
+             builder written both ways measured thirty-three wasi imports as a \
+             `Vec` and zero as an array.\n\
              2. `.to_string()` or `format!`, which route through the allocator's \
              out-of-memory handler. Copy `pure_string` from the samples.\n\
              \n\

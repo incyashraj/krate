@@ -123,6 +123,10 @@ check "chart" "quick" "drawn:yes"
 # through the redraw path. `animated:yes` failing means an app can no longer
 # drive its own frames, which is the difference between a viewer and a game.
 check "bounce" "quick" "animated:yes"
+# The first app that draws in 3D: nine cubes, one mesh, depth-tested and lit.
+# `rendered3d:yes` failing means the 3D path is broken on some system, which is
+# the one thing no unit test can tell us about all three at once.
+check "cubes" "quick" "rendered3d:yes"
 # A network app: fetches feeds over HTTPS with per-host grants.
 #
 # Deliberately not run here. Its work is a real HTTPS request, so a check that

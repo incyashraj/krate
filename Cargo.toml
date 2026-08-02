@@ -21,6 +21,7 @@ exclude = [
     "apps/krate-cat",
     "apps/krate-clock",
     "apps/krate-bounce",
+    "apps/krate-cubes",
     "apps/krate-chart",
     "apps/krate-hello-gui",
     "apps/krate-notes",
