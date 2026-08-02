@@ -5,5 +5,10 @@ pre-build = [
   # The file picker (rfd) needs the window-system headers, not just audio.
   # Without them this target fails to build and the release publishes with one
   # platform missing -- which nobody notices until an arm64 Linux user asks.
+  # libclang is for whisper-rs-sys (speech-to-text), which runs bindgen over
+  # the whisper.cpp headers. It is a host tool, so it is installed for the
+  # build machine's architecture rather than the target's -- asking for
+  # libclang-dev:$CROSS_DEB_ARCH gets the wrong one and the build still fails.
+  "apt-get --assume-yes install libclang-dev clang",
   "apt-get --assume-yes install libasound2-dev:$CROSS_DEB_ARCH libwayland-dev:$CROSS_DEB_ARCH libxkbcommon-dev:$CROSS_DEB_ARCH",
 ]
