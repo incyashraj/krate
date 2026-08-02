@@ -97,6 +97,13 @@ pub struct Phase3GuiHost {
     /// travel the image widget's proven path to all three systems.
     canvases:
         std::cell::RefCell<std::collections::BTreeMap<u64, (WindowId, WidgetId, CanvasSurface)>>,
+    /// Keys currently held down, for `events.key-held`.
+    ///
+    /// Tracked here rather than left to the app because the host is the only
+    /// side that sees a window lose focus. An app tracking presses itself
+    /// keeps running forever when someone alt-tabs mid-stride: the release
+    /// went to another window and never arrives.
+    held_keys: std::cell::RefCell<std::collections::BTreeSet<String>>,
     /// Bound 3D scenes, sharing the canvas id space so a scene and a canvas
     /// can never collide on one number.
     scenes: std::cell::RefCell<std::collections::BTreeMap<u64, (WindowId, WidgetId, Scene)>>,
@@ -125,6 +132,7 @@ impl Phase3GuiHost {
             headless_started: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             canvases: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            held_keys: std::cell::RefCell::new(std::collections::BTreeSet::new()),
             scenes: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             next_canvas_id: std::cell::Cell::new(1),
             audio_capture: AudioCaptureRuntime::default(),
@@ -330,6 +338,16 @@ impl Phase3GuiHost {
         }
     }
 
+    /// Forget held keys when a window loses focus.
+    ///
+    /// Every release from that moment goes to whatever window took focus, so
+    /// anything still marked held would stay held forever.
+    fn on_window_focus_changed(&self, focused: bool) {
+        if !focused {
+            self.held_keys.borrow_mut().clear();
+        }
+    }
+
     fn poll_one_event(&self) -> Result<Option<ui::types::Event>, UiDispatchError> {
         let dispatcher = self.dispatcher();
         for window in &self.windows {
@@ -383,6 +401,18 @@ impl Phase3GuiHost {
         // Attach keyboard focus to raw key samples and queue portable
         // key/text events. Raw samples never enter the queue directly.
         for sample in dispatcher.drain_raw_key_input() {
+            // Held-key state updates from the raw sample rather than the
+            // queued event, so a key is held the moment it goes down even if
+            // the app never drains the queue -- a game polling `key-held` in a
+            // tight frame loop may legitimately never call `poll`.
+            {
+                let mut held = self.held_keys.borrow_mut();
+                if sample.pressed {
+                    held.insert(sample.key.clone());
+                } else {
+                    held.remove(&sample.key);
+                }
+            }
             let focused = dispatcher.focused_widget(sample.window).ok().flatten();
             if let Ok(event) = krate_adapter_common::ui::KeyEvent::new(
                 sample.window,
@@ -449,6 +479,13 @@ impl Phase3GuiHost {
 
         // Skip host-side bookkeeping events that have no portable WIT shape.
         while let Some(event) = dispatcher.poll_event()? {
+            // A window losing focus means every release from now on goes
+            // somewhere else. Forget what was held, or an app polling
+            // `key-held` sees a key that will never come back up -- the player
+            // who alt-tabbed mid-stride returns to a character still running.
+            if let UiEvent::WindowFocused { focused, .. } = event {
+                self.on_window_focus_changed(focused);
+            }
             if let Some(event) = event_to_wit(event) {
                 return Ok(Some(event));
             }
@@ -939,6 +976,14 @@ impl ui::events::Host for Phase3GuiHost {
     fn poll(&mut self) -> wasmtime::Result<Option<ui::types::Event>> {
         self.poll_one_event()
             .map_err(|err| wasmtime::Error::msg(err.to_string()))
+    }
+
+    fn key_held(&mut self, key: String) -> wasmtime::Result<bool> {
+        // Pump first: a game that only ever calls `key-held` in a tight frame
+        // loop never drains the queue, and without this its input would be
+        // whatever arrived before the last `poll`.
+        let _ = self.poll_one_event();
+        Ok(self.held_keys.borrow().contains(&key))
     }
 
     fn wait(&mut self, timeout_millis: Option<u32>) -> wasmtime::Result<Option<ui::types::Event>> {
@@ -1443,6 +1488,34 @@ impl gfx::scene3d::Host for Phase3GuiHost {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
         };
         surface.triangles(&vertices, (tint.r, tint.g, tint.b, tint.a));
+        Ok(Ok(()))
+    }
+
+    fn place(
+        &mut self,
+        scene: u64,
+        vertices: Vec<f32>,
+        translate: Vec<f32>,
+        rotate_degrees: Vec<f32>,
+        scale: f32,
+        tint: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        if translate.len() != 3 || rotate_degrees.len() != 3 {
+            return Ok(Err(gfx::types::GfxError::Unsupported(
+                "place takes three floats for translate and three for rotate".to_string(),
+            )));
+        }
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.place(
+            &vertices,
+            [translate[0], translate[1], translate[2]],
+            [rotate_degrees[0], rotate_degrees[1], rotate_degrees[2]],
+            scale,
+            (tint.r, tint.g, tint.b, tint.a),
+        );
         Ok(Ok(()))
     }
 
@@ -1961,6 +2034,34 @@ mod tests {
             .expect("set_root call")
             .expect("a canvas may be the root");
         (host, window, widget)
+    }
+
+    #[test]
+    fn a_held_key_is_forgotten_when_the_window_loses_focus() {
+        // The bug this whole call exists to prevent. An app tracking presses
+        // itself never sees the release once focus moves away, so the player
+        // who alt-tabs mid-stride comes back to a character still running.
+        let mut host = headless_host();
+        host.held_keys.borrow_mut().insert("KeyW".to_string());
+        assert!(ui::events::Host::key_held(&mut host, "KeyW".to_string()).expect("query"));
+
+        // Losing focus clears everything; gaining it does not.
+        host.held_keys.borrow_mut().insert("KeyW".to_string());
+        host.on_window_focus_changed(false);
+        assert!(
+            !ui::events::Host::key_held(&mut host, "KeyW".to_string()).expect("query"),
+            "a key held when focus was lost must not stay held"
+        );
+
+        host.held_keys.borrow_mut().insert("KeyA".to_string());
+        host.on_window_focus_changed(true);
+        assert!(
+            ui::events::Host::key_held(&mut host, "KeyA".to_string()).expect("query"),
+            "gaining focus must not clear keys the person is holding"
+        );
+
+        // A key nobody pressed is not held.
+        assert!(!ui::events::Host::key_held(&mut host, "KeyZ".to_string()).expect("query"));
     }
 
     #[test]

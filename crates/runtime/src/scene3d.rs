@@ -235,6 +235,46 @@ impl Scene {
         }
     }
 
+    /// Draw triangles moved by a transform, without touching the input.
+    ///
+    /// Rotation is applied around the model's own origin before translation,
+    /// which is what an author means by "spin it and put it there". Doing it
+    /// the other way round orbits the object around the world origin instead,
+    /// and that difference is a whole evening of confusion for whoever hits it.
+    pub fn place(
+        &mut self,
+        vertices: &[f32],
+        translate: [f32; 3],
+        rotate_degrees: [f32; 3],
+        scale: f32,
+        tint: (f32, f32, f32, f32),
+    ) {
+        let (sx, cx) = rotate_degrees[0].to_radians().sin_cos();
+        let (sy, cy) = rotate_degrees[1].to_radians().sin_cos();
+        let (sz, cz) = rotate_degrees[2].to_radians().sin_cos();
+
+        let transform = |v: Vec3| -> Vec3 {
+            let s = if scale.is_finite() && scale != 0.0 {
+                scale
+            } else {
+                1.0
+            };
+            let (x, y, z) = (v.x * s, v.y * s, v.z * s);
+            // X, then Y, then Z, matching the order the contract states.
+            let (y, z) = (y * cx - z * sx, y * sx + z * cx);
+            let (x, z) = (x * cy + z * sy, -x * sy + z * cy);
+            let (x, y) = (x * cz - y * sz, x * sz + y * cz);
+            Vec3::new(x + translate[0], y + translate[1], z + translate[2])
+        };
+
+        for chunk in vertices.chunks_exact(9) {
+            let a = transform(Vec3::new(chunk[0], chunk[1], chunk[2]));
+            let b = transform(Vec3::new(chunk[3], chunk[4], chunk[5]));
+            let c = transform(Vec3::new(chunk[6], chunk[7], chunk[8]));
+            self.triangle(a, b, c, tint);
+        }
+    }
+
     /// The colour buffer in the image pipeline's format.
     pub fn to_image(&self) -> Result<ImagePixels, UiAdapterError> {
         let mut rgba = Vec::with_capacity(self.colour.len() * 4);
@@ -441,6 +481,81 @@ mod tests {
                 secs * 1000.0 / frames as f64
             );
         }
+    }
+
+    #[test]
+    fn a_placed_mesh_moves_without_the_caller_rebuilding_it() {
+        // The whole point: one mesh, many positions, and the input untouched
+        // so an app can keep a single copy.
+        let mesh = facing_triangle();
+        let mut scene = Scene::new(64, 64).expect("scene");
+        scene.clear(0xFF00_0000);
+        scene.place(
+            &mesh,
+            [2.5, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            1.0,
+            (1.0, 0.0, 0.0, 1.0),
+        );
+        let image = scene.to_image().expect("image");
+
+        // Moved right, so the middle is empty and the right side is not.
+        assert_eq!(
+            pixel(&image, 32, 34),
+            [0, 0, 0, 255],
+            "the mesh should have moved out of the middle"
+        );
+        assert!(
+            image.rgba.chunks(4).any(|px| px[0] > 60),
+            "and it should still be visible somewhere"
+        );
+        assert_eq!(
+            mesh,
+            facing_triangle(),
+            "the caller's mesh must be untouched"
+        );
+    }
+
+    #[test]
+    fn rotation_happens_around_the_model_not_the_world() {
+        // Rotating around the world origin would swing a translated object
+        // across the scene. Rotating a triangle sitting at the origin must
+        // leave it at the origin.
+        let mut scene = Scene::new(64, 64).expect("scene");
+        scene.clear(0xFF00_0000);
+        scene.place(
+            &facing_triangle(),
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 180.0],
+            1.0,
+            (0.0, 1.0, 0.0, 1.0),
+        );
+        let image = scene.to_image().expect("image");
+        // Flipped upside down, so ink is now above centre rather than below.
+        assert!(
+            pixel(&image, 32, 28)[1] > 60,
+            "a spun triangle stays where it was put"
+        );
+    }
+
+    #[test]
+    fn a_zero_scale_does_not_collapse_the_model_into_nothing() {
+        // A guest sweeping a scale through zero -- an object shrinking away --
+        // would otherwise produce degenerate triangles every frame.
+        let mut scene = Scene::new(32, 32).expect("scene");
+        scene.clear(0xFF00_0000);
+        scene.place(
+            &facing_triangle(),
+            [0.0; 3],
+            [0.0; 3],
+            0.0,
+            (1.0, 1.0, 1.0, 1.0),
+        );
+        let image = scene.to_image().expect("image");
+        assert!(
+            image.rgba.chunks(4).any(|px| px[0] > 60),
+            "a zero scale falls back to 1.0 rather than drawing nothing"
+        );
     }
 
     #[test]

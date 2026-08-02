@@ -140,6 +140,19 @@ interface scene3d {
   /// culling is describing a closed mesh, and the host cannot know that.
   triangles: func(scene: u64, vertices: list<f32>, tint: color) -> result<_, gfx-error>;
 
+  /// Draw triangles positioned by a transform, without moving the vertices.
+  ///
+  /// `translate` is x,y,z. `rotate-degrees` is around x, y and z in that
+  /// order. `scale` is uniform. The mesh itself is sent unchanged, so an app
+  /// can keep one cube and place a hundred of them.
+  ///
+  /// This exists because the alternative is a matrix multiply per vertex on
+  /// the guest side, every frame, with the result crossing the sandbox
+  /// boundary -- the most expensive place to put it. A tree of a thousand
+  /// leaves is one mesh and a thousand cheap calls rather than a thousand
+  /// rebuilt vertex lists.
+  place: func(scene: u64, vertices: list<f32>, translate: list<f32>, rotate-degrees: list<f32>, scale: f32, tint: color) -> result<_, gfx-error>;
+
   /// Publish the frame to the widget. Until this, nothing is shown.
   present: func(scene: u64) -> result<_, gfx-error>;
 }

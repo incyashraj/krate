@@ -357,6 +357,18 @@ interface events {
   poll: func() -> option<event>;
   /// Wait until the next event arrives or the timeout expires.
   wait: func(timeout-millis: option<u32>) -> option<event>;
+
+  /// Whether a key is held down right now.
+  ///
+  /// A game asks "is W down", not "was W pressed". An app can track this from
+  /// press and release events, and every app that tries gets the same bug: the
+  /// window loses focus while a key is held, the release is delivered to
+  /// somebody else, and the player keeps running forever. The host sees focus
+  /// changes and clears held keys on one, so this is the only place the
+  /// question can be answered correctly.
+  ///
+  /// Key names are the same ones `key-event` reports.
+  key-held: func(key: string) -> bool;
 }
 
 /// System dialog calls.
