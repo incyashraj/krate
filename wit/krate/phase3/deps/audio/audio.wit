@@ -49,6 +49,31 @@ interface playback {
   stop: func(stream-id: u64) -> result<_, audio-error>;
   /// Write interleaved little-endian audio bytes.
   write: func(stream-id: u64, bytes: list<u8>) -> result<u32, audio-error>;
+
+  /// Load a short sound once and get a handle to play it with.
+  ///
+  /// For sound effects: a footstep, a shot, a click. Held in memory decoded,
+  /// so playing one costs no device call. Opening a stream takes about two
+  /// milliseconds -- an eighth of a frame at sixty per second -- which a game
+  /// firing a sound on the frame it happens cannot afford.
+  ///
+  /// The bytes are interleaved little-endian samples in the stream's own
+  /// format, exactly like `write`.
+  load-sound: func(stream-id: u64, bytes: list<u8>) -> result<u64, audio-error>;
+
+  /// Start a loaded sound playing, mixed with whatever else is sounding.
+  ///
+  /// Returns immediately; the sound plays to its end on its own. Playing the
+  /// same handle again while it is still sounding starts a second copy, which
+  /// is what makes rapid fire sound like rapid fire rather than one long note.
+  ///
+  /// `gain` scales it: 1.0 is as loaded, 0.5 is half as loud. Mixing is
+  /// additive and clamped, so a dozen sounds at once distort rather than wrap
+  /// around into noise.
+  play-sound: func(stream-id: u64, sound: u64, gain: f32) -> result<_, audio-error>;
+
+  /// Stop every copy of a sound that is currently playing.
+  stop-sound: func(stream-id: u64, sound: u64) -> result<_, audio-error>;
 }
 
 /// Audio capture calls.

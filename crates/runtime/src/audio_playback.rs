@@ -20,6 +20,19 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 /// So a full ring accepts fewer bytes and the guest learns it from `write`'s
 /// return value: backpressure, not loss.
 const MAX_RING_SAMPLES: usize = 48_000 * 2 * 10;
+/// Largest device callback this mixes in one pass.
+///
+/// A fixed scratch buffer because the callback runs on a real-time thread and
+/// must not allocate. 8192 samples is far beyond any normal callback -- 1024
+/// is typical -- and anything past it is filled with silence rather than
+/// stale audio.
+const MAX_CALLBACK_FRAMES: usize = 8_192;
+/// Most sound effects that may sound at once.
+///
+/// Beyond this a mix is noise anyway, and the bound is what stops an app that
+/// calls `play-sound` in a loop from growing the voice list until the
+/// real-time callback cannot keep up.
+const MAX_VOICES: usize = 64;
 const MIN_SAMPLE_RATE: u32 = 8_000;
 const MAX_SAMPLE_RATE: u32 = 192_000;
 const MAX_CHANNELS: u16 = 8;
@@ -52,6 +65,24 @@ struct PlaybackStream {
     stream_error: Arc<Mutex<Option<String>>>,
     converter: WriteConverter,
     started: bool,
+    /// Loaded sound effects, in the device's own sample layout so playing one
+    /// costs no conversion.
+    sounds: Arc<Mutex<Vec<Arc<Vec<f32>>>>>,
+    /// Sounds currently playing, shared with the device callback.
+    voices: Arc<Mutex<Vec<Voice>>>,
+}
+
+/// One sound effect in flight.
+///
+/// A copy per play rather than a cursor per sound, so firing the same shot
+/// twice in quick succession sounds like two shots rather than one restarting.
+struct Voice {
+    /// Which loaded sound this is, so `stop-sound` can find every copy.
+    sound: u64,
+    samples: Arc<Vec<f32>>,
+    /// How far through, in samples.
+    at: usize,
+    gain: f32,
 }
 
 pub struct AudioPlaybackRuntime {
@@ -83,6 +114,8 @@ impl AudioPlaybackRuntime {
         let device_channels = stream_config.channels;
 
         let ring: Arc<Mutex<VecDeque<f32>>> = Arc::new(Mutex::new(VecDeque::new()));
+        let sounds: Arc<Mutex<Vec<Arc<Vec<f32>>>>> = Arc::new(Mutex::new(Vec::new()));
+        let voices: Arc<Mutex<Vec<Voice>>> = Arc::new(Mutex::new(Vec::new()));
         let stream_error = Arc::new(Mutex::new(None));
         let callback_error = stream_error.clone();
         let error_callback = move |error: cpal::Error| {
@@ -97,10 +130,11 @@ impl AudioPlaybackRuntime {
         let stream = match device_config.sample_format() {
             cpal::SampleFormat::I16 => {
                 let ring = ring.clone();
+                let voices = voices.clone();
                 device.build_output_stream(
                     stream_config,
                     move |out: &mut [i16], _| {
-                        drain_into(&ring, out, |sample| {
+                        drain_into(&ring, &voices, out, |sample| {
                             (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16
                         });
                     },
@@ -110,10 +144,11 @@ impl AudioPlaybackRuntime {
             }
             cpal::SampleFormat::U16 => {
                 let ring = ring.clone();
+                let voices = voices.clone();
                 device.build_output_stream(
                     stream_config,
                     move |out: &mut [u16], _| {
-                        drain_into(&ring, out, |sample| {
+                        drain_into(&ring, &voices, out, |sample| {
                             ((sample.clamp(-1.0, 1.0) + 1.0) * 32_767.5) as u16
                         });
                     },
@@ -123,10 +158,11 @@ impl AudioPlaybackRuntime {
             }
             cpal::SampleFormat::F32 => {
                 let ring = ring.clone();
+                let voices = voices.clone();
                 device.build_output_stream(
                     stream_config,
                     move |out: &mut [f32], _| {
-                        drain_into(&ring, out, |sample| sample.clamp(-1.0, 1.0));
+                        drain_into(&ring, &voices, out, |sample| sample.clamp(-1.0, 1.0));
                     },
                     error_callback,
                     None,
@@ -152,6 +188,8 @@ impl AudioPlaybackRuntime {
                 stream_error,
                 converter: WriteConverter::new(config, device_rate, device_channels),
                 started: false,
+                sounds: sounds.clone(),
+                voices: voices.clone(),
             },
         );
         Ok(stream_id)
@@ -183,6 +221,88 @@ impl AudioPlaybackRuntime {
         Ok(())
     }
 
+    /// Decode a sound effect once and keep it ready to play.
+    pub fn load_sound(&mut self, stream_id: u64, bytes: &[u8]) -> Result<u64, PlaybackError> {
+        let stream = self
+            .streams
+            .get_mut(&stream_id)
+            .ok_or(PlaybackError::InvalidStream)?;
+        let samples = stream.converter.decode(bytes);
+        if samples.is_empty() {
+            return Err(PlaybackError::InvalidConfig(
+                "a sound needs at least one whole frame of samples".to_string(),
+            ));
+        }
+        let mut sounds = stream
+            .sounds
+            .lock()
+            .map_err(|_| PlaybackError::Platform("sound table lock poisoned".to_string()))?;
+        sounds.push(Arc::new(samples));
+        // Handles start at one so zero stays an obviously invalid value.
+        Ok(sounds.len() as u64)
+    }
+
+    /// Start a loaded sound, mixed with whatever else is playing.
+    pub fn play_sound(
+        &mut self,
+        stream_id: u64,
+        sound: u64,
+        gain: f32,
+    ) -> Result<(), PlaybackError> {
+        let stream = self
+            .streams
+            .get_mut(&stream_id)
+            .ok_or(PlaybackError::InvalidStream)?;
+        let samples = {
+            let sounds = stream
+                .sounds
+                .lock()
+                .map_err(|_| PlaybackError::Platform("sound table lock poisoned".to_string()))?;
+            let index = (sound as usize)
+                .checked_sub(1)
+                .ok_or(PlaybackError::InvalidStream)?;
+            sounds
+                .get(index)
+                .cloned()
+                .ok_or(PlaybackError::InvalidStream)?
+        };
+        let mut voices = stream
+            .voices
+            .lock()
+            .map_err(|_| PlaybackError::Platform("voice list lock poisoned".to_string()))?;
+        // A bound on simultaneous voices: without one, an app looping
+        // `play-sound` would grow this list until memory ran out, and the
+        // real-time callback would slow down with every added voice.
+        if voices.len() >= MAX_VOICES {
+            return Ok(());
+        }
+        voices.push(Voice {
+            sound,
+            samples,
+            at: 0,
+            gain: if gain.is_finite() {
+                gain.clamp(0.0, 4.0)
+            } else {
+                1.0
+            },
+        });
+        Ok(())
+    }
+
+    /// Stop every copy of one sound.
+    pub fn stop_sound(&mut self, stream_id: u64, sound: u64) -> Result<(), PlaybackError> {
+        let stream = self
+            .streams
+            .get_mut(&stream_id)
+            .ok_or(PlaybackError::InvalidStream)?;
+        let mut voices = stream
+            .voices
+            .lock()
+            .map_err(|_| PlaybackError::Platform("voice list lock poisoned".to_string()))?;
+        voices.retain(|voice| voice.sound != sound);
+        Ok(())
+    }
+
     /// Queue interleaved little-endian audio bytes; returns how many were
     /// accepted. Only whole frames are consumed, so the guest keeps the
     /// remainder and writes it again with the next chunk.
@@ -206,25 +326,53 @@ impl AudioPlaybackRuntime {
 /// Runs on the real-time audio thread: one try_lock, no allocation. If the
 /// guest's thread holds the lock right now, this callback plays silence rather
 /// than blocking — a missed millisecond of audio beats a stalled device.
-fn drain_into<T>(ring: &Arc<Mutex<VecDeque<f32>>>, out: &mut [T], convert: impl Fn(f32) -> T)
-where
+fn drain_into<T>(
+    ring: &Arc<Mutex<VecDeque<f32>>>,
+    voices: &Arc<Mutex<Vec<Voice>>>,
+    out: &mut [T],
+    convert: impl Fn(f32) -> T,
+) where
     T: Copy,
 {
-    let silence = convert(0.0);
-    match ring.try_lock() {
-        Ok(mut ring) => {
-            for slot in out.iter_mut() {
-                *slot = match ring.pop_front() {
-                    Some(sample) => convert(sample),
-                    None => silence,
-                };
-            }
+    // Streamed audio first, then sound effects mixed on top. Both use
+    // try_lock: this is the real-time thread, and a missed millisecond of
+    // audio beats a stalled device.
+    let mut mixed = [0.0_f32; MAX_CALLBACK_FRAMES];
+    let count = out.len().min(MAX_CALLBACK_FRAMES);
+
+    if let Ok(mut ring) = ring.try_lock() {
+        for slot in mixed.iter_mut().take(count) {
+            *slot = ring.pop_front().unwrap_or(0.0);
         }
-        Err(_) => {
-            for slot in out.iter_mut() {
-                *slot = silence;
+    }
+
+    if let Ok(mut voices) = voices.try_lock() {
+        for voice in voices.iter_mut() {
+            let remaining = voice.samples.len().saturating_sub(voice.at);
+            let take = remaining.min(count);
+            for (slot, sample) in mixed
+                .iter_mut()
+                .take(take)
+                .zip(voice.samples[voice.at..].iter())
+            {
+                // Additive, clamped at conversion: a dozen sounds at once
+                // distort rather than wrapping around into noise, which is
+                // what integer overflow would sound like.
+                *slot += sample * voice.gain;
             }
+            voice.at += take;
         }
+        // Finished voices are dropped here rather than in the caller, so a
+        // game that never stops anything does not accumulate them.
+        voices.retain(|voice| voice.at < voice.samples.len());
+    }
+
+    for (slot, sample) in out.iter_mut().zip(mixed.iter()) {
+        *slot = convert(*sample);
+    }
+    // Any tail beyond the scratch buffer is silence rather than stale audio.
+    for slot in out.iter_mut().skip(count) {
+        *slot = convert(0.0);
     }
 }
 
@@ -261,6 +409,48 @@ impl WriteConverter {
             PlaybackSampleFormat::PcmS16 => 2,
             PlaybackSampleFormat::Float32 => 4,
         }
+    }
+
+    /// Turn guest bytes into device-layout samples, for a stored sound.
+    ///
+    /// Reuses the same resampling and channel mapping as `write`, so a sound
+    /// effect and a stream at the same rate come out identical -- a footstep
+    /// should not sound different depending on which call played it.
+    fn decode(&mut self, bytes: &[u8]) -> Vec<f32> {
+        let frame_bytes = self.bytes_per_sample() * self.guest_channels;
+        let whole = bytes.len() / frame_bytes.max(1);
+        let mut out = Vec::with_capacity(whole * self.device_channels);
+        let mut frame = vec![0.0_f32; self.guest_channels];
+        // A private accumulator: decoding a sound must not disturb the phase
+        // of the stream that is playing.
+        let mut accumulator = 0_u64;
+
+        for index in 0..whole {
+            let start = index * frame_bytes;
+            for (channel, slot) in frame.iter_mut().enumerate() {
+                let at = start + channel * self.bytes_per_sample();
+                *slot = match self.guest_format {
+                    PlaybackSampleFormat::PcmS16 => {
+                        let Some(pair) = bytes.get(at..at + 2) else {
+                            continue;
+                        };
+                        f32::from(i16::from_le_bytes([pair[0], pair[1]])) / f32::from(i16::MAX)
+                    }
+                    PlaybackSampleFormat::Float32 => {
+                        let Some(quad) = bytes.get(at..at + 4) else {
+                            continue;
+                        };
+                        f32::from_le_bytes([quad[0], quad[1], quad[2], quad[3]])
+                    }
+                };
+            }
+            accumulator += u64::from(self.device_rate);
+            while accumulator >= u64::from(self.guest_rate) {
+                accumulator -= u64::from(self.guest_rate);
+                push_device_frame(&mut out, &frame, self.device_channels);
+            }
+        }
+        out
     }
 
     /// Convert and queue as many whole frames as fit; return bytes consumed.
@@ -496,7 +686,8 @@ mod tests {
     fn the_device_callback_fills_silence_on_underrun() {
         let ring = Arc::new(Mutex::new(VecDeque::from(vec![0.5_f32, -0.5])));
         let mut out = [123_i16; 4];
-        drain_into(&ring, &mut out, |sample| {
+        let voices = Arc::new(Mutex::new(Vec::new()));
+        drain_into(&ring, &voices, &mut out, |sample| {
             (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16
         });
         assert_eq!(out[0], (0.5 * f32::from(i16::MAX)) as i16);

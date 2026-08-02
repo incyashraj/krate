@@ -18,13 +18,13 @@ not be drawn into. That pair reads `works` on both tables now.
 | Interface | Functions | State |
 | --- | --- | --- |
 | `audio.capture` | 4 | **works** |
-| `audio.playback` | 4 | **works** |
+| `audio.playback` | 7 | **works** |
 | `gfx.canvas2d` | 7 | **works** |
-| `gfx.scene3d` | 6 | **works** |
-| `speech.transcription` | 24 | **works** |
+| `gfx.scene3d` | 10 | **works** |
+| `speech.transcription` | 25 | **works** |
 | `ui.clipboard` | 2 | **works** |
 | `ui.dialog` | 3 | **works** |
-| `ui.events` | 2 | **works** |
+| `ui.events` | 3 | **works** |
 | `ui.image` | 2 | **works** |
 | `ui.launcher` | 1 | **works** |
 | `ui.menu` | 1 | **not implemented** |

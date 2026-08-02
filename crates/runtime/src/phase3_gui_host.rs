@@ -1680,6 +1680,64 @@ impl audio::playback::Host for Phase3GuiHost {
         Ok(self.audio_playback.stop(stream_id).map_err(playback_error))
     }
 
+    fn load_sound(
+        &mut self,
+        stream_id: u64,
+        bytes: Vec<u8>,
+    ) -> wasmtime::Result<Result<u64, audio::types::AudioError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Playback))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
+        Ok(self
+            .audio_playback
+            .load_sound(stream_id, &bytes)
+            .map_err(playback_error))
+    }
+
+    fn play_sound(
+        &mut self,
+        stream_id: u64,
+        sound: u64,
+        gain: f32,
+    ) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Playback))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
+        Ok(self
+            .audio_playback
+            .play_sound(stream_id, sound, gain)
+            .map_err(playback_error))
+    }
+
+    fn stop_sound(
+        &mut self,
+        stream_id: u64,
+        sound: u64,
+    ) -> wasmtime::Result<Result<(), audio::types::AudioError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Audio(AudioCall::Playback))
+            .is_err()
+        {
+            return Ok(Err(audio_permission_denied()));
+        }
+        Ok(self
+            .audio_playback
+            .stop_sound(stream_id, sound)
+            .map_err(playback_error))
+    }
+
     fn write(
         &mut self,
         stream_id: u64,
