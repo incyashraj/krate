@@ -1073,6 +1073,26 @@ jobs:
           command -v wasm-tools >/dev/null || cargo install wasm-tools --locked
           sh scripts/check-recommended-crates.sh
 
+  # The one target no other job builds. It compiles inside a `cross` container
+  # that does not inherit the runner's packages, so a dependency needing a
+  # system library fails there and nowhere else -- which is how an rc5 release
+  # got as far as tagging before whisper-rs-sys reported no libclang. Nightly
+  # rather than per-push: it is slow, and the failure it catches arrives with a
+  # new dependency rather than with ordinary edits.
+  cross-build-arm64-linux:
+    name: Cross-build (aarch64 Linux)
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.91.1
+      - name: Install cross
+        run: cargo install cross --locked
+      - name: Build the release binary the way the release does
+        run: cross build --release --target aarch64-unknown-linux-gnu -p krate-cli
+
   port-regression:
     name: Re-port the proven programs
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.full) }}
