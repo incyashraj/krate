@@ -168,7 +168,25 @@ impl<'a> Phase3UiDispatcher<'a> {
 
     pub fn create_window(&self, options: WindowOptions) -> UiDispatchResult<WindowId> {
         self.check_window_access()?;
-        Ok(self.adapter.create_window(options)?)
+        let id = self.adapter.create_window(options)?;
+        // A created window is a window somebody can see. Every adapter kept
+        // create and show as separate steps, and no app ever called show --
+        // they create a window and start drawing. macOS additionally needs the
+        // process promoted out of its background activation policy, which its
+        // show path does and its create path does not. The result shipped: on
+        // every platform, `krate run` on a GUI app ran forever with a window
+        // that existed and was never on screen.
+        //
+        // Shown here, at the one point every adapter sits behind, rather than
+        // patched into each adapter. `show` stays available as the way to
+        // re-front a window; it is no longer the price of being visible.
+        if let Err(error) = self.adapter.show_window(id) {
+            // A window that cannot be shown is a window that failed to open.
+            // Failing loudly here is the point -- silence was the bug.
+            let _ = self.adapter.close_window(id);
+            return Err(error.into());
+        }
+        Ok(id)
     }
 
     pub fn show_window(&self, id: WindowId) -> UiDispatchResult<()> {
@@ -576,6 +594,9 @@ mod tests {
             dispatcher.drain_events().expect("events"),
             vec![
                 UiEvent::WindowCreated(id),
+                // Created windows are shown by the dispatcher itself now; the
+                // second Shown below is this test's own explicit show call.
+                UiEvent::WindowShown(id),
                 UiEvent::WindowShown(id),
                 UiEvent::Resized { id, size: resized },
                 UiEvent::RedrawRequested(id),
@@ -600,6 +621,12 @@ mod tests {
             dispatcher.poll_event().expect("poll"),
             Some(UiEvent::WindowCreated(id))
         );
+        assert_eq!(
+            dispatcher.poll_event().expect("poll"),
+            Some(UiEvent::WindowShown(id))
+        );
+        // The dispatcher shows on create, and this test also called show:
+        // two Shown events, in FIFO order, then empty.
         assert_eq!(
             dispatcher.poll_event().expect("poll"),
             Some(UiEvent::WindowShown(id))
@@ -655,6 +682,7 @@ mod tests {
             dispatcher.drain_events().expect("events"),
             vec![
                 UiEvent::WindowCreated(id),
+                UiEvent::WindowShown(id),
                 UiEvent::WindowFocused { id, focused: true },
                 UiEvent::Resized { id, size: resized },
                 UiEvent::WindowCloseRequested(id),
@@ -684,6 +712,7 @@ mod tests {
             dispatcher.drain_events().expect("events"),
             vec![
                 UiEvent::WindowCreated(id),
+                UiEvent::WindowShown(id),
                 UiEvent::ThemeChanged { theme: Theme::Dark },
                 UiEvent::ScaleChanged { id, scale: 2.0 },
             ]
@@ -714,7 +743,34 @@ mod tests {
         assert_eq!(window.title, "Krate host adapter");
         assert_eq!(
             dispatcher.drain_events().expect("events"),
-            vec![UiEvent::WindowCreated(id), UiEvent::WindowShown(id)]
+            vec![
+                UiEvent::WindowCreated(id),
+                // Shown by the dispatcher on create, then by the explicit call.
+                UiEvent::WindowShown(id),
+                UiEvent::WindowShown(id),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_created_window_is_already_visible() {
+        // The regression this pins: every adapter treated create and show as
+        // separate steps, no app ever called show, and `krate run` on a GUI
+        // app looped forever with a window that existed off screen on every
+        // platform. Create alone must leave the window shown.
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let adapter = DraftUiAdapter::default();
+        let size = WindowSize::new(320, 240).expect("size");
+        let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+
+        let id = dispatcher
+            .create_window(WindowOptions::new("Visible", size).expect("options"))
+            .expect("create window");
+
+        let events = dispatcher.drain_events().expect("events");
+        assert!(
+            events.contains(&UiEvent::WindowShown(id)),
+            "create alone must show the window; saw {events:?}"
         );
     }
 
@@ -879,6 +935,7 @@ mod tests {
             dispatcher.drain_events().expect("events"),
             vec![
                 UiEvent::WindowCreated(window),
+                UiEvent::WindowShown(window),
                 UiEvent::WidgetRootSet {
                     window,
                     root: WidgetId::new(1).expect("root"),
@@ -1062,6 +1119,7 @@ mod tests {
             dispatcher.drain_events().expect("events"),
             vec![
                 UiEvent::WindowCreated(window),
+                UiEvent::WindowShown(window),
                 UiEvent::WidgetRootSet {
                     window,
                     root: WidgetId::new(1).expect("root"),

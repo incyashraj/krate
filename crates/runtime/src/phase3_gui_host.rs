@@ -12,8 +12,8 @@
 use krate_adapter_common::painter::drawn_kind;
 use krate_adapter_common::ui::{
     kind_is_selectable, ImagePixels, Modifiers, PointerButton, Theme, UiAdapterError, UiEvent,
-    WidgetId, WidgetKind, WidgetNode, WidgetPlacement, WidgetStyle, WindowId, WindowOptions,
-    WindowSize,
+    WidgetId, WidgetKind, WidgetNode, WidgetPlacement, WidgetStyle, WindowBackendKind, WindowId,
+    WindowOptions, WindowSize,
 };
 use krate_layout::{absolute_rect, LayoutViewport};
 use std::sync::Arc;
@@ -123,13 +123,22 @@ impl Phase3GuiHost {
     /// Create the GUI host with the requested host UI mode.
     pub fn new(guard: UapiGuard, mode: Phase3HostUiMode) -> Result<Self, UiDispatchError> {
         let runtime = Phase3UiRuntime::try_with_host_adapter_mode(guard, mode)?;
+        // Read before `runtime` moves into the struct below.
+        let headless_backend =
+            runtime.adapter_info().window_backend == WindowBackendKind::HeadlessDraft;
         Ok(Self {
             runtime,
             chosen_files: Default::default(),
             windows: Vec::new(),
             scroll_offsets: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             native_text: std::cell::RefCell::new(std::collections::BTreeMap::new()),
-            headless: matches!(mode, Phase3HostUiMode::HeadlessDraft),
+            // Judged by the adapter actually serving this run, not the mode
+            // that was requested. NativeWithHeadlessFallback can land on the
+            // headless adapter, and deriving this flag from the request meant
+            // that run got neither a window nor the headless exit budget: it
+            // looped forever, invisible and silent, which is exactly what a
+            // person saw on their first `krate run`.
+            headless: headless_backend,
             idle_waits: std::cell::Cell::new(0),
             headless_started: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
@@ -175,6 +184,24 @@ impl Phase3GuiHost {
     /// Independent of how the guest waits, which is the point: the idle-wait
     /// counter is defeated by any timeout, and an animated app always passes
     /// one.
+    /// Tick every native window's event loop once, without blocking.
+    ///
+    /// The adapters route real input, close clicks and redraws through this,
+    /// and it was never called: `events.wait` slept between polls of a queue
+    /// nothing native ever fed. A window that existed but took no input and
+    /// ignored its close button was the result. Headless runs skip it -- the
+    /// draft adapter has no native loop to tick.
+    fn pump_native_windows(&self) {
+        if self.headless {
+            return;
+        }
+        for id in &self.windows {
+            if let Err(error) = self.dispatcher().pump_event_loop_once(*id) {
+                tracing::debug!(?error, window = id.get(), "native event pump failed");
+            }
+        }
+    }
+
     fn headless_budget_close_request(&self) -> Option<ui::types::Event> {
         if !self.headless {
             return None;
@@ -793,9 +820,21 @@ impl ui::window::Host for Phase3GuiHost {
             Err(err) => return Ok(Err(ui::types::UiError::Platform(err.to_string()))),
         };
 
+        let title_note = options.title.clone();
         match self.dispatcher().create_window(options) {
             Ok(id) => {
                 self.windows.push(id);
+                // One line to stderr, native backends only. A person running a
+                // GUI app from a terminal watched a silent prompt for minutes
+                // because the window was invisible; had it said this, the gap
+                // between "opened" and "nothing on my screen" would have been
+                // one glance wide. Stderr so JSON on stdout stays parseable,
+                // and never on the headless path so replay logs stay quiet.
+                if !self.headless {
+                    eprintln!(
+                        "krate: opened window {title_note:?} (close it or press Ctrl-C to quit)"
+                    );
+                }
                 Ok(Ok(id.get()))
             }
             Err(err) => Ok(Err(dispatch_error_to_ui_error(err))),
@@ -977,6 +1016,7 @@ impl ui::tree::Host for Phase3GuiHost {
 
 impl ui::events::Host for Phase3GuiHost {
     fn poll(&mut self) -> wasmtime::Result<Option<ui::types::Event>> {
+        self.pump_native_windows();
         self.poll_one_event()
             .map_err(|err| wasmtime::Error::msg(err.to_string()))
     }
@@ -1017,6 +1057,7 @@ impl ui::events::Host for Phase3GuiHost {
         }
 
         loop {
+            self.pump_native_windows();
             let event = self
                 .poll_one_event()
                 .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
