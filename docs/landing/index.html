@@ -9,7 +9,7 @@
        once. Without it the same page is reachable at two hosts and search
        engines have to guess which one is real. -->
   <link rel="canonical" href="https://krate.tech/" />
-  <meta property="og:title" content="Krate — The cloud for AI-made software" />
+  <meta property="og:title" content="Krate: the cloud for AI-made software" />
   <meta property="og:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/" />
@@ -18,10 +18,10 @@
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Krate turns an AI request into one app file for Mac, Windows, and Linux." />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Krate — The cloud for AI-made software" />
+  <meta name="twitter:title" content="Krate: the cloud for AI-made software" />
   <meta name="twitter:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
   <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
-  <title>Krate — The cloud for AI-made software | One app file for Mac, Windows, Linux</title>
+  <title>Krate: the cloud for AI-made software | One app file for Mac, Windows, Linux</title>
   <link rel="icon" href="./krate-favicon.png" />
   <link rel="apple-touch-icon" href="./krate-favicon.png" />
   <link rel="stylesheet" href="./krate.css" />
@@ -260,7 +260,7 @@
         <div class="section-heading">
           <p class="label">Measured</p>
           <h2>318 apps fit inside one photo.</h2>
-          <p>A complete 2D game — gravity, collision, sprites — is 11 KB. Not 11 megabytes, and the same file runs on Mac, Windows, and Linux. It is that small because nothing is bundled inside it that your computer already has.</p>
+          <p>A complete 2D game, with gravity, collision and sprites, is 11 KB. Not 11 megabytes, and the same file runs on Mac, Windows, and Linux. It is that small because nothing is bundled inside it that your computer already has.</p>
           <!-- The link belongs here, next to the surprising claim, because
                this is the sentence that makes a reader want to check. -->
           <p><a href="/reports/">Every measurement, how it was taken, and what still does not work →</a></p>
@@ -275,7 +275,7 @@
         <figure class="chart-figure">
           <div class="chart-row">
             <svg class="chart" viewBox="0 0 740 340" role="img"
-                 aria-label="How much slower Krate is than native, by how much work the app does. Starts at 5.25 times slower on a 3 millisecond task and falls to 1.00 times — the same speed as native — on a 700 millisecond task.">
+                 aria-label="How much slower Krate is than native, by how much work the app does. Starts at 5.25 times slower on a 3 millisecond task and falls to 1.00 times, the same speed as native, on a 700 millisecond task.">
               <defs>
                 <linearGradient id="gapFill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stop-color="#6cf4d7" stop-opacity=".22" />
@@ -316,9 +316,9 @@
 
               <hr class="callout-rule" />
 
-              <p class="callout-lead">A checklist app takes</p>
-              <p class="callout-figure">925<span>&times;</span></p>
-              <p class="callout-sub">less space than the Reminders app on your Mac<a href="#note-size" class="chart-star" aria-label="See note about size">*</a></p>
+              <p class="callout-lead">A 2D game takes</p>
+              <p class="callout-figure">41,000<span>&times;</span></p>
+              <p class="callout-sub">less space than Discord<a href="#note-size" class="chart-star" aria-label="See note about size">*</a></p>
             </div>
           </div>
         </figure>
@@ -326,23 +326,25 @@
         <div class="chart-notes">
           <p id="note-speed">
             <span class="chart-star">*</span>
-            Sustained compute. The same program built twice — native and as a Krate
-            app — finished 300 million calculations in the same time, and produced
+            Sustained compute. The same program built twice, native and as a Krate
+            app, finished 300 million calculations in the same time, and produced
             identical output. Short tasks are the worst case: a program that does
             almost nothing but ask the system for things runs about 5&times; slower,
             because a fixed 6 ms startup is most of its total.
           </p>
           <p id="note-size">
             <span class="chart-star">*</span>
-            Both measured on the same Mac: Apple's Reminders is 11.2 MB, and a
-            working Krate checklist — a window, checkboxes, and items that survive
-            a restart — is 12,759 bytes for all three operating systems together.
-            The 2D game above, with gravity, collision and sprites, is smaller
-            still at 10,982 bytes.
-            Reminders does more than keep a checklist. It is also already one of
-            the leaner apps on a Mac; a note-taking app built the common way,
-            like Obsidian at 482 MB, is nearly 40,000 times the size of ours.
-            Krate itself is a 17.5 MB install, once, shared by every app you run.
+            Both measured on the same Mac with <code>du -sk</code>: Discord is
+            431 MB, and the 2D game above, with gravity, collision and sprites,
+            is 10,982 bytes for all three operating systems together.
+            Discord is the comparison because it solves the same problem Krate
+            solves, one codebase shipped to Mac, Windows and Linux, and it does
+            it by putting a copy of a web browser inside the app. So does VS
+            Code at 1.4 GB, which is 140,000 times the game. A chat client does
+            far more than a game; the number that matters is the floor each
+            approach starts from, which is a browser for one and nothing for the
+            other. Krate itself is a 17.5 MB install, once, shared by every app
+            you run.
           </p>
           <p>
             Measured on an Apple Silicon Mac. Windows and Linux are not measured yet.
@@ -473,7 +475,7 @@
           </div>
           <div class="proof">
             <strong>Opens in 16 milliseconds</strong>
-            <p>Median cold start on an Apple Silicon Mac. A single frame of 60&nbsp;fps video is 16.7&nbsp;ms — most Krate apps are open before your screen finishes drawing one.</p>
+            <p>Median cold start on an Apple Silicon Mac. A single frame of 60&nbsp;fps video is 16.7&nbsp;ms, so most Krate apps are open before your screen finishes drawing one.</p>
           </div>
           <div class="proof">
             <strong>The sandbox is free</strong>
@@ -481,7 +483,7 @@
           </div>
           <div class="proof">
             <strong>2D games run here</strong>
-            <p>Gravity, collision, sprites, and a real frame loop — in an 11&nbsp;KB file that opens on all three systems.</p>
+            <p>Gravity, collision, sprites, and a real frame loop, in an 11&nbsp;KB file that opens on all three systems.</p>
           </div>
         </div>
       </div>
@@ -565,7 +567,7 @@
         <div class="public-links">
           <a class="public-link" href="/reports/">
             <strong>The measurements</strong>
-            <span>Sizes, startup, sandbox cost — charted from real data →</span>
+            <span>Sizes, startup, sandbox cost, charted from real data →</span>
           </a>
           <a class="public-link" href="/progress/">
             <strong>Where we are today</strong>
@@ -607,7 +609,7 @@
           <p class="about-body">
             The problem it answers has not been solved: software still cannot
             move between computers the way a file can, and you cannot tell what
-            a program does before you run it. Krate is one answer to both — a
+            a program does before you run it. Krate is one answer to both: a
             single app file that opens on Mac, Windows, and Linux, and carries
             the list of what it is allowed to do on the outside, where you can
             read it before anything runs.
