@@ -1378,6 +1378,22 @@ jobs:
         run: git fetch --tags --force --depth=1
       - name: Check the installers do not suggest a stale version
         run: sh scripts/check-installer-versions.sh
+      # install.ps1 is the first thing a Windows user runs, so a parse error in
+      # it breaks every Windows install at once. The full cold-install walk
+      # covers this properly but only runs on a schedule or with [full-ci], so
+      # check the syntax on every change -- it costs a second and needs no
+      # network, no release and no Windows runner.
+      - name: Check the Windows installer parses
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/scripts/install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) {
+            $errors | ForEach-Object { Write-Host $_.Message }
+            throw "install.ps1 has $($errors.Count) syntax error(s)"
+          }
+          Write-Host "install.ps1 parses cleanly"
       - name: Check Go SDK shape
         run: node packages/sdk-go/scripts/check-shape.mjs
 

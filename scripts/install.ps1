@@ -19,13 +19,23 @@ $binary = 'krate.exe'
 function Write-Say { param([string]$Message) Write-Host $Message }
 function Stop-Install { param([string]$Message) Write-Error "error: $Message"; exit 1 }
 
-# Only x86_64 Windows is published today. Say so plainly rather than
-# downloading an archive that cannot run.
-$arch = $env:PROCESSOR_ARCHITECTURE
-if ($arch -ne 'AMD64') {
-    Stop-Install "unsupported architecture: $arch (install from source instead)"
+# Intel and ARM Windows both publish a build. ARM matters more than its share
+# of desktops suggests: a Windows VM on an Apple Silicon Mac is ARM, and that
+# is the ordinary way to try Windows without owning a Windows machine.
+#
+# PROCESSOR_ARCHITECTURE reports the architecture of the *process*, so a
+# 32-bit PowerShell on a 64-bit machine says x86. PROCESSOR_ARCHITEW6432 is
+# set only in that case and carries the machine's real architecture, so prefer
+# it when present rather than refusing a machine that is perfectly supported.
+$arch = $env:PROCESSOR_ARCHITEW6432
+if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
+switch ($arch) {
+    'AMD64' { $target = 'x86_64-pc-windows-msvc' }
+    'ARM64' { $target = 'aarch64-pc-windows-msvc' }
+    default {
+        Stop-Install "unsupported architecture: $arch (install from source instead)"
+    }
 }
-$target = 'x86_64-pc-windows-msvc'
 
 $version = $env:KRATE_VERSION
 if (-not $version) {
@@ -70,7 +80,7 @@ if (-not $version) {
         Write-Host ''
         Write-Host 'To install right now, pin a version. Take the newest tag from'
         Write-Host "https://github.com/$repo/releases and use it like this:"
-        Write-Host '  $env:KRATE_VERSION="v0.1.0-rc7"; irm https://krate.tech/install.ps1 | iex'
+        Write-Host '  $env:KRATE_VERSION="v0.1.0-rc8"; irm https://krate.tech/install.ps1 | iex'
         exit 1
     }
 }

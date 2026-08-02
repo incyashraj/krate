@@ -49,7 +49,7 @@ jobs:
             cross: true
             optional: true
             # Everything except speech-to-text. See the note in the build step.
-            features: phase2-bindings
+            no-speech: true
           - os: macos-latest
             target: x86_64-apple-darwin
             ext: tar.gz
@@ -59,6 +59,21 @@ jobs:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             ext: zip
+          # Windows on ARM. Anybody running a Windows VM on an Apple Silicon
+          # Mac gets this, which is the ordinary way to test Windows without
+          # owning a Windows machine -- so it is not a niche target, it is the
+          # one a reviewer is most likely to hit. The installer refused with
+          # "unsupported architecture: ARM64" until this existed.
+          #
+          # Cross-compiled from the x86_64 runner, which the MSVC toolchain
+          # supports directly; GitHub has no ARM Windows runner.
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            ext: zip
+            # No ARM Windows runner means no way to run what it builds, so
+            # treat a failure as "not this release" rather than blocking the
+            # other five.
+            optional: true
 
     steps:
       - uses: actions/checkout@v5
@@ -99,10 +114,13 @@ jobs:
           # single dependency is why that platform has been missing from every
           # release. Dropping it there ships a Krate that does everything
           # except transcribe audio, which beats shipping nothing.
-          FEATURES="${{ matrix.features }}"
-          if [[ -n "$FEATURES" ]]; then
-            echo "building with restricted features: $FEATURES"
-            FEATURE_ARGS=(--no-default-features --features "$FEATURES")
+          # krate-cli's only feature is `speech`, so "everything but speech" is
+          # plain --no-default-features. Naming a runtime feature here instead
+          # failed rc7 with "the package 'krate-cli' does not contain this
+          # feature", which is why this is a boolean rather than a feature list.
+          if [[ "${{ matrix.no-speech }}" == "true" ]]; then
+            echo "building without speech-to-text"
+            FEATURE_ARGS=(--no-default-features)
           else
             FEATURE_ARGS=()
           fi
