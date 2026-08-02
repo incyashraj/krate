@@ -1519,6 +1519,39 @@ impl gfx::scene3d::Host for Phase3GuiHost {
         Ok(Ok(()))
     }
 
+    fn upload_texture(
+        &mut self,
+        scene: u64,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) -> wasmtime::Result<Result<u64, gfx::types::GfxError>> {
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        match surface.upload_texture(width, height, &rgba) {
+            Ok(handle) => Ok(Ok(handle)),
+            Err(error) => Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
+        }
+    }
+
+    fn textured(
+        &mut self,
+        scene: u64,
+        vertices: Vec<f32>,
+        uvs: Vec<f32>,
+        texture: u64,
+        tint: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.textured(&vertices, &uvs, texture, (tint.r, tint.g, tint.b, tint.a));
+        Ok(Ok(()))
+    }
+
     fn present(&mut self, scene: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         let (window, widget, image) = {
             let scenes = self.scenes.borrow();

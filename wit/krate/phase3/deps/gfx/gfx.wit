@@ -153,6 +153,27 @@ interface scene3d {
   /// rebuilt vertex lists.
   place: func(scene: u64, vertices: list<f32>, translate: list<f32>, rotate-degrees: list<f32>, scale: f32, tint: color) -> result<_, gfx-error>;
 
+  /// Upload an image once and get a handle to draw with.
+  ///
+  /// The same straight-RGBA bytes an image widget takes, so an app decodes a
+  /// texture atlas once with `zune-png` inside its own sandbox and keeps the
+  /// handle. Sending pixels on every draw would move a megabyte across the
+  /// sandbox boundary sixty times a second to show the same wall.
+  ///
+  /// A texture belongs to its scene and goes away when the scene does.
+  upload-texture: func(scene: u64, width: u32, height: u32, rgba: list<u8>) -> result<u64, gfx-error>;
+
+  /// Draw triangles wearing a texture.
+  ///
+  /// `vertices` is x,y,z per corner as before. `uvs` is u,v per corner -- six
+  /// floats per triangle -- where 0,0 is the top-left of the image and 1,1 the
+  /// bottom-right. Coordinates outside that range wrap, so a floor can tile a
+  /// small image across a large surface.
+  ///
+  /// `tint` multiplies the sampled colour, so one grey texture can become a
+  /// red wall and a blue one without uploading it twice.
+  textured: func(scene: u64, vertices: list<f32>, uvs: list<f32>, texture: u64, tint: color) -> result<_, gfx-error>;
+
   /// Publish the frame to the widget. Until this, nothing is shown.
   present: func(scene: u64) -> result<_, gfx-error>;
 }
