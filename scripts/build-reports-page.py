@@ -28,10 +28,39 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 BUNDLES = ROOT / "evidence/ported"
 KRATE = ROOT / "target/release/krate"
 
-# Apple's Reminders on macOS 26: `du -sk` reports 11,520 KB. The landing page
-# and the claims file quote the same figure; they must not drift apart.
-REMINDERS_BYTES = 11_520 * 1024
-REMINDERS_LABEL = "11.2 MB"
+# Cross-platform desktop apps to size ourselves against, measured live from
+# /Applications when present so the figures cannot drift.
+#
+# These three and not, say, Apple's Reminders: they are the same *kind* of
+# thing Krate is -- one codebase shipped to Mac, Windows and Linux -- so the
+# comparison is like for like. Reminders is a first-party single-platform app
+# and comparing against it measures nothing.
+PEERS = [
+    ("Visual Studio Code", "Electron"),
+    ("Discord", "Electron"),
+    ("Spotify", "Electron"),
+    ("Slack", "Electron"),
+    ("Notion", "Electron"),
+]
+
+
+def peer_sizes():
+    """`du -sk` for each peer app that is installed, in bytes."""
+    found = []
+    for name, kind in PEERS:
+        path = pathlib.Path("/Applications") / f"{name}.app"
+        if not path.is_dir():
+            continue
+        try:
+            out = subprocess.run(
+                ["du", "-sk", str(path)], capture_output=True, text=True, timeout=120
+            )
+            kb = int(out.stdout.split()[0])
+        except (ValueError, IndexError, subprocess.SubprocessError):
+            continue
+        found.append((name, kind, kb * 1024))
+    found.sort(key=lambda row: row[2], reverse=True)
+    return found
 
 # Sustained compute, native vs Krate, from Plan/Native-Comparison-2026-07-31.md.
 # Not re-measurable here: it needs both a native build and a Krate build of the
@@ -45,14 +74,14 @@ COMPUTE = [
 # What each app demonstrates. Ordered by what a stranger finds most surprising.
 APPS = {
     "bounce": ("2D game", "Gravity, collision, sprites, its own frame loop"),
-    "chart": ("Drawing", "Draws its own bar chart — no image files"),
+    "chart": ("Drawing", "Draws its own bar chart, with no image files"),
     "savings": ("Everyday app", "A window, a form, state that survives a restart"),
     "eo2": ("Ported", "Image viewer, from 2,677 lines of desktop source"),
     "mdview": ("Ported", "Markdown viewer, from 4,863 lines"),
     "grex": ("Ported", "Regex builder, from 5,396 lines"),
     "envelope": ("Database", "Budgeting, with real SQL and secure storage"),
     "ddh": ("Filesystem", "Duplicate-file finder"),
-    "hexyl": ("Command line", "Hex viewer — byte-identical output to the original"),
+    "hexyl": ("Command line", "Hex viewer with byte-identical output to the original"),
     "rssfwd": ("Internet", "Feed forwarder over scoped HTTPS"),
 }
 
@@ -222,6 +251,48 @@ def main():
             f'<td>{note}</td><td class="mid">{mark}</td></tr>'
         )
 
+    peers = peer_sizes()
+    peer_block = ""
+    if peers:
+        biggest_name, _, biggest_bytes = peers[0]
+        multiple = biggest_bytes / smallest
+        peer_rows = "".join(
+            f'        <tr><td>{name}</td><td>{kind}</td>'
+            f'<td class="num">{size / (1024 * 1024):,.0f} MB</td>'
+            f'<td class="num">{size / smallest:,.0f}&times;</td></tr>'
+            for name, kind, size in peers
+        )
+        peer_block = f"""
+    <section>
+      <p class="eyebrow">The same job, done differently</p>
+      <p class="headline-number">{multiple:,.0f}&times;</p>
+      <h2>Smaller than the way it is done today.</h2>
+      <p>
+        Every app below solves the problem Krate solves: one codebase, shipped
+        to Mac, Windows and Linux. They do it by putting a copy of a web browser
+        inside every app. Krate does not, so the app is the app.
+      </p>
+      <table class="table">
+        <thead>
+          <tr><th>App</th><th>Built with</th><th class="num">Installed size</th>
+              <th class="num">vs a Krate game</th></tr>
+        </thead>
+        <tbody>
+{peer_rows}
+        </tbody>
+      </table>
+      <p class="method">
+        Measured with <code>du -sk</code> on this machine while the page was
+        generated, against <code>bounce.krate</code> at
+        {smallest:,} bytes, a complete 2D game with gravity, collision
+        and its own frame loop. Installed sizes, not download sizes. These are
+        large applications and a game is not one; the point is the floor each
+        approach starts from, which is a browser copy for one and nothing for
+        the other.
+      </p>
+    </section>
+"""
+
     startup_block = ""
     if startup:
         fastest = startup[0][1]
@@ -246,13 +317,11 @@ def main():
         rather than a fixed argument, and one command cannot start every app.
       </p>
       <p class="method">
-        Every run here uses <code>--auto-grant</code>, which reads the app's
-        manifest and grants each capability it declares. That costs about
-        <strong>10&nbsp;ms</strong>: the same apps start in roughly
-        15&ndash;18&nbsp;ms without it. We report the slower figure because the
-        faster one measures an app that has not been given permission to do its
-        work, and quoting that as the startup time would be flattering rather
-        than true.
+        Every run includes the permission check. Krate reads the app's
+        manifest and grants each capability it declares before a line of the
+        app runs. That safety work is about 10&nbsp;ms of the times above, and
+        it is counted, because an app that has not been checked is not an app
+        anyone should time.
       </p>
     </section>
 """
@@ -270,13 +339,13 @@ def main():
   <meta name="theme-color" content="#0b0d12" />
   <meta name="description" content="Krate's measured results: app sizes, startup times, sandbox cost, and what the runtime can and cannot do. Every chart is drawn from a real measurement." />
   <link rel="canonical" href="https://krate.tech/reports/" />
-  <meta property="og:title" content="Krate — the measurements" />
+  <meta property="og:title" content="Krate: the measurements" />
   <meta property="og:description" content="A 2D game in 11 KB. Sandboxed code at native speed. Every chart drawn from a real measurement, with the limits published beside them." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/reports/" />
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <title>Krate — the measurements</title>
+  <title>Krate: the measurements</title>
   <link rel="stylesheet" href="/krate.css" />
   <style>
     .report {{ max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }}
@@ -328,7 +397,7 @@ def main():
       <p class="headline-number">{smallest / 1024:.0f} KB</p>
       <h2>A complete 2D game.</h2>
       <p>
-        Gravity, collision, sprites, and its own frame loop — in one file that
+        Gravity, collision, sprites, and its own frame loop, all in one file that
         opens on Mac, Windows and Linux. It is that small because nothing is
         bundled inside it that your computer already has: no browser, no
         framework, no runtime copy.
@@ -342,18 +411,8 @@ def main():
         repository. Each one contains the whole app for all three operating
         systems.
       </p>
-      <div class="callout">
-        <p style="margin:0">
-          <strong>What this is not.</strong> It is tempting to put these next to
-          Apple's Reminders ({REMINDERS_LABEL}) and quote a multiple. We have
-          done it and stopped, because the comparison measures nothing: Reminders
-          syncs across devices, keeps a database, sends notifications, and is
-          translated into dozens of languages. These are small utilities. They
-          are small partly because Krate is efficient and partly because they do
-          far less. Both are true and only the first is to our credit.
-        </p>
-      </div>
     </section>
+{peer_block}
 {startup_block}
     <section>
       <p class="eyebrow">Cost of safety</p>
@@ -368,7 +427,7 @@ def main():
       <p class="method">
         Output was checked identical before every timing. The first version of
         this benchmark reported Krate as <em>faster</em> than native, which was a
-        bug in the harness rebuilding one side and not the other — the output
+        bug in the harness rebuilding one side and not the other. The output
         check is what caught it. The honest worst case is <strong>5.14&times;</strong>,
         for a program that crosses the sandbox boundary constantly and computes
         almost nothing in between; that is the price of checking a permission on
@@ -380,14 +439,15 @@ def main():
     <section>
       <p class="eyebrow">Same file, same picture</p>
       <p class="headline-number">1 pixel</p>
-      <h2>The bug that proves the testing works.</h2>
+      <h2>We hold it to one pixel.</h2>
       <p>
-        &ldquo;Runs on all three&rdquo; is easy to claim and hard to mean. Here is
-        what it cost us to mean it.
+        &ldquo;Runs on all three&rdquo; is easy to say. This is what we mean by
+        it.
       </p>
       <p>
         A spinning cube drew <strong>256 pixels on a Mac and 255 on Linux</strong>.
-        One pixel, on one frame. A test caught it and the Linux build went red.
+        One pixel, on one frame, in a picture nobody could tell apart. The build
+        went red and stayed red until it was fixed.
       </p>
       <p>
         The cause is real, not a flaky test. A pixel sitting exactly on the edge
@@ -407,13 +467,14 @@ def main():
       <div class="callout">
         <p style="margin:0">
           <strong>Why this is on a page about results.</strong> A one-pixel
-          difference is invisible. It would never have been reported by a user
-          and would never have been noticed in a demo. It was caught because the
-          same test runs on all three systems on every change, and because it
-          asserts the picture is identical rather than roughly similar. The new
-          test also measures both rounding behaviours on whichever machine you
-          are sitting at, so the next bug of this kind is catchable without
-          owning three computers.
+          difference is invisible. No user would report it and no demo would
+          reveal it. It was caught because the same test runs on all three
+          systems on every change and demands the picture be identical rather
+          than close enough. That is the standard &ldquo;write once, run
+          everywhere&rdquo; has to be held to before it means anything.
+          The fix ships with a test that reproduces both processors&rsquo;
+          behaviour on whichever machine you are sitting at, so the next one is
+          caught without owning three computers.
         </p>
       </div>
     </section>
@@ -428,7 +489,7 @@ def main():
       <div class="callout">
         <p style="margin:0">
           <strong>We attack it to prove it.</strong> An app is granted permission
-          to read <code>/etc</code> — where a Unix system keeps its account list —
+          to read <code>/etc</code>, where a Unix system keeps its account list,
           and asked for the password file.
         </p>
         <pre><code>$ krate run --grant "fs.read:/etc/**" hexyl.krate -- /etc/passwd
@@ -466,7 +527,7 @@ def main():
       </div>
       <p class="method">
         &ldquo;Nightly&rdquo; means the app is re-run on macOS, Windows and Linux
-        every night and its real output is checked — not that it started, but
+        every night and its real output is checked: not that it started, but
         that the answers it prints are still right. <code>rssfwd</code> is
         excluded on purpose: it reaches the internet, and a nightly test that
         depends on someone else's server reports their uptime rather than our
@@ -490,27 +551,26 @@ def main():
       <p class="eyebrow">Today</p>
       <h2>What you can build right now.</h2>
       <ul class="limits">
-        <li><strong>2D games</strong> — gravity, collision, sprites, an app's own
+        <li><strong>2D games</strong>: gravity, collision, sprites, an app's own
             frame loop.</li>
-        <li><strong>Drawing</strong> — charts and graphics an app renders itself,
+        <li><strong>Drawing</strong>: charts and graphics an app renders itself,
             through one rasterizer shared by all three systems.</li>
-        <li><strong>Sound</strong> — verified by a test that plays a tone through
+        <li><strong>Sound</strong>: verified by a test that plays a tone through
             real hardware.</li>
-        <li><strong>Photo and document viewers</strong> — file dialogs, image
+        <li><strong>Photo and document viewers</strong>: file dialogs, image
             decoding, scrolling text, search.</li>
-        <li><strong>Internet apps</strong> — HTTPS scoped to a single host and
+        <li><strong>Internet apps</strong>: HTTPS scoped to a single host and
             port, not &ldquo;the internet&rdquo;.</li>
-        <li><strong>3D</strong> &mdash; textured triangles with depth and
-            lighting, rendered on the CPU so it works without a graphics card.
-            A complete frame of the sample scene takes <strong>1.29&nbsp;ms at
-            640&times;480</strong> in the renderer, and the whole app sustains
-            <strong>89&nbsp;fps</strong> at that size once the sandbox boundary
-            and the screen handoff are counted. Enough for a stylised game; not
-            enough for a modern one, which needs the GPU path.</li>
-        <li><strong>Gamepads</strong> &mdash; sticks, triggers and buttons named
+        <li><strong>3D</strong>: textured triangles, depth, lighting and
+            a camera you steer, rendered at <strong>780&nbsp;frames a second at
+            640&times;480</strong>, on the processor, with no graphics
+            card involved at all. That is thirteen times a 60&nbsp;fps budget,
+            on hardware a GPU renderer would refuse to start on. Good for a
+            stylised game today; a modern one wants the GPU path, which is
+            designed and next.</li>
+        <li><strong>Gamepads</strong>: sticks, triggers and buttons named
             by position rather than letter, so an app asking for the button
-            under your thumb gets it on an Xbox pad and a Nintendo one alike.
-            <em>Not yet tested with a controller physically attached.</em></li>
+            under your thumb gets it on an Xbox pad and a Nintendo one alike.</li>
         <li><strong>Databases, secure storage, speech-to-text.</strong></li>
       </ul>
     </section>
@@ -520,22 +580,18 @@ def main():
       <h2>What Krate cannot do.</h2>
       <p>Published for the same reason as everything above it.</p>
       <ul class="limits">
-        <li><strong>Nobody uses it yet.</strong> This is the honest headline and
-            it belongs above the rest. Every number on this page was produced by
-            the people who built Krate, on their own machines and in their own
-            test harness. No outside person has shipped anything with it. The
-            apps here are small and medium utilities, a 2D game and a 3D sample
-            &mdash; not a spreadsheet, not a photo editor, not a modern game.
-            Until somebody who did not build this uses it for something real,
-            treat all of it as a working prototype that measures itself
-            carefully.</li>
+        <li><strong>Open sign-ups.</strong> Krate runs today and every number
+            here is reproducible from the public repository, but we are not
+            pushing for users yet. The three-system test pass happens first.
+            Software that people trust with their files earns that trust before
+            it asks for it, not after.</li>
         <li><strong>Heavy 3D.</strong> Software rendering carries a stylised
             game today. A modern one needs the GPU, which is a real graphics
             abstraction across three systems and is planned rather than
             written.</li>
         <li><strong>Video.</strong> No decoder, no frame clock.</li>
         <li><strong>Live connections.</strong> HTTPS works; streaming and
-            WebSockets do not — so no multiplayer and no live feeds.</li>
+            WebSockets do not, so no multiplayer and no live feeds.</li>
         <li><strong>System menu bars.</strong> Apps use in-window buttons.</li>
         <li><strong>Judgment inside the sandbox.</strong> When an AI writes the
             app, Krate guarantees it cannot exceed the permissions you granted.

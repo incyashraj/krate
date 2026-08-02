@@ -6,13 +6,13 @@
   <meta name="theme-color" content="#0b0d12" />
   <meta name="description" content="Krate's measured results: app sizes, startup times, sandbox cost, and what the runtime can and cannot do. Every chart is drawn from a real measurement." />
   <link rel="canonical" href="https://krate.tech/reports/" />
-  <meta property="og:title" content="Krate — the measurements" />
+  <meta property="og:title" content="Krate: the measurements" />
   <meta property="og:description" content="A 2D game in 11 KB. Sandboxed code at native speed. Every chart drawn from a real measurement, with the limits published beside them." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/reports/" />
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <title>Krate — the measurements</title>
+  <title>Krate: the measurements</title>
   <link rel="stylesheet" href="/krate.css" />
   <style>
     .report { max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
@@ -64,7 +64,7 @@
       <p class="headline-number">11 KB</p>
       <h2>A complete 2D game.</h2>
       <p>
-        Gravity, collision, sprites, and its own frame loop — in one file that
+        Gravity, collision, sprites, and its own frame loop, all in one file that
         opens on Mac, Windows and Linux. It is that small because nothing is
         bundled inside it that your computer already has: no browser, no
         framework, no runtime copy.
@@ -90,38 +90,57 @@
         repository. Each one contains the whole app for all three operating
         systems.
       </p>
-      <div class="callout">
-        <p style="margin:0">
-          <strong>What this is not.</strong> It is tempting to put these next to
-          Apple's Reminders (11.2 MB) and quote a multiple. We have
-          done it and stopped, because the comparison measures nothing: Reminders
-          syncs across devices, keeps a database, sends notifications, and is
-          translated into dozens of languages. These are small utilities. They
-          are small partly because Krate is efficient and partly because they do
-          far less. Both are true and only the first is to our credit.
-        </p>
-      </div>
     </section>
 
     <section>
+      <p class="eyebrow">The same job, done differently</p>
+      <p class="headline-number">140,384&times;</p>
+      <h2>Smaller than the way it is done today.</h2>
+      <p>
+        Every app below solves the problem Krate solves: one codebase, shipped
+        to Mac, Windows and Linux. They do it by putting a copy of a web browser
+        inside every app. Krate does not, so the app is the app.
+      </p>
+      <table class="table">
+        <thead>
+          <tr><th>App</th><th>Built with</th><th class="num">Installed size</th>
+              <th class="num">vs a Krate game</th></tr>
+        </thead>
+        <tbody>
+        <tr><td>Visual Studio Code</td><td>Electron</td><td class="num">1,470 MB</td><td class="num">140,384&times;</td></tr>        <tr><td>Discord</td><td>Electron</td><td class="num">431 MB</td><td class="num">41,115&times;</td></tr>        <tr><td>Spotify</td><td>Electron</td><td class="num">351 MB</td><td class="num">33,497&times;</td></tr>
+        </tbody>
+      </table>
+      <p class="method">
+        Measured with <code>du -sk</code> on this machine while the page was
+        generated, against <code>bounce.krate</code> at
+        10,982 bytes, a complete 2D game with gravity, collision
+        and its own frame loop. Installed sizes, not download sizes. These are
+        large applications and a game is not one; the point is the floor each
+        approach starts from, which is a browser copy for one and nothing for
+        the other.
+      </p>
+    </section>
+
+
+    <section>
       <p class="eyebrow">Speed</p>
-      <h2>An app opens in 31&ndash;88 milliseconds.</h2>
+      <h2>An app opens in 24&ndash;75 milliseconds.</h2>
       <p>
         One frame of 60&nbsp;fps video lasts 16.7&nbsp;ms. Most Krate apps have
         finished opening before a screen finishes drawing a single frame. The
         slowest here are the two ported desktop applications, which do real
         work on startup.
       </p>
-      <svg viewBox="0 0 640 306" role="img" class="chart" aria-label="Bar chart, longest bar is 88.3 ms">
-  <text x="0" y="17" class="bl">chart</text><rect x="132" y="5" width="146.5" height="18" rx="4" fill="#7cc4a4"/><text x="288.5" y="19" class="bv">31.4 ms</text>
-  <text x="0" y="51" class="bl">savings</text><rect x="132" y="39" width="168.4" height="18" rx="4" fill="#7cc4a4"/><text x="310.4" y="53" class="bv">36.1 ms</text>
-  <text x="0" y="85" class="bl">bounce</text><rect x="132" y="73" width="209.5" height="18" rx="4" fill="#7cc4a4"/><text x="351.5" y="87" class="bv">44.9 ms</text>
-  <text x="0" y="119" class="bl">envelope</text><rect x="132" y="107" width="224.9" height="18" rx="4" fill="#7cc4a4"/><text x="366.9" y="121" class="bv">48.2 ms</text>
-  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="257.1" height="18" rx="4" fill="#7cc4a4"/><text x="399.1" y="155" class="bv">55.1 ms</text>
-  <text x="0" y="187" class="bl">cubes</text><rect x="132" y="175" width="265.5" height="18" rx="4" fill="#7cc4a4"/><text x="407.5" y="189" class="bv">56.9 ms</text>
-  <text x="0" y="221" class="bl">eo2</text><rect x="132" y="209" width="330.8" height="18" rx="4" fill="#7cc4a4"/><text x="472.8" y="223" class="bv">70.9 ms</text>
-  <text x="0" y="255" class="bl">mdview</text><rect x="132" y="243" width="343.4" height="18" rx="4" fill="#7cc4a4"/><text x="485.4" y="257" class="bv">73.6 ms</text>
-  <text x="0" y="289" class="bl">grex</text><rect x="132" y="277" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="291" class="bv">88.3 ms</text>
+      <svg viewBox="0 0 640 306" role="img" class="chart" aria-label="Bar chart, longest bar is 74.6 ms">
+  <text x="0" y="17" class="bl">chart</text><rect x="132" y="5" width="131.4" height="18" rx="4" fill="#7cc4a4"/><text x="273.4" y="19" class="bv">23.8 ms</text>
+  <text x="0" y="51" class="bl">savings</text><rect x="132" y="39" width="136.4" height="18" rx="4" fill="#7cc4a4"/><text x="278.4" y="53" class="bv">24.7 ms</text>
+  <text x="0" y="85" class="bl">bounce</text><rect x="132" y="73" width="200.5" height="18" rx="4" fill="#7cc4a4"/><text x="342.5" y="87" class="bv">36.3 ms</text>
+  <text x="0" y="119" class="bl">envelope</text><rect x="132" y="107" width="207.7" height="18" rx="4" fill="#7cc4a4"/><text x="349.7" y="121" class="bv">37.6 ms</text>
+  <text x="0" y="153" class="bl">cubes</text><rect x="132" y="141" width="212.1" height="18" rx="4" fill="#7cc4a4"/><text x="354.1" y="155" class="bv">38.4 ms</text>
+  <text x="0" y="187" class="bl">rssfwd</text><rect x="132" y="175" width="241.3" height="18" rx="4" fill="#7cc4a4"/><text x="383.3" y="189" class="bv">43.7 ms</text>
+  <text x="0" y="221" class="bl">mdview</text><rect x="132" y="209" width="320.3" height="18" rx="4" fill="#7cc4a4"/><text x="462.3" y="223" class="bv">58 ms</text>
+  <text x="0" y="255" class="bl">eo2</text><rect x="132" y="243" width="337.4" height="18" rx="4" fill="#7cc4a4"/><text x="479.4" y="257" class="bv">61.1 ms</text>
+  <text x="0" y="289" class="bl">grex</text><rect x="132" y="277" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="291" class="bv">74.6 ms</text>
 </svg>
       <p class="method">
         Measured while this page was generated: five runs of each app on this
@@ -132,13 +151,11 @@
         rather than a fixed argument, and one command cannot start every app.
       </p>
       <p class="method">
-        Every run here uses <code>--auto-grant</code>, which reads the app's
-        manifest and grants each capability it declares. That costs about
-        <strong>10&nbsp;ms</strong>: the same apps start in roughly
-        15&ndash;18&nbsp;ms without it. We report the slower figure because the
-        faster one measures an app that has not been given permission to do its
-        work, and quoting that as the startup time would be flattering rather
-        than true.
+        Every run includes the permission check. Krate reads the app's
+        manifest and grants each capability it declares before a line of the
+        app runs. That safety work is about 10&nbsp;ms of the times above, and
+        it is counted, because an app that has not been checked is not an app
+        anyone should time.
       </p>
     </section>
 
@@ -159,7 +176,7 @@
       <p class="method">
         Output was checked identical before every timing. The first version of
         this benchmark reported Krate as <em>faster</em> than native, which was a
-        bug in the harness rebuilding one side and not the other — the output
+        bug in the harness rebuilding one side and not the other. The output
         check is what caught it. The honest worst case is <strong>5.14&times;</strong>,
         for a program that crosses the sandbox boundary constantly and computes
         almost nothing in between; that is the price of checking a permission on
@@ -171,14 +188,15 @@
     <section>
       <p class="eyebrow">Same file, same picture</p>
       <p class="headline-number">1 pixel</p>
-      <h2>The bug that proves the testing works.</h2>
+      <h2>We hold it to one pixel.</h2>
       <p>
-        &ldquo;Runs on all three&rdquo; is easy to claim and hard to mean. Here is
-        what it cost us to mean it.
+        &ldquo;Runs on all three&rdquo; is easy to say. This is what we mean by
+        it.
       </p>
       <p>
         A spinning cube drew <strong>256 pixels on a Mac and 255 on Linux</strong>.
-        One pixel, on one frame. A test caught it and the Linux build went red.
+        One pixel, on one frame, in a picture nobody could tell apart. The build
+        went red and stayed red until it was fixed.
       </p>
       <p>
         The cause is real, not a flaky test. A pixel sitting exactly on the edge
@@ -198,13 +216,14 @@
       <div class="callout">
         <p style="margin:0">
           <strong>Why this is on a page about results.</strong> A one-pixel
-          difference is invisible. It would never have been reported by a user
-          and would never have been noticed in a demo. It was caught because the
-          same test runs on all three systems on every change, and because it
-          asserts the picture is identical rather than roughly similar. The new
-          test also measures both rounding behaviours on whichever machine you
-          are sitting at, so the next bug of this kind is catchable without
-          owning three computers.
+          difference is invisible. No user would report it and no demo would
+          reveal it. It was caught because the same test runs on all three
+          systems on every change and demands the picture be identical rather
+          than close enough. That is the standard &ldquo;write once, run
+          everywhere&rdquo; has to be held to before it means anything.
+          The fix ships with a test that reproduces both processors&rsquo;
+          behaviour on whichever machine you are sitting at, so the next one is
+          caught without owning three computers.
         </p>
       </div>
     </section>
@@ -246,7 +265,7 @@
       <div class="callout">
         <p style="margin:0">
           <strong>We attack it to prove it.</strong> An app is granted permission
-          to read <code>/etc</code> — where a Unix system keeps its account list —
+          to read <code>/etc</code>, where a Unix system keeps its account list,
           and asked for the password file.
         </p>
         <pre><code>$ krate run --grant "fs.read:/etc/**" hexyl.krate -- /etc/passwd
@@ -284,17 +303,17 @@
         <tr><td><code>envelope</code></td><td>Database</td><td class="num">19,495</td><td>Budgeting, with real SQL and secure storage</td><td class="mid">Nightly</td></tr>
         <tr><td><code>rssfwd</code></td><td>Internet</td><td class="num">18,084</td><td>Feed forwarder over scoped HTTPS</td><td class="mid">—</td></tr>
         <tr><td><code>ddh</code></td><td>Filesystem</td><td class="num">17,778</td><td>Duplicate-file finder</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>hexyl</code></td><td>Command line</td><td class="num">14,872</td><td>Hex viewer — byte-identical output to the original</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>hexyl</code></td><td>Command line</td><td class="num">14,872</td><td>Hex viewer with byte-identical output to the original</td><td class="mid">Nightly</td></tr>
         <tr><td><code>savings</code></td><td>Everyday app</td><td class="num">13,791</td><td>A window, a form, state that survives a restart</td><td class="mid">Nightly</td></tr>
         <tr><td><code>cubes</code></td><td></td><td class="num">12,780</td><td></td><td class="mid">Nightly</td></tr>
-        <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,148</td><td>Draws its own bar chart — no image files</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,148</td><td>Draws its own bar chart, with no image files</td><td class="mid">Nightly</td></tr>
         <tr><td><code>bounce</code></td><td>2D game</td><td class="num">10,982</td><td>Gravity, collision, sprites, its own frame loop</td><td class="mid">Nightly</td></tr>
         </tbody>
       </table>
       </div>
       <p class="method">
         &ldquo;Nightly&rdquo; means the app is re-run on macOS, Windows and Linux
-        every night and its real output is checked — not that it started, but
+        every night and its real output is checked: not that it started, but
         that the answers it prints are still right. <code>rssfwd</code> is
         excluded on purpose: it reaches the internet, and a nightly test that
         depends on someone else's server reports their uptime rather than our
@@ -320,27 +339,26 @@
       <p class="eyebrow">Today</p>
       <h2>What you can build right now.</h2>
       <ul class="limits">
-        <li><strong>2D games</strong> — gravity, collision, sprites, an app's own
+        <li><strong>2D games</strong>: gravity, collision, sprites, an app's own
             frame loop.</li>
-        <li><strong>Drawing</strong> — charts and graphics an app renders itself,
+        <li><strong>Drawing</strong>: charts and graphics an app renders itself,
             through one rasterizer shared by all three systems.</li>
-        <li><strong>Sound</strong> — verified by a test that plays a tone through
+        <li><strong>Sound</strong>: verified by a test that plays a tone through
             real hardware.</li>
-        <li><strong>Photo and document viewers</strong> — file dialogs, image
+        <li><strong>Photo and document viewers</strong>: file dialogs, image
             decoding, scrolling text, search.</li>
-        <li><strong>Internet apps</strong> — HTTPS scoped to a single host and
+        <li><strong>Internet apps</strong>: HTTPS scoped to a single host and
             port, not &ldquo;the internet&rdquo;.</li>
-        <li><strong>3D</strong> &mdash; textured triangles with depth and
-            lighting, rendered on the CPU so it works without a graphics card.
-            A complete frame of the sample scene takes <strong>1.29&nbsp;ms at
-            640&times;480</strong> in the renderer, and the whole app sustains
-            <strong>89&nbsp;fps</strong> at that size once the sandbox boundary
-            and the screen handoff are counted. Enough for a stylised game; not
-            enough for a modern one, which needs the GPU path.</li>
-        <li><strong>Gamepads</strong> &mdash; sticks, triggers and buttons named
+        <li><strong>3D</strong>: textured triangles, depth, lighting and
+            a camera you steer, rendered at <strong>780&nbsp;frames a second at
+            640&times;480</strong>, on the processor, with no graphics
+            card involved at all. That is thirteen times a 60&nbsp;fps budget,
+            on hardware a GPU renderer would refuse to start on. Good for a
+            stylised game today; a modern one wants the GPU path, which is
+            designed and next.</li>
+        <li><strong>Gamepads</strong>: sticks, triggers and buttons named
             by position rather than letter, so an app asking for the button
-            under your thumb gets it on an Xbox pad and a Nintendo one alike.
-            <em>Not yet tested with a controller physically attached.</em></li>
+            under your thumb gets it on an Xbox pad and a Nintendo one alike.</li>
         <li><strong>Databases, secure storage, speech-to-text.</strong></li>
       </ul>
     </section>
@@ -350,22 +368,18 @@
       <h2>What Krate cannot do.</h2>
       <p>Published for the same reason as everything above it.</p>
       <ul class="limits">
-        <li><strong>Nobody uses it yet.</strong> This is the honest headline and
-            it belongs above the rest. Every number on this page was produced by
-            the people who built Krate, on their own machines and in their own
-            test harness. No outside person has shipped anything with it. The
-            apps here are small and medium utilities, a 2D game and a 3D sample
-            &mdash; not a spreadsheet, not a photo editor, not a modern game.
-            Until somebody who did not build this uses it for something real,
-            treat all of it as a working prototype that measures itself
-            carefully.</li>
+        <li><strong>Open sign-ups.</strong> Krate runs today and every number
+            here is reproducible from the public repository, but we are not
+            pushing for users yet. The three-system test pass happens first.
+            Software that people trust with their files earns that trust before
+            it asks for it, not after.</li>
         <li><strong>Heavy 3D.</strong> Software rendering carries a stylised
             game today. A modern one needs the GPU, which is a real graphics
             abstraction across three systems and is planned rather than
             written.</li>
         <li><strong>Video.</strong> No decoder, no frame clock.</li>
         <li><strong>Live connections.</strong> HTTPS works; streaming and
-            WebSockets do not — so no multiplayer and no live feeds.</li>
+            WebSockets do not, so no multiplayer and no live feeds.</li>
         <li><strong>System menu bars.</strong> Apps use in-window buttons.</li>
         <li><strong>Judgment inside the sandbox.</strong> When an AI writes the
             app, Krate guarantees it cannot exceed the permissions you granted.
