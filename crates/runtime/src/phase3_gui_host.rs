@@ -1552,6 +1552,19 @@ impl gfx::scene3d::Host for Phase3GuiHost {
         Ok(Ok(()))
     }
 
+    fn cull_back_faces(
+        &mut self,
+        scene: u64,
+        enabled: bool,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.set_cull_back_faces(enabled);
+        Ok(Ok(()))
+    }
+
     fn present(&mut self, scene: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         let (window, widget, image) = {
             let scenes = self.scenes.borrow();

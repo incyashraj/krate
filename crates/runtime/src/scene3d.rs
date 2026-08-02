@@ -81,6 +81,13 @@ pub struct Scene {
     look_at: Vec3,
     fov_degrees: f32,
     light: Vec3,
+    /// Whether triangles facing away from the camera are skipped.
+    ///
+    /// Off by default because it is only correct for closed meshes: a flat
+    /// floor culled from underneath simply disappears, and an app author
+    /// looking at a hole in the world has no reason to suspect a setting they
+    /// never turned on.
+    cull_back_faces: bool,
     /// Uploaded images, keyed by the handle the guest was given. Owned by the
     /// scene so they go away with it and cannot outlive the run.
     textures: Vec<Texture>,
@@ -137,6 +144,7 @@ impl Scene {
             look_at: Vec3::new(0.0, 0.0, 0.0),
             fov_degrees: 60.0,
             light: Vec3::new(-0.4, -0.7, -0.6).normalized(),
+            cull_back_faces: false,
             textures: Vec::new(),
         })
     }
@@ -153,6 +161,19 @@ impl Scene {
         // or inverts the scene; clamped rather than refused, because an app
         // sweeping a zoom through a bad value should distort, not fail.
         self.fov_degrees = fov_degrees.clamp(5.0, 150.0);
+    }
+
+    pub fn set_cull_back_faces(&mut self, enabled: bool) {
+        self.cull_back_faces = enabled;
+    }
+
+    /// Whether a projected triangle should be skipped as back-facing.
+    ///
+    /// The signed screen area already says which way the corners wind, so
+    /// culling is a sign test rather than another dot product. Positive area
+    /// is a back face here, matching counter-clockwise-when-seen-from-outside.
+    fn culled(&self, area: f32) -> bool {
+        self.cull_back_faces && area > 0.0
     }
 
     pub fn set_light(&mut self, direction: [f32; 3]) {
@@ -220,7 +241,7 @@ impl Scene {
             (pa.1.max(pb.1).max(pc.1).ceil().min(self.height as f32) as u32).min(self.height);
 
         let area = (pb.0 - pa.0) * (pc.1 - pa.1) - (pc.0 - pa.0) * (pb.1 - pa.1);
-        if area.abs() < 1e-6 {
+        if area.abs() < 1e-6 || self.culled(area) {
             return;
         }
 
@@ -342,7 +363,7 @@ impl Scene {
             (pa.1.max(pb.1).max(pc.1).ceil().min(self.height as f32) as u32).min(self.height);
 
         let area = (pb.0 - pa.0) * (pc.1 - pa.1) - (pc.0 - pa.0) * (pb.1 - pa.1);
-        if area.abs() < 1e-6 {
+        if area.abs() < 1e-6 || self.culled(area) {
             return;
         }
 
@@ -521,6 +542,42 @@ fn pack_shaded(tint: (f32, f32, f32, f32), shade: f32) -> u32 {
 mod tests {
     use super::*;
 
+    /// A unit cube as twelve triangles, corners counter-clockwise from
+    /// outside, which is the winding culling expects.
+    fn unit_cube() -> Vec<f32> {
+        let c = [
+            [-0.5_f32, -0.5, -0.5],
+            [0.5, -0.5, -0.5],
+            [0.5, 0.5, -0.5],
+            [-0.5, 0.5, -0.5],
+            [-0.5, -0.5, 0.5],
+            [0.5, -0.5, 0.5],
+            [0.5, 0.5, 0.5],
+            [-0.5, 0.5, 0.5],
+        ];
+        let faces = [
+            [0usize, 1, 2],
+            [0, 2, 3],
+            [5, 4, 7],
+            [5, 7, 6],
+            [4, 0, 3],
+            [4, 3, 7],
+            [1, 5, 6],
+            [1, 6, 2],
+            [3, 2, 6],
+            [3, 6, 7],
+            [4, 5, 1],
+            [4, 1, 0],
+        ];
+        let mut mesh = Vec::new();
+        for face in faces {
+            for corner in face {
+                mesh.extend_from_slice(&c[corner]);
+            }
+        }
+        mesh
+    }
+
     /// A triangle filling most of the view, facing the default camera.
     fn facing_triangle() -> Vec<f32> {
         vec![
@@ -676,8 +733,14 @@ mod tests {
             }
         }
 
-        for (w, h) in [(320u32, 240u32), (640, 480), (800, 600)] {
+        for (w, h, cull) in [
+            (320u32, 240u32, false),
+            (640, 480, false),
+            (640, 480, true),
+            (800, 600, false),
+        ] {
             let mut scene = Scene::new(w, h).expect("scene");
+            scene.set_cull_back_faces(cull);
             scene.set_camera([2.5, 2.0, 3.5], [0.0, 0.0, 0.0], 60.0);
             let frames = 120;
             let start = std::time::Instant::now();
@@ -688,7 +751,8 @@ mod tests {
             }
             let secs = start.elapsed().as_secs_f64();
             println!(
-                "  {w}x{h}: {:.0} fps ({:.1} ms/frame)",
+                "  {w}x{h}{}: {:.0} fps ({:.1} ms/frame)",
+                if cull { " culled" } else { "" },
                 frames as f64 / secs,
                 secs * 1000.0 / frames as f64
             );
@@ -952,6 +1016,70 @@ mod tests {
         assert!(
             near_rows > far_rows * 3,
             "perspective must compress the far half: {far_rows} far rows vs {near_rows} near"
+        );
+    }
+
+    #[test]
+    fn culling_keeps_the_near_face_and_drops_the_far_one() {
+        // A closed cube: with culling on, the far side stops being filled and
+        // the near side still covers it. The picture must not change.
+        let mut without = Scene::new(64, 64).expect("scene");
+        without.clear(0xFF00_0000);
+        without.place(&unit_cube(), [0.0; 3], [0.0; 3], 1.0, (0.9, 0.5, 0.2, 1.0));
+        let plain = without.to_image().expect("image");
+
+        let mut with = Scene::new(64, 64).expect("scene");
+        with.set_cull_back_faces(true);
+        with.clear(0xFF00_0000);
+        with.place(&unit_cube(), [0.0; 3], [0.0; 3], 1.0, (0.9, 0.5, 0.2, 1.0));
+        let culled = with.to_image().expect("image");
+
+        // The same silhouette either way: culling a closed mesh removes only
+        // surfaces the near side already covers.
+        let plain_drawn = plain.rgba.chunks(4).filter(|px| px[0] > 20).count();
+        let culled_drawn = culled.rgba.chunks(4).filter(|px| px[0] > 20).count();
+        assert_eq!(
+            plain_drawn, culled_drawn,
+            "culling must not change how much of the cube is visible"
+        );
+
+        // And it renders the cube *better*. Front and back faces of a cube
+        // meet at exactly equal depth along the silhouette, so without culling
+        // a back face can win the depth test and paint its dimmer shading over
+        // the front. Dropping it removes the tie entirely.
+        let plain_bright = plain.rgba.chunks(4).filter(|px| px[0] > 100).count();
+        let culled_bright = culled.rgba.chunks(4).filter(|px| px[0] > 100).count();
+        assert!(
+            culled_bright > plain_bright,
+            "culling removes back faces that were fighting the front for depth: \
+             {culled_bright} lit pixels with culling against {plain_bright} without"
+        );
+    }
+
+    #[test]
+    fn culling_is_off_until_an_app_asks_for_it() {
+        // A single flat triangle seen from behind is the case that breaks:
+        // culling it makes a floor vanish when the camera dips below it. Off
+        // by default means an app never loses geometry it did not opt in to
+        // losing.
+        let facing_away: Vec<f32> = vec![-1.0, -1.0, 0.0, 0.0, 1.0, 0.0, 1.0, -1.0, 0.0];
+
+        let mut default_scene = Scene::new(48, 48).expect("scene");
+        default_scene.clear(0xFF00_0000);
+        default_scene.triangles(&facing_away, (0.0, 0.0, 1.0, 1.0));
+        assert!(
+            pixel(&default_scene.to_image().expect("image"), 24, 26)[2] > 60,
+            "by default both winding orders draw"
+        );
+
+        let mut culled = Scene::new(48, 48).expect("scene");
+        culled.set_cull_back_faces(true);
+        culled.clear(0xFF00_0000);
+        culled.triangles(&facing_away, (0.0, 0.0, 1.0, 1.0));
+        assert_eq!(
+            pixel(&culled.to_image().expect("image"), 24, 26),
+            [0, 0, 0, 255],
+            "with culling on, a back-facing triangle is skipped"
         );
     }
 
