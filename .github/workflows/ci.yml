@@ -1175,17 +1175,34 @@ jobs:
           Invoke-WebRequest -Uri 'https://krate.tech/install.ps1' -OutFile $script -UseBasicParsing
           if (-not (Test-Path $script)) { throw 'COLD PATH BROKEN: installer did not download' }
 
-          Write-Host '2. running it'
-          & pwsh -NoProfile -File $script
-          if ($LASTEXITCODE -ne 0) { throw "COLD PATH BROKEN: installer exited $LASTEXITCODE" }
+          Write-Host '2. running it the way the website says to'
+          # Dot-sourced, not `& pwsh -File`. A person pipes the installer into
+          # their own session with `irm ... | iex`, so anything it does to that
+          # session -- notably putting itself on PATH -- has to be tested in a
+          # session, not in a child process that exits immediately afterwards.
+          # Running it as a child is why a real first install came back
+          # "krate is not recognized" with every check here green.
+          . $script
+          if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+            throw "COLD PATH BROKEN: installer exited $LASTEXITCODE"
+          }
 
           $krate = Join-Path $env:KRATE_INSTALL_DIR 'krate.exe'
           if (-not (Test-Path $krate)) { throw "COLD PATH BROKEN: no krate.exe at $krate" }
-          Write-Host "   installed: $(& $krate --version)"
+
+          Write-Host '2b. calling it by name, in this same session'
+          # The whole point of the installer touching PATH. Get-Command rather
+          # than running it, so this fails as "not on PATH" rather than as
+          # whatever the binary happens to print.
+          $found = Get-Command krate -ErrorAction SilentlyContinue
+          if (-not $found) {
+            throw "COLD PATH BROKEN: krate installed but is not callable by name in the session that installed it"
+          }
+          Write-Host "   installed and on PATH: $(krate --version)"
 
           Write-Host '3. running the app it suggests, with no grants'
           Push-Location $work
-          $out = & $krate run 'https://krate.tech/notes.krate' 2>&1 | Out-String
+          $out = krate run 'https://krate.tech/notes.krate' 2>&1 | Out-String
           $code = $LASTEXITCODE
           Pop-Location
           if ($code -ne 5) { throw "COLD PATH BROKEN: expected exit 5 without grants, got $code" }
@@ -1194,7 +1211,7 @@ jobs:
 
           Write-Host '4. running it with grants'
           Push-Location $work
-          $out = & $krate run --grant 'fs.read:notes/**' --grant 'fs.write:notes/**' 'https://krate.tech/notes.krate' 2>&1 | Out-String
+          $out = krate run --grant 'fs.read:notes/**' --grant 'fs.write:notes/**' 'https://krate.tech/notes.krate' 2>&1 | Out-String
           $code = $LASTEXITCODE
           Pop-Location
           if ($code -ne 0) { throw "COLD PATH BROKEN: the app failed with its grants: $out" }

@@ -160,14 +160,39 @@ try {
 
     # Being on PATH is what makes the next command work, so fix it rather than
     # leaving the person to discover the problem themselves.
+    #
+    # Two separate things have to happen, and only doing the first is why
+    # `krate --version` came back "not recognized" straight after a successful
+    # install: SetEnvironmentVariable writes the *persisted* PATH, which is
+    # read by processes started afterwards. The window the installer ran in
+    # already has its copy and never sees the change. So update this session
+    # too, and the person can carry straight on in the terminal they are
+    # already sitting in.
+    #
+    # Compared entry by entry rather than with -like: a path is matched as a
+    # whole segment, so C:\Krate\bin does not count as already present because
+    # C:\Krate\bin\extra happens to contain it, and characters PowerShell
+    # treats as wildcards cannot corrupt the test.
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-    if ($userPath -notlike "*$dir*") {
-        [Environment]::SetEnvironmentVariable('Path', "$userPath;$dir", 'User')
-        Write-Say "Added $dir to your PATH. Open a new terminal for it to take effect."
+    $entries = @()
+    if ($userPath) { $entries = $userPath -split ';' | Where-Object { $_ } }
+    $already = $entries | Where-Object { $_.TrimEnd('\') -ieq $dir.TrimEnd('\') }
+    if (-not $already) {
+        $updated = (($entries + $dir) -join ';')
+        [Environment]::SetEnvironmentVariable('Path', $updated, 'User')
+        Write-Say "Added $dir to your PATH."
+    }
+    # This session, so the next command works here and not only in a new window.
+    if (($env:Path -split ';' | Where-Object { $_.TrimEnd('\') -ieq $dir.TrimEnd('\') }).Count -eq 0) {
+        $env:Path = "$env:Path;$dir"
     }
 
     Write-Say ''
-    Write-Say 'You can now open a .krate someone sends you.'
+    Write-Say 'You can now open a .krate someone sends you. Try this:'
+    Write-Say '  krate run https://krate.tech/cubes.krate'
+    Write-Say ''
+    Write-Say 'If a new terminal says "krate is not recognized", run it by full path:'
+    Write-Say "  & `"$dir\$binary`" --version"
     Write-Say "To *make* your own apps with 'krate create', you also need the Rust"
     Write-Say "build tools. 'krate create' checks for them and offers to install"
     Write-Say "them on first use; 'krate doctor' shows what is present at any time."

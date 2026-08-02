@@ -111,6 +111,79 @@
       line-height: 1.04;
     }
 
+    /* Two columns of platforms: what runs today, and what is next. Collapses
+       to one on a phone rather than squeezing two lists side by side. */
+    .platform-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+      margin-top: 1.6rem;
+    }
+
+    .platform-col h3 {
+      margin: 0 0 .9rem;
+      font-size: 15px;
+      letter-spacing: .02em;
+    }
+
+    .platform-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: .6rem;
+    }
+
+    .platform-list li {
+      padding-left: 1.1rem;
+      position: relative;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+
+    .platform-list strong { color: var(--text, #e8ecf4); }
+
+    /* A tick for what ships, so the two columns read differently at a glance
+       without relying on colour alone. */
+    .platform-col:first-child .platform-list li::before {
+      content: "\2713";
+      position: absolute;
+      left: 0;
+      color: var(--cyan);
+    }
+
+    .platform-col:last-child .platform-list li::before {
+      content: "\2192";
+      position: absolute;
+      left: 0;
+      color: var(--muted);
+    }
+
+    .chip {
+      display: inline-block;
+      margin-left: .4rem;
+      padding: .05rem .45rem;
+      border-radius: 999px;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      vertical-align: middle;
+    }
+
+    .chip-on {
+      background: rgba(108, 244, 215, .14);
+      border: 1px solid rgba(108, 244, 215, .35);
+      color: var(--cyan);
+    }
+
+    .platform-col .method {
+      margin-top: 1rem;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+
     .hero-lead {
       max-width: 540px;
       margin: 18px auto 38px;
@@ -494,6 +567,59 @@
          identical output before timing anything. The caveats are on the page
          on purpose: someone technical will ask for the worst case, and it is
          better to have already said it. -->
+
+    <!-- Which machines this actually runs on. Written out rather than left as
+         "Mac, Windows and Linux", because the answer to "will it run on mine"
+         should not require reading a release page, and because ARM coverage is
+         the part people do not expect. -->
+    <section class="section" id="platforms">
+      <div class="wrap plain-block">
+        <p class="eyebrow">Where it runs</p>
+        <h2>Six builds. Both chips. All three systems.</h2>
+        <p>
+          Every release publishes each of these, and the same app file opens on
+          all of them.
+        </p>
+        <div class="platform-grid">
+          <div class="platform-col">
+            <h3>Shipping now</h3>
+            <ul class="platform-list">
+              <li><strong>macOS</strong> on Apple Silicon <span class="chip chip-on">tested</span></li>
+              <li><strong>macOS</strong> on Intel</li>
+              <li><strong>Windows</strong> on Intel and AMD</li>
+              <li><strong>Windows</strong> on ARM <span class="chip chip-on">tested</span></li>
+              <li><strong>Linux</strong> on Intel and AMD</li>
+              <li><strong>Linux</strong> on ARM</li>
+            </ul>
+            <p class="method">
+              Windows on ARM covers a Windows VM on an Apple Silicon Mac, which
+              is how most people try Windows without owning a Windows machine.
+              Linux on ARM covers a Raspberry Pi 4 or 5 and most cloud ARM
+              instances. Marked <em>tested</em> where a person has installed and
+              run it, rather than only built it.
+            </p>
+          </div>
+          <div class="platform-col">
+            <h3>Next</h3>
+            <ul class="platform-list">
+              <li><strong>Speech on ARM builds.</strong> Everything else works
+                  there today; transcription needs a newer C++ toolchain than
+                  those build containers carry.</li>
+              <li><strong>A signed installer</strong> for Windows and macOS, so
+                  neither system warns about an unknown developer.</li>
+              <li><strong>Linux on RISC-V</strong>, once there is somebody
+                  asking for it.</li>
+              <li><strong>Phones and tablets.</strong> The runtime is portable
+                  and the window layer is not. Real work, not a recompile.</li>
+              <li><strong>The browser.</strong> Krate apps are already
+                  WebAssembly, so this is the shortest path of the four and the
+                  one that would let somebody try an app without installing
+                  anything at all.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
 
         <!-- The store is real and has its own page now, so this points at it
          rather than reproducing it with mock cards that would drift. -->
