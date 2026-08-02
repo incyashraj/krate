@@ -70,6 +70,10 @@ jobs:
           - os: windows-latest
             target: aarch64-pc-windows-msvc
             ext: zip
+            # Same reason as arm64 Linux: whisper.cpp is built through CMake
+            # and does not cross-compile to this target from the x86_64 runner.
+            # Ship everything else rather than nothing.
+            no-speech: true
             # No ARM Windows runner means no way to run what it builds, so
             # treat a failure as "not this release" rather than blocking the
             # other five.
