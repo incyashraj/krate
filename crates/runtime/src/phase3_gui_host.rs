@@ -1567,11 +1567,14 @@ impl gfx::scene3d::Host for Phase3GuiHost {
 
     fn present(&mut self, scene: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         let (window, widget, image) = {
-            let scenes = self.scenes.borrow();
-            let Some((window, widget, surface)) = scenes.get(&scene) else {
+            // Mutable because presenting is what fills the frame: triangles
+            // are queued as they are drawn and rasterized here, once, across
+            // every core.
+            let mut scenes = self.scenes.borrow_mut();
+            let Some((window, widget, surface)) = scenes.get_mut(&scene) else {
                 return Ok(Err(gfx::types::GfxError::InvalidTarget));
             };
-            let image = match surface.to_image() {
+            let image = match surface.render_image() {
                 Ok(image) => image,
                 Err(error) => return Ok(Err(gfx::types::GfxError::Platform(error.to_string()))),
             };
