@@ -24,7 +24,7 @@ not be drawn into. That pair reads `works` on both tables now.
 | `speech.transcription` | 25 | **works** |
 | `ui.clipboard` | 2 | **works** |
 | `ui.dialog` | 3 | **works** |
-| `ui.events` | 3 | **works** |
+| `ui.events` | 6 | **works** |
 | `ui.image` | 2 | **works** |
 | `ui.launcher` | 1 | **works** |
 | `ui.menu` | 1 | **not implemented** |
