@@ -12,7 +12,7 @@ const EXPECTED_IMPORTS: &[&str] = &[
     "krate:fs/files@0.1.0",
     "krate:fs/types@0.1.0",
     "krate:gfx/canvas2d@0.1.0",
-    "krate:gfx/gpu3d@0.1.0",
+    "krate:gfx/scene3d@0.1.0",
     "krate:gfx/types@0.1.0",
     "krate:io/args@0.1.0",
     "krate:io/log@0.1.0",

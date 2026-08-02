@@ -58,15 +58,6 @@ interface types {
 
 
 
-  /// GPU surface options.
-  record surface-options {
-    /// Preferred width in physical pixels.
-    width: u32,
-    /// Preferred height in physical pixels.
-    height: u32,
-    /// Whether presentation should wait for vertical sync.
-    vsync: bool,
-  }
 }
 
 /// 2D drawing calls for widget-backed canvases.
@@ -106,12 +97,49 @@ interface canvas2d {
   present: func(canvas: u64) -> result<_, gfx-error>;
 }
 
-/// Minimal 3D surface calls for later WebGPU-shaped work.
-interface gpu3d {
-  use types.{gfx-error, surface-options};
+/// Software 3D: triangles with depth, lit and drawn on the CPU.
+///
+/// Deliberately not a GPU abstraction. A real one means wgpu, shaders, and
+/// three drivers agreeing about the same scene, which is weeks of work and a
+/// dependency on every machine having a working GPU stack. The CPU rasterizer
+/// already sustains roughly 400 million pixels a second on a laptop, which is
+/// 640x480 at sixty frames with room to spare -- so this ships 3D on all three
+/// systems now, and the GPU path can arrive later behind the same calls.
+///
+/// One call per operation, and vertices as flat lists of floats rather than
+/// records. Both are the lesson canvas2d taught: a `list<variant>` cannot be
+/// lowered by current guest toolchains without dragging std's panic machinery,
+/// and with it the entire `wasi:*` import surface, into an otherwise pure
+/// component.
+///
+/// Nothing appears until `present`. Draw calls mutate a host-side depth buffer
+/// and colour buffer; presenting publishes them to the widget the way a canvas
+/// does.
+interface scene3d {
+  use types.{color, gfx-error};
 
-  /// Create or bind a GPU surface for a window widget.
-  create-surface: func(window: u64, widget: u64, options: surface-options) -> result<u64, gfx-error>;
-  /// Present the current frame for a surface.
-  present: func(surface: u64) -> result<_, gfx-error>;
+  /// Create a 3D scene that draws into a window widget.
+  bind: func(window: u64, widget: u64) -> result<u64, gfx-error>;
+
+  /// Clear colour and depth. Call this at the start of every frame.
+  clear: func(scene: u64, sky: color) -> result<_, gfx-error>;
+
+  /// Place the camera: eye, the point it looks at, and vertical field of view
+  /// in degrees. Up is +Y.
+  camera: func(scene: u64, eye: list<f32>, look-at: list<f32>, fov-degrees: f32) -> result<_, gfx-error>;
+
+  /// Direction light travels, as a vector. Surfaces facing into it are lit.
+  light: func(scene: u64, direction: list<f32>) -> result<_, gfx-error>;
+
+  /// Draw triangles. `vertices` is x,y,z per corner -- nine floats per
+  /// triangle -- in world space. Every triangle in one call shares a colour,
+  /// which keeps the common case (a mesh in one material) to a single crossing
+  /// of the sandbox boundary.
+  ///
+  /// Facing away from the camera is drawn too: an app that wants back-face
+  /// culling is describing a closed mesh, and the host cannot know that.
+  triangles: func(scene: u64, vertices: list<f32>, tint: color) -> result<_, gfx-error>;
+
+  /// Publish the frame to the widget. Until this, nothing is shown.
+  present: func(scene: u64) -> result<_, gfx-error>;
 }

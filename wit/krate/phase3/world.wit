@@ -32,7 +32,7 @@ world gui {
   import krate:ui/notify@0.1.0;
 
   import krate:gfx/canvas2d@0.1.0;
-  import krate:gfx/gpu3d@0.1.0;
+  import krate:gfx/scene3d@0.1.0;
 
   import krate:audio/playback@0.1.0;
   import krate:audio/capture@0.1.0;

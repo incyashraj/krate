@@ -165,6 +165,9 @@ def main():
     <p>We publish this for the same reason we publish the rest.</p>
     <ul>
       <li><strong>3D graphics.</strong> The interface exists and does nothing.</li>
+      <li><strong>Heavy 3D.</strong> Software 3D works -- triangles with depth
+          and lighting, 54 frames a second at 640x480 on a laptop. A modern 3D
+          game needs the GPU path, which is planned rather than written.</li>
       <li><strong>Video.</strong> No decoder, no frame clock.</li>
       <li><strong>Live connections.</strong> HTTPS works; streaming and
           WebSockets do not, so no multiplayer and no live feeds.</li>

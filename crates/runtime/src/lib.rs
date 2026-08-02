@@ -43,6 +43,7 @@ pub mod phase3_gui_bindings;
 #[cfg(feature = "phase2-bindings")]
 pub mod phase3_gui_host;
 pub mod random_host;
+mod scene3d;
 pub mod secret_host;
 mod speech_transcription;
 pub mod sql_host;
@@ -526,7 +527,7 @@ impl Runtime {
         link_gui!(ui::notify);
         link_gui!(gfx::types);
         link_gui!(gfx::canvas2d);
-        link_gui!(gfx::gpu3d);
+        link_gui!(gfx::scene3d);
         link_gui!(audio::types);
         link_gui!(audio::playback);
         link_gui!(audio::capture);

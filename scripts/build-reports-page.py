@@ -443,6 +443,11 @@ def main():
             decoding, scrolling text, search.</li>
         <li><strong>Internet apps</strong> — HTTPS scoped to a single host and
             port, not &ldquo;the internet&rdquo;.</li>
+        <li><strong>3D</strong> &mdash; triangles with depth and lighting,
+            rendered on the CPU so it works without a graphics card. Measured
+            on a laptop: 207&nbsp;fps at 320&times;240, 54&nbsp;fps at
+            640&times;480. Enough for a stylised game; not yet enough for a
+            modern one, which needs the GPU path.</li>
         <li><strong>Databases, secure storage, speech-to-text.</strong></li>
       </ul>
     </section>
@@ -452,8 +457,11 @@ def main():
       <h2>What Krate cannot do.</h2>
       <p>Published for the same reason as everything above it.</p>
       <ul class="limits">
-        <li><strong>3D graphics.</strong> The interface is declared and does
-            nothing.</li>
+
+        <li><strong>Heavy 3D.</strong> Software rendering carries a stylised
+            game today. A modern one needs the GPU, which is a real graphics
+            abstraction across three systems and is planned rather than
+            written.</li>
         <li><strong>Video.</strong> No decoder, no frame clock.</li>
         <li><strong>Live connections.</strong> HTTPS works; streaming and
             WebSockets do not — so no multiplayer and no live feeds.</li>

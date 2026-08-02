@@ -24,6 +24,7 @@ use crate::{
     canvas_raster::{pack_color, CanvasSurface},
     phase3_gui_bindings::krate::{audio, gfx, speech, ui},
     phase3_ui::{Phase3HostUiMode, Phase3UiDispatcher, Phase3UiRuntime, UiDispatchError},
+    scene3d::Scene,
     speech_transcription::{LocalSpeechRuntime, SpeechError},
     uapi::{AudioCall, UapiCall, UapiGuard, UiCall},
 };
@@ -96,7 +97,10 @@ pub struct Phase3GuiHost {
     /// travel the image widget's proven path to all three systems.
     canvases:
         std::cell::RefCell<std::collections::BTreeMap<u64, (WindowId, WidgetId, CanvasSurface)>>,
-    /// The next canvas id to hand out; ids are never reused within a run.
+    /// Bound 3D scenes, sharing the canvas id space so a scene and a canvas
+    /// can never collide on one number.
+    scenes: std::cell::RefCell<std::collections::BTreeMap<u64, (WindowId, WidgetId, Scene)>>,
+    /// The next canvas or scene id to hand out; never reused within a run.
     next_canvas_id: std::cell::Cell<u64>,
     /// Native microphone streams owned by this one sandboxed app session.
     audio_capture: AudioCaptureRuntime,
@@ -121,6 +125,7 @@ impl Phase3GuiHost {
             headless_started: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             canvases: std::cell::RefCell::new(std::collections::BTreeMap::new()),
+            scenes: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             next_canvas_id: std::cell::Cell::new(1),
             audio_capture: AudioCaptureRuntime::default(),
             audio_playback: AudioPlaybackRuntime::default(),
@@ -1198,10 +1203,6 @@ impl ui::menu::Host for Phase3GuiHost {
     }
 }
 
-fn gfx_unsupported() -> gfx::types::GfxError {
-    gfx::types::GfxError::Unsupported("graphics are not implemented yet".to_string())
-}
-
 impl gfx::types::Host for Phase3GuiHost {}
 
 impl gfx::canvas2d::Host for Phase3GuiHost {
@@ -1344,18 +1345,125 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
     }
 }
 
-impl gfx::gpu3d::Host for Phase3GuiHost {
-    fn create_surface(
+impl gfx::scene3d::Host for Phase3GuiHost {
+    fn bind(
         &mut self,
-        _window: u64,
-        _widget: u64,
-        _options: gfx::types::SurfaceOptions,
+        window: u64,
+        widget: u64,
     ) -> wasmtime::Result<Result<u64, gfx::types::GfxError>> {
-        Ok(Err(gfx_unsupported()))
+        let window_id = match self.window_id(window) {
+            Ok(id) => id,
+            Err(_) => return Ok(Err(gfx::types::GfxError::InvalidTarget)),
+        };
+        let Ok(widget_id) = WidgetId::new(widget) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        let rect = match self.canvas_widget_rect(window_id, widget_id) {
+            Ok(rect) => rect,
+            Err(error) => return Ok(Err(error)),
+        };
+        let scene = match Scene::new(rect.0.max(1.0) as u32, rect.1.max(1.0) as u32) {
+            Ok(scene) => scene,
+            Err(error) => return Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
+        };
+        let scene_id = self.next_canvas_id.get();
+        self.next_canvas_id.set(scene_id.saturating_add(1));
+        self.scenes
+            .borrow_mut()
+            .insert(scene_id, (window_id, widget_id, scene));
+        Ok(Ok(scene_id))
     }
 
-    fn present(&mut self, _surface: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        Ok(Err(gfx_unsupported()))
+    fn clear(
+        &mut self,
+        scene: u64,
+        sky: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.clear(pack_color(sky.r, sky.g, sky.b, sky.a));
+        Ok(Ok(()))
+    }
+
+    fn camera(
+        &mut self,
+        scene: u64,
+        eye: Vec<f32>,
+        look_at: Vec<f32>,
+        fov_degrees: f32,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        // Three floats each, or the call describes nothing. Refused rather
+        // than padded: a camera silently placed at the origin is a bug an app
+        // author would spend an evening on.
+        if eye.len() != 3 || look_at.len() != 3 {
+            return Ok(Err(gfx::types::GfxError::Unsupported(
+                "camera takes three floats for eye and three for look-at".to_string(),
+            )));
+        }
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.set_camera(
+            [eye[0], eye[1], eye[2]],
+            [look_at[0], look_at[1], look_at[2]],
+            fov_degrees,
+        );
+        Ok(Ok(()))
+    }
+
+    fn light(
+        &mut self,
+        scene: u64,
+        direction: Vec<f32>,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        if direction.len() != 3 {
+            return Ok(Err(gfx::types::GfxError::Unsupported(
+                "light takes three floats".to_string(),
+            )));
+        }
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.set_light([direction[0], direction[1], direction[2]]);
+        Ok(Ok(()))
+    }
+
+    fn triangles(
+        &mut self,
+        scene: u64,
+        vertices: Vec<f32>,
+        tint: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut scenes = self.scenes.borrow_mut();
+        let Some((_, _, surface)) = scenes.get_mut(&scene) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.triangles(&vertices, (tint.r, tint.g, tint.b, tint.a));
+        Ok(Ok(()))
+    }
+
+    fn present(&mut self, scene: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let (window, widget, image) = {
+            let scenes = self.scenes.borrow();
+            let Some((window, widget, surface)) = scenes.get(&scene) else {
+                return Ok(Err(gfx::types::GfxError::InvalidTarget));
+            };
+            let image = match surface.to_image() {
+                Ok(image) => image,
+                Err(error) => return Ok(Err(gfx::types::GfxError::Platform(error.to_string()))),
+            };
+            (*window, *widget, image)
+        };
+        self.images
+            .borrow_mut()
+            .insert((window, widget), std::sync::Arc::new(image));
+        Ok(self
+            .sync_native_widgets(window)
+            .map_err(|error| gfx::types::GfxError::Platform(error.to_string())))
     }
 }
 

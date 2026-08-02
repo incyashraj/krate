@@ -96,22 +96,22 @@
 
     <section>
       <p class="eyebrow">Speed</p>
-      <h2>An app opens in 18&ndash;48 milliseconds.</h2>
+      <h2>An app opens in 17&ndash;44 milliseconds.</h2>
       <p>
         One frame of 60&nbsp;fps video lasts 16.7&nbsp;ms. Most Krate apps have
         finished opening before a screen finishes drawing a single frame. The
         slowest here are the two ported desktop applications, which do real
         work on startup.
       </p>
-      <svg viewBox="0 0 640 272" role="img" class="chart" aria-label="Bar chart, longest bar is 47.7 ms">
-  <text x="0" y="17" class="bl">chart</text><rect x="132" y="5" width="157.2" height="18" rx="4" fill="#7cc4a4"/><text x="299.2" y="19" class="bv">18.2 ms</text>
-  <text x="0" y="51" class="bl">savings</text><rect x="132" y="39" width="165.0" height="18" rx="4" fill="#7cc4a4"/><text x="307.0" y="53" class="bv">19.1 ms</text>
-  <text x="0" y="85" class="bl">bounce</text><rect x="132" y="73" width="222.8" height="18" rx="4" fill="#7cc4a4"/><text x="364.8" y="87" class="bv">25.8 ms</text>
-  <text x="0" y="119" class="bl">envelope</text><rect x="132" y="107" width="258.3" height="18" rx="4" fill="#7cc4a4"/><text x="400.3" y="121" class="bv">29.9 ms</text>
-  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="259.1" height="18" rx="4" fill="#7cc4a4"/><text x="401.1" y="155" class="bv">30 ms</text>
-  <text x="0" y="187" class="bl">eo2</text><rect x="132" y="175" width="327.4" height="18" rx="4" fill="#7cc4a4"/><text x="469.4" y="189" class="bv">37.9 ms</text>
-  <text x="0" y="221" class="bl">mdview</text><rect x="132" y="209" width="331.7" height="18" rx="4" fill="#7cc4a4"/><text x="473.7" y="223" class="bv">38.4 ms</text>
-  <text x="0" y="255" class="bl">grex</text><rect x="132" y="243" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="257" class="bv">47.7 ms</text>
+      <svg viewBox="0 0 640 272" role="img" class="chart" aria-label="Bar chart, longest bar is 43.7 ms">
+  <text x="0" y="17" class="bl">chart</text><rect x="132" y="5" width="158.4" height="18" rx="4" fill="#7cc4a4"/><text x="300.4" y="19" class="bv">16.8 ms</text>
+  <text x="0" y="51" class="bl">savings</text><rect x="132" y="39" width="165.0" height="18" rx="4" fill="#7cc4a4"/><text x="307.0" y="53" class="bv">17.5 ms</text>
+  <text x="0" y="85" class="bl">bounce</text><rect x="132" y="73" width="237.6" height="18" rx="4" fill="#7cc4a4"/><text x="379.6" y="87" class="bv">25.2 ms</text>
+  <text x="0" y="119" class="bl">envelope</text><rect x="132" y="107" width="245.1" height="18" rx="4" fill="#7cc4a4"/><text x="387.1" y="121" class="bv">26 ms</text>
+  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="271.5" height="18" rx="4" fill="#7cc4a4"/><text x="413.5" y="155" class="bv">28.8 ms</text>
+  <text x="0" y="187" class="bl">eo2</text><rect x="132" y="175" width="279.1" height="18" rx="4" fill="#7cc4a4"/><text x="421.1" y="189" class="bv">29.6 ms</text>
+  <text x="0" y="221" class="bl">mdview</text><rect x="132" y="209" width="353.5" height="18" rx="4" fill="#7cc4a4"/><text x="495.5" y="223" class="bv">37.5 ms</text>
+  <text x="0" y="255" class="bl">grex</text><rect x="132" y="243" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="257" class="bv">43.7 ms</text>
 </svg>
       <p class="method">
         Measured while this page was generated: five runs of each app on this
@@ -245,7 +245,7 @@
       <p class="eyebrow">Coverage</p>
       <h2>How much of the system is real.</h2>
       <ul>
-      <li>10 of 14 declared interfaces are fully implemented. 2 are declared and do nothing yet.</li>
+      <li>11 of 14 declared interfaces are fully implemented. 1 are declared and do nothing yet.</li>
       <li>17 of 17 declared widgets work on all three systems.</li>
       </ul>
       <p>
@@ -269,6 +269,11 @@
             decoding, scrolling text, search.</li>
         <li><strong>Internet apps</strong> — HTTPS scoped to a single host and
             port, not &ldquo;the internet&rdquo;.</li>
+        <li><strong>3D</strong> &mdash; triangles with depth and lighting,
+            rendered on the CPU so it works without a graphics card. Measured
+            on a laptop: 207&nbsp;fps at 320&times;240, 54&nbsp;fps at
+            640&times;480. Enough for a stylised game; not yet enough for a
+            modern one, which needs the GPU path.</li>
         <li><strong>Databases, secure storage, speech-to-text.</strong></li>
       </ul>
     </section>
@@ -278,8 +283,11 @@
       <h2>What Krate cannot do.</h2>
       <p>Published for the same reason as everything above it.</p>
       <ul class="limits">
-        <li><strong>3D graphics.</strong> The interface is declared and does
-            nothing.</li>
+
+        <li><strong>Heavy 3D.</strong> Software rendering carries a stylised
+            game today. A modern one needs the GPU, which is a real graphics
+            abstraction across three systems and is planned rather than
+            written.</li>
         <li><strong>Video.</strong> No decoder, no frame clock.</li>
         <li><strong>Live connections.</strong> HTTPS works; streaming and
             WebSockets do not — so no multiplayer and no live feeds.</li>
