@@ -23,11 +23,21 @@ Everything below is a way of making that concrete.
 
 ## Size: the number people feel
 
-| What it is | Size | Compared to Apple's Reminders (11.2 MB) |
-|---|---|---|
-| A 2D game with physics and sprites | **11 KB** | **1,074× smaller** |
-| A markdown viewer (ported from 4,863 lines) | **51 KB** | 227× smaller |
-| An image viewer (ported from 2,677 lines) | **77 KB** | 152× smaller |
+Compared against the software Krate actually competes with: apps that ship one
+codebase to Mac, Windows and Linux by putting a browser inside every copy.
+Measured with `du -sk` on this Mac, 2026-08-02.
+
+| What it is | Size | vs Discord (431 MB) | vs VS Code (1.4 GB) |
+|---|---|---|---|
+| A 2D game with physics and sprites | **11 KB** | **41,000× smaller** | **140,000× smaller** |
+| A markdown viewer (ported from 4,863 lines) | **51 KB** | 8,697× smaller | 28,929× smaller |
+| An image viewer (ported from 2,677 lines) | **77 KB** | 5,833× smaller | 19,401× smaller |
+
+Reminders was the old comparison and it is a fair thing to object to: a
+first-party single-platform app that syncs, keeps a database and ships in
+dozens of languages. Discord and VS Code are the right fight. They do far more
+than a game, and the number that survives that objection is the floor each
+approach starts from: a browser copy for one, nothing for the other.
 
 Ways to say it:
 
