@@ -76,7 +76,7 @@ if [ -z "$version" ]; then
     echo "on shared networks and clears within the hour." >&2
     echo "" >&2
     echo "To install right now, pin a version:" >&2
-    echo "  KRATE_VERSION=v0.1.0-rc10 curl -fsSL https://krate.tech/install.sh | sh" >&2
+    echo "  KRATE_VERSION=v0.1.0-rc11 curl -fsSL https://krate.tech/install.sh | sh" >&2
     echo "" >&2
     echo "Versions are listed at https://github.com/${REPO}/releases" >&2
     exit 1

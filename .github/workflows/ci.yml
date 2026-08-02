@@ -1398,6 +1398,12 @@ jobs:
         run: git fetch --tags --force --depth=1
       - name: Check the installers do not suggest a stale version
         run: sh scripts/check-installer-versions.sh
+      # Both winit adapters created windows hidden, assuming apps call
+      # window.show. No sample app does, so on Windows and Linux a person ran
+      # a 3D app and saw a frame count with no window. Every test passed: they
+      # check a window was created, never that it is visible.
+      - name: Check native windows are visible when created
+        run: sh scripts/check-windows-are-visible.sh
       # install.ps1 is the first thing a Windows user runs, so a parse error in
       # it breaks every Windows install at once. The full cold-install walk
       # covers this properly but only runs on a schedule or with [full-ci], so

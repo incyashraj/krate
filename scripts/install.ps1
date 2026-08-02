@@ -80,7 +80,7 @@ if (-not $version) {
         Write-Host ''
         Write-Host 'To install right now, pin a version. Take the newest tag from'
         Write-Host "https://github.com/$repo/releases and use it like this:"
-        Write-Host '  $env:KRATE_VERSION="v0.1.0-rc10"; irm https://krate.tech/install.ps1 | iex'
+        Write-Host '  $env:KRATE_VERSION="v0.1.0-rc11"; irm https://krate.tech/install.ps1 | iex'
         exit 1
     }
 }

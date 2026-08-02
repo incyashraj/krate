@@ -132,7 +132,17 @@ mod real {
                         pending.size.width as f64,
                         pending.size.height as f64,
                     ))
-                    .with_visible(false);
+                    // Visible on creation, matching macOS. Hidden-until-shown
+                    // assumed every app calls `window.show`, and none of them
+                    // do: the samples create a window and start drawing. On
+                    // macOS that displays; here it produced a running app with
+                    // nothing on screen, which is what a first Windows user
+                    // saw when they ran a 3D game and got a frame count.
+                    //
+                    // `show` still works and is still the way to reveal a
+                    // window deliberately; it is simply no longer required to
+                    // see anything at all.
+                    .with_visible(true);
                 if let Ok(window) = event_loop.create_window(attributes) {
                     self.windows.insert(
                         window.id(),

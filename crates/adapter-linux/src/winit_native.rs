@@ -132,7 +132,12 @@ mod real {
                         pending.size.width as f64,
                         pending.size.height as f64,
                     ))
-                    .with_visible(false);
+                    // Visible on creation, matching macOS. See the same note in
+                    // the Windows adapter: hidden-until-shown assumed every app
+                    // calls `window.show`, and none of the samples do. A user
+                    // ran a 3D app on Windows and saw a frame count print with
+                    // no window; Linux had the identical bug.
+                    .with_visible(true);
                 if let Ok(window) = event_loop.create_window(attributes) {
                     self.windows.insert(
                         window.id(),
