@@ -6,11 +6,11 @@
   <meta name="theme-color" content="#0b0d12" />
   <meta name="description" content="Where Krate is today, measured: every app we have shipped, its size, and whether it is re-tested nightly on Mac, Windows, and Linux." />
   <link rel="canonical" href="https://krate.tech/progress/" />
-  <meta property="og:title" content="Krate — where we are, measured" />
+  <meta property="og:title" content="Krate: where we are, measured" />
   <meta property="og:description" content="Every app we have shipped, its size, and what still does not work. Generated from the repository, not written by hand." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/progress/" />
-  <title>Krate — where we are, measured</title>
+  <title>Krate: where we are, measured</title>
   <link rel="stylesheet" href="/krate.css" />
   <style>
     .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -27,9 +27,9 @@
     <p>
       Every app we have shipped, its real size, and whether it is re-tested every
       night on Mac, Windows, and Linux. This page is generated from the
-      repository — if a number here is wrong, the code is wrong.
+      repository. If a number here is wrong, the code is wrong.
     </p>
-    <p class="generated">Generated 2026-08-02 from commit <code>694deec</code>.</p>
+    <p class="generated">Generated 2026-08-02 from commit <code>b1e4931</code>.</p>
 
     <h2>Apps that exist and run</h2>
     <table>
@@ -45,13 +45,13 @@
           <tr><td><code>ddh</code></td><td class="num">17,778</td><td class="num">664&times;</td><td>Duplicate-file finder</td><td>Yes</td></tr>
           <tr><td><code>hexyl</code></td><td class="num">14,872</td><td class="num">793&times;</td><td>Hex viewer, byte-identical output to the original</td><td>Yes</td></tr>
           <tr><td><code>savings</code></td><td class="num">13,791</td><td class="num">855&times;</td><td>Budget splitter with a window and saved state</td><td>Yes</td></tr>
-          <tr><td><code>cubes</code></td><td class="num">12,462</td><td class="num">947&times;</td><td></td><td>Yes</td></tr>
+          <tr><td><code>cubes</code></td><td class="num">12,780</td><td class="num">923&times;</td><td></td><td>Yes</td></tr>
           <tr><td><code>chart</code></td><td class="num">11,148</td><td class="num">1,058&times;</td><td>Draws its own bar chart, no image files</td><td>Yes</td></tr>
           <tr><td><code>bounce</code></td><td class="num">10,982</td><td class="num">1,074&times;</td><td>2D game: gravity, collision, sprites, own frame loop</td><td>Yes</td></tr>
       </tbody>
     </table>
     <p>
-      <strong>All 11 apps together: 302,143 bytes (295&nbsp;KB).</strong>
+      <strong>All 11 apps together: 302,461 bytes (295&nbsp;KB).</strong>
       Apple's Reminders app, which keeps lists, is 39.0&times; that on its own.
     </p>
     <p class="generated">
@@ -65,7 +65,7 @@
       All of them. <code>v0.1.0-rc5</code> is the first release with drawing,
       animation and sound, and it was checked by downloading the published
       binary and running the 2D game, the chart and the sandbox escape test
-      with it &mdash; not by trusting the build that made it.
+      with it, not by trusting the build that made it.
     </p>
     <p class="generated">
       One gap: there is no arm64 Linux binary in rc5. It builds inside a
@@ -97,7 +97,7 @@
       <li><strong>System menu bars.</strong> Apps use in-window buttons instead.</li>
       <li><strong>Judgment inside the sandbox.</strong> When an AI builds an app,
           Krate guarantees it cannot exceed the permissions you granted. It does
-          not guarantee the AI chose well inside them — we caught our own
+          not guarantee the AI chose well inside them. We caught our own
           generated password manager storing passwords in ordinary storage, and
           fixed the instructions that led it there.</li>
     </ul>

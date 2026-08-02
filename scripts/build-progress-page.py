@@ -93,11 +93,11 @@ def main():
   <meta name="theme-color" content="#0b0d12" />
   <meta name="description" content="Where Krate is today, measured: every app we have shipped, its size, and whether it is re-tested nightly on Mac, Windows, and Linux." />
   <link rel="canonical" href="https://krate.tech/progress/" />
-  <meta property="og:title" content="Krate — where we are, measured" />
+  <meta property="og:title" content="Krate: where we are, measured" />
   <meta property="og:description" content="Every app we have shipped, its size, and what still does not work. Generated from the repository, not written by hand." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/progress/" />
-  <title>Krate — where we are, measured</title>
+  <title>Krate: where we are, measured</title>
   <link rel="stylesheet" href="/krate.css" />
   <style>
     .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
@@ -114,7 +114,7 @@ def main():
     <p>
       Every app we have shipped, its real size, and whether it is re-tested every
       night on Mac, Windows, and Linux. This page is generated from the
-      repository — if a number here is wrong, the code is wrong.
+      repository. If a number here is wrong, the code is wrong.
     </p>
     <p class="generated">Generated {today} from commit <code>{commit()}</code>.</p>
 
@@ -142,7 +142,7 @@ def main():
       All of them. <code>v0.1.0-rc5</code> is the first release with drawing,
       animation and sound, and it was checked by downloading the published
       binary and running the 2D game, the chart and the sandbox escape test
-      with it &mdash; not by trusting the build that made it.
+      with it, not by trusting the build that made it.
     </p>
     <p class="generated">
       One gap: there is no arm64 Linux binary in rc5. It builds inside a
@@ -174,7 +174,7 @@ def main():
       <li><strong>System menu bars.</strong> Apps use in-window buttons instead.</li>
       <li><strong>Judgment inside the sandbox.</strong> When an AI builds an app,
           Krate guarantees it cannot exceed the permissions you granted. It does
-          not guarantee the AI chose well inside them — we caught our own
+          not guarantee the AI chose well inside them. We caught our own
           generated password manager storing passwords in ordinary storage, and
           fixed the instructions that led it there.</li>
     </ul>
