@@ -777,6 +777,20 @@ jobs:
             ${{ runner.temp }}/hello-gui-linux-bundle.png
           if-no-files-found: ignore
           retention-days: 14
+      - name: Run macOS AppKit native input proof
+        if: matrix.os == 'macos-latest'
+        shell: bash
+        run: |
+          # macOS had no native-input proof, and that is exactly where a real
+          # bug shipped: windows showed, closed, and drew, but no keypress ever
+          # reached a game, because AppKit hands key events to a responder
+          # chain a drawn canvas is not part of. This posts a synthetic Space
+          # into the process's own AppKit queue, pumps the production path, and
+          # requires the sample to come out the runtime side with the portable
+          # name apps hard-code. No accessibility permission: it is our own
+          # queue, not synthesized global input.
+          cargo run -p krate-adapter-macos --example key_capture_probe
+
       - name: Run Windows winit native window proof
         if: matrix.os == 'windows-latest'
         shell: bash

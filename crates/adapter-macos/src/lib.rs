@@ -458,6 +458,16 @@ impl UiAdapter for MacosUiAdapter {
 }
 
 impl UiAdapter for MacosAppKitPrototypeUiAdapter {
+    /// Keyboard input captured by the AppKit pump.
+    ///
+    /// Without this override the trait default returns nothing, and that was
+    /// the difference between watching a game and playing it: the window
+    /// showed, the close button worked, and every keypress went to a responder
+    /// chain no drawn view listens to.
+    fn drain_raw_key_input(&self) -> Vec<krate_adapter_common::ui::RawKeySample> {
+        appkit::take_raw_key_samples()
+    }
+
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
         self.headless.set_root(window, root)
     }

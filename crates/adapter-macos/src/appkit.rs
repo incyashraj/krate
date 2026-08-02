@@ -1172,13 +1172,14 @@ mod platform {
     use objc2::rc::Retained;
     use objc2::runtime::{AnyObject, ProtocolObject};
     use objc2::{
-        define_class, msg_send, sel, AllocAnyThread, DefinedClass, MainThreadMarker, MainThreadOnly,
+        define_class, msg_send, sel, AllocAnyThread, ClassType, DefinedClass, MainThreadMarker,
+        MainThreadOnly,
     };
     use objc2_app_kit::{
         NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSBitmapImageRep,
-        NSButton, NSColor, NSControl, NSEventMask, NSEventModifierFlags, NSFont, NSImage,
-        NSImageScaling, NSImageView, NSMenu, NSMenuItem, NSTextField, NSView, NSWindow,
-        NSWindowDelegate, NSWindowStyleMask,
+        NSButton, NSColor, NSControl, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType,
+        NSFont, NSImage, NSImageScaling, NSImageView, NSMenu, NSMenuItem, NSText, NSTextField,
+        NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
     };
     use objc2_foundation::{
         NSDefaultRunLoopMode, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
@@ -1959,6 +1960,91 @@ mod platform {
         }
     }
 
+    thread_local! {
+        /// Key samples captured by the pump, waiting for the runtime to drain
+        /// them. Main-thread only, like every other AppKit surface here.
+        static PENDING_KEY_SAMPLES: std::cell::RefCell<Vec<krate_adapter_common::ui::RawKeySample>> =
+            const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    /// Hand over every key sample captured since the last call.
+    ///
+    /// This is the macOS half of `drain_raw_key_input`. The winit adapters
+    /// collect keyboard input from their event loop; AppKit hands events to a
+    /// responder chain instead, and a drawn canvas is not a responder -- so
+    /// before this existed, every keypress into a game window was dispatched
+    /// to nobody and dropped. A person could see the game and not play it.
+    pub fn take_raw_key_samples() -> Vec<krate_adapter_common::ui::RawKeySample> {
+        PENDING_KEY_SAMPLES.with(|slot| slot.borrow_mut().drain(..).collect())
+    }
+
+    /// Map an AppKit key event to the portable name the host uses.
+    ///
+    /// The names must match the winit adapters exactly -- "Space",
+    /// "ArrowLeft", "a" -- because apps hard-code them: the same bundle asking
+    /// for `key-held("Space")` has to launch its ball on every platform.
+    /// Arrows and editing keys go by key code, since their character forms
+    /// are private-use codepoints nobody should ever see; everything else is
+    /// its typed character.
+    fn portable_key_name(key_code: u16, characters: Option<&str>) -> Option<String> {
+        let named = match key_code {
+            36 | 76 => Some("Enter"),
+            48 => Some("Tab"),
+            49 => Some("Space"),
+            51 => Some("Backspace"),
+            53 => Some("Escape"),
+            115 => Some("Home"),
+            116 => Some("PageUp"),
+            117 => Some("Delete"),
+            119 => Some("End"),
+            121 => Some("PageDown"),
+            123 => Some("ArrowLeft"),
+            124 => Some("ArrowRight"),
+            125 => Some("ArrowDown"),
+            126 => Some("ArrowUp"),
+            _ => None,
+        };
+        if let Some(name) = named {
+            return Some(name.to_string());
+        }
+        let text = characters?;
+        let ch = text.chars().next()?;
+        if ch.is_control() || ('\u{f700}'..='\u{f8ff}').contains(&ch) {
+            // Function-key range and control characters carry no portable
+            // meaning; dropping them beats inventing names per platform.
+            return None;
+        }
+        Some(ch.to_string())
+    }
+
+    #[cfg(test)]
+    mod key_name_tests {
+        use super::portable_key_name;
+
+        #[test]
+        fn the_keys_games_use_map_to_the_names_apps_hard_code() {
+            // The exact strings bounce and cubes ask key-held for. A mapping
+            // slip here is a game that works on Windows and not on a Mac,
+            // which is precisely the bug this module exists to end.
+            assert_eq!(portable_key_name(49, Some(" ")).as_deref(), Some("Space"));
+            assert_eq!(portable_key_name(123, None).as_deref(), Some("ArrowLeft"));
+            assert_eq!(portable_key_name(124, None).as_deref(), Some("ArrowRight"));
+            assert_eq!(portable_key_name(126, None).as_deref(), Some("ArrowUp"));
+            assert_eq!(portable_key_name(125, None).as_deref(), Some("ArrowDown"));
+            assert_eq!(portable_key_name(36, Some("\r")).as_deref(), Some("Enter"));
+            assert_eq!(portable_key_name(53, None).as_deref(), Some("Escape"));
+            assert_eq!(portable_key_name(0, Some("a")).as_deref(), Some("a"));
+        }
+
+        #[test]
+        fn arrow_private_use_characters_never_leak_as_names() {
+            // Arrows arrive with a private-use character attached; an unknown
+            // key code with one must map to nothing rather than to garbage.
+            assert_eq!(portable_key_name(200, Some("\u{f704}")), None);
+            assert_eq!(portable_key_name(200, Some("\u{0008}")), None);
+        }
+    }
+
     impl AppKitWindowPrototype {
         /// Drain and dispatch pending NSApplication events without blocking.
         ///
@@ -1985,12 +2071,97 @@ mod platform {
                 let Some(event) = event else {
                     break;
                 };
+                if self.capture_key_event(&event) {
+                    // A game key: recorded for the runtime, not dispatched.
+                    // Sending it on would reach a responder chain where no
+                    // drawn view listens, whose answer to every keypress is
+                    // the system beep.
+                    dispatched += 1;
+                    continue;
+                }
                 app.sendEvent(&event);
                 dispatched += 1;
             }
             app.updateWindows();
 
             Ok(dispatched)
+        }
+
+        /// Record a key event as a raw sample, unless a native text control
+        /// is being edited.
+        ///
+        /// Returns true when the event was captured and must not be sent on.
+        /// When the window's first responder is a text view -- the field
+        /// editor AppKit installs while an NSTextField is being edited -- the
+        /// event belongs to that field and is forwarded untouched, so typing
+        /// in real controls keeps working. Everything else is game input.
+        fn capture_key_event(&self, event: &NSEvent) -> bool {
+            let event_type = event.r#type();
+            let pressed = match event_type {
+                NSEventType::KeyDown => true,
+                NSEventType::KeyUp => false,
+                _ => return false,
+            };
+
+            let editing_text = self
+                .window
+                .firstResponder()
+                .is_some_and(|responder| responder.isKindOfClass(NSText::class()));
+            if editing_text {
+                return false;
+            }
+
+            // Command shortcuts belong to the menu, not the game. Capturing
+            // them here would eat Cmd-Q and Cmd-W at the pump, and an app you
+            // cannot quit is a worse bug than the one this function fixes.
+            let flags = event.modifierFlags();
+            if flags.contains(NSEventModifierFlags::Command) {
+                return false;
+            }
+
+            let characters = event.charactersIgnoringModifiers();
+            let characters = characters.as_deref().map(|text| text.to_string());
+            let key_code = event.keyCode();
+            let Some(key) = portable_key_name(key_code, characters.as_deref()) else {
+                // Unknown key: captured anyway so it cannot beep, but no
+                // sample -- there is no portable name an app could ask for.
+                return true;
+            };
+
+            let modifiers = krate_adapter_common::ui::Modifiers {
+                shift: flags.contains(NSEventModifierFlags::Shift),
+                control: flags.contains(NSEventModifierFlags::Control),
+                alt: flags.contains(NSEventModifierFlags::Option),
+                meta: flags.contains(NSEventModifierFlags::Command),
+            };
+
+            // Printable text travels with the press, the same shape the winit
+            // adapters produce, so the host's text synthesis works unchanged.
+            let text = if pressed {
+                characters.filter(|value| {
+                    value.chars().next().is_some_and(|ch| {
+                        !ch.is_control() && !('\u{f700}'..='\u{f8ff}').contains(&ch)
+                    })
+                })
+            } else {
+                None
+            };
+
+            // Attributed to this session's window. The pump serves the whole
+            // application queue, but every sample-driven app today is a
+            // single-window game; multi-window key routing can pick the true
+            // target window when an app exists to need it.
+            PENDING_KEY_SAMPLES.with(|slot| {
+                slot.borrow_mut()
+                    .push(krate_adapter_common::ui::RawKeySample {
+                        window: self.id,
+                        key,
+                        pressed,
+                        modifiers,
+                        text,
+                    });
+            });
+            true
         }
     }
 
@@ -2428,6 +2599,7 @@ mod platform {
     }
 }
 
+pub use platform::take_raw_key_samples;
 pub use platform::AppKitDrawViewSurface;
 pub use platform::AppKitWidgetSurface;
 pub use platform::AppKitWindowNativeDelegate;
