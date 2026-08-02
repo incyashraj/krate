@@ -17,6 +17,11 @@ Last verified: 2026-08-02.
 **One file. Three operating systems. No installer, no runtime to download, no
 permission it did not ask for.**
 
+As of v0.1.0-rc9 that is **six published binaries**: Intel and ARM for each of
+Linux, Windows and macOS. ARM Windows matters more than its desktop share
+suggests, because a Windows VM on an Apple Silicon Mac is ARM, and that is how
+most people try Windows without owning a Windows machine.
+
 Everything below is a way of making that concrete.
 
 ---
