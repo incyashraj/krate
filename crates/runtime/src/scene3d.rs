@@ -578,8 +578,27 @@ fn fill_band(
                 let w0 = ((pb.0 - pa.0) * (py - pa.1) - (px - pa.0) * (pb.1 - pa.1)) / tri.area;
                 let w1 = ((px - pa.0) * (pc.1 - pa.1) - (pc.0 - pa.0) * (py - pa.1)) / tri.area;
                 let w2 = 1.0 - w0 - w1;
-                let inside =
-                    (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) || (w0 <= 0.0 && w1 <= 0.0 && w2 <= 0.0);
+                // A pixel lying exactly on a triangle edge has a barycentric of
+                // zero there, and the true value is unrepresentable: whether it
+                // computes as +1e-8 or -1e-8 depends on whether the compiler
+                // contracted the multiply-subtract above into a fused
+                // multiply-add. arm64 and x86_64 make that choice differently.
+                //
+                // Measured on the edge function this rasterizer uses: of points
+                // lying exactly on an edge, 16.5% land on opposite sides of
+                // zero under the two evaluation orders. A cube's silhouette is
+                // entirely shared edges, which is how the same cube drew 256
+                // pixels on macOS and 255 on Linux CI.
+                //
+                // A tolerance of 1e-6 takes that 16.5% to zero, and 1e-7 does
+                // not (109 of 20000 still disagree). It is a coverage decision
+                // rather than a fudge: a millionth of a triangle's width is far
+                // inside one pixel, so it can only decide pixels already
+                // balanced on the boundary -- where either answer is right and
+                // only agreeing across platforms matters.
+                const EDGE: f32 = 1e-6;
+                let inside = (w0 >= -EDGE && w1 >= -EDGE && w2 >= -EDGE)
+                    || (w0 <= EDGE && w1 <= EDGE && w2 <= EDGE);
                 if !inside {
                     continue;
                 }
@@ -1132,6 +1151,69 @@ mod tests {
         assert!(
             near_rows > far_rows * 3,
             "perspective must compress the far half: {far_rows} far rows vs {near_rows} near"
+        );
+    }
+
+    /// The edge function, evaluated the two ways a compiler may choose.
+    ///
+    /// Not called by the renderer -- it exists so the test below can measure
+    /// the disagreement that a platform difference produces, on this machine,
+    /// without needing the other platform.
+    fn edge_plain(a: (f32, f32), b: (f32, f32), p: (f32, f32)) -> f32 {
+        (b.0 - a.0) * (p.1 - a.1) - (p.0 - a.0) * (b.1 - a.1)
+    }
+
+    fn edge_fused(a: (f32, f32), b: (f32, f32), p: (f32, f32)) -> f32 {
+        (b.0 - a.0).mul_add(p.1 - a.1, -((p.0 - a.0) * (b.1 - a.1)))
+    }
+
+    #[test]
+    fn the_edge_tolerance_is_wide_enough_for_the_worst_rounding_difference() {
+        // Why this test exists: a cube drew 256 pixels on macOS and 255 on
+        // Linux CI, and no test caught it because every test ran on one
+        // machine. The cause is that a pixel exactly on a triangle edge has a
+        // true barycentric of zero, and whether it computes as slightly
+        // positive or slightly negative depends on whether the compiler fused
+        // the multiply and subtract -- which arm64 and x86_64 decide
+        // differently.
+        //
+        // Rather than needing both machines, this measures the two evaluation
+        // orders here and asserts the tolerance covers the gap between them.
+        let a = (3.7_f32, 11.3);
+        let b = (41.9_f32, 27.15);
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        // A representative triangle area, since the renderer divides by it
+        // before comparing against the tolerance.
+        let area = 700.0_f32;
+
+        let mut without_tolerance = 0;
+        let mut with_tolerance = 0;
+        let samples = 20_000;
+        for i in 1..samples {
+            // A point exactly on the edge: the shared-edge case that a closed
+            // mesh silhouette is entirely made of.
+            let t = i as f32 / samples as f32;
+            let p = (a.0 + dx * t, a.1 + dy * t);
+            let plain = edge_plain(a, b, p) / area;
+            let fused = edge_fused(a, b, p) / area;
+            if (plain >= 0.0) != (fused >= 0.0) {
+                without_tolerance += 1;
+            }
+            const EDGE: f32 = 1e-6;
+            if (plain >= -EDGE) != (fused >= -EDGE) {
+                with_tolerance += 1;
+            }
+        }
+
+        assert!(
+            without_tolerance > 0,
+            "this machine shows no rounding difference at all, so the test \
+             below proves nothing -- the sample points must be wrong"
+        );
+        assert_eq!(
+            with_tolerance, 0,
+            "the tolerance must absorb every rounding disagreement; \
+             {without_tolerance} of {samples} on-edge points disagree without it"
         );
     }
 
