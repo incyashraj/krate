@@ -1339,6 +1339,21 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         Ok(Ok(canvas_id))
     }
 
+    fn canvas_size(
+        &mut self,
+        canvas: u64,
+    ) -> wasmtime::Result<Result<gfx::types::Size, gfx::types::GfxError>> {
+        let canvases = self.canvases.borrow();
+        let Some((_, _, surface)) = canvases.get(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        let (width, height) = surface.dimensions();
+        Ok(Ok(gfx::types::Size {
+            width: width as f32,
+            height: height as f32,
+        }))
+    }
+
     fn clear(
         &mut self,
         canvas: u64,

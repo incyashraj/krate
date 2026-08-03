@@ -118,6 +118,13 @@ impl CanvasSurface {
     }
 
     /// The canvas as the image pipeline's pixel format.
+    /// The surface's size in pixels, which is its size in logical points too
+    /// -- the canvas renders at 1x, and the display scale is applied when the
+    /// host lifts the image onto the screen.
+    pub fn dimensions(&self) -> (u32, u32) {
+        (self.width, self.height)
+    }
+
     pub fn to_image(&self) -> Result<ImagePixels, UiAdapterError> {
         let mut rgba = Vec::with_capacity(self.buffer.len() * 4);
         for word in &self.buffer {

@@ -74,10 +74,18 @@ interface types {
 /// `present` publishes it to the widget. That keeps a hundred fills from
 /// re-rendering the window a hundred times.
 interface canvas2d {
-  use types.{color, point, rect, gfx-error};
+  use types.{color, point, rect, size, gfx-error};
 
   /// Create or bind a 2D canvas for a window widget.
   bind: func(window: u64, widget: u64) -> result<u64, gfx-error>;
+  /// The canvas's current size in logical pixels.
+  ///
+  /// A canvas is laid out to fill its widget, and a widget with siblings or a
+  /// resizable window is not the size the app guessed at startup. Ask, then
+  /// draw to the answer: an app that hardcodes 240x200 and shares its window
+  /// with a title bar draws a picture that is clipped or half empty. Returns
+  /// the size that `clear` fills and `present` publishes.
+  canvas-size: func(canvas: u64) -> result<size, gfx-error>;
   /// Fill the whole canvas with one color.
   clear: func(canvas: u64, fill: color) -> result<_, gfx-error>;
   /// Fill a rectangle.

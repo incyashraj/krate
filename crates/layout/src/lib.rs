@@ -11,6 +11,12 @@ use taffy::prelude::*;
 use taffy::TaffyError;
 use thiserror::Error;
 
+/// Height a content-sized widget falls back to when it has no explicit height
+/// and the layout cannot measure its text. One standard control row: enough
+/// that a label or a checkbox lowers to a real native view rather than a
+/// zero-height one the host refuses.
+const DEFAULT_CONTENT_ROW_HEIGHT: f32 = 24.0;
+
 /// Logical window content size used for a layout pass.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LayoutViewport {
@@ -394,7 +400,18 @@ fn taffy_style_from_parts(
         display: Display::Flex,
         flex_direction: flex_direction_for(kind),
         flex_wrap: flex_wrap_for(kind),
-        flex_grow: widget_style.grow,
+        // Content-sized widgets do not grow, whatever the app's boilerplate
+        // asked for. A Text label given flex-grow eats half its column and
+        // leaves a dead band -- which is exactly what a title above a canvas
+        // did, because the common `node()` helper stamps grow: 1.0 on every
+        // widget. Text hugs its line; a container or a canvas fills the room.
+        // An explicit height still wins for anyone who genuinely wants a tall
+        // label.
+        flex_grow: if hugs_content(kind) && widget_style.height.is_none() {
+            0.0
+        } else {
+            widget_style.grow
+        },
         // Widgets with an explicit height keep it: Taffy's default
         // flex_shrink of 1 would compress Scroll children to fit their
         // container instead of overflowing it, which makes scrolling
@@ -403,6 +420,23 @@ fn taffy_style_from_parts(
             0.0
         } else {
             1.0
+        },
+        // A content-sized widget that no longer grows must not collapse to
+        // nothing. The layout has no font metrics, so it cannot measure a
+        // line, but a control that lowers to a native view needs a real
+        // height or the lowering is refused ("placement needs a non-zero
+        // size"). This floor is one standard control row; a Text with its own
+        // explicit height overrides it, and a growing container ignores it.
+        min_size: if hugs_content(kind) && widget_style.height.is_none() {
+            Size {
+                width: auto(),
+                height: Dimension::from_length(DEFAULT_CONTENT_ROW_HEIGHT),
+            }
+        } else {
+            Size {
+                width: auto(),
+                height: auto(),
+            }
         },
         size,
         padding: Rect {
@@ -453,6 +487,26 @@ fn flex_wrap_for(kind: WidgetKind) -> FlexWrap {
 /// container is all three hosts need, because none of them paint it.
 fn is_region_container(kind: WidgetKind) -> bool {
     matches!(kind, WidgetKind::Canvas)
+}
+
+/// Widgets sized by their content, which therefore should not flex-grow.
+///
+/// Text and its editable cousins have an intrinsic size; a checkbox, a radio,
+/// a switch and a progress bar are fixed controls. None of them should stretch
+/// to fill a column just because a boilerplate helper set grow on every node.
+/// Containers, canvases, lists and images are not here: they are meant to fill
+/// the space they are given.
+fn hugs_content(kind: WidgetKind) -> bool {
+    matches!(
+        kind,
+        WidgetKind::Text
+            | WidgetKind::TextField
+            | WidgetKind::Checkbox
+            | WidgetKind::Radio
+            | WidgetKind::Switch
+            | WidgetKind::Progress
+            | WidgetKind::Slider
+    )
 }
 
 fn dimension_from_option(value: Option<f32>) -> Dimension {
@@ -540,6 +594,56 @@ mod tests {
                 width: 100.0,
                 height: 60.0,
             })
+        );
+    }
+
+    #[test]
+    fn a_text_title_above_a_canvas_hugs_its_line_and_gives_the_rest_to_the_canvas() {
+        // The chart bug, pinned. A title and a canvas, both stamped grow: 1.0
+        // by the common node() helper. Before the fix they split the window
+        // in half and the canvas drew into a dead band; now the text hugs its
+        // line and the canvas fills what is left.
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        tree.upsert(
+            WidgetNode::new(WidgetId::new(2).expect("title"), WidgetKind::Text)
+                .with_parent(tree.root())
+                .with_style(WidgetStyle {
+                    grow: 1.0,
+                    ..WidgetStyle::default()
+                })
+                .expect("title style"),
+        )
+        .expect("title");
+        tree.upsert(
+            WidgetNode::new(WidgetId::new(3).expect("canvas"), WidgetKind::Canvas)
+                .with_parent(tree.root())
+                .with_style(WidgetStyle {
+                    grow: 1.0,
+                    ..WidgetStyle::default()
+                })
+                .expect("canvas style"),
+        )
+        .expect("canvas");
+
+        let layout = compute_layout(&tree, LayoutViewport::new(240.0, 200.0).expect("viewport"))
+            .expect("layout");
+        let title = layout
+            .rect(WidgetId::new(2).expect("title"))
+            .expect("title rect");
+        let canvas = layout
+            .rect(WidgetId::new(3).expect("canvas"))
+            .expect("canvas rect");
+
+        assert!(
+            title.height < 40.0,
+            "the title should hug its line, got {}",
+            title.height
+        );
+        assert!(
+            canvas.height > 150.0,
+            "the canvas should fill what the title left, got {}",
+            canvas.height
         );
     }
 
@@ -884,7 +988,9 @@ mod tests {
     }
 
     fn growing_child(id: u64, parent: WidgetId) -> WidgetNode {
-        WidgetNode::new(WidgetId::new(id).expect("id"), WidgetKind::Text)
+        // A Stack, not Text: content-sized widgets no longer grow, so a helper
+        // that must fill space uses a container that is meant to.
+        WidgetNode::new(WidgetId::new(id).expect("id"), WidgetKind::Stack)
             .with_parent(parent)
             .with_style(WidgetStyle {
                 grow: 1.0,

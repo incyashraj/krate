@@ -52,22 +52,41 @@ fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetN
 }
 
 fn draw_chart(canvas: u64) -> Result<u32, gfx::GfxError> {
+    // Draw to the canvas's real size, not a guessed one. The canvas shares
+    // this window with a native title above it, so it is shorter than the
+    // window; an earlier version hardcoded 200 and drew a chart that ran off
+    // the bottom into space that was not there. `canvas-size` is how an app
+    // finds out what it actually got.
+    let size = canvas2d::canvas_size(canvas)?;
+    let w = size.width;
+    let h = size.height;
+
     // A cream sheet behind everything.
     canvas2d::clear(canvas, color(0.98, 0.97, 0.94))?;
     let mut calls = 1_u32;
 
-    // One bar per day, scaled so the wettest day fills the height.
+    // A margin all round, and the plot inside it. Everything below is a
+    // fraction of the real canvas, so the chart fills whatever height it was
+    // given rather than a fixed one.
+    let margin = 12.0;
+    let label_band = 16.0;
+    let plot_top = label_band + 4.0;
+    let baseline = h - margin;
+    let chart_height = (baseline - plot_top).max(1.0);
+    let days = RAINFALL.len().max(1) as f32;
+    let plot_width = w - 2.0 * margin;
+    let slot = plot_width / days;
+    let bar_width = (slot * 0.7).max(1.0);
+    let bar_gap = slot - bar_width;
+
+    // One bar per day, scaled so the wettest day fills the plot height.
     let max = RAINFALL.iter().copied().fold(1.0_f32, f32::max);
-    let bar_width = 20.0;
-    let gap = 8.0;
-    let chart_height = 120.0;
-    let baseline = 150.0;
     for (day, rain) in RAINFALL.iter().enumerate() {
         let height = (rain / max) * chart_height;
         canvas2d::fill_rect(
             canvas,
             gfx::Rect {
-                x: 12.0 + day as f32 * (bar_width + gap),
+                x: margin + bar_gap / 2.0 + day as f32 * slot,
                 y: baseline - height,
                 width: bar_width,
                 height,
@@ -77,14 +96,14 @@ fn draw_chart(canvas: u64) -> Result<u32, gfx::GfxError> {
         calls += 1;
     }
 
-    // A frame around the plot, and the title.
+    // A frame around the plot, and the axis label.
     canvas2d::stroke_rect(
         canvas,
         gfx::Rect {
-            x: 8.0,
-            y: 24.0,
-            width: 7.0 * (bar_width + gap) + 8.0,
-            height: baseline - 20.0,
+            x: margin - 4.0,
+            y: plot_top,
+            width: plot_width + 8.0,
+            height: baseline - plot_top,
         },
         color(0.1, 0.1, 0.1),
         1.0,
@@ -92,7 +111,7 @@ fn draw_chart(canvas: u64) -> Result<u32, gfx::GfxError> {
     canvas2d::draw_text(
         canvas,
         "rain, mm",
-        gfx::Point { x: 12.0, y: 18.0 },
+        gfx::Point { x: margin, y: 12.0 },
         7.0,
         color(0.1, 0.1, 0.1),
     )?;
