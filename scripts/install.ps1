@@ -213,6 +213,39 @@ try {
         $env:Path = "$env:Path;$dir"
     }
 
+    # Register the .krate double-click handler so a bundle someone sends you
+    # opens by double-clicking it in Explorer, not only from the command line.
+    # The logic lives in scripts/install-krate-desktop.ps1, which writes a
+    # per-user (HKCU, no admin) association whose open command is
+    # `"<krate.exe>" run "%1" --consent`. A curl/irm install has no repo
+    # checkout, so fetch that script from GitHub and run it against the exe we
+    # just placed. This is best-effort: a failure here (offline, blocked fetch,
+    # odd environment) must not fail the install, which already succeeded as a
+    # working CLI. Set $env:KRATE_NO_DESKTOP=1 to skip it (matches the Unix
+    # KRATE_NO_DESKTOP=1 opt-out).
+    $installedBinary = Join-Path $dir $binary
+    if ($env:KRATE_NO_DESKTOP -eq '1') {
+        Write-Say 'Skipping the .krate file association (KRATE_NO_DESKTOP=1).'
+    } else {
+        try {
+            $desktopScript = Join-Path $tmp 'install-krate-desktop.ps1'
+            $desktopUrl = "https://raw.githubusercontent.com/$repo/main/scripts/install-krate-desktop.ps1"
+            Invoke-WebRequest -Uri $desktopUrl -OutFile $desktopScript -UseBasicParsing
+            # Run the fetched script in its own PowerShell with the execution
+            # policy relaxed for that process only, so a machine whose policy
+            # blocks scripts still gets the association. Pass the absolute path
+            # to the exe we just installed; install-krate-desktop.ps1 bakes that
+            # path into the open command, so double-click works without krate
+            # being on PATH.
+            & powershell -NoProfile -ExecutionPolicy Bypass -File $desktopScript -KrateBinary $installedBinary | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "association script exited with code $LASTEXITCODE" }
+            Write-Say 'Registered the .krate handler -- you can double-click a .krate now.'
+        } catch {
+            Write-Say 'Note: could not register the .krate double-click handler; the CLI still works.'
+            Write-Say "You can run it later: krate is installed, and you can always use 'krate run <file>'."
+        }
+    }
+
     Write-Say ''
     Write-Say 'You can now open a .krate someone sends you. Try this:'
     Write-Say '  krate run https://krate.tech/cubes.krate'
