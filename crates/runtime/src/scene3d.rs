@@ -267,7 +267,14 @@ impl Scene {
         // facing away is dim rather than black -- a solid black facet reads as
         // a hole in the model.
         let normal = b.sub(a).cross(c.sub(a)).normalized();
-        let facing = (-normal.dot(self.light)).max(0.0);
+        // Two-sided: the shade is how aligned the surface is with the light,
+        // regardless of which way the triangle is wound. A one-sided term left
+        // every face whose normal happened to point away from the light on
+        // ambient alone -- and a spinning cube's front faces wind inward, so
+        // the whole scene sat at 0.35 and read flat and dark. Absolute value
+        // lights a surface the same whether its normal points at the light or
+        // straight away, which is what a solid object wants.
+        let facing = normal.dot(self.light).abs();
         let shade = 0.35 + 0.65 * facing;
 
         let (Some(pa), Some(pb), Some(pc)) = (self.project(a), self.project(b), self.project(c))
@@ -359,7 +366,14 @@ impl Scene {
         tint: (f32, f32, f32, f32),
     ) {
         let normal = b.sub(a).cross(c.sub(a)).normalized();
-        let facing = (-normal.dot(self.light)).max(0.0);
+        // Two-sided: the shade is how aligned the surface is with the light,
+        // regardless of which way the triangle is wound. A one-sided term left
+        // every face whose normal happened to point away from the light on
+        // ambient alone -- and a spinning cube's front faces wind inward, so
+        // the whole scene sat at 0.35 and read flat and dark. Absolute value
+        // lights a surface the same whether its normal points at the light or
+        // straight away, which is what a solid object wants.
+        let facing = normal.dot(self.light).abs();
         let shade = 0.35 + 0.65 * facing;
 
         let (Some(pa), Some(pb), Some(pc)) = (self.project(a), self.project(b), self.project(c))
@@ -1241,16 +1255,24 @@ mod tests {
             "culling must not change how much of the cube is visible"
         );
 
-        // And it renders the cube *better*. Front and back faces of a cube
-        // meet at exactly equal depth along the silhouette, so without culling
-        // a back face can win the depth test and paint its dimmer shading over
-        // the front. Dropping it removes the tie entirely.
-        let plain_bright = plain.rgba.chunks(4).filter(|px| px[0] > 100).count();
-        let culled_bright = culled.rgba.chunks(4).filter(|px| px[0] > 100).count();
+        // Both renders are solidly lit, not near-black. Lighting is two-sided
+        // now, so a face is bright whichever way it is wound; this guards the
+        // regression that had every cube sitting on ambient alone (max pixel
+        // ~64) because front faces wind inward. A well-lit orange cube reaches
+        // well past half brightness.
+        let plain_bright = plain.rgba.chunks(4).filter(|px| px[0] > 120).count();
         assert!(
-            culled_bright > plain_bright,
-            "culling removes back faces that were fighting the front for depth: \
-             {culled_bright} lit pixels with culling against {plain_bright} without"
+            plain_bright > 100,
+            "the cube should be lit, not flat: only {plain_bright} bright pixels"
+        );
+        // Culling no longer changes brightness -- with two-sided shading the
+        // back face that used to win a depth fight is as bright as the front,
+        // so dropping it is invisible. That is the point: culling is a
+        // performance choice, not a fix for a lighting artefact.
+        let culled_bright = culled.rgba.chunks(4).filter(|px| px[0] > 120).count();
+        assert_eq!(
+            plain_bright, culled_bright,
+            "two-sided lighting makes culling invisible: {plain_bright} vs {culled_bright}"
         );
     }
 

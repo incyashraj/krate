@@ -217,10 +217,6 @@ impl bindings::Guest for Component {
                 return 1;
             }
         };
-        if scene3d::light(scene, &[-0.5, -0.8, -0.4]).is_err() {
-            out("light:no");
-            return 1;
-        }
 
         let mesh = cube();
         let ground = floor();
@@ -283,17 +279,19 @@ impl bindings::Guest for Component {
             spin += 40.0 * dt;
 
             let radius = 7.0_f32;
-            if scene3d::camera(
-                scene,
-                &[cos(angle) * radius, height, sin(angle) * radius],
-                &[0.0, 0.0, 0.0],
-                60.0,
-            )
-            .is_err()
-            {
+            let eye = [cos(angle) * radius, height, sin(angle) * radius];
+            if scene3d::camera(scene, &eye, &[0.0, 0.0, 0.0], 60.0).is_err() {
                 out("camera:no");
                 return 1;
             }
+
+            // A headlight: the light points from the camera toward the middle,
+            // so the faces you are looking at are the faces that catch it. A
+            // fixed light cannot do this while the camera orbits -- it lit the
+            // far side and left every visible face on ambient alone, which read
+            // as flat and dim. Nudged downward so the tops stay brighter than
+            // the sides and the cubes keep their shape.
+            let _ = scene3d::light(scene, &[-eye[0], -eye[1] - 3.0, -eye[2]]);
 
             if scene3d::clear(scene, colour(0.05, 0.07, 0.12)).is_err() {
                 out("clear:no");
