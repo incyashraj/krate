@@ -64,12 +64,7 @@ fn sample_bilinear(image: &ImagePixels, u: f32, v: f32) -> u32 {
         let y = yi.clamp(0, h - 1);
         let i = ((y * w + x) * 4) as usize;
         match image.rgba.get(i..i + 4) {
-            Some(px) => (
-                px[0] as f32,
-                px[1] as f32,
-                px[2] as f32,
-                px[3] as f32,
-            ),
+            Some(px) => (px[0] as f32, px[1] as f32, px[2] as f32, px[3] as f32),
             None => (0.0, 0.0, 0.0, 0.0),
         }
     };
@@ -425,15 +420,25 @@ mod tests {
         // and writes, and that a rotation does not send every pixel off-image.
         let mut surface = CanvasSurface::new(60, 60).expect("surface");
         surface.clear(0xFF00_0000); // opaque black
-        let red = ImagePixels::new(2, 2, vec![255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255])
-            .expect("red sprite");
+        let red = ImagePixels::new(
+            2,
+            2,
+            vec![
+                255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255,
+            ],
+        )
+        .expect("red sprite");
         // 40x40 at the centre, rotated 30 degrees (pi/6).
         surface.draw_sprite(30.0, 30.0, 40.0, 40.0, core::f32::consts::FRAC_PI_6, &red);
         let img = surface.to_image().expect("image");
         // Centre pixel must be red (the sprite covers the middle at any angle).
         let c = 30 * 60 + 30;
         let px = &img.rgba[c * 4..c * 4 + 4];
-        assert_eq!(px, &[255, 0, 0, 255], "the rotated sprite covers the centre");
+        assert_eq!(
+            px,
+            &[255, 0, 0, 255],
+            "the rotated sprite covers the centre"
+        );
         // A far corner must still be the black background (the 40x40 rotated
         // sprite does not reach the 60x60 corners).
         let corner = &img.rgba[0..4];
