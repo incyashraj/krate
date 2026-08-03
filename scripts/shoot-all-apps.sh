@@ -40,7 +40,9 @@ filetree:no
 convert:no
 dashboard:no
 weather:no
+fractal:no
 timer:no
+contacts:yes
 keyvault:yes
 "
 

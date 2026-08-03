@@ -9,13 +9,29 @@
 //! It renders the Mandelbrot set: for each pixel, iterate z = z^2 + c and color
 //! by how fast it escapes. The math is plain f64 with no panic paths, the
 //! buffer is one `alloc` Vec, and the component imports only `krate:*`.
+//!
+//! This app is `#![no_std]`, and that is the point. `ui.image` set-pixels sends
+//! the pixel buffer as a growable `list<u8>`, whose lowering reaches the
+//! allocation path. In a std-linked guest that path routes through std's
+//! allocation-error handler and its panic runtime, dragging the whole `wasi:*`
+//! import set into an otherwise pure component -- so the app fails to
+//! instantiate against the Krate linker. Building `#![no_std]` lets the SDK own
+//! the allocator and a trapping panic handler, so the same path traps instead
+//! of leaking. This is the shape every real Krate app uses.
 
+#![no_std]
 #![allow(clippy::needless_range_loop)]
+
+extern crate alloc;
+
+// Linked purely for its `no_std` runtime lang items -- the global allocator,
+// the panic handler, and the memory intrinsics a wasm guest needs when std is
+// not linked. Not called directly; the underscore keeps the import.
+extern crate krate as _krate_runtime;
 
 #[allow(warnings)]
 mod bindings;
 
-extern crate alloc;
 use alloc::vec::Vec;
 
 use bindings::krate::io::{args, stdio};

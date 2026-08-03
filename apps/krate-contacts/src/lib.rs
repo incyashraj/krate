@@ -3,13 +3,36 @@
 //! The wall it tests: key-value storage is enough for a counter, but a real
 //! app has structured data it queries -- rows, columns, ordering, a WHERE.
 //! This app keeps contacts in an actual SQLite table through `store.sql`:
-//! it creates the table, inserts a few people in a transaction, then queries
+//! it creates the table, seeds a few people the first time it runs, then queries
 //! them back sorted by name and shows them. If SQL is faked or the query path
 //! is broken, the list comes back empty and the status line says so.
 //!
 //! Parameters are bound, never pasted into the statement, which is the point
 //! of the typed value set. Text out of the rows is turned into widget labels
 //! without a panic path, so the component imports only `krate:*`.
+//!
+//! This app must be `#![no_std]`, and that is the whole reason it is a probe.
+//! `store.sql`'s `query` returns a nested `list<row<list<value>>>`, and the
+//! generated glue that lifts it uses `Vec::with_capacity`. In a `std`-linked
+//! guest that call reaches std's allocation-error handler, which routes through
+//! std's panic runtime and drags the entire `wasi:*` import set into an
+//! otherwise pure component -- so the app fails to instantiate against the Krate
+//! linker. Building `#![no_std]` lets the SDK own the allocator and a trapping
+//! panic handler, so the same allocation path traps instead of leaking. This is
+//! the same fix every other Krate guest uses; the database result type is just
+//! the first one whose *generated* lift forces the growable-`Vec` path an app
+//! cannot hand-write its way around.
+#![no_std]
+extern crate alloc;
+
+// Linked purely for its `no_std` runtime lang items -- the global allocator, the
+// trapping panic handler, and the mem intrinsics -- which apply to the whole
+// component. The GUI-world bindings this app calls are the generated `bindings`
+// module below; the SDK crate carries only the CLI world, so we take the
+// runtime from it here, not the API surface.
+extern crate krate as _krate_runtime;
+
+use alloc::string::String;
 
 #[allow(warnings)]
 mod bindings;
@@ -332,9 +355,12 @@ fn pure_string_from_bytes(bytes: &[u8]) -> String {
     }
     unsafe {
         let layout = core::alloc::Layout::from_size_align_unchecked(len, 1);
-        let ptr = std::alloc::alloc(layout);
+        let ptr = alloc::alloc::alloc(layout);
         if ptr.is_null() {
-            core::arch::wasm32::unreachable()
+            #[cfg(target_arch = "wasm32")]
+            core::arch::wasm32::unreachable();
+            #[cfg(not(target_arch = "wasm32"))]
+            unreachable!();
         }
         core::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, len);
         String::from_raw_parts(ptr, len, len)

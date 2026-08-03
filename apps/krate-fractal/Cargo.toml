@@ -7,6 +7,12 @@ repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]
+# The Krate SDK, linked for its no_std runtime lang items (global allocator,
+# panic handler, memory intrinsics). set_pixels sends a growable list<u8>,
+# whose lowering reaches the allocation path; in a std guest that routes
+# through std's alloc-error handler and drags in all of wasi:*. no_std with
+# the SDK owning that path keeps this image app krate:*-only.
+krate = { path = "../../crates/bindings-rust" }
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 
 [lib]

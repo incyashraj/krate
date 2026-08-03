@@ -11,16 +11,16 @@ rationale = "Open the contacts window"
 required = true
 
 [[capabilities]]
+cap = "store.sql"
+rationale = "Keep contacts in an application database and query them back"
+required = true
+
+[[capabilities]]
 cap = "io.stdout"
-rationale = "Report the row count on exit for automated runs"
+rationale = "Report the queried row count for automated runs"
 required = true
 
 [[capabilities]]
 cap = "io.args"
 rationale = "Read the quick-run flag used by automated tests"
-required = true
-
-[[capabilities]]
-cap = "store.sql"
-rationale = "Keep contacts in a local SQL table"
 required = true

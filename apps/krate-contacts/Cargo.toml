@@ -7,13 +7,18 @@ repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]
+# The SDK crate is linked for its no_std runtime lang items (allocator, panic
+# handler, mem intrinsics), which keep the query-result lift from reaching std's
+# WASI-backed allocation-error path. This app uses its own generated GUI-world
+# `bindings` for the UI the SDK crate does not carry.
+krate = { path = "../../crates/bindings-rust" }
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 
 [lib]
 crate-type = ["cdylib"]
 
-# Gate the generated `impl std::error::Error` behind a feature nobody turns
-# on, so a GUI app that needs a real dependency can be `#![no_std]`.
+# Gate the generated `impl std::error::Error` behind a feature nobody turns on,
+# so this GUI app can be `#![no_std]`.
 [package.metadata.component.bindings]
 std_feature = true
 
