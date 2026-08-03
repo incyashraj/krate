@@ -233,9 +233,18 @@ registered. Do not hand-shim it. Add `features = [\"getrandom-backend\"]` to the
 `apps/krate-diceroll` is a working example.\n\n\
 ## Showing a picture\n\n\
 Do not reach for the `image` crate: it requires `std` unconditionally and drags \
-in the whole `wasi:*` surface. Use `zune-png` / `zune-jpeg` / `zune-core` at \
-`0.5` with `default-features = false`, decode to RGBA yourself, and hand the \
-bytes to `ui::image::set_pixels`. `apps/krate-fractal` does this.\n\n\
+in the whole `wasi:*` surface. Decode PNG/JPEG yourself with `zune-png` / \
+`zune-jpeg` / `zune-core` at `0.5`, `default-features = false`, then hand the \
+RGBA to `ui::image::set_pixels`. The exact 0.5 API (earlier versions differ, and \
+the method names are easy to guess wrong):\n\n\
+\u{20}\u{20}\u{20}\u{20}use zune_core::bytestream::ZCursor;\n\
+\u{20}\u{20}\u{20}\u{20}// PngDecoder::new takes a ZCursor, not a &[u8] directly:\n\
+\u{20}\u{20}\u{20}\u{20}let mut dec = zune_png::PngDecoder::new(ZCursor::new(bytes));\n\
+\u{20}\u{20}\u{20}\u{20}let rgba = dec.decode_raw()?;            // Vec<u8>, RGBA\n\
+\u{20}\u{20}\u{20}\u{20}let (w, h) = dec.dimensions().unwrap();  // (usize, usize) -- cast to u32\n\n\
+The methods are `dimensions()`, `colorspace()`, `depth()` -- not `get_dimensions` \
+and friends. `apps/krate-fractal` shows the set_pixels side; `krate:fs/files` \
+plus `ui::dialog::open_file` is how you let the person pick the file.\n\n\
 ## Getting input into a CLI app\n\n\
 Command-line arguments (`krate::io::args`) are single-line only: an argument \
 may not contain a newline, because Phase 2 delivers all args as one \
