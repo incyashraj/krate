@@ -875,26 +875,16 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
         (0.0, 0.0)
     };
 
-    // Deep space background: a smooth vertical gradient, dim glow up top easing
-    // to a darker floor. Drawn as a stack of thin bands so there is no hard
-    // seam between two flat rectangles -- the eye reads one continuous void.
-    canvas2d::clear(canvas, color(0.039, 0.039, 0.071, 1.0))?;
-    let bands = 48u32;
-    let mut bi = 0u32;
-    while bi < bands {
-        let t = bi as f32 / bands as f32;
-        // Lighter, faintly blue at the top (t=0) easing to the base color at
-        // the bottom. A gentle ease so the top glow falls off naturally.
-        let fade = (1.0 - t) * (1.0 - t);
-        let r = 0.039 + fade * 0.028;
-        let g = 0.039 + fade * 0.028;
-        let b = 0.071 + fade * 0.055;
-        let band_h = HEIGHT / bands as f32 + 1.0;
-        // No shake offset on the background: the void stays put while the
-        // action shakes over it, so screen shake never bares a screen edge.
-        fill(canvas, 0.0, 0.0, 0.0, t * HEIGHT, WIDTH, band_h, color(r, g, b, 1.0))?;
-        bi += 1;
-    }
+    // Deep space background: one native vertical gradient, a faintly-blue glow
+    // up top easing to a darker floor. The host draws the smooth ramp, so there
+    // is no seam and no band loop -- the void reads as one continuous space.
+    // No shake offset: the void stays put while the action shakes over it.
+    canvas2d::linear_gradient(
+        canvas,
+        gfx::Rect { x: 0.0, y: 0.0, width: WIDTH, height: HEIGHT },
+        color(0.067, 0.067, 0.126, 1.0),
+        color(0.039, 0.039, 0.071, 1.0),
+    )?;
 
     // ---- starfield ----
     let mut i = 0usize;
@@ -1131,9 +1121,9 @@ fn fill(
     )
 }
 
-/// A filled circle, scanned row by row so the edge is round rather than a
-/// blocky square. This is the primitive that makes the game read as modern
-/// neon instead of retro pixels.
+/// A crisp anti-aliased filled circle -- one native runtime call. The host
+/// smooths the edge and blends it, so this is a true round dot, not a scanned
+/// approximation.
 fn disc(
     canvas: u64,
     sx: f32,
@@ -1143,32 +1133,14 @@ fn disc(
     r: f32,
     c: gfx::Color,
 ) -> Result<(), gfx::GfxError> {
-    // Small discs render as a single solid square: the row-scan below leaves
-    // visible gaps (a hollow ring look) at tiny radii, which was making every
-    // spark a donut. Below ~2.5px a filled square reads as a dot anyway.
-    if r <= 2.5 {
-        return fill(canvas, sx, sy, cx - r, cy - r, r * 2.0, r * 2.0, c);
-    }
-    // One row of pixels per step (step 1.0, not 1.5) so rows overlap slightly
-    // and never leave a horizontal gap -- a solid disc, not a ring.
-    let top = (cy - r) as i32;
-    let bot = (cy + r) as i32;
-    let mut yy = top;
-    while yy <= bot {
-        let dy = (yy as f32) + 0.5 - cy;
-        let half = r * r - dy * dy;
-        if half > 0.0 {
-            let chord = sqrtf(half);
-            fill(canvas, sx, sy, cx - chord, yy as f32, chord * 2.0, 1.0, c)?;
-        }
-        yy += 1;
-    }
-    Ok(())
+    canvas2d::fill_circle(canvas, gfx::Point { x: cx + sx, y: cy + sy }, r, c)
 }
 
-/// A soft radial glow: several translucent discs from a wide dim halo down to
-/// a bright tight core, so a light source blooms instead of ending in a hard
-/// edge. `r` is the core radius; the halo reaches ~2.4x that.
+/// A soft radial glow: one native radial gradient for the bloom halo (the true
+/// color easing to transparent, so light falls off smoothly with no banding),
+/// a solid saturated body, and a small lifted-brightness core so it reads as
+/// lit from within. The gradient is a single host call instead of a stack of
+/// discs, so the falloff is continuous.
 fn glow(
     canvas: u64,
     sx: f32,
@@ -1180,23 +1152,23 @@ fn glow(
     grn: f32,
     blu: f32,
 ) -> Result<(), gfx::GfxError> {
-    // A tight, saturated bloom: a narrow faint halo in the true color (not
-    // washed toward white), then a solid vivid body, then a small hot center.
-    // Keeping the halo tight and same-hue is what reads as vibrant neon rather
-    // than a milky blob.
-    disc(canvas, sx, sy, cx, cy, r * 1.6, color(red, grn, blu, 0.14))?;
-    disc(canvas, sx, sy, cx, cy, r * 1.22, color(red, grn, blu, 0.30))?;
-    // Solid, fully-saturated body.
-    disc(canvas, sx, sy, cx, cy, r, color(red, grn, blu, 1.0))?;
-    // A small lifted-brightness center, only a touch toward white, so it looks
-    // lit from within without going pale.
-    let lift = |v: f32| (v * 0.5 + 0.5).min(1.0);
-    disc(
+    let center = gfx::Point { x: cx + sx, y: cy + sy };
+    // Bloom: bright at the core, fading to fully transparent at ~2x the body
+    // radius. Smoothstep falloff is done host-side, so the halo is continuous.
+    canvas2d::radial_gradient(
         canvas,
-        sx,
-        sy,
-        cx,
-        cy,
+        center,
+        r * 2.1,
+        color(red, grn, blu, 0.55),
+        color(red, grn, blu, 0.0),
+    )?;
+    // Solid saturated body.
+    canvas2d::fill_circle(canvas, center, r, color(red, grn, blu, 1.0))?;
+    // Hot center, only a touch toward white so it stays vivid.
+    let lift = |v: f32| (v * 0.5 + 0.5).min(1.0);
+    canvas2d::fill_circle(
+        canvas,
+        center,
         r * 0.42,
         color(lift(red), lift(grn), lift(blu), 1.0),
     )?;
