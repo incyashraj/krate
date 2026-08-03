@@ -322,6 +322,13 @@ impl Phase3GuiHost {
             if !drawn_kind(node.kind) {
                 continue;
             }
+            // A widget inside an unselected tab panel is not on screen. The
+            // layout collapses the panel, but a nested control still resolves
+            // to a rectangle, so without this every tab's contents would paint
+            // on top of each other.
+            if krate_layout::is_hidden_by_tabs(&tree, *id) {
+                continue;
+            }
             let Some(rect) = absolute_rect(&tree, &layout, *id) else {
                 continue;
             };

@@ -435,6 +435,31 @@ fn parent_hides_this_child(
     position != selected
 }
 
+/// Whether a widget is inside a tab panel that is not the selected one, and so
+/// should not be drawn at all.
+///
+/// The layout collapses an unselected panel to `Display::None`, which zeroes
+/// its own box -- but a drawn host builds a placement per widget from the tree,
+/// and a control nested in a hidden panel still resolves to a rectangle near
+/// the origin. Without this check every tab's controls paint on top of each
+/// other. Native hosts get the same answer through their real view hierarchy;
+/// this gives the drawn painters the same truth. Walks every ancestor, so a
+/// control several containers deep inside a hidden panel is still hidden.
+pub fn is_hidden_by_tabs(tree: &WidgetTree, widget: WidgetId) -> bool {
+    let index = child_index(tree);
+    let mut cursor = Some(widget);
+    while let Some(id) = cursor {
+        let Some(node) = tree.node(id) else {
+            return false;
+        };
+        if parent_hides_this_child(tree, &index, node) {
+            return true;
+        }
+        cursor = node.parent;
+    }
+    false
+}
+
 fn taffy_style_for(
     node: &WidgetNode,
     is_root: bool,
@@ -557,9 +582,16 @@ fn flex_direction_for(kind: WidgetKind) -> FlexDirection {
         return FlexDirection::Column;
     }
     match kind {
-        WidgetKind::Stack | WidgetKind::Scroll | WidgetKind::ListView | WidgetKind::TreeView => {
-            FlexDirection::Column
-        }
+        // Tabs stacks like any column: only the selected panel takes space, and
+        // it fills the width. Laid out as a row (the old default), the panels
+        // sat side by side and the visible one collapsed to zero width, so a
+        // whole tab's contents vanished. This is why the settings probe came up
+        // blank.
+        WidgetKind::Stack
+        | WidgetKind::Scroll
+        | WidgetKind::ListView
+        | WidgetKind::TreeView
+        | WidgetKind::Tabs => FlexDirection::Column,
         _ => FlexDirection::Row,
     }
 }
@@ -847,6 +879,59 @@ mod tests {
         );
         assert_eq!(first.width, 0.0, "an unselected panel takes no width");
         assert_eq!(third.width, 0.0, "an unselected panel takes no width");
+    }
+
+    #[test]
+    fn a_selected_tab_panel_fills_the_width_and_hides_the_others() {
+        // The settings-probe bug: a tab strip laid out as a row put its panels
+        // side by side, so the selected panel -- a content-sized container --
+        // collapsed to zero width and its controls vanished. Tabs is a column
+        // now, so the selected panel fills the width like a stack child does,
+        // and is_hidden_by_tabs reports the other panels' contents as hidden.
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Tabs)
+            .with_selected(1)
+            .expect("selected");
+        let mut tree = WidgetTree::new(root).expect("tree");
+        // Three content-sized panels (no explicit width), each with a child.
+        for panel in 0..3u64 {
+            tree.upsert(
+                WidgetNode::new(WidgetId::new(10 + panel).expect("panel"), WidgetKind::Stack)
+                    .with_parent(tree.root())
+                    .with_style(WidgetStyle::default())
+                    .expect("panel style"),
+            )
+            .expect("panel");
+            tree.upsert(fixed_child(
+                100 + panel,
+                WidgetId::new(10 + panel).unwrap(),
+                200.0,
+                24.0,
+            ))
+            .expect("control");
+        }
+
+        let layout = compute_layout(&tree, LayoutViewport::new(460.0, 400.0).expect("viewport"))
+            .expect("layout");
+        let selected = layout
+            .rect(WidgetId::new(11).expect("panel 1"))
+            .expect("rect");
+        assert!(
+            selected.width > 400.0,
+            "the selected panel fills the width, got {}",
+            selected.width
+        );
+
+        // The control in panel 0 (unselected) is hidden; the one in panel 1 is
+        // not. This is what the drawn painter keys on to avoid painting every
+        // tab on top of each other.
+        assert!(
+            is_hidden_by_tabs(&tree, WidgetId::new(100).expect("panel 0 control")),
+            "a control in an unselected tab is hidden"
+        );
+        assert!(
+            !is_hidden_by_tabs(&tree, WidgetId::new(101).expect("panel 1 control")),
+            "a control in the selected tab is not hidden"
+        );
     }
 
     #[test]

@@ -35,6 +35,7 @@ bounce:no
 chart:no
 calc:no
 bigscroll:no
+settings:no
 keyvault:yes
 "
 
