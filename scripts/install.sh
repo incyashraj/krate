@@ -39,8 +39,8 @@ case "$arch" in
   *) die "unsupported architecture: $arch (install from source instead)" ;;
 esac
 
-# Only aarch64 macOS and both Linux arches ship binaries today; x86_64 macOS
-# and Windows-from-sh are not covered here.
+# Both macOS arches (Intel and Apple Silicon) and both Linux arches ship
+# binaries. Windows installs through install.ps1, not this script.
 target="${arch_part}-${os_part}"
 
 # ---- work out which version to fetch ---------------------------------------
@@ -137,15 +137,6 @@ say "Downloading ${archive}..."
 curl -fSL "${base}/${archive}" -o "${tmp}/${archive}" \
   || {
     # Naming the likely cause beats asking the person to go and check. arm64
-    # Linux is absent from rc5 on purpose: it builds in a container whose
-    # libclang is too old for one dependency, and holding four working
-    # platforms for it helped nobody.
-    if [ "$target" = "aarch64-unknown-linux-gnu" ]; then
-      die "there is no ${target} binary in ${version}. That build is temporarily
-missing while a toolchain problem in its build container is fixed; every other
-platform is published. Build from source in the meantime:
-  git clone https://github.com/incyashraj/krate && cd krate && cargo build --release -p krate-cli"
-    fi
     die "download failed. Does a binary exist for ${target} in release ${version}?"
   }
 
