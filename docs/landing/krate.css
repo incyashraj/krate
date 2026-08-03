@@ -2014,3 +2014,109 @@
       line-height: 1.65;
       white-space: pre;
     }
+
+    /* Proof-by-pixels gallery. Cards hold a real headless screenshot of each
+       app; the checkered frame reads as "this is a captured image" and keeps a
+       dark app screenshot legible on the dark page. The chip is the measured
+       fact each shot proves, in cyan to match the site's success accent. */
+    .shot-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-top: 8px;
+    }
+
+    .shot-card {
+      margin: 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: border-color .18s ease, transform .18s ease;
+    }
+
+    .shot-card:hover {
+      border-color: var(--blue);
+      transform: translateY(-2px);
+    }
+
+    .shot-frame {
+      aspect-ratio: 4 / 3;
+      border-bottom: 1px solid var(--line);
+      background-color: #0e1016;
+      background-image:
+        linear-gradient(45deg, #14171f 25%, transparent 25%),
+        linear-gradient(-45deg, #14171f 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #14171f 75%),
+        linear-gradient(-45deg, transparent 75%, #14171f 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+      overflow: hidden;
+    }
+
+    .shot-frame img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top center;
+    }
+
+    .shot-card figcaption {
+      padding: 15px 17px 18px;
+    }
+
+    .shot-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 7px;
+    }
+
+    .shot-head strong {
+      font-size: 16px;
+    }
+
+    .shot-chip {
+      flex: none;
+      padding: 3px 9px;
+      border-radius: 999px;
+      color: var(--cyan);
+      background: rgba(108, 244, 215, .12);
+      border: 1px solid rgba(108, 244, 215, .3);
+      font-family: var(--mono);
+      font-size: 11.5px;
+      white-space: nowrap;
+    }
+
+    .shot-card figcaption p {
+      margin: 0;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .shot-note {
+      margin: 22px 0 0;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 15px;
+    }
+
+    .shot-note code {
+      color: var(--blue-soft);
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+
+    @media (max-width: 860px) {
+      .shot-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 560px) {
+      .shot-grid { grid-template-columns: 1fr; }
+    }
