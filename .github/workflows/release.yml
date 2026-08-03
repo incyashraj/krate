@@ -191,9 +191,20 @@ jobs:
       - name: Generate checksums
         shell: bash
         run: |
+          # Bare filenames, not build paths. Downloaded release assets sit in one
+          # flat folder, so a line like `dist/krate-aarch64-apple-darwin/krate-...
+          # .tar.gz` names a path that does not exist next to the download, and
+          # `shasum -a 256 -c SHA256SUMS` skips every line and reports "no file
+          # was verified". Compute the hashes with full paths, then strip every
+          # directory so each line is `<hash>  <basename>` -- checkable by hand
+          # next to the downloaded asset, which is the whole point of the file.
+          # Assets from different target dirs never share a basename, so this
+          # cannot make two lines collide.
           find dist -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0 \
             | sort -z \
-            | xargs -0 sha256sum > SHA256SUMS
+            | xargs -0 sha256sum \
+            | sed -E 's#(^[0-9a-f]+  ).*/#\1#' > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2

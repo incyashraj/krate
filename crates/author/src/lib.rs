@@ -44,6 +44,19 @@ impl AppKind {
     /// or analyze a file. Matching the GUI broadly also gives an `--author-cmd`
     /// agent the right starter to adapt, which is where authoring succeeds.
     pub fn infer(request: &str) -> AppKind {
+        Self::infer_matched(request).unwrap_or(AppKind::Checklist)
+    }
+
+    /// Infer the kind only when the request clearly names one of the built-in
+    /// templates. Returns `None` when nothing matched.
+    ///
+    /// The built-in maker has three templates and no ability to write arbitrary
+    /// apps. `infer` above falls back to the checklist for anything it does not
+    /// recognise, which is fine as a default but silent -- someone who asked for
+    /// "a PDF merger" would get a checklist named "pdf-merger" and no hint that
+    /// the AI did not run. Callers use this to say so, and to point at
+    /// `--agent`. Keep the two in lockstep: every branch here is a branch there.
+    pub fn infer_matched(request: &str) -> Option<AppKind> {
         let lower = request.to_lowercase();
 
         let wants_voice_prompter = lower.contains("voice prompter")
@@ -52,7 +65,7 @@ impl AppKind {
             || (lower.contains("microphone")
                 && (lower.contains("prompt") || lower.contains("script")));
         if wants_voice_prompter {
-            return AppKind::VoicePrompter;
+            return Some(AppKind::VoicePrompter);
         }
 
         // Clear signals for the CLI file-analysis app.
@@ -64,7 +77,7 @@ impl AppKind {
             || lower.contains("read a text file")
             || lower.contains("read a file");
         if wants_file_report {
-            return AppKind::WordFrequency;
+            return Some(AppKind::WordFrequency);
         }
 
         // Everything list/tracker/item shaped is the checklist GUI. This covers
@@ -81,13 +94,13 @@ impl AppKind {
             || lower.contains("groceries")
             || lower.contains("shopping");
         if wants_list {
-            return AppKind::Checklist;
+            return Some(AppKind::Checklist);
         }
 
-        // Default to the GUI checklist: a windowed, interactive app is the more
-        // useful and demo-friendly fallback than a CLI file reporter for an
-        // unclassified request.
-        AppKind::Checklist
+        // Nothing matched. The caller decides what to do -- `infer` falls back
+        // to the checklist, the CLI warns that the built-in maker did not
+        // recognise the request and points at --agent.
+        None
     }
 }
 
@@ -917,6 +930,22 @@ mod tests {
             AppKind::infer("count the words in a file"),
             AppKind::WordFrequency
         );
+    }
+
+    #[test]
+    fn infer_matched_reports_when_nothing_matched() {
+        // A request the templates cannot serve returns None from the matcher,
+        // even though `infer` still falls back to a checklist. This is the
+        // signal the CLI uses to warn that the AI did not run.
+        assert_eq!(AppKind::infer_matched("a pdf merger"), None);
+        assert_eq!(AppKind::infer_matched("shrink these photos"), None);
+        // A real match still reports Some, so the warning stays quiet.
+        assert_eq!(
+            AppKind::infer_matched("a grocery list"),
+            Some(AppKind::Checklist)
+        );
+        // And the total function keeps its checklist default.
+        assert_eq!(AppKind::infer("a pdf merger"), AppKind::Checklist);
     }
 
     #[test]

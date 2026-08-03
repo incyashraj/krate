@@ -2363,6 +2363,25 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         Some(CreateKind::VoicePrompter) => AppKind::VoicePrompter,
         None => AppKind::infer(&req.request),
     };
+    // When the built-in maker (no agent) is about to generate an app the request
+    // did not actually name, say so. The built-in path has three templates and
+    // cannot write arbitrary apps; a request like "a pdf merger" silently became
+    // a checklist wearing that name, which reads as the AI being broken rather
+    // than unbuilt. Only warn when it truly fell back: an explicit --kind is a
+    // choice, and an --agent run does not touch these templates at all.
+    let fell_back_to_default = req.kind.is_none()
+        && req.author_cmd.is_none()
+        && AppKind::infer_matched(&req.request).is_none();
+    if fell_back_to_default && !req.json {
+        eprintln!(
+            "note: \"{}\" did not match a built-in template, so Krate is starting from \
+             its checklist starter and naming it after your request. The built-in maker \
+             has three templates (checklist, word-count, voice-prompter) and does not \
+             write arbitrary apps. To have an AI actually write this app, re-run with \
+             `--agent claude`. To pick a template on purpose, pass `--kind`.",
+            req.request
+        );
+    }
     let default_name = match kind {
         AppKind::Checklist => "checklist",
         AppKind::WordFrequency => "word-count",
@@ -4562,8 +4581,79 @@ fn doctor() -> Result<u8> {
     print_tool_status("npm", &["--version"]);
     print_jco_status();
     println!();
-    println!("state dir       {}", krate_home().display());
+    print_rust_toolchain_status();
+    println!();
+    // Show the state dir, and say whether it exists. It is created lazily on
+    // first use (the key-value store, the machine key), so on a fresh install
+    // this path does not exist yet -- printing it bare read as though doctor
+    // was pointing at a missing folder. Name the state as well as the path.
+    let home = krate_home();
+    let home_state = if home.exists() {
+        "exists"
+    } else {
+        "not created yet (made on first use)"
+    };
+    println!("state dir       {} ({home_state})", home.display());
     Ok(0)
+}
+
+/// Report which `cargo`/`rustc` a plain build would use, and warn when it is not
+/// rustup's.
+///
+/// `krate create` prepends rustup's toolchain itself, so its own builds are
+/// safe. But someone building a library or CLI with plain `cargo` -- which is
+/// most of the point of a component you hand to Krate -- uses whatever is first
+/// on PATH. On a Mac with `brew install rust`, that is a Homebrew cargo with no
+/// `wasm32-wasip1` target, and the build dies with "can't find crate for core".
+/// Doctor used to check the target but never say which cargo it checked, so a
+/// Homebrew or distro Rust got a green light straight into that wall. Name the
+/// cargo, and warn when it is not the rustup one.
+fn print_rust_toolchain_status() {
+    println!("Rust toolchain");
+
+    let path_cargo = find_on_path("cargo");
+    match &path_cargo {
+        Some(path) => println!("  cargo (PATH)  {}", path.display()),
+        None => println!("  cargo (PATH)  not found"),
+    }
+    let path_rustc = find_on_path("rustc");
+    if let Some(path) = &path_rustc {
+        println!("  rustc (PATH)  {}", path.display());
+    }
+
+    match rustup_toolchain_bin() {
+        Some(rustup_bin) => {
+            let rustup_cargo = rustup_bin.join("cargo");
+            println!("  rustup cargo  {}", rustup_cargo.display());
+            // Warn when the cargo a plain build would pick up is not the rustup
+            // one. Compare the resolved cargo against rustup's bin dir.
+            let path_is_rustup = path_cargo
+                .as_deref()
+                .and_then(Path::parent)
+                .map(|dir| dir == rustup_bin)
+                .unwrap_or(false);
+            if !path_is_rustup {
+                println!(
+                    "  warning: the cargo first on your PATH is not rustup's. A plain \
+                     `cargo build` for wasm32-wasip1 may fail with \"can't find crate \
+                     for core\". Krate's own `krate create`/`krate build` use rustup's \
+                     toolchain regardless, but if you build a library yourself, run it \
+                     with rustup's cargo (e.g. `rustup run stable cargo build`)."
+                );
+            }
+        }
+        None => {
+            println!("  rustup        not found");
+            if path_cargo.is_some() {
+                println!(
+                    "  warning: cargo is on your PATH but rustup is not. Krate needs the \
+                     wasm32-wasip1 target, which rustup manages. Install rustup from \
+                     https://rustup.rs and add the target with `rustup target add \
+                     wasm32-wasip1`."
+                );
+            }
+        }
+    }
 }
 
 fn check_manifest(file: &Path, format: OutputFormat) -> Result<u8> {
