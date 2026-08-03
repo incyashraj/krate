@@ -1327,6 +1327,13 @@ pub trait UiAdapter: WindowAdapter {
 #[derive(Debug, Default)]
 pub struct DraftUiAdapter {
     registry: Mutex<DraftWindowRegistry>,
+    /// In-process clipboard buffer.
+    ///
+    /// Headless runs and CI have no OS pasteboard, so the draft adapter keeps a
+    /// plain string that `write_clipboard_text` sets and `read_clipboard_text`
+    /// returns. This lets a clipboard round-trip succeed without any real
+    /// system clipboard.
+    clipboard: Mutex<String>,
 }
 
 impl DraftUiAdapter {
@@ -1466,6 +1473,31 @@ impl UiAdapter for DraftUiAdapter {
 
     fn queue_text_changed(&self, event: TextChangedEvent) -> Result<(), UiAdapterError> {
         self.registry()?.queue_text_changed(event)
+    }
+
+    /// Read the in-process clipboard buffer.
+    ///
+    /// There is no OS pasteboard headless, so this returns whatever the last
+    /// `write_clipboard_text` stored (empty until then).
+    fn read_clipboard_text(&self) -> Result<String, UiAdapterError> {
+        self.clipboard
+            .lock()
+            .map(|buffer| buffer.clone())
+            .map_err(|_| {
+                UiAdapterError::Internal("draft clipboard lock is poisoned".to_string())
+            })
+    }
+
+    /// Write to the in-process clipboard buffer.
+    fn write_clipboard_text(&self, text: &str) -> Result<(), UiAdapterError> {
+        self.clipboard
+            .lock()
+            .map(|mut buffer| {
+                text.clone_into(&mut buffer);
+            })
+            .map_err(|_| {
+                UiAdapterError::Internal("draft clipboard lock is poisoned".to_string())
+            })
     }
 }
 
@@ -2523,6 +2555,21 @@ mod tests {
     }
 
     #[test]
+    fn draft_adapter_clipboard_round_trips_in_process() {
+        let adapter = DraftUiAdapter::new();
+
+        // Empty until the first write.
+        assert_eq!(adapter.read_clipboard_text().expect("read empty"), "");
+
+        adapter.write_clipboard_text("hello").expect("write");
+        assert_eq!(adapter.read_clipboard_text().expect("read"), "hello");
+
+        // A second write replaces the buffer.
+        adapter.write_clipboard_text("world").expect("write again");
+        assert_eq!(adapter.read_clipboard_text().expect("read again"), "world");
+    }
+
+    #[test]
     fn draft_adapter_polls_before_drain() {
         let adapter = DraftUiAdapter::new();
         let size = WindowSize::new(700, 500).expect("size");
@@ -2761,16 +2808,14 @@ mod tests {
     }
 
     #[test]
-    fn draft_adapter_reports_clipboard_as_unsupported() {
-        let adapter = DraftUiAdapter::new();
+    fn draft_adapter_clipboard_is_isolated_per_instance() {
+        // Each draft adapter owns its own in-process buffer; writing to one
+        // does not leak into another.
+        let first = DraftUiAdapter::new();
+        let second = DraftUiAdapter::new();
 
-        assert!(matches!(
-            adapter.read_clipboard_text(),
-            Err(UiAdapterError::Unsupported(_))
-        ));
-        assert!(matches!(
-            adapter.write_clipboard_text("copied text"),
-            Err(UiAdapterError::Unsupported(_))
-        ));
+        first.write_clipboard_text("first").expect("write first");
+        assert_eq!(first.read_clipboard_text().expect("read first"), "first");
+        assert_eq!(second.read_clipboard_text().expect("read second"), "");
     }
 }

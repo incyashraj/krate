@@ -4,6 +4,7 @@
 //! `krate-adapter-common`, while macOS-specific host wiring will land here.
 
 mod appkit;
+mod clipboard;
 mod consent;
 mod open_document;
 
@@ -454,6 +455,19 @@ impl UiAdapter for MacosUiAdapter {
 
     fn queue_text_changed(&self, event: TextChangedEvent) -> Result<(), UiAdapterError> {
         self.draft.queue_text_changed(event)
+    }
+
+    /// Read the macOS system pasteboard.
+    ///
+    /// The drawn host owns Cut/Copy/Paste, so the guest reaches the real
+    /// pasteboard through here rather than the draft in-process buffer.
+    fn read_clipboard_text(&self) -> Result<String, UiAdapterError> {
+        clipboard::read_text()
+    }
+
+    /// Write to the macOS system pasteboard.
+    fn write_clipboard_text(&self, text: &str) -> Result<(), UiAdapterError> {
+        clipboard::write_text(text)
     }
 }
 

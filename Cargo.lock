@@ -1869,6 +1869,7 @@ dependencies = [
 name = "krate-adapter-macos"
 version = "0.1.0-dev"
 dependencies = [
+ "arboard",
  "krate-adapter-common",
  "libc",
  "objc2 0.6.4",

@@ -11,6 +11,9 @@ publish = false
 krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
 libc.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies.arboard]
+workspace = true
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6.4"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAlert", "NSApplication", "NSButton", "NSButtonCell", "NSCell", "NSColor", "NSControl", "NSEvent", "NSFont", "NSGraphics", "NSGraphicsContext", "NSBitmapImageRep", "NSImage", "NSImageRep", "NSImageView", "NSImageCell", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSPanel", "NSSavePanel", "NSText", "NSResponder", "NSRunningApplication", "NSTextField", "NSView", "NSWindow", "objc2-core-foundation"] }

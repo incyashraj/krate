@@ -1343,20 +1343,20 @@ mod tests {
     }
 
     #[test]
-    fn clipboard_read_reaches_draft_unsupported_when_granted() {
-        let policy =
-            SessionPolicy::from_cli_grants(&["ui.clipboard:read".to_string()]).expect("policy");
+    fn clipboard_round_trips_through_draft_in_process_buffer_when_granted() {
+        let policy = SessionPolicy::from_cli_grants(&[
+            "ui.clipboard:read".to_string(),
+            "ui.clipboard:write".to_string(),
+        ])
+        .expect("policy");
         let guard = UapiGuard::new(policy);
         let adapter = DraftUiAdapter::default();
         let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
 
-        let err = dispatcher
-            .read_clipboard_text()
-            .expect_err("clipboard host adapter is not implemented yet");
-
-        assert!(matches!(
-            err,
-            UiDispatchError::Adapter(UiAdapterError::Unsupported(_))
-        ));
+        // The headless draft path now keeps an in-process clipboard, so a
+        // granted round-trip succeeds instead of reporting Unsupported.
+        assert_eq!(dispatcher.read_clipboard_text().expect("empty read"), "");
+        dispatcher.write_clipboard_text("hello").expect("write");
+        assert_eq!(dispatcher.read_clipboard_text().expect("read"), "hello");
     }
 }
