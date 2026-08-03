@@ -34,6 +34,7 @@ exclude = [
     "apps/krate-contacts",
     "apps/krate-settings",
     "apps/krate-fractal",
+    "apps/krate-filetree",
     "test/integration/hello-world",
     "test/integration/phase2-smoke",
     "test/integration/print-loop",

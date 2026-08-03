@@ -36,6 +36,7 @@ chart:no
 calc:no
 bigscroll:no
 settings:no
+filetree:no
 keyvault:yes
 "
 
