@@ -760,10 +760,16 @@ impl AppKitWindowSession {
         // correct precisely because text-changed keeps the guest in sync.
         // Remove the previous control set before adding the new one, or old
         // controls linger on screen under the new ones and overlap.
-        if let Some(previous) = self.widget_surface.take() {
-            previous.teardown();
-        }
-        let surface = self.window.lower_widget_placements(placements, delegate)?;
+        // Hand the previous surface to the lowering so it can reuse matching
+        // native views instead of building a fresh set every frame. A canvas
+        // game re-lowers 60 times a second; recreating its full-window
+        // NSImageView (and the CGImage AppKit caches for it) each time made
+        // CoreAnimation retain thousands of images and drove RSS into the
+        // gigabytes. Reuse turns a frame into a single setImage: call.
+        let previous = self.widget_surface.take();
+        let surface = self
+            .window
+            .lower_widget_placements(placements, delegate, previous)?;
         let snapshot = surface.snapshot();
         self.widget_surface = Some(surface);
         Ok(snapshot)
@@ -1163,6 +1169,33 @@ mod platform {
         Some(image)
     }
 
+    /// Pull the previous frame's image view for a widget out of the surface
+    /// being replaced, so it can be reused rather than rebuilt.
+    ///
+    /// Only an image-backed view (Image or a drawn Canvas) is a candidate: it
+    /// is a plain NSImageView with no target-action wiring, so setImage: is the
+    /// whole update. Reusing it keeps AppKit from caching a fresh CGImage per
+    /// frame. Taking it out of `controls` means it will not be torn down when
+    /// the leftovers are; it stays parented in the content view throughout.
+    fn reuse_image_view(
+        previous: &mut Option<AppKitWidgetSurface>,
+        widget: WidgetId,
+    ) -> Option<Retained<NSImageView>> {
+        let surface = previous.as_mut()?;
+        match surface.kinds.get(&widget) {
+            Some(WidgetKind::Image) | Some(WidgetKind::Canvas) => {}
+            _ => return None,
+        }
+        // Confirm it is really an NSImageView before handing it back; a Canvas
+        // that had no pixels last frame was lowered as a label, not a view we
+        // can setImage: on.
+        let view = surface.controls.get(&widget)?;
+        let image_view = view.downcast_ref::<NSImageView>()?.retain();
+        surface.kinds.remove(&widget);
+        surface.controls.remove(&widget);
+        Some(image_view)
+    }
+
     /// Climb a lowered AppKit widget up to the NSView the surface map holds.
     ///
     /// The map used to hold NSControl, because every widget was one. An image
@@ -1173,11 +1206,11 @@ mod platform {
         Retained::from(control.as_ref())
     }
     use super::*;
-    use objc2::rc::Retained;
+    use objc2::rc::{autoreleasepool, Retained};
     use objc2::runtime::{AnyObject, ProtocolObject};
     use objc2::{
         define_class, msg_send, sel, AllocAnyThread, ClassType, DefinedClass, MainThreadMarker,
-        MainThreadOnly,
+        MainThreadOnly, Message,
     };
     use objc2_app_kit::{
         NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSBitmapImageRep,
@@ -1531,6 +1564,26 @@ mod platform {
             &self,
             placements: &[AppKitWidgetPlacement],
             delegate: &AppKitWindowNativeDelegate,
+            previous: Option<AppKitWidgetSurface>,
+        ) -> Result<AppKitWidgetSurface, UiAdapterError> {
+            // A canvas app re-lowers its whole view tree every frame, and each
+            // frame allocates a fresh full-window NSBitmapImageRep (width *
+            // height * 4 bytes) plus transient NSString / NSColor / NSImage
+            // objects, all autoreleased. Outside a pool these pile up until the
+            // next system run-loop cycle -- which, because the runtime drives
+            // its own manual pump, may be a long time. A local pool drains them
+            // the moment the frame is lowered. The NSView controls the surface
+            // keeps are strong Retained refs, so they survive the drain.
+            autoreleasepool(|_pool| {
+                self.lower_widget_placements_pooled(placements, delegate, previous)
+            })
+        }
+
+        fn lower_widget_placements_pooled(
+            &self,
+            placements: &[AppKitWidgetPlacement],
+            delegate: &AppKitWindowNativeDelegate,
+            previous: Option<AppKitWidgetSurface>,
         ) -> Result<AppKitWidgetSurface, UiAdapterError> {
             let mtm = main_thread_marker()?;
             let content_view = self.window.contentView().ok_or_else(|| {
@@ -1544,6 +1597,13 @@ mod platform {
             let mut controls = BTreeMap::new();
             let mut kinds = BTreeMap::new();
             let mut lowered = Vec::with_capacity(placements.len());
+
+            // The previous frame's native views, still parented in the content
+            // view. Any that a placement reuses are moved out of here; whatever
+            // is left over at the end is torn down. This is what lets a canvas
+            // game keep one NSImageView for its whole run instead of minting a
+            // fresh one -- and a fresh cached CGImage -- every frame.
+            let mut reusable = previous;
 
             for placement in placements {
                 let (x, _, width, height) = placement.rect();
@@ -1774,28 +1834,43 @@ mod platform {
                         // is exactly what the drawn painter does on the other
                         // two hosts, so a picture lands the same way on all
                         // three rather than letterboxed here and stretched
-                        // there.
-                        let view = NSImageView::new(mtm);
+                        // there. Reuse the prior frame's view when this id was
+                        // an image before, so the CGImage AppKit caches is
+                        // replaced in place rather than accumulated.
+                        let view = reuse_image_view(&mut reusable, placement.widget())
+                            .unwrap_or_else(|| {
+                                let view = NSImageView::new(mtm);
+                                view.setImageScaling(
+                                    NSImageScaling::ScaleProportionallyUpOrDown,
+                                );
+                                view
+                            });
                         view.setFrame(frame);
-                        view.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
-                        if let Some(pixels) = placement.pixels() {
-                            if let Some(image) = ns_image_from_rgba(pixels) {
-                                view.setImage(Some(&image));
-                            }
+                        match placement.pixels().and_then(ns_image_from_rgba) {
+                            Some(image) => view.setImage(Some(&image)),
+                            None => view.setImage(None),
                         }
                         control_view(view)
                     }
                     WidgetKind::Canvas if placement.pixels().is_some() => {
                         // A canvas someone has drawn on shows its raster the
                         // same way an image widget does. An untouched canvas
-                        // falls through to the container arm below.
-                        let view = NSImageView::new(mtm);
+                        // falls through to the container arm below. Reused
+                        // across frames: a canvas game re-lowers 60 times a
+                        // second, and minting a new view (and cached CGImage)
+                        // each time is what drove RSS into the gigabytes.
+                        let view = reuse_image_view(&mut reusable, placement.widget())
+                            .unwrap_or_else(|| {
+                                let view = NSImageView::new(mtm);
+                                view.setImageScaling(
+                                    NSImageScaling::ScaleProportionallyUpOrDown,
+                                );
+                                view
+                            });
                         view.setFrame(frame);
-                        view.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
-                        if let Some(pixels) = placement.pixels() {
-                            if let Some(image) = ns_image_from_rgba(pixels) {
-                                view.setImage(Some(&image));
-                            }
+                        match placement.pixels().and_then(ns_image_from_rgba) {
+                            Some(image) => view.setImage(Some(&image)),
+                            None => view.setImage(None),
                         }
                         control_view(view)
                     }
@@ -1831,6 +1906,14 @@ mod platform {
                 controls.insert(placement.widget(), control);
                 kinds.insert(placement.widget(), placement.kind());
                 lowered.push(placement.widget());
+            }
+
+            // Tear down whatever the previous frame left that this frame did
+            // not reuse -- controls for widgets that are gone, and image views
+            // whose widget changed kind. Reused image views were removed from
+            // this surface above, so they are not touched here.
+            if let Some(previous) = reusable {
+                previous.teardown();
             }
 
             // Focus the editor so typing works the moment the window opens —
@@ -2061,32 +2144,43 @@ mod platform {
             let app = NSApplication::sharedApplication(mtm);
             let mut dispatched = 0usize;
 
-            loop {
-                // SAFETY: Called on the main thread; a nil date means "do not
-                // wait", so this never blocks the runtime.
-                let event = unsafe {
-                    app.nextEventMatchingMask_untilDate_inMode_dequeue(
-                        NSEventMask::Any,
-                        None,
-                        NSDefaultRunLoopMode,
-                        true,
-                    )
-                };
-                let Some(event) = event else {
-                    break;
-                };
-                if self.capture_key_event(&event) {
-                    // A game key: recorded for the runtime, not dispatched.
-                    // Sending it on would reach a responder chain where no
-                    // drawn view listens, whose answer to every keypress is
-                    // the system beep.
+            // Drain autoreleased objects every frame. This runtime drives its
+            // own manual pump (nextEventMatchingMask in a loop) instead of
+            // running [NSApp run], so the top-level autorelease pool AppKit
+            // installs never cycles. Every dequeued NSEvent -- and every
+            // NSImage / NSBitmapImageRep / NSImageView a frame builds during
+            // sendEvent -- is autoreleased and would otherwise accumulate for
+            // the life of the process. A full-window game re-presenting at
+            // 60fps reached tens of gigabytes and was force-quit. Wrapping the
+            // pump in a pool that drains each call keeps a windowed app flat.
+            autoreleasepool(|_pool| {
+                loop {
+                    // SAFETY: Called on the main thread; a nil date means "do
+                    // not wait", so this never blocks the runtime.
+                    let event = unsafe {
+                        app.nextEventMatchingMask_untilDate_inMode_dequeue(
+                            NSEventMask::Any,
+                            None,
+                            NSDefaultRunLoopMode,
+                            true,
+                        )
+                    };
+                    let Some(event) = event else {
+                        break;
+                    };
+                    if self.capture_key_event(&event) {
+                        // A game key: recorded for the runtime, not dispatched.
+                        // Sending it on would reach a responder chain where no
+                        // drawn view listens, whose answer to every keypress is
+                        // the system beep.
+                        dispatched += 1;
+                        continue;
+                    }
+                    app.sendEvent(&event);
                     dispatched += 1;
-                    continue;
                 }
-                app.sendEvent(&event);
-                dispatched += 1;
-            }
-            app.updateWindows();
+                app.updateWindows();
+            });
 
             Ok(dispatched)
         }
@@ -2492,6 +2586,7 @@ mod platform {
             &self,
             _placements: &[AppKitWidgetPlacement],
             _delegate: &AppKitWindowNativeDelegate,
+            _previous: Option<AppKitWidgetSurface>,
         ) -> Result<AppKitWidgetSurface, UiAdapterError> {
             Err(UiAdapterError::Unsupported(
                 "AppKit widget lowering is only available on macOS".to_string(),
