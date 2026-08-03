@@ -1,0 +1,21 @@
+[app]
+id = "dev.krate.nova2"
+name = "Nova 2"
+version = "0.1.0-dev"
+entry = "code.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the game window"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report the score"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag"
+required = true

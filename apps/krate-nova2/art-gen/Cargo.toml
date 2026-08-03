@@ -1,0 +1,19 @@
+# Empty [workspace] detaches this tiny generator from any parent workspace,
+# so it builds standalone regardless of where the repo is checked out.
+[workspace]
+
+[package]
+name = "nova2-art-gen"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "art-gen"
+path = "src/main.rs"
+
+[dependencies]
+png = "0.17"
+
+[profile.release]
+opt-level = 3
