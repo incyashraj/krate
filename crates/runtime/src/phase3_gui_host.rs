@@ -1508,6 +1508,70 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         Ok(Ok(()))
     }
 
+    fn fill_circle(
+        &mut self,
+        canvas: u64,
+        center: gfx::types::Point,
+        radius: f32,
+        fill: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.fill_circle(
+            center.x,
+            center.y,
+            radius,
+            pack_color(fill.r, fill.g, fill.b, fill.a),
+        );
+        Ok(Ok(()))
+    }
+
+    fn radial_gradient(
+        &mut self,
+        canvas: u64,
+        center: gfx::types::Point,
+        radius: f32,
+        inner: gfx::types::Color,
+        outer: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.radial_gradient(
+            center.x,
+            center.y,
+            radius,
+            pack_color(inner.r, inner.g, inner.b, inner.a),
+            pack_color(outer.r, outer.g, outer.b, outer.a),
+        );
+        Ok(Ok(()))
+    }
+
+    fn linear_gradient(
+        &mut self,
+        canvas: u64,
+        area: gfx::types::Rect,
+        top: gfx::types::Color,
+        bottom: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.linear_gradient_v(
+            area.x,
+            area.y,
+            area.width,
+            area.height,
+            pack_color(top.r, top.g, top.b, top.a),
+            pack_color(bottom.r, bottom.g, bottom.b, bottom.a),
+        );
+        Ok(Ok(()))
+    }
+
     fn stroke_rect(
         &mut self,
         canvas: u64,

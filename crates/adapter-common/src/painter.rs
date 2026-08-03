@@ -214,6 +214,12 @@ pub fn fill_rect(
     if x1 <= x0 || y1 <= y0 {
         return;
     }
+    // Opaque fills overwrite (the fast path every solid UI element uses).
+    // Translucent fills alpha-blend source-over onto what is already there --
+    // this is what makes glows, soft edges, and layered light possible instead
+    // of the last-drawn color simply winning. The branch is on the source
+    // alpha, so nothing that passes a fully opaque color changes behavior.
+    let src_a = color >> 24;
     for row in y0..y1 {
         let start = (row * width + x0) as usize;
         let end = (row * width + x1) as usize;
@@ -221,11 +227,47 @@ pub fn fill_rect(
         // edit to the arithmetic above from reintroducing an out-of-bounds
         // slice: index the buffer only where it exists.
         if let Some(span) = buffer.get_mut(start..end) {
-            for pixel in span {
-                *pixel = color;
+            if src_a >= 255 {
+                for pixel in span {
+                    *pixel = color;
+                }
+            } else if src_a > 0 {
+                for pixel in span {
+                    *pixel = blend_over(color, *pixel);
+                }
             }
+            // src_a == 0 is fully transparent: draw nothing.
         }
     }
+}
+
+/// Composite a straight-alpha `src` over an opaque `dst`, both `0xAARRGGBB`.
+///
+/// Standard source-over: `out = src * a + dst * (1 - a)` per channel, with the
+/// result kept opaque (canvas pixels are always opaque; alpha is only a draw
+/// weight). Integer math, rounded, so a stack of translucent layers builds up
+/// smoothly the way a real compositor blends them.
+#[inline]
+pub fn blend_over(src: u32, dst: u32) -> u32 {
+    let a = (src >> 24) & 0xFF;
+    if a == 0 {
+        return dst;
+    }
+    if a == 255 {
+        return src | 0xFF00_0000;
+    }
+    let inv = 255 - a;
+    let sr = (src >> 16) & 0xFF;
+    let sg = (src >> 8) & 0xFF;
+    let sb = src & 0xFF;
+    let dr = (dst >> 16) & 0xFF;
+    let dg = (dst >> 8) & 0xFF;
+    let db = dst & 0xFF;
+    // +127 for rounding on the /255.
+    let r = (sr * a + dr * inv + 127) / 255;
+    let g = (sg * a + dg * inv + 127) / 255;
+    let b = (sb * a + db * inv + 127) / 255;
+    0xFF00_0000 | (r << 16) | (g << 8) | b
 }
 
 /// Paint the lowered widget placements into a framebuffer.

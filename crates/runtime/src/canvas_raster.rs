@@ -41,6 +41,18 @@ pub fn pack_color(r: f32, g: f32, b: f32, a: f32) -> u32 {
     (channel(a) << 24) | (channel(r) << 16) | (channel(g) << 8) | channel(b)
 }
 
+/// Linearly interpolate two `0xAARRGGBB` colors, `t` in 0..=1 (0 = a, 1 = b),
+/// all four channels including alpha. Used by the gradient primitives.
+fn lerp_color(a: u32, b: u32, t: f32) -> u32 {
+    let t = t.clamp(0.0, 1.0);
+    let mix = |shift: u32| -> u32 {
+        let ca = ((a >> shift) & 0xFF) as f32;
+        let cb = ((b >> shift) & 0xFF) as f32;
+        (ca + (cb - ca) * t + 0.5) as u32 & 0xFF
+    };
+    (mix(24) << 24) | (mix(16) << 16) | (mix(8) << 8) | mix(0)
+}
+
 impl CanvasSurface {
     pub fn new(width: u32, height: u32) -> Result<Self, UiAdapterError> {
         if width == 0 || height == 0 || width > MAX_CANVAS_EDGE || height > MAX_CANVAS_EDGE {
@@ -69,6 +81,96 @@ impl CanvasSurface {
             (x, y, w, h),
             color,
         );
+    }
+
+    /// A filled circle with an anti-aliased edge, alpha-blended over the
+    /// canvas. Each pixel's coverage is its distance from the edge, so the rim
+    /// is smooth rather than stair-stepped -- the primitive that makes round
+    /// things look drawn instead of plotted.
+    pub fn fill_circle(&mut self, cx: f32, cy: f32, radius: f32, color: u32) {
+        if radius <= 0.0 {
+            return;
+        }
+        let (w, h) = (self.width, self.height);
+        let x0 = ((cx - radius).floor().max(0.0) as u32).min(w);
+        let x1 = (((cx + radius).ceil()).max(0.0) as u32).min(w);
+        let y0 = ((cy - radius).floor().max(0.0) as u32).min(h);
+        let y1 = (((cy + radius).ceil()).max(0.0) as u32).min(h);
+        let base_a = (color >> 24) & 0xFF;
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let dx = px as f32 + 0.5 - cx;
+                let dy = py as f32 + 0.5 - cy;
+                let dist = (dx * dx + dy * dy).sqrt();
+                // Coverage: 1 inside, fading to 0 across a 1px edge band.
+                let coverage = (radius - dist + 0.5).clamp(0.0, 1.0);
+                if coverage <= 0.0 {
+                    continue;
+                }
+                let a = ((base_a as f32) * coverage) as u32;
+                if a == 0 {
+                    continue;
+                }
+                let px_color = (a << 24) | (color & 0x00FF_FFFF);
+                let idx = (py * w + px) as usize;
+                if let Some(slot) = self.buffer.get_mut(idx) {
+                    *slot = krate_adapter_common::painter::blend_over(px_color, *slot);
+                }
+            }
+        }
+    }
+
+    /// A radial gradient disc: `inner` color at the center easing to `outer`
+    /// color (typically transparent) at `radius`. This is the real glow/bloom
+    /// primitive -- a soft light falloff instead of a flat disc, which is the
+    /// single biggest difference between a modern look and a flat one.
+    pub fn radial_gradient(&mut self, cx: f32, cy: f32, radius: f32, inner: u32, outer: u32) {
+        if radius <= 0.0 {
+            return;
+        }
+        let (w, h) = (self.width, self.height);
+        let x0 = ((cx - radius).floor().max(0.0) as u32).min(w);
+        let x1 = (((cx + radius).ceil()).max(0.0) as u32).min(w);
+        let y0 = ((cy - radius).floor().max(0.0) as u32).min(h);
+        let y1 = (((cy + radius).ceil()).max(0.0) as u32).min(h);
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let dx = px as f32 + 0.5 - cx;
+                let dy = py as f32 + 0.5 - cy;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist > radius {
+                    continue;
+                }
+                // Smoothstep the interpolation so the falloff looks like light,
+                // not a linear ramp.
+                let t = dist / radius;
+                let t = t * t * (3.0 - 2.0 * t);
+                let c = lerp_color(inner, outer, t);
+                if (c >> 24) == 0 {
+                    continue;
+                }
+                let idx = (py * w + px) as usize;
+                if let Some(slot) = self.buffer.get_mut(idx) {
+                    *slot = krate_adapter_common::painter::blend_over(c, *slot);
+                }
+            }
+        }
+    }
+
+    /// A vertical linear gradient filling a rectangle: `top` color at `y`
+    /// easing to `bottom` at `y + h`. For skies, panels, backdrops.
+    pub fn linear_gradient_v(&mut self, x: f32, y: f32, w: f32, h: f32, top: u32, bottom: u32) {
+        if h <= 0.0 || w <= 0.0 {
+            return;
+        }
+        let rows = h.ceil() as i32;
+        let mut i = 0i32;
+        while i < rows {
+            let t = (i as f32 + 0.5) / h;
+            let c = lerp_color(top, bottom, t.clamp(0.0, 1.0));
+            self.fill_rect(x, y + i as f32, w, 1.0, c);
+            i += 1;
+        }
     }
 
     /// Four thin fills; a stroke is its edges.
