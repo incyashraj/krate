@@ -32,6 +32,11 @@ const MAX_PHASE2_ARG_COUNT: usize = 1024;
 /// explicit `--fuel` always overrides this.
 const UNTRUSTED_FUEL_BUDGET: u64 = 5_000_000_000;
 
+/// How long `krate create --agent` waits for the AI to author the app before
+/// giving up with a clear message. Long enough for a real authoring run, short
+/// enough that a stalled agent does not hang the person forever.
+const AGENT_AUTHOR_TIMEOUT_SECS: u64 = 180;
+
 /// Version shown by `krate --version`. The release workflow sets
 /// `KRATE_RELEASE_VERSION` to the git tag so a released binary reports its real
 /// version; local and CI builds fall back to the crate version from Cargo.toml.
@@ -2770,6 +2775,22 @@ fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
         .arg("Read,Edit,Write")
         .arg("--permission-mode")
         .arg("acceptEdits");
+    // Close stdin. `claude -p` reads stdin for piped input; inheriting the
+    // parent's stdin made it block waiting for input that never comes -- the
+    // transcript literally said "no stdin data received in 3s, proceeding
+    // without it", and create hung. Giving it /dev/null means it never waits.
+    command.stdin(std::process::Stdio::null());
+    // Run the child `claude` as a fresh, clean session. If `krate create` is
+    // itself launched from inside a Claude Code session (which a developer may
+    // well do), the inherited CLAUDE_CODE_* / session environment can confuse
+    // the nested agent into stalling. Strip those so the child starts as if
+    // launched from a plain terminal, with its own auth and defaults.
+    for (key, _) in std::env::vars() {
+        if key.starts_with("CLAUDE_CODE_") || key == "CLAUDECODE" || key == "CLAUDE_CODE_ENTRYPOINT"
+        {
+            command.env_remove(key);
+        }
+    }
     // Send the model's own chatter to the transcript, not the create output.
     if let Some(file) = &file {
         if let Ok(clone) = file.try_clone() {
@@ -2780,9 +2801,50 @@ fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
         }
     }
 
-    let status = command
-        .status()
+    // Authoring takes a while and prints nothing to the user (the model's
+    // output goes to the transcript), so "==> authoring" looked like a hang.
+    // Reassure them, show a heartbeat so it never looks dead, and bound the
+    // wait: a stuck agent fails with a clear message and a fallback, never an
+    // endless silent hang.
+    eprintln!("    the AI is writing your app -- this usually takes a minute or two");
+    let mut child = command
+        .spawn()
         .context("run the `claude` CLI (is Claude Code installed and signed in?)")?;
+    let start = std::time::Instant::now();
+    let deadline = start + std::time::Duration::from_secs(AGENT_AUTHOR_TIMEOUT_SECS);
+    let mut last_beat = start;
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {
+                let now = std::time::Instant::now();
+                // A dot every 10s so the person sees it is alive and working.
+                if now.duration_since(last_beat) >= std::time::Duration::from_secs(10) {
+                    eprint!(".");
+                    let _ = io::stderr().flush();
+                    last_beat = now;
+                }
+                if now >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    eprintln!();
+                    anyhow::bail!(
+                        "the AI agent did not finish within {} minutes and was stopped. \
+                         It may have stalled or lost its connection. Two things to try:\n  \
+                         1. Run the command again -- it often works on a second try.\n  \
+                         2. Start from a built-in template instead of the AI:\n     \
+                         krate create \"...\" --kind checklist\n\
+                         The agent's transcript is at {} if you want to see what happened.",
+                        AGENT_AUTHOR_TIMEOUT_SECS / 60,
+                        transcript.display()
+                    );
+                }
+                std::thread::sleep(std::time::Duration::from_millis(300));
+            }
+            Err(err) => return Err(err).context("waiting for the `claude` agent"),
+        }
+    };
+    eprintln!();
     if !status.success() {
         anyhow::bail!(
             "the Claude agent did not finish successfully; see {}",
