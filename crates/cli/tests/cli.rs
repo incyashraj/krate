@@ -3455,6 +3455,32 @@ fn check_app_passes_a_known_good_app_and_emits_json() {
     );
 }
 
+#[test]
+fn check_app_passes_a_cli_app_that_needs_an_argument() {
+    // Regression: a CLI app that requires an argument must pass check-app. It
+    // used to fail at the run stage because check-app gave CLI apps no argument
+    // at all -- so the app printed its usage and exited non-zero, and check-app
+    // called a correct app broken. krate-cat reads a file argument; check-app
+    // must seed a fixture and pass its path (the same thing create verifies), so
+    // the app does its work once and exits 0.
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let app_dir = workspace_path(PathBuf::from("apps/krate-cat"));
+    let output = krate()
+        .arg("check-app")
+        .arg(&app_dir)
+        .output()
+        .expect("run check-app");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "check-app must pass a CLI app that takes an argument: {stderr}"
+    );
+}
+
 fn configured_hello_component() -> Option<PathBuf> {
     configured_component_from_env("KRATE_HELLO_WASM", "hello component test")
 }

@@ -225,12 +225,26 @@ Do not reach for the `image` crate: it requires `std` unconditionally and drags 
 in the whole `wasi:*` surface. Use `zune-png` / `zune-jpeg` / `zune-core` at \
 `0.5` with `default-features = false`, decode to RGBA yourself, and hand the \
 bytes to `ui::image::set_pixels`. `apps/krate-fractal` does this.\n\n\
+## Getting input into a CLI app\n\n\
+Command-line arguments (`krate::io::args`) are single-line only: an argument \
+may not contain a newline, because Phase 2 delivers all args as one \
+newline-joined string. So a short, single-line input (a number, a word, a URL) \
+comes in as an argument -- but any multi-line input (a table, a JSON document, \
+a block of text) must be read from standard input instead:\n\n\
+\u{20}\u{20}\u{20}\u{20}let text = krate::io::stdio::stdin().read_text()?;\n\n\
+Read stdin to end, do the work, print the result. This is how a formatter or a \
+pretty-printer should take its input -- the same shape as `column`, `jq`, or \
+`sort`, where you pipe data in. An app that tries to take a multi-line document \
+as an argument will be refused before it runs.\n\n\
 ## The verification run\n\n\
 `check-app` (and `create`) run the app once with every capability granted and \
 one argument, requiring exit 0. The argument is the bare word `quick` (not \
-`--quick`) for a GUI app, or a sample file path for a CLI app that declares \
-`fs.read:` and no window. Handle `quick` before any other argument parsing, do \
-the real work once, print something, and exit 0 without waiting for input.\n";
+`--quick`), except a CLI app that declares `fs.read:` and no window is given a \
+sample file path instead. Handle `quick` before any other argument parsing: on \
+`quick`, do the real work once against a small built-in sample (or empty \
+stdin), print something, and exit 0. Never wait for input or open a window \
+nobody will close. An app that parses arguments strictly and rejects the \
+unknown `quick` fails here after building and packing correctly.\n";
 
 /// Section 4: the GUI world interfaces, extracted from the WIT. A GUI app calls
 /// these through its generated `bindings::krate::{ui,gfx,audio,speech}::*`, not
