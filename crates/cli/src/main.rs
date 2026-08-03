@@ -2065,8 +2065,8 @@ fn publish_bundle(bundle: &Path, hub_override: Option<&str>) -> Result<u8> {
             bundle.display()
         );
     }
-    let bytes = fs::read(bundle)
-        .with_context(|| format!("could not read bundle {}", bundle.display()))?;
+    let bytes =
+        fs::read(bundle).with_context(|| format!("could not read bundle {}", bundle.display()))?;
     if bytes.is_empty() {
         anyhow::bail!("bundle is empty: {}", bundle.display());
     }
@@ -2086,7 +2086,10 @@ fn publish_bundle(bundle: &Path, hub_override: Option<&str>) -> Result<u8> {
             let detail = response
                 .into_string()
                 .unwrap_or_else(|_| "(no detail)".to_string());
-            anyhow::bail!("the hub rejected the bundle (HTTP {code}): {}", detail.trim());
+            anyhow::bail!(
+                "the hub rejected the bundle (HTTP {code}): {}",
+                detail.trim()
+            );
         }
         Err(ureq::Error::Transport(err)) => {
             anyhow::bail!(
@@ -2103,9 +2106,8 @@ fn publish_bundle(bundle: &Path, hub_override: Option<&str>) -> Result<u8> {
     // The response is a small JSON object { "url", "id" }. Rather than pull in a
     // parser for two fields, pluck the url out; if the shape is unexpected, show
     // the raw body so it is still debuggable.
-    let url = extract_json_string(&body, "url").ok_or_else(|| {
-        anyhow::anyhow!("the hub returned an unexpected response: {body}")
-    })?;
+    let url = extract_json_string(&body, "url")
+        .ok_or_else(|| anyhow::anyhow!("the hub returned an unexpected response: {body}"))?;
 
     println!("Published. Anyone can run it with:");
     println!("  krate run {url}");
