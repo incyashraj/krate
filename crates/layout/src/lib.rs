@@ -17,6 +17,49 @@ use thiserror::Error;
 /// zero-height one the host refuses.
 const DEFAULT_CONTENT_ROW_HEIGHT: f32 = 24.0;
 
+/// Space between a container's children when the app sets none. Zero-gap
+/// stacks read as amateur -- rows touch, a title sits flat on the control
+/// below it. One comfortable line of separation makes every app breathe
+/// without any app asking. Overridden the moment an app sets its own padding,
+/// which signals it is laying things out deliberately.
+const DEFAULT_CONTAINER_GAP: f32 = 10.0;
+
+/// Inset from the window edge for a top-level layout that is not a full-bleed
+/// canvas. Content flush against the frame is the single biggest tell that a
+/// UI was not designed; a margin fixes it everywhere at once.
+const DEFAULT_ROOT_INSET: f32 = 14.0;
+
+/// Whether a container's sole child is a drawing that should fill it edge to
+/// edge. A canvas-only or image-only parent (a 3D game, a full-window photo)
+/// must not get a border inset or an internal gap that would shrink the
+/// drawing and leave a frame around it.
+fn is_full_bleed_parent(
+    tree: &WidgetTree,
+    child_index: &BTreeMap<WidgetId, Vec<WidgetId>>,
+    widget: WidgetId,
+) -> bool {
+    let Some(children) = child_index.get(&widget) else {
+        return false;
+    };
+    children.len() == 1
+        && tree
+            .node(children[0])
+            .map(|n| matches!(n.kind, WidgetKind::Canvas | WidgetKind::Image))
+            .unwrap_or(false)
+}
+
+/// Containers whose children flow in a line and therefore benefit from a gap.
+fn is_gap_container(kind: WidgetKind) -> bool {
+    matches!(
+        kind,
+        WidgetKind::Stack
+            | WidgetKind::Scroll
+            | WidgetKind::ListView
+            | WidgetKind::TreeView
+            | WidgetKind::Grid
+    )
+}
+
 /// Logical window content size used for a layout pass.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LayoutViewport {
@@ -126,6 +169,7 @@ pub struct PreparedLayoutTree {
     root_node: NodeId,
     root_kind: WidgetKind,
     root_style: WidgetStyle,
+    root_full_bleed: bool,
     taffy: TaffyTree<()>,
     node_map: BTreeMap<WidgetId, NodeId>,
 }
@@ -146,6 +190,7 @@ impl PreparedLayoutTree {
         let mut taffy = TaffyTree::<()>::new();
         let mut node_map = BTreeMap::new();
         let child_index = child_index(tree);
+        let root_full_bleed = is_full_bleed_parent(tree, &child_index, root_widget);
         let root_node = build_taffy_node(
             tree,
             root_widget,
@@ -160,6 +205,7 @@ impl PreparedLayoutTree {
             root_node,
             root_kind,
             root_style,
+            root_full_bleed,
             taffy,
             node_map,
         })
@@ -167,7 +213,13 @@ impl PreparedLayoutTree {
 
     /// Compute layout using the prepared tree.
     pub fn compute(&mut self, viewport: LayoutViewport) -> Result<LayoutSnapshot, LayoutError> {
-        let root_style = taffy_style_from_parts(self.root_kind, self.root_style, true, viewport);
+        let root_style = taffy_style_from_parts(
+            self.root_kind,
+            self.root_style,
+            true,
+            viewport,
+            self.root_full_bleed,
+        );
         self.taffy
             .set_style(self.root_node, root_style)
             .map_err(map_taffy)?;
@@ -325,7 +377,8 @@ fn build_taffy_node(
     // A tab strip shows one panel at a time. Everything else in the tree is
     // always laid out, so this is the only place visibility is decided.
     let hidden = parent_hides_this_child(tree, child_index, node);
-    let mut style = taffy_style_for(node, widget == tree.root(), viewport);
+    let full_bleed = is_full_bleed_parent(tree, child_index, widget);
+    let mut style = taffy_style_for(node, widget == tree.root(), viewport, full_bleed);
     if hidden {
         style.display = Display::None;
     }
@@ -375,8 +428,13 @@ fn parent_hides_this_child(
     position != selected
 }
 
-fn taffy_style_for(node: &WidgetNode, is_root: bool, viewport: LayoutViewport) -> Style {
-    taffy_style_from_parts(node.kind, node.style, is_root, viewport)
+fn taffy_style_for(
+    node: &WidgetNode,
+    is_root: bool,
+    viewport: LayoutViewport,
+    full_bleed: bool,
+) -> Style {
+    taffy_style_from_parts(node.kind, node.style, is_root, viewport, full_bleed)
 }
 
 fn taffy_style_from_parts(
@@ -384,6 +442,7 @@ fn taffy_style_from_parts(
     widget_style: WidgetStyle,
     is_root: bool,
     viewport: LayoutViewport,
+    full_bleed: bool,
 ) -> Style {
     let mut size = Size {
         width: dimension_from_option(widget_style.width),
@@ -439,11 +498,38 @@ fn taffy_style_from_parts(
             }
         },
         size,
-        padding: Rect {
-            left: LengthPercentage::length(widget_style.padding),
-            right: LengthPercentage::length(widget_style.padding),
-            top: LengthPercentage::length(widget_style.padding),
-            bottom: LengthPercentage::length(widget_style.padding),
+        // Padding: the app's own value wins. When it sets none, a top-level
+        // non-canvas layout gets a window inset so content does not touch the
+        // frame; a full-bleed canvas root and every inner widget get nothing,
+        // so a game still fills the window and a button is not silently fattened.
+        padding: {
+            let inset = if widget_style.padding > 0.0 {
+                widget_style.padding
+            } else if is_root && !full_bleed {
+                DEFAULT_ROOT_INSET
+            } else {
+                0.0
+            };
+            Rect {
+                left: LengthPercentage::length(inset),
+                right: LengthPercentage::length(inset),
+                top: LengthPercentage::length(inset),
+                bottom: LengthPercentage::length(inset),
+            }
+        },
+        // Gap: a default line of space between a flowing container's children,
+        // unless this is a full-bleed canvas (no gap around a single drawing)
+        // or the app set its own padding (it is spacing things itself).
+        gap: {
+            let gap = if !full_bleed && widget_style.padding == 0.0 && is_gap_container(kind) {
+                DEFAULT_CONTAINER_GAP
+            } else {
+                0.0
+            };
+            Size {
+                width: LengthPercentage::length(gap),
+                height: LengthPercentage::length(gap),
+            }
         },
         ..Default::default()
     }
@@ -577,24 +663,20 @@ mod tests {
                 height: 200.0,
             })
         );
-        assert_eq!(
-            layout.rect(WidgetId::new(2).expect("first")),
-            Some(ComputedRect {
-                x: 0.0,
-                y: 0.0,
-                width: 100.0,
-                height: 40.0,
-            })
-        );
-        assert_eq!(
-            layout.rect(WidgetId::new(3).expect("second")),
-            Some(ComputedRect {
-                x: 0.0,
-                y: 40.0,
-                width: 100.0,
-                height: 60.0,
-            })
-        );
+        let first = layout
+            .rect(WidgetId::new(2).expect("first"))
+            .expect("first");
+        let second = layout
+            .rect(WidgetId::new(3).expect("second"))
+            .expect("second");
+        // Children are inset from the window frame and keep their sizes; order
+        // is preserved. The exact numbers come from the default inset and gap,
+        // asserted through the constants so the intent stays legible.
+        assert_eq!((first.x, first.y), (DEFAULT_ROOT_INSET, DEFAULT_ROOT_INSET));
+        assert_eq!((first.width, first.height), (100.0, 40.0));
+        assert_eq!(second.x, DEFAULT_ROOT_INSET);
+        assert_eq!(second.y, DEFAULT_ROOT_INSET + 40.0 + DEFAULT_CONTAINER_GAP);
+        assert_eq!((second.width, second.height), (100.0, 60.0));
     }
 
     #[test]
@@ -640,10 +722,19 @@ mod tests {
             "the title should hug its line, got {}",
             title.height
         );
+        // The canvas fills what the title leaves inside the window inset. Even
+        // after the default margin and gap it takes the great majority of the
+        // height -- the point of the fix is that it is not a half-window band.
         assert!(
-            canvas.height > 150.0,
+            canvas.height > 120.0,
             "the canvas should fill what the title left, got {}",
             canvas.height
+        );
+        assert!(
+            canvas.height > title.height * 3.0,
+            "the canvas should dwarf the title, got canvas {} vs title {}",
+            canvas.height,
+            title.height
         );
     }
 
@@ -659,24 +750,24 @@ mod tests {
         let layout = compute_layout(&tree, LayoutViewport::new(100.0, 120.0).expect("viewport"))
             .expect("layout");
 
-        assert_eq!(
-            layout.rect(WidgetId::new(2).expect("first")),
-            Some(ComputedRect {
-                x: 0.0,
-                y: 0.0,
-                width: 100.0,
-                height: 60.0,
-            })
-        );
-        assert_eq!(
-            layout.rect(WidgetId::new(3).expect("second")),
-            Some(ComputedRect {
-                x: 0.0,
-                y: 60.0,
-                width: 100.0,
-                height: 60.0,
-            })
-        );
+        let first = layout
+            .rect(WidgetId::new(2).expect("first"))
+            .expect("first");
+        let second = layout
+            .rect(WidgetId::new(3).expect("second"))
+            .expect("second");
+        // Two equal growing children split the height that is left inside the
+        // window inset, once the gap between them is taken out. They stay the
+        // same size as each other, sit inside the inset, and the second starts
+        // one gap below the first.
+        let inner_width = 100.0 - 2.0 * DEFAULT_ROOT_INSET;
+        let available = 120.0 - 2.0 * DEFAULT_ROOT_INSET - DEFAULT_CONTAINER_GAP;
+        assert_eq!((first.x, first.y), (DEFAULT_ROOT_INSET, DEFAULT_ROOT_INSET));
+        assert_eq!(first.width, inner_width);
+        assert_eq!(first.height, available / 2.0);
+        assert_eq!(second.height, first.height);
+        assert_eq!(second.x, DEFAULT_ROOT_INSET);
+        assert_eq!(second.y, first.y + first.height + DEFAULT_CONTAINER_GAP);
     }
 
     #[test]
@@ -688,13 +779,14 @@ mod tests {
         // being accepted.
         let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Grid);
         let mut tree = WidgetTree::new(root).expect("tree");
-        // Three 40-wide children in a 100-wide viewport: two fit, the third wraps.
+        // Three 40-wide children with a gap between them: in a 140-wide viewport
+        // two fit inside the inset (40 + gap + 40), the third wraps to a new row.
         for id in 2..=4 {
             tree.upsert(fixed_child(id, tree.root(), 40.0, 20.0))
                 .expect("child");
         }
 
-        let layout = compute_layout(&tree, LayoutViewport::new(100.0, 200.0).expect("viewport"))
+        let layout = compute_layout(&tree, LayoutViewport::new(140.0, 200.0).expect("viewport"))
             .expect("layout");
 
         let first = layout.rect(WidgetId::new(2).expect("id")).expect("first");
@@ -763,6 +855,60 @@ mod tests {
     }
 
     #[test]
+    fn a_full_bleed_canvas_fills_the_window_but_a_normal_layout_is_inset() {
+        // A game or 3D scene fills a window whose only child is a canvas: no
+        // border inset, no gap, the drawing reaches every edge. The moment the
+        // window holds ordinary widgets instead, they sit inside a margin so
+        // nothing touches the frame. Both in one test so the two halves of the
+        // rule cannot drift apart.
+        let canvas_root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let mut canvas_tree = WidgetTree::new(canvas_root).expect("tree");
+        canvas_tree
+            .upsert(
+                WidgetNode::new(WidgetId::new(2).expect("canvas"), WidgetKind::Canvas)
+                    .with_parent(canvas_tree.root())
+                    .with_style(WidgetStyle {
+                        grow: 1.0,
+                        ..WidgetStyle::default()
+                    })
+                    .expect("canvas style"),
+            )
+            .expect("canvas");
+        let canvas_layout = compute_layout(
+            &canvas_tree,
+            LayoutViewport::new(320.0, 240.0).expect("viewport"),
+        )
+        .expect("layout");
+        let canvas = canvas_layout
+            .rect(WidgetId::new(2).expect("canvas"))
+            .expect("canvas rect");
+        assert_eq!(
+            (canvas.x, canvas.y, canvas.width, canvas.height),
+            (0.0, 0.0, 320.0, 240.0),
+            "a canvas-only window must be filled edge to edge"
+        );
+
+        let widget_root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let mut widget_tree = WidgetTree::new(widget_root).expect("tree");
+        widget_tree
+            .upsert(fixed_child(2, widget_tree.root(), 100.0, 30.0))
+            .expect("child");
+        let widget_layout = compute_layout(
+            &widget_tree,
+            LayoutViewport::new(320.0, 240.0).expect("viewport"),
+        )
+        .expect("layout");
+        let child = widget_layout
+            .rect(WidgetId::new(2).expect("child"))
+            .expect("child rect");
+        assert_eq!(
+            (child.x, child.y),
+            (DEFAULT_ROOT_INSET, DEFAULT_ROOT_INSET),
+            "an ordinary widget must sit inside the window inset"
+        );
+    }
+
+    #[test]
     fn a_stack_does_not_wrap() {
         // The other half of the same claim: wrapping is specific to grid, not
         // something the change turned on for every container.
@@ -820,15 +966,21 @@ mod tests {
         let layout = compute_layout(&tree, LayoutViewport::new(300.0, 200.0).expect("viewport"))
             .expect("layout");
 
+        // The container sits inside the root's default window inset; its own
+        // fixed size is unchanged. The child sits at the container's own 8px
+        // padding, measured from the container's inset origin.
         assert_eq!(
             layout.rect(WidgetId::new(2).expect("container")),
             Some(ComputedRect {
-                x: 0.0,
-                y: 0.0,
+                x: DEFAULT_ROOT_INSET,
+                y: DEFAULT_ROOT_INSET,
                 width: 160.0,
                 height: 80.0,
             })
         );
+        // This rect is relative to the container, so it reflects the
+        // container's own 8px padding only -- the root inset shifts the
+        // container, not the child within it.
         assert_eq!(
             layout.rect(WidgetId::new(3).expect("child")),
             Some(ComputedRect {
@@ -865,11 +1017,13 @@ mod tests {
         let layout = compute_layout(&tree, LayoutViewport::new(300.0, 200.0).expect("viewport"))
             .expect("layout");
 
+        // Absolute position folds in the root inset and the container's own
+        // padding: the child lands at inset + 8 on both axes.
         assert_eq!(
             absolute_rect(&tree, &layout, WidgetId::new(3).expect("child")),
             Some(ComputedRect {
-                x: 8.0,
-                y: 8.0,
+                x: DEFAULT_ROOT_INSET + 8.0,
+                y: DEFAULT_ROOT_INSET + 8.0,
                 width: 100.0,
                 height: 24.0,
             })
@@ -900,8 +1054,16 @@ mod tests {
 
         let layout = compute_layout(&tree, LayoutViewport::new(300.0, 200.0).expect("viewport"))
             .expect("layout");
-        let hit =
-            hit_test(&tree, &layout, LayoutPoint::new(16.0, 16.0).expect("point")).expect("hit");
+        // The child now sits at inset + container padding, so aim a few pixels
+        // inside that combined offset to land on it rather than in the frame or
+        // the container's own padding band.
+        let inside = DEFAULT_ROOT_INSET + 8.0 + 4.0;
+        let hit = hit_test(
+            &tree,
+            &layout,
+            LayoutPoint::new(inside, inside).expect("point"),
+        )
+        .expect("hit");
 
         assert_eq!(hit.widget, WidgetId::new(3).expect("child"));
         assert_eq!(hit.depth, 2);

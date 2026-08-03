@@ -1009,14 +1009,15 @@ mod tests {
                 height: 200.0,
             })
         );
-        assert_eq!(
-            layout.rect(WidgetId::new(2).expect("row")),
-            Some(krate_layout::ComputedRect {
-                x: 0.0,
-                y: 0.0,
-                width: 120.0,
-                height: 32.0,
-            })
+        // The row is a plain widget, so it sits inside the default window
+        // inset rather than flush against the frame; its size is unchanged.
+        let row_rect = layout
+            .rect(WidgetId::new(2).expect("row"))
+            .expect("row rect");
+        assert_eq!((row_rect.width, row_rect.height), (120.0, 32.0));
+        assert!(
+            row_rect.x > 0.0 && row_rect.y > 0.0,
+            "a plain widget must be inset from the window frame, got {row_rect:?}"
         );
     }
 
@@ -1102,12 +1103,14 @@ mod tests {
         dispatcher.set_root(window, root).expect("root");
         dispatcher.upsert_node(window, button).expect("button");
         dispatcher.upsert_node(window, label).expect("label");
+        // The button is inset from the window frame now, so click well inside
+        // it (past the inset) to land on the label nested within.
         let target = dispatcher
             .route_pointer_event(PointerRouteRequest {
                 window,
                 viewport: LayoutViewport::new(300.0, 200.0).expect("viewport"),
-                x: 10.0,
-                y: 10.0,
+                x: 30.0,
+                y: 30.0,
                 button: Some(PointerButton::Primary),
                 pressed: true,
                 modifiers: Modifiers::default(),
@@ -1135,8 +1138,8 @@ mod tests {
                 UiEvent::Pointer(PointerEvent {
                     window,
                     widget: Some(WidgetId::new(3).expect("label")),
-                    x: 10.0,
-                    y: 10.0,
+                    x: 30.0,
+                    y: 30.0,
                     button: Some(PointerButton::Primary),
                     pressed: true,
                     modifiers: Modifiers::default(),
