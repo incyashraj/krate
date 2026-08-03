@@ -28,6 +28,14 @@ use crate::ui::{kind_is_selectable, ImagePixels, WidgetKind, WidgetPlacement};
 /// through parley's display scale.
 const LABEL_FONT_SIZE: f32 = 13.0;
 
+/// One image or canvas queued to blit over the finished vello frame.
+/// `rect` and `clip` are in physical pixels, ready for `draw_image`.
+struct ImageBlit<'a> {
+    rect: (f32, f32, f32, f32),
+    clip: Option<(f32, f32, f32, f32)>,
+    image: &'a ImagePixels,
+}
+
 thread_local! {
     static TEXT_ENGINE: RefCell<TextEngine> = RefCell::new(TextEngine::new());
 }
@@ -220,8 +228,7 @@ pub fn try_paint_placements(
         // in the same z-order it was placed. Without this, a 3D scene or a 2D
         // canvas fell into the match's catch-all and drew nothing: the window
         // came up blank on Windows and Linux while macOS painted it natively.
-        let mut blits: Vec<(f32, f32, f32, f32, Option<(f32, f32, f32, f32)>, &ImagePixels)> =
-            Vec::new();
+        let mut blits: Vec<ImageBlit<'_>> = Vec::new();
 
         for placement in placements {
             let (px, py) = (placement.x * scale, placement.y * scale);
@@ -517,7 +524,11 @@ pub fn try_paint_placements(
                         fill(&mut ctx, COLOR_FIELD_FILL, px, py, pw, ph);
                     }
                     if let Some(image) = placement.pixels.as_deref() {
-                        blits.push((px, py, pw, ph, clip_px, image));
+                        blits.push(ImageBlit {
+                            rect: (px, py, pw, ph),
+                            clip: clip_px,
+                            image,
+                        });
                     }
                     continue;
                 }
@@ -547,8 +558,8 @@ pub fn try_paint_placements(
         // Composite images over the finished vello frame with the shared
         // rasterizer, so a scene or canvas lands with the same scaling and
         // alpha blending on every host.
-        for (px, py, pw, ph, clip, image) in blits {
-            crate::painter::draw_image(buffer, width, height, (px, py, pw, ph), image, clip);
+        for blit in blits {
+            crate::painter::draw_image(buffer, width, height, blit.rect, blit.image, blit.clip);
         }
         true
     })
@@ -618,7 +629,9 @@ mod tests {
         let red = ImagePixels::new(
             w,
             h,
-            std::iter::repeat([255u8, 0, 0, 255]).take((w * h) as usize).flatten().collect(),
+            std::iter::repeat_n([255u8, 0, 0, 255], (w * h) as usize)
+                .flatten()
+                .collect(),
         )
         .expect("red image");
         let placements = [WidgetPlacement {
