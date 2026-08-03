@@ -875,19 +875,26 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
         (0.0, 0.0)
     };
 
-    // Deep space background, faint vertical gradient via two bands.
+    // Deep space background: a smooth vertical gradient, dim glow up top easing
+    // to a darker floor. Drawn as a stack of thin bands so there is no hard
+    // seam between two flat rectangles -- the eye reads one continuous void.
     canvas2d::clear(canvas, color(0.039, 0.039, 0.071, 1.0))?;
-    // A dim glow band near the top and a darker floor give depth without images.
-    fill(
-        canvas,
-        sx,
-        sy,
-        0.0,
-        0.0,
-        WIDTH,
-        HEIGHT * 0.42,
-        color(0.06, 0.06, 0.12, 1.0),
-    )?;
+    let bands = 48u32;
+    let mut bi = 0u32;
+    while bi < bands {
+        let t = bi as f32 / bands as f32;
+        // Lighter, faintly blue at the top (t=0) easing to the base color at
+        // the bottom. A gentle ease so the top glow falls off naturally.
+        let fade = (1.0 - t) * (1.0 - t);
+        let r = 0.039 + fade * 0.028;
+        let g = 0.039 + fade * 0.028;
+        let b = 0.071 + fade * 0.055;
+        let band_h = HEIGHT / bands as f32 + 1.0;
+        // No shake offset on the background: the void stays put while the
+        // action shakes over it, so screen shake never bares a screen edge.
+        fill(canvas, 0.0, 0.0, 0.0, t * HEIGHT, WIDTH, band_h, color(r, g, b, 1.0))?;
+        bi += 1;
+    }
 
     // ---- starfield ----
     let mut i = 0usize;
