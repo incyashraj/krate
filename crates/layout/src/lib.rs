@@ -48,6 +48,13 @@ fn is_full_bleed_parent(
             .unwrap_or(false)
 }
 
+/// Widgets that are meant to fill the room given to them when the app sets no
+/// size: a canvas an app paints, an image widget. Both collapse to a sliver
+/// with zero grow and no size, which reads as a blank window.
+fn wants_to_fill(kind: WidgetKind) -> bool {
+    matches!(kind, WidgetKind::Canvas | WidgetKind::Image)
+}
+
 /// Containers whose children flow in a line and therefore benefit from a gap.
 fn is_gap_container(kind: WidgetKind) -> bool {
     matches!(
@@ -468,6 +475,14 @@ fn taffy_style_from_parts(
         // label.
         flex_grow: if hugs_content(kind) && widget_style.height.is_none() {
             0.0
+        } else if wants_to_fill(kind) && widget_style.grow == 0.0 && widget_style.height.is_none() {
+            // A canvas or image with no size and no grow is almost certainly
+            // meant to fill its space -- a full-window game, a photo viewer.
+            // Left at grow 0 it collapses to nothing on the cross axis (a
+            // 480x1 strip) and renders blank, which is a trap an app author
+            // hits once and cannot see without a screenshot. Default it to
+            // fill; an explicit size or grow still wins.
+            1.0
         } else {
             widget_style.grow
         },
@@ -852,6 +867,35 @@ mod tests {
         let second = layout.rect(WidgetId::new(3).expect("id")).expect("second");
         assert!(first.width > 0.0, "the first panel shows by default");
         assert_eq!(second.width, 0.0, "the rest do not");
+    }
+
+    #[test]
+    fn a_canvas_with_no_size_or_grow_still_fills_rather_than_collapsing() {
+        // The trap a paint app hit: a canvas with grow 0 and no height collapsed
+        // to a one-pixel strip and rendered blank. A drawing with no size is
+        // meant to fill; default it to grow so an author who forgets grow: 1.0
+        // still gets a canvas they can see.
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let mut tree = WidgetTree::new(root).expect("tree");
+        tree.upsert(
+            WidgetNode::new(WidgetId::new(2).expect("canvas"), WidgetKind::Canvas)
+                .with_parent(tree.root())
+                // grow defaults to 0, no width or height set: the trap shape.
+                .with_style(WidgetStyle::default())
+                .expect("canvas style"),
+        )
+        .expect("canvas");
+
+        let layout = compute_layout(&tree, LayoutViewport::new(480.0, 360.0).expect("viewport"))
+            .expect("layout");
+        let canvas = layout
+            .rect(WidgetId::new(2).expect("canvas"))
+            .expect("canvas rect");
+        assert_eq!(
+            (canvas.x, canvas.y, canvas.width, canvas.height),
+            (0.0, 0.0, 480.0, 360.0),
+            "a bare canvas must fill the window, not collapse to a strip"
+        );
     }
 
     #[test]

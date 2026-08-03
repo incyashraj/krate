@@ -29,6 +29,8 @@ exclude = [
     "apps/krate-calc",
     "apps/krate-bigscroll",
     "apps/krate-keyvault",
+    "apps/krate-fetch",
+    "apps/krate-paint",
     "test/integration/hello-world",
     "test/integration/phase2-smoke",
     "test/integration/print-loop",
