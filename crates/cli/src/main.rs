@@ -747,8 +747,7 @@ fn run() -> Result<u8> {
             let pack = authoring_context::generate(&dir);
             match output {
                 Some(path) => {
-                    fs::write(&path, pack)
-                        .with_context(|| format!("write {}", path.display()))?;
+                    fs::write(&path, pack).with_context(|| format!("write {}", path.display()))?;
                     println!("wrote {}", path.display());
                 }
                 None => print!("{pack}"),
@@ -4888,7 +4887,9 @@ fn imports_fix(bad: &[String], app_dir: &Path) -> String {
         );
     }
 
-    let wants_entropy = bad.iter().any(|i| i.contains("random") || i.contains("getrandom"));
+    let wants_entropy = bad
+        .iter()
+        .any(|i| i.contains("random") || i.contains("getrandom"));
     let mut fix = String::from(
         "The guest linked std or hit a reachable panic/alloc path, which drags \
          in all of std's wasi:* imports and stops the component from \
@@ -5013,7 +5014,10 @@ fn run_check_app(
         if !path.exists() {
             return Err(CheckFailure {
                 stage: CheckStage::Layout,
-                detail: format!("{} is not an app directory: {name} is missing", dir.display()),
+                detail: format!(
+                    "{} is not an app directory: {name} is missing",
+                    dir.display()
+                ),
                 fix: "Point check-app at the folder that holds Cargo.toml, src/lib.rs, and \
                       manifest.toml."
                     .to_string(),
@@ -5024,15 +5028,14 @@ fn run_check_app(
 
     // Stage: manifest. Parse it now so a bad manifest is named here, not as a
     // confusing run failure later.
-    let manifest = krate_manifest::Manifest::parse_file(&manifest_path).map_err(|error| {
-        CheckFailure {
+    let manifest =
+        krate_manifest::Manifest::parse_file(&manifest_path).map_err(|error| CheckFailure {
             stage: CheckStage::Manifest,
             detail: format!("manifest.toml did not parse: {error:#}"),
             fix: "Fix the manifest so it declares [app] (id, name, version, entry, world) and \
                   its [[capabilities]]. `krate manifest check manifest.toml` explains the shape."
                 .to_string(),
-        }
-    })?;
+        })?;
     passed.push("manifest");
 
     // Stage: build. Reuses component_build_command -> rustup toolchain, so it is
@@ -5049,16 +5052,18 @@ fn run_check_app(
     // Stage: imports. The component must import only krate:*.
     let wasm_bytes = fs::read(&wasm).map_err(|error| CheckFailure {
         stage: CheckStage::Build,
-        detail: format!("could not read the built component at {}: {error}", wasm.display()),
+        detail: format!(
+            "could not read the built component at {}: {error}",
+            wasm.display()
+        ),
         fix: String::new(),
     })?;
-    let bad = krate_bundle::imports::non_krate_imports(&wasm_bytes).map_err(|error| {
-        CheckFailure {
+    let bad =
+        krate_bundle::imports::non_krate_imports(&wasm_bytes).map_err(|error| CheckFailure {
             stage: CheckStage::Imports,
             detail: format!("could not read the component's imports: {error}"),
             fix: String::new(),
-        }
-    })?;
+        })?;
     if !bad.is_empty() {
         return Err(CheckFailure {
             stage: CheckStage::Imports,
@@ -6448,11 +6453,7 @@ mod create_tests {
 
     #[test]
     fn the_author_prompt_is_the_check_app_loop() {
-        let prompt = claude_author_prompt(
-            "/work/app",
-            "a tip calculator",
-            "/usr/local/bin/krate",
-        );
+        let prompt = claude_author_prompt("/work/app", "a tip calculator", "/usr/local/bin/krate");
         // The request and the working directory are in it.
         assert!(prompt.contains("a tip calculator"));
         assert!(prompt.contains("/work/app"));
@@ -6507,7 +6508,10 @@ mod check_app_tests {
             "entropy leak should point at the SDK backend: {fix}"
         );
         assert!(fix.contains("random.bytes"), "should name the capability");
-        assert!(fix.contains("krate-diceroll"), "should point at the example");
+        assert!(
+            fix.contains("krate-diceroll"),
+            "should point at the example"
+        );
     }
 
     #[test]

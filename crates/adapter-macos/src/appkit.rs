@@ -1840,9 +1840,7 @@ mod platform {
                         let view = reuse_image_view(&mut reusable, placement.widget())
                             .unwrap_or_else(|| {
                                 let view = NSImageView::new(mtm);
-                                view.setImageScaling(
-                                    NSImageScaling::ScaleProportionallyUpOrDown,
-                                );
+                                view.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
                                 view
                             });
                         view.setFrame(frame);
@@ -1862,9 +1860,7 @@ mod platform {
                         let view = reuse_image_view(&mut reusable, placement.widget())
                             .unwrap_or_else(|| {
                                 let view = NSImageView::new(mtm);
-                                view.setImageScaling(
-                                    NSImageScaling::ScaleProportionallyUpOrDown,
-                                );
+                                view.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
                                 view
                             });
                         view.setFrame(frame);

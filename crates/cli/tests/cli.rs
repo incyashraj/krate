@@ -3355,7 +3355,10 @@ fn create_with_an_agent_seam_scaffolds_a_building_skeleton_and_the_pack() {
         "the context pack is dropped beside the skeleton"
     );
     let lib = std::fs::read_to_string(app_dir.join("src/lib.rs")).expect("skeleton lib.rs");
-    assert!(lib.contains("Replace"), "the skeleton is a blank to fill in");
+    assert!(
+        lib.contains("Replace"),
+        "the skeleton is a blank to fill in"
+    );
 }
 
 #[test]
@@ -3450,7 +3453,9 @@ fn check_app_passes_a_known_good_app_and_emits_json() {
     assert!(stages.iter().any(|s| s == "run"));
     let imports = value["imports"].as_array().expect("imports array");
     assert!(
-        imports.iter().all(|i| i.as_str().unwrap().starts_with("krate:")),
+        imports
+            .iter()
+            .all(|i| i.as_str().unwrap().starts_with("krate:")),
         "a passing app imports only krate:*: {imports:?}"
     );
 }

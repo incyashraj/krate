@@ -138,7 +138,12 @@ fn capability_catalog_section() -> String {
 fn capability_row(spec: &krate_manifest::CapabilitySpec) -> String {
     let default = if spec.default_granted() { "yes" } else { "no" };
     let note = capability_note(&spec.name());
-    format!("| `{}` | {} | {} |\n", spec.display_pattern(), default, note)
+    format!(
+        "| `{}` | {} | {} |\n",
+        spec.display_pattern(),
+        default,
+        note
+    )
 }
 
 /// A one-line human note for a capability, keyed by its `module.action` name.
@@ -358,10 +363,7 @@ fn render_wit_interfaces(package: &str, wit: &str) -> String {
                     let acc = format!("{}: {rest}", sig_name.trim());
                     if line.contains(';') {
                         let iface = current_interface.clone().unwrap_or_default();
-                        out.push_str(&format!(
-                            "- `{iface}::{}`\n",
-                            normalize_wit_signature(&acc)
-                        ));
+                        out.push_str(&format!("- `{iface}::{}`\n", normalize_wit_signature(&acc)));
                         wrote_any = true;
                     } else {
                         // Multi-line: the parameters wrap onto following lines.
@@ -588,7 +590,9 @@ interface canvas {
 }
 ";
         let out = render_wit_interfaces("x", wit);
-        assert!(out.contains("canvas::fill-rect: func(canvas: u64, area: rect, fill: color) -> result<_, gfx-error>"));
+        assert!(out.contains(
+            "canvas::fill-rect: func(canvas: u64, area: rect, fill: color) -> result<_, gfx-error>"
+        ));
         assert!(out.contains("canvas::present: func(canvas: u64) -> result<_, gfx-error>"));
     }
 

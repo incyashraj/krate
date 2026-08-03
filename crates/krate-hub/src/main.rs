@@ -139,9 +139,7 @@ impl From<io::Error> for RequestError {
 
 /// Read the request line and headers. Returns (method, path, headers) with the
 /// reader positioned at the start of the body.
-fn read_request_head(
-    reader: &mut BufReader<TcpStream>,
-) -> Result<RequestHead, RequestError> {
+fn read_request_head(reader: &mut BufReader<TcpStream>) -> Result<RequestHead, RequestError> {
     let mut line = String::new();
     let mut total = 0;
 
@@ -190,12 +188,7 @@ fn handle_publish(
     // reject them.
     if let Some(len) = declared_len {
         if len > MAX_UPLOAD_BYTES {
-            return write_response(
-                stream,
-                413,
-                "text/plain",
-                b"bundle too large (5 MiB max)",
-            );
+            return write_response(stream, 413, "text/plain", b"bundle too large (5 MiB max)");
         }
     }
 

@@ -1270,7 +1270,10 @@ mod tests {
         // Visual/consumer requests -> a window.
         assert_eq!(AppKind::wants_gui("a tip calculator"), Skeleton::Gui);
         assert_eq!(AppKind::wants_gui("a maze you can walk"), Skeleton::Gui);
-        assert_eq!(AppKind::wants_gui("a pomodoro timer with a ring"), Skeleton::Gui);
+        assert_eq!(
+            AppKind::wants_gui("a pomodoro timer with a ring"),
+            Skeleton::Gui
+        );
         // Explicit command-line shapes -> CLI.
         assert_eq!(
             AppKind::wants_gui("a command-line JSON pretty-printer"),
