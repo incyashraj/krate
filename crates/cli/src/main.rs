@@ -34,9 +34,15 @@ const MAX_PHASE2_ARG_COUNT: usize = 1024;
 const UNTRUSTED_FUEL_BUDGET: u64 = 5_000_000_000;
 
 /// How long `krate create --agent` waits for the AI to author the app before
-/// giving up with a clear message. Long enough for a real authoring run, short
-/// enough that a stalled agent does not hang the person forever.
-const AGENT_AUTHOR_TIMEOUT_SECS: u64 = 180;
+/// giving up with a clear message.
+///
+/// The agent now iterates: it writes code, runs `check-app`, reads the failure,
+/// and fixes it, across several build cycles -- each cargo-component build alone
+/// is tens of seconds. So the budget is minutes, not the ~3 the old one-shot
+/// needed. Override with KRATE_AUTHOR_TIMEOUT_SECS for a slow machine or a hard
+/// request. Short enough that a genuinely stuck agent still fails with a clear
+/// message rather than hanging forever.
+const AGENT_AUTHOR_TIMEOUT_SECS: u64 = 900;
 
 /// Version shown by `krate --version`. The release workflow sets
 /// `KRATE_RELEASE_VERSION` to the git tag so a released binary reports its real
@@ -2783,76 +2789,69 @@ fn run_author_agent(agent: AgentKind) -> Result<u8> {
         .context("KRATE_APP_DIR is not set; run this through `krate create --agent`")?;
     let request =
         std::env::var("KRATE_REQUEST").unwrap_or_else(|_| "a small useful app".to_string());
-    let kind = std::env::var("KRATE_APP_KIND").unwrap_or_else(|_| "checklist".to_string());
 
     match agent {
-        AgentKind::Claude => run_claude_author(&app_dir, &request, &kind),
+        AgentKind::Claude => run_claude_author(&app_dir, &request),
     }
 }
 
-/// The prompt handed to Claude Code. It points the model at the compiling
-/// starter `create` already dropped in the app dir and states the rules, then
-/// asks it to make the app match the request. Editing a known-good, rendering,
-/// non-hanging base is what makes AI authoring dependable rather than a coin
-/// flip: the model adapts real working code instead of writing the strict
-/// no_std/`krate:*` discipline from a blank page.
-fn claude_author_prompt(app_dir: &str, request: &str, kind: &str) -> String {
-    let starter = match kind {
-        "voice-prompter" => {
-            "a voice prompter GUI that opens a window, displays a script, requests \
-microphone access, transcribes each spoken phrase locally with its bundled model, and \
-advances when the words match the current line. Preserve its audio.capture calls, \
-streaming local speech match, visible listening state, manual controls, and quick \
-verification path"
-        }
-        "word-frequency" => {
-            "a command-line word-frequency app that reads only its granted input file \
-and prints a report. Preserve its bounded input handling and quick verification path"
-        }
-        _ => {
-            "a checklist GUI that opens a window, shows checkbox rows, lets the user \
-add and toggle items, and saves them to its granted folder. Preserve its window, event, \
-save, and quick verification paths"
-        }
-    };
+/// The prompt handed to Claude Code: the loop instruction.
+///
+/// The agent is no longer asked to adapt a behavioral template. It is given a
+/// minimal compiling skeleton, the full context pack, and the one tool that
+/// changes everything -- it can run `krate check-app .`, see exactly what is
+/// wrong, and fix it. So the prompt is short: build the app, and do not stop
+/// until the oracle says OK. Everything the agent needs to know is in the pack,
+/// which is generated from real sources, not restated here where it could drift.
+fn claude_author_prompt(app_dir: &str, request: &str, krate_bin: &str) -> String {
     format!(
-        "You are writing a Krate desktop app in Rust, from the user's request.\n\
+        "You are building a Krate desktop app in Rust from this request:\n\
 \n\
-A COMPILING, WORKING starter is already in {app_dir} (Cargo.toml, src/lib.rs,\n\
-manifest.toml): {starter}. Read it first. It already follows every rule below\n\
-and works, so it is the safest base to build from.\n\
+    {request}\n\
 \n\
-Your job: make the app match the request. Adapt the starter's title, content,\n\
-controls, and behavior while keeping every capability the resulting app really\n\
-needs in manifest.toml. If the request is genuinely different, rewrite\n\
-src/lib.rs following the same structure and rules.\n\
+Work in {app_dir}. A minimal compiling skeleton is already there (Cargo.toml,\n\
+src/lib.rs, manifest.toml): it opens a window (or prints a line, for a CLI app),\n\
+builds cleanly, and imports only krate:* -- but it does nothing yet. Your job is\n\
+to make it the app the request describes.\n\
 \n\
-Request: {request}\n\
+How to work:\n\
+1. Read KRATE_AUTHORING.md in this directory first. It lists every function you\n\
+   can call, every capability a manifest may declare, the no_std rules, the GUI\n\
+   interfaces, and an index of the shipped example apps. It is generated from\n\
+   the real SDK, so everything in it is accurate.\n\
+2. Find the closest example in section 5 and read that app's src/lib.rs and\n\
+   manifest.toml under the apps/ directory. Adapt its proven, working code --\n\
+   do not write the no_std/krate:* discipline from a blank page.\n\
+3. Write the app: edit src/lib.rs, and set manifest.toml to exactly the\n\
+   capabilities the app uses.\n\
+4. After every change, run this from {app_dir}:\n\
 \n\
-HARD RULES (the starter obeys all of these; do not break them):\n\
-- The app is no_std plus alloc. Do not add any std usage.\n\
-- Import only from the Krate bindings modules already used by the starter.\n\
-  Never import wasi interfaces or std io.\n\
-- Build strings with the starter's pure_string and number_string helpers,\n\
-  never with the format macro.\n\
-- Keep the starter's working host calls and event structure unless the request\n\
-  genuinely requires a change.\n\
-- The app must still exit promptly when its first argument is the literal\n\
-  word quick. The starter already does this; keep it.\n\
+       {krate_bin} check-app .\n\
 \n\
-After editing, the app must build, match the request, request only the access it\n\
-uses, and exit on quick. Use the Read and Edit (or Write) tools. Do not explain;\n\
-just make the app."
+   It builds the app, checks it imports only krate:*, and runs it once. On\n\
+   failure it names the stage and the exact fix -- including how to remove a\n\
+   leaked wasi:* import. Do whatever it says.\n\
+\n\
+Do not stop until `check-app` prints OK. That is the whole definition of done:\n\
+not \"looks right\", not \"should work\" -- the oracle prints OK. Use the Read,\n\
+Edit, Write, and Bash tools. Do not explain what you did; just build the app\n\
+until the check passes."
     )
 }
 
-fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
-    let prompt = claude_author_prompt(app_dir, request, kind);
+fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
+    // The agent runs `krate check-app .` itself, so it needs this binary on a
+    // known path. current_exe is the running krate; hand its absolute path to
+    // the prompt so the agent's Bash calls resolve it regardless of PATH.
+    let krate_bin = std::env::current_exe()
+        .ok()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "krate".to_string());
+    let prompt = claude_author_prompt(app_dir, request, &krate_bin);
     let transcript = Path::new(app_dir).join(".agent-transcript.txt");
-    // The template compiles and passes every downstream check by design, so an
-    // agent that answers in chat and edits nothing would hand the person a
-    // checklist app wearing their request's name. The port pipeline shipped
-    // exactly that once; the same snapshot-compare closes it here.
+    // A snapshot of the skeleton, to detect an agent that answered in chat and
+    // never wrote code -- that would leave the blank skeleton, which builds and
+    // passes check-app but is not the requested app.
     let starter_lib = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
     let file = fs::File::create(&transcript).ok();
 
@@ -2860,8 +2859,11 @@ fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
     command
         .arg("-p")
         .arg(&prompt)
+        // Bash is the change that makes authoring a loop: the agent can now run
+        // `krate check-app .`, read the failure, and fix it. Read/Edit/Write
+        // let it write the code; Bash lets it verify it.
         .arg("--allowed-tools")
-        .arg("Read,Edit,Write")
+        .arg("Read,Edit,Write,Bash")
         .arg("--permission-mode")
         .arg("acceptEdits");
     // Close stdin. `claude -p` reads stdin for piped input; inheriting the
@@ -2890,17 +2892,23 @@ fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
         }
     }
 
-    // Authoring takes a while and prints nothing to the user (the model's
-    // output goes to the transcript), so "==> authoring" looked like a hang.
-    // Reassure them, show a heartbeat so it never looks dead, and bound the
-    // wait: a stuck agent fails with a clear message and a fallback, never an
-    // endless silent hang.
-    eprintln!("    the AI is writing your app -- this usually takes a minute or two");
+    // Authoring iterates now (write, check, fix) and prints nothing to the user
+    // (the model's output goes to the transcript), so reassure them, show a
+    // heartbeat so it never looks dead, and bound the wait: a stuck agent fails
+    // with the app's own check-app verdict, never an endless silent hang.
+    let timeout_secs = std::env::var("KRATE_AUTHOR_TIMEOUT_SECS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(AGENT_AUTHOR_TIMEOUT_SECS);
+    eprintln!(
+        "    the AI is writing your app and checking it as it goes -- this can take \
+         several minutes"
+    );
     let mut child = command
         .spawn()
         .context("run the `claude` CLI (is Claude Code installed and signed in?)")?;
     let start = std::time::Instant::now();
-    let deadline = start + std::time::Duration::from_secs(AGENT_AUTHOR_TIMEOUT_SECS);
+    let deadline = start + std::time::Duration::from_secs(timeout_secs);
     let mut last_beat = start;
     let status = loop {
         match child.try_wait() {
@@ -2917,16 +2925,10 @@ fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
                     let _ = child.kill();
                     let _ = child.wait();
                     eprintln!();
-                    anyhow::bail!(
-                        "the AI agent did not finish within {} minutes and was stopped. \
-                         It may have stalled or lost its connection. Two things to try:\n  \
-                         1. Run the command again -- it often works on a second try.\n  \
-                         2. Start from a built-in template instead of the AI:\n     \
-                         krate create \"...\" --kind checklist\n\
-                         The agent's transcript is at {} if you want to see what happened.",
-                        AGENT_AUTHOR_TIMEOUT_SECS / 60,
-                        transcript.display()
-                    );
+                    // Report what actually blocked it, not a generic stall: run
+                    // the same oracle the agent was running and surface its last
+                    // verdict.
+                    return Err(author_stalled_error(app_dir, &transcript, timeout_secs));
                 }
                 std::thread::sleep(std::time::Duration::from_millis(300));
             }
@@ -2944,31 +2946,77 @@ fn run_claude_author(app_dir: &str, request: &str, kind: &str) -> Result<u8> {
     if lib_after == starter_lib {
         anyhow::bail!(
             "the agent finished without changing the app: src/lib.rs is byte-identical \
-             to the starter template, so this would package the template as if it were \
+             to the blank skeleton, so this would package an empty app as if it were \
              \"{request}\". The agent's transcript is at {} -- it usually means the \
-             agent explained the app instead of writing it. Even a request the template \
-             already satisfies needs its titles and labels made real.",
+             agent explained the app instead of writing it.",
+            transcript.display()
+        );
+    }
+    // The agent claims it is done. Confirm with the same oracle it was told to
+    // satisfy: if check-app does not pass, say exactly why rather than letting
+    // the downstream create pipeline fail with a less specific message.
+    if let Err(failure) = check_app_verdict(app_dir) {
+        anyhow::bail!(
+            "the agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
+             The agent's transcript is at {}. Running the command again often gets it \
+             the rest of the way.",
             transcript.display()
         );
     }
     Ok(0)
 }
 
+/// The error for an agent that ran out of time: the last `check-app` verdict, so
+/// the person sees how close it got and what remained, not just "it stalled".
+fn author_stalled_error(app_dir: &str, transcript: &Path, timeout_secs: u64) -> anyhow::Error {
+    let minutes = timeout_secs / 60;
+    let verdict = match check_app_verdict(app_dir) {
+        Ok(()) => "The last check-app run actually passed -- re-running the command should \
+                   finish the packaging."
+            .to_string(),
+        Err(failure) => format!("The last check-app run reported:\n\n{failure}"),
+    };
+    anyhow::anyhow!(
+        "the AI agent did not finish within {minutes} minutes and was stopped.\n\n{verdict}\n\n\
+         Two things to try:\n  \
+         1. Run the command again -- authoring often finishes on a second try, and it \
+         resumes from the code already written.\n  \
+         2. Raise the budget: set KRATE_AUTHOR_TIMEOUT_SECS to more seconds.\n\
+         The agent's transcript is at {}.",
+        transcript.display()
+    )
+}
+
+/// Run the check-app oracle against an authored app and return its verdict as a
+/// string on failure. This is the same check the agent was told to satisfy, run
+/// once more so `create` reports the true blocker instead of a generic message.
+fn check_app_verdict(app_dir: &str) -> std::result::Result<(), String> {
+    match run_check_app(Path::new(app_dir), None, false) {
+        Ok(_) => Ok(()),
+        Err(failure) => {
+            let mut message = format!("{} failed: {}", failure.stage.label(), failure.detail);
+            if !failure.fix.is_empty() {
+                message.push_str("\n\nFix: ");
+                message.push_str(&failure.fix);
+            }
+            Err(message)
+        }
+    }
+}
+
 fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
-    use krate_author::{generate, AppKind, AppRequest};
+    use krate_author::skeleton;
 
     fs::create_dir_all(ctx.app_dir.join("src"))?;
 
-    // Give the agent a running start rather than a blank page: a compiling
-    // starter (the built-in template for this kind) it can edit, and a CONTRACT
-    // stating the one hard rule. Both may be overwritten by the agent.
-    let mut request = match ctx.kind {
-        AppKind::Checklist => AppRequest::checklist(ctx.name),
-        AppKind::WordFrequency => AppRequest::word_frequency(ctx.name),
-        AppKind::VoicePrompter => AppRequest::voice_prompter(ctx.name),
-    };
-    request.description = ctx.request.to_string();
-    if let Ok(app) = generate(&request, ctx.sdk_prefix) {
+    // Give the agent a minimal compiling skeleton -- a blank that already
+    // builds, imports only krate:*, and passes check-app -- not a behavioral
+    // template to adapt. The skeleton's world (GUI vs CLI) is chosen from the
+    // request, because that sets the WIT wiring the agent should not have to
+    // redo; everything else it writes. The agent overwrites src/lib.rs and
+    // tunes manifest.toml.
+    let world = krate_author::AppKind::wants_gui(ctx.request);
+    if let Ok(app) = skeleton(ctx.name, ctx.sdk_prefix, world) {
         for file in &app.files {
             let dest = ctx.app_dir.join(&file.path);
             if let Some(parent) = dest.parent() {
@@ -2977,7 +3025,14 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
             let _ = fs::write(&dest, &file.contents);
         }
     }
-    fs::write(ctx.app_dir.join("CONTRACT.md"), author_contract(ctx.name))?;
+    // The context pack: the real facts the agent builds against (the SDK
+    // surface, the capability catalog, the no_std discipline, the GUI-world
+    // interfaces, and an index of the shipped example apps). Replaces the old
+    // one-page CONTRACT.
+    fs::write(
+        ctx.app_dir.join("KRATE_AUTHORING.md"),
+        authoring_context::generate(ctx.app_dir),
+    )?;
 
     let shell = author_shell();
     let status = std::process::Command::new(shell)
@@ -6361,20 +6416,24 @@ mod create_tests {
     }
 
     #[test]
-    fn claude_gets_the_starter_for_the_requested_app_kind() {
-        let voice = claude_author_prompt(
-            "/tmp/app",
-            "make a voice prompter that follows me",
-            "voice-prompter",
+    fn the_author_prompt_is_the_check_app_loop() {
+        let prompt = claude_author_prompt(
+            "/work/app",
+            "a tip calculator",
+            "/usr/local/bin/krate",
         );
-        assert!(voice.contains("microphone access"));
-        assert!(voice.contains("audio.capture"));
-        assert!(voice.contains("streaming local speech match"));
-        assert!(!voice.contains("a checklist GUI"));
-
-        let checklist = claude_author_prompt("/tmp/app", "make a grocery list", "checklist");
-        assert!(checklist.contains("a checklist GUI"));
-        assert!(!checklist.contains("streaming local speech match"));
+        // The request and the working directory are in it.
+        assert!(prompt.contains("a tip calculator"));
+        assert!(prompt.contains("/work/app"));
+        // The loop: read the pack, run check-app with this binary, do not stop
+        // until OK. This is the whole mechanism piece 3 adds.
+        assert!(prompt.contains("KRATE_AUTHORING.md"));
+        assert!(prompt.contains("/usr/local/bin/krate check-app ."));
+        assert!(prompt.contains("OK"));
+        assert!(prompt.contains("Bash"), "the agent is told it may use Bash");
+        // It is no longer anchored to a template kind.
+        assert!(!prompt.contains("a checklist GUI"));
+        assert!(!prompt.contains("streaming local speech match"));
     }
 
     #[test]

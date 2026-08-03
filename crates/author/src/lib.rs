@@ -43,6 +43,39 @@ impl AppKind {
     /// and the CLI reporter is reserved for requests that clearly want to read
     /// or analyze a file. Matching the GUI broadly also gives an `--author-cmd`
     /// agent the right starter to adapt, which is where authoring succeeds.
+    /// Whether a request is best served by a windowed app or a command-line
+    /// one. Used only to pick the skeleton world for AI authoring, where the
+    /// choice sets the WIT wiring the agent should not have to redo.
+    ///
+    /// Leans GUI: a windowed app is the more useful and demo-friendly default,
+    /// and most consumer requests ("a tip calculator", "a maze you can walk")
+    /// are visual. Only a clear command-line signal -- printing to stdout,
+    /// reading a file to a report, a pipe -- picks CLI.
+    pub fn wants_gui(request: &str) -> Skeleton {
+        let lower = request.to_lowercase();
+        let cli_signals = [
+            "command line",
+            "command-line",
+            "cli ",
+            " cli",
+            "stdout",
+            "terminal",
+            "print to the console",
+            "prints to the console",
+            "read a file",
+            "reads a file",
+            "from a file",
+            "pipe",
+            "stdin",
+            "no window",
+            "headless",
+        ];
+        if cli_signals.iter().any(|s| lower.contains(s)) {
+            return Skeleton::Cli;
+        }
+        Skeleton::Gui
+    }
+
     pub fn infer(request: &str) -> AppKind {
         Self::infer_matched(request).unwrap_or(AppKind::Checklist)
     }
@@ -278,6 +311,290 @@ pub fn generate(request: &AppRequest, sdk_prefix: &str) -> Result<GeneratedApp, 
         ],
     };
     Ok(GeneratedApp { files })
+}
+
+/// Which world a skeleton is wired for. A GUI skeleton opens a window; a CLI
+/// skeleton reads args and prints. The choice sets the WIT world in Cargo.toml,
+/// which is the one thing an agent cannot easily fix after the fact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Skeleton {
+    /// A windowed app (phase-3 gui world).
+    Gui,
+    /// A command-line app (phase-2 cli world).
+    Cli,
+}
+
+/// A minimal compiling skeleton for the AI author to fill in.
+///
+/// Unlike the built-in templates, this carries no app behavior to "adapt" -- it
+/// is a blank that already builds, imports only `krate:*`, and passes
+/// `check-app`. A GUI skeleton opens a window, honors the `quick` argument, and
+/// exits; a CLI skeleton prints one line and honors `quick`. The agent writes
+/// the real app over the stub, keeping the WIT-wired Cargo.toml and adjusting
+/// the manifest to the capabilities it actually uses.
+///
+/// The Cargo.toml is the existing, proven wiring (GUI or CLI world), so the
+/// hardest-to-get-right file is correct by construction.
+pub fn skeleton(name: &str, sdk_prefix: &str, world: Skeleton) -> Result<GeneratedApp, String> {
+    // Reuse a request only as the carrier for the name/wiring the cargo/manifest
+    // helpers expect. The kind here is immaterial: skeleton sources and
+    // manifests are written below, not taken from a template.
+    let request = AppRequest {
+        name: name.to_string(),
+        description: "a Krate app".to_string(),
+        kind: AppKind::Checklist,
+        read_glob: "./data/**".to_string(),
+        top_n: 10,
+    };
+    request.validate()?;
+    let files = match world {
+        Skeleton::Gui => vec![
+            GeneratedFile {
+                path: "Cargo.toml".to_string(),
+                contents: checklist_cargo_toml(&request, sdk_prefix),
+            },
+            GeneratedFile {
+                path: "src/lib.rs".to_string(),
+                contents: gui_skeleton_source(),
+            },
+            GeneratedFile {
+                path: "manifest.toml".to_string(),
+                contents: gui_skeleton_manifest(&request),
+            },
+        ],
+        Skeleton::Cli => vec![
+            GeneratedFile {
+                path: "Cargo.toml".to_string(),
+                contents: cargo_toml(&request, sdk_prefix),
+            },
+            GeneratedFile {
+                path: "src/lib.rs".to_string(),
+                contents: cli_skeleton_source(),
+            },
+            GeneratedFile {
+                path: "manifest.toml".to_string(),
+                contents: cli_skeleton_manifest(&request),
+            },
+        ],
+    };
+    Ok(GeneratedApp { files })
+}
+
+/// A minimal GUI skeleton: opens a window with one label, waits a bounded number
+/// of rounds (short when the first argument is `quick`), then exits. No_std, no
+/// behavior, imports only `krate:*`. The agent replaces the body.
+fn gui_skeleton_source() -> String {
+    // Kept deliberately small and heavily commented: the comments are the
+    // agent's in-file guide to the shape it must keep (bindings, quick, the
+    // pure_string helper, export!). `#[allow(warnings)]` on bindings matches
+    // every shipped GUI app.
+    r####"//! A minimal Krate GUI skeleton. Replace this with the real app.
+//!
+//! It opens a window with one label, honors the `quick` argument (exit
+//! promptly for automated checks), and imports only `krate:*`. Keep the
+//! shape -- `mod bindings`, the `quick` check, `pure_string`, `export!` --
+//! and build the requested app inside `run`. Read KRATE_AUTHORING.md first,
+//! then the closest example under apps/, and run `krate check-app .` until
+//! it prints OK.
+
+#[allow(warnings)]
+mod bindings;
+
+use bindings::krate::io::args;
+use bindings::krate::ui::{events, tree, types, window};
+
+const ROOT_ID: u64 = 1;
+const LABEL_ID: u64 = 2;
+
+/// How many 50ms rounds to stay open: a short window for `quick`, a longer
+/// one for a real session.
+const QUICK_ROUNDS: u32 = 20;
+const SESSION_ROUNDS: u32 = 600;
+const ROUND_MILLIS: u32 = 50;
+
+struct Component;
+
+fn root() -> types::WidgetNode {
+    types::WidgetNode {
+        id: ROOT_ID,
+        parent: None,
+        kind: types::WidgetKind::Stack,
+        label: None,
+        role: None,
+        style: types::Style { width: Some(480.0), height: Some(320.0), grow: 0.0, padding: 16.0 },
+        checked: None,
+        value: None,
+        selected: None,
+        text_cursor: None,
+    }
+}
+
+fn label(text: &str) -> types::WidgetNode {
+    types::WidgetNode {
+        id: LABEL_ID,
+        parent: Some(ROOT_ID),
+        kind: types::WidgetKind::Text,
+        label: Some(pure_string(text)),
+        role: Some(pure_string("text")),
+        style: types::Style { width: Some(440.0), height: Some(28.0), grow: 0.0, padding: 0.0 },
+        checked: None,
+        value: None,
+        selected: None,
+        text_cursor: None,
+    }
+}
+
+impl bindings::Guest for Component {
+    fn run() -> i32 {
+        let size = types::WindowSize { width: 480, height: 320 };
+        let Ok(win) = window::create("Krate App", size) else { return 30; };
+        if window::show(win).is_err() { return 31; }
+        if tree::set_root(win, &root()).is_err()
+            || tree::upsert_node(win, &label("Replace me")).is_err()
+        {
+            let _ = window::close(win);
+            return 32;
+        }
+
+        // `quick` is a bare first argument (not a flag). Compare bytes, not
+        // with str methods, so no panic path pulls wasi in.
+        let raw = args::raw();
+        let quick = raw
+            .as_bytes()
+            .split(|b| *b == b'\n')
+            .next()
+            .is_some_and(|first| first == b"quick");
+        let rounds = if quick { QUICK_ROUNDS } else { SESSION_ROUNDS };
+
+        for _ in 0..rounds {
+            if let Some(types::Event::CloseRequested(id)) = events::wait(Some(ROUND_MILLIS)) {
+                if id == win {
+                    break;
+                }
+            }
+        }
+
+        let _ = window::close(win);
+        0
+    }
+}
+
+/// Build an owned `String` without touching std's allocation-error handler,
+/// whose panic path drags the whole `wasi:*` import set in. Keep this helper.
+fn pure_string(text: &str) -> String {
+    let len = text.len();
+    if len == 0 {
+        return String::new();
+    }
+    unsafe {
+        let layout = core::alloc::Layout::from_size_align_unchecked(len, 1);
+        let ptr = std::alloc::alloc(layout);
+        if ptr.is_null() {
+            core::arch::wasm32::unreachable()
+        }
+        core::ptr::copy_nonoverlapping(text.as_ptr(), ptr, len);
+        String::from_raw_parts(ptr, len, len)
+    }
+}
+
+bindings::export!(Component with_types_in bindings);
+"####
+        .to_string()
+}
+
+/// The GUI skeleton's manifest: a window and the automation defaults. The agent
+/// adds the capabilities the real app uses.
+fn gui_skeleton_manifest(request: &AppRequest) -> String {
+    let snake = request.snake_name();
+    let title = title_case(&request.name);
+    format!(
+        r#"[app]
+id = "dev.krate.{snake}"
+name = "{title}"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/{snake}.wasm"
+world = "krate:app/gui@0.2.0"
+
+# Declare only the capabilities the app uses. A window is the one every GUI
+# app needs. Add fs.read/fs.write, store.kv, random.bytes, and so on as the
+# app requires -- see KRATE_AUTHORING.md section 2.
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the app window"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated checks"
+required = false
+"#
+    )
+}
+
+/// A minimal CLI skeleton: prints one line and exits, honoring `quick`. No_std,
+/// imports only `krate:*`. The agent replaces the body.
+fn cli_skeleton_source() -> String {
+    r####"// A minimal Krate CLI skeleton. Replace this with the real app.
+//
+// It prints one line and exits, and honors the `quick` argument. It imports
+// only `krate:*` and is no_std. Keep the shape -- the `quick` check and the
+// krate::io calls -- and build the requested app inside `run`. Read
+// KRATE_AUTHORING.md first, then the closest example under apps/, and run
+// `krate check-app .` until it prints OK.
+#![no_std]
+extern crate alloc;
+
+use krate::{
+    io::{args, stdio, streams::OutputStreamExt},
+    Guest,
+};
+
+struct Component;
+
+impl Guest for Component {
+    fn run() -> i32 {
+        // `quick` is a bare first argument used by automated checks. A CLI app
+        // must do its work once and exit 0 whether it gets `quick` or a real
+        // argument. Handle it before any other parsing.
+        let stdout = stdio::stdout();
+        let _ = stdout.write_line("replace me");
+        let _ = stdout.flush();
+        0
+    }
+}
+
+krate::export!(Component);
+"####
+        .to_string()
+}
+
+/// The CLI skeleton's manifest: stdout and args, no gating capability yet. The
+/// agent adds fs.read (and marks it required) for a file-reading app, etc.
+fn cli_skeleton_manifest(request: &AppRequest) -> String {
+    let snake = request.snake_name();
+    let name = &request.name;
+    format!(
+        r#"[app]
+id = "dev.krate.{snake}"
+name = "{name}"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/{snake}.wasm"
+world = "krate:app/cli@0.1.0"
+
+# Declare only the capabilities the app uses. stdout and args are shown here;
+# add fs.read (mark it required for a file-reading app), net.connect,
+# random.bytes, and so on as needed -- see KRATE_AUTHORING.md section 2.
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print the app's output"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read command-line arguments"
+required = false
+"#
+    )
 }
 
 fn cargo_toml(request: &AppRequest, sdk_prefix: &str) -> String {
@@ -946,6 +1263,69 @@ mod tests {
         );
         // And the total function keeps its checklist default.
         assert_eq!(AppKind::infer("a pdf merger"), AppKind::Checklist);
+    }
+
+    #[test]
+    fn wants_gui_leans_windowed_but_hears_a_clear_cli_signal() {
+        // Visual/consumer requests -> a window.
+        assert_eq!(AppKind::wants_gui("a tip calculator"), Skeleton::Gui);
+        assert_eq!(AppKind::wants_gui("a maze you can walk"), Skeleton::Gui);
+        assert_eq!(AppKind::wants_gui("a pomodoro timer with a ring"), Skeleton::Gui);
+        // Explicit command-line shapes -> CLI.
+        assert_eq!(
+            AppKind::wants_gui("a command-line JSON pretty-printer"),
+            Skeleton::Cli
+        );
+        assert_eq!(
+            AppKind::wants_gui("read a file and print a word count to stdout"),
+            Skeleton::Cli
+        );
+        assert_eq!(
+            AppKind::wants_gui("a CLI that formats a markdown table"),
+            Skeleton::Cli
+        );
+    }
+
+    #[test]
+    fn skeletons_produce_the_three_files_wired_to_the_right_world() {
+        let gui = skeleton("my-app", "/sdk", Skeleton::Gui).expect("gui skeleton");
+        let names: Vec<&str> = gui.files.iter().map(|f| f.path.as_str()).collect();
+        assert!(names.contains(&"Cargo.toml"));
+        assert!(names.contains(&"src/lib.rs"));
+        assert!(names.contains(&"manifest.toml"));
+        let gui_manifest = &gui
+            .files
+            .iter()
+            .find(|f| f.path == "manifest.toml")
+            .unwrap()
+            .contents;
+        assert!(gui_manifest.contains("gui@0.2.0"), "GUI world");
+        assert!(gui_manifest.contains("ui.window:create"), "a window");
+        let gui_lib = &gui
+            .files
+            .iter()
+            .find(|f| f.path == "src/lib.rs")
+            .unwrap()
+            .contents;
+        assert!(gui_lib.contains("window::create"), "opens a window");
+        assert!(gui_lib.contains("quick"), "honors the quick argument");
+
+        let cli = skeleton("my-app", "/sdk", Skeleton::Cli).expect("cli skeleton");
+        let cli_manifest = &cli
+            .files
+            .iter()
+            .find(|f| f.path == "manifest.toml")
+            .unwrap()
+            .contents;
+        assert!(cli_manifest.contains("cli@0.1.0"), "CLI world");
+        let cli_lib = &cli
+            .files
+            .iter()
+            .find(|f| f.path == "src/lib.rs")
+            .unwrap()
+            .contents;
+        assert!(cli_lib.contains("#![no_std]"), "no_std CLI");
+        assert!(cli_lib.contains("write_line"), "prints something");
     }
 
     #[test]

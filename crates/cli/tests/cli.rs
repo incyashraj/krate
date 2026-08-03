@@ -3308,6 +3308,57 @@ fn sample_manifest(app: &str) -> PathBuf {
 }
 
 #[test]
+fn create_with_an_agent_seam_scaffolds_a_building_skeleton_and_the_pack() {
+    // The agent path drops a minimal skeleton + KRATE_AUTHORING.md, then builds
+    // it. Drive it with a no-op author command (`true`), so this exercises the
+    // scaffolding and the full build/pack/verify pipeline on the blank
+    // skeleton -- without needing an AI. The skeleton must be a valid app on its
+    // own, or an agent that starts from it starts from a broken base. Skipped
+    // where the build toolchain is absent.
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let work = tempfile::tempdir().expect("temp dir");
+    let out = work.path().join("skel.krate");
+    let inspect = work.path().join("inspect");
+    // A GUI-leaning request, so the GUI skeleton is chosen.
+    let output = krate()
+        .arg("create")
+        .arg("a small dashboard")
+        .arg("--author-cmd")
+        .arg("true")
+        .arg("--output")
+        .arg(&out)
+        .arg("--work-dir")
+        .arg(&inspect)
+        .output()
+        .expect("run create");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "create should build the skeleton into a .krate: {stderr}"
+    );
+    assert!(out.is_file(), "the .krate was written");
+    // The work dir holds exactly one app directory; find it rather than
+    // predicting the name-derivation. The pack and a real skeleton lib.rs were
+    // dropped for the agent.
+    let app_dir = std::fs::read_dir(&inspect)
+        .expect("read work dir")
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.is_dir())
+        .expect("one app dir under the work dir");
+    assert!(
+        app_dir.join("KRATE_AUTHORING.md").is_file(),
+        "the context pack is dropped beside the skeleton"
+    );
+    let lib = std::fs::read_to_string(app_dir.join("src/lib.rs")).expect("skeleton lib.rs");
+    assert!(lib.contains("Replace"), "the skeleton is a blank to fill in");
+}
+
+#[test]
 fn authoring_context_writes_a_pack_with_every_section() {
     // No build tools needed: the pack is generated from embedded sources and
     // the repo's apps tree. Fast, and it guards the subcommand end to end.
