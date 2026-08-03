@@ -2824,18 +2824,25 @@ How to work:\n\
    do not write the no_std/krate:* discipline from a blank page.\n\
 3. Write the app: edit src/lib.rs, and set manifest.toml to exactly the\n\
    capabilities the app uses.\n\
-4. After every change, run this from {app_dir}:\n\
+4. After every change, run exactly this from {app_dir}:\n\
 \n\
        {krate_bin} check-app .\n\
 \n\
    It builds the app, checks it imports only krate:*, and runs it once. On\n\
    failure it names the stage and the exact fix -- including how to remove a\n\
-   leaked wasi:* import. Do whatever it says.\n\
+   leaked wasi:* import. Do whatever it says, then run it again.\n\
+\n\
+Use `{krate_bin} check-app .` to build -- do NOT run `cargo build` or\n\
+`cargo component build` yourself. check-app builds with the correct rustup\n\
+toolchain and the wasm target; a bare `cargo` on this machine is often the wrong\n\
+one and fails with \"can't find crate for core\". check-app is the only build\n\
+command you need.\n\
 \n\
 Do not stop until `check-app` prints OK. That is the whole definition of done:\n\
-not \"looks right\", not \"should work\" -- the oracle prints OK. Use the Read,\n\
-Edit, Write, and Bash tools. Do not explain what you did; just build the app\n\
-until the check passes."
+not \"looks right\", not \"should work\" -- the oracle prints OK, having actually\n\
+run. If a command seems blocked, try it again; you have permission to run it.\n\
+Use the Read, Edit, Write, and Bash tools. Do not explain what you did; just\n\
+build the app until the check passes."
     )
 }
 
@@ -2864,8 +2871,16 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
         // let it write the code; Bash lets it verify it.
         .arg("--allowed-tools")
         .arg("Read,Edit,Write,Bash")
+        // bypassPermissions, not acceptEdits. This session is headless and
+        // non-interactive, so any permission prompt blocks forever with no one
+        // to clear it. acceptEdits auto-accepts file edits but still prompts on
+        // Bash -- which meant the agent could not actually run `krate check-app`
+        // or a build, and fell back to writing code blind (the exact failure the
+        // loop exists to prevent). The agent works inside a throwaway app dir on
+        // the user's own machine, doing precisely what `krate create` was asked
+        // to do, so bypassing prompts here is scoped and safe.
         .arg("--permission-mode")
-        .arg("acceptEdits");
+        .arg("bypassPermissions");
     // Close stdin. `claude -p` reads stdin for piped input; inheriting the
     // parent's stdin made it block waiting for input that never comes -- the
     // transcript literally said "no stdin data received in 3s, proceeding

@@ -257,7 +257,17 @@ fn gui_world_section() -> String {
          package's `types` interface (with two exceptions the samples show:\n\
          `ui::image::ImagePixels` and `ui::dialog`). Signatures are WIT, so\n\
          `list<u8>` is a Rust `Vec<u8>`/`&[u8]`, `result<t, e>` is `Result<T, E>`,\n\
-         and kebab-case names become snake_case in Rust.\n\n",
+         and kebab-case names become snake_case in Rust.\n\n\
+         IMPORTANT for a GUI app: reach the *shared* modules through `bindings::krate`\n\
+         too, not the `krate::` SDK helpers in section 1. Their shapes differ. In the\n\
+         generated bindings the action is a nested module, so it is\n\
+         `bindings::krate::random::bytes::get(count)`,\n\
+         `bindings::krate::random::bytes::below(bound)`,\n\
+         `bindings::krate::random::bytes::next_u64()`, and\n\
+         `bindings::krate::store::kv::get(key)` -- not `random::bytes(count)` or\n\
+         `store::get(key)`, which are the SDK free-function forms and do not exist on the\n\
+         GUI world's `bindings`. When in doubt, expand the module path: the leaf that\n\
+         takes the arguments is the function.\n\n",
     );
     for (package, wit) in [
         ("gfx", GFX_WIT),
