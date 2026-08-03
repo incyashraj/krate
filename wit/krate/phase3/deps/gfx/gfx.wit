@@ -112,6 +112,13 @@ interface canvas2d {
   /// over what is already on the canvas, which is what makes a sprite a sprite
   /// rather than a rectangle with a picture in it.
   draw-pixels: func(canvas: u64, area: rect, width: u32, height: u32, rgba: list<u8>) -> result<_, gfx-error>;
+  /// Draw a decoded RGBA sprite centred at `center`, scaled to `dst` pixels,
+  /// rotated by `angle` radians (clockwise), alpha-blended over the canvas.
+  /// `width`/`height` are the source image size; `rgba` is `width*height*4`
+  /// straight-alpha bytes. This is what a ship that points where it flies, a
+  /// spinning asteroid, or any rotated sprite needs -- the piece that lets a
+  /// canvas game reach a real textured-sprite look instead of flat shapes.
+  draw-sprite: func(canvas: u64, center: point, dst: size, angle: f32, width: u32, height: u32, rgba: list<u8>) -> result<_, gfx-error>;
   /// Publish the raster to the widget. Until this, nothing is shown.
   present: func(canvas: u64) -> result<_, gfx-error>;
 }

@@ -1639,6 +1639,28 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         Ok(Ok(()))
     }
 
+    fn draw_sprite(
+        &mut self,
+        canvas: u64,
+        center: gfx::types::Point,
+        dst: gfx::types::Size,
+        angle: f32,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let image = match ImagePixels::new(width, height, rgba) {
+            Ok(image) => image,
+            Err(error) => return Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
+        };
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.draw_sprite(center.x, center.y, dst.width, dst.height, angle, &image);
+        Ok(Ok(()))
+    }
+
     fn present(&mut self, canvas: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         // The one call that reaches the widget. Draw calls mutate the raster;
         // this publishes it, so a hundred fills cost one render.

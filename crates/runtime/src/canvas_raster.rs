@@ -41,6 +41,61 @@ pub fn pack_color(r: f32, g: f32, b: f32, a: f32) -> u32 {
     (channel(a) << 24) | (channel(r) << 16) | (channel(g) << 8) | channel(b)
 }
 
+/// Bilinearly sample a straight-RGBA image at floating texel coordinates,
+/// returning `0xAARRGGBB`. Smoothing four neighbouring texels stops a rotated
+/// or scaled sprite from shimmering into hard stair-steps as it moves. Samples
+/// off the image edge clamp to the nearest edge texel.
+fn sample_bilinear(image: &ImagePixels, u: f32, v: f32) -> u32 {
+    let w = image.width as i32;
+    let h = image.height as i32;
+    if w <= 0 || h <= 0 {
+        return 0;
+    }
+    // Texel centres are at +0.5; shift so integer floor picks the lower-left.
+    let fx = u - 0.5;
+    let fy = v - 0.5;
+    let x0 = fx.floor() as i32;
+    let y0 = fy.floor() as i32;
+    let tx = fx - x0 as f32;
+    let ty = fy - y0 as f32;
+
+    let at = |xi: i32, yi: i32| -> (f32, f32, f32, f32) {
+        let x = xi.clamp(0, w - 1);
+        let y = yi.clamp(0, h - 1);
+        let i = ((y * w + x) * 4) as usize;
+        match image.rgba.get(i..i + 4) {
+            Some(px) => (
+                px[0] as f32,
+                px[1] as f32,
+                px[2] as f32,
+                px[3] as f32,
+            ),
+            None => (0.0, 0.0, 0.0, 0.0),
+        }
+    };
+
+    let c00 = at(x0, y0);
+    let c10 = at(x0 + 1, y0);
+    let c01 = at(x0, y0 + 1);
+    let c11 = at(x0 + 1, y0 + 1);
+
+    let lerp = |a: f32, b: f32, t: f32| a + (b - a) * t;
+    let mix = |i: usize| -> u32 {
+        let top = lerp(
+            [c00.0, c00.1, c00.2, c00.3][i],
+            [c10.0, c10.1, c10.2, c10.3][i],
+            tx,
+        );
+        let bot = lerp(
+            [c01.0, c01.1, c01.2, c01.3][i],
+            [c11.0, c11.1, c11.2, c11.3][i],
+            tx,
+        );
+        (lerp(top, bot, ty) + 0.5) as u32 & 0xFF
+    };
+    (mix(3) << 24) | (mix(0) << 16) | (mix(1) << 8) | mix(2)
+}
+
 /// Linearly interpolate two `0xAARRGGBB` colors, `t` in 0..=1 (0 = a, 1 = b),
 /// all four channels including alpha. Used by the gradient primitives.
 fn lerp_color(a: u32, b: u32, t: f32) -> u32 {
@@ -219,6 +274,86 @@ impl CanvasSurface {
         );
     }
 
+    /// Draw a decoded RGBA sprite centred at `(cx, cy)`, scaled to `dst_w` x
+    /// `dst_h`, rotated by `angle` radians (clockwise), and alpha-blended over
+    /// the canvas. This is the primitive a real sprite game needs: a ship that
+    /// points where it flies, a spinning asteroid, a rotating shield.
+    ///
+    /// Implemented by inverse mapping -- for each destination pixel in the
+    /// rotated bounding box, rotate it back into the sprite's own texture space
+    /// and sample there. That guarantees every destination pixel is written at
+    /// most once (no gaps or double-blends a forward map would leave) and lets
+    /// the source be sampled with bilinear smoothing so the sprite does not
+    /// shimmer as it turns.
+    pub fn draw_sprite(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        dst_w: f32,
+        dst_h: f32,
+        angle: f32,
+        image: &ImagePixels,
+    ) {
+        let (iw, ih) = (image.width, image.height);
+        if iw == 0 || ih == 0 || dst_w <= 0.0 || dst_h <= 0.0 {
+            return;
+        }
+        // A hostile or absurd request draws nothing rather than allocating or
+        // looping forever: cap the drawn size to the canvas plus a margin.
+        let max_edge = (self.width.max(self.height) as f32) * 2.0 + 4.0;
+        if !dst_w.is_finite()
+            || !dst_h.is_finite()
+            || !angle.is_finite()
+            || !cx.is_finite()
+            || !cy.is_finite()
+            || dst_w > max_edge
+            || dst_h > max_edge
+        {
+            return;
+        }
+
+        let (sin_a, cos_a) = (angle.sin(), angle.cos());
+        // The rotated sprite's axis-aligned bounding box, half extents.
+        let hw = dst_w * 0.5;
+        let hh = dst_h * 0.5;
+        let bb_x = hw * cos_a.abs() + hh * sin_a.abs();
+        let bb_y = hw * sin_a.abs() + hh * cos_a.abs();
+        let x0 = ((cx - bb_x).floor().max(0.0) as u32).min(self.width);
+        let x1 = (((cx + bb_x).ceil()).max(0.0) as u32).min(self.width);
+        let y0 = ((cy - bb_y).floor().max(0.0) as u32).min(self.height);
+        let y1 = (((cy + bb_y).ceil()).max(0.0) as u32).min(self.height);
+
+        // Scale from destination pixels back to source texels.
+        let sx_scale = iw as f32 / dst_w;
+        let sy_scale = ih as f32 / dst_h;
+
+        for py in y0..y1 {
+            for px in x0..x1 {
+                // Destination offset from the sprite centre.
+                let ddx = px as f32 + 0.5 - cx;
+                let ddy = py as f32 + 0.5 - cy;
+                // Inverse-rotate into the sprite's own (unrotated) frame.
+                let lx = ddx * cos_a + ddy * sin_a;
+                let ly = -ddx * sin_a + ddy * cos_a;
+                // Only pixels inside the sprite's own rectangle.
+                if lx < -hw || lx >= hw || ly < -hh || ly >= hh {
+                    continue;
+                }
+                // Map to source texel coordinates.
+                let su = (lx + hw) * sx_scale;
+                let sv = (ly + hh) * sy_scale;
+                let sample = sample_bilinear(image, su, sv);
+                if (sample >> 24) == 0 {
+                    continue;
+                }
+                let idx = (py * self.width + px) as usize;
+                if let Some(slot) = self.buffer.get_mut(idx) {
+                    *slot = krate_adapter_common::painter::blend_over(sample, *slot);
+                }
+            }
+        }
+    }
+
     /// The canvas as the image pipeline's pixel format.
     /// The surface's size in pixels, which is its size in logical points too
     /// -- the canvas renders at 1x, and the display scale is applied when the
@@ -270,9 +405,39 @@ mod tests {
             surface.draw_pixels(1e9, 1e9, 10.0, 10.0, &tiny);
         }
 
+        // draw_sprite with hostile center, size, and angle: a NaN angle, an
+        // infinite size, a sprite the size of the universe -- none may trap.
+        for &bad in &poison {
+            surface.draw_sprite(bad, bad, bad, bad, bad, &tiny);
+            surface.draw_sprite(20.0, 15.0, 30.0, 30.0, bad, &tiny);
+            surface.draw_sprite(bad, bad, 10.0, 10.0, 0.7, &tiny);
+        }
+
         // The buffer must still be the size it started at, and readable.
         assert_eq!(surface.dimensions(), (40, 30));
         let _ = surface.to_image().expect("image after hostile input");
+    }
+
+    #[test]
+    fn a_rotated_sprite_lands_rotated_and_blended() {
+        // A 2x2 opaque red sprite drawn large and rotated must put red pixels on
+        // the canvas around its centre -- proving the rotate-blit path samples
+        // and writes, and that a rotation does not send every pixel off-image.
+        let mut surface = CanvasSurface::new(60, 60).expect("surface");
+        surface.clear(0xFF00_0000); // opaque black
+        let red = ImagePixels::new(2, 2, vec![255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255])
+            .expect("red sprite");
+        // 40x40 at the centre, rotated 30 degrees (pi/6).
+        surface.draw_sprite(30.0, 30.0, 40.0, 40.0, core::f32::consts::FRAC_PI_6, &red);
+        let img = surface.to_image().expect("image");
+        // Centre pixel must be red (the sprite covers the middle at any angle).
+        let c = 30 * 60 + 30;
+        let px = &img.rgba[c * 4..c * 4 + 4];
+        assert_eq!(px, &[255, 0, 0, 255], "the rotated sprite covers the centre");
+        // A far corner must still be the black background (the 40x40 rotated
+        // sprite does not reach the 60x60 corners).
+        let corner = &img.rgba[0..4];
+        assert_eq!(corner, &[0, 0, 0, 255], "the corner stays background");
     }
 
     #[test]
