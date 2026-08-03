@@ -51,6 +51,142 @@
       color: var(--quiet);
       font-size: 11px;
     }
+
+    /* "How to open this" — the panel that appears after a download, so a first
+       time visitor is never left holding a .krate file with no idea what to do
+       with it. It is the difference between "I downloaded something" and "I ran
+       an app". */
+    .open-help {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(4, 6, 10, .72);
+      z-index: 100;
+    }
+    .open-help[open] { display: flex; }
+    .open-panel {
+      width: 100%;
+      max-width: 520px;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      background: var(--panel);
+      border: 1px solid var(--line-strong);
+      border-radius: 14px;
+      padding: 28px;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
+    }
+    .open-panel h2 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      letter-spacing: -.02em;
+    }
+    .open-app-name { color: var(--blue); }
+    .open-sub {
+      margin: 0 0 22px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .open-steps { display: grid; gap: 18px; }
+    .open-step { display: flex; gap: 14px; align-items: flex-start; }
+    .open-num {
+      flex: none;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      background: var(--blue);
+      color: #fff;
+      font-family: var(--mono);
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .open-step h3 { margin: 3px 0 6px; font-size: 15px; }
+    .open-step p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
+    /* One command, copyable, matching the terminal look used elsewhere. */
+    .open-cmd {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      padding: 10px 12px;
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      overflow-x: auto;
+    }
+    .open-cmd code { color: var(--cyan); white-space: nowrap; }
+    .open-copy {
+      flex: none;
+      margin-left: auto;
+      padding: 4px 10px;
+      background: var(--panel-raised);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .open-copy:hover { border-color: var(--line-strong); }
+    /* The OS the panel is showing steps for, and a way to switch it if the
+       guess was wrong. */
+    .open-os-row {
+      display: flex;
+      gap: 8px;
+      margin: 0 0 20px;
+      flex-wrap: wrap;
+    }
+    .open-os {
+      padding: 5px 12px;
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 12.5px;
+      cursor: pointer;
+    }
+    .open-os[aria-pressed="true"] {
+      background: var(--blue-soft);
+      border-color: var(--blue);
+      color: var(--text);
+    }
+    .open-foot {
+      margin-top: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    .open-close {
+      padding: 8px 18px;
+      background: var(--blue);
+      border: none;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .open-already {
+      color: var(--quiet);
+      font-size: 12.5px;
+      text-decoration: underline;
+      background: none;
+      border: none;
+      cursor: pointer;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .open-panel { animation: open-rise .18s ease-out; }
+      @keyframes open-rise {
+        from { transform: translateY(8px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+    }
 </style>
 </head>
 <body>
@@ -120,6 +256,48 @@
     </section>
     </main>
 
+    <!-- Shown after a download so a first-time visitor knows what to do with
+         the .krate file: install Krate once if needed, then double-click. The
+         OS is guessed and switchable. -->
+    <div class="open-help" id="openHelp" role="dialog" aria-modal="true" aria-labelledby="openTitle">
+      <div class="open-panel">
+        <h2 id="openTitle">Opening <span class="open-app-name" id="openApp">your app</span></h2>
+        <p class="open-sub">It just downloaded to your computer. Here is how to run it.</p>
+
+        <div class="open-os-row" id="openOsRow" role="group" aria-label="Choose your system">
+          <button class="open-os" type="button" data-os="mac">macOS</button>
+          <button class="open-os" type="button" data-os="windows">Windows</button>
+          <button class="open-os" type="button" data-os="linux">Linux</button>
+        </div>
+
+        <div class="open-steps">
+          <div class="open-step" id="stepInstall">
+            <div class="open-num">1</div>
+            <div>
+              <h3>Install Krate once</h3>
+              <p id="installBlurb">Krate is the small runtime that opens any <code>.krate</code> app. Paste this into a terminal:</p>
+              <div class="open-cmd">
+                <code id="installCmd">curl -fsSL https://krate.tech/install.sh | sh</code>
+                <button class="open-copy" type="button" id="installCopy">Copy</button>
+              </div>
+            </div>
+          </div>
+          <div class="open-step">
+            <div class="open-num">2</div>
+            <div>
+              <h3 id="openHead">Double-click the file</h3>
+              <p id="openBody">Find the <code>.krate</code> file in your Downloads and double-click it. Krate shows you exactly what the app wants to access, then opens it.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="open-foot">
+          <button class="open-already" type="button" id="alreadyBtn">I already have Krate</button>
+          <button class="open-close" type="button" id="openClose">Got it</button>
+        </div>
+      </div>
+    </div>
+
     <script>
       // The shelf is built from the generated index so the page and the files
       // can never disagree.
@@ -172,7 +350,7 @@
                   : '<li><span>&#9679;</span> nothing beyond opening a window</li>'}
               </ul>
               <div class="store-foot">
-                <a class="path-link" href="./apps/${a.file}" download>Download &darr;</a>
+                <a class="path-link" href="./apps/${a.file}" download data-app-name="${a.name}">Download &darr;</a>
                 <p class="store-digest" title="Identity you can check with --dump-caps">${(a.digest || "").slice(0, 16)}&hellip;</p>
               </div>
             </article>
@@ -182,6 +360,105 @@
           document.getElementById("shelf").innerHTML =
             '<p class="store-desc">Could not load the app list.</p>';
         });
+
+      // "How to open this" flow. A download alone leaves a first-time visitor
+      // holding a file they cannot open; this panel turns the download into a
+      // first run. Per OS: install Krate once (if they need to), then double
+      // click. The OS is guessed from the platform and switchable.
+      (() => {
+        const OS = {
+          mac: {
+            install: "curl -fsSL https://krate.tech/install.sh | sh",
+            blurb: "Krate is the small runtime that opens any .krate app. Paste this into Terminal:",
+            openHead: "Double-click the file",
+            openBody: "Find the .krate file in your Downloads and double-click it. The first time, macOS may ask you to confirm — open it from Finder's right-click → Open. Krate shows what the app wants to access, then opens it.",
+          },
+          windows: {
+            install: "irm https://krate.tech/install.ps1 | iex",
+            blurb: "Krate is the small runtime that opens any .krate app. Paste this into PowerShell:",
+            openHead: "Double-click the file",
+            openBody: "Find the .krate file in your Downloads and double-click it. Krate shows what the app wants to access, then opens it.",
+          },
+          linux: {
+            install: "curl -fsSL https://krate.tech/install.sh | sh",
+            blurb: "Krate is the small runtime that opens any .krate app. Paste this into a terminal:",
+            openHead: "Open the file",
+            openBody: "Double-click the .krate file, or run krate run ~/Downloads/<app>.krate from a terminal. Krate shows what the app wants to access, then opens it.",
+          },
+        };
+
+        const guessOs = () => {
+          const p = (navigator.platform || navigator.userAgent || "").toLowerCase();
+          if (p.includes("win")) return "windows";
+          if (p.includes("linux") || p.includes("android")) return "linux";
+          return "mac";
+        };
+
+        const help = document.getElementById("openHelp");
+        const appLabel = document.getElementById("openApp");
+        const installCmd = document.getElementById("installCmd");
+        const installBlurb = document.getElementById("installBlurb");
+        const openHead = document.getElementById("openHead");
+        const openBody = document.getElementById("openBody");
+        const stepInstall = document.getElementById("stepInstall");
+        let currentOs = guessOs();
+
+        const render = (os) => {
+          const info = OS[os] || OS.mac;
+          installCmd.textContent = info.install;
+          installBlurb.textContent = info.blurb;
+          openHead.textContent = info.openHead;
+          openBody.textContent = info.openBody;
+          document.querySelectorAll(".open-os").forEach((b) =>
+            b.setAttribute("aria-pressed", String(b.dataset.os === os)));
+        };
+
+        const openPanel = (name) => {
+          appLabel.textContent = name || "your app";
+          stepInstall.style.display = "";
+          currentOs = guessOs();
+          render(currentOs);
+          help.setAttribute("open", "");
+          document.getElementById("openClose").focus();
+        };
+        const closePanel = () => help.removeAttribute("open");
+
+        // The download itself proceeds normally (the browser handles the
+        // native `download` link); we just show the guide alongside it.
+        document.getElementById("shelf").addEventListener("click", (e) => {
+          const link = e.target.closest("a.path-link[download]");
+          if (!link) return;
+          openPanel(link.dataset.appName);
+        });
+
+        document.getElementById("openOsRow").addEventListener("click", (e) => {
+          const btn = e.target.closest(".open-os");
+          if (!btn) return;
+          currentOs = btn.dataset.os;
+          render(currentOs);
+        });
+
+        document.getElementById("installCopy").addEventListener("click", (e) => {
+          navigator.clipboard?.writeText(installCmd.textContent).then(() => {
+            const b = e.target;
+            const was = b.textContent;
+            b.textContent = "Copied";
+            setTimeout(() => (b.textContent = was), 1400);
+          });
+        });
+
+        // "I already have Krate" collapses the install step so a returning
+        // visitor sees only the one thing they need: double-click.
+        document.getElementById("alreadyBtn").addEventListener("click", () => {
+          stepInstall.style.display = "none";
+        });
+
+        document.getElementById("openClose").addEventListener("click", closePanel);
+        help.addEventListener("click", (e) => { if (e.target === help) closePanel(); });
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape" && help.hasAttribute("open")) closePanel();
+        });
+      })();
     </script>
 <footer>
     <div class="wrap footer-inner">

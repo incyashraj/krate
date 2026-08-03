@@ -117,6 +117,13 @@ jobs:
           for bundle in evidence/ported/*.krate; do
             cp "$bundle" "_site/$(basename "$bundle")"
           done
+          # The curated store apps -- the polished, usable ones a person would
+          # actually download and run (notes, checklist, paint, a couple of
+          # games), packed by scripts/pack-store-apps.sh and committed like the
+          # ported bundles. They join the same store shelf below.
+          for bundle in evidence/store/*.krate; do
+            cp "$bundle" "_site/$(basename "$bundle")"
+          done
           # Krate Cloud, served under /cloud/. Listings are generated from the
           # .krate files themselves, so a listing cannot describe an app
           # differently from what the file actually asks for.
