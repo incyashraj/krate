@@ -45,6 +45,27 @@ target="${arch_part}-${os_part}"
 
 # ---- work out which version to fetch ---------------------------------------
 
+# Print the highest version tag from stdin (one tag per line).
+#
+# GitHub returns releases newest-created-first, but a re-tag or an out-of-order
+# push can put an older tag ahead -- which shipped rc9 to a machine when rc14
+# was current. So rank by version rather than trust order: a final release
+# outranks its own pre-releases, and a higher rc number outranks a lower one.
+highest_version() {
+  awk '
+    /^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$/ {
+      tag = $0
+      v = tag; sub(/^v/, "", v)
+      rc = 9999
+      if (v ~ /-rc[0-9]+$/) { rc = v; sub(/.*-rc/, "", rc); sub(/-rc[0-9]+$/, "", v) }
+      n = split(v, p, ".")
+      key = p[1] * 1000000 + p[2] * 10000 + p[3] * 100 + rc / 10000
+      if (key > best) { best = key; best_tag = tag }
+    }
+    END { if (best_tag != "") print best_tag }
+  '
+}
+
 version="${KRATE_VERSION:-}"
 if [ -z "$version" ]; then
   say "Finding the latest release..."
@@ -53,7 +74,7 @@ if [ -z "$version" ]; then
   # starts with v. Those carry the krate binaries; the notes-* bundle releases
   # do not. Querying the list avoids a guaranteed 404 on /latest.
   version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=30" \
-    | grep '"tag_name"' | cut -d '"' -f 4 | grep '^v' | head -1 || true)"
+    | grep '"tag_name"' | cut -d '"' -f 4 | highest_version || true)"
 
   # The API is rate limited to 60 requests an hour per address and does not
   # care that you are only reading. Anyone behind a shared address -- an
@@ -66,7 +87,7 @@ if [ -z "$version" ]; then
     say "The GitHub API did not answer; reading the releases page instead..."
     version="$(curl -fsSL "https://github.com/${REPO}/releases" \
       | grep -o "/${REPO}/releases/tag/v[0-9][^\"]*" \
-      | cut -d / -f 6 | head -1 || true)"
+      | cut -d / -f 6 | highest_version || true)"
   fi
 
   if [ -z "$version" ]; then

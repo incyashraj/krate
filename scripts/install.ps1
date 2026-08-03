@@ -19,6 +19,20 @@ $binary = 'krate.exe'
 function Write-Say { param([string]$Message) Write-Host $Message }
 function Stop-Install { param([string]$Message) Write-Error "error: $Message"; exit 1 }
 
+# Rank a version tag so the newest sorts highest, regardless of API or page
+# order. A final release outranks any of its own pre-releases (rc), and a
+# higher rc number outranks a lower one. Returns a single sortable number.
+function rc_rank {
+    param([string]$Tag)
+    if ($Tag -match '^v(\d+)\.(\d+)\.(\d+)(?:-rc(\d+))?$') {
+        $base = ([int]$Matches[1]) * 1000000 + ([int]$Matches[2]) * 10000 + ([int]$Matches[3]) * 100
+        # No rc suffix is the final release: rank it above every rc of the same
+        # version by giving it 99, and an rc its own number.
+        if ($Matches[4]) { return $base + [int]$Matches[4] } else { return $base + 99 }
+    }
+    return -1
+}
+
 # Intel and ARM Windows both publish a build. ARM matters more than its share
 # of desktops suggests: a Windows VM on an Apple Silicon Mac is ARM, and that
 # is the ordinary way to try Windows without owning a Windows machine.
@@ -45,7 +59,15 @@ if (-not $version) {
     try {
         $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=30" `
             -Headers @{ 'User-Agent' = 'krate-installer' }
-        $version = ($releases | Where-Object { $_.tag_name -like 'v*' } | Select-Object -First 1).tag_name
+        # Sort by version, do not trust the array order. GitHub returns
+        # releases newest-created-first, but a re-tag or an out-of-order push
+        # can put an older tag ahead of a newer one -- which shipped rc9 to a
+        # machine when rc14 was current. Rank by the numeric rc suffix so the
+        # highest always wins.
+        $version = ($releases |
+            Where-Object { $_.tag_name -match '^v\d+\.\d+\.\d+(-rc(\d+))?$' } |
+            Sort-Object -Descending { rc_rank $_.tag_name } |
+            Select-Object -First 1).tag_name
     } catch {
         $version = $null
     }
@@ -65,8 +87,12 @@ if (-not $version) {
             # that escaping is easy to get wrong and fails as a parse error
             # rather than a wrong answer.
             $pattern = '/' + $repo + '/releases/tag/(v[0-9][^"]*)'
-            $match = [regex]::Match($page.Content, $pattern)
-            if ($match.Success) { $version = $match.Groups[1].Value }
+            $tags = [regex]::Matches($page.Content, $pattern) |
+                ForEach-Object { $_.Groups[1].Value } |
+                Sort-Object -Unique
+            # Highest version among every tag on the page, not the first the
+            # page happened to render.
+            $version = $tags | Sort-Object -Descending { rc_rank $_ } | Select-Object -First 1
         } catch {
             $version = $null
         }
