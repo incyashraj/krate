@@ -513,6 +513,21 @@ fn friendly_error(err: &anyhow::Error) -> String {
                 return message;
             }
         }
+        // A component that imports a host interface this runtime does not
+        // provide fails to instantiate with wasmtime's "a matching
+        // implementation was not found in the linker". To a person that is
+        // noise; the real meaning is almost always "this app was built for a
+        // newer Krate than you have". Say that instead, with the fix.
+        let text = cause.to_string();
+        if text.contains("matching implementation was not found")
+            || (text.contains("imports instance") && text.contains("not found"))
+        {
+            return "this app needs a newer version of Krate than you have installed. \
+                    Update Krate and try again:\n  \
+                    curl -fsSL https://krate.tech/install.sh | sh\n\
+                    (on Windows: irm https://krate.tech/install.ps1 | iex)"
+                .to_string();
+        }
     }
     format!("{err:#}")
 }
