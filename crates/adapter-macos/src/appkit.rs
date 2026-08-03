@@ -93,11 +93,15 @@ impl AppKitWidgetPlacement {
                 )));
             }
         }
-        if width == 0.0 || height == 0.0 {
-            return Err(UiAdapterError::Unsupported(
-                "AppKit widget placement needs a non-zero size".to_string(),
-            ));
-        }
+        // A zero-size widget is clamped to one pixel, not refused. The winit
+        // adapters already clamp (inner.width.max(1)); macOS used to error,
+        // which meant the same app -- a Text laid out to zero height, say --
+        // crashed on a Mac and rendered a sliver on Windows. Different
+        // behaviour from the same bundle is the one thing Krate exists to
+        // prevent, so all three now do the same survivable thing: show a
+        // widget too small to see rather than take down the app.
+        let width = width.max(1.0);
+        let height = height.max(1.0);
 
         Ok(Self {
             widget,
@@ -2669,8 +2673,25 @@ mod tests {
             AppKitWidgetPlacement::new(widget, WidgetKind::Button, None, -1.0, 0.0, 10.0, 10.0),
             Err(UiAdapterError::Unsupported(_))
         ));
+        // A zero-size placement is clamped, not refused. This used to error,
+        // which crashed an app on a Mac that rendered fine on Windows, where
+        // the winit adapter clamps. All three survive the same way now: a
+        // widget too small to see beats a dead app.
+        let clamped =
+            AppKitWidgetPlacement::new(widget, WidgetKind::Button, None, 0.0, 0.0, 0.0, 10.0)
+                .expect("zero size is clamped, not refused");
+        assert!(
+            clamped.width >= 1.0 && clamped.height >= 1.0,
+            "a zero dimension must clamp up to at least one pixel, got {}x{}",
+            clamped.width,
+            clamped.height
+        );
+
+        // Negative and non-finite geometry are still refused: a clamp cannot
+        // rescue a value that is not a coordinate at all, and letting it
+        // through would place a widget at a nonsense location.
         assert!(matches!(
-            AppKitWidgetPlacement::new(widget, WidgetKind::Button, None, 0.0, 0.0, 0.0, 10.0),
+            AppKitWidgetPlacement::new(widget, WidgetKind::Button, None, -1.0, 0.0, 10.0, 10.0),
             Err(UiAdapterError::Unsupported(_))
         ));
         assert!(matches!(
