@@ -442,6 +442,46 @@
       border: 1px solid rgba(244, 220, 116, .35);
     }
 
+    /* A gallery of real apps the AI built, one screenshot each. Proof beats
+       prose: these are the actual first frames, not mockups. */
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 18px;
+      margin-top: 26px;
+    }
+    .shot {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--panel);
+    }
+    .shot figure { margin: 0; }
+    .shot img {
+      display: block;
+      width: 100%;
+      height: 170px;
+      object-fit: cover;
+      object-position: top center;
+      background: #eef0f4;
+      border-bottom: 1px solid var(--line);
+    }
+    .shot figcaption {
+      padding: 12px 14px;
+    }
+    .shot .req {
+      color: var(--text);
+      font-size: 13.5px;
+      font-family: var(--sans);
+    }
+    .shot .req::before { content: "\201C"; }
+    .shot .req::after { content: "\201D"; }
+    .shot .made {
+      margin-top: 4px;
+      color: var(--quiet);
+      font-size: 11.5px;
+    }
+
     /* Troubleshooting: collapsible details, matching the FAQ feel. */
     .trouble {
       max-width: 68ch;
@@ -693,11 +733,42 @@
     <section class="section" id="what-to-expect">
       <div class="wrap">
         <p class="label">What to expect</p>
-        <h2>It writes real apps, not magic.</h2>
+        <h2>It writes real apps, and checks its own work.</h2>
         <div class="prose">
-          <p>The AI writes a real, working app -- not a mockup. It is at its best with <strong>focused apps</strong>: a small tool, a form, a calculator, a utility, a simple game. Give it one clear job and it does well.</p>
-          <p>It is <strong>not</strong> going to one-shot a large, complex app from a one-line request. If you ask for something sprawling, expect to narrow it down or make it in pieces.</p>
-          <p>If a run stalls or takes too long, Krate stops it after three minutes and tells you so. Just <strong>run the command again</strong> -- it often works on the second try. Or skip the AI and start from a built-in template, then edit it:</p>
+          <p>When you run <code>krate create ... --agent claude</code>, the AI does not write blind. It is handed a full reference to what Krate can do, then works in a <strong>loop</strong>: write the code, run Krate's own checker, read exactly what failed, fix it -- and it does not stop until the app builds, imports only what it declared, and actually runs. What you get is a real, working <code>.krate</code>, not a mockup.</p>
+          <p>It is at its best with <strong>focused apps</strong>: a tool, a form, a game, a utility. Each of these was built from a single plain-English line, and each is a real working app:</p>
+        </div>
+
+        <div class="gallery">
+          <div class="shot"><figure>
+            <img src="/app-shots/calc.png" alt="A calculator app with a grid of number and operator buttons and a display showing 33" loading="lazy" />
+            <figcaption><span class="req">a calculator with buttons</span><p class="made">a full clickable keypad that evaluates what you type</p></figcaption>
+          </figure></div>
+          <div class="shot"><figure>
+            <img src="/app-shots/pomodoro.png" alt="A pomodoro timer with a circular orange progress ring and a large countdown" loading="lazy" />
+            <figcaption><span class="req">a pomodoro timer with a ring</span><p class="made">a circular countdown drawn on a canvas</p></figcaption>
+          </figure></div>
+          <div class="shot"><figure>
+            <img src="/app-shots/maze.png" alt="A randomly generated maze with a player dot and a green exit square" loading="lazy" />
+            <figcaption><span class="req">a maze you can walk with arrow keys</span><p class="made">a generated maze, a player, an exit</p></figcaption>
+          </figure></div>
+          <div class="shot"><figure>
+            <img src="/app-shots/todo.png" alt="A todo list app with a text field, checkboxes, and an add-task button" loading="lazy" />
+            <figcaption><span class="req">a todo list that saves</span><p class="made">checkboxes that are still there next time</p></figcaption>
+          </figure></div>
+          <div class="shot"><figure>
+            <img src="/app-shots/converter.png" alt="A miles to kilometers converter showing 26.2 miles equals 42.164 km" loading="lazy" />
+            <figcaption><span class="req">a miles to kilometers converter</span><p class="made">live conversion as you type</p></figcaption>
+          </figure></div>
+          <div class="shot"><figure>
+            <img src="/app-shots/imgview.png" alt="An image viewer window with a button to pick a PNG file" loading="lazy" />
+            <figcaption><span class="req">an image viewer</span><p class="made">pick a PNG through a dialog and show it</p></figcaption>
+          </figure></div>
+        </div>
+
+        <div class="prose" style="margin-top:26px">
+          <p>It <strong>will not</strong> one-shot a large, sprawling app from one line -- narrow it down, or build it in pieces. Authoring iterates, so a run can take a few minutes; Krate shows a heartbeat while it works, and if it stops early it tells you how far the checker got and what remained. Running the same command again usually finishes it.</p>
+          <p>You can also skip the AI and start from a built-in template offline, then edit it:</p>
         </div>
         <div class="cmd" style="max-width:66ch;margin-top:16px">
           <pre id="cmd-4"><span class="p">krate</span> create <span class="s">"a checklist"</span> --output ./mytodo --kind checklist</pre>
@@ -734,7 +805,7 @@
           <details>
             <summary>The AI run hangs or takes forever</summary>
             <div class="answer">
-              <p>While it works, Krate prints a dot every few seconds so you can see it is alive. If it does not finish in three minutes, Krate stops it on its own and tells you. Run the same command again -- it often works on the second try. If it keeps stalling, start from a template instead: add <code>--kind checklist</code> and edit what it gives you.</p>
+              <p>While it works, Krate prints a dot every few seconds so you can see it is alive. Authoring iterates -- write, check, fix -- so a few minutes is normal. If it runs long and stops, Krate tells you how far its checker got, so you know what remained; running the same command again usually finishes it. If it keeps stalling, start from a template instead: add <code>--kind checklist</code> and edit what it gives you. You can also give it more time with <code>KRATE_AUTHOR_TIMEOUT_SECS</code>.</p>
             </div>
           </details>
           <details>

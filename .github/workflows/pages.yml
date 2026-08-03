@@ -76,6 +76,10 @@ jobs:
           mkdir -p _site/reports
           cp docs/landing/reports.html _site/reports/index.html
           cp docs/landing/*.png _site/
+          # Screenshots of the real apps the AI built, shown on the
+          # make-an-app-with-AI page (which references them at /app-shots/).
+          mkdir -p _site/app-shots
+          cp docs/landing/app-shots/*.png _site/app-shots/ 2>/dev/null || true
           cp -R docs/book/book _site/docs
           # Standalone doc pages (e.g. the make-an-app-with-AI guide) that the
           # landing page links to at /docs/pages/. Copied after the book so the
