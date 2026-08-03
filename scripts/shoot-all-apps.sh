@@ -40,6 +40,7 @@ filetree:no
 convert:no
 dashboard:no
 weather:no
+timer:no
 keyvault:yes
 "
 
