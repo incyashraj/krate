@@ -46,6 +46,7 @@ impl Image {
     }
 
     // Alpha-composite src (straight rgba) over the existing pixel.
+    #[allow(dead_code)]
     #[inline]
     fn over(&mut self, x: usize, y: usize, src: [f32; 4]) {
         if x >= self.w || y >= self.h {
@@ -89,9 +90,16 @@ impl Image {
     fn to_rgba8(&self) -> Vec<u8> {
         let mut out = Vec::with_capacity(self.w * self.h * 4);
         for p in &self.px {
-            for c in 0..4 {
-                let v = (p[c].clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
-                out.push(v);
+            let a = (p[3].clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+            // Zero the color channels of fully-transparent pixels so no stray color
+            // leaks at edges under straight-alpha compositing.
+            if a == 0 {
+                out.extend_from_slice(&[0, 0, 0, 0]);
+            } else {
+                for c in 0..3 {
+                    out.push((p[c].clamp(0.0, 1.0) * 255.0 + 0.5) as u8);
+                }
+                out.push(a);
             }
         }
         out
@@ -572,10 +580,6 @@ fn shade_ship_sample(
     let ny = (fy - top) / span;
     let max_halfwidth_px = body_max_halfwidth * (fs / 2.0);
 
-    if ny < -0.02 || ny > 1.02 {
-        // still allow fins slightly outside? fins are within [0,1] so skip.
-    }
-
     // hull coverage
     let hw = if ny >= 0.0 && ny <= 1.0 {
         profile(hull, ny) * max_halfwidth_px
@@ -585,7 +589,7 @@ fn shade_ship_sample(
     let dx = fx - cx;
     let nx = if hw > 1e-3 { dx / hw } else { 10.0 }; // -1..1 inside hull
 
-    let mut in_body = ny >= 0.0 && ny <= 1.0 && nx.abs() <= 1.0;
+    let in_body = ny >= 0.0 && ny <= 1.0 && nx.abs() <= 1.0;
 
     // Check fins (accent wings) in normalized space nx in [-1,1] using canvas-relative x.
     // fins defined in normalized space where x is fraction of half-canvas, y is ny.
@@ -624,7 +628,7 @@ fn shade_ship_sample(
     };
 
     // Surface micro-detail: faint noise perturbation for a brushed-metal feel.
-    let n_pert = (value_noise(fx * 0.35, fy * 0.35, seed) - 0.5) * 0.12;
+    let n_pert = (value_noise(fx * 0.35, fy * 0.35, seed) - 0.5) * 0.07;
     normal = normalize3([normal[0] + n_pert, normal[1] - n_pert * 0.5, normal[2]]);
 
     // --- Lighting ---
@@ -641,9 +645,15 @@ fn shade_ship_sample(
     let edge = 1.0 - dome; // near 1 at hull edges
     let rim = smoothstep(0.72, 1.0, edge) * (dot3(normal, light).max(0.0)) * 0.8;
 
-    // base albedo: body or accent (fins)
+    // base albedo: body or accent (fins). Wings use a darker, desaturated metal
+    // version of the accent so they read as painted plates, not glowing panels.
+    let wing_albedo = [
+        params.accent[0] * 0.62 + params.body[0] * 0.18,
+        params.accent[1] * 0.62 + params.body[1] * 0.18,
+        params.accent[2] * 0.62 + params.body[2] * 0.18,
+    ];
     let mut albedo = if in_fin && !in_body {
-        params.accent
+        wing_albedo
     } else if in_fin && in_body {
         // where fin overlaps body, blend
         [
@@ -679,8 +689,6 @@ fn shade_ship_sample(
     }
     // longitudinal seams near |nx| ~ 0.5
     if in_body {
-        let seam = ((nx.abs() - 0.52).abs()).min((nx.abs() - 0.0).abs());
-        let _ = seam;
         let d = (nx.abs() - 0.5).abs();
         if d < 0.03 {
             panel_dark += (1.0 - d / 0.03) * 0.35;
@@ -692,18 +700,23 @@ fn shade_ship_sample(
 
     // Wings: darken toward their outboard trailing edge and tone down the
     // specular so they read as solid angled metal plates, not glowing glass.
-    let (spec_k, rim_k, wing_shade) = if is_wing {
-        // shade from a bit of noise + a gradient so the plate isn't a flat fill
-        let plate = 0.72 + 0.18 * (value_noise(fx * 0.25, fy * 0.25, seed ^ 0x55) - 0.5) * 2.0;
-        (0.35f32, 0.0f32, plate.clamp(0.5, 1.0))
+    let (spec_k, rim_k, wing_shade, wing_edge) = if is_wing {
+        // Give the plate depth: darker toward the outboard tip and trailing (lower)
+        // portion; a thin bright leading edge on the light-facing (upper/left) side.
+        let outboard = smoothstep(0.35, 1.0, fin_nx.abs()); // 0 near body, 1 at tip
+        let trailing = smoothstep(0.35, 0.95, ny); // 0 leading, 1 trailing
+        let plate = (1.0 - outboard * 0.32 - trailing * 0.28).clamp(0.42, 1.0);
+        // leading edge: thin bright bevel where the wing meets the airflow (upper-left)
+        let lead = smoothstep(0.30, 0.05, ny) * (0.6 + 0.4 * smoothstep(0.0, -0.6, fin_nx));
+        (0.30f32, 0.0f32, plate, lead * 0.5)
     } else {
-        (0.9f32, 0.9f32, 1.0f32)
+        (0.9f32, 0.9f32, 1.0f32, 0.0f32)
     };
 
     let mut rgb = [0.0f32; 3];
     for i in 0..3 {
         let lit = albedo[i] * (ambient + diffuse * 0.95);
-        rgb[i] = (lit + spec * spec_k + rim * rim_k) * wing_shade;
+        rgb[i] = (lit + spec * spec_k + rim * rim_k) * wing_shade + wing_edge;
         rgb[i] *= 1.0 - panel_dark;
     }
 
@@ -732,8 +745,6 @@ fn shade_ship_sample(
 
     // --- Engine glow at the tail ---
     if in_body {
-        let gd = ((ny - 0.98).max(0.0)) ; // near tail
-        let _ = gd;
         let tail = smoothstep(0.82, 1.0, ny);
         if tail > 0.0 {
             // a couple of engine nozzles
@@ -775,7 +786,6 @@ fn gen_projectile(w: usize, h: usize, core: [f32; 3], glow: [f32; 3]) -> Image {
     for y in 0..h {
         for x in 0..w {
             let fx = x as f32 + 0.5;
-            let fy = y as f32 + 0.5;
             // vertical bolt: capsule shape, bright core, soft glow
             let dx = (fx - cx).abs();
             // taper the ends
@@ -788,11 +798,10 @@ fn gen_projectile(w: usize, h: usize, core: [f32; 3], glow: [f32; 3]) -> Image {
             let glow_a = smoothstep(glow_w, 0.0, dx) * taper * 0.6;
 
             let mut rgb = [0.0f32; 3];
-            let mut a = 0.0f32;
             for i in 0..3 {
                 rgb[i] = glow[i] * glow_a + core[i] * core_a;
             }
-            a = (glow_a + core_a).min(1.0);
+            let a = (glow_a + core_a).min(1.0);
             // white-hot center
             for i in 0..3 {
                 rgb[i] = (rgb[i] + core_a * 0.6).min(1.0);
@@ -832,10 +841,11 @@ fn gen_asteroid(size: usize, seed: u32) -> Image {
         (rng & 0xFFFF) as f32 / 65535.0
     };
     let mut craters = Vec::new();
-    for _ in 0..6 {
+    for _ in 0..7 {
         let ca = next() * std::f32::consts::TAU;
-        let cr = next() * 0.55;
-        let crad = 0.10 + next() * 0.16;
+        // bias craters away from the dead center so they don't read as a face
+        let cr = 0.22 + next() * 0.46;
+        let crad = 0.08 + next() * 0.13;
         craters.push((cr * ca.cos(), cr * ca.sin(), crad));
     }
 
@@ -880,8 +890,8 @@ fn gen_asteroid(size: usize, seed: u32) -> Image {
                     }
 
                     let ndl = dot3(normal, light).max(0.0);
-                    let ambient = 0.22;
-                    let base_grey = 0.42 + (fbm(fx * 0.05, fy * 0.05, 3, seed) - 0.5) * 0.14;
+                    let ambient = 0.30;
+                    let base_grey = 0.52 + (fbm(fx * 0.05, fy * 0.05, 3, seed) - 0.5) * 0.16;
                     // slight brown/warm tint
                     let albedo = [base_grey * 1.02, base_grey * 0.97, base_grey * 0.9];
                     let mut rgb = [0.0f32; 3];
@@ -986,18 +996,18 @@ fn main() {
 
     // 3b. Enemy B: bulky orange gunship, wide blocky hull, stubby wings.
     let enemy_b_hull = [
-        (0.00, 0.34), // blunt nose
-        (0.16, 0.5),
-        (0.36, 0.72),
-        (0.58, 0.82), // very wide body
-        (0.76, 0.78),
-        (0.90, 0.6),
-        (1.00, 0.5),
+        (0.00, 0.44), // blunt wide nose
+        (0.18, 0.62),
+        (0.40, 0.78),
+        (0.60, 0.84), // wide body, only a gentle taper
+        (0.80, 0.80),
+        (0.92, 0.72),
+        (1.00, 0.64),
     ];
     let enemy_b_fins = vec![
-        // stubby side pods
-        vec![(-0.62, 0.36), (-0.98, 0.44), (-0.98, 0.72), (-0.6, 0.7)],
-        vec![(0.62, 0.36), (0.98, 0.44), (0.98, 0.72), (0.6, 0.7)],
+        // stubby side gun pods, further out and blockier
+        vec![(-0.66, 0.30), (-1.02, 0.36), (-1.02, 0.74), (-0.64, 0.72)],
+        vec![(0.66, 0.30), (1.02, 0.36), (1.02, 0.74), (0.64, 0.72)],
     ];
     let enemy_b = render_ship(
         112,
@@ -1020,7 +1030,7 @@ fn main() {
     emit(dir, "projectile", &proj);
 
     // 5. Asteroid
-    let ast = gen_asteroid(96, 424242);
+    let ast = gen_asteroid(96, 9137);
     emit(dir, "asteroid", &ast);
 
     println!("done.");
