@@ -4990,7 +4990,10 @@ fn preflight_toolchain_report_json(output: &Path) -> Result<()> {
 fn install_command_line(cmd: &[String]) -> String {
     let joined = cmd.join(" ");
     if cmd.first().map(String::as_str) == Some("curl") {
-        format!("{joined} | sh")
+        // Match what run_install_command actually pipes: -y and
+        // --no-modify-path, so someone who copies the printed line gets the
+        // same non-interactive, profile-safe install Krate runs itself.
+        format!("{joined} | sh -s -- -y --no-modify-path")
     } else {
         joined
     }
@@ -5006,8 +5009,14 @@ fn run_install_command(cmd: &[String]) -> Result<()> {
             .stdout(std::process::Stdio::piped())
             .spawn()
             .context("run curl for rustup")?;
+        // -y: non-interactive, accept defaults. --no-modify-path: do NOT touch
+        // the user's shell profile. rustup's profile edit failed outright on a
+        // first user whose .bash_profile was not writable ("could not amend
+        // shell profile ... Permission denied"), which killed the whole
+        // install. Krate finds the toolchain through rustup's own bin dir
+        // (rustup_toolchain_bin), so it never needed the profile edited anyway.
         let sh = ProcessCommand::new("sh")
-            .args(["-s", "--", "-y"])
+            .args(["-s", "--", "-y", "--no-modify-path"])
             .stdin(curl.stdout.context("curl produced no output")?)
             .status()
             .context("run the rustup installer")?;
