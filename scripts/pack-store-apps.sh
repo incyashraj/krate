@@ -41,9 +41,9 @@ build_env() {
 # pipeline probe), nova2 (its art only exists bundled, packed elsewhere), and
 # the CLI dev tools cat/curl/clock/diceroll.
 # bounce, chart, and cubes are already served from evidence/ported (they back
-# the short krate.tech/cubes.krate URLs), so they are not repeated here.
+# the short krate.tech/cubes.krate URLs), and notes is served from its release
+# as krate.tech/notes.krate -- none are repeated here.
 APPS=(
-  krate-notes
   krate-checklist
   krate-paint
   krate-keyvault
