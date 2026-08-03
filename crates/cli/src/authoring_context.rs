@@ -206,13 +206,24 @@ what stops std's unwinding and formatting machinery dragging its own I/O in.\n\n
 ## std or no_std -- pick by your dependencies\n\n\
 - **No dependencies beyond the bindings?** Use plain std. `krate-notes` is a \
 shipped GUI app that does exactly this and imports zero `wasi:*`.\n\
-- **Any real dependency (a decoder, a parser, `rand`)?** Use `#![no_std]` + \
-`extern crate alloc;`. A crate that never touches the OS still leaks through \
-std's panic path. Depend on the `krate` SDK, which owns the allocator, \
-`#[panic_handler]`, and the `mem*` intrinsics -- the starter has all three.\n\n\
-`no_std` needs `std_feature = true` under `[package.metadata.component.bindings]` \
-in `Cargo.toml`, which puts the generated `impl std::error::Error` behind a \
-feature nobody turns on. Leave that line alone.\n\n\
+- **Any real dependency (a decoder, a parser, `rand`), or a lot of logic where \
+a stray panic is likely?** Make it `#![no_std]`. Even a crate that never \
+touches the OS leaks through std's panic path.\n\n\
+Converting the skeleton to `#![no_std]` is a checklist -- miss a step and it \
+fails to build with \"no global memory allocator found\" or \"`#[panic_handler]` \
+required\":\n\
+\u{20}\u{20}1. put `#![no_std]` at the top of `src/lib.rs`, then `extern crate alloc;`, \
+then `extern crate krate as _krate_runtime;`\n\
+\u{20}\u{20}2. KEEP the `krate` dependency in `Cargo.toml` -- do NOT remove it. It is \
+what provides the allocator, `#[panic_handler]`, and the `mem*` intrinsics a \
+`no_std` guest needs. This is the step that is most often missed.\n\
+\u{20}\u{20}3. keep `std_feature = true` under \
+`[package.metadata.component.bindings]`, which puts the generated \
+`impl std::error::Error` behind a feature nobody turns on.\n\
+\u{20}\u{20}4. build strings with a `pure_string`-style helper and allocate directly; \
+avoid `format!`, `.unwrap()`, and `a[i]` indexing.\n\n\
+`apps/krate-contacts` and `apps/krate-fractal` are shipped `no_std` GUI apps to \
+copy this wiring from.\n\n\
 ## A dependency that needs randomness (getrandom / rand / uuid)\n\n\
 These do not build on a target with no OS entropy unless a backend is \
 registered. Do not hand-shim it. Add `features = [\"getrandom-backend\"]` to the \
