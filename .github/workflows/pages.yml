@@ -12,6 +12,7 @@ on:
       - "docs/landing/**"
       - "docs/open/**"
       - "docs/cloud/**"
+      - "docs/pages/**"
       - "docs/answers/**"
       - "scripts/build-store.sh"
       - "scripts/store-listing.py"
@@ -76,6 +77,12 @@ jobs:
           cp docs/landing/reports.html _site/reports/index.html
           cp docs/landing/*.png _site/
           cp -R docs/book/book _site/docs
+          # Standalone doc pages (e.g. the make-an-app-with-AI guide) that the
+          # landing page links to at /docs/pages/. Copied after the book so the
+          # book output does not clobber the pages dir. Without this the link
+          # from the landing page 404s.
+          mkdir -p _site/docs/pages
+          cp docs/pages/*.html _site/docs/pages/ 2>/dev/null || true
           # The custom domain lives in the built artifact, not in the branch, so
           # it has to be copied on every deploy. Without it Pages forgets the
           # domain and krate.tech stops resolving to this site.
