@@ -1,0 +1,7 @@
+# getrandom's custom backend is selected by this cfg, not a cargo feature. With
+# it set here, a plain `cargo component build --release` picks up the SDK's
+# getrandom backend and routes entropy to krate:random/bytes -- no environment
+# variable to remember. Only an app that pulls getrandom (directly or through a
+# crate like `rand`) needs this file; apps without it should not carry the flag.
+[build]
+rustflags = ["--cfg", "getrandom_backend=\"custom\""]

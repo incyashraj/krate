@@ -1,0 +1,29 @@
+[app]
+id = "dev.krate.diceroll"
+name = "krate-diceroll"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_diceroll.wasm"
+world = "krate:app/cli@0.1.0"
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read how many dice to roll"
+required = false
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print the rolled dice"
+required = true
+
+[[capabilities]]
+cap = "io.stderr"
+rationale = "Print errors"
+required = false
+
+# The one capability the getrandom-backed dependency needs. `rand` seeds itself
+# from getrandom, the SDK routes that to here, and the app has to ask for it --
+# a person reading this list sees "entropy" named, which is the point.
+[[capabilities]]
+cap = "random.bytes"
+rationale = "Seed the dice-roll generator with real entropy"
+required = true

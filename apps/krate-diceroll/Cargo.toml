@@ -1,0 +1,44 @@
+[package]
+name = "krate-diceroll"
+version = "0.1.0-dev"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/incyashraj/krate"
+rust-version = "1.91"
+
+[dependencies]
+# The SDK, with its getrandom backend turned on. That backend routes every
+# getrandom draw to krate:random/bytes, so an ordinary crate that pulls
+# getrandom (here, `rand`) works with no wiring in this app at all -- the whole
+# point of the proof. The app must still declare the random.bytes capability.
+krate = { path = "../../crates/bindings-rust", features = ["getrandom-backend"] }
+wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
+# A real, unmodified ecosystem crate that depends on getrandom. Nothing here
+# knows it is running on Krate. This is exactly the shape of a dependency a
+# reviewer asked whether Krate could support.
+rand = { version = "0.9", default-features = false, features = ["small_rng", "os_rng"] }
+
+[lib]
+crate-type = ["cdylib"]
+
+[package.metadata.component]
+package = "krate:diceroll"
+
+[package.metadata.component.target]
+path = "../../wit/krate/phase2"
+world = "cli"
+
+[package.metadata.component.target.dependencies]
+"krate:io" = { path = "../../wit/krate/phase2/deps/io" }
+"krate:fs" = { path = "../../wit/krate/phase2/deps/fs" }
+"krate:net" = { path = "../../wit/krate/phase2/deps/net" }
+"krate:time" = { path = "../../wit/krate/phase2/deps/time" }
+"krate:locale" = { path = "../../wit/krate/phase2/deps/locale" }
+"krate:resources" = { path = "../../wit/krate/phase2/deps/resources" }
+"krate:store" = { path = "../../wit/krate/phase2/deps/store" }
+"krate:random" = { path = "../../wit/krate/phase2/deps/random" }
+
+[profile.release]
+panic = "abort"
+
+[workspace]

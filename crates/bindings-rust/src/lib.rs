@@ -685,6 +685,40 @@ pub mod random {
     }
 }
 
+// The getrandom custom backend. Ordinary crates -- rand, uuid, ahash, and a
+// large slice of the ecosystem -- depend on getrandom, and on a target with no
+// OS entropy source (which a Krate component is: no wasi:*) getrandom will not
+// build unless a backend is registered. Downstream registration is exactly what
+// getrandom's `custom` feature plus `--cfg getrandom_backend="custom"` is for:
+// getrandom calls the symbol below for every draw.
+//
+// Routing entropy through `krate:random/bytes` means an app that pulls getrandom
+// works with no per-app wiring, at the cost of declaring the `random.bytes`
+// capability -- which is correct, because it really is asking the host for
+// entropy. Without this feature nothing changes: an app that touches no
+// getrandom-dependent crate never links it.
+//
+// The signature is getrandom 0.3's: fill `len` bytes at `dest`, return a custom
+// error code on failure. It is `unsafe` because getrandom hands over a raw
+// buffer; the length is exactly what getrandom asked for.
+#[cfg(all(feature = "getrandom-backend", target_arch = "wasm32"))]
+#[no_mangle]
+unsafe extern "Rust" fn __getrandom_v03_custom(
+    dest: *mut u8,
+    len: usize,
+) -> Result<(), getrandom::Error> {
+    // SAFETY: getrandom guarantees `dest` points at `len` writable bytes.
+    let buffer = core::slice::from_raw_parts_mut(dest, len);
+    match random::fill(buffer) {
+        Ok(()) => Ok(()),
+        // The host refused (the app did not get the random.bytes capability) or
+        // errored. Report a custom-source failure rather than pretend success:
+        // a caller handed a zeroed buffer while believing it is random is worse
+        // off than one that sees the error.
+        Err(_) => Err(getrandom::Error::UNEXPECTED),
+    }
+}
+
 pub mod locale {
     pub use crate::bindings::krate::locale::types::{DateStyle, LocaleId, NumberStyle};
     use alloc::string::String;

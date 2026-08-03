@@ -1841,6 +1841,7 @@ name = "krate"
 version = "0.1.0-dev"
 dependencies = [
  "dlmalloc",
+ "getrandom 0.3.4",
  "wit-bindgen-rt",
 ]
 

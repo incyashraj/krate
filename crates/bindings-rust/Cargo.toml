@@ -23,9 +23,20 @@ include = [
 # get the `std::error::Error` impls. Guests never turn it on.
 default = []
 std = []
+# Provide the getrandom custom backend so ordinary crates that pull getrandom
+# (rand, uuid, and much of the ecosystem) work on Krate without the app writing
+# any wiring. Entropy is routed to `krate:random/bytes`, so an app that turns
+# this on must declare the `random.bytes` capability. Off by default: it adds a
+# dependency and forces `--cfg getrandom_backend="custom"`, which only an app
+# that actually pulls getrandom should take on.
+getrandom-backend = ["dep:getrandom"]
 
 [dependencies]
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
+# Only pulled in when an app opts into the getrandom backend. `custom` is the
+# feature that lets a downstream register its own source; the `--cfg
+# getrandom_backend="custom"` flag (set by the app's build) is what activates it.
+getrandom = { version = "0.3", default-features = false, optional = true }
 # The global allocator for a `no_std` guest. This is the same allocator `std`
 # uses on wasm32-wasip1, so it is a known-good, no-surprises choice; the guest
 # gets `alloc` (Vec/String) with zero boilerplate and the SDK owns the wiring so
