@@ -1,0 +1,31 @@
+[app]
+id = "dev.krate.clip"
+name = "Clipboard Probe"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_clip.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window that shows the written and read-back text"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report the round-trip result on exit for automated runs"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated tests"
+required = true
+
+[[capabilities]]
+cap = "ui.clipboard:write"
+rationale = "Write a known string to the host clipboard"
+required = true
+
+[[capabilities]]
+cap = "ui.clipboard:read"
+rationale = "Read the string back to prove the round-trip"
+required = true
