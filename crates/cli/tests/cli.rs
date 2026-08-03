@@ -3307,6 +3307,72 @@ fn sample_manifest(app: &str) -> PathBuf {
     workspace_path(PathBuf::from(format!("apps/{app}/manifest.toml")))
 }
 
+#[test]
+fn check_app_reports_a_missing_layout_without_building() {
+    // No build tools needed: check-app must fail fast, and clearly, when the
+    // directory is not an app. This is the first thing an agent hits if it
+    // points check-app at the wrong place.
+    let empty = tempfile::tempdir().expect("temp dir");
+    let output = krate()
+        .arg("check-app")
+        .arg(empty.path())
+        .output()
+        .expect("run check-app");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "check-app on an empty dir must fail: {stderr}"
+    );
+    // Exit 10 is the layout stage. Distinct code so an agent can branch.
+    assert_eq!(output.status.code(), Some(10), "layout stage exit code");
+    assert!(
+        stderr.contains("not an app directory") && stderr.contains("Cargo.toml"),
+        "should name what is missing: {stderr}"
+    );
+}
+
+#[test]
+fn check_app_passes_a_known_good_app_and_emits_json() {
+    // The oracle's happy path against a real CLI app that runs clean headless
+    // with no arguments. Builds it, checks krate:*-only imports, and runs it --
+    // the same guarantees a successful `create` gives. krate-diceroll also pulls
+    // a real getrandom-dependent crate (rand) through the SDK backend, so a pass
+    // here doubles as a guard that ordinary dependencies still resolve to a
+    // 0-wasi component. Skipped where the build toolchain is absent, rather than
+    // weakened.
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+    let app_dir = workspace_path(PathBuf::from("apps/krate-diceroll"));
+    let output = krate()
+        .arg("check-app")
+        .arg(&app_dir)
+        .arg("--json")
+        .output()
+        .expect("run check-app");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "check-app on krate-cat should pass.\nstdout: {stdout}\nstderr: {stderr}"
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("check-app --json emits one JSON object");
+    assert_eq!(value["ok"], serde_json::Value::Bool(true));
+    // Every stage a CLI app goes through, and only krate:* imports.
+    let stages = value["stages"].as_array().expect("stages array");
+    assert!(stages.iter().any(|s| s == "build"));
+    assert!(stages.iter().any(|s| s == "imports"));
+    assert!(stages.iter().any(|s| s == "run"));
+    let imports = value["imports"].as_array().expect("imports array");
+    assert!(
+        imports.iter().all(|i| i.as_str().unwrap().starts_with("krate:")),
+        "a passing app imports only krate:*: {imports:?}"
+    );
+}
+
 fn configured_hello_component() -> Option<PathBuf> {
     configured_component_from_env("KRATE_HELLO_WASM", "hello component test")
 }

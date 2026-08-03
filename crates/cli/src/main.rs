@@ -186,6 +186,38 @@ enum Command {
     Version,
     /// Check the local development environment.
     Doctor,
+
+    /// Build, import-check, and run an app directory, printing one clear
+    /// verdict. This is the oracle an AI author (or a human, or CI) runs after
+    /// every change: it compiles the crate with the right toolchain, confirms
+    /// the component imports only Krate APIs, and runs it once headless. On
+    /// failure it names the stage and the fix -- including mapping a leaked
+    /// `wasi:*` import back to the no_std discipline that removes it. Prints
+    /// `OK` and exits 0 only when every stage passes.
+    CheckApp {
+        /// The app directory: the folder holding Cargo.toml, src/lib.rs, and
+        /// manifest.toml. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+
+        /// Paint the app's first frame to this PNG after it runs, so a GUI
+        /// app's output can be seen. Ignored for CLI apps that open no window.
+        #[arg(long, value_name = "FILE")]
+        shoot: Option<PathBuf>,
+
+        /// Stop after the import check: build and confirm krate:*-only imports,
+        /// but do not run the app. Useful when the app needs input or resources
+        /// a headless run cannot provide.
+        #[arg(long)]
+        no_run: bool,
+
+        /// Print one machine-readable JSON object instead of human lines. The
+        /// object names the stage that failed and carries the actionable fix,
+        /// so an agent can branch on it. Errors are reported as JSON too.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Inspect and validate Phase 2 app manifests.
     Manifest {
         #[command(subcommand)]
@@ -679,6 +711,12 @@ fn run() -> Result<u8> {
             Ok(0)
         }
         Command::Doctor => doctor(),
+        Command::CheckApp {
+            dir,
+            shoot,
+            no_run,
+            json,
+        } => check_app(&dir, shoot.as_deref(), no_run, json),
         Command::Manifest { command } => match command {
             ManifestCommand::Check { file, format } => check_manifest(&file, format),
             ManifestCommand::Explain { file, format } => explain_manifest(&file, format),
@@ -3421,6 +3459,19 @@ const VERIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 /// and rejoin the file name; if even that fails we fall back to joining the file
 /// onto the current dir manually. The bundle was already written to `output`, so
 /// its parent is guaranteed to exist here.
+/// Resolve a path to absolute against the current directory, without requiring
+/// it to exist. Canonicalizes when the path is present (following symlinks),
+/// otherwise joins it onto the current dir. Used by check-app so paths handed to
+/// a child process -- which runs in a different cwd -- resolve to the same file.
+fn absolute_from_cwd(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        return path.to_path_buf();
+    }
+    fs::canonicalize(path)
+        .or_else(|_| std::env::current_dir().map(|cwd| cwd.join(path)))
+        .unwrap_or_else(|_| path.to_path_buf())
+}
+
 fn absolute_output_path(output: &Path) -> Result<PathBuf> {
     if output.is_absolute() {
         return Ok(output.to_path_buf());
@@ -4656,6 +4707,372 @@ fn print_rust_toolchain_status() {
     }
 }
 
+/// The stage of `check-app` a failure happened in. Ordered as the check runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum CheckStage {
+    /// Locating the app files (Cargo.toml, src/lib.rs, manifest.toml).
+    Layout,
+    /// Parsing manifest.toml.
+    Manifest,
+    /// cargo-component build.
+    Build,
+    /// The component imports only krate:* interfaces.
+    Imports,
+    /// A headless run with all grants.
+    Run,
+    /// Painting the app's first frame to a PNG.
+    Shoot,
+}
+
+impl CheckStage {
+    /// The exit code for a failure at this stage. Distinct per stage so an
+    /// agent or CI can branch on *where* it failed without parsing text.
+    fn exit_code(self) -> u8 {
+        match self {
+            CheckStage::Layout => 10,
+            CheckStage::Manifest => 11,
+            CheckStage::Build => 12,
+            CheckStage::Imports => 13,
+            CheckStage::Run => 14,
+            CheckStage::Shoot => 15,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            CheckStage::Layout => "layout",
+            CheckStage::Manifest => "manifest",
+            CheckStage::Build => "build",
+            CheckStage::Imports => "imports",
+            CheckStage::Run => "run",
+            CheckStage::Shoot => "shoot",
+        }
+    }
+}
+
+/// A single failure from `check-app`: which stage, what went wrong, and the
+/// concrete next action. `fix` is the load-bearing field for an AI author --
+/// it turns an opaque failure into an instruction it can act on.
+struct CheckFailure {
+    stage: CheckStage,
+    /// What went wrong, in the tool's own words (compiler output, the leaking
+    /// imports, the failing exit code).
+    detail: String,
+    /// The concrete thing to do about it. Empty when the detail is already the
+    /// whole story.
+    fix: String,
+}
+
+/// Turn a set of non-krate imports into a specific, actionable fix.
+///
+/// This is the piece that makes `check-app` an oracle rather than a linter: a
+/// leaked `wasi:*` import is never the real problem, it is a symptom of the
+/// guest linking std or hitting a panic/alloc path. Name the symptom, name the
+/// cause, and name the cure -- including the getrandom case, which has its own
+/// specific remedy (the SDK backend) rather than the general no_std one.
+fn imports_fix(bad: &[String], app_dir: &Path) -> String {
+    let has_wasi = bad.iter().any(|i| i.starts_with("wasi:"));
+    if !has_wasi {
+        // A non-wasi, non-krate import means the crate reached for a host API
+        // Krate does not model at all -- not a leak, a genuine mismatch.
+        return format!(
+            "This component imports host APIs Krate does not provide: {}. \
+             Krate offers only krate:* interfaces. Remove the dependency or \
+             feature that needs these, or replace it with a krate:* capability \
+             (io, fs, net, time, locale, random, resources, store, and the GUI \
+             world's ui/gfx/audio/speech).",
+            bad.join(", ")
+        );
+    }
+
+    let wants_entropy = bad.iter().any(|i| i.contains("random") || i.contains("getrandom"));
+    let mut fix = String::from(
+        "The guest linked std or hit a reachable panic/alloc path, which drags \
+         in all of std's wasi:* imports and stops the component from \
+         instantiating under Krate. Make the guest no_std:\n\
+         \u{20}\u{20}- put `#![no_std]` at the top of src/lib.rs and add `extern crate alloc;`\n\
+         \u{20}\u{20}- depend on the `krate` SDK (it owns the allocator, panic handler, and mem \
+         intrinsics)\n\
+         \u{20}\u{20}- set `std_feature = true` under `[package.metadata.component.bindings]` in \
+         Cargo.toml so generated `impl std::error::Error` blocks do not force std\n\
+         \u{20}\u{20}- avoid reachable panics: no `format!`, `.unwrap()`, `a[i]` indexing, or \
+         growable-Vec realloc on a hostile path; use the SDK's string/number helpers instead",
+    );
+    if wants_entropy {
+        fix.push_str(
+            "\n\nOne of the leaked imports is entropy. A dependency here pulls getrandom \
+             (rand, uuid, and much of the ecosystem do). Do not hand-shim it: add \
+             `features = [\"getrandom-backend\"]` to the `krate` dependency, add a \
+             `.cargo/config.toml` with `rustflags = [\"--cfg\", \"getrandom_backend=\\\"custom\\\"\"]`, \
+             and declare the `random.bytes` capability in manifest.toml. The SDK then routes \
+             every draw to the host. See apps/krate-diceroll for a working example.",
+        );
+    }
+    let hints = panic_site_hints(app_dir);
+    if !hints.is_empty() {
+        fix.push_str("\n\nLikely panic/alloc sites (a grep, not a proof):");
+        fix.push_str(&hints);
+    }
+    fix
+}
+
+/// Whether the app opens a window, from its manifest capabilities. A GUI app is
+/// run with the `quick` token so it draws a frame and exits instead of blocking
+/// on a window; a CLI app takes no such arg.
+fn manifest_is_gui(manifest: &krate_manifest::Manifest) -> bool {
+    manifest
+        .capabilities
+        .iter()
+        .any(|cap| cap.cap.starts_with("ui.window"))
+}
+
+/// Build, import-check, and run an app directory, printing one verdict.
+///
+/// The feedback oracle: an AI author runs this after every change and fixes
+/// whatever it reports until it prints OK. Stops at the first failing stage and
+/// names both the cause and the fix. Reuses the exact primitives `create` uses
+/// -- the rustup-pinned build, the import checker, a headless run -- so a green
+/// verdict here means the same thing a successful `create` does.
+fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Result<u8> {
+    let outcome = run_check_app(dir, shoot, no_run);
+    match &outcome {
+        Ok(summary) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "ok": true,
+                        "dir": dir.display().to_string(),
+                        "stages": summary.passed,
+                        "imports": summary.imports,
+                        "shoot": summary.shoot.as_ref().map(|p| p.display().to_string()),
+                    })
+                );
+            } else {
+                println!("OK");
+                for stage in &summary.passed {
+                    println!("  {stage} passed");
+                }
+                if let Some(shot) = &summary.shoot {
+                    println!("  wrote {}", shot.display());
+                }
+            }
+            Ok(0)
+        }
+        Err(failure) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "ok": false,
+                        "dir": dir.display().to_string(),
+                        "stage": failure.stage.label(),
+                        "detail": failure.detail,
+                        "fix": failure.fix,
+                    })
+                );
+            } else {
+                eprintln!("FAILED at {}", failure.stage.label());
+                eprintln!();
+                eprintln!("{}", failure.detail.trim_end());
+                if !failure.fix.is_empty() {
+                    eprintln!();
+                    eprintln!("Fix:");
+                    eprintln!("{}", failure.fix.trim_end());
+                }
+            }
+            Ok(failure.stage.exit_code())
+        }
+    }
+}
+
+/// What a passing `check-app` recorded, for the OK summary.
+struct CheckSummary {
+    passed: Vec<&'static str>,
+    imports: Vec<String>,
+    shoot: Option<PathBuf>,
+}
+
+fn run_check_app(
+    dir: &Path,
+    shoot: Option<&Path>,
+    no_run: bool,
+) -> std::result::Result<CheckSummary, CheckFailure> {
+    let mut passed: Vec<&'static str> = Vec::new();
+
+    // Stage: layout. The three files every Krate app has.
+    let manifest_path = dir.join("manifest.toml");
+    for (name, path) in [
+        ("Cargo.toml", dir.join("Cargo.toml")),
+        ("src/lib.rs", dir.join("src/lib.rs")),
+        ("manifest.toml", manifest_path.clone()),
+    ] {
+        if !path.exists() {
+            return Err(CheckFailure {
+                stage: CheckStage::Layout,
+                detail: format!("{} is not an app directory: {name} is missing", dir.display()),
+                fix: "Point check-app at the folder that holds Cargo.toml, src/lib.rs, and \
+                      manifest.toml."
+                    .to_string(),
+            });
+        }
+    }
+    passed.push("layout");
+
+    // Stage: manifest. Parse it now so a bad manifest is named here, not as a
+    // confusing run failure later.
+    let manifest = krate_manifest::Manifest::parse_file(&manifest_path).map_err(|error| {
+        CheckFailure {
+            stage: CheckStage::Manifest,
+            detail: format!("manifest.toml did not parse: {error:#}"),
+            fix: "Fix the manifest so it declares [app] (id, name, version, entry, world) and \
+                  its [[capabilities]]. `krate manifest check manifest.toml` explains the shape."
+                .to_string(),
+        }
+    })?;
+    passed.push("manifest");
+
+    // Stage: build. Reuses component_build_command -> rustup toolchain, so it is
+    // immune to the Homebrew-cargo-shadows-rustup wall.
+    let wasm = build_component_captured(dir).map_err(|detail| CheckFailure {
+        stage: CheckStage::Build,
+        detail,
+        fix: "Fix the compiler errors above. The build uses rustup's toolchain and the \
+              wasm32-wasip1 target; run `krate doctor` if the target or toolchain looks wrong."
+            .to_string(),
+    })?;
+    passed.push("build");
+
+    // Stage: imports. The component must import only krate:*.
+    let wasm_bytes = fs::read(&wasm).map_err(|error| CheckFailure {
+        stage: CheckStage::Build,
+        detail: format!("could not read the built component at {}: {error}", wasm.display()),
+        fix: String::new(),
+    })?;
+    let bad = krate_bundle::imports::non_krate_imports(&wasm_bytes).map_err(|error| {
+        CheckFailure {
+            stage: CheckStage::Imports,
+            detail: format!("could not read the component's imports: {error}"),
+            fix: String::new(),
+        }
+    })?;
+    if !bad.is_empty() {
+        return Err(CheckFailure {
+            stage: CheckStage::Imports,
+            detail: format!("the component imports non-Krate APIs: {}", bad.join(", ")),
+            fix: imports_fix(&bad, dir),
+        });
+    }
+    let imports = krate_bundle::imports::component_imports(&wasm_bytes)
+        .map(|set| set.into_iter().collect())
+        .unwrap_or_default();
+    passed.push("imports");
+
+    if no_run {
+        return Ok(CheckSummary {
+            passed,
+            imports,
+            shoot: None,
+        });
+    }
+
+    // Stage: run. Run the built component with its manifest, headless, all
+    // grants. A GUI app gets the `quick` token so it draws a frame and exits;
+    // a CLI app takes no arg. Untrusted + a fuel budget so a runaway fails here
+    // rather than hanging the check.
+    //
+    // Absolute paths: run_self sets the child's cwd to `dir`, so a wasm or
+    // manifest path relative to *our* cwd would resolve wrong inside the child
+    // (doubling the dir prefix). Canonicalize both against the current dir first.
+    let wasm_str = absolute_from_cwd(&wasm).to_string_lossy().into_owned();
+    let manifest_str = absolute_from_cwd(&manifest_path)
+        .to_string_lossy()
+        .into_owned();
+    let is_gui = manifest_is_gui(&manifest);
+    let mut run_args: Vec<String> = vec![
+        "run".into(),
+        wasm_str.clone(),
+        "--manifest".into(),
+        manifest_str.clone(),
+        "--untrusted".into(),
+        "--auto-grant".into(),
+        "--headless".into(),
+    ];
+    if is_gui {
+        run_args.push("--".into());
+        run_args.push("quick".into());
+    }
+    let run_arg_refs: Vec<&str> = run_args.iter().map(String::as_str).collect();
+    let exit = run_self(dir, &run_arg_refs).map_err(|error| CheckFailure {
+        stage: CheckStage::Run,
+        detail: format!("could not run the app: {error:#}"),
+        fix: String::new(),
+    })?;
+    if exit != 0 {
+        let hint = match exit {
+            4 => " (exit 4 means it exhausted its fuel budget -- a runaway or infinite loop)",
+            5 => " (exit 5 means a capability it needs is not declared in manifest.toml)",
+            _ => "",
+        };
+        return Err(CheckFailure {
+            stage: CheckStage::Run,
+            detail: format!("the app failed to run headless with all grants (exit {exit}){hint}"),
+            fix: "Run it yourself to see its output: \
+                  `krate run <wasm> --manifest manifest.toml --auto-grant`. Set \
+                  KRATE_VERIFY_LOG=/path/to/log to capture what it printed. If it needs a \
+                  capability, declare it in manifest.toml."
+                .to_string(),
+        });
+    }
+    passed.push("run");
+
+    // Stage: shoot (optional). Paint the first frame to a PNG so a GUI app's
+    // output can be seen.
+    let shot = if let Some(png) = shoot {
+        // Absolute so the PNG lands next to where the user ran check-app, not
+        // inside the app dir the child cd's into.
+        let png_str = absolute_from_cwd(png).to_string_lossy().into_owned();
+        let mut shoot_args: Vec<String> = vec![
+            "run".into(),
+            wasm_str,
+            "--manifest".into(),
+            manifest_str,
+            "--auto-grant".into(),
+            "--shoot".into(),
+            png_str,
+        ];
+        if is_gui {
+            shoot_args.push("--".into());
+            shoot_args.push("quick".into());
+        }
+        let shoot_refs: Vec<&str> = shoot_args.iter().map(String::as_str).collect();
+        let shoot_exit = run_self(dir, &shoot_refs).map_err(|error| CheckFailure {
+            stage: CheckStage::Shoot,
+            detail: format!("could not paint the app's frame: {error:#}"),
+            fix: String::new(),
+        })?;
+        if shoot_exit != 0 {
+            return Err(CheckFailure {
+                stage: CheckStage::Shoot,
+                detail: format!("painting the app's frame failed (exit {shoot_exit})"),
+                fix: "The app runs but did not render a frame. A CLI app with no window cannot \
+                      be shot; drop --shoot for it."
+                    .to_string(),
+            });
+        }
+        Some(png.to_path_buf())
+    } else {
+        None
+    };
+
+    Ok(CheckSummary {
+        passed,
+        imports,
+        shoot: shot,
+    })
+}
+
 fn check_manifest(file: &Path, format: OutputFormat) -> Result<u8> {
     let manifest = Manifest::parse_file(file)?;
     let declared_caps = manifest.declared_capabilities()?;
@@ -5883,7 +6300,10 @@ mod create_tests {
             .into_iter()
             .map(String::from)
             .collect();
-        assert!(super::install_command_line(&curl).ends_with("| sh"));
+        // The printed line pipes into a shell and matches what Krate runs
+        // itself: -y for a non-interactive install and --no-modify-path so it
+        // does not fail trying to amend a shell profile it cannot write.
+        assert!(super::install_command_line(&curl).ends_with("| sh -s -- -y --no-modify-path"));
 
         // An ordinary command is unchanged; only the piped one is special.
         let cargo: Vec<String> = ["cargo", "install", "cargo-component"]
@@ -5930,5 +6350,85 @@ mod create_tests {
         assert_eq!(app_kind_name(AppKind::Checklist), "checklist");
         assert_eq!(app_kind_name(AppKind::WordFrequency), "word-frequency");
         assert_eq!(app_kind_name(AppKind::VoicePrompter), "voice-prompter");
+    }
+}
+
+#[cfg(test)]
+mod check_app_tests {
+    use super::{imports_fix, manifest_is_gui, CheckStage};
+    use std::path::Path;
+
+    #[test]
+    fn wasi_leak_fix_names_the_no_std_discipline() {
+        let bad = vec![
+            "wasi:cli/stdout@0.2.3".to_string(),
+            "wasi:clocks/wall-clock@0.2.3".to_string(),
+        ];
+        let fix = imports_fix(&bad, Path::new("/nonexistent"));
+        // The cause and the cure, not just the symptom.
+        assert!(fix.contains("no_std"), "should name no_std: {fix}");
+        assert!(fix.contains("#![no_std]"));
+        assert!(fix.contains("panic"), "should name the panic path");
+        // Not the getrandom branch: no entropy import was leaked.
+        assert!(!fix.contains("getrandom-backend"));
+    }
+
+    #[test]
+    fn wasi_leak_with_entropy_points_at_the_getrandom_backend() {
+        let bad = vec![
+            "wasi:cli/stdout@0.2.3".to_string(),
+            "wasi:random/random@0.2.3".to_string(),
+        ];
+        let fix = imports_fix(&bad, Path::new("/nonexistent"));
+        assert!(
+            fix.contains("getrandom-backend"),
+            "entropy leak should point at the SDK backend: {fix}"
+        );
+        assert!(fix.contains("random.bytes"), "should name the capability");
+        assert!(fix.contains("krate-diceroll"), "should point at the example");
+    }
+
+    #[test]
+    fn a_non_wasi_host_import_reads_as_a_genuine_mismatch_not_a_leak() {
+        let bad = vec!["example:host/api@0.1.0".to_string()];
+        let fix = imports_fix(&bad, Path::new("/nonexistent"));
+        // Not a std leak: a real "Krate does not model this" message.
+        assert!(!fix.contains("no_std"), "should not blame std: {fix}");
+        assert!(fix.contains("does not provide") || fix.contains("only krate:*"));
+    }
+
+    #[test]
+    fn every_stage_has_a_distinct_nonzero_exit_code() {
+        use std::collections::BTreeSet;
+        let stages = [
+            CheckStage::Layout,
+            CheckStage::Manifest,
+            CheckStage::Build,
+            CheckStage::Imports,
+            CheckStage::Run,
+            CheckStage::Shoot,
+        ];
+        let codes: BTreeSet<u8> = stages.iter().map(|s| s.exit_code()).collect();
+        assert_eq!(codes.len(), stages.len(), "exit codes must be distinct");
+        assert!(codes.iter().all(|&c| c != 0), "no stage exits 0 on failure");
+    }
+
+    #[test]
+    fn a_window_capability_marks_an_app_as_gui() {
+        fn manifest(caps: &str) -> krate_manifest::Manifest {
+            krate_manifest::Manifest::parse(&format!(
+                "[app]\nid = \"dev.krate.x\"\nname = \"X\"\nversion = \"0.1.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n{caps}"
+            ))
+            .expect("manifest parses")
+        }
+        let gui = manifest(
+            "\n[[capabilities]]\ncap = \"ui.window:create\"\nrationale = \"t\"\nrequired = true\n",
+        );
+        assert!(manifest_is_gui(&gui));
+        let cli = manifest(
+            "\n[[capabilities]]\ncap = \"io.stdout\"\nrationale = \"t\"\nrequired = true\n",
+        );
+        assert!(!manifest_is_gui(&cli));
     }
 }
