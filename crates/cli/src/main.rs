@@ -208,6 +208,20 @@ enum Command {
         output: PathBuf,
     },
 
+    /// Upload a .krate to a hub and print a URL anyone can `krate run`.
+    ///
+    /// The bundle is stored by the hash of its bytes, so republishing the same
+    /// app returns the same URL. The hub to use comes from KRATE_HUB_URL,
+    /// defaulting to a local dev server at http://127.0.0.1:8787.
+    Publish {
+        /// Path to the .krate bundle to upload.
+        bundle: PathBuf,
+
+        /// Hub to upload to. Overrides the KRATE_HUB_URL environment variable.
+        #[arg(long)]
+        hub: Option<String>,
+    },
+
     /// Author a small app from a request and package it as one shareable
     /// .krate: generate the source, build it, check it imports only Krate
     /// APIs, pack it, and verify its permission wall before writing the file.
@@ -583,6 +597,7 @@ fn run() -> Result<u8> {
             manifest,
             output,
         } => pack_bundle(&file, &manifest, &output),
+        Command::Publish { bundle, hub } => publish_bundle(&bundle, hub.as_deref()),
         Command::Create {
             request,
             output,
@@ -1590,12 +1605,16 @@ fn run_report_command(report: &Path, show_only: bool) -> Result<u8> {
     println!();
     println!("Everything above is what would be sent. It is still only on your computer.");
     println!();
-    println!("Krate will not upload it for you. To send it:");
+    println!("Krate will not upload this report for you -- it can contain your");
+    println!("source and paths, so sending it stays your call. To send it:");
     println!("  1. Copy the text above.");
     println!("  2. Open https://github.com/incyashraj/krate/issues/new");
     println!("  3. Paste it, edit out anything you would rather not share, and post.");
     println!();
     println!("Anything you leave in is public on that page, so read it once more first.");
+    println!();
+    println!("(Sharing a working app is a different thing: `krate publish <app.krate>`");
+    println!("uploads the app and prints a URL anyone can `krate run`.)");
 
     Ok(0)
 }
@@ -2024,6 +2043,90 @@ fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
         println!("included portable assets from {}", assets.display());
     }
     Ok(0)
+}
+
+/// Default hub used when neither `--hub` nor `KRATE_HUB_URL` is set. A local
+/// dev server, so the demo works out of the box once someone runs `krate-hub`.
+const DEFAULT_HUB_URL: &str = "http://127.0.0.1:8787";
+
+/// Upload a `.krate` to a hub and print the URL anyone can `krate run`.
+///
+/// The hub stores by content hash, so this is idempotent: publishing the same
+/// bundle twice hands back the same URL. All the interesting failure modes are
+/// "the hub is not reachable" and "that file is not a bundle", and both get a
+/// plain message rather than a stack of transport errors.
+fn publish_bundle(bundle: &Path, hub_override: Option<&str>) -> Result<u8> {
+    // Only upload something that is actually a bundle. Catching it here means a
+    // wrong path fails locally with a clear message instead of round-tripping
+    // to the hub to be rejected.
+    if !krate_bundle::is_bundle_path(bundle) {
+        anyhow::bail!(
+            "not a .krate bundle: {}\nPack one first with `krate pack` (or `krate create`).",
+            bundle.display()
+        );
+    }
+    let bytes = fs::read(bundle)
+        .with_context(|| format!("could not read bundle {}", bundle.display()))?;
+    if bytes.is_empty() {
+        anyhow::bail!("bundle is empty: {}", bundle.display());
+    }
+
+    let hub = hub_override
+        .map(str::to_string)
+        .or_else(|| std::env::var("KRATE_HUB_URL").ok())
+        .unwrap_or_else(|| DEFAULT_HUB_URL.to_string());
+    let endpoint = format!("{}/publish", hub.trim_end_matches('/'));
+
+    let response = match ureq::post(&endpoint)
+        .set("Content-Type", "application/octet-stream")
+        .send_bytes(&bytes)
+    {
+        Ok(response) => response,
+        Err(ureq::Error::Status(code, response)) => {
+            let detail = response
+                .into_string()
+                .unwrap_or_else(|_| "(no detail)".to_string());
+            anyhow::bail!("the hub rejected the bundle (HTTP {code}): {}", detail.trim());
+        }
+        Err(ureq::Error::Transport(err)) => {
+            anyhow::bail!(
+                "could not reach the hub at {hub}: {err}\n\
+                 Is a hub running? Start one locally with `krate-hub`, or point \
+                 `KRATE_HUB_URL` at a reachable one.",
+            );
+        }
+    };
+
+    let body = response
+        .into_string()
+        .context("could not read the hub's response")?;
+    // The response is a small JSON object { "url", "id" }. Rather than pull in a
+    // parser for two fields, pluck the url out; if the shape is unexpected, show
+    // the raw body so it is still debuggable.
+    let url = extract_json_string(&body, "url").ok_or_else(|| {
+        anyhow::anyhow!("the hub returned an unexpected response: {body}")
+    })?;
+
+    println!("Published. Anyone can run it with:");
+    println!("  krate run {url}");
+    Ok(0)
+}
+
+/// Pull one string field out of a flat JSON object like `{"url":"...","id":"..."}`.
+///
+/// Deliberately tiny: the hub's response has exactly two string fields and no
+/// nesting, so a full JSON dependency here would be more moving parts than the
+/// job needs.
+fn extract_json_string(json: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{key}\"");
+    let start = json.find(&needle)? + needle.len();
+    let rest = &json[start..];
+    let colon = rest.find(':')?;
+    let after_colon = &rest[colon + 1..];
+    let open = after_colon.find('"')? + 1;
+    let value = &after_colon[open..];
+    let close = value.find('"')?;
+    Some(value[..close].to_string())
 }
 
 struct CreateRequest {

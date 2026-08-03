@@ -1931,6 +1931,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "krate-hub"
+version = "0.1.0-dev"
+dependencies = [
+ "sha2",
+ "zip",
+]
+
+[[package]]
 name = "krate-layout"
 version = "0.1.0-dev"
 dependencies = [

@@ -1,0 +1,20 @@
+[package]
+name = "krate-hub"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "krate-hub"
+path = "src/main.rs"
+
+[dependencies]
+# Content addressing: the same bytes always land at the same URL, which is what
+# lets v1 skip auth entirely -- there is nothing to overwrite.
+sha2 = "0.10.9"
+# Validate the upload really is a .krate (a zip) before we store it, using the
+# same zip crate the rest of the workspace already depends on.
+zip.workspace = true
