@@ -11,9 +11,21 @@
 //! global input.
 //!
 //!     cargo run -p krate-adapter-macos --example key_capture_probe
+//!
+//! macOS-only: it drives AppKit directly. Cargo compiles examples on every
+//! target, so off macOS this file is a stub `main` -- otherwise the whole
+//! workspace fails to build on Linux and Windows CI over an objc2 import that
+//! could never run there anyway.
 
+#[cfg(not(target_os = "macos"))]
+fn main() {
+    eprintln!("key_capture_probe drives AppKit and only runs on macOS");
+}
+
+#[cfg(target_os = "macos")]
 use krate_adapter_common::ui::{UiAdapter, WindowAdapter, WindowOptions, WindowSize};
 
+#[cfg(target_os = "macos")]
 fn main() {
     let adapter = krate_adapter_macos::discover_appkit_prototype_ui_adapter()
         .expect("AppKit prototype adapter");
@@ -56,6 +68,7 @@ fn main() {
 }
 
 /// Post one synthetic key event into this process's AppKit queue.
+#[cfg(target_os = "macos")]
 fn post_key(key_code: u16, characters: &str, down: bool) {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSApplication, NSEvent, NSEventModifierFlags, NSEventType};
