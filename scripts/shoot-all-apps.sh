@@ -37,6 +37,7 @@ calc:no
 bigscroll:no
 settings:no
 filetree:no
+convert:no
 keyvault:yes
 "
 
