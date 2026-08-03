@@ -2409,6 +2409,14 @@ mod platform {
 mod platform {
     use super::*;
 
+    /// Key capture is a macOS-AppKit concern; off this platform the adapter is
+    /// a set of placeholders and there is nothing to capture. Present so the
+    /// unconditional re-export resolves on every target -- the same reason the
+    /// placeholder types below exist.
+    pub fn take_raw_key_samples() -> Vec<krate_adapter_common::ui::RawKeySample> {
+        Vec::new()
+    }
+
     /// Placeholder returned only on macOS builds.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct AppKitWindowPrototype {
