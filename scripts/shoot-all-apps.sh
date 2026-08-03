@@ -41,6 +41,7 @@ convert:no
 dashboard:no
 weather:no
 fractal:no
+nova:no
 timer:no
 contacts:yes
 keyvault:yes

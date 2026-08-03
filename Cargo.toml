@@ -35,6 +35,7 @@ exclude = [
     "apps/krate-contacts",
     "apps/krate-settings",
     "apps/krate-fractal",
+    "apps/krate-nova",
     "apps/krate-filetree",
     "apps/krate-convert",
     "apps/krate-weather",

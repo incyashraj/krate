@@ -1,0 +1,55 @@
+[package]
+name = "krate-nova"
+version = "0.1.0-dev"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/incyashraj/krate"
+rust-version = "1.91"
+
+[dependencies]
+# The Krate SDK, linked for its no_std runtime lang items (global allocator,
+# panic handler, memory intrinsics). This game runs a real-time canvas loop and
+# stays krate:*-only by being #![no_std]: the SDK owns the allocator and a
+# trapping panic handler so no path drags in the wasi:* import set.
+krate = { path = "../../crates/bindings-rust" }
+wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
+
+# Standalone: this app is excluded from the repo workspace and builds on its
+# own, so it carries an empty workspace table to stop cargo walking up to the
+# repo root manifest.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+# Gate the generated `impl std::error::Error` behind a feature nobody turns on,
+# so this GUI app can be `#![no_std]`.
+[package.metadata.component.bindings]
+std_feature = true
+
+[package.metadata.component]
+package = "krate:nova"
+
+[package.metadata.component.target]
+path = "../../wit/krate/phase3"
+world = "gui"
+
+[package.metadata.component.target.dependencies]
+"krate:io" = { path = "../../wit/krate/phase3/deps/io" }
+"krate:fs" = { path = "../../wit/krate/phase3/deps/fs" }
+"krate:net" = { path = "../../wit/krate/phase3/deps/net" }
+"krate:time" = { path = "../../wit/krate/phase3/deps/time" }
+"krate:locale" = { path = "../../wit/krate/phase3/deps/locale" }
+"krate:resources" = { path = "../../wit/krate/phase3/deps/resources" }
+"krate:store" = { path = "../../wit/krate/phase3/deps/store" }
+"krate:random" = { path = "../../wit/krate/phase3/deps/random" }
+"krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }
+"krate:gfx" = { path = "../../wit/krate/phase3/deps/gfx" }
+"krate:audio" = { path = "../../wit/krate/phase3/deps/audio" }
+"krate:speech" = { path = "../../wit/krate/phase3/deps/speech" }
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = "s"
