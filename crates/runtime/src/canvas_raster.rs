@@ -142,6 +142,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn hostile_guest_draw_calls_never_panic() {
+        // The 2D twin of the scene3d fuzz test. A guest can hand the canvas a
+        // NaN rectangle, an infinite stroke, a rectangle the size of the
+        // observable universe, or one with negative dimensions. The rasterizer
+        // clips against the real buffer, so none of that may index out of
+        // bounds or trap -- a bad app draws nothing, it does not crash the
+        // host.
+        let poison = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 1e30, -1e30, 0.0];
+        let mut surface = CanvasSurface::new(40, 30).expect("surface");
+
+        for &bad in &poison {
+            surface.clear(0xFF00_2040);
+            surface.fill_rect(bad, bad, bad, bad, 0xFFFF_FFFF);
+            surface.fill_rect(bad, 0.0, 20.0, bad, 0xFF00_FF00);
+            surface.stroke_rect(bad, bad, bad, bad, bad, 0xFFFF_0000);
+            surface.stroke_rect(0.0, 0.0, 100.0, 100.0, bad, 0xFF00_00FF);
+        }
+
+        // draw_pixels with a valid tiny image at hostile positions.
+        let tiny = ImagePixels::new(2, 2, vec![200; 16]).expect("tiny image");
+        for &bad in &poison {
+            surface.draw_pixels(bad, bad, bad, bad, &tiny);
+            surface.draw_pixels(-1000.0, -1000.0, 10.0, 10.0, &tiny);
+            surface.draw_pixels(1e9, 1e9, 10.0, 10.0, &tiny);
+        }
+
+        // The buffer must still be the size it started at, and readable.
+        assert_eq!(surface.dimensions(), (40, 30));
+        let _ = surface.to_image().expect("image after hostile input");
+    }
+
+    #[test]
     fn a_color_survives_packing_and_publishing() {
         let mut canvas = CanvasSurface::new(4, 4).expect("canvas");
         canvas.clear(pack_color(1.0, 0.0, 0.0, 1.0));

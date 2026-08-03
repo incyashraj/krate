@@ -690,6 +690,60 @@ fn pack_shaded(tint: (f32, f32, f32, f32), shade: f32) -> u32 {
 mod tests {
     use super::*;
 
+    #[test]
+    fn hostile_guest_geometry_never_panics_or_hangs() {
+        // A guest is untrusted code. It can send a NaN vertex, an infinite
+        // camera, a zero field of view, a triangle list whose length is not a
+        // multiple of nine, or ten thousand coincident points. None of that
+        // may crash the host or spin it forever -- the whole point of the
+        // sandbox is that a bad app is a bad app, not a broken runtime. This
+        // throws each hostile shape at the full render path and asserts only
+        // that it returns.
+        let poison = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 1e30, -1e30, 0.0];
+        let mut scene = Scene::new(64, 48).expect("scene");
+
+        for &bad in &poison {
+            scene.set_camera([bad, bad, bad], [bad, 0.0, 0.0], bad);
+            scene.set_light([bad, bad, bad]);
+            scene.clear(0xFF00_0000);
+            // A triangle made entirely of the poison value.
+            scene.triangles(&[bad; 9], (bad, bad, bad, 1.0));
+            // A vertex list that is not a whole number of triangles.
+            scene.triangles(&[bad, bad, bad, bad], (0.5, 0.5, 0.5, 1.0));
+            // A placed mesh with poison transforms.
+            scene.place(&[bad; 9], [bad; 3], [bad; 3], bad, (0.9, 0.2, 0.2, 1.0));
+            // Rendering must return rather than trap; the pixels are whatever
+            // they are, and this test does not care what -- only that we got
+            // here.
+            let _ = scene
+                .render_image()
+                .expect("render must not fail on bad input");
+        }
+
+        // A texture with a zero dimension and hostile UVs.
+        let _ = scene.upload_texture(0, 0, &[]);
+        if let Ok(texture) = scene.upload_texture(2, 2, &[255; 16]) {
+            scene.clear(0xFF00_0000);
+            scene.textured(
+                &[f32::NAN; 9],
+                &[f32::INFINITY; 6],
+                texture,
+                (1.0, 1.0, 1.0, 1.0),
+            );
+            let _ = scene.render_image().expect("textured render must not fail");
+        }
+
+        // An empty frame, and a frame of a single degenerate (zero-area)
+        // triangle, are both fine.
+        scene.clear(0xFF10_2030);
+        let _ = scene.render_image().expect("empty frame");
+        scene.triangles(
+            &[1.0, 1.0, 5.0, 1.0, 1.0, 5.0, 1.0, 1.0, 5.0],
+            (1.0, 1.0, 1.0, 1.0),
+        );
+        let _ = scene.render_image().expect("degenerate triangle");
+    }
+
     /// A unit cube as twelve triangles, corners counter-clockwise from
     /// outside, which is the winding culling expects.
     fn unit_cube() -> Vec<f32> {

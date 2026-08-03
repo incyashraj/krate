@@ -98,10 +98,15 @@ pub fn draw_image(
 
     // Clamp to the buffer and to any scroll clip before touching a pixel, so
     // the sampling loop never has to bounds-check.
-    let mut x0 = ox.max(0.0);
-    let mut y0 = oy.max(0.0);
-    let mut x1 = (ox + draw_w).min(width as f32);
-    let mut y1 = (oy + draw_h).min(height as f32);
+    // Both edges clamped to the buffer, top edge included. A hostile rect
+    // whose position is finite but enormous would otherwise put x0 past width
+    // while x1 pinned to width, and the guard below would save the range but
+    // an intermediate index could still fall outside -- clamp the near edge
+    // too so every pixel the loop visits exists.
+    let mut x0 = ox.max(0.0).min(width as f32);
+    let mut y0 = oy.max(0.0).min(height as f32);
+    let mut x1 = (ox + draw_w).max(0.0).min(width as f32);
+    let mut y1 = (oy + draw_h).max(0.0).min(height as f32);
     if let Some((cx, cy, cw, ch)) = clip {
         x0 = x0.max(cx);
         y0 = y0.max(cy);
@@ -196,15 +201,29 @@ pub fn fill_rect(
     color: u32,
 ) {
     let (x, y, w, h) = rect;
-    let x0 = x.max(0.0) as u32;
-    let y0 = y.max(0.0) as u32;
+    // Clamp both edges to the buffer. The left edge was clamped only at zero,
+    // so a hostile x of 1e30 saturated x0 to u32::MAX while x1 stayed at
+    // `width`, producing start > end and a slice-index panic -- a guest could
+    // crash the host with one fill_rect. A NaN edge becomes 0 through `as`,
+    // which is harmless. Both edges now sit inside the buffer, and the range
+    // is skipped entirely if it comes out empty.
+    let x0 = (x.max(0.0) as u32).min(width);
+    let y0 = (y.max(0.0) as u32).min(height);
     let x1 = ((x + w).max(0.0) as u32).min(width);
     let y1 = ((y + h).max(0.0) as u32).min(height);
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
     for row in y0..y1 {
         let start = (row * width + x0) as usize;
         let end = (row * width + x1) as usize;
-        for pixel in &mut buffer[start..end] {
-            *pixel = color;
+        // Bounded by construction now, but a defensive check keeps a future
+        // edit to the arithmetic above from reintroducing an out-of-bounds
+        // slice: index the buffer only where it exists.
+        if let Some(span) = buffer.get_mut(start..end) {
+            for pixel in span {
+                *pixel = color;
+            }
         }
     }
 }
