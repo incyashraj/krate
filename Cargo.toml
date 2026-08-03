@@ -38,6 +38,7 @@ exclude = [
     "apps/krate-convert",
     "apps/krate-weather",
     "apps/krate-clip",
+    "apps/krate-dashboard",
     "test/integration/hello-world",
     "test/integration/phase2-smoke",
     "test/integration/print-loop",

@@ -38,6 +38,8 @@ bigscroll:no
 settings:no
 filetree:no
 convert:no
+dashboard:no
+weather:no
 keyvault:yes
 "
 
