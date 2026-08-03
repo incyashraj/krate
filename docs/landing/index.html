@@ -724,7 +724,7 @@
           <p>Then open <code>frame.png</code>. If the app drew a window, you will see it. This shipped in <code>v0.1.0-rc16</code>, the current release.</p>
 
           <p class="eyebrow">Not ready yet</p>
-          <p>Database-backed apps do not work: <code>store.sql</code> query() currently leaks WASI, so anything backed by SQL is blocked. The direct image-widget path (<code>ui.image</code> set_pixels()) has the same leak, so apps that push their own pixels into an image widget are blocked. Both are in progress and are likely one root cause. Clipboard works on Mac and Linux (and headless); Windows clipboard is not there yet.</p>
+          <p>Most of the surface works today, including database storage (<code>store.sql</code>) and pushing your own pixels into an image widget (<code>ui.image</code>) -- a real SQL budgeting app and an image viewer are among the apps that build and run. The one gap: clipboard works on Mac and Linux (and headless), but the Windows clipboard is not wired up yet.</p>
         </div>
       </div>
     </section>
