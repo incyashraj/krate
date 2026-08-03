@@ -920,12 +920,11 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
         i += 1;
     }
 
-    // ---- enemy bullets (hot pink-orange dots) ----
+    // ---- enemy bullets (hot glowing orbs) ----
     let mut i = 0usize;
     while i < w.n_ebullets {
         if let Some(b) = w.ebullets.get(i) {
-            fill(canvas, sx, sy, b.x - 4.0, b.y - 4.0, 8.0, 8.0, color(1.0, 0.4, 0.2, 0.5))?;
-            fill(canvas, sx, sy, b.x - 2.0, b.y - 2.0, 4.0, 4.0, color(1.0, 0.85, 0.4, 1.0))?;
+            glow(canvas, sx, sy, b.x, b.y, 4.0, 1.0, 0.5, 0.18)?;
         }
         i += 1;
     }
@@ -939,23 +938,28 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
         i += 1;
     }
 
-    // ---- particles (additive-feeling warm sparks that fade) ----
+    // ---- particles (round glowing sparks that fade, with a soft halo) ----
     let mut i = 0usize;
     while i < w.n_particles {
         if let Some(p) = w.particles.get(i) {
             let t = (p.life / p.max_life).clamp(0.0, 1.0);
-            let a = t;
-            let sz = p.size * (0.4 + t * 0.6);
-            fill(
-                canvas,
-                sx,
-                sy,
-                p.x - sz * 0.5,
-                p.y - sz * 0.5,
-                sz,
-                sz,
-                color(p.r, p.g, p.b, a),
-            )?;
+            let radius = p.size * (0.35 + t * 0.65) * 0.7;
+            // Soft halo, then a bright core -- a spark that glows rather than a
+            // hard square. Halo alpha fades faster than the core.
+            disc(canvas, sx, sy, p.x, p.y, radius * 2.0, color(p.r, p.g, p.b, t * 0.22))?;
+            disc(canvas, sx, sy, p.x, p.y, radius, color(p.r, p.g, p.b, t))?;
+            // Hot white center on the freshest sparks.
+            if t > 0.55 {
+                disc(
+                    canvas,
+                    sx,
+                    sy,
+                    p.x,
+                    p.y,
+                    radius * 0.5,
+                    color(1.0, 1.0, 0.92, (t - 0.55) * 2.0),
+                )?;
+            }
         }
         i += 1;
     }
@@ -997,40 +1001,44 @@ fn draw(canvas: u64, w: &World, blink_on: bool) -> Result<(), gfx::GfxError> {
     Ok(())
 }
 
-/// The player ship: a cyan triangle built from stacked rectangles, with a bright
-/// core, wing tips, and a muzzle flash when firing.
+/// The player ship: a sleek glowing cyan arrowhead with a lit cockpit, glowing
+/// wing lights, and round muzzle flashes when firing. Drawn with smooth chords
+/// so its edges read as a crisp craft, not a stack of blocks.
 fn draw_ship(canvas: u64, sx: f32, sy: f32, x: f32, y: f32, muzzle: bool) -> Result<(), gfx::GfxError> {
-    let cyan = color(0.2, 0.95, 1.0, 1.0);
-    let cyan_dim = color(0.1, 0.55, 0.75, 1.0);
-    // Outer glow.
-    fill(canvas, sx, sy, x - 18.0, y - 16.0, 36.0, 34.0, color(0.15, 0.7, 0.9, 0.16))?;
-    // Nose to tail as a stack of narrowing/widening bars -> triangle silhouette.
-    // rows from top (nose) to bottom (wings)
-    let rows: [(f32, f32); 6] = [
-        (-15.0, 4.0),
-        (-11.0, 8.0),
-        (-6.0, 14.0),
-        (-1.0, 20.0),
-        (4.0, 26.0),
-        (9.0, 22.0),
-    ];
-    let mut i = 0usize;
-    while i < rows.len() {
-        if let Some((oy, wdt)) = rows.get(i).copied() {
-            let c = if i < 3 { cyan } else { cyan_dim };
-            fill(canvas, sx, sy, x - wdt * 0.5, y + oy, wdt, 5.0, c)?;
-        }
-        i += 1;
+    let cyan = color(0.20, 0.95, 1.0, 1.0);
+    let cyan_deep = color(0.10, 0.55, 0.80, 1.0);
+    // Ambient glow beneath the whole craft so it sits in a pool of light.
+    disc(canvas, sx, sy, x, y - 2.0, 22.0, color(0.15, 0.75, 1.0, 0.10))?;
+    disc(canvas, sx, sy, x, y - 2.0, 15.0, color(0.15, 0.80, 1.0, 0.14))?;
+
+    // The hull: an arrowhead. For each row from nose (top) to tail, the half
+    // width grows linearly, and each row is one smooth chord. A darker under-
+    // hull row behind it gives a hint of depth.
+    let nose = y - 17.0;
+    let tail = y + 12.0;
+    let mut yy = nose as i32;
+    while yy <= tail as i32 {
+        let f = ((yy as f32) - nose) / (tail - nose); // 0 at nose, 1 at tail
+        let half = 2.0 + f * f * 16.0; // narrow nose flaring to wide tail
+        // Deep under-tone at the outer edge, bright core toward the center.
+        fill(canvas, sx, sy, x - half, yy as f32, half * 2.0, 1.0, cyan_deep)?;
+        let inner = half * 0.55;
+        fill(canvas, sx, sy, x - inner, yy as f32, inner * 2.0, 1.0, cyan)?;
+        yy += 1;
     }
-    // Bright cockpit core.
-    fill(canvas, sx, sy, x - 3.0, y - 8.0, 6.0, 12.0, color(0.9, 1.0, 1.0, 1.0))?;
-    // Wing tips.
-    fill(canvas, sx, sy, x - 15.0, y + 6.0, 5.0, 8.0, cyan)?;
-    fill(canvas, sx, sy, x + 10.0, y + 6.0, 5.0, 8.0, cyan)?;
+
+    // Swept wing tips: two small glowing lights out at the tail corners.
+    disc(canvas, sx, sy, x - 15.0, y + 9.0, 4.0, cyan)?;
+    disc(canvas, sx, sy, x + 15.0, y + 9.0, 4.0, cyan)?;
+
+    // Lit cockpit: a bright white-cyan orb near the nose.
+    disc(canvas, sx, sy, x, y - 4.0, 4.5, color(0.85, 1.0, 1.0, 1.0))?;
+    disc(canvas, sx, sy, x, y - 4.0, 2.2, color(1.0, 1.0, 1.0, 1.0))?;
+
     if muzzle {
-        // Twin muzzle flashes.
-        fill(canvas, sx, sy, x - 10.0, y - 18.0, 6.0, 8.0, color(0.8, 1.0, 1.0, 0.9))?;
-        fill(canvas, sx, sy, x + 4.0, y - 18.0, 6.0, 8.0, color(0.8, 1.0, 1.0, 0.9))?;
+        // Twin round muzzle flashes at the nose.
+        glow(canvas, sx, sy, x - 7.0, y - 16.0, 4.0, 0.7, 1.0, 1.0)?;
+        glow(canvas, sx, sy, x + 7.0, y - 16.0, 4.0, 0.7, 1.0, 1.0)?;
     }
     Ok(())
 }
@@ -1041,28 +1049,35 @@ fn draw_enemy(canvas: u64, sx: f32, sy: f32, e: &Enemy) -> Result<(), gfx::GfxEr
     let pop = (e.age * 6.0).min(1.0); // scale in over ~0.16s
     let scale = 0.4 + pop * 0.6;
     let flash = e.hit > 0.0;
-    let (base, glow) = if e.kind == 1 {
-        (color(1.0, 0.5, 0.1, 1.0), color(1.0, 0.45, 0.1, 0.18))
+    // Orange divers vs magenta grunts, each a glowing orb.
+    let (r, g, b) = if e.kind == 1 {
+        (1.0, 0.52, 0.12)
     } else {
-        (color(1.0, 0.2, 0.75, 1.0), color(1.0, 0.15, 0.7, 0.18))
+        (1.0, 0.24, 0.72)
     };
-    let body = if flash { color(1.0, 1.0, 1.0, 1.0) } else { base };
-    let s = if e.kind == 1 { 18.0 } else { 15.0 } * scale;
-    // Glow.
-    fill(canvas, sx, sy, e.x - s, e.y - s, s * 2.0, s * 2.0, glow)?;
-    // Diamond via three horizontal bars (narrow, wide, narrow) + verticals.
-    fill(canvas, sx, sy, e.x - s * 0.35, e.y - s, s * 0.7, s * 2.0, body)?;
-    fill(canvas, sx, sy, e.x - s, e.y - s * 0.35, s * 2.0, s * 0.7, body)?;
-    fill(canvas, sx, sy, e.x - s * 0.7, e.y - s * 0.7, s * 1.4, s * 1.4, body)?;
-    // Dark core so it reads as a shape, not a blob.
-    if !flash {
-        let core = if e.kind == 1 {
-            color(0.5, 0.15, 0.02, 1.0)
-        } else {
-            color(0.45, 0.05, 0.3, 1.0)
-        };
-        fill(canvas, sx, sy, e.x - s * 0.28, e.y - s * 0.28, s * 0.56, s * 0.56, core)?;
+    let radius = (if e.kind == 1 { 15.0 } else { 12.5 }) * scale;
+
+    if flash {
+        // On hit: a white flash orb, bigger, so a kill reads instantly.
+        glow(canvas, sx, sy, e.x, e.y, radius * 1.15, 1.0, 1.0, 1.0)?;
+        return Ok(());
     }
+
+    // The glowing body.
+    glow(canvas, sx, sy, e.x, e.y, radius, r, g, b)?;
+    // A dark iris so the orb reads as an eye/creature, not a plain dot -- the
+    // small detail that makes it feel designed.
+    disc(canvas, sx, sy, e.x, e.y, radius * 0.32, color(r * 0.25, g * 0.12, b * 0.2, 0.9))?;
+    // A tiny offset highlight for a sense of a lit surface.
+    disc(
+        canvas,
+        sx,
+        sy,
+        e.x - radius * 0.28,
+        e.y - radius * 0.28,
+        radius * 0.16,
+        color(1.0, 1.0, 1.0, 0.85),
+    )?;
     Ok(())
 }
 
@@ -1114,6 +1129,78 @@ fn fill(
         },
         c,
     )
+}
+
+/// A filled circle, scanned row by row so the edge is round rather than a
+/// blocky square. This is the primitive that makes the game read as modern
+/// neon instead of retro pixels.
+fn disc(
+    canvas: u64,
+    sx: f32,
+    sy: f32,
+    cx: f32,
+    cy: f32,
+    r: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
+    // Small discs render as a single solid square: the row-scan below leaves
+    // visible gaps (a hollow ring look) at tiny radii, which was making every
+    // spark a donut. Below ~2.5px a filled square reads as a dot anyway.
+    if r <= 2.5 {
+        return fill(canvas, sx, sy, cx - r, cy - r, r * 2.0, r * 2.0, c);
+    }
+    // One row of pixels per step (step 1.0, not 1.5) so rows overlap slightly
+    // and never leave a horizontal gap -- a solid disc, not a ring.
+    let top = (cy - r) as i32;
+    let bot = (cy + r) as i32;
+    let mut yy = top;
+    while yy <= bot {
+        let dy = (yy as f32) + 0.5 - cy;
+        let half = r * r - dy * dy;
+        if half > 0.0 {
+            let chord = sqrtf(half);
+            fill(canvas, sx, sy, cx - chord, yy as f32, chord * 2.0, 1.0, c)?;
+        }
+        yy += 1;
+    }
+    Ok(())
+}
+
+/// A soft radial glow: several translucent discs from a wide dim halo down to
+/// a bright tight core, so a light source blooms instead of ending in a hard
+/// edge. `r` is the core radius; the halo reaches ~2.4x that.
+fn glow(
+    canvas: u64,
+    sx: f32,
+    sy: f32,
+    cx: f32,
+    cy: f32,
+    r: f32,
+    red: f32,
+    grn: f32,
+    blu: f32,
+) -> Result<(), gfx::GfxError> {
+    // A tight, saturated bloom: a narrow faint halo in the true color (not
+    // washed toward white), then a solid vivid body, then a small hot center.
+    // Keeping the halo tight and same-hue is what reads as vibrant neon rather
+    // than a milky blob.
+    disc(canvas, sx, sy, cx, cy, r * 1.6, color(red, grn, blu, 0.14))?;
+    disc(canvas, sx, sy, cx, cy, r * 1.22, color(red, grn, blu, 0.30))?;
+    // Solid, fully-saturated body.
+    disc(canvas, sx, sy, cx, cy, r, color(red, grn, blu, 1.0))?;
+    // A small lifted-brightness center, only a touch toward white, so it looks
+    // lit from within without going pale.
+    let lift = |v: f32| (v * 0.5 + 0.5).min(1.0);
+    disc(
+        canvas,
+        sx,
+        sy,
+        cx,
+        cy,
+        r * 0.42,
+        color(lift(red), lift(grn), lift(blu), 1.0),
+    )?;
+    Ok(())
 }
 
 fn draw_text(
