@@ -3308,6 +3308,37 @@ fn sample_manifest(app: &str) -> PathBuf {
 }
 
 #[test]
+fn authoring_context_writes_a_pack_with_every_section() {
+    // No build tools needed: the pack is generated from embedded sources and
+    // the repo's apps tree. Fast, and it guards the subcommand end to end.
+    let out_dir = tempfile::tempdir().expect("temp dir");
+    let out_file = out_dir.path().join("KRATE_AUTHORING.md");
+    // Point it at the workspace root so its apps/ tree seeds the example index.
+    let app_dir = workspace_path(PathBuf::from("apps/krate-diceroll"));
+    let status = krate()
+        .arg("authoring-context")
+        .arg(&app_dir)
+        .arg("--output")
+        .arg(&out_file)
+        .status()
+        .expect("run authoring-context");
+    assert!(status.success(), "authoring-context should succeed");
+    let pack = std::fs::read_to_string(&out_file).expect("pack written");
+    for needle in [
+        "# 1. The SDK",
+        "# 2. Capabilities",
+        "# 3. Passing the import check",
+        "# 4. The GUI world",
+        "# 5. Example apps",
+        "canvas2d::present",
+        "random.bytes",
+        "krate-notes",
+    ] {
+        assert!(pack.contains(needle), "pack should contain {needle:?}");
+    }
+}
+
+#[test]
 fn check_app_reports_a_missing_layout_without_building() {
     // No build tools needed: check-app must fail fast, and clearly, when the
     // directory is not an app. This is the first thing an agent hits if it

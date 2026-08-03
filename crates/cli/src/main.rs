@@ -17,6 +17,7 @@ use krate_runtime::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+mod authoring_context;
 mod mcp;
 mod port_report;
 mod sdk;
@@ -216,6 +217,25 @@ enum Command {
         /// so an agent can branch on it. Errors are reported as JSON too.
         #[arg(long)]
         json: bool,
+    },
+
+    /// Write the authoring context pack (KRATE_AUTHORING.md) for an app dir.
+    ///
+    /// This is the file an AI author reads before writing code: the SDK API
+    /// surface, the capability catalog, the no_std discipline, the GUI-world
+    /// interfaces, and an index of the shipped example apps -- all generated
+    /// from the same sources the runtime builds against, so it cannot drift. A
+    /// human can read it too, to see exactly what an app may call and declare.
+    AuthoringContext {
+        /// The app directory the pack is for. Its sibling apps/ tree, when
+        /// present, seeds the example index. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        dir: PathBuf,
+
+        /// Write to this file instead of stdout. `KRATE_AUTHORING.md` in the app
+        /// dir is the conventional location the authoring loop uses.
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
     },
 
     /// Inspect and validate Phase 2 app manifests.
@@ -717,6 +737,18 @@ fn run() -> Result<u8> {
             no_run,
             json,
         } => check_app(&dir, shoot.as_deref(), no_run, json),
+        Command::AuthoringContext { dir, output } => {
+            let pack = authoring_context::generate(&dir);
+            match output {
+                Some(path) => {
+                    fs::write(&path, pack)
+                        .with_context(|| format!("write {}", path.display()))?;
+                    println!("wrote {}", path.display());
+                }
+                None => print!("{pack}"),
+            }
+            Ok(0)
+        }
         Command::Manifest { command } => match command {
             ManifestCommand::Check { file, format } => check_manifest(&file, format),
             ManifestCommand::Explain { file, format } => explain_manifest(&file, format),
