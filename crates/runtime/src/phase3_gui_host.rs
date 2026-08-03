@@ -180,12 +180,18 @@ impl Phase3GuiHost {
     /// input. Capturing mid-construction (on every tree sync) grabbed a
     /// half-built frame -- a checklist with its title but not its rows.
     fn maybe_take_screenshot(&self) {
-        if self.screenshot_taken.get() || self.screenshot.is_none() {
-            return;
-        }
         let Some(window) = self.windows.first().copied() else {
             return;
         };
+        self.maybe_take_screenshot_for(window);
+    }
+
+    /// Capture a specific window, used on close so an app that never waits for
+    /// input still gets its final frame shot.
+    fn maybe_take_screenshot_for(&self, window: WindowId) {
+        if self.screenshot_taken.get() || self.screenshot.is_none() {
+            return;
+        }
         let Some((path, scale)) = self.screenshot.as_ref() else {
             return;
         };
@@ -947,6 +953,12 @@ impl ui::window::Host for Phase3GuiHost {
             Ok(id) => id,
             Err(err) => return Ok(Err(err)),
         };
+        // Last chance to capture: an app that builds its window and exits
+        // without ever waiting for input -- a scripted verification run, a
+        // one-shot tool -- would otherwise never hit the wait or present
+        // capture points. Shoot its final frame here, while the tree is still
+        // alive, before the window is torn down.
+        self.maybe_take_screenshot_for(id);
         let result = self
             .dispatcher()
             .close_window(id)

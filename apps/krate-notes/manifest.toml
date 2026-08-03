@@ -2,7 +2,7 @@
 id = "dev.krate.notes"
 name = "Krate Notes"
 version = "0.1.0-dev"
-entry = "code.wasm"
+entry = "target/wasm32-wasip1/release/krate_notes.wasm"
 world = "krate:app/gui@0.2.0"
 
 [[capabilities]]
