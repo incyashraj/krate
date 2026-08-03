@@ -1483,9 +1483,7 @@ impl UiAdapter for DraftUiAdapter {
         self.clipboard
             .lock()
             .map(|buffer| buffer.clone())
-            .map_err(|_| {
-                UiAdapterError::Internal("draft clipboard lock is poisoned".to_string())
-            })
+            .map_err(|_| UiAdapterError::Internal("draft clipboard lock is poisoned".to_string()))
     }
 
     /// Write to the in-process clipboard buffer.
@@ -1495,9 +1493,7 @@ impl UiAdapter for DraftUiAdapter {
             .map(|mut buffer| {
                 text.clone_into(&mut buffer);
             })
-            .map_err(|_| {
-                UiAdapterError::Internal("draft clipboard lock is poisoned".to_string())
-            })
+            .map_err(|_| UiAdapterError::Internal("draft clipboard lock is poisoned".to_string()))
     }
 }
 

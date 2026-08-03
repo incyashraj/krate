@@ -3812,6 +3812,14 @@ fn human_label(cap: &Capability) -> String {
             Some(r) => format!("save files in {}", tidy_resource(r)),
             None => "save files".to_string(),
         },
+        ("fs", "list") => match resource {
+            Some(r) => format!("see the list of files in {}", tidy_resource(r)),
+            None => "see the list of files".to_string(),
+        },
+        ("fs", "mkdir") => match resource {
+            Some(r) => format!("create folders in {}", tidy_resource(r)),
+            None => "create folders".to_string(),
+        },
         ("net", "connect") => match resource {
             Some(r) => format!("connect to {r} over the network"),
             None => "connect over the network".to_string(),
@@ -5311,6 +5319,14 @@ mod create_tests {
             "save files in checklist"
         );
         assert_eq!(human_label(&cap("fs.read:data/**")), "read files in data");
+        assert_eq!(
+            human_label(&cap("fs.list:input/**")),
+            "see the list of files in input"
+        );
+        assert_eq!(
+            human_label(&cap("fs.mkdir:input/quick")),
+            "create folders in input/quick"
+        );
         assert_eq!(
             human_label(&cap("ui.window:create")),
             "open a window on your screen"
