@@ -100,7 +100,9 @@ wasmtime::component::bindgen!({
 });
 
 /// Runtime configuration for a single `krate run` invocation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+// No `Eq`: `screenshot_scale` is an `f32`. `PartialEq` is enough for the tests
+// that compare configs, and floats have no total equality anyway.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Config {
     /// Optional Wasmtime fuel budget. `None` means no fuel limit.
     pub fuel: Option<u64>,
@@ -136,6 +138,12 @@ pub struct Config {
     pub app_secrets: Option<(PathBuf, String, Vec<u8>)>,
     /// Host UI backend mode for Phase 3 `gui` world runs.
     pub phase3_ui_mode: phase3_ui::Phase3HostUiMode,
+    /// When set, a headless GUI run paints the window to this PNG once the app
+    /// has drawn a frame. This is how `krate shoot` and automated app tests see
+    /// what an app actually renders rather than trusting its exit code.
+    pub screenshot_path: Option<PathBuf>,
+    /// Display scale applied to a screenshot; 2.0 mimics a HiDPI window.
+    pub screenshot_scale: f32,
 }
 
 impl Default for Config {
@@ -156,6 +164,8 @@ impl Default for Config {
             app_database_path: None,
             app_secrets: None,
             phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
+            screenshot_path: None,
+            screenshot_scale: 2.0,
         }
     }
 }
@@ -469,7 +479,13 @@ impl Runtime {
             config.phase3_ui_mode,
         )
         .map_err(|err| RuntimeError::Instantiate(err.to_string()))?
-        .with_asset_root(config.bundle_assets_root.clone());
+        .with_asset_root(config.bundle_assets_root.clone())
+        .with_screenshot(
+            config
+                .screenshot_path
+                .clone()
+                .map(|path| (path, config.screenshot_scale)),
+        );
         store.data_mut().phase3_gui = Some(gui_host);
 
         let mut linker = wasmtime::component::Linker::new(&self.engine);

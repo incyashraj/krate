@@ -1984,6 +1984,7 @@ dependencies = [
  "krate-manifest",
  "krate-policy",
  "libc",
+ "png",
  "rfd",
  "rusqlite",
  "sha2",

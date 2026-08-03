@@ -24,7 +24,12 @@ rfd.workspace = true
 ureq.workspace = true
 rusqlite.workspace = true
 sha2 = "0.10.9"
-krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev" }
+# Encoding a window frame to a PNG for `krate shoot` and headless verification.
+png = "0.18.1"
+# vector-text so a headless screenshot renders with the same antialiased vello
+# text the Windows and Linux windows use -- a screenshot has to look like the
+# real thing to be worth taking.
+krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev", features = ["vector-text"] }
 krate-layout = { path = "../layout", version = "0.1.0-dev" }
 krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
 krate-policy = { path = "../policy", version = "0.1.0-dev" }

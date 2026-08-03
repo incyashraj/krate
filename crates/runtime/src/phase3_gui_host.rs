@@ -117,6 +117,11 @@ pub struct Phase3GuiHost {
     audio_playback: AudioPlaybackRuntime,
     /// Local speech model contexts, scoped to this one sandboxed app session.
     speech: LocalSpeechRuntime,
+    /// A screenshot request: paint the window to this PNG at this scale once
+    /// the app has drawn a frame. `taken` guards against writing every frame --
+    /// the first drawn frame is the one captured.
+    screenshot: Option<(std::path::PathBuf, f32)>,
+    screenshot_taken: std::cell::Cell<bool>,
 }
 
 impl Phase3GuiHost {
@@ -150,12 +155,46 @@ impl Phase3GuiHost {
             audio_capture: AudioCaptureRuntime::default(),
             audio_playback: AudioPlaybackRuntime::default(),
             speech: LocalSpeechRuntime::default(),
+            screenshot: None,
+            screenshot_taken: std::cell::Cell::new(false),
         })
     }
 
     pub fn with_asset_root(mut self, root: Option<std::path::PathBuf>) -> Self {
         self.speech = LocalSpeechRuntime::default().with_asset_root(root);
         self
+    }
+
+    /// Ask the host to paint the window to `path` at `scale` once the app has
+    /// drawn a frame. Only meaningful on a headless run, where there is no real
+    /// window to grab from the window server.
+    pub fn with_screenshot(mut self, request: Option<(std::path::PathBuf, f32)>) -> Self {
+        self.screenshot = request;
+        self
+    }
+
+    /// If a screenshot was requested and not yet taken, paint the frame now.
+    ///
+    /// Called at the top of the app's event wait, which is the first moment the
+    /// tree is fully built: an app constructs its whole window, then waits for
+    /// input. Capturing mid-construction (on every tree sync) grabbed a
+    /// half-built frame -- a checklist with its title but not its rows.
+    fn maybe_take_screenshot(&self) {
+        if self.screenshot_taken.get() || self.screenshot.is_none() {
+            return;
+        }
+        let Some(window) = self.windows.first().copied() else {
+            return;
+        };
+        let Some((path, scale)) = self.screenshot.as_ref() else {
+            return;
+        };
+        match self.render_window_png(window, *scale, path) {
+            Ok(()) => self.screenshot_taken.set(true),
+            // Nothing to render yet is not an error: the very first wait can
+            // arrive before the tree exists. A later wait will succeed.
+            Err(error) => tracing::debug!(?error, "screenshot not ready yet"),
+        }
     }
 
     fn dispatcher(&self) -> Phase3UiDispatcher<'_> {
@@ -239,12 +278,30 @@ impl Phase3GuiHost {
     /// This is the naive vertical-slice strategy: every tree change replaces
     /// the whole native widget set. Reconciler diffing comes later.
     fn sync_native_widgets(&self, window: WindowId) -> Result<(), UiDispatchError> {
-        let dispatcher = self.dispatcher();
-        let Some(tree) = dispatcher.widget_tree(window)? else {
+        let Some((_size, placements)) = self.window_placements(window)? else {
             return Ok(());
         };
+        self.dispatcher()
+            .lower_widget_placements(window, &placements)?;
+        Ok(())
+    }
+
+    /// Build the drawn-widget placement list for a window, exactly as
+    /// `sync_native_widgets` lowers it, plus the window's logical size.
+    ///
+    /// Factored out so a headless screenshot can paint the same frame the
+    /// native hosts lower -- one source of truth for "what is on screen",
+    /// which is the only way a screenshot proves anything about a real run.
+    fn window_placements(
+        &self,
+        window: WindowId,
+    ) -> Result<Option<(WindowSize, Vec<WidgetPlacement>)>, UiDispatchError> {
+        let dispatcher = self.dispatcher();
+        let Some(tree) = dispatcher.widget_tree(window)? else {
+            return Ok(None);
+        };
         let Some(record) = dispatcher.window(window)? else {
-            return Ok(());
+            return Ok(None);
         };
 
         let viewport = LayoutViewport::new(record.size.width as f32, record.size.height as f32)
@@ -332,8 +389,41 @@ impl Phase3GuiHost {
         }
         drop(offsets);
 
-        dispatcher.lower_widget_placements(window, &placements)?;
-        Ok(())
+        Ok(Some((record.size, placements)))
+    }
+
+    /// Paint a window's current frame to a PNG file, the way a headless
+    /// verification or `krate shoot` captures what an app draws.
+    ///
+    /// This paints the exact placements the native hosts lower, through the
+    /// same shared painter, so the image is what a person would see -- not a
+    /// separate render path that could drift from the real one.
+    pub fn render_window_png(
+        &self,
+        window: WindowId,
+        scale: f32,
+        path: &std::path::Path,
+    ) -> Result<(), UiDispatchError> {
+        let Some((size, placements)) = self.window_placements(window)? else {
+            return Err(UiDispatchError::Layout(format!(
+                "window {} has nothing to render yet",
+                window.get()
+            )));
+        };
+        let scale = scale.max(1.0);
+        let pw = ((size.width as f32) * scale).round().max(1.0) as u32;
+        let ph = ((size.height as f32) * scale).round().max(1.0) as u32;
+        let mut buffer = vec![0u32; pw as usize * ph as usize];
+        krate_adapter_common::painter::paint_placements(
+            &mut buffer,
+            pw,
+            ph,
+            scale,
+            &placements,
+            krate_adapter_common::painter::PaintInteraction::default(),
+        );
+        write_argb_png(&buffer, pw, ph, path)
+            .map_err(|err| UiDispatchError::Layout(format!("write {}: {err}", path.display())))
     }
 
     /// Report a natively lowered control's text whenever a person changes it.
@@ -1016,12 +1106,19 @@ impl ui::tree::Host for Phase3GuiHost {
 
 impl ui::events::Host for Phase3GuiHost {
     fn poll(&mut self) -> wasmtime::Result<Option<ui::types::Event>> {
+        // No screenshot here for the same reason as key_held: poll is called at
+        // the top of a frame loop, before this frame is drawn. wait (widget
+        // apps) and present (canvas and scene apps) are the capture points.
         self.pump_native_windows();
         self.poll_one_event()
             .map_err(|err| wasmtime::Error::msg(err.to_string()))
     }
 
     fn key_held(&mut self, key: String) -> wasmtime::Result<bool> {
+        // No screenshot here: a game reads key-held at the top of its loop,
+        // before it has drawn this frame's scene, so capturing on the first
+        // key-held grabs a blank frame. The scene `present` captures instead.
+        //
         // Pump first: a game that only ever calls `key-held` in a tight frame
         // loop never drains the queue, and without this its input would be
         // whatever arrived before the last `poll`.
@@ -1042,6 +1139,11 @@ impl ui::events::Host for Phase3GuiHost {
     }
 
     fn wait(&mut self, timeout_millis: Option<u32>) -> wasmtime::Result<Option<ui::types::Event>> {
+        // The app has built its window and is now waiting for input: the first
+        // stable, fully-drawn frame. Capture here, before any budget check
+        // that might end the run.
+        self.maybe_take_screenshot();
+
         let deadline = timeout_millis
             .map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(u64::from(ms)));
 
@@ -1457,7 +1559,13 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
     fn present(&mut self, canvas: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         // The one call that reaches the widget. Draw calls mutate the raster;
         // this publishes it, so a hundred fills cost one render.
-        Ok(self.publish_canvas(canvas))
+        let result = self.publish_canvas(canvas);
+        // A presented canvas is a real drawn frame -- the right moment to
+        // capture a 2D game or drawing, which may never call wait.
+        if result.is_ok() {
+            self.maybe_take_screenshot();
+        }
+        Ok(result)
     }
 }
 
@@ -1654,10 +1762,44 @@ impl gfx::scene3d::Host for Phase3GuiHost {
         self.images
             .borrow_mut()
             .insert((window, widget), std::sync::Arc::new(image));
-        Ok(self
+        let result = self
             .sync_native_widgets(window)
-            .map_err(|error| gfx::types::GfxError::Platform(error.to_string())))
+            .map_err(|error| gfx::types::GfxError::Platform(error.to_string()));
+        // A presented scene is a real drawn 3D frame -- capture here so a game
+        // that steers with key-held and never calls wait still gets shot with
+        // its scene on screen, not the blank frame before the first present.
+        if result.is_ok() {
+            self.maybe_take_screenshot();
+        }
+        Ok(result)
     }
+}
+
+/// Write an `0xAARRGGBB` framebuffer to a PNG file as RGBA.
+fn write_argb_png(
+    buffer: &[u32],
+    width: u32,
+    height: u32,
+    path: &std::path::Path,
+) -> std::io::Result<()> {
+    let mut rgba = Vec::with_capacity(buffer.len() * 4);
+    for px in buffer {
+        rgba.push(((px >> 16) & 0xFF) as u8);
+        rgba.push(((px >> 8) & 0xFF) as u8);
+        rgba.push((px & 0xFF) as u8);
+        rgba.push(((px >> 24) & 0xFF) as u8);
+    }
+    let file = std::io::BufWriter::new(std::fs::File::create(path)?);
+    let mut encoder = png::Encoder::new(file, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder
+        .write_header()
+        .map_err(|err| std::io::Error::other(err.to_string()))?;
+    writer
+        .write_image_data(&rgba)
+        .map_err(|err| std::io::Error::other(err.to_string()))?;
+    Ok(())
 }
 
 fn audio_permission_denied() -> audio::types::AudioError {
@@ -2346,6 +2488,53 @@ mod tests {
         assert_eq!(&image.rgba[0..4], &[255, 0, 0, 255], "the red fill");
         let last = image.rgba.len() - 4;
         assert_eq!(&image.rgba[last..], &[0, 0, 255, 255], "the blue clear");
+    }
+
+    #[test]
+    fn presenting_a_canvas_writes_the_requested_screenshot() {
+        // The `krate shoot` path end to end: a headless host asked for a
+        // screenshot paints the window to a real PNG when the app presents a
+        // frame, and the PNG decodes to the window's pixel size. This is the
+        // tool every app test relies on to see what an app draws.
+        let dir = std::env::temp_dir().join(format!("krate-shoot-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("frame.png");
+
+        let (mut host, window, widget) = host_with_canvas_widget();
+        host.screenshot = Some((path.clone(), 2.0));
+        let canvas = gfx::canvas2d::Host::bind(&mut host, window, widget)
+            .expect("bind call")
+            .expect("a canvas widget binds");
+        gfx::canvas2d::Host::clear(
+            &mut host,
+            canvas,
+            gfx::types::Color {
+                r: 1.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+        )
+        .expect("clear call")
+        .expect("clear succeeds");
+        gfx::canvas2d::Host::present(&mut host, canvas)
+            .expect("present call")
+            .expect("present succeeds");
+
+        assert!(host.screenshot_taken.get(), "the screenshot was taken");
+        let bytes = std::fs::read(&path).expect("screenshot file exists");
+        assert!(!bytes.is_empty(), "the screenshot is not empty");
+        // Decode it: a valid PNG at the window size times the 2x scale.
+        let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+        let reader = decoder.read_info().expect("valid png");
+        let info = reader.info();
+        assert_eq!(
+            (info.width, info.height),
+            (400, 400),
+            "200x200 window at 2x"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

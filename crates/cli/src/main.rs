@@ -161,6 +161,18 @@ enum Command {
         #[arg(long, hide = true)]
         test_timezone: Option<String>,
 
+        /// Run headless and paint the app's window to this PNG once it has
+        /// drawn a frame. This is how you see what an app actually renders --
+        /// on any machine, in CI, without a display -- instead of trusting that
+        /// it exited cleanly. Implies --headless.
+        #[arg(long, value_name = "FILE")]
+        shoot: Option<PathBuf>,
+
+        /// Display scale for --shoot. 2 mimics a HiDPI window; 1 is raw logical
+        /// pixels.
+        #[arg(long, default_value_t = 2.0)]
+        shoot_scale: f32,
+
         /// Arguments passed to the Krate app. Put them after `--`.
         #[arg(last = true, value_name = "ARG")]
         app_args: Vec<String>,
@@ -519,6 +531,8 @@ fn run() -> Result<u8> {
             test_time,
             test_locale,
             test_timezone,
+            shoot,
+            shoot_scale,
             app_args,
         } => run_component(RunRequest {
             target,
@@ -540,7 +554,10 @@ fn run() -> Result<u8> {
             auto_grant,
             prompt,
             consent,
-            ui_mode: if headless {
+            // A screenshot is a headless render by definition: there is no way
+            // to grab a native window's pixels here, and forcing headless makes
+            // --shoot work the same on a laptop, a server, and CI.
+            ui_mode: if headless || shoot.is_some() {
                 krate_runtime::phase3_ui::Phase3HostUiMode::HeadlessDraft
             } else if native_window {
                 krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype
@@ -555,6 +572,8 @@ fn run() -> Result<u8> {
             test_time_millis: test_time,
             test_locale,
             test_timezone,
+            screenshot_path: shoot,
+            screenshot_scale: shoot_scale,
             app_args,
         }),
         #[cfg(target_os = "macos")]
@@ -1975,6 +1994,10 @@ struct RunRequest {
     test_time_millis: Option<u64>,
     test_locale: Option<String>,
     test_timezone: Option<String>,
+    /// When set, a headless GUI run paints the window to this PNG.
+    screenshot_path: Option<PathBuf>,
+    /// Display scale for the screenshot.
+    screenshot_scale: f32,
     app_args: Vec<String>,
 }
 
@@ -3491,6 +3514,8 @@ fn run_component(request: RunRequest) -> Result<u8> {
             )
         }),
         phase3_ui_mode: request.ui_mode,
+        screenshot_path: request.screenshot_path.clone(),
+        screenshot_scale: request.screenshot_scale,
     };
     let runtime = Runtime::new(&config)?;
     let runtime_world = match manifest.map(Manifest::app_world).transpose()? {
@@ -3743,6 +3768,8 @@ fn open_app() -> Result<u8> {
         test_time_millis: None,
         test_locale: None,
         test_timezone: None,
+        screenshot_path: None,
+        screenshot_scale: 2.0,
         app_args: Vec::new(),
     })
 }
