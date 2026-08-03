@@ -5065,9 +5065,13 @@ fn run_check_app(
     }
 
     // Stage: run. Run the built component with its manifest, headless, all
-    // grants. A GUI app gets the `quick` token so it draws a frame and exits;
-    // a CLI app takes no arg. Untrusted + a fuel budget so a runaway fails here
-    // rather than hanging the check.
+    // grants -- exactly as `create` verifies an app, so a green check-app means
+    // the same thing a successful create does. Every app (GUI and CLI) is given
+    // the bare `quick` token: the verification convention every Krate app
+    // follows is "do the work once and exit 0 on `quick`". The one exception is
+    // a file-reading CLI app (declares fs.read:, no window), which needs a real
+    // file path -- prepare_verify_dir seeds a fixture and returns its path.
+    // Untrusted + a fuel budget so a runaway fails here rather than hanging.
     //
     // Absolute paths: run_self sets the child's cwd to `dir`, so a wasm or
     // manifest path relative to *our* cwd would resolve wrong inside the child
@@ -5077,7 +5081,21 @@ fn run_check_app(
         .to_string_lossy()
         .into_owned();
     let is_gui = manifest_is_gui(&manifest);
-    let mut run_args: Vec<String> = vec![
+    // A scratch dir the run happens in, seeded for a file-reading CLI app so it
+    // has a real fixture to work against. Matches create's verify.
+    let verify_dir = tempfile::tempdir().map_err(|error| CheckFailure {
+        stage: CheckStage::Run,
+        detail: format!("could not create a scratch dir for the run: {error}"),
+        fix: String::new(),
+    })?;
+    let verify_arg = prepare_verify_dir(verify_dir.path(), &manifest)
+        .map_err(|error| CheckFailure {
+            stage: CheckStage::Run,
+            detail: format!("could not prepare the run: {error:#}"),
+            fix: String::new(),
+        })?
+        .unwrap_or_else(|| "quick".to_string());
+    let run_args: Vec<String> = vec![
         "run".into(),
         wasm_str.clone(),
         "--manifest".into(),
@@ -5085,13 +5103,11 @@ fn run_check_app(
         "--untrusted".into(),
         "--auto-grant".into(),
         "--headless".into(),
+        "--".into(),
+        verify_arg,
     ];
-    if is_gui {
-        run_args.push("--".into());
-        run_args.push("quick".into());
-    }
     let run_arg_refs: Vec<&str> = run_args.iter().map(String::as_str).collect();
-    let exit = run_self(dir, &run_arg_refs).map_err(|error| CheckFailure {
+    let exit = run_self(verify_dir.path(), &run_arg_refs).map_err(|error| CheckFailure {
         stage: CheckStage::Run,
         detail: format!("could not run the app: {error:#}"),
         fix: String::new(),
