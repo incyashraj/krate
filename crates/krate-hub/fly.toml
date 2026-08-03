@@ -1,0 +1,65 @@
+# fly.io config for Krate Hub.
+#
+# This is the recommended one-command host: fly gives you free HTTPS and a
+# public https://<app>.fly.dev URL out of the box, which is exactly what the
+# "one-click share" demo needs.
+#
+# Deploy from the REPO ROOT (the Docker build context must be the repo root):
+#
+#   fly launch --no-deploy --copy-config --dockerfile crates/krate-hub/Dockerfile
+#   fly volumes create krate_data --size 1
+#   fly deploy --dockerfile crates/krate-hub/Dockerfile
+#
+# See crates/krate-hub/DEPLOY.md for the full walkthrough.
+
+# CHANGE THIS to your chosen app name. It also determines the default URL
+# (https://<app>.fly.dev), so keep it in sync with KRATE_HUB_PUBLIC_URL below.
+app = "krate-hub"
+
+# CHANGE to a region near you / your users (e.g. "sjc", "iad", "lhr", "sin").
+primary_region = "iad"
+
+[build]
+  # Build context is the repo root; the hub Dockerfile lives under the crate.
+  dockerfile = "crates/krate-hub/Dockerfile"
+
+[env]
+  # The container binds all interfaces; fly's proxy terminates TLS in front.
+  KRATE_HUB_ADDR = "0.0.0.0:8787"
+  # Store published apps on the mounted volume (see [mounts] below).
+  KRATE_HUB_DIR = "/data"
+  # CHANGE THIS to your real public origin. It must match your app name (or your
+  # custom domain, e.g. "https://hub.krate.tech"). This is the origin baked into
+  # every URL the hub hands back, so if it's wrong the returned links won't
+  # resolve.
+  KRATE_HUB_PUBLIC_URL = "https://krate-hub.fly.dev"
+
+# Persistent volume so published .krate bundles survive restarts and redeploys.
+# Create it once with: fly volumes create krate_data --size 1
+[mounts]
+  source = "krate_data"
+  destination = "/data"
+
+[http_service]
+  # fly routes public HTTPS traffic to this internal port -- the port the hub
+  # listens on inside the container.
+  internal_port = 8787
+  # Force HTTPS: any http:// request is redirected to https://.
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  # Keep at least one machine so the demo URL is always warm. Set to 0 to let
+  # fly scale to zero (cheaper, adds a cold-start delay on the first request).
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "5s"
+
+# A small, cheap VM is plenty for a content-addressed file store serving a demo.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

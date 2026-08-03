@@ -1,0 +1,40 @@
+# Docker build context is the repo root (see crates/krate-hub/Dockerfile).
+# Keep the context small so `docker build` is fast and does not ship build
+# artifacts, VCS history, or node/tooling caches into the daemon.
+
+# Rust build output -- by far the biggest thing to exclude.
+target/
+**/target/
+
+# Version control.
+.git/
+.gitignore
+.gitattributes
+
+# Node / web tooling.
+node_modules/
+**/node_modules/
+package-lock.json
+package.json
+
+# Built docs (regenerated; large).
+docs/book/book/
+docs/**/book/
+
+# Fuzzing corpora and artifacts.
+fuzz/corpus/
+fuzz/artifacts/
+
+# Local hub data, if someone ran the hub in-tree.
+hub-data/
+**/hub-data/
+
+# Editor / OS cruft.
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+
+# The Docker files themselves don't need to go into the image build.
+**/Dockerfile
+.dockerignore
