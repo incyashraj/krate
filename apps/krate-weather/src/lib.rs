@@ -1,136 +1,306 @@
-//! Krate Weather — a good-looking weather card, one shareable file.
+//! Krate weather — a modern weather card, drawn on a canvas.
 //!
-//! A polished, static weather card: a city, a hero temperature, the current
-//! condition, a five-day forecast, and a couple of stat lines. No network,
-//! no files, no store — the data is mock and hardcoded. It exists as a
-//! screenshot-worthy sample for the product gallery: a real-world layout that
-//! shows what a Krate GUI app looks like when it is dressed up rather than
-//! probing a capability.
+//! A new user is not impressed by a column of plain labels. So the whole card
+//! is painted into a canvas: a soft gradient sky, a big temperature, a simple
+//! sun-and-cloud mark, a condition line, and a row of forecast pills along the
+//! bottom. It is mock data -- no network -- but it should look like an app
+//! someone would actually want to open.
 //!
-//! Held to the same discipline as the other samples: a Krate component may
-//! import only `krate:*`, so every access is non-panicking and every owned
-//! `String` is built through the raw-allocation helper. A stray `.unwrap()`,
-//! `[i]` index, or `format!` would reach std's allocation-error handler and
-//! drag the whole `wasi:*` import set into an otherwise pure component.
+//! The drawing is rectangle fills, discs approximated by scanned rows, and the
+//! canvas text call. No panic paths, only `krate:*`.
 
 #[allow(warnings)]
 mod bindings;
 
+use bindings::krate::gfx::{canvas2d, types as gfx};
 use bindings::krate::io::{args, stdio};
 use bindings::krate::ui::{events, tree, types, window};
 
-// Widget ids. The tree is static, so each node gets a fixed id.
 const ROOT_ID: u64 = 1;
-const HEADER_CARD_ID: u64 = 2;
-const CITY_ID: u64 = 3;
-const TEMP_ID: u64 = 4;
-const CONDITION_ID: u64 = 5;
-const STATS_ROW_ID: u64 = 6;
-const STAT_HUMIDITY_ID: u64 = 7;
-const STAT_WIND_ID: u64 = 8;
-const STAT_FEELS_ID: u64 = 9;
-const FORECAST_TITLE_ID: u64 = 10;
-const FORECAST_LIST_ID: u64 = 11;
-const FORECAST_ROW_BASE_ID: u64 = 20;
+const CANVAS_ID: u64 = 2;
 
-const WINDOW_W: u32 = 380;
-const WINDOW_H: u32 = 480;
+const WIDTH: u32 = 400;
+const HEIGHT: u32 = 520;
 
-/// Interactive runs stay open until the window is closed; automated runs pass
-/// `quick` and exit promptly.
-const MAX_WAIT_ROUNDS: u32 = 600_000;
-const WAIT_ROUND_MILLIS: u32 = 50;
+const CITY: &str = "San Francisco";
+const CONDITION: &str = "Partly cloudy";
+const TEMP: i32 = 64;
+const HIGH: i32 = 68;
+const LOW: i32 = 57;
 
-/// Consecutive quiet rounds before an unwatched run stops waiting, about ten
-/// seconds. A person clicking or typing resets it, so it is only ever reached
-/// when there is no window to come back to at all.
-const MAX_IDLE_ROUNDS: u32 = 200;
-
-/// One forecast entry: a day, its condition, and its high, all static.
-struct Forecast {
-    day: &'static str,
-    condition: &'static str,
-    high: &'static str,
-}
-
-/// The five-day forecast, hardcoded. Kept short so the card reads at a glance.
-const FORECAST: [Forecast; 5] = [
-    Forecast { day: "Mon", condition: "Sunny", high: "66°" },
-    Forecast { day: "Tue", condition: "Cloudy", high: "61°" },
-    Forecast { day: "Wed", condition: "Sunny", high: "68°" },
-    Forecast { day: "Thu", condition: "Clear", high: "70°" },
-    Forecast { day: "Fri", condition: "Rain", high: "63°" },
+/// Five days: label, high, and a condition code (0 sun, 1 partly, 2 cloud, 3 rain).
+const FORECAST: [(&str, i32, u8); 5] = [
+    ("Mon", 66, 0),
+    ("Tue", 61, 2),
+    ("Wed", 68, 1),
+    ("Thu", 70, 0),
+    ("Fri", 63, 3),
 ];
+
+const QUICK_ROUNDS: u32 = 20;
+const MAX_ROUNDS: u32 = 600;
+const ROUND_MILLIS: u32 = 50;
 
 struct Component;
 
-/// Build an owned `String` without touching std's allocation-error handler,
-/// which would drag the `wasi:*` import set into the component. Mirrors the
-/// raw-allocation path the generated bindings use. Copied verbatim from the
-/// checklist sample.
-fn pure_string(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let len = bytes.len();
-    if len == 0 {
-        return String::new();
-    }
-    unsafe {
-        let layout = core::alloc::Layout::from_size_align_unchecked(len, 1);
-        let ptr = std::alloc::alloc(layout);
-        if ptr.is_null() {
-            #[cfg(target_arch = "wasm32")]
-            core::arch::wasm32::unreachable();
-            #[cfg(not(target_arch = "wasm32"))]
-            std::process::abort();
+impl bindings::Guest for Component {
+    fn run() -> i32 {
+        let size = types::WindowSize {
+            width: WIDTH,
+            height: HEIGHT,
+        };
+        let Ok(win) = window::create("Weather", size) else {
+            return 30;
+        };
+        if window::show(win).is_err() {
+            return 31;
         }
-        core::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, len);
-        String::from_raw_parts(ptr, len, len)
-    }
-}
+        if tree::set_root(win, &stack_root()).is_err()
+            || tree::upsert_node(win, &canvas_node()).is_err()
+        {
+            let _ = window::close(win);
+            return 32;
+        }
+        let canvas = match canvas2d::bind(win, CANVAS_ID) {
+            Ok(c) => c,
+            Err(_) => {
+                let _ = window::close(win);
+                return 33;
+            }
+        };
+        if draw_card(canvas).is_err() {
+            let _ = window::close(win);
+            return 34;
+        }
 
-/// Concatenate several static strings into one owned `String` without
-/// `format!`, which would reach the allocation-error handler. Used to build
-/// stat lines and forecast rows into a single label.
-fn joined(parts: &[&str]) -> String {
-    let mut buf = [0u8; 64];
-    let mut len = 0usize;
-    for part in parts {
-        for byte in part.as_bytes() {
-            if let Some(slot) = buf.get_mut(len) {
-                *slot = *byte;
-                len += 1;
+        let out = stdio::stdout();
+        let _ = out.write(b"weather:ok\n");
+
+        let raw = args::raw();
+        let quick = raw
+            .as_bytes()
+            .split(|byte| *byte == b'\n')
+            .next()
+            .is_some_and(|first| first == b"quick");
+        let rounds = if quick { QUICK_ROUNDS } else { MAX_ROUNDS };
+        for _ in 0..rounds {
+            match events::wait(Some(ROUND_MILLIS)) {
+                Some(types::Event::CloseRequested(id)) if id == win => break,
+                _ => {}
             }
         }
+
+        let _ = window::close(win);
+        0
     }
-    pure_string(core::str::from_utf8(buf.get(..len).unwrap_or(&[])).unwrap_or(""))
 }
 
-// ---- widget tree ----------------------------------------------------------
+fn draw_card(canvas: u64) -> Result<(), gfx::GfxError> {
+    let size = canvas2d::canvas_size(canvas)?;
+    let w = size.width;
+    let h = size.height;
 
-/// Small constructor so every node builder stays one readable block.
-#[allow(clippy::too_many_arguments)]
-fn node(
-    id: u64,
-    parent: Option<u64>,
-    kind: types::WidgetKind,
-    label: Option<String>,
-    role: Option<String>,
-    width: f32,
-    height: f32,
-    grow: f32,
-    padding: f32,
-) -> types::WidgetNode {
+    // A vertical gradient sky: deep blue at the top easing to a lighter blue,
+    // painted as a stack of thin horizontal bands.
+    let bands = 60u32;
+    let mut i = 0u32;
+    while i < bands {
+        let t = i as f32 / bands as f32;
+        let r = 0.16 + t * 0.22;
+        let g = 0.34 + t * 0.28;
+        let b = 0.64 + t * 0.18;
+        let band_h = h / bands as f32 + 1.0;
+        fill(canvas, 0.0, t * h, w, band_h, r, g, b)?;
+        i += 1;
+    }
+
+    // City name, top-left.
+    text(canvas, CITY, 24.0, 46.0, 22.0, 0.92, 0.95, 1.0)?;
+
+    // A sun-and-cloud mark, top-right.
+    draw_sun_cloud(canvas, w - 92.0, 30.0)?;
+
+    // The big temperature, large.
+    let mut tbuf = [0u8; 8];
+    let temp_text = degree(TEMP, &mut tbuf);
+    text(canvas, temp_text, 22.0, 168.0, 88.0, 1.0, 1.0, 1.0)?;
+
+    // Condition and high/low under the number.
+    text(canvas, CONDITION, 26.0, 208.0, 19.0, 0.88, 0.92, 0.99)?;
+    let mut hlbuf = [0u8; 24];
+    let hl = high_low(HIGH, LOW, &mut hlbuf);
+    text(canvas, hl, 26.0, 236.0, 16.0, 0.80, 0.86, 0.96)?;
+
+    // A divider line: 1px tall, white.
+    fill(canvas, 24.0, 272.0, w - 48.0, 1.0, 1.0, 1.0, 1.0)?;
+
+    // Five forecast pills across the bottom.
+    let count = FORECAST.len() as f32;
+    let margin = 20.0;
+    let gap = 10.0;
+    let usable = w - margin * 2.0 - gap * (count - 1.0);
+    let pill_w = usable / count;
+    let pill_top = 310.0;
+    let pill_h = 168.0;
+
+    let mut j = 0usize;
+    while j < FORECAST.len() {
+        if let Some(&(day, high, code)) = FORECAST.get(j) {
+            let x = margin + (j as f32) * (pill_w + gap);
+            // Pill background: a lighter panel over the sky.
+            fill(canvas, x, pill_top, pill_w, pill_h, 0.30, 0.44, 0.68)?;
+            // Day label, centered-ish.
+            text(canvas, day, x + 10.0, pill_top + 28.0, 15.0, 0.92, 0.95, 1.0)?;
+            // A small weather glyph for the day.
+            draw_glyph(canvas, x + pill_w / 2.0 - 14.0, pill_top + 58.0, code)?;
+            // High temperature near the bottom of the pill.
+            let mut dbuf = [0u8; 8];
+            let d = degree(high, &mut dbuf);
+            text(canvas, d, x + 10.0, pill_top + pill_h - 20.0, 20.0, 1.0, 1.0, 1.0)?;
+        }
+        j += 1;
+    }
+
+    canvas2d::present(canvas)?;
+    Ok(())
+}
+
+/// A sun with a small cloud overlapping it, for the header.
+fn draw_sun_cloud(canvas: u64, x: f32, y: f32) -> Result<(), gfx::GfxError> {
+    disc(canvas, x + 22.0, y + 20.0, 17.0, 1.0, 0.85, 0.40)?;
+    disc(canvas, x + 6.0, y + 36.0, 12.0, 0.96, 0.98, 1.0)?;
+    disc(canvas, x + 24.0, y + 32.0, 15.0, 0.96, 0.98, 1.0)?;
+    disc(canvas, x + 42.0, y + 36.0, 12.0, 0.96, 0.98, 1.0)?;
+    fill(canvas, x + 6.0, y + 42.0, 48.0, 10.0, 0.96, 0.98, 1.0)?;
+    Ok(())
+}
+
+/// A small forecast glyph by condition code.
+fn draw_glyph(canvas: u64, x: f32, y: f32, code: u8) -> Result<(), gfx::GfxError> {
+    match code {
+        0 => {
+            disc(canvas, x + 14.0, y + 12.0, 12.0, 1.0, 0.85, 0.40)?;
+        }
+        1 => {
+            disc(canvas, x + 8.0, y + 8.0, 8.0, 1.0, 0.85, 0.40)?;
+            disc(canvas, x + 18.0, y + 15.0, 10.0, 0.96, 0.98, 1.0)?;
+        }
+        2 => {
+            disc(canvas, x + 9.0, y + 13.0, 10.0, 0.92, 0.95, 1.0)?;
+            disc(canvas, x + 21.0, y + 13.0, 10.0, 0.92, 0.95, 1.0)?;
+            fill(canvas, x + 9.0, y + 15.0, 20.0, 8.0, 0.92, 0.95, 1.0)?;
+        }
+        _ => {
+            disc(canvas, x + 14.0, y + 9.0, 10.0, 0.86, 0.89, 0.95)?;
+            fill(canvas, x + 8.0, y + 22.0, 3.0, 8.0, 0.6, 0.80, 1.0)?;
+            fill(canvas, x + 16.0, y + 22.0, 3.0, 8.0, 0.6, 0.80, 1.0)?;
+            fill(canvas, x + 24.0, y + 22.0, 3.0, 8.0, 0.6, 0.80, 1.0)?;
+        }
+    }
+    Ok(())
+}
+
+/// A filled disc, approximated by scanning rows and filling the chord width.
+fn disc(
+    canvas: u64,
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+) -> Result<(), gfx::GfxError> {
+    let steps = (radius * 2.0) as i32;
+    let mut i = 0i32;
+    while i < steps {
+        let dy = (i as f32) - radius;
+        let half = radius * radius - dy * dy;
+        if half > 0.0 {
+            let chord = sqrt(half);
+            fill(canvas, cx - chord, cy + dy, chord * 2.0, 1.5, r, g, b)?;
+        }
+        i += 1;
+    }
+    Ok(())
+}
+
+/// Square root by Newton's method, no std math import.
+fn sqrt(x: f32) -> f32 {
+    if x <= 0.0 {
+        return 0.0;
+    }
+    let mut guess = x;
+    let mut i = 0;
+    while i < 8 {
+        guess = 0.5 * (guess + x / guess);
+        i += 1;
+    }
+    guess
+}
+
+fn fill(
+    canvas: u64,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+) -> Result<(), gfx::GfxError> {
+    canvas2d::fill_rect(
+        canvas,
+        gfx::Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        gfx::Color { r, g, b, a: 1.0 },
+    )
+}
+
+fn text(
+    canvas: u64,
+    s: &str,
+    x: f32,
+    y: f32,
+    size: f32,
+    r: f32,
+    g: f32,
+    b: f32,
+) -> Result<(), gfx::GfxError> {
+    canvas2d::draw_text(
+        canvas,
+        s,
+        gfx::Point { x, y },
+        size,
+        gfx::Color { r, g, b, a: 1.0 },
+    )
+}
+
+// ----- widget builders -----
+
+fn stack_root() -> types::WidgetNode {
+    node(ROOT_ID, None, types::WidgetKind::Stack)
+}
+
+fn canvas_node() -> types::WidgetNode {
+    node(CANVAS_ID, Some(ROOT_ID), types::WidgetKind::Canvas)
+}
+
+fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetNode {
     types::WidgetNode {
         id,
         parent,
         kind,
-        label,
-        role,
+        label: None,
+        role: None,
         style: types::Style {
-            width: Some(width),
-            height: Some(height),
-            grow,
-            padding,
+            width: None,
+            height: None,
+            grow: 0.0,
+            padding: 0.0,
         },
         checked: None,
         value: None,
@@ -139,261 +309,76 @@ fn node(
     }
 }
 
-/// The outer column that holds every card.
-fn root() -> types::WidgetNode {
-    node(
-        ROOT_ID,
-        None,
-        types::WidgetKind::Stack,
-        None,
-        None,
-        WINDOW_W as f32,
-        WINDOW_H as f32,
-        0.0,
-        16.0,
-    )
-}
+// ----- text helpers, panic-free -----
 
-/// The hero card: city, big temperature, and the current condition, grouped in
-/// their own stack so they read as one block at the top.
-fn header_card() -> types::WidgetNode {
-    node(
-        HEADER_CARD_ID,
-        Some(ROOT_ID),
-        types::WidgetKind::Stack,
-        None,
-        None,
-        340.0,
-        176.0,
-        0.0,
-        12.0,
-    )
-}
-
-fn city() -> types::WidgetNode {
-    let mut n = node(
-        CITY_ID,
-        Some(HEADER_CARD_ID),
-        types::WidgetKind::Text,
-        Some(pure_string("San Francisco")),
-        Some(pure_string("heading")),
-        316.0,
-        26.0,
-        0.0,
-        0.0,
-    );
-    n.role = Some(pure_string("heading"));
-    n
-}
-
-/// The hero number. Its tall explicit height is what makes the layout give it
-/// room to read as the biggest thing on the card.
-fn temp() -> types::WidgetNode {
-    let mut n = node(
-        TEMP_ID,
-        Some(HEADER_CARD_ID),
-        types::WidgetKind::Text,
-        Some(pure_string("64°")),
-        Some(pure_string("heading")),
-        316.0,
-        86.0,
-        0.0,
-        0.0,
-    );
-    n.role = Some(pure_string("heading"));
-    n
-}
-
-fn condition() -> types::WidgetNode {
-    let mut n = node(
-        CONDITION_ID,
-        Some(HEADER_CARD_ID),
-        types::WidgetKind::Text,
-        Some(pure_string("Partly cloudy")),
-        Some(pure_string("status")),
-        316.0,
-        24.0,
-        0.0,
-        0.0,
-    );
-    n.role = Some(pure_string("status"));
-    n
-}
-
-/// The stat strip: three short lines grouped in a wrapping row.
-fn stats_row() -> types::WidgetNode {
-    node(
-        STATS_ROW_ID,
-        Some(ROOT_ID),
-        types::WidgetKind::Grid,
-        None,
-        None,
-        340.0,
-        34.0,
-        0.0,
-        4.0,
-    )
-}
-
-fn stat(id: u64, label: &str, value: &str) -> types::WidgetNode {
-    let mut n = node(
-        id,
-        Some(STATS_ROW_ID),
-        types::WidgetKind::Text,
-        Some(joined(&[label, "  ", value])),
-        Some(pure_string("status")),
-        104.0,
-        26.0,
-        0.0,
-        0.0,
-    );
-    n.role = Some(pure_string("status"));
-    n
-}
-
-fn forecast_title() -> types::WidgetNode {
-    let mut n = node(
-        FORECAST_TITLE_ID,
-        Some(ROOT_ID),
-        types::WidgetKind::Text,
-        Some(pure_string("5-Day Forecast")),
-        Some(pure_string("heading")),
-        340.0,
-        24.0,
-        0.0,
-        0.0,
-    );
-    n.role = Some(pure_string("heading"));
-    n
-}
-
-/// The forecast card: a column of one row per day.
-fn forecast_list() -> types::WidgetNode {
-    node(
-        FORECAST_LIST_ID,
-        Some(ROOT_ID),
-        types::WidgetKind::Stack,
-        None,
-        None,
-        340.0,
-        190.0,
-        0.0,
-        8.0,
-    )
-}
-
-/// One forecast row: "Mon     Sunny     66°" as a single aligned line. Spaces
-/// do the aligning; the label is one string.
-fn forecast_row(index: usize, entry: &Forecast) -> types::WidgetNode {
-    let text = joined(&[entry.day, "     ", entry.condition, "     ", entry.high]);
-    let mut n = node(
-        FORECAST_ROW_BASE_ID + index as u64,
-        Some(FORECAST_LIST_ID),
-        types::WidgetKind::Text,
-        Some(text),
-        Some(pure_string("status")),
-        316.0,
-        28.0,
-        0.0,
-        0.0,
-    );
-    n.role = Some(pure_string("status"));
-    n
-}
-
-/// Build the whole tree once. Returns false if any upsert fails.
-fn build(win: u64) -> bool {
-    if tree::set_root(win, &root()).is_err() {
-        return false;
+/// "64°" as a str. The degree sign is UTF-8 0xC2 0xB0.
+fn degree(value: i32, buf: &mut [u8; 8]) -> &str {
+    let mut pos = 0usize;
+    let mut num = [0u8; 6];
+    for byte in i32_bytes(value, &mut num) {
+        push(buf, &mut pos, *byte);
     }
-    let ok = tree::upsert_node(win, &header_card()).is_ok()
-        && tree::upsert_node(win, &city()).is_ok()
-        && tree::upsert_node(win, &temp()).is_ok()
-        && tree::upsert_node(win, &condition()).is_ok()
-        && tree::upsert_node(win, &stats_row()).is_ok()
-        && tree::upsert_node(win, &stat(STAT_HUMIDITY_ID, "Humidity", "72%")).is_ok()
-        && tree::upsert_node(win, &stat(STAT_WIND_ID, "Wind", "8 mph")).is_ok()
-        && tree::upsert_node(win, &stat(STAT_FEELS_ID, "Feels", "61°")).is_ok()
-        && tree::upsert_node(win, &forecast_title()).is_ok()
-        && tree::upsert_node(win, &forecast_list()).is_ok();
-    if !ok {
-        return false;
+    push(buf, &mut pos, 0xC2);
+    push(buf, &mut pos, 0xB0);
+    // SAFETY: digits, an optional minus, and the two-byte degree sign are UTF-8.
+    unsafe { core::str::from_utf8_unchecked(buf.get(..pos).unwrap_or(b"")) }
+}
+
+/// "H:68   L:57".
+fn high_low(high: i32, low: i32, buf: &mut [u8; 24]) -> &str {
+    let mut pos = 0usize;
+    for byte in b"H:" {
+        push(buf, &mut pos, *byte);
     }
-    for i in 0..FORECAST.len() {
-        let Some(entry) = FORECAST.get(i) else {
-            continue;
-        };
-        if tree::upsert_node(win, &forecast_row(i, entry)).is_err() {
-            return false;
+    let mut num = [0u8; 6];
+    for byte in i32_bytes(high, &mut num) {
+        push(buf, &mut pos, *byte);
+    }
+    for byte in b"   L:" {
+        push(buf, &mut pos, *byte);
+    }
+    for byte in i32_bytes(low, &mut num) {
+        push(buf, &mut pos, *byte);
+    }
+    unsafe { core::str::from_utf8_unchecked(buf.get(..pos).unwrap_or(b"")) }
+}
+
+fn push(buf: &mut [u8], pos: &mut usize, byte: u8) {
+    if let Some(slot) = buf.get_mut(*pos) {
+        *slot = byte;
+        *pos += 1;
+    }
+}
+
+fn i32_bytes(value: i32, buf: &mut [u8; 6]) -> &[u8] {
+    let mut pos = 0usize;
+    let mut mag = if value < 0 {
+        push(buf, &mut pos, b'-');
+        i64::from(value).unsigned_abs()
+    } else {
+        value as u64
+    };
+    if mag == 0 {
+        push(buf, &mut pos, b'0');
+        return buf.get(..pos).unwrap_or(b"0");
+    }
+    let mut scratch = [0u8; 12];
+    let mut count = 0usize;
+    while mag > 0 && count < scratch.len() {
+        if let Some(slot) = scratch.get_mut(count) {
+            *slot = b'0' + (mag % 10) as u8;
+        }
+        mag /= 10;
+        count += 1;
+    }
+    let mut i = count;
+    while i > 0 {
+        i -= 1;
+        if let Some(digit) = scratch.get(i) {
+            push(buf, &mut pos, *digit);
         }
     }
-    true
-}
-
-// ---- the app --------------------------------------------------------------
-
-impl bindings::Guest for Component {
-    fn run() -> i32 {
-        let size = types::WindowSize {
-            width: WINDOW_W,
-            height: WINDOW_H,
-        };
-        let Ok(win) = window::create("Weather", size) else {
-            return 30;
-        };
-        if window::show(win).is_err() {
-            return 31;
-        }
-        if !build(win) {
-            let _ = window::close(win);
-            return 32;
-        }
-
-        // A quick automated run builds the card and exits at once. It must NOT
-        // enter the event-wait loop — waiting on window events during a
-        // headless/verify run is what makes verification hang.
-        let raw = args::raw();
-        let quick = raw
-            .as_bytes()
-            .split(|byte| *byte == b'\n')
-            .next()
-            .is_some_and(|first| first == b"quick");
-
-        if quick {
-            let _ = window::close(win);
-            let out = stdio::stdout();
-            let _ = out.write(b"weather:ok\n");
-            return 0;
-        }
-
-        let mut close_requested = false;
-        let mut idle_rounds = 0u32;
-        for _ in 0..MAX_WAIT_ROUNDS {
-            let event = events::wait(Some(WAIT_ROUND_MILLIS));
-            if event.is_none() {
-                idle_rounds += 1;
-                if idle_rounds >= MAX_IDLE_ROUNDS {
-                    break;
-                }
-                continue;
-            }
-            idle_rounds = 0;
-            if let Some(types::Event::CloseRequested(_)) = event {
-                close_requested = true;
-                break;
-            }
-        }
-
-        let _ = window::close(win);
-        let out = stdio::stdout();
-        let _ = out.write(b"weather:ok\n");
-
-        if close_requested {
-            2
-        } else {
-            0
-        }
-    }
+    buf.get(..pos).unwrap_or(b"0")
 }
 
 bindings::export!(Component with_types_in bindings);
