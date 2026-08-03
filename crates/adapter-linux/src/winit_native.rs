@@ -98,6 +98,10 @@ mod real {
     fn key_name(key: &winit::keyboard::Key) -> Option<String> {
         use winit::keyboard::{Key, NamedKey};
         match key {
+            // winit reports the spacebar as a literal " " character, not
+            // NamedKey::Space; without this an app never matches
+            // key_held("Space"). Same fix as the Windows adapter.
+            Key::Character(text) if text.as_str() == " " => Some("Space".to_string()),
             Key::Character(text) => Some(text.to_string()),
             Key::Named(named) => {
                 let name = match named {
@@ -576,6 +580,36 @@ mod real {
     /// Whether a native window is currently tracked for the id.
     pub fn has_native_window(krate: WindowId) -> Result<bool, UiAdapterError> {
         with_tracked(krate, |_| ()).map(|found| found.is_some())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::key_name;
+        use winit::keyboard::{Key, NamedKey, SmolStr};
+
+        #[test]
+        fn the_spacebar_is_named_space_not_a_blank() {
+            // winit hands the spacebar over as a " " character, and a bare
+            // to_string() named the key " ", which no app matches against
+            // key_held("Space"). This is the regression that made Space do
+            // nothing on Linux and Windows while it worked on macOS.
+            assert_eq!(
+                key_name(&Key::Character(SmolStr::new(" "))).as_deref(),
+                Some("Space")
+            );
+            assert_eq!(
+                key_name(&Key::Named(NamedKey::Space)).as_deref(),
+                Some("Space")
+            );
+            assert_eq!(
+                key_name(&Key::Character(SmolStr::new("a"))).as_deref(),
+                Some("a")
+            );
+            assert_eq!(
+                key_name(&Key::Named(NamedKey::ArrowLeft)).as_deref(),
+                Some("ArrowLeft")
+            );
+        }
     }
 }
 

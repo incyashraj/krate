@@ -22,7 +22,7 @@ use crate::painter::{
     COLOR_BUTTON_LABEL, COLOR_FIELD_BORDER, COLOR_FIELD_FILL, COLOR_FIELD_TEXT, COLOR_KNOB,
     COLOR_SELECTION, COLOR_TEXT, COLOR_TRACK,
 };
-use crate::ui::{kind_is_selectable, WidgetKind, WidgetPlacement};
+use crate::ui::{kind_is_selectable, ImagePixels, WidgetKind, WidgetPlacement};
 
 /// Logical font size for widget labels; multiplied by the scale factor
 /// through parley's display scale.
@@ -212,6 +212,16 @@ pub fn try_paint_placements(
             width as f32,
             height as f32,
         );
+
+        // Image and canvas pixels are blitted into the framebuffer after the
+        // vello pixmap is copied over -- vello_cpu has no image primitive here,
+        // and the shared `draw_image` already scales, blends, and clips exactly
+        // as every other host does. Collected in the same pass so a scene draws
+        // in the same z-order it was placed. Without this, a 3D scene or a 2D
+        // canvas fell into the match's catch-all and drew nothing: the window
+        // came up blank on Windows and Linux while macOS painted it natively.
+        let mut blits: Vec<(f32, f32, f32, f32, Option<(f32, f32, f32, f32)>, &ImagePixels)> =
+            Vec::new();
 
         for placement in placements {
             let (px, py) = (placement.x * scale, placement.y * scale);
@@ -497,6 +507,20 @@ pub fn try_paint_placements(
                     }
                     continue;
                 }
+                WidgetKind::Image | WidgetKind::Canvas => {
+                    // A backdrop under an image (so a picture that does not
+                    // fill its rect sits on a panel, matching the bitmap
+                    // painter), then the pixels themselves queued for the
+                    // post-pixmap blit. A canvas with no pixels yet draws
+                    // nothing rather than a stray panel.
+                    if placement.kind == WidgetKind::Image || placement.pixels.is_some() {
+                        fill(&mut ctx, COLOR_FIELD_FILL, px, py, pw, ph);
+                    }
+                    if let Some(image) = placement.pixels.as_deref() {
+                        blits.push((px, py, pw, ph, clip_px, image));
+                    }
+                    continue;
+                }
                 _ => continue,
             };
             if label.is_empty() {
@@ -519,6 +543,12 @@ pub fn try_paint_placements(
         ctx.render_to_pixmap(&mut resources, &mut pixmap);
         for (dst, src) in buffer.iter_mut().zip(pixmap.data().iter()) {
             *dst = 0xFF00_0000 | ((src.r as u32) << 16) | ((src.g as u32) << 8) | (src.b as u32);
+        }
+        // Composite images over the finished vello frame with the shared
+        // rasterizer, so a scene or canvas lands with the same scaling and
+        // alpha blending on every host.
+        for (px, py, pw, ph, clip, image) in blits {
+            crate::painter::draw_image(buffer, width, height, (px, py, pw, ph), image, clip);
         }
         true
     })
@@ -574,6 +604,54 @@ mod tests {
             shades.len() > 3,
             "expected antialiased blends, found {} shades",
             shades.len()
+        );
+    }
+
+    #[test]
+    fn a_canvas_draws_its_pixels_not_a_blank_frame() {
+        // The regression that made 3D and 2D-canvas apps come up as a white
+        // window on Windows and Linux: the vello painter had no arm for Image
+        // or Canvas, so a scene's pixels were dropped and the frame stayed at
+        // the background colour. A solid-red canvas must put red on screen.
+        let (w, h) = (64u32, 48u32);
+        let mut buffer = vec![0u32; (w * h) as usize];
+        let red = ImagePixels::new(
+            w,
+            h,
+            std::iter::repeat([255u8, 0, 0, 255]).take((w * h) as usize).flatten().collect(),
+        )
+        .expect("red image");
+        let placements = [WidgetPlacement {
+            widget: WidgetId::new(1).unwrap(),
+            kind: WidgetKind::Canvas,
+            label: None,
+            checked: None,
+            value: None,
+            selection: None,
+            text_cursor: None,
+            clip: None,
+            x: 0.0,
+            y: 0.0,
+            width: w as f32,
+            height: h as f32,
+            clickable: false,
+            role: None,
+            pixels: Some(std::sync::Arc::new(red)),
+        }];
+        assert!(try_paint_placements(
+            &mut buffer,
+            w,
+            h,
+            1.0,
+            &placements,
+            PaintInteraction::default(),
+        ));
+        // Centre pixel is opaque red, not the background wash.
+        let centre = buffer[((h / 2) * w + w / 2) as usize];
+        assert_eq!(
+            centre & 0x00FF_FFFF,
+            0x00FF_0000,
+            "the canvas pixels must reach the framebuffer, got {centre:#010x}"
         );
     }
 
