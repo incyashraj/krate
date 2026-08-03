@@ -492,30 +492,80 @@
       <div class="wrap">
         <div class="section-heading">
           <p class="label">Start here</p>
-          <h2>Choose the path that fits you.</h2>
-          
+          <h2>It works like Python.</h2>
+          <p>You install the runtime once. After that, you can open any <code>.krate</code> app someone sends you. Double-click it, or run it from a terminal. That is the whole idea.</p>
         </div>
 
+        <!-- The install command has never been visible on the page itself,
+             only inside a JS terminal demo a reader might never click. A
+             first-time visitor could not find the one command they came for.
+             It now sits here, in the open, with a copy button. -->
+        <div class="install-block">
+          <div class="install-line">
+            <p class="install-label">macOS or Linux &mdash; paste into a terminal</p>
+            <div class="install-code">
+              <code id="installUnix">curl -fsSL https://krate.tech/install.sh | sh</code>
+              <button class="copy-button" type="button" data-copy="installUnix">Copy</button>
+            </div>
+          </div>
+          <div class="install-line">
+            <p class="install-label">Windows &mdash; paste into PowerShell</p>
+            <div class="install-code">
+              <code id="installWin">irm https://krate.tech/install.ps1 | iex</code>
+              <button class="copy-button" type="button" data-copy="installWin">Copy</button>
+            </div>
+          </div>
+          <p class="install-foot">That is the only install. You never do it again per app.</p>
+
+          <details class="issues-box">
+            <summary>Hit a snag? Common issues &amp; fixes</summary>
+            <ul class="issues-list">
+              <li>
+                <span class="issue-q">A new terminal says <code>krate: command not found</code> or <code>'krate' is not recognized</code>.</span>
+                <span class="issue-a">The install folder is not on your PATH yet. Open a fresh terminal, or add the PATH line the installer printed at the end.</span>
+              </li>
+              <li>
+                <span class="issue-q">An app won't open: <code>a matching implementation was not found in the linker</code>.</span>
+                <span class="issue-a">The app needs a newer Krate than you have. Update by running the install command above again.</span>
+              </li>
+              <li>
+                <span class="issue-q">Making an app, the Rust install failed: <code>could not amend shell profile ... Permission denied</code>.</span>
+                <span class="issue-a">This is fixed in a newer Krate. Run the install command above again to update.</span>
+              </li>
+              <li>
+                <span class="issue-q">I ran <code>./krate</code> and it said no such file.</span>
+                <span class="issue-a">After installing, the command is just <code>krate</code>, with no <code>./</code>. Use <code>krate run app.krate</code>.</span>
+              </li>
+              <li>
+                <span class="issue-q">Double-clicking a <code>.krate</code> does nothing.</span>
+                <span class="issue-a">Reinstall with the latest version, which sets up the file association so double-click opens it.</span>
+              </li>
+            </ul>
+            <p class="issues-report">Still stuck? Tell us &rarr; <a href="https://github.com/incyashraj/krate/issues/new?title=Setup%20problem&amp;body=What%20I%20ran%3A%0A%0AWhat%20I%20expected%3A%0A%0AWhat%20happened%20(paste%20the%20exact%20error)%3A%0A%0AMy%20system%20(Mac%2FWindows%2FLinux)%3A%0A%0AKrate%20version%20(run%20%60krate%20--version%60)%3A">report it on GitHub</a>. The same list, and where to report, is one command away in the terminal: <code>krate doctor</code> shows your setup and where to get help.</p>
+          </details>
+        </div>
+
+        <p class="paths-lead">Now that Krate is installed, pick your path.</p>
         <div class="path-grid">
           <a class="path-card" href="/open/">
             <span class="path-number">01 / OPEN</span>
-            <h3>I received a Krate app</h3>
-            <p>Install Krate once, then open it like any file.</p>
-            <span class="path-link">Open it →</span>
+            <h3>Someone sent me an app</h3>
+            <p>Double-click the <code>.krate</code> file, or run <code>krate run app.krate</code>. Krate shows what it wants, then opens it.</p>
+            <span class="path-link">Open one now &rarr;</span>
+          </a>
+
+          <a class="path-card" href="/cloud/">
+            <span class="path-number">02 / GET</span>
+            <h3>I want apps to try</h3>
+            <p>Krate Cloud is the store. Browse and download apps, then open them the same way. The shelf is still filling up.</p>
+            <span class="path-link">Open the store &rarr;</span>
           </a>
 
           <a class="path-card" href="./docs/pages/make-an-app-with-ai.html">
-            <span class="path-number">02 / CREATE</span>
-            <h3>I want to make an app</h3>
-            <p>Describe it. You get one file you can send.</p>
-            <span class="path-link">Make your first app →</span>
-          </a>
-
-          <a class="path-card" href="https://github.com/incyashraj/krate/discussions">
-            <span class="path-number">03 / INTEGRATE</span>
-            <h3>We build AI products</h3>
-            <p>Use Krate as the output format for your agents.</p>
-            <span class="path-link">Discuss an integration →</span>
+            <span class="path-number">03 / MAKE</span>
+            <h3>I want to build one</h3>
+            <p>For developers. Describe an app and let AI write it with <code>krate create</code>, then share it on Krate Cloud.</p>
+            <span class="path-link">Make an app with AI &rarr;</span>
           </a>
         </div>
       </div>
@@ -1158,6 +1208,40 @@
     });
 
     showDemo("create");
+
+    // Copy the install command to the clipboard. Inline and dependency-free so
+    // it survives the page's strict CSP (no external scripts allowed).
+    document.querySelectorAll(".copy-button").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const source = document.getElementById(button.dataset.copy);
+        if (!source) return;
+        const text = source.textContent.trim();
+        const done = () => {
+          const original = button.textContent;
+          button.textContent = "Copied";
+          button.classList.add("copied");
+          window.setTimeout(() => {
+            button.textContent = original;
+            button.classList.remove("copied");
+          }, 1600);
+        };
+        try {
+          await navigator.clipboard.writeText(text);
+          done();
+        } catch (error) {
+          // Older or locked-down browsers: fall back to a hidden selection.
+          const helper = document.createElement("textarea");
+          helper.value = text;
+          helper.setAttribute("readonly", "");
+          helper.style.position = "absolute";
+          helper.style.left = "-9999px";
+          document.body.appendChild(helper);
+          helper.select();
+          try { document.execCommand("copy"); done(); } catch (_) { /* give up quietly */ }
+          document.body.removeChild(helper);
+        }
+      });
+    });
   </script>
 </body>
 </html>

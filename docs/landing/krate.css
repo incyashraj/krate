@@ -1000,6 +1000,180 @@
     }
 
 
+    /* Install command, copy button, and the common-issues box. Built from the
+       same tokens as the rest of the page so it reads as one surface. */
+    .install-block {
+      max-width: 760px;
+      margin: 0 auto 40px;
+    }
+
+
+    .install-line + .install-line {
+      margin-top: 16px;
+    }
+
+
+    .install-label {
+      margin: 0 0 7px;
+      color: var(--quiet);
+      font-family: var(--mono);
+      font-size: 12px;
+    }
+
+
+    .install-code {
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+      padding: 12px 12px 12px 15px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+
+    .install-code code {
+      flex: 1;
+      overflow-x: auto;
+      color: var(--blue-soft);
+      font-family: var(--mono);
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: nowrap;
+    }
+
+
+    .copy-button {
+      flex: none;
+      align-self: center;
+      min-height: 32px;
+      padding: 6px 14px;
+      color: var(--text);
+      background: transparent;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      font-family: var(--sans);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: color .15s ease, background .15s ease, border-color .15s ease;
+    }
+
+
+    .copy-button:hover,
+    .copy-button:focus-visible {
+      color: var(--bg);
+      background: var(--cyan);
+      border-color: var(--cyan);
+      outline: none;
+    }
+
+
+    .copy-button.copied {
+      color: var(--bg);
+      background: var(--cyan);
+      border-color: var(--cyan);
+    }
+
+
+    .install-foot {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 14px;
+    }
+
+
+    .issues-box {
+      margin-top: 22px;
+      padding: 4px 18px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+
+    .issues-box summary {
+      padding: 14px 0;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+
+    .issues-box summary:hover {
+      color: var(--cyan);
+    }
+
+
+    .issues-list {
+      margin: 4px 0 0;
+      padding: 0 0 8px;
+      list-style: none;
+    }
+
+
+    .issues-list li {
+      padding: 13px 0;
+      border-top: 1px solid var(--line);
+    }
+
+
+    .issue-q,
+    .issue-a {
+      display: block;
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+
+    .issue-q {
+      color: var(--text);
+    }
+
+
+    .issue-a {
+      margin-top: 4px;
+      color: var(--muted);
+    }
+
+
+    .issues-list code,
+    .issues-report code {
+      color: var(--blue-soft);
+      font-family: var(--mono);
+      font-size: 13px;
+    }
+
+
+    .issues-report {
+      margin: 6px 0 14px;
+      padding-top: 13px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+
+    .issues-report a {
+      color: var(--cyan);
+    }
+
+
+    .paths-lead {
+      margin: 0 0 18px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 15px;
+      text-align: center;
+    }
+
+
     .proof-grid {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
