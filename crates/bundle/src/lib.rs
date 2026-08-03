@@ -159,8 +159,48 @@ fn io_err(path: &Path, source: io::Error) -> BundleError {
 
 /// Whether a path looks like a bundle rather than a bare component.
 pub fn is_bundle_path(path: &Path) -> bool {
-    path.extension()
+    // A `.krate` extension is the fast, obvious signal.
+    if path
+        .extension()
         .is_some_and(|ext| ext.eq_ignore_ascii_case(BUNDLE_EXTENSION))
+    {
+        return true;
+    }
+    // But `krate create --output myapp` writes the bundle to a path the user
+    // named, often with no extension. Running that must still work, so fall
+    // back to sniffing the content: a bundle is a ZIP (magic `PK\x03\x04`)
+    // whose first entry is `manifest.toml`. This is a cheap read of the file
+    // header, not a full open, and it means a bundle is a bundle whatever it
+    // is called -- which is what a person renaming or downloading one expects.
+    looks_like_bundle_file(path)
+}
+
+/// Whether a file's bytes look like a Krate bundle: a ZIP archive that names
+/// `manifest.toml` in its first local-file-header. A raw `.wasm` (which starts
+/// with `\0asm`) never matches, so the two are never confused.
+fn looks_like_bundle_file(path: &Path) -> bool {
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    // 4-byte ZIP local-file-header signature + 26 header bytes + the file name.
+    // "manifest.toml" is 13 bytes; read enough to see it if it is the first
+    // entry (which `pack` always writes first).
+    let mut head = [0u8; 64];
+    let n = match std::io::Read::read(&mut file, &mut head) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    let head = &head[..n];
+    // ZIP local file header magic.
+    if !head.starts_with(&[0x50, 0x4B, 0x03, 0x04]) {
+        return false;
+    }
+    // The file name follows the 30-byte fixed local header. Look for
+    // "manifest.toml" anywhere in the bytes we read (it is right there when it
+    // is the first entry, and this avoids parsing header length fields).
+    head.windows(b"manifest.toml".len())
+        .any(|w| w == b"manifest.toml")
 }
 
 /// Whether a run target is a URL rather than a filesystem path.

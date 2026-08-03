@@ -1936,7 +1936,18 @@ fn verify_packed_app(output: &Path, manifest: &krate_manifest::Manifest) -> Resu
     let run_with = |arg: &str| -> Result<i32> {
         run_self(
             verify_dir.path(),
-            &["run", bundle_str, "--untrusted", "--auto-grant", "--", arg],
+            // Headless: verification is an automated run, not a windowed
+            // session. A GUI app opened windowed in this non-interactive
+            // context traps; headless runs the same code without a window.
+            &[
+                "run",
+                bundle_str,
+                "--untrusted",
+                "--auto-grant",
+                "--headless",
+                "--",
+                arg,
+            ],
         )
     };
 
@@ -2499,6 +2510,13 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
             bundle_abs.to_str().unwrap(),
             "--untrusted",
             "--auto-grant",
+            // Headless: verification is an automated check that the app runs
+            // and honors its permission wall, not a play session. A GUI app run
+            // windowed here tries to open a real window in a non-interactive
+            // context and traps -- which failed `krate create` at the last step
+            // for a checklist that in fact runs perfectly. Headless runs the
+            // same code without a window.
+            "--headless",
             "--",
             &verify_arg,
         ],
@@ -2525,6 +2543,9 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
             deny_args.push("--grant".to_string());
             deny_args.push(name);
         }
+        // Headless for the same reason as the allow run: this is an automated
+        // permission-wall check, not a windowed session.
+        deny_args.push("--headless".to_string());
         deny_args.push("--".to_string());
         deny_args.push(verify_arg.clone());
         let deny_arg_refs: Vec<&str> = deny_args.iter().map(String::as_str).collect();
