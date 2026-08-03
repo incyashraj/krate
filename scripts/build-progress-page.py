@@ -142,16 +142,16 @@ def main():
 
     <h2>What the current public release can run</h2>
     <p>
-      All of them. <code>v0.1.0-rc5</code> is the first release with drawing,
-      animation and sound, and it was checked by downloading the published
-      binary and running the 2D game, the chart and the sandbox escape test
-      with it, not by trusting the build that made it.
+      All of them. The current release is <code>v0.1.0-rc16</code>. Drawing,
+      animation and sound arrived in <code>v0.1.0-rc5</code>, and each release is
+      checked by downloading the published binary and running the 2D game, the
+      chart and the sandbox escape test with it, not by trusting the build that
+      made it. rc16 also adds <code>krate run app.wasm --shoot frame.png</code>,
+      which paints any app's window to a PNG on any machine with no display.
     </p>
     <p class="generated">
-      One gap: there is no arm64 Linux binary in rc5. It builds inside a
-      container whose C tooling is too old for one dependency, and holding four
-      working platforms for it helped nobody. The installer says so on that
-      machine and gives the build-from-source command.
+      Six platforms ship as of rc16, including arm64 Linux and ARM Windows.
+      The earlier gap (no arm64 Linux binary in rc5) is closed.
     </p>
 
     <h2>How much of the system is real</h2>

@@ -703,6 +703,32 @@
       </div>
     </section>
 
+    <!-- Plain, honest status for a newcomer: what runs today, how to check it
+         yourself, and what is not ready. No hype. If a claim here stops being
+         true, fix it here first. -->
+    <section class="section" id="tested">
+      <div class="wrap">
+        <div class="section-heading">
+          <p class="label">What is tested and working</p>
+          <h2>Here is what runs today, and how to check it yourself.</h2>
+          <p>Every app below was built and its window was rendered to an image and looked at. No mockups.</p>
+        </div>
+
+        <div class="plain-block">
+          <p class="eyebrow">Apps that run today</p>
+          <p>Calculator, temperature converter, notes, a 500-row scrolling list, a persistence counter that saves and reloads, HTTP fetch, real-time animation, tabbed settings with a slider, switch, and progress bar, a file tree, a stats dashboard with a bar chart beside the widgets, a weather card, a Pomodoro timer, a 3D scene, and a 2D Breakout game you play with the arrow keys. Twenty-three example apps ship in <code>apps/krate-*</code>; twelve are shown as screenshots above.</p>
+
+          <p class="eyebrow">Check one yourself</p>
+          <p>Run any app and have the runtime paint its window to a PNG, on any machine, no display needed:</p>
+          <p><code>krate run app.wasm --shoot frame.png</code></p>
+          <p>Then open <code>frame.png</code>. If the app drew a window, you will see it. This shipped in <code>v0.1.0-rc16</code>, the current release.</p>
+
+          <p class="eyebrow">Not ready yet</p>
+          <p>Database-backed apps do not work: <code>store.sql</code> query() currently leaks WASI, so anything backed by SQL is blocked. The direct image-widget path (<code>ui.image</code> set_pixels()) has the same leak, so apps that push their own pixels into an image widget are blocked. Both are in progress and are likely one root cause. Clipboard works on Mac and Linux (and headless); Windows clipboard is not there yet.</p>
+        </div>
+      </div>
+    </section>
+
 
 
     <!-- Measured, not claimed. Every number here came from building the same
@@ -809,7 +835,7 @@
 <details class="faq-item">
             <summary><span class="faq-index">08 / Today</span><span>What can Krate apps do today, and can it convert my existing app?</span></summary>
             <div class="faq-answer">
-              <p>Today Krate is best for small apps that fit its current UI and capability set, such as notes, lists, text entry, buttons, local persistence, and portable command-line tools.</p>
+              <p>Today Krate runs a real range of small apps that fit its current UI and capability set: a calculator, a temperature converter, notes and lists, tabbed settings with sliders, switches, and progress bars, a file tree, a stats dashboard with a bar chart, a weather card, a Pomodoro timer, real-time animation, a 3D scene, a 2D Breakout game you play with the arrow keys, HTTP fetch, local persistence, and portable command-line tools. Twenty-three example apps ship in the repo, and twelve are shown above as real screenshots. What is not ready yet: database-backed apps (the SQL query path leaks WASI) and the direct image-widget path -- both are in progress and likely one root cause.</p>
               <p>It does not automatically convert an existing Swift, Electron, Tauri, or native application yet. Current apps must use Krate APIs. AI-assisted porting is a planned development target, and it will reimplement supported behavior rather than pretend an incompatible binary became portable.</p>
             </div>
           </details>
