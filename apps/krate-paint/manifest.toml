@@ -1,6 +1,6 @@
 [app]
 id = "dev.krate.paint"
-name = "krate-paint"
+name = "Paint"
 version = "0.1.0-dev"
 entry = "target/wasm32-wasip1/release/krate_paint.wasm"
 world = "krate:app/gui@0.2.0"
