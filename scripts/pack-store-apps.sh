@@ -55,6 +55,7 @@ APPS=(
   krate-savings
   krate-eo2
   krate-mdview
+  krate-weather
 )
 
 for app in "${APPS[@]}"; do

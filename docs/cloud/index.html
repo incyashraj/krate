@@ -424,6 +424,7 @@
       const KIND_BY_FILE = {
         nova: "Game", nova2: "Game", bounce: "Game", cubes: "Toy",
         paint: "Creative", fractal: "Creative", eo2: "Creative",
+        weather: "Lifestyle",
         chart: "Tool", fetch: "Tool", savings: "Tool", hexyl: "Tool",
         grex: "Tool", ddh: "Tool", rssfwd: "Tool", envelope: "Tool",
         contacts: "Utility", checklist: "Utility", clip: "Utility",
@@ -458,6 +459,7 @@
         notes: "Jot notes and save them locally, offline.",
         fetch: "Fetches a page over the network and shows it.",
         savings: "A budget splitter: divide income into categories.",
+        weather: "Current conditions and a five-day forecast, at a glance.",
         eo2: "A small photo shelf: view, keep, and remove images.",
         envelope: "Envelope budgeting over a local database (CLI).",
         mdview: "Renders a Markdown file into a readable page.",
@@ -505,7 +507,7 @@
       // else lands in the grid below. This is the one editorial call on the
       // page -- kept small and by file stem so it is easy to update as apps
       // improve.
-      const FEATURED = ["nova", "contacts", "savings", "paint"];
+      const FEATURED = ["nova", "weather", "notes"];
 
       const renderCard = (a, featured) => {
         const kind = kindOf(a.file, a.asks);
