@@ -461,17 +461,34 @@ enum AgentKind {
     Claude,
 }
 
+/// Single-quote a path for use inside a shell command string, so an install
+/// path containing spaces (or an apostrophe) cannot split into two arguments.
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', r"'\''"))
+}
+
 impl AgentKind {
     /// The `--author-cmd` string that drives this agent. Krate builds the
     /// headless prompt and passes the request through the environment, so the
     /// user never has to write agent glue — `--agent claude` just works.
-    fn author_command(self) -> &'static str {
+    fn author_command(self) -> String {
+        // Invoke THIS binary by its own path, never the bare name `krate`.
+        // A bare name resolves through PATH, so a `krate` installed earlier
+        // would drive the agent instead of the one the person just ran -- the
+        // authoring prompt, the progress reporting, and the check-app oracle
+        // would all silently come from a different version than the command
+        // that is running. Same class of trap as double-clicking a stale
+        // installed app: everything appears to work while the wrong code runs.
+        let exe = std::env::current_exe()
+            .ok()
+            .and_then(|path| path.to_str().map(str::to_string))
+            .unwrap_or_else(|| "krate".to_string());
         match self {
-            // `krate author-agent claude` is a hidden subcommand that runs the
-            // agent with the right prompt and flags, reading KRATE_REQUEST etc.
-            // from the environment create already sets. Invoking our own binary
+            // `author-agent claude` is a hidden subcommand that runs the agent
+            // with the right prompt and flags, reading KRATE_REQUEST etc. from
+            // the environment create already sets. Invoking our own binary
             // keeps the prompt versioned with the tool instead of in a script.
-            AgentKind::Claude => "krate author-agent claude",
+            AgentKind::Claude => format!("{} author-agent claude", shell_quote(&exe)),
         }
     }
 }
@@ -2870,6 +2887,13 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
         // let it write the code; Bash lets it verify it.
         .arg("--allowed-tools")
         .arg("Read,Edit,Write,Bash")
+        // Streamed JSON events, one object per line, so the progress reporter
+        // can say what the agent is actually doing right now ("writing
+        // src/lib.rs", "running krate check-app") instead of printing dots.
+        // The transcript keeps every line, so nothing is lost by streaming.
+        .arg("--output-format")
+        .arg("stream-json")
+        .arg("--verbose")
         // bypassPermissions, not acceptEdits. This session is headless and
         // non-interactive, so any permission prompt blocks forever with no one
         // to clear it. acceptEdits auto-accepts file edits but still prompts on
@@ -2896,11 +2920,12 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
             command.env_remove(key);
         }
     }
-    // Send the model's own chatter to the transcript, not the create output.
+    // stdout is piped, not sent straight to the transcript: the reporter reads
+    // the streamed events to show live progress and writes every line it reads
+    // to the transcript, so the file ends up with the same content it always
+    // had. stderr still goes straight to the transcript.
+    command.stdout(std::process::Stdio::piped());
     if let Some(file) = &file {
-        if let Ok(clone) = file.try_clone() {
-            command.stdout(std::process::Stdio::from(file.try_clone().unwrap_or(clone)));
-        }
         if let Ok(clone) = file.try_clone() {
             command.stderr(std::process::Stdio::from(clone));
         }
@@ -2921,35 +2946,63 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
     let mut child = command
         .spawn()
         .context("run the `claude` CLI (is Claude Code installed and signed in?)")?;
+
+    // Read the agent's streamed events on a worker thread and turn each one
+    // into a plain-English progress line. The thread owns the pipe and appends
+    // every raw line to the transcript, so the transcript is unchanged while
+    // the person watching gets to see real work instead of dots.
+    let stdout = child.stdout.take();
+    let transcript_for_thread = transcript.clone();
+    let reporter = stdout.map(|stdout| {
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            let mut log = fs::OpenOptions::new()
+                .append(true)
+                .open(&transcript_for_thread)
+                .ok();
+            let mut steps = 0usize;
+            let mut last = String::new();
+            for line in io::BufReader::new(stdout).lines().map_while(Result::ok) {
+                if let Some(log) = log.as_mut() {
+                    let _ = writeln!(log, "{line}");
+                }
+                if let Some(step) = author_progress_line(&line) {
+                    // Collapse repeats: an agent editing one file five times
+                    // should not print the same sentence five times.
+                    if step == last {
+                        continue;
+                    }
+                    steps += 1;
+                    eprintln!("    {steps:>2}. {step}");
+                    let _ = io::stderr().flush();
+                    last = step;
+                }
+            }
+        })
+    });
+
     let start = std::time::Instant::now();
     let deadline = start + std::time::Duration::from_secs(timeout_secs);
-    let mut last_beat = start;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Ok(None) => {
-                let now = std::time::Instant::now();
-                // A dot every 10s so the person sees it is alive and working.
-                if now.duration_since(last_beat) >= std::time::Duration::from_secs(10) {
-                    eprint!(".");
-                    let _ = io::stderr().flush();
-                    last_beat = now;
-                }
-                if now >= deadline {
+                if std::time::Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
-                    eprintln!();
                     // Report what actually blocked it, not a generic stall: run
                     // the same oracle the agent was running and surface its last
                     // verdict.
                     return Err(author_stalled_error(app_dir, &transcript, timeout_secs));
                 }
-                std::thread::sleep(std::time::Duration::from_millis(300));
+                std::thread::sleep(std::time::Duration::from_millis(200));
             }
             Err(err) => return Err(err).context("waiting for the `claude` agent"),
         }
     };
-    eprintln!();
+    if let Some(reporter) = reporter {
+        let _ = reporter.join();
+    }
     if !status.success() {
         anyhow::bail!(
             "the Claude agent did not finish successfully; see {}",
@@ -2978,6 +3031,61 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
         );
     }
     Ok(0)
+}
+
+/// Turn one streamed agent event into a plain-English progress line, or `None`
+/// for events a person watching does not care about.
+///
+/// The point is that someone waiting several minutes can see the loop actually
+/// working -- writing the code, building it, checking the imports, fixing what
+/// failed -- rather than a row of dots that proves only that the process is
+/// alive. Everything here is best-effort: an event shape we do not recognize
+/// simply prints nothing, and the transcript still has the raw line.
+fn author_progress_line(line: &str) -> Option<String> {
+    let event: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    let content = event.get("message")?.get("content")?.as_array()?;
+
+    for part in content {
+        if part.get("type")?.as_str()? != "tool_use" {
+            continue;
+        }
+        let name = part.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        let input = part.get("input");
+        let arg = |key: &str| -> Option<String> { Some(input?.get(key)?.as_str()?.to_string()) };
+
+        return Some(match name {
+            "Write" | "Edit" => {
+                let path = arg("file_path").unwrap_or_default();
+                let file = path.rsplit('/').next().unwrap_or(&path).to_string();
+                match file.as_str() {
+                    "lib.rs" => "writing the app's code".to_string(),
+                    "Cargo.toml" => "setting up the build".to_string(),
+                    "manifest.toml" => "declaring what the app needs access to".to_string(),
+                    other if other.is_empty() => "writing a file".to_string(),
+                    other => format!("writing {other}"),
+                }
+            }
+            // Every read collapses to one line. Naming each file made the
+            // opening of every run a wall of "reading X" that told the person
+            // nothing -- what matters is that it is studying the reference
+            // before it writes, which is one fact, not six.
+            "Read" | "Glob" | "Grep" => "reading Krate's API reference".to_string(),
+            "Bash" => {
+                let cmd = arg("command").unwrap_or_default();
+                if cmd.contains("check-app") {
+                    "checking it builds, runs, and only uses what it declared".to_string()
+                } else if cmd.contains("cargo build") || cmd.contains("cargo component") {
+                    "building the app".to_string()
+                } else if cmd.contains("cargo") {
+                    "running the Rust toolchain".to_string()
+                } else {
+                    continue;
+                }
+            }
+            _ => continue,
+        });
+    }
+    None
 }
 
 /// The error for an agent that ran out of time: the last `check-app` verdict, so

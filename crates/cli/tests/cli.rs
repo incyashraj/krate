@@ -4039,3 +4039,56 @@ fn a_failed_port_says_what_kind_of_failure_it_was() {
         "it must say the report stayed local: {stderr}"
     );
 }
+
+/// `--agent` must drive THIS binary, never whatever `krate` PATH happens to
+/// resolve to.
+///
+/// The regression this guards: `--agent claude` used to expand to the bare
+/// string `krate author-agent claude`. Running a freshly built krate would
+/// then hand authoring to an older installed krate -- a different prompt, a
+/// different check-app, a different everything -- while appearing to work.
+/// The same class of trap as double-clicking a stale installed app.
+#[test]
+fn the_agent_seam_invokes_this_binary_not_one_from_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // A decoy `krate` earlier on PATH. If the seam resolves by name, this is
+    // what would run, and it fails loudly.
+    let decoy_dir = dir.path().join("decoy");
+    std::fs::create_dir_all(&decoy_dir).expect("decoy dir");
+    let decoy = decoy_dir.join("krate");
+    std::fs::write(
+        &decoy,
+        "#!/bin/sh\necho 'DECOY KRATE FROM PATH RAN' >&2\nexit 42\n",
+    )
+    .expect("write decoy");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&decoy, std::fs::Permissions::from_mode(0o755))
+            .expect("chmod decoy");
+    }
+
+    let path = format!(
+        "{}:{}",
+        decoy_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    // `author-agent` with no agent environment fails fast; what matters is
+    // WHICH binary produced the failure, not that it succeeded.
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_krate"))
+        .args(["create", "a test app", "--output"])
+        .arg(dir.path().join("out.krate"))
+        .args(["--agent", "claude"])
+        .env("PATH", &path)
+        .env("KRATE_AUTHOR_TIMEOUT_SECS", "1")
+        .output()
+        .expect("run create");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("DECOY KRATE FROM PATH RAN"),
+        "--agent resolved `krate` through PATH instead of using the running \
+         binary, so an older install would silently drive authoring: {stderr}"
+    );
+}
