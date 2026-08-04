@@ -351,7 +351,11 @@ pub fn skeleton(name: &str, sdk_prefix: &str, world: Skeleton) -> Result<Generat
         Skeleton::Gui => vec![
             GeneratedFile {
                 path: "Cargo.toml".to_string(),
-                contents: checklist_cargo_toml(&request, sdk_prefix),
+                // The skeleton's src/lib.rs is a `std` app, unlike the no_std
+                // checklist template, so it needs the SDK's `std` feature on.
+                // Linking the default no_std SDK into a std guest fails at
+                // link time with "failed to load bitcode of module std".
+                contents: skeleton_cargo_toml(&request, sdk_prefix),
             },
             GeneratedFile {
                 path: "src/lib.rs".to_string(),
@@ -984,6 +988,21 @@ fn title_case(name: &str) -> String {
     }
 }
 
+/// Cargo.toml for the AI-authoring skeleton.
+///
+/// Same as the checklist template except the `krate` dependency turns on the
+/// SDK's `std` feature, because `gui_skeleton_source` is a `std` app. The SDK
+/// is `no_std` by default so guests link no std and cannot leak its latent
+/// `wasi:*` imports; linking that default into a `std` guest fails with
+/// "failed to load bitcode of module std". An agent converting the app to
+/// `#![no_std]` should drop `features = ["std"]` at the same time.
+fn skeleton_cargo_toml(request: &AppRequest, sdk_prefix: &str) -> String {
+    checklist_cargo_toml(request, sdk_prefix).replace(
+        &format!(r#"krate = {{ path = "{sdk_prefix}/crates/bindings-rust" }}"#),
+        &format!(r#"krate = {{ path = "{sdk_prefix}/crates/bindings-rust", features = ["std"] }}"#),
+    )
+}
+
 fn checklist_cargo_toml(request: &AppRequest, sdk_prefix: &str) -> String {
     let name = &request.name;
     // The GUI world (phase3) needs the ui/gfx/audio WIT packages the CLI world
@@ -1003,6 +1022,10 @@ repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]
+# The Krate SDK. src/lib.rs has `extern crate krate`, and the SDK owns this
+# guest's global allocator, panic handler, and memory intrinsics -- without
+# this line the app cannot build at all.
+krate = {{ path = "{sdk_prefix}/crates/bindings-rust" }}
 wit-bindgen-rt = {{ version = "0.44.0", features = ["bitflags"] }}
 
 [lib]
@@ -1419,5 +1442,41 @@ mod tests {
         let req = AppRequest::checklist("my-list");
         assert_eq!(req.top_n, 0);
         assert!(req.validate().is_ok());
+    }
+}
+
+#[cfg(test)]
+mod krate_dependency_tests {
+    use super::*;
+
+    /// Every generated Cargo.toml must declare the `krate` dependency.
+    ///
+    /// The regression this guards: the GUI (checklist) template emitted
+    /// `extern crate krate` in src/lib.rs but never wrote the matching
+    /// dependency, so `krate create` without an agent could not build ANY app
+    /// routed to it -- and most plain requests route there. It died with "can't
+    /// find crate for `krate`", "no global memory allocator found", and
+    /// "`#[panic_handler]` function required": three errors, one cause. The CLI
+    /// template had the line, which is why this went unnoticed.
+    #[test]
+    fn every_template_declares_the_krate_dependency() {
+        for kind in [
+            AppKind::WordFrequency,
+            AppKind::Checklist,
+            AppKind::VoicePrompter,
+        ] {
+            let mut request = AppRequest::word_frequency("sample");
+            request.kind = kind;
+            let app = generate(&request, "../..").expect("generate");
+            let cargo = app.file("Cargo.toml").expect("cargo");
+            assert!(
+                cargo
+                    .lines()
+                    .map(str::trim_start)
+                    .any(|line| line.starts_with("krate ") || line.starts_with("krate=")),
+                "the {kind:?} template has no `krate` dependency, so an app made \
+                 from it cannot build:\n{cargo}"
+            );
+        }
     }
 }

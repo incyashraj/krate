@@ -2876,6 +2876,19 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
     // never wrote code -- that would leave the blank skeleton, which builds and
     // passes check-app but is not the requested app.
     let starter_lib = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
+    // The starter's `krate` dependency line, kept so it can be put back if the
+    // agent rewrites Cargo.toml without it (see restore_krate_dependency).
+    let starter_krate_dep = fs::read_to_string(Path::new(app_dir).join("Cargo.toml"))
+        .ok()
+        .and_then(|cargo| {
+            cargo
+                .lines()
+                .find(|line| {
+                    let line = line.trim_start();
+                    line.starts_with("krate ") || line.starts_with("krate=")
+                })
+                .map(str::to_string)
+        });
     let file = fs::File::create(&transcript).ok();
 
     let mut command = ProcessCommand::new("claude");
@@ -3019,6 +3032,13 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
             transcript.display()
         );
     }
+    // Put the `krate` dependency back if the agent deleted it. Measured on five
+    // authored apps in a row: converting to `#![no_std]` makes an agent reason
+    // that a no_std crate should not depend on anything and drop the line, and
+    // the app then cannot build at all. We know exactly what the line was, so
+    // restoring it beats failing and asking the agent to figure it out.
+    restore_krate_dependency(app_dir, starter_krate_dep.as_deref());
+
     // The agent claims it is done. Confirm with the same oracle it was told to
     // satisfy: if check-app does not pass, say exactly why rather than letting
     // the downstream create pipeline fail with a less specific message.
@@ -3031,6 +3051,51 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
         );
     }
     Ok(0)
+}
+
+/// Put the starter's `krate` dependency back into Cargo.toml if the agent
+/// rewrote the file without it.
+///
+/// The SDK owns the guest's global allocator, panic handler, and memory
+/// intrinsics, so an app missing this line cannot build -- and the three errors
+/// it produces all point away from the cause. Agents drop it while converting
+/// to `#![no_std]`, reasoning that a no_std crate should not have dependencies.
+/// It is the most common authoring failure by a wide margin, and since the
+/// correct line is known exactly, restoring it is better than reporting it.
+///
+/// Best-effort and silent: if anything about the file is unexpected, leave it
+/// alone and let `check-app`'s layout stage report it with an exact fix.
+fn restore_krate_dependency(app_dir: &str, starter_line: Option<&str>) {
+    let Some(starter_line) = starter_line else {
+        return;
+    };
+    let path = Path::new(app_dir).join("Cargo.toml");
+    let Ok(cargo) = fs::read_to_string(&path) else {
+        return;
+    };
+    let declares_krate = cargo
+        .lines()
+        .map(str::trim_start)
+        .any(|line| line.starts_with("krate ") || line.starts_with("krate="));
+    if declares_krate {
+        return;
+    }
+    // Insert directly under [dependencies]. Anywhere else in the file would be
+    // a different table and would not be a dependency at all.
+    let mut out = String::with_capacity(cargo.len() + starter_line.len() + 1);
+    let mut inserted = false;
+    for line in cargo.lines() {
+        out.push_str(line);
+        out.push('\n');
+        if !inserted && line.trim() == "[dependencies]" {
+            out.push_str(starter_line);
+            out.push('\n');
+            inserted = true;
+        }
+    }
+    if inserted {
+        let _ = fs::write(&path, out);
+    }
 }
 
 /// Turn one streamed agent event into a plain-English progress line, or `None`
@@ -5128,6 +5193,40 @@ fn run_check_app(
                 ),
                 fix: "Point check-app at the folder that holds Cargo.toml, src/lib.rs, and \
                       manifest.toml."
+                    .to_string(),
+            });
+        }
+    }
+    // Still layout: the `krate` dependency must survive whatever rewrote
+    // Cargo.toml.
+    //
+    // This is the single most common way an authored app fails. An agent
+    // converting the app to `#![no_std]` reasons that a no_std crate should not
+    // depend on things, deletes the `krate` line, and the build then dies with
+    // three errors that all point away from the cause: "can't find crate for
+    // `krate`", "no global memory allocator found", "`#[panic_handler]`
+    // function required". Measured 5 out of 5 authored apps hitting exactly
+    // this. The context pack already says to keep it, in capitals; saying it
+    // louder does not work, so catch it here and say precisely what to restore.
+    if let Ok(cargo) = fs::read_to_string(dir.join("Cargo.toml")) {
+        let declares_krate = cargo
+            .lines()
+            .map(str::trim_start)
+            .any(|line| line.starts_with("krate ") || line.starts_with("krate="));
+        if !declares_krate {
+            return Err(CheckFailure {
+                stage: CheckStage::Layout,
+                detail: "Cargo.toml has no `krate` dependency. The SDK owns this app's \
+                         global allocator, panic handler, and memory intrinsics, so \
+                         without it the build fails with \"can't find crate for `krate`\", \
+                         \"no global memory allocator found\", and \"`#[panic_handler]` \
+                         function required\" -- three errors with one cause."
+                    .to_string(),
+                fix: "Put the dependency back under [dependencies] in Cargo.toml, exactly \
+                      as the starter had it:\n\n    krate = { path = \"<the path the \
+                      starter used>\" }\n\nKeep it even when the app is `#![no_std]` -- \
+                      especially then. no_std does not mean no dependencies; the SDK is \
+                      what makes no_std work."
                     .to_string(),
             });
         }
