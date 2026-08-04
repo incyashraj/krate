@@ -1,0 +1,965 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Krate Mode -- make any AI write Krate apps</title>
+  <!-- Root-absolute, not relative: this page is served from /docs/pages/, so a
+       "./krate-favicon.png" would 404 and the tab would fall back to a blank
+       page icon. -->
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
+  <meta name="description" content="One prompt you paste into ChatGPT, Claude, or Cursor that makes it write correct Krate app code. Nothing to install. You build the result locally." />
+  <!-- Self-contained on purpose, matching make-an-app-with-ai.html: this page
+       ships its own CSS because the deploy layout for docs/pages/ is not settled
+       yet, and a page that carries its own styles renders correctly wherever it
+       lands. Tokens and type are copied from that page so the two read as one
+       site. No external scripts or fonts. The prompt itself is fetched from a
+       same-origin path so the page stays small and the prompt stays generated;
+       if that fetch fails the button falls back to the download link, which is
+       always correct. -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0d12;
+      --panel: #11141b;
+      --panel-raised: #171b24;
+      --line: #2a303d;
+      --line-strong: #414a5c;
+      --text: #f5f7fb;
+      --muted: #98a1b3;
+      --quiet: #687185;
+      --blue: #6291ff;
+      --blue-soft: #a9c2ff;
+      --cyan: #6cf4d7;
+      --yellow: #f4dc74;
+      --danger: #ff7f95;
+      --max: 920px;
+      --mono: "SFMono-Regular", "Cascadia Code", "Liberation Mono", Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 84px;
+    }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 50% -20%, rgba(98, 145, 255, .13), transparent 34rem),
+        var(--bg);
+      font-family: var(--mono);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      z-index: 100;
+      inset: 0;
+      pointer-events: none;
+      opacity: .035;
+      background: repeating-linear-gradient(
+        to bottom,
+        #ffffff 0,
+        #ffffff 1px,
+        transparent 1px,
+        transparent 4px
+      );
+    }
+
+    a { color: inherit; }
+    button { font: inherit; }
+    img { display: block; max-width: 100%; }
+
+    ::selection {
+      color: var(--bg);
+      background: var(--cyan);
+    }
+
+    .skip {
+      position: fixed;
+      z-index: 999;
+      top: 12px;
+      left: 12px;
+      padding: 9px 13px;
+      color: var(--bg);
+      background: var(--cyan);
+      transform: translateY(-160%);
+    }
+
+    .skip:focus { transform: translateY(0); }
+
+    .wrap {
+      width: min(var(--max), calc(100% - 40px));
+      margin: 0 auto;
+    }
+
+    .site-nav {
+      position: sticky;
+      z-index: 80;
+      top: 0;
+      background: rgba(11, 13, 18, .88);
+      border-bottom: 1px solid rgba(65, 74, 92, .55);
+      backdrop-filter: blur(18px);
+    }
+
+    .nav-inner {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 28px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      text-decoration: none;
+      font-weight: 800;
+      letter-spacing: -.02em;
+    }
+
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      color: var(--bg);
+      background: var(--blue);
+      border-radius: 7px;
+      font-size: 15px;
+      font-weight: 900;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      margin-left: auto;
+    }
+
+    .nav-link {
+      padding: 8px 10px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 13px;
+      border-radius: 6px;
+    }
+
+    .nav-link:hover,
+    .nav-link:focus-visible {
+      color: var(--text);
+      background: var(--panel-raised);
+      outline: none;
+    }
+
+    .nav-cta {
+      margin-left: 12px;
+      padding: 8px 13px;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 13px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+    }
+
+    .nav-cta:hover,
+    .nav-cta:focus-visible {
+      color: var(--bg);
+      background: var(--cyan);
+      border-color: var(--cyan);
+      outline: none;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    .hero {
+      padding: 92px 0 54px;
+    }
+
+    .eyebrow {
+      margin: 0 0 22px;
+      color: var(--cyan);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .11em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 20ch;
+      margin-bottom: 22px;
+      font-family: var(--mono);
+      font-size: clamp(38px, 6.5vw, 66px);
+      line-height: 1.04;
+      letter-spacing: -.055em;
+    }
+
+    .hero-lead {
+      max-width: 56ch;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: clamp(16px, 2vw, 20px);
+      line-height: 1.6;
+    }
+
+    .hero-lead strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .section {
+      padding: 52px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .label {
+      margin-bottom: 13px;
+      color: var(--cyan);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+
+    h2 {
+      margin-bottom: 16px;
+      font-size: clamp(26px, 4vw, 38px);
+      line-height: 1.14;
+      letter-spacing: -.045em;
+    }
+
+    h3 {
+      margin-bottom: 10px;
+      font-size: 19px;
+      letter-spacing: -.02em;
+    }
+
+    .prose {
+      max-width: 68ch;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.7;
+    }
+
+    .prose p { margin-bottom: 16px; }
+    .prose p:last-child { margin-bottom: 0; }
+
+    .prose strong { color: var(--text); font-weight: 650; }
+
+    .prose a {
+      color: var(--blue-soft);
+      text-decoration-color: rgba(169, 194, 255, .4);
+      text-underline-offset: 3px;
+    }
+
+    .prose a:hover,
+    .prose a:focus-visible { text-decoration-color: var(--blue-soft); }
+
+    code {
+      font-family: var(--mono);
+      color: var(--blue-soft);
+      font-size: .92em;
+    }
+
+    .note-box {
+      max-width: 68ch;
+      margin-top: 24px;
+      padding: 18px 20px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-left: 2px solid var(--cyan);
+      border-radius: 8px;
+    }
+
+    .note-box p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .note-box p:last-child { margin-bottom: 0; }
+    .note-box strong { color: var(--text); }
+    .note-box a { color: var(--cyan); text-decoration: none; }
+    .note-box a:hover { text-decoration: underline; }
+
+    /* The steps. Each is a heading, a line of prose, and a copy-pasteable
+       command with its own copy button. */
+    .step {
+      margin-top: 34px;
+      padding-top: 34px;
+      border-top: 1px solid var(--line);
+    }
+
+    .step:first-of-type {
+      margin-top: 8px;
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    .step-head {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .step-num {
+      flex: none;
+      display: inline-grid;
+      place-items: center;
+      min-width: 26px;
+      height: 26px;
+      padding: 0 6px;
+      color: var(--bg);
+      background: var(--blue-soft);
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .step-head h3 { margin: 0; }
+
+    .step-body {
+      max-width: 66ch;
+      margin: 0 0 16px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    .step-body code { color: var(--blue-soft); }
+
+    /* The command block plus its copy button. The command scrolls sideways on a
+       narrow screen instead of pushing the page. */
+    .cmd {
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+      max-width: 100%;
+    }
+
+    .cmd pre {
+      flex: 1 1 auto;
+      min-width: 0;
+      margin: 0;
+      padding: 15px 16px;
+      overflow-x: auto;
+      color: #dce4f7;
+      background: #090b0f;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre;
+    }
+
+    .cmd pre .p { color: var(--cyan); }
+    .cmd pre .s { color: var(--yellow); }
+
+    .copy-button {
+      flex: none;
+      align-self: flex-start;
+      padding: 9px 13px;
+      color: var(--muted);
+      background: var(--panel-raised);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 12px;
+      transition: color .15s ease, border-color .15s ease;
+    }
+
+    .copy-button:hover,
+    .copy-button:focus-visible {
+      color: var(--text);
+      border-color: var(--line-strong);
+      outline: none;
+    }
+
+    .copy-button.copied {
+      color: var(--bg);
+      background: var(--cyan);
+      border-color: var(--cyan);
+    }
+
+    .copy-button.failed {
+      color: var(--bg);
+      background: var(--danger);
+      border-color: var(--danger);
+    }
+
+    /* The big get-the-prompt control. One oversized button, because it is the
+       only thing on this page most people need. */
+    .prompt-grab {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px;
+      max-width: 68ch;
+      margin-top: 26px;
+      padding: 22px;
+      background: var(--panel);
+      border: 1px solid var(--line-strong);
+      border-radius: 12px;
+    }
+
+    .grab-button {
+      min-height: 52px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 22px;
+      color: var(--bg);
+      background: var(--cyan);
+      border: 1px solid var(--cyan);
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: var(--mono);
+      font-size: 14px;
+      font-weight: 800;
+      letter-spacing: -.01em;
+    }
+
+    .grab-button:hover,
+    .grab-button:focus-visible {
+      background: var(--blue-soft);
+      border-color: var(--blue-soft);
+      outline: none;
+    }
+
+    .grab-button.copied { background: var(--text); border-color: var(--text); }
+    .grab-button.failed { background: var(--danger); border-color: var(--danger); }
+
+    .grab-note {
+      flex: 1 1 220px;
+      margin: 0;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .grab-note a { color: var(--cyan); text-decoration: none; }
+    .grab-note a:hover { text-decoration: underline; }
+
+    /* The when-to-use-what table, as two cards side by side where there is room. */
+    .two-up {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+      margin-top: 22px;
+    }
+
+    .share-card {
+      padding: 20px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    .share-card h3 { margin-bottom: 8px; font-size: 16px; }
+
+    .share-card p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .share-card p:last-child { margin-bottom: 0; }
+    .share-card code { color: var(--blue-soft); }
+    .share-card ul {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .pill {
+      display: inline-block;
+      margin-bottom: 14px;
+      padding: 4px 9px;
+      border-radius: 99px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .pill.live {
+      color: var(--cyan);
+      border: 1px solid rgba(108, 244, 215, .4);
+    }
+
+    .pill.soon {
+      color: var(--yellow);
+      border: 1px solid rgba(244, 220, 116, .35);
+    }
+
+    .trouble {
+      max-width: 68ch;
+      margin-top: 20px;
+    }
+
+    .trouble details {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .trouble details:first-child {
+      border-top: 1px solid var(--line);
+    }
+
+    .trouble summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 2px;
+      color: var(--text);
+      cursor: pointer;
+      list-style: none;
+      font-size: 15px;
+      font-weight: 650;
+    }
+
+    .trouble summary::-webkit-details-marker { display: none; }
+
+    .trouble summary::after {
+      content: "+";
+      flex: none;
+      color: var(--blue-soft);
+      font-size: 20px;
+      font-weight: 400;
+    }
+
+    .trouble details[open] summary::after {
+      content: "\00d7";
+      color: var(--cyan);
+    }
+
+    .trouble summary:hover,
+    .trouble summary:focus-visible {
+      color: var(--cyan);
+      outline: none;
+    }
+
+    .trouble .answer {
+      padding: 0 2px 20px;
+      color: var(--muted);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+
+    .trouble .answer code { color: var(--blue-soft); }
+
+    .cta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .button {
+      min-height: 44px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 11px 17px;
+      color: var(--text);
+      background: transparent;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .button.primary {
+      color: var(--bg);
+      background: var(--text);
+      border-color: var(--text);
+    }
+
+    .button:hover,
+    .button:focus-visible {
+      color: var(--bg);
+      background: var(--cyan);
+      border-color: var(--cyan);
+      outline: none;
+    }
+
+    footer {
+      padding: 28px 0 40px;
+      color: var(--quiet);
+      border-top: 1px solid var(--line);
+      font-size: 11px;
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .footer-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+    }
+
+    .footer-links a {
+      color: var(--muted);
+      text-decoration: none;
+    }
+
+    .footer-links a:hover,
+    .footer-links a:focus-visible {
+      color: var(--text);
+      outline: none;
+    }
+
+    @media (max-width: 600px) {
+      .wrap { width: min(100% - 28px, var(--max)); }
+      .nav-links .nav-link { display: none; }
+      .footer-inner {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+
+  <nav class="site-nav" aria-label="Primary navigation">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="Krate home">
+        <span class="brand-mark" aria-hidden="true">K</span>
+        <span>Krate</span>
+      </a>
+      <div class="nav-links">
+        <a class="nav-link" href="/#start">Start</a>
+        <a class="nav-link" href="/cloud/">Store</a>
+        <a class="nav-link" href="/docs/">Docs</a>
+        <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
+        <a class="nav-cta" href="/#start">Get Krate</a>
+      </div>
+    </div>
+  </nav>
+
+  <main id="main">
+    <!-- 1. Hero -->
+    <header class="hero">
+      <div class="wrap">
+        <p class="eyebrow">Krate Mode</p>
+        <h1>Teach any AI to write Krate apps.</h1>
+        <p class="hero-lead">One prompt. Paste it into ChatGPT, Claude, Cursor, or whatever you already use, and it writes <strong>correct Krate app code</strong>. Nothing to install to get started.</p>
+      </div>
+    </header>
+
+    <!-- 2. The prompt itself, up top, because it is why people came -->
+    <section class="section" id="get-the-prompt">
+      <div class="wrap">
+        <p class="label">The prompt</p>
+        <h2>Copy it, paste it, then ask for an app.</h2>
+        <div class="prose">
+          <p>The prompt carries the real Krate API -- every function that exists, every capability an app may ask for, the rules that keep an app inside its sandbox, and two complete working apps as examples. It is <strong>generated from Krate's own source code</strong>, so it describes the toolchain that will actually build your app, not a summary someone wrote once and forgot.</p>
+        </div>
+
+        <div class="prompt-grab">
+          <button class="grab-button" type="button" id="grab" data-src="/krate-mode.md">Copy the prompt</button>
+          <p class="grab-note">About 56 KB of text. Long, deliberately -- it is the whole API. Or <a href="/krate-mode.md" download>download it as a file</a>.</p>
+        </div>
+
+        <div class="note-box">
+          <p><strong>Paste it as your first message, then ask for what you want</strong> in the next one. For example: <code>a unit converter for cooking measurements</code>, or <code>a tool that explains a cron expression</code>.</p>
+          <p>It works in a long-context chat. If your model has a small context window, the prompt may not fit -- use the <a href="/#start">local <code>krate create</code></a> route instead, which does not need one.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. The steps -->
+    <section class="section" id="steps">
+      <div class="wrap">
+        <p class="label">How it works</p>
+        <h2>Three steps, and one honest catch.</h2>
+
+        <!-- Step 1 -->
+        <div class="step">
+          <div class="step-head">
+            <span class="step-num" aria-hidden="true">1</span>
+            <h3>Paste the prompt.</h3>
+          </div>
+          <p class="step-body">Start a fresh chat and paste the prompt as your first message. The model reads the API and the rules. It will usually just say it is ready.</p>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step">
+          <div class="step-head">
+            <span class="step-num" aria-hidden="true">2</span>
+            <h3>Ask for an app.</h3>
+          </div>
+          <p class="step-body">Describe what you want in plain words. The model writes three complete files -- <code>Cargo.toml</code>, <code>src/lib.rs</code>, and <code>manifest.toml</code> -- and hands them to you. Save them into an empty folder.</p>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step">
+          <div class="step-head">
+            <span class="step-num" aria-hidden="true">3</span>
+            <h3>Build it on your machine.</h3>
+          </div>
+          <p class="step-body">This is the step the chat cannot do for you. Run this in the folder you saved the files into. It builds the app, checks it only uses Krate APIs, and runs it once.</p>
+          <div class="cmd">
+            <pre id="cmd-1"><span class="p">krate</span> check-app .</pre>
+            <button class="copy-button" type="button" data-target="cmd-1" aria-label="Copy command">Copy</button>
+          </div>
+          <p class="step-body" style="margin-top:16px">If it prints <code>OK</code>, the app is real -- it compiled, it stayed inside the sandbox, and it ran. If it fails, it names the stage and the exact fix. <strong>Paste that failure back into the chat</strong> and the model corrects the code. That loop is the whole workflow.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. The honest catch -->
+    <section class="section" id="the-catch">
+      <div class="wrap">
+        <p class="label">The catch</p>
+        <h2>The chat cannot compile anything.</h2>
+        <div class="prose">
+          <p>A chat model has no compiler. It cannot build your app, cannot run it, and cannot check whether it stayed inside the sandbox. It can only write code that <em>should</em> work. The prompt tells the model this outright and instructs it not to claim otherwise, but it is worth knowing yourself.</p>
+          <p>So <strong>the build always happens on your machine</strong>, and <code>krate check-app</code> is what turns "the model wrote something" into "this actually works". It is not a formality -- it is the only thing in the loop that knows the truth.</p>
+          <p>You need Krate and the Rust build tools installed for that step. The <a href="/docs/pages/make-an-app-with-ai.html">make-an-app-with-AI guide</a> covers that setup, and <code>krate create</code> will offer to install what is missing the first time you run it.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. When to use which -->
+    <section class="section" id="which-one">
+      <div class="wrap">
+        <p class="label">Which one to use</p>
+        <h2>Krate Mode, or something else.</h2>
+        <div class="two-up">
+          <div class="share-card">
+            <p><span class="pill live">Works today</span></p>
+            <h3>Krate Mode (this page)</h3>
+            <p>Use it when:</p>
+            <ul>
+              <li>you want to try Krate with zero install</li>
+              <li>you already work in ChatGPT, Claude, or Cursor</li>
+              <li>you want to read and edit the code yourself</li>
+              <li>your tool has no MCP support</li>
+            </ul>
+            <p style="margin-top:14px">You copy the files out of the chat by hand, and you run the build.</p>
+          </div>
+          <div class="share-card">
+            <p><span class="pill live">Works today</span></p>
+            <h3>Local <code>krate create</code></h3>
+            <p>Use it when:</p>
+            <ul>
+              <li>you have Krate installed already</li>
+              <li>you want the app built for you, end to end</li>
+              <li>you would rather not copy files around</li>
+            </ul>
+            <p style="margin-top:14px">The AI runs on your machine in a loop against the real checker, so it fixes its own mistakes before you see them. See the <a href="/docs/pages/make-an-app-with-ai.html">guide</a>.</p>
+          </div>
+        </div>
+
+        <div class="note-box">
+          <p><span class="pill soon">Coming</span></p>
+          <p><strong>A Krate MCP server</strong> is being built. It will let a model start a build, watch it, and hand back the finished <code>.krate</code> without you copying anything -- the same loop as <code>krate create</code>, driven from inside your chat. Krate Mode is what works in the meantime, and it will keep working for tools that never get MCP support.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 6. What it can and cannot make -->
+    <section class="section" id="what-to-expect">
+      <div class="wrap">
+        <p class="label">What to expect</p>
+        <h2>Focused apps work. Sprawling ones do not.</h2>
+        <div class="prose">
+          <p>Krate Mode is at its best with a <strong>single, clear app</strong>: a converter, a calculator, a timer, a small game, a formatter, a viewer. Both apps used to test this prompt -- a cooking measurement converter and a cron expression explainer -- built and ran correctly on the first try, with no corrections needed.</p>
+          <p>It will not one-shot a large, sprawling program from one sentence. Narrow the request, or build it a piece at a time.</p>
+          <p>Some things Krate apps genuinely cannot do, and a good answer says so rather than writing code that pretends: reach another person's device, run in the background when closed, or read your email and accounts. The prompt tells the model to refuse those plainly instead of producing a convincing-looking app over invented data.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. Troubleshooting -->
+    <section class="section" id="troubleshooting">
+      <div class="wrap">
+        <p class="label">Troubleshooting</p>
+        <h2>If something goes wrong.</h2>
+        <div class="trouble">
+          <details>
+            <summary>check-app says it failed at imports</summary>
+            <div class="answer">
+              <p>The app reached the operating system somewhere it should not have, usually through a path that can crash. Paste the whole failure into the chat -- the prompt teaches the model what causes this and how to fix it. The usual culprits are <code>format!</code>, <code>.unwrap()</code>, square-bracket indexing, or a deleted <code>krate</code> dependency in <code>Cargo.toml</code>.</p>
+            </div>
+          </details>
+          <details>
+            <summary>It says "no global memory allocator found"</summary>
+            <div class="answer">
+              <p>The model removed the <code>krate</code> dependency from <code>Cargo.toml</code>, usually reasoning that the app does not call it. It is still required -- it supplies pieces the app cannot build without. Put it back, or tell the chat to restore it.</p>
+            </div>
+          </details>
+          <details>
+            <summary>The paths in Cargo.toml are wrong</summary>
+            <div class="answer">
+              <p>The prompt leaves them marked <code>PREFIX</code> because the correct path depends on your machine. The easy fix is to let Krate set the folder up first: run <code>krate create "your app idea"</code>, which writes a working <code>Cargo.toml</code> with the right paths, then have the chat replace only <code>src/lib.rs</code> and <code>manifest.toml</code>.</p>
+            </div>
+          </details>
+          <details>
+            <summary>The model invented a function that does not exist</summary>
+            <div class="answer">
+              <p>Paste the compiler error back. The prompt lists every function that exists and tells the model not to invent calls, so pointing it at the failure usually fixes it in one turn. If it keeps guessing the same missing call, say plainly that the function does not exist and ask it to solve the problem another way.</p>
+            </div>
+          </details>
+          <details>
+            <summary>The prompt does not fit in my chat</summary>
+            <div class="answer">
+              <p>It is about 56 KB, which needs a reasonably long context window. If your model rejects it, use the local route instead: <code>krate create "your app idea"</code> hands the same reference to an AI running on your machine, with no context limit to work around.</p>
+            </div>
+          </details>
+        </div>
+
+        <div class="cta-row">
+          <a class="button primary" href="/#start">Get Krate</a>
+          <a class="button" href="/docs/pages/make-an-app-with-ai.html">Make an app with AI</a>
+          <a class="button" href="https://github.com/incyashraj/krate/discussions">Ask a question</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <span>© 2026 Krate Labs</span>
+      <div class="footer-links">
+        <a href="/">Home</a>
+        <a href="/docs/">Docs</a>
+        <a href="/cloud/">Store</a>
+        <a href="https://github.com/incyashraj/krate">GitHub</a>
+        <a href="https://github.com/incyashraj/krate/discussions">Ask a question</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Copy buttons: inline, no external libraries, CSP-safe. Each button names
+    // the id of the <pre> whose text it copies. We copy pre.textContent so the
+    // syntax-highlight spans do not end up in the clipboard.
+    (function () {
+      var buttons = document.querySelectorAll(".copy-button");
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].addEventListener("click", function () {
+          var button = this;
+          var target = document.getElementById(button.getAttribute("data-target"));
+          if (!target) return;
+          copyText(target.textContent, button, "Copy");
+        });
+      }
+
+      // The prompt is too large to inline in this page, so it is fetched from
+      // the same origin on click. On any failure -- offline, blocked fetch, no
+      // clipboard permission -- the button says so and points at the download
+      // link, which always works. Never silently claim a copy that did not
+      // happen: someone would paste an empty message and blame the model.
+      var grab = document.getElementById("grab");
+      if (grab) {
+        grab.addEventListener("click", function () {
+          var button = grab;
+          var original = "Copy the prompt";
+          button.textContent = "Fetching...";
+          fetch(button.getAttribute("data-src"))
+            .then(function (response) {
+              if (!response.ok) throw new Error("http " + response.status);
+              return response.text();
+            })
+            .then(function (text) {
+              copyText(text, button, original);
+            })
+            .catch(function () {
+              button.textContent = "Use the download link";
+              button.classList.add("failed");
+              window.setTimeout(function () {
+                button.textContent = original;
+                button.classList.remove("failed");
+              }, 2600);
+            });
+        });
+      }
+
+      function copyText(text, button, original) {
+        var done = function () {
+          button.textContent = "Copied";
+          button.classList.add("copied");
+          window.setTimeout(function () {
+            button.textContent = original;
+            button.classList.remove("copied");
+          }, 1600);
+        };
+        var failed = function () {
+          button.textContent = "Copy failed";
+          button.classList.add("failed");
+          window.setTimeout(function () {
+            button.textContent = original;
+            button.classList.remove("failed");
+          }, 2200);
+        };
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, function () {
+            fallbackCopy(text, done, failed);
+          });
+        } else {
+          fallbackCopy(text, done, failed);
+        }
+      }
+
+      // For browsers without the async clipboard API (or when it is blocked),
+      // fall back to a hidden textarea and execCommand.
+      function fallbackCopy(text, done, failed) {
+        var area = document.createElement("textarea");
+        area.value = text;
+        area.setAttribute("readonly", "");
+        area.style.position = "absolute";
+        area.style.left = "-9999px";
+        document.body.appendChild(area);
+        area.select();
+        var ok = false;
+        try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+        document.body.removeChild(area);
+        if (ok) { done(); } else { failed(); }
+      }
+    })();
+  </script>
+</body>
+</html>

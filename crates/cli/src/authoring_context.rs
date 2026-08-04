@@ -72,7 +72,11 @@ below is in service of writing an app that passes that check.
 
 /// Section 1: the SDK API surface, reusing the same generated reference the
 /// authoring contract has always used.
-fn sdk_surface_section() -> String {
+///
+/// `pub(crate)` because Krate Mode (`crate::krate_mode`) publishes the same
+/// generated section into its paste-in prompt. One generator, two consumers, so
+/// the published prompt cannot teach an API the pack has moved on from.
+pub(crate) fn sdk_surface_section() -> String {
     let functions = sdk_reference::parse_sdk(sdk_reference::GUEST_SDK_SOURCE);
     let mut out = String::from("\n---\n\n# 1. The SDK: every `krate::*` function you can call\n\n");
     out.push_str(
@@ -90,7 +94,7 @@ fn sdk_surface_section() -> String {
 /// than the bare name list the old contract used: it names each capability's
 /// phase, whether it is granted to every app by default, and how a scoped one
 /// is written.
-fn capability_catalog_section() -> String {
+pub(crate) fn capability_catalog_section() -> String {
     let mut out = String::from("\n---\n\n# 2. Capabilities: what a manifest may declare\n\n");
     out.push_str(
         "Declare in `manifest.toml` only the capabilities the app actually uses. A\n\
@@ -274,7 +278,7 @@ unknown `quick` fails here after building and packing correctly.\n";
 /// Section 4: the GUI world interfaces, extracted from the WIT. A GUI app calls
 /// these through its generated `bindings::krate::{ui,gfx,audio,speech}::*`, not
 /// through the `krate::*` SDK functions in section 1.
-fn gui_world_section() -> String {
+pub(crate) fn gui_world_section() -> String {
     let mut out = String::from("\n---\n\n# 4. The GUI world: ui / gfx / audio / speech\n\n");
     out.push_str(
         "A windowed app reaches these through its generated `bindings` module, e.g.\n\
