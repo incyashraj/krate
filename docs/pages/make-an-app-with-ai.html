@@ -397,6 +397,170 @@
       border-color: var(--cyan);
     }
 
+    /* The command builder. You describe the app, it writes the command. This
+       exists because hand-assembled commands on this site have been wrong
+       before -- a built command cannot be. Styling reuses the tokens above so
+       it reads as part of the page, not a widget bolted on. */
+    .builder {
+      max-width: 68ch;
+      margin-top: 24px;
+      padding: 22px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+
+    .builder-field { margin-bottom: 20px; }
+    .builder-field:last-child { margin-bottom: 0; }
+
+    /* Field labels only. The radio rows are labels too, so they are excluded
+       here and styled by .builder .choice below. */
+    .builder .builder-field > label,
+    .builder legend,
+    .builder .field-label {
+      display: block;
+      margin-bottom: 8px;
+      padding: 0;
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .builder .hint {
+      margin: 0 0 10px;
+      color: var(--quiet);
+      font-family: var(--sans);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .builder textarea,
+    .builder input[type="text"] {
+      display: block;
+      width: 100%;
+      padding: 11px 13px;
+      color: var(--text);
+      background: #090b0f;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .builder textarea {
+      min-height: 76px;
+      resize: vertical;
+    }
+
+    .builder textarea::placeholder,
+    .builder input[type="text"]::placeholder { color: var(--quiet); }
+
+    .builder textarea:focus-visible,
+    .builder input[type="text"]:focus-visible {
+      border-color: var(--cyan);
+      outline: 2px solid var(--cyan);
+      outline-offset: 1px;
+    }
+
+    .builder fieldset {
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+
+    .choices {
+      display: grid;
+      gap: 8px;
+    }
+
+    /* Written as .builder .choice, not .choice: the generic ".builder label"
+       rule above also matches these (each choice IS a label) and would
+       otherwise win on specificity and flatten the padding to zero. */
+    .builder .choice {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 14px;
+      background: var(--panel-raised);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: var(--sans);
+      font-size: 14px;
+      font-weight: 400;
+      line-height: 1.45;
+    }
+
+    /* The text column has to be a real block, or the note runs past the
+       rounded corner instead of wrapping inside it. */
+    .choice .choice-text {
+      display: block;
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+
+    .choice:hover { border-color: var(--line-strong); }
+
+    .choice input[type="radio"] {
+      flex: none;
+      margin: 3px 0 0;
+      accent-color: var(--cyan);
+    }
+
+    .choice input[type="radio"]:focus-visible {
+      outline: 2px solid var(--cyan);
+      outline-offset: 2px;
+    }
+
+    .choice:has(input:checked) {
+      border-color: var(--cyan);
+      background: rgba(108, 244, 215, .06);
+    }
+
+    .choice .choice-text { color: var(--text); font-weight: 650; }
+
+    .choice .choice-note {
+      display: block;
+      margin-top: 3px;
+      color: var(--quiet);
+      font-weight: 400;
+      font-size: 12.5px;
+      line-height: 1.5;
+    }
+
+    /* The built command. Same look as the static command blocks above so a
+       generated command and a hand-written one are visually the same thing. */
+    .builder-out {
+      margin-top: 22px;
+      padding-top: 20px;
+      border-top: 1px solid var(--line);
+    }
+
+    .builder-out .cmd pre { white-space: pre-wrap; word-break: break-word; }
+
+    .builder-out .cmd pre.is-empty { color: var(--quiet); }
+
+    .builder-status {
+      margin: 10px 0 0;
+      color: var(--quiet);
+      font-family: var(--sans);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .copy-button[disabled] {
+      opacity: .45;
+      cursor: not-allowed;
+    }
+
+    .copy-button[disabled]:hover { color: var(--muted); border-color: var(--line); }
+
+    /* Hidden until the script runs, so a browser with no JS never sees a
+       control that would do nothing. */
+    .js-only { display: none; }
+
     /* The share section's two ways, side by side where there's room. */
     .two-up {
       display: grid;
@@ -676,7 +840,75 @@
       </div>
     </section>
 
-    <!-- 3. The steps -->
+    <!-- 3. The command builder. Nobody should hand-assemble a create command.
+         Without JavaScript this still renders a real, runnable example command
+         in the output block, so the section is never an empty box. -->
+    <section class="section" id="build-your-command">
+      <div class="wrap">
+        <p class="label">Build your command</p>
+        <h2>Describe it, copy the command.</h2>
+        <div class="prose">
+          <p>Type what you want below. The exact command to run is written for you, with the quoting already handled. Copy it and paste it into your terminal.</p>
+        </div>
+
+        <div class="builder">
+          <div class="builder-field">
+            <label for="b-request">What do you want the app to do?</label>
+            <p class="hint">Plain words. One focused app works best -- a tool, a form, a small game.</p>
+            <textarea id="b-request" name="request" rows="3" spellcheck="true" autocomplete="off" placeholder="a habit tracker that saves my streaks"></textarea>
+          </div>
+
+          <div class="builder-field">
+            <fieldset>
+              <legend>Which AI should write it?</legend>
+              <div class="choices">
+                <label class="choice">
+                  <input type="radio" name="b-ai" value="claude" checked />
+                  <span class="choice-text">Claude Code
+                    <span class="choice-note">You have the <code>claude</code> command installed. This is the supported path.</span>
+                  </span>
+                </label>
+                <label class="choice">
+                  <input type="radio" name="b-ai" value="other" />
+                  <span class="choice-text">Another AI tool
+                    <span class="choice-note">Any command that writes the app source. Krate hands it the request.</span>
+                  </span>
+                </label>
+                <label class="choice">
+                  <input type="radio" name="b-ai" value="none" />
+                  <span class="choice-text">No AI, use a built-in template
+                    <span class="choice-note">Works offline and finishes in seconds. You edit it afterwards.</span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          <div class="builder-field js-only" id="b-author-cmd-field" hidden>
+            <label for="b-author-cmd">The command that writes the app</label>
+            <p class="hint">It is given <code>KRATE_APP_DIR</code>, <code>KRATE_APP_NAME</code>, and <code>KRATE_REQUEST</code>, and must write <code>Cargo.toml</code>, <code>src/lib.rs</code>, and <code>manifest.toml</code> into the app directory.</p>
+            <input type="text" id="b-author-cmd" name="author-cmd" autocomplete="off" spellcheck="false" placeholder="my-ai-tool write-app" />
+          </div>
+
+          <div class="builder-field js-only" id="b-output-field" hidden>
+            <label for="b-output">File name to save it as</label>
+            <p class="hint">Filled in from your description. Change it if you want a different name.</p>
+            <input type="text" id="b-output" name="output" autocomplete="off" spellcheck="false" placeholder="my-app.krate" />
+          </div>
+
+          <div class="builder-out">
+            <p class="field-label" id="b-out-label">Your command</p>
+            <div class="cmd">
+              <pre id="b-command" aria-labelledby="b-out-label" aria-live="polite" tabindex="0">krate create "a habit tracker that saves my streaks" --output habit-tracker.krate --agent claude</pre>
+              <button class="copy-button" type="button" data-target="b-command" id="b-copy" aria-label="Copy the built command">Copy</button>
+            </div>
+            <p class="builder-status" id="b-status">Run this in your terminal, in the folder where you want the file to land.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. The steps -->
     <section class="section" id="steps">
       <div class="wrap">
         <p class="label">The steps</p>
@@ -734,7 +966,7 @@
       </div>
     </section>
 
-    <!-- 4. What to expect -->
+    <!-- 5. What to expect -->
     <section class="section" id="what-to-expect">
       <div class="wrap">
         <p class="label">What to expect</p>
@@ -782,7 +1014,7 @@
       </div>
     </section>
 
-    <!-- 5. Krate Cloud / publish -->
+    <!-- 6. Krate Cloud / publish -->
     <section class="section" id="krate-cloud">
       <div class="wrap">
         <p class="label">Krate Cloud</p>
@@ -801,7 +1033,7 @@
       </div>
     </section>
 
-    <!-- 6. Troubleshooting -->
+    <!-- 7. Troubleshooting -->
     <section class="section" id="troubleshooting">
       <div class="wrap">
         <p class="label">Troubleshooting</p>
@@ -852,6 +1084,7 @@
       for (var i = 0; i < buttons.length; i++) {
         buttons[i].addEventListener("click", function () {
           var button = this;
+          if (button.disabled) return;
           var target = document.getElementById(button.getAttribute("data-target"));
           if (!target) return;
           var text = target.textContent;
@@ -889,6 +1122,170 @@
         try { document.execCommand("copy"); done(); } catch (e) {}
         document.body.removeChild(area);
       }
+    })();
+
+    // The command builder. Its whole job is that a command copied from this
+    // page always runs. Two rules make that true:
+    //
+    //   1. Every value that came from a person is single-quoted for the shell,
+    //      with an embedded apostrophe closed, escaped, and reopened ('\'').
+    //      That is the only POSIX quoting style with no exceptions inside it:
+    //      double quotes, backticks, $, backslashes and newlines are all
+    //      literal within single quotes. The CLI quotes paths the same way.
+    //   2. The flags are exactly the ones `krate create` defines. --output is
+    //      required, so it is always emitted. There is no --to on create.
+    (function () {
+      var requestBox = document.getElementById("b-request");
+      var outputBox = document.getElementById("b-output");
+      var outputField = document.getElementById("b-output-field");
+      var authorCmdBox = document.getElementById("b-author-cmd");
+      var authorCmdField = document.getElementById("b-author-cmd-field");
+      var commandBox = document.getElementById("b-command");
+      var copyButton = document.getElementById("b-copy");
+      var status = document.getElementById("b-status");
+      var radios = document.querySelectorAll("input[name='b-ai']");
+
+      // If any piece is missing, leave the static example command alone rather
+      // than half-wiring the section.
+      if (!requestBox || !outputBox || !commandBox || !copyButton || !status) return;
+
+      // The controls are hidden in the markup so a no-JS visitor never sees a
+      // dead input. We are running, so reveal them.
+      var jsOnly = document.querySelectorAll(".js-only");
+      for (var j = 0; j < jsOnly.length; j++) {
+        jsOnly[j].classList.remove("js-only");
+      }
+      if (outputField) outputField.hidden = false;
+
+      var READY_NOTE = "Run this in your terminal, in the folder where you want the file to land.";
+      var EMPTY_NOTE = "Describe your app above and the command appears here.";
+      var PLACEHOLDER = "Waiting for your description.";
+
+      // True once the person edits the file name themselves. From then on we
+      // stop overwriting it from the description.
+      var outputTouched = false;
+
+      // Single-quote for the shell. Safe for every byte, including " and '.
+      function shellQuote(value) {
+        return "'" + String(value).split("'").join("'\\''") + "'";
+      }
+
+      // Kebab-case any text into something safe as a file name. Letters and
+      // digits survive, everything else becomes a separator, so the result can
+      // never be empty-ish, contain a space, or start with a dash (which the
+      // shell would read as a flag).
+      function kebab(text) {
+        return String(text)
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, " ")
+          .trim()
+          .replace(/\s+/g, "-");
+      }
+
+      // "A Habit Tracker!! that saves my streaks" -> "habit-tracker-that-saves".
+      // Only used for the name we derive from the description: leading filler
+      // words are dropped and it is cut to four words so the file name stays
+      // short. A name the person typed themselves is never trimmed this way --
+      // "my streaks" must stay "my-streaks".
+      function slugFromDescription(text) {
+        var cleaned = kebab(text);
+        if (!cleaned) return "";
+        var words = cleaned.split("-");
+        while (words.length > 1 && /^(a|an|the|my|some)$/.test(words[0])) {
+          words.shift();
+        }
+        return words.slice(0, 4).join("-");
+      }
+
+      function selectedAi() {
+        for (var i = 0; i < radios.length; i++) {
+          if (radios[i].checked) return radios[i].value;
+        }
+        return "claude";
+      }
+
+      // Make sure whatever is in the file-name box ends up a sane .krate name.
+      function normaliseOutput(raw) {
+        var value = String(raw).trim();
+        if (!value) return "";
+        // Keep a path the person typed, but sanitise the last segment.
+        var parts = value.split("/");
+        var last = parts.pop();
+        last = last.replace(/\.krate$/i, "");
+        last = kebab(last);
+        if (!last) return "";
+        parts.push(last + ".krate");
+        return parts.join("/");
+      }
+
+      function render() {
+        var request = requestBox.value.trim();
+        var ai = selectedAi();
+
+        if (authorCmdField) authorCmdField.hidden = ai !== "other";
+
+        // Keep the file name following the description until it is edited.
+        if (!outputTouched) {
+          var derived = slugFromDescription(request);
+          outputBox.value = derived ? derived + ".krate" : "";
+        }
+        outputBox.placeholder = "my-app.krate";
+
+        if (!request) {
+          commandBox.textContent = PLACEHOLDER;
+          commandBox.classList.add("is-empty");
+          copyButton.disabled = true;
+          status.textContent = EMPTY_NOTE;
+          return;
+        }
+
+        var output = normaliseOutput(outputBox.value) || "my-app.krate";
+
+        var parts = ["krate", "create", shellQuote(request), "--output", shellQuote(output)];
+
+        if (ai === "claude") {
+          parts.push("--agent", "claude");
+        } else if (ai === "other") {
+          var authorCmd = authorCmdBox ? authorCmdBox.value.trim() : "";
+          if (authorCmd) {
+            parts.push("--author-cmd", shellQuote(authorCmd));
+          }
+        }
+
+        commandBox.textContent = parts.join(" ");
+        commandBox.classList.remove("is-empty");
+        copyButton.disabled = false;
+
+        if (ai === "other" && authorCmdBox && !authorCmdBox.value.trim()) {
+          status.textContent = "Add your tool's command above, or this runs the built-in template instead.";
+        } else if (ai === "none") {
+          status.textContent = "No AI. Krate picks a built-in template that fits, and it finishes in seconds.";
+        } else {
+          status.textContent = READY_NOTE;
+        }
+      }
+
+      requestBox.addEventListener("input", render);
+      if (authorCmdBox) authorCmdBox.addEventListener("input", render);
+
+      outputBox.addEventListener("input", function () {
+        outputTouched = true;
+        render();
+      });
+
+      // An emptied file-name box goes back to following the description.
+      outputBox.addEventListener("blur", function () {
+        if (!outputBox.value.trim()) {
+          outputTouched = false;
+        }
+        render();
+      });
+
+      for (var k = 0; k < radios.length; k++) {
+        radios[k].addEventListener("change", render);
+      }
+
+      render();
     })();
   </script>
 </body>
