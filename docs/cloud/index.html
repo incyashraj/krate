@@ -60,6 +60,29 @@
       letter-spacing: .01em;
     }
 
+    /* Featured row: the best apps, larger, before the grid. */
+    .store-featured-label {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    #allLabel { margin-top: 44px; }
+    .store-featured {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 22px;
+      margin-bottom: 8px;
+    }
+    /* A featured card is taller and gives its screenshot more room -- the shot
+       is the reason it is featured. */
+    .store-card-featured .store-thumb { height: 220px; }
+    .store-card-featured h3 { font-size: 19px; }
+    .store-card-featured .store-what { font-size: 15px; }
+
     /* A real store card: a screenshot, a name, what it does, then the honest
        permissions tucked into a detail. The old card led with the permission
        list, which made an app that only opens a window read as empty. */
@@ -300,9 +323,18 @@
           <p>Every app here is one file. Install Krate once, open any of them, and you see exactly what it is asking for before a line of it runs.</p>
         </div>
 
+        <!-- Featured: the best-looking apps, shown larger and first. The set
+             is curated in the page (FEATURED below); everything else falls into
+             the grid. -->
+        <div id="featuredWrap" hidden>
+          <p class="store-featured-label">Featured</p>
+          <div class="store-featured" id="featured" aria-label="Featured apps"></div>
+        </div>
+
         <!-- Listings are generated from the .krate files themselves by
              scripts/build-store.sh, so a listing cannot describe an app
              differently from what the file actually asks for. -->
+        <p class="store-featured-label" id="allLabel" hidden>All apps</p>
         <div class="store-shelf" id="shelf" aria-label="Apps"></div>
 
         <div class="store-why">
@@ -469,6 +501,55 @@
       const sensitive = (cap) =>
         cap === "audio.capture" || cap.startsWith("net.connect");
 
+      // The curated best, shown in the Featured row (in this order). Everything
+      // else lands in the grid below. This is the one editorial call on the
+      // page -- kept small and by file stem so it is easy to update as apps
+      // improve.
+      const FEATURED = ["nova", "contacts", "savings", "paint"];
+
+      const renderCard = (a, featured) => {
+        const kind = kindOf(a.file, a.asks);
+        const desc = descOf(a.file);
+        // The distinct things it may touch, in plain words. Deduped, and never
+        // the whole story of the card -- just the honest footnote.
+        const asks = [...new Map(a.asks.map((c) => [plainAsk(c), c])).entries()];
+        // A thumbnail: the app's rendered first frame for a GUI app, or a clean
+        // lettered tile for a CLI app that has no window to shoot.
+        const letter = (a.name || "?").trim().charAt(0).toUpperCase();
+        const thumb = hasShot(a.file)
+          ? `<div class="store-thumb">
+               <img src="${shotPath(a.file)}" alt="Screenshot of ${a.name}" loading="lazy"
+                    onerror="this.closest('.store-thumb').classList.add('no-shot'); this.remove();" />
+               <span class="store-thumb-letter" aria-hidden="true">${letter}</span>
+             </div>`
+          : `<div class="store-thumb no-shot">
+               <span class="store-thumb-letter" aria-hidden="true">${letter}</span>
+             </div>`;
+        return `
+        <article class="store-card${featured ? " store-card-featured" : ""}">
+          ${thumb}
+          <div class="store-body">
+            <div class="store-head">
+              <h3>${a.name}</h3>
+              <p class="store-by"><span class="store-kind">${kind}</span> &middot; ${humanBytes(a.bytes)}</p>
+            </div>
+            ${desc ? `<p class="store-what">${desc}</p>` : ""}
+            <details class="store-asks-wrap">
+              <summary>${asks.length ? `Wants access to ${asks.length} thing${asks.length > 1 ? "s" : ""}` : "Wants nothing but a window"}</summary>
+              <ul class="store-asks">
+                ${asks.length
+                  ? asks.map(([text, c]) => `<li><span class="${sensitive(c) ? "warn" : ""}">&#9679;</span> ${text}</li>`).join("")
+                  : '<li><span>&#9679;</span> opens a window and nothing else</li>'}
+              </ul>
+            </details>
+            <div class="store-foot">
+              <a class="path-link" href="./apps/${a.file}" download data-app-name="${a.name}">Download &darr;</a>
+              <p class="store-digest" title="Identity you can check with --dump-caps">${(a.digest || "").slice(0, 16)}&hellip;</p>
+            </div>
+          </div>
+        </article>`;
+      };
+
       fetch("./apps/index.json")
         .then((r) => r.json())
         .then((apps) => {
@@ -477,49 +558,20 @@
             shelf.innerHTML = '<p class="store-desc">No apps listed yet.</p>';
             return;
           }
-          shelf.innerHTML = apps.map((a) => {
-            const kind = kindOf(a.file, a.asks);
-            const desc = descOf(a.file);
-            // The distinct things it may touch, in plain words. Deduped, and
-            // never the whole story of the card -- just the honest footnote.
-            const asks = [...new Map(a.asks.map((c) => [plainAsk(c), c])).entries()];
-            // A thumbnail: the app's rendered first frame for a GUI app, or a
-            // clean lettered tile for a CLI app that has no window to shoot.
-            const letter = (a.name || "?").trim().charAt(0).toUpperCase();
-            const thumb = hasShot(a.file)
-              ? `<div class="store-thumb">
-                   <img src="${shotPath(a.file)}" alt="Screenshot of ${a.name}" loading="lazy"
-                        onerror="this.closest('.store-thumb').classList.add('no-shot'); this.remove();" />
-                   <span class="store-thumb-letter" aria-hidden="true">${letter}</span>
-                 </div>`
-              : `<div class="store-thumb no-shot">
-                   <span class="store-thumb-letter" aria-hidden="true">${letter}</span>
-                 </div>`;
-            return `
-            <article class="store-card">
-              ${thumb}
-              <div class="store-body">
-                <div class="store-head">
-                  <h3>${a.name}</h3>
-                  <p class="store-by"><span class="store-kind">${kind}</span> &middot; ${humanBytes(a.bytes)}</p>
-                </div>
-                ${desc ? `<p class="store-what">${desc}</p>` : ""}
-                <details class="store-asks-wrap">
-                  <summary>${asks.length ? `Wants access to ${asks.length} thing${asks.length > 1 ? "s" : ""}` : "Wants nothing but a window"}</summary>
-                  <ul class="store-asks">
-                    ${asks.length
-                      ? asks.map(([text, c]) => `<li><span class="${sensitive(c) ? "warn" : ""}">&#9679;</span> ${text}</li>`).join("")
-                      : '<li><span>&#9679;</span> opens a window and nothing else</li>'}
-                  </ul>
-                </details>
-                <div class="store-foot">
-                  <a class="path-link" href="./apps/${a.file}" download data-app-name="${a.name}">Download &darr;</a>
-                  <p class="store-digest" title="Identity you can check with --dump-caps">${(a.digest || "").slice(0, 16)}&hellip;</p>
-                </div>
-              </div>
-            </article>
-          `;
-          }).join("");
+          // Split into featured (in FEATURED order) and the rest.
+          const feat = [];
+          for (const stem of FEATURED) {
+            const a = apps.find((x) => stemOf(x.file) === stem);
+            if (a) feat.push(a);
+          }
+          const rest = apps.filter((a) => !feat.includes(a));
+          if (feat.length) {
+            document.getElementById("featured").innerHTML =
+              feat.map((a) => renderCard(a, true)).join("");
+            document.getElementById("featuredWrap").hidden = false;
+            document.getElementById("allLabel").hidden = false;
+          }
+          shelf.innerHTML = rest.map((a) => renderCard(a, false)).join("");
         })
         .catch(() => {
           document.getElementById("shelf").innerHTML =
@@ -590,7 +642,9 @@
 
         // The download itself proceeds normally (the browser handles the
         // native `download` link); we just show the guide alongside it.
-        document.getElementById("shelf").addEventListener("click", (e) => {
+        // Delegated on document so both the featured row and the grid are
+        // covered by one listener.
+        document.addEventListener("click", (e) => {
           const link = e.target.closest("a.path-link[download]");
           if (!link) return;
           openPanel(link.dataset.appName);
