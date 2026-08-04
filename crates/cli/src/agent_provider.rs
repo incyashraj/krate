@@ -1,0 +1,427 @@
+//! The AI provider seam: which coding agents `--agent` can drive.
+//!
+//! Krate is not tied to one AI. A provider answers four questions -- what it is
+//! called, how to check it is installed, how to invoke it headlessly, and how to
+//! read its output -- and Krate owns everything else. The prompt, the timeout,
+//! the guard against an agent that answered in chat without writing code, and
+//! the `check-app` verdict are Krate's authoring policy, identical for every
+//! provider, so they cannot drift apart as providers are added.
+//!
+//! Adding a provider is a new implementation plus one line in [`PROVIDERS`].
+//!
+//! The design and the verified invocation for each provider we plan to support
+//! are in `Plan/ai-providers-2026-08.md`.
+
+use std::process::{Command as ProcessCommand, ExitStatus, Stdio};
+
+/// One AI coding agent Krate knows how to drive.
+pub trait AgentProvider: Send + Sync {
+    /// The value accepted after `--agent`, e.g. `claude`. Lowercase and stable:
+    /// this is a user-facing name that appears in commands people save.
+    fn name(&self) -> &'static str;
+
+    /// One line describing the provider, for `--help` and for the listing shown
+    /// when someone names a provider that does not exist.
+    fn description(&self) -> &'static str;
+
+    /// The executable Krate spawns. Looked up on PATH to decide whether this
+    /// provider is available on this machine.
+    fn program(&self) -> &'static str;
+
+    /// What to tell someone whose machine does not have this CLI installed.
+    fn install_hint(&self) -> &'static str;
+
+    /// The arguments for one headless authoring run of `prompt`.
+    fn author_args(&self, prompt: &str) -> Vec<String>;
+
+    /// Provider-specific spawn setup.
+    ///
+    /// The default closes stdin, which every provider needs: a headless agent
+    /// that inherits the parent's stdin can block forever waiting for input
+    /// that never arrives.
+    fn configure(&self, command: &mut ProcessCommand) {
+        command.stdin(Stdio::null());
+    }
+
+    /// Turn one line of the agent's streamed output into a plain-English
+    /// progress line, or `None` for lines a person watching does not care
+    /// about.
+    ///
+    /// Best-effort by design: an output shape we do not recognize prints
+    /// nothing, and the raw line still reaches the transcript.
+    fn progress_line(&self, line: &str) -> Option<String>;
+
+    /// Whether the run failed. Exit status is the truth for most providers; one
+    /// that reports failure inside its final event can override this.
+    fn failed(&self, status: &ExitStatus) -> bool {
+        !status.success()
+    }
+}
+
+/// Every provider Krate can drive, in the order they are listed to a person.
+///
+/// This is the whole registry. A new provider is appended here and nowhere
+/// else: `--agent` accepts it, the error listing mentions it, and the
+/// installed-check covers it, all from this one line.
+pub const PROVIDERS: &[&dyn AgentProvider] = &[&ClaudeProvider];
+
+/// Look up a provider by the name given to `--agent`.
+///
+/// Returns a listing error rather than a bare "invalid value", because the
+/// useful reply to a name we do not know is the set of names we do know.
+pub fn resolve(name: &str) -> Result<&'static dyn AgentProvider, String> {
+    let wanted = name.trim().to_ascii_lowercase();
+    if let Some(provider) = PROVIDERS.iter().find(|p| p.name() == wanted) {
+        return Ok(*provider);
+    }
+    let mut message = format!("unknown AI provider \"{name}\".\n\nAvailable providers:\n");
+    for provider in PROVIDERS {
+        message.push_str(&format!(
+            "  {:<8} {}\n",
+            provider.name(),
+            provider.description()
+        ));
+    }
+    message.push_str(
+        "\nOr use --author-cmd <command> to drive any other tool: it is handed \
+         KRATE_APP_DIR, KRATE_APP_NAME, and KRATE_REQUEST.",
+    );
+    Err(message)
+}
+
+/// Whether this provider's CLI is installed on this machine.
+///
+/// One shared implementation on purpose: "is this program on PATH" has exactly
+/// one right answer, and a provider allowed to define its own could only get it
+/// wrong.
+pub fn is_installed(provider: &dyn AgentProvider) -> bool {
+    which_on_path(provider.program()).is_some()
+}
+
+/// The error for a provider whose CLI is not installed.
+///
+/// Without this, asking for a provider you do not have produces a raw spawn
+/// failure naming a program you never typed. This says what is missing and how
+/// to get it.
+pub fn missing_cli_error(provider: &dyn AgentProvider) -> String {
+    format!(
+        "the `{program}` command is not installed, so Krate cannot use {name} to write your app.\n\n\
+         {hint}\n\n\
+         Already installed it? Open a new terminal so `{program}` is on your PATH, or use \
+         --author-cmd to point Krate straight at it.",
+        program = provider.program(),
+        name = provider.name(),
+        hint = provider.install_hint(),
+    )
+}
+
+/// Find an executable on PATH, honoring PATHEXT on Windows.
+fn which_on_path(program: &str) -> Option<std::path::PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    // On Windows a bare name resolves against a list of extensions; on Unix the
+    // file itself must be executable.
+    let extensions: Vec<String> = if cfg!(windows) {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".EXE;.CMD;.BAT;.COM".to_string())
+            .split(';')
+            .filter(|e| !e.is_empty())
+            .map(|e| e.to_ascii_lowercase())
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    for dir in std::env::split_paths(&path) {
+        if dir.as_os_str().is_empty() {
+            continue;
+        }
+        let direct = dir.join(program);
+        if is_executable_file(&direct) {
+            return Some(direct);
+        }
+        for extension in &extensions {
+            let candidate = dir.join(format!("{program}{extension}"));
+            if is_executable_file(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn is_executable_file(path: &std::path::Path) -> bool {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return false;
+    };
+    if !metadata.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        metadata.permissions().mode() & 0o111 != 0
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
+}
+
+/// Claude Code, driven headlessly through the `claude` CLI.
+pub struct ClaudeProvider;
+
+impl AgentProvider for ClaudeProvider {
+    fn name(&self) -> &'static str {
+        "claude"
+    }
+
+    fn description(&self) -> &'static str {
+        "Claude Code (the `claude` CLI)"
+    }
+
+    fn program(&self) -> &'static str {
+        "claude"
+    }
+
+    fn install_hint(&self) -> &'static str {
+        "Install Claude Code from https://claude.com/claude-code, then run `claude` once to \
+         sign in."
+    }
+
+    fn author_args(&self, prompt: &str) -> Vec<String> {
+        [
+            "-p",
+            prompt,
+            // Bash is the flag that makes authoring a loop rather than a single
+            // shot: the agent can run `krate check-app .`, read the failure, and
+            // fix it. Read/Edit/Write let it write the code; Bash lets it verify.
+            "--allowed-tools",
+            "Read,Edit,Write,Bash",
+            // Streamed JSON events, one object per line, so the progress
+            // reporter can say what the agent is doing right now instead of
+            // printing dots. The transcript keeps every line either way.
+            "--output-format",
+            "stream-json",
+            "--verbose",
+            // bypassPermissions, not acceptEdits. This session is headless, so
+            // any permission prompt blocks forever with nobody to clear it.
+            // acceptEdits auto-accepts file edits but still prompts on Bash --
+            // which meant the agent could not run `krate check-app` at all and
+            // fell back to writing code blind, the exact failure the loop exists
+            // to prevent. The agent works inside a throwaway app dir on the
+            // user's own machine, doing precisely what `krate create` was asked
+            // to do, so bypassing prompts here is scoped and safe.
+            "--permission-mode",
+            "bypassPermissions",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+    }
+
+    fn configure(&self, command: &mut ProcessCommand) {
+        // Close stdin. `claude -p` reads stdin for piped input; inheriting the
+        // parent's made it block waiting for input that never comes -- the
+        // transcript literally said "no stdin data received in 3s, proceeding
+        // without it", and create hung.
+        command.stdin(Stdio::null());
+        // Run the child `claude` as a fresh, clean session. If `krate create` is
+        // itself launched from inside a Claude Code session (which a developer
+        // may well do), the inherited CLAUDE_CODE_* / session environment can
+        // confuse the nested agent into stalling. Strip those so the child
+        // starts as if launched from a plain terminal, with its own auth.
+        for (key, _) in std::env::vars() {
+            if key.starts_with("CLAUDE_CODE_") || key == "CLAUDECODE" {
+                command.env_remove(key);
+            }
+        }
+    }
+
+    fn progress_line(&self, line: &str) -> Option<String> {
+        let event: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+        let content = event.get("message")?.get("content")?.as_array()?;
+
+        for part in content {
+            if part.get("type")?.as_str()? != "tool_use" {
+                continue;
+            }
+            let name = part.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            let input = part.get("input");
+            let arg =
+                |key: &str| -> Option<String> { Some(input?.get(key)?.as_str()?.to_string()) };
+
+            return Some(match name {
+                "Write" | "Edit" => {
+                    let path = arg("file_path").unwrap_or_default();
+                    let file = path.rsplit('/').next().unwrap_or(&path).to_string();
+                    match file.as_str() {
+                        "lib.rs" => "writing the app's code".to_string(),
+                        "Cargo.toml" => "setting up the build".to_string(),
+                        "manifest.toml" => "declaring what the app needs access to".to_string(),
+                        "" => "writing a file".to_string(),
+                        other => format!("writing {other}"),
+                    }
+                }
+                // Every read collapses to one line. Naming each file made the
+                // opening of every run a wall of "reading X" that told the
+                // person nothing -- what matters is that it is studying the
+                // reference before it writes, which is one fact, not six.
+                "Read" | "Glob" | "Grep" => "reading Krate's API reference".to_string(),
+                "Bash" => {
+                    let cmd = arg("command").unwrap_or_default();
+                    if cmd.contains("check-app") {
+                        "checking it builds, runs, and only uses what it declared".to_string()
+                    } else if cmd.contains("cargo build") || cmd.contains("cargo component") {
+                        "building the app".to_string()
+                    } else if cmd.contains("cargo") {
+                        "running the Rust toolchain".to_string()
+                    } else {
+                        continue;
+                    }
+                }
+                _ => continue,
+            });
+        }
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Resolve a name that must succeed, without requiring `Debug` on the
+    /// trait object that `expect` would need.
+    fn resolved(name: &str) -> &'static dyn AgentProvider {
+        match resolve(name) {
+            Ok(provider) => provider,
+            Err(error) => panic!("{name} should resolve: {error}"),
+        }
+    }
+
+    #[test]
+    fn a_known_provider_name_resolves() {
+        let provider = resolved("claude");
+        assert_eq!(provider.name(), "claude");
+        assert_eq!(provider.program(), "claude");
+    }
+
+    #[test]
+    fn provider_names_are_matched_case_insensitively() {
+        assert_eq!(resolved("Claude").name(), "claude");
+        assert_eq!(resolved(" claude ").name(), "claude");
+    }
+
+    /// An unknown provider must list the ones that exist. A bare "invalid
+    /// value" tells someone they were wrong without telling them what is right.
+    #[test]
+    fn an_unknown_provider_lists_the_available_ones() {
+        let Err(error) = resolve("gpt-9") else {
+            panic!("gpt-9 is not a provider and must not resolve");
+        };
+        assert!(
+            error.contains("unknown AI provider \"gpt-9\""),
+            "it must quote the name that was given: {error}"
+        );
+        assert!(
+            error.contains("Available providers:"),
+            "it must offer a listing: {error}"
+        );
+        for provider in PROVIDERS {
+            assert!(
+                error.contains(provider.name()),
+                "the listing must name {}: {error}",
+                provider.name()
+            );
+        }
+        assert!(
+            error.contains("--author-cmd"),
+            "it must mention the escape hatch for unsupported tools: {error}"
+        );
+    }
+
+    /// The missing-CLI message has to be actionable: what is missing, and the
+    /// step that fixes it. This is the difference between a person installing
+    /// Claude Code and a person filing a bug about a spawn failure.
+    #[test]
+    fn a_missing_cli_explains_how_to_install_it() {
+        let message = missing_cli_error(&ClaudeProvider);
+        assert!(
+            message.contains("`claude` command is not installed"),
+            "it must name the missing program: {message}"
+        );
+        assert!(
+            message.contains("claude.com/claude-code"),
+            "it must say where to get it: {message}"
+        );
+        assert!(
+            !message.contains("No such file or directory"),
+            "it must not read like a raw spawn error: {message}"
+        );
+    }
+
+    #[test]
+    fn installed_detection_finds_a_real_program_and_misses_a_fake_one() {
+        struct Fake(&'static str);
+        impl AgentProvider for Fake {
+            fn name(&self) -> &'static str {
+                "fake"
+            }
+            fn description(&self) -> &'static str {
+                "not real"
+            }
+            fn program(&self) -> &'static str {
+                self.0
+            }
+            fn install_hint(&self) -> &'static str {
+                "there is nothing to install"
+            }
+            fn author_args(&self, _prompt: &str) -> Vec<String> {
+                Vec::new()
+            }
+            fn progress_line(&self, _line: &str) -> Option<String> {
+                None
+            }
+        }
+
+        // A program every supported platform has, versus one nobody has.
+        let real = if cfg!(windows) { "cmd" } else { "sh" };
+        assert!(is_installed(&Fake(real)), "{real} must be found on PATH");
+        assert!(!is_installed(&Fake("krate-no-such-agent-cli-xyz")));
+    }
+
+    /// The Claude flags are load-bearing and were each fixed in response to a
+    /// real hang or a real silent failure. This pins them so a refactor cannot
+    /// quietly drop one.
+    #[test]
+    fn claude_is_invoked_headlessly_with_the_flags_that_keep_it_unblocked() {
+        let args = ClaudeProvider.author_args("build me an app");
+        assert_eq!(args[0], "-p");
+        assert_eq!(args[1], "build me an app");
+        let joined = args.join(" ");
+        assert!(joined.contains("--allowed-tools Read,Edit,Write,Bash"));
+        assert!(joined.contains("--output-format stream-json"));
+        assert!(joined.contains("--permission-mode bypassPermissions"));
+    }
+
+    #[test]
+    fn claude_progress_lines_are_plain_english() {
+        let write = r#"{"message":{"content":[{"type":"tool_use","name":"Write",
+            "input":{"file_path":"/tmp/app/src/lib.rs"}}]}}"#;
+        assert_eq!(
+            ClaudeProvider.progress_line(write).as_deref(),
+            Some("writing the app's code")
+        );
+
+        let check = r#"{"message":{"content":[{"type":"tool_use","name":"Bash",
+            "input":{"command":"/usr/bin/krate check-app ."}}]}}"#;
+        assert_eq!(
+            ClaudeProvider.progress_line(check).as_deref(),
+            Some("checking it builds, runs, and only uses what it declared")
+        );
+
+        // Anything we do not recognize prints nothing rather than guessing.
+        assert_eq!(ClaudeProvider.progress_line("not json"), None);
+        assert_eq!(ClaudeProvider.progress_line(r#"{"type":"other"}"#), None);
+    }
+}

@@ -17,6 +17,7 @@ use krate_runtime::{
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+mod agent_provider;
 mod authoring_context;
 mod mcp;
 mod port_report;
@@ -301,9 +302,10 @@ enum Command {
         /// generator. `--agent claude` drives Claude Code: Krate hands it the
         /// request and a working starter, and it writes the app. This is the
         /// clean, supported way to plug in an agent; `--author-cmd` below is the
-        /// lower-level escape hatch for any other tool.
-        #[arg(long, value_enum)]
-        agent: Option<AgentKind>,
+        /// lower-level escape hatch for any other tool. An unknown name lists
+        /// the providers that are supported.
+        #[arg(long, value_name = "NAME")]
+        agent: Option<String>,
 
         /// A command that writes the app source instead of the built-in
         /// generator — the lower-level agent seam. It is handed
@@ -395,8 +397,8 @@ enum Command {
         /// Ask a supported AI coding agent to transform the prepared candidate.
         /// Requires --to. The original source is re-analyzed after the agent
         /// runs and the command stops if its scanned contents changed.
-        #[arg(long, value_enum)]
-        agent: Option<AgentKind>,
+        #[arg(long, value_name = "NAME")]
+        agent: Option<String>,
 
         /// Lower-level agent seam. The command runs inside the prepared
         /// workspace with KRATE_PORT_SOURCE, KRATE_PORT_PLAN,
@@ -438,8 +440,8 @@ enum Command {
     /// the environment create sets. Hidden because it is not a user entry point.
     #[command(hide = true)]
     AuthorAgent {
-        #[arg(value_enum)]
-        agent: AgentKind,
+        #[arg(value_name = "NAME")]
+        agent: String,
     },
 }
 
@@ -454,43 +456,45 @@ enum CreateKind {
     VoicePrompter,
 }
 
-/// An AI coding agent Krate knows how to drive for `--agent`.
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum AgentKind {
-    /// Claude Code (the `claude` CLI), driven headlessly.
-    Claude,
-}
-
 /// Single-quote a path for use inside a shell command string, so an install
 /// path containing spaces (or an apostrophe) cannot split into two arguments.
 fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r"'\''"))
 }
 
-impl AgentKind {
-    /// The `--author-cmd` string that drives this agent. Krate builds the
-    /// headless prompt and passes the request through the environment, so the
-    /// user never has to write agent glue — `--agent claude` just works.
-    fn author_command(self) -> String {
-        // Invoke THIS binary by its own path, never the bare name `krate`.
-        // A bare name resolves through PATH, so a `krate` installed earlier
-        // would drive the agent instead of the one the person just ran -- the
-        // authoring prompt, the progress reporting, and the check-app oracle
-        // would all silently come from a different version than the command
-        // that is running. Same class of trap as double-clicking a stale
-        // installed app: everything appears to work while the wrong code runs.
-        let exe = std::env::current_exe()
-            .ok()
-            .and_then(|path| path.to_str().map(str::to_string))
-            .unwrap_or_else(|| "krate".to_string());
-        match self {
-            // `author-agent claude` is a hidden subcommand that runs the agent
-            // with the right prompt and flags, reading KRATE_REQUEST etc. from
-            // the environment create already sets. Invoking our own binary
-            // keeps the prompt versioned with the tool instead of in a script.
-            AgentKind::Claude => format!("{} author-agent claude", shell_quote(&exe)),
-        }
+/// The `--author-cmd` string that drives a provider. Krate builds the headless
+/// prompt and passes the request through the environment, so the user never has
+/// to write agent glue -- `--agent claude` just works.
+fn agent_author_command(provider: &dyn agent_provider::AgentProvider) -> String {
+    // Invoke THIS binary by its own path, never the bare name `krate`.
+    // A bare name resolves through PATH, so a `krate` installed earlier
+    // would drive the agent instead of the one the person just ran -- the
+    // authoring prompt, the progress reporting, and the check-app oracle
+    // would all silently come from a different version than the command
+    // that is running. Same class of trap as double-clicking a stale
+    // installed app: everything appears to work while the wrong code runs.
+    let exe = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.to_str().map(str::to_string))
+        .unwrap_or_else(|| "krate".to_string());
+    // `author-agent <name>` is a hidden subcommand that runs the agent with the
+    // right prompt and flags, reading KRATE_REQUEST etc. from the environment
+    // create already sets. Invoking our own binary keeps the prompt versioned
+    // with the tool instead of in a script.
+    format!("{} author-agent {}", shell_quote(&exe), provider.name())
+}
+
+/// Resolve `--agent <name>` to a provider, and check its CLI is actually here.
+///
+/// Both failures are answered with the fix rather than the symptom: an unknown
+/// name gets the list of names that work, and a provider whose CLI is missing
+/// gets the install step. Neither should ever surface as a spawn error.
+fn resolve_agent(name: &str) -> Result<&'static dyn agent_provider::AgentProvider> {
+    let provider = agent_provider::resolve(name).map_err(|message| anyhow::anyhow!(message))?;
+    if !agent_provider::is_installed(provider) {
+        anyhow::bail!(agent_provider::missing_cli_error(provider));
     }
+    Ok(provider)
 }
 
 #[derive(Debug, Subcommand)]
@@ -709,9 +713,14 @@ fn run() -> Result<u8> {
             request,
             output,
             // --agent is the clean front door; it resolves to the command that
-            // drives that agent. An explicit --author-cmd still wins for any
-            // other tool.
-            author_cmd: author_cmd.or_else(|| agent.map(|a| a.author_command().to_string())),
+            // drives that provider. An explicit --author-cmd still wins for any
+            // other tool. Resolving here means an unknown name or a missing CLI
+            // is reported before any authoring work begins.
+            author_cmd: match (author_cmd, agent) {
+                (Some(command), _) => Some(command),
+                (None, Some(name)) => Some(agent_author_command(resolve_agent(&name)?)),
+                (None, None) => None,
+            },
             kind,
             name,
             transcript,
@@ -748,7 +757,7 @@ fn run() -> Result<u8> {
             no_install,
         }),
         Command::Mcp => mcp::serve().map(|()| 0),
-        Command::AuthorAgent { agent } => run_author_agent(agent),
+        Command::AuthorAgent { agent } => run_author_agent(&agent),
         Command::Version => {
             print_version();
             Ok(0)
@@ -801,7 +810,7 @@ struct PortRequest {
     plan_format: OutputFormat,
     plan_output: Option<PathBuf>,
     prepare: Option<PathBuf>,
-    agent: Option<AgentKind>,
+    agent: Option<String>,
     author_cmd: Option<String>,
     to: Option<PathBuf>,
     transcript: Option<PathBuf>,
@@ -871,8 +880,20 @@ fn port_project(req: PortRequest) -> Result<u8> {
 
     if let Some(output) = req.to.as_deref() {
         preflight_toolchain(req.yes, req.no_install)?;
-        let command = match (req.agent, req.author_cmd.as_deref()) {
-            (Some(AgentKind::Claude), None) => PortAuthor::Claude,
+        let command = match (req.agent.as_deref(), req.author_cmd.as_deref()) {
+            (Some(name), None) => {
+                let provider = resolve_agent(name)?;
+                match provider.name() {
+                    "claude" => PortAuthor::Claude,
+                    // Porting drives the agent with its own prompts and repair
+                    // loop, which have only been built for Claude so far. Say
+                    // that plainly rather than silently doing something else.
+                    other => anyhow::bail!(
+                        "--agent {other} cannot port yet; porting supports only `claude` today. \
+                         Use --author-cmd <command> to drive {other} yourself."
+                    ),
+                }
+            }
             (None, Some(command)) => PortAuthor::Command(command),
             _ => anyhow::bail!("choose exactly one of --agent or --author-cmd"),
         };
@@ -2798,17 +2819,15 @@ struct AuthorContext<'a> {
 
 /// Drive a supported AI agent to author the app (the `--agent` path). Reads the
 /// request and app dir from the environment `create` set, builds the agent
-/// prompt here — versioned with the tool, not in an external script — and runs
-/// the agent headless. Today the one supported agent is Claude Code.
-fn run_author_agent(agent: AgentKind) -> Result<u8> {
+/// prompt here -- versioned with the tool, not in an external script -- and runs
+/// the provider headless.
+fn run_author_agent(agent: &str) -> Result<u8> {
     let app_dir = std::env::var("KRATE_APP_DIR")
         .context("KRATE_APP_DIR is not set; run this through `krate create --agent`")?;
     let request =
         std::env::var("KRATE_REQUEST").unwrap_or_else(|_| "a small useful app".to_string());
 
-    match agent {
-        AgentKind::Claude => run_claude_author(&app_dir, &request),
-    }
+    run_provider_author(resolve_agent(agent)?, &app_dir, &request)
 }
 
 /// The prompt handed to Claude Code: the loop instruction.
@@ -2862,7 +2881,18 @@ build the app until the check passes."
     )
 }
 
-fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
+/// Run one provider through Krate's authoring policy.
+///
+/// Everything here is the same for every provider: the prompt, the transcript,
+/// the skeleton snapshot that catches an agent which answered in chat without
+/// writing code, the progress reporting, the timeout, and the `check-app`
+/// verdict. Only the argument list, the spawn setup, and the progress parsing
+/// come from the provider -- which is exactly the split the trait draws.
+fn run_provider_author(
+    provider: &'static dyn agent_provider::AgentProvider,
+    app_dir: &str,
+    request: &str,
+) -> Result<u8> {
     // The agent runs `krate check-app .` itself, so it needs this binary on a
     // known path. current_exe is the running krate; hand its absolute path to
     // the prompt so the agent's Bash calls resolve it regardless of PATH.
@@ -2878,48 +2908,11 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
     let starter_lib = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
     let file = fs::File::create(&transcript).ok();
 
-    let mut command = ProcessCommand::new("claude");
-    command
-        .arg("-p")
-        .arg(&prompt)
-        // Bash is the change that makes authoring a loop: the agent can now run
-        // `krate check-app .`, read the failure, and fix it. Read/Edit/Write
-        // let it write the code; Bash lets it verify it.
-        .arg("--allowed-tools")
-        .arg("Read,Edit,Write,Bash")
-        // Streamed JSON events, one object per line, so the progress reporter
-        // can say what the agent is actually doing right now ("writing
-        // src/lib.rs", "running krate check-app") instead of printing dots.
-        // The transcript keeps every line, so nothing is lost by streaming.
-        .arg("--output-format")
-        .arg("stream-json")
-        .arg("--verbose")
-        // bypassPermissions, not acceptEdits. This session is headless and
-        // non-interactive, so any permission prompt blocks forever with no one
-        // to clear it. acceptEdits auto-accepts file edits but still prompts on
-        // Bash -- which meant the agent could not actually run `krate check-app`
-        // or a build, and fell back to writing code blind (the exact failure the
-        // loop exists to prevent). The agent works inside a throwaway app dir on
-        // the user's own machine, doing precisely what `krate create` was asked
-        // to do, so bypassing prompts here is scoped and safe.
-        .arg("--permission-mode")
-        .arg("bypassPermissions");
-    // Close stdin. `claude -p` reads stdin for piped input; inheriting the
-    // parent's stdin made it block waiting for input that never comes -- the
-    // transcript literally said "no stdin data received in 3s, proceeding
-    // without it", and create hung. Giving it /dev/null means it never waits.
-    command.stdin(std::process::Stdio::null());
-    // Run the child `claude` as a fresh, clean session. If `krate create` is
-    // itself launched from inside a Claude Code session (which a developer may
-    // well do), the inherited CLAUDE_CODE_* / session environment can confuse
-    // the nested agent into stalling. Strip those so the child starts as if
-    // launched from a plain terminal, with its own auth and defaults.
-    for (key, _) in std::env::vars() {
-        if key.starts_with("CLAUDE_CODE_") || key == "CLAUDECODE" || key == "CLAUDE_CODE_ENTRYPOINT"
-        {
-            command.env_remove(key);
-        }
-    }
+    let mut command = ProcessCommand::new(provider.program());
+    command.args(provider.author_args(&prompt));
+    // Provider-specific spawn setup: closing stdin so a headless run never
+    // blocks on input, plus anything else that provider needs.
+    provider.configure(&mut command);
     // stdout is piped, not sent straight to the transcript: the reporter reads
     // the streamed events to show live progress and writes every line it reads
     // to the transcript, so the file ends up with the same content it always
@@ -2943,9 +2936,16 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
         "    the AI is writing your app and checking it as it goes -- this can take \
          several minutes"
     );
-    let mut child = command
-        .spawn()
-        .context("run the `claude` CLI (is Claude Code installed and signed in?)")?;
+    let mut child = command.spawn().with_context(|| {
+        // Availability was checked before authoring began, so reaching here
+        // means something else went wrong -- but still name the provider and the
+        // sign-in step rather than leaving a bare OS error.
+        format!(
+            "run the `{program}` CLI (is {name} installed and signed in?)",
+            program = provider.program(),
+            name = provider.name(),
+        )
+    })?;
 
     // Read the agent's streamed events on a worker thread and turn each one
     // into a plain-English progress line. The thread owns the pipe and appends
@@ -2966,7 +2966,7 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
                 if let Some(log) = log.as_mut() {
                     let _ = writeln!(log, "{line}");
                 }
-                if let Some(step) = author_progress_line(&line) {
+                if let Some(step) = provider.progress_line(&line) {
                     // Collapse repeats: an agent editing one file five times
                     // should not print the same sentence five times.
                     if step == last {
@@ -2997,15 +2997,19 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
                 }
                 std::thread::sleep(std::time::Duration::from_millis(200));
             }
-            Err(err) => return Err(err).context("waiting for the `claude` agent"),
+            Err(err) => {
+                return Err(err)
+                    .with_context(|| format!("waiting for the `{}` agent", provider.name()))
+            }
         }
     };
     if let Some(reporter) = reporter {
         let _ = reporter.join();
     }
-    if !status.success() {
+    if provider.failed(&status) {
         anyhow::bail!(
-            "the Claude agent did not finish successfully; see {}",
+            "the {} agent did not finish successfully; see {}",
+            provider.name(),
             transcript.display()
         );
     }
@@ -3031,61 +3035,6 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
         );
     }
     Ok(0)
-}
-
-/// Turn one streamed agent event into a plain-English progress line, or `None`
-/// for events a person watching does not care about.
-///
-/// The point is that someone waiting several minutes can see the loop actually
-/// working -- writing the code, building it, checking the imports, fixing what
-/// failed -- rather than a row of dots that proves only that the process is
-/// alive. Everything here is best-effort: an event shape we do not recognize
-/// simply prints nothing, and the transcript still has the raw line.
-fn author_progress_line(line: &str) -> Option<String> {
-    let event: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
-    let content = event.get("message")?.get("content")?.as_array()?;
-
-    for part in content {
-        if part.get("type")?.as_str()? != "tool_use" {
-            continue;
-        }
-        let name = part.get("name").and_then(|n| n.as_str()).unwrap_or("");
-        let input = part.get("input");
-        let arg = |key: &str| -> Option<String> { Some(input?.get(key)?.as_str()?.to_string()) };
-
-        return Some(match name {
-            "Write" | "Edit" => {
-                let path = arg("file_path").unwrap_or_default();
-                let file = path.rsplit('/').next().unwrap_or(&path).to_string();
-                match file.as_str() {
-                    "lib.rs" => "writing the app's code".to_string(),
-                    "Cargo.toml" => "setting up the build".to_string(),
-                    "manifest.toml" => "declaring what the app needs access to".to_string(),
-                    "" => "writing a file".to_string(),
-                    other => format!("writing {other}"),
-                }
-            }
-            // Every read collapses to one line. Naming each file made the
-            // opening of every run a wall of "reading X" that told the person
-            // nothing -- what matters is that it is studying the reference
-            // before it writes, which is one fact, not six.
-            "Read" | "Glob" | "Grep" => "reading Krate's API reference".to_string(),
-            "Bash" => {
-                let cmd = arg("command").unwrap_or_default();
-                if cmd.contains("check-app") {
-                    "checking it builds, runs, and only uses what it declared".to_string()
-                } else if cmd.contains("cargo build") || cmd.contains("cargo component") {
-                    "building the app".to_string()
-                } else if cmd.contains("cargo") {
-                    "running the Rust toolchain".to_string()
-                } else {
-                    continue;
-                }
-            }
-            _ => continue,
-        });
-    }
-    None
 }
 
 /// The error for an agent that ran out of time: the last `check-app` verdict, so
