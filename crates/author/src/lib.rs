@@ -19,6 +19,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod feasibility;
+
 /// What kind of app the agent was asked to build. The enum is the seam where
 /// more request types slot in without reshaping the pipeline around them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
