@@ -349,6 +349,13 @@ enum Command {
         /// scripts. Errors are reported as JSON too.
         #[arg(long)]
         json: bool,
+
+        /// Author the app even when the request asks for something Krate
+        /// cannot do. The screen that stops "download my email" is a judgement
+        /// about your words, and it can be wrong; this overrides it. What you
+        /// get back will not do the impossible part.
+        #[arg(long)]
+        force: bool,
     },
 
     /// Analyze an existing source project and explain how it can become a
@@ -705,6 +712,7 @@ fn run() -> Result<u8> {
             yes,
             no_install,
             json,
+            force,
         } => create_krate(CreateRequest {
             request,
             output,
@@ -719,6 +727,7 @@ fn run() -> Result<u8> {
             yes,
             no_install,
             json,
+            force,
         }),
         Command::Report { report, show } => run_report_command(&report, show),
         Command::Port {
@@ -2265,6 +2274,7 @@ struct CreateRequest {
     yes: bool,
     no_install: bool,
     json: bool,
+    force: bool,
 }
 
 /// Fewest characters a create request must have to be worth authoring from.
@@ -2402,6 +2412,46 @@ fn validate_create_request(request: &str) -> std::result::Result<(), String> {
     Ok(())
 }
 
+/// Turn a refusal into what the person (or the calling model) sees, and the
+/// error that stops `create`.
+///
+/// A refusal is a good outcome, not a crash: it arrives in a second instead of
+/// five minutes, and it saves someone from being handed an app that cannot do
+/// the thing they asked for. So it reads as an answer -- the reason, the
+/// nearest buildable thing, and the way to override -- rather than as a fault.
+fn report_refusal(
+    req: &CreateRequest,
+    refusal: &krate_author::feasibility::Refusal,
+) -> anyhow::Error {
+    if req.json {
+        // Agents and the MCP server read this. `ok: false` with a distinct
+        // error keeps a refusal from being mistaken for a build failure, which
+        // is the difference between "ask for something else" and "retry".
+        let report = serde_json::json!({
+            "schema": "krate.author.v1",
+            "ok": false,
+            "error": "cannot-build",
+            "request": req.request,
+            "limit": refusal.limit,
+            "reason": refusal.reason,
+            "instead": refusal.instead,
+            "message": format!("{}. Try instead: {}.", refusal.reason, refusal.instead),
+        });
+        if let Ok(line) = serde_json::to_string(&report) {
+            println!("{line}");
+        }
+    }
+    anyhow::anyhow!(
+        "Krate cannot build that: {}.\n\n\
+         Try instead: {}.\n\n\
+         Stopped before writing any code, so nothing was spent on an app that could \
+         not have worked. If you think this is wrong, re-run with --force and Krate \
+         will build what it can.",
+        refusal.reason,
+        refusal.instead
+    )
+}
+
 /// Author a small app from a request and package it as one shareable `.krate`.
 ///
 /// The steps mirror the authoring loop: generate the source (built-in template
@@ -2425,6 +2475,22 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
             println!("{}", serde_json::to_string(&report)?);
         }
         anyhow::bail!("{message}");
+    }
+
+    // Screen the request against what Krate can actually do, before spending
+    // three to five minutes and an AI budget. Nothing downstream compares the
+    // finished app to the request -- all six check-app stages are mechanical --
+    // so "download my email" would otherwise produce a mail-reader UI over
+    // invented data that builds, runs, exits 0, and is reported as ready.
+    //
+    // The screen refuses only what is certainly impossible and says so in one
+    // sentence; anything it is unsure about is built. A caveat is not a
+    // refusal: the app is authored and the note is printed with it.
+    let feasibility = krate_author::feasibility::screen(&req.request);
+    if let krate_author::feasibility::Verdict::Refuse(refusal) = &feasibility {
+        if !req.force {
+            return Err(report_refusal(&req, refusal));
+        }
     }
 
     // Building the app needs a Rust toolchain, cargo-component, and the wasm
@@ -2701,9 +2767,18 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         .iter()
         .map(|cap| cap.cap.clone())
         .collect();
+    // What the app honestly does. When the request asked for something the app
+    // can only partly serve -- live data with no host named being the usual
+    // case -- say so here, with the finished app, rather than letting the
+    // person find out when the numbers never change.
+    let caveat = match &feasibility {
+        krate_author::feasibility::Verdict::Caveat(c) => Some(c.note.clone()),
+        _ => None,
+    };
     let transcript = serde_json::json!({
         "schema": "krate.author.v1",
         "request": req.request,
+        "caveat": caveat,
         "app": {"name": name, "kind": format!("{kind:?}")},
         "requested_permissions": requested,
         "gating_permission": gating,
@@ -2730,6 +2805,12 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
 
     println!();
     println!("Created {}", req.output.display());
+    if let Some(note) = &caveat {
+        // Printed with the success, not instead of it: the app was built and
+        // works, and this is the part of the request it could not make real.
+        println!();
+        println!("  One thing to know: {note}.");
+    }
     if let Some(path) = &sidecar {
         println!("  transcript: {}", path.display());
     }
@@ -2858,8 +2939,57 @@ Do not stop until `check-app` prints OK. That is the whole definition of done:\n
 not \"looks right\", not \"should work\" -- the oracle prints OK, having actually\n\
 run. If a command seems blocked, try it again; you have permission to run it.\n\
 Use the Read, Edit, Write, and Bash tools. Do not explain what you did; just\n\
-build the app until the check passes."
+build the app until the check passes.\n\
+\n\
+One exception, and only one. If the request needs something no Krate app can\n\
+do -- reading the mail, photos, contacts or messages already on this computer,\n\
+signing in to somebody's Google/Spotify/Twitter account, reaching another\n\
+person's device, or running while the app is closed -- then do NOT build a\n\
+convincing app over invented data and let check-app pass it. An app that looks\n\
+like a mail reader but can never read mail is worse than no app. Write the\n\
+single line\n\
+\n\
+    KRATE-CANNOT-BUILD: <one plain sentence saying what is out of reach>\n\
+\n\
+to a file named CANNOT-BUILD.txt in {app_dir}, and stop. Krate will show that\n\
+sentence to the person.\n\
+\n\
+Use this only when you are certain. If the request merely sounds ambitious, or\n\
+could be read as wanting a local, offline, or example-data version of the\n\
+thing, build that version -- and make the app itself honest about it on screen\n\
+(a label saying the data is built-in sample data, say). Building something\n\
+useful is almost always the right answer; refusing something buildable is not."
     )
+}
+
+/// The file name an agent writes to say the request is out of reach.
+const AGENT_REFUSAL_FILE: &str = "CANNOT-BUILD.txt";
+
+/// Read an agent's refusal, if it left one. Returns the one plain sentence it
+/// gave, with the marker stripped.
+///
+/// This is the second half of the refusal path. The pre-screen in
+/// `feasibility` stops the phrasings we listed; this catches the ones we did
+/// not think of, judged by the one participant that has read both the request
+/// and the whole API reference. Deliberately forgiving about the exact shape --
+/// the marker anywhere in the file is enough -- because a refusal that fails to
+/// parse would silently become a wrong app, which is the outcome this whole
+/// path exists to prevent.
+fn agent_refusal(app_dir: &str) -> Option<String> {
+    let text = fs::read_to_string(Path::new(app_dir).join(AGENT_REFUSAL_FILE)).ok()?;
+    let reason = text
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("KRATE-CANNOT-BUILD:"))
+        .map(str::trim)
+        .unwrap_or_else(|| text.trim());
+    if reason.is_empty() {
+        // The file exists but says nothing. Still a refusal -- treat the empty
+        // case as one rather than building the app it was warning about.
+        return Some(
+            "the AI judged this request to be outside what a Krate app can do".to_string(),
+        );
+    }
+    Some(reason.to_string())
 }
 
 fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
@@ -3002,6 +3132,20 @@ fn run_claude_author(app_dir: &str, request: &str) -> Result<u8> {
     };
     if let Some(reporter) = reporter {
         let _ = reporter.join();
+    }
+    // The agent's own refusal, checked before the exit status: the pre-screen
+    // catches the phrasings we know, and the agent is the one that can judge a
+    // request nobody anticipated. It only gets here after reading the API
+    // reference, so when it says the request is out of reach it has a better
+    // basis for that than a phrase match does. Read this first because a
+    // refusing agent may well exit non-zero.
+    if let Some(reason) = agent_refusal(app_dir) {
+        anyhow::bail!(
+            "Krate cannot build that: {reason}\n\n\
+             The AI read the request and Krate's full API reference and stopped rather \
+             than build an app that looks right but cannot do what you asked. If you \
+             think it is wrong, re-run with --force."
+        );
     }
     if !status.success() {
         anyhow::bail!(
@@ -6574,6 +6718,92 @@ mod create_tests {
         // It is no longer anchored to a template kind.
         assert!(!prompt.contains("a checklist GUI"));
         assert!(!prompt.contains("streaming local speech match"));
+    }
+
+    #[test]
+    fn the_prompt_lets_the_agent_refuse_an_impossible_request() {
+        // "Do not stop until check-app prints OK" with no exception is what
+        // makes an agent build a mail reader over invented data: every stage
+        // passes and nothing ever compares the app to the request. The prompt
+        // must give it one way out, and name the marker the CLI reads back.
+        let prompt = claude_author_prompt("/work/app", "download my email", "/usr/local/bin/krate");
+        assert!(
+            prompt.contains("KRATE-CANNOT-BUILD:"),
+            "the agent is never told how to refuse"
+        );
+        assert!(prompt.contains(super::AGENT_REFUSAL_FILE));
+        // And it is told, in the same breath, not to over-use it -- a false
+        // refusal is worse than a caveated app.
+        assert!(
+            prompt.contains("only when you are certain"),
+            "the agent is not warned against refusing something buildable"
+        );
+    }
+
+    #[test]
+    fn an_agents_refusal_is_read_back_as_one_sentence() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let path = dir.path().join(super::AGENT_REFUSAL_FILE);
+        std::fs::write(
+            &path,
+            "KRATE-CANNOT-BUILD: a Krate app cannot read the mail on this computer\n",
+        )
+        .expect("write");
+        assert_eq!(
+            super::agent_refusal(&dir.path().to_string_lossy()).as_deref(),
+            Some("a Krate app cannot read the mail on this computer")
+        );
+    }
+
+    #[test]
+    fn no_refusal_file_means_the_app_was_built() {
+        // The common case: the agent built the app and left no marker, so
+        // nothing here may interrupt it.
+        let dir = tempfile::tempdir().expect("temp dir");
+        assert_eq!(super::agent_refusal(&dir.path().to_string_lossy()), None);
+    }
+
+    #[test]
+    fn a_refusal_is_machine_readable_and_not_a_build_failure() {
+        // What the MCP server will read. A refusal has to be distinguishable
+        // from a build that broke: one means "ask for something else", the
+        // other means "retry". Same schema, distinct error, and the reason and
+        // the alternative are separate fields so a model can use them.
+        let req = super::CreateRequest {
+            request: "a Spotify client".to_string(),
+            output: std::path::PathBuf::from("/dev/null"),
+            author_cmd: None,
+            kind: None,
+            name: None,
+            transcript: None,
+            work_dir: None,
+            yes: false,
+            no_install: true,
+            json: true,
+            force: false,
+        };
+        let verdict = krate_author::feasibility::screen(&req.request);
+        let krate_author::feasibility::Verdict::Refuse(refusal) = verdict else {
+            panic!("a Spotify client must be refused");
+        };
+        // The error carries the one sentence and the way forward.
+        let message = super::report_refusal(&req, &refusal).to_string();
+        assert!(message.contains("Krate cannot build that"));
+        assert!(message.contains("Try instead:"));
+        assert!(
+            message.contains("--force"),
+            "a refusal must say how to override it"
+        );
+    }
+
+    #[test]
+    fn an_empty_refusal_file_still_stops_the_build() {
+        // A refusal that fails to parse must never fall through into building
+        // the app it was warning about. Erring toward the refusal is right
+        // here: the agent only writes this file when it means to stop.
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(dir.path().join(super::AGENT_REFUSAL_FILE), "  \n").expect("write");
+        assert!(super::agent_refusal(&dir.path().to_string_lossy()).is_some());
     }
 
     #[test]
