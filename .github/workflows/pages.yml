@@ -14,6 +14,10 @@ on:
       - "docs/cloud/**"
       - "docs/pages/**"
       - "docs/answers/**"
+      # The Krate Mode prompt, served at the site root. Without this a
+      # regenerated prompt would sit in the repo while the live URL kept
+      # handing models the old API.
+      - "docs/krate-mode.md"
       - "scripts/build-store.sh"
       - "scripts/store-listing.py"
       - "scripts/build-answer-pages.py"
@@ -87,6 +91,11 @@ jobs:
           # from the landing page 404s.
           mkdir -p _site/docs/pages
           cp docs/pages/*.html _site/docs/pages/ 2>/dev/null || true
+          # Krate Mode: the paste-in prompt, served from the site root so the
+          # copy button on /docs/pages/krate-mode.html can fetch it same-origin
+          # and so the download link is a short, retypable URL. Generated from
+          # the Krate source and checked in; a CLI test fails if it goes stale.
+          cp docs/krate-mode.md _site/krate-mode.md
           # The custom domain lives in the built artifact, not in the branch, so
           # it has to be copied on every deploy. Without it Pages forgets the
           # domain and krate.tech stops resolving to this site.

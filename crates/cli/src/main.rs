@@ -19,6 +19,7 @@ use sha2::{Digest, Sha256};
 
 mod agent_provider;
 mod authoring_context;
+mod krate_mode;
 mod mcp;
 mod port_report;
 mod sdk;
@@ -244,6 +245,23 @@ enum Command {
 
         /// Write to this file instead of stdout. `KRATE_AUTHORING.md` in the app
         /// dir is the conventional location the authoring loop uses.
+        #[arg(short, long, value_name = "FILE")]
+        output: Option<PathBuf>,
+    },
+
+    /// Print Krate Mode: the paste-in prompt that teaches any chat model to
+    /// write correct Krate apps.
+    ///
+    /// Where `authoring-context` targets an agent that has the repo and can run
+    /// `check-app` in a loop, this targets someone in ChatGPT, Claude, or Cursor
+    /// with nothing installed. It carries the same generated API surface, but
+    /// adds complete file templates, two shipped apps inlined as worked
+    /// examples, and an honest handoff -- because a chat model cannot compile.
+    ///
+    /// `docs/krate-mode.md` is the published copy; regenerate it with
+    /// `krate krate-mode --output docs/krate-mode.md` whenever the API changes.
+    KrateMode {
+        /// Write to this file instead of stdout.
         #[arg(short, long, value_name = "FILE")]
         output: Option<PathBuf>,
     },
@@ -790,6 +808,18 @@ fn run() -> Result<u8> {
                     println!("wrote {}", path.display());
                 }
                 None => print!("{pack}"),
+            }
+            Ok(0)
+        }
+        Command::KrateMode { output } => {
+            let prompt = krate_mode::generate();
+            match output {
+                Some(path) => {
+                    fs::write(&path, prompt)
+                        .with_context(|| format!("write {}", path.display()))?;
+                    println!("wrote {}", path.display());
+                }
+                None => print!("{prompt}"),
             }
             Ok(0)
         }
