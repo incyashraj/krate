@@ -63,7 +63,13 @@ pub trait AgentProvider: Send + Sync {
 /// This is the whole registry. A new provider is appended here and nowhere
 /// else: `--agent` accepts it, the error listing mentions it, and the
 /// installed-check covers it, all from this one line.
-pub const PROVIDERS: &[&dyn AgentProvider] = &[&ClaudeProvider];
+pub const PROVIDERS: &[&dyn AgentProvider] = &[
+    &ClaudeProvider,
+    &CodexProvider,
+    &GeminiProvider,
+    &CopilotProvider,
+    &GrokProvider,
+];
 
 /// Look up a provider by the name given to `--agent`.
 ///
@@ -283,6 +289,275 @@ impl AgentProvider for ClaudeProvider {
             });
         }
         None
+    }
+}
+
+/// A shared plain-English translation of a tool-use event.
+///
+/// Every provider streams a different envelope, but underneath they all report
+/// the same handful of actions: wrote a file, read a file, ran a command. The
+/// mapping from those actions to what a waiting person wants to read is the
+/// same regardless of which AI did it, so it lives here once.
+fn describe_tool_use(tool: &str, path: Option<&str>, command: Option<&str>) -> Option<String> {
+    let tool = tool.to_ascii_lowercase();
+    if tool.contains("write") || tool.contains("edit") || tool.contains("apply") {
+        let path = path.unwrap_or("");
+        let file = path.rsplit('/').next().unwrap_or(path);
+        return Some(match file {
+            "lib.rs" => "writing the app's code".to_string(),
+            "Cargo.toml" => "setting up the build".to_string(),
+            "manifest.toml" => "declaring what the app needs access to".to_string(),
+            "" => "writing a file".to_string(),
+            other => format!("writing {other}"),
+        });
+    }
+    if tool.contains("read")
+        || tool.contains("glob")
+        || tool.contains("grep")
+        || tool.contains("search")
+        || tool.contains("list")
+    {
+        return Some("reading Krate's API reference".to_string());
+    }
+    if tool.contains("bash")
+        || tool.contains("shell")
+        || tool.contains("exec")
+        || tool.contains("terminal")
+    {
+        let command = command.unwrap_or("");
+        if command.contains("check-app") {
+            return Some("checking it builds, runs, and only uses what it declared".to_string());
+        }
+        if command.contains("cargo build") || command.contains("cargo component") {
+            return Some("building the app".to_string());
+        }
+        if command.contains("cargo") {
+            return Some("running the Rust toolchain".to_string());
+        }
+        return None;
+    }
+    None
+}
+
+/// OpenAI Codex CLI. Flags verified against `codex exec --help` on 2026-08-04.
+struct CodexProvider;
+
+impl AgentProvider for CodexProvider {
+    fn name(&self) -> &'static str {
+        "codex"
+    }
+
+    fn description(&self) -> &'static str {
+        "OpenAI Codex CLI"
+    }
+
+    fn program(&self) -> &'static str {
+        "codex"
+    }
+
+    fn install_hint(&self) -> &'static str {
+        "npm install -g @openai/codex, then run `codex` once to sign in"
+    }
+
+    fn author_args(&self, prompt: &str) -> Vec<String> {
+        [
+            "exec",
+            // Streamed JSON events, so progress can be reported as real steps.
+            "--json",
+            // Krate authors into a throwaway directory that is not a git repo.
+            // Without this, codex refuses to start there.
+            "--skip-git-repo-check",
+            // The agent must write files and run check-app inside the app dir.
+            // workspace-write is the narrowest mode that allows both; it is not
+            // full access.
+            "--sandbox",
+            "workspace-write",
+            prompt,
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+    }
+
+    fn configure(&self, command: &mut ProcessCommand) {
+        command.stdin(Stdio::null());
+    }
+
+    fn progress_line(&self, line: &str) -> Option<String> {
+        let event: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+        // Codex reports tool calls under a few shapes across versions; try the
+        // documented one first and fall back to a generic scan rather than
+        // going silent on a version we have not seen.
+        let name = event
+            .get("name")
+            .or_else(|| event.get("tool"))
+            .or_else(|| event.pointer("/item/name"))
+            .and_then(|v| v.as_str())?;
+        let path = event
+            .pointer("/arguments/path")
+            .or_else(|| event.pointer("/input/path"))
+            .or_else(|| event.pointer("/arguments/file_path"))
+            .and_then(|v| v.as_str());
+        let command = event
+            .pointer("/arguments/command")
+            .or_else(|| event.pointer("/input/command"))
+            .and_then(|v| v.as_str());
+        describe_tool_use(name, path, command)
+    }
+}
+
+/// Google Gemini CLI. Flags from Google's published CLI reference; the binary
+/// was not installed on the machine where this was written, so the event shape
+/// is parsed defensively rather than assumed.
+struct GeminiProvider;
+
+impl AgentProvider for GeminiProvider {
+    fn name(&self) -> &'static str {
+        "gemini"
+    }
+
+    fn description(&self) -> &'static str {
+        "Google Gemini CLI"
+    }
+
+    fn program(&self) -> &'static str {
+        "gemini"
+    }
+
+    fn install_hint(&self) -> &'static str {
+        "npm install -g @google/gemini-cli, then run `gemini` once to sign in"
+    }
+
+    fn author_args(&self, prompt: &str) -> Vec<String> {
+        [
+            "--prompt",
+            prompt,
+            // Headless: approve the agent's own tool calls, since there is
+            // nobody at the terminal to answer a prompt.
+            "--approval-mode",
+            "yolo",
+            "--output-format",
+            "stream-json",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+    }
+
+    fn configure(&self, command: &mut ProcessCommand) {
+        command.stdin(Stdio::null());
+    }
+
+    fn progress_line(&self, line: &str) -> Option<String> {
+        let event: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+        let name = event
+            .pointer("/toolCall/name")
+            .or_else(|| event.get("name"))
+            .and_then(|v| v.as_str())?;
+        let args = event
+            .pointer("/toolCall/args")
+            .or_else(|| event.get("args"));
+        let path = args
+            .and_then(|a| a.get("file_path").or_else(|| a.get("path")))
+            .and_then(|v| v.as_str());
+        let command = args.and_then(|a| a.get("command")).and_then(|v| v.as_str());
+        describe_tool_use(name, path, command)
+    }
+}
+
+/// GitHub Copilot CLI. Flags verified against `copilot --help` on 2026-08-04.
+///
+/// Copilot does not stream structured events in non-interactive mode, so there
+/// is no progress to report beyond the heartbeat the caller prints. The app
+/// still gets built and checked; only the step-by-step narration is missing.
+struct CopilotProvider;
+
+impl AgentProvider for CopilotProvider {
+    fn name(&self) -> &'static str {
+        "copilot"
+    }
+
+    fn description(&self) -> &'static str {
+        "GitHub Copilot CLI"
+    }
+
+    fn program(&self) -> &'static str {
+        "copilot"
+    }
+
+    fn install_hint(&self) -> &'static str {
+        "npm install -g @github/copilot, then run `copilot` once to sign in"
+    }
+
+    fn author_args(&self, prompt: &str) -> Vec<String> {
+        [
+            "-p",
+            prompt,
+            // Headless: nobody is there to approve each tool call.
+            "--allow-all-tools",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+    }
+
+    fn configure(&self, command: &mut ProcessCommand) {
+        command.stdin(Stdio::null());
+    }
+
+    fn progress_line(&self, _line: &str) -> Option<String> {
+        // Plain prose output, not structured events. Reporting a guessed step
+        // from a substring match would be worse than reporting nothing.
+        None
+    }
+}
+
+/// xAI Grok CLI, which installs its binary as `agent`. Flags verified against
+/// `agent --help` on 2026-08-04 (grok 0.2.14).
+struct GrokProvider;
+
+impl AgentProvider for GrokProvider {
+    fn name(&self) -> &'static str {
+        "grok"
+    }
+
+    fn description(&self) -> &'static str {
+        "xAI Grok CLI"
+    }
+
+    fn program(&self) -> &'static str {
+        // Grok ships as `agent`, not `grok`. Using the wrong name here would
+        // report "not installed" on a machine that has it.
+        "agent"
+    }
+
+    fn install_hint(&self) -> &'static str {
+        "install the Grok CLI from xAI, then run `agent` once to sign in"
+    }
+
+    fn author_args(&self, prompt: &str) -> Vec<String> {
+        ["--single", prompt, "--output-format", "json"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    fn configure(&self, command: &mut ProcessCommand) {
+        command.stdin(Stdio::null());
+    }
+
+    fn progress_line(&self, line: &str) -> Option<String> {
+        let event: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+        let name = event
+            .get("tool")
+            .or_else(|| event.get("name"))
+            .and_then(|v| v.as_str())?;
+        let path = event
+            .pointer("/input/path")
+            .or_else(|| event.pointer("/input/file_path"))
+            .and_then(|v| v.as_str());
+        let command = event.pointer("/input/command").and_then(|v| v.as_str());
+        describe_tool_use(name, path, command)
     }
 }
 

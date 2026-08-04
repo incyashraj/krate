@@ -269,6 +269,50 @@
       font-size: .92em;
     }
 
+    /* The connect-your-AI table: one row per tool, name / how to install /
+       which flag. A real table would be semantically right but wraps badly on
+       a phone, so this is a grid that collapses to stacked rows. */
+    .ai-table {
+      margin-top: 24px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .ai-row {
+      display: grid;
+      grid-template-columns: 12rem 1fr 11rem;
+      gap: 16px;
+      align-items: center;
+      padding: 14px 18px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .ai-row:last-child { border-bottom: none; }
+
+    .ai-name {
+      font-family: var(--sans);
+      font-weight: 650;
+      color: var(--text);
+    }
+
+    .ai-install,
+    .ai-flag {
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    .ai-flag code { color: var(--cyan); }
+
+    @media (max-width: 640px) {
+      .ai-row {
+        grid-template-columns: 1fr;
+        gap: 6px;
+      }
+    }
+
     /* The prerequisites box: two plain facts, set apart so nobody misses them
        before they start. */
     .note-box {
@@ -836,6 +880,62 @@
         <div class="note-box">
           <p><strong>You do not install the build tools by hand.</strong> The first time you run <code>krate create</code>, it checks what is missing and offers to set it up for you. Say yes and it installs.</p>
           <p>It is a one-time setup of about five minutes. After that, every app you make builds fast. You can check your setup any time with <code>krate doctor</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2b. Connect your AI. Deliberately a lookup, not a login: every one of
+         these tools owns its own sign-in, and Krate holding a copy of anyone's
+         credentials would be strictly worse than the tool holding its own. -->
+    <section class="section" id="connect-your-ai">
+      <div class="wrap">
+        <p class="label">Connect your AI</p>
+        <h2>Use the AI you already have.</h2>
+        <div class="prose">
+          <p>Krate does not run an AI for you and never sees your account. It uses an AI tool that is already installed on your machine and already signed in to you. Your code stays on your computer, and your key never touches us.</p>
+          <p>Run this to see what you can use right now:</p>
+        </div>
+
+        <div class="cmd">
+          <pre id="cmd-ai"><span class="p">krate</span> ai</pre>
+          <button class="copy-button" type="button" data-target="cmd-ai" aria-label="Copy command">Copy</button>
+        </div>
+
+        <div class="prose">
+          <p>It prints the tools it found, the ones you could add, and the exact command to make your first app. If you have none of them yet, install any one below, sign in to it once, and run <code>krate ai</code> again.</p>
+        </div>
+
+        <div class="ai-table" role="list">
+          <div class="ai-row" role="listitem">
+            <div class="ai-name">Claude Code</div>
+            <div class="ai-install"><code>npm install -g @anthropic-ai/claude-code</code></div>
+            <div class="ai-flag"><code>--agent claude</code></div>
+          </div>
+          <div class="ai-row" role="listitem">
+            <div class="ai-name">OpenAI Codex</div>
+            <div class="ai-install"><code>npm install -g @openai/codex</code></div>
+            <div class="ai-flag"><code>--agent codex</code></div>
+          </div>
+          <div class="ai-row" role="listitem">
+            <div class="ai-name">Google Gemini</div>
+            <div class="ai-install"><code>npm install -g @google/gemini-cli</code></div>
+            <div class="ai-flag"><code>--agent gemini</code></div>
+          </div>
+          <div class="ai-row" role="listitem">
+            <div class="ai-name">GitHub Copilot</div>
+            <div class="ai-install"><code>npm install -g @github/copilot</code></div>
+            <div class="ai-flag"><code>--agent copilot</code></div>
+          </div>
+          <div class="ai-row" role="listitem">
+            <div class="ai-name">xAI Grok</div>
+            <div class="ai-install">Install the Grok CLI from xAI</div>
+            <div class="ai-flag"><code>--agent grok</code></div>
+          </div>
+        </div>
+
+        <div class="note-box">
+          <p><strong>Using something else?</strong> Any tool that can write files from a prompt works. Pass it with <code>--author-cmd "your command"</code> instead of <code>--agent</code>. Krate hands it the request and a working starter, then checks whatever it writes.</p>
+          <p><strong>No AI at all?</strong> You can still make an app. Leave the AI out and Krate uses a built-in template.</p>
         </div>
       </div>
     </section>

@@ -194,6 +194,9 @@ enum Command {
     Version,
     /// Check the local development environment.
     Doctor,
+    /// Show which AI coding tools are installed, so you know what you can
+    /// author apps with. Reads nothing but your PATH.
+    Ai,
 
     /// Build, import-check, and run an app directory, printing one clear
     /// verdict. This is the oracle an AI author (or a human, or CI) runs after
@@ -763,6 +766,7 @@ fn run() -> Result<u8> {
             Ok(0)
         }
         Command::Doctor => doctor(),
+        Command::Ai => ai_status(),
         Command::CheckApp {
             dir,
             shoot,
@@ -3007,11 +3011,29 @@ fn run_provider_author(
         let _ = reporter.join();
     }
     if provider.failed(&status) {
-        anyhow::bail!(
-            "the {} agent did not finish successfully; see {}",
-            provider.name(),
-            transcript.display()
-        );
+        // Surface the agent's own error rather than pointing at a file. A
+        // failure here is usually about the person's AI account, not their
+        // app -- an expired login, a model their plan cannot reach, a CLI
+        // that needs updating -- and "see this transcript" makes them go
+        // digging through JSON to find one sentence they could have been
+        // told directly.
+        let reason = agent_failure_reason(&transcript);
+        match reason {
+            Some(reason) => anyhow::bail!(
+                "{} could not write the app:\n\n  {reason}\n\n\
+                 This is a problem with the AI tool, not with Krate or your \
+                 request. Check that `{}` runs on its own, then try again. \
+                 The full transcript is at {}.",
+                provider.name(),
+                provider.program(),
+                transcript.display()
+            ),
+            None => anyhow::bail!(
+                "the {} agent did not finish successfully; see {}",
+                provider.name(),
+                transcript.display()
+            ),
+        }
     }
     let lib_after = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
     if lib_after == starter_lib {
@@ -3040,6 +3062,104 @@ fn run_provider_author(
             transcript.display()
         );
     }
+    Ok(0)
+}
+
+/// Pull the agent's own error sentence out of its transcript.
+///
+/// Providers stream JSON lines, and a failure is usually one clear sentence
+/// buried among hundreds of events -- often nested as a JSON string inside a
+/// JSON field. Best-effort by design: an unrecognized shape returns None and
+/// the caller falls back to naming the transcript.
+fn agent_failure_reason(transcript: &Path) -> Option<String> {
+    let text = fs::read_to_string(transcript).ok()?;
+    let mut last = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if !line.starts_with('{') {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        // Look wherever providers put a message, then unwrap one layer of
+        // JSON-in-a-string, which is how the useful sentence usually arrives.
+        let raw = event
+            .pointer("/error/message")
+            .or_else(|| event.pointer("/item/message"))
+            .or_else(|| event.get("message"))
+            .and_then(|v| v.as_str());
+        let Some(raw) = raw else { continue };
+        let unwrapped = serde_json::from_str::<serde_json::Value>(raw)
+            .ok()
+            .and_then(|inner| {
+                inner
+                    .pointer("/error/message")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| raw.to_string());
+        let is_error = event.get("type").and_then(|t| t.as_str()) == Some("error")
+            || event.pointer("/item/type").and_then(|t| t.as_str()) == Some("error")
+            || event.get("error").is_some();
+        if is_error && !unwrapped.trim().is_empty() {
+            last = Some(unwrapped.trim().to_string());
+        }
+    }
+    last.map(|reason| {
+        // One sentence, not a wall. Long provider errors repeat themselves.
+        let trimmed: String = reason.chars().take(300).collect();
+        trimmed
+    })
+}
+
+/// Show which AI coding tools are on this machine.
+///
+/// This is the "connect your AI" step, and it is deliberately a lookup rather
+/// than a login: every one of these tools already has its own sign-in, and
+/// Krate holding a copy of someone's credentials would be strictly worse than
+/// the tool holding its own. Nothing here reads a key, opens a browser, or
+/// talks to a server -- it looks at PATH and tells you what you can use.
+fn ai_status() -> Result<u8> {
+    let installed: Vec<_> = agent_provider::PROVIDERS
+        .iter()
+        .filter(|provider| agent_provider::is_installed(**provider))
+        .collect();
+
+    if installed.is_empty() {
+        println!("No AI coding tool found on this machine.");
+        println!();
+        println!("Install any one of these, sign in to it once, and Krate will use it:");
+        for provider in agent_provider::PROVIDERS {
+            println!("  {:<9}{}", provider.name(), provider.install_hint());
+        }
+        println!();
+        println!("You can also build an app without AI:");
+        println!("  krate create \"a checklist\" --output checklist.krate");
+        return Ok(0);
+    }
+
+    println!("Ready to use:");
+    for provider in &installed {
+        println!("  {:<9}{}", provider.name(), provider.description());
+    }
+
+    let missing: Vec<_> = agent_provider::PROVIDERS
+        .iter()
+        .filter(|provider| !agent_provider::is_installed(**provider))
+        .collect();
+    if !missing.is_empty() {
+        println!();
+        println!("Not installed:");
+        for provider in &missing {
+            println!("  {:<9}{}", provider.name(), provider.install_hint());
+        }
+    }
+
+    let first = installed[0].name();
+    println!();
+    println!("Make an app:");
+    println!("  krate create \"a habit tracker\" --output habit.krate --agent {first}");
     Ok(0)
 }
 

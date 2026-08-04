@@ -4220,3 +4220,30 @@ fn a_supported_agent_with_no_cli_installed_explains_how_to_install_it() {
         "it must not surface a raw spawn error: {stderr}"
     );
 }
+
+/// `krate ai` must tell someone what they can author with.
+///
+/// This is the "connect your AI" step. It is a lookup rather than a login: the
+/// AI tools each own their own sign-in, and Krate holding a copy of anyone's
+/// credentials would be strictly worse. The command must therefore work
+/// offline, touch no credential, and still be useful when nothing is
+/// installed.
+#[test]
+fn ai_lists_what_this_machine_can_author_with() {
+    let output = krate().arg("ai").output().expect("run krate ai");
+    assert!(output.status.success(), "krate ai must not fail");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Every provider is accounted for, either as ready or as installable.
+    for provider in ["claude", "codex", "gemini", "copilot", "grok"] {
+        assert!(
+            stdout.contains(provider),
+            "krate ai must mention {provider}: {stdout}"
+        );
+    }
+    // It must end with something the person can actually do next.
+    assert!(
+        stdout.contains("krate create"),
+        "krate ai must show the next command: {stdout}"
+    );
+}
