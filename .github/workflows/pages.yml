@@ -137,6 +137,11 @@ jobs:
           mkdir -p _site/cloud
           cp docs/cloud/index.html _site/cloud/index.html
           cp docs/landing/*.png _site/cloud/ 2>/dev/null || true
+          # The store card thumbnails: each GUI app's rendered first frame, so a
+          # card shows what the app looks like instead of a bare icon. CLI apps
+          # (no window) have no shot and fall back to a lettered tile in the page.
+          mkdir -p _site/cloud/shots
+          cp docs/cloud/shots/*.png _site/cloud/shots/ 2>/dev/null || true
           # Built from this commit, not from the last release: the store shows
           # each app's content identity, and that only exists in builds after
           # rc4. An older binary silently produced an empty shelf.

@@ -60,6 +60,77 @@
       letter-spacing: .01em;
     }
 
+    /* A real store card: a screenshot, a name, what it does, then the honest
+       permissions tucked into a detail. The old card led with the permission
+       list, which made an app that only opens a window read as empty. */
+    .store-card {
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      overflow: hidden;
+    }
+    /* The screenshot: the app's rendered first frame, cropped to a banner so
+       every card is the same height regardless of window shape. */
+    .store-thumb {
+      position: relative;
+      height: 150px;
+      background: #0e1017;
+      border-bottom: 1px solid var(--line);
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+    }
+    .store-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: top center;
+      display: block;
+    }
+    /* The lettered tile a CLI app (no window to shoot) falls back to, and what
+       a GUI app shows if its shot ever fails to load. */
+    .store-thumb-letter {
+      display: none;
+      font-family: var(--mono);
+      font-size: 46px;
+      font-weight: 700;
+      color: var(--line-strong);
+    }
+    .store-thumb.no-shot { background: var(--panel-raised); }
+    .store-thumb.no-shot .store-thumb-letter { display: block; }
+
+    .store-body {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 16px 18px 18px;
+      flex: 1;
+    }
+    .store-head h3 { margin: 0; }
+    /* What the app does -- the line that was missing. This is the card's lead. */
+    .store-what {
+      margin: 0;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    /* Permissions, demoted to a detail so they inform without dominating. */
+    .store-asks-wrap { margin-top: auto; }
+    .store-asks-wrap summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 12.5px;
+      list-style: none;
+      padding: 6px 0;
+      border-top: 1px solid var(--line);
+    }
+    .store-asks-wrap summary::-webkit-details-marker { display: none; }
+    .store-asks-wrap summary::before { content: "\25B8 "; color: var(--quiet); }
+    .store-asks-wrap[open] summary::before { content: "\25BE "; }
+    .store-asks-wrap .store-asks { margin: 4px 0 6px; padding: 0; list-style: none; }
+    .store-asks-wrap .store-asks li { font-size: 12.5px; color: var(--muted); padding: 2px 0; }
+    .store-asks-wrap .store-asks .warn { color: var(--yellow); }
+
     /* "How to open this" — the panel that appears after a download, so a first
        time visitor is never left holding a .krate file with no idea what to do
        with it. It is the difference between "I downloaded something" and "I ran
@@ -337,6 +408,46 @@
         return "App";
       };
 
+      // A human line for what the app *does* -- the thing a store card should
+      // lead with. Keyed by file stem. Without one, a card would fall back to
+      // its permissions, which describe what it may touch, not what it is.
+      const DESC_BY_FILE = {
+        nova: "A neon top-down arcade space shooter.",
+        bounce: "Classic brick-breaker: bounce the ball, clear the wall.",
+        cubes: "A lit, textured 3D scene rendering on the CPU.",
+        paint: "Draw freehand on a canvas with your mouse.",
+        fractal: "Renders the Mandelbrot set, pixel by pixel.",
+        chart: "Turns a few numbers into a clean bar chart.",
+        contacts: "A contact list kept in a real SQL database.",
+        checklist: "A checklist you tick off; it saves as you go.",
+        clip: "Copy and paste text through the system clipboard.",
+        clipboard: "Copy and paste text through the system clipboard.",
+        keyvault: "Remembers how many times you have opened it.",
+        notes: "Jot notes and save them locally, offline.",
+        fetch: "Fetches a page over the network and shows it.",
+        savings: "A budget splitter: divide income into categories.",
+        eo2: "A small photo shelf: view, keep, and remove images.",
+        envelope: "Envelope budgeting over a local database (CLI).",
+        mdview: "Renders a Markdown file into a readable page.",
+        hexyl: "A hex viewer for the bytes of any file (CLI).",
+        grex: "Builds a regular expression from example strings (CLI).",
+        ddh: "Finds duplicate files under a folder (CLI).",
+        rssfwd: "Reads an RSS feed and prints the latest items (CLI).",
+      };
+      const descOf = (file) => {
+        const stem = (file || "").replace(/^krate-/, "").replace(/\.krate$/, "");
+        return DESC_BY_FILE[stem] || "";
+      };
+      // A shot exists for GUI apps (rendered headless); a CLI app has no window
+      // to capture, so it gets a lettered tile instead. Naming the shotless apps
+      // is more reliable than waiting for a broken <img> to error -- with lazy
+      // loading an off-screen 404 never fires onerror until scrolled to.
+      const NO_SHOT = new Set(["ddh", "envelope", "grex", "hexyl", "rssfwd"]);
+      const stemOf = (file) =>
+        (file || "").replace(/^krate-/, "").replace(/\.krate$/, "");
+      const hasShot = (file) => !NO_SHOT.has(stemOf(file));
+      const shotPath = (file) => `./shots/${stemOf(file)}.png`;
+
       // Say what a capability means, not what it is called. The words match the
       // permission window a person sees when the app actually opens.
       const plainAsk = (cap) => {
@@ -368,24 +479,43 @@
           }
           shelf.innerHTML = apps.map((a) => {
             const kind = kindOf(a.file, a.asks);
+            const desc = descOf(a.file);
+            // The distinct things it may touch, in plain words. Deduped, and
+            // never the whole story of the card -- just the honest footnote.
+            const asks = [...new Map(a.asks.map((c) => [plainAsk(c), c])).entries()];
+            // A thumbnail: the app's rendered first frame for a GUI app, or a
+            // clean lettered tile for a CLI app that has no window to shoot.
+            const letter = (a.name || "?").trim().charAt(0).toUpperCase();
+            const thumb = hasShot(a.file)
+              ? `<div class="store-thumb">
+                   <img src="${shotPath(a.file)}" alt="Screenshot of ${a.name}" loading="lazy"
+                        onerror="this.closest('.store-thumb').classList.add('no-shot'); this.remove();" />
+                   <span class="store-thumb-letter" aria-hidden="true">${letter}</span>
+                 </div>`
+              : `<div class="store-thumb no-shot">
+                   <span class="store-thumb-letter" aria-hidden="true">${letter}</span>
+                 </div>`;
             return `
             <article class="store-card">
-              <div class="store-top">
-                <div class="store-icon" aria-hidden="true">&#9635;</div>
-                <div>
+              ${thumb}
+              <div class="store-body">
+                <div class="store-head">
                   <h3>${a.name}</h3>
                   <p class="store-by"><span class="store-kind">${kind}</span> &middot; ${humanBytes(a.bytes)}</p>
                 </div>
-              </div>
-              <ul class="store-asks">
-                ${a.asks.length
-                  ? [...new Map(a.asks.map((c) => [plainAsk(c), c])).entries()]
-                      .map(([text, c]) => `<li><span class="${sensitive(c) ? "warn" : ""}">&#9679;</span> ${text}</li>`).join("")
-                  : '<li><span>&#9679;</span> nothing beyond opening a window</li>'}
-              </ul>
-              <div class="store-foot">
-                <a class="path-link" href="./apps/${a.file}" download data-app-name="${a.name}">Download &darr;</a>
-                <p class="store-digest" title="Identity you can check with --dump-caps">${(a.digest || "").slice(0, 16)}&hellip;</p>
+                ${desc ? `<p class="store-what">${desc}</p>` : ""}
+                <details class="store-asks-wrap">
+                  <summary>${asks.length ? `Wants access to ${asks.length} thing${asks.length > 1 ? "s" : ""}` : "Wants nothing but a window"}</summary>
+                  <ul class="store-asks">
+                    ${asks.length
+                      ? asks.map(([text, c]) => `<li><span class="${sensitive(c) ? "warn" : ""}">&#9679;</span> ${text}</li>`).join("")
+                      : '<li><span>&#9679;</span> opens a window and nothing else</li>'}
+                  </ul>
+                </details>
+                <div class="store-foot">
+                  <a class="path-link" href="./apps/${a.file}" download data-app-name="${a.name}">Download &darr;</a>
+                  <p class="store-digest" title="Identity you can check with --dump-caps">${(a.digest || "").slice(0, 16)}&hellip;</p>
+                </div>
               </div>
             </article>
           `;
