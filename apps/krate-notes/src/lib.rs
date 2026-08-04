@@ -1,55 +1,46 @@
-//! Krate Notes — the flagship sample (Phase-3-Plan §17).
+//! Krate Notes — a two-pane notes app, drawn on a canvas.
 //!
-//! A note taking app that is one shareable file. A list of notes on the left,
-//! an editor on the right, and saving writes to a directory the user granted.
-//! Nothing else on the machine is reachable.
+//! The Apple-Notes shape: a sidebar of note cards on the left (title, date,
+//! snippet), the selected note on the right as real type — first line as the
+//! title, the rest as body text with a caret. Click a row to switch, type to
+//! write, "+ New" to add a note. Everything persists as plain text files in
+//! the one directory the user granted (`./notes/`), same paths and format as
+//! every earlier version of this app.
 //!
-//! This exists because a widget gallery proves a mechanism and a real app
-//! proves a product. Someone can be sent a link to this, open it, see exactly
-//! what it wants, allow one folder, and keep using it.
-//!
-//! Panic-free discipline, inherited from hello-gui: indexed slice operations
-//! pull std's panic machinery (and with it WASI imports) into the component,
-//! so every buffer here is fixed capacity and every access non-panicking.
+//! `#![no_std]` keeps it `krate:*`-only: the SDK owns the allocator and a
+//! trapping panic handler, so no path drags in the `wasi:*` import set. All
+//! state is fixed-size; no `format!`, `unwrap`, or panicking index.
+
+#![no_std]
+
+extern crate alloc;
+
+extern crate krate as _krate_runtime;
 
 #[allow(warnings)]
 mod bindings;
 
 use bindings::krate::fs::files::{self, OpenMode};
+use bindings::krate::gfx::{canvas2d, types as gfx};
 use bindings::krate::io::{args, stdio};
 use bindings::krate::ui::{clipboard, events, tree, types, window};
 
 const ROOT_ID: u64 = 1;
-/// The left column wraps a header label and the note list. Child order is
-/// BTreeMap id order, so the left column's id must sort before the editor
-/// column's for the sidebar to sit on the left.
-const LEFT_COLUMN_ID: u64 = 2;
-const EDITOR_ID: u64 = 3;
-const STATUS_ID: u64 = 4;
-const EDITOR_COLUMN_ID: u64 = 5;
-const SIDEBAR_HEADER_ID: u64 = 6;
-const SIDEBAR_ID: u64 = 7;
-const NOTE_ROW_BASE_ID: u64 = 10;
-/// The "+ New note" row lives just past the last possible note slot, so its id
-/// never collides with a note row and `is_note_row` can reject it cleanly.
-const NEW_NOTE_ID: u64 = NOTE_ROW_BASE_ID + NOTE_CAPACITY_SLOTS as u64;
+const CANVAS_ID: u64 = 2;
 
-/// Total note slots the sample can ever hold. Fixed so no allocation is needed;
-/// only the first `live` of them are shown, and "+ New note" reveals the next.
-const NOTE_CAPACITY_SLOTS: usize = 8;
-/// How many notes exist when the app first opens.
-const INITIAL_NOTE_COUNT: usize = 3;
-const NOTE_TITLES: [&str; NOTE_CAPACITY_SLOTS] = [
-    "first note",
-    "second note",
-    "third note",
-    "fourth note",
-    "fifth note",
-    "sixth note",
-    "seventh note",
-    "eighth note",
-];
-const NOTE_FILES: [&str; NOTE_CAPACITY_SLOTS] = [
+const W: f32 = 900.0;
+const H: f32 = 640.0;
+const SIDEBAR_W: f32 = 280.0;
+
+/// Note slots. Fixed so no allocation is needed; the sidebar fits exactly this
+/// many rows above the "+ New" button.
+const SLOTS: usize = 7;
+/// Bytes of text a note holds. Fixed-capacity, same ceiling as always.
+const CAP: usize = 512;
+
+/// Same paths and plain-text format as every earlier krate-notes, so notes
+/// saved by an older build load unchanged here.
+const NOTE_FILES: [&str; SLOTS] = [
     "./notes/first.txt",
     "./notes/second.txt",
     "./notes/third.txt",
@@ -57,122 +48,107 @@ const NOTE_FILES: [&str; NOTE_CAPACITY_SLOTS] = [
     "./notes/fifth.txt",
     "./notes/sixth.txt",
     "./notes/seventh.txt",
-    "./notes/eighth.txt",
 ];
 
-/// Bytes of note text the editor holds. A real editor would grow; a sample
-/// that must not pull panic machinery into the component does not.
-const NOTE_CAPACITY: usize = 512;
+const INITIAL_NOTE_COUNT: usize = 3;
 
-/// Rounds the interactive session runs for. A note taking app should stay
-/// open until the person closes it, not time out while they are thinking, so
-/// this is a very high ceiling rather than a demo budget: about eight hours at
-/// the round length below. `hello-gui` uses a short bound because it is a CI
-/// fixture that must never hang; this is an app someone uses.
 const MAX_WAIT_ROUNDS: u32 = 600_000;
-/// Automated runs pass `quick` and exit promptly.
-const QUICK_WAIT_ROUNDS: u32 = 40;
+const QUICK_WAIT_ROUNDS: u32 = 30;
 const WAIT_ROUND_MILLIS: u32 = 50;
-
-/// Consecutive quiet rounds before the app stops waiting, about ten seconds.
-///
-/// The ceiling above assumes a window someone can come back to and click. With
-/// no window there is nothing to come back to and every round is guaranteed to
-/// stay quiet, so waiting the ceiling out sits there for eight hours looking
-/// like a hang. Any click or keystroke resets this, so someone using the window
-/// never reaches it.
 const MAX_IDLE_ROUNDS: u32 = 200;
 
-struct Component;
+// ------------------------------------------------------------------
+// Palette
+// ------------------------------------------------------------------
 
-/// How many edit states undo/redo can walk back through. Fixed so the editor
-/// allocates nothing: the two stacks below are inline arrays. A note is small
-/// and a demo session is short, so a shallow history is plenty; the point is
-/// that undo works at all on the drawn path, not that it is unbounded.
-const HISTORY_DEPTH: usize = 32;
+const BG_TOP: gfx::Color = gfx::Color { r: 0.043, g: 0.055, b: 0.082, a: 1.0 }; // #0B0E15
+const BG_BOT: gfx::Color = gfx::Color { r: 0.063, g: 0.078, b: 0.114, a: 1.0 }; // #10141D
+const SIDEBAR_BG: gfx::Color = gfx::Color { r: 0.030, g: 0.039, b: 0.059, a: 1.0 }; // darker
+const ROW_CARD: gfx::Color = gfx::Color { r: 0.055, g: 0.071, b: 0.104, a: 1.0 };
+/// Accent at ~18% over the sidebar ground, pre-blended so the rounded-rect
+/// pieces can be laid down at full alpha without doubling up.
+const ROW_SELECTED: gfx::Color = gfx::Color { r: 0.079, g: 0.132, b: 0.228, a: 1.0 };
+const DIVIDER: gfx::Color = gfx::Color { r: 0.137, g: 0.165, b: 0.220, a: 1.0 }; // #232A38
+const INK: gfx::Color = gfx::Color { r: 0.949, g: 0.961, b: 0.980, a: 1.0 }; // #F2F5FA
+const INK_BODY: gfx::Color = gfx::Color { r: 0.839, g: 0.867, b: 0.910, a: 1.0 };
+const INK_SEC: gfx::Color = gfx::Color { r: 0.604, g: 0.647, b: 0.710, a: 1.0 }; // #9AA5B5
+const INK_QUIET: gfx::Color = gfx::Color { r: 0.365, g: 0.408, b: 0.471, a: 1.0 }; // #5D6878
+const ACCENT: gfx::Color = gfx::Color { r: 0.298, g: 0.553, b: 1.0, a: 1.0 }; // #4C8DFF
+const GHOST_BORDER: gfx::Color = gfx::Color { r: 0.165, g: 0.196, b: 0.251, a: 1.0 };
 
-/// One captured edit state: the full text plus where the cursor and selection
-/// sat. Undo restores all three so the caret lands back where the person was.
+// ------------------------------------------------------------------
+// Sidebar layout
+// ------------------------------------------------------------------
+
+const ROW_X: f32 = 12.0;
+const ROW_W: f32 = SIDEBAR_W - ROW_X * 2.0;
+const ROW_H: f32 = 58.0;
+const ROW_GAP: f32 = 6.0;
+const ROWS_Y: f32 = 104.0;
+
+const NEW_BTN_H: f32 = 44.0;
+const NEW_BTN_Y: f32 = H - 24.0 - NEW_BTN_H;
+
+// Editor layout.
+const CONTENT_X: f32 = SIDEBAR_W + 48.0;
+const CONTENT_W: f32 = W - CONTENT_X - 44.0; // 528, under the 640 max measure
+const TOPBAR_RULE_Y: f32 = 52.0;
+const TITLE_BASELINE: f32 = 112.0;
+const TITLE_SIZE: f32 = 24.0;
+const BODY_SIZE: f32 = 16.0;
+const BODY_LH: f32 = 23.0; // ~1.45 line height
+const BODY_Y0: f32 = TITLE_BASELINE + 38.0;
+const BODY_MAX_LINES: usize = 21;
+
+/// Approximate advance per character for the system face. Measured off a real
+/// shot of this app: body text renders at ~0.42-0.44em per char, so 0.44 keeps
+/// the caret near the true text end while still wrapping inside the measure.
+fn char_w(size: f32) -> f32 {
+    size * 0.44
+}
+
+fn text_width(s: &str, size: f32) -> f32 {
+    (s.len() as f32) * char_w(size)
+}
+
+// ------------------------------------------------------------------
+// Note buffers — fixed-capacity, panic-free
+// ------------------------------------------------------------------
+
 #[derive(Clone, Copy)]
-struct Snapshot {
-    bytes: [u8; NOTE_CAPACITY],
+struct NoteBuf {
+    bytes: [u8; CAP],
     len: usize,
-    cursor: usize,
-    anchor: usize,
 }
 
-/// A fixed-capacity, allocation-free, panic-free text editor.
-///
-/// The drawn path (Linux, Windows) paints its own text, so unlike the macOS
-/// native control, every editing behavior — caret movement, selection, cut,
-/// copy, paste, undo, redo — is implemented here in the guest against the raw
-/// byte buffer. Text is treated as bytes: `TextInput` on the drawn path is
-/// filtered to ASCII, so a byte index is always a character boundary and the
-/// caret arithmetic below is exact.
-struct NoteBuffer {
-    bytes: [u8; NOTE_CAPACITY],
-    len: usize,
-    /// Caret position as a byte offset in `0..=len`.
-    cursor: usize,
-    /// The other end of the selection. Equal to `cursor` means no selection;
-    /// otherwise the selection spans `[min, max)` of the two.
-    anchor: usize,
-    /// States to restore on undo, and the states redo can return to. Both are
-    /// bounded ring-free stacks: pushing past the top drops the oldest state.
-    undo: [Snapshot; HISTORY_DEPTH],
-    undo_len: usize,
-    redo: [Snapshot; HISTORY_DEPTH],
-    redo_len: usize,
-}
-
-impl NoteBuffer {
+impl NoteBuf {
     const fn new() -> Self {
-        let empty = Snapshot {
-            bytes: [0; NOTE_CAPACITY],
-            len: 0,
-            cursor: 0,
-            anchor: 0,
-        };
-        Self {
-            bytes: [0; NOTE_CAPACITY],
-            len: 0,
-            cursor: 0,
-            anchor: 0,
-            undo: [empty; HISTORY_DEPTH],
-            undo_len: 0,
-            redo: [empty; HISTORY_DEPTH],
-            redo_len: 0,
-        }
+        Self { bytes: [0; CAP], len: 0 }
     }
 
-    // ---- state used by load/save/quick-seed (unchanged call sites) ----
-
-    /// Reset to an empty note. Used when loading a file or making a new note,
-    /// which is a fresh document, so history is cleared too.
     fn clear(&mut self) {
         self.len = 0;
-        self.cursor = 0;
-        self.anchor = 0;
-        self.undo_len = 0;
-        self.redo_len = 0;
     }
 
-    fn push_str(&mut self, text: &str) {
-        for byte in text.as_bytes() {
-            self.push(*byte);
-        }
-    }
-
-    /// Append one byte at the end and keep the caret trailing it. Used by the
-    /// file loader and the quick-run seed, which fill the buffer before the
-    /// person starts editing, so this never touches history.
     fn push(&mut self, byte: u8) {
         if let Some(slot) = self.bytes.get_mut(self.len) {
             *slot = byte;
             self.len += 1;
-            self.cursor = self.len;
-            self.anchor = self.len;
         }
+    }
+
+    /// Append printable ASCII and newlines only; the drawn text path treats a
+    /// byte as a character, so anything else is dropped.
+    fn push_str(&mut self, text: &str) {
+        for byte in text.as_bytes() {
+            if byte.is_ascii_graphic() || *byte == b' ' || *byte == b'\n' {
+                self.push(*byte);
+            }
+        }
+    }
+
+    fn pop(&mut self) {
+        self.len = self.len.saturating_sub(1);
     }
 
     fn as_str(&self) -> &str {
@@ -180,821 +156,609 @@ impl NoteBuffer {
         core::str::from_utf8(slice).unwrap_or("")
     }
 
-    // ---- selection ----
-
-    /// Selection bounds as `[start, end)` in byte offsets, start <= end.
-    fn selection(&self) -> (usize, usize) {
-        if self.cursor <= self.anchor {
-            (self.cursor, self.anchor)
-        } else {
-            (self.anchor, self.cursor)
-        }
-    }
-
-    fn has_selection(&self) -> bool {
-        self.cursor != self.anchor
-    }
-
-    /// The selected text, or the empty string when nothing is selected. Copy
-    /// and Cut hand this to the clipboard.
-    fn selected_text(&self) -> &str {
-        let (start, end) = self.selection();
-        let slice = self.bytes.get(start..end).unwrap_or(&[]);
-        core::str::from_utf8(slice).unwrap_or("")
-    }
-
-    fn select_all(&mut self) {
-        self.anchor = 0;
-        self.cursor = self.len;
-    }
-
-    // ---- caret movement. `extend` keeps the anchor to grow a selection. ----
-
-    fn move_left(&mut self, extend: bool) {
-        // Moving without extending collapses an existing selection to its left
-        // edge rather than stepping past it — the behavior every editor has.
-        if !extend && self.has_selection() {
-            let (start, _) = self.selection();
-            self.cursor = start;
-        } else {
-            self.cursor = self.cursor.saturating_sub(1);
-        }
-        if !extend {
-            self.anchor = self.cursor;
-        }
-    }
-
-    fn move_right(&mut self, extend: bool) {
-        if !extend && self.has_selection() {
-            let (_, end) = self.selection();
-            self.cursor = end;
-        } else {
-            self.cursor = (self.cursor + 1).min(self.len);
-        }
-        if !extend {
-            self.anchor = self.cursor;
-        }
-    }
-
-    fn move_home(&mut self, extend: bool) {
-        self.cursor = 0;
-        if !extend {
-            self.anchor = 0;
-        }
-    }
-
-    fn move_end(&mut self, extend: bool) {
-        self.cursor = self.len;
-        if !extend {
-            self.anchor = self.len;
-        }
-    }
-
-    // ---- history ----
-
-    /// Capture the current state onto the undo stack before a mutation, and
-    /// drop any redo future — editing after an undo forks history, so the old
-    /// redo path no longer applies.
-    fn record(&mut self) {
-        let snap = Snapshot {
-            bytes: self.bytes,
-            len: self.len,
-            cursor: self.cursor,
-            anchor: self.anchor,
-        };
-        push_snapshot(&mut self.undo, &mut self.undo_len, snap);
-        self.redo_len = 0;
-    }
-
-    fn restore(&mut self, snap: Snapshot) {
-        self.bytes = snap.bytes;
-        self.len = snap.len;
-        self.cursor = snap.cursor.min(snap.len);
-        self.anchor = snap.anchor.min(snap.len);
-    }
-
-    /// Step back one edit. The current state is pushed onto redo first so it
-    /// can be reached again. Returns whether anything changed.
-    fn undo(&mut self) -> bool {
-        let Some(prev) = pop_snapshot(&self.undo, &mut self.undo_len) else {
-            return false;
-        };
-        let current = Snapshot {
-            bytes: self.bytes,
-            len: self.len,
-            cursor: self.cursor,
-            anchor: self.anchor,
-        };
-        push_snapshot(&mut self.redo, &mut self.redo_len, current);
-        self.restore(prev);
-        true
-    }
-
-    fn redo(&mut self) -> bool {
-        let Some(next) = pop_snapshot(&self.redo, &mut self.redo_len) else {
-            return false;
-        };
-        let current = Snapshot {
-            bytes: self.bytes,
-            len: self.len,
-            cursor: self.cursor,
-            anchor: self.anchor,
-        };
-        push_snapshot(&mut self.undo, &mut self.undo_len, current);
-        self.restore(next);
-        true
-    }
-
-    // ---- editing ops (each records history first) ----
-
-    /// Remove the current selection in place, leaving the caret where it began.
-    /// Returns false when there was nothing selected.
-    fn delete_selection_raw(&mut self) -> bool {
-        if !self.has_selection() {
-            return false;
-        }
-        let (start, end) = self.selection();
-        let removed = end - start;
-        // Shift the tail after the selection left over the hole it leaves.
-        let mut i = end;
-        while i < self.len {
-            if let Some(src) = self.bytes.get(i).copied() {
-                if let Some(slot) = self.bytes.get_mut(start + (i - end)) {
-                    *slot = src;
-                }
-            }
-            i += 1;
-        }
-        self.len = self.len.saturating_sub(removed);
-        self.cursor = start;
-        self.anchor = start;
-        true
-    }
-
-    /// Insert text at the caret, replacing any selection first. Silently stops
-    /// at capacity rather than growing or panicking.
-    fn insert_str(&mut self, text: &str) {
-        self.record();
-        self.delete_selection_raw();
-        for byte in text.as_bytes() {
-            // The drawn host only forwards ASCII text input, but guard anyway:
-            // a non-ASCII byte would break the byte-equals-char assumption.
-            if !byte.is_ascii() {
-                continue;
-            }
-            self.insert_byte(*byte);
-        }
-    }
-
-    /// Insert one byte at the caret, shifting the tail right. No-op at capacity.
-    fn insert_byte(&mut self, byte: u8) {
-        if self.len >= NOTE_CAPACITY {
-            return;
-        }
-        // Shift everything from the caret onward one slot to the right.
-        let mut i = self.len;
-        while i > self.cursor {
-            if let Some(src) = self.bytes.get(i - 1).copied() {
-                if let Some(slot) = self.bytes.get_mut(i) {
-                    *slot = src;
-                }
-            }
-            i -= 1;
-        }
-        if let Some(slot) = self.bytes.get_mut(self.cursor) {
-            *slot = byte;
-            self.len += 1;
-            self.cursor += 1;
-            self.anchor = self.cursor;
-        }
-    }
-
-    /// Backspace: delete the selection if any, otherwise the byte before the
-    /// caret.
-    fn backspace(&mut self) {
-        self.record();
-        if self.delete_selection_raw() {
-            return;
-        }
-        if self.cursor == 0 {
-            // Nothing to delete; drop the snapshot we just took so a no-op
-            // backspace does not consume an undo step.
-            self.undo_len = self.undo_len.saturating_sub(1);
-            return;
-        }
-        self.cursor -= 1;
-        let mut i = self.cursor;
-        while i + 1 < self.len {
-            if let Some(src) = self.bytes.get(i + 1).copied() {
-                if let Some(slot) = self.bytes.get_mut(i) {
-                    *slot = src;
-                }
-            }
-            i += 1;
-        }
-        self.len = self.len.saturating_sub(1);
-        self.anchor = self.cursor;
-    }
-
-    /// Forward delete (the Delete key): the selection if any, else the byte at
-    /// the caret.
-    fn delete_forward(&mut self) {
-        self.record();
-        if self.delete_selection_raw() {
-            return;
-        }
-        if self.cursor >= self.len {
-            self.undo_len = self.undo_len.saturating_sub(1);
-            return;
-        }
-        let mut i = self.cursor;
-        while i + 1 < self.len {
-            if let Some(src) = self.bytes.get(i + 1).copied() {
-                if let Some(slot) = self.bytes.get_mut(i) {
-                    *slot = src;
-                }
-            }
-            i += 1;
-        }
-        self.len = self.len.saturating_sub(1);
-        self.anchor = self.cursor;
-    }
-
-    /// Delete the current selection as one undoable step. Cut is Copy (which
-    /// reads `selected_text` first) followed by this. No-op with no selection,
-    /// and then it does not consume an undo step.
-    fn delete_selection(&mut self) {
-        if !self.has_selection() {
-            return;
-        }
-        self.record();
-        self.delete_selection_raw();
+    fn is_empty(&self) -> bool {
+        self.len == 0
     }
 }
 
-/// Push a snapshot onto a bounded stack. At capacity the oldest state slides
-/// out, so history stays shallow without ever allocating or panicking.
-fn push_snapshot(stack: &mut [Snapshot; HISTORY_DEPTH], len: &mut usize, snap: Snapshot) {
-    if *len < HISTORY_DEPTH {
-        if let Some(slot) = stack.get_mut(*len) {
-            *slot = snap;
-            *len += 1;
-        }
-        return;
-    }
-    // Full: drop index 0 by shifting everything down, then write the newest.
-    let mut i = 1;
-    while i < HISTORY_DEPTH {
-        if let Some(src) = stack.get(i).copied() {
-            if let Some(dst) = stack.get_mut(i - 1) {
-                *dst = src;
-            }
-        }
-        i += 1;
-    }
-    if let Some(slot) = stack.get_mut(HISTORY_DEPTH - 1) {
-        *slot = snap;
+/// The first line of a note is its title.
+fn first_line(s: &str) -> &str {
+    match s.as_bytes().iter().position(|b| *b == b'\n') {
+        Some(pos) => s.get(..pos).unwrap_or(""),
+        None => s,
     }
 }
 
-fn pop_snapshot(stack: &[Snapshot; HISTORY_DEPTH], len: &mut usize) -> Option<Snapshot> {
-    if *len == 0 {
-        return None;
-    }
-    *len -= 1;
-    stack.get(*len).copied()
-}
-
-/// Build an owned `String` without touching std's allocation-error handler.
-///
-/// `String::from` and `push_str` reference std's OOM handler, which drags the
-/// whole `wasi:cli`/`wasi:io` import set into an otherwise pure component and
-/// makes it unloadable by a runtime that only provides `krate:*`. This mirrors
-/// the raw-allocation path the generated bindings use, trapping on allocation
-/// failure instead.
-fn pure_string(text: &str) -> String {
-    pure_string_from_bytes(text.as_bytes())
-}
-
-fn pure_string_from_bytes(bytes: &[u8]) -> String {
-    let len = bytes.len();
-    if len == 0 {
-        return String::new();
-    }
-    unsafe {
-        let layout = core::alloc::Layout::from_size_align_unchecked(len, 1);
-        let ptr = std::alloc::alloc(layout);
-        if ptr.is_null() {
-            // On the wasm target, trap without pulling in std's allocation-error
-            // handler (which drags the wasi import set into the component). Under
-            // a native test build there is no such constraint, so abort plainly.
-            #[cfg(target_arch = "wasm32")]
-            core::arch::wasm32::unreachable();
-            #[cfg(not(target_arch = "wasm32"))]
-            std::process::abort();
-        }
-        core::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr, len);
-        String::from_raw_parts(ptr, len, len)
+/// Everything after the first newline is the body.
+fn body_text(s: &str) -> &str {
+    match s.as_bytes().iter().position(|b| *b == b'\n') {
+        Some(pos) => s.get(pos + 1..).unwrap_or(""),
+        None => "",
     }
 }
 
-/// Root is a Grid, which lays out as a row: sidebar on the left, editor
-/// column on the right, the shape every note app has.
-fn stack_root() -> types::WidgetNode {
-    types::WidgetNode {
-        id: ROOT_ID,
-        parent: None,
-        kind: types::WidgetKind::Grid,
-        label: None,
-        role: None,
-        style: types::Style {
-            width: Some(720.0),
-            height: Some(480.0),
-            grow: 0.0,
-            padding: 16.0,
-        },
-        checked: None,
-        value: None,
-        selected: None,
-        text_cursor: None,
-    }
-}
+// ------------------------------------------------------------------
+// Persistence — same plain-text-per-file scheme as always
+// ------------------------------------------------------------------
 
-/// The right-hand column: editor above, status line below.
-fn editor_column() -> types::WidgetNode {
-    types::WidgetNode {
-        id: EDITOR_COLUMN_ID,
-        parent: Some(ROOT_ID),
-        kind: types::WidgetKind::Stack,
-        label: None,
-        role: None,
-        style: types::Style {
-            width: Some(460.0),
-            height: Some(448.0),
-            grow: 1.0,
-            padding: 0.0,
-        },
-        checked: None,
-        value: None,
-        selected: None,
-        text_cursor: None,
-    }
-}
-
-/// The left column: a header label above the note list.
-fn left_column() -> types::WidgetNode {
-    types::WidgetNode {
-        id: LEFT_COLUMN_ID,
-        parent: Some(ROOT_ID),
-        kind: types::WidgetKind::Stack,
-        label: None,
-        role: None,
-        style: types::Style {
-            width: Some(200.0),
-            height: Some(448.0),
-            grow: 0.0,
-            padding: 0.0,
-        },
-        checked: None,
-        value: None,
-        selected: None,
-        text_cursor: None,
-    }
-}
-
-/// The list's header. A plain label: its parent is the Stack, not the
-/// ListView, so the host does not lower it as a clickable row.
-fn sidebar_header() -> types::WidgetNode {
-    types::WidgetNode {
-        id: SIDEBAR_HEADER_ID,
-        parent: Some(LEFT_COLUMN_ID),
-        kind: types::WidgetKind::Text,
-        label: Some(pure_string("Notes")),
-        role: Some(pure_string("heading")),
-        style: types::Style {
-            width: Some(200.0),
-            height: Some(30.0),
-            grow: 0.0,
-            padding: 0.0,
-        },
-        checked: None,
-        value: None,
-        selected: None,
-        text_cursor: None,
-    }
-}
-
-/// The note list. Selection lives here, so the host paints the highlight.
-fn sidebar(selected: Option<u32>) -> types::WidgetNode {
-    types::WidgetNode {
-        id: SIDEBAR_ID,
-        parent: Some(LEFT_COLUMN_ID),
-        kind: types::WidgetKind::ListView,
-        label: None,
-        role: Some(pure_string("listbox")),
-        style: types::Style {
-            width: Some(200.0),
-            height: Some(418.0),
-            grow: 0.0,
-            padding: 0.0,
-        },
-        checked: None,
-        value: None,
-        selected,
-        text_cursor: None,
-    }
-}
-
-fn note_row(index: usize) -> types::WidgetNode {
-    types::WidgetNode {
-        id: NOTE_ROW_BASE_ID + index as u64,
-        parent: Some(SIDEBAR_ID),
-        kind: types::WidgetKind::Text,
-        label: Some(pure_string(
-            NOTE_TITLES.get(index).copied().unwrap_or("note"),
-        )),
-        role: Some(pure_string("option")),
-        style: types::Style {
-            width: Some(200.0),
-            height: Some(28.0),
-            grow: 0.0,
-            padding: 0.0,
-        },
-        checked: None,
-        value: None,
-        selected: None,
-        text_cursor: None,
-    }
-}
-
-/// The editor. A TextArea wraps and fills from the top, unlike a field.
-///
-/// `cursor` and `anchor` are byte offsets the drawn hosts use to paint the
-/// caret and selection. The macOS native control owns its own caret and
-/// ignores them, so passing them always is harmless there.
-fn editor(buffer: &NoteBuffer) -> types::WidgetNode {
-    types::WidgetNode {
-        id: EDITOR_ID,
-        parent: Some(EDITOR_COLUMN_ID),
-        kind: types::WidgetKind::TextArea,
-        label: Some(pure_string(buffer.as_str())),
-        role: Some(pure_string("textbox")),
-        style: types::Style {
-            width: Some(460.0),
-            height: Some(392.0),
-            grow: 1.0,
-            padding: 0.0,
-        },
-        checked: None,
-        value: None,
-        selected: None,
-        text_cursor: Some(types::TextCursor {
-            cursor: buffer.cursor as u32,
-            anchor: buffer.anchor as u32,
-        }),
-    }
-}
-
-fn status(text: &str) -> types::WidgetNode {
-    types::WidgetNode {
-        id: STATUS_ID,
-        parent: Some(EDITOR_COLUMN_ID),
-        kind: types::WidgetKind::Text,
-        label: Some(pure_string(text)),
-        role: Some(pure_string("status")),
-        style: types::Style {
-            width: Some(460.0),
-            height: Some(28.0),
-            grow: 0.0,
-            padding: 0.0,
-        },
-        checked: None,
-        value: None,
-        selected: None,
-        text_cursor: None,
-    }
-}
-
-/// The "+ New note" affordance at the bottom of the list. A clickable row, not
-/// a note: selecting it reveals the next slot instead of loading a file.
-fn new_note_row() -> types::WidgetNode {
-    types::WidgetNode {
-        id: NEW_NOTE_ID,
-        parent: Some(SIDEBAR_ID),
-        kind: types::WidgetKind::Text,
-        label: Some(pure_string("+ New note")),
-        role: Some(pure_string("button")),
-        style: types::Style {
-            width: Some(200.0),
-            height: Some(28.0),
-            grow: 0.0,
-            padding: 0.0,
-        },
-        checked: None,
-        value: None,
-        selected: None,
-        text_cursor: None,
-    }
-}
-
-fn is_note_row(widget: Option<u64>) -> Option<usize> {
-    let id = widget?;
-    if id < NOTE_ROW_BASE_ID || id >= NEW_NOTE_ID {
-        return None;
-    }
-    let index = (id - NOTE_ROW_BASE_ID) as usize;
-    (index < NOTE_CAPACITY_SLOTS).then_some(index)
-}
-
-fn is_new_note_row(widget: Option<u64>) -> bool {
-    widget == Some(NEW_NOTE_ID)
-}
-
-/// Load a note from the granted directory. A missing file is an empty note,
-/// not an error: the first run of a fresh install has nothing saved yet.
-fn load_note(index: usize, buffer: &mut NoteBuffer) -> bool {
-    buffer.clear();
+fn load_note(index: usize, buf: &mut NoteBuf) -> bool {
+    buf.clear();
     let Some(path) = NOTE_FILES.get(index) else {
         return false;
     };
     let Ok(file) = files::open(path, OpenMode::Read) else {
         return false;
     };
-    while let Ok(chunk) = file.read(NOTE_CAPACITY as u32) {
+    while let Ok(chunk) = file.read(CAP as u32) {
         if chunk.is_empty() {
             break;
         }
         for byte in &chunk {
-            buffer.push(*byte);
+            buf.push(*byte);
         }
     }
     true
 }
 
-/// What a drawn-path key press did, so the run loop knows what to re-lower.
-enum DrawnKeyOutcome {
-    /// The key was not one this editor handles.
-    Ignored,
-    /// Text changed; re-lower the editor and mark the note dirty.
-    Edited,
-    /// Only the caret or selection moved; re-lower to repaint it.
-    Moved,
-    /// The note was saved to disk.
-    Saved,
-    /// A save was attempted but the write was refused.
-    SaveDenied,
-}
-
-/// The command a drawn-path key press maps to, before any side effect runs.
-///
-/// Splitting translation from execution keeps the shortcut table — the part
-/// that must behave the same on every host — a pure function of the key and
-/// modifiers, with no clipboard, file, or binding calls in the way.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum KeyAction {
-    None,
-    SelectAll,
-    Copy,
-    Cut,
-    Paste,
-    Undo,
-    Redo,
-    Save,
-    Backspace,
-    DeleteForward,
-    MoveLeft { extend: bool },
-    MoveRight { extend: bool },
-    MoveHome { extend: bool },
-    MoveEnd { extend: bool },
-}
-
-/// Translate a key name and modifier state into an editing command.
-///
-/// This is the whole keyboard surface for the drawn hosts, and the one place
-/// platform shortcuts are decided. Editing shortcuts key off Control (Linux,
-/// Windows) or Meta/Command (macOS) via `chord`, so the byte-identical guest
-/// honors each platform's native modifier without knowing which host it runs
-/// on. Navigation keys (arrows, Home, End, Backspace, Delete) need no modifier;
-/// Shift on them extends the selection.
-fn classify_key(key: &str, control: bool, meta: bool, shift: bool) -> KeyAction {
-    let chord = control || meta;
-    if chord {
-        return match key {
-            "a" | "A" => KeyAction::SelectAll,
-            "c" | "C" => KeyAction::Copy,
-            "x" | "X" => KeyAction::Cut,
-            "v" | "V" => KeyAction::Paste,
-            // Redo is Cmd/Ctrl+Shift+Z; undo is the same chord without Shift.
-            // Ctrl+Y is the Windows habit for redo. Check Shift first so Z does
-            // not fall through to undo.
-            "z" | "Z" if shift => KeyAction::Redo,
-            "z" | "Z" => KeyAction::Undo,
-            "y" | "Y" => KeyAction::Redo,
-            "s" | "S" => KeyAction::Save,
-            _ => KeyAction::None,
-        };
-    }
-    match key {
-        "Backspace" => KeyAction::Backspace,
-        "Delete" => KeyAction::DeleteForward,
-        "ArrowLeft" => KeyAction::MoveLeft { extend: shift },
-        "ArrowRight" => KeyAction::MoveRight { extend: shift },
-        "Home" => KeyAction::MoveHome { extend: shift },
-        "End" => KeyAction::MoveEnd { extend: shift },
-        _ => KeyAction::None,
-    }
-}
-
-/// Run one drawn-path key press: translate it, then apply it to the buffer,
-/// performing the clipboard and file side effects the command needs.
-fn apply_drawn_key(buffer: &mut NoteBuffer, key: &types::KeyEvent, selected: usize) -> DrawnKeyOutcome {
-    let action = classify_key(
-        &key.key,
-        key.modifiers.control,
-        key.modifiers.meta,
-        key.modifiers.shift,
-    );
-    match action {
-        KeyAction::None => DrawnKeyOutcome::Ignored,
-        KeyAction::SelectAll => {
-            buffer.select_all();
-            DrawnKeyOutcome::Moved
-        }
-        // Cut/Copy/Paste round-trip through the host clipboard. A note denied
-        // `ui.clipboard` still types and saves — the calls just fail closed.
-        KeyAction::Copy => {
-            if buffer.has_selection() {
-                let _ = clipboard::write_text(buffer.selected_text());
-            }
-            DrawnKeyOutcome::Ignored
-        }
-        KeyAction::Cut => {
-            if buffer.has_selection() {
-                let _ = clipboard::write_text(buffer.selected_text());
-                buffer.delete_selection();
-                DrawnKeyOutcome::Edited
-            } else {
-                DrawnKeyOutcome::Ignored
-            }
-        }
-        KeyAction::Paste => {
-            if let Ok(text) = clipboard::read_text() {
-                if !text.is_empty() {
-                    buffer.insert_str(&text);
-                    return DrawnKeyOutcome::Edited;
-                }
-            }
-            DrawnKeyOutcome::Ignored
-        }
-        KeyAction::Undo => {
-            if buffer.undo() {
-                DrawnKeyOutcome::Edited
-            } else {
-                DrawnKeyOutcome::Ignored
-            }
-        }
-        KeyAction::Redo => {
-            if buffer.redo() {
-                DrawnKeyOutcome::Edited
-            } else {
-                DrawnKeyOutcome::Ignored
-            }
-        }
-        KeyAction::Save => {
-            if save_note(selected, buffer) {
-                DrawnKeyOutcome::Saved
-            } else {
-                DrawnKeyOutcome::SaveDenied
-            }
-        }
-        KeyAction::Backspace => {
-            buffer.backspace();
-            DrawnKeyOutcome::Edited
-        }
-        KeyAction::DeleteForward => {
-            buffer.delete_forward();
-            DrawnKeyOutcome::Edited
-        }
-        KeyAction::MoveLeft { extend } => {
-            buffer.move_left(extend);
-            DrawnKeyOutcome::Moved
-        }
-        KeyAction::MoveRight { extend } => {
-            buffer.move_right(extend);
-            DrawnKeyOutcome::Moved
-        }
-        KeyAction::MoveHome { extend } => {
-            buffer.move_home(extend);
-            DrawnKeyOutcome::Moved
-        }
-        KeyAction::MoveEnd { extend } => {
-            buffer.move_end(extend);
-            DrawnKeyOutcome::Moved
-        }
-    }
-}
-
-/// Save the editor buffer back to the granted directory.
-fn save_note(index: usize, buffer: &NoteBuffer) -> bool {
+fn save_note(index: usize, buf: &NoteBuf) -> bool {
     let Some(path) = NOTE_FILES.get(index) else {
         return false;
     };
     let Ok(file) = files::open(path, OpenMode::Write) else {
         return false;
     };
-    let bytes = buffer.bytes.get(..buffer.len).unwrap_or(&[]);
+    let bytes = buf.bytes.get(..buf.len).unwrap_or(&[]);
     file.write(bytes).is_ok()
 }
+
+// ------------------------------------------------------------------
+// Drawing helpers
+// ------------------------------------------------------------------
+
+fn fill(canvas: u64, x: f32, y: f32, w: f32, h: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+    canvas2d::fill_rect(canvas, gfx::Rect { x, y, width: w, height: h }, c)
+}
+
+fn disc(canvas: u64, cx: f32, cy: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+    canvas2d::fill_circle(canvas, gfx::Point { x: cx, y: cy }, r, c)
+}
+
+/// Opaque rounded rect: cross of two rects plus four corner discs. Pieces
+/// overlap, which is fine at full alpha.
+fn rounded_rect(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+    let r = r.min(w * 0.5).min(h * 0.5);
+    fill(canvas, x + r, y, w - r * 2.0, h, c)?;
+    fill(canvas, x, y + r, w, h - r * 2.0, c)?;
+    disc(canvas, x + r, y + r, r, c)?;
+    disc(canvas, x + w - r, y + r, r, c)?;
+    disc(canvas, x + r, y + h - r, r, c)?;
+    disc(canvas, x + w - r, y + h - r, r, c)?;
+    Ok(())
+}
+
+/// Hairline rounded border: a filled rounded rect in the border color with a
+/// slightly smaller rounded rect of the ground punched back over it, so the
+/// corners actually curve instead of leaving gaps.
+fn stroke_rounded(
+    canvas: u64,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    r: f32,
+    c: gfx::Color,
+    ground: gfx::Color,
+) -> Result<(), gfx::GfxError> {
+    let t = 1.5;
+    rounded_rect(canvas, x, y, w, h, r, c)?;
+    rounded_rect(canvas, x + t, y + t, w - t * 2.0, h - t * 2.0, r - t, ground)?;
+    Ok(())
+}
+
+fn draw_text(canvas: u64, text: &str, x: f32, y: f32, size: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+    canvas2d::draw_text(canvas, text, gfx::Point { x, y }, size, c)
+}
+
+/// Draw `s` truncated to `max_chars` with a trailing ellipsis when it is cut.
+fn draw_text_trunc(
+    canvas: u64,
+    s: &str,
+    max_chars: usize,
+    x: f32,
+    y: f32,
+    size: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
+    if s.len() <= max_chars {
+        return draw_text(canvas, s, x, y, size, c);
+    }
+    let mut buf = [0u8; 96];
+    let mut pos = 0usize;
+    let keep = max_chars.saturating_sub(1).min(buf.len().saturating_sub(3));
+    for byte in s.as_bytes().iter().take(keep) {
+        push_byte(&mut buf, &mut pos, *byte);
+    }
+    // U+2026 HORIZONTAL ELLIPSIS.
+    push_byte(&mut buf, &mut pos, 0xE2);
+    push_byte(&mut buf, &mut pos, 0x80);
+    push_byte(&mut buf, &mut pos, 0xA6);
+    let slice = buf.get(..pos).unwrap_or(&[]);
+    if let Ok(txt) = core::str::from_utf8(slice) {
+        draw_text(canvas, txt, x, y, size, c)?;
+    }
+    Ok(())
+}
+
+fn push_byte(buf: &mut [u8], pos: &mut usize, byte: u8) {
+    if let Some(slot) = buf.get_mut(*pos) {
+        *slot = byte;
+        *pos += 1;
+    }
+}
+
+// ------------------------------------------------------------------
+// Sidebar snippet — body collapsed onto one line
+// ------------------------------------------------------------------
+
+/// Copy the body into `buf` with newlines and runs of spaces collapsed to a
+/// single space, capped at `max_chars` with an ellipsis.
+fn snippet<'a>(body: &str, buf: &'a mut [u8; 64], max_chars: usize) -> &'a str {
+    let mut pos = 0usize;
+    let mut last_space = true; // swallow leading whitespace
+    let mut truncated = false;
+    for byte in body.as_bytes() {
+        if pos >= max_chars {
+            truncated = true;
+            break;
+        }
+        let b = if *byte == b'\n' { b' ' } else { *byte };
+        if b == b' ' {
+            if last_space {
+                continue;
+            }
+            last_space = true;
+        } else {
+            last_space = false;
+        }
+        push_byte(buf, &mut pos, b);
+    }
+    if truncated {
+        // Drop one char to make room for the ellipsis.
+        pos = pos.saturating_sub(1);
+        push_byte(buf, &mut pos, 0xE2);
+        push_byte(buf, &mut pos, 0x80);
+        push_byte(buf, &mut pos, 0xA6);
+    }
+    let slice = buf.get(..pos).unwrap_or(&[]);
+    core::str::from_utf8(slice).unwrap_or("")
+}
+
+// ------------------------------------------------------------------
+// Body wrap — greedy word wrap over ASCII bytes
+// ------------------------------------------------------------------
+
+/// Draw the body word-wrapped. Returns (chars on the last drawn line, baseline
+/// of the last drawn line) so the caller can place the caret at the end.
+fn draw_body(
+    canvas: u64,
+    body: &str,
+    x: f32,
+    y0: f32,
+) -> Result<(usize, f32), gfx::GfxError> {
+    let budget = (CONTENT_W / char_w(BODY_SIZE)) as usize; // chars per line
+    let bytes = body.as_bytes();
+    let len = bytes.len();
+    let mut start = 0usize;
+    let mut line = 0usize;
+    let mut last_len = 0usize;
+    let mut last_baseline = y0;
+    while line < BODY_MAX_LINES {
+        let baseline = y0 + (line as f32) * BODY_LH;
+        // Find where this line ends.
+        let mut end = len;
+        let mut next = len + 1; // signals "done" when no break found
+        let mut last_space: Option<usize> = None;
+        let mut i = start;
+        while i < len {
+            let b = bytes.get(i).copied().unwrap_or(0);
+            if b == b'\n' {
+                end = i;
+                next = i + 1;
+                break;
+            }
+            if b == b' ' {
+                last_space = Some(i);
+            }
+            if i - start >= budget {
+                if let Some(sp) = last_space {
+                    if sp > start {
+                        end = sp;
+                        next = sp + 1;
+                        break;
+                    }
+                }
+                end = i;
+                next = i;
+                break;
+            }
+            i += 1;
+        }
+        if let Some(slice) = bytes.get(start..end) {
+            if let Ok(txt) = core::str::from_utf8(slice) {
+                if !txt.is_empty() {
+                    draw_text(canvas, txt, x, baseline, BODY_SIZE, INK_BODY)?;
+                }
+                last_len = txt.len();
+                last_baseline = baseline;
+            }
+        }
+        if next > len {
+            break; // consumed the whole body
+        }
+        start = next;
+        line += 1;
+        // A trailing newline should still land the caret on the fresh line.
+        if start == len {
+            last_len = 0;
+            last_baseline = y0 + (line as f32) * BODY_LH;
+            break;
+        }
+    }
+    Ok((last_len, last_baseline))
+}
+
+// ------------------------------------------------------------------
+// The frame
+// ------------------------------------------------------------------
+
+fn row_top(index: usize) -> f32 {
+    ROWS_Y + (index as f32) * (ROW_H + ROW_GAP)
+}
+
+fn hit_row(x: f32, y: f32, live: usize) -> Option<usize> {
+    if x < ROW_X || x > ROW_X + ROW_W {
+        return None;
+    }
+    let mut i = 0usize;
+    while i < live {
+        let top = row_top(i);
+        if y >= top && y <= top + ROW_H {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+fn hit_new(x: f32, y: f32) -> bool {
+    x >= ROW_X && x <= ROW_X + ROW_W && y >= NEW_BTN_Y && y <= NEW_BTN_Y + NEW_BTN_H
+}
+
+fn draw_frame(
+    canvas: u64,
+    notes: &[NoteBuf; SLOTS],
+    dates: &[&str; SLOTS],
+    live: usize,
+    selected: usize,
+) -> Result<(), gfx::GfxError> {
+    // Ground: the editor surface gradient, then the darker sidebar over it.
+    canvas2d::linear_gradient(
+        canvas,
+        gfx::Rect { x: 0.0, y: 0.0, width: W, height: H },
+        BG_TOP,
+        BG_BOT,
+    )?;
+    fill(canvas, 0.0, 0.0, SIDEBAR_W, H, SIDEBAR_BG)?;
+    // Hairline divider between the panes.
+    fill(canvas, SIDEBAR_W, 0.0, 1.0, H, DIVIDER)?;
+
+    // ---- sidebar header ----
+    draw_text(canvas, "Notes", 24.0, 56.0, 28.0, INK)?;
+    let mut cbuf = [0u8; 16];
+    let count_txt = count_label(live, &mut cbuf);
+    draw_text(canvas, count_txt, 25.0, 80.0, 13.0, INK_QUIET)?;
+
+    // ---- note rows ----
+    let title_budget = ((ROW_W - 32.0) / char_w(16.0)) as usize;
+    let mut i = 0usize;
+    while i < live {
+        let top = row_top(i);
+        let is_sel = i == selected;
+        let card = if is_sel { ROW_SELECTED } else { ROW_CARD };
+        rounded_rect(canvas, ROW_X, top, ROW_W, ROW_H, 10.0, card)?;
+        if is_sel {
+            // The 3px accent bar on the row's left edge.
+            rounded_rect(canvas, ROW_X + 4.0, top + 10.0, 3.0, ROW_H - 20.0, 1.5, ACCENT)?;
+        }
+        let note = notes.get(i).copied().unwrap_or(NoteBuf::new());
+        let text = note.as_str();
+        let title = first_line(text);
+        let tx = ROW_X + 16.0;
+        if title.is_empty() {
+            draw_text(canvas, "New Note", tx, top + 24.0, 16.0, INK_QUIET)?;
+        } else {
+            draw_text_trunc(canvas, title, title_budget, tx, top + 24.0, 16.0, INK)?;
+        }
+        // Second line: date in secondary, snippet in quiet. The date width is
+        // over-estimated on purpose (0.55em) so the snippet never crowds it,
+        // and the snippet budget under-fills (0.5em) so it never touches the
+        // card's right edge.
+        let date = dates.get(i).copied().unwrap_or("Today");
+        draw_text(canvas, date, tx, top + 45.0, 12.5, INK_SEC)?;
+        let date_w = (date.len() as f32) * 12.5 * 0.55;
+        let mut sbuf = [0u8; 64];
+        let remaining = ROW_W - 32.0 - date_w - 10.0;
+        let snip_budget = (remaining / (12.5 * 0.5)) as usize;
+        let snip = snippet(body_text(text), &mut sbuf, snip_budget.min(60));
+        if snip.is_empty() {
+            draw_text(canvas, "No additional text", tx + date_w + 10.0, top + 45.0, 12.5, INK_QUIET)?;
+        } else {
+            draw_text(canvas, snip, tx + date_w + 10.0, top + 45.0, 12.5, INK_QUIET)?;
+        }
+        i += 1;
+    }
+
+    // ---- "+ New" ghost button ----
+    stroke_rounded(canvas, ROW_X, NEW_BTN_Y, ROW_W, NEW_BTN_H, 12.0, GHOST_BORDER, SIDEBAR_BG)?;
+    let label = "+ New";
+    let lw = text_width(label, 15.0);
+    draw_text(
+        canvas,
+        label,
+        ROW_X + (ROW_W - lw) * 0.5,
+        NEW_BTN_Y + NEW_BTN_H * 0.5 + 5.0,
+        15.0,
+        ACCENT,
+    )?;
+
+    // ---- editor top bar: the note's date, centered, with a hairline ----
+    let date = dates.get(selected).copied().unwrap_or("Today");
+    let mut dbuf = [0u8; 32];
+    let date_line = edited_label(date, &mut dbuf);
+    let dw = text_width(date_line, 12.5);
+    draw_text(
+        canvas,
+        date_line,
+        SIDEBAR_W + ((W - SIDEBAR_W) - dw) * 0.5,
+        32.0,
+        12.5,
+        INK_QUIET,
+    )?;
+    fill(
+        canvas,
+        SIDEBAR_W + 1.0,
+        TOPBAR_RULE_Y,
+        W - SIDEBAR_W - 1.0,
+        1.0,
+        gfx::Color { r: 0.137, g: 0.165, b: 0.220, a: 0.6 },
+    )?;
+
+    // ---- the selected note ----
+    let note = notes.get(selected).copied().unwrap_or(NoteBuf::new());
+    let text = note.as_str();
+    let title = first_line(text);
+    let title_budget = (CONTENT_W / char_w(TITLE_SIZE)) as usize;
+    let (caret_x, caret_y);
+    if text.is_empty() {
+        draw_text(canvas, "New Note", CONTENT_X, TITLE_BASELINE, TITLE_SIZE, INK_QUIET)?;
+        caret_x = CONTENT_X;
+        caret_y = TITLE_BASELINE;
+    } else {
+        draw_text_trunc(canvas, title, title_budget, CONTENT_X, TITLE_BASELINE, TITLE_SIZE, INK)?;
+        let body = body_text(text);
+        let has_break = text.len() > title.len(); // a newline exists
+        if !has_break {
+            // Still typing the first line: caret rides the title.
+            caret_x = CONTENT_X + text_width(title, TITLE_SIZE);
+            caret_y = TITLE_BASELINE;
+        } else if body.is_empty() {
+            caret_x = CONTENT_X;
+            caret_y = BODY_Y0;
+        } else {
+            let (last_len, last_baseline) = draw_body(canvas, body, CONTENT_X, BODY_Y0)?;
+            caret_x = CONTENT_X + (last_len as f32) * char_w(BODY_SIZE);
+            caret_y = last_baseline;
+        }
+    }
+    // The caret: a slim accent bar hanging from the last baseline.
+    let caret_h = if caret_y <= TITLE_BASELINE + 0.5 { 24.0 } else { 18.0 };
+    fill(canvas, caret_x + 1.0, caret_y - caret_h + 3.0, 2.0, caret_h, ACCENT)?;
+
+    canvas2d::present(canvas)?;
+    Ok(())
+}
+
+/// "3 notes" (or "1 note").
+fn count_label<'a>(live: usize, buf: &'a mut [u8; 16]) -> &'a str {
+    let mut pos = 0usize;
+    let n = live.min(99);
+    if n >= 10 {
+        push_byte(buf, &mut pos, b'0' + (n / 10) as u8);
+    }
+    push_byte(buf, &mut pos, b'0' + (n % 10) as u8);
+    for byte in if n == 1 { b" note".as_slice() } else { b" notes".as_slice() } {
+        push_byte(buf, &mut pos, *byte);
+    }
+    let slice = buf.get(..pos).unwrap_or(&[]);
+    core::str::from_utf8(slice).unwrap_or("notes")
+}
+
+/// "Edited Today" and friends for the top bar.
+fn edited_label<'a>(date: &str, buf: &'a mut [u8; 32]) -> &'a str {
+    let mut pos = 0usize;
+    for byte in b"Edited " {
+        push_byte(buf, &mut pos, *byte);
+    }
+    for byte in date.as_bytes().iter().take(20) {
+        push_byte(buf, &mut pos, *byte);
+    }
+    let slice = buf.get(..pos).unwrap_or(&[]);
+    core::str::from_utf8(slice).unwrap_or("Edited")
+}
+
+// ------------------------------------------------------------------
+// Seeds
+// ------------------------------------------------------------------
+
+const SEED_TEXTS: [&str; INITIAL_NOTE_COUNT] = [
+    "Ship the demo\nRecord the 90-second run-through, tighten the intro, and send the link before Friday standup. Keep the energy up in the first ten seconds - that is where people decide to keep watching.\n\nCut the settings tour. Nobody asked for the settings tour.",
+    "Groceries\nOat milk, espresso beans, basil, lemons, arborio rice, parmesan, olive oil, dark chocolate, sourdough.",
+    "Ideas\nVoice memos that turn into checklists. A weekly review template. Pixel-art icon pack for the store. Tiny apps that do one thing well.",
+];
+const SEED_DATES: [&str; INITIAL_NOTE_COUNT] = ["Today", "Yesterday", "Sunday"];
+
+// ------------------------------------------------------------------
+// Widget tree — one canvas filling the window
+// ------------------------------------------------------------------
+
+fn stack_root() -> types::WidgetNode {
+    node(ROOT_ID, None, types::WidgetKind::Stack)
+}
+
+fn canvas_node() -> types::WidgetNode {
+    node(CANVAS_ID, Some(ROOT_ID), types::WidgetKind::Canvas)
+}
+
+fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetNode {
+    types::WidgetNode {
+        id,
+        parent,
+        kind,
+        label: None,
+        role: None,
+        style: types::Style {
+            width: None,
+            height: None,
+            grow: 0.0,
+            padding: 0.0,
+        },
+        checked: None,
+        value: None,
+        selected: None,
+        text_cursor: None,
+    }
+}
+
+// ------------------------------------------------------------------
+// Entry point
+// ------------------------------------------------------------------
+
+struct Component;
 
 impl bindings::Guest for Component {
     fn run() -> i32 {
         let size = types::WindowSize {
-            width: 720,
-            height: 480,
+            width: W as u32,
+            height: H as u32,
         };
-        let Ok(win) = window::create("Krate Notes", size) else {
+        let Ok(win) = window::create("Notes", size) else {
             return 30;
         };
         if window::show(win).is_err() {
             return 31;
         }
+        if tree::set_root(win, &stack_root()).is_err()
+            || tree::upsert_node(win, &canvas_node()).is_err()
+        {
+            let _ = window::close(win);
+            return 32;
+        }
+        let canvas = match canvas2d::bind(win, CANVAS_ID) {
+            Ok(c) => c,
+            Err(_) => {
+                let _ = window::close(win);
+                return 33;
+            }
+        };
 
-        let mut selected: u32 = 0;
-        let mut buffer = NoteBuffer::new();
-        // A hint belongs on screen, not in the buffer: text seeded here would
-        // be saved to the file as though the person had typed it.
-        load_note(0, &mut buffer);
+        let mut notes = [NoteBuf::new(); SLOTS];
+        let mut dates: [&str; SLOTS] = ["Today"; SLOTS];
+        let mut live = INITIAL_NOTE_COUNT;
+        let mut selected = 0usize;
+        let mut saved_any = false;
+        let mut dirty = false;
+        let mut close_requested = false;
 
-        // Detect the automation flag before building the tree so a quick run
-        // can seed deterministic content and exit having provably saved it.
         let raw = args::raw();
         let quick = raw
             .as_bytes()
             .split(|byte| *byte == b'\n')
             .next()
             .is_some_and(|first| first == b"quick");
-        if quick && buffer.as_str().is_empty() {
-            buffer.push_str("saved by quick run");
-        }
 
-        // The editor column must exist before its children (editor, status).
-        if tree::set_root(win, &stack_root()).is_err()
-            || tree::upsert_node(win, &left_column()).is_err()
-            || tree::upsert_node(win, &sidebar_header()).is_err()
-            || tree::upsert_node(win, &sidebar(Some(selected))).is_err()
-            || tree::upsert_node(win, &editor_column()).is_err()
-            || tree::upsert_node(win, &editor(&buffer)).is_err()
-            || tree::upsert_node(win, &status("Cmd+S to save")).is_err()
-        {
-            let _ = window::close(win);
-            return 32;
-        }
-
-        // How many note slots are currently in use. Starts at the seeded
-        // count, grows when "+ New note" is chosen, and re-discovers notes
-        // created in earlier sessions by probing which files exist — a note
-        // added yesterday must still be in the list today.
-        let mut live: usize = INITIAL_NOTE_COUNT;
-        while live < NOTE_CAPACITY_SLOTS {
-            let Some(path) = NOTE_FILES.get(live) else {
-                break;
-            };
-            if files::open(path, OpenMode::Read).is_err() {
-                break;
+        if quick {
+            // The store screenshot: three realistic notes, first selected,
+            // saved to disk to prove the write path.
+            let mut i = 0usize;
+            while i < INITIAL_NOTE_COUNT {
+                if let (Some(buf), Some(text)) = (notes.get_mut(i), SEED_TEXTS.get(i)) {
+                    buf.clear();
+                    buf.push_str(text);
+                    if save_note(i, buf) {
+                        saved_any = true;
+                    }
+                }
+                if let (Some(slot), Some(date)) = (dates.get_mut(i), SEED_DATES.get(i)) {
+                    *slot = date;
+                }
+                i += 1;
             }
-            live += 1;
-        }
-        let mut row = 0usize;
-        while row < live {
-            if tree::upsert_node(win, &note_row(row)).is_err() {
-                let _ = window::close(win);
-                return 32;
-            }
-            row += 1;
-        }
-        if tree::upsert_node(win, &new_note_row()).is_err() {
-            let _ = window::close(win);
-            return 32;
-        }
-
-        let rounds = if quick {
-            QUICK_WAIT_ROUNDS
         } else {
-            MAX_WAIT_ROUNDS
-        };
+            // Load what exists; reveal any notes beyond the initial three that
+            // an earlier session created.
+            let mut found_any = false;
+            let mut i = 0usize;
+            while i < INITIAL_NOTE_COUNT {
+                if let Some(buf) = notes.get_mut(i) {
+                    if load_note(i, buf) && !buf.is_empty() {
+                        found_any = true;
+                    }
+                }
+                i += 1;
+            }
+            while live < SLOTS {
+                let Some(buf) = notes.get_mut(live) else {
+                    break;
+                };
+                if !load_note(live, buf) {
+                    break;
+                }
+                live += 1;
+            }
+            if !found_any {
+                // Fresh install: welcome content instead of three blank rows.
+                let mut j = 0usize;
+                while j < INITIAL_NOTE_COUNT {
+                    if let (Some(buf), Some(text)) = (notes.get_mut(j), SEED_TEXTS.get(j)) {
+                        buf.clear();
+                        buf.push_str(text);
+                        if save_note(j, buf) {
+                            saved_any = true;
+                        }
+                    }
+                    if let (Some(slot), Some(date)) = (dates.get_mut(j), SEED_DATES.get(j)) {
+                        *slot = date;
+                    }
+                    j += 1;
+                }
+            }
+        }
 
-        let mut saved_any = false;
-        let mut close_requested = false;
-        // A quick run seeds content above and must save it on exit to prove
-        // the write path in CI, so it starts dirty.
-        let mut dirty = quick;
+        if draw_frame(canvas, &notes, &dates, live, selected).is_err() {
+            let _ = window::close(win);
+            return 34;
+        }
 
+        let rounds = if quick { QUICK_WAIT_ROUNDS } else { MAX_WAIT_ROUNDS };
         let mut idle_rounds = 0u32;
-        for _ in 0..rounds {
+        let mut round = 0u32;
+        while round < rounds {
+            round += 1;
             let event = events::wait(Some(WAIT_ROUND_MILLIS));
-            // Quiet rounds are normal while someone reads or thinks, but an
-            // unbroken run of them means nobody is there to type at all.
             if event.is_none() {
+                if quick {
+                    continue;
+                }
                 idle_rounds += 1;
                 if idle_rounds >= MAX_IDLE_ROUNDS {
                     break;
@@ -1002,135 +766,132 @@ impl bindings::Guest for Component {
                 continue;
             }
             idle_rounds = 0;
+            let mut redraw = false;
             match event {
-                // Selecting a note saves the one being edited, then loads the
-                // new one. Losing edits on click would be the first thing a
-                // real user noticed.
-                Some(types::Event::Pointer(pointer))
-                    if pointer.pressed && is_note_row(pointer.widget).is_some() =>
-                {
-                    if let Some(index) = is_note_row(pointer.widget) {
-                        if save_note(selected as usize, &buffer) {
-                            saved_any = true;
+                Some(types::Event::Pointer(p)) if p.pressed => {
+                    if let Some(index) = hit_row(p.x, p.y, live) {
+                        if index != selected {
+                            // Switching saves the note being edited first, so a
+                            // click never loses work.
+                            if dirty {
+                                if save_note(selected, notes.get(selected).unwrap_or(&NoteBuf::new())) {
+                                    saved_any = true;
+                                }
+                                dirty = false;
+                            }
+                            selected = index;
+                            redraw = true;
                         }
-                        selected = index as u32;
-                        load_note(index, &mut buffer);
-                        let _ = tree::upsert_node(win, &sidebar(Some(selected)));
-                        let _ = tree::upsert_node(win, &editor(&buffer));
-                        let _ = tree::upsert_node(win, &status("loaded"));
-                        dirty = false;
-                    }
-                }
-                // "+ New note" reveals the next unused slot, up to capacity. It
-                // saves the note being edited first, then switches to a fresh
-                // empty note so nothing in progress is lost.
-                Some(types::Event::Pointer(pointer))
-                    if pointer.pressed && is_new_note_row(pointer.widget) =>
-                {
-                    if live < NOTE_CAPACITY_SLOTS {
-                        if save_note(selected as usize, &buffer) {
-                            saved_any = true;
-                        }
-                        let index = live;
-                        live += 1;
-                        selected = index as u32;
-                        buffer.clear();
-                        let _ = tree::upsert_node(win, &note_row(index));
-                        let _ = tree::upsert_node(win, &sidebar(Some(selected)));
-                        let _ = tree::upsert_node(win, &editor(&buffer));
-                        let _ = tree::upsert_node(win, &status("new note"));
-                        dirty = false;
-                    } else {
-                        let _ = tree::upsert_node(win, &status("note list full"));
-                    }
-                }
-                // A native control (macOS) owns its text and reports the whole
-                // value after any edit, including deletes and pastes. Replace,
-                // do not append, and do not re-lower the editor: the control
-                // already shows the truth, and re-lowering would fight it.
-                Some(types::Event::TextChanged(changed)) if changed.widget == EDITOR_ID => {
-                    // Mirror the control's authoritative text and touch nothing
-                    // else. Any upsert here would re-lower the whole tree,
-                    // rebuilding the control being typed into and dropping
-                    // characters. The editor shows the truth already; the status
-                    // updates only on save.
-                    buffer.clear();
-                    for byte in changed.text.as_bytes() {
-                        buffer.push(*byte);
-                    }
-                    dirty = true;
-                }
-                // A drawn host (Linux, Windows) sends committed characters and
-                // relies on the guest to render them. Insert at the caret,
-                // replacing any selection, and re-lower. Control combinations
-                // (Ctrl+C and friends) arrive as Key events with no text, so
-                // this only ever carries real typed characters.
-                Some(types::Event::TextInput(text)) => {
-                    let only_printable = text
-                        .as_bytes()
-                        .iter()
-                        .all(|byte| byte.is_ascii_graphic() || *byte == b' ');
-                    if only_printable && !text.is_empty() {
-                        buffer.insert_str(&text);
-                        dirty = true;
-                        let _ = tree::upsert_node(win, &editor(&buffer));
-                        let _ = tree::upsert_node(win, &status("editing"));
-                    }
-                }
-                // The drawn path implements every editing behavior here, since
-                // it paints its own text and has no native control to defer to.
-                // Shortcuts fire on Control (Linux, Windows) or Meta/Command
-                // (macOS) so the same guest works on every host.
-                Some(types::Event::Key(key)) if key.pressed => {
-                    match apply_drawn_key(&mut buffer, &key, selected as usize) {
-                        DrawnKeyOutcome::Ignored => {}
-                        DrawnKeyOutcome::Edited => {
-                            dirty = true;
-                            let _ = tree::upsert_node(win, &editor(&buffer));
-                        }
-                        DrawnKeyOutcome::Moved => {
-                            // Caret and selection live in the guest; re-lower so
-                            // the painter can show the new selection highlight.
-                            let _ = tree::upsert_node(win, &editor(&buffer));
-                        }
-                        DrawnKeyOutcome::Saved => {
-                            saved_any = true;
+                    } else if hit_new(p.x, p.y) && live < SLOTS {
+                        if dirty {
+                            if save_note(selected, notes.get(selected).unwrap_or(&NoteBuf::new())) {
+                                saved_any = true;
+                            }
                             dirty = false;
-                            let _ = tree::upsert_node(win, &status("saved"));
                         }
-                        DrawnKeyOutcome::SaveDenied => {
-                            let _ = tree::upsert_node(win, &status("save denied"));
+                        selected = live;
+                        live += 1;
+                        if let Some(buf) = notes.get_mut(selected) {
+                            buf.clear();
+                        }
+                        if let Some(slot) = dates.get_mut(selected) {
+                            *slot = "Today";
+                        }
+                        redraw = true;
+                    }
+                }
+                Some(types::Event::TextInput(text)) => {
+                    if let Some(buf) = notes.get_mut(selected) {
+                        buf.push_str(&text);
+                        dirty = true;
+                        redraw = true;
+                    }
+                }
+                Some(types::Event::Key(key)) if key.pressed => {
+                    let chord = key.modifiers.control || key.modifiers.meta;
+                    let k = key.key.as_bytes();
+                    if chord {
+                        match k {
+                            b"s" | b"S" => {
+                                if save_note(selected, notes.get(selected).unwrap_or(&NoteBuf::new())) {
+                                    saved_any = true;
+                                    dirty = false;
+                                }
+                            }
+                            b"v" | b"V" => {
+                                if let Ok(text) = clipboard::read_text() {
+                                    if !text.is_empty() {
+                                        if let Some(buf) = notes.get_mut(selected) {
+                                            buf.push_str(&text);
+                                            dirty = true;
+                                            redraw = true;
+                                        }
+                                    }
+                                }
+                            }
+                            b"c" | b"C" => {
+                                if let Some(buf) = notes.get(selected) {
+                                    if !buf.is_empty() {
+                                        let _ = clipboard::write_text(buf.as_str());
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        match k {
+                            b"Backspace" => {
+                                if let Some(buf) = notes.get_mut(selected) {
+                                    if !buf.is_empty() {
+                                        buf.pop();
+                                        dirty = true;
+                                        redraw = true;
+                                    }
+                                }
+                            }
+                            b"Enter" | b"Return" => {
+                                if let Some(buf) = notes.get_mut(selected) {
+                                    buf.push(b'\n');
+                                    dirty = true;
+                                    redraw = true;
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
                 Some(types::Event::CloseRequested(_)) => {
                     close_requested = true;
-                    break;
                 }
                 _ => {}
             }
+            if redraw {
+                let _ = draw_frame(canvas, &notes, &dates, live, selected);
+            }
+            if close_requested {
+                break;
+            }
         }
 
-        // Save on the way out only when there are unsaved edits, so closing
-        // never loses work but a view-only session does not rewrite the file.
-        // The empty-buffer guard still stands: never erase a note by saving
-        // nothing over it.
-        if dirty && !buffer.as_str().is_empty() && save_note(selected as usize, &buffer) {
-            saved_any = true;
+        // Never lose the note being edited on the way out — but also never
+        // erase a file by writing an empty buffer over it.
+        if dirty {
+            if let Some(buf) = notes.get(selected) {
+                if !buf.is_empty() && save_note(selected, buf) {
+                    saved_any = true;
+                }
+            }
         }
 
         let _ = window::close(win);
 
-        // Report for automation, matching the hello-gui convention.
         let out = stdio::stdout();
         let _ = out.write(b"note:");
-        let _ = out.write(
-            NOTE_TITLES
-                .get(selected as usize)
-                .copied()
-                .unwrap_or("")
-                .as_bytes(),
-        );
+        if let Some(buf) = notes.get(selected) {
+            let title = first_line(buf.as_str());
+            let cut = title.get(..title.len().min(40)).unwrap_or("");
+            let _ = out.write(cut.as_bytes());
+        }
         let _ = out.write(b"\n");
         if saved_any {
             let _ = out.write(b"saved:yes\n");
@@ -1145,185 +906,3 @@ impl bindings::Guest for Component {
 }
 
 bindings::export!(Component with_types_in bindings);
-
-#[cfg(test)]
-mod tests {
-    //! Editor-logic tests that run natively — no host, no wasm, no clipboard.
-    //! They cover the parts of the YC demo interaction the guest owns on the
-    //! drawn path: shortcut translation, selection, editing, and undo/redo.
-    //! Persistence (save/load across close/reopen) rides the real file host and
-    //! is proven by the cross-platform matrix run, not here.
-    use super::*;
-
-    fn typed(buffer: &mut NoteBuffer, text: &str) {
-        buffer.insert_str(text);
-    }
-
-    // ---- shortcut translation ----
-
-    #[test]
-    fn control_and_meta_both_trigger_editing_shortcuts() {
-        // Linux/Windows use Control, macOS uses Meta; the same guest must honor
-        // either, so a chord is control OR meta.
-        assert_eq!(classify_key("c", true, false, false), KeyAction::Copy);
-        assert_eq!(classify_key("c", false, true, false), KeyAction::Copy);
-        assert_eq!(classify_key("a", true, false, false), KeyAction::SelectAll);
-        assert_eq!(classify_key("v", false, true, false), KeyAction::Paste);
-        assert_eq!(classify_key("x", true, false, false), KeyAction::Cut);
-        assert_eq!(classify_key("s", true, false, false), KeyAction::Save);
-    }
-
-    #[test]
-    fn undo_redo_shortcuts_distinguish_shift_and_y() {
-        assert_eq!(classify_key("z", true, false, false), KeyAction::Undo);
-        assert_eq!(classify_key("z", true, false, true), KeyAction::Redo);
-        assert_eq!(classify_key("Z", true, false, true), KeyAction::Redo);
-        // Ctrl+Y is the Windows redo habit.
-        assert_eq!(classify_key("y", true, false, false), KeyAction::Redo);
-    }
-
-    #[test]
-    fn navigation_keys_need_no_modifier_and_shift_extends() {
-        assert_eq!(classify_key("Backspace", false, false, false), KeyAction::Backspace);
-        assert_eq!(classify_key("Delete", false, false, false), KeyAction::DeleteForward);
-        assert_eq!(
-            classify_key("ArrowLeft", false, false, false),
-            KeyAction::MoveLeft { extend: false }
-        );
-        assert_eq!(
-            classify_key("ArrowRight", false, false, true),
-            KeyAction::MoveRight { extend: true }
-        );
-        assert_eq!(
-            classify_key("Home", false, false, true),
-            KeyAction::MoveHome { extend: true }
-        );
-        assert_eq!(classify_key("End", false, false, false), KeyAction::MoveEnd { extend: false });
-    }
-
-    #[test]
-    fn a_plain_letter_is_not_a_shortcut() {
-        // Without a chord, a letter is text, handled by the TextInput path, so
-        // the key handler must not claim it.
-        assert_eq!(classify_key("a", false, false, false), KeyAction::None);
-        assert_eq!(classify_key("z", false, false, false), KeyAction::None);
-    }
-
-    // ---- editing ----
-
-    #[test]
-    fn typing_inserts_at_the_caret_not_only_the_end() {
-        let mut b = NoteBuffer::new();
-        typed(&mut b, "helo");
-        b.move_left(false); // caret between "hel" and "o"
-        typed(&mut b, "l"); // "hello"
-        assert_eq!(b.as_str(), "hello");
-        assert_eq!(b.cursor, 4);
-    }
-
-    #[test]
-    fn backspace_and_delete_remove_around_the_caret() {
-        let mut b = NoteBuffer::new();
-        typed(&mut b, "abcd");
-        b.backspace(); // "abc"
-        assert_eq!(b.as_str(), "abc");
-        b.move_home(false);
-        b.delete_forward(); // "bc"
-        assert_eq!(b.as_str(), "bc");
-        assert_eq!(b.cursor, 0);
-    }
-
-    #[test]
-    fn insert_at_capacity_never_grows_or_panics() {
-        let mut b = NoteBuffer::new();
-        // Fill past capacity; the editor must clamp, not panic.
-        for _ in 0..(NOTE_CAPACITY + 50) {
-            typed(&mut b, "x");
-        }
-        assert_eq!(b.len, NOTE_CAPACITY);
-        assert_eq!(b.as_str().len(), NOTE_CAPACITY);
-    }
-
-    // ---- selection ----
-
-    #[test]
-    fn shift_arrows_build_a_selection_and_typing_replaces_it() {
-        let mut b = NoteBuffer::new();
-        typed(&mut b, "hello");
-        b.move_home(false);
-        b.move_right(true); // select "h"
-        b.move_right(true); // select "he"
-        assert!(b.has_selection());
-        assert_eq!(b.selected_text(), "he");
-        typed(&mut b, "HE"); // replaces selection
-        assert_eq!(b.as_str(), "HEllo");
-        assert!(!b.has_selection());
-    }
-
-    #[test]
-    fn select_all_spans_the_whole_buffer() {
-        let mut b = NoteBuffer::new();
-        typed(&mut b, "note body");
-        b.select_all();
-        assert_eq!(b.selected_text(), "note body");
-        b.delete_selection();
-        assert_eq!(b.as_str(), "");
-    }
-
-    #[test]
-    fn moving_without_shift_collapses_the_selection() {
-        let mut b = NoteBuffer::new();
-        typed(&mut b, "abcde");
-        b.select_all();
-        b.move_left(false); // collapse to left edge
-        assert!(!b.has_selection());
-        assert_eq!(b.cursor, 0);
-    }
-
-    // ---- undo / redo ----
-
-    #[test]
-    fn undo_then_redo_walks_edit_history() {
-        let mut b = NoteBuffer::new();
-        typed(&mut b, "one");
-        typed(&mut b, " two");
-        assert_eq!(b.as_str(), "one two");
-        assert!(b.undo());
-        assert_eq!(b.as_str(), "one");
-        assert!(b.redo());
-        assert_eq!(b.as_str(), "one two");
-    }
-
-    #[test]
-    fn undo_restores_caret_and_selection_position() {
-        let mut b = NoteBuffer::new();
-        typed(&mut b, "abc");
-        let before = (b.cursor, b.anchor);
-        typed(&mut b, "d");
-        assert!(b.undo());
-        assert_eq!((b.cursor, b.anchor), before);
-    }
-
-    #[test]
-    fn editing_after_undo_drops_the_redo_future() {
-        let mut b = NoteBuffer::new();
-        typed(&mut b, "a");
-        typed(&mut b, "b");
-        assert!(b.undo()); // back to "a"
-        typed(&mut b, "c"); // forks history
-        assert_eq!(b.as_str(), "ac");
-        // The old "ab" future is gone.
-        assert!(!b.redo());
-        assert_eq!(b.as_str(), "ac");
-    }
-
-    #[test]
-    fn a_noop_backspace_does_not_consume_an_undo_step() {
-        let mut b = NoteBuffer::new();
-        typed(&mut b, "x");
-        b.move_home(false);
-        b.backspace(); // caret at 0, nothing to delete
-        assert!(b.undo()); // undoes the typing, not a phantom step
-        assert_eq!(b.as_str(), "");
-    }
-}

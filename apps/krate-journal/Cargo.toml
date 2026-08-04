@@ -1,5 +1,5 @@
 [package]
-name = "krate-notes"
+name = "krate-journal"
 version = "0.1.0-dev"
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -25,7 +25,7 @@ crate-type = ["cdylib"]
 std_feature = true
 
 [package.metadata.component]
-package = "krate:notes"
+package = "krate:journal"
 
 [package.metadata.component.target]
 path = "../../wit/krate/phase3"

@@ -34,7 +34,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "krate-notes"
+name = "krate-focus"
 version = "0.1.0-dev"
 dependencies = [
  "krate",

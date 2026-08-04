@@ -56,6 +56,11 @@ APPS=(
   krate-eo2
   krate-mdview
   krate-weather
+  krate-notes
+  krate-focus
+  krate-journal
+  krate-clocks
+  krate-pulse
 )
 
 for app in "${APPS[@]}"; do

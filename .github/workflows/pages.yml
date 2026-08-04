@@ -154,7 +154,7 @@ jobs:
           shelf_bundles=""
           for b in _site/*.krate; do
             case "$(basename "$b")" in
-              eo2.krate|mdview.krate|savings.krate) ;;
+              eo2.krate|mdview.krate|savings.krate|notes.krate) ;;
               *) shelf_bundles="$shelf_bundles $b" ;;
             esac
           done
