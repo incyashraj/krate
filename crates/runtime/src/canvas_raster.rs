@@ -246,9 +246,11 @@ impl CanvasSurface {
     /// honoring a font name on one system.
     pub fn text(&mut self, text: &str, x: f32, y: f32, font_size: f32, color: u32) {
         if krate_adapter_common::vector_text::draw_canvas_text(
-            &mut self.buffer,
-            self.width,
-            self.height,
+            krate_adapter_common::vector_text::CanvasTarget {
+                buffer: &mut self.buffer,
+                width: self.width,
+                height: self.height,
+            },
             text,
             x,
             y,

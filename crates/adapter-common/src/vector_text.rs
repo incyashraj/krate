@@ -117,6 +117,19 @@ impl TextEngine {
     }
 }
 
+/// The canvas being drawn into: the pixel buffer and its dimensions.
+///
+/// These three always travel together and are meaningless apart -- a buffer
+/// without its width cannot be indexed. Grouping them also keeps
+/// `draw_canvas_text` inside clippy's argument limit without silencing the
+/// lint, which was pointing at a real signature smell.
+pub struct CanvasTarget<'a> {
+    /// `0xAARRGGBB` pixels, `width * height` long.
+    pub buffer: &'a mut [u32],
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Draw one antialiased text run into an `0xAARRGGBB` canvas buffer.
 ///
 /// `(x, baseline_y)` follows the canvas draw-text contract: the origin is the
@@ -132,15 +145,18 @@ impl TextEngine {
 /// pixel-art, and every canvas app looked blocky no matter how carefully it
 /// was designed.
 pub fn draw_canvas_text(
-    buffer: &mut [u32],
-    width: u32,
-    height: u32,
+    target: CanvasTarget<'_>,
     text: &str,
     x: f32,
     baseline_y: f32,
     font_size: f32,
     color: u32,
 ) -> bool {
+    let CanvasTarget {
+        buffer,
+        width,
+        height,
+    } = target;
     if text.is_empty() || width == 0 || height == 0 {
         return true;
     }

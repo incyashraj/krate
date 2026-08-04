@@ -3061,7 +3061,7 @@ fn author_progress_line(line: &str) -> Option<String> {
                     "lib.rs" => "writing the app's code".to_string(),
                     "Cargo.toml" => "setting up the build".to_string(),
                     "manifest.toml" => "declaring what the app needs access to".to_string(),
-                    other if other.is_empty() => "writing a file".to_string(),
+                    "" => "writing a file".to_string(),
                     other => format!("writing {other}"),
                 }
             }
