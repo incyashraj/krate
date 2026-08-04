@@ -232,12 +232,31 @@ impl CanvasSurface {
         self.fill_rect(x + w - stroke, y, stroke, h, color);
     }
 
-    /// Draw a text run with the painter's bitmap font.
+    /// Draw a text run with real antialiased vector type.
     ///
-    /// `font-family` is accepted and ignored: the drawn painter has exactly one
-    /// face, and honoring the same text on every system beats honoring a font
-    /// name on one of them. Size maps to the font's integer scale.
+    /// Text is laid out by parley from system fonts at the exact requested size
+    /// and rasterized with antialiasing -- the same engine the drawn widget
+    /// painter uses. This is what makes canvas apps read as modern instead of
+    /// pixel-art: the old 5x7 bitmap face, integer-scaled, turned every label
+    /// blocky at anything above small sizes. The bitmap font remains as the
+    /// fallback for a host with no usable system fonts, so text never silently
+    /// disappears.
+    ///
+    /// `font-family` is accepted and ignored: one good face everywhere beats
+    /// honoring a font name on one system.
     pub fn text(&mut self, text: &str, x: f32, y: f32, font_size: f32, color: u32) {
+        if krate_adapter_common::vector_text::draw_canvas_text(
+            &mut self.buffer,
+            self.width,
+            self.height,
+            text,
+            x,
+            y,
+            font_size,
+            color,
+        ) {
+            return;
+        }
         let scale = ((font_size / 7.0).round() as u32).clamp(1, 16);
         // The WIT origin is the baseline; drawtext takes the top-left corner.
         let top = y - drawtext::text_height(scale) as f32;
@@ -510,9 +529,14 @@ mod tests {
         canvas.clear(pack_color(1.0, 1.0, 1.0, 1.0));
         canvas.text("hi", 2.0, 20.0, 7.0, pack_color(0.0, 0.0, 0.0, 1.0));
         let image = canvas.to_image().expect("image");
-        // Some pixel became ink; where exactly is the font's business.
+        // Some pixel became ink; where exactly is the font's business. With
+        // antialiased vector text a tiny glyph may cover no pixel fully, so
+        // "ink" means clearly darker than the white ground, not pure black.
         assert!(
-            image.rgba.chunks(4).any(|px| px == [0, 0, 0, 255]),
+            image
+                .rgba
+                .chunks(4)
+                .any(|px| px[0] < 128 && px[1] < 128 && px[2] < 128 && px[3] == 255),
             "drawing text must change at least one pixel"
         );
     }

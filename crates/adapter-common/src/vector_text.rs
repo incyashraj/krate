@@ -98,6 +98,114 @@ impl TextEngine {
         // "Xg" spans an ascender and descender, a stable line-box proxy.
         self.layout_text("Xg", scale, None).height()
     }
+
+    /// Lay out canvas text at an explicit font size (display scale 1).
+    ///
+    /// The widget path fixes the size at `LABEL_FONT_SIZE` and varies the
+    /// display scale; a canvas run is the opposite -- the guest names the size
+    /// in the draw-text call, so it is pushed directly.
+    fn layout_canvas(&mut self, text: &str, font_size: f32) -> Layout<()> {
+        let mut builder = self
+            .layout_cx
+            .ranged_builder(&mut self.font_cx, text, 1.0, true);
+        builder.push_default(GenericFamily::SansSerif);
+        builder.push_default(StyleProperty::FontSize(font_size));
+        let mut layout = builder.build(text);
+        layout.break_all_lines(None);
+        layout.align(Alignment::Start, AlignmentOptions::default());
+        layout
+    }
+}
+
+/// Draw one antialiased text run into an `0xAARRGGBB` canvas buffer.
+///
+/// `(x, baseline_y)` follows the canvas draw-text contract: the origin is the
+/// text baseline. Glyphs are laid out by parley from real system fonts at the
+/// exact `font_size` and rasterized by vello_cpu with antialiasing, then
+/// source-over blended onto the existing canvas content -- so text sits cleanly
+/// on whatever the app drew underneath.
+///
+/// Returns `false` when the text produces no glyphs (a host with no usable
+/// system fonts); the caller then falls back to the 5x7 bitmap font, so text
+/// never silently disappears. This is what replaced the bitmap font as the
+/// canvas default: at anything above small sizes the 5x7 face reads as
+/// pixel-art, and every canvas app looked blocky no matter how carefully it
+/// was designed.
+pub fn draw_canvas_text(
+    buffer: &mut [u32],
+    width: u32,
+    height: u32,
+    text: &str,
+    x: f32,
+    baseline_y: f32,
+    font_size: f32,
+    color: u32,
+) -> bool {
+    if text.is_empty() || width == 0 || height == 0 {
+        return true;
+    }
+    let font_size = font_size.clamp(4.0, 256.0);
+    TEXT_ENGINE.with(|engine| {
+        let engine = &mut *engine.borrow_mut();
+        let layout = engine.layout_canvas(text, font_size);
+        let Some(first_line) = layout.lines().next() else {
+            // Whitespace-only text: nothing to draw, nothing to fall back for.
+            return true;
+        };
+        let first_baseline = first_line.metrics().baseline;
+
+        // Rasterize into a pixmap just large enough for the run, padded so
+        // antialiased edges are not clipped.
+        let pad = 2.0f32;
+        let pm_w = (layout.width() + pad * 2.0).ceil() as u32;
+        let pm_h = (layout.height() + pad * 2.0).ceil() as u32;
+        let (Ok(w16), Ok(h16)) = (u16::try_from(pm_w), u16::try_from(pm_h)) else {
+            return false;
+        };
+        if w16 == 0 || h16 == 0 {
+            return true;
+        }
+        let mut ctx = RenderContext::new(w16, h16);
+        let mut resources = Resources::new();
+        if draw_layout(&mut ctx, &mut resources, &layout, color, pad, pad) == 0 {
+            return false;
+        }
+        ctx.flush();
+        let mut pixmap = Pixmap::new(w16, h16);
+        ctx.render_to_pixmap(&mut resources, &mut pixmap);
+
+        // Blend the run over the canvas. The layout's top-left lands at
+        // (x, baseline_y - first_baseline); the pad shifts both back.
+        let dst_x0 = (x - pad).floor() as i64;
+        let dst_y0 = (baseline_y - first_baseline - pad).floor() as i64;
+        let data = pixmap.data();
+        let pm_w = w16 as usize;
+        for row in 0..h16 as i64 {
+            let by = dst_y0 + row;
+            if by < 0 || by >= height as i64 {
+                continue;
+            }
+            for col in 0..pm_w as i64 {
+                let bx = dst_x0 + col;
+                if bx < 0 || bx >= width as i64 {
+                    continue;
+                }
+                let src = data[row as usize * pm_w + col as usize];
+                if src.a == 0 {
+                    continue;
+                }
+                let di = by as usize * width as usize + bx as usize;
+                let dst = buffer[di];
+                // Source-over: src is premultiplied, dst is opaque 0xAARRGGBB.
+                let inv = 255 - src.a as u32;
+                let r = (((dst >> 16) & 0xFF) * inv / 255 + src.r as u32).min(255);
+                let g = (((dst >> 8) & 0xFF) * inv / 255 + src.g as u32).min(255);
+                let b = ((dst & 0xFF) * inv / 255 + src.b as u32).min(255);
+                buffer[di] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
+            }
+        }
+        true
+    })
 }
 
 /// Clamp a character offset to a string's character count, so a caret past the
