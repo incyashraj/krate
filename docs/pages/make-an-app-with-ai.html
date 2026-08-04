@@ -4,6 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Make an app by describing it — Krate</title>
+  <!-- Root-absolute, not relative: this page is served from /docs/pages/, so a
+       "./krate-favicon.png" would 404 and the tab would fall back to a blank
+       page icon. -->
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <meta name="description" content="Describe the app you want, an AI writes it, and you get one file that runs on Mac, Windows, and Linux and can be shared. A plain, honest walkthrough." />
   <!-- Self-contained on purpose. This page ships its own CSS because the deploy
        layout for docs/pages/ is not settled yet, and a page that carries its
