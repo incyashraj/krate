@@ -3954,7 +3954,8 @@ fn a_failure_report_is_shown_in_full_and_never_sent_on_its_own() {
     );
     // Sending is the person's own action, in their own browser.
     assert!(
-        stdout.contains("will not upload it for you"),
+        stdout.contains("will not upload it for you")
+            || stdout.contains("will not upload this report for you"),
         "the report must not imply Krate transmits it: {stdout}"
     );
 }
