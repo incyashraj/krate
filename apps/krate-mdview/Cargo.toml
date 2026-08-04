@@ -1,5 +1,5 @@
 [package]
-name = "krate-contacts"
+name = "krate-mdview"
 version = "0.1.0-dev"
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -7,15 +7,16 @@ repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]
-# The SDK crate is linked for its no_std runtime lang items (allocator, panic
-# handler, mem intrinsics), which keep the query-result lift from reaching std's
-# WASI-backed allocation-error path. This app uses its own generated GUI-world
-# `bindings` for the UI the SDK crate does not carry.
+# The Krate SDK, linked for its no_std runtime lang items (global allocator,
+# panic handler, memory intrinsics). This reader draws its whole page onto a
+# canvas and stays krate:*-only by being #![no_std]: the SDK owns the allocator
+# and a trapping panic handler so no path drags in the wasi:* import set.
 krate = { path = "../../crates/bindings-rust" }
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 
-# Standalone: this app builds on its own, so it carries an empty workspace table
-# to stop cargo walking up to a parent workspace manifest.
+# Standalone: this app is excluded from the repo workspace and builds on its
+# own, so it carries an empty workspace table to stop cargo walking up to the
+# repo root manifest.
 [workspace]
 
 [lib]
@@ -27,7 +28,7 @@ crate-type = ["cdylib"]
 std_feature = true
 
 [package.metadata.component]
-package = "krate:contacts"
+package = "krate:mdview"
 
 [package.metadata.component.target]
 path = "../../wit/krate/phase3"

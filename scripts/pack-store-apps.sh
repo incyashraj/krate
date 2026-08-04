@@ -52,6 +52,9 @@ APPS=(
   krate-fetch
   krate-nova
   krate-fractal
+  krate-savings
+  krate-eo2
+  krate-mdview
 )
 
 for app in "${APPS[@]}"; do

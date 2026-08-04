@@ -7,7 +7,14 @@ repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]
+# The Krate SDK, linked for its no_std runtime lang items (global allocator,
+# panic handler, memory intrinsics) so this canvas app stays krate:*-only.
+krate = { path = "../../crates/bindings-rust" }
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
+
+# Standalone: excluded from the repo workspace, builds on its own, so it carries
+# an empty workspace table to stop cargo walking up to the repo root manifest.
+[workspace]
 
 [lib]
 crate-type = ["cdylib"]

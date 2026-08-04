@@ -145,9 +145,21 @@ jobs:
           # Built from this commit, not from the last release: the store shows
           # each app's content identity, and that only exists in builds after
           # rc4. An older binary silently produced an empty shelf.
+          #
+          # eo2, mdview, and savings now ship as rebuilt krate-* store apps
+          # with modern canvas UIs; their old ported bundles stay served (the
+          # nightly replay and short URLs depend on them) but are left off the
+          # shelf so the store does not list the same app twice.
           cargo build --release -p krate-cli
+          shelf_bundles=""
+          for b in _site/*.krate; do
+            case "$(basename "$b")" in
+              eo2.krate|mdview.krate|savings.krate) ;;
+              *) shelf_bundles="$shelf_bundles $b" ;;
+            esac
+          done
           KRATE_BIN=target/release/krate \
-            sh scripts/build-store.sh _site/cloud _site/*.krate
+            sh scripts/build-store.sh _site/cloud $shelf_bundles
           cp scripts/install.sh _site/install.sh
           cp scripts/install.ps1 _site/install.ps1
           # A trailing-slash-free alias, so `krate.tech/install` works too.

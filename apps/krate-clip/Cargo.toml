@@ -9,6 +9,10 @@ rust-version = "1.91"
 [dependencies]
 wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
 
+# Standalone: this app builds on its own, so it carries an empty workspace table
+# to stop cargo walking up to a parent workspace manifest.
+[workspace]
+
 [lib]
 crate-type = ["cdylib"]
 

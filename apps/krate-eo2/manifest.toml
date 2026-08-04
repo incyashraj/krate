@@ -1,0 +1,59 @@
+[app]
+id = "dev.krate.eo2"
+name = "Eo2"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_eo2.wasm"
+world = "krate:app/gui@0.2.0"
+
+# The viewer window itself. Without it there is nothing to view an image in,
+# so this is the capability that gates the app.
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Show the image viewer window"
+required = true
+
+# Reading image bytes to decode. Scoped to the pictures folder rather than the
+# whole disk: the narrowest scope that still preserves opening a picture and
+# walking to its neighbours.
+[[capabilities]]
+cap = "fs.read:images/**"
+rationale = "Read the image files you view"
+required = true
+
+# Navigation is "the next image in this directory", which needs the directory
+# listing and not just the one file. This is what makes next/previous work.
+[[capabilities]]
+cap = "fs.list:images/**"
+rationale = "Find the next and previous image in the folder"
+required = true
+
+# The delete button in the action bar.
+[[capabilities]]
+cap = "fs.remove:images/**"
+rationale = "Delete the image you are viewing"
+required = false
+
+# The shuffle order for the slideshow is seeded from OS entropy.
+[[capabilities]]
+cap = "random.bytes"
+rationale = "Seed the slideshow shuffle order"
+required = false
+
+# Replaces ~/.config/eo2/config.toml. The app names a key, never a path, so it
+# needs no filesystem grant to keep its own settings.
+[[capabilities]]
+cap = "store.kv"
+rationale = "Remember your settings between runs"
+required = false
+
+# Report state on exit for automated runs.
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report state on exit for automated runs"
+required = false
+
+# Read the quick-run flag used by automated checks.
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated checks"
+required = false
