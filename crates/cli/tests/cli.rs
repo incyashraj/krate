@@ -4154,3 +4154,69 @@ fn create_without_an_agent_builds_a_real_app_from_a_template() {
         );
     }
 }
+
+/// An unrecognized `--agent` must list the providers that do exist.
+///
+/// The failure this prevents is a dead end: someone tries the AI they actually
+/// have, gets told the value is invalid, and has no way to discover what Krate
+/// supports without reading the source.
+#[test]
+fn an_unknown_agent_name_lists_the_supported_providers() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_krate"))
+        .args(["create", "a test app", "--output"])
+        .arg(dir.path().join("out.krate"))
+        .args(["--agent", "definitely-not-an-ai"])
+        .output()
+        .expect("run create");
+
+    assert!(
+        !output.status.success(),
+        "an unknown agent must not succeed"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("definitely-not-an-ai"),
+        "it must quote the name that was given: {stderr}"
+    );
+    assert!(
+        stderr.contains("Available providers:") && stderr.contains("claude"),
+        "it must list the providers that work: {stderr}"
+    );
+    assert!(
+        stderr.contains("--author-cmd"),
+        "it must point at the escape hatch for other tools: {stderr}"
+    );
+}
+
+/// A supported provider whose CLI is not installed must say so, and say how to
+/// install it -- never fail with a raw spawn error naming a program the person
+/// never typed.
+#[test]
+fn a_supported_agent_with_no_cli_installed_explains_how_to_install_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    // An empty PATH guarantees `claude` cannot be found, whatever this machine
+    // happens to have installed.
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_krate"))
+        .args(["create", "a test app", "--output"])
+        .arg(dir.path().join("out.krate"))
+        .args(["--agent", "claude"])
+        .env("PATH", "")
+        .output()
+        .expect("run create");
+
+    assert!(!output.status.success(), "a missing CLI must not succeed");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("`claude` command is not installed"),
+        "it must name the missing command in plain words: {stderr}"
+    );
+    assert!(
+        stderr.contains("claude.com/claude-code"),
+        "it must say where to get it: {stderr}"
+    );
+    assert!(
+        !stderr.contains("No such file or directory") && !stderr.contains("os error 2"),
+        "it must not surface a raw spawn error: {stderr}"
+    );
+}
