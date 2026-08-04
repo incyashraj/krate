@@ -4973,6 +4973,121 @@ struct CheckFailure {
     fix: String,
 }
 
+/// Put the `krate` dependency back into a `#![no_std]` app that lost it.
+///
+/// Returns whether it changed anything. This is a repair, not a check, and it
+/// exists because telling an author the rule demonstrably does not work: the
+/// context pack says to keep the dependency and authors still drop it while
+/// converting an app to `no_std`. The failure it causes -- "no global memory
+/// allocator" / "`#[panic_handler]` function required" -- names neither the
+/// dependency nor the file it belongs in, so the author usually reaches for a
+/// hand-written allocator and panic handler instead, which is the wrong answer
+/// twice over.
+///
+/// Deliberately narrow. It only acts when all three are true:
+///   - `src/lib.rs` is `#![no_std]` (a std guest genuinely does not need the dep)
+///   - `Cargo.toml` has a `[dependencies]` table with no `krate` entry
+///   - the manifest's WIT target path tells us where the SDK lives
+///
+/// That last condition is what keeps this honest: the path is taken from the
+/// `[package.metadata.component.target]` entry cargo-component already resolves
+/// against, so the restored dependency points at the same SDK the bindings come
+/// from, and we never guess a path.
+fn restore_krate_dependency(dir: &Path) -> bool {
+    let cargo_path = dir.join("Cargo.toml");
+    let Ok(cargo) = fs::read_to_string(&cargo_path) else {
+        return false;
+    };
+    // Already there: nothing to do. Match the key at the start of a line so a
+    // `krate` mentioned inside a comment or a path string does not count.
+    if cargo.lines().any(|line| {
+        line.trim_start().starts_with("krate ") || line.trim_start().starts_with("krate=")
+    }) {
+        return false;
+    }
+    let Ok(lib) = fs::read_to_string(dir.join("src/lib.rs")) else {
+        return false;
+    };
+    if !lib.contains("#![no_std]") {
+        return false;
+    }
+    let Some(sdk_prefix) = sdk_prefix_from_cargo(&cargo) else {
+        return false;
+    };
+    let Some(deps_at) = cargo.find("\n[dependencies]\n") else {
+        return false;
+    };
+    let insert_at = deps_at + "\n[dependencies]\n".len();
+    let line = format!(
+        "# Restored by `krate check-app`: a #![no_std] guest cannot link without the\n\
+         # SDK, which owns the global allocator, the panic handler, and the mem*\n\
+         # intrinsics. Do not remove it.\n\
+         krate = {{ path = \"{sdk_prefix}/crates/bindings-rust\" }}\n"
+    );
+    let mut repaired = String::with_capacity(cargo.len() + line.len());
+    repaired.push_str(&cargo[..insert_at]);
+    repaired.push_str(&line);
+    repaired.push_str(&cargo[insert_at..]);
+    fs::write(&cargo_path, repaired).is_ok()
+}
+
+/// The SDK root a generated Cargo.toml points at, read back out of its WIT
+/// target path. The template writes `<prefix>/wit/krate/phaseN`, so the prefix
+/// is everything before `/wit/`.
+fn sdk_prefix_from_cargo(cargo: &str) -> Option<String> {
+    for line in cargo.lines() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with("path") {
+            continue;
+        }
+        let value = trimmed.split('"').nth(1)?;
+        if let Some(prefix) = value.split("/wit/").next() {
+            if prefix != value && !prefix.is_empty() {
+                return Some(prefix.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Turn a failed build into a specific fix when we recognize the failure.
+///
+/// A raw cargo dump is the least useful thing to hand an author that is already
+/// looping on the build. Two failures are common enough and cryptic enough to
+/// be worth naming: a `no_std` guest missing the SDK's lang items, and a `std`
+/// guest whose bindings were built with `std_feature` off.
+fn build_fix(detail: &str) -> String {
+    let generic = "Fix the compiler errors above. The build uses rustup's toolchain and the \
+                   wasm32-wasip1 target; run `krate doctor` if the target or toolchain looks \
+                   wrong.";
+    // The no_std guest with no SDK. rustc reports the missing lang items one at
+    // a time, so match any of them rather than one exact string.
+    if detail.contains("`#[panic_handler]` function required")
+        || detail.contains("no global memory allocator")
+        || detail.contains("no #[default_lib_allocator]")
+        || detail.contains("undefined symbol: memcpy")
+    {
+        return "This is a `#![no_std]` guest with no allocator, panic handler, or memory \
+                intrinsics. Do NOT write your own -- add the SDK, which provides all three:\n\
+                \u{20}\u{20}- put `krate = { path = \"<sdk>/crates/bindings-rust\" }` under \
+                `[dependencies]` in Cargo.toml (copy the path prefix from the \
+                `[package.metadata.component.target]` entry already there)\n\
+                \u{20}\u{20}- add `extern crate krate as _krate_runtime;` near the top of \
+                src/lib.rs so the crate is linked even when nothing calls it\n\
+                apps/krate-notes is a shipped GUI app that does exactly this."
+            .to_string();
+    }
+    // A std guest whose bindings were gated behind std_feature.
+    if detail.contains("failed to load bitcode of module std") {
+        return "The guest links `std` but the generated bindings were built without it. \
+                Either make the guest `#![no_std]` (the usual answer -- see \
+                KRATE_AUTHORING.md section 3), or keep std and add `features = [\"std\"]` to \
+                the `krate` dependency in Cargo.toml."
+            .to_string();
+    }
+    generic.to_string()
+}
+
 /// Turn a set of non-krate imports into a specific, actionable fix.
 ///
 /// This is the piece that makes `check-app` an oracle rather than a linter: a
@@ -5148,13 +5263,30 @@ fn run_check_app(
 
     // Stage: build. Reuses component_build_command -> rustup toolchain, so it is
     // immune to the Homebrew-cargo-shadows-rustup wall.
+    //
+    // Before building, repair the one thing we know the right answer to. An
+    // author that converts the app to `#![no_std]` -- which section 3 of the
+    // context pack tells it to do as soon as there is a real dependency --
+    // routinely drops the `krate` dependency along the way, and then the link
+    // fails with "no global memory allocator" or "`#[panic_handler]` function
+    // required", neither of which names the missing dep. Telling it not to did
+    // not work; the pack said so in capitals and it still went missing. So put
+    // the line back instead of complaining about it.
+    let restored_sdk_dep = restore_krate_dependency(dir);
     let wasm = build_component_captured(dir).map_err(|detail| CheckFailure {
         stage: CheckStage::Build,
+        fix: build_fix(&detail),
         detail,
-        fix: "Fix the compiler errors above. The build uses rustup's toolchain and the \
-              wasm32-wasip1 target; run `krate doctor` if the target or toolchain looks wrong."
-            .to_string(),
     })?;
+    if restored_sdk_dep {
+        // Not a failure -- the build passed -- but say it happened, so an author
+        // reading the output learns the rule rather than silently relying on it.
+        eprintln!(
+            "note: src/lib.rs is #![no_std] but Cargo.toml had no `krate` dependency, so \
+             check-app put it back. The SDK owns the allocator, panic handler, and memory \
+             intrinsics a no_std guest needs; do not remove it."
+        );
+    }
     passed.push("build");
 
     // Stage: imports. The component must import only krate:*.
@@ -6586,7 +6718,7 @@ mod create_tests {
 
 #[cfg(test)]
 mod check_app_tests {
-    use super::{imports_fix, manifest_is_gui, CheckStage};
+    use super::{build_fix, imports_fix, manifest_is_gui, restore_krate_dependency, CheckStage};
     use std::path::Path;
 
     #[test]
@@ -6629,6 +6761,131 @@ mod check_app_tests {
         // Not a std leak: a real "Krate does not model this" message.
         assert!(!fix.contains("no_std"), "should not blame std: {fix}");
         assert!(fix.contains("does not provide") || fix.contains("only krate:*"));
+    }
+
+    /// A generated app dir, for the repair tests: a Cargo.toml carrying the WIT
+    /// target path the repair reads the SDK prefix out of, and a lib.rs.
+    fn app_dir_with(cargo_extra: &str, lib: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("temp app dir");
+        std::fs::create_dir_all(dir.path().join("src")).expect("src");
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            format!(
+                "[workspace]\n\n[package]\nname = \"x\"\nversion = \"0.1.0\"\n\
+                 edition = \"2021\"\n\n[dependencies]\n{cargo_extra}\n\
+                 [package.metadata.component.target]\n\
+                 path = \"/sdk/root/wit/krate/phase3\"\nworld = \"gui\"\n"
+            ),
+        )
+        .expect("write Cargo.toml");
+        std::fs::write(dir.path().join("src/lib.rs"), lib).expect("write lib.rs");
+        dir
+    }
+
+    #[test]
+    fn a_no_std_app_that_lost_the_sdk_dependency_gets_it_back() {
+        // The measured top failure of AI authoring: the author converts the app
+        // to no_std -- which the context pack tells it to do -- and drops the
+        // `krate` dependency on the way, so the link fails on lang items with a
+        // message that names neither the dep nor Cargo.toml. Repair it.
+        let dir = app_dir_with(
+            "wit-bindgen-rt = { version = \"0.44.0\" }\n",
+            "#![no_std]\nextern crate alloc;\n",
+        );
+        assert!(
+            restore_krate_dependency(dir.path()),
+            "a no_std app with no krate dep must be repaired"
+        );
+        let cargo = std::fs::read_to_string(dir.path().join("Cargo.toml")).expect("read back");
+        assert!(
+            cargo.contains("krate = { path = \"/sdk/root/crates/bindings-rust\" }"),
+            "the restored dep points at the SDK the WIT target already names:\n{cargo}"
+        );
+        // Idempotent: a second pass must not add it twice.
+        assert!(
+            !restore_krate_dependency(dir.path()),
+            "repairing twice must be a no-op"
+        );
+        assert_eq!(
+            cargo.matches("krate = { path").count(),
+            1,
+            "exactly one krate dependency"
+        );
+    }
+
+    #[test]
+    fn the_sdk_dependency_repair_leaves_correct_apps_alone() {
+        // Narrow on purpose. A std guest does not need the dep, an app that
+        // already has it must not get a second one, and an app whose Cargo.toml
+        // does not say where the SDK is must not have a path guessed for it.
+        let std_guest = app_dir_with(
+            "wit-bindgen-rt = { version = \"0.44.0\" }\n",
+            "// plain std\n",
+        );
+        assert!(
+            !restore_krate_dependency(std_guest.path()),
+            "a std guest links std's own allocator and needs no repair"
+        );
+
+        let already = app_dir_with(
+            "krate = { path = \"../../crates/bindings-rust\" }\n",
+            "#![no_std]\n",
+        );
+        assert!(
+            !restore_krate_dependency(already.path()),
+            "an app that already depends on the SDK is untouched"
+        );
+
+        // No WIT target path means no honest way to know where the SDK lives.
+        let no_prefix = tempfile::tempdir().expect("temp");
+        std::fs::create_dir_all(no_prefix.path().join("src")).expect("src");
+        std::fs::write(
+            no_prefix.path().join("Cargo.toml"),
+            "[package]\nname = \"x\"\n\n[dependencies]\n",
+        )
+        .expect("cargo");
+        std::fs::write(no_prefix.path().join("src/lib.rs"), "#![no_std]\n").expect("lib");
+        assert!(
+            !restore_krate_dependency(no_prefix.path()),
+            "never guess an SDK path"
+        );
+    }
+
+    #[test]
+    fn a_missing_lang_item_build_failure_names_the_sdk_dependency() {
+        // The build stage used to hand back raw cargo output for this, and an
+        // author reading "error: `#[panic_handler]` function required" writes
+        // its own panic handler -- the wrong answer. Name the real cause.
+        for error in [
+            "error: `#[panic_handler]` function required, but not found",
+            "error: no global memory allocator found but one is required",
+            "rust-lld: error: undefined symbol: memcpy",
+        ] {
+            let fix = build_fix(error);
+            assert!(
+                fix.contains("krate = { path"),
+                "must name the dependency to add for {error}:\n{fix}"
+            );
+            assert!(
+                fix.contains("Do NOT write your own"),
+                "must steer away from a hand-written allocator/panic handler:\n{fix}"
+            );
+        }
+
+        // The other cryptic one: a std guest against bindings gated on
+        // std_feature. Different cause, different cure.
+        let fix = build_fix("error: failed to load bitcode of module std");
+        assert!(
+            fix.contains("features = [\"std\"]"),
+            "a std guest needs the std feature, not the no_std treatment:\n{fix}"
+        );
+
+        // An ordinary compile error keeps the general advice.
+        let fix = build_fix("error[E0308]: mismatched types");
+        assert!(
+            fix.contains("Fix the compiler errors above"),
+            "an ordinary error is not diagnosed as something it is not:\n{fix}"
+        );
     }
 
     #[test]

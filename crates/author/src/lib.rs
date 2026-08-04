@@ -1003,6 +1003,13 @@ repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]
+# The Krate SDK, linked for its no_std runtime lang items (global allocator,
+# panic handler, memory intrinsics). Every shipped GUI app depends on it, and a
+# GUI app that goes `#![no_std]` -- which is what section 3 of KRATE_AUTHORING.md
+# tells an author to do the moment there is a real dependency -- cannot link
+# without it. It was missing here, so every windowed app the agent wrote had to
+# discover the missing dep through a failed build and add it back by hand.
+krate = {{ path = "{sdk_prefix}/crates/bindings-rust" }}
 wit-bindgen-rt = {{ version = "0.44.0", features = ["bitflags"] }}
 
 [lib]
@@ -1287,6 +1294,28 @@ mod tests {
             AppKind::wants_gui("a CLI that formats a markdown table"),
             Skeleton::Cli
         );
+    }
+
+    #[test]
+    fn both_skeletons_depend_on_the_sdk() {
+        // Measured: the GUI template shipped without the `krate` dependency
+        // while the CLI one had it, so every windowed app an AI authored had to
+        // find the missing dep through a failed link and add it back. The SDK
+        // owns the allocator, panic handler, and mem* intrinsics a no_std guest
+        // needs, and every shipped GUI app under apps/ depends on it.
+        for world in [Skeleton::Gui, Skeleton::Cli] {
+            let app = skeleton("my-app", "/sdk", world).expect("skeleton");
+            let cargo = &app
+                .files
+                .iter()
+                .find(|f| f.path == "Cargo.toml")
+                .expect("Cargo.toml")
+                .contents;
+            assert!(
+                cargo.contains(r#"krate = { path = "/sdk/crates/bindings-rust" }"#),
+                "{world:?} skeleton must depend on the SDK:\n{cargo}"
+            );
+        }
     }
 
     #[test]
