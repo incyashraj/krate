@@ -59,8 +59,6 @@
       font-weight: 600;
       letter-spacing: .01em;
     }
-    /* The emoji icon needs a touch more room than the old glyph. */
-    .store-icon { font-size: 22px; }
 
     /* "How to open this" — the panel that appears after a download, so a first
        time visitor is never left holding a .krate file with no idea what to do
@@ -319,28 +317,24 @@
       // shelf sees "Nova is a game" without opening it. Classified from the
       // file name first (a known app), then falling back to what it asks for,
       // so a new app still gets a reasonable label. Kept coarse on purpose:
-      // Game / Creative / Tool / Utility / Reader, each with one emoji.
+      // Game / Creative / Tool / Utility / Reader.
       const KIND_BY_FILE = {
-        nova: ["Game", "\u{1F47E}"], "nova2": ["Game", "\u{1F47E}"],
-        bounce: ["Game", "\u{1F3AE}"], cubes: ["Toy", "\u{1F4E6}"],
-        paint: ["Creative", "\u{1F3A8}"], fractal: ["Creative", "\u{1F308}"],
-        chart: ["Tool", "\u{1F4CA}"], contacts: ["Utility", "\u{1F4C7}"],
-        checklist: ["Utility", "\u{2705}"], clip: ["Utility", "\u{1F4CB}"],
-        clipboard: ["Utility", "\u{1F4CB}"], keyvault: ["Utility", "\u{1F511}"],
-        notes: ["Utility", "\u{1F4DD}"], fetch: ["Tool", "\u{1F310}"],
-        savings: ["Tool", "\u{1F4B0}"], mdview: ["Reader", "\u{1F4C4}"],
-        hexyl: ["Tool", "\u{1F50D}"], grex: ["Tool", "\u{1F524}"],
-        ddh: ["Tool", "\u{1F5C2}"], rssfwd: ["Tool", "\u{1F4E1}"],
-        envelope: ["Tool", "\u{2709}"], eo2: ["Creative", "\u{1F5BC}"],
+        nova: "Game", nova2: "Game", bounce: "Game", cubes: "Toy",
+        paint: "Creative", fractal: "Creative", eo2: "Creative",
+        chart: "Tool", fetch: "Tool", savings: "Tool", hexyl: "Tool",
+        grex: "Tool", ddh: "Tool", rssfwd: "Tool", envelope: "Tool",
+        contacts: "Utility", checklist: "Utility", clip: "Utility",
+        clipboard: "Utility", keyvault: "Utility", notes: "Utility",
+        mdview: "Reader",
       };
       const kindOf = (file, asks) => {
         const stem = (file || "").replace(/^krate-/, "").replace(/\.krate$/, "");
         if (KIND_BY_FILE[stem]) return KIND_BY_FILE[stem];
         // Fallbacks by what the app asks for.
-        if (asks.some((c) => c.startsWith("net.connect"))) return ["Tool", "\u{1F310}"];
-        if (asks.some((c) => c.startsWith("store"))) return ["Utility", "\u{1F4E6}"];
-        if (asks.some((c) => c.startsWith("audio"))) return ["Media", "\u{1F3A4}"];
-        return ["App", "\u{1F4C4}"];
+        if (asks.some((c) => c.startsWith("net.connect"))) return "Tool";
+        if (asks.some((c) => c.startsWith("store"))) return "Utility";
+        if (asks.some((c) => c.startsWith("audio"))) return "Media";
+        return "App";
       };
 
       // Say what a capability means, not what it is called. The words match the
@@ -373,11 +367,11 @@
             return;
           }
           shelf.innerHTML = apps.map((a) => {
-            const [kind, emoji] = kindOf(a.file, a.asks);
+            const kind = kindOf(a.file, a.asks);
             return `
             <article class="store-card">
               <div class="store-top">
-                <div class="store-icon" aria-hidden="true">${emoji}</div>
+                <div class="store-icon" aria-hidden="true">&#9635;</div>
                 <div>
                   <h3>${a.name}</h3>
                   <p class="store-by"><span class="store-kind">${kind}</span> &middot; ${humanBytes(a.bytes)}</p>
