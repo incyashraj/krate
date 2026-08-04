@@ -4092,3 +4092,65 @@ fn the_agent_seam_invokes_this_binary_not_one_from_path() {
          binary, so an older install would silently drive authoring: {stderr}"
     );
 }
+
+/// `krate create` with no agent must produce a working app.
+///
+/// The regression this guards: the GUI template wrote `extern crate krate`
+/// into src/lib.rs but never wrote the matching `krate` dependency into
+/// Cargo.toml, so EVERY app made this way failed to build. It survived because
+/// the only create test drove the agent seam, which uses a different
+/// skeleton -- the plain template path, which is what the website tells people
+/// to run, had no test at all.
+///
+/// Covers both templates: a list-shaped request routes to the GUI checklist,
+/// a file-reading request routes to the CLI reporter.
+#[test]
+fn create_without_an_agent_builds_a_real_app_from_a_template() {
+    if !has_cargo_component() {
+        eprintln!("skipping: cargo-component not installed");
+        return;
+    }
+    let _build_lock = cargo_build_guard();
+
+    for (request, label) in [
+        ("a grocery list app", "gui template"),
+        ("read a file and count the words", "cli template"),
+    ] {
+        let work = tempfile::tempdir().expect("temp dir");
+        let out = work.path().join("made.krate");
+        let inspect = work.path().join("inspect");
+        let output = krate()
+            .arg("create")
+            .arg(request)
+            .arg("--output")
+            .arg(&out)
+            .arg("--work-dir")
+            .arg(&inspect)
+            .output()
+            .expect("run create");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            output.status.success(),
+            "`krate create \"{request}\"` ({label}) must build without an agent. \
+             This is the command the website tells people to run.\n{stderr}"
+        );
+        assert!(out.is_file(), "{label}: the .krate was written");
+
+        // The dependency whose absence caused the original failure.
+        let app_dir = std::fs::read_dir(&inspect)
+            .expect("work dir")
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|path| path.join("Cargo.toml").is_file())
+            .expect("an app directory");
+        let cargo = std::fs::read_to_string(app_dir.join("Cargo.toml")).expect("Cargo.toml");
+        assert!(
+            cargo
+                .lines()
+                .map(str::trim_start)
+                .any(|line| line.starts_with("krate ") || line.starts_with("krate=")),
+            "{label}: Cargo.toml must declare the `krate` dependency; the SDK owns \
+             the guest's allocator and panic handler:\n{cargo}"
+        );
+    }
+}
