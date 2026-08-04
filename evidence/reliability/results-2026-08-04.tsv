@@ -1,0 +1,7 @@
+n	request	result	stage	stage_name	seconds	krate_bytes	lib_lines	note
+1	a to-do list I can check things off in	pass	0	-	168	14115	888	-
+4	a countdown timer for a 25 minute work session	pass	0	-	186	13181	716	-
+6	a shopping list I can add and remove items from	pass	0	-	173	14271	903	-
+9	a meeting cost calculator: people, hourly rate, minutes	pass	0	-	171	14539	826	-
+13	a tip calculator	pass	0	-	191	14309	882	-
+15	a currency-style percentage calculator for discounts	pass	0	-	184	14464	839	-

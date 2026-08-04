@@ -1,0 +1,128 @@
+# The reliability corpus: 100 requests a real person might make.
+#
+# One request per line. Lines starting with # are comments and are skipped by
+# the harness, as are blank lines. The harness numbers requests by their
+# position among the non-comment lines, so DO NOT reorder or delete lines --
+# append only. A request's number is its identity in every results file.
+#
+# Sections are the categories we want covered. The last section is the awkward
+# one: vague, too big, impossible, and ambiguous requests. Those are in here on
+# purpose. A request Krate cannot serve should get a fast honest refusal, and
+# that counts as a pass; a silently wrong app is the failure.
+
+# --- productivity (1-12) ---
+a to-do list I can check things off in
+a note taking app that saves my notes
+a habit tracker with a row of days for each habit
+a countdown timer for a 25 minute work session
+a daily journal where I write one entry a day
+a shopping list I can add and remove items from
+a reading list of books with a read/unread mark
+a simple kanban board with three columns
+a meeting cost calculator: people, hourly rate, minutes
+a water intake tracker for the day
+a packing list for a trip with checkboxes
+a birthday reminder list showing who is next
+
+# --- calculators and converters (13-26) ---
+a tip calculator
+a unit converter for length and weight
+a currency-style percentage calculator for discounts
+a BMI calculator
+a loan repayment calculator showing the monthly payment
+a temperature converter between celsius and fahrenheit
+a calculator with buttons for the four operations
+a date difference calculator: how many days between two dates
+a fuel cost calculator for a trip
+a split-the-bill calculator for a group
+a compound interest calculator
+a cooking measurement converter between cups and grams
+a pace calculator for runners
+a screen resolution aspect ratio calculator
+
+# --- games (27-42) ---
+a tic tac toe game against another person on the same computer
+a memory matching card game
+a snake game
+a number guessing game where I guess what the computer picked
+a rock paper scissors game against the computer
+a dice roller that rolls two dice
+a game of hangman with a built in word list
+a simple breakout game with a paddle and a ball
+a whack-a-mole game with a score
+a 2048 sliding tile game
+a minesweeper game on a small grid
+a pong game for two players on one keyboard
+a reaction time tester: click when the colour changes
+a connect four game for two players
+a maze game where I move a dot to the exit
+a simon says colour memory game
+
+# --- utilities and viewers (43-58) ---
+a stopwatch with lap times
+a colour picker that shows me the hex code
+a random password generator
+a QR-style grid pattern generator from a short text
+a text case converter: upper, lower, title case
+a word and character counter for text I paste in
+a markdown preview that shows my headings and lists
+a JSON pretty printer
+a CSV viewer that shows a table
+a text file viewer with line numbers
+an image viewer that opens a PNG I choose
+a hex viewer for a small file
+a diff viewer that compares two blocks of text
+a clipboard history that remembers the last few things
+a file renamer preview: show what the new names would be
+a base64 encoder and decoder
+
+# --- trackers and reference (59-72) ---
+an expense tracker with a running total
+a mood tracker with a face for each day
+a workout log with sets and reps
+a plant watering schedule
+a car mileage log
+a step goal tracker for the week
+a periodic table reference I can click an element in
+a colour name reference showing common web colours
+a keyboard shortcut cheatsheet for my editor
+a unit prefix reference: kilo, mega, giga
+a country capitals quiz
+a times tables practice app for a child
+a chord chart reference for a guitar
+a metric conversion reference table
+
+# --- creative tools (73-85) ---
+a drawing pad where I can draw with the mouse
+a pixel art editor on a 16 by 16 grid
+a colour palette generator from one base colour
+a gradient maker showing two colours blending
+a simple drum machine with four sounds
+a metronome that ticks at a set tempo
+a random name generator for characters
+a haiku composer that counts my syllables
+a mandala pattern drawer
+a bouncing ball screensaver
+a starfield animation
+a spirograph drawing toy
+a fractal viewer showing the mandelbrot set
+
+# --- awkward on purpose: vague, too big, impossible, ambiguous (86-100) ---
+# vague
+something for my mornings
+something to help me focus
+an app that makes my day better
+something fun
+a thing to organise my life
+# too big
+a spreadsheet
+a word processor
+a photo editor like photoshop
+a full email client
+a web browser
+# impossible on Krate
+download my email and show me the unread ones
+a chat app so I can message my friends
+an app that posts to my twitter account
+show me the live weather from the internet
+sync my files to my phone
