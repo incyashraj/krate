@@ -137,7 +137,7 @@ PAGES = [
         "faq": [
             (
                 "How do I share an app I made with AI?",
-                "Package it into a single .krate file with `krate create`, then send that file however you send any file. The person who receives it installs Krate once, double-clicks the file, and the app opens on Mac, Windows, or Linux from that same file.",
+                "Two ways. Send the .krate file however you send any file -- the person installs Krate once, double-clicks it, and the app opens on Mac, Windows, or Linux. Or publish it with `krate publish yourapp.krate` and send the link instead; anyone can run it straight from that URL, and it shows up at krate.tech/cloud with your name on it.",
             ),
             (
                 "Do I need to build it separately for each operating system?",
@@ -157,7 +157,7 @@ PAGES = [
             (
                 "Make it one file",
                 """        <p>Describe the app, and Krate has AI write it, checks it, and packages the result:</p>
-        <pre class="answer-cmd">krate create "a checklist app that saves locally" --agent claude</pre>
+        <pre class="answer-cmd">krate</pre>
         <p>What comes out is <code>checklist.krate</code> &mdash; around 12 KB, containing the app and the list of what it needs to be allowed to do.</p>""",
             ),
             (

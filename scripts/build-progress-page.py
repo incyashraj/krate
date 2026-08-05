@@ -54,6 +54,26 @@ def commit():
         return "unknown"
 
 
+def newest_release():
+    """The newest v-tag, so a page about progress cannot advertise an old one.
+
+    This said rc16 while rc21 shipped -- five releases stale on a page whose
+    whole subject is what is current. A hard-coded version on a progress page
+    is a promise to update it by hand every release, and that promise is
+    always broken eventually.
+    """
+    try:
+        tags = subprocess.run(
+            ["git", "tag", "--list", "v*", "--sort=-v:refname"],
+            cwd=ROOT, capture_output=True, text=True, check=True,
+        ).stdout.split()
+        return tags[0] if tags else "v0.1.0"
+    except Exception:
+        return "v0.1.0"
+
+
+NEWEST = newest_release()
+
 DESCRIPTIONS = {
     "eo2": "Image viewer, ported from 2,677 lines of desktop source",
     "mdview": "Markdown viewer, ported from 4,863 lines",
@@ -161,15 +181,15 @@ def main():
 
     <h2>What the current public release can run</h2>
     <p>
-      All of them. The current release is <code>v0.1.0-rc16</code>. Drawing,
+      All of them. The current release is <code>{NEWEST}</code>. Drawing,
       animation and sound arrived in <code>v0.1.0-rc5</code>, and each release is
       checked by downloading the published binary and running the 2D game, the
       chart and the sandbox escape test with it, not by trusting the build that
-      made it. rc16 also adds <code>krate run app.wasm --shoot frame.png</code>,
+      made it. Krate also has <code>krate run app.wasm --shoot frame.png</code>,
       which paints any app's window to a PNG on any machine with no display.
     </p>
     <p class="generated">
-      Six platforms ship as of rc16, including arm64 Linux and ARM Windows.
+      Six platforms ship, including arm64 Linux and ARM Windows.
       The earlier gap (no arm64 Linux binary in rc5) is closed.
     </p>
 

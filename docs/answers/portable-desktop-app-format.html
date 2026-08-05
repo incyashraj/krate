@@ -9,7 +9,7 @@
        once. Without it the same page is reachable at two hosts and search
        engines have to guess which one is real. -->
   <link rel="canonical" href="https://krate.tech/portable-desktop-app-format.html" />
-  <meta property="og:title" content="Krate — The cloud for AI-made software" />
+  <meta property="og:title" content="Krate: the cloud for AI-made software" />
   <meta property="og:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/" />
@@ -18,10 +18,10 @@
   <meta property="og:image:height" content="630" />
   <meta property="og:image:alt" content="Krate turns an AI request into one app file for Mac, Windows, and Linux." />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Krate — The cloud for AI-made software" />
+  <meta name="twitter:title" content="Krate: the cloud for AI-made software" />
   <meta name="twitter:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
   <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
-  <title>A portable desktop app format: one file for Mac, Windows, and Linux — Krate</title>
+  <title>Krate: the cloud for AI-made software | One app file for Mac, Windows, Linux</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="stylesheet" href="/krate.css" />
@@ -111,6 +111,79 @@
       line-height: 1.04;
     }
 
+    /* Two columns of platforms: what runs today, and what is next. Collapses
+       to one on a phone rather than squeezing two lists side by side. */
+    .platform-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2rem;
+      margin-top: 1.6rem;
+    }
+
+    .platform-col h3 {
+      margin: 0 0 .9rem;
+      font-size: 15px;
+      letter-spacing: .02em;
+    }
+
+    .platform-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: .6rem;
+    }
+
+    .platform-list li {
+      padding-left: 1.1rem;
+      position: relative;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+
+    .platform-list strong { color: var(--text, #e8ecf4); }
+
+    /* A tick for what ships, so the two columns read differently at a glance
+       without relying on colour alone. */
+    .platform-col:first-child .platform-list li::before {
+      content: "\2713";
+      position: absolute;
+      left: 0;
+      color: var(--cyan);
+    }
+
+    .platform-col:last-child .platform-list li::before {
+      content: "\2192";
+      position: absolute;
+      left: 0;
+      color: var(--muted);
+    }
+
+    .chip {
+      display: inline-block;
+      margin-left: .4rem;
+      padding: .05rem .45rem;
+      border-radius: 999px;
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      vertical-align: middle;
+    }
+
+    .chip-on {
+      background: rgba(108, 244, 215, .14);
+      border: 1px solid rgba(108, 244, 215, .35);
+      color: var(--cyan);
+    }
+
+    .platform-col .method {
+      margin-top: 1rem;
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--muted);
+    }
+
     .hero-lead {
       max-width: 540px;
       margin: 18px auto 38px;
@@ -146,7 +219,7 @@
       "name": "What kinds of apps fit this format?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "Small and medium desktop apps: calculators, converters, lists, notes, trackers, file tools, API clients, dashboards with charts, timers, simple 2D games, and 3D scenes. They open a window, keep settings, save state locally, fetch over HTTP, and open links. Local database storage is in progress and not ready yet. Games with native engines and system tools are out of scope."
+        "text": "Small and medium desktop apps: lists, notes, trackers, file tools, API clients, dashboards. They can open a window, keep settings, keep a database, stay signed in, send notifications, and open links. Games with native engines and system tools are out of scope."
       }
     }
   ]
@@ -164,15 +237,19 @@
       <button class="menu-button" id="menuButton" type="button" aria-expanded="false" aria-controls="navLinks" aria-label="Open navigation">☰</button>
 
       <div class="nav-links" id="navLinks">
-        <!-- Four links. Eight made a first-time visitor choose before they
-             knew what any of them meant. -->
+        <!-- Kept short. Eight made a first-time visitor choose before they
+             knew what any of them meant, and this list has drifted upward
+             before -- add one only by replacing one.
+             Reports is here because the numbers are the argument: a visitor
+             who doubts the claims should not have to scroll two thirds of the
+             page to find where they are proved. -->
         <a class="nav-link" href="/#start">Start</a>
-        <a class="nav-link" href="/cloud/">Store</a>
-        <a class="nav-link" href="/#faq">FAQ</a>
+        <a class="nav-link" href="/reports/">Reports</a>
+        <a class="nav-link" href="/cloud/">Cloud</a>
+        <a class="nav-link" href="/publish/">Publish</a>
         <a class="nav-link" href="/docs/">Docs</a>
-        <a class="nav-link" href="/docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
         <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
-        <a class="nav-cta" href="/docs/pages/make-an-app-with-ai.html">Make an app</a>
+        <a class="nav-cta" href="/#start">Make an app</a>
       </div>
     </div>
   </nav>
@@ -201,7 +278,7 @@
     <section class="section">
       <div class="wrap plain-block">
         <h2>What an app can actually do</h2>
-        <p>Enough for a real app. It can open a window with real controls, keep its own settings, save state locally so it reopens where you left off, fetch over HTTP from hosts you name, open links in your browser, and read and write folders you choose. Local database storage is in progress and not ready yet.</p>
+        <p>Enough for a real app. It can open a window with real controls, keep its own settings, keep its own database, stay signed in, send notifications, open links in your browser, read and write folders you choose, and reach hosts you name.</p>
         <p>Each of those is a separate permission the person sees before the app runs, so an app that keeps a list never sees your folders.</p>
       </div>
     </section>

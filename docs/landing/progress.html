@@ -48,7 +48,7 @@
       night on Mac, Windows, and Linux. This page is generated from the
       repository. If a number here is wrong, the code is wrong.
     </p>
-    <p class="generated">Generated 2026-08-05 from commit <code>66a25cf</code>.</p>
+    <p class="generated">Generated 2026-08-05 from commit <code>607c15b</code>.</p>
 
     <h2>Apps that exist and run</h2>
     <table>
@@ -56,23 +56,23 @@
         <tr><th>App</th><th class="num">Bytes</th><th class="num">vs Discord</th><th>What it is</th><th>Nightly</th></tr>
       </thead>
       <tbody>
-          <tr><td><code>eo2</code></td><td class="num">77,484</td><td class="num">5,827&times;</td><td>Image viewer, ported from 2,677 lines of desktop source</td><td>Yes</td></tr>
           <tr><td><code>grex</code></td><td class="num">54,084</td><td class="num">8,349&times;</td><td>Regex builder, ported from 5,396 lines</td><td>Yes</td></tr>
-          <tr><td><code>mdview</code></td><td class="num">51,963</td><td class="num">8,689&times;</td><td>Markdown viewer, ported from 4,863 lines</td><td>Yes</td></tr>
           <tr><td><code>envelope</code></td><td class="num">19,495</td><td class="num">23,161&times;</td><td>Budgeting app with a real database</td><td>Yes</td></tr>
+          <tr><td><code>mdview</code></td><td class="num">18,965</td><td class="num">23,808&times;</td><td>Markdown viewer, ported from 4,863 lines</td><td>Yes</td></tr>
           <tr><td><code>rssfwd</code></td><td class="num">18,084</td><td class="num">24,968&times;</td><td>Feed forwarder that talks to the internet</td><td>Not nightly</td></tr>
+          <tr><td><code>eo2</code></td><td class="num">18,021</td><td class="num">25,056&times;</td><td>Image viewer, ported from 2,677 lines of desktop source</td><td>Yes</td></tr>
           <tr><td><code>ddh</code></td><td class="num">17,778</td><td class="num">25,398&times;</td><td>Duplicate-file finder</td><td>Yes</td></tr>
+          <tr><td><code>savings</code></td><td class="num">15,227</td><td class="num">29,653&times;</td><td>Budget splitter with a window and saved state</td><td>Yes</td></tr>
           <tr><td><code>hexyl</code></td><td class="num">14,872</td><td class="num">30,361&times;</td><td>Hex viewer, byte-identical output to the original</td><td>Yes</td></tr>
-          <tr><td><code>savings</code></td><td class="num">13,791</td><td class="num">32,741&times;</td><td>Budget splitter with a window and saved state</td><td>Yes</td></tr>
-          <tr><td><code>bounce</code></td><td class="num">13,161</td><td class="num">34,308&times;</td><td>2D game: a playable Breakout with paddle, bricks, lives, a win</td><td>Yes</td></tr>
-          <tr><td><code>cubes</code></td><td class="num">12,762</td><td class="num">35,381&times;</td><td></td><td>Yes</td></tr>
-          <tr><td><code>chart</code></td><td class="num">11,713</td><td class="num">38,549&times;</td><td>Draws its own bar chart, no image files</td><td>Yes</td></tr>
+          <tr><td><code>bounce</code></td><td class="num">13,047</td><td class="num">34,608&times;</td><td>2D game: a playable Breakout with paddle, bricks, lives, a win</td><td>Yes</td></tr>
+          <tr><td><code>cubes</code></td><td class="num">12,880</td><td class="num">35,056&times;</td><td></td><td>Yes</td></tr>
+          <tr><td><code>chart</code></td><td class="num">11,455</td><td class="num">39,417&times;</td><td>Draws its own bar chart, no image files</td><td>Yes</td></tr>
       </tbody>
     </table>
     <p>
-      <strong>All 11 apps together: 305,187 bytes (298&nbsp;KB).</strong>
+      <strong>All 11 apps together: 213,908 bytes (209&nbsp;KB).</strong>
       Discord, which solves the same one-codebase-three-systems problem with a
-      browser inside the app, is 1,479.5&times; that on its own.
+      browser inside the app, is 2,110.8&times; that on its own.
     </p>
     <p class="generated">
       One app is not re-run nightly on purpose: <code>rssfwd</code> reaches the
@@ -82,15 +82,15 @@
 
     <h2>What the current public release can run</h2>
     <p>
-      All of them. The current release is <code>v0.1.0-rc16</code>. Drawing,
+      All of them. The current release is <code>v0.1.0-rc21</code>. Drawing,
       animation and sound arrived in <code>v0.1.0-rc5</code>, and each release is
       checked by downloading the published binary and running the 2D game, the
       chart and the sandbox escape test with it, not by trusting the build that
-      made it. rc16 also adds <code>krate run app.wasm --shoot frame.png</code>,
+      made it. Krate also has <code>krate run app.wasm --shoot frame.png</code>,
       which paints any app's window to a PNG on any machine with no display.
     </p>
     <p class="generated">
-      Six platforms ship as of rc16, including arm64 Linux and ARM Windows.
+      Six platforms ship, including arm64 Linux and ARM Windows.
       The earlier gap (no arm64 Linux binary in rc5) is closed.
     </p>
 
