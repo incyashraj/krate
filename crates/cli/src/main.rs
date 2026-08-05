@@ -2726,7 +2726,21 @@ fn publish_bundle(
         .ok()
         .map(|opened| opened.manifest().app.name.clone())
         .unwrap_or_default();
-    let identity = github_auth::current();
+    // The error message told people to run `krate publish` and be asked, so
+    // it had better ask. Signing in here rather than failing with advice is
+    // the difference between one command and a scavenger hunt.
+    let identity = match github_auth::current() {
+        Some(identity) => Some(identity),
+        None => {
+            println!("Publishing puts your name on the app, so it needs a GitHub sign-in.");
+            match github_auth::sign_in() {
+                Ok(identity) => Some(identity),
+                Err(err) => {
+                    anyhow::bail!("could not sign in: {err}");
+                }
+            }
+        }
+    };
     let mut request = ureq::post(&endpoint).set("Content-Type", "application/octet-stream");
     if !app_name.is_empty() {
         request = request.set("X-Krate-Name", &app_name);
