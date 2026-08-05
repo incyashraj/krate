@@ -567,9 +567,16 @@ impl Phase3GuiHost {
             }
         }
 
-        // Wheel input scrolls host-side: hit-test the topmost Scroll
-        // container under the cursor, clamp its offset to the content
-        // extent, and re-lower. The guest never sees wheel events.
+        // Wheel input goes two places. A `scroll` container scrolls host-side:
+        // hit-test the topmost one under the cursor, clamp its offset to the
+        // content extent, and re-lower, so a widget-tree app scrolls the way
+        // the platform does without writing any code.
+        //
+        // The guest also gets the event, always. An app that draws its own
+        // content has no scroll container to find, so if this were the only
+        // handling every canvas app would silently swallow every scroll -- and
+        // that is exactly the bug: a list of 32 items showing 6, with the rest
+        // permanently out of reach.
         for sample in dispatcher.drain_raw_wheel_input() {
             let Ok(Some(record)) = dispatcher.window(sample.window) else {
                 continue;
@@ -579,6 +586,15 @@ impl Phase3GuiHost {
             else {
                 continue;
             };
+            let _ = dispatcher.route_wheel_event(crate::phase3_ui::WheelRouteRequest {
+                window: sample.window,
+                viewport,
+                x: sample.x,
+                y: sample.y,
+                dx: sample.dx,
+                dy: sample.dy,
+                modifiers: sample.modifiers,
+            });
             let Ok(Some(tree)) = dispatcher.widget_tree(sample.window) else {
                 continue;
             };
@@ -903,6 +919,15 @@ fn event_to_wit(event: UiEvent) -> Option<ui::types::Event> {
             button: pointer.button.map(pointer_button_to_wit),
             pressed: pointer.pressed,
             modifiers: modifiers_to_wit(pointer.modifiers),
+        })),
+        UiEvent::Wheel(wheel) => Some(ui::types::Event::Wheel(ui::types::WheelEvent {
+            window: wheel.window.get(),
+            widget: wheel.widget.map(|widget| widget.get()),
+            x: wheel.x,
+            y: wheel.y,
+            dx: wheel.dx,
+            dy: wheel.dy,
+            modifiers: modifiers_to_wit(wheel.modifiers),
         })),
         UiEvent::Key(key) => Some(ui::types::Event::Key(ui::types::KeyEvent {
             window: key.window.get(),

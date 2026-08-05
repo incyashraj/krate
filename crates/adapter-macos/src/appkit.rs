@@ -2048,6 +2048,22 @@ mod platform {
         /// them. Main-thread only, like every other AppKit surface here.
         static PENDING_KEY_SAMPLES: std::cell::RefCell<Vec<krate_adapter_common::ui::RawKeySample>> =
             const { std::cell::RefCell::new(Vec::new()) };
+
+        /// Wheel and trackpad samples captured by the pump, waiting for the
+        /// runtime to drain them. Same main-thread rule as the key samples.
+        static PENDING_WHEEL_SAMPLES: std::cell::RefCell<
+            Vec<krate_adapter_common::ui::RawWheelSample>,
+        > = const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    /// Hand over every wheel sample captured since the last call.
+    ///
+    /// The macOS half of `drain_raw_wheel_input`. AppKit delivers scroll
+    /// events down the responder chain, and a drawn canvas is an NSImageView
+    /// that answers nothing, so a scroll over a Krate canvas used to reach
+    /// nobody. Reading them off the pump is the same trick the key path uses.
+    pub fn take_raw_wheel_samples() -> Vec<krate_adapter_common::ui::RawWheelSample> {
+        PENDING_WHEEL_SAMPLES.with(|slot| slot.borrow_mut().drain(..).collect())
     }
 
     /// Hand over every key sample captured since the last call.
@@ -2164,6 +2180,10 @@ mod platform {
                     let Some(event) = event else {
                         break;
                     };
+                    // Scroll is recorded and still sent on: unlike a keypress
+                    // it has no beeping responder to protect against, and a
+                    // lowered NSScrollView must keep scrolling itself.
+                    self.capture_wheel_event(&event);
                     if self.capture_key_event(&event) {
                         // A game key: recorded for the runtime, not dispatched.
                         // Sending it on would reach a responder chain where no
@@ -2179,6 +2199,78 @@ mod platform {
             });
 
             Ok(dispatched)
+        }
+
+        /// Record a scroll wheel or trackpad gesture as a raw sample.
+        ///
+        /// AppKit reports two shapes through one event type. A trackpad and a
+        /// Magic Mouse set `hasPreciseScrollingDeltas` and give deltas already
+        /// in points; a notched mouse wheel leaves it false and gives about 1
+        /// per notch, which is scaled to the same ~20 points per notch the
+        /// winit adapters use, so the same gesture moves a list the same
+        /// distance on every system.
+        ///
+        /// AppKit's positive `scrollingDeltaY` moves content down the screen,
+        /// which is the opposite of a growing scroll offset, so both axes are
+        /// negated. `isDirectionInvertedFromDevice` is macOS's "natural
+        /// scrolling" preference already applied, and inverting again puts the
+        /// person's own setting back the way they chose it.
+        fn capture_wheel_event(&self, event: &NSEvent) {
+            if event.r#type() != NSEventType::ScrollWheel {
+                return;
+            }
+            // Only this session's window. An event for another window would
+            // otherwise be attributed here and scroll the wrong content.
+            let Ok(mtm) = main_thread_marker() else {
+                return;
+            };
+            match event.window(mtm) {
+                Some(target) if target == self.window => {}
+                _ => return,
+            }
+
+            let scale = if event.hasPreciseScrollingDeltas() {
+                1.0
+            } else {
+                20.0
+            };
+            let mut dx = -(event.scrollingDeltaX() as f32) * scale;
+            let mut dy = -(event.scrollingDeltaY() as f32) * scale;
+            if event.isDirectionInvertedFromDevice() {
+                dx = -dx;
+                dy = -dy;
+            }
+            if dx.abs() <= f32::EPSILON && dy.abs() <= f32::EPSILON {
+                return;
+            }
+
+            // locationInWindow is in AppKit's bottom-up window coordinates;
+            // Krate logical coordinates run top-down from the content area's
+            // top-left, which is the space every app hit-tests in.
+            let point = event.locationInWindow();
+            let content_height = self.window.contentLayoutRect().size.height;
+            let x = point.x as f32;
+            let y = (content_height - point.y) as f32;
+
+            let flags = event.modifierFlags();
+            let modifiers = krate_adapter_common::ui::Modifiers {
+                shift: flags.contains(NSEventModifierFlags::Shift),
+                control: flags.contains(NSEventModifierFlags::Control),
+                alt: flags.contains(NSEventModifierFlags::Option),
+                meta: flags.contains(NSEventModifierFlags::Command),
+            };
+
+            PENDING_WHEEL_SAMPLES.with(|slot| {
+                slot.borrow_mut()
+                    .push(krate_adapter_common::ui::RawWheelSample {
+                        window: self.id,
+                        x,
+                        y,
+                        dx,
+                        dy,
+                        modifiers,
+                    });
+            });
         }
 
         /// Record a key event as a raw sample, unless a native text control
@@ -2507,6 +2599,12 @@ mod platform {
         Vec::new()
     }
 
+    /// Wheel capture is a macOS-AppKit concern, for the same reason as keys
+    /// above. Present so the unconditional re-export resolves everywhere.
+    pub fn take_raw_wheel_samples() -> Vec<krate_adapter_common::ui::RawWheelSample> {
+        Vec::new()
+    }
+
     /// Placeholder returned only on macOS builds.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct AppKitWindowPrototype {
@@ -2703,6 +2801,7 @@ mod platform {
 }
 
 pub use platform::take_raw_key_samples;
+pub use platform::take_raw_wheel_samples;
 pub use platform::AppKitDrawViewSurface;
 pub use platform::AppKitWidgetSurface;
 pub use platform::AppKitWindowNativeDelegate;

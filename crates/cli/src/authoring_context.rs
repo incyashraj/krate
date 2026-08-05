@@ -302,10 +302,26 @@ The bound is only ever correct on the `quick` path, where nobody is watching:\n\
 canvas: a drawn button is only clickable because you compare the pointer \
 position to the same rectangle you filled. Keep the layout in one place so the \
 drawing and the hit-testing cannot disagree.\n\n\
-**Content taller than the window is currently unreachable.** There is no wheel \
-or scroll event in this version, so a canvas app cannot scroll. Design for what \
-fits, and say so plainly in your report rather than drawing rows nobody can \
-reach.\n\n\
+**Make content taller than the window scroll.** A list that outgrows the window \
+is the normal case, not an edge case, and an app that draws six of thirty-two \
+rows and a \"+ 26 more\" label has lost the other twenty-six for good. The \
+runtime sends `Event::Wheel(wheel-event)` for a mouse wheel, a trackpad, or a \
+scroll gesture, with `dx` and `dy` in logical pixels (positive `dy` scrolls \
+down, further into the list) already normalized across all three systems. Keep \
+one scroll offset, add the delta, clamp it, and redraw:\n\n\
+\u{20}\u{20}\u{20}\u{20}Some(types::Event::Wheel(w)) => {\n\
+\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}// content_height is the height of everything you would draw;\n\
+\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}// view_height is the region you draw it into.\n\
+\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}let max = (content_height - view_height).max(0.0);\n\
+\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}scroll = (scroll + w.dy).clamp(0.0, max);\n\
+\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}dirty = true;\n\
+\u{20}\u{20}\u{20}\u{20}}\n\n\
+Then subtract `scroll` from every row's y when you draw it, and **subtract it \
+again when you hit-test** -- the two must use the same number or clicks land on \
+the wrong row the moment somebody scrolls. Skip rows that fall outside the \
+visible region rather than drawing them over your header: there is no clip \
+rectangle yet, so anything you draw above the list region lands on top of it. \
+`apps/krate-checklist` scrolls this way and is the one to copy.\n\n\
 ## Packing: the entry name changes\n\n\
 Your `manifest.toml` points `entry` at the build output, which is right for \
 building and for `check-app`. Inside a packed `.krate` the component is stored \

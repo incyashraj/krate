@@ -98,6 +98,10 @@ const MIN_CANVAS_H: f32 = 260.0;
 struct Layout {
     width: f32,
     height: f32,
+    /// How far the list is scrolled, in pixels from the top. Every row rect is
+    /// shifted by this, so drawing and hit-testing move together and a row you
+    /// can see is a row you can click.
+    scroll: f32,
     margin: f32,
     content_w: f32,
     /// Title baseline and the two lines under it.
@@ -184,6 +188,10 @@ impl Layout {
         Self {
             width,
             height,
+            // A fresh layout starts unscrolled; the caller applies the current
+            // offset with `scrolled_by` so the scroll position survives a
+            // resize and a redraw.
+            scroll: 0.0,
             margin,
             content_w,
             title_size,
@@ -207,7 +215,7 @@ impl Layout {
     fn row(&self, index: usize) -> Rect {
         Rect {
             x: self.margin,
-            y: self.list_top + (index as f32) * (self.row_h + self.row_gap),
+            y: self.list_top + (index as f32) * (self.row_h + self.row_gap) - self.scroll,
             w: self.content_w,
             h: self.row_h,
         }
@@ -225,6 +233,41 @@ impl Layout {
     }
 
     /// How many rows this list actually shows: fewer than fit, if it is short.
+    /// The same layout, scrolled. Clamped to the real content, so a flick past
+    /// the end springs back to the last row rather than showing empty space.
+    fn scrolled_by(mut self, offset: f32, len: usize) -> Self {
+        self.scroll = offset.clamp(0.0, self.max_scroll(len));
+        self
+    }
+
+    /// How far this list can scroll before the last row sits at the bottom of
+    /// the visible strip. Zero when everything already fits.
+    fn max_scroll(&self, len: usize) -> f32 {
+        let step = self.row_h + self.row_gap;
+        let content = (len as f32) * step;
+        let visible = (self.visible_rows as f32) * step;
+        (content - visible).max(0.0)
+    }
+
+    /// Rows that could be on screen at the current offset. With scrolling the
+    /// list is no longer capped at `visible_rows`: every row is reachable, and
+    /// the ones outside the strip are skipped when drawing.
+    fn first_visible(&self, len: usize) -> usize {
+        let step = self.row_h + self.row_gap;
+        if step <= 0.0 {
+            return 0;
+        }
+        let first = (self.scroll / step) as usize;
+        first.min(len.saturating_sub(1))
+    }
+
+    /// The last row worth drawing or hit-testing at the current offset: one
+    /// past the visible strip, so a partly-scrolled row is still handled.
+    fn last_visible(&self, len: usize) -> usize {
+        let first = self.first_visible(len);
+        (first + self.visible_rows + 1).min(len)
+    }
+
     fn shown_rows(&self, len: usize) -> usize {
         if len < self.visible_rows {
             len
@@ -235,8 +278,15 @@ impl Layout {
 
     /// Which row, if any, contains this point.
     fn hit_row(&self, len: usize, x: f32, y: f32) -> Option<usize> {
-        let shown = self.shown_rows(len);
-        let mut i = 0usize;
+        // Scan the scrolled window, not the first N rows: with a scroll offset
+        // the row under the pointer may be row 20.
+        let shown = self.last_visible(len);
+        let mut i = self.first_visible(len);
+        // A row scrolled above the list must not be clickable through the
+        // header, so reject anything above the strip before testing.
+        if y < self.list_top {
+            return None;
+        }
         while i < shown {
             if self.row(i).contains(x, y) {
                 return Some(i);
@@ -464,9 +514,15 @@ const INK_DONE: gfx::Color = gfx::Color { r: 0.435, g: 0.475, b: 0.561, a: 1.0 }
 /// This is the shape to copy: read the size every frame rather than trusting a
 /// constant, build one `Layout` from it, and hand that same `Layout` to both
 /// the drawing below and the hit-testing in the event loop.
-fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Result<Layout, gfx::GfxError> {
+fn draw(
+    canvas: u64,
+    list: &Checklist,
+    draft: &Draft,
+    field_focus: bool,
+    scroll: f32,
+) -> Result<Layout, gfx::GfxError> {
     let size = canvas2d::canvas_size(canvas)?;
-    let layout = Layout::for_size(size.width, size.height);
+    let layout = Layout::for_size(size.width, size.height).scrolled_by(scroll, list.len);
     draw_with(canvas, &layout, list, draft, field_focus)?;
     Ok(layout)
 }
@@ -520,26 +576,49 @@ fn draw_with(
     }
 
     // ---- item rows as cards ----
-    let shown = layout.shown_rows(list.len);
-    let mut i = 0usize;
-    while i < shown {
+    // Draw the scrolled window, skipping anything above the strip so a row
+    // scrolled off the top cannot paint over the header. There is no clip
+    // rectangle in this version (K-004), so the bounds are checked by hand.
+    let mut i = layout.first_visible(list.len);
+    let last = layout.last_visible(list.len);
+    while i < last {
         if let Some(item) = list.items.get(i) {
-            if item.used {
+            if item.used && layout.row(i).y + layout.row_h > layout.list_top {
                 draw_row(canvas, layout, i, item, accent)?;
             }
         }
         i += 1;
     }
-    if list.len > shown {
-        let mut mbuf = [0u8; 24];
-        let more = more_label((list.len - shown) as u32, &mut mbuf);
-        if let Ok(txt) = core::str::from_utf8(more) {
-            let y = layout.list_top + (shown as f32) * (layout.row_h + layout.row_gap) + 4.0;
-            // Only if it fits above the input strip; a cramped window drops it
-            // rather than painting it over the field.
-            if y < layout.field.y - 4.0 {
-                draw_text(canvas, txt, layout.margin, y, 13.0, INK_DIM)?;
-            }
+    // A scrollbar instead of a "+ N more" label. The label used to be the only
+    // sign that rows existed below the fold, and it was a dead end -- there was
+    // no way to reach them. Now the thumb says how much list there is and where
+    // you are in it.
+    let max_scroll = layout.max_scroll(list.len);
+    if max_scroll > 0.0 {
+        let track_x = layout.margin + layout.content_w - 5.0;
+        let track_y = layout.list_top;
+        let track_h = (layout.field.y - 12.0 - track_y).max(0.0);
+        if track_h > 20.0 {
+            let step = layout.row_h + layout.row_gap;
+            let content = (list.len as f32) * step;
+            let frac = (track_h / content).clamp(0.08, 1.0);
+            let thumb_h = (track_h * frac).max(24.0);
+            let travel = track_h - thumb_h;
+            let pos = if max_scroll > 0.0 {
+                (layout.scroll / max_scroll).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
+            rounded_rect(canvas, track_x, track_y, 4.0, track_h, 2.0, color(0.16, 0.18, 0.24, 1.0))?;
+            rounded_rect(
+                canvas,
+                track_x,
+                track_y + travel * pos,
+                4.0,
+                thumb_h,
+                2.0,
+                color(0.35, 0.39, 0.49, 1.0),
+            )?;
         }
     }
 
@@ -902,7 +981,7 @@ impl bindings::Guest for Component {
             if save(&list) {
                 saved_any = true;
             }
-            let _ = draw(canvas, &list, &draft, false);
+            let _ = draw(canvas, &list, &draft, false, 0.0);
             report(&list, saved_any);
             let _ = window::close(win);
             return 0;
@@ -935,7 +1014,7 @@ impl bindings::Guest for Component {
                 while drain < 8 && events::wait(Some(1)).is_some() {
                     drain += 1;
                 }
-                let Ok(layout) = draw(canvas, &list, &draft, false) else {
+                let Ok(layout) = draw(canvas, &list, &draft, false, 0.0) else {
                     all_ok = false;
                     continue;
                 };
@@ -981,7 +1060,10 @@ impl bindings::Guest for Component {
         // The layout the last frame was drawn with. Clicks are tested against
         // exactly this, so a click can only ever be judged against the picture
         // the person is actually looking at.
-        let mut layout = match draw(canvas, &list, &draft, field_focus) {
+        // How far the list is scrolled. Lives here so it survives redraws and
+        // resizes; `scrolled_by` clamps it to whatever the new size can show.
+        let mut scroll = 0.0f32;
+        let mut layout = match draw(canvas, &list, &draft, field_focus, scroll) {
             Ok(layout) => layout,
             Err(_) => {
                 let _ = window::close(win);
@@ -1035,6 +1117,14 @@ impl bindings::Guest for Component {
                 // Redrawing recomputes the layout from the canvas's new size,
                 // and the hit-testing above follows automatically because it
                 // reads the same `layout` the frame was drawn with.
+                Some(types::Event::Wheel(w)) => {
+                    // Positive dy scrolls down, matching the direction the
+                    // offset grows. The clamp lives in `scrolled_by`, so a
+                    // flick past either end springs back instead of showing
+                    // blank space.
+                    scroll = (scroll + w.dy).clamp(0.0, layout.max_scroll(list.len));
+                    dirty = true;
+                }
                 Some(types::Event::Resized(_)) | Some(types::Event::RedrawRequested(_)) => {
                     dirty = true;
                 }
@@ -1071,7 +1161,7 @@ impl bindings::Guest for Component {
                 _ => {}
             }
             if dirty {
-                if let Ok(fresh) = draw(canvas, &list, &draft, field_focus) {
+                if let Ok(fresh) = draw(canvas, &list, &draft, field_focus, scroll) {
                     layout = fresh;
                 }
             }

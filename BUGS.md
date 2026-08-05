@@ -71,20 +71,38 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
-### K-001 — Canvas apps cannot scroll: there is no scroll event
-Status:   claimed
-Owner:    W12
-Severity: blocker
-Class:    runtime-hole
-Found:    2026-08-05, lead, auditing the WIT against a user report
-Evidence: `wit/krate/phase3/deps/ui/ui.wit` defines ten event variants
-          (close-requested, resized, redraw-requested, pointer, key, text-input,
-          text-changed, action, focus-changed, theme-changed). No wheel, no
-          scroll delta. `scroll` appears once as a widget kind, unrelated.
-          A user's habit tracker held 32 items, showed 6, and the rest were
-          permanently unreachable behind a "+ N more" label.
-Fix:      Add a wheel event to the WIT, plumb through host and all three
-          adapters, use it in krate-checklist.
+### K-014 — This machine is out of disk, and cargo cannot finish a test run
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    environment
+Found:    2026-08-05, W12, running cargo test at the end of the K-001 work
+Evidence: `df -h /` reports 159Mi available of 460Gi (99% full). Tool calls
+          start failing with "ENOSPC: no space left on device". The bulk is
+          build output: `/Users/yashrajpardeshi/Projects/layer6x6/target` is
+          87G, and each agent worktree adds its own (mine is 7.8G).
+Fix:      Not a product defect. `cargo clean` the shared checkout and the
+          finished worktrees. Recorded so a later ENOSPC failure is not
+          mistaken for a Krate bug, and because several agents building in
+          parallel worktrees is what fills the disk -- the cost is structural,
+          not a one-off.
+
+### K-013 — apps/krate-bigscroll has no manifest, so it is not a runnable app
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-05, W12, running check-app across apps while verifying K-001
+Evidence: `krate check-app apps/krate-bigscroll` prints
+          "FAILED at layout / apps/krate-bigscroll is not an app directory:
+          manifest.toml is missing". The directory holds Cargo.toml, Cargo.lock
+          and src/ and has never had a manifest (`git log -- apps/krate-bigscroll`
+          shows only 1d799c1, a workspace-root change). Pre-existing, unrelated
+          to the scroll work.
+Fix:      Add a manifest.toml so it is a real app, or delete the directory. As
+          it stands it is a half-app that fails any sweep over `apps/`, and its
+          name makes it look like the scrolling reference when it is not --
+          `apps/krate-checklist` is.
 
 ### K-002 — No text measurement, so every app guesses text width
 Status:   fixed-pending-merge
@@ -121,8 +139,20 @@ Severity: serious
 Class:    runtime-hole
 Found:    2026-08-05, lead, capability audit
 Evidence: one mention of "clip" in the whole of `gfx.wit`, not a clip rect.
-Fix:      A clip rectangle on canvas2d. Travels with K-001; scrolling is not
-          usable without it.
+          Confirmed while fixing K-001: with the wheel event working, a row
+          scrolled above the list region paints straight over the title, and a
+          row at the bottom edge shows its rounded corners beside the narrower
+          text field. `apps/krate-checklist` works around both by hand -- it
+          skips any row above the region and repaints a background band across
+          the input strip before drawing it. That works and it is not a fix:
+          every scrolling app has to reinvent it, and an app that draws rows of
+          varying height cannot.
+Fix:      A clip rectangle on canvas2d. Left unclaimed by W12: the scroll work
+          shipped without it by working around it in the app, so this is a real
+          remaining hole rather than something already covered. When it lands,
+          delete the hand-rolled band and the strict top-edge test in
+          `apps/krate-checklist` (`row_visible`, and the `fill` above the input
+          strip in `draw`) -- both exist only because there is no clip rect.
 
 ### K-005 — No frame timing, so animation polls a timeout and hopes
 Status:   open
@@ -366,7 +396,33 @@ Fix:      Either put a per-app sandbox data dir outside the source tree, or
 
 ## Fixed
 
-### K-008 — MCP reported success for an app nobody asked for
+### K-001 — Canvas apps cannot scroll: there is no scroll event
+Status:   fixed
+Owner:    W12
+Severity: blocker
+Class:    runtime-hole
+Found:    2026-08-05, lead, auditing the WIT against a user report
+Evidence: `wit/krate/phase3/deps/ui/ui.wit` defined ten event variants
+          (close-requested, resized, redraw-requested, pointer, key, text-input,
+          text-changed, action, focus-changed, theme-changed). No wheel, no
+          scroll delta. `scroll` appeared once as a widget kind, unrelated.
+          A user's habit tracker held 32 items, showed 6, and the rest were
+          permanently unreachable behind a "+ N more" label.
+          The runtime already captured wheel input on Linux and Windows and
+          spent it entirely host-side on `scroll` widget containers -- a canvas
+          app has no such container, so every scroll was silently dropped.
+          macOS captured none at all.
+Fix:      COMMIT_PLACEHOLDER. An eleventh event variant, `wheel(wheel-event)`,
+          shaped like `pointer-event` (window, widget, x, y, modifiers) plus
+          `dx`/`dy` in logical pixels, positive-down and positive-right, with a
+          notch normalized to ~20px so one gesture moves a list the same
+          distance on all three systems.
+Proof:    `krate check-app apps/krate-checklist` prints OK, and the app's
+          verification run prints `items:20 / saved:yes / scroll:ok 120` --
+          `scroll:ok` means a wheel delta moved the list and clamped at both
+          ends. `krate run --shoot` renders the list starting at item 3 with a
+          proportional scrollbar, where it used to render six items and
+          "+ 14 more".
 Status:   fixed
 Owner:    lead
 Severity: blocker

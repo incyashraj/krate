@@ -9,8 +9,8 @@ use krate_adapter_common::{
     ui::{
         DraftUiAdapter, KeyEvent, NativeWindowHandle, PointerEvent, RawPointerSample,
         TextChangedEvent, TextInputEvent, Theme, UiAdapter, UiAdapterError, UiAdapterInfo, UiEvent,
-        UiEventLoopTick, WidgetId, WidgetNode, WidgetPlacement, WidgetTree, WindowAdapter,
-        WindowBackendKind, WindowId, WindowOptions, WindowRecord, WindowSize,
+        UiEventLoopTick, WheelEvent, WidgetId, WidgetNode, WidgetPlacement, WidgetTree,
+        WindowAdapter, WindowBackendKind, WindowId, WindowOptions, WindowRecord, WindowSize,
         WinitWindowEventCollector, WinitWindowEventLoopStep, WinitWindowEventLoopStepReport,
         WinitWindowNativeEvent, WinitWindowSession, WinitWindowSnapshot,
     },
@@ -335,6 +335,10 @@ impl UiAdapter for LinuxUiAdapter {
         self.draft.queue_pointer_event(event)
     }
 
+    fn queue_wheel_event(&self, event: WheelEvent) -> Result<(), UiAdapterError> {
+        self.draft.queue_wheel_event(event)
+    }
+
     fn queue_key_event(&self, event: KeyEvent) -> Result<(), UiAdapterError> {
         self.draft.queue_key_event(event)
     }
@@ -501,6 +505,10 @@ impl UiAdapter for LinuxWinitPrototypeUiAdapter {
 
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError> {
         self.headless.queue_pointer_event(event)
+    }
+
+    fn queue_wheel_event(&self, event: WheelEvent) -> Result<(), UiAdapterError> {
+        self.headless.queue_wheel_event(event)
     }
 
     fn queue_key_event(&self, event: KeyEvent) -> Result<(), UiAdapterError> {

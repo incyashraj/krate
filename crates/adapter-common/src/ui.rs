@@ -156,6 +156,21 @@ pub struct PointerEvent {
     pub modifiers: Modifiers,
 }
 
+/// Wheel or trackpad scroll event after runtime routing.
+///
+/// Deltas are logical pixels, positive-down and positive-right, already
+/// normalized by the backend from whatever the platform reported.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WheelEvent {
+    pub window: WindowId,
+    pub widget: Option<WidgetId>,
+    pub x: f32,
+    pub y: f32,
+    pub dx: f32,
+    pub dy: f32,
+    pub modifiers: Modifiers,
+}
+
 /// Keyboard input event after runtime focus routing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyEvent {
@@ -690,6 +705,7 @@ pub enum UiEvent {
         widget: WidgetId,
     },
     Pointer(PointerEvent),
+    Wheel(WheelEvent),
     Key(KeyEvent),
     TextInput(TextInputEvent),
     TextChanged(TextChangedEvent),
@@ -1200,8 +1216,9 @@ pub struct RawKeySample {
 ///
 /// Deltas are in logical pixels (line-based wheels are pre-scaled by the
 /// backend). The runtime hit-tests the position against Scroll
-/// containers and adjusts host-side scroll offsets; raw samples never
-/// enter the UI event queue.
+/// containers and adjusts host-side scroll offsets, and also queues a
+/// portable `Wheel` event so an app that draws its own content can scroll
+/// itself. Raw samples never enter the UI event queue directly.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RawWheelSample {
     /// Window the sample belongs to.
@@ -1210,8 +1227,15 @@ pub struct RawWheelSample {
     pub x: f32,
     /// Cursor Y in logical pixels at wheel time.
     pub y: f32,
+    /// Horizontal scroll delta in logical pixels (positive scrolls right).
+    pub dx: f32,
     /// Vertical scroll delta in logical pixels (positive scrolls down).
     pub dy: f32,
+    /// Modifier state while the wheel moved.
+    ///
+    /// Carried rather than dropped because ctrl-scroll is zoom on every
+    /// desktop, and an app cannot tell a zoom from a scroll without it.
+    pub modifiers: Modifiers,
 }
 
 pub trait UiAdapter: WindowAdapter {
@@ -1235,6 +1259,13 @@ pub trait UiAdapter: WindowAdapter {
 
     /// Queue a routed pointer event.
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError>;
+
+    /// Queue a routed wheel event.
+    ///
+    /// Required rather than defaulted: a default would let an adapter compile
+    /// while silently swallowing every scroll, which is the exact failure this
+    /// event exists to end.
+    fn queue_wheel_event(&self, event: WheelEvent) -> Result<(), UiAdapterError>;
 
     /// Queue a routed key event.
     fn queue_key_event(&self, event: KeyEvent) -> Result<(), UiAdapterError>;
@@ -1461,6 +1492,10 @@ impl UiAdapter for DraftUiAdapter {
 
     fn queue_pointer_event(&self, event: PointerEvent) -> Result<(), UiAdapterError> {
         self.registry()?.queue_pointer_event(event)
+    }
+
+    fn queue_wheel_event(&self, event: WheelEvent) -> Result<(), UiAdapterError> {
+        self.registry()?.queue_wheel_event(event)
     }
 
     fn queue_key_event(&self, event: KeyEvent) -> Result<(), UiAdapterError> {
@@ -1773,6 +1808,13 @@ impl DraftWindowRegistry {
     pub fn queue_pointer_event(&mut self, event: PointerEvent) -> Result<(), UiAdapterError> {
         self.validate_event_target(event.window, event.widget)?;
         self.events.push_back(UiEvent::Pointer(event));
+        Ok(())
+    }
+
+    /// Queue a wheel event after runtime hit testing has assigned a target.
+    pub fn queue_wheel_event(&mut self, event: WheelEvent) -> Result<(), UiAdapterError> {
+        self.validate_event_target(event.window, event.widget)?;
+        self.events.push_back(UiEvent::Wheel(event));
         Ok(())
     }
 
