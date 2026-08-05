@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Apps | Krate</title>
+  <meta name="description" content="Apps people have published to Krate. Every one runs in a sandbox and tells you what it wants before it starts." />
+  <link rel="stylesheet" href="/krate.css" />
+  <link rel="icon" href="/krate-favicon.png" />
+  <style>
+    .wrap { max-width: 780px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+    .masthead { display: flex; align-items: center; gap: .6rem; margin-bottom: 2.4rem; }
+    .masthead img { width: 30px; height: 30px; border-radius: 7px; }
+    .masthead a { color: var(--text); text-decoration: none; font-weight: 600; letter-spacing: -.01em; }
+    .masthead nav { margin-left: auto; display: flex; gap: 1.1rem; font-size: .9rem; }
+    .masthead nav a { color: var(--muted); font-weight: 400; }
+    .masthead nav a:hover { color: var(--text); }
+
+    h1 { margin: 0 0 .35rem; font-size: 1.9rem; letter-spacing: -.02em; }
+    .lede { color: var(--muted); margin: 0 0 2.2rem; line-height: 1.6; max-width: 46rem; }
+
+    .app {
+      border: 1px solid var(--line); border-radius: 13px;
+      background: var(--panel); padding: 1.15rem 1.3rem; margin-bottom: .9rem;
+    }
+    .app-top { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+    .app-name { font-weight: 600; color: var(--text); font-size: 1.02rem; }
+    .app-size { color: var(--quiet); font-size: .82rem; margin-left: auto; }
+    .app-desc { color: var(--muted); margin: .45rem 0 .8rem; line-height: 1.55; }
+    .app-by { display: flex; align-items: center; gap: .45rem; font-size: .85rem; color: var(--quiet); }
+    .app-by img { width: 20px; height: 20px; border-radius: 50%; }
+    .app-by a { color: var(--muted); text-decoration: none; }
+    .app-by a:hover { color: var(--text); }
+
+    .run {
+      margin-top: .9rem; display: flex; gap: .5rem; align-items: center;
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 8px; padding: .5rem .65rem;
+    }
+    .run code {
+      font-family: var(--mono); font-size: .78rem; color: var(--blue-soft);
+      overflow-x: auto; white-space: nowrap; flex: 1;
+    }
+    .run button {
+      background: transparent; border: 1px solid var(--line-strong);
+      color: var(--muted); border-radius: 6px; padding: .25rem .55rem;
+      font: inherit; font-size: .76rem; cursor: pointer; flex-shrink: 0;
+    }
+    .run button:hover { color: var(--text); border-color: var(--blue); }
+
+    .empty { color: var(--quiet); text-align: center; padding: 3rem 1rem; line-height: 1.7; }
+    .empty a { color: var(--blue-soft); }
+    .note { color: var(--quiet); font-size: .87rem; line-height: 1.65; margin-top: 2.5rem; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="masthead">
+      <img src="/krate-glyph-blue.png" alt="" />
+      <a href="/">Krate</a>
+      <nav>
+        <a href="/apps/">Apps</a>
+        <a href="/publish/">Publish</a>
+        <a href="/docs/">Docs</a>
+      </nav>
+    </header>
+
+    <h1>Apps people have published</h1>
+    <p class="lede">
+      Every one is a single file that runs in a sandbox. It tells you what it
+      wants &mdash; the network, a folder, the microphone &mdash; before it
+      starts, and it gets nothing you have not agreed to.
+    </p>
+
+    <div id="list"></div>
+
+    <p class="note">
+      Made something? <a href="/publish/">Publish it</a>, or run
+      <code>krate publish yourapp.krate</code>.
+    </p>
+  </main>
+
+  <script>
+    const HUB = "https://hub.krate.tech";
+
+    function esc(value) {
+      return String(value).replace(/[&<>"]/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
+
+    function kb(bytes) {
+      return bytes < 1024 ? bytes + " B"
+        : bytes < 1048576 ? Math.round(bytes / 1024) + " KB"
+        : (bytes / 1048576).toFixed(1) + " MB";
+    }
+
+    // "3 days ago" reads better than a timestamp for something that is mostly
+    // about whether anyone is still publishing.
+    function ago(seconds) {
+      const delta = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
+      if (delta < 3600) return Math.max(1, Math.floor(delta / 60)) + "m ago";
+      if (delta < 86400) return Math.floor(delta / 3600) + "h ago";
+      if (delta < 2592000) return Math.floor(delta / 86400) + "d ago";
+      return new Date(seconds * 1000).toLocaleDateString();
+    }
+
+    (async () => {
+      const list = document.getElementById("list");
+      try {
+        const { apps } = await fetch(HUB + "/apps").then((r) => r.json());
+        if (!apps.length) {
+          list.innerHTML =
+            '<p class="empty">Nothing published yet.<br />' +
+            '<a href="/publish/">Be the first</a>.</p>';
+          return;
+        }
+        list.innerHTML = apps
+          .map((app) => {
+            const m = app.meta || {};
+            const command = "krate run " + app.url;
+            return `
+              <article class="app">
+                <div class="app-top">
+                  <span class="app-name">${esc(m.name || "Untitled app")}</span>
+                  <span class="app-size">${kb(m.size || 0)} &middot; ${ago(m.published || 0)}</span>
+                </div>
+                ${m.description ? `<p class="app-desc">${esc(m.description)}</p>` : ""}
+                <div class="app-by">
+                  ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="" />` : ""}
+                  <span>by <a href="${esc(m.author_url || "#")}" rel="noopener">${esc(m.author || "anonymous")}</a></span>
+                </div>
+                <div class="run">
+                  <code>${esc(command)}</code>
+                  <button data-copy="${esc(command)}">Copy</button>
+                </div>
+              </article>`;
+          })
+          .join("");
+
+        list.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-copy]");
+          if (!button) return;
+          navigator.clipboard.writeText(button.dataset.copy);
+          const was = button.textContent;
+          button.textContent = "Copied";
+          setTimeout(() => (button.textContent = was), 1200);
+        });
+      } catch (err) {
+        list.innerHTML =
+          '<p class="empty">Could not reach the hub just now.<br />' +
+          "Try again in a moment.</p>";
+      }
+    })();
+  </script>
+</body>
+</html>

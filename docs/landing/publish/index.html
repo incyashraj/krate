@@ -6,8 +6,15 @@
   <title>Publish an app | Krate</title>
   <meta name="description" content="Sign in with GitHub, choose a .krate file, and publish it so anyone can run it." />
   <link rel="stylesheet" href="/krate.css" />
+  <link rel="icon" href="/krate-favicon.png" />
   <style>
-    .wrap { max-width: 660px; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+    .wrap { max-width: 660px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+    .masthead { display: flex; align-items: center; gap: .6rem; margin-bottom: 2.4rem; }
+    .masthead img { width: 30px; height: 30px; border-radius: 7px; }
+    .masthead > a { color: var(--text); text-decoration: none; font-weight: 600; letter-spacing: -.01em; }
+    .masthead nav { margin-left: auto; display: flex; gap: 1.1rem; font-size: .9rem; }
+    .masthead nav a { color: var(--muted); text-decoration: none; font-weight: 400; }
+    .masthead nav a:hover { color: var(--text); }
     h1 { margin: 0 0 .35rem; font-size: 1.9rem; letter-spacing: -.02em; }
     .lede { color: var(--muted); margin: 0 0 2.5rem; line-height: 1.6; }
 
@@ -84,10 +91,33 @@
     .result a { color: var(--blue-soft); word-break: break-all; }
     .error { color: var(--yellow); font-size: .9rem; margin-top: .7rem; }
     .filename { color: var(--text); font-family: var(--mono); font-size: .9rem; }
+    .muted { color: var(--quiet); }
+    .perms { margin-top: .9rem; border-top: 1px solid var(--line); padding-top: .8rem; }
+    .perms-title {
+      font-size: .74rem; text-transform: uppercase; letter-spacing: .08em;
+      color: var(--quiet); margin-bottom: .5rem;
+    }
+    .perm { display: flex; gap: .7rem; align-items: baseline; margin-bottom: .35rem; }
+    .perm code {
+      font-family: var(--mono); font-size: .78rem; color: var(--blue-soft);
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 5px; padding: .1rem .4rem; white-space: nowrap;
+    }
+    .perm span { color: var(--muted); font-size: .84rem; line-height: 1.4; }
   </style>
 </head>
 <body>
   <main class="wrap">
+    <header class="masthead">
+      <img src="/krate-glyph-blue.png" alt="" />
+      <a href="/">Krate</a>
+      <nav>
+        <a href="/apps/">Apps</a>
+        <a href="/publish/">Publish</a>
+        <a href="/docs/">Docs</a>
+      </nav>
+    </header>
+
     <h1>Publish an app</h1>
     <p class="lede">
       Put a <code>.krate</code> somewhere anyone can run it. You need a file you
@@ -246,7 +276,7 @@
       if (e.target.files[0]) takeFile(e.target.files[0]);
     });
 
-    function takeFile(chosen) {
+    async function takeFile(chosen) {
       if (!chosen.name.endsWith(".krate")) {
         $("error").hidden = false;
         $("error").textContent = "That is not a .krate file.";
@@ -254,11 +284,96 @@
       }
       file = chosen;
       $("error").hidden = true;
+
+      // Everything shown here is read out of the bundle rather than asked of
+      // the person. The app already knows its own name, and its manifest
+      // already explains every permission in plain words -- asking someone to
+      // retype what the file states would only invite them to state it wrongly.
+      const found = await inspect(chosen);
+      let html =
+        '<span class="filename">' + esc(found.name || chosen.name) + "</span>" +
+        ' <span class="muted">&middot; ' + kb(chosen.size) + "</span>";
+      if (found.caps.length) {
+        html +=
+          '<div class="perms"><div class="perms-title">What it asks for</div>' +
+          found.caps
+            .map((c) =>
+              '<div class="perm"><code>' + esc(c.cap) + "</code>" +
+              (c.rationale ? "<span>" + esc(c.rationale) + "</span>" : "") +
+              "</div>")
+            .join("") +
+          "</div>";
+      } else if (found.error) {
+        html += '<div class="perms"><span class="muted">' + esc(found.error) + "</span></div>";
+      }
       $("fileinfo").hidden = false;
-      $("fileinfo").innerHTML =
-        '<span class="filename">' + chosen.name + "</span> &middot; " +
-        Math.max(1, Math.round(chosen.size / 1024)) + " KB";
+      $("fileinfo").innerHTML = html;
       refresh();
+    }
+
+    function kb(bytes) {
+      return bytes < 1024 ? bytes + " B"
+        : bytes < 1048576 ? Math.round(bytes / 1024) + " KB"
+        : (bytes / 1048576).toFixed(1) + " MB";
+    }
+
+    function esc(value) {
+      return String(value).replace(/[&<>"]/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
+
+    // Pull the manifest out of a .krate without a zip library. A bundle is a
+    // zip, so the manifest is found by scanning for its local file header;
+    // Krate writes entries deflated, and DecompressionStream handles that in
+    // every browser that can run this page.
+    async function inspect(chosen) {
+      const out = { name: "", caps: [], error: "" };
+      try {
+        const bytes = new Uint8Array(await chosen.arrayBuffer());
+        const toml = await readEntry(bytes, "manifest.toml");
+        if (!toml) {
+          out.error = "could not read the manifest inside this bundle";
+          return out;
+        }
+        const name = toml.match(/^\s*name\s*=\s*"([^"]*)"/m);
+        if (name) out.name = name[1];
+        for (const block of toml.split(/\[\[capabilities\]\]/).slice(1)) {
+          const cap = block.match(/^\s*cap\s*=\s*"([^"]*)"/m);
+          const why = block.match(/^\s*rationale\s*=\s*"([^"]*)"/m);
+          if (cap) out.caps.push({ cap: cap[1], rationale: why ? why[1] : "" });
+        }
+      } catch (err) {
+        out.error = "could not read this bundle";
+      }
+      return out;
+    }
+
+    async function readEntry(bytes, wanted) {
+      const view = new DataView(bytes.buffer);
+      const target = new TextEncoder().encode(wanted);
+      for (let i = 0; i + 30 < bytes.length; i++) {
+        if (view.getUint32(i, true) !== 0x04034b50) continue;
+        const method = view.getUint16(i + 8, true);
+        const compressed = view.getUint32(i + 18, true);
+        const nameLen = view.getUint16(i + 26, true);
+        const extraLen = view.getUint16(i + 28, true);
+        if (nameLen !== target.length) continue;
+        let matches = true;
+        for (let k = 0; k < nameLen; k++) {
+          if (bytes[i + 30 + k] !== target[k]) { matches = false; break; }
+        }
+        if (!matches) continue;
+        const at = i + 30 + nameLen + extraLen;
+        const slice = bytes.slice(at, at + compressed);
+        if (method === 0) return new TextDecoder().decode(slice);
+        if (method === 8) {
+          const stream = new Blob([slice]).stream()
+            .pipeThrough(new DecompressionStream("deflate-raw"));
+          return await new Response(stream).text();
+        }
+        return null;
+      }
+      return null;
     }
 
     $("publish").addEventListener("click", async () => {

@@ -72,8 +72,10 @@ jobs:
           cp docs/answers/*.html _site/
           cp docs/landing/faq.html _site/faq.html
           # Publish an app from the browser: sign in, attach a .krate, go.
-          mkdir -p _site/publish
+          mkdir -p _site/publish _site/apps
           cp docs/landing/publish/index.html _site/publish/index.html
+          # The gallery: everything published, read live from the hub.
+          cp docs/landing/apps/index.html _site/apps/index.html
           # Regenerated on every deploy so the published numbers are the
           # repository's, not whatever was true when someone last edited HTML.
           python3 scripts/build-progress-page.py
