@@ -68,9 +68,9 @@ defect.
 
 | WS | Owns | Serves | Status |
 |---|---|---|---|
-| **W12** | Wheel/scroll event: WIT, host, three adapters, scrolling checklist | G2, K-001 | running |
-| **W13** | Canvas apps lay out from canvas_size and handle resize | G2, K-003 | running |
-| **W14** | Usability stage in check-app | G3, K-006 | running |
+| **W12** | Wheel/scroll event: WIT, host, three adapters, scrolling checklist | G2, K-001 | **done, parked on its branch, not merged** |
+| **W13** | Canvas apps lay out from canvas_size and handle resize | G2, K-003 | **landed and merged** |
+| **W14** | Usability stage in check-app | G3, K-006 | **done, parked on its branch, not merged** |
 | **W15** | Text measurement, delete the guess from seven apps | G2, K-002 | **landed** -- 11 apps converted, measurement matches drawn pixels |
 | **W16** | The benchmark: corpus, harness, honest score | G1 | **landed** -- 42 requests, harness self-checks against 17 bundles, first score 0/5 authored |
 | **W17** | Outsider testing with Grok, from a clean machine's point of view | G4 | **landed** -- 8 built, 0 usable; five defects filed |
@@ -105,10 +105,31 @@ workstation lands, so a session that dies mid-flight loses nothing.
 
 ---
 
+## Parked work — not merged, do not lose
+
+Two workstations finished but are NOT merged. Their branches hold real,
+building work. Merge these before starting anything new.
+
+| Branch | What it holds | Why parked |
+|---|---|---|
+| `worktree-agent-a568654ac09818ebe` | **W12: the wheel/scroll event.** Wheel event in the WIT, host, adapters, and a scrolling checklist. Builds clean. Commit `fd3b5e2`. | Never committed itself; I committed it as WIP. Fixes K-001, the last blocker. |
+| `worktree-agent-a078a3c9a5a425de9` | **W14: the usability stage.** Seventh check-app stage, exit code 16. Proven to catch K-009 and K-003 by reverting each fix. Commit `e140712`. | Ready to merge. Full-workspace clippy not run against it. |
+
+Expect a BUGS.md K-number collision on both -- they branched before K-013
+through K-023 existed. Renumber theirs into free slots, as done for W13 and
+W16.
+
 ## Progress log
 
 Newest first. One line per landing.
 
+- **2026-08-05** — W13 landed and merged. Found the runtime half of the resize
+  bug: a bound canvas never learned its window had been resized, so canvas_size
+  reported the opening size forever -- which is likely why only 3 of 34 apps
+  ever called it. Seven apps now lay out from the real size.
+- **2026-08-05** — W12 and W14 finished but stalled without committing. Their
+  work is preserved on their branches and listed above. **Merging W12 clears
+  K-001, the last blocker.**
 - **2026-08-05** — W17 (outsider, Grok, public install only) delivered the
   number that matters: **8 of 8 apps built, 0 of 8 usable.** Every one bounded
   its interactive loop and quit itself mid-use -- four at exactly 40 seconds,
