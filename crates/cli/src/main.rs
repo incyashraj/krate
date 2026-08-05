@@ -22,9 +22,11 @@ mod authoring_context;
 mod krate_mode;
 mod mcp;
 mod port_report;
+mod progress;
 mod sdk;
 mod sdk_reference;
 mod speech_model;
+mod style;
 mod tui;
 
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
@@ -2333,6 +2335,57 @@ pub(crate) fn print_help_summary() -> Result<u8> {
 }
 
 /// Author an app for the interactive menu.
+/// Where authoring progress goes when the interactive front door is driving.
+///
+/// A process-global sink rather than a parameter threaded through
+/// `create_krate` and everything below it: there is exactly one authoring run
+/// at a time, and the alternative touches a dozen signatures for one optional
+/// display.
+static PROGRESS_SINK: std::sync::Mutex<Option<std::sync::Arc<progress::Progress>>> =
+    std::sync::Mutex::new(None);
+
+fn set_progress_sink(sink: Option<std::sync::Arc<progress::Progress>>) {
+    if let Ok(mut slot) = PROGRESS_SINK.lock() {
+        *slot = sink;
+    }
+}
+
+/// Report one line of agent progress, if anything is listening.
+fn report_progress(step: &str) -> bool {
+    let Ok(slot) = PROGRESS_SINK.lock() else {
+        return false;
+    };
+    let Some(progress) = slot.as_ref() else {
+        return false;
+    };
+    // Map what the agent says it is doing onto a stage a person understands.
+    // Writing code is the long middle; the compile and check stages are driven
+    // by check-app's own output further down.
+    let lower = step.to_lowercase();
+    if lower.contains("check-app") || lower.contains("cargo") || lower.contains("build") {
+        progress.advance(2);
+    } else if lower.contains("read") && lower.contains("krate_authoring") {
+        progress.advance(0);
+    } else {
+        progress.advance(1);
+    }
+    progress.note(step.to_string());
+    true
+}
+
+/// Author an app with a live progress display driving the terminal.
+pub(crate) fn author_app_for_tui_watched(
+    request: &str,
+    provider: &'static dyn agent_provider::AgentProvider,
+    output: &Path,
+    progress: &std::sync::Arc<progress::Progress>,
+) -> Result<()> {
+    set_progress_sink(Some(std::sync::Arc::clone(progress)));
+    let result = author_app_for_tui(request, provider, output);
+    set_progress_sink(None);
+    result
+}
+
 pub(crate) fn author_app_for_tui(
     request: &str,
     provider: &'static dyn agent_provider::AgentProvider,
@@ -3496,8 +3549,12 @@ fn run_provider_author(
                         continue;
                     }
                     steps += 1;
-                    eprintln!("    {steps:>2}. {step}");
-                    let _ = io::stderr().flush();
+                    // When the front door is drawing, its display owns the
+                    // terminal; printing here as well would fight it.
+                    if !report_progress(&step) {
+                        eprintln!("    {steps:>2}. {step}");
+                        let _ = io::stderr().flush();
+                    }
                     last = step;
                 }
             }

@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 
 use crate::agent_provider::{self, AgentProvider, Readiness};
+use crate::style::{self, glyphs};
 
 /// How long to give a provider to prove it works. Generous, because a cold
 /// start on a slow network is not the same as being broken.
@@ -29,9 +30,7 @@ pub fn run() -> Result<u8> {
         return crate::print_help_summary();
     }
 
-    println!();
-    println!("  Krate -- make an app you can send to anyone.");
-    println!();
+    banner();
 
     loop {
         let choice = main_menu()?;
@@ -56,12 +55,36 @@ enum MenuChoice {
     Quit,
 }
 
+/// The wordmark and one line saying what this is. Drawn once, at the top.
+fn banner() {
+    let width = style::content_width();
+    println!();
+    println!("  {}", style::bold(&style::accent("KRATE")));
+    println!("  {}", style::dim("make an app you can send to anyone"));
+    println!("  {}", style::rule(width.saturating_sub(2)));
+    println!();
+}
+
+/// One menu row: the key to press, what it does, and why you would.
+fn item(k: &str, title: &str, hint: &str) {
+    if hint.is_empty() {
+        println!("  {}  {}", style::key(k), title);
+    } else {
+        println!("  {}  {:<26}{}", style::key(k), title, style::dim(hint));
+    }
+}
+
 fn main_menu() -> Result<MenuChoice> {
-    println!("  1  Make an app");
-    println!("  2  Connect an AI app        so you can build from inside it");
-    println!("  3  Open an app someone sent me");
-    println!("  4  My apps");
-    println!("  q  Quit");
+    item("1", "Make an app", "describe it, an AI writes it");
+    item(
+        "2",
+        "Connect an AI app",
+        "build from inside Claude or Cursor",
+    );
+    item("3", "Open an app", "one someone sent you");
+    item("4", "My apps", "everything you have made");
+    println!();
+    item("q", "Quit", "");
     println!();
 
     loop {
@@ -72,7 +95,11 @@ fn main_menu() -> Result<MenuChoice> {
             "4" => return Ok(MenuChoice::MyApps),
             "q" | "quit" | "exit" => return Ok(MenuChoice::Quit),
             "" => continue,
-            other => println!("  There is no option {other}. Pick 1-4, or q to quit."),
+            other => println!(
+                "  {} {}",
+                style::warn(glyphs().cross),
+                style::dim(&format!("no option {other} -- pick 1-4, or q to quit"))
+            ),
         }
     }
 }
@@ -94,30 +121,49 @@ fn make_an_app() -> Result<()> {
     };
 
     println!();
-    println!("  Cooking your app with {}.", provider.name());
-    println!("  This takes 2-5 minutes -- it is compiling real Rust, not");
-    println!("  filling in a template. Good time to put the kettle on.");
+    println!(
+        "  {} {}",
+        style::dim("cooking with"),
+        style::bold(provider.name())
+    );
+    println!(
+        "  {}",
+        style::dim("2-5 minutes: it compiles real Rust, not a template")
+    );
     println!();
 
     let output = default_output_path(&request);
     let started = Instant::now();
 
-    let result = crate::author_app_for_tui(&request, provider, &output);
+    // A live display rather than a wall of build output. The stages are named
+    // in words someone outside the project would recognise, and each keeps its
+    // own elapsed time so a long one looks busy rather than stuck.
+    let progress = std::sync::Arc::new(crate::progress::Progress::start(
+        crate::progress::AUTHOR_STAGES,
+    ));
+    let result = crate::author_app_for_tui_watched(&request, provider, &output, &progress);
+    crate::progress::Progress::stop(&progress);
 
     match result {
         Ok(()) => {
             let size = std::fs::metadata(&output).map(|m| m.len()).unwrap_or(0);
             println!();
             println!(
-                "  Done in {}. {} ({})",
-                humanise(started.elapsed()),
-                output
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default(),
-                humanise_bytes(size)
+                "  {} {}  {}",
+                style::good(glyphs().tick),
+                style::bold(
+                    &output
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default()
+                ),
+                style::dim(&format!(
+                    "{} in {}",
+                    humanise_bytes(size),
+                    humanise(started.elapsed())
+                ))
             );
-            println!("  Saved to {}", output.display());
+            println!("  {}", style::dim(&output.display().to_string()));
             println!();
             after_build(&output)?;
         }
@@ -143,9 +189,9 @@ fn make_an_app() -> Result<()> {
 /// again.
 fn after_build(bundle: &Path) -> Result<()> {
     loop {
-        println!("  1  Open it now");
-        println!("  2  Make a change to it");
-        println!("  3  Back to the menu");
+        item("1", "Open it now", "");
+        item("2", "Make a change", "tell the AI what to change");
+        item("3", "Back", "");
         println!();
         match prompt("  > ")?.trim() {
             "1" => {
@@ -262,10 +308,11 @@ fn choose_provider() -> Result<Option<&'static dyn AgentProvider>> {
     println!();
     for (index, (provider, _)) in working.iter().enumerate() {
         println!(
-            "  {}  {:<9}{}",
-            index + 1,
-            provider.name(),
-            provider.description().trim_end()
+            "  {}  {}{} {}",
+            style::key(&(index + 1).to_string()),
+            style::bold(&pad(provider.name(), 10)),
+            style::dim(&pad(provider.description().trim_end(), 26)),
+            style::good(&format!("{} ready", glyphs().tick))
         );
     }
 
@@ -275,13 +322,26 @@ fn choose_provider() -> Result<Option<&'static dyn AgentProvider>> {
         for (provider, readiness) in &broken {
             match readiness {
                 Readiness::NotReady { summary, remedy } => {
-                    println!("     {:<16}{summary}", provider.name());
+                    println!(
+                        "     {}{}",
+                        style::dim(&pad(provider.name(), 10)),
+                        style::warn(summary)
+                    );
                     if let Some(remedy) = remedy {
-                        println!("     {:<16}fix it with: {remedy}", "");
+                        println!(
+                            "     {}{} {}",
+                            pad("", 10),
+                            style::dim(glyphs().arrow),
+                            style::dim(remedy)
+                        );
                     }
                 }
                 Readiness::Missing => {
-                    println!("     {:<16}not installed", provider.name());
+                    println!(
+                        "     {}{}",
+                        style::dim(&pad(provider.name(), 10)),
+                        style::dim("not installed")
+                    );
                 }
                 Readiness::Working => {}
             }
@@ -468,6 +528,19 @@ fn open_bundle(bundle: &Path) -> Result<()> {
 }
 
 // -------------------------------------------------------------------- helpers
+
+/// Pad to a visible width before styling.
+///
+/// `{:<10}` on an already-styled string counts the escape bytes, so the column
+/// silently collapses. Padding the plain text first is the only way the columns
+/// line up whether or not colour is on.
+fn pad(text: &str, width: usize) -> String {
+    let visible = text.chars().count();
+    if visible >= width {
+        return text.to_string();
+    }
+    format!("{text}{}", " ".repeat(width - visible))
+}
 
 fn prompt(label: &str) -> Result<String> {
     print!("{label}");
