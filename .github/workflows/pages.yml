@@ -164,8 +164,10 @@ jobs:
           # The page a non-technical person lands on after "I received one".
           mkdir -p _site/open
           cp docs/open/index.html _site/open/index.html
-          mkdir -p _site/cloud
+          mkdir -p _site/cloud _site/cloud/app
           cp docs/cloud/index.html _site/cloud/index.html
+          # One page per app, filled in from the hub by its id.
+          cp docs/cloud/app/index.html _site/cloud/app/index.html
           cp docs/landing/*.png _site/cloud/ 2>/dev/null || true
           # The store card thumbnails: each GUI app's rendered first frame, so a
           # card shows what the app looks like instead of a bare icon. CLI apps

@@ -268,6 +268,15 @@
       font-size: 14.5px;
       line-height: 1.6;
     }
+    .alt-note {
+      color: var(--quiet); font-size: .88rem; line-height: 1.65;
+      margin-top: .7rem; padding-top: .7rem; border-top: 1px solid var(--line);
+    }
+    .alt-note code {
+      font-family: var(--mono); font-size: .82rem; color: var(--blue-soft);
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 5px; padding: .1rem .4rem;
+    }
   </style>
 </head>
 <body>
@@ -297,7 +306,7 @@
     <section class="section open-hero">
       <div class="wrap">
         <h1 class="open-title">Someone sent you an app.</h1>
-        <p class="open-lead">It arrives as one file. Three steps and it is open &mdash; and it will tell you what it wants before it does anything.</p>
+        <p class="open-lead">Double-click it and it opens. The only thing you need is Krate, installed once &mdash; after that every app anyone sends you just opens, and each one tells you what it wants before it does anything.</p>
         <div class="open-file-card">
           <span class="open-file-glyph" aria-hidden="true"></span>
           <span>
@@ -313,8 +322,8 @@
         <ol class="open-track">
           <li>
             <span class="open-num">1</span>
-            <h2>Install Krate</h2>
-            <p>Krate is what opens these files. Once, and it works for everything anyone sends you afterwards.</p>
+            <h2>Install Krate, once</h2>
+            <p>This is the only setup there is. Do it once and every Krate app anyone sends you from then on is just a double-click.</p>
 
             <div class="os-panel" data-os="mac">
               <p>On your Mac, open <strong>Terminal</strong> &mdash; press <kbd>&#8984;</kbd> and <kbd>Space</kbd>, type <em>terminal</em>, press Enter &mdash; then paste this and press Enter.</p>
@@ -348,8 +357,9 @@
 
           <li>
             <span class="open-num">2</span>
-            <h2>Open the file</h2>
-            <p>Double-click the file you were sent, the same as a document or a photo.</p>
+            <h2>Double-click the file</h2>
+            <p>Double-click the file you were sent, the same as a document or a photo. There is nothing to unzip, nothing to install per app, and no developer tools.</p>
+            <p class="alt-note">Prefer a terminal? <code>krate</code> opens a menu with <strong>Open an app</strong>, or run <code>krate run theapp.krate</code> directly. Both do exactly the same thing.</p>
           </li>
 
           <li>

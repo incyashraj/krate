@@ -192,7 +192,26 @@
       font-size: clamp(13px, 1.5vw, 15px);
       line-height: 1.6;
     }
-  </style>
+      .stat-row {
+      display: grid; gap: 1rem; margin: 2rem 0 2.2rem;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    }
+    .stat {
+      border: 1px solid var(--line); border-radius: 12px;
+      background: var(--panel); padding: 1.2rem 1.3rem;
+    }
+    .stat-n {
+      display: block; font-size: 2.1rem; line-height: 1.1;
+      color: var(--text); letter-spacing: -.03em; font-weight: 600;
+    }
+    .stat-l {
+      display: block; margin-top: .45rem; color: var(--quiet);
+      font-size: .85rem; line-height: 1.5;
+    }
+    .proof-links { display: flex; flex-wrap: wrap; gap: 1.4rem; }
+    .proof-links a { color: var(--blue-soft); text-decoration: none; font-size: .92rem; }
+    .proof-links a:hover { text-decoration: underline; }
+</style>
   <!-- Structured data. Search engines read this to show a rich result rather
        than a plain blue link, and to answer questions directly. Every claim
        here is one the site actually makes. -->
@@ -908,35 +927,40 @@
         </div>
     </section>
 
-    <section class="section">
+    <section class="section" id="proof">
       <div class="wrap">
         <div class="section-heading">
-          <p class="label">Built in public</p>
+          <p class="label">The evidence</p>
           <h2>Look at the product, not a promise.</h2>
-          <p>The runtime is open source. The builds and current limitations are public too.</p>
+          <p>The runtime is open source, the builds are public, and the numbers
+             below are read live rather than typed into this page.</p>
         </div>
 
-        <div class="public-links">
-          <a class="public-link" href="/reports/">
-            <strong>The measurements</strong>
-            <span>Sizes, startup, sandbox cost, charted from real data →</span>
-          </a>
-          <a class="public-link" href="/progress/">
-            <strong>Where we are today</strong>
-            <span>Every app, its size, and what still does not work →</span>
-          </a>
-          <a class="public-link" href="https://github.com/incyashraj/krate">
-            <strong>GitHub</strong>
-            <span>Read the code and current README →</span>
-          </a>
-          <a class="public-link" href="https://github.com/incyashraj/krate/actions">
-            <strong>Three-system CI</strong>
-            <span>See the Mac, Windows, and Linux runs →</span>
-          </a>
-          <a class="public-link" href="https://www.producthunt.com/products/krate-3?launch=krate-3">
-            <strong>Product Hunt</strong>
-            <span>Join the launch discussion →</span>
-          </a>
+        <div class="stat-row" id="liveStats">
+          <div class="stat">
+            <span class="stat-n" id="statApps">&mdash;</span>
+            <span class="stat-l">apps published to Krate Cloud</span>
+          </div>
+          <div class="stat">
+            <span class="stat-n" id="statSize">&mdash;</span>
+            <span class="stat-l">average app size</span>
+          </div>
+          <div class="stat">
+            <span class="stat-n">3</span>
+            <span class="stat-l">systems, one file, no rebuild</span>
+          </div>
+          <div class="stat">
+            <span class="stat-n">0</span>
+            <span class="stat-l">capabilities granted unless you say so</span>
+          </div>
+        </div>
+
+        <div class="proof-links">
+          <a href="/cloud/">Browse the apps yourself &rarr;</a>
+          <a href="/reports/">The measurements &rarr;</a>
+          <a href="/progress/">What still does not work &rarr;</a>
+          <a href="https://github.com/incyashraj/krate">Read the source &rarr;</a>
+          <a href="https://github.com/incyashraj/krate/actions">Watch it build &rarr;</a>
         </div>
       </div>
     </section>
@@ -1243,6 +1267,23 @@
         }
       });
     });
+  </script>
+  <script>
+    // Read the real counts rather than printing a number someone has to
+    // remember to update. Every hard-coded app count on this page has gone
+    // stale at least once.
+    (async () => {
+      try {
+        const { apps } = await fetch("https://hub.krate.tech/apps").then((r) => r.json());
+        if (!apps.length) return;
+        document.getElementById("statApps").textContent = apps.length;
+        const avg = apps.reduce((t, a) => t + (a.meta?.size || 0), 0) / apps.length;
+        document.getElementById("statSize").textContent = Math.round(avg / 1024) + " KB";
+      } catch (_) {
+        // A hub that is down must not leave dashes where numbers go.
+        document.getElementById("liveStats").style.display = "none";
+      }
+    })();
   </script>
 </body>
 </html>

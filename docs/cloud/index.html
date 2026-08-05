@@ -3,203 +3,226 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Krate Cloud | Apps people have published</title>
-  <meta name="description" content="Apps people have published to Krate. Every one runs in a sandbox and tells you what it wants before it starts." />
+  <title>Krate Cloud | Apps you can open in one click</title>
+  <meta name="description" content="Browse apps people have published to Krate Cloud. Every one is a single file that runs in a sandbox and tells you what it wants before it starts." />
   <link rel="stylesheet" href="/krate.css" />
   <link rel="icon" href="/krate-favicon.png" />
   <style>
-    .wrap { max-width: 1000px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
-    .masthead { display: flex; align-items: center; gap: .6rem; margin-bottom: 2.4rem; }
-    .masthead img { width: 30px; height: 30px; border-radius: 7px; }
-    .masthead a { color: var(--text); text-decoration: none; font-weight: 600; letter-spacing: -.01em; }
+    .wrap { max-width: 1060px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+
+    .masthead { display: flex; align-items: center; gap: .6rem; margin-bottom: 2.6rem; }
+    .masthead img.logo { width: 30px; height: 30px; border-radius: 7px; }
+    .masthead > a { color: var(--text); text-decoration: none; font-weight: 600; letter-spacing: -.01em; }
     .masthead nav { margin-left: auto; display: flex; gap: 1.1rem; font-size: .9rem; }
-    .masthead nav a { color: var(--muted); font-weight: 400; }
+    .masthead nav a { color: var(--muted); text-decoration: none; }
     .masthead nav a:hover { color: var(--text); }
 
-    h1 { margin: 0 0 .35rem; font-size: 1.9rem; letter-spacing: -.02em; }
-    .lede { color: var(--muted); margin: 0 0 2.2rem; line-height: 1.6; max-width: 46rem; }
-
-    .grid {
-      display: grid; gap: 1rem;
-      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    /* The hero states the one thing a visitor needs before browsing: these
+       open on your own machine, and they say what they want first. */
+    .hero { margin-bottom: 2.6rem; }
+    .hero h1 { margin: 0 0 .5rem; font-size: 2.1rem; letter-spacing: -.025em; }
+    .hero p { color: var(--muted); margin: 0; line-height: 1.65; max-width: 46rem; }
+    .hero .badge {
+      display: inline-block; margin-bottom: .8rem;
+      font-size: .72rem; text-transform: uppercase; letter-spacing: .1em;
+      color: var(--blue-soft); border: 1px solid var(--line-strong);
+      border-radius: 999px; padding: .22rem .7rem;
     }
-    .app {
-      border: 1px solid var(--line); border-radius: 13px;
+
+    .bar { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; margin-bottom: 1.4rem; }
+    .bar input {
+      flex: 1; min-width: 220px;
+      background: var(--panel); color: var(--text);
+      border: 1px solid var(--line); border-radius: 9px;
+      padding: .6rem .8rem; font: inherit;
+    }
+    .bar input:focus { outline: none; border-color: var(--blue); }
+    .count { color: var(--quiet); font-size: .88rem; }
+
+    .grid { display: grid; gap: 1.1rem; grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); }
+
+    .card {
+      display: flex; flex-direction: column; text-decoration: none;
+      border: 1px solid var(--line); border-radius: 14px;
       background: var(--panel); overflow: hidden;
-      display: flex; flex-direction: column;
       transition: border-color .15s ease, transform .15s ease;
     }
-    .app:hover { border-color: var(--line-strong); transform: translateY(-2px); }
-    /* The thumbnail is the point of a store: you decide by looking. */
-    .thumb {
+    .card:hover { border-color: var(--line-strong); transform: translateY(-3px); }
+    /* A store is something you decide by looking at, so the picture leads. */
+    .shot {
       aspect-ratio: 4 / 3; background: var(--bg);
       border-bottom: 1px solid var(--line);
       display: grid; place-items: center; overflow: hidden;
     }
-    .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
-    .thumb .none { color: var(--quiet); font-size: .78rem; }
-    .app-body { padding: .9rem 1rem 1rem; display: flex; flex-direction: column; flex: 1; }
-    .app-top { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
-    .app-name { font-weight: 600; color: var(--text); font-size: 1.02rem; }
-    .app-size { color: var(--quiet); font-size: .82rem; margin-left: auto; }
-    .app-desc { color: var(--muted); margin: .45rem 0 .8rem; line-height: 1.55; }
-    .app-by { display: flex; align-items: center; gap: .45rem; font-size: .85rem; color: var(--quiet); }
-    .app-by img { width: 20px; height: 20px; border-radius: 50%; }
-    .app-by a { color: var(--muted); text-decoration: none; }
-    .app-by a:hover { color: var(--text); }
+    .shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+    .shot .none { color: var(--quiet); font-size: .76rem; }
 
-    .run {
-      margin-top: .9rem; display: flex; gap: .5rem; align-items: center;
-      background: var(--bg); border: 1px solid var(--line);
-      border-radius: 8px; padding: .5rem .65rem;
+    .card-body { padding: .85rem .95rem 1rem; display: flex; flex-direction: column; flex: 1; }
+    .card-name { color: var(--text); font-weight: 600; font-size: 1rem; margin-bottom: .25rem; }
+    .card-desc {
+      color: var(--muted); font-size: .87rem; line-height: 1.5; margin: 0 0 .8rem;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
     }
-    .run code {
-      font-family: var(--mono); font-size: .78rem; color: var(--blue-soft);
-      overflow-x: auto; white-space: nowrap; flex: 1;
+    .card-foot {
+      display: flex; align-items: center; gap: .4rem;
+      margin-top: auto; color: var(--quiet); font-size: .8rem;
     }
-    .run button {
-      background: transparent; border: 1px solid var(--line-strong);
-      color: var(--muted); border-radius: 6px; padding: .25rem .55rem;
-      font: inherit; font-size: .76rem; cursor: pointer; flex-shrink: 0;
-    }
-    .run button:hover { color: var(--text); border-color: var(--blue); }
+    .card-foot img { width: 18px; height: 18px; border-radius: 50%; }
+    .card-foot .size { margin-left: auto; }
 
-    .empty { color: var(--quiet); text-align: center; padding: 3rem 1rem; line-height: 1.7; }
+    .empty { color: var(--quiet); text-align: center; padding: 3.5rem 1rem; line-height: 1.8; }
     .empty a { color: var(--blue-soft); }
-    .note { color: var(--quiet); font-size: .87rem; line-height: 1.65; margin-top: 2.5rem; }
+
     .how {
-      margin-top: 3rem; border-top: 1px solid var(--line); padding-top: 1.8rem;
-      display: grid; gap: 1.4rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      margin-top: 3.5rem; border-top: 1px solid var(--line); padding-top: 2rem;
+      display: grid; gap: 1.6rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     }
-    .how h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .09em;
-              color: var(--quiet); margin: 0 0 .5rem; font-weight: 600; }
-    .how p { color: var(--muted); line-height: 1.65; margin: 0; font-size: .92rem; }
+    .how h2 {
+      font-size: .78rem; text-transform: uppercase; letter-spacing: .09em;
+      color: var(--quiet); margin: 0 0 .55rem; font-weight: 600;
+    }
+    .how p { color: var(--muted); line-height: 1.7; margin: 0; font-size: .92rem; }
     .how a { color: var(--blue-soft); }
     .how code {
-      font-family: var(--mono); background: var(--bg); border: 1px solid var(--line);
-      border-radius: 5px; padding: .1rem .4rem; color: var(--blue-soft);
+      font-family: var(--mono); font-size: .82rem; color: var(--blue-soft);
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 5px; padding: .1rem .4rem;
     }
   </style>
 </head>
 <body>
   <main class="wrap">
     <header class="masthead">
-      <img src="/krate-glyph-blue.png" alt="" />
+      <img class="logo" src="/krate-glyph-blue.png" alt="" />
       <a href="/">Krate</a>
       <nav>
         <a href="/cloud/">Cloud</a>
         <a href="/publish/">Publish</a>
         <a href="/docs/">Docs</a>
+        <a href="/contact/">Contact</a>
       </nav>
     </header>
 
-    <h1>Krate Cloud</h1>
-    <p class="lede">
-      Apps people have published. Every one is a single file that runs in a
-      sandbox: it tells you what it wants &mdash; the network, a folder, the
-      microphone &mdash; before it starts, and it gets nothing you have not
-      agreed to.
-    </p>
+    <div class="hero">
+      <span class="badge">Early access</span>
+      <h1>Krate Cloud</h1>
+      <p>
+        Apps people have published. Each one is a single file that runs on your
+        own computer in a sandbox &mdash; it tells you what it wants before it
+        starts, and gets nothing else.
+      </p>
+    </div>
+
+    <div class="bar">
+      <input type="search" id="q" placeholder="Search apps" autocomplete="off" />
+      <span class="count" id="count"></span>
+    </div>
 
     <div id="list"></div>
 
     <div class="how">
-      <h2>How to open one</h2>
-      <p>
-        <a href="/">Install Krate</a>, then copy an app's command and paste it
-        into your terminal. Krate downloads the app, shows you what it is
-        asking for, and opens it once you agree.
-      </p>
-      <h2>How to make your own</h2>
-      <p>
-        Type <code>krate</code> in a terminal. It asks what you want to make,
-        writes it with an AI you already have, and hands you the file. Then
-        <a href="/publish/">publish it</a> and it appears here.
-      </p>
+      <div>
+        <h2>Open one</h2>
+        <p>
+          <a href="/">Install Krate</a> once, then click any app here and copy
+          its command. Krate downloads it, shows what it asks for, and opens it
+          when you agree.
+        </p>
+      </div>
+      <div>
+        <h2>Make your own</h2>
+        <p>
+          Type <code>krate</code> in a terminal. It asks what you want to make,
+          and an AI you already have writes it.
+        </p>
+      </div>
+      <div>
+        <h2>Publish it</h2>
+        <p>
+          <code>krate publish yourapp.krate</code>, or drop the file on
+          <a href="/publish/">the publish page</a>. It appears here with your
+          name on it.
+        </p>
+      </div>
     </div>
   </main>
 
   <script>
     const HUB = "https://hub.krate.tech";
+    let ALL = [];
 
-    function esc(value) {
-      return String(value).replace(/[&<>"]/g, (c) =>
-        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-    }
+    const esc = (v) => String(v).replace(/[&<>"]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-    function kb(bytes) {
-      return bytes < 1024 ? bytes + " B"
-        : bytes < 1048576 ? Math.round(bytes / 1024) + " KB"
-        : (bytes / 1048576).toFixed(1) + " MB";
-    }
+    const kb = (b) => b < 1024 ? b + " B"
+      : b < 1048576 ? Math.round(b / 1024) + " KB"
+      : (b / 1048576).toFixed(1) + " MB";
 
-    // "3 days ago" reads better than a timestamp for something that is mostly
-    // about whether anyone is still publishing.
     function ago(seconds) {
-      const delta = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
-      if (delta < 3600) return Math.max(1, Math.floor(delta / 60)) + "m ago";
-      if (delta < 86400) return Math.floor(delta / 3600) + "h ago";
-      if (delta < 2592000) return Math.floor(delta / 86400) + "d ago";
+      const d = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
+      if (d < 3600) return Math.max(1, Math.floor(d / 60)) + "m ago";
+      if (d < 86400) return Math.floor(d / 3600) + "h ago";
+      if (d < 2592000) return Math.floor(d / 86400) + "d ago";
       return new Date(seconds * 1000).toLocaleDateString();
+    }
+
+    function card(app) {
+      const m = app.meta || {};
+      return `
+        <a class="card" href="/cloud/app/?id=${esc(app.id)}">
+          <div class="shot">
+            ${app.shot
+              ? `<img loading="lazy" src="${esc(app.shot)}" alt="${esc(m.name || "App")} running" />`
+              : '<span class="none">no screenshot yet</span>'}
+          </div>
+          <div class="card-body">
+            <div class="card-name">${esc(m.name || "Untitled app")}</div>
+            ${m.description ? `<p class="card-desc">${esc(m.description)}</p>` : ""}
+            <div class="card-foot">
+              ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="" />` : ""}
+              <span>${esc(m.author || "anonymous")}</span>
+              <span class="size">${kb(m.size || 0)} &middot; ${ago(m.published || 0)}</span>
+            </div>
+          </div>
+        </a>`;
+    }
+
+    function render(apps) {
+      const term = document.getElementById("q").value.trim().toLowerCase();
+      const shown = term
+        ? apps.filter((a) => {
+            const m = a.meta || {};
+            return (m.name || "").toLowerCase().includes(term)
+              || (m.description || "").toLowerCase().includes(term)
+              || (m.author || "").toLowerCase().includes(term);
+          })
+        : apps;
+
+      document.getElementById("count").textContent =
+        shown.length === apps.length
+          ? `${apps.length} app${apps.length === 1 ? "" : "s"}`
+          : `${shown.length} of ${apps.length}`;
+
+      document.getElementById("list").innerHTML = shown.length
+        ? '<div class="grid">' + shown.map(card).join("") + "</div>"
+        : '<p class="empty">Nothing matches that.</p>';
     }
 
     (async () => {
       const list = document.getElementById("list");
       try {
         const { apps } = await fetch(HUB + "/apps").then((r) => r.json());
+        ALL = apps;
         if (!apps.length) {
           list.innerHTML =
-            '<p class="empty">Nothing published yet.<br />' +
-            '<a href="/publish/">Be the first</a>.</p>';
+            '<p class="empty">Nothing published yet.<br /><a href="/publish/">Be the first</a>.</p>';
           return;
         }
-        list.innerHTML =
-          '<div class="grid">' +
-          apps
-            .map((app) => {
-              const m = app.meta || {};
-              const command = "krate run " + app.url;
-              return `
-                <article class="app">
-                  <div class="thumb">
-                    ${
-                      app.shot
-                        ? `<img loading="lazy" src="${esc(app.shot)}" alt="${esc(m.name || "the app")} running" />`
-                        : '<span class="none">no screenshot yet</span>'
-                    }
-                  </div>
-                  <div class="app-body">
-                    <div class="app-top">
-                      <span class="app-name">${esc(m.name || "Untitled app")}</span>
-                    </div>
-                    ${m.description ? `<p class="app-desc">${esc(m.description)}</p>` : ""}
-                    <div class="app-by">
-                      ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="" />` : ""}
-                      <span>by <a href="${esc(m.author_url || "#")}" rel="noopener">${esc(m.author || "anonymous")}</a></span>
-                      <span class="app-size">${kb(m.size || 0)}</span>
-                    </div>
-                    <div class="run">
-                      <code>${esc(command)}</code>
-                      <button data-copy="${esc(command)}">Copy</button>
-                    </div>
-                  </div>
-                </article>`;
-            })
-            .join("") +
-          "</div>";
-
-        list.addEventListener("click", (event) => {
-          const button = event.target.closest("button[data-copy]");
-          if (!button) return;
-          navigator.clipboard.writeText(button.dataset.copy);
-          const was = button.textContent;
-          button.textContent = "Copied";
-          setTimeout(() => (button.textContent = was), 1200);
-        });
+        render(ALL);
+        document.getElementById("q").addEventListener("input", () => render(ALL));
       } catch (err) {
         list.innerHTML =
-          '<p class="empty">Could not reach the hub just now.<br />' +
-          "Try again in a moment.</p>";
+          '<p class="empty">Could not reach Krate Cloud just now.<br />Try again in a moment.</p>';
       }
     })();
   </script>

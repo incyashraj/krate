@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>App | Krate Cloud</title>
+  <meta name="description" content="What this app does, who made it, and exactly what it asks for before it runs." />
+  <link rel="stylesheet" href="/krate.css" />
+  <link rel="icon" href="/krate-favicon.png" />
+  <style>
+    .wrap { max-width: 860px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+
+    .masthead { display: flex; align-items: center; gap: .6rem; margin-bottom: 2rem; }
+    .masthead img.logo { width: 30px; height: 30px; border-radius: 7px; }
+    .masthead > a { color: var(--text); text-decoration: none; font-weight: 600; }
+    .masthead nav { margin-left: auto; display: flex; gap: 1.1rem; font-size: .9rem; }
+    .masthead nav a { color: var(--muted); text-decoration: none; }
+    .masthead nav a:hover { color: var(--text); }
+
+    .back { color: var(--quiet); text-decoration: none; font-size: .88rem; display: inline-block; margin-bottom: 1.4rem; }
+    .back:hover { color: var(--text); }
+
+    .head { display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 2rem; }
+    .head .shot {
+      flex: 0 0 320px; max-width: 100%; aspect-ratio: 4 / 3;
+      border: 1px solid var(--line); border-radius: 12px;
+      background: var(--bg); overflow: hidden; display: grid; place-items: center;
+    }
+    .head .shot img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+    .head .shot .none { color: var(--quiet); font-size: .8rem; }
+    .head .meta { flex: 1; min-width: 240px; }
+    .head h1 { margin: 0 0 .45rem; font-size: 1.75rem; letter-spacing: -.02em; }
+    .head .desc { color: var(--muted); line-height: 1.65; margin: 0 0 1rem; }
+    .by { display: flex; align-items: center; gap: .5rem; color: var(--quiet); font-size: .9rem; }
+    .by img { width: 24px; height: 24px; border-radius: 50%; }
+    .by a { color: var(--muted); text-decoration: none; }
+    .by a:hover { color: var(--text); }
+    .facts { display: flex; gap: 1.2rem; flex-wrap: wrap; margin-top: 1rem; color: var(--quiet); font-size: .86rem; }
+
+    h2 {
+      font-size: .78rem; text-transform: uppercase; letter-spacing: .09em;
+      color: var(--quiet); margin: 2.2rem 0 .8rem; font-weight: 600;
+    }
+
+    .run-row {
+      display: flex; gap: .5rem; align-items: center;
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 9px; padding: .6rem .7rem;
+    }
+    .run-row code {
+      font-family: var(--mono); font-size: .8rem; color: var(--blue-soft);
+      overflow-x: auto; white-space: nowrap; flex: 1; min-width: 0;
+    }
+    .run-row button, .dl {
+      background: transparent; border: 1px solid var(--line-strong);
+      color: var(--muted); border-radius: 7px; padding: .3rem .65rem;
+      font: inherit; font-size: .8rem; cursor: pointer; flex-shrink: 0;
+      text-decoration: none;
+    }
+    .run-row button:hover, .dl:hover { color: var(--text); border-color: var(--blue); }
+    .hint { color: var(--quiet); font-size: .87rem; line-height: 1.65; margin: .6rem 0 0; }
+
+    /* The permission wall, written by the app itself. This is the part that
+       makes opening a stranger's app a decision rather than a leap. */
+    .perm { display: flex; gap: .8rem; align-items: baseline; padding: .55rem 0; border-bottom: 1px solid var(--line); }
+    .perm:last-child { border-bottom: 0; }
+    .perm code {
+      font-family: var(--mono); font-size: .78rem; color: var(--blue-soft);
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 5px; padding: .12rem .45rem; white-space: nowrap;
+    }
+    .perm span { color: var(--muted); font-size: .89rem; line-height: 1.5; }
+
+    .foot {
+      margin-top: 2.6rem; border-top: 1px solid var(--line); padding-top: 1.3rem;
+      display: flex; gap: 1.2rem; flex-wrap: wrap; align-items: center;
+      color: var(--quiet); font-size: .87rem;
+    }
+    .foot a { color: var(--muted); }
+    .report { margin-left: auto; }
+    .loading, .missing { color: var(--quiet); padding: 3rem 0; text-align: center; line-height: 1.8; }
+    .missing a { color: var(--blue-soft); }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="masthead">
+      <img class="logo" src="/krate-glyph-blue.png" alt="" />
+      <a href="/">Krate</a>
+      <nav>
+        <a href="/cloud/">Cloud</a>
+        <a href="/publish/">Publish</a>
+        <a href="/docs/">Docs</a>
+        <a href="/contact/">Contact</a>
+      </nav>
+    </header>
+
+    <a class="back" href="/cloud/">&larr; All apps</a>
+    <div id="app"><p class="loading">Loading…</p></div>
+  </main>
+
+  <script>
+    const HUB = "https://hub.krate.tech";
+
+    const esc = (v) => String(v).replace(/[&<>"]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+    const kb = (b) => b < 1024 ? b + " B"
+      : b < 1048576 ? Math.round(b / 1024) + " KB"
+      : (b / 1048576).toFixed(1) + " MB";
+
+    const when = (s) => s ? new Date(s * 1000).toLocaleDateString(undefined,
+      { year: "numeric", month: "long", day: "numeric" }) : "";
+
+    // Read the permission wall out of the bundle itself rather than trusting a
+    // description. Each capability carries the app's own reason for wanting it.
+    async function permissions(url) {
+      try {
+        const bytes = new Uint8Array(await fetch(url).then((r) => r.arrayBuffer()));
+        const toml = await entry(bytes, "manifest.toml");
+        if (!toml) return [];
+        return toml.split(/\[\[capabilities\]\]/).slice(1).map((block) => {
+          const cap = block.match(/^\s*cap\s*=\s*"([^"]*)"/m);
+          const why = block.match(/^\s*rationale\s*=\s*"([^"]*)"/m);
+          return cap ? { cap: cap[1], why: why ? why[1] : "" } : null;
+        }).filter(Boolean);
+      } catch (_) {
+        return [];
+      }
+    }
+
+    async function entry(bytes, wanted) {
+      const view = new DataView(bytes.buffer);
+      const target = new TextEncoder().encode(wanted);
+      for (let i = 0; i + 30 < bytes.length; i++) {
+        if (view.getUint32(i, true) !== 0x04034b50) continue;
+        const method = view.getUint16(i + 8, true);
+        const size = view.getUint32(i + 18, true);
+        const nameLen = view.getUint16(i + 26, true);
+        const extraLen = view.getUint16(i + 28, true);
+        if (nameLen !== target.length) continue;
+        let ok = true;
+        for (let k = 0; k < nameLen; k++) {
+          if (bytes[i + 30 + k] !== target[k]) { ok = false; break; }
+        }
+        if (!ok) continue;
+        const at = i + 30 + nameLen + extraLen;
+        const slice = bytes.slice(at, at + size);
+        if (method === 0) return new TextDecoder().decode(slice);
+        if (method === 8) {
+          const stream = new Blob([slice]).stream()
+            .pipeThrough(new DecompressionStream("deflate-raw"));
+          return await new Response(stream).text();
+        }
+        return null;
+      }
+      return null;
+    }
+
+    (async () => {
+      const root = document.getElementById("app");
+      const id = new URLSearchParams(location.search).get("id") || "";
+      if (!/^[0-9a-f]{64}$/.test(id)) {
+        root.innerHTML = '<p class="missing">No app named.<br /><a href="/cloud/">Browse all apps</a>.</p>';
+        return;
+      }
+
+      let app;
+      try {
+        const { apps } = await fetch(HUB + "/apps").then((r) => r.json());
+        app = apps.find((a) => a.id === id);
+      } catch (_) {}
+      if (!app) {
+        root.innerHTML = '<p class="missing">That app is not on Krate Cloud.<br /><a href="/cloud/">Browse all apps</a>.</p>';
+        return;
+      }
+
+      const m = app.meta || {};
+      document.title = `${m.name || "App"} | Krate Cloud`;
+      const cmd = "krate run " + app.url;
+      const issue = "https://github.com/incyashraj/krate/issues/new?title="
+        + encodeURIComponent(`Report: ${m.name || "app"} on Krate Cloud`)
+        + "&body=" + encodeURIComponent(
+            `App: ${m.name || ""}\nBy: ${m.author || ""}\nLink: ${app.url}\n\nWhat is wrong:\n`);
+
+      root.innerHTML = `
+        <div class="head">
+          <div class="shot">
+            ${app.shot
+              ? `<img src="${esc(app.shot)}" alt="${esc(m.name || "App")} running" />`
+              : '<span class="none">no screenshot yet</span>'}
+          </div>
+          <div class="meta">
+            <h1>${esc(m.name || "Untitled app")}</h1>
+            ${m.description ? `<p class="desc">${esc(m.description)}</p>` : ""}
+            <div class="by">
+              ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="" />` : ""}
+              <span>by <a href="${esc(m.author_url || "#")}" rel="noopener">${esc(m.author || "anonymous")}</a></span>
+            </div>
+            <div class="facts">
+              <span>${kb(m.size || 0)}</span>
+              <span>Published ${esc(when(m.published))}</span>
+              <span>Mac, Windows, Linux</span>
+            </div>
+          </div>
+        </div>
+
+        <h2>Open it</h2>
+        <div class="run-row">
+          <code>${esc(cmd)}</code>
+          <button id="copy">Copy</button>
+        </div>
+        <p class="hint">
+          Paste that into a terminal. Krate downloads the app, shows you what it
+          asks for, and opens it once you agree. No Krate yet?
+          <a href="/">Install it first</a> &mdash; one command.
+        </p>
+
+        <h2>What it asks for</h2>
+        <div id="perms"><p class="hint">Reading the app…</p></div>
+
+        <div class="foot">
+          <a class="dl" href="${esc(app.url)}">Download the file</a>
+          <a href="/cloud/">All apps</a>
+          <a class="report" href="${issue}" rel="noopener">Report this app</a>
+        </div>`;
+
+      document.getElementById("copy").onclick = () => {
+        navigator.clipboard.writeText(cmd);
+        const b = document.getElementById("copy");
+        b.textContent = "Copied";
+        setTimeout(() => (b.textContent = "Copy"), 1200);
+      };
+
+      const perms = await permissions(app.url);
+      document.getElementById("perms").innerHTML = perms.length
+        ? perms.map((p) =>
+            `<div class="perm"><code>${esc(p.cap)}</code>${p.why ? `<span>${esc(p.why)}</span>` : ""}</div>`
+          ).join("")
+        : '<p class="hint">Krate will show you the full list before it opens.</p>';
+    })();
+  </script>
+</body>
+</html>
