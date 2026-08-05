@@ -19,6 +19,7 @@
 //! Transport: newline-delimited JSON-RPC 2.0 over stdio. See
 //! `docs/mcp-setup.md` for the client configuration.
 
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -42,6 +43,28 @@ pub fn serve() -> Result<()> {
         authoring_context::generate,
     );
     let tools = KrateServer { authoring };
+
+    // Say what this is when a person runs it by hand.
+    //
+    // An MCP server reads JSON-RPC from stdin and writes it to stdout, so with
+    // nothing connected it sits there producing nothing. That looks exactly
+    // like a hang, and the first person to try it reasonably concluded it was
+    // broken. When stdin is a terminal there is no client, so print the
+    // explanation; when it is a pipe -- which is every real client -- print
+    // nothing, because stray output on the wrong stream corrupts the protocol.
+    // This goes to stderr regardless, which clients ignore.
+    if std::io::stdin().is_terminal() {
+        eprintln!("Krate MCP server: waiting for an AI client on stdin.");
+        eprintln!();
+        eprintln!("Nothing will happen here. This command is not meant to be run by hand --");
+        eprintln!("it is what Claude Desktop or Cursor starts for you in the background.");
+        eprintln!();
+        eprintln!("To connect it, see https://krate.tech/docs/pages/build-an-app.html");
+        eprintln!("To make an app right now, run:  krate create \"your app\" --output app.krate --agent claude");
+        eprintln!();
+        eprintln!("Press Ctrl-C to stop.");
+    }
+
     krate_mcp::serve_with(&tools, std::io::stdin().lock(), std::io::stdout().lock())
 }
 
