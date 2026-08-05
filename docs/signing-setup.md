@@ -86,3 +86,25 @@ is not done, whatever the build log says.
 
 Notarization adds roughly two to five minutes to a macOS release. The ticket is
 stapled to the bundle, so the app also opens on a machine that is offline.
+
+## If notarization returns 401 and your credentials are right
+
+This is the confusing one, and it is usually not the credentials.
+
+After you create a Developer ID certificate, Apple frequently posts an updated
+Developer Program License Agreement. Until it is accepted, the **notary service
+answers 401 "Invalid credentials"** — even though the Apple ID, team id and
+app-specific password are all correct, and even though `codesign` works fine
+with the same certificate.
+
+Go to [developer.apple.com/account](https://developer.apple.com/account). If
+there is an agreement banner, accept it, then re-run the release. Nothing else
+needs changing.
+
+Only after that is clear is it worth re-checking:
+
+- `APPLE_ID` is the Apple ID **email**, not a username.
+- `APPLE_APP_PASSWORD` is app-specific (`xxxx-xxxx-xxxx-xxxx`) from
+  [appleid.apple.com](https://appleid.apple.com), not the account password.
+- `APPLE_TEAM_ID` matches what the certificate says:
+  `security find-identity -v -p codesigning`
