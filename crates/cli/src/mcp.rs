@@ -1,109 +1,98 @@
-//! Minimal MCP server exposing Krate component execution to agents.
+//! The Krate MCP server: authoring plus sandboxed execution, over stdio.
 //!
-//! One tool, `run_component`: an MCP-capable agent framework supplies a
-//! component path, optional manifest, and grants; Krate executes the
-//! component inside the capability sandbox through the embedding API and
-//! returns a `krate.run.v1`-shaped report (exit class, granted/denied
-//! capabilities, duration, captured stdout).
+//! Two families of tool, deliberately in one server, because a model that just
+//! built an app should be able to run it without the user wiring up a second
+//! connector:
 //!
-//! Scope is deliberately bounded (Plan/Phase-3-Plan.md P3-EMB-03): no agent
-//! orchestration, no model calls, no tool registry. Krate executes
-//! artifacts safely; the agent ecosystem does the rest.
+//!  - **Authoring** (`krate_schema`, `krate_examples`, `krate_start_build`,
+//!    `krate_build_status`, `krate_check`, `krate_package`, `krate_run`), from
+//!    the `krate-mcp` crate. These wrap the authoring loop -- the context pack,
+//!    `krate create`, and the `check-app` oracle -- so someone can get a
+//!    working `.krate` by talking.
+//!  - **Execution** (`run_component`, `inspect_bundle`), below. An agent
+//!    framework supplies a component and grants; Krate runs it inside the
+//!    capability sandbox and returns a `krate.run.v1` report.
 //!
-//! Transport: newline-delimited JSON-RPC 2.0 over stdio, per the MCP stdio
-//! transport. Wire an agent at it with e.g.
-//! `claude mcp add krate -- krate mcp`.
+//! This file owns only the execution half and the composition. The protocol
+//! itself lives in `krate_mcp::protocol`, tested on its own.
+//!
+//! Transport: newline-delimited JSON-RPC 2.0 over stdio. See
+//! `docs/mcp-setup.md` for the client configuration.
 
-use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use krate_manifest::Manifest;
+use krate_mcp::{KrateTools, ToolSet};
 use krate_policy::SessionPolicy;
 use krate_runtime::{embed, Config};
 use serde_json::{json, Value};
 
-const SERVER_NAME: &str = "krate";
-const PROTOCOL_VERSION: &str = "2024-11-05";
+use crate::authoring_context;
 
 pub fn serve() -> Result<()> {
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    let mut out = stdout.lock();
+    // The binary that runs builds and checks is this one. Resolving it here,
+    // rather than trusting a bare `krate` on PATH, means the server always
+    // drives the Krate it is part of -- an installed older release on PATH was
+    // exactly how a "fixed" bug appeared to come back.
+    let krate_bin = std::env::current_exe().context("locate the krate binary")?;
+    let authoring = KrateTools::new(
+        krate_bin,
+        krate_mcp::mcp_root()?,
+        authoring_context::generate,
+    );
+    let tools = KrateServer { authoring };
+    krate_mcp::serve_with(&tools, std::io::stdin().lock(), std::io::stdout().lock())
+}
 
-    for line in stdin.lock().lines() {
-        let line = line.context("read MCP request line")?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let Some(response) = handle_message(&line) else {
-            continue;
-        };
-        writeln!(out, "{response}").context("write MCP response")?;
-        out.flush().context("flush MCP response")?;
+/// The whole server: the authoring tools plus the execution tools.
+struct KrateServer {
+    authoring: KrateTools,
+}
+
+impl ToolSet for KrateServer {
+    fn server_name(&self) -> &str {
+        "krate"
     }
 
-    Ok(())
-}
+    fn server_version(&self) -> &str {
+        env!("CARGO_PKG_VERSION")
+    }
 
-/// Handle one JSON-RPC message; `None` means no response (notification).
-fn handle_message(raw: &str) -> Option<Value> {
-    let message: Value = match serde_json::from_str(raw) {
-        Ok(message) => message,
-        Err(err) => {
-            return Some(error_response(
-                Value::Null,
-                -32700,
-                &format!("parse error: {err}"),
-            ))
+    fn instructions(&self) -> Option<String> {
+        // The authoring instructions plus one line on the execution half, so a
+        // model knows both halves exist before it starts.
+        self.authoring.instructions().map(|text| {
+            format!(
+                "{text}\n\nThis server can also run components directly: `inspect_bundle` shows \
+                 what a .krate asks for without executing it, and `run_component` runs one with \
+                 exactly the permissions you name and nothing else."
+            )
+        })
+    }
+
+    fn tools(&self) -> Vec<Value> {
+        let mut tools = self.authoring.tools();
+        tools.extend(execution_tools());
+        tools
+    }
+
+    fn call(&self, name: &str, arguments: &Value) -> std::result::Result<Value, String> {
+        match name {
+            // A run that ends badly is still a successful *call*: the report is
+            // the answer, and it carries the exit class and the remedy the
+            // model needs. Only a call that could not produce a report at all
+            // (a missing file, a bad URL) is an error.
+            "run_component" => run_component_tool(arguments).map_err(|err| format!("{err:#}")),
+            "inspect_bundle" => inspect_bundle_tool(arguments).map_err(|err| format!("{err:#}")),
+            other => self.authoring.call(other, arguments),
         }
-    };
-
-    let method = message.get("method").and_then(Value::as_str)?.to_string();
-    let id = message.get("id").cloned();
-    let params = message.get("params").cloned().unwrap_or(Value::Null);
-
-    // Notifications carry no id and get no response.
-    let id = id?;
-
-    let result = match method.as_str() {
-        "initialize" => json!({
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": { "tools": {} },
-            "serverInfo": {
-                "name": SERVER_NAME,
-                "version": env!("CARGO_PKG_VERSION"),
-            },
-        }),
-        "ping" => json!({}),
-        "tools/list" => tools_list(),
-        "tools/call" => match tools_call(&params) {
-            Ok(result) => result,
-            Err(err) => return Some(error_response(id, -32602, &err.to_string())),
-        },
-        _ => {
-            return Some(error_response(
-                id,
-                -32601,
-                &format!("unknown method {method}"),
-            ))
-        }
-    };
-
-    Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
+    }
 }
 
-fn error_response(id: Value, code: i64, message: &str) -> Value {
-    json!({
-        "jsonrpc": "2.0",
-        "id": id,
-        "error": { "code": code, "message": message },
-    })
-}
-
-fn tools_list() -> Value {
-    json!({
-        "tools": [{
+fn execution_tools() -> Vec<Value> {
+    vec![
+        json!({
             "name": "run_component",
             "description": "Run a Krate WebAssembly component inside the capability sandbox. \
                 Grants are explicit: nothing is prompted, and the component cannot touch \
@@ -150,7 +139,8 @@ fn tools_list() -> Value {
                 },
                 "required": []
             }
-        }, {
+        }),
+        json!({
             "name": "inspect_bundle",
             "description": "Read a .krate bundle's identity and the capabilities it requests, without running it. \
                 Use this before run_component to decide whether an app should be executed at all, \
@@ -169,34 +159,8 @@ fn tools_list() -> Value {
                 },
                 "required": ["bundle"]
             }
-        }]
-    })
-}
-
-fn tools_call(params: &Value) -> Result<Value> {
-    let name = params
-        .get("name")
-        .and_then(Value::as_str)
-        .context("tools/call needs a name")?;
-    let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
-
-    match name {
-        "run_component" => {
-            let report = run_component_tool(&arguments)?;
-            Ok(json!({
-                "content": [{ "type": "text", "text": report.to_string() }],
-                "isError": report["exit"]["class"] != "success",
-            }))
-        }
-        "inspect_bundle" => {
-            let report = inspect_bundle_tool(&arguments)?;
-            Ok(json!({
-                "content": [{ "type": "text", "text": report.to_string() }],
-                "isError": false,
-            }))
-        }
-        other => anyhow::bail!("unknown tool {other}"),
-    }
+        }),
+    ]
 }
 
 /// Report what a bundle is and what it wants, without running it.
@@ -440,37 +404,88 @@ fn string_list(value: Option<&Value>) -> Result<Vec<String>> {
 mod tests {
     use super::*;
 
-    fn call(line: &str) -> Value {
-        handle_message(line).expect("response expected")
+    /// The composed server, pointed at a scratch root so nothing touches the
+    /// user's real Krate directory.
+    fn server(root: &Path) -> KrateServer {
+        KrateServer {
+            authoring: KrateTools::new(
+                root.join("krate"),
+                root.to_path_buf(),
+                authoring_context::generate,
+            ),
+        }
+    }
+
+    fn call(server: &KrateServer, line: &str) -> Value {
+        krate_mcp::protocol::handle_line(server, line).expect("response expected")
     }
 
     #[test]
-    fn initialize_and_list_shape() {
-        let init = call(r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#);
+    fn initialize_reports_the_protocol_version_and_the_server_name() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let server = server(dir.path());
+        let init = call(
+            &server,
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}"#,
+        );
         assert_eq!(init["result"]["serverInfo"]["name"], "krate");
+        assert_eq!(
+            init["result"]["protocolVersion"],
+            krate_mcp::PROTOCOL_VERSION
+        );
+        // The instructions are the one chance to steer a model before it
+        // guesses, so they must actually arrive.
+        assert!(init["result"]["instructions"]
+            .as_str()
+            .expect("instructions")
+            .contains("krate_schema"));
+    }
 
-        let list = call(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#);
-        assert_eq!(list["result"]["tools"][0]["name"], "run_component");
+    #[test]
+    fn both_families_of_tool_are_advertised_together() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let server = server(dir.path());
+        let list = call(&server, r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#);
+        let names: Vec<&str> = list["result"]["tools"]
+            .as_array()
+            .expect("tools")
+            .iter()
+            .map(|tool| tool["name"].as_str().expect("name"))
+            .collect();
+        // Authoring: build an app by talking.
+        assert!(names.contains(&"krate_schema"));
+        assert!(names.contains(&"krate_start_build"));
+        assert!(names.contains(&"krate_check"));
+        // Execution: then run what you built, or inspect someone else's.
+        assert!(names.contains(&"run_component"));
+        assert!(names.contains(&"inspect_bundle"));
+        assert_eq!(names.len(), 9);
     }
 
     #[test]
     fn notifications_get_no_response() {
-        assert!(
-            handle_message(r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#).is_none()
-        );
+        let dir = tempfile::tempdir().expect("tempdir");
+        let server = server(dir.path());
+        assert!(krate_mcp::protocol::handle_line(
+            &server,
+            r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#
+        )
+        .is_none());
     }
 
     #[test]
     fn unknown_methods_error() {
-        let response = call(r#"{"jsonrpc":"2.0","id":3,"method":"nope"}"#);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let server = server(dir.path());
+        let response = call(&server, r#"{"jsonrpc":"2.0","id":3,"method":"nope"}"#);
         assert_eq!(response["error"]["code"], -32601);
     }
 
     #[test]
     fn invalid_component_is_classified_not_crashed() {
-        let dir = std::env::temp_dir().join("krate-mcp-test");
-        std::fs::create_dir_all(&dir).expect("create temp dir");
-        let wasm = dir.join("bogus.wasm");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let server = server(dir.path());
+        let wasm = dir.path().join("bogus.wasm");
         std::fs::write(&wasm, b"not a component").expect("write bogus wasm");
 
         let request = json!({
@@ -482,14 +497,11 @@ mod tests {
                 "arguments": { "component_path": wasm.to_string_lossy() },
             },
         });
-        let response = call(&request.to_string());
-        let text = response["result"]["content"][0]["text"]
-            .as_str()
-            .expect("text content");
-        let report: Value = serde_json::from_str(text).expect("parse report");
+        let response = call(&server, &request.to_string());
+        // Not a crash and not a protocol error: a report the model can read.
+        let report: Value = response["result"]["structuredContent"].clone();
         assert_eq!(report["schema"], "krate.run.v1");
         assert_eq!(report["exit"]["class"], "invalid-component");
-        assert_eq!(response["result"]["isError"], true);
     }
 }
 
@@ -522,16 +534,15 @@ required = true
     }
 
     #[test]
-    fn both_tools_are_advertised() {
-        let list = tools_list();
-        let names: Vec<&str> = list["tools"]
-            .as_array()
-            .expect("tools array")
-            .iter()
-            .map(|tool| tool["name"].as_str().expect("tool name"))
-            .collect();
-        assert!(names.contains(&"run_component"));
-        assert!(names.contains(&"inspect_bundle"));
+    fn the_execution_tools_are_valid_mcp_tool_definitions() {
+        for tool in execution_tools() {
+            let name = tool["name"].as_str().expect("tool name");
+            assert!(["run_component", "inspect_bundle"].contains(&name));
+            // inputSchema MUST be a JSON Schema object, never null, or a strict
+            // client rejects the whole tool list.
+            assert_eq!(tool["inputSchema"]["type"], "object", "{name}");
+            assert!(tool["description"].as_str().expect("description").len() > 80);
+        }
     }
 
     #[test]

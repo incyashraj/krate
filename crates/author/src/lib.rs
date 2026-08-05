@@ -392,14 +392,28 @@ fn gui_skeleton_source() -> String {
 //!
 //! It opens a window with one label, honors the `quick` argument (exit
 //! promptly for automated checks), and imports only `krate:*`. Keep the
-//! shape -- `mod bindings`, the `quick` check, `pure_string`, `export!` --
-//! and build the requested app inside `run`. Read KRATE_AUTHORING.md first,
-//! then the closest example under apps/, and run `krate check-app .` until
-//! it prints OK.
+//! shape -- `#![no_std]`, `mod bindings`, the `quick` check, `pure_string`,
+//! `export!` -- and build the requested app inside `run`. Read
+//! KRATE_AUTHORING.md first, then the closest example under apps/, and run
+//! `krate check-app .` until it prints OK.
+
+// A Krate guest is no_std: the SDK owns the allocator, the panic handler, and
+// the mem intrinsics, so nothing here can pull std's latent `wasi:*` imports.
+// Linking std instead would fail the import check the moment this app does
+// anything real, which is far too late to find out.
+#![no_std]
+
+extern crate alloc;
+
+// Pulled in for its allocator and panic handler even though this file calls no
+// `krate::*` function directly. Without it the link fails with "no global
+// memory allocator found" and "`#[panic_handler]` function required".
+extern crate krate as _krate_runtime;
 
 #[allow(warnings)]
 mod bindings;
 
+use alloc::string::String;
 use bindings::krate::io::args;
 use bindings::krate::ui::{events, tree, types, window};
 
@@ -488,7 +502,7 @@ fn pure_string(text: &str) -> String {
     }
     unsafe {
         let layout = core::alloc::Layout::from_size_align_unchecked(len, 1);
-        let ptr = std::alloc::alloc(layout);
+        let ptr = alloc::alloc::alloc(layout);
         if ptr.is_null() {
             core::arch::wasm32::unreachable()
         }
@@ -1003,6 +1017,11 @@ repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]
+# The SDK owns the allocator, the panic handler, and the mem intrinsics a
+# `#![no_std]` guest needs. Without it the build stops at "can't find crate for
+# `krate`", "no global memory allocator found", and "`#[panic_handler]`
+# function required" -- three errors that all name the same missing line.
+krate = {{ path = "{sdk_prefix}/crates/bindings-rust" }}
 wit-bindgen-rt = {{ version = "0.44.0", features = ["bitflags"] }}
 
 [lib]
@@ -1211,6 +1230,31 @@ mod tests {
         assert!(cargo.contains(r#"package = "krate:word-count""#));
     }
 
+    /// The GUI world needs the same `krate` dependency the CLI world has. It
+    /// was missing here once, and every windowed app the generator or the agent
+    /// skeleton produced died on three errors that all meant this one line:
+    /// "can't find crate for `krate`", "no global memory allocator found", and
+    /// "`#[panic_handler]` function required". Nothing else in the pipeline
+    /// caught it, because the CLI world was fine and only it was tested.
+    #[test]
+    fn the_gui_world_depends_on_the_sdk_too() {
+        let gui = generate(&AppRequest::checklist("todo"), "../..").expect("generate");
+        let cargo = gui.file("Cargo.toml").expect("cargo");
+        assert!(
+            cargo.contains(r#"krate = { path = "../../crates/bindings-rust" }"#),
+            "the GUI Cargo.toml must depend on the SDK, got:\n{cargo}"
+        );
+
+        // The skeleton is what an AI author is handed to start from, so it has
+        // to build before the agent writes a line.
+        let skel = skeleton("todo", "../..", Skeleton::Gui).expect("skeleton");
+        let skel_cargo = skel.file("Cargo.toml").expect("cargo");
+        assert!(
+            skel_cargo.contains(r#"krate = { path = "../../crates/bindings-rust" }"#),
+            "the GUI skeleton must depend on the SDK, got:\n{skel_cargo}"
+        );
+    }
+
     #[test]
     fn rejects_a_bad_name() {
         let mut bad = req();
@@ -1312,6 +1356,17 @@ mod tests {
             .contents;
         assert!(gui_lib.contains("window::create"), "opens a window");
         assert!(gui_lib.contains("quick"), "honors the quick argument");
+        // The GUI skeleton must be no_std for the same reason the CLI one is:
+        // it depends on the SDK, which supplies the allocator and the panic
+        // handler, and linking std as well makes those collide
+        // ("rust_begin_unwind: symbol multiply defined"). It also means the
+        // agent starts from a shape that passes the import check rather than
+        // one that fails it the moment it does anything real.
+        assert!(gui_lib.contains("#![no_std]"), "no_std GUI");
+        assert!(
+            !gui_lib.contains("std::alloc::"),
+            "a no_std guest must allocate through `alloc`, not `std`"
+        );
 
         let cli = skeleton("my-app", "/sdk", Skeleton::Cli).expect("cli skeleton");
         let cli_manifest = &cli
