@@ -2681,7 +2681,10 @@ fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
 
 /// Default hub used when neither `--hub` nor `KRATE_HUB_URL` is set. A local
 /// dev server, so the demo works out of the box once someone runs `krate-hub`.
-const DEFAULT_HUB_URL: &str = "http://127.0.0.1:8787";
+/// The public hub. KRATE_HUB_URL still overrides it, which is how the local
+/// dev server is used -- but the default has to be the real one, or publishing
+/// silently uploads to a laptop nobody else can reach.
+const DEFAULT_HUB_URL: &str = "https://hub.krate.tech";
 
 /// Upload a `.krate` to a hub and print the URL anyone can `krate run`.
 ///
@@ -2732,10 +2735,9 @@ fn publish_bundle(
         request = request.set("X-Krate-Description", description);
     }
     if let Some(identity) = &identity {
-        request = request.set("X-Krate-Author", identity.display_name()).set(
-            "X-Krate-Author-Url",
-            &format!("https://github.com/{}", identity.login),
-        );
+        // The hub verifies this against GitHub rather than trusting a name in
+        // a header, so the author shown on an app's page is a real account.
+        request = request.set("Authorization", &format!("Bearer {}", identity.token));
     }
 
     let response = match request.send_bytes(&bytes) {

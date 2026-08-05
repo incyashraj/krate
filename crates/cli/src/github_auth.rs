@@ -24,7 +24,7 @@ use crate::style::{self, glyphs};
 /// authorise anything. The device flow has no client secret at all, which is
 /// part of why it suits a distributed CLI: there is no secret to leak in a
 /// binary anyone can download.
-const CLIENT_ID: &str = "Ov23liKrateCloudPublish";
+const CLIENT_ID: &str = "Ov23liV2n8Dxi0okyv0F";
 
 const DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
 const TOKEN_URL: &str = "https://github.com/login/oauth/access_token";

@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Publish an app | Krate</title>
+  <meta name="description" content="Sign in with GitHub, choose a .krate file, and publish it so anyone can run it." />
+  <link rel="stylesheet" href="/krate.css" />
+  <style>
+    .wrap { max-width: 660px; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+    h1 { margin: 0 0 .35rem; font-size: 1.9rem; letter-spacing: -.02em; }
+    .lede { color: var(--muted); margin: 0 0 2.5rem; line-height: 1.6; }
+
+    /* Each step is dimmed until the one before it is done, so the page reads
+       as a sequence rather than three things to fill in at once. */
+    .step {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1rem;
+      opacity: .45;
+      pointer-events: none;
+      transition: opacity .2s ease, border-color .2s ease;
+    }
+    .step.active { opacity: 1; pointer-events: auto; border-color: var(--line-strong); }
+    .step.done { opacity: 1; pointer-events: auto; }
+    .step h2 {
+      font-size: .82rem; text-transform: uppercase; letter-spacing: .09em;
+      color: var(--quiet); margin: 0 0 .9rem; font-weight: 600;
+    }
+    .step h2 .n {
+      display: inline-grid; place-items: center;
+      width: 1.35rem; height: 1.35rem; margin-right: .5rem;
+      border-radius: 50%; background: var(--panel-raised);
+      color: var(--blue-soft); font-size: .72rem;
+    }
+    .step.done h2 .n { background: var(--blue); color: #071018; }
+
+    button.primary {
+      background: var(--blue); color: #071018; border: 0;
+      padding: .7rem 1.15rem; border-radius: 9px;
+      font: inherit; font-weight: 600; cursor: pointer;
+    }
+    button.primary:disabled { opacity: .5; cursor: default; }
+    button.ghost {
+      background: transparent; color: var(--muted);
+      border: 1px solid var(--line-strong);
+      padding: .55rem .9rem; border-radius: 9px; font: inherit; cursor: pointer;
+    }
+
+    .drop {
+      border: 1px dashed var(--line-strong); border-radius: 11px;
+      padding: 1.6rem 1rem; text-align: center; color: var(--muted);
+      cursor: pointer; transition: border-color .15s ease, background .15s ease;
+    }
+    .drop:hover, .drop.over { border-color: var(--blue); background: var(--panel-raised); }
+    .drop strong { color: var(--text); display: block; margin-bottom: .25rem; }
+
+    label { display: block; font-size: .82rem; color: var(--quiet); margin: 0 0 .4rem; }
+    textarea {
+      width: 100%; min-height: 5rem; resize: vertical;
+      background: var(--bg); color: var(--text);
+      border: 1px solid var(--line); border-radius: 9px;
+      padding: .7rem .8rem; font: inherit; line-height: 1.5;
+    }
+    textarea:focus { outline: none; border-color: var(--blue); }
+
+    .who { display: flex; align-items: center; gap: .7rem; }
+    .who img { width: 34px; height: 34px; border-radius: 50%; }
+    .who .login { color: var(--text); font-weight: 600; }
+
+    .code {
+      font-family: var(--mono); font-size: 1.5rem; letter-spacing: .18em;
+      color: var(--blue-soft); background: var(--bg);
+      border: 1px solid var(--line); border-radius: 9px;
+      padding: .7rem 1rem; display: inline-block; margin: .5rem 0;
+    }
+    .note { color: var(--quiet); font-size: .88rem; line-height: 1.6; }
+    .result {
+      border: 1px solid var(--blue); border-radius: 12px;
+      background: var(--panel-raised); padding: 1.2rem 1.35rem; margin-top: 1.5rem;
+    }
+    .result a { color: var(--blue-soft); word-break: break-all; }
+    .error { color: var(--yellow); font-size: .9rem; margin-top: .7rem; }
+    .filename { color: var(--text); font-family: var(--mono); font-size: .9rem; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>Publish an app</h1>
+    <p class="lede">
+      Put a <code>.krate</code> somewhere anyone can run it. You need a file you
+      already made &mdash; if you have not made one yet, install Krate and type
+      <code>krate</code>.
+    </p>
+
+    <!-- 1. Who -->
+    <section class="step active" id="step-auth">
+      <h2><span class="n">1</span>Sign in</h2>
+      <div id="auth-idle">
+        <button class="primary" id="signin">Sign in with GitHub</button>
+        <p class="note" style="margin-top:.8rem">
+          So the app carries your name. Krate asks for read-only access to your
+          public profile and nothing else.
+        </p>
+      </div>
+      <div id="auth-waiting" hidden>
+        <p class="note">Open <a href="https://github.com/login/device" target="_blank" rel="noopener">github.com/login/device</a> and enter:</p>
+        <div class="code" id="usercode">····-····</div>
+        <p class="note" id="auth-status">Waiting for you to approve it…</p>
+      </div>
+      <div id="auth-done" hidden>
+        <div class="who">
+          <img id="avatar" alt="" />
+          <div>
+            <div class="login" id="whoami"></div>
+            <button class="ghost" id="signout" style="margin-top:.4rem;padding:.3rem .6rem;font-size:.8rem">Sign out</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. What -->
+    <section class="step" id="step-file">
+      <h2><span class="n">2</span>Choose the file</h2>
+      <div class="drop" id="drop">
+        <strong>Drop a .krate here</strong>
+        <span>or click to choose one</span>
+      </div>
+      <input type="file" id="file" accept=".krate" hidden />
+      <p class="note" id="fileinfo" hidden></p>
+    </section>
+
+    <!-- 3. Describe and go -->
+    <section class="step" id="step-publish">
+      <h2><span class="n">3</span>Describe it</h2>
+      <label for="description">One line, so people know what it does</label>
+      <textarea id="description" placeholder="a habit tracker with a weekly grid"></textarea>
+      <p style="margin:1rem 0 0">
+        <button class="primary" id="publish" disabled>Publish</button>
+      </p>
+      <p class="error" id="error" hidden></p>
+    </section>
+
+    <div class="result" id="result" hidden>
+      <strong>Published.</strong>
+      <p class="note" style="margin:.5rem 0">Anyone can run it with:</p>
+      <p class="filename"><code id="runcmd"></code></p>
+      <p class="note" style="margin:.6rem 0 0">Or send them this link: <a id="link" href="#"></a></p>
+    </div>
+  </main>
+
+  <script>
+    // The hub. Same origin would be neater, but the hub is a Worker on its own
+    // subdomain so the page has to name it.
+    const HUB = "https://hub.krate.tech";
+    const CLIENT_ID = "Ov23liV2n8Dxi0okyv0F";
+
+    // The same device flow the CLI uses, for the same reason: no callback URL
+    // to register, and nothing secret has to live in this page. A browser
+    // cannot call GitHub's token endpoint directly (no CORS), so the hub
+    // proxies those two calls.
+    let identity = null;
+    let file = null;
+
+    const $ = (id) => document.getElementById(id);
+    const steps = { auth: $("step-auth"), file: $("step-file"), publish: $("step-publish") };
+
+    function refresh() {
+      steps.auth.className = "step " + (identity ? "done" : "active");
+      steps.file.className = "step " + (identity ? (file ? "done" : "active") : "");
+      steps.publish.className = "step " + (identity && file ? "active" : "");
+      $("publish").disabled = !(identity && file);
+    }
+
+    function showIdentity() {
+      $("auth-idle").hidden = true;
+      $("auth-waiting").hidden = true;
+      $("auth-done").hidden = false;
+      $("whoami").textContent = identity.name || identity.login;
+      $("avatar").src = identity.avatar_url || "";
+      refresh();
+    }
+
+    // Restore a previous sign-in so publishing a second app costs nothing.
+    try {
+      const saved = localStorage.getItem("krate-identity");
+      if (saved) { identity = JSON.parse(saved); showIdentity(); }
+    } catch (_) {}
+
+    $("signin").addEventListener("click", async () => {
+      $("auth-idle").hidden = true;
+      $("auth-waiting").hidden = false;
+      try {
+        const start = await fetch(HUB + "/auth/start", { method: "POST" }).then((r) => r.json());
+        $("usercode").textContent = start.user_code;
+        window.open(start.verification_uri, "_blank", "noopener");
+
+        // Poll on the interval GitHub named; polling faster is refused.
+        const deadline = Date.now() + start.expires_in * 1000;
+        while (Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, start.interval * 1000));
+          const poll = await fetch(HUB + "/auth/poll", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ device_code: start.device_code }),
+          }).then((r) => r.json());
+          if (poll.identity) {
+            identity = poll.identity;
+            localStorage.setItem("krate-identity", JSON.stringify(identity));
+            showIdentity();
+            return;
+          }
+          if (poll.error && poll.error !== "authorization_pending" && poll.error !== "slow_down") {
+            throw new Error(poll.error);
+          }
+        }
+        throw new Error("that code expired -- try again");
+      } catch (err) {
+        $("auth-waiting").hidden = true;
+        $("auth-idle").hidden = false;
+        $("error").hidden = false;
+        $("error").textContent = String(err.message || err);
+      }
+    });
+
+    $("signout").addEventListener("click", () => {
+      identity = null;
+      localStorage.removeItem("krate-identity");
+      $("auth-done").hidden = true;
+      $("auth-idle").hidden = false;
+      refresh();
+    });
+
+    const drop = $("drop");
+    drop.addEventListener("click", () => $("file").click());
+    drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+    drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+    drop.addEventListener("drop", (e) => {
+      e.preventDefault();
+      drop.classList.remove("over");
+      if (e.dataTransfer.files[0]) takeFile(e.dataTransfer.files[0]);
+    });
+    $("file").addEventListener("change", (e) => {
+      if (e.target.files[0]) takeFile(e.target.files[0]);
+    });
+
+    function takeFile(chosen) {
+      if (!chosen.name.endsWith(".krate")) {
+        $("error").hidden = false;
+        $("error").textContent = "That is not a .krate file.";
+        return;
+      }
+      file = chosen;
+      $("error").hidden = true;
+      $("fileinfo").hidden = false;
+      $("fileinfo").innerHTML =
+        '<span class="filename">' + chosen.name + "</span> &middot; " +
+        Math.max(1, Math.round(chosen.size / 1024)) + " KB";
+      refresh();
+    }
+
+    $("publish").addEventListener("click", async () => {
+      const button = $("publish");
+      button.disabled = true;
+      button.textContent = "Publishing…";
+      $("error").hidden = true;
+      try {
+        const response = await fetch(HUB + "/publish", {
+          method: "POST",
+          headers: {
+            "content-type": "application/octet-stream",
+            authorization: "Bearer " + identity.token,
+            "x-krate-name": file.name.replace(/\.krate$/, ""),
+            "x-krate-description": $("description").value.trim(),
+          },
+          body: await file.arrayBuffer(),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const published = await response.json();
+        $("result").hidden = false;
+        $("runcmd").textContent = "krate run " + published.url;
+        $("link").href = published.url;
+        $("link").textContent = published.url;
+        button.textContent = "Published";
+      } catch (err) {
+        $("error").hidden = false;
+        $("error").textContent = String(err.message || err);
+        button.disabled = false;
+        button.textContent = "Publish";
+      }
+    });
+
+    refresh();
+  </script>
+</body>
+</html>

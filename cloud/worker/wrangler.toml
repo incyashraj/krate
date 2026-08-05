@@ -1,0 +1,21 @@
+# The Krate hub, as a Cloudflare Worker.
+#
+# Bundles live in R2 (blobs, content-addressed by SHA-256) and their metadata
+# in KV (small, read on every page load). That split matters: R2 is cheap for
+# bytes and KV is fast for the listing the cloud page renders.
+
+name = "krate-hub"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+account_id = "1ded170dc582113e578faac5034be4ce"
+
+[[r2_buckets]]
+binding = "BUNDLES"
+bucket_name = "krate-bundles"
+
+[[kv_namespaces]]
+binding = "APPS"
+id = "PLACEHOLDER_FILLED_BY_SETUP"
+
+[vars]
+PUBLIC_BASE = "https://hub.krate.tech"
