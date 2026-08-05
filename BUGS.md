@@ -336,16 +336,17 @@ Fix:      Fixed by actually running each tool rather than looking at PATH.
           demanded stdout and marked a working tool broken.
 
 ### K-020 — Double-clicking a .krate opened a file picker, not the app
-Status:   open
-Owner:    unclaimed
+Status:   not reproducible -- closing
+Owner:    lead
 Severity: serious
 Class:    our-code
 Found:    2026-08-05, W17, outsider testing
 Evidence: Double-clicking a `.krate` produced an off-screen file picker rather
           than opening the app. Double-click is the headline promise on the
           website and the simplest path we advertise.
-Fix:      Reproduce on a clean machine first -- this may be the stale
-          /Applications/Krate.app trap that has bitten before.
+Fix:      Retested by Yashraj on 2026-08-05: double-click works. W17 most
+          likely hit the stale /Applications/Krate.app trap, as suspected.
+          Closing rather than leaving an unreproducible entry on the board.
 
 ### K-021 — An absolute path to target/release is the WRONG binary in a worktree
 Status:   open
@@ -486,6 +487,40 @@ Evidence: `unzip -l ~/Desktop/a-news-app-giving.krate` lists only
           scroll, resize, text measurement, self-close -- and reports bugs
           that are already fixed here.
 Fix:      Cut a release. Until then, say plainly which binary a test used.
+
+### K-031 — Krate.app shipped with no icons, so every .krate looks corrupt
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-05, Yashraj, from the Dock
+Evidence: `plutil -p /Applications/Krate.app/Contents/Info.plist` names
+          CFBundleIconFile "Krate" and CFBundleTypeIconFile "KrateDoc", but
+          Contents/Resources contains no .icns at all, so macOS draws the
+          broken-document page on every .krate a user owns.
+          make-macos-app.sh regenerated the icons behind `|| true` and copied
+          them only `if [ -f ]`, so a build machine without PIL shipped a
+          release whose every file looked corrupt, silently.
+Fix:      The copy is now required: generated icons first, the committed
+          dist/icon/ copies as a fallback, and a hard failure naming the fix
+          if neither exists. Verified byte-identical to the source logos.
+
+### K-032 — A window sometimes will not close from its own close button
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    unknown -- needs diagnosis
+Found:    2026-08-05, Yashraj, using a generated app
+Evidence: Clicking the native close button sometimes leaves the window open
+          with the pointer in the spinning-wait state. The app can be closed
+          from the terminal instead. Read the code: windowShouldClose returns
+          false and defers to the app, the callback is queued and drained, and
+          the host's wait loop pumps native windows -- so the wiring is
+          present and the fault is elsewhere. Not yet reproduced under a
+          debugger.
+Fix:      Reproduce first with a minimal app. Suspect the app is inside a
+          long-running call when the callback arrives, or a redraw loop that
+          never yields, rather than a missing event path.
 
 ---
 

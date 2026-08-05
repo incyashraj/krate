@@ -50,17 +50,26 @@ exec "$(dirname "$0")/krate-cli" open-app
 SHIM
 chmod +x "$APP/Contents/MacOS/Krate"
 
-# App icon: regenerate from source when the tooling is present; ship without
-# an icon rather than fail when it is not (CI runners without PIL).
+# App icon. The Info.plist below names Krate.icns and KrateDoc.icns, so
+# shipping without them is not "no icon" -- macOS draws the broken-document
+# page on every .krate a user has. That shipped once because this step was
+# `|| true` and PIL was missing on the build machine, and it silently produced
+# a release whose files all looked corrupt.
 if python3 -c "import PIL" 2>/dev/null; then
   python3 scripts/make-app-icon.py "$OUT_DIR/icon" >/dev/null 2>&1 || true
 fi
-if [ -f "$OUT_DIR/icon/Krate.icns" ]; then
-  cp "$OUT_DIR/icon/Krate.icns" "$APP/Contents/Resources/Krate.icns"
-fi
-if [ -f "$OUT_DIR/icon/KrateDoc.icns" ]; then
-  cp "$OUT_DIR/icon/KrateDoc.icns" "$APP/Contents/Resources/KrateDoc.icns"
-fi
+for icon in Krate KrateDoc; do
+  if [ -f "$OUT_DIR/icon/$icon.icns" ]; then
+    cp "$OUT_DIR/icon/$icon.icns" "$APP/Contents/Resources/$icon.icns"
+  elif [ -f "dist/icon/$icon.icns" ]; then
+    # Committed fallback, so a machine without PIL still ships real icons.
+    cp "dist/icon/$icon.icns" "$APP/Contents/Resources/$icon.icns"
+  else
+    echo "error: $icon.icns is missing, and the Info.plist names it." >&2
+    echo "Run: python3 scripts/make-app-icon.py $OUT_DIR/icon" >&2
+    exit 1
+  fi
+done
 
 VERSION="$("$BINARY" --version | awk '{print $2}')"
 
