@@ -102,7 +102,9 @@ print_summary() {
     NR == 1 { next }
     {
       total++
-      if ($3 == "pass") { pass++ } else { fail++; stage[$5]++ }
+      if ($3 == "pass") { pass++ }
+      else if ($3 == "skipped") { skipped++ }
+      else { fail++; stage[$5]++ }
       secs += $6
       if ($3 == "pass") { lines += $8; passlines++ }
     }
@@ -111,7 +113,12 @@ print_summary() {
       printf "\n  requests run     %d\n", total
       printf "  passed           %d\n", pass
       printf "  failed           %d\n", fail
-      printf "  pass rate        %.0f%%\n", (pass * 100) / total
+      if (skipped > 0) printf "  skipped (quota)  %d\n", skipped
+      # Pass rate counts only requests that actually reached the AI. A quota
+      # rejection means nothing was authored, so including it would understate
+      # the system rather than measure it.
+      attempted = pass + fail
+      if (attempted > 0) printf "  pass rate        %.0f%% (of %d attempted)\n", (pass * 100) / attempted, attempted
       printf "  mean wall time   %.0fs\n", secs / total
       if (passlines > 0) printf "  mean lines (pass) %.0f\n", lines / passlines
       if (fail > 0) {
@@ -196,7 +203,23 @@ for n in $targets; do
   [ -n "$app_dir" ] && [ -f "$app_dir/src/lib.rs" ] && \
     lib_lines="$(wc -l < "$app_dir/src/lib.rs" | tr -d ' ')"
 
-  if [ "$create_exit" = "0" ]; then
+  # A rate-limit rejection is not an authoring failure: the agent process
+  # started, the API refused it, and no code was ever written. Counting those
+  # as failures is how a run of 47 quota rejections turned a 14/14 pass rate
+  # into a reported 23%, which was a lie about the system. Record them as
+  # skipped and stop, because once the quota is gone every remaining request
+  # fails in two seconds and the whole corpus burns in a minute.
+  rate_limited=0
+  if [ -n "$app_dir" ] && [ -f "$app_dir/.agent-transcript.txt" ] && \
+     grep -q '"status":"rejected"' "$app_dir/.agent-transcript.txt" 2>/dev/null; then
+    rate_limited=1
+  fi
+
+  if [ "$rate_limited" = "1" ]; then
+    result="skipped"
+    stage=0
+    note="rate limited: the AI account was out of quota, no code was written"
+  elif [ "$create_exit" = "0" ]; then
     result="pass"
     stage=0
     note="-"
@@ -222,6 +245,14 @@ for n in $targets; do
     "$seconds" "$krate_bytes" "$lib_lines" "$note" >> "$results"
 
   echo "     -> $result ${seconds}s stage=$name lines=$lib_lines"
+
+  if [ "$rate_limited" = "1" ]; then
+    echo
+    echo "Stopping: the AI account is out of quota."
+    echo "Nothing is lost -- this run is resumable, so re-run it when the quota"
+    echo "resets and it will pick up from request $n."
+    break
+  fi
 
   # Drop the build artifacts, keep the source. Every app dir compiles its own
   # copy of the SDK into a private target/ of a gigabyte or so, and a corpus run

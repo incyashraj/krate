@@ -13,50 +13,50 @@ n	request	result	stage	stage_name	seconds	krate_bytes	lib_lines	note
 10	a water intake tracker for the day	pass	0	-	185	14353	877	-
 11	a packing list for a trip with checkboxes	pass	0	-	147	14328	946	-
 12	a birthday reminder list showing who is next	pass	0	-	222	18619	1198	-
-14	a unit converter for length and weight	fail	0	-	141	0	1005	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-14/work/unit-converter/.agent-transcript.txt 
-16	a BMI calculator	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-16/work/bmi-calculator/.agent-transcript.txt 
-17	a loan repayment calculator showing the monthly payment	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-17/work/loan-repayment-calculator/.agent-transcript.txt 
-18	a temperature converter between celsius and fahrenheit	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-18/work/temperature-converter-between/.agent-transcript.txt 
-19	a calculator with buttons for the four operations	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-19/work/calculator/.agent-transcript.txt 
-20	a date difference calculator: how many days between two dates	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-20/work/date-difference-calculator/.agent-transcript.txt 
-21	a fuel cost calculator for a trip	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-21/work/fuel-cost-calculator/.agent-transcript.txt 
-22	a split-the-bill calculator for a group	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-22/work/splitthebill-calculator/.agent-transcript.txt 
-23	a compound interest calculator	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-23/work/compound-interest-calculator/.agent-transcript.txt 
-24	a cooking measurement converter between cups and grams	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-24/work/cooking-measurement-converter/.agent-transcript.txt 
-25	a pace calculator for runners	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-25/work/pace-calculator/.agent-transcript.txt 
-26	a screen resolution aspect ratio calculator	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-26/work/screen-resolution-aspect/.agent-transcript.txt 
-27	a tic tac toe game against another person on the same computer	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-27/work/tic-tac-toe/.agent-transcript.txt 
-28	a memory matching card game	fail	0	-	4	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-28/work/memory-matching-card/.agent-transcript.txt 
-29	a snake game	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-29/work/snake-game/.agent-transcript.txt 
-30	a number guessing game where I guess what the computer picked	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-30/work/number-guessing-game/.agent-transcript.txt 
-31	a rock paper scissors game against the computer	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-31/work/rock-paper-scissors/.agent-transcript.txt 
-32	a dice roller that rolls two dice	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-32/work/dice-roller/.agent-transcript.txt 
-33	a game of hangman with a built in word list	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-33/work/game/.agent-transcript.txt 
-34	a simple breakout game with a paddle and a ball	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-34/work/breakout-game/.agent-transcript.txt 
-35	a whack-a-mole game with a score	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-35/work/whackamole-game/.agent-transcript.txt 
-36	a 2048 sliding tile game	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-36/work/sliding-tile-game/.agent-transcript.txt 
-37	a minesweeper game on a small grid	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-37/work/minesweeper-game-on/.agent-transcript.txt 
-38	a pong game for two players on one keyboard	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-38/work/pong-game/.agent-transcript.txt 
-39	a reaction time tester: click when the colour changes	fail	0	-	3	0	30	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-39/work/reaction-time-tester/.agent-transcript.txt 
-40	a connect four game for two players	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-40/work/connect-four-game/.agent-transcript.txt 
-41	a maze game where I move a dot to the exit	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-41/work/maze-game-where/.agent-transcript.txt 
-42	a simon says colour memory game	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-42/work/simon-says-colour/.agent-transcript.txt 
-43	a stopwatch with lap times	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-43/work/stopwatch/.agent-transcript.txt 
-44	a colour picker that shows me the hex code	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-44/work/colour-picker/.agent-transcript.txt 
-45	a random password generator	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-45/work/random-password-generator/.agent-transcript.txt 
-46	a QR-style grid pattern generator from a short text	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-46/work/qrstyle-grid-pattern/.agent-transcript.txt 
-47	a text case converter: upper, lower, title case	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-47/work/text-case-converter/.agent-transcript.txt 
-48	a word and character counter for text I paste in	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-48/work/word/.agent-transcript.txt 
-49	a markdown preview that shows my headings and lists	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-49/work/markdown-preview/.agent-transcript.txt 
-50	a JSON pretty printer	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-50/work/json-pretty-printer/.agent-transcript.txt 
-51	a CSV viewer that shows a table	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-51/work/csv-viewer/.agent-transcript.txt 
-52	a text file viewer with line numbers	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-52/work/text-file-viewer/.agent-transcript.txt 
-53	an image viewer that opens a PNG I choose	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-53/work/image-viewer/.agent-transcript.txt 
-54	a hex viewer for a small file	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-54/work/hex-viewer/.agent-transcript.txt 
-55	a diff viewer that compares two blocks of text	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-55/work/diff-viewer/.agent-transcript.txt 
-56	a clipboard history that remembers the last few things	fail	0	-	3	0	30	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-56/work/clipboard-history/.agent-transcript.txt 
-57	a file renamer preview: show what the new names would be	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-57/work/file-renamer-preview/.agent-transcript.txt 
-58	a base64 encoder and decoder	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-58/work/base64-encoder/.agent-transcript.txt 
-59	an expense tracker with a running total	fail	0	-	4	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-59/work/expense-tracker/.agent-transcript.txt 
-60	a mood tracker with a face for each day	fail	0	-	2	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-60/work/mood-tracker/.agent-transcript.txt 
-61	a workout log with sets and reps	fail	0	-	3	0	110	error: the claude agent did not finish successfully; see /tmp/reliability/w1/work/req-61/work/workout-log/.agent-transcript.txt 
+14	a unit converter for length and weight	skipped	0	-	141	0	1005	rate limited: the AI account was out of quota, no code was written
+16	a BMI calculator	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+17	a loan repayment calculator showing the monthly payment	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+18	a temperature converter between celsius and fahrenheit	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+19	a calculator with buttons for the four operations	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+20	a date difference calculator: how many days between two dates	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+21	a fuel cost calculator for a trip	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+22	a split-the-bill calculator for a group	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+23	a compound interest calculator	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+24	a cooking measurement converter between cups and grams	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+25	a pace calculator for runners	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+26	a screen resolution aspect ratio calculator	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+27	a tic tac toe game against another person on the same computer	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+28	a memory matching card game	skipped	0	-	4	0	110	rate limited: the AI account was out of quota, no code was written
+29	a snake game	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+30	a number guessing game where I guess what the computer picked	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+31	a rock paper scissors game against the computer	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+32	a dice roller that rolls two dice	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+33	a game of hangman with a built in word list	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+34	a simple breakout game with a paddle and a ball	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+35	a whack-a-mole game with a score	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+36	a 2048 sliding tile game	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+37	a minesweeper game on a small grid	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+38	a pong game for two players on one keyboard	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+39	a reaction time tester: click when the colour changes	skipped	0	-	3	0	30	rate limited: the AI account was out of quota, no code was written
+40	a connect four game for two players	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+41	a maze game where I move a dot to the exit	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+42	a simon says colour memory game	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+43	a stopwatch with lap times	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+44	a colour picker that shows me the hex code	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+45	a random password generator	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+46	a QR-style grid pattern generator from a short text	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+47	a text case converter: upper, lower, title case	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+48	a word and character counter for text I paste in	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+49	a markdown preview that shows my headings and lists	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+50	a JSON pretty printer	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+51	a CSV viewer that shows a table	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+52	a text file viewer with line numbers	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+53	an image viewer that opens a PNG I choose	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+54	a hex viewer for a small file	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+55	a diff viewer that compares two blocks of text	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
+56	a clipboard history that remembers the last few things	skipped	0	-	3	0	30	rate limited: the AI account was out of quota, no code was written
+57	a file renamer preview: show what the new names would be	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+58	a base64 encoder and decoder	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+59	an expense tracker with a running total	skipped	0	-	4	0	110	rate limited: the AI account was out of quota, no code was written
+60	a mood tracker with a face for each day	skipped	0	-	2	0	110	rate limited: the AI account was out of quota, no code was written
+61	a workout log with sets and reps	skipped	0	-	3	0	110	rate limited: the AI account was out of quota, no code was written
