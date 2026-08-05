@@ -26,8 +26,8 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 # Both shelves. `ported` holds the programs brought over from other languages;
-# `store` holds the apps written for Krate that the store actually lists.
-# Counting only `ported` made this page report 11 apps while 17 shipped.
+# `store` holds the apps written for Krate. Counting only `ported` made this
+# page report 11 apps while 25 ship.
 BUNDLE_DIRS = (ROOT / "evidence/ported", ROOT / "evidence/store")
 KRATE = ROOT / "target/release/krate"
 
@@ -369,11 +369,6 @@ def main():
   <meta name="theme-color" content="#0b0d12" />
   <meta name="description" content="Krate's measured results: app sizes, startup times, sandbox cost, and what the runtime can and cannot do. Every chart is drawn from a real measurement." />
   <link rel="canonical" href="https://krate.tech/reports/" />
-  <!-- Both pages live one level down (/reports/, /progress/), so the icon path
-       must be root-absolute. A relative one would 404 and the tab would fall
-       back to a blank page icon. -->
-  <link rel="icon" href="/krate-favicon.png" />
-  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <meta property="og:title" content="Krate: the measurements" />
   <meta property="og:description" content="A 2D game in 11 KB. Sandboxed code at native speed. Every chart drawn from a real measurement, with the limits published beside them." />
   <meta property="og:type" content="website" />
@@ -381,21 +376,10 @@ def main():
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <title>Krate: the measurements</title>
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="stylesheet" href="/krate.css" />
   <style>
-    /* A branded header, so these pages are recognisably part of the site and
-       there is a way back. Both live one level down, so every path here is
-       root-absolute. */
-    .page-nav {{ border-bottom: 1px solid #23262e; }}
-    .page-nav-inner {{ max-width: 48rem; margin: 0 auto; padding: 1rem 1.5rem;
-      display: flex; align-items: center; gap: .6rem; }}
-    .page-nav a {{ display: inline-flex; align-items: center; gap: .6rem;
-      color: inherit; text-decoration: none; font-weight: 700;
-      letter-spacing: -.02em; }}
-    .page-nav img {{ width: 26px; height: 26px; display: block; }}
-    .page-nav .home {{ margin-left: auto; font-weight: 400; font-size: .9rem;
-      color: #98a1b3; }}
-    .page-nav .home:hover {{ color: #f5f7fb; }}
     .report {{ max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }}
     .report section {{ margin: 0 0 4.5rem; }}
     .report h1 {{ font-size: clamp(2.1rem, 5vw, 3rem); line-height: 1.1; margin: 0.4rem 0 1rem; }}
@@ -428,13 +412,21 @@ def main():
   </style>
 </head>
 <body>
-  <nav class="page-nav" aria-label="Primary">
-    <div class="page-nav-inner">
-      <a href="/" aria-label="Krate home">
+  <!-- The logo was missing here, so this page read as somebody else's. It is
+       the page a doubter is sent to, which is the worst one to look unhosted.
+       Links are absolute because this page is served from /reports/. -->
+  <nav class="site-nav" aria-label="Primary navigation">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="Krate home">
         <img src="/krate-glyph-blue.png" alt="" />
         <span>Krate</span>
       </a>
-      <a class="home" href="/">Back to the home page</a>
+      <div class="nav-links">
+        <a class="nav-link" href="/#start">Start</a>
+        <a class="nav-link" href="/cloud/">Store</a>
+        <a class="nav-link" href="/#faq">FAQ</a>
+        <a class="nav-link" href="/docs/">Docs</a>
+      </div>
     </div>
   </nav>
 

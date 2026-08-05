@@ -95,28 +95,15 @@ def main():
   <meta name="theme-color" content="#0b0d12" />
   <meta name="description" content="Where Krate is today, measured: every app we have shipped, its size, and whether it is re-tested nightly on Mac, Windows, and Linux." />
   <link rel="canonical" href="https://krate.tech/progress/" />
-  <!-- Both pages live one level down (/reports/, /progress/), so the icon path
-       must be root-absolute. A relative one would 404 and the tab would fall
-       back to a blank page icon. -->
-  <link rel="icon" href="/krate-favicon.png" />
-  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <meta property="og:title" content="Krate: where we are, measured" />
   <meta property="og:description" content="Every app we have shipped, its size, and what still does not work. Generated from the repository, not written by hand." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/progress/" />
   <title>Krate: where we are, measured</title>
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="stylesheet" href="/krate.css" />
   <style>
-    .page-nav {{ border-bottom: 1px solid #23262e; }}
-    .page-nav-inner {{ max-width: 60rem; margin: 0 auto; padding: 1rem 1.5rem;
-      display: flex; align-items: center; gap: .6rem; }}
-    .page-nav a {{ display: inline-flex; align-items: center; gap: .6rem;
-      color: inherit; text-decoration: none; font-weight: 700;
-      letter-spacing: -.02em; }}
-    .page-nav img {{ width: 26px; height: 26px; display: block; }}
-    .page-nav .home {{ margin-left: auto; font-weight: 400; font-size: .9rem;
-      color: #98a1b3; }}
-    .page-nav .home:hover {{ color: #f5f7fb; }}
     .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
     table {{ border-collapse: collapse; width: 100%; margin: 1.5rem 0; }}
     th, td {{ padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.08); text-align: left; }}
@@ -125,13 +112,20 @@ def main():
   </style>
 </head>
 <body>
-  <nav class="page-nav" aria-label="Primary">
-    <div class="page-nav-inner">
-      <a href="/" aria-label="Krate home">
+  <!-- The logo was missing here. Links are absolute because this page is
+       served from /progress/, not from the site root. -->
+  <nav class="site-nav" aria-label="Primary navigation">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="Krate home">
         <img src="/krate-glyph-blue.png" alt="" />
         <span>Krate</span>
       </a>
-      <a class="home" href="/">Back to the home page</a>
+      <div class="nav-links">
+        <a class="nav-link" href="/#start">Start</a>
+        <a class="nav-link" href="/cloud/">Store</a>
+        <a class="nav-link" href="/#faq">FAQ</a>
+        <a class="nav-link" href="/docs/">Docs</a>
+      </div>
     </div>
   </nav>
 

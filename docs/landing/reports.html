@@ -6,11 +6,6 @@
   <meta name="theme-color" content="#0b0d12" />
   <meta name="description" content="Krate's measured results: app sizes, startup times, sandbox cost, and what the runtime can and cannot do. Every chart is drawn from a real measurement." />
   <link rel="canonical" href="https://krate.tech/reports/" />
-  <!-- Both pages live one level down (/reports/, /progress/), so the icon path
-       must be root-absolute. A relative one would 404 and the tab would fall
-       back to a blank page icon. -->
-  <link rel="icon" href="/krate-favicon.png" />
-  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <meta property="og:title" content="Krate: the measurements" />
   <meta property="og:description" content="A 2D game in 11 KB. Sandboxed code at native speed. Every chart drawn from a real measurement, with the limits published beside them." />
   <meta property="og:type" content="website" />
@@ -18,21 +13,10 @@
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <title>Krate: the measurements</title>
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="stylesheet" href="/krate.css" />
   <style>
-    /* A branded header, so these pages are recognisably part of the site and
-       there is a way back. Both live one level down, so every path here is
-       root-absolute. */
-    .page-nav { border-bottom: 1px solid #23262e; }
-    .page-nav-inner { max-width: 48rem; margin: 0 auto; padding: 1rem 1.5rem;
-      display: flex; align-items: center; gap: .6rem; }
-    .page-nav a { display: inline-flex; align-items: center; gap: .6rem;
-      color: inherit; text-decoration: none; font-weight: 700;
-      letter-spacing: -.02em; }
-    .page-nav img { width: 26px; height: 26px; display: block; }
-    .page-nav .home { margin-left: auto; font-weight: 400; font-size: .9rem;
-      color: #98a1b3; }
-    .page-nav .home:hover { color: #f5f7fb; }
     .report { max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
     .report section { margin: 0 0 4.5rem; }
     .report h1 { font-size: clamp(2.1rem, 5vw, 3rem); line-height: 1.1; margin: 0.4rem 0 1rem; }
@@ -65,13 +49,21 @@
   </style>
 </head>
 <body>
-  <nav class="page-nav" aria-label="Primary">
-    <div class="page-nav-inner">
-      <a href="/" aria-label="Krate home">
+  <!-- The logo was missing here, so this page read as somebody else's. It is
+       the page a doubter is sent to, which is the worst one to look unhosted.
+       Links are absolute because this page is served from /reports/. -->
+  <nav class="site-nav" aria-label="Primary navigation">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="Krate home">
         <img src="/krate-glyph-blue.png" alt="" />
         <span>Krate</span>
       </a>
-      <a class="home" href="/">Back to the home page</a>
+      <div class="nav-links">
+        <a class="nav-link" href="/#start">Start</a>
+        <a class="nav-link" href="/cloud/">Store</a>
+        <a class="nav-link" href="/#faq">FAQ</a>
+        <a class="nav-link" href="/docs/">Docs</a>
+      </div>
     </div>
   </nav>
 
@@ -164,6 +156,57 @@
       </p>
     </section>
 
+
+    <section>
+      <p class="eyebrow">Speed</p>
+      <h2>An app opens in 17&ndash;1,816 milliseconds.</h2>
+      <p>
+        One frame of 60&nbsp;fps video lasts 16.7&nbsp;ms. Most Krate apps have
+        finished opening before a screen finishes drawing a single frame. The
+        slowest here are the two ported desktop applications, which do real
+        work on startup.
+      </p>
+      <svg viewBox="0 0 640 782" role="img" class="chart" aria-label="Bar chart, longest bar is 1,815.9 ms">
+  <text x="0" y="17" class="bl">savings</text><rect x="132" y="5" width="3.8" height="18" rx="4" fill="#7cc4a4"/><text x="145.8" y="19" class="bv">16.8 ms</text>
+  <text x="0" y="51" class="bl">envelope</text><rect x="132" y="39" width="4.2" height="18" rx="4" fill="#7cc4a4"/><text x="146.2" y="53" class="bv">18.7 ms</text>
+  <text x="0" y="85" class="bl">cubes</text><rect x="132" y="73" width="4.4" height="18" rx="4" fill="#7cc4a4"/><text x="146.4" y="87" class="bv">19.2 ms</text>
+  <text x="0" y="119" class="bl">rssfwd</text><rect x="132" y="107" width="4.4" height="18" rx="4" fill="#7cc4a4"/><text x="146.4" y="121" class="bv">19.6 ms</text>
+  <text x="0" y="153" class="bl">eo2</text><rect x="132" y="141" width="6.4" height="18" rx="4" fill="#7cc4a4"/><text x="148.4" y="155" class="bv">28.4 ms</text>
+  <text x="0" y="187" class="bl">mdview</text><rect x="132" y="175" width="6.7" height="18" rx="4" fill="#7cc4a4"/><text x="148.7" y="189" class="bv">29.7 ms</text>
+  <text x="0" y="221" class="bl">grex</text><rect x="132" y="209" width="7.8" height="18" rx="4" fill="#7cc4a4"/><text x="149.8" y="223" class="bv">34.4 ms</text>
+  <text x="0" y="255" class="bl">paint</text><rect x="132" y="243" width="8.9" height="18" rx="4" fill="#7cc4a4"/><text x="150.9" y="257" class="bv">39.1 ms</text>
+  <text x="0" y="289" class="bl">checklist</text><rect x="132" y="277" width="10.8" height="18" rx="4" fill="#7cc4a4"/><text x="152.8" y="291" class="bv">47.6 ms</text>
+  <text x="0" y="323" class="bl">focus</text><rect x="132" y="311" width="10.9" height="18" rx="4" fill="#7cc4a4"/><text x="152.9" y="325" class="bv">48.1 ms</text>
+  <text x="0" y="357" class="bl">chart</text><rect x="132" y="345" width="11.3" height="18" rx="4" fill="#7cc4a4"/><text x="153.3" y="359" class="bv">49.7 ms</text>
+  <text x="0" y="391" class="bl">clocks</text><rect x="132" y="379" width="11.3" height="18" rx="4" fill="#7cc4a4"/><text x="153.3" y="393" class="bv">50 ms</text>
+  <text x="0" y="425" class="bl">pulse</text><rect x="132" y="413" width="11.8" height="18" rx="4" fill="#7cc4a4"/><text x="153.8" y="427" class="bv">52.1 ms</text>
+  <text x="0" y="459" class="bl">journal</text><rect x="132" y="447" width="12.2" height="18" rx="4" fill="#7cc4a4"/><text x="154.2" y="461" class="bv">53.7 ms</text>
+  <text x="0" y="493" class="bl">keyvault</text><rect x="132" y="481" width="24.5" height="18" rx="4" fill="#7cc4a4"/><text x="166.5" y="495" class="bv">108.2 ms</text>
+  <text x="0" y="527" class="bl">bounce</text><rect x="132" y="515" width="41.9" height="18" rx="4" fill="#7cc4a4"/><text x="183.9" y="529" class="bv">184.8 ms</text>
+  <text x="0" y="561" class="bl">nova</text><rect x="132" y="549" width="66.8" height="18" rx="4" fill="#7cc4a4"/><text x="208.8" y="563" class="bv">294.4 ms</text>
+  <text x="0" y="595" class="bl">fetch</text><rect x="132" y="583" width="71.4" height="18" rx="4" fill="#7cc4a4"/><text x="213.4" y="597" class="bv">314.7 ms</text>
+  <text x="0" y="629" class="bl">contacts</text><rect x="132" y="617" width="72.5" height="18" rx="4" fill="#7cc4a4"/><text x="214.5" y="631" class="bv">319.4 ms</text>
+  <text x="0" y="663" class="bl">clip</text><rect x="132" y="651" width="73.1" height="18" rx="4" fill="#7cc4a4"/><text x="215.1" y="665" class="bv">322 ms</text>
+  <text x="0" y="697" class="bl">fractal</text><rect x="132" y="685" width="271.0" height="18" rx="4" fill="#7cc4a4"/><text x="413.0" y="699" class="bv">1,194.3 ms</text>
+  <text x="0" y="731" class="bl">weather</text><rect x="132" y="719" width="278.7" height="18" rx="4" fill="#7cc4a4"/><text x="420.7" y="733" class="bv">1,228.4 ms</text>
+  <text x="0" y="765" class="bl">notes</text><rect x="132" y="753" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="767" class="bv">1,815.9 ms</text>
+</svg>
+      <p class="method">
+        Measured while this page was generated: five runs of each app on this
+        machine, median reported, whole-process time including everything the
+        app itself does. These numbers were hardcoded once and had drifted
+        within a day, so the page now runs the apps instead of remembering them.
+        Two of the ten are missing from this chart because they take a file path
+        rather than a fixed argument, and one command cannot start every app.
+      </p>
+      <p class="method">
+        Every run includes the permission check. Krate reads the app's
+        manifest and grants each capability it declares before a line of the
+        app runs. That safety work is about 10&nbsp;ms of the times above, and
+        it is counted, because an app that has not been checked is not an app
+        anyone should time.
+      </p>
+    </section>
 
     <section>
       <p class="eyebrow">Cost of safety</p>
