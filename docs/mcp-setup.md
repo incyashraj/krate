@@ -76,8 +76,11 @@ Ask your AI:
 
 > What Krate tools do you have?
 
-It should list seven: `krate_schema`, `krate_examples`, `krate_start_build`,
+Seven of them build apps: `krate_schema`, `krate_examples`, `krate_start_build`,
 `krate_build_status`, `krate_check`, `krate_package`, and `krate_run`.
+
+Two more, `inspect_bundle` and `run_component`, are for opening a `.krate`
+somebody sent you rather than making one. Nine in total is correct.
 
 ## Then just talk
 
