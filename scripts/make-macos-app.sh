@@ -58,6 +58,31 @@ chmod +x "$APP/Contents/MacOS/Krate"
 if python3 -c "import PIL" 2>/dev/null; then
   python3 scripts/make-app-icon.py "$OUT_DIR/icon" >/dev/null 2>&1 || true
 fi
+
+# Fallback with no PIL at all. CI runners refuse `pip install` under PEP 668,
+# so the generator never runs there and the build failed on a missing icon --
+# which is worse than the bug it was added to catch. sips and iconutil ship
+# with macOS, and the source PNGs are committed, so an icon can always be
+# built from them.
+if [ ! -f "$OUT_DIR/icon/Krate.icns" ] && command -v iconutil >/dev/null 2>&1; then
+  mkdir -p "$OUT_DIR/icon"
+  for pair in "Krate:docs/landing/krate-app-icon.png" \
+              "KrateDoc:docs/landing/krate-document-icon.png"; do
+    name="${pair%%:*}"; src="${pair#*:}"
+    [ -f "$src" ] || continue
+    set="$OUT_DIR/icon/$name.iconset"
+    rm -rf "$set"; mkdir -p "$set"
+    for size in 16 32 128 256 512; do
+      sips -z "$size" "$size" "$src" --out "$set/icon_${size}x${size}.png" \
+        >/dev/null 2>&1 || true
+      double=$((size * 2))
+      sips -z "$double" "$double" "$src" \
+        --out "$set/icon_${size}x${size}@2x.png" >/dev/null 2>&1 || true
+    done
+    iconutil -c icns "$set" -o "$OUT_DIR/icon/$name.icns" 2>/dev/null || true
+    rm -rf "$set"
+  done
+fi
 for icon in Krate KrateDoc; do
   if [ -f "$OUT_DIR/icon/$icon.icns" ]; then
     cp "$OUT_DIR/icon/$icon.icns" "$APP/Contents/Resources/$icon.icns"
