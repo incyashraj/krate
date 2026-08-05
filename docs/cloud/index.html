@@ -3,700 +3,155 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0b0d12" />
-  <meta name="description" content="Create AI-made apps as one portable file for Mac, Windows, and Linux with controlled access. Krate Cloud will add publishing and distribution." />
-  <!-- The github.io project page redirects here, so name the canonical home
-       once. Without it the same page is reachable at two hosts and search
-       engines have to guess which one is real. -->
-  <link rel="canonical" href="https://cloud.krate.tech/" />
-  <meta property="og:title" content="Krate | AI apps, built to travel." />
-  <meta property="og:description" content="Create AI-made apps as one portable file for Mac, Windows, and Linux. Krate shows what each app wants to access before it runs." />
-  <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://krate.tech/" />
-  <meta property="og:image" content="https://krate.tech/og-v2.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Krate turns an AI request into one app file for Mac, Windows, and Linux." />
-  <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Krate | AI apps, built to travel." />
-  <meta name="twitter:description" content="Create AI-made apps as one portable file for Mac, Windows, and Linux. Krate shows what each app wants to access before it runs." />
-  <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
-  <title>Krate Cloud | Apps that show what they want</title>
-  <link rel="icon" href="./krate-favicon.png" />
-  <link rel="apple-touch-icon" href="./krate-favicon.png" />
+  <title>Krate Cloud | Apps people have published</title>
+  <meta name="description" content="Apps people have published to Krate. Every one runs in a sandbox and tells you what it wants before it starts." />
   <link rel="stylesheet" href="/krate.css" />
+  <link rel="icon" href="/krate-favicon.png" />
   <style>
-/* The command reads as something you could type, not a slogan. It shrinks
-       hard on small screens because a wrapped command looks broken. */
-    .hero-command {
-      max-width: 15ch;
-      margin-inline: auto;
-      font-size: clamp(34px, 6vw, 68px);
-      letter-spacing: -.045em;
-      line-height: 1.04;
-    }
+    .wrap { max-width: 780px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+    .masthead { display: flex; align-items: center; gap: .6rem; margin-bottom: 2.4rem; }
+    .masthead img { width: 30px; height: 30px; border-radius: 7px; }
+    .masthead a { color: var(--text); text-decoration: none; font-weight: 600; letter-spacing: -.01em; }
+    .masthead nav { margin-left: auto; display: flex; gap: 1.1rem; font-size: .9rem; }
+    .masthead nav a { color: var(--muted); font-weight: 400; }
+    .masthead nav a:hover { color: var(--text); }
 
-    .hero-lead {
-      max-width: 540px;
-      margin: 18px auto 38px;
-      color: var(--muted);
-      font-family: var(--mono);
-      font-size: clamp(13px, 1.5vw, 15px);
-      line-height: 1.6;
-    }
-  
-    /* The identity, small and quiet: it is there to be checked, not read. */
-    .store-digest {
-      margin: 6px 0 0;
-      color: var(--quiet);
-      font-size: 11px;
-    }
+    h1 { margin: 0 0 .35rem; font-size: 1.9rem; letter-spacing: -.02em; }
+    .lede { color: var(--muted); margin: 0 0 2.2rem; line-height: 1.6; max-width: 46rem; }
 
-    /* The kind label (Game, Tool, Creative...) sits where the version was, so a
-       shelf tells you what each app *is* at a glance. */
-    .store-kind {
-      color: var(--blue-soft);
-      font-weight: 600;
-      letter-spacing: .01em;
+    .app {
+      border: 1px solid var(--line); border-radius: 13px;
+      background: var(--panel); padding: 1.15rem 1.3rem; margin-bottom: .9rem;
     }
+    .app-top { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
+    .app-name { font-weight: 600; color: var(--text); font-size: 1.02rem; }
+    .app-size { color: var(--quiet); font-size: .82rem; margin-left: auto; }
+    .app-desc { color: var(--muted); margin: .45rem 0 .8rem; line-height: 1.55; }
+    .app-by { display: flex; align-items: center; gap: .45rem; font-size: .85rem; color: var(--quiet); }
+    .app-by img { width: 20px; height: 20px; border-radius: 50%; }
+    .app-by a { color: var(--muted); text-decoration: none; }
+    .app-by a:hover { color: var(--text); }
 
-    /* Featured row: the best apps, larger, before the grid. */
-    .store-featured-label {
-      margin: 0 0 14px;
-      color: var(--muted);
-      font-family: var(--mono);
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: .16em;
-      text-transform: uppercase;
+    .run {
+      margin-top: .9rem; display: flex; gap: .5rem; align-items: center;
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 8px; padding: .5rem .65rem;
     }
-    #allLabel { margin-top: 44px; }
-    .store-featured {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-      gap: 22px;
-      margin-bottom: 8px;
+    .run code {
+      font-family: var(--mono); font-size: .78rem; color: var(--blue-soft);
+      overflow-x: auto; white-space: nowrap; flex: 1;
     }
-    /* A featured card is taller and gives its screenshot more room -- the shot
-       is the reason it is featured. */
-    .store-card-featured .store-thumb { height: 220px; }
-    .store-card-featured h3 { font-size: 19px; }
-    .store-card-featured .store-what { font-size: 15px; }
+    .run button {
+      background: transparent; border: 1px solid var(--line-strong);
+      color: var(--muted); border-radius: 6px; padding: .25rem .55rem;
+      font: inherit; font-size: .76rem; cursor: pointer; flex-shrink: 0;
+    }
+    .run button:hover { color: var(--text); border-color: var(--blue); }
 
-    /* A real store card: a screenshot, a name, what it does, then the honest
-       permissions tucked into a detail. The old card led with the permission
-       list, which made an app that only opens a window read as empty. */
-    .store-card {
-      display: flex;
-      flex-direction: column;
-      padding: 0;
-      overflow: hidden;
-    }
-    /* The screenshot: the app's rendered first frame, cropped to a banner so
-       every card is the same height regardless of window shape. */
-    .store-thumb {
-      position: relative;
-      height: 150px;
-      background: #0e1017;
-      border-bottom: 1px solid var(--line);
-      overflow: hidden;
-      display: grid;
-      place-items: center;
-    }
-    .store-thumb img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      object-position: top center;
-      display: block;
-    }
-    /* The lettered tile a CLI app (no window to shoot) falls back to, and what
-       a GUI app shows if its shot ever fails to load. */
-    .store-thumb-letter {
-      display: none;
-      font-family: var(--mono);
-      font-size: 46px;
-      font-weight: 700;
-      color: var(--line-strong);
-    }
-    .store-thumb.no-shot { background: var(--panel-raised); }
-    .store-thumb.no-shot .store-thumb-letter { display: block; }
-
-    .store-body {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      padding: 16px 18px 18px;
-      flex: 1;
-    }
-    .store-head h3 { margin: 0; }
-    /* What the app does -- the line that was missing. This is the card's lead. */
-    .store-what {
-      margin: 0;
-      color: var(--text);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-    /* Permissions, demoted to a detail so they inform without dominating. */
-    .store-asks-wrap { margin-top: auto; }
-    .store-asks-wrap summary {
-      cursor: pointer;
-      color: var(--muted);
-      font-size: 12.5px;
-      list-style: none;
-      padding: 6px 0;
-      border-top: 1px solid var(--line);
-    }
-    .store-asks-wrap summary::-webkit-details-marker { display: none; }
-    .store-asks-wrap summary::before { content: "\25B8 "; color: var(--quiet); }
-    .store-asks-wrap[open] summary::before { content: "\25BE "; }
-    .store-asks-wrap .store-asks { margin: 4px 0 6px; padding: 0; list-style: none; }
-    .store-asks-wrap .store-asks li { font-size: 12.5px; color: var(--muted); padding: 2px 0; }
-    .store-asks-wrap .store-asks .warn { color: var(--yellow); }
-
-    /* "How to open this" — the panel that appears after a download, so a first
-       time visitor is never left holding a .krate file with no idea what to do
-       with it. It is the difference between "I downloaded something" and "I ran
-       an app". */
-    .open-help {
-      position: fixed;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-      background: rgba(4, 6, 10, .72);
-      z-index: 100;
-    }
-    .open-help[open] { display: flex; }
-    .open-panel {
-      width: 100%;
-      max-width: 520px;
-      max-height: calc(100vh - 40px);
-      overflow-y: auto;
-      background: var(--panel);
-      border: 1px solid var(--line-strong);
-      border-radius: 14px;
-      padding: 28px;
-      box-shadow: 0 24px 60px rgba(0, 0, 0, .5);
-    }
-    .open-panel h2 {
-      margin: 0 0 4px;
-      font-size: 20px;
-      letter-spacing: -.02em;
-    }
-    .open-app-name { color: var(--blue); }
-    .open-sub {
-      margin: 0 0 22px;
-      color: var(--muted);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-    .open-steps { display: grid; gap: 18px; }
-    .open-step { display: flex; gap: 14px; align-items: flex-start; }
-    .open-num {
-      flex: none;
-      width: 26px;
-      height: 26px;
-      border-radius: 50%;
-      display: grid;
-      place-items: center;
-      background: var(--blue);
-      color: #fff;
-      font-family: var(--mono);
-      font-size: 13px;
-      font-weight: 600;
-    }
-    .open-step h3 { margin: 3px 0 6px; font-size: 15px; }
-    .open-step p { margin: 0; color: var(--muted); font-size: 13.5px; line-height: 1.5; }
-    /* One command, copyable, matching the terminal look used elsewhere. */
-    .open-cmd {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 10px;
-      padding: 10px 12px;
-      background: var(--bg);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      font-family: var(--mono);
-      font-size: 12.5px;
-      overflow-x: auto;
-    }
-    .open-cmd code { color: var(--cyan); white-space: nowrap; }
-    .open-copy {
-      flex: none;
-      margin-left: auto;
-      padding: 4px 10px;
-      background: var(--panel-raised);
-      border: 1px solid var(--line);
-      border-radius: 6px;
-      color: var(--text);
-      font-size: 12px;
-      cursor: pointer;
-    }
-    .open-copy:hover { border-color: var(--line-strong); }
-    /* The OS the panel is showing steps for, and a way to switch it if the
-       guess was wrong. */
-    .open-os-row {
-      display: flex;
-      gap: 8px;
-      margin: 0 0 20px;
-      flex-wrap: wrap;
-    }
-    .open-os {
-      padding: 5px 12px;
-      background: transparent;
-      border: 1px solid var(--line);
-      border-radius: 999px;
-      color: var(--muted);
-      font-size: 12.5px;
-      cursor: pointer;
-    }
-    .open-os[aria-pressed="true"] {
-      background: var(--blue-soft);
-      border-color: var(--blue);
-      color: var(--text);
-    }
-    .open-foot {
-      margin-top: 24px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-    }
-    .open-close {
-      padding: 8px 18px;
-      background: var(--blue);
-      border: none;
-      border-radius: 8px;
-      color: #fff;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    .open-already {
-      color: var(--quiet);
-      font-size: 12.5px;
-      text-decoration: underline;
-      background: none;
-      border: none;
-      cursor: pointer;
-    }
-    @media (prefers-reduced-motion: no-preference) {
-      .open-panel { animation: open-rise .18s ease-out; }
-      @keyframes open-rise {
-        from { transform: translateY(8px); opacity: 0; }
-        to { transform: translateY(0); opacity: 1; }
-      }
-    }
-</style>
+    .empty { color: var(--quiet); text-align: center; padding: 3rem 1rem; line-height: 1.7; }
+    .empty a { color: var(--blue-soft); }
+    .note { color: var(--quiet); font-size: .87rem; line-height: 1.65; margin-top: 2.5rem; }
+  </style>
 </head>
 <body>
-<nav class="site-nav" aria-label="Primary navigation">
-    <div class="wrap nav-inner">
-      <a class="brand" href="https://krate.tech/#" aria-label="Krate home">
-        <img src="./krate-glyph-blue.png" alt="" />
-        <span>Krate</span>
-      </a>
+  <main class="wrap">
+    <header class="masthead">
+      <img src="/krate-glyph-blue.png" alt="" />
+      <a href="/">Krate</a>
+      <nav>
+        <a href="/cloud/">Cloud</a>
+        <a href="/publish/">Publish</a>
+        <a href="/docs/">Docs</a>
+      </nav>
+    </header>
 
-      <button class="menu-button" id="menuButton" type="button" aria-expanded="false" aria-controls="navLinks" aria-label="Open navigation">☰</button>
+    <h1>Krate Cloud</h1>
+    <p class="lede">
+      Apps people have published. Every one is a single file that runs in a
+      sandbox: it tells you what it wants &mdash; the network, a folder, the
+      microphone &mdash; before it starts, and it gets nothing you have not
+      agreed to.
+    </p>
 
-      <div class="nav-links" id="navLinks">
-        <!-- Four links. Eight made a first-time visitor choose before they
-             knew what any of them meant. -->
-        <a class="nav-link" href="https://krate.tech/#start">Start</a>
-        <a class="nav-link" href="https://krate.tech/#cloud">Store</a>
-        <a class="nav-link" href="https://krate.tech/#faq">FAQ</a>
-        <a class="nav-link" href="https://krate.tech/docs/">Docs</a>
-        <a class="nav-link" href="https://krate.tech/docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
-        <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
-        <a class="nav-cta" href="https://krate.tech/docs/pages/make-an-app-with-ai.html">Make an app</a>
-      </div>
-    </div>
-  </nav>
-    <main id="main">
-    <section class="section">
-      <div class="wrap">
-        <div class="section-heading">
-          <p class="label">Krate Cloud</p>
-          <h2>Apps that show what they want.</h2>
-          <p>Every app here is one file. Install Krate once, open any of them, and you see exactly what it is asking for before a line of it runs.</p>
-        </div>
+    <div id="list"></div>
 
-        <!-- Featured: the best-looking apps, shown larger and first. The set
-             is curated in the page (FEATURED below); everything else falls into
-             the grid. -->
-        <div id="featuredWrap" hidden>
-          <p class="store-featured-label">Featured</p>
-          <div class="store-featured" id="featured" aria-label="Featured apps"></div>
-        </div>
+    <p class="note">
+      Made something? <a href="/publish/">Publish it</a>, or run
+      <code>krate publish yourapp.krate</code>.
+    </p>
+  </main>
 
-        <!-- Listings are generated from the .krate files themselves by
-             scripts/build-store.sh, so a listing cannot describe an app
-             differently from what the file actually asks for. -->
-        <p class="store-featured-label" id="allLabel" hidden>All apps</p>
-        <div class="store-shelf" id="shelf" aria-label="Apps"></div>
+  <script>
+    const HUB = "https://hub.krate.tech";
 
-        <div class="store-why">
-          <div>
-            <h4>Nothing is described by hand</h4>
-            <p>Each listing is read out of the file: its name, its size, its identity, and every permission it asks for. Nobody gets to describe their own app more kindly than it behaves.</p>
-          </div>
-          <div>
-            <h4>You can check what you got</h4>
-            <p>Every app carries an identity computed from its contents. Run <code>krate run app.krate --dump-caps</code> and compare it to the one shown here.</p>
-          </div>
-          <div>
-            <h4>It runs on your computer</h4>
-            <p>Downloading is the only thing that happens here. The app opens locally, with exactly the access you allow, online or off.</p>
-          </div>
-        </div>
-      </div>
-    </section>
+    function esc(value) {
+      return String(value).replace(/[&<>"]/g, (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
 
-    <section class="section" id="publish">
-      <div class="wrap plain-block">
-        <h2>Publish yours</h2>
-        <p>If you have made a <code>.krate</code>, it can be listed here. There is no account and no review queue.</p>
-        <p>Send the file, or a link to it. Krate reads the rest out of the file itself &mdash; what it is, what it asks for, and the identity people can check it against.</p>
-        <div class="actions">
-          <a class="button primary" href="https://github.com/incyashraj/krate/issues/new?title=Publish%20my%20app&amp;body=Attach%20your%20.krate%20file%20or%20paste%20a%20link%20to%20it.%20Nothing%20else%20is%20needed%20%E2%80%94%20Krate%20reads%20the%20name%2C%20version%2C%20size%2C%20identity%2C%20and%20requested%20permissions%20out%20of%20the%20file.">Send an app</a>
-          <a class="button" href="https://krate.tech/docs/pages/make-an-app-with-ai.html">Make one first</a>
-        </div>
-      </div>
-    </section>
-    </main>
+    function kb(bytes) {
+      return bytes < 1024 ? bytes + " B"
+        : bytes < 1048576 ? Math.round(bytes / 1024) + " KB"
+        : (bytes / 1048576).toFixed(1) + " MB";
+    }
 
-    <!-- Shown after a download so a first-time visitor knows what to do with
-         the .krate file: install Krate once if needed, then double-click. The
-         OS is guessed and switchable. -->
-    <div class="open-help" id="openHelp" role="dialog" aria-modal="true" aria-labelledby="openTitle">
-      <div class="open-panel">
-        <h2 id="openTitle">Opening <span class="open-app-name" id="openApp">your app</span></h2>
-        <p class="open-sub">It just downloaded to your computer. Here is how to run it.</p>
+    // "3 days ago" reads better than a timestamp for something that is mostly
+    // about whether anyone is still publishing.
+    function ago(seconds) {
+      const delta = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
+      if (delta < 3600) return Math.max(1, Math.floor(delta / 60)) + "m ago";
+      if (delta < 86400) return Math.floor(delta / 3600) + "h ago";
+      if (delta < 2592000) return Math.floor(delta / 86400) + "d ago";
+      return new Date(seconds * 1000).toLocaleDateString();
+    }
 
-        <div class="open-os-row" id="openOsRow" role="group" aria-label="Choose your system">
-          <button class="open-os" type="button" data-os="mac">macOS</button>
-          <button class="open-os" type="button" data-os="windows">Windows</button>
-          <button class="open-os" type="button" data-os="linux">Linux</button>
-        </div>
+    (async () => {
+      const list = document.getElementById("list");
+      try {
+        const { apps } = await fetch(HUB + "/apps").then((r) => r.json());
+        if (!apps.length) {
+          list.innerHTML =
+            '<p class="empty">Nothing published yet.<br />' +
+            '<a href="/publish/">Be the first</a>.</p>';
+          return;
+        }
+        list.innerHTML = apps
+          .map((app) => {
+            const m = app.meta || {};
+            const command = "krate run " + app.url;
+            return `
+              <article class="app">
+                <div class="app-top">
+                  <span class="app-name">${esc(m.name || "Untitled app")}</span>
+                  <span class="app-size">${kb(m.size || 0)} &middot; ${ago(m.published || 0)}</span>
+                </div>
+                ${m.description ? `<p class="app-desc">${esc(m.description)}</p>` : ""}
+                <div class="app-by">
+                  ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="" />` : ""}
+                  <span>by <a href="${esc(m.author_url || "#")}" rel="noopener">${esc(m.author || "anonymous")}</a></span>
+                </div>
+                <div class="run">
+                  <code>${esc(command)}</code>
+                  <button data-copy="${esc(command)}">Copy</button>
+                </div>
+              </article>`;
+          })
+          .join("");
 
-        <div class="open-steps">
-          <div class="open-step" id="stepInstall">
-            <div class="open-num">1</div>
-            <div>
-              <h3>Install Krate once</h3>
-              <p id="installBlurb">Krate is the small runtime that opens any <code>.krate</code> app. Paste this into a terminal:</p>
-              <div class="open-cmd">
-                <code id="installCmd">curl -fsSL https://krate.tech/install.sh | sh</code>
-                <button class="open-copy" type="button" id="installCopy">Copy</button>
-              </div>
-            </div>
-          </div>
-          <div class="open-step">
-            <div class="open-num">2</div>
-            <div>
-              <h3 id="openHead">Double-click the file</h3>
-              <p id="openBody">Find the <code>.krate</code> file in your Downloads and double-click it. Krate shows you exactly what the app wants to access, then opens it.</p>
-            </div>
-          </div>
-        </div>
-
-        <div class="open-foot">
-          <button class="open-already" type="button" id="alreadyBtn">I already have Krate</button>
-          <button class="open-close" type="button" id="openClose">Got it</button>
-        </div>
-      </div>
-    </div>
-
-    <script>
-      // The shelf is built from the generated index so the page and the files
-      // can never disagree.
-      const humanBytes = (n) => n < 1024 * 1024
-        ? `${Math.round(n / 1024)} KB`
-        : `${(n / 1024 / 1024).toFixed(1)} MB`;
-
-      // What kind of thing an app is, at a glance -- so someone scanning the
-      // shelf sees "Nova is a game" without opening it. Classified from the
-      // file name first (a known app), then falling back to what it asks for,
-      // so a new app still gets a reasonable label. Kept coarse on purpose:
-      // Game / Creative / Tool / Utility / Reader.
-      const KIND_BY_FILE = {
-        nova: "Game", nova2: "Game", bounce: "Game", cubes: "Toy",
-        paint: "Creative", fractal: "Creative", eo2: "Creative",
-        weather: "Lifestyle", focus: "Productivity", journal: "Lifestyle",
-        clocks: "Utility", pulse: "Finance",
-        chart: "Tool", fetch: "Tool", savings: "Tool", hexyl: "Tool",
-        grex: "Tool", ddh: "Tool", rssfwd: "Tool", envelope: "Tool",
-        contacts: "Utility", checklist: "Utility", clip: "Utility",
-        clipboard: "Utility", keyvault: "Utility", notes: "Utility",
-        mdview: "Reader",
-      };
-      const kindOf = (file, asks) => {
-        const stem = (file || "").replace(/^krate-/, "").replace(/\.krate$/, "");
-        if (KIND_BY_FILE[stem]) return KIND_BY_FILE[stem];
-        // Fallbacks by what the app asks for.
-        if (asks.some((c) => c.startsWith("net.connect"))) return "Tool";
-        if (asks.some((c) => c.startsWith("store"))) return "Utility";
-        if (asks.some((c) => c.startsWith("audio"))) return "Media";
-        return "App";
-      };
-
-      // A human line for what the app *does* -- the thing a store card should
-      // lead with. Keyed by file stem. Without one, a card would fall back to
-      // its permissions, which describe what it may touch, not what it is.
-      const DESC_BY_FILE = {
-        nova: "A neon top-down arcade space shooter.",
-        bounce: "Classic brick-breaker: bounce the ball, clear the wall.",
-        cubes: "A lit, textured 3D scene rendering on the CPU.",
-        paint: "Draw freehand on a canvas with your mouse.",
-        fractal: "Renders the Mandelbrot set, pixel by pixel.",
-        chart: "Turns a few numbers into a clean bar chart.",
-        contacts: "A contact list kept in a real SQL database.",
-        checklist: "A checklist you tick off; it saves as you go.",
-        clip: "Copy and paste text through the system clipboard.",
-        clipboard: "Copy and paste text through the system clipboard.",
-        keyvault: "Remembers how many times you have opened it.",
-        notes: "Jot notes and save them locally, offline.",
-        fetch: "Fetches a page over the network and shows it.",
-        savings: "A budget splitter: divide income into categories.",
-        weather: "Current conditions and a five-day forecast, at a glance.",
-        focus: "A pomodoro timer with a clean progress ring.",
-        journal: "A private, message-yourself journal. Entries stay on device.",
-        clocks: "Six cities on live analog faces, day and night.",
-        pulse: "A personal finance dashboard: balance, trends, categories.",
-        eo2: "A small photo shelf: view, keep, and remove images.",
-        envelope: "Envelope budgeting over a local database (CLI).",
-        mdview: "Renders a Markdown file into a readable page.",
-        hexyl: "A hex viewer for the bytes of any file (CLI).",
-        grex: "Builds a regular expression from example strings (CLI).",
-        ddh: "Finds duplicate files under a folder (CLI).",
-        rssfwd: "Reads an RSS feed and prints the latest items (CLI).",
-      };
-      const descOf = (file) => {
-        const stem = (file || "").replace(/^krate-/, "").replace(/\.krate$/, "");
-        return DESC_BY_FILE[stem] || "";
-      };
-      // A shot exists for GUI apps (rendered headless); a CLI app has no window
-      // to capture, so it gets a lettered tile instead. Naming the shotless apps
-      // is more reliable than waiting for a broken <img> to error -- with lazy
-      // loading an off-screen 404 never fires onerror until scrolled to.
-      const NO_SHOT = new Set(["ddh", "envelope", "grex", "hexyl", "rssfwd"]);
-      const stemOf = (file) =>
-        (file || "").replace(/^krate-/, "").replace(/\.krate$/, "");
-      const hasShot = (file) => !NO_SHOT.has(stemOf(file));
-      const shotPath = (file) => `./shots/${stemOf(file)}.png`;
-
-      // Say what a capability means, not what it is called. The words match the
-      // permission window a person sees when the app actually opens.
-      const plainAsk = (cap) => {
-        if (cap.startsWith("fs.read")) return "read files in a folder you choose";
-        if (cap.startsWith("fs.write")) return "save files in a folder you choose";
-        if (cap.startsWith("net.connect")) return "connect to the internet";
-        if (cap === "store.kv") return "save its own settings and data";
-        if (cap === "store.sql") return "keep its own database";
-        if (cap === "store.secret") return "save a sign-in for itself";
-        if (cap === "ui.notify") return "send you notifications";
-        if (cap === "ui.open-url") return "open links in your browser";
-        if (cap === "ui.clipboard:read") return "read your clipboard";
-        if (cap === "ui.clipboard:write") return "copy to your clipboard";
-        if (cap.startsWith("ui.window")) return "open a window";
-        if (cap === "audio.capture") return "listen through your microphone";
-        return cap;
-      };
-      // The asks worth noticing on a shelf you are scanning.
-      const sensitive = (cap) =>
-        cap === "audio.capture" || cap.startsWith("net.connect");
-
-      // The curated best, shown in the Featured row (in this order). Everything
-      // else lands in the grid below. This is the one editorial call on the
-      // page -- kept small and by file stem so it is easy to update as apps
-      // improve.
-      const FEATURED = ["nova", "weather", "notes"];
-
-      const renderCard = (a, featured) => {
-        const kind = kindOf(a.file, a.asks);
-        const desc = descOf(a.file);
-        // The distinct things it may touch, in plain words. Deduped, and never
-        // the whole story of the card -- just the honest footnote.
-        const asks = [...new Map(a.asks.map((c) => [plainAsk(c), c])).entries()];
-        // A thumbnail: the app's rendered first frame for a GUI app, or a clean
-        // lettered tile for a CLI app that has no window to shoot.
-        const letter = (a.name || "?").trim().charAt(0).toUpperCase();
-        const thumb = hasShot(a.file)
-          ? `<div class="store-thumb">
-               <img src="${shotPath(a.file)}" alt="Screenshot of ${a.name}" loading="lazy"
-                    onerror="this.closest('.store-thumb').classList.add('no-shot'); this.remove();" />
-               <span class="store-thumb-letter" aria-hidden="true">${letter}</span>
-             </div>`
-          : `<div class="store-thumb no-shot">
-               <span class="store-thumb-letter" aria-hidden="true">${letter}</span>
-             </div>`;
-        return `
-        <article class="store-card${featured ? " store-card-featured" : ""}">
-          ${thumb}
-          <div class="store-body">
-            <div class="store-head">
-              <h3>${a.name}</h3>
-              <p class="store-by"><span class="store-kind">${kind}</span> &middot; ${humanBytes(a.bytes)}</p>
-            </div>
-            ${desc ? `<p class="store-what">${desc}</p>` : ""}
-            <details class="store-asks-wrap">
-              <summary>${asks.length ? `Wants access to ${asks.length} thing${asks.length > 1 ? "s" : ""}` : "Wants nothing but a window"}</summary>
-              <ul class="store-asks">
-                ${asks.length
-                  ? asks.map(([text, c]) => `<li><span class="${sensitive(c) ? "warn" : ""}">&#9679;</span> ${text}</li>`).join("")
-                  : '<li><span>&#9679;</span> opens a window and nothing else</li>'}
-              </ul>
-            </details>
-            <div class="store-foot">
-              <a class="path-link" href="./apps/${a.file}" download data-app-name="${a.name}">Download &darr;</a>
-              <p class="store-digest" title="Identity you can check with --dump-caps">${(a.digest || "").slice(0, 16)}&hellip;</p>
-            </div>
-          </div>
-        </article>`;
-      };
-
-      fetch("./apps/index.json")
-        .then((r) => r.json())
-        .then((apps) => {
-          const shelf = document.getElementById("shelf");
-          if (!apps.length) {
-            shelf.innerHTML = '<p class="store-desc">No apps listed yet.</p>';
-            return;
-          }
-          // Split into featured (in FEATURED order) and the rest.
-          const feat = [];
-          for (const stem of FEATURED) {
-            const a = apps.find((x) => stemOf(x.file) === stem);
-            if (a) feat.push(a);
-          }
-          const rest = apps.filter((a) => !feat.includes(a));
-          if (feat.length) {
-            document.getElementById("featured").innerHTML =
-              feat.map((a) => renderCard(a, true)).join("");
-            document.getElementById("featuredWrap").hidden = false;
-            document.getElementById("allLabel").hidden = false;
-          }
-          shelf.innerHTML = rest.map((a) => renderCard(a, false)).join("");
-        })
-        .catch(() => {
-          document.getElementById("shelf").innerHTML =
-            '<p class="store-desc">Could not load the app list.</p>';
+        list.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-copy]");
+          if (!button) return;
+          navigator.clipboard.writeText(button.dataset.copy);
+          const was = button.textContent;
+          button.textContent = "Copied";
+          setTimeout(() => (button.textContent = was), 1200);
         });
-
-      // "How to open this" flow. A download alone leaves a first-time visitor
-      // holding a file they cannot open; this panel turns the download into a
-      // first run. Per OS: install Krate once (if they need to), then double
-      // click. The OS is guessed from the platform and switchable.
-      (() => {
-        const OS = {
-          mac: {
-            install: "curl -fsSL https://krate.tech/install.sh | sh",
-            blurb: "Krate is the small runtime that opens any .krate app. Paste this into Terminal:",
-            openHead: "Double-click the file",
-            openBody: "Find the .krate file in your Downloads and double-click it. The first time, macOS may ask you to confirm — open it from Finder's right-click → Open. Krate shows what the app wants to access, then opens it.",
-          },
-          windows: {
-            install: "irm https://krate.tech/install.ps1 | iex",
-            blurb: "Krate is the small runtime that opens any .krate app. Paste this into PowerShell:",
-            openHead: "Double-click the file",
-            openBody: "Find the .krate file in your Downloads and double-click it. Krate shows what the app wants to access, then opens it.",
-          },
-          linux: {
-            install: "curl -fsSL https://krate.tech/install.sh | sh",
-            blurb: "Krate is the small runtime that opens any .krate app. Paste this into a terminal:",
-            openHead: "Open the file",
-            openBody: "Double-click the .krate file, or run krate run ~/Downloads/<app>.krate from a terminal. Krate shows what the app wants to access, then opens it.",
-          },
-        };
-
-        const guessOs = () => {
-          const p = (navigator.platform || navigator.userAgent || "").toLowerCase();
-          if (p.includes("win")) return "windows";
-          if (p.includes("linux") || p.includes("android")) return "linux";
-          return "mac";
-        };
-
-        const help = document.getElementById("openHelp");
-        const appLabel = document.getElementById("openApp");
-        const installCmd = document.getElementById("installCmd");
-        const installBlurb = document.getElementById("installBlurb");
-        const openHead = document.getElementById("openHead");
-        const openBody = document.getElementById("openBody");
-        const stepInstall = document.getElementById("stepInstall");
-        let currentOs = guessOs();
-
-        const render = (os) => {
-          const info = OS[os] || OS.mac;
-          installCmd.textContent = info.install;
-          installBlurb.textContent = info.blurb;
-          openHead.textContent = info.openHead;
-          openBody.textContent = info.openBody;
-          document.querySelectorAll(".open-os").forEach((b) =>
-            b.setAttribute("aria-pressed", String(b.dataset.os === os)));
-        };
-
-        const openPanel = (name) => {
-          appLabel.textContent = name || "your app";
-          stepInstall.style.display = "";
-          currentOs = guessOs();
-          render(currentOs);
-          help.setAttribute("open", "");
-          document.getElementById("openClose").focus();
-        };
-        const closePanel = () => help.removeAttribute("open");
-
-        // The download itself proceeds normally (the browser handles the
-        // native `download` link); we just show the guide alongside it.
-        // Delegated on document so both the featured row and the grid are
-        // covered by one listener.
-        document.addEventListener("click", (e) => {
-          const link = e.target.closest("a.path-link[download]");
-          if (!link) return;
-          openPanel(link.dataset.appName);
-        });
-
-        document.getElementById("openOsRow").addEventListener("click", (e) => {
-          const btn = e.target.closest(".open-os");
-          if (!btn) return;
-          currentOs = btn.dataset.os;
-          render(currentOs);
-        });
-
-        document.getElementById("installCopy").addEventListener("click", (e) => {
-          navigator.clipboard?.writeText(installCmd.textContent).then(() => {
-            const b = e.target;
-            const was = b.textContent;
-            b.textContent = "Copied";
-            setTimeout(() => (b.textContent = was), 1400);
-          });
-        });
-
-        // "I already have Krate" collapses the install step so a returning
-        // visitor sees only the one thing they need: double-click.
-        document.getElementById("alreadyBtn").addEventListener("click", () => {
-          stepInstall.style.display = "none";
-        });
-
-        document.getElementById("openClose").addEventListener("click", closePanel);
-        help.addEventListener("click", (e) => { if (e.target === help) closePanel(); });
-        document.addEventListener("keydown", (e) => {
-          if (e.key === "Escape" && help.hasAttribute("open")) closePanel();
-        });
-      })();
-    </script>
-<footer>
-    <div class="wrap footer-inner">
-      <span>© 2026 Krate Labs</span>
-      <div class="footer-links">
-        <a href="https://krate.tech/docs/">Docs</a>
-        <a href="https://krate.tech/docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
-        <a href="https://github.com/incyashraj/krate">GitHub</a>
-        <a href="https://github.com/incyashraj/krate/discussions">Ask a question</a>
-        <a href="https://github.com/incyashraj/krate/releases">Releases</a>
-      </div>
-    </div>
-  </footer>
+      } catch (err) {
+        list.innerHTML =
+          '<p class="empty">Could not reach the hub just now.<br />' +
+          "Try again in a moment.</p>";
+      }
+    })();
+  </script>
 </body>
 </html>

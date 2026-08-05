@@ -47,6 +47,12 @@ export default {
       if (request.method === "POST" && pathname === "/auth/poll") {
         return cors(await authPoll(request, env));
       }
+      if (request.method === "POST" && pathname === "/usage") {
+        return cors(await usage(request, env));
+      }
+      if (request.method === "GET" && pathname === "/stats") {
+        return cors(await stats(env));
+      }
       if (request.method === "GET" && pathname === "/apps") {
         return cors(await list(env));
       }
@@ -154,6 +160,78 @@ async function list(env) {
   }
   apps.sort((a, b) => (b.meta.published || 0) - (a.meta.published || 0));
   return json({ apps });
+}
+
+// --------------------------------------------------------------------- usage
+
+// How many people use Krate, and nothing about who they are. The CLI sends a
+// random install id, a version, an OS name, and one of three action words.
+// Nothing here reads an IP, sets a cookie, or stores a request body.
+
+async function usage(request, env) {
+  let event;
+  try {
+    event = await request.json();
+  } catch (_) {
+    return text("bad request", 400);
+  }
+
+  // A closed set on this side too. Anything unexpected is dropped rather than
+  // stored, so a bad or malicious client cannot turn this into free storage.
+  const actions = ["make", "open", "publish"];
+  const id = String(event.id || "").slice(0, 64);
+  const action = actions.includes(event.action) ? event.action : null;
+  if (!/^[0-9a-f]{8,64}$/.test(id) || !action) {
+    return text("ok");
+  }
+  const version = String(event.version || "").slice(0, 32);
+  const os = String(event.os || "").slice(0, 16);
+  const day = new Date().toISOString().slice(0, 10);
+
+  // Two keys: one marking this install seen today, one counting the action.
+  // Together they answer "how many people" and "how much are they doing"
+  // without keeping a log of individual events.
+  await env.APPS.put(`seen:${day}:${id}`, JSON.stringify({ version, os }), {
+    // Ninety days is long enough to see a trend and short enough that this
+    // never becomes an archive.
+    expirationTtl: 90 * 24 * 60 * 60,
+  });
+  await bump(env, `count:${day}:${action}`);
+  return text("ok");
+}
+
+async function bump(env, key) {
+  const current = parseInt((await env.APPS.get(key)) || "0", 10);
+  await env.APPS.put(key, String(current + 1), {
+    expirationTtl: 90 * 24 * 60 * 60,
+  });
+}
+
+/// The numbers, for us. Distinct installs and action counts by day.
+async function stats(env) {
+  const seen = await env.APPS.list({ prefix: "seen:", limit: 1000 });
+  const counts = await env.APPS.list({ prefix: "count:", limit: 1000 });
+
+  const installsByDay = {};
+  const allInstalls = new Set();
+  for (const key of seen.keys) {
+    const [, day, id] = key.name.split(":");
+    installsByDay[day] = (installsByDay[day] || 0) + 1;
+    allInstalls.add(id);
+  }
+  const actions = {};
+  for (const key of counts.keys) {
+    const [, day, action] = key.name.split(":");
+    const value = parseInt((await env.APPS.get(key.name)) || "0", 10);
+    actions[day] = actions[day] || {};
+    actions[day][action] = value;
+  }
+
+  return json({
+    distinct_installs_90d: allInstalls.size,
+    active_installs_by_day: installsByDay,
+    actions_by_day: actions,
+  });
 }
 
 // -------------------------------------------------------------- browser auth

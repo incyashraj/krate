@@ -18,6 +18,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 mod agent_provider;
+mod usage;
 mod authoring_context;
 mod github_auth;
 mod krate_mode;
@@ -2418,6 +2419,7 @@ pub(crate) fn author_app_for_tui(
     })?;
     if code == 0 {
         remember_app(output);
+        usage::record(usage::Action::Make);
         Ok(())
     } else {
         Err(anyhow::anyhow!("the app could not be built"))
@@ -2783,6 +2785,7 @@ fn publish_bundle(
     let url = extract_json_string(&body, "url")
         .ok_or_else(|| anyhow::anyhow!("the hub returned an unexpected response: {body}"))?;
 
+    usage::record(usage::Action::Publish);
     println!("Published. Anyone can run it with:");
     println!("  krate run {url}");
     Ok(0)
@@ -4853,6 +4856,9 @@ fn resolve_run_target(
 }
 
 fn run_component(request: RunRequest) -> Result<u8> {
+    // Every way an app is opened lands here: the menu, a double-click, and a
+    // bare `krate run`. Counting anywhere else would miss most of them.
+    usage::record(usage::Action::Open);
     validate_app_args(&request.app_args)?;
 
     // Held for the whole run: dropping it removes the extracted bundle.
