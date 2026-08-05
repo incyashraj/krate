@@ -187,6 +187,13 @@ enum Command {
         #[arg(long, default_value_t = 2.0)]
         shoot_scale: f32,
 
+        /// Drive the app the way a person would -- resize it, press it, and
+        /// watch that it stays open -- and write what was observed to this
+        /// path as JSON. Implies --headless. Used by `check-app`'s usability
+        /// stage; not something you need by hand.
+        #[arg(long, hide = true, value_name = "FILE")]
+        usability_report: Option<PathBuf>,
+
         /// Arguments passed to the Krate app. Put them after `--`.
         #[arg(last = true, value_name = "ARG")]
         app_args: Vec<String>,
@@ -697,6 +704,7 @@ fn run() -> Result<u8> {
             test_timezone,
             shoot,
             shoot_scale,
+            usability_report,
             app_args,
         } => run_component(RunRequest {
             target,
@@ -720,8 +728,11 @@ fn run() -> Result<u8> {
             consent,
             // A screenshot is a headless render by definition: there is no way
             // to grab a native window's pixels here, and forcing headless makes
-            // --shoot work the same on a laptop, a server, and CI.
-            ui_mode: if headless || shoot.is_some() {
+            // --shoot work the same on a laptop, a server, and CI. A driven
+            // usability run is headless for the same reason -- it compares
+            // frames it paints itself, and must run the same way in CI as on a
+            // laptop with a display attached.
+            ui_mode: if headless || shoot.is_some() || usability_report.is_some() {
                 krate_runtime::phase3_ui::Phase3HostUiMode::HeadlessDraft
             } else if native_window {
                 krate_runtime::phase3_ui::Phase3HostUiMode::NativePrototype
@@ -738,6 +749,7 @@ fn run() -> Result<u8> {
             test_timezone,
             screenshot_path: shoot,
             screenshot_scale: shoot_scale,
+            usability_report,
             app_args,
         }),
         #[cfg(target_os = "macos")]
@@ -2228,6 +2240,9 @@ struct RunRequest {
     screenshot_path: Option<PathBuf>,
     /// Display scale for the screenshot.
     screenshot_scale: f32,
+    /// When set, drive the run against the usability script and write what was
+    /// observed here.
+    usability_report: Option<PathBuf>,
     app_args: Vec<String>,
 }
 
@@ -4514,6 +4529,14 @@ fn run_component(request: RunRequest) -> Result<u8> {
         phase3_ui_mode: request.ui_mode,
         screenshot_path: request.screenshot_path.clone(),
         screenshot_scale: request.screenshot_scale,
+        usability_plan: request.usability_report.as_ref().map(|path| {
+            krate_runtime::usability::UsabilityPlan {
+                report_path: path.clone(),
+                check_resize: true,
+                check_click: true,
+                check_stay_open: true,
+            }
+        }),
     };
     let runtime = Runtime::new(&config)?;
     let runtime_world = match manifest.map(Manifest::app_world).transpose()? {
@@ -4768,6 +4791,7 @@ fn open_app() -> Result<u8> {
         test_timezone: None,
         screenshot_path: None,
         screenshot_scale: 2.0,
+        usability_report: None,
         app_args: Vec::new(),
     })
 }
@@ -5448,6 +5472,9 @@ enum CheckStage {
     Run,
     /// Painting the app's first frame to a PNG.
     Shoot,
+    /// Driving the app the way a person would: does it stay open, does it
+    /// follow a resize, does pressing it do anything.
+    Usability,
 }
 
 impl CheckStage {
@@ -5461,6 +5488,7 @@ impl CheckStage {
             CheckStage::Imports => 13,
             CheckStage::Run => 14,
             CheckStage::Shoot => 15,
+            CheckStage::Usability => 16,
         }
     }
 
@@ -5472,6 +5500,7 @@ impl CheckStage {
             CheckStage::Imports => "imports",
             CheckStage::Run => "run",
             CheckStage::Shoot => "shoot",
+            CheckStage::Usability => "usability",
         }
     }
 }
@@ -5689,6 +5718,7 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
                         "stages": summary.passed,
                         "imports": summary.imports,
                         "shoot": summary.shoot.as_ref().map(|p| p.display().to_string()),
+                        "usability_notes": summary.usability_notes,
                     })
                 );
             } else {
@@ -5698,6 +5728,12 @@ fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Resu
                 }
                 if let Some(shot) = &summary.shoot {
                     println!("  wrote {}", shot.display());
+                }
+                // Said out loud so a green result is never read as more than it
+                // is: these are the usability checks that could not be made on
+                // this app, not ones it passed.
+                for note in &summary.usability_notes {
+                    println!("  note: {note}");
                 }
             }
             Ok(0)
@@ -5734,6 +5770,10 @@ struct CheckSummary {
     passed: Vec<&'static str>,
     imports: Vec<String>,
     shoot: Option<PathBuf>,
+    /// What the usability stage could not measure, in plain words. Notes, not
+    /// failures: a green check-app with a note here means the app passed
+    /// everything that could be checked, and says which checks those were.
+    usability_notes: Vec<String>,
 }
 
 fn run_check_app(
@@ -5742,6 +5782,7 @@ fn run_check_app(
     no_run: bool,
 ) -> std::result::Result<CheckSummary, CheckFailure> {
     let mut passed: Vec<&'static str> = Vec::new();
+    let mut usability_notes: Vec<String> = Vec::new();
 
     // Stage: layout. The three files every Krate app has.
     let manifest_path = dir.join("manifest.toml");
@@ -5774,12 +5815,20 @@ fn run_check_app(
     // function required". Measured 5 out of 5 authored apps hitting exactly
     // this. The context pack already says to keep it, in capitals; saying it
     // louder does not work, so catch it here and say precisely what to restore.
+    //
+    // Only for a `#![no_std]` app. A `std` guest links std's own allocator and
+    // panic handler and does not need the SDK at all -- fifteen shipped apps
+    // are exactly that, and failing them here was a false failure of my own
+    // making, caught by W14 sweeping every app.
+    let is_no_std = fs::read_to_string(dir.join("src/lib.rs"))
+        .map(|lib| lib.contains("#![no_std]"))
+        .unwrap_or(false);
     if let Ok(cargo) = fs::read_to_string(dir.join("Cargo.toml")) {
         let declares_krate = cargo
             .lines()
             .map(str::trim_start)
             .any(|line| line.starts_with("krate ") || line.starts_with("krate="));
-        if !declares_krate {
+        if is_no_std && !declares_krate {
             return Err(CheckFailure {
                 stage: CheckStage::Layout,
                 detail: "Cargo.toml has no `krate` dependency. The SDK owns this app's \
@@ -5871,6 +5920,7 @@ fn run_check_app(
             passed,
             imports,
             shoot: None,
+            usability_notes,
         });
     }
 
@@ -5948,9 +5998,9 @@ fn run_check_app(
         let png_str = absolute_from_cwd(png).to_string_lossy().into_owned();
         let mut shoot_args: Vec<String> = vec![
             "run".into(),
-            wasm_str,
+            wasm_str.clone(),
             "--manifest".into(),
-            manifest_str,
+            manifest_str.clone(),
             "--auto-grant".into(),
             "--shoot".into(),
             png_str,
@@ -5979,11 +6029,132 @@ fn run_check_app(
         None
     };
 
+    // Stage: usability. Every stage above asks whether the app is *valid*.
+    // This one asks whether it is *usable*: does it stay open, does it follow
+    // the window when that is resized, does pressing it do anything. Those are
+    // the properties a person actually experiences, and an app that fails all
+    // three passed every other stage green.
+    //
+    // Only a GUI app has a window, so a CLI app skips this outright rather than
+    // failing it.
+    if is_gui {
+        let notes = run_usability_stage(dir, &wasm_str, &manifest_str)?;
+        passed.push("usability");
+        usability_notes = notes;
+    }
+
     Ok(CheckSummary {
         passed,
         imports,
         shoot: shot,
+        usability_notes,
     })
+}
+
+/// Drive the app and turn what was observed into either a failure or notes.
+///
+/// The rule that governs every line here: **only fail on what was actually
+/// seen to break.** Anything the driver could not measure comes back as a note.
+/// A stage that fails an app it merely failed to measure gets skipped with
+/// `--skip`, and a skipped stage protects nothing.
+fn run_usability_stage(
+    dir: &Path,
+    wasm_str: &str,
+    manifest_str: &str,
+) -> std::result::Result<Vec<String>, CheckFailure> {
+    let scratch = tempfile::tempdir().map_err(|error| CheckFailure {
+        stage: CheckStage::Usability,
+        detail: format!("could not create a scratch dir for the usability run: {error}"),
+        fix: String::new(),
+    })?;
+    let report_path = scratch.path().join("usability.json");
+    let report_str = report_path.to_string_lossy().into_owned();
+
+    // No `quick`: the whole point is to run the app the way a person does. On
+    // the quick path an app does its scripted work and exits, which would make
+    // every app look like one that closes by itself.
+    let args: Vec<String> = vec![
+        "run".into(),
+        wasm_str.to_string(),
+        "--manifest".into(),
+        manifest_str.to_string(),
+        "--auto-grant".into(),
+        "--usability-report".into(),
+        report_str,
+    ];
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let exit = run_self(dir, &arg_refs).map_err(|error| CheckFailure {
+        stage: CheckStage::Usability,
+        detail: format!("could not drive the app: {error:#}"),
+        fix: String::new(),
+    })?;
+
+    let report = match krate_runtime::usability::UsabilityReport::read(&report_path) {
+        Ok(report) => report,
+        Err(error) => {
+            // No report at all means the driver never got far enough to write
+            // one. That is a gap in the measurement, not proof of a defect, so
+            // it is a note. The run stage above already covers "the app does
+            // not run".
+            return Ok(vec![format!(
+                "could not observe this app (exit {exit}, no report: {error}); \
+                 the usability checks did not run"
+            )]);
+        }
+    };
+
+    if !report.opened_window {
+        return Ok(vec![
+            "this app never opened a window, so there was nothing to drive".to_string(),
+        ]);
+    }
+
+    // Failures first, in the order a person would notice them.
+    use krate_runtime::usability::Observation;
+    if let Some(Observation::Broke { detail }) = &report.stay_open {
+        return Err(CheckFailure {
+            stage: CheckStage::Usability,
+            detail: detail.clone(),
+            fix: "A window should stay open until the person closes it. If the app has an \
+                  idle timeout so a headless check cannot hang, gate it on the `quick` \
+                  argument so it never fires in a real session."
+                .to_string(),
+        });
+    }
+    if let Some(Observation::Broke { detail }) = &report.resize {
+        return Err(CheckFailure {
+            stage: CheckStage::Usability,
+            detail: detail.clone(),
+            fix: "Lay the app out from `canvas2d::canvas_size` rather than from constants, \
+                  and redraw on `Event::Resized`. Hit-testing must use the same numbers the \
+                  drawing does, or clicks land in the wrong place after a resize."
+                .to_string(),
+        });
+    }
+    if let Some(Observation::Broke { detail }) = &report.click {
+        return Err(CheckFailure {
+            stage: CheckStage::Usability,
+            detail: detail.clone(),
+            fix: "A control that is drawn should do something when it is pressed. Handle \
+                  `Event::Pointer` with `pressed` set, work out what was hit, change the \
+                  app's state, and redraw."
+                .to_string(),
+        });
+    }
+
+    // Everything else becomes a note, so a person can see what was and was not
+    // actually measured rather than reading a green line as more than it is.
+    let mut notes = Vec::new();
+    for (name, observation) in [
+        ("stays open", &report.stay_open),
+        ("survives a resize", &report.resize),
+        ("responds to a press", &report.click),
+    ] {
+        if let Some(Observation::Unobserved { reason }) = observation {
+            notes.push(format!("{name}: not checked -- {reason}"));
+        }
+    }
+    Ok(notes)
 }
 
 fn check_manifest(file: &Path, format: OutputFormat) -> Result<u8> {
@@ -7534,10 +7705,31 @@ mod check_app_tests {
             CheckStage::Imports,
             CheckStage::Run,
             CheckStage::Shoot,
+            CheckStage::Usability,
         ];
         let codes: BTreeSet<u8> = stages.iter().map(|s| s.exit_code()).collect();
         assert_eq!(codes.len(), stages.len(), "exit codes must be distinct");
         assert!(codes.iter().all(|&c| c != 0), "no stage exits 0 on failure");
+    }
+
+    #[test]
+    fn every_stage_has_a_distinct_label() {
+        use std::collections::BTreeSet;
+        let stages = [
+            CheckStage::Layout,
+            CheckStage::Manifest,
+            CheckStage::Build,
+            CheckStage::Imports,
+            CheckStage::Run,
+            CheckStage::Shoot,
+            CheckStage::Usability,
+        ];
+        let labels: BTreeSet<&str> = stages.iter().map(|s| s.label()).collect();
+        assert_eq!(
+            labels.len(),
+            stages.len(),
+            "an agent branches on the label, so two stages must never share one"
+        );
     }
 
     #[test]

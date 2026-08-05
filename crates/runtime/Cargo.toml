@@ -34,6 +34,9 @@ krate-layout = { path = "../layout", version = "0.1.0-dev" }
 krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
 krate-policy = { path = "../policy", version = "0.1.0-dev" }
 libc.workspace = true
+# The usability report check-app reads back after a driven run.
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 wasmtime.workspace = true

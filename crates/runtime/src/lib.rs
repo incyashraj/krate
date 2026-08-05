@@ -49,6 +49,7 @@ pub mod secret_host;
 mod speech_transcription;
 pub mod sql_host;
 pub mod store_host;
+pub mod usability;
 
 #[cfg(feature = "phase2-bindings")]
 use krate_adapter_common::locale::{
@@ -144,6 +145,10 @@ pub struct Config {
     pub screenshot_path: Option<PathBuf>,
     /// Display scale applied to a screenshot; 2.0 mimics a HiDPI window.
     pub screenshot_scale: f32,
+    /// When set, drive this GUI run against a usability script -- resize it,
+    /// press it, and watch that it stays open -- and write what was observed to
+    /// the plan's report path. Only ever set by `check-app`'s usability stage.
+    pub usability_plan: Option<usability::UsabilityPlan>,
 }
 
 impl Default for Config {
@@ -166,6 +171,7 @@ impl Default for Config {
             phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
             screenshot_path: None,
             screenshot_scale: 2.0,
+            usability_plan: None,
         }
     }
 }
@@ -485,7 +491,8 @@ impl Runtime {
                 .screenshot_path
                 .clone()
                 .map(|path| (path, config.screenshot_scale)),
-        );
+        )
+        .with_usability(config.usability_plan.clone());
         store.data_mut().phase3_gui = Some(gui_host);
 
         let mut linker = wasmtime::component::Linker::new(&self.engine);
@@ -554,7 +561,22 @@ impl Runtime {
             phase3_gui_bindings::Gui::instantiate(&mut store, &component.component, &linker)
                 .map_err(|err| RuntimeError::Instantiate(err.to_string()))?;
 
-        let code = match bindings.call_run(&mut store) {
+        let outcome = bindings.call_run(&mut store);
+
+        // Write the usability report before anything else can return, so a run
+        // that trapped or ran out of fuel still reports what it saw. An app
+        // that dies halfway is exactly the kind this stage exists to describe,
+        // and a missing report would read as "could not measure".
+        if let Some(gui) = store.data().phase3_gui.as_ref() {
+            if let (Some(report), Some(path)) = (gui.usability_report(), gui.usability_report_path())
+            {
+                if let Err(error) = report.write(&path) {
+                    tracing::debug!(?error, "could not write the usability report");
+                }
+            }
+        }
+
+        let code = match outcome {
             Ok(code) => code,
             Err(err) => {
                 if let Some(message) = classify_limit_error(&err) {

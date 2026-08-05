@@ -165,7 +165,7 @@ Evidence: `redraw-requested` and `request-redraw` exist; zero matches for
 Fix:      A frame/tick event carrying elapsed time, so animation is time-based.
 
 ### K-006 — Nothing checks whether an app is usable, only whether it is valid
-Status:   claimed
+Status:   fixed-pending-merge
 Owner:    W14
 Severity: serious
 Class:    our-code
@@ -391,6 +391,32 @@ Evidence: `krate run apps/krate-notes/target/.../krate_notes.wasm --manifest
           an app's test data by accident.
 Fix:      Either put a per-app sandbox data dir outside the source tree, or
           add the app-relative pattern to .gitignore. Not urgent.
+
+### K-024 — krate-pulse pins its canvas to constants, so it ignores a resize
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    example-bug
+Found:    2026-08-05, W14, first run of the new usability stage across apps/
+Evidence: Found by the usability stage, not by a person -- which is what the
+          stage is for:
+
+              $ ./target/release/krate check-app apps/krate-pulse
+              FAILED at usability
+              the window was resized to 1300x840 and the app's canvas stayed
+              1080x700, so its layout is not following the window
+              EXIT=16
+
+          `apps/krate-pulse/src/lib.rs:503` and `:518` set
+          `width: Some(WIDTH), height: Some(HEIGHT)` on the canvas node, with
+          `const WIDTH: f32 = 1080.0` at :33. The file has zero matches for
+          both `canvas_size` and `Resized`, so nothing re-lays it out.
+          It is the only shipped app that pins its canvas this way
+          (`grep -ln "width: Some(WIDTH)" apps/*/src/lib.rs`).
+Fix:      Same shape as K-003: drop the fixed style on the canvas node, lay out
+          from `canvas2d::canvas_size`, and handle `Event::Resized`. Left
+          unclaimed rather than fixed here, because K-003 is W13's and this is
+          the same repair on a second app -- it should go with that work.
 
 ---
 
