@@ -88,3 +88,35 @@ itself.
 4. Decide the refusal shape: the cheapest honest version is a screen before
    authoring that names what Krate cannot do and stops, rather than spending
    three minutes producing something wrong.
+
+## Krate Mode: what is verified and what is not (2026-08-05)
+
+Verified without a model, by me:
+
+- The published `docs/krate-mode.md` is byte-identical to what
+  `krate krate-mode` generates, so it cannot silently teach a dead API. I
+  confirmed the drift test fails when the file is edited, then restored it.
+- Both worked examples are the real shipped sources of `apps/krate-clock` and
+  `apps/krate-checklist`, inlined via `include_str!`, not invented for the
+  prompt.
+- The page is live at https://krate.tech/docs/pages/krate-mode.html and the raw
+  prompt at https://krate.tech/krate-mode.md.
+
+**Not verified by me:** that a fresh model given this prompt produces an app
+that passes `check-app`. The workstation that built it reports two apps passing
+first try (a cooking unit converter, 820 lines; a cron expression explainer,
+1016 lines), but I could not reproduce that independently because both AI
+accounts on this machine are currently unusable:
+
+- Claude: `OAuth session expired and could not be refreshed`
+- Codex: `The 'gpt-5.6-sol' model requires a newer version of Codex`
+
+This is the single most important claim about Krate Mode and it rests on one
+report. Re-run it the moment an account works:
+
+    cd /tmp && mkdir kmtest && cd kmtest
+    claude -p "$(cat docs/krate-mode.md)
+
+    Now write: <some app nobody has built>. Write the three files here." \
+      --allowed-tools Read,Write,Edit --permission-mode bypassPermissions
+    krate check-app .
