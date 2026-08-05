@@ -237,6 +237,22 @@ jobs:
           # already succeeded by this point, so a failure here should not throw
           # away a working signed build -- warn, ship signed, and say exactly
           # what to check.
+          # Trim whitespace. The same credentials that authenticate from a
+          # terminal returned 401 from CI, and the difference between a
+          # working value and a broken one is usually a newline picked up
+          # when the secret was pasted -- invisible in the GitHub UI and
+          # impossible to spot in a log, since the value is masked.
+          APPLE_ID="$(printf '%s' "$APPLE_ID" | tr -d '[:space:]')"
+          APPLE_TEAM_ID="$(printf '%s' "$APPLE_TEAM_ID" | tr -d '[:space:]')"
+          APPLE_APP_PASSWORD="$(printf '%s' "$APPLE_APP_PASSWORD" | tr -d '[:space:]')"
+
+          # Report the shapes, never the values. An app-specific password is
+          # always 19 characters as xxxx-xxxx-xxxx-xxxx, and a team id is
+          # always 10, so a wrong length localises the problem immediately
+          # without printing a secret.
+          echo "apple-id length: ${#APPLE_ID}, team-id length: ${#APPLE_TEAM_ID}," \
+               "password length: ${#APPLE_APP_PASSWORD} (expect 19)"
+
           if ! xcrun notarytool submit "dist/$zip_name" \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
