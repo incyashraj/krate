@@ -282,11 +282,13 @@ esac
 say ""
 say "To update later, just run this installer again."
 say ""
-# End on something the person can do, not on what they cannot do yet. The old
-# ending listed the build tools `krate create` needs, which reads as homework
-# to someone who has just installed and has nothing to open.
-say "Try it now:"
+# End on the one word, not on a URL to paste. Someone who has just installed
+# something wants to know how to start it, and `krate` is the answer to every
+# question they have next -- make one, open one, publish one. A sample app
+# to run is a demo; this is the product.
+say "Start here:"
 say ""
-say "  krate run https://krate.tech/notes.krate"
+say "  krate"
 say ""
-say "That opens a real app. Krate will show you what it wants first."
+say "That opens a short menu: make an app by describing it, open one someone"
+say "sent you, or browse what people have published."

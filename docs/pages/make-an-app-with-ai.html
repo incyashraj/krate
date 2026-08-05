@@ -917,6 +917,61 @@
     <!-- 2b. Connect your AI. Deliberately a lookup, not a login: every one of
          these tools owns its own sign-in, and Krate holding a copy of anyone's
          credentials would be strictly worse than the tool holding its own. -->
+    <section class="band">
+      <div class="wrap">
+        <h2>Type <code>krate</code>. Say what you want.</h2>
+        <p class="lead">
+          Everything below happens inside <code>krate</code>. You do not need to
+          remember a flag, name an output file, or know which AI you have
+          installed.
+        </p>
+
+        <ol class="tui-steps">
+          <li>
+            <h3>Type <code>krate</code></h3>
+            <p>It opens a short menu. Pick <strong>Make an app</strong>.</p>
+            <pre>krate</pre>
+          </li>
+          <li>
+            <h3>Say what you want</h3>
+            <p>
+              Plain words. Krate checks which AI tools actually work on your
+              machine and asks which should write it. One that is installed but
+              not signed in is shown with the command that fixes it, so you
+              cannot pick one that will fail.
+            </p>
+            <pre>a checklist that saves my todos</pre>
+          </li>
+          <li>
+            <h3>Watch it build</h3>
+            <p>
+              It reads Krate's API reference, writes the code, compiles it, and
+              checks the app runs and paints a window. Two to five minutes,
+              with each stage and its elapsed time on screen.
+            </p>
+            <pre>&#10003; wrote the app's code        1m 12s
+&#10003; checked it builds and runs    38s
+
+Created checklist.krate  (14 KB)</pre>
+          </li>
+          <li>
+            <h3>Open it, change it, or publish it</h3>
+            <p>
+              Krate offers all three when it finishes. Changing it means saying
+              what should be different &mdash; the app carries its own source,
+              so the AI edits what is there instead of starting over.
+            </p>
+          </li>
+        </ol>
+
+        <p class="aside">
+          Prefer one line with no prompts?
+          <code>krate create "a checklist" --output checklist.krate</code>
+          does the same thing, for scripts and CI.
+        </p>
+      </div>
+    </section>
+
     <section class="section" id="connect-your-ai">
       <div class="wrap">
         <p class="label">Connect your AI</p>
@@ -973,67 +1028,12 @@
     <!-- 3. The command builder. Nobody should hand-assemble a create command.
          Without JavaScript this still renders a real, runnable example command
          in the output block, so the section is never an empty box. -->
-    <section class="band">
-      <div class="wrap">
-        <h2>One word, then a conversation.</h2>
-        <p class="lead">
-          Everything below happens inside <code>krate</code>. You do not need to
-          remember a flag, name an output file, or know which AI you have
-          installed.
-        </p>
-
-        <ol class="tui-steps">
-          <li>
-            <h3>Type <code>krate</code></h3>
-            <p>It opens a short menu. Pick <strong>Make an app</strong>.</p>
-            <pre>krate</pre>
-          </li>
-          <li>
-            <h3>Say what you want</h3>
-            <p>
-              Plain words. Krate checks which AI tools actually work on your
-              machine and asks which should write it. One that is installed but
-              not signed in is shown with the command that fixes it, so you
-              cannot pick one that will fail.
-            </p>
-            <pre>a checklist that saves my todos</pre>
-          </li>
-          <li>
-            <h3>Watch it build</h3>
-            <p>
-              It reads Krate's API reference, writes the code, compiles it, and
-              checks the app runs and paints a window. Two to five minutes,
-              with each stage and its elapsed time on screen.
-            </p>
-            <pre>&#10003; wrote the app's code        1m 12s
-&#10003; checked it builds and runs    38s
-
-Created checklist.krate  (14 KB)</pre>
-          </li>
-          <li>
-            <h3>Open it, change it, or publish it</h3>
-            <p>
-              Krate offers all three when it finishes. Changing it means saying
-              what should be different &mdash; the app carries its own source,
-              so the AI edits what is there instead of starting over.
-            </p>
-          </li>
-        </ol>
-
-        <p class="aside">
-          Prefer one line with no prompts?
-          <code>krate create "a checklist" --output checklist.krate</code>
-          does the same thing, for scripts and CI.
-        </p>
-      </div>
-    </section>
-
     <section class="section" id="build-your-command">
       <div class="wrap">
         <p class="label">Build your command</p>
-        <h2>Or build the one-line version.</h2>
+        <h2>Rather not be asked? Build the one-line version.</h2>
         <div class="prose">
-          <p>Typing <code>krate</code> is the short way and asks you everything it needs. If you want the single command instead &mdash; for a script, or to keep in your notes &mdash; describe the app here and it is written out with the quoting handled.</p>
+          <p>Everything above happens by typing <code>krate</code> and answering its questions. If you would rather have a single command &mdash; for a script, for CI, or to keep in your notes &mdash; describe the app here and it is written out with the quoting handled.</p>
         </div>
 
         <div class="builder">

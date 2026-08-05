@@ -247,14 +247,15 @@ try {
     }
 
     Write-Say ''
-    Write-Say 'You can now open a .krate someone sends you. Try this:'
-    Write-Say '  krate run https://krate.tech/cubes.krate'
+    Write-Say 'Start here:'
+    Write-Say ''
+    Write-Say '  krate'
+    Write-Say ''
+    Write-Say 'That opens a short menu: make an app by describing it, open one'
+    Write-Say 'someone sent you, or browse what people have published.'
     Write-Say ''
     Write-Say 'If a new terminal says "krate is not recognized", run it by full path:'
-    Write-Say "  & `"$dir\$binary`" --version"
-    Write-Say "To *make* your own apps with 'krate create', you also need the Rust"
-    Write-Say "build tools. 'krate create' checks for them and offers to install"
-    Write-Say "them on first use; 'krate doctor' shows what is present at any time."
+    Write-Say "  & `"$dir\$binary`" --version""
 } finally {
     Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
