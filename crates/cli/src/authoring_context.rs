@@ -278,10 +278,26 @@ compute the layout from that, and recompute when it changes:\n\n\
 **Handle the resize event.** The runtime sends `Event::Resized(window-size)` \
 when the window changes. Re-read the canvas size, recompute the layout, and \
 redraw. An app that ignores it is only correct at its opening size.\n\n\
-**Do not close yourself.** A real session ends when the person closes the \
-window (`Event::CloseRequested`). If you use an idle timeout so the automated \
-`quick` run cannot hang, gate it on `quick` -- an unconditional one closes the \
-window while somebody is reading it.\n\n\
+**Do not close yourself. This is the most common way a generated app fails.** \
+A real session ends when the person closes the window \
+(`Event::CloseRequested`), and only then. Do NOT put a round limit, a frame \
+count, or an idle timeout on the interactive loop.\n\n\
+Eight apps were written from this pack by an AI and every single one bounded \
+its loop -- `const MAX_ROUNDS: u32 = 800` at 50ms a round, so each app quit \
+itself after forty seconds while somebody was using it. A flashcard app that \
+closes during revision is not a working app, however well the rest is written. \
+The bound is only ever correct on the `quick` path, where nobody is watching:\n\n\
+\u{20}\u{20}\u{20}\u{20}if quick {\n\
+\u{20}\u{20}\u{20}\u{20}    // seed state, draw one frame, print key:value, exit 0\n\
+\u{20}\u{20}\u{20}\u{20}}\n\
+\u{20}\u{20}\u{20}\u{20}// interactive: loop with no round limit at all\n\
+\u{20}\u{20}\u{20}\u{20}loop {\n\
+\u{20}\u{20}\u{20}\u{20}    match events::wait(None) {\n\
+\u{20}\u{20}\u{20}\u{20}        Some(Event::CloseRequested(_)) => break,\n\
+\u{20}\u{20}\u{20}\u{20}        // ... handle the rest, redraw when something changed\n\
+\u{20}\u{20}\u{20}\u{20}        _ => {}\n\
+\u{20}\u{20}\u{20}\u{20}    }\n\
+\u{20}\u{20}\u{20}\u{20}}\n\n\
 **Hit-test against what you actually drew.** There is no widget tree behind a \
 canvas: a drawn button is only clickable because you compare the pointer \
 position to the same rectangle you filled. Keep the layout in one place so the \
@@ -302,9 +318,23 @@ one argument, requiring exit 0. The argument is the bare word `quick` (not \
 `--quick`), except a CLI app that declares `fs.read:` and no window is given a \
 sample file path instead. Handle `quick` before any other argument parsing: on \
 `quick`, do the real work once against a small built-in sample (or empty \
-stdin), print something, and exit 0. Never wait for input or open a window \
-nobody will close. An app that parses arguments strictly and rejects the \
-unknown `quick` fails here after building and packing correctly.\n";
+stdin), print what the app is holding, and exit 0. Never wait for input or open \
+a window nobody will close. An app that parses arguments strictly and rejects \
+the unknown `quick` fails here after building and packing correctly.\n\n\
+**Print one `key:value` per line, and make the keys mean something.** This is \
+the only way anything outside the app can tell whether it did what was asked. \
+`check-app` reads it, CI reads it, and a benchmark reads it. \"print something\" \
+is not enough: an app that prints `ok` builds, runs, paints a frame, and proves \
+nothing about whether it works.\n\n\
+Print the state a person would look at to judge the app. A to-do list prints \
+how many items it holds and how many are done; a tip calculator prints the tip \
+and the total; a game prints the score and whether it is over:\n\n\
+\u{20}\u{20}\u{20}\u{20}items:5\n\
+\u{20}\u{20}\u{20}\u{20}done:2\n\
+\u{20}\u{20}\u{20}\u{20}saved:yes\n\n\
+Lower-case keys, no spaces around the colon, one pair per line, numbers as \
+bare digits. Seed enough state in the `quick` path that the numbers are \
+interesting -- a to-do list that prints `items:0` has proved nothing either.\n";
 
 /// Section 4: the GUI world interfaces, extracted from the WIT. A GUI app calls
 /// these through its generated `bindings::krate::{ui,gfx,audio,speech}::*`, not

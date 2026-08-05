@@ -59,9 +59,15 @@ experiences.
 
 ## Two things that keep biting
 
-**The binary on PATH is not the one you built.** `krate` resolves to an older
-installed release. Always invoke `/Users/yashrajpardeshi/Projects/layer6x6/target/release/krate`
-by absolute path. A "fixed" bug appeared to come back twice because of this.
+**The binary on PATH is not the one you built.** A bare `krate` resolves to an
+older installed release, and on this machine a debug build shadows even that.
+Always invoke the binary by absolute path.
+
+**If you are in a worktree, that path is YOUR worktree's target** --
+`<your-worktree>/target/release/krate`, not the main repo's. The main repo's
+binary was built by someone else, possibly before your WIT existed, and it fails
+in ways that read as a broken app rather than a stale tool ("this app needs a
+newer version of Krate"). Both mistakes have cost real time.
 
 **Generated bindings churn.** Building rewrites `apps/*/src/bindings.rs`. Run
 `git checkout apps/*/src/bindings.rs` before committing unless you actually

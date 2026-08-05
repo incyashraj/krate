@@ -44,13 +44,16 @@ real data, a small game, a text tool. Not a spreadsheet, not a browser.
 The gates before we say version 1:
 
 - **G1. The benchmark exists and the number is public.** A fixed corpus, a
-  stated pass bar, an honest score including failures. *In progress — W16.*
+  stated pass bar, an honest score including failures. *Corpus and harness done
+  (W16). The first run scored 0 of 5 authored apps, caused by K-015, now fixed.
+  Needs a re-run before any number is published.*
 - **G2. Nothing on the board is a blocker.** Today: K-001 (no scroll), K-007
   (environment). *In progress — W12.*
 - **G3. Usability is enforced, not hoped for.** check-app fails an app that
   cannot be clicked, resized, or stays closed. *In progress — W14.*
 - **G4. The outsider path works cold.** Someone with only the public install and
-  the website gets a working app. *Harness built; needs a real run.*
+  the website gets a working app. *Run once (W17): 8 built, 0 usable. The
+  headline cause is fixed; needs a re-run to confirm.*
 - **G5. Real users have done it.** Ten people outside this machine have made an
   app and sent it to someone.
 
@@ -68,9 +71,9 @@ defect.
 | **W12** | Wheel/scroll event: WIT, host, three adapters, scrolling checklist | G2, K-001 | running |
 | **W13** | Canvas apps lay out from canvas_size and handle resize | G2, K-003 | running |
 | **W14** | Usability stage in check-app | G3, K-006 | running |
-| **W15** | Text measurement, delete the guess from seven apps | G2, K-002 | running |
-| **W16** | The benchmark: corpus, harness, honest score | G1 | running |
-| **W17** | Outsider testing with Grok, from a clean machine's point of view | G4 | running -- resumed after verifying its blocker |
+| **W15** | Text measurement, delete the guess from seven apps | G2, K-002 | **landed** -- 11 apps converted, measurement matches drawn pixels |
+| **W16** | The benchmark: corpus, harness, honest score | G1 | **landed** -- 42 requests, harness self-checks against 17 bundles, first score 0/5 authored |
+| **W17** | Outsider testing with Grok, from a clean machine's point of view | G4 | **landed** -- 8 built, 0 usable; five defects filed |
 
 ### What each is actually trying to prove
 
@@ -106,6 +109,23 @@ workstation lands, so a session that dies mid-flight loses nothing.
 
 Newest first. One line per landing.
 
+- **2026-08-05** — W17 (outsider, Grok, public install only) delivered the
+  number that matters: **8 of 8 apps built, 0 of 8 usable.** Every one bounded
+  its interactive loop and quit itself mid-use -- four at exactly 40 seconds,
+  timed three times. All eight made the same mistake, which makes it a teaching
+  hole, now fixed. Also: buttons that work only sometimes (K-017), layout
+  collapsing past four controls (K-018), `krate ai` calling broken providers
+  ready (K-019), double-click opening a file picker (K-020).
+- **2026-08-05** — W15 landed text measurement. `iiii` and `WWWW` now measure
+  4.25x apart where the old constant returned the same number for both. Found
+  the bug hiding under five different names across **11** apps, not the 7 we
+  knew about, with several comments claiming the host font is monospace.
+- **2026-08-05** — W16 landed the benchmark and the number is bad in the useful
+  way: **0 of 5 authored apps passed**, while the old measure scores those same
+  five 5/5. Every one builds, imports only krate:*, runs, and paints a frame --
+  and none can prove it did what was asked, because the authoring pack's entire
+  spec for the verification run was "print something". One paragraph in the pack
+  (K-015), now fixed. Do not publish a score until it is re-run.
 - **2026-08-05** — W17 (outsider) stopped mid-run rather than report eight
   working apps on a path it suspected was serving templates. Two of its three
   findings hold and are filed (K-013, K-014); the central one -- that `--agent

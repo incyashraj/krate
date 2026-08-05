@@ -1,0 +1,10 @@
+id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	missing	note
+39	refuse	download my email and show me the unread ones	pass	-	0	0	1	1	-	refused: host-app
+40	refuse	a chat app so I can message my friends	pass	-	0	0	1	1	-	refused: another-device
+1	easy	a tip calculator	fail	does	132	12065	1	4	tip>=0,total>=0,total!=0	K-013: app is correct (bill 60, 18%, 7080 cents) but named its keys tip% and total_cents
+41	refuse	sync my files to my phone	pass	-	0	0	1	1	-	refused: another-device
+42	refuse	an app that posts to my twitter account	pass	-	0	0	1	1	-	refused: third-party-account
+5	easy	a click counter that goes up when I press the button	fail	does	192	7302	0	1	count>=1	0/1 observable properties held
+6	easy	a dice roller that rolls two dice	fail	does	257	10738	0	5	die1>=1,die1<=6,die2>=1,die2<=6,total>=2	0/5 observable properties held
+2	easy	a to-do list I can check things off in	fail	does	181	15399	1	2	checked>=1	1/2 observable properties held
+9	easy	a stopwatch with lap times	fail	does	177	11587	0	2	elapsed>=0,laps>=1	0/2 observable properties held

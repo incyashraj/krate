@@ -87,7 +87,7 @@ Fix:      Add a wheel event to the WIT, plumb through host and all three
           adapters, use it in krate-checklist.
 
 ### K-002 — No text measurement, so every app guesses text width
-Status:   claimed
+Status:   fixed-pending-merge
 Owner:    W15
 Severity: serious
 Class:    runtime-hole
@@ -197,6 +197,127 @@ Fix:      Not a product defect, but it silently invalidates measurements and has
           already made a fixed bug appear to come back twice. Every command in
           this repo must use an absolute path, and outsider testing must use
           ~/.local/bin/krate explicitly.
+
+### K-015 — The `quick` run says "print something", so nothing can read what an app printed
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    teaching-hole
+Found:    2026-08-05, W16, first Krate App Benchmark run
+Evidence: `krate krate-mode` line 52-57 is the whole specification of the
+          verification run's output: "do the app's real work once against a
+          small built-in sample, **print something**, and exit 0". That is the
+          only instruction about stdout anywhere in the pack.
+          The pack's own worked example does the right thing --
+          `write_pair(&stdout, "timezone", &timezone)`, one `key:value` per
+          line -- and 17 of 17 shipped bundles follow it (`items:5`,
+          `income:6500`, `index:0`). But the rule is never stated, only
+          demonstrated, so an agent is free not to copy it.
+          Benchmark request 1, "a tip calculator", authored via
+          `--agent grok`. The app is CORRECT: bill $48.50, tip 18%, total
+          $57.23. It printed all three on one line with currency symbols:
+              $ krate run app.krate --auto-grant --shoot f.png -- quick
+              bill:$48.50 tip:18% total:$57.23
+          Only `bill?` is machine-readable. `tip>=0` and `total>=0` cannot be
+          evaluated: `tip` and `total` are not at the start of a line, and the
+          values carry `$` and `%`.
+          Cost: a working app scored 1/6 on observable properties. Anything
+          that reads app state -- this benchmark, the K-006 usability stage,
+          CI -- is blind to an app that works.
+Fix:      State the contract in the pack, do not just demonstrate it: on
+          `quick`, print one `key:value` per line, bare values, no symbols or
+          units, last line `quick:done`. `write_pair` already does exactly this
+          and is already in the pack; promote it from example to rule.
+          Highest leverage per line changed on the board -- it is one paragraph
+          and it makes every future app readable by machine.
+
+### K-016 — Generated apps bound their interactive loop and quit mid-use
+Status:   claimed
+Owner:    lead
+Severity: blocker
+Class:    teaching-hole
+Found:    2026-08-05, W17, outsider testing -- it timed the same app three times
+Evidence: Eight apps written by Grok from the public pack, and **all eight**
+          bounded the interactive loop. tip/colour/expense/flashcards used
+          `MAX_ROUNDS = 800` at `ROUND_MILLIS = 50` = exactly 40 seconds, timed
+          at 45s/46s/43s. countdown and scratchpad 60s, chess 180s, maze 360s.
+          The apps did separate `QUICK_ROUNDS` correctly; they simply believed
+          the interactive loop should also end. A flashcard app that closes
+          during revision is not a working app.
+Fix:      The pack now says plainly that the interactive loop takes no bound at
+          all, with the wrong pattern named and the right one shown. The bound
+          belongs only on the `quick` path.
+
+### K-017 — Nothing anyone can click reliably works
+Status:   open
+Owner:    unclaimed
+Severity: blocker
+Class:    unknown -- needs diagnosis
+Found:    2026-08-05, W17, outsider testing
+Evidence: The colour picker's Red "+" was clicked seven times across two runs
+          and the app's own final state stayed at the untouched default
+          `r:64 g:128 b:200`. One earlier run did end at `#FFFFFF`, so input
+          CAN land -- which makes it unreliable rather than unwired, and that is
+          worse. 0 of 8 apps were usable despite 8 of 8 building.
+Fix:      Diagnose first. Could be K-003 (layout and hit-testing disagree), a
+          pointer-event delivery bug in the macOS adapter, or generated apps
+          hit-testing wrongly. Do not guess -- instrument one app and find out.
+
+### K-018 — Layout collapses past four controls in a row
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    example-bug
+Found:    2026-08-05, W17, outsider testing, via `--shoot`
+Evidence: The 5th button in a row wraps and draws on top of the next row's
+          text. In the expense tracker the "Add expense" button -- the app's
+          most important control -- is covered by the "Other" category button.
+          The chess board renders 7 columns instead of 8, sheared. The three
+          apps that look right all use rows of 2-3 buttons; the maze escapes by
+          drawing to a canvas.
+Fix:      Likely downstream of K-002 (no text measurement, now fixed) since
+          button widths were guessed. Re-test after K-002 merges before
+          treating it as separate.
+
+### K-019 — `krate ai` reports broken providers as ready
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-05, W17, outsider testing, cold start
+Evidence: `krate ai` lists Claude and Codex under "Ready to use" when both fail
+          on invocation -- Claude's auth is expired, Codex needs a newer CLI.
+          It only checks whether the binary is on PATH. A newcomer follows that
+          advice, picks Claude, and gets a failure that looks like Krate's.
+Fix:      Either probe the provider cheaply, or soften the wording from "Ready
+          to use" to "installed" and say a sign-in may still be needed.
+
+### K-020 — Double-clicking a .krate opened a file picker, not the app
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-05, W17, outsider testing
+Evidence: Double-clicking a `.krate` produced an off-screen file picker rather
+          than opening the app. Double-click is the headline promise on the
+          website and the simplest path we advertise.
+Fix:      Reproduce on a clean machine first -- this may be the stale
+          /Applications/Krate.app trap that has bitten before.
+
+### K-021 — An absolute path to target/release is the WRONG binary in a worktree
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    environment
+Found:    2026-08-05, W15, after losing significant time to it
+Evidence: CLAUDE.md says to invoke
+          `/Users/yashrajpardeshi/Projects/layer6x6/target/release/krate` by
+          absolute path. From a worktree that is the MAIN repo's binary, built
+          by another workstation before the caller's WIT existed. It reported
+          "this app needs a newer version of Krate", which reads as a broken
+          app rather than a stale tool.
+Fix:      The rule is "absolute path to YOUR OWN worktree's target". CLAUDE.md
+          needs correcting.
 
 ---
 
