@@ -85,10 +85,19 @@ jobs:
           mkdir -p _site/app-shots
           cp docs/landing/app-shots/*.png _site/app-shots/ 2>/dev/null || true
           cp -R docs/book/book _site/docs
-          # Standalone doc pages (e.g. the make-an-app-with-AI guide) that the
-          # landing page links to at /docs/pages/. Copied after the book so the
-          # book output does not clobber the pages dir. Without this the link
-          # from the landing page 404s.
+          # Standalone doc pages that the landing page links to at
+          # /docs/pages/: build-an-app (the "I want to build one" destination,
+          # MCP first), make-an-app-with-AI (the command builder), and
+          # krate-mode (the paste-in prompt). The glob copies all of them, so a
+          # new page here needs no change to this step -- but it does need
+          # docs/pages/** to stay in the paths: trigger above, or editing it
+          # changes nothing on the live site. Copied after the book so the book
+          # output does not clobber the pages dir. Without this the link from
+          # the landing page 404s.
+          #
+          # These pages reference the logo at /krate-glyph-blue.png and the
+          # favicon at /krate-favicon.png; both land at the site root via the
+          # `cp docs/landing/*.png _site/` step above.
           mkdir -p _site/docs/pages
           cp docs/pages/*.html _site/docs/pages/ 2>/dev/null || true
           # Krate Mode: the paste-in prompt, served from the site root so the
