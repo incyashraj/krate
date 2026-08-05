@@ -2051,6 +2051,10 @@ mod platform {
 
         /// Wheel and trackpad samples captured by the pump, waiting for the
         /// runtime to drain them. Same main-thread rule as the key samples.
+        static PENDING_POINTER_SAMPLES: std::cell::RefCell<
+            Vec<krate_adapter_common::ui::RawPointerSample>,
+        > = const { std::cell::RefCell::new(Vec::new()) };
+
         static PENDING_WHEEL_SAMPLES: std::cell::RefCell<
             Vec<krate_adapter_common::ui::RawWheelSample>,
         > = const { std::cell::RefCell::new(Vec::new()) };
@@ -2062,6 +2066,10 @@ mod platform {
     /// events down the responder chain, and a drawn canvas is an NSImageView
     /// that answers nothing, so a scroll over a Krate canvas used to reach
     /// nobody. Reading them off the pump is the same trick the key path uses.
+    pub fn take_raw_pointer_samples() -> Vec<krate_adapter_common::ui::RawPointerSample> {
+        PENDING_POINTER_SAMPLES.with(|slot| slot.borrow_mut().drain(..).collect())
+    }
+
     pub fn take_raw_wheel_samples() -> Vec<krate_adapter_common::ui::RawWheelSample> {
         PENDING_WHEEL_SAMPLES.with(|slot| slot.borrow_mut().drain(..).collect())
     }
@@ -2184,6 +2192,7 @@ mod platform {
                     // it has no beeping responder to protect against, and a
                     // lowered NSScrollView must keep scrolling itself.
                     self.capture_wheel_event(&event);
+                    self.capture_mouse_event(&event);
                     if self.capture_key_event(&event) {
                         // A game key: recorded for the runtime, not dispatched.
                         // Sending it on would reach a responder chain where no
@@ -2269,6 +2278,55 @@ mod platform {
                         dx,
                         dy,
                         modifiers,
+                    });
+            });
+        }
+
+        /// Record a mouse press or release as a raw pointer sample.
+        ///
+        /// Without this a drawn app could not be clicked at all. AppKit sends
+        /// mouse events down the responder chain, and a canvas app is an
+        /// NSImageView that answers nothing -- so every click was delivered to
+        /// a view with no handler and silently dropped. Exactly the hole that
+        /// existed for scroll wheel, found the same way: an app that looked
+        /// right and could not be used.
+        ///
+        /// The event is still sent on afterwards, so real AppKit controls in
+        /// the same window keep working.
+        fn capture_mouse_event(&self, event: &NSEvent) {
+            let pressed = match event.r#type() {
+                NSEventType::LeftMouseDown => true,
+                NSEventType::LeftMouseUp => false,
+                _ => return,
+            };
+
+            // Only this session's window, for the same reason as scroll: an
+            // event for another window would be attributed here and click the
+            // wrong content.
+            let Ok(mtm) = main_thread_marker() else {
+                return;
+            };
+            match event.window(mtm) {
+                Some(target) if target == self.window => {}
+                _ => return,
+            }
+
+            // locationInWindow is bottom-up in window space; Krate logical
+            // coordinates run top-down from the content area's top-left, which
+            // is the space every app hit-tests in. Getting this wrong would be
+            // worse than no clicks: they would land mirrored.
+            let point = event.locationInWindow();
+            let content_height = self.window.contentLayoutRect().size.height;
+            let x = point.x as f32;
+            let y = (content_height - point.y) as f32;
+
+            PENDING_POINTER_SAMPLES.with(|slot| {
+                slot.borrow_mut()
+                    .push(krate_adapter_common::ui::RawPointerSample {
+                        window: self.id,
+                        x,
+                        y,
+                        pressed,
                     });
             });
         }
@@ -2605,6 +2663,11 @@ mod platform {
         Vec::new()
     }
 
+    /// Pointer capture, same reason.
+    pub fn take_raw_pointer_samples() -> Vec<krate_adapter_common::ui::RawPointerSample> {
+        Vec::new()
+    }
+
     /// Placeholder returned only on macOS builds.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     pub struct AppKitWindowPrototype {
@@ -2801,6 +2864,7 @@ mod platform {
 }
 
 pub use platform::take_raw_key_samples;
+pub use platform::take_raw_pointer_samples;
 pub use platform::take_raw_wheel_samples;
 pub use platform::AppKitDrawViewSurface;
 pub use platform::AppKitWidgetSurface;

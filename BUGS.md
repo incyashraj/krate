@@ -279,8 +279,8 @@ Fix:      The pack now says plainly that the interactive loop takes no bound at
           belongs only on the `quick` path.
 
 ### K-017 — Nothing anyone can click reliably works
-Status:   open
-Owner:    unclaimed
+Status:   claimed
+Owner:    lead
 Severity: blocker
 Class:    unknown -- needs diagnosis
 Found:    2026-08-05, W17, outsider testing
@@ -445,6 +445,47 @@ Evidence: After a clean rebuild, 23 of 27 apps pass every stage. These four
           than a defect.
 Fix:      Diagnose each. None is a reference app the authoring pack recommends,
           so none blocks a user making an app.
+
+### K-026 — An app's only route to live data is a button, and buttons do not work
+Status:   claimed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-05, Yashraj, first real app made through the new front door
+Evidence: Asked for "a news app giving me all open source news". The app is
+          correct: it declares `net.connect:hnrss.org:443`, imports
+          `krate:net/http-client`, has a real `try_live_fetch`, and carries
+          three states -- `mode:sample`, `mode:live`, `mode:live-failed`.
+          The run printed `mode:sample`, NOT `live-failed`, so the fetch was
+          never attempted. The live fetch is behind a "Refresh" button, and
+          pointer input does not reliably reach apps (K-017).
+
+          Verified separately that the feed and the permission are both fine:
+          `curl https://hnrss.org/newest?q=open+source` returns 200, and
+          `--log-grants` shows `net.connect:hnrss.org:443` was granted.
+
+          So a user asks for live news, gets an app that CAN fetch live news,
+          and sees hardcoded sample articles with no way to reach the real
+          ones. It reads as "Krate makes fake apps", which is the worst
+          possible misreading of a working sandbox.
+Fix:      Two parts. Fix pointer delivery (K-017) so the button works. And
+          teach the pack that an app should attempt live data on startup, not
+          only behind a control -- sample data is a fallback, never the
+          default state.
+
+### K-027 — Bundles made by the installed release carry no source
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    environment
+Found:    2026-08-05, lead, while diagnosing K-026
+Evidence: `unzip -l ~/Desktop/a-news-app-giving.krate` lists only
+          manifest.toml and code.wasm. Source shipping landed in 27f4609 but
+          the installed `krate` on PATH is rc20, which predates it. Anyone
+          testing with the public install gets none of today's fixes --
+          scroll, resize, text measurement, self-close -- and reports bugs
+          that are already fixed here.
+Fix:      Cut a release. Until then, say plainly which binary a test used.
 
 ---
 

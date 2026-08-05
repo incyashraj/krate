@@ -492,6 +492,13 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
         appkit::take_raw_wheel_samples()
     }
 
+    /// Clicks captured by the AppKit pump. Same hole as keys and scroll: a
+    /// press on a drawn canvas reaches an NSImageView that answers nothing,
+    /// so without this an app could be looked at and never used.
+    fn drain_raw_pointer_input(&self) -> Vec<krate_adapter_common::ui::RawPointerSample> {
+        appkit::take_raw_pointer_samples()
+    }
+
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError> {
         self.headless.set_root(window, root)
     }
