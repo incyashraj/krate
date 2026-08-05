@@ -18,7 +18,6 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 mod agent_provider;
-mod usage;
 mod authoring_context;
 mod github_auth;
 mod krate_mode;
@@ -30,6 +29,7 @@ mod sdk_reference;
 mod speech_model;
 mod style;
 mod tui;
+mod usage;
 
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
 const MAX_PHASE2_ARG_COUNT: usize = 1024;

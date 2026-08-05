@@ -114,7 +114,16 @@ krate krate-mode
 Paste it into the chat, ask for your app, then build the code it gives you with
 `krate check-app`.
 
-### 3. Run one command
+### 3. Type one word
+
+```bash
+krate
+```
+
+It asks what you want to make, shows which AI tools on your machine are ready
+to write it, and builds the file. Nothing to remember and nothing to configure.
+
+For a script, or if you would rather not be asked, the same thing in one line:
 
 ```bash
 krate create "a habit tracker that remembers my streaks" \
@@ -276,9 +285,14 @@ permission wall; running an app straight from an HTTPS URL; authoring through
 MCP, Krate Mode, or the command line with five AI providers; `check-app`; and
 JSON output for agents and scripts.
 
-Not here yet: Krate Cloud, which will add publishing, discovery, publisher
-identity, signing, and updates. Automatic conversion of any existing app or
-opaque native binary is not something Krate claims to do.
+Krate Cloud is live at [krate.tech/cloud](https://krate.tech/cloud). Publish
+with `krate publish yourapp.krate` or from
+[krate.tech/publish](https://krate.tech/publish); either way it signs you in
+with GitHub so the app carries your name, and anyone with the link can run it.
+
+Not here yet: signing, updates, and discovery beyond a single listing.
+Automatic conversion of an existing app or an opaque native binary is not
+something Krate claims to do.
 
 Known limits, stated plainly:
 
@@ -360,6 +374,31 @@ testing. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then
 and [Discussions](https://github.com/incyashraj/krate/discussions). For a larger
 change, open an issue before writing the full implementation. Everyone is held
 to the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## What Krate counts
+
+Krate counts how many people use it, and nothing about them.
+
+**Sent:** a random id made on your machine, the Krate version, the operating
+system name, one of `install` / `make` / `open` / `publish`, whether an AI
+wrote the app, and whether it worked.
+
+**Never sent:** app names, prompts, file paths, your name, your email, your
+hostname, or anything from inside an app. The id is random bytes written to
+`~/.krate/install-id` -- not derived from your hardware, MAC address, or
+hostname -- so it cannot be traced back to a person. Delete that file and this
+becomes a new anonymous install.
+
+It says so on first run rather than hiding in this file, and turning it off
+changes nothing else:
+
+```bash
+krate telemetry off
+```
+
+`KRATE_NO_USAGE=1` does the same, and `DO_NOT_TRACK=1` is honoured too. The
+request is fire-and-forget with a short timeout: a hub that is down or slow
+costs about 16 milliseconds and can never change a command's result.
 
 ## Project status
 

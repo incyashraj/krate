@@ -198,9 +198,8 @@ pub fn record_with(action: Action, facts: Facts) {
     // detached thread loses the race with process exit, and the last event
     // before a command ends -- which is most of them -- was never sent.
     let handle = std::thread::spawn(move || {
-        let mut body = format!(
-            r#"{{"id":"{id}","version":"{version}","os":"{os}","action":"{action}""#
-        );
+        let mut body =
+            format!(r#"{{"id":"{id}","version":"{version}","os":"{os}","action":"{action}""#);
         if let Some(ai) = facts.ai {
             body.push_str(&format!(r#","ai":{ai}"#));
         }
