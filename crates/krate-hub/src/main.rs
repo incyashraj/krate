@@ -120,6 +120,7 @@ fn handle(mut stream: TcpStream, config: &Config) -> io::Result<()> {
     match (method.as_str(), path.as_str()) {
         ("GET", "/health") => write_response(&mut stream, 200, "text/plain", b"ok"),
         ("POST", "/publish") => handle_publish(&mut stream, &mut reader, &headers, config),
+        ("GET", "/apps") => handle_list(&mut stream, config),
         ("GET", p) if p.starts_with("/a/") => handle_fetch(&mut stream, p, config),
         _ => write_response(&mut stream, 404, "text/plain", b"not found"),
     }
@@ -232,8 +233,121 @@ fn handle_publish(
         std::fs::rename(&tmp, &stored)?;
     }
 
+    // Metadata travels in headers rather than a multipart body: the body is
+    // the bundle, and a publisher without any of these still gets a working
+    // upload rather than a rejection.
+    let meta_field = |name: &str, fallback: &str| {
+        header(headers, name)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(fallback)
+            .to_string()
+    };
+    let meta = Metadata {
+        name: meta_field("x-krate-name", "Untitled app"),
+        description: meta_field("x-krate-description", ""),
+        author: meta_field("x-krate-author", "anonymous"),
+        author_url: meta_field("x-krate-author-url", ""),
+        published: now_iso8601(),
+        size: body.len(),
+    };
+    let meta_path = config.data_dir.join(format!("{hash}.json"));
+    if !meta_path.exists() {
+        let _ = std::fs::write(&meta_path, meta.to_json());
+    }
+
     let url = format!("{}/a/{hash}", config.public_base.trim_end_matches('/'));
     let json = format!("{{\"url\":\"{url}\",\"id\":\"{hash}\"}}");
+    write_response(stream, 200, "application/json", json.as_bytes())
+}
+
+/// What a published app carries beyond its bytes.
+struct Metadata {
+    name: String,
+    description: String,
+    author: String,
+    author_url: String,
+    published: String,
+    size: usize,
+}
+
+impl Metadata {
+    fn to_json(&self) -> String {
+        format!(
+            "{{\"name\":{},\"description\":{},\"author\":{},\"author_url\":{},\"published\":{},\"size\":{}}}",
+            json_string(&self.name),
+            json_string(&self.description),
+            json_string(&self.author),
+            json_string(&self.author_url),
+            json_string(&self.published),
+            self.size
+        )
+    }
+}
+
+/// Escape a string for JSON. Small enough to do by hand, and it keeps the hub
+/// free of a serialisation dependency it otherwise does not need.
+fn json_string(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('"');
+    for c in value.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// Seconds since the epoch, as a date. Good enough to sort and show.
+fn now_iso8601() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    format!("{secs}")
+}
+
+/// Every published app, newest first, as JSON.
+///
+/// This is what makes a cloud page possible: without it an app can only be
+/// reached by someone who already has its exact hash.
+fn handle_list(stream: &mut TcpStream, config: &Config) -> io::Result<()> {
+    let mut entries: Vec<(String, String)> = Vec::new();
+    if let Ok(dir) = std::fs::read_dir(&config.data_dir) {
+        for entry in dir.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let Some(hash) = name.strip_suffix(".json") else {
+                continue;
+            };
+            if let Ok(text) = std::fs::read_to_string(entry.path()) {
+                entries.push((hash.to_string(), text));
+            }
+        }
+    }
+    // Newest first: the published timestamp is inside the JSON, and sorting by
+    // it here saves every reader from doing so.
+    entries.sort_by(|a, b| b.1.cmp(&a.1));
+
+    let items: Vec<String> = entries
+        .iter()
+        .map(|(hash, meta)| {
+            let url = format!("{}/a/{hash}", config.public_base.trim_end_matches('/'));
+            format!(
+                "{{\"id\":{},\"url\":{},\"meta\":{meta}}}",
+                json_string(hash),
+                json_string(&url)
+            )
+        })
+        .collect();
+
+    let json = format!("{{\"apps\":[{}]}}", items.join(","));
     write_response(stream, 200, "application/json", json.as_bytes())
 }
 

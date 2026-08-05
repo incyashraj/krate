@@ -19,6 +19,7 @@ use sha2::{Digest, Sha256};
 
 mod agent_provider;
 mod authoring_context;
+mod github_auth;
 mod krate_mode;
 mod mcp;
 mod port_report;
@@ -335,6 +336,11 @@ enum Command {
         /// Hub to upload to. Overrides the KRATE_HUB_URL environment variable.
         #[arg(long)]
         hub: Option<String>,
+
+        /// One line describing the app, shown on its cloud page. Defaults to
+        /// what you asked for when the app was made.
+        #[arg(long)]
+        description: Option<String>,
     },
 
     /// Author a small app from a request and package it as one shareable
@@ -769,7 +775,11 @@ fn run() -> Result<u8> {
             manifest,
             output,
         } => pack_bundle(&file, &manifest, &output),
-        Command::Publish { bundle, hub } => publish_bundle(&bundle, hub.as_deref()),
+        Command::Publish {
+            bundle,
+            hub,
+            description,
+        } => publish_bundle(&bundle, hub.as_deref(), description.as_deref()),
         Command::Create {
             request,
             output,
@@ -2654,7 +2664,11 @@ const DEFAULT_HUB_URL: &str = "http://127.0.0.1:8787";
 /// bundle twice hands back the same URL. All the interesting failure modes are
 /// "the hub is not reachable" and "that file is not a bundle", and both get a
 /// plain message rather than a stack of transport errors.
-fn publish_bundle(bundle: &Path, hub_override: Option<&str>) -> Result<u8> {
+fn publish_bundle(
+    bundle: &Path,
+    hub_override: Option<&str>,
+    description: Option<&str>,
+) -> Result<u8> {
     // Only upload something that is actually a bundle. Catching it here means a
     // wrong path fails locally with a clear message instead of round-tripping
     // to the hub to be rejected.
@@ -2676,10 +2690,30 @@ fn publish_bundle(bundle: &Path, hub_override: Option<&str>) -> Result<u8> {
         .unwrap_or_else(|| DEFAULT_HUB_URL.to_string());
     let endpoint = format!("{}/publish", hub.trim_end_matches('/'));
 
-    let response = match ureq::post(&endpoint)
-        .set("Content-Type", "application/octet-stream")
-        .send_bytes(&bytes)
-    {
+    // The app already knows its own name; the description is what the person
+    // typed when they asked for it, and the author comes from the GitHub
+    // sign-in. All three are optional -- publishing still works signed out,
+    // it just lands as "anonymous".
+    let app_name = krate_bundle::open(bundle)
+        .ok()
+        .map(|opened| opened.manifest().app.name.clone())
+        .unwrap_or_default();
+    let identity = github_auth::current();
+    let mut request = ureq::post(&endpoint).set("Content-Type", "application/octet-stream");
+    if !app_name.is_empty() {
+        request = request.set("X-Krate-Name", &app_name);
+    }
+    if let Some(description) = description {
+        request = request.set("X-Krate-Description", description);
+    }
+    if let Some(identity) = &identity {
+        request = request.set("X-Krate-Author", identity.display_name()).set(
+            "X-Krate-Author-Url",
+            &format!("https://github.com/{}", identity.login),
+        );
+    }
+
+    let response = match request.send_bytes(&bytes) {
         Ok(response) => response,
         Err(ureq::Error::Status(code, response)) => {
             let detail = response
