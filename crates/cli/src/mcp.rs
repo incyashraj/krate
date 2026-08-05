@@ -54,17 +54,23 @@ pub fn serve() -> Result<()> {
     // nothing, because stray output on the wrong stream corrupts the protocol.
     // This goes to stderr regardless, which clients ignore.
     if std::io::stdin().is_terminal() {
-        eprintln!("Krate MCP server: waiting for an AI client on stdin.");
+        // Run by hand from a terminal, this is a dead end: it speaks JSON-RPC,
+        // so anything typed here comes back as a parse error. A tester did
+        // exactly that -- read the suggested command below, typed it into this
+        // prompt, and got three parse errors in a row. So stop before serving
+        // rather than sitting there looking like it wants input.
+        eprintln!("This is not a command to run by hand.");
         eprintln!();
-        eprintln!("Nothing will happen here. This command is not meant to be run by hand --");
-        eprintln!("it is what Claude Desktop or Cursor starts for you in the background.");
+        eprintln!("`krate mcp` is the background server that Claude Desktop or Cursor");
+        eprintln!("starts for you. It speaks JSON-RPC, so anything you type here comes");
+        eprintln!("back as a parse error.");
         eprintln!();
-        eprintln!("To set it up, run:   krate connect");
-        eprintln!(
-            "To make an app now:  krate create \"your app\" --output app.krate --agent claude"
-        );
+        eprintln!("What you probably want:");
         eprintln!();
-        eprintln!("Press Ctrl-C to stop.");
+        eprintln!("  krate            make an app, open one, or publish one");
+        eprintln!("  krate connect    set up Claude Desktop or Cursor to use Krate");
+        eprintln!();
+        return Ok(());
     }
 
     krate_mcp::serve_with(&tools, std::io::stdin().lock(), std::io::stdout().lock())

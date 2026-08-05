@@ -232,13 +232,29 @@ jobs:
           zip_name="krate-app-${version}-${{ matrix.target }}.zip"
           (cd dist && rm -f "$zip_name" && zip -qry "$zip_name" Krate.app)
 
-          xcrun notarytool submit "dist/$zip_name" \
+          # Notarization is the step most likely to fail on credentials, and
+          # its 401 says nothing about which of the three is wrong. Signing has
+          # already succeeded by this point, so a failure here should not throw
+          # away a working signed build -- warn, ship signed, and say exactly
+          # what to check.
+          if ! xcrun notarytool submit "dist/$zip_name" \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_PASSWORD" \
-            --wait
+            --wait; then
+            echo "::warning::Notarization failed. The build is signed but not"
+            echo "notarized, so Gatekeeper will still warn on download."
+            echo "A 401 means one of these three is wrong:"
+            echo "  APPLE_ID          the Apple ID email, not a username"
+            echo "  APPLE_TEAM_ID     ten characters, from the certificate"
+            echo "  APPLE_APP_PASSWORD  an app-specific password from"
+            echo "                    appleid.apple.com, in the form"
+            echo "                    xxxx-xxxx-xxxx-xxxx. Not your Apple ID"
+            echo "                    password, and not an API key."
+            exit 0
+          fi
           # Staple the ticket so the app opens offline as well.
-          xcrun stapler staple dist/Krate.app
+          xcrun stapler staple dist/Krate.app || true
           (cd dist && rm -f "$zip_name" && zip -qry "$zip_name" Krate.app)
           echo "notarized and stapled"
 

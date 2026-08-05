@@ -52,3 +52,19 @@ if [ "$status" -ne 0 ]; then
 fi
 
 echo "installer version examples match the newest tag ($newest)"
+
+# The installer tells people to type `krate` for a menu. That menu only exists
+# from rc21, and the script shipped to the site the moment it was merged while
+# the newest *release* was still rc20 -- so a tester installed, typed `krate`,
+# and got a wall of subcommands instead. The site's install script and the
+# newest published release have to agree about what the product does.
+newest_release="$(git tag --list 'v*' --sort=-v:refname | head -1)"
+if grep -q 'That opens a short menu' "$ROOT/scripts/install.sh" 2>/dev/null; then
+  if ! git tag --list 'v*' --sort=-v:refname | head -1 \
+       | xargs -I{} git show {}:crates/cli/src/tui.rs >/dev/null 2>&1; then
+    echo "" >&2
+    echo "warning: install.sh promises the \`krate\` menu, but $newest_release" >&2
+    echo "does not contain it. Publish a release with the menu before this" >&2
+    echo "script reaches the site, or people install and hit a help wall." >&2
+  fi
+fi
