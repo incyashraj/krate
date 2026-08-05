@@ -101,7 +101,7 @@ Evidence: `gfx.wit` has draw-text and zero matches for
 Fix:      canvas2d::measure-text through the same parley path draw-text uses.
 
 ### K-003 — Canvas apps break when the window is resized
-Status:   claimed
+Status:   fixed-pending-merge
 Owner:    W13
 Severity: serious
 Class:    example-bug
@@ -318,6 +318,49 @@ Evidence: CLAUDE.md says to invoke
           app rather than a stale tool.
 Fix:      The rule is "absolute path to YOUR OWN worktree's target". CLAUDE.md
           needs correcting.
+
+### K-022 — A bound canvas never learned its window had been resized
+Status:   fixed
+Owner:    W13
+Severity: serious
+Class:    our-code
+Found:    2026-08-05, W13, while fixing K-003 -- the app fix did not take
+Evidence: `phase3_gui_host.rs` built a `CanvasSurface` once in `bind` from the
+          widget rect and never rebuilt it. `canvas_size` returned
+          `surface.dimensions()`, so it reported the bind-time size forever.
+          An app doing everything right -- reading canvas_size every frame,
+          handling Resized -- still laid out to the original size, because the
+          host kept telling it nothing had changed.
+            $ krate run ...krate_checklist.wasm ... -- resize-check
+            size:440x620 hit:ok     <- window was set to 900x500
+            size:440x620 hit:ok     <- window was set to 320x760
+          This is why only 3 of 34 apps called canvas_size and none looked
+          wrong for it: the call could not report anything useful.
+Fix:      `CanvasSurface::resize` plus `Phase3GuiHost::refit_canvas`, called
+          from `canvas_size` so asking is what re-fits the surface to the
+          widget's current rect. Regression test
+          `resize_refits_the_buffer_and_reports_the_new_size`.
+
+### K-023 — Running an app from its source dir writes its data into the repo
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-05, W13, running krate-notes headless while fixing K-003
+Evidence: `krate run apps/krate-notes/target/.../krate_notes.wasm --manifest
+          manifest.toml --auto-grant --headless` created
+          `apps/krate-notes/notes/{first,second,third}.txt` as untracked files
+          in the repo:
+            $ git status --short
+            ?? apps/krate-notes/notes/
+          The app's fs paths are sandbox-relative and the sandbox root is the
+          cwd, so running from the app's own directory drops its save files
+          into the source tree. `.gitignore` has `/notes/` -- anchored at the
+          repo root, so it does not match this path. Harmless but it means
+          anyone verifying a GUI app dirties their working tree and may commit
+          an app's test data by accident.
+Fix:      Either put a per-app sandbox data dir outside the source tree, or
+          add the app-relative pattern to .gitignore. Not urgent.
 
 ---
 

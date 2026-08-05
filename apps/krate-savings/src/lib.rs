@@ -31,6 +31,9 @@ use bindings::krate::ui::{events, tree, types, window};
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
 
+/// The size the window opens at. Nothing is laid out from these -- the window
+/// is resizable, so every rectangle comes from `Layout::for_size`, built from
+/// `canvas2d::canvas_size` at the top of each frame.
 const WIDTH: f32 = 460.0;
 const HEIGHT: f32 = 560.0;
 
@@ -39,9 +42,6 @@ const DATA_KEY: &str = "income";
 const MAX_WAIT_ROUNDS: u32 = 600_000;
 const WAIT_ROUND_MILLIS: u32 = 33;
 const MAX_IDLE_ROUNDS: u32 = 300;
-
-const MARGIN: f32 = 28.0;
-const CONTENT_W: f32 = WIDTH - MARGIN * 2.0;
 
 // The four allocation categories, in bar order. Percentages sum to 100. Amounts
 // are computed by integer math; the last slice takes the remainder so the parts
@@ -152,20 +152,78 @@ fn amounts(income: u64) -> [u64; CAT_COUNT] {
 }
 
 // ------------------------------------------------------------------
-// Hit testing
+// Layout
 // ------------------------------------------------------------------
+//
+// One struct, computed from the canvas's current size once per frame, read by
+// both the drawing and the hit-testing. Coordinates are deliberately not
+// `const`s: a rect drawn from one set of numbers and clicked against another
+// drifts apart the moment the window is resized.
 
-const FIELD_Y: f32 = 96.0;
-const FIELD_H: f32 = 58.0;
-const CALC_W: f32 = 128.0;
+/// Below this the layout clamps rather than computing negative widths.
+const MIN_CANVAS_W: f32 = 280.0;
+const MIN_CANVAS_H: f32 = 360.0;
 
-fn field_rect() -> (f32, f32, f32, f32) {
-    let fw = CONTENT_W - CALC_W - 12.0;
-    (MARGIN, FIELD_Y, fw, FIELD_H)
+/// Every rectangle in the window, derived from the canvas size.
+struct Layout {
+    width: f32,
+    height: f32,
+    margin: f32,
+    content_w: f32,
+    title_baseline: f32,
+    subtitle_baseline: f32,
+    /// The income field and the Calculate button beside it.
+    field: (f32, f32, f32, f32),
+    calc: (f32, f32, f32, f32),
+    /// The allocation card under them.
+    card_y: f32,
+    card_h: f32,
+    /// Height of one legend row, shrunk when the card is short.
+    legend_row_h: f32,
 }
 
-fn calc_rect() -> (f32, f32, f32, f32) {
-    (WIDTH - MARGIN - CALC_W, FIELD_Y, CALC_W, FIELD_H)
+impl Layout {
+    fn for_size(width: f32, height: f32) -> Self {
+        let width = width.max(MIN_CANVAS_W);
+        let height = height.max(MIN_CANVAS_H);
+
+        let margin = (width * 0.061).clamp(16.0, 40.0);
+        let content_w = (width - margin * 2.0).max(120.0);
+
+        let title_baseline = margin + 28.0;
+        let subtitle_baseline = title_baseline + 24.0;
+
+        let field_y = subtitle_baseline + 16.0;
+        let field_h = (height * 0.104).clamp(44.0, 60.0);
+        // The button keeps a sane share of a narrow window so its label never
+        // overruns the field beside it.
+        let calc_w = (content_w * 0.31).clamp(88.0, 132.0);
+        let field_w = (content_w - calc_w - 12.0).max(70.0);
+
+        let field = (margin, field_y, field_w, field_h);
+        let calc = (margin + content_w - calc_w, field_y, calc_w, field_h);
+
+        let card_y = field_y + field_h + 34.0;
+        let card_h = (height - card_y - margin).max(80.0);
+
+        // Legend rows share what the card has under its bar.
+        let legend_space = (card_h - 200.0).max(0.0);
+        let legend_row_h = (legend_space / CAT_COUNT as f32).clamp(26.0, 44.0);
+
+        Self {
+            width,
+            height,
+            margin,
+            content_w,
+            title_baseline,
+            subtitle_baseline,
+            field,
+            calc,
+            card_y,
+            card_h,
+            legend_row_h,
+        }
+    }
 }
 
 fn hit(x: f32, y: f32, r: (f32, f32, f32, f32)) -> bool {
@@ -176,10 +234,32 @@ fn hit(x: f32, y: f32, r: (f32, f32, f32, f32)) -> bool {
 // Rendering
 // ------------------------------------------------------------------
 
-fn draw(canvas: u64, income: &Money, computed: u64, field_focus: bool) -> Result<(), gfx::GfxError> {
+/// Ask the canvas its size, then draw to that answer. Returns the layout used,
+/// so the event loop hit-tests the picture actually on screen.
+fn draw(
+    canvas: u64,
+    income: &Money,
+    computed: u64,
+    field_focus: bool,
+) -> Result<Layout, gfx::GfxError> {
+    let size = canvas2d::canvas_size(canvas)?;
+    let layout = Layout::for_size(size.width, size.height);
+    draw_with(canvas, &layout, income, computed, field_focus)?;
+    Ok(layout)
+}
+
+fn draw_with(
+    canvas: u64,
+    layout: &Layout,
+    income: &Money,
+    computed: u64,
+    field_focus: bool,
+) -> Result<(), gfx::GfxError> {
+    let margin = layout.margin;
+    let content_w = layout.content_w;
     canvas2d::linear_gradient(
         canvas,
-        gfx::Rect { x: 0.0, y: 0.0, width: WIDTH, height: HEIGHT },
+        gfx::Rect { x: 0.0, y: 0.0, width: layout.width, height: layout.height },
         BG_TOP,
         BG_BOT,
     )?;
@@ -188,11 +268,18 @@ fn draw(canvas: u64, income: &Money, computed: u64, field_focus: bool) -> Result
     let accent_soft = color(0.42, 0.62, 1.0, 0.16);
 
     // ---- header ----
-    draw_text(canvas, "Budget Splitter", MARGIN, 56.0, 30.0, INK)?;
-    draw_text(canvas, "Where your monthly income goes", MARGIN, 80.0, 14.0, INK_DIM)?;
+    draw_text(canvas, "Budget Splitter", margin, layout.title_baseline, 30.0, INK)?;
+    draw_text(
+        canvas,
+        "Where your monthly income goes",
+        margin,
+        layout.subtitle_baseline,
+        14.0,
+        INK_DIM,
+    )?;
 
     // ---- income field ----
-    let (fx, fy, fw, fh) = field_rect();
+    let (fx, fy, fw, fh) = layout.field;
     if field_focus {
         rounded_rect(canvas, fx - 2.0, fy - 2.0, fw + 4.0, fh + 4.0, 16.0, accent_soft)?;
     }
@@ -221,18 +308,27 @@ fn draw(canvas: u64, income: &Money, computed: u64, field_focus: bool) -> Result
     }
 
     // ---- Calculate button ----
-    let (cx0, cy0, cw, ch) = calc_rect();
+    let (cx0, cy0, cw, ch) = layout.calc;
     rounded_rect(canvas, cx0, cy0, cw, ch, 14.0, accent)?;
-    let lw = text_width("Calculate", 16.0);
-    draw_text(canvas, "Calculate", cx0 + (cw - lw) * 0.5, cy0 + ch * 0.5 + 6.0, 16.0, color(0.05, 0.08, 0.16, 1.0))?;
+    // The label shrinks rather than overrunning a narrow button.
+    let label_size = 16.0f32.min(cw * 0.175);
+    let lw = text_width("Calculate", label_size);
+    draw_text(
+        canvas,
+        "Calculate",
+        cx0 + (cw - lw) * 0.5,
+        cy0 + ch * 0.5 + 6.0,
+        label_size,
+        color(0.05, 0.08, 0.16, 1.0),
+    )?;
 
     // ---- the allocation card ----
-    let card_y = 188.0;
-    let card_h = HEIGHT - card_y - MARGIN;
-    rounded_rect(canvas, MARGIN, card_y, CONTENT_W, card_h, 18.0, CARD)?;
+    let card_y = layout.card_y;
+    let card_h = layout.card_h;
+    rounded_rect(canvas, margin, card_y, content_w, card_h, 18.0, CARD)?;
 
-    let inner = MARGIN + 24.0;
-    let inner_w = CONTENT_W - 48.0;
+    let inner = margin + 24.0;
+    let inner_w = (content_w - 48.0).max(60.0);
 
     draw_text(canvas, "Total to allocate", inner, card_y + 34.0, 14.0, INK_DIM)?;
     let mut tbuf = [0u8; 24];
@@ -271,7 +367,8 @@ fn draw(canvas: u64, income: &Money, computed: u64, field_focus: bool) -> Result
 
         // ---- legend rows: swatch, name, percent, amount ----
         let mut ly = bar_y + bar_h + 40.0;
-        let row_h = 44.0;
+        // Rows tighten on a short window rather than running off the card.
+        let row_h = layout.legend_row_h;
         let mut j = 0usize;
         while j < CAT_COUNT {
             let c = CAT_COL.get(j).copied().unwrap_or(INK);
@@ -281,12 +378,14 @@ fn draw(canvas: u64, income: &Money, computed: u64, field_focus: bool) -> Result
 
             rounded_rect(canvas, inner, ly - 12.0, 16.0, 16.0, 5.0, c)?;
             draw_text(canvas, name, inner + 30.0, ly + 4.0, 17.0, INK)?;
-            // Percent sits in its own fixed column so it never collides with the
-            // longest name (Investments).
+            // Percent sits in its own column, placed as a share of the card so
+            // it never collides with the longest name (Investments) and never
+            // runs into the amount on the right, at any window width.
             let mut pbuf = [0u8; 8];
             let ps = pct_label(pct, &mut pbuf);
             if let Ok(txt) = core::str::from_utf8(ps) {
-                draw_text(canvas, txt, inner + 200.0, ly + 4.0, 14.0, INK_DIM)?;
+                let pct_x = inner + (inner_w * 0.55).max(text_width(name, 17.0) + 34.0);
+                draw_text(canvas, txt, pct_x, ly + 4.0, 14.0, INK_DIM)?;
             }
             let mut abuf = [0u8; 24];
             let asr = dollars(amt, &mut abuf);
@@ -373,6 +472,32 @@ fn text_width(s: &str, size: f32) -> f32 {
 // ------------------------------------------------------------------
 // Number formatting, panic-free
 // ------------------------------------------------------------------
+
+/// A plain decimal number into a byte buffer, panic-free. Used by the resize
+/// self-check to report the size it actually laid out to.
+fn u32_bytes(value: u32, buf: &mut [u8; 12]) -> &[u8] {
+    let mut scratch = [0u8; 10];
+    let mut n = value;
+    let mut count = if value == 0 { 1usize } else { 0usize };
+    while n > 0 && count < scratch.len() {
+        if let Some(slot) = scratch.get_mut(count) {
+            *slot = b'0' + (n % 10) as u8;
+        }
+        n /= 10;
+        count += 1;
+    }
+    let mut pos = 0usize;
+    let mut i = count;
+    while i > 0 {
+        i -= 1;
+        let digit = scratch.get(i).copied().unwrap_or(b'0');
+        if let Some(slot) = buf.get_mut(pos) {
+            *slot = digit;
+            pos += 1;
+        }
+    }
+    buf.get(..pos).unwrap_or(b"0")
+}
 
 /// Grouped digits (thousands separators), no currency sign.
 fn grouped(value: u64, buf: &mut [u8; 20]) -> &[u8] {
@@ -542,11 +667,65 @@ impl bindings::Guest for Component {
         let mut field_focus = true;
 
         let raw = args::raw();
-        let quick = raw
-            .as_bytes()
-            .split(|byte| *byte == b'\n')
-            .next()
-            .is_some_and(|first| first == b"quick");
+        let first_arg = raw.as_bytes().split(|byte| *byte == b'\n').next();
+        let quick = first_arg.is_some_and(|first| first == b"quick");
+        let resize_check = first_arg.is_some_and(|first| first == b"resize-check");
+
+        if resize_check {
+            // Drive the window through several shapes and confirm a click at
+            // the centre of each control still lands on that control.
+            let out = stdio::stdout();
+            let mut demo = Money::new();
+            demo.set_value(6500);
+            let sizes = [(460u32, 560u32), (820u32, 420u32), (300u32, 700u32)];
+            let mut all_ok = true;
+            for (w, h) in sizes {
+                if window::set_size(win, types::WindowSize { width: w, height: h }).is_err() {
+                    all_ok = false;
+                    continue;
+                }
+                let mut drain = 0u32;
+                while drain < 8 && events::wait(Some(1)).is_some() {
+                    drain += 1;
+                }
+                let Ok(layout) = draw(canvas, &demo, demo.value(), false) else {
+                    all_ok = false;
+                    continue;
+                };
+
+                let _ = out.write(b"size:");
+                let mut nbuf = [0u8; 12];
+                let _ = out.write(u32_bytes(layout.width as u32, &mut nbuf));
+                let _ = out.write(b"x");
+                let _ = out.write(u32_bytes(layout.height as u32, &mut nbuf));
+
+                let f = layout.field;
+                let c = layout.calc;
+                let field_ok = hit(f.0 + f.2 * 0.5, f.1 + f.3 * 0.5, f);
+                let calc_ok = hit(c.0 + c.2 * 0.5, c.1 + c.3 * 0.5, c);
+                // The field must not reach under the button, or one would
+                // swallow the other's clicks.
+                let apart_ok = f.0 + f.2 <= c.0;
+                // Both stay inside the canvas, and the card clears them.
+                let inside_ok = c.0 + c.2 <= layout.width
+                    && layout.card_y + layout.card_h <= layout.height + 0.5;
+                let card_ok = layout.card_y >= f.1 + f.3;
+
+                if field_ok && calc_ok && apart_ok && inside_ok && card_ok {
+                    let _ = out.write(b" hit:ok\n");
+                } else {
+                    let _ = out.write(b" hit:WRONG\n");
+                    all_ok = false;
+                }
+            }
+            if all_ok {
+                let _ = out.write(b"resize:ok\n");
+            } else {
+                let _ = out.write(b"resize:FAILED\n");
+            }
+            let _ = window::close(win);
+            return if all_ok { 0 } else { 40 };
+        }
 
         if quick {
             // The automated shot: a believable income, calculated, so the frame
@@ -561,10 +740,15 @@ impl bindings::Guest for Component {
             return 0;
         }
 
-        if draw(canvas, &income, computed, field_focus).is_err() {
-            let _ = window::close(win);
-            return 34;
-        }
+        // The layout the visible frame was drawn with, so clicks follow the
+        // window when it is resized.
+        let mut layout = match draw(canvas, &income, computed, field_focus) {
+            Ok(layout) => layout,
+            Err(_) => {
+                let _ = window::close(win);
+                return 34;
+            }
+        };
 
         let mut idle_rounds = 0u32;
         let mut round = 0u32;
@@ -588,12 +772,12 @@ impl bindings::Guest for Component {
             let mut done = false;
             match event {
                 Some(types::Event::Pointer(p)) if p.pressed => {
-                    if hit(p.x, p.y, calc_rect()) {
+                    if hit(p.x, p.y, layout.calc) {
                         computed = income.value();
                         save_income(computed);
                         field_focus = false;
                         dirty = true;
-                    } else if hit(p.x, p.y, field_rect()) {
+                    } else if hit(p.x, p.y, layout.field) {
                         field_focus = true;
                         dirty = true;
                     } else {
@@ -639,10 +823,17 @@ impl bindings::Guest for Component {
                 Some(types::Event::CloseRequested(_)) => {
                     done = true;
                 }
+                // Resized: recompute the layout from the canvas's new size.
+                // Hit-testing follows, because it reads this same layout.
+                Some(types::Event::Resized(_)) | Some(types::Event::RedrawRequested(_)) => {
+                    dirty = true;
+                }
                 _ => {}
             }
             if dirty {
-                let _ = draw(canvas, &income, computed, field_focus);
+                if let Ok(fresh) = draw(canvas, &income, computed, field_focus) {
+                    layout = fresh;
+                }
             }
             if done {
                 break;

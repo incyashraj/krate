@@ -28,9 +28,11 @@ use bindings::krate::ui::{clipboard, events, tree, types, window};
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
 
+/// The size the window opens at. Nothing is laid out from these: the person
+/// can resize the window, so every rectangle comes from `Layout::for_size`,
+/// which is built from `canvas2d::canvas_size` at the top of each frame.
 const W: f32 = 900.0;
 const H: f32 = 640.0;
-const SIDEBAR_W: f32 = 280.0;
 
 /// Note slots. Fixed so no allocation is needed; the sidebar fits exactly this
 /// many rows above the "+ New" button.
@@ -77,28 +79,148 @@ const ACCENT: gfx::Color = gfx::Color { r: 0.298, g: 0.553, b: 1.0, a: 1.0 }; //
 const GHOST_BORDER: gfx::Color = gfx::Color { r: 0.165, g: 0.196, b: 0.251, a: 1.0 };
 
 // ------------------------------------------------------------------
-// Sidebar layout
+// Layout
 // ------------------------------------------------------------------
+//
+// One struct, computed from the canvas's current size once per frame, read by
+// both the drawing and the hit-testing. That is the whole discipline: a
+// control drawn from one set of numbers and clicked against another drifts
+// apart the moment the window is resized, and then clicks land on the wrong
+// note. Nothing below is a `const` coordinate, on purpose.
 
-const ROW_X: f32 = 12.0;
-const ROW_W: f32 = SIDEBAR_W - ROW_X * 2.0;
-const ROW_H: f32 = 58.0;
-const ROW_GAP: f32 = 6.0;
-const ROWS_Y: f32 = 104.0;
+/// A rectangle in canvas coordinates -- the unit drawing and hit-testing share.
+#[derive(Clone, Copy)]
+struct Rect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
 
-const NEW_BTN_H: f32 = 44.0;
-const NEW_BTN_Y: f32 = H - 24.0 - NEW_BTN_H;
+impl Rect {
+    fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
+    }
+}
 
-// Editor layout.
-const CONTENT_X: f32 = SIDEBAR_W + 48.0;
-const CONTENT_W: f32 = W - CONTENT_X - 44.0; // 528, under the 640 max measure
-const TOPBAR_RULE_Y: f32 = 52.0;
-const TITLE_BASELINE: f32 = 112.0;
+/// Below this the layout clamps instead of computing negative widths.
+const MIN_CANVAS_W: f32 = 420.0;
+const MIN_CANVAS_H: f32 = 320.0;
+
 const TITLE_SIZE: f32 = 24.0;
 const BODY_SIZE: f32 = 16.0;
 const BODY_LH: f32 = 23.0; // ~1.45 line height
-const BODY_Y0: f32 = TITLE_BASELINE + 38.0;
-const BODY_MAX_LINES: usize = 21;
+
+/// Every rectangle in the window, derived from the canvas size.
+struct Layout {
+    width: f32,
+    height: f32,
+    /// The note list on the left.
+    sidebar_w: f32,
+    row_x: f32,
+    row_w: f32,
+    row_h: f32,
+    row_gap: f32,
+    rows_y: f32,
+    /// How many note rows fit above the "+ New" button at this height.
+    visible_rows: usize,
+    new_btn: Rect,
+    /// The editor on the right.
+    content_x: f32,
+    content_w: f32,
+    topbar_rule_y: f32,
+    title_baseline: f32,
+    body_y0: f32,
+    body_max_lines: usize,
+}
+
+impl Layout {
+    fn for_size(width: f32, height: f32) -> Self {
+        let width = width.max(MIN_CANVAS_W);
+        let height = height.max(MIN_CANVAS_H);
+
+        // The sidebar takes a share of the width, bounded so it neither
+        // squeezes the editor on a narrow window nor sprawls on a wide one.
+        let sidebar_w = (width * 0.31).clamp(180.0, 320.0);
+        let row_x = 12.0;
+        let row_w = (sidebar_w - row_x * 2.0).max(60.0);
+        let row_h = 58.0;
+        let row_gap = 6.0;
+        let rows_y = 104.0;
+
+        let new_btn_h = 44.0;
+        let new_btn = Rect {
+            x: row_x,
+            y: height - 24.0 - new_btn_h,
+            w: row_w,
+            h: new_btn_h,
+        };
+
+        // Rows fill the gap between the sidebar header and the New button.
+        let rows_space = (new_btn.y - 16.0 - rows_y).max(0.0);
+        let visible_rows = (rows_space / (row_h + row_gap)) as usize;
+
+        let gutter = (width * 0.053).clamp(20.0, 48.0);
+        let content_x = sidebar_w + gutter;
+        let content_w = (width - content_x - gutter * 0.92).max(120.0);
+
+        let topbar_rule_y = 52.0;
+        let title_baseline = 112.0;
+        let body_y0 = title_baseline + 38.0;
+        // Lines stop before the bottom edge rather than running off it.
+        let body_max_lines = (((height - 28.0) - body_y0) / BODY_LH).max(0.0) as usize;
+
+        Self {
+            width,
+            height,
+            sidebar_w,
+            row_x,
+            row_w,
+            row_h,
+            row_gap,
+            rows_y,
+            visible_rows,
+            new_btn,
+            content_x,
+            content_w,
+            topbar_rule_y,
+            title_baseline,
+            body_y0,
+            body_max_lines,
+        }
+    }
+
+    /// The card for sidebar row `index`. Drawn from this, clicked against this.
+    fn row(&self, index: usize) -> Rect {
+        Rect {
+            x: self.row_x,
+            y: self.rows_y + (index as f32) * (self.row_h + self.row_gap),
+            w: self.row_w,
+            h: self.row_h,
+        }
+    }
+
+    /// How many rows this many notes actually shows at this size.
+    fn shown_rows(&self, live: usize) -> usize {
+        if live < self.visible_rows {
+            live
+        } else {
+            self.visible_rows
+        }
+    }
+
+    fn hit_row(&self, x: f32, y: f32, live: usize) -> Option<usize> {
+        let shown = self.shown_rows(live);
+        let mut i = 0usize;
+        while i < shown {
+            if self.row(i).contains(x, y) {
+                return Some(i);
+            }
+            i += 1;
+        }
+        None
+    }
+}
 
 /// Approximate advance per character for the system face. Measured off a real
 /// shot of this app: body text renders at ~0.42-0.44em per char, so 0.44 keeps
@@ -341,18 +463,21 @@ fn snippet<'a>(body: &str, buf: &'a mut [u8; 64], max_chars: usize) -> &'a str {
 /// of the last drawn line) so the caller can place the caret at the end.
 fn draw_body(
     canvas: u64,
+    layout: &Layout,
     body: &str,
     x: f32,
     y0: f32,
 ) -> Result<(usize, f32), gfx::GfxError> {
-    let budget = (CONTENT_W / char_w(BODY_SIZE)) as usize; // chars per line
+    // Both the wrap width and the line count come from the current size, so a
+    // wider window wraps later and a taller one shows more lines.
+    let budget = (layout.content_w / char_w(BODY_SIZE)) as usize; // chars per line
     let bytes = body.as_bytes();
     let len = bytes.len();
     let mut start = 0usize;
     let mut line = 0usize;
     let mut last_len = 0usize;
     let mut last_baseline = y0;
-    while line < BODY_MAX_LINES {
+    while line < layout.body_max_lines {
         let baseline = y0 + (line as f32) * BODY_LH;
         // Find where this line ends.
         let mut end = len;
@@ -411,31 +536,28 @@ fn draw_body(
 // The frame
 // ------------------------------------------------------------------
 
-fn row_top(index: usize) -> f32 {
-    ROWS_Y + (index as f32) * (ROW_H + ROW_GAP)
-}
+// Hit-testing lives on `Layout` -- see `Layout::hit_row` and
+// `layout.new_btn.contains`. Same rectangles the drawing uses.
 
-fn hit_row(x: f32, y: f32, live: usize) -> Option<usize> {
-    if x < ROW_X || x > ROW_X + ROW_W {
-        return None;
-    }
-    let mut i = 0usize;
-    while i < live {
-        let top = row_top(i);
-        if y >= top && y <= top + ROW_H {
-            return Some(i);
-        }
-        i += 1;
-    }
-    None
-}
-
-fn hit_new(x: f32, y: f32) -> bool {
-    x >= ROW_X && x <= ROW_X + ROW_W && y >= NEW_BTN_Y && y <= NEW_BTN_Y + NEW_BTN_H
-}
-
+/// Ask the canvas its size, then draw the frame to that answer. Returns the
+/// layout the frame was drawn with, so the event loop hit-tests against
+/// exactly the picture on screen.
 fn draw_frame(
     canvas: u64,
+    notes: &[NoteBuf; SLOTS],
+    dates: &[&str; SLOTS],
+    live: usize,
+    selected: usize,
+) -> Result<Layout, gfx::GfxError> {
+    let size = canvas2d::canvas_size(canvas)?;
+    let layout = Layout::for_size(size.width, size.height);
+    draw_frame_with(canvas, &layout, notes, dates, live, selected)?;
+    Ok(layout)
+}
+
+fn draw_frame_with(
+    canvas: u64,
+    layout: &Layout,
     notes: &[NoteBuf; SLOTS],
     dates: &[&str; SLOTS],
     live: usize,
@@ -444,13 +566,13 @@ fn draw_frame(
     // Ground: the editor surface gradient, then the darker sidebar over it.
     canvas2d::linear_gradient(
         canvas,
-        gfx::Rect { x: 0.0, y: 0.0, width: W, height: H },
+        gfx::Rect { x: 0.0, y: 0.0, width: layout.width, height: layout.height },
         BG_TOP,
         BG_BOT,
     )?;
-    fill(canvas, 0.0, 0.0, SIDEBAR_W, H, SIDEBAR_BG)?;
+    fill(canvas, 0.0, 0.0, layout.sidebar_w, layout.height, SIDEBAR_BG)?;
     // Hairline divider between the panes.
-    fill(canvas, SIDEBAR_W, 0.0, 1.0, H, DIVIDER)?;
+    fill(canvas, layout.sidebar_w, 0.0, 1.0, layout.height, DIVIDER)?;
 
     // ---- sidebar header ----
     draw_text(canvas, "Notes", 24.0, 56.0, 28.0, INK)?;
@@ -459,21 +581,23 @@ fn draw_frame(
     draw_text(canvas, count_txt, 25.0, 80.0, 13.0, INK_QUIET)?;
 
     // ---- note rows ----
-    let title_budget = ((ROW_W - 32.0) / char_w(16.0)) as usize;
+    let title_budget = ((layout.row_w - 32.0) / char_w(16.0)) as usize;
+    let shown = layout.shown_rows(live);
     let mut i = 0usize;
-    while i < live {
-        let top = row_top(i);
+    while i < shown {
+        let row = layout.row(i);
+        let top = row.y;
         let is_sel = i == selected;
         let card = if is_sel { ROW_SELECTED } else { ROW_CARD };
-        rounded_rect(canvas, ROW_X, top, ROW_W, ROW_H, 10.0, card)?;
+        rounded_rect(canvas, row.x, row.y, row.w, row.h, 10.0, card)?;
         if is_sel {
             // The 3px accent bar on the row's left edge.
-            rounded_rect(canvas, ROW_X + 4.0, top + 10.0, 3.0, ROW_H - 20.0, 1.5, ACCENT)?;
+            rounded_rect(canvas, row.x + 4.0, top + 10.0, 3.0, row.h - 20.0, 1.5, ACCENT)?;
         }
         let note = notes.get(i).copied().unwrap_or(NoteBuf::new());
         let text = note.as_str();
         let title = first_line(text);
-        let tx = ROW_X + 16.0;
+        let tx = row.x + 16.0;
         if title.is_empty() {
             draw_text(canvas, "New Note", tx, top + 24.0, 16.0, INK_QUIET)?;
         } else {
@@ -487,8 +611,8 @@ fn draw_frame(
         draw_text(canvas, date, tx, top + 45.0, 12.5, INK_SEC)?;
         let date_w = (date.len() as f32) * 12.5 * 0.55;
         let mut sbuf = [0u8; 64];
-        let remaining = ROW_W - 32.0 - date_w - 10.0;
-        let snip_budget = (remaining / (12.5 * 0.5)) as usize;
+        let remaining = row.w - 32.0 - date_w - 10.0;
+        let snip_budget = (remaining / (12.5 * 0.5)).max(0.0) as usize;
         let snip = snippet(body_text(text), &mut sbuf, snip_budget.min(60));
         if snip.is_empty() {
             draw_text(canvas, "No additional text", tx + date_w + 10.0, top + 45.0, 12.5, INK_QUIET)?;
@@ -499,14 +623,15 @@ fn draw_frame(
     }
 
     // ---- "+ New" ghost button ----
-    stroke_rounded(canvas, ROW_X, NEW_BTN_Y, ROW_W, NEW_BTN_H, 12.0, GHOST_BORDER, SIDEBAR_BG)?;
+    let new_btn = layout.new_btn;
+    stroke_rounded(canvas, new_btn.x, new_btn.y, new_btn.w, new_btn.h, 12.0, GHOST_BORDER, SIDEBAR_BG)?;
     let label = "+ New";
     let lw = text_width(label, 15.0);
     draw_text(
         canvas,
         label,
-        ROW_X + (ROW_W - lw) * 0.5,
-        NEW_BTN_Y + NEW_BTN_H * 0.5 + 5.0,
+        new_btn.x + (new_btn.w - lw) * 0.5,
+        new_btn.y + new_btn.h * 0.5 + 5.0,
         15.0,
         ACCENT,
     )?;
@@ -519,49 +644,52 @@ fn draw_frame(
     draw_text(
         canvas,
         date_line,
-        SIDEBAR_W + ((W - SIDEBAR_W) - dw) * 0.5,
+        layout.sidebar_w + ((layout.width - layout.sidebar_w) - dw) * 0.5,
         32.0,
         12.5,
         INK_QUIET,
     )?;
     fill(
         canvas,
-        SIDEBAR_W + 1.0,
-        TOPBAR_RULE_Y,
-        W - SIDEBAR_W - 1.0,
+        layout.sidebar_w + 1.0,
+        layout.topbar_rule_y,
+        layout.width - layout.sidebar_w - 1.0,
         1.0,
         gfx::Color { r: 0.137, g: 0.165, b: 0.220, a: 0.6 },
     )?;
 
     // ---- the selected note ----
+    let content_x = layout.content_x;
+    let title_baseline = layout.title_baseline;
     let note = notes.get(selected).copied().unwrap_or(NoteBuf::new());
     let text = note.as_str();
     let title = first_line(text);
-    let title_budget = (CONTENT_W / char_w(TITLE_SIZE)) as usize;
+    let title_budget = (layout.content_w / char_w(TITLE_SIZE)) as usize;
     let (caret_x, caret_y);
     if text.is_empty() {
-        draw_text(canvas, "New Note", CONTENT_X, TITLE_BASELINE, TITLE_SIZE, INK_QUIET)?;
-        caret_x = CONTENT_X;
-        caret_y = TITLE_BASELINE;
+        draw_text(canvas, "New Note", content_x, title_baseline, TITLE_SIZE, INK_QUIET)?;
+        caret_x = content_x;
+        caret_y = title_baseline;
     } else {
-        draw_text_trunc(canvas, title, title_budget, CONTENT_X, TITLE_BASELINE, TITLE_SIZE, INK)?;
+        draw_text_trunc(canvas, title, title_budget, content_x, title_baseline, TITLE_SIZE, INK)?;
         let body = body_text(text);
         let has_break = text.len() > title.len(); // a newline exists
         if !has_break {
             // Still typing the first line: caret rides the title.
-            caret_x = CONTENT_X + text_width(title, TITLE_SIZE);
-            caret_y = TITLE_BASELINE;
+            caret_x = content_x + text_width(title, TITLE_SIZE);
+            caret_y = title_baseline;
         } else if body.is_empty() {
-            caret_x = CONTENT_X;
-            caret_y = BODY_Y0;
+            caret_x = content_x;
+            caret_y = layout.body_y0;
         } else {
-            let (last_len, last_baseline) = draw_body(canvas, body, CONTENT_X, BODY_Y0)?;
-            caret_x = CONTENT_X + (last_len as f32) * char_w(BODY_SIZE);
+            let (last_len, last_baseline) =
+                draw_body(canvas, layout, body, content_x, layout.body_y0)?;
+            caret_x = content_x + (last_len as f32) * char_w(BODY_SIZE);
             caret_y = last_baseline;
         }
     }
     // The caret: a slim accent bar hanging from the last baseline.
-    let caret_h = if caret_y <= TITLE_BASELINE + 0.5 { 24.0 } else { 18.0 };
+    let caret_h = if caret_y <= title_baseline + 0.5 { 24.0 } else { 18.0 };
     fill(canvas, caret_x + 1.0, caret_y - caret_h + 3.0, 2.0, caret_h, ACCENT)?;
 
     canvas2d::present(canvas)?;
@@ -581,6 +709,35 @@ fn count_label<'a>(live: usize, buf: &'a mut [u8; 16]) -> &'a str {
     }
     let slice = buf.get(..pos).unwrap_or(&[]);
     core::str::from_utf8(slice).unwrap_or("notes")
+}
+
+/// A plain decimal number into a byte buffer, panic-free. Used by the
+/// resize self-check to report the size it actually laid out to.
+fn u32_bytes(value: u32, buf: &mut [u8; 12]) -> &[u8] {
+    if value == 0 {
+        let mut pos = 0usize;
+        push_byte(buf, &mut pos, b'0');
+        return buf.get(..pos).unwrap_or(b"0");
+    }
+    let mut scratch = [0u8; 10];
+    let mut n = value;
+    let mut count = 0usize;
+    while n > 0 && count < scratch.len() {
+        if let Some(slot) = scratch.get_mut(count) {
+            *slot = b'0' + (n % 10) as u8;
+        }
+        n /= 10;
+        count += 1;
+    }
+    let mut pos = 0usize;
+    let mut i = count;
+    while i > 0 {
+        i -= 1;
+        if let Some(src) = scratch.get(i).copied() {
+            push_byte(buf, &mut pos, src);
+        }
+    }
+    buf.get(..pos).unwrap_or(b"0")
 }
 
 /// "Edited Today" and friends for the top bar.
@@ -680,11 +837,70 @@ impl bindings::Guest for Component {
         let mut close_requested = false;
 
         let raw = args::raw();
-        let quick = raw
-            .as_bytes()
-            .split(|byte| *byte == b'\n')
-            .next()
-            .is_some_and(|first| first == b"quick");
+        let first_arg = raw.as_bytes().split(|byte| *byte == b'\n').next();
+        let quick = first_arg.is_some_and(|first| first == b"quick");
+        // Drives the window through several sizes and asserts the hit-boxes
+        // followed the drawing. See the block further down.
+        let resize_check = first_arg.is_some_and(|first| first == b"resize-check");
+
+        if resize_check {
+            let out = stdio::stdout();
+            let live_n = 3usize;
+            let sizes = [(900u32, 640u32), (1200u32, 420u32), (480u32, 800u32)];
+            let mut all_ok = true;
+            for (w, h) in sizes {
+                if window::set_size(win, types::WindowSize { width: w, height: h }).is_err() {
+                    all_ok = false;
+                    continue;
+                }
+                let mut drain = 0u32;
+                while drain < 8 && events::wait(Some(1)).is_some() {
+                    drain += 1;
+                }
+                let Ok(layout) = draw_frame(canvas, &notes, &dates, live_n, 0) else {
+                    all_ok = false;
+                    continue;
+                };
+
+                let _ = out.write(b"size:");
+                let mut nbuf = [0u8; 12];
+                let _ = out.write(u32_bytes(layout.width as u32, &mut nbuf));
+                let _ = out.write(b"x");
+                let _ = out.write(u32_bytes(layout.height as u32, &mut nbuf));
+
+                // Click the middle of the row the frame just drew.
+                let target = 1usize;
+                let row = layout.row(target);
+                let hit = layout.hit_row(row.x + row.w * 0.5, row.y + row.h * 0.5, live_n);
+                let row_ok = hit == Some(target);
+                // Just above it must miss, or a huge hit-box would pass too.
+                let miss_ok =
+                    layout.hit_row(row.x + row.w * 0.5, row.y - 4.0, live_n) != Some(target);
+                let new_ok = layout.new_btn.contains(
+                    layout.new_btn.x + layout.new_btn.w * 0.5,
+                    layout.new_btn.y + layout.new_btn.h * 0.5,
+                );
+                // The New button must never sit on top of the last row.
+                let no_overlap = layout.shown_rows(live_n) == 0
+                    || layout.row(layout.shown_rows(live_n) - 1).y
+                        + layout.row(layout.shown_rows(live_n) - 1).h
+                        <= layout.new_btn.y;
+
+                if row_ok && miss_ok && new_ok && no_overlap {
+                    let _ = out.write(b" hit:ok\n");
+                } else {
+                    let _ = out.write(b" hit:WRONG\n");
+                    all_ok = false;
+                }
+            }
+            if all_ok {
+                let _ = out.write(b"resize:ok\n");
+            } else {
+                let _ = out.write(b"resize:FAILED\n");
+            }
+            let _ = window::close(win);
+            return if all_ok { 0 } else { 40 };
+        }
 
         if quick {
             // The store screenshot: three realistic notes, first selected,
@@ -744,10 +960,15 @@ impl bindings::Guest for Component {
             }
         }
 
-        if draw_frame(canvas, &notes, &dates, live, selected).is_err() {
-            let _ = window::close(win);
-            return 34;
-        }
+        // The layout the visible frame was drawn with. Clicks are tested
+        // against exactly this, so they follow the window when it is resized.
+        let mut layout = match draw_frame(canvas, &notes, &dates, live, selected) {
+            Ok(layout) => layout,
+            Err(_) => {
+                let _ = window::close(win);
+                return 34;
+            }
+        };
 
         let rounds = if quick { QUICK_WAIT_ROUNDS } else { MAX_WAIT_ROUNDS };
         let mut idle_rounds = 0u32;
@@ -769,7 +990,7 @@ impl bindings::Guest for Component {
             let mut redraw = false;
             match event {
                 Some(types::Event::Pointer(p)) if p.pressed => {
-                    if let Some(index) = hit_row(p.x, p.y, live) {
+                    if let Some(index) = layout.hit_row(p.x, p.y, live) {
                         if index != selected {
                             // Switching saves the note being edited first, so a
                             // click never loses work.
@@ -782,7 +1003,7 @@ impl bindings::Guest for Component {
                             selected = index;
                             redraw = true;
                         }
-                    } else if hit_new(p.x, p.y) && live < SLOTS {
+                    } else if layout.new_btn.contains(p.x, p.y) && live < SLOTS {
                         if dirty {
                             if save_note(selected, notes.get(selected).unwrap_or(&NoteBuf::new())) {
                                 saved_any = true;
@@ -863,10 +1084,18 @@ impl bindings::Guest for Component {
                 Some(types::Event::CloseRequested(_)) => {
                     close_requested = true;
                 }
+                // The window changed size, so every rectangle changed with it.
+                // Redrawing recomputes the layout from the canvas's new size,
+                // and hit-testing follows because it reads the same layout.
+                Some(types::Event::Resized(_)) | Some(types::Event::RedrawRequested(_)) => {
+                    redraw = true;
+                }
                 _ => {}
             }
             if redraw {
-                let _ = draw_frame(canvas, &notes, &dates, live, selected);
+                if let Ok(fresh) = draw_frame(canvas, &notes, &dates, live, selected) {
+                    layout = fresh;
+                }
             }
             if close_requested {
                 break;

@@ -119,6 +119,22 @@ impl CanvasSurface {
         })
     }
 
+    /// Re-fit the surface to a new size, discarding the old pixels.
+    ///
+    /// A window is resizable, so the widget rect a canvas was bound to is not
+    /// the rect it keeps. Without this the buffer stays frozen at its bind-time
+    /// size: `canvas_size` reports a stale answer, an app that lays out from it
+    /// draws to the wrong extent, and every hit-box is off. Returns whether the
+    /// size actually changed, so callers can skip redundant work.
+    pub fn resize(&mut self, width: u32, height: u32) -> Result<bool, UiAdapterError> {
+        if width == self.width && height == self.height {
+            return Ok(false);
+        }
+        let fitted = Self::new(width, height)?;
+        *self = fitted;
+        Ok(true)
+    }
+
     pub fn clear(&mut self, color: u32) {
         self.buffer.fill(color);
     }
@@ -393,6 +409,35 @@ impl CanvasSurface {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resize_refits_the_buffer_and_reports_the_new_size() {
+        // A canvas is bound once and the window is resizable, so the surface
+        // has to follow the widget. When it did not, `canvas_size` kept
+        // answering with the bind-time size forever: an app that lays out from
+        // that answer draws to the wrong extent and every hit-box is off. That
+        // is the resize bug, and this is the line that stops it coming back.
+        let mut surface = CanvasSurface::new(440, 620).expect("surface");
+        assert_eq!(surface.dimensions(), (440, 620));
+
+        assert!(surface.resize(900, 500).expect("grow"));
+        assert_eq!(surface.dimensions(), (900, 500));
+        // The buffer really is the new size, not just the reported number.
+        assert_eq!(surface.buffer.len(), 900 * 500);
+
+        assert!(surface.resize(320, 760).expect("shrink"));
+        assert_eq!(surface.dimensions(), (320, 760));
+        assert_eq!(surface.buffer.len(), 320 * 760);
+
+        // Same size is a no-op, so a redraw does not reallocate every frame.
+        assert!(!surface.resize(320, 760).expect("same"));
+
+        // A hostile size is refused rather than allocating the world.
+        assert!(surface.resize(0, 10).is_err());
+        assert!(surface.resize(MAX_CANVAS_EDGE + 1, 10).is_err());
+        // ...and a refused resize leaves the surface usable at its old size.
+        assert_eq!(surface.dimensions(), (320, 760));
+    }
 
     #[test]
     fn hostile_guest_draw_calls_never_panic() {

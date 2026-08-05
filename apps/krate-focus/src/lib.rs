@@ -32,6 +32,9 @@ use bindings::krate::ui::{events, tree, types, window};
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
 
+/// The size the window opens at. Nothing is laid out from these -- the window
+/// is resizable, so every rectangle comes from `Layout::for_size`, built from
+/// `canvas2d::canvas_size` at the top of each frame.
 const WIDTH: f32 = 520.0;
 const HEIGHT: f32 = 680.0;
 
@@ -46,21 +49,114 @@ const MAX_WAIT_ROUNDS: u32 = 6_000_000;
 const MAX_IDLE_ROUNDS: u32 = 200;
 
 // ---- geometry -----------------------------------------------------
+//
+// One `Layout`, computed from the canvas's current size once per frame, read
+// by both the drawing and the hit-testing. The ring centres itself on the
+// canvas and the buttons stay under it at any size. Nothing here is a `const`
+// coordinate: a rect drawn from one set of numbers and clicked against another
+// drifts apart the moment the window is resized.
 
-const CX: f32 = WIDTH * 0.5;
-const RING_CY: f32 = 288.0;
-const RING_R: f32 = 170.0;
-const RING_STROKE: f32 = 14.0;
-
-const DOTS_Y: f32 = 516.0;
 const DOT_R: f32 = 5.0;
 const DOT_GAP: f32 = 28.0;
 
-const BTN_Y: f32 = 560.0;
-const BTN_H: f32 = 44.0;
-const BTN_PRIMARY_W: f32 = 140.0;
-const BTN_GHOST_W: f32 = 112.0;
-const BTN_GAP: f32 = 16.0;
+/// Below this the layout clamps rather than computing a negative radius.
+const MIN_CANVAS_W: f32 = 260.0;
+const MIN_CANVAS_H: f32 = 380.0;
+
+/// Every rectangle and centre in the timer, derived from the canvas size.
+struct Layout {
+    width: f32,
+    height: f32,
+    /// Horizontal centre -- everything in this app hangs off it.
+    cx: f32,
+    caption_y: f32,
+    ring_cy: f32,
+    ring_r: f32,
+    ring_stroke: f32,
+    /// Type sizes, scaled with the ring so the clock always fits inside it.
+    time_size: f32,
+    label_size: f32,
+    dots_y: f32,
+    btn_y: f32,
+    btn_h: f32,
+    btn_primary_w: f32,
+    btn_ghost_w: f32,
+    btn_gap: f32,
+}
+
+impl Layout {
+    fn for_size(width: f32, height: f32) -> Self {
+        let width = width.max(MIN_CANVAS_W);
+        let height = height.max(MIN_CANVAS_H);
+        let cx = width * 0.5;
+
+        let caption_y = (height * 0.094).clamp(38.0, 72.0);
+
+        // Buttons sit a fixed distance off the bottom; the ring takes the
+        // space between the caption and the dots above them.
+        let btn_h = 44.0;
+        let btn_y = height - 76.0;
+        let dots_y = btn_y - 44.0;
+
+        let ring_top = caption_y + 24.0;
+        let ring_space = (dots_y - 24.0 - ring_top).max(60.0);
+        // The ring is bounded by BOTH the width and the height it has, so it
+        // never spills out of a narrow window or a short one.
+        let ring_r = (ring_space * 0.5).min(width * 0.42).clamp(40.0, 190.0);
+        let ring_cy = ring_top + ring_space * 0.5;
+        let ring_stroke = (ring_r * 0.082).clamp(6.0, 16.0);
+
+        let time_size = (ring_r * 0.52).clamp(24.0, 88.0);
+        let label_size = (ring_r * 0.088).clamp(10.0, 15.0);
+
+        // The buttons keep a sane share of a narrow window rather than
+        // overrunning its edges.
+        let avail = (width - 48.0).max(120.0);
+        let btn_primary_w = (avail * 0.52).clamp(96.0, 140.0);
+        let btn_ghost_w = (avail * 0.40).clamp(80.0, 112.0);
+        let btn_gap = 16.0;
+
+        Self {
+            width,
+            height,
+            cx,
+            caption_y,
+            ring_cy,
+            ring_r,
+            ring_stroke,
+            time_size,
+            label_size,
+            dots_y,
+            btn_y,
+            btn_h,
+            btn_primary_w,
+            btn_ghost_w,
+            btn_gap,
+        }
+    }
+
+    /// The primary button. Drawn from this, clicked against this.
+    fn primary_rect(&self) -> gfx::Rect {
+        let total = self.btn_primary_w + self.btn_gap + self.btn_ghost_w;
+        gfx::Rect {
+            x: self.cx - total * 0.5,
+            y: self.btn_y,
+            width: self.btn_primary_w,
+            height: self.btn_h,
+        }
+    }
+
+    /// The ghost (Reset) button beside it.
+    fn ghost_rect(&self) -> gfx::Rect {
+        let total = self.btn_primary_w + self.btn_gap + self.btn_ghost_w;
+        gfx::Rect {
+            x: self.cx - total * 0.5 + self.btn_primary_w + self.btn_gap,
+            y: self.btn_y,
+            width: self.btn_ghost_w,
+            height: self.btn_h,
+        }
+    }
+}
 
 // ---- palette (the house design system) ----------------------------
 
@@ -247,11 +343,67 @@ impl bindings::Guest for Component {
         };
 
         let raw = args::raw();
-        let quick = raw
-            .as_bytes()
-            .split(|byte| *byte == b'\n')
-            .next()
-            .is_some_and(|first| first == b"quick");
+        let first_arg = raw.as_bytes().split(|byte| *byte == b'\n').next();
+        let quick = first_arg.is_some_and(|first| first == b"quick");
+        let resize_check = first_arg.is_some_and(|first| first == b"resize-check");
+
+        if resize_check {
+            // Drive the window through several shapes and confirm a click at
+            // the centre of the button just drawn still lands on that button.
+            let out = stdio::stdout();
+            let mut timer = Timer::new(2);
+            timer.remaining_ms = (18 * 60 + 24) * 1000;
+            let sizes = [(520u32, 680u32), (900u32, 460u32), (300u32, 820u32)];
+            let mut all_ok = true;
+            for (w, h) in sizes {
+                if window::set_size(win, types::WindowSize { width: w, height: h }).is_err() {
+                    all_ok = false;
+                    continue;
+                }
+                let mut drain = 0u32;
+                while drain < 8 && events::wait(Some(1)).is_some() {
+                    drain += 1;
+                }
+                let Ok(layout) = draw(canvas, &timer) else {
+                    all_ok = false;
+                    continue;
+                };
+
+                let _ = out.write(b"size:");
+                let mut nbuf = [0u8; 12];
+                let _ = out.write(u32_bytes(layout.width as u32, &mut nbuf));
+                let _ = out.write(b"x");
+                let _ = out.write(u32_bytes(layout.height as u32, &mut nbuf));
+
+                let pr = layout.primary_rect();
+                let gr = layout.ghost_rect();
+                let primary_ok = hit(pr.x + pr.width * 0.5, pr.y + pr.height * 0.5, pr);
+                let ghost_ok = hit(gr.x + gr.width * 0.5, gr.y + gr.height * 0.5, gr);
+                // The two buttons must never overlap, or one would swallow the
+                // other's clicks.
+                let apart_ok = pr.x + pr.width <= gr.x;
+                // Both must stay inside the canvas at every size.
+                let inside_ok = pr.x >= 0.0
+                    && gr.x + gr.width <= layout.width
+                    && gr.y + gr.height <= layout.height;
+                // The ring must not run into the buttons below it.
+                let ring_ok = layout.ring_cy + layout.ring_r <= layout.btn_y;
+
+                if primary_ok && ghost_ok && apart_ok && inside_ok && ring_ok {
+                    let _ = out.write(b" hit:ok\n");
+                } else {
+                    let _ = out.write(b" hit:WRONG\n");
+                    all_ok = false;
+                }
+            }
+            if all_ok {
+                let _ = out.write(b"resize:ok\n");
+            } else {
+                let _ = out.write(b"resize:FAILED\n");
+            }
+            let _ = window::close(win);
+            return if all_ok { 0 } else { 40 };
+        }
 
         if quick {
             // The automated shot: mid-focus, paused at 18:24 with two of the
@@ -268,10 +420,15 @@ impl bindings::Guest for Component {
         }
 
         let mut timer = Timer::new(completed);
-        if draw(canvas, &timer).is_err() {
-            let _ = window::close(win);
-            return 34;
-        }
+        // The layout the visible frame was drawn with, so clicks follow the
+        // window when it is resized.
+        let mut layout = match draw(canvas, &timer) {
+            Ok(layout) => layout,
+            Err(_) => {
+                let _ = window::close(win);
+                return 34;
+            }
+        };
 
         let mut idle_rounds = 0u32;
         for _ in 0..MAX_WAIT_ROUNDS {
@@ -280,7 +437,9 @@ impl bindings::Guest for Component {
             // Keep the clock honest every round while running; redraw only
             // when the visible second flips.
             if timer.running && timer.tick(clock::now_millis()) {
-                let _ = draw(canvas, &timer);
+                if let Ok(fresh) = draw(canvas, &timer) {
+                    layout = fresh;
+                }
             }
 
             if event.is_none() {
@@ -301,20 +460,31 @@ impl bindings::Guest for Component {
             match event {
                 Some(types::Event::Pointer(p)) if p.pressed => {
                     let now = clock::now_millis();
-                    if hit(p.x, p.y, primary_rect()) {
+                    if hit(p.x, p.y, layout.primary_rect()) {
                         if timer.running {
                             timer.pause(now);
                         } else {
                             timer.start(now);
                         }
-                        let _ = draw(canvas, &timer);
-                    } else if hit(p.x, p.y, ghost_rect()) {
+                        if let Ok(fresh) = draw(canvas, &timer) {
+                            layout = fresh;
+                        }
+                    } else if hit(p.x, p.y, layout.ghost_rect()) {
                         timer.reset();
-                        let _ = draw(canvas, &timer);
+                        if let Ok(fresh) = draw(canvas, &timer) {
+                            layout = fresh;
+                        }
                     }
                 }
                 Some(types::Event::CloseRequested(id)) if id == win => {
                     break;
+                }
+                // Resized: recompute the layout from the canvas's new size.
+                // Hit-testing follows, because it reads this same layout.
+                Some(types::Event::Resized(_)) | Some(types::Event::RedrawRequested(_)) => {
+                    if let Ok(fresh) = draw(canvas, &timer) {
+                        layout = fresh;
+                    }
                 }
                 _ => {}
             }
@@ -327,29 +497,8 @@ impl bindings::Guest for Component {
     }
 }
 
-// ------------------------------------------------------------------
-// Layout rectangles + hit testing
-// ------------------------------------------------------------------
-
-fn primary_rect() -> gfx::Rect {
-    let total = BTN_PRIMARY_W + BTN_GAP + BTN_GHOST_W;
-    gfx::Rect {
-        x: CX - total * 0.5,
-        y: BTN_Y,
-        width: BTN_PRIMARY_W,
-        height: BTN_H,
-    }
-}
-
-fn ghost_rect() -> gfx::Rect {
-    let total = BTN_PRIMARY_W + BTN_GAP + BTN_GHOST_W;
-    gfx::Rect {
-        x: CX - total * 0.5 + BTN_PRIMARY_W + BTN_GAP,
-        y: BTN_Y,
-        width: BTN_GHOST_W,
-        height: BTN_H,
-    }
-}
+// Layout rectangles and hit-testing both live on `Layout` -- see
+// `Layout::primary_rect` and `Layout::ghost_rect`.
 
 fn hit(x: f32, y: f32, r: gfx::Rect) -> bool {
     x >= r.x && x <= r.x + r.width && y >= r.y && y <= r.y + r.height
@@ -359,11 +508,22 @@ fn hit(x: f32, y: f32, r: gfx::Rect) -> bool {
 // Rendering
 // ------------------------------------------------------------------
 
-fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
+/// Ask the canvas its size, then draw the timer to that answer. Returns the
+/// layout used, so the event loop hit-tests the picture on screen.
+fn draw(canvas: u64, timer: &Timer) -> Result<Layout, gfx::GfxError> {
+    let size = canvas2d::canvas_size(canvas)?;
+    let layout = Layout::for_size(size.width, size.height);
+    draw_with(canvas, &layout, timer)?;
+    Ok(layout)
+}
+
+fn draw_with(canvas: u64, layout: &Layout, timer: &Timer) -> Result<(), gfx::GfxError> {
+    let cx = layout.cx;
+    let ring_cy = layout.ring_cy;
     // Ground: the house near-black blue, top to bottom.
     canvas2d::linear_gradient(
         canvas,
-        gfx::Rect { x: 0.0, y: 0.0, width: WIDTH, height: HEIGHT },
+        gfx::Rect { x: 0.0, y: 0.0, width: layout.width, height: layout.height },
         BG_TOP,
         BG_BOT,
     )?;
@@ -371,8 +531,8 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
     // A faint accent pool behind the ring so it sits in its own light.
     canvas2d::radial_gradient(
         canvas,
-        gfx::Point { x: CX, y: RING_CY },
-        RING_R + 80.0,
+        gfx::Point { x: cx, y: ring_cy },
+        layout.ring_r + 80.0,
         tint(ACCENT, 0.07),
         tint(ACCENT, 0.0),
     )?;
@@ -381,18 +541,18 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
     let cap = "P O M O D O R O";
     let csize = 13.0;
     let cw = text_width(cap, csize);
-    draw_text(canvas, cap, CX - cw * 0.5, 64.0, csize, INK_QUIET)?;
+    draw_text(canvas, cap, cx - cw * 0.5, layout.caption_y, csize, INK_QUIET)?;
 
-    draw_ring(canvas, timer.progress())?;
+    draw_ring(canvas, layout, timer.progress())?;
 
     // ---- remaining time, big, centered in the ring ----
     let mut buf = [0u8; 8];
     let text = fmt_mmss(timer.remaining_ms, &mut buf);
     if let Ok(txt) = core::str::from_utf8(text) {
-        let size = 64.0;
+        let size = layout.time_size;
         let w = time_width(txt, size);
-        let x = CX - w * 0.5;
-        let y = RING_CY + 8.0;
+        let x = cx - w * 0.5;
+        let y = ring_cy + size * 0.125;
         // Double-strike for weight: real type, faux bold.
         draw_text(canvas, txt, x + 0.7, y, size, INK)?;
         draw_text(canvas, txt, x, y, size, INK)?;
@@ -400,22 +560,22 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
 
     // ---- session label under the time ----
     let label = timer.phase.label();
-    let lsize = 15.0;
+    let lsize = layout.label_size;
     let lw = text_width(label, lsize);
-    draw_text(canvas, label, CX - lw * 0.5, RING_CY + 46.0, lsize, INK_DIM)?;
+    draw_text(canvas, label, cx - lw * 0.5, ring_cy + layout.ring_r * 0.27, lsize, INK_DIM)?;
 
     // ---- session dots: pomodoros banked this cycle ----
     let filled = timer.dots_filled();
     for i in 0..4u64 {
-        let x = CX + (i as f32 - 1.5) * DOT_GAP;
+        let x = cx + (i as f32 - 1.5) * DOT_GAP;
         // Empty dots sit a step above the ring track so they stay legible at
         // this small size on the dark ground.
         let c = if i < filled { ACCENT } else { rgb(0x31, 0x3A, 0x4C) };
-        disc(canvas, x, DOTS_Y, DOT_R, c)?;
+        disc(canvas, x, layout.dots_y, DOT_R, c)?;
     }
 
     // ---- buttons ----
-    let pr = primary_rect();
+    let pr = layout.primary_rect();
     rounded_rect(canvas, pr.x, pr.y, pr.width, pr.height, 12.0, ACCENT)?;
     let verb = timer.verb();
     let vsize = 17.0;
@@ -429,11 +589,11 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
         gfx::Color { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
     )?;
 
-    let gr = ghost_rect();
+    let gr = layout.ghost_rect();
     // Ghost: hairline border, hollow body. The body is refilled with the
     // ground color sampled at the button's band so the border reads 1px.
     rounded_rect(canvas, gr.x, gr.y, gr.width, gr.height, 12.0, TRACK)?;
-    let inner = bg_at((gr.y + gr.height * 0.5) / HEIGHT);
+    let inner = bg_at((gr.y + gr.height * 0.5) / layout.height);
     rounded_rect(canvas, gr.x + 1.0, gr.y + 1.0, gr.width - 2.0, gr.height - 2.0, 11.0, inner)?;
     let reset = "Reset";
     let rw = text_width(reset, vsize);
@@ -454,9 +614,9 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
 /// overlapping discs along the circle so the band has round, soft edges. The
 /// arc starts at 12 o'clock and sweeps clockwise; its leading end gets a
 /// slightly larger head dot so progress has a focal point.
-fn draw_ring(canvas: u64, progress: f32) -> Result<(), gfx::GfxError> {
+fn draw_ring(canvas: u64, layout: &Layout, progress: f32) -> Result<(), gfx::GfxError> {
     const TWO_PI: f32 = 6.283_185_5;
-    let dot_r = RING_STROKE * 0.5;
+    let dot_r = layout.ring_stroke * 0.5;
     // Disc spacing along the circumference: ~1.5px keeps the band smooth.
     let steps = 720u32;
     let step = TWO_PI / steps as f32;
@@ -464,7 +624,7 @@ fn draw_ring(canvas: u64, progress: f32) -> Result<(), gfx::GfxError> {
     // Track, full turn.
     for i in 0..steps {
         let a = i as f32 * step;
-        let (x, y) = ring_point(a);
+        let (x, y) = ring_point(layout, a);
         disc(canvas, x, y, dot_r, TRACK)?;
     }
 
@@ -472,14 +632,14 @@ fn draw_ring(canvas: u64, progress: f32) -> Result<(), gfx::GfxError> {
     let sweep = (progress.clamp(0.0, 1.0) * steps as f32) as u32;
     for i in 0..=sweep.min(steps) {
         let a = i as f32 * step;
-        let (x, y) = ring_point(a);
+        let (x, y) = ring_point(layout, a);
         disc(canvas, x, y, dot_r, ACCENT)?;
     }
 
     // Head dot with a soft glow at the leading edge.
     if progress > 0.0 {
         let a = progress.clamp(0.0, 1.0) * TWO_PI;
-        let (x, y) = ring_point(a);
+        let (x, y) = ring_point(layout, a);
         canvas2d::radial_gradient(
             canvas,
             gfx::Point { x, y },
@@ -494,12 +654,15 @@ fn draw_ring(canvas: u64, progress: f32) -> Result<(), gfx::GfxError> {
 }
 
 /// Point on the ring at `a` radians past 12 o'clock, clockwise.
-fn ring_point(a: f32) -> (f32, f32) {
+fn ring_point(layout: &Layout, a: f32) -> (f32, f32) {
     const HALF_PI: f32 = 1.570_796_3;
     // Screen angle: 12 o'clock is -90 deg; clockwise means +angle in screen
     // coords (y down).
     let t = a - HALF_PI;
-    (CX + RING_R * cos_approx(t), RING_CY + RING_R * sin_approx(t))
+    (
+        layout.cx + layout.ring_r * cos_approx(t),
+        layout.ring_cy + layout.ring_r * sin_approx(t),
+    )
 }
 
 // ------------------------------------------------------------------
@@ -574,6 +737,32 @@ fn bg_at(t: f32) -> gfx::Color {
 /// Rough advance for UI labels in the system face: ~0.52em per char.
 fn text_width(s: &str, size: f32) -> f32 {
     (s.chars().count() as f32) * size * 0.52
+}
+
+/// A plain decimal number into a byte buffer, panic-free. Used by the resize
+/// self-check to report the size it actually laid out to.
+fn u32_bytes(value: u32, buf: &mut [u8; 12]) -> &[u8] {
+    let mut scratch = [0u8; 10];
+    let mut n = value;
+    let mut count = if value == 0 { 1usize } else { 0usize };
+    while n > 0 && count < scratch.len() {
+        if let Some(slot) = scratch.get_mut(count) {
+            *slot = b'0' + (n % 10) as u8;
+        }
+        n /= 10;
+        count += 1;
+    }
+    let mut pos = 0usize;
+    let mut i = count;
+    while i > 0 {
+        i -= 1;
+        let digit = scratch.get(i).copied().unwrap_or(b'0');
+        if let Some(slot) = buf.get_mut(pos) {
+            *slot = digit;
+            pos += 1;
+        }
+    }
+    buf.get(..pos).unwrap_or(b"0")
 }
 
 /// Advance for the mm:ss readout: digits are wider than the colon.

@@ -30,15 +30,13 @@ use bindings::krate::ui::{events, tree, types, window};
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
 
+/// The size the window opens at. Nothing is laid out from these -- the window
+/// is resizable, so every rectangle comes from `Layout::for_size`, built from
+/// `canvas2d::canvas_size` at the top of each frame.
 const WIDTH: f32 = 1080.0;
 const HEIGHT: f32 = 700.0;
 
-const MARGIN: f32 = 32.0;
-/// Left column (balance + chart) width; right column starts after the gutter.
-const LEFT_W: f32 = 656.0;
 const GUTTER: f32 = 24.0;
-const RIGHT_X: f32 = MARGIN + LEFT_W + GUTTER;
-const RIGHT_W: f32 = WIDTH - RIGHT_X - MARGIN;
 
 const MAX_WAIT_ROUNDS: u32 = 600_000;
 const WAIT_ROUND_MILLIS: u32 = 33;
@@ -146,6 +144,35 @@ fn text_right(canvas: u64, s: &str, right: f32, y: f32, size: f32, c: gfx::Color
     text(canvas, s, right - est_width(s, size), y, size, c);
 }
 
+/// A plain decimal number into a byte buffer, panic-free. Used by the resize
+/// self-check to report the size it actually laid out to.
+fn u32_bytes(value: u32, buf: &mut [u8; 12]) -> &[u8] {
+    let mut scratch = [0u8; 10];
+    let mut n = value;
+    let mut count = 0usize;
+    if n == 0 {
+        count = 1;
+    }
+    while n > 0 && count < scratch.len() {
+        if let Some(slot) = scratch.get_mut(count) {
+            *slot = b'0' + (n % 10) as u8;
+        }
+        n /= 10;
+        count += 1;
+    }
+    let mut pos = 0usize;
+    let mut i = count;
+    while i > 0 {
+        i -= 1;
+        let digit = scratch.get(i).copied().unwrap_or(b'0');
+        if let Some(slot) = buf.get_mut(pos) {
+            *slot = digit;
+            pos += 1;
+        }
+    }
+    buf.get(..pos).unwrap_or(b"0")
+}
+
 fn rounded(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
     let r = r.min(w * 0.5).min(h * 0.5);
     fill(canvas, x + r, y, w - r * 2.0, h, c)?;
@@ -236,82 +263,232 @@ fn money<'b>(buf: &'b mut [u8; 24], cents: i64, signed: bool) -> &'b str {
     core::str::from_utf8(buf.get(..out).unwrap_or(b"$0")).unwrap_or("$0")
 }
 
-// ---- layout regions ---------------------------------------------------------
+// ---- layout -----------------------------------------------------------------
+//
+// One struct, computed from the canvas's current size once per frame, read by
+// both the drawing and the hit-testing. Coordinates are deliberately not
+// `const`s: a rect drawn from one set of numbers and clicked against another
+// drifts apart the instant the window is resized.
 
-const HEADER_BASE: f32 = 64.0;
-const BAL_CAPTION_Y: f32 = 116.0;
-const BAL_Y: f32 = 178.0;
-const CHART_Y: f32 = 216.0;
-const CHART_H: f32 = 230.0;
-const RECENT_Y: f32 = CHART_Y + CHART_H + GUTTER;
-const RECENT_H: f32 = HEIGHT - RECENT_Y - MARGIN;
-const CATS_Y: f32 = 98.0;
-const CATS_H: f32 = 262.0;
-const RIGHT2_Y: f32 = CATS_Y + CATS_H + GUTTER;
+/// A rectangle in canvas coordinates -- the unit drawing and hit-testing share.
+#[derive(Clone, Copy)]
+struct Rect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+impl Rect {
+    fn contains(&self, x: f32, y: f32) -> bool {
+        x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
+    }
+}
+
+/// Below this the layout clamps rather than computing negative widths.
+const MIN_CANVAS_W: f32 = 560.0;
+const MIN_CANVAS_H: f32 = 420.0;
+
+/// Every region of the dashboard, derived from the canvas size.
+struct Layout {
+    width: f32,
+    height: f32,
+    margin: f32,
+    /// Left column (balance + chart) and the right column beside it.
+    left_w: f32,
+    right_x: f32,
+    right_w: f32,
+    header_base: f32,
+    bal_caption_y: f32,
+    bal_y: f32,
+    bal_size: f32,
+    chart: Rect,
+    recent: Rect,
+    cats: Rect,
+    insight: Rect,
+    /// Height of one category row, and where the rows start.
+    cat_row_h: f32,
+    cats_rows_y: f32,
+}
+
+impl Layout {
+    fn for_size(width: f32, height: f32) -> Self {
+        let width = width.max(MIN_CANVAS_W);
+        let height = height.max(MIN_CANVAS_H);
+
+        let margin = (width * 0.03).clamp(18.0, 40.0);
+        let usable = (width - margin * 2.0 - GUTTER).max(200.0);
+        // The right column keeps a readable share; the left takes the rest.
+        let right_w = (usable * 0.34).clamp(210.0, 380.0);
+        let left_w = (usable - right_w).max(160.0);
+        let right_x = margin + left_w + GUTTER;
+
+        let header_base = (height * 0.091).clamp(44.0, 68.0);
+        let bal_caption_y = header_base + 52.0;
+        let bal_y = bal_caption_y + 62.0;
+        // The balance number shrinks on a narrow window so its delta chip
+        // still has somewhere to sit.
+        let bal_size = (width * 0.052).clamp(30.0, 56.0);
+
+        // Left column: chart on top, Recent filling what is left.
+        let chart_y = bal_y + 38.0;
+        let content_bottom = height - margin;
+        let left_space = (content_bottom - chart_y - GUTTER).max(80.0);
+        let chart_h = (left_space * 0.5).clamp(120.0, 260.0);
+        let chart = Rect { x: margin, y: chart_y, w: left_w, h: chart_h };
+        let recent_y = chart_y + chart_h + GUTTER;
+        let recent = Rect {
+            x: margin,
+            y: recent_y,
+            w: left_w,
+            h: (content_bottom - recent_y).max(60.0),
+        };
+
+        // Right column: categories on top, insight filling what is left.
+        let cats_y = header_base + 34.0;
+        let right_space = (content_bottom - cats_y - GUTTER).max(80.0);
+        let cats_h = (right_space * 0.62).clamp(150.0, 300.0);
+        let cats = Rect { x: right_x, y: cats_y, w: right_w, h: cats_h };
+        let insight_y = cats_y + cats_h + GUTTER;
+        let insight = Rect {
+            x: right_x,
+            y: insight_y,
+            w: right_w,
+            h: (content_bottom - insight_y).max(60.0),
+        };
+
+        // Category rows share the card's remaining height between them.
+        let cats_rows_y = cats_y + 80.0;
+        let rows_space = (cats_y + cats_h - 14.0 - cats_rows_y).max(0.0);
+        let cat_row_h = (rows_space / CAT_COUNT as f32).clamp(28.0, 46.0);
+
+        Self {
+            width,
+            height,
+            margin,
+            left_w,
+            right_x,
+            right_w,
+            header_base,
+            bal_caption_y,
+            bal_y,
+            bal_size,
+            chart,
+            recent,
+            cats,
+            insight,
+            cat_row_h,
+            cats_rows_y,
+        }
+    }
+
+    /// The clickable strip for category `index`. Drawn from this, and tested
+    /// against this, so the wash a person sees is the thing they can hit.
+    fn cat_row(&self, index: usize) -> Rect {
+        let ry = self.cats_rows_y + (index as f32) * self.cat_row_h;
+        Rect {
+            x: self.right_x + 12.0,
+            y: ry - 6.0,
+            w: self.right_w - 24.0,
+            h: self.cat_row_h - 6.0,
+        }
+    }
+
+    fn hit_category(&self, x: f32, y: f32) -> Option<usize> {
+        let mut i = 0usize;
+        while i < CAT_COUNT {
+            if self.cat_row(i).contains(x, y) {
+                return Some(i);
+            }
+            i += 1;
+        }
+        None
+    }
+}
 
 // ---- drawing ----------------------------------------------------------------
 
-fn draw(canvas: u64, selected: Option<usize>) -> Result<(), gfx::GfxError> {
+/// Ask the canvas its size, then draw the dashboard to that answer. Returns
+/// the layout used, so the event loop hit-tests the picture on screen.
+fn draw(canvas: u64, selected: Option<usize>) -> Result<Layout, gfx::GfxError> {
+    let size = canvas2d::canvas_size(canvas)?;
+    let layout = Layout::for_size(size.width, size.height);
+    draw_with(canvas, &layout, selected)?;
+    Ok(layout)
+}
+
+fn draw_with(canvas: u64, layout: &Layout, selected: Option<usize>) -> Result<(), gfx::GfxError> {
     // Ground gradient.
     canvas2d::linear_gradient(
         canvas,
-        gfx::Rect { x: 0.0, y: 0.0, width: WIDTH, height: HEIGHT },
+        gfx::Rect { x: 0.0, y: 0.0, width: layout.width, height: layout.height },
         BG_TOP,
         BG_BOT,
     )?;
 
-    draw_header(canvas);
-    draw_balance(canvas);
-    draw_chart(canvas)?;
-    draw_categories(canvas, selected)?;
-    draw_insight(canvas)?;
-    draw_recent(canvas, selected)?;
+    draw_header(canvas, layout);
+    draw_balance(canvas, layout);
+    draw_chart(canvas, layout)?;
+    draw_categories(canvas, layout, selected)?;
+    draw_insight(canvas, layout)?;
+    draw_recent(canvas, layout, selected)?;
     canvas2d::present(canvas)
 }
 
-fn draw_header(canvas: u64) {
+fn draw_header(canvas: u64, layout: &Layout) {
+    let margin = layout.margin;
+    let base = layout.header_base;
     // Logo dot + wordmark.
-    let _ = disc(canvas, MARGIN + 9.0, HEADER_BASE - 11.0, 9.0, ACCENT);
-    let _ = disc(canvas, MARGIN + 9.0, HEADER_BASE - 11.0, 3.5, INK);
-    text(canvas, "Pulse", MARGIN + 28.0, HEADER_BASE, 30.0, INK);
-    text_right(canvas, "August 2026", WIDTH - MARGIN, HEADER_BASE - 4.0, 15.0, INK_DIM);
+    let _ = disc(canvas, margin + 9.0, base - 11.0, 9.0, ACCENT);
+    let _ = disc(canvas, margin + 9.0, base - 11.0, 3.5, INK);
+    text(canvas, "Pulse", margin + 28.0, base, 30.0, INK);
+    text_right(canvas, "August 2026", layout.width - margin, base - 4.0, 15.0, INK_DIM);
 }
 
-fn draw_balance(canvas: u64) {
-    text(canvas, "TOTAL BALANCE", MARGIN, BAL_CAPTION_Y, 12.0, INK_QUIET);
+fn draw_balance(canvas: u64, layout: &Layout) {
+    let margin = layout.margin;
+    let bal_y = layout.bal_y;
+    let bal_size = layout.bal_size;
+    text(canvas, "TOTAL BALANCE", margin, layout.bal_caption_y, 12.0, INK_QUIET);
     let mut buf = [0u8; 24];
     let bal = money(&mut buf, BALANCE, false);
-    text(canvas, bal, MARGIN - 2.0, BAL_Y, 56.0, INK);
+    text(canvas, bal, margin - 2.0, bal_y, bal_size, INK);
 
     // Delta chip to the right of the number.
-    let bal_w = est_width(bal, 56.0);
-    let chip_x = MARGIN + bal_w + 22.0;
+    let bal_w = est_width(bal, bal_size);
+    let chip_x = margin + bal_w + 22.0;
     let mut dbuf = [0u8; 24];
     let delta = money(&mut dbuf, DELTA, true);
     // "+$1,240.00 this month" -> drop the cents for the chip.
     let delta_short = delta.get(..delta.len().saturating_sub(3)).unwrap_or(delta);
     let label_w = est_width(delta_short, 14.0) + est_width(" this month", 14.0);
-    let _ = rounded(canvas, chip_x, BAL_Y - 32.0, label_w + 30.0, 30.0, 15.0, CHIP_GREEN);
-    text(canvas, delta_short, chip_x + 14.0, BAL_Y - 10.0, 14.0, GREEN);
-    text(
-        canvas,
-        " this month",
-        chip_x + 14.0 + est_width(delta_short, 14.0),
-        BAL_Y - 10.0,
-        14.0,
-        INK_DIM,
-    );
+    // Only draw the chip if it actually fits beside the number; on a narrow
+    // window it is dropped rather than painted off the edge.
+    if chip_x + label_w + 30.0 <= layout.margin + layout.left_w {
+        let _ = rounded(canvas, chip_x, bal_y - 32.0, label_w + 30.0, 30.0, 15.0, CHIP_GREEN);
+        text(canvas, delta_short, chip_x + 14.0, bal_y - 10.0, 14.0, GREEN);
+        text(
+            canvas,
+            " this month",
+            chip_x + 14.0 + est_width(delta_short, 14.0),
+            bal_y - 10.0,
+            14.0,
+            INK_DIM,
+        );
+    }
 }
 
-fn draw_chart(canvas: u64) -> Result<(), gfx::GfxError> {
-    card(canvas, MARGIN, CHART_Y, LEFT_W, CHART_H)?;
-    text(canvas, "Spending", MARGIN + 24.0, CHART_Y + 40.0, 18.0, INK);
-    text(canvas, "Last 30 days", MARGIN + 24.0, CHART_Y + 62.0, 12.5, INK_QUIET);
+fn draw_chart(canvas: u64, layout: &Layout) -> Result<(), gfx::GfxError> {
+    let chart = layout.chart;
+    card(canvas, chart.x, chart.y, chart.w, chart.h)?;
+    text(canvas, "Spending", chart.x + 24.0, chart.y + 40.0, 18.0, INK);
+    text(canvas, "Last 30 days", chart.x + 24.0, chart.y + 62.0, 12.5, INK_QUIET);
 
-    let inner_x = MARGIN + 24.0;
-    let inner_w = LEFT_W - 48.0;
-    let base_y = CHART_Y + CHART_H - 36.0;
-    let plot_h = 112.0;
+    let inner_x = chart.x + 24.0;
+    let inner_w = (chart.w - 48.0).max(40.0);
+    let base_y = chart.y + chart.h - 36.0;
+    // The plot fills what the card has under its two header lines.
+    let plot_h = (chart.h - 108.0).clamp(40.0, 160.0);
 
     // Gridlines + axis labels at $0 / $70 / $140.
     let max = 140.0f32;
@@ -378,10 +555,17 @@ fn draw_chart(canvas: u64) -> Result<(), gfx::GfxError> {
     Ok(())
 }
 
-fn draw_categories(canvas: u64, selected: Option<usize>) -> Result<(), gfx::GfxError> {
-    card(canvas, RIGHT_X, CATS_Y, RIGHT_W, CATS_H)?;
-    text(canvas, "Categories", RIGHT_X + 22.0, CATS_Y + 38.0, 18.0, INK);
-    text(canvas, "This month", RIGHT_X + 22.0, CATS_Y + 60.0, 12.5, INK_QUIET);
+fn draw_categories(
+    canvas: u64,
+    layout: &Layout,
+    selected: Option<usize>,
+) -> Result<(), gfx::GfxError> {
+    let cats = layout.cats;
+    let right_x = layout.right_x;
+    let right_w = layout.right_w;
+    card(canvas, cats.x, cats.y, cats.w, cats.h)?;
+    text(canvas, "Categories", cats.x + 22.0, cats.y + 38.0, 18.0, INK);
+    text(canvas, "This month", cats.x + 22.0, cats.y + 60.0, 12.5, INK_QUIET);
 
     let total: i64 = {
         let mut sum = 0i64;
@@ -393,44 +577,49 @@ fn draw_categories(canvas: u64, selected: Option<usize>) -> Result<(), gfx::GfxE
         sum
     };
 
-    let row_h = 46.0;
-    let rows_y = CATS_Y + 80.0;
     for i in 0..CAT_COUNT {
-        let ry = rows_y + i as f32 * row_h;
+        // The clickable strip and the drawn wash are the same rectangle.
+        let strip = layout.cat_row(i);
+        let ry = layout.cats_rows_y + i as f32 * layout.cat_row_h;
         // Selection wash behind the active row.
         if selected == Some(i) {
-            rounded(canvas, RIGHT_X + 12.0, ry - 6.0, RIGHT_W - 24.0, row_h - 6.0, 10.0, WASH_SEL)?;
+            rounded(canvas, strip.x, strip.y, strip.w, strip.h, 10.0, WASH_SEL)?;
         }
-        disc(canvas, RIGHT_X + 30.0, ry + 10.0, 5.0, CAT_COL[i])?;
-        text(canvas, CAT_NAMES[i], RIGHT_X + 46.0, ry + 15.0, 15.0, INK);
+        disc(canvas, right_x + 30.0, ry + 10.0, 5.0, CAT_COL[i])?;
+        text(canvas, CAT_NAMES[i], right_x + 46.0, ry + 15.0, 15.0, INK);
         let mut buf = [0u8; 24];
         let amt = money(&mut buf, -CAT_TOTALS[i], false);
-        text_right(canvas, amt, RIGHT_X + RIGHT_W - 22.0, ry + 15.0, 14.5, INK_DIM);
+        text_right(canvas, amt, right_x + right_w - 22.0, ry + 15.0, 14.5, INK_DIM);
         // Share bar under the row text.
-        let bar_w = RIGHT_W - 68.0;
+        let bar_w = (right_w - 68.0).max(20.0);
         let share = CAT_TOTALS[i] as f32 / total as f32;
-        rounded(canvas, RIGHT_X + 46.0, ry + 24.0, bar_w, 5.0, 2.5, rgb(0.125, 0.153, 0.208))?;
+        rounded(canvas, right_x + 46.0, ry + 24.0, bar_w, 5.0, 2.5, rgb(0.125, 0.153, 0.208))?;
         let mut c = CAT_COL[i];
         c.a = 0.9;
-        rounded(canvas, RIGHT_X + 46.0, ry + 24.0, (bar_w * share).max(6.0), 5.0, 2.5, c)?;
+        rounded(canvas, right_x + 46.0, ry + 24.0, (bar_w * share).max(6.0), 5.0, 2.5, c)?;
     }
     Ok(())
 }
 
-fn draw_recent(canvas: u64, selected: Option<usize>) -> Result<(), gfx::GfxError> {
+fn draw_recent(
+    canvas: u64,
+    layout: &Layout,
+    selected: Option<usize>,
+) -> Result<(), gfx::GfxError> {
     // Recent list spans under the chart, left column.
-    card(canvas, MARGIN, RECENT_Y, LEFT_W, RECENT_H)?;
-    text(canvas, "Recent", MARGIN + 24.0, RECENT_Y + 36.0, 18.0, INK);
+    let recent = layout.recent;
+    card(canvas, recent.x, recent.y, recent.w, recent.h)?;
+    text(canvas, "Recent", recent.x + 24.0, recent.y + 36.0, 18.0, INK);
     match selected {
         Some(i) => {
             let name = CAT_NAMES[i.min(CAT_COUNT - 1)];
-            text(canvas, name, MARGIN + 110.0, RECENT_Y + 36.0, 12.5, ACCENT);
+            text(canvas, name, recent.x + 110.0, recent.y + 36.0, 12.5, ACCENT);
         }
-        None => text(canvas, "All activity", MARGIN + 110.0, RECENT_Y + 36.0, 12.5, INK_QUIET),
+        None => text(canvas, "All activity", recent.x + 110.0, recent.y + 36.0, 12.5, INK_QUIET),
     }
 
     let row_h = 44.0;
-    let mut ry = RECENT_Y + 58.0;
+    let mut ry = recent.y + 58.0;
     let mut shown = 0u32;
     for tx in TXS.iter() {
         if let Some(sel) = selected {
@@ -438,44 +627,53 @@ fn draw_recent(canvas: u64, selected: Option<usize>) -> Result<(), gfx::GfxError
                 continue;
             }
         }
-        if ry + row_h > RECENT_Y + RECENT_H - 8.0 {
+        // Stop at the card's edge, so a short window shows fewer rows rather
+        // than painting them past the bottom.
+        if ry + row_h > recent.y + recent.h - 8.0 {
             break;
         }
         // Avatar: rounded square in the category color (green for income).
         let av = if tx.cat == INCOME { GREEN } else { CAT_COL[tx.cat.min(CAT_COUNT - 1)] };
         let av_soft = blend(CARD, av, 0.22);
-        rounded(canvas, MARGIN + 24.0, ry, 30.0, 30.0, 9.0, av_soft)?;
+        rounded(canvas, recent.x + 24.0, ry, 30.0, 30.0, 9.0, av_soft)?;
         let initial = tx.merchant.get(..1).unwrap_or("?");
-        text(canvas, initial, MARGIN + 33.0, ry + 21.0, 15.0, av);
+        text(canvas, initial, recent.x + 33.0, ry + 21.0, 15.0, av);
 
-        text(canvas, tx.merchant, MARGIN + 66.0, ry + 14.0, 15.0, INK);
+        text(canvas, tx.merchant, recent.x + 66.0, ry + 14.0, 15.0, INK);
         let cat_label = if tx.cat == INCOME { "Income" } else { CAT_NAMES[tx.cat.min(CAT_COUNT - 1)] };
-        text(canvas, cat_label, MARGIN + 66.0, ry + 30.0, 11.5, INK_QUIET);
+        text(canvas, cat_label, recent.x + 66.0, ry + 30.0, 11.5, INK_QUIET);
 
         let mut buf = [0u8; 24];
         let amt = money(&mut buf, tx.cents, tx.cents > 0);
         let color = if tx.cents > 0 { GREEN } else { INK };
-        text_right(canvas, amt, MARGIN + LEFT_W - 24.0, ry + 20.0, 15.0, color);
+        text_right(canvas, amt, recent.x + recent.w - 24.0, ry + 20.0, 15.0, color);
 
         // Hairline between rows.
-        fill(canvas, MARGIN + 66.0, ry + row_h - 5.0, LEFT_W - 90.0, 1.0, gfx::Color { r: 1.0, g: 1.0, b: 1.0, a: 0.04 })?;
+        fill(
+            canvas,
+            recent.x + 66.0,
+            ry + row_h - 5.0,
+            (recent.w - 90.0).max(10.0),
+            1.0,
+            gfx::Color { r: 1.0, g: 1.0, b: 1.0, a: 0.04 },
+        )?;
         ry += row_h;
         shown += 1;
     }
     if shown == 0 && selected.is_some() {
-        text(canvas, "No activity in this category yet.", MARGIN + 24.0, RECENT_Y + 84.0, 13.5, INK_QUIET);
+        text(canvas, "No activity in this category yet.", recent.x + 24.0, recent.y + 84.0, 13.5, INK_QUIET);
     }
     Ok(())
 }
 
 /// The small insight card under Categories: one honest derived stat.
-fn draw_insight(canvas: u64) -> Result<(), gfx::GfxError> {
-    let y = RIGHT2_Y;
-    let h = HEIGHT - y - MARGIN;
-    card(canvas, RIGHT_X, y, RIGHT_W, h)?;
-    text(canvas, "Insight", RIGHT_X + 22.0, y + 36.0, 18.0, INK);
+fn draw_insight(canvas: u64, layout: &Layout) -> Result<(), gfx::GfxError> {
+    let insight = layout.insight;
+    let y = insight.y;
+    card(canvas, insight.x, insight.y, insight.w, insight.h)?;
+    text(canvas, "Insight", insight.x + 22.0, y + 36.0, 18.0, INK);
     // A green down-arrow chip: spending is lower than last month.
-    let ax = RIGHT_X + 34.0;
+    let ax = insight.x + 34.0;
     let ay = y + 86.0;
     disc(canvas, ax, ay, 16.0, CHIP_GREEN)?;
     // Arrow: stem + head drawn from fills.
@@ -500,7 +698,10 @@ fn stack_root() -> types::WidgetNode {
         kind: types::WidgetKind::Stack,
         label: None,
         role: None,
-        style: types::Style { width: Some(WIDTH), height: Some(HEIGHT), grow: 0.0, padding: 0.0 },
+        // Grow to fill the window rather than pinning a fixed size: a pinned
+        // width and height keep the canvas at its opening size forever, so the
+        // app can never see a resize even if it asks.
+        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0 },
         checked: None,
         value: None,
         selected: None,
@@ -515,7 +716,10 @@ fn canvas_node() -> types::WidgetNode {
         kind: types::WidgetKind::Canvas,
         label: None,
         role: Some(pure_string("canvas")),
-        style: types::Style { width: Some(WIDTH), height: Some(HEIGHT), grow: 0.0, padding: 0.0 },
+        // Grow to fill the window rather than pinning a fixed size: a pinned
+        // width and height keep the canvas at its opening size forever, so the
+        // app can never see a resize even if it asks.
+        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0 },
         checked: None,
         value: None,
         selected: None,
@@ -546,21 +750,8 @@ fn save_selected(selected: Option<usize>) {
     }
 }
 
-/// Which category row a click landed on, if any.
-fn hit_category(x: f32, y: f32) -> Option<usize> {
-    let rows_y = CATS_Y + 80.0;
-    let row_h = 46.0;
-    if x < RIGHT_X + 12.0 || x > RIGHT_X + RIGHT_W - 12.0 {
-        return None;
-    }
-    for i in 0..CAT_COUNT {
-        let ry = rows_y + i as f32 * row_h - 6.0;
-        if y >= ry && y < ry + row_h - 4.0 {
-            return Some(i);
-        }
-    }
-    None
-}
+// Which category a click landed on is `Layout::hit_category` -- the same
+// rectangles `draw_categories` paints the selection wash into.
 
 // ---- app --------------------------------------------------------------------
 
@@ -590,11 +781,9 @@ impl bindings::Guest for Component {
         let mut selected = load_selected();
 
         let raw = args::raw();
-        let quick = raw
-            .as_bytes()
-            .split(|byte| *byte == b'\n')
-            .next()
-            .is_some_and(|first| first == b"quick");
+        let first_arg = raw.as_bytes().split(|byte| *byte == b'\n').next();
+        let quick = first_arg.is_some_and(|first| first == b"quick");
+        let resize_check = first_arg.is_some_and(|first| first == b"resize-check");
 
         if quick {
             // The automated shot: the full dashboard, nothing filtered.
@@ -606,22 +795,94 @@ impl bindings::Guest for Component {
             return 0;
         }
 
-        let _ = draw(canvas, selected);
+        if resize_check {
+            // Drive the window through several shapes and confirm a click at
+            // the centre of the category row just drawn selects that row.
+            let out = stdio::stdout();
+            let sizes = [(1080u32, 700u32), (1400u32, 520u32), (700u32, 900u32)];
+            let mut all_ok = true;
+            for (w, h) in sizes {
+                if window::set_size(win, types::WindowSize { width: w, height: h }).is_err() {
+                    all_ok = false;
+                    continue;
+                }
+                let mut drain = 0u32;
+                while drain < 8 && events::wait(Some(1)).is_some() {
+                    drain += 1;
+                }
+                let Ok(layout) = draw(canvas, None) else {
+                    all_ok = false;
+                    continue;
+                };
+
+                let _ = out.write(b"size:");
+                let mut nbuf = [0u8; 12];
+                let _ = out.write(u32_bytes(layout.width as u32, &mut nbuf));
+                let _ = out.write(b"x");
+                let _ = out.write(u32_bytes(layout.height as u32, &mut nbuf));
+
+                let target = 2usize;
+                let strip = layout.cat_row(target);
+                let hit = layout.hit_category(strip.x + strip.w * 0.5, strip.y + strip.h * 0.5);
+                let row_ok = hit == Some(target);
+                // A point left of the strip must miss it.
+                let miss_ok = layout.hit_category(strip.x - 6.0, strip.y + strip.h * 0.5).is_none();
+                // The two columns must not overlap at any size.
+                let cols_ok = layout.margin + layout.left_w <= layout.right_x;
+                // ...and the right column's cards must not overlap each other.
+                let stack_ok = layout.cats.y + layout.cats.h <= layout.insight.y;
+
+                if row_ok && miss_ok && cols_ok && stack_ok {
+                    let _ = out.write(b" hit:ok\n");
+                } else {
+                    let _ = out.write(b" hit:WRONG\n");
+                    all_ok = false;
+                }
+            }
+            if all_ok {
+                let _ = out.write(b"resize:ok\n");
+            } else {
+                let _ = out.write(b"resize:FAILED\n");
+            }
+            let _ = out.flush();
+            let _ = window::close(win);
+            return if all_ok { 0 } else { 40 };
+        }
+
+        // The layout the visible frame was drawn with, so clicks follow the
+        // window when it is resized.
+        let mut layout = match draw(canvas, selected) {
+            Ok(layout) => layout,
+            Err(_) => {
+                let _ = window::close(win);
+                return 34;
+            }
+        };
 
         let mut idle = 0u32;
         for _ in 0..MAX_WAIT_ROUNDS {
             match events::wait(Some(WAIT_ROUND_MILLIS)) {
                 Some(types::Event::Pointer(p)) if p.pressed => {
                     idle = 0;
-                    let hit = hit_category(p.x, p.y);
+                    let hit = layout.hit_category(p.x, p.y);
                     if let Some(i) = hit {
                         // Click the active row again to clear the filter.
                         selected = if selected == Some(i) { None } else { Some(i) };
                         save_selected(selected);
-                        let _ = draw(canvas, selected);
+                        if let Ok(fresh) = draw(canvas, selected) {
+                            layout = fresh;
+                        }
                     }
                 }
                 Some(types::Event::CloseRequested(id)) if id == win => break,
+                // Resized: recompute the layout from the canvas's new size.
+                // Hit-testing follows, because it reads this same layout.
+                Some(types::Event::Resized(_)) | Some(types::Event::RedrawRequested(_)) => {
+                    idle = 0;
+                    if let Ok(fresh) = draw(canvas, selected) {
+                        layout = fresh;
+                    }
+                }
                 Some(_) => idle = 0,
                 None => {
                     idle += 1;
