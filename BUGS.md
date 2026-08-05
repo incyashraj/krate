@@ -147,19 +147,56 @@ Evidence: check-app has six stages -- layout, manifest, build, imports, run,
 Fix:      A usability stage. Must not produce false failures -- a flaky gate
           gets skipped and then protects nothing.
 
-### K-007 — This machine's AI accounts are unusable
+### K-007 — Two of this machine's three AI accounts are unusable
 Status:   open
 Owner:    unclaimed
-Severity: blocker
+Severity: annoyance
 Class:    environment
 Found:    2026-08-05, lead, trying to verify Krate Mode end to end
 Evidence: `claude -p` returns "OAuth session expired and could not be
           refreshed". `codex exec` returns "The 'gpt-5.6-sol' model requires a
           newer version of Codex".
+          **Grok works.** `krate create --agent grok` authored a 584-line chess
+          board in 237s and a real tip calculator in 229s, both from scratch --
+          verified by timing and by reading the source. So authoring can still
+          be measured end to end; it was a blocker and is not any more.
 Fix:      Not ours. Yashraj re-authenticates Claude and updates Codex. Recorded
-          because it blocks every end-to-end authoring measurement and must not
-          be mistaken for a product failure -- it already turned a 14/14 pass
-          rate into a reported 23% once.
+          because it once turned a 14/14 pass rate into a reported 23% and must
+          not be mistaken for a product failure again.
+
+### K-013 — Our development history leaks into every app a user makes
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-05, W17, outsider testing -- it read the Cargo.toml of an app
+          it had just made and found notes addressed to us, not to it
+Evidence: `crates/author/src/lib.rs:1045` writes this into every generated
+          Cargo.toml: "It was missing here, so every windowed app the agent
+          wrote had to discover the missing dep through a failed build and add
+          it back by hand." Another names an image viewer that pulled four wasi
+          imports. These are our bug-fix notes from past sessions, shipped to
+          strangers inside their own app.
+          W17 reasonably concluded from them that it had been handed a
+          pre-built template rather than a fresh authoring run, and stopped.
+Fix:      Comments in generated files should explain the code to the person who
+          now owns it. The history belongs in our repo, not in their app.
+
+### K-014 — A debug build shadows the real release on PATH
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    environment
+Found:    2026-08-05, W17, checking what `krate` actually resolves to
+Evidence: `which krate` gives
+          `/Users/yashrajpardeshi/Projects/layer6x6/target/debug/krate`
+          (`krate 0.1.0-dev`). The installed release at `~/.local/bin/krate`
+          (rc20) is shadowed. Anything measured through the dev binary is
+          contaminated: it is not the code a user runs.
+Fix:      Not a product defect, but it silently invalidates measurements and has
+          already made a fixed bug appear to come back twice. Every command in
+          this repo must use an absolute path, and outsider testing must use
+          ~/.local/bin/krate explicitly.
 
 ---
 

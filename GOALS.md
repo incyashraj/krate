@@ -70,7 +70,7 @@ defect.
 | **W14** | Usability stage in check-app | G3, K-006 | running |
 | **W15** | Text measurement, delete the guess from seven apps | G2, K-002 | running |
 | **W16** | The benchmark: corpus, harness, honest score | G1 | running |
-| **W17** | Outsider testing with Grok, from a clean machine's point of view | G4 | starting |
+| **W17** | Outsider testing with Grok, from a clean machine's point of view | G4 | running -- resumed after verifying its blocker |
 
 ### What each is actually trying to prove
 
@@ -106,6 +106,12 @@ workstation lands, so a session that dies mid-flight loses nothing.
 
 Newest first. One line per landing.
 
+- **2026-08-05** — W17 (outsider) stopped mid-run rather than report eight
+  working apps on a path it suspected was serving templates. Two of its three
+  findings hold and are filed (K-013, K-014); the central one -- that `--agent
+  grok` does not really call Grok -- is wrong, disproved by timing a chess board
+  at 237s and 584 lines. Grok authoring works end to end, which also downgrades
+  K-007 from blocker to annoyance.
 - **2026-08-05** — Workstations W12-W16 launched against the capability audit.
   BUGS.md and the claim protocol established.
 - **2026-08-05** — rc20 shipped: MCP server with seven authoring tools, five AI
