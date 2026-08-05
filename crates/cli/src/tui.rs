@@ -180,7 +180,11 @@ fn make_named_app(request: &str) -> Result<()> {
         }
         Err(err) => {
             println!();
-            println!("  That did not work.");
+            println!(
+                "  {} {}",
+                style::bad(glyphs().cross),
+                style::bad("that did not work")
+            );
             println!();
             for line in err.to_string().lines().take(12) {
                 println!("  {line}");
@@ -265,7 +269,11 @@ fn change_an_app(bundle: &Path) -> Result<()> {
         }
         Err(err) => {
             println!();
-            println!("  That change did not work, and your app is untouched.");
+            println!(
+                "  {} {}",
+                style::bad(glyphs().cross),
+                style::bad("that change did not work -- your app is untouched")
+            );
             println!();
             for line in err.to_string().lines().take(12) {
                 println!("  {line}");
@@ -401,6 +409,26 @@ fn connect_ai() -> Result<()> {
     println!("  by asking it in chat. You only do this once.");
     println!();
 
+    match crate::github_identity() {
+        Some(identity) => {
+            println!(
+                "  {} {} {}",
+                style::good(glyphs().tick),
+                style::dim("published apps are credited to"),
+                style::bold(&identity)
+            );
+            println!("  {}", style::dim("press s to sign out of GitHub"));
+            println!();
+        }
+        None => {
+            println!(
+                "  {}",
+                style::dim("publishing will ask you to sign in with GitHub")
+            );
+            println!();
+        }
+    }
+
     let targets = crate::connected_targets();
     for (index, (target, connected)) in targets.iter().enumerate() {
         println!(
@@ -422,6 +450,15 @@ fn connect_ai() -> Result<()> {
     let answer = prompt("  > ")?;
     let answer = answer.trim();
     if answer.eq_ignore_ascii_case("b") || answer.is_empty() {
+        println!();
+        return Ok(());
+    }
+    if answer.eq_ignore_ascii_case("s") {
+        match crate::github_sign_out() {
+            Ok(true) => println!("\n  {} signed out", style::good(glyphs().tick)),
+            Ok(false) => println!("\n  {}", style::dim("you were not signed in")),
+            Err(err) => println!("\n  {} {err}", style::warn(glyphs().cross)),
+        }
         println!();
         return Ok(());
     }
@@ -586,9 +623,10 @@ fn show_history() -> Result<()> {
             .map(|path| path.exists())
             .unwrap_or(false);
         println!(
-            "  {}  {}  {}",
+            "  {}  {}  {}  {}",
             style::key(&(index + 1).to_string()),
-            pad(&truncate(&entry.request, 44), 44),
+            pad(&truncate(&entry.request, 38), 38),
+            style::dim(&pad(&when_ago(entry.when), 8)),
             if built {
                 style::good(&format!("{} built", glyphs().tick))
             } else {
@@ -623,6 +661,22 @@ fn show_history() -> Result<()> {
         return after_build(bundle);
     }
     make_named_app(&entry.request)
+}
+
+/// How long ago, in the shortest form that still says something.
+fn when_ago(seconds: u64) -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let delta = now.saturating_sub(seconds);
+    if delta < 3600 {
+        format!("{}m ago", (delta / 60).max(1))
+    } else if delta < 86_400 {
+        format!("{}h ago", delta / 3600)
+    } else {
+        format!("{}d ago", delta / 86_400)
+    }
 }
 
 /// Clip a request to fit a column without wrapping the row.

@@ -2510,6 +2510,16 @@ pub(crate) fn revise_app_for_tui(
     }
 }
 
+/// Who published apps are credited to, if anyone is signed in.
+pub(crate) fn github_identity() -> Option<String> {
+    github_auth::current().map(|identity| identity.display_name().to_string())
+}
+
+/// Forget the GitHub sign-in.
+pub(crate) fn github_sign_out() -> Result<bool> {
+    github_auth::sign_out()
+}
+
 /// Connect one named target, without asking again which one.
 pub(crate) fn connect_one_for_tui(target: &ClientTarget) -> Result<()> {
     connect(Some(target.key), true, false)?;
@@ -2541,7 +2551,7 @@ pub(crate) fn reopen_app(target: &ClientTarget) -> Result<bool> {
             .status()
             .map(|status| status.success())
             .unwrap_or(false);
-        return Ok(opened);
+        Ok(opened)
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -4883,7 +4893,7 @@ fn run_component(request: RunRequest) -> Result<u8> {
             ok: Some(matches!(opened, Ok(0))),
         },
     );
-    return opened;
+    opened
 }
 
 fn run_component_inner(request: RunRequest) -> Result<u8> {

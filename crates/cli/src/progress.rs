@@ -84,11 +84,6 @@ impl Progress {
         let _ = self.tx.send(Message::Note(text.into()));
     }
 
-    /// Stop drawing and leave the finished stages on screen.
-    pub fn finish(mut self) {
-        self.shutdown();
-    }
-
     /// Stop a display held behind a shared handle.
     ///
     /// The sink hands a clone to the authoring run, so by the time the caller
@@ -332,9 +327,9 @@ mod tests {
     fn the_display_starts_and_stops_without_a_terminal() {
         // In CI there is no tty; starting and finishing must still be clean
         // rather than panicking or hanging on the draw thread.
-        let progress = Progress::start(AUTHOR_STAGES);
+        let progress = std::sync::Arc::new(Progress::start(AUTHOR_STAGES));
         progress.advance(1);
         progress.note("writing lib.rs");
-        progress.finish();
+        Progress::stop(&progress);
     }
 }

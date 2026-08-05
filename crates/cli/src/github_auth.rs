@@ -134,10 +134,10 @@ pub fn sign_in() -> Result<Identity> {
     println!();
     println!("  {}", style::bold("Sign in with GitHub"));
     println!();
-    println!("  {}  {}", style::dim("1."), "Open this page:");
+    println!("  {}  Open this page:", style::dim("1."));
     println!("      {}", style::accent(&device.verification_uri));
     println!();
-    println!("  {}  {}", style::dim("2."), "Enter this code:");
+    println!("  {}  Enter this code:", style::dim("2."));
     println!("      {}", style::bold(&style::accent(&device.user_code)));
     println!();
 

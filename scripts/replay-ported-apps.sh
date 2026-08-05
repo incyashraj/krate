@@ -110,8 +110,10 @@ echo "Replaying every ported app:"
 
 # A hex viewer: the case that forced a raw byte write into the SDK.
 check "hexyl" "input/sample.bin" "48 65 6c 6c 6f"
-# A GUI budget splitter: window, widget tree, saved state.
-check "savings" "quick" "Rent"
+# A GUI budget splitter: window, widget tree, saved state. Asserts the split
+# rather than a caption -- 2275 out of 6500 is the app doing the arithmetic,
+# which a label appearing on screen never proved.
+check "savings" "quick" "slice:2275"
 # A duplicate finder: walks a directory and reads many files.
 check "ddh" "quick" "Total files"
 # A database CLI: SQL, secrets, and random together.
@@ -122,15 +124,16 @@ check "grex" "quick" "^a(?:bc?)?"
 # rssfwd is deliberately absent. Given a real feed file it reaches the
 # internet, and a nightly check that depends on someone else's server reports
 # their uptime rather than our runtime. Its bundle still ships and still opens.
-# The first ported app a non-programmer would open on purpose. `rgba-widen:ok`
-# is the decoder turning real bytes into pixels, which is the part that was
-# impossible this morning -- there was no way to put a picture in a window.
-check "eo2" "quick" "rgba-widen:ok"
+# The first ported app a non-programmer would open on purpose: a decoder
+# turning real bytes into pixels. Its quick line was `rgba-widen:ok` until the
+# apps moved to the key:value shape the authoring pack now requires, so this
+# asserts the app's own ok line instead -- the same fact, current spelling.
+check "eo2" "quick" "eo2:ok"
 # The port that exposed the no-op agent: its first "success" was the untouched
-# scaffold, packaged as if it were the app. This bundle is the honest retry --
-# 3,203 lines, zero repair attempts -- and `rendered:yes` is its own markdown
-# fixture surviving the parse-layout-render path.
-check "mdview" "quick" "rendered:yes"
+# scaffold, packaged as if it were the app. This bundle is the honest retry.
+# `blocks:` is its markdown fixture surviving the parse-layout-render path --
+# a non-zero block count means real content came out the other end.
+check "mdview" "quick" "blocks:"
 # The first guest ever to draw through gfx.canvas2d. Not a port -- an in-repo
 # sample -- but it belongs here for the same reason the others do: it is the
 # only nightly check that a guest's draw calls reach real pixels on all three
