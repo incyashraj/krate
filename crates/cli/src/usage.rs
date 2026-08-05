@@ -21,6 +21,7 @@
 //! a short timeout, so it can never slow down or break a command -- a metric
 //! that costs the user something is not worth having.
 
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -138,6 +139,14 @@ fn announce_once() -> bool {
     let Some(dir) = krate_dir() else {
         return false;
     };
+    // Never speak into a pipe. A script reading krate's output has no way to
+    // tell a one-time notice from the answer it asked for -- this broke the
+    // website build, where a helper merged stderr into stdout and then tried
+    // to parse it as JSON. The counting still happens; only the notice waits
+    // for a terminal to print to.
+    if !std::io::stderr().is_terminal() || !std::io::stdout().is_terminal() {
+        return true;
+    }
     let marker = dir.join("usage-notice-shown");
     if marker.exists() {
         return true;

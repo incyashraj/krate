@@ -178,7 +178,7 @@ async function usage(request, env) {
 
   // A closed set on this side too. Anything unexpected is dropped rather than
   // stored, so a bad or malicious client cannot turn this into free storage.
-  const actions = ["make", "open", "publish"];
+  const actions = ["install", "make", "open", "publish"];
   const id = String(event.id || "").slice(0, 64);
   const action = actions.includes(event.action) ? event.action : null;
   if (!/^[0-9a-f]{8,64}$/.test(id) || !action) {
@@ -197,6 +197,12 @@ async function usage(request, env) {
     expirationTtl: 90 * 24 * 60 * 60,
   });
   await bump(env, `count:${day}:${action}`);
+  if (event.ok === false) {
+    await bump(env, `count:${day}:${action}-failed`);
+  }
+  if (event.ai === true) {
+    await bump(env, `count:${day}:${action}-by-ai`);
+  }
   return text("ok");
 }
 
