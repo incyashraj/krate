@@ -56,6 +56,12 @@ export default {
       if (request.method === "GET" && pathname === "/apps") {
         return cors(await list(env));
       }
+      if (request.method === "POST" && pathname.startsWith("/shot/")) {
+        return cors(await putShot(request, pathname.slice(6), env));
+      }
+      if (request.method === "GET" && pathname.startsWith("/shot/")) {
+        return cors(await getShot(pathname.slice(6), env));
+      }
       if (request.method === "GET" && pathname.startsWith("/a/")) {
         return cors(await fetchBundle(pathname.slice(3), env));
       }
@@ -125,6 +131,43 @@ async function publish(request, env) {
   return json({ url: `${base}/a/${hash}`, id: hash });
 }
 
+/// Store a screenshot for an app already published.
+///
+/// Separate from the bundle upload so a shot can be added or replaced without
+/// republishing, and so a publisher with no screenshot still gets a working
+/// listing rather than a rejection.
+async function putShot(request, hash, env) {
+  const identity = await verifyGitHub(request, env);
+  if (!identity) return text("sign in first", 401);
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+
+  const body = new Uint8Array(await request.arrayBuffer());
+  // A PNG and a sane size. Anything else is refused rather than served back
+  // to a browser as an image later.
+  if (body.length === 0 || body.length > 2 * 1024 * 1024) {
+    return text("a shot must be a PNG under 2 MiB", 413);
+  }
+  if (!(body[0] === 0x89 && body[1] === 0x50 && body[2] === 0x4e && body[3] === 0x47)) {
+    return text("that is not a PNG", 422);
+  }
+  await env.BUNDLES.put(`shot:${hash}`, body, {
+    httpMetadata: { contentType: "image/png" },
+  });
+  return json({ ok: true });
+}
+
+async function getShot(hash, env) {
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const object = await env.BUNDLES.get(`shot:${hash}`);
+  if (!object) return text("not found", 404);
+  return new Response(object.body, {
+    headers: {
+      "content-type": "image/png",
+      "cache-control": "public, max-age=86400",
+    },
+  });
+}
+
 // ----------------------------------------------------------------- fetching
 
 async function fetchBundle(hash, env) {
@@ -137,13 +180,33 @@ async function fetchBundle(hash, env) {
   if (!object) {
     return text("not found", 404);
   }
+
+  // Name the download after the app, not its hash. "84380a400d91.krate" tells
+  // the person nothing, sorts meaninglessly in a downloads folder, and looks
+  // like something went wrong -- the app already knows what it is called.
+  const meta = await env.APPS.get(`app:${hash}`);
+  let filename = `${hash.slice(0, 12)}.krate`;
+  if (meta) {
+    try {
+      const name = JSON.parse(meta).name || "";
+      const slug = name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 48);
+      if (slug) filename = `${slug}.krate`;
+    } catch (_) {
+      // A bad metadata record must not stop the download.
+    }
+  }
+
   return new Response(object.body, {
     headers: {
       "content-type": "application/octet-stream",
       // Content-addressed, so a bundle at a given URL can never change and
       // may be cached forever.
       "cache-control": "public, max-age=31536000, immutable",
-      "content-disposition": `attachment; filename="${hash.slice(0, 12)}.krate"`,
+      "content-disposition": `attachment; filename="${filename}"`,
     },
   });
 }
@@ -156,7 +219,13 @@ async function list(env) {
     if (!raw) continue;
     const hash = key.name.slice("app:".length);
     const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
-    apps.push({ id: hash, url: `${base}/a/${hash}`, meta: JSON.parse(raw) });
+    const shot = await env.BUNDLES.head(`shot:${hash}`);
+    apps.push({
+      id: hash,
+      url: `${base}/a/${hash}`,
+      shot: shot ? `${base}/shot/${hash}` : null,
+      meta: JSON.parse(raw),
+    });
   }
   apps.sort((a, b) => (b.meta.published || 0) - (a.meta.published || 0));
   return json({ apps });

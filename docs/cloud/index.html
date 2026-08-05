@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/krate.css" />
   <link rel="icon" href="/krate-favicon.png" />
   <style>
-    .wrap { max-width: 780px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+    .wrap { max-width: 1000px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
     .masthead { display: flex; align-items: center; gap: .6rem; margin-bottom: 2.4rem; }
     .masthead img { width: 30px; height: 30px; border-radius: 7px; }
     .masthead a { color: var(--text); text-decoration: none; font-weight: 600; letter-spacing: -.01em; }
@@ -19,10 +19,26 @@
     h1 { margin: 0 0 .35rem; font-size: 1.9rem; letter-spacing: -.02em; }
     .lede { color: var(--muted); margin: 0 0 2.2rem; line-height: 1.6; max-width: 46rem; }
 
+    .grid {
+      display: grid; gap: 1rem;
+      grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    }
     .app {
       border: 1px solid var(--line); border-radius: 13px;
-      background: var(--panel); padding: 1.15rem 1.3rem; margin-bottom: .9rem;
+      background: var(--panel); overflow: hidden;
+      display: flex; flex-direction: column;
+      transition: border-color .15s ease, transform .15s ease;
     }
+    .app:hover { border-color: var(--line-strong); transform: translateY(-2px); }
+    /* The thumbnail is the point of a store: you decide by looking. */
+    .thumb {
+      aspect-ratio: 4 / 3; background: var(--bg);
+      border-bottom: 1px solid var(--line);
+      display: grid; place-items: center; overflow: hidden;
+    }
+    .thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+    .thumb .none { color: var(--quiet); font-size: .78rem; }
+    .app-body { padding: .9rem 1rem 1rem; display: flex; flex-direction: column; flex: 1; }
     .app-top { display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
     .app-name { font-weight: 600; color: var(--text); font-size: 1.02rem; }
     .app-size { color: var(--quiet); font-size: .82rem; margin-left: auto; }
@@ -51,6 +67,18 @@
     .empty { color: var(--quiet); text-align: center; padding: 3rem 1rem; line-height: 1.7; }
     .empty a { color: var(--blue-soft); }
     .note { color: var(--quiet); font-size: .87rem; line-height: 1.65; margin-top: 2.5rem; }
+    .how {
+      margin-top: 3rem; border-top: 1px solid var(--line); padding-top: 1.8rem;
+      display: grid; gap: 1.4rem; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+    .how h2 { font-size: .8rem; text-transform: uppercase; letter-spacing: .09em;
+              color: var(--quiet); margin: 0 0 .5rem; font-weight: 600; }
+    .how p { color: var(--muted); line-height: 1.65; margin: 0; font-size: .92rem; }
+    .how a { color: var(--blue-soft); }
+    .how code {
+      font-family: var(--mono); background: var(--bg); border: 1px solid var(--line);
+      border-radius: 5px; padding: .1rem .4rem; color: var(--blue-soft);
+    }
   </style>
 </head>
 <body>
@@ -75,10 +103,20 @@
 
     <div id="list"></div>
 
-    <p class="note">
-      Made something? <a href="/publish/">Publish it</a>, or run
-      <code>krate publish yourapp.krate</code>.
-    </p>
+    <div class="how">
+      <h2>How to open one</h2>
+      <p>
+        <a href="/">Install Krate</a>, then copy an app's command and paste it
+        into your terminal. Krate downloads the app, shows you what it is
+        asking for, and opens it once you agree.
+      </p>
+      <h2>How to make your own</h2>
+      <p>
+        Type <code>krate</code> in a terminal. It asks what you want to make,
+        writes it with an AI you already have, and hands you the file. Then
+        <a href="/publish/">publish it</a> and it appears here.
+      </p>
+    </div>
   </main>
 
   <script>
@@ -115,28 +153,40 @@
             '<a href="/publish/">Be the first</a>.</p>';
           return;
         }
-        list.innerHTML = apps
-          .map((app) => {
-            const m = app.meta || {};
-            const command = "krate run " + app.url;
-            return `
-              <article class="app">
-                <div class="app-top">
-                  <span class="app-name">${esc(m.name || "Untitled app")}</span>
-                  <span class="app-size">${kb(m.size || 0)} &middot; ${ago(m.published || 0)}</span>
-                </div>
-                ${m.description ? `<p class="app-desc">${esc(m.description)}</p>` : ""}
-                <div class="app-by">
-                  ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="" />` : ""}
-                  <span>by <a href="${esc(m.author_url || "#")}" rel="noopener">${esc(m.author || "anonymous")}</a></span>
-                </div>
-                <div class="run">
-                  <code>${esc(command)}</code>
-                  <button data-copy="${esc(command)}">Copy</button>
-                </div>
-              </article>`;
-          })
-          .join("");
+        list.innerHTML =
+          '<div class="grid">' +
+          apps
+            .map((app) => {
+              const m = app.meta || {};
+              const command = "krate run " + app.url;
+              return `
+                <article class="app">
+                  <div class="thumb">
+                    ${
+                      app.shot
+                        ? `<img loading="lazy" src="${esc(app.shot)}" alt="${esc(m.name || "the app")} running" />`
+                        : '<span class="none">no screenshot yet</span>'
+                    }
+                  </div>
+                  <div class="app-body">
+                    <div class="app-top">
+                      <span class="app-name">${esc(m.name || "Untitled app")}</span>
+                    </div>
+                    ${m.description ? `<p class="app-desc">${esc(m.description)}</p>` : ""}
+                    <div class="app-by">
+                      ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="" />` : ""}
+                      <span>by <a href="${esc(m.author_url || "#")}" rel="noopener">${esc(m.author || "anonymous")}</a></span>
+                      <span class="app-size">${kb(m.size || 0)}</span>
+                    </div>
+                    <div class="run">
+                      <code>${esc(command)}</code>
+                      <button data-copy="${esc(command)}">Copy</button>
+                    </div>
+                  </div>
+                </article>`;
+            })
+            .join("") +
+          "</div>";
 
         list.addEventListener("click", (event) => {
           const button = event.target.closest("button[data-copy]");

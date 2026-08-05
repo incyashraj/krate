@@ -88,7 +88,24 @@
       border: 1px solid var(--blue); border-radius: 12px;
       background: var(--panel-raised); padding: 1.2rem 1.35rem; margin-top: 1.5rem;
     }
-    .result a { color: var(--blue-soft); word-break: break-all; }
+    .result a { color: var(--blue-soft); }
+    .share-row {
+      display: flex; gap: .5rem; align-items: center;
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 8px; padding: .55rem .65rem; margin-bottom: .4rem;
+    }
+    /* A 64-character hash has nowhere to wrap, so it used to push out of its
+       own box. Scrolling inside the row keeps the layout intact. */
+    .share-row code {
+      font-family: var(--mono); font-size: .78rem; color: var(--blue-soft);
+      overflow-x: auto; white-space: nowrap; flex: 1; min-width: 0;
+    }
+    .share-row button {
+      background: transparent; border: 1px solid var(--line-strong);
+      color: var(--muted); border-radius: 6px; padding: .28rem .6rem;
+      font: inherit; font-size: .76rem; cursor: pointer; flex-shrink: 0;
+    }
+    .share-row button:hover { color: var(--text); border-color: var(--blue); }
     .error { color: var(--yellow); font-size: .9rem; margin-top: .7rem; }
     .filename { color: var(--text); font-family: var(--mono); font-size: .9rem; }
     .muted { color: var(--quiet); }
@@ -175,9 +192,23 @@
 
     <div class="result" id="result" hidden>
       <strong>Published.</strong>
-      <p class="note" style="margin:.5rem 0">Anyone can run it with:</p>
-      <p class="filename"><code id="runcmd"></code></p>
-      <p class="note" style="margin:.6rem 0 0">Or send them this link: <a id="link" href="#"></a></p>
+      <p class="note" style="margin:.5rem 0 .9rem">
+        It is now on <a href="/cloud/">Krate Cloud</a>. Send this link to anyone
+        &mdash; they need Krate installed, and nothing else.
+      </p>
+
+      <div class="share-row">
+        <code id="link-text"></code>
+        <button type="button" id="copy-link">Copy</button>
+      </div>
+
+      <p class="note" style="margin:1rem 0 .4rem">
+        Or, if they would rather use the terminal:
+      </p>
+      <div class="share-row">
+        <code id="runcmd"></code>
+        <button type="button" id="copy-cmd">Copy</button>
+      </div>
     </div>
   </main>
 
@@ -396,8 +427,17 @@
         const published = await response.json();
         $("result").hidden = false;
         $("runcmd").textContent = "krate run " + published.url;
-        $("link").href = published.url;
-        $("link").textContent = published.url;
+        $("link-text").textContent = published.url;
+        for (const [id, value] of [
+          ["copy-link", published.url],
+          ["copy-cmd", "krate run " + published.url],
+        ]) {
+          $(id).onclick = () => {
+            navigator.clipboard.writeText(value);
+            $(id).textContent = "Copied";
+            setTimeout(() => ($(id).textContent = "Copy"), 1200);
+          };
+        }
         button.textContent = "Published";
       } catch (err) {
         $("error").hidden = false;
