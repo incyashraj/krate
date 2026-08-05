@@ -55,6 +55,15 @@ pub const MANIFEST_ENTRY: &str = "manifest.toml";
 pub const COMPONENT_ENTRY: &str = "code.wasm";
 /// Root for optional portable resources inside the bundle.
 pub const ASSETS_PREFIX: &str = "assets/";
+/// Root for the app's own source, so a bundle can be changed and rebuilt.
+///
+/// A `.krate` used to carry only compiled wasm, which meant an app could be
+/// run but never altered -- not by the person who made it a week later, and
+/// not at all by someone it was sent to. Shipping the source makes any bundle
+/// editable by whoever holds it, which is what "one file you can send anyone"
+/// ought to mean. It roughly doubles a small app's size and that is a fair
+/// trade for the app remaining alive.
+pub const SOURCE_PREFIX: &str = "source/";
 /// Conventional file extension.
 pub const BUNDLE_EXTENSION: &str = "krate";
 
@@ -239,6 +248,21 @@ pub fn pack_with_assets(
     assets_dir: Option<&Path>,
     output_path: &Path,
 ) -> Result<u64> {
+    pack_with_source(manifest_path, component_path, assets_dir, None, output_path)
+}
+
+/// Pack a bundle, optionally embedding the app's source directory.
+///
+/// `source_dir` is the crate root -- the directory holding `Cargo.toml` and
+/// `src/`. Only the files needed to rebuild are taken; `target/` is the bulk of
+/// a crate directory and is never useful inside a bundle.
+pub fn pack_with_source(
+    manifest_path: &Path,
+    component_path: &Path,
+    assets_dir: Option<&Path>,
+    source_dir: Option<&Path>,
+    output_path: &Path,
+) -> Result<u64> {
     let manifest_text =
         fs::read_to_string(manifest_path).map_err(|err| io_err(manifest_path, err))?;
     let manifest =
@@ -271,6 +295,13 @@ pub fn pack_with_assets(
             io::copy(&mut input, &mut zip).map_err(|err| io_err(output_path, err))?;
         }
     }
+    if let Some(source_dir) = source_dir.filter(|path| path.is_dir()) {
+        for (entry_name, source) in collect_source(source_dir)? {
+            zip.start_file(entry_name, options)?;
+            let mut input = File::open(&source).map_err(|err| io_err(&source, err))?;
+            io::copy(&mut input, &mut zip).map_err(|err| io_err(output_path, err))?;
+        }
+    }
     zip.finish()?;
 
     let size = fs::metadata(output_path)
@@ -289,6 +320,7 @@ pub struct OpenBundle {
     manifest_path: PathBuf,
     component_path: PathBuf,
     assets_path: Option<PathBuf>,
+    source_path: Option<PathBuf>,
     manifest: Manifest,
 }
 
@@ -306,6 +338,15 @@ impl OpenBundle {
     /// Root of the extracted portable assets, when the bundle contains any.
     pub fn assets_path(&self) -> Option<&Path> {
         self.assets_path.as_deref()
+    }
+
+    /// Path to the app's extracted source, when the bundle carries it.
+    ///
+    /// This is what makes an app changeable: hand this directory and a sentence
+    /// to an AI and it can rebuild the app rather than write a new one from
+    /// nothing. `None` for bundles packed before source shipped.
+    pub fn source_path(&self) -> Option<&Path> {
+        self.source_path.as_deref()
     }
 
     /// The parsed manifest.
@@ -387,6 +428,28 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
         }
     }
 
+    // Source is extracted through the same guard as assets, so a crafted entry
+    // name cannot write outside the temp directory.
+    let source_path = dir.path().join("source");
+    let source_names: Vec<String> = {
+        let mut names = Vec::new();
+        for index in 0..archive.len() {
+            let name = archive.by_index(index)?.name().to_string();
+            if name.starts_with(SOURCE_PREFIX) && !name.ends_with('/') {
+                names.push(name);
+            }
+        }
+        names
+    };
+    for name in &source_names {
+        let relative = safe_source_relative_path(name)?;
+        let destination = source_path.join(relative);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|err| io_err(parent, err))?;
+        }
+        extract_asset_entry(&mut archive, name, &destination)?;
+    }
+
     let manifest_text =
         fs::read_to_string(&manifest_path).map_err(|err| io_err(&manifest_path, err))?;
     let manifest =
@@ -402,8 +465,58 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
         manifest_path,
         component_path,
         assets_path: (!asset_names.is_empty()).then_some(assets_path),
+        source_path: (!source_names.is_empty()).then_some(source_path),
         manifest,
     })
+}
+
+/// Gather the files needed to rebuild an app, under [`SOURCE_PREFIX`].
+///
+/// Skips what cannot be rebuilt from or would bloat the bundle: `target/` is
+/// build output and is usually far larger than the app itself, `Cargo.lock`
+/// pins versions that may not resolve on someone else's machine, and
+/// `bindings.rs` is regenerated from the WIT on every build. Everything else
+/// under the crate root is taken as-is.
+fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
+    fn skip(name: &str) -> bool {
+        matches!(name, "target" | "Cargo.lock" | "bindings.rs" | ".git")
+    }
+
+    fn visit(root: &Path, current: &Path, out: &mut Vec<(String, PathBuf)>) -> Result<()> {
+        let mut entries = fs::read_dir(current)
+            .map_err(|err| io_err(current, err))?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(|err| io_err(current, err))?;
+        entries.sort_by_key(|entry| entry.file_name());
+        for entry in entries {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if skip(&name) {
+                continue;
+            }
+            let metadata = fs::symlink_metadata(&path).map_err(|err| io_err(&path, err))?;
+            // A symlink out of the crate would pull in arbitrary files, the
+            // same reason assets refuse them.
+            if metadata.file_type().is_symlink() {
+                return Err(BundleError::AssetSymlink { path });
+            }
+            if metadata.is_dir() {
+                visit(root, &path, out)?;
+                continue;
+            }
+            let relative = path
+                .strip_prefix(root)
+                .map_err(|_| BundleError::Manifest("source path escaped its root".into()))?;
+            let mut entry_name = String::from(SOURCE_PREFIX);
+            entry_name.push_str(&relative.to_string_lossy().replace('\\', "/"));
+            out.push((entry_name, path));
+        }
+        Ok(())
+    }
+
+    let mut out = Vec::new();
+    visit(root, root, &mut out)?;
+    Ok(out)
 }
 
 fn collect_assets(root: &Path) -> Result<Vec<(String, PathBuf)>> {
@@ -495,6 +608,34 @@ fn asset_entry_name(relative: &Path) -> Result<String> {
 fn safe_asset_relative_path(name: &str) -> Result<PathBuf> {
     let relative =
         name.strip_prefix(ASSETS_PREFIX)
+            .ok_or_else(|| BundleError::UnsafeAssetPath {
+                path: name.to_string(),
+            })?;
+    if relative.is_empty() || relative.contains('\\') {
+        return Err(BundleError::UnsafeAssetPath {
+            path: name.to_string(),
+        });
+    }
+    let path = Path::new(relative);
+    if path
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(BundleError::UnsafeAssetPath {
+            path: name.to_string(),
+        });
+    }
+    Ok(path.to_path_buf())
+}
+
+/// The same containment guard as assets, for source entries.
+///
+/// Deliberately a copy rather than a shared generic: these two prefixes are
+/// security boundaries, and a future change to one should not silently loosen
+/// the other.
+fn safe_source_relative_path(name: &str) -> Result<PathBuf> {
+    let relative =
+        name.strip_prefix(SOURCE_PREFIX)
             .ok_or_else(|| BundleError::UnsafeAssetPath {
                 path: name.to_string(),
             })?;
@@ -693,6 +834,46 @@ required = true
             fs::read(extracted.join("icon.bin")).expect("read binary asset"),
             [1, 2, 3]
         );
+    }
+
+    #[test]
+    fn packs_the_source_so_an_app_can_be_changed_later() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+
+        // A crate-shaped directory, including the two things that must NOT be
+        // packed: build output, and a lock file that may not resolve elsewhere.
+        write_temp(dir.path(), "Cargo.toml", b"[package]\nname = \"demo\"\n");
+        write_temp(dir.path(), "Cargo.lock", b"# pinned");
+        fs::create_dir_all(dir.path().join("src")).expect("src");
+        fs::write(dir.path().join("src/lib.rs"), b"fn main() {}").expect("lib");
+        fs::create_dir_all(dir.path().join("target/release")).expect("target");
+        fs::write(dir.path().join("target/release/junk"), b"build output").expect("junk");
+
+        let bundle = dir.path().join("out.krate");
+        pack_with_source(&manifest, &component, None, Some(dir.path()), &bundle)
+            .expect("pack with source");
+
+        let opened = open(&bundle).expect("open");
+        let source = opened.source_path().expect("source shipped");
+        assert!(source.join("Cargo.toml").is_file());
+        assert!(source.join("src/lib.rs").is_file());
+        // The point of shipping source is rebuilding, and neither of these
+        // helps with that: one is output, the other pins versions.
+        assert!(!source.join("Cargo.lock").exists());
+        assert!(!source.join("target").exists());
+    }
+
+    #[test]
+    fn a_bundle_without_source_still_opens() {
+        let dir = TempDir::new().expect("tempdir");
+        let manifest = write_temp(dir.path(), "manifest.toml", MANIFEST.as_bytes());
+        let component = write_temp(dir.path(), "code.wasm", b"\0asm\x01\0\0\0");
+        let bundle = dir.path().join("out.krate");
+        pack(&manifest, &component, &bundle).expect("pack");
+        // Every bundle made before source shipped is this shape.
+        assert!(open(&bundle).expect("open").source_path().is_none());
     }
 
     #[test]

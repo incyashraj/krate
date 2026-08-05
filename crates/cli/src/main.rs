@@ -2262,9 +2262,34 @@ fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
         .parent()
         .map(|parent| parent.join("assets"))
         .filter(|path| path.is_dir());
-    let size = krate_bundle::pack_with_assets(manifest, file, assets.as_deref(), output)
-        .with_context(|| format!("could not pack {}", output.display()))?;
+    // Ship the source next to the wasm when the manifest sits in a crate, so
+    // the app can be changed later rather than only run. Identified by
+    // Cargo.toml: a manifest elsewhere just packs as before.
+    // `--manifest manifest.toml` has an empty parent, which is not the same as
+    // having no parent -- without this the source was silently skipped for the
+    // most natural way to type the command.
+    let source = manifest
+        .parent()
+        .map(|parent| {
+            if parent.as_os_str().is_empty() {
+                PathBuf::from(".")
+            } else {
+                parent.to_path_buf()
+            }
+        })
+        .filter(|parent| parent.join("Cargo.toml").is_file());
+    let size = krate_bundle::pack_with_source(
+        manifest,
+        file,
+        assets.as_deref(),
+        source.as_deref(),
+        output,
+    )
+    .with_context(|| format!("could not pack {}", output.display()))?;
     println!("wrote {} ({size} bytes)", output.display());
+    if source.is_some() {
+        println!("included the app's source, so it can be changed later");
+    }
     if let Some(assets) = assets {
         println!("included portable assets from {}", assets.display());
     }
