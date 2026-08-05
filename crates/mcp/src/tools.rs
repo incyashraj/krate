@@ -352,6 +352,47 @@ impl KrateTools {
         };
         let using_builtin = matches!(author, Author::BuiltIn);
 
+        // Refuse rather than build the wrong app.
+        //
+        // Without an agent the built-in generator runs, and it knows three
+        // shapes: a checklist, a word-count reporter, a voice prompter. Asked
+        // through this server for a habit tracker it produced a checklist
+        // named "habit-tracker", passed every check-app stage, and reported
+        // "succeeded" -- because every stage is mechanical and none asks
+        // whether the app is what was requested. Measured on the first real
+        // session through this server.
+        //
+        // This used to be a warning attached to a successful result, and a
+        // warning the caller can ignore is not a guard: a model that gets a
+        // job id and a green status tells the person their app is ready.
+        //
+        // The refusal is unconditional rather than gated on a keyword match,
+        // because the matcher is deliberately broad -- "a habit tracker" hits
+        // the checklist rule on the word "track". Broad matching is right for
+        // picking a starter an agent will rewrite; it is wrong as a promise
+        // that the built-in generator can serve the request. Over MCP nobody
+        // is reading warnings, so the honest answer is no.
+        // `allow_builtin` is the deliberate opt-in: a caller who genuinely
+        // wants a template (our own tests, a scripted demo) says so. A model
+        // asking for an app never sets it, which is the point.
+        let allow_builtin = arguments
+            .get("allow_builtin")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if using_builtin && !allow_builtin {
+            return Err(
+                "Krate's built-in generator cannot write an arbitrary app. It knows a \
+                 checklist, a word-count reporter, and a voice prompter, and would give \
+                 you the nearest one named after your request -- an app that builds and \
+                 runs and is not what was asked for.\n\n\
+                 Start the build again with `agent` set to a coding agent installed \
+                 here, for example \"claude\". Run `krate ai` to see which are \
+                 available.\n\n\
+                 Tell the person this rather than retrying without an agent."
+                    .to_string(),
+            );
+        }
+
         let id = self.jobs.start(BuildSpec {
             krate_bin: self.krate_bin.clone(),
             description: description.to_string(),
@@ -1065,20 +1106,32 @@ mod tests {
     }
 
     #[test]
-    fn a_build_without_an_agent_warns_that_the_template_generator_is_limited() {
+    fn a_build_without_an_agent_is_refused_rather_than_warned_about() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let result = tools(dir.path())
+        // This test used to assert a warning on a successful start. That is
+        // exactly how someone ended up with a checklist named "habit-tracker"
+        // and a model telling them their app was ready: the warning was
+        // attached to a green result and nothing read it.
+        let err = tools(dir.path())
             .call(
                 "krate_start_build",
                 &json!({ "description": "a pdf merger" }),
             )
-            .expect("start");
+            .expect_err("a build with no agent must be refused");
+        assert!(err.contains("cannot write an arbitrary app"), "{err}");
+        assert!(err.contains("agent"), "it must name the fix: {err}");
+    }
+
+    #[test]
+    fn allow_builtin_is_the_deliberate_way_to_get_a_template() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let result = tools(dir.path())
+            .call(
+                "krate_start_build",
+                &json!({ "description": "a checklist", "allow_builtin": true }),
+            )
+            .expect("an explicit opt-in still works");
         assert_eq!(result["status"], "running");
-        assert_eq!(result["name"], "pdf-merger");
-        // Silence here is how a person ends up with a checklist named
-        // "pdf-merger" and a model insisting it built what they asked for.
-        let warning = result["warning"].as_str().expect("a warning");
-        assert!(warning.contains("cannot write an arbitrary app"));
     }
 
     #[test]
@@ -1091,7 +1144,10 @@ mod tests {
         assert!(err.contains("No builds have been started"));
 
         let started = tools
-            .call("krate_start_build", &json!({ "description": "a timer" }))
+            .call(
+                "krate_start_build",
+                &json!({ "description": "a timer", "allow_builtin": true }),
+            )
             .expect("start");
         let real = started["job_id"].as_str().expect("id");
         let err = tools
@@ -1105,7 +1161,10 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let tools = tools(dir.path());
         let started = tools
-            .call("krate_start_build", &json!({ "description": "a timer" }))
+            .call(
+                "krate_start_build",
+                &json!({ "description": "a timer", "allow_builtin": true }),
+            )
             .expect("start");
         let id = started["job_id"].as_str().expect("id").to_string();
 

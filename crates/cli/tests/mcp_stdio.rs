@@ -284,7 +284,7 @@ fn a_client_can_drive_a_build_from_start_to_a_finished_krate_file() {
     let started_at = Instant::now();
     let started = client.call_tool(
         "krate_start_build",
-        json!({ "description": "a checklist app that saves locally", "name": "todo-list" }),
+        json!({ "description": "a checklist app that saves locally", "name": "todo-list", "allow_builtin": true }),
     );
     let start_took = started_at.elapsed();
     assert!(
@@ -511,7 +511,7 @@ fn the_server_refuses_what_krate_cannot_build_but_not_what_it_can() {
     // The near-miss a topic matcher would get wrong.
     let started = client.call_tool(
         "krate_start_build",
-        json!({ "description": "a full email client with fake sample messages" }),
+        json!({ "description": "a full email client with fake sample messages", "allow_builtin": true }),
     );
     assert!(
         started["content"][0]["text"]
@@ -519,6 +519,60 @@ fn the_server_refuses_what_krate_cannot_build_but_not_what_it_can() {
             .unwrap_or_default()
             .contains("job_id"),
         "a buildable request must start a job: {started}"
+    );
+
+    client.shutdown();
+}
+
+/// Building without an agent must be refused, not warned about.
+///
+/// The regression this guards, measured on the first real session through this
+/// server: someone asked Claude Desktop for a habit tracker, `krate_start_build`
+/// ran without an `agent`, and the built-in generator produced a CHECKLIST
+/// named "habit-tracker". It passed every check-app stage and reported
+/// "succeeded", because every stage is mechanical and none of them asks whether
+/// the app is what was requested. Running that artifact opens a window titled
+/// "Checklist".
+///
+/// A warning attached to a successful result is not a guard. A model that gets
+/// a job id and a green status tells the person their app is ready.
+#[test]
+fn building_without_an_agent_is_refused_rather_than_silently_wrong() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let mut client = Client::launch(root.path());
+    client.request(
+        "initialize",
+        json!({
+            "protocolVersion": "2025-11-25",
+            "capabilities": {},
+            "clientInfo": { "name": "krate-test-client", "version": "1.0.0" },
+        }),
+    );
+
+    let refusal = client.call_tool_expecting_error(
+        "krate_start_build",
+        json!({ "description": "a daily habit tracker with streaks and a history strip" }),
+    );
+    assert!(
+        refusal.contains("cannot write an arbitrary app"),
+        "it must say the built-in generator cannot serve this: {refusal}"
+    );
+    assert!(
+        refusal.contains("agent"),
+        "it must point at the fix -- pass an agent: {refusal}"
+    );
+
+    // The refusal is unconditional, so a request that DOES match a template is
+    // refused too. That is deliberate: the matcher is broad enough that "a
+    // habit tracker" hits the checklist rule on the word "track", so a
+    // keyword-gated guard would let exactly the reported failure through.
+    let also_refused = client.call_tool_expecting_error(
+        "krate_start_build",
+        json!({ "description": "a checklist that saves my todos" }),
+    );
+    assert!(
+        also_refused.contains("cannot write an arbitrary app"),
+        "without an agent every request is refused: {also_refused}"
     );
 
     client.shutdown();

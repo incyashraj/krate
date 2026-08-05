@@ -1347,8 +1347,13 @@ impl bindings::Guest for Component {
             round += 1;
             let event = events::wait(Some(WAIT_ROUND_MILLIS));
             if event.is_none() {
+                // The idle timeout exists so a headless verification run cannot
+                // hang forever waiting for a window nobody will close. That is
+                // only a need on the automated path. Applying it to a real
+                // session closed the window after ten quiet seconds, which is
+                // what "the app closes by itself" turned out to be.
                 idle_rounds += 1;
-                if idle_rounds >= MAX_IDLE_ROUNDS {
+                if quick && idle_rounds >= MAX_IDLE_ROUNDS {
                     break;
                 }
                 continue;

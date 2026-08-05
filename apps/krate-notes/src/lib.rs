@@ -760,7 +760,7 @@ impl bindings::Guest for Component {
                     continue;
                 }
                 idle_rounds += 1;
-                if idle_rounds >= MAX_IDLE_ROUNDS {
+                if quick && idle_rounds >= MAX_IDLE_ROUNDS {
                     break;
                 }
                 continue;
