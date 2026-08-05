@@ -2534,8 +2534,33 @@ pub(crate) fn reopen_app(target: &ClientTarget) -> Result<bool> {
     }
 }
 
-/// Run a bundle for the menu, with the same defaults double-clicking uses.
+/// Run a bundle for the menu, in a child process.
+///
+/// Deliberately a child rather than an in-process call. An app that will not
+/// close from its own close button leaves Ctrl-C as the only way out, and in
+/// one process that interrupt kills the front door too -- the person loses
+/// their whole session to close one app. A child takes the interrupt by
+/// itself and the menu survives it.
 pub(crate) fn run_bundle_for_tui(bundle: &Path) -> Result<()> {
+    let exe = std::env::current_exe().context("could not find Krate's own binary")?;
+    let status = std::process::Command::new(exe)
+        .arg("run")
+        .arg(bundle)
+        .arg("--auto-grant")
+        .status()
+        .context("could not start the app")?;
+
+    // 130 is the shell's convention for "ended by Ctrl-C", which is a normal
+    // way to close an app here rather than a failure worth reporting.
+    match status.code() {
+        Some(0) | Some(130) | None => Ok(()),
+        Some(code) => anyhow::bail!("the app exited with code {code}"),
+    }
+}
+
+/// Run a bundle in this process, with the same defaults double-clicking uses.
+#[allow(dead_code)]
+pub(crate) fn run_bundle_inline(bundle: &Path) -> Result<()> {
     // Mirrors what `krate run <bundle>` does with no flags, plus the auto-grant
     // that double-clicking already uses: the person chose this app from a list
     // of apps they made, so a permission prompt per capability is friction

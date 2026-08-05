@@ -39,6 +39,7 @@ pub fn run() -> Result<u8> {
             MenuChoice::ConnectAi => connect_ai()?,
             MenuChoice::OpenAnApp => open_an_app()?,
             MenuChoice::MyApps => my_apps()?,
+            MenuChoice::History => show_history()?,
             MenuChoice::Quit => {
                 println!();
                 return Ok(0);
@@ -52,6 +53,7 @@ enum MenuChoice {
     ConnectAi,
     OpenAnApp,
     MyApps,
+    History,
     Quit,
 }
 
@@ -83,6 +85,7 @@ fn main_menu() -> Result<MenuChoice> {
     );
     item("3", "Open an app", "one someone sent you");
     item("4", "My apps", "everything you have made");
+    item("5", "History", "what you asked for before");
     println!();
     item("q", "Quit", "");
     println!();
@@ -93,12 +96,13 @@ fn main_menu() -> Result<MenuChoice> {
             "2" => return Ok(MenuChoice::ConnectAi),
             "3" => return Ok(MenuChoice::OpenAnApp),
             "4" => return Ok(MenuChoice::MyApps),
+            "5" => return Ok(MenuChoice::History),
             "q" | "quit" | "exit" => return Ok(MenuChoice::Quit),
             "" => continue,
             other => println!(
                 "  {} {}",
                 style::warn(glyphs().cross),
-                style::dim(&format!("no option {other} -- pick 1-4, or q to quit"))
+                style::dim(&format!("no option {other} -- pick 1-5, or q to quit"))
             ),
         }
     }
@@ -111,11 +115,17 @@ fn make_an_app() -> Result<()> {
     let request = prompt("  What do you want to make?\n  > ")?;
     let request = request.trim().to_string();
     if request.is_empty() {
-        println!("  Nothing to build yet. Come back when you know.");
+        println!("  {}", style::dim("nothing to build yet"));
         println!();
         return Ok(());
     }
+    make_named_app(&request)
+}
 
+/// Build one named request. Shared by the prompt and by history, so making
+/// something again is the same path as making it the first time.
+fn make_named_app(request: &str) -> Result<()> {
+    let request = request.to_string();
     let Some(provider) = choose_provider()? else {
         return Ok(());
     };
@@ -133,6 +143,7 @@ fn make_an_app() -> Result<()> {
     println!();
 
     let output = default_output_path(&request);
+    remember_request(&request, Some(&output));
     let started = Instant::now();
 
     // A live display rather than a wall of build output. The stages are named
@@ -523,8 +534,181 @@ fn my_apps() -> Result<()> {
 }
 
 fn open_bundle(bundle: &Path) -> Result<()> {
-    println!("  Opening {}...", bundle.display());
-    crate::run_bundle_for_tui(bundle)
+    println!(
+        "  {} {}",
+        style::dim("opening"),
+        style::bold(
+            &bundle
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default()
+        )
+    );
+    println!(
+        "  {}",
+        style::dim("close its window, or press Ctrl-C, to come back here")
+    );
+    println!();
+
+    // An app that will not close from its own close button (K-032) used to
+    // leave Ctrl-C as the only way out, and that killed the whole front door
+    // along with it -- losing the session. Running the app in a child process
+    // means an interrupt ends the app and returns here.
+    let result = crate::run_bundle_for_tui(bundle);
+    match result {
+        Ok(()) => {}
+        Err(err) => {
+            println!();
+            println!(
+                "  {} {}",
+                style::warn(glyphs().cross),
+                style::dim(&err.to_string())
+            );
+        }
+    }
+    Ok(())
+}
+
+/// What you asked for before, so a lost session can be picked back up.
+fn show_history() -> Result<()> {
+    println!();
+    let entries = history();
+    if entries.is_empty() {
+        println!("  {}", style::dim("nothing yet"));
+        println!();
+        return Ok(());
+    }
+
+    for (index, entry) in entries.iter().take(15).enumerate() {
+        let built = entry
+            .bundle
+            .as_ref()
+            .map(|path| path.exists())
+            .unwrap_or(false);
+        println!(
+            "  {}  {}  {}",
+            style::key(&(index + 1).to_string()),
+            pad(&truncate(&entry.request, 44), 44),
+            if built {
+                style::good(&format!("{} built", glyphs().tick))
+            } else {
+                style::dim("not finished")
+            }
+        );
+    }
+    println!();
+    println!(
+        "  {}",
+        style::dim("pick one to make it again, or b to go back")
+    );
+    println!();
+
+    let answer = prompt("  > ")?;
+    let answer = answer.trim();
+    if answer.eq_ignore_ascii_case("b") || answer.is_empty() {
+        println!();
+        return Ok(());
+    }
+    let Ok(n) = answer.parse::<usize>() else {
+        println!();
+        return Ok(());
+    };
+    let Some(entry) = entries.get(n.saturating_sub(1)) else {
+        println!();
+        return Ok(());
+    };
+
+    // An app that finished is worth opening rather than rebuilding.
+    if let Some(bundle) = entry.bundle.as_ref().filter(|path| path.exists()) {
+        return after_build(bundle);
+    }
+    make_named_app(&entry.request)
+}
+
+/// Clip a request to fit a column without wrapping the row.
+fn truncate(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let kept: String = text.chars().take(max.saturating_sub(1)).collect();
+    format!("{kept}…")
+}
+
+// -------------------------------------------------------------------- history
+
+/// One thing the person asked Krate to make, and how it went.
+///
+/// Kept because a build takes minutes and a session can end in the middle of
+/// one -- a crash, a closed lid, an app that had to be killed. Without this the
+/// request itself is lost and the only way back is to remember what you typed.
+#[derive(Debug)]
+pub struct HistoryEntry {
+    pub request: String,
+    pub bundle: Option<PathBuf>,
+    pub when: u64,
+}
+
+fn history_path() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(Path::new(&home).join(".krate").join("history.tsv"))
+}
+
+/// Record a request as soon as it is made, before the build starts.
+///
+/// Written up front rather than on success, precisely so a session that dies
+/// mid-build still leaves the request behind.
+fn remember_request(request: &str, bundle: Option<&Path>) {
+    let Some(path) = history_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let when = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // Tabs, and requests cannot contain one because the prompt reads a line.
+    let line = format!(
+        "{when}\t{}\t{}\n",
+        request.replace(['\t', '\n'], " "),
+        bundle.map(|p| p.display().to_string()).unwrap_or_default()
+    );
+    use std::io::Write as _;
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let _ = file.write_all(line.as_bytes());
+    }
+}
+
+/// Everything asked for on this machine, newest first.
+pub fn history() -> Vec<HistoryEntry> {
+    let Some(path) = history_path() else {
+        return Vec::new();
+    };
+    let mut entries: Vec<HistoryEntry> = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            let when = parts.next()?.parse().ok()?;
+            let request = parts.next()?.to_string();
+            let bundle = parts
+                .next()
+                .filter(|value| !value.is_empty())
+                .map(PathBuf::from);
+            Some(HistoryEntry {
+                request,
+                bundle,
+                when,
+            })
+        })
+        .collect();
+    entries.reverse();
+    entries
 }
 
 // -------------------------------------------------------------------- helpers
