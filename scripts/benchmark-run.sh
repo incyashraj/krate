@@ -128,9 +128,11 @@ print_summary() {
     NR == 1 { next }
     {
       total++
+      if ($4 == "skipped") { skipped++; secs += $6; next }
+      # Tier counts track ATTEMPTED requests only, for the same reason the score
+      # does: a request the AI never saw says nothing about the tier.
       tiers[$2]++
       if ($4 == "pass") { pass++; tierpass[$2]++ }
-      else if ($4 == "skipped") { skipped++ }
       else { fail++; gate[$5]++ }
       secs += $6
     }
@@ -139,7 +141,7 @@ print_summary() {
       printf "\n  requests run      %d\n", total
       printf "  usable            %d\n", pass
       printf "  not usable        %d\n", fail
-      if (skipped > 0) printf "  skipped (quota)   %d\n", skipped
+      if (skipped > 0) printf "  skipped (account) %d\n", skipped
       # The score counts only requests that actually reached the AI. A quota
       # rejection means nothing was authored, so including it would understate
       # the product rather than measure it.
@@ -223,6 +225,29 @@ else
 fi
 
 mkdir -p "$work_root"
+
+# Refuse to start beside another authoring run. Two `krate create` processes on
+# one machine fight over the same cargo target cache and the same AI quota, and
+# a request that fails because another workstation exhausted the quota is
+# recorded against the product rather than against the machine. That is exactly
+# the confusion that once turned a 14/14 pass rate into a reported 23%.
+#
+# Found the hard way: the first attempt at this run started while another
+# workstation was authoring "a tip calculator that splits the bill by number of
+# people" from ~/.local/bin/krate into ~/krate-outsider. Nothing was corrupted,
+# because each run keeps its own work dir -- but it cost real time to prove
+# that, and a louder failure up front is worth more than a quiet coincidence.
+others="$(pgrep -f 'krate create' 2>/dev/null | wc -l | tr -d ' ')"
+if [ "${others:-0}" -gt 0 ] && [ "${ALLOW_CONCURRENT_RUNS:-0}" != "1" ]; then
+  echo "another 'krate create' is already running on this machine:" >&2
+  pgrep -laf 'krate create' 2>/dev/null | cut -c1-120 >&2
+  echo >&2
+  echo "Two authoring runs share one AI quota and one build cache, so the" >&2
+  echo "score would measure the collision rather than the product. Wait for" >&2
+  echo "it to finish, or set ALLOW_CONCURRENT_RUNS=1 if you are certain." >&2
+  exit 3
+fi
+
 echo "krate binary : $krate_bin"
 echo "corpus       : $corpus ($total_rows requests)"
 echo "results      : $results"
@@ -286,18 +311,39 @@ for id in $targets; do
   total_asserts=0
   missing="-"
 
-  # --- quota check, before anything is judged ---
+  # --- account check, before anything is judged ---
+  #
+  # A request the AI never saw is not a product failure. Two ways that happens,
+  # and both must be `skipped` rather than `fail`:
+  #
+  #   quota  the API refused the request; no code was ever written. Counting
+  #          these as failures once turned a 14/14 pass rate into a reported
+  #          23%, which was a lie about the system.
+  #   auth   the account is not signed in at all. Measured here: `--agent
+  #          claude` failed request 2 in 4 seconds with "OAuth session expired"
+  #          in the transcript (K-007). Four seconds is far too fast to have
+  #          authored anything, and recording it as a failed app would have put
+  #          this machine's broken login into the product's score.
   rate_limited=0
-  if [ -n "$app_dir" ] && [ -f "$app_dir/.agent-transcript.txt" ] && \
-     grep -q '"status":"rejected"' "$app_dir/.agent-transcript.txt" 2>/dev/null; then
-    rate_limited=1
-  fi
-  grep -q '"status":"rejected"' "$log" "$dir/create.err" 2>/dev/null && rate_limited=1
+  skip_reason=""
+  for f in "$log" "$dir/create.err" "${app_dir:+$app_dir/.agent-transcript.txt}"; do
+    [ -n "$f" ] && [ -f "$f" ] || continue
+    if grep -q '"status":"rejected"' "$f" 2>/dev/null; then
+      rate_limited=1
+      skip_reason="rate limited: the AI account was out of quota, no code was written"
+      break
+    fi
+    if grep -qE 'OAuth session expired|could not be refreshed|Failed to authenticate|requires a newer version' "$f" 2>/dev/null; then
+      rate_limited=1
+      skip_reason="agent account unusable (K-007): the AI never saw this request"
+      break
+    fi
+  done
 
   if [ "$rate_limited" = "1" ]; then
     result="skipped"
-    gate="quota"
-    note="rate limited: the AI account was out of quota, no code was written"
+    gate="account"
+    note="$skip_reason"
 
   # --- the refuse tier is scored inverted ---
   elif [ "$tier" = "refuse" ]; then
@@ -422,9 +468,10 @@ for id in $targets; do
 
   if [ "$rate_limited" = "1" ]; then
     echo
-    echo "Stopping: the AI account is out of quota."
-    echo "Nothing is lost -- this run is resumable, so re-run it when the quota"
-    echo "resets and it will pick up from request $id."
+    echo "Stopping: $skip_reason"
+    echo "Nothing is lost -- this run is resumable, so fix the account and"
+    echo "re-run; it will pick up from request $id. Every remaining request"
+    echo "would otherwise fail in seconds for a reason that is not the product."
     break
   fi
 
