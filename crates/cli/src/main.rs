@@ -25,6 +25,7 @@ mod port_report;
 mod sdk;
 mod sdk_reference;
 mod speech_model;
+mod tui;
 
 const MAX_PHASE2_ARGS_RAW_BYTES: usize = 64 * 1024;
 const MAX_PHASE2_ARG_COUNT: usize = 1024;
@@ -61,8 +62,11 @@ const KRATE_VERSION: &str = match option_env!("KRATE_RELEASE_VERSION") {
     about = "Krate: write once, run on everything."
 )]
 struct Cli {
+    /// No subcommand opens the interactive front door. `krate` is what a
+    /// newcomer types, and it used to answer with sixteen commands and no
+    /// suggestion which one to start with.
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -677,7 +681,11 @@ fn friendly_error(err: &anyhow::Error) -> String {
 fn run() -> Result<u8> {
     let cli = Cli::parse();
 
-    match cli.command {
+    let Some(command) = cli.command else {
+        return tui::run();
+    };
+
+    match command {
         Command::Run {
             target,
             fuel,
@@ -2254,6 +2262,293 @@ struct ManifestInitRequest {
     capabilities: Vec<String>,
     output: Option<PathBuf>,
     force: bool,
+}
+
+/// Remove Krate from an AI app's config: the exact reverse of `connect`.
+///
+/// Needed for more than tidiness. The common case is reconnecting after
+/// something broke -- moving the binary, or a half-written config -- and
+/// without a way to remove the old entry the only fix was hand-editing JSON.
+pub(crate) fn disconnect_target(target: &ClientTarget) -> Result<bool> {
+    if !target.path.exists() {
+        return Ok(false);
+    }
+    let existing = fs::read_to_string(&target.path)?;
+    let mut config: serde_json::Value = serde_json::from_str(&existing).with_context(|| {
+        format!(
+            "{} is not valid JSON, so I will not rewrite it.",
+            target.path.display()
+        )
+    })?;
+
+    let Some(servers) = config
+        .as_object_mut()
+        .and_then(|object| object.get_mut("mcpServers"))
+        .and_then(|servers| servers.as_object_mut())
+    else {
+        return Ok(false);
+    };
+    if servers.remove("krate").is_none() {
+        return Ok(false);
+    }
+
+    // Only Krate's own entry is touched; anything else in the file is left
+    // exactly as it was.
+    fs::write(
+        &target.path,
+        format!("{}\n", serde_json::to_string_pretty(&config)?),
+    )?;
+    Ok(true)
+}
+
+/// Which AI apps currently have Krate connected.
+pub(crate) fn connected_targets() -> Vec<(ClientTarget, bool)> {
+    connect_targets()
+        .into_iter()
+        .map(|target| {
+            let connected = fs::read_to_string(&target.path)
+                .ok()
+                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+                .map(|config| config.pointer("/mcpServers/krate").is_some())
+                .unwrap_or(false);
+            (target, connected)
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Seams the interactive front door calls into.
+//
+// Each one wraps an existing command path rather than duplicating it, so the
+// menu and the flags stay the same product. If these ever diverge, the menu is
+// lying about what Krate does.
+// ---------------------------------------------------------------------------
+
+/// The old bare-`krate` behaviour, kept for pipes and scripts.
+pub(crate) fn print_help_summary() -> Result<u8> {
+    use clap::CommandFactory;
+    Cli::command().print_help()?;
+    println!();
+    Ok(0)
+}
+
+/// Author an app for the interactive menu.
+pub(crate) fn author_app_for_tui(
+    request: &str,
+    provider: &'static dyn agent_provider::AgentProvider,
+    output: &Path,
+) -> Result<()> {
+    let code = create_krate(CreateRequest {
+        request: request.to_string(),
+        output: output.to_path_buf(),
+        author_cmd: Some(agent_author_command(provider)),
+        kind: None,
+        name: None,
+        transcript: None,
+        work_dir: None,
+        // The menu already asked; asking again inside would be a second
+        // question about a decision the person has made.
+        yes: true,
+        no_install: false,
+        json: false,
+        force: false,
+    })?;
+    if code == 0 {
+        remember_app(output);
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("the app could not be built"))
+    }
+}
+
+/// Extract a bundle's source, when it carries any.
+pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
+    let opened = krate_bundle::open(bundle)?;
+    let Some(source) = opened.source_path() else {
+        return Ok(None);
+    };
+    // The opened bundle deletes its temp directory on drop, so the source is
+    // copied somewhere that outlives this call.
+    let target = std::env::temp_dir().join(format!("krate-edit-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&target);
+    copy_tree(source, &target)?;
+    Ok(Some(target))
+}
+
+fn copy_tree(from: &Path, to: &Path) -> Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let source = entry.path();
+        let destination = to.join(entry.file_name());
+        if source.is_dir() {
+            copy_tree(&source, &destination)?;
+        } else {
+            fs::copy(&source, &destination)?;
+        }
+    }
+    Ok(())
+}
+
+/// Change an app that already exists, in place.
+///
+/// The AI is handed the app's own source and told what to change, which is why
+/// this is quicker and more faithful than describing the whole app again.
+pub(crate) fn revise_app_for_tui(
+    source: &Path,
+    change: &str,
+    provider: &'static dyn agent_provider::AgentProvider,
+    output: &Path,
+) -> Result<()> {
+    let request = format!(
+        "The Krate app in this directory already works. Change it as follows, \
+         and change nothing else: {change}\n\n\
+         Keep the same crate name and manifest. When you are done, run \
+         `krate check-app .` and make sure every stage passes."
+    );
+    let code = create_krate(CreateRequest {
+        request,
+        output: output.to_path_buf(),
+        author_cmd: Some(agent_author_command(provider)),
+        kind: None,
+        name: None,
+        transcript: None,
+        // Author into the existing source rather than an empty directory --
+        // this is the whole difference between changing an app and replacing
+        // it.
+        work_dir: Some(source.to_path_buf()),
+        yes: true,
+        no_install: false,
+        json: false,
+        // The output already exists; that is the point.
+        force: true,
+    })?;
+    if code == 0 {
+        remember_app(output);
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("the change could not be applied"))
+    }
+}
+
+/// Connect one named target, without asking again which one.
+pub(crate) fn connect_one_for_tui(target: &ClientTarget) -> Result<()> {
+    connect(Some(target.key), true, false)?;
+    Ok(())
+}
+
+/// Bring an AI app to the front so it reloads its config.
+///
+/// Returns false when there is nothing to open rather than treating it as an
+/// error: on Linux, and for a client we cannot name, the honest answer is to
+/// print the restart instruction instead.
+pub(crate) fn reopen_app(target: &ClientTarget) -> Result<bool> {
+    let app = match target.key {
+        "claude" => "Claude",
+        "cursor" => "Cursor",
+        _ => return Ok(false),
+    };
+    #[cfg(target_os = "macos")]
+    {
+        // Quit first: an app already running will not re-read its config.
+        let _ = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(format!("tell application \"{app}\" to quit"))
+            .status();
+        std::thread::sleep(std::time::Duration::from_millis(1200));
+        let opened = std::process::Command::new("open")
+            .arg("-a")
+            .arg(app)
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        return Ok(opened);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Ok(false)
+    }
+}
+
+/// Run a bundle for the menu, with the same defaults double-clicking uses.
+pub(crate) fn run_bundle_for_tui(bundle: &Path) -> Result<()> {
+    // Mirrors what `krate run <bundle>` does with no flags, plus the auto-grant
+    // that double-clicking already uses: the person chose this app from a list
+    // of apps they made, so a permission prompt per capability is friction
+    // without a decision behind it.
+    run_component(RunRequest {
+        target: bundle.display().to_string(),
+        file: PathBuf::new(),
+        insecure_http: false,
+        fuel: None,
+        mem_limit: 256,
+        max_http_response_bytes: DEFAULT_MAX_HTTP_RESPONSE_BYTES,
+        http_timeout_millis: DEFAULT_HTTP_TIMEOUT_MILLIS,
+        sandbox_root: PathBuf::from("."),
+        manifest_path: None,
+        grants: Vec::new(),
+        auto_grant: true,
+        prompt: false,
+        consent: false,
+        ui_mode: krate_runtime::phase3_ui::Phase3HostUiMode::NativeWithHeadlessFallback,
+        json: false,
+        dump_caps: false,
+        dump_caps_format: OutputFormat::Text,
+        log_grants: None,
+        log_grants_format: GrantLogFormat::Text,
+        test_time_millis: None,
+        test_locale: None,
+        test_timezone: None,
+        screenshot_path: None,
+        screenshot_scale: 2.0,
+        usability_report: None,
+        app_args: Vec::new(),
+    })?;
+    Ok(())
+}
+
+/// Where the list of made apps is kept.
+fn recent_apps_file() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    Some(Path::new(&home).join(".krate").join("recent-apps"))
+}
+
+/// Note that an app was made, so "My apps" can list it later.
+fn remember_app(bundle: &Path) {
+    let Some(file) = recent_apps_file() else {
+        return;
+    };
+    if let Some(parent) = file.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let absolute = bundle
+        .canonicalize()
+        .unwrap_or_else(|_| bundle.to_path_buf());
+    let line = absolute.display().to_string();
+    let mut kept: Vec<String> = fs::read_to_string(&file)
+        .unwrap_or_default()
+        .lines()
+        .filter(|existing| *existing != line)
+        .map(str::to_string)
+        .collect();
+    kept.insert(0, line);
+    kept.truncate(50);
+    let _ = fs::write(&file, kept.join("\n"));
+}
+
+/// Apps made on this machine that still exist, newest first.
+pub(crate) fn recent_apps() -> Vec<PathBuf> {
+    let Some(file) = recent_apps_file() else {
+        return Vec::new();
+    };
+    fs::read_to_string(&file)
+        .unwrap_or_default()
+        .lines()
+        .map(PathBuf::from)
+        // An app the person has since deleted or moved should not be offered.
+        .filter(|path| path.exists())
+        .collect()
 }
 
 /// Write a `.krate` bundle from a component and its manifest.
