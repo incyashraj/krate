@@ -32,13 +32,19 @@ security find-identity -v -p codesigning | grep "Developer ID Application"
 
 ## 2. Export it for CI
 
-Keychain Access → **My Certificates** → right-click the Developer ID
-Application entry → **Export** → `.p12`, with a password you will use below.
+```bash
+security export -k ~/Library/Keychains/login.keychain-db \
+  -t identities -f pkcs12 -o /tmp/krate.p12 -P "your-password"
+base64 -i /tmp/krate.p12 | pbcopy
+```
 
-Then base64 it, because a GitHub secret holds text:
+That exports every identity with a private key, so the file will also hold an
+"Apple Development" certificate if you have one. That is fine: the workflow
+picks the Developer ID entry by name. Check it is in there before uploading:
 
 ```bash
-base64 -i ~/Desktop/krate-signing.p12 | pbcopy
+openssl pkcs12 -in /tmp/krate.p12 -passin pass:your-password \
+  -nokeys -legacy | grep -c "BEGIN CERTIFICATE"
 ```
 
 ## 3. An app-specific password
