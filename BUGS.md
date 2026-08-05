@@ -71,6 +71,39 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-013 — The `quick` run says "print something", so nothing can read what an app printed
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    teaching-hole
+Found:    2026-08-05, W16, first Krate App Benchmark run
+Evidence: `krate krate-mode` line 52-57 is the whole specification of the
+          verification run's output: "do the app's real work once against a
+          small built-in sample, **print something**, and exit 0". That is the
+          only instruction about stdout anywhere in the pack.
+          The pack's own worked example does the right thing --
+          `write_pair(&stdout, "timezone", &timezone)`, one `key:value` per
+          line -- and 17 of 17 shipped bundles follow it (`items:5`,
+          `income:6500`, `index:0`). But the rule is never stated, only
+          demonstrated, so an agent is free not to copy it.
+          Benchmark request 1, "a tip calculator", authored via
+          `--agent grok`. The app is CORRECT: bill $48.50, tip 18%, total
+          $57.23. It printed all three on one line with currency symbols:
+              $ krate run app.krate --auto-grant --shoot f.png -- quick
+              bill:$48.50 tip:18% total:$57.23
+          Only `bill?` is machine-readable. `tip>=0` and `total>=0` cannot be
+          evaluated: `tip` and `total` are not at the start of a line, and the
+          values carry `$` and `%`.
+          Cost: a working app scored 1/6 on observable properties. Anything
+          that reads app state -- this benchmark, the K-006 usability stage,
+          CI -- is blind to an app that works.
+Fix:      State the contract in the pack, do not just demonstrate it: on
+          `quick`, print one `key:value` per line, bare values, no symbols or
+          units, last line `quick:done`. `write_pair` already does exactly this
+          and is already in the pack; promote it from example to rule.
+          Highest leverage per line changed on the board -- it is one paragraph
+          and it makes every future app readable by machine.
+
 ### K-001 — Canvas apps cannot scroll: there is no scroll event
 Status:   claimed
 Owner:    W12
@@ -147,19 +180,32 @@ Evidence: check-app has six stages -- layout, manifest, build, imports, run,
 Fix:      A usability stage. Must not produce false failures -- a flaky gate
           gets skipped and then protects nothing.
 
-### K-007 — This machine's AI accounts are unusable
+### K-007 — Three of this machine's four AI accounts are unusable
 Status:   open
 Owner:    unclaimed
-Severity: blocker
+Severity: serious
 Class:    environment
 Found:    2026-08-05, lead, trying to verify Krate Mode end to end
 Evidence: `claude -p` returns "OAuth session expired and could not be
           refreshed". `codex exec` returns "The 'gpt-5.6-sol' model requires a
           newer version of Codex".
-Fix:      Not ours. Yashraj re-authenticates Claude and updates Codex. Recorded
-          because it blocks every end-to-end authoring measurement and must not
-          be mistaken for a product failure -- it already turned a 14/14 pass
-          rate into a reported 23% once.
+          W16, 2026-08-05, checking all four providers before a benchmark run:
+          `copilot -p "say ok" --allow-all-tools` exits 1 with EMPTY stdout and
+          EMPTY stderr -- it fails silently, which is worse than the other two
+          because nothing on screen says why.
+          **Grok works.** `agent --single "Reply with exactly: ALIVE"
+          --output-format json` exits 0 and returns
+          `{"text":"ALIVE","stopReason":"end_turn",...}`. `krate ai` lists grok
+          as ready and `crates/cli/src/agent_provider.rs:519` registers it as a
+          supported provider invoking `agent --single`.
+          So this was downgraded from blocker to serious: authoring is NOT
+          fully blocked on this machine. `--agent grok` is a live path and the
+          benchmark run used it.
+Fix:      Not ours. Yashraj re-authenticates Claude, updates Codex, and looks at
+          why Copilot exits 1 saying nothing. Recorded because it must not be
+          mistaken for a product failure -- it already turned a 14/14 pass rate
+          into a reported 23% once. Note for anyone measuring: reach for
+          `--agent grok` before reporting that authoring cannot run.
 
 ---
 
