@@ -727,8 +727,6 @@ const CONTENT_W: f32 = WIDTH - MARGIN * 2.0;
 const LIST_TOP: f32 = 148.0;
 const ROW_H: f32 = 52.0;
 const ROW_GAP: f32 = 10.0;
-/// How many rows fit in the region before the input strip.
-const VISIBLE_ROWS: usize = 6;
 const CHECK_SIZE: f32 = 24.0;
 
 const INPUT_H: f32 = 46.0;
@@ -930,19 +928,84 @@ fn save(list: &Checklist) -> bool {
 // Hit testing: which control, if any, contains (x, y)?
 // ------------------------------------------------------------------
 
-fn row_y(index: usize) -> f32 {
-    LIST_TOP + (index as f32) * (ROW_H + ROW_GAP)
+/// Where row `index` sits once `scroll` pixels have been scrolled away.
+///
+/// Drawing and hit-testing both go through this one function on purpose: the
+/// two must agree about where a row is, and the surest way for them to disagree
+/// is for each to do its own arithmetic.
+fn row_y(index: usize, scroll: f32) -> f32 {
+    LIST_TOP + (index as f32) * (ROW_H + ROW_GAP) - scroll
 }
 
-fn hit_row(list: &Checklist, x: f32, y: f32) -> Option<usize> {
+/// Bottom of the region rows are drawn into: everything above the input strip.
+fn list_bottom() -> f32 {
+    input_y() - 16.0
+}
+
+/// Height of the visible list region.
+fn view_height() -> f32 {
+    (list_bottom() - LIST_TOP).max(0.0)
+}
+
+/// Total height of every row laid end to end, whether or not it fits.
+fn content_height(list: &Checklist) -> f32 {
+    if list.len == 0 {
+        return 0.0;
+    }
+    (list.len as f32) * (ROW_H + ROW_GAP) - ROW_GAP
+}
+
+/// The largest offset worth scrolling to: the point where the last row's
+/// bottom edge reaches the bottom of the region. Zero when everything already
+/// fits, so a short list cannot be scrolled at all.
+fn max_scroll(list: &Checklist) -> f32 {
+    (content_height(list) - view_height()).max(0.0)
+}
+
+/// Apply a wheel delta and keep the result inside the scrollable range.
+fn clamp_scroll(scroll: f32, delta: f32, list: &Checklist) -> f32 {
+    let next = scroll + delta;
+    let max = max_scroll(list);
+    if next < 0.0 {
+        0.0
+    } else if next > max {
+        max
+    } else {
+        next
+    }
+}
+
+/// Whether a row at `y` should be drawn.
+///
+/// Canvas2d has no clip rectangle yet (K-004), so the two edges are handled
+/// differently and deliberately.
+///
+/// The top edge is strict: a row scrolled above `LIST_TOP` is skipped
+/// entirely, because the header is drawn first and a partial row would paint
+/// straight over the title and the progress bar.
+///
+/// The bottom edge is loose: a row may hang past `list_bottom` because the
+/// input strip is drawn *after* the rows and covers whatever hangs down. That
+/// gives smooth pixel-by-pixel scrolling, which snapping to whole rows would
+/// have cost -- one notch of a mouse wheel is smaller than a row, so a snapped
+/// list would refuse to move at all.
+fn row_visible(y: f32) -> bool {
+    y >= LIST_TOP && y < list_bottom()
+}
+
+fn hit_row(list: &Checklist, scroll: f32, x: f32, y: f32) -> Option<usize> {
     if x < MARGIN || x > WIDTH - MARGIN {
         return None;
     }
-    let shown = if list.len < VISIBLE_ROWS { list.len } else { VISIBLE_ROWS };
+    // A click outside the list region belongs to whatever is drawn there, not
+    // to a row that happens to be scrolled underneath it.
+    if y < LIST_TOP || y > list_bottom() {
+        return None;
+    }
     let mut i = 0usize;
-    while i < shown {
-        let ry = row_y(i);
-        if y >= ry && y <= ry + ROW_H {
+    while i < list.len {
+        let ry = row_y(i, scroll);
+        if row_visible(ry) && y >= ry && y <= ry + ROW_H {
             return Some(i);
         }
         i += 1;
@@ -983,7 +1046,13 @@ const INK_DONE: gfx::Color = gfx::Color { r: 0.435, g: 0.475, b: 0.561, a: 1.0 }
 // Rendering
 // ------------------------------------------------------------------
 
-fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Result<(), gfx::GfxError> {
+fn draw(
+    canvas: u64,
+    list: &Checklist,
+    draft: &Draft,
+    field_focus: bool,
+    scroll: f32,
+) -> Result<(), gfx::GfxError> {
     // Deep, considered ground -- a soft vertical gradient, not flat black.
     canvas2d::linear_gradient(
         canvas,
@@ -1018,27 +1087,54 @@ fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Resu
         }
     }
 
-    // ---- item rows as cards ----
-    let shown = if list.len < VISIBLE_ROWS { list.len } else { VISIBLE_ROWS };
+    // ---- item rows as cards, shifted by the scroll offset ----
+    //
+    // Every row is drawn, not a fixed first six: which ones land on screen is
+    // decided by the offset. Rows outside the region are skipped rather than
+    // drawn, because there is no clip rectangle -- a row scrolled past the top
+    // would paint straight over the title.
     let mut i = 0usize;
-    while i < shown {
-        if let Some(item) = list.items.get(i) {
-            if item.used {
-                draw_row(canvas, i, item, accent)?;
+    while i < list.len {
+        let y = row_y(i, scroll);
+        if row_visible(y) {
+            if let Some(item) = list.items.get(i) {
+                if item.used {
+                    draw_row(canvas, y, item, accent)?;
+                }
             }
         }
         i += 1;
     }
-    if list.len > VISIBLE_ROWS {
-        let mut mbuf = [0u8; 24];
-        let more = more_label((list.len - VISIBLE_ROWS) as u32, &mut mbuf);
-        if let Ok(txt) = core::str::from_utf8(more) {
-            draw_text(canvas, txt, MARGIN, row_y(VISIBLE_ROWS) + 4.0, 13.0, INK_DIM)?;
-        }
+
+    // A slim track and thumb on the right, so a long list looks scrollable
+    // instead of looking truncated. Drawn only when there is something to
+    // scroll to.
+    let max = max_scroll(list);
+    if max > 0.0 {
+        let view = view_height();
+        let track_x = WIDTH - MARGIN + 8.0;
+        rounded_rect(canvas, track_x, LIST_TOP, 4.0, view, 2.0, color(0.16, 0.18, 0.24, 1.0))?;
+        let content = content_height(list).max(1.0);
+        let thumb_h = (view * view / content).max(24.0).min(view);
+        let thumb_y = LIST_TOP + (view - thumb_h) * (scroll / max).clamp(0.0, 1.0);
+        rounded_rect(canvas, track_x, thumb_y, 4.0, thumb_h, 2.0, color(0.35, 0.39, 0.49, 1.0))?;
     }
 
     // ---- input strip: text field + Add button ----
+    //
+    // Repaint the background across the whole strip band first. This is the
+    // app doing by hand what a clip rectangle would do for it (K-004): a row
+    // scrolled to the bottom edge hangs into this band, and without the band
+    // its rounded corners show through beside the narrower text field.
     let iy = input_y();
+    fill(
+        canvas,
+        0.0,
+        list_bottom(),
+        WIDTH,
+        HEIGHT - list_bottom(),
+        BG_BOT,
+    )?;
     let fw = CONTENT_W - ADD_W - 12.0;
     if field_focus {
         rounded_rect(canvas, MARGIN - 2.0, iy - 2.0, fw + 4.0, INPUT_H + 4.0, 14.0, accent_soft)?;
@@ -1073,8 +1169,7 @@ fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Resu
 
 /// One item row: a rounded card, a drawn checkbox that fills with accent when
 /// checked (with a drawn tick), and the item text (dimmed + struck when done).
-fn draw_row(canvas: u64, index: usize, item: &Item, accent: gfx::Color) -> Result<(), gfx::GfxError> {
-    let y = row_y(index);
+fn draw_row(canvas: u64, y: f32, item: &Item, accent: gfx::Color) -> Result<(), gfx::GfxError> {
     let card = if item.done { CARD_DONE } else { CARD };
     rounded_rect(canvas, MARGIN, y, CONTENT_W, ROW_H, 14.0, card)?;
 
@@ -1202,11 +1297,12 @@ fn progress_label(done: u32, total: u32, buf: &mut [u8; 32]) -> &[u8] {
     buf.get(..pos).unwrap_or(b"")
 }
 
-fn more_label(n: u32, buf: &mut [u8; 24]) -> &[u8] {
+/// `prefix` followed by a number, for the filler rows the `quick` run adds so
+/// the list is long enough to scroll.
+fn numbered_label<'a>(prefix: &[u8], n: u32, buf: &'a mut [u8; 24]) -> &'a [u8] {
     let mut pos = 0usize;
-    push_bytes(buf, &mut pos, b"+ ");
+    push_bytes(buf, &mut pos, prefix);
     push_num(buf, &mut pos, n);
-    push_bytes(buf, &mut pos, b" more");
     buf.get(..pos).unwrap_or(b"")
 }
 
@@ -1293,6 +1389,9 @@ impl bindings::Guest for Component {
         }
         let mut draft = Draft::new();
         let mut field_focus = false;
+        // How far the list has been scrolled, in logical pixels. Zero is the
+        // top. Drawing and hit-testing both read this one value.
+        let mut scroll = 0.0f32;
 
         let raw = args::raw();
         let quick = raw
@@ -1330,13 +1429,35 @@ impl bindings::Guest for Component {
             if save(&list) {
                 saved_any = true;
             }
-            let _ = draw(canvas, &list, &draft, false);
+            // Enough rows that the list is taller than the region, so the
+            // scrolling path is the one this run exercises rather than a
+            // special case nobody reaches.
+            let mut extra = 1u32;
+            while list.len < 20 {
+                let mut buf = [0u8; 24];
+                let label = numbered_label(b"Follow up ", extra, &mut buf);
+                if let Ok(text) = core::str::from_utf8(label) {
+                    list.push(text, false);
+                }
+                extra += 1;
+            }
+            // Prove the wheel arithmetic on the real list: scroll down past
+            // the end, which must clamp, then back up past the top, which
+            // must clamp to zero.
+            scroll = clamp_scroll(scroll, 400.0, &list);
+            let scrolled_down = scroll > 0.0 && scroll <= max_scroll(&list);
+            scroll = clamp_scroll(scroll, -10_000.0, &list);
+            let clamped_top = scroll == 0.0;
+            // Leave the shot mid-list, which is the state worth looking at.
+            scroll = clamp_scroll(scroll, 120.0, &list);
+            let _ = draw(canvas, &list, &draft, false, scroll);
             report(&list, saved_any);
+            report_scroll(scrolled_down && clamped_top, scroll);
             let _ = window::close(win);
             return 0;
         }
 
-        if draw(canvas, &list, &draft, field_focus).is_err() {
+        if draw(canvas, &list, &draft, field_focus, scroll).is_err() {
             let _ = window::close(win);
             return 34;
         }
@@ -1362,8 +1483,19 @@ impl bindings::Guest for Component {
             let mut dirty = false;
             let mut done = false;
             match event {
+                // The wheel, a trackpad, or a scroll gesture. `dy` is in
+                // logical pixels and positive-down, so adding it to the offset
+                // moves further into the list. Clamping is what stops a hard
+                // flick from scrolling past the last row into empty space.
+                Some(types::Event::Wheel(w)) => {
+                    let next = clamp_scroll(scroll, w.dy, &list);
+                    if next != scroll {
+                        scroll = next;
+                        dirty = true;
+                    }
+                }
                 Some(types::Event::Pointer(p)) if p.pressed => {
-                    if let Some(index) = hit_row(&list, p.x, p.y) {
+                    if let Some(index) = hit_row(&list, scroll, p.x, p.y) {
                         list.toggle(index);
                         if save(&list) {
                             saved_any = true;
@@ -1416,7 +1548,11 @@ impl bindings::Guest for Component {
                 _ => {}
             }
             if dirty {
-                let _ = draw(canvas, &list, &draft, field_focus);
+                // Re-clamp before drawing: adding an item changes how far the
+                // list can scroll, and an offset left over from the old extent
+                // would draw a gap below the last row.
+                scroll = clamp_scroll(scroll, 0.0, &list);
+                let _ = draw(canvas, &list, &draft, field_focus, scroll);
             }
             if done {
                 break;
@@ -1427,6 +1563,17 @@ impl bindings::Guest for Component {
         let _ = window::close(win);
         0
     }
+}
+
+/// Say what the scroll arithmetic did, so the automated run can be read as
+/// proof rather than taken on faith: `scroll:ok` means a wheel delta moved the
+/// list and clamped at both ends, and the number is where it finished.
+fn report_scroll(ok: bool, offset: f32) {
+    let out = stdio::stdout();
+    let _ = out.write(if ok { b"scroll:ok " } else { b"scroll:BROKEN " });
+    let mut buf = [0u8; 10];
+    let _ = out.write(number_bytes(offset as u32, &mut buf));
+    let _ = out.write(b"\n");
 }
 
 fn report(list: &Checklist, saved_any: bool) {

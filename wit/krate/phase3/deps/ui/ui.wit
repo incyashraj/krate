@@ -86,6 +86,47 @@ interface types {
     modifiers: modifiers,
   }
 
+  /// A wheel, trackpad, or scroll-gesture event delivered by the host.
+  ///
+  /// Shaped like `pointer-event` on purpose: an app scrolls the thing under the
+  /// cursor, so it needs the same position and the same hit-tested widget, and
+  /// an author who has already written pointer handling can write this one
+  /// without learning a second shape.
+  ///
+  /// Deltas are in **logical pixels**, not lines or notches. Every windowing
+  /// system reports one or the other -- a macOS trackpad gives pixel-precise
+  /// deltas, a mouse wheel gives discrete notches -- and asking every app to
+  /// know which it got means every app gets it wrong on one platform. The host
+  /// converts: a notch becomes about 20 logical pixels, matching what native
+  /// applications move for one click of a wheel. An app can add the delta to a
+  /// scroll offset and clamp it, and that works the same on all three systems.
+  ///
+  /// Positive `dy` scrolls the content *down*, meaning the view moves further
+  /// into a long list, which is the direction a scroll offset grows. Positive
+  /// `dx` scrolls right. This already accounts for the platform's natural
+  /// scrolling setting, so an app never reads a preference to know which way is
+  /// which.
+  record wheel-event {
+    /// Target window id.
+    window: u64,
+    /// Target widget id if hit testing found one.
+    widget: option<u64>,
+    /// Cursor X in logical pixels when the wheel moved.
+    x: f32,
+    /// Cursor Y in logical pixels when the wheel moved.
+    y: f32,
+    /// Horizontal delta in logical pixels. Positive scrolls right.
+    dx: f32,
+    /// Vertical delta in logical pixels. Positive scrolls down.
+    dy: f32,
+    /// Modifier state at the time of the event.
+    ///
+    /// Worth checking: ctrl-scroll means zoom on every desktop, so an app that
+    /// scrolls on this without looking will zoom nothing and scroll when the
+    /// person asked to zoom.
+    modifiers: modifiers,
+  }
+
   /// A widget's complete text after a person edited it in a native control.
   ///
   /// Sent by hosts that lower widgets to real OS controls, where the control
@@ -242,6 +283,18 @@ interface types {
     pointer(pointer-event),
     /// Keyboard input changed.
     key(key-event),
+    /// A wheel turned, or a trackpad scroll gesture moved.
+    ///
+    /// An app that draws its own content -- anything on a canvas -- keeps its
+    /// own scroll offset, adds `dy` to it on each of these, clamps it to the
+    /// content it drew, and redraws. Without this event such an app has no way
+    /// to reach content past the bottom of its window, no matter how it is
+    /// written.
+    ///
+    /// Apps built from the portable widget tree with a `scroll` container do
+    /// not need to handle this: the host scrolls those itself, the way the
+    /// platform does, and the event still arrives for anything else on screen.
+    wheel(wheel-event),
     /// Text input after keyboard layout or IME processing.
     ///
     /// Append semantics: the characters named here were added to whatever the

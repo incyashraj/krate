@@ -5,7 +5,7 @@
 //! GTK windows come later.
 
 use krate_adapter_common::ui::{
-    KeyEvent, Modifiers, PointerButton, PointerEvent, TextInputEvent, Theme, UiAdapter,
+    KeyEvent, Modifiers, PointerButton, PointerEvent, TextInputEvent, Theme, UiAdapter, WheelEvent,
     UiAdapterError, UiAdapterInfo, UiEvent, UiEventLoopTick, WidgetId, WidgetNode, WidgetTree,
     WindowId, WindowOptions, WindowRecord, WindowSize,
 };
@@ -45,6 +45,18 @@ pub struct PointerRouteRequest {
     pub y: f32,
     pub button: Option<PointerButton>,
     pub pressed: bool,
+    pub modifiers: Modifiers,
+}
+
+/// A wheel or trackpad scroll to hit-test and deliver to the app.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WheelRouteRequest {
+    pub window: WindowId,
+    pub viewport: LayoutViewport,
+    pub x: f32,
+    pub y: f32,
+    pub dx: f32,
+    pub dy: f32,
     pub modifiers: Modifiers,
 }
 
@@ -330,6 +342,41 @@ impl<'a> Phase3UiDispatcher<'a> {
             y: request.y,
             button: request.button,
             pressed: request.pressed,
+            modifiers: request.modifiers,
+        })?;
+
+        Ok(widget)
+    }
+
+    /// Hit-test a scroll gesture and queue the portable wheel event.
+    ///
+    /// Same routing as a pointer press, because a scroll targets whatever is
+    /// under the cursor. The widget id is a hint for widget-tree apps; a canvas
+    /// app ignores it and uses the coordinates it drew against.
+    pub fn route_wheel_event(
+        &self,
+        request: WheelRouteRequest,
+    ) -> UiDispatchResult<Option<WidgetId>> {
+        self.check_window_access()?;
+        let point = LayoutPoint::new(request.x, request.y)
+            .map_err(|err| UiDispatchError::Layout(err.to_string()))?;
+        let tree =
+            self.adapter
+                .widget_tree(request.window)?
+                .ok_or(UiAdapterError::MissingWidgetTree {
+                    window: request.window.get(),
+                })?;
+        let layout = compute_layout(&tree, request.viewport)
+            .map_err(|err| UiDispatchError::Layout(err.to_string()))?;
+        let widget = hit_test(&tree, &layout, point).map(|hit| hit.widget);
+
+        self.adapter.queue_wheel_event(WheelEvent {
+            window: request.window,
+            widget,
+            x: request.x,
+            y: request.y,
+            dx: request.dx,
+            dy: request.dy,
             modifiers: request.modifiers,
         })?;
 
@@ -1145,6 +1192,64 @@ mod tests {
                     modifiers: Modifiers::default(),
                 }),
             ]
+        );
+    }
+
+    /// A scroll must reach the app as an event carrying its deltas.
+    ///
+    /// This is the regression guard for the bug that motivated the wheel event:
+    /// scroll input used to be consumed entirely host-side for `Scroll`
+    /// containers, so an app that drew its own content -- every canvas app --
+    /// received nothing and could not scroll at all.
+    #[test]
+    fn routes_wheel_events_with_deltas_to_the_app() {
+        let guard = UapiGuard::new(SessionPolicy::default());
+        let adapter = DraftUiAdapter::default();
+        let dispatcher = Phase3UiDispatcher::new(&guard, &adapter);
+        let window = dispatcher
+            .create_window(
+                WindowOptions::new("List", WindowSize::new(300, 200).expect("window size"))
+                    .expect("options"),
+            )
+            .expect("create window");
+        let root = WidgetNode::new(WidgetId::new(1).expect("root"), WidgetKind::Stack);
+        let canvas = WidgetNode::new(WidgetId::new(2).expect("canvas"), WidgetKind::Canvas)
+            .with_parent(root.id)
+            .with_style(WidgetStyle {
+                width: Some(200.0),
+                height: Some(150.0),
+                ..WidgetStyle::default()
+            })
+            .expect("style");
+
+        dispatcher.set_root(window, root).expect("root");
+        dispatcher.upsert_node(window, canvas).expect("canvas");
+
+        let target = dispatcher
+            .route_wheel_event(WheelRouteRequest {
+                window,
+                viewport: LayoutViewport::new(300.0, 200.0).expect("viewport"),
+                x: 30.0,
+                y: 30.0,
+                dx: 0.0,
+                dy: 40.0,
+                modifiers: Modifiers::default(),
+            })
+            .expect("wheel");
+
+        assert_eq!(target, Some(WidgetId::new(2).expect("canvas")));
+        let events = dispatcher.drain_events().expect("events");
+        assert_eq!(
+            events.last(),
+            Some(&UiEvent::Wheel(WheelEvent {
+                window,
+                widget: Some(WidgetId::new(2).expect("canvas")),
+                x: 30.0,
+                y: 30.0,
+                dx: 0.0,
+                dy: 40.0,
+                modifiers: Modifiers::default(),
+            }))
         );
     }
 

@@ -249,25 +249,30 @@ mod real {
                     if let Some((x, y)) = self.cursor.get(&native).copied() {
                         // Line deltas scale to ~20 logical px per notch;
                         // pixel deltas divide by the window scale factor.
-                        // Winit's positive y scrolls content up; our dy is
-                        // positive-down.
-                        let dy = match delta {
-                            winit::event::MouseScrollDelta::LineDelta(_, lines) => -lines * 20.0,
+                        // Winit's positive y scrolls content up and positive x
+                        // scrolls it right; ours are positive-down and
+                        // positive-right, so both are negated.
+                        let (dx, dy) = match delta {
+                            winit::event::MouseScrollDelta::LineDelta(columns, lines) => {
+                                (-columns * 20.0, -lines * 20.0)
+                            }
                             winit::event::MouseScrollDelta::PixelDelta(pos) => {
                                 let scale = self
                                     .windows
                                     .get(&native)
                                     .map(|tracked| tracked.window.scale_factor())
                                     .unwrap_or(1.0);
-                                -(pos.y / scale) as f32
+                                (-(pos.x / scale) as f32, -(pos.y / scale) as f32)
                             }
                         };
-                        if dy.abs() > f32::EPSILON {
+                        if dx.abs() > f32::EPSILON || dy.abs() > f32::EPSILON {
                             self.wheel_samples.push(RawWheelSample {
                                 window: krate,
                                 x,
                                 y,
+                                dx,
                                 dy,
+                                modifiers: self.modifiers,
                             });
                         }
                     }
