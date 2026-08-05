@@ -216,13 +216,31 @@ jobs:
           fi
           echo "signing with: $IDENTITY"
 
-          # The nested CLI is signed before the bundle that contains it;
-          # codesign refuses to seal a bundle whose contents change afterwards.
+          # Every executable inside the bundle, innermost first: codesign
+          # refuses to seal a bundle whose contents change afterwards.
+          #
+          # There are two. The launcher `Krate` is a shell script that execs
+          # `krate-cli`, and signing only the latter is why notarization came
+          # back Invalid with "not signed with a valid Developer ID
+          # certificate" -- the notary service checks every Mach-O and script
+          # in Contents/MacOS, not just the one named in the plist.
           codesign --force --options runtime --timestamp \
             --sign "$IDENTITY" dist/Krate.app/Contents/MacOS/krate-cli
           codesign --force --options runtime --timestamp \
+            --sign "$IDENTITY" dist/Krate.app/Contents/MacOS/Krate
+          codesign --force --options runtime --timestamp \
             --sign "$IDENTITY" dist/Krate.app
           codesign --verify --deep --strict --verbose=2 dist/Krate.app
+
+          # Fail here rather than after a notarization round trip. An ad-hoc
+          # signature left anywhere inside the bundle is exactly what the
+          # notary service rejects, and it costs minutes to find out that way.
+          for exe in dist/Krate.app/Contents/MacOS/*; do
+            if codesign -dvvv "$exe" 2>&1 | grep -q "adhoc"; then
+              echo "::error::$exe is still ad-hoc signed; notarization would fail."
+              exit 1
+            fi
+          done
 
           # The bare CLI is downloaded and run directly, so it needs signing too.
           codesign --force --options runtime --timestamp \

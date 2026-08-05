@@ -87,6 +87,30 @@ is not done, whatever the build log says.
 Notarization adds roughly two to five minutes to a macOS release. The ticket is
 stapled to the bundle, so the app also opens on a machine that is offline.
 
+## If notarization returns "Invalid"
+
+The credentials are fine; the binary is not. Get the reason:
+
+```bash
+xcrun notarytool log <submission-id> --apple-id <email> \
+  --team-id <team> --password <app-specific>
+```
+
+The one that caught us: `Krate.app/Contents/MacOS/` holds **two**
+executables — the `Krate` launcher script and the `krate-cli` binary it
+execs. Signing only the second left the first ad-hoc, and the notary service
+checks every executable in that folder, not just the one named in the plist.
+It reports this as "The binary is not signed with a valid Developer ID
+certificate", which sounds like a certificate problem and is not.
+
+Check for a stray ad-hoc signature before uploading anything:
+
+```bash
+for exe in Krate.app/Contents/MacOS/*; do
+  codesign -dvvv "$exe" 2>&1 | grep -q adhoc && echo "unsigned: $exe"
+done
+```
+
 ## If notarization returns 401 and your credentials are right
 
 This is the confusing one, and it is usually not the credentials.
