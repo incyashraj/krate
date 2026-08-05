@@ -33,6 +33,30 @@ Every entry has a `Class:`, which says who can fix it:
 - `environment` — this machine, not the product. Record it so it is not
   rediscovered and not mistaken for a product failure.
 
+
+## GOALS.md: the plan of record
+
+`GOALS.md` at the repo root holds direction and progress -- the long-term goal,
+the mid-term gates, and the numbered workstations. Read it to see what your work
+is for. `BUGS.md` holds defects; `GOALS.md` holds direction. There are no other
+tracking files.
+
+Work top-down: goal, then gate, then workstation. If a task has no line back up
+to a goal in that file, question whether it should be done at all.
+
+## Testing like a stranger
+
+Users never ask for templates, so tests must not use them. Ask for arbitrary
+apps nobody has built, then **actually use them** -- click every control, resize
+the window, add items past the bottom of the list, leave it alone for thirty
+seconds. Building is not passing. Six check-app stages passed an app that could
+not be clicked.
+
+`~/krate-outsider` is an isolated sandbox for testing from a stranger's point of
+view: only the publicly installed `krate`, only krate.tech, never the repo
+source. It is the only uncontaminated signal we have about what a real person
+experiences.
+
 ## Two things that keep biting
 
 **The binary on PATH is not the one you built.** `krate` resolves to an older
