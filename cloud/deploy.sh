@@ -36,24 +36,42 @@ $WRANGLER r2 bucket create krate-bundles 2>/dev/null \
   || echo "    krate-bundles is already there"
 
 echo "==> KV namespace for the metadata"
-KV_OUTPUT="$($WRANGLER kv namespace create APPS 2>&1 || true)"
-# wrangler prints the new id in a TOML snippet; an existing namespace has to be
-# looked up instead.
-KV_ID="$(printf '%s' "$KV_OUTPUT" | grep -oE '[0-9a-f]{32}' | head -1 || true)"
-if [ -z "$KV_ID" ]; then
-  KV_ID="$($WRANGLER kv namespace list 2>/dev/null \
-    | python3 -c 'import json,sys
+# Ask for the namespace list first and only create when it is genuinely
+# absent. The earlier version created-then-fell-back-to-listing, and on a
+# second run wrangler printed no new id, so a loose grep picked the account id
+# out of surrounding text and wrote that in as the namespace.
+kv_lookup() {
+  $WRANGLER kv namespace list 2>/dev/null | python3 -c '
+import json, sys
 try:
     for ns in json.load(sys.stdin):
-        if ns.get("title","").endswith("APPS"):
-            print(ns["id"]); break
+        # wrangler titles a namespace "<worker>-<binding>".
+        if ns.get("title", "").endswith("APPS"):
+            print(ns["id"])
+            break
 except Exception:
-    pass' || true)"
+    pass'
+}
+
+# A good id already in the config wins. It is the one thing here known to be
+# correct, and re-deriving it every run is what went wrong twice.
+KV_ID="$(grep -oE '^id = "[0-9a-f]{32}"' wrangler.toml | grep -oE '[0-9a-f]{32}' || true)"
+if [ -z "$KV_ID" ]; then
+  KV_ID="$(kv_lookup || true)"
+fi
+if [ -z "$KV_ID" ]; then
+  $WRANGLER kv namespace create APPS >/dev/null 2>&1 || true
+  KV_ID="$(kv_lookup || true)"
 fi
 
-if [ -z "$KV_ID" ]; then
-  echo "error: could not create or find the APPS namespace." >&2
-  echo "$KV_OUTPUT" >&2
+# A namespace id is 32 hex characters, and so is an account id -- so shape
+# alone is not enough. Refusing to proceed when it equals the account id is
+# what stops the exact mix-up that broke two deploys.
+ACCOUNT_ID="$(grep -oE '^account_id = "[0-9a-f]{32}"' wrangler.toml | grep -oE '[0-9a-f]{32}')"
+if [ -z "$KV_ID" ] || [ "$KV_ID" = "$ACCOUNT_ID" ]; then
+  echo "error: could not find the APPS KV namespace." >&2
+  echo "Look it up with: npx wrangler@3 kv namespace list" >&2
+  echo "then set it as the id under [[kv_namespaces]] in cloud/worker/wrangler.toml" >&2
   exit 1
 fi
 echo "    namespace: $KV_ID"
