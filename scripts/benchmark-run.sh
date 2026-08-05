@@ -237,10 +237,19 @@ mkdir -p "$work_root"
 # people" from ~/.local/bin/krate into ~/krate-outsider. Nothing was corrupted,
 # because each run keeps its own work dir -- but it cost real time to prove
 # that, and a louder failure up front is worth more than a quiet coincidence.
-others="$(pgrep -f 'krate create' 2>/dev/null | wc -l | tr -d ' ')"
+#
+# Matched on the binary invocation (`.../krate create`) rather than the bare
+# words, because `pgrep -f 'krate create'` also matches this harness's own
+# wrapper shell and any grep whose pattern happens to contain the phrase. A
+# guard with false positives gets disabled, and then it protects nothing.
+others=0
+if [ "$dry_run" != "1" ]; then
+  others="$(pgrep -laf 'krate create' 2>/dev/null \
+    | grep -E '/krate create ' | grep -vc 'grep -E' || true)"
+fi
 if [ "${others:-0}" -gt 0 ] && [ "${ALLOW_CONCURRENT_RUNS:-0}" != "1" ]; then
   echo "another 'krate create' is already running on this machine:" >&2
-  pgrep -laf 'krate create' 2>/dev/null | cut -c1-120 >&2
+  pgrep -laf 'krate create' 2>/dev/null | grep -E '/krate create ' | grep -v 'grep -E' | cut -c1-120 >&2
   echo >&2
   echo "Two authoring runs share one AI quota and one build cache, so the" >&2
   echo "score would measure the collision rather than the product. Wait for" >&2

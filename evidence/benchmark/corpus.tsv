@@ -65,6 +65,16 @@
 # reliably do this today (K-013 -- the pack says only "print something"), and
 # that is a real, reportable failure rather than something to paper over here.
 #
+# CHANGE LOG. Every edit to a locked assert is recorded here.
+#
+# 2026-08-05, before the first run. Rows 14, 30, 33, 34 asserted `saved==1`,
+# `roundtrip==1`, `tail==1`, `measured==1`. Checking against the 17 shipped
+# bundles showed real apps write `saved:yes`, not `saved:1`. Those four asserts
+# were therefore testing a naming convention rather than a capability, and an
+# app that genuinely saved would have failed on spelling. Relaxed to `!=no`,
+# which tests the thing the request is about. Nothing was relaxed because a run
+# failed it -- this was caught before the run.
+#
 # HONESTY RULE. Do not delete or soften a row because we fail it. The hard tier
 # exists because it is currently mostly red, and a benchmark that only holds
 # what we pass is an advert. Rows may be added; a row may only be REMOVED if it
@@ -86,7 +96,7 @@
 
 # --- medium: real state, several parts, or persistence (13-30) ---
 13	medium	a habit tracker with a row of days for each habit	habits>=3;days>=7;marked>=1
-14	medium	a note taking app that saves my notes	notes>=1;saved==1
+14	medium	a note taking app that saves my notes	notes>=1;saved!=no
 15	medium	an expense tracker with a running total	entries>=3;total>=1
 16	medium	a shopping list I can add and remove items from	items>=2;added>=1;removed>=1
 17	medium	a simple kanban board with three columns	columns==3;cards>=3;moved>=1
@@ -102,7 +112,7 @@
 27	medium	a reading list of books with a read/unread mark	books>=3;read>=1;unread>=1
 28	medium	a mood tracker with a face for each day	days>=7;recorded>=1
 29	medium	a dashboard with three panels showing different numbers	panels==3;values>=3
-30	medium	a base64 encoder and decoder	encoded?;decoded?;roundtrip==1
+30	medium	a base64 encoder and decoder	encoded?;decoded?;roundtrip!=no
 
 # --- hard: sits on or past a limit we have not shipped (31-38) ---
 # These are here to be failed today, and each one names the board entry that
@@ -113,8 +123,8 @@
 # layout so hit-boxes stay put while the canvas stretches.
 31	hard	a long list of 200 items I can scroll through	items>=200;scrolled>=1;visible>=1
 32	hard	a text file viewer with line numbers for a long file	lines>=100;scrolled>=1;firstline?
-33	hard	a log viewer that keeps the newest line in view	lines>=50;scrolled>=1;tail==1
-34	hard	a table where the columns line up with the widest cell	cols>=3;measured==1;widest>=1
+33	hard	a log viewer that keeps the newest line in view	lines>=50;scrolled>=1;tail!=no
+34	hard	a table where the columns line up with the widest cell	cols>=3;measured!=no;widest>=1
 35	hard	a paragraph of text that wraps to the window width	wrapped>=2;width>=1
 36	hard	a snake game	length>=3;ticks>=1;alive?
 37	hard	a drawing pad where I can draw with the mouse	strokes>=1;points>=2
