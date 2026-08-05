@@ -33,6 +33,9 @@ use bindings::krate::ui::{events, tree, types, window};
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
 
+/// The size the window opens at. Nothing is laid out from these -- the window
+/// is resizable, so every rectangle comes from `Layout::for_size`, built from
+/// `canvas2d::canvas_size` at the top of each frame.
 const WIDTH: f32 = 480.0;
 const HEIGHT: f32 = 760.0;
 
@@ -44,11 +47,14 @@ const WAIT_ROUND_MILLIS: u32 = 33;
 const MAX_IDLE_ROUNDS: u32 = 1800;
 
 // ---- layout ----
+//
+// One struct, computed from the canvas's current size once per frame, read by
+// everything that draws and everything that hit-tests. Bubble wrapping depends
+// on the width, so a resize genuinely re-flows the feed rather than clipping
+// it.
 const BAR_H: f32 = 64.0;
 const SIDE: f32 = 16.0;
 const INPUT_H: f32 = 76.0;
-const INPUT_TOP: f32 = HEIGHT - INPUT_H;
-const BUBBLE_MAX_W: f32 = WIDTH * 0.75;
 const BUBBLE_PAD_X: f32 = 13.0;
 const BUBBLE_PAD_TOP: f32 = 10.0;
 const BUBBLE_PAD_BOT: f32 = 10.0;
@@ -57,6 +63,46 @@ const LINE_H: f32 = 20.0;
 const TS_SIZE: f32 = 11.0;
 const BUBBLE_GAP: f32 = 8.0;
 const SEP_GAP: f32 = 14.0;
+
+/// Below this the layout clamps rather than computing negative widths.
+const MIN_CANVAS_W: f32 = 280.0;
+const MIN_CANVAS_H: f32 = 320.0;
+
+/// Every measure the feed and its two bars need, derived from the canvas size.
+#[derive(Clone, Copy)]
+struct Layout {
+    width: f32,
+    height: f32,
+    /// Top of the input bar, which is where the feed stops.
+    input_top: f32,
+    /// Widest a message bubble may be at this width.
+    bubble_max_w: f32,
+    /// The round send button in the input bar: centre and radius.
+    send: (f32, f32, f32),
+}
+
+impl Layout {
+    fn for_size(width: f32, height: f32) -> Self {
+        let width = width.max(MIN_CANVAS_W);
+        let height = height.max(MIN_CANVAS_H);
+        let input_top = height - INPUT_H;
+        // Bubbles take a share of the width, so a wider window fits more words
+        // per line instead of leaving the feed in a narrow column.
+        let bubble_max_w = (width * 0.75).max(120.0);
+        let r = 22.0;
+        let send = (width - SIDE - r, input_top + 16.0 + r, r);
+        Self { width, height, input_top, bubble_max_w, send }
+    }
+
+    /// Whether a point is inside the round send button. Drawn from the same
+    /// centre and radius, so the circle a person sees is the one they hit.
+    fn hit_send(&self, x: f32, y: f32) -> bool {
+        let (cx, cy, r) = self.send;
+        let dx = x - cx;
+        let dy = y - cy;
+        dx * dx + dy * dy <= r * r
+    }
+}
 
 // ---- palette ----
 // Flat ground: an 8-bit gradient this shallow quantizes into visible bands,
@@ -262,8 +308,8 @@ fn day_label(entry_day: u64, today: u64) -> &'static str {
 }
 
 /// Measure one entry's bubble. Returns (width, height, timestamp-beside-text).
-fn measure_bubble(text: &str, ts: &str) -> (f32, f32, bool) {
-    let max_text_w = BUBBLE_MAX_W - BUBBLE_PAD_X * 2.0;
+fn measure_bubble(layout: &Layout, text: &str, ts: &str) -> (f32, f32, bool) {
+    let max_text_w = layout.bubble_max_w - BUBBLE_PAD_X * 2.0;
     let lines = wrap_lines(text, max_text_w);
     let mut widest = 0.0f32;
     for (a, b) in lines.iter() {
@@ -294,7 +340,7 @@ fn measure_bubble(text: &str, ts: &str) -> (f32, f32, bool) {
     (content_w + BUBBLE_PAD_X * 2.0, h, beside)
 }
 
-fn build_items(entries: &[Entry], today: u64) -> Vec<Item> {
+fn build_items(layout: &Layout, entries: &[Entry], today: u64) -> Vec<Item> {
     let mut items = Vec::new();
     let mut prev_day: Option<u64> = None;
     for (i, entry) in entries.iter().enumerate() {
@@ -304,7 +350,7 @@ fn build_items(entries: &[Entry], today: u64) -> Vec<Item> {
             prev_day = Some(d);
         }
         let ts = time_label(entry.millis);
-        let (w, h, beside) = measure_bubble(&entry.text, &ts);
+        let (w, h, beside) = measure_bubble(layout, &entry.text, &ts);
         items.push(Item::Bubble {
             entry_index: i,
             width: w,
@@ -319,24 +365,44 @@ fn build_items(entries: &[Entry], today: u64) -> Vec<Item> {
 // Rendering
 // ------------------------------------------------------------------
 
-fn draw(canvas: u64, entries: &[Entry], draft: &str, now: u64) -> Result<(), gfx::GfxError> {
+/// Ask the canvas its size, then draw the feed to that answer. Returns the
+/// layout used, so the event loop hit-tests the picture on screen.
+fn draw(canvas: u64, entries: &[Entry], draft: &str, now: u64) -> Result<Layout, gfx::GfxError> {
+    let size = canvas2d::canvas_size(canvas)?;
+    let layout = Layout::for_size(size.width, size.height);
+    draw_with(canvas, &layout, entries, draft, now)?;
+    Ok(layout)
+}
+
+fn draw_with(
+    canvas: u64,
+    layout: &Layout,
+    entries: &[Entry],
+    draft: &str,
+    now: u64,
+) -> Result<(), gfx::GfxError> {
     // Ground.
     canvas2d::clear(canvas, BG)?;
 
-    draw_feed(canvas, entries, now)?;
-    draw_top_bar(canvas, entries.len())?;
-    draw_input_bar(canvas, draft)?;
+    draw_feed(canvas, layout, entries, now)?;
+    draw_top_bar(canvas, layout, entries.len())?;
+    draw_input_bar(canvas, layout, draft)?;
 
     canvas2d::present(canvas)?;
     Ok(())
 }
 
-fn draw_feed(canvas: u64, entries: &[Entry], now: u64) -> Result<(), gfx::GfxError> {
-    let items = build_items(entries, day_of(now));
+fn draw_feed(
+    canvas: u64,
+    layout: &Layout,
+    entries: &[Entry],
+    now: u64,
+) -> Result<(), gfx::GfxError> {
+    let items = build_items(layout, entries, day_of(now));
 
     // Anchor the newest item just above the input bar and stack upward,
     // like a real chat: history scrolls away under the top bar.
-    let mut y_end = INPUT_TOP - 14.0;
+    let mut y_end = layout.input_top - 14.0;
     let mut tops: Vec<f32> = Vec::new();
     tops.resize(items.len(), 0.0);
     let mut i = items.len();
@@ -367,14 +433,14 @@ fn draw_feed(canvas: u64, entries: &[Entry], now: u64) -> Result<(), gfx::GfxErr
 
     // When the whole history fits with headroom, float a quiet privacy note
     // in the empty space — the honest-local version of WhatsApp's E2E banner.
-    let first_top = tops.first().copied().unwrap_or(INPUT_TOP);
+    let first_top = tops.first().copied().unwrap_or(layout.input_top);
     if first_top > BAR_H + 120.0 {
         let note = "Only you can see this — entries stay on this device";
         let size = 11.5;
         let tw = text_width(note, size);
         let pw = tw + 28.0;
         let ph = 24.0;
-        let px = (WIDTH - pw) * 0.5;
+        let px = (layout.width - pw) * 0.5;
         let py = BAR_H + (first_top - BAR_H - ph) * 0.5;
         rounded_rect(canvas, px, py, pw, ph, 8.0, PANEL)?;
         draw_text(canvas, note, px + 14.0, py + 16.0, size, INK_QUIET)?;
@@ -386,10 +452,10 @@ fn draw_feed(canvas: u64, entries: &[Entry], now: u64) -> Result<(), gfx::GfxErr
             continue;
         }
         match item {
-            Item::Separator(label) => draw_separator(canvas, label, top)?,
+            Item::Separator(label) => draw_separator(canvas, layout, label, top)?,
             Item::Bubble { entry_index, width, height, ts_beside } => {
                 if let Some(entry) = entries.get(*entry_index) {
-                    draw_bubble(canvas, entry, top, *width, *height, *ts_beside)?;
+                    draw_bubble(canvas, layout, entry, top, *width, *height, *ts_beside)?;
                 }
             }
         }
@@ -397,12 +463,17 @@ fn draw_feed(canvas: u64, entries: &[Entry], now: u64) -> Result<(), gfx::GfxErr
     Ok(())
 }
 
-fn draw_separator(canvas: u64, label: &str, top: f32) -> Result<(), gfx::GfxError> {
+fn draw_separator(
+    canvas: u64,
+    layout: &Layout,
+    label: &str,
+    top: f32,
+) -> Result<(), gfx::GfxError> {
     let size = 11.5;
     let tw = text_width(label, size);
     let pill_w = tw + 26.0;
     let pill_h = 22.0;
-    let x = (WIDTH - pill_w) * 0.5;
+    let x = (layout.width - pill_w) * 0.5;
     rounded_rect(canvas, x, top, pill_w, pill_h, pill_h * 0.5, PANEL)?;
     draw_text(canvas, label, x + (pill_w - tw) * 0.5, top + 15.0, size, INK_DIM)?;
     Ok(())
@@ -410,17 +481,18 @@ fn draw_separator(canvas: u64, label: &str, top: f32) -> Result<(), gfx::GfxErro
 
 fn draw_bubble(
     canvas: u64,
+    layout: &Layout,
     entry: &Entry,
     top: f32,
     w: f32,
     h: f32,
     ts_beside: bool,
 ) -> Result<(), gfx::GfxError> {
-    let x = WIDTH - SIDE - w;
+    let x = layout.width - SIDE - w;
     // Chat-tail feel: every corner 16 except a tight 4 at the bottom-right.
     bubble_shape(canvas, x, top, w, h, 16.0, 4.0, BUBBLE)?;
 
-    let max_text_w = BUBBLE_MAX_W - BUBBLE_PAD_X * 2.0;
+    let max_text_w = layout.bubble_max_w - BUBBLE_PAD_X * 2.0;
     let lines = wrap_lines(&entry.text, max_text_w);
     let mut baseline = top + BUBBLE_PAD_TOP + 14.0;
     for (a, b) in lines.iter() {
@@ -443,9 +515,9 @@ fn draw_bubble(
     Ok(())
 }
 
-fn draw_top_bar(canvas: u64, count: usize) -> Result<(), gfx::GfxError> {
-    fill(canvas, 0.0, 0.0, WIDTH, BAR_H, BAR_BG)?;
-    fill(canvas, 0.0, BAR_H - 1.0, WIDTH, 1.0, HAIRLINE)?;
+fn draw_top_bar(canvas: u64, layout: &Layout, count: usize) -> Result<(), gfx::GfxError> {
+    fill(canvas, 0.0, 0.0, layout.width, BAR_H, BAR_BG)?;
+    fill(canvas, 0.0, BAR_H - 1.0, layout.width, 1.0, HAIRLINE)?;
 
     // Avatar disc: accent-tinted, "M" initial in accent.
     let cx = 24.0 + 20.0;
@@ -462,16 +534,16 @@ fn draw_top_bar(canvas: u64, count: usize) -> Result<(), gfx::GfxError> {
     Ok(())
 }
 
-fn draw_input_bar(canvas: u64, draft: &str) -> Result<(), gfx::GfxError> {
-    fill(canvas, 0.0, INPUT_TOP, WIDTH, INPUT_H, BAR_BG)?;
-    fill(canvas, 0.0, INPUT_TOP, WIDTH, 1.0, HAIRLINE)?;
+fn draw_input_bar(canvas: u64, layout: &Layout, draft: &str) -> Result<(), gfx::GfxError> {
+    fill(canvas, 0.0, layout.input_top, layout.width, INPUT_H, BAR_BG)?;
+    fill(canvas, 0.0, layout.input_top, layout.width, 1.0, HAIRLINE)?;
 
     // The rounded field.
     let fx = SIDE;
-    let fy = INPUT_TOP + 16.0;
+    let fy = layout.input_top + 16.0;
     let fh = 44.0;
-    let (bx, _by, br) = send_button();
-    let fw = bx - br - 10.0 - fx;
+    let (bx, _by, br) = layout.send;
+    let fw = (bx - br - 10.0 - fx).max(40.0);
     rounded_rect(canvas, fx, fy, fw, fh, fh * 0.5, PANEL)?;
     stroke_rounded(canvas, fx, fy, fw, fh, fh * 0.5, HAIRLINE)?;
 
@@ -496,16 +568,12 @@ fn draw_input_bar(canvas: u64, draft: &str) -> Result<(), gfx::GfxError> {
         fill(canvas, tx + cw + 3.0, fy + 12.0, 2.0, fh - 24.0, ACCENT)?;
     }
 
-    // Send button: accent disc + paper-plane built from filled shapes.
-    let (bx, by, br) = send_button();
+    // Send button: accent disc + paper-plane built from filled shapes. The
+    // same centre and radius `Layout::hit_send` tests against.
+    let (bx, by, br) = layout.send;
     disc(canvas, bx, by, br, ACCENT)?;
     paper_plane(canvas, bx, by)?;
     Ok(())
-}
-
-fn send_button() -> (f32, f32, f32) {
-    let r = 22.0;
-    (WIDTH - SIDE - r, INPUT_TOP + 16.0 + r, r)
 }
 
 /// A right-pointing paper plane: the classic send glyph, a solid triangle with
@@ -687,11 +755,63 @@ impl bindings::Guest for Component {
 
         let now = clock::now_millis();
         let raw = args::raw();
-        let quick = raw
-            .as_bytes()
-            .split(|byte| *byte == b'\n')
-            .next()
-            .is_some_and(|first| first == b"quick");
+        let first_arg = raw.as_bytes().split(|byte| *byte == b'\n').next();
+        let quick = first_arg.is_some_and(|first| first == b"quick");
+        let resize_check = first_arg.is_some_and(|first| first == b"resize-check");
+
+        if resize_check {
+            // Drive the window through several shapes and confirm the send
+            // button is still where it was drawn, and the feed still fits.
+            let out = stdio::stdout();
+            let demo = seed_entries(now);
+            let sizes = [(480u32, 760u32), (900u32, 400u32), (300u32, 640u32)];
+            let mut all_ok = true;
+            for (w, h) in sizes {
+                if window::set_size(win, types::WindowSize { width: w, height: h }).is_err() {
+                    all_ok = false;
+                    continue;
+                }
+                let mut drain = 0u32;
+                while drain < 8 && events::wait(Some(1)).is_some() {
+                    drain += 1;
+                }
+                let Ok(layout) = draw(canvas, &demo, "", now) else {
+                    all_ok = false;
+                    continue;
+                };
+
+                let mut line = String::new();
+                line.push_str("size:");
+                push_u64(&mut line, layout.width as u64);
+                line.push('x');
+                push_u64(&mut line, layout.height as u64);
+                let _ = out.write(line.as_bytes());
+
+                let (bx, by, br) = layout.send;
+                let send_ok = layout.hit_send(bx, by);
+                // Just outside the disc must miss it.
+                let miss_ok = !layout.hit_send(bx + br + 4.0, by);
+                // The button stays inside the canvas and inside the input bar.
+                let inside_ok = bx + br <= layout.width && by + br <= layout.height;
+                let bar_ok = by - br >= layout.input_top;
+                // Bubbles never exceed the window they are drawn in.
+                let bubble_ok = layout.bubble_max_w <= layout.width;
+
+                if send_ok && miss_ok && inside_ok && bar_ok && bubble_ok {
+                    let _ = out.write(b" hit:ok\n");
+                } else {
+                    let _ = out.write(b" hit:WRONG\n");
+                    all_ok = false;
+                }
+            }
+            if all_ok {
+                let _ = out.write(b"resize:ok\n");
+            } else {
+                let _ = out.write(b"resize:FAILED\n");
+            }
+            let _ = window::close(win);
+            return if all_ok { 0 } else { 40 };
+        }
 
         if quick {
             // The store screenshot: a believable two-day feed and a draft mid-type.
@@ -708,10 +828,15 @@ impl bindings::Guest for Component {
         let mut entries = load_entries();
         let mut draft = String::new();
 
-        if draw(canvas, &entries, &draft, now).is_err() {
-            let _ = window::close(win);
-            return 34;
-        }
+        // The layout the visible frame was drawn with, so clicks follow the
+        // window when it is resized.
+        let mut layout = match draw(canvas, &entries, &draft, now) {
+            Ok(layout) => layout,
+            Err(_) => {
+                let _ = window::close(win);
+                return 34;
+            }
+        };
 
         let mut idle_rounds = 0u32;
         let mut round = 0u32;
@@ -731,10 +856,7 @@ impl bindings::Guest for Component {
             let mut send = false;
             match event {
                 Some(types::Event::Pointer(p)) if p.pressed => {
-                    let (bx, by, br) = send_button();
-                    let dx = p.x - bx;
-                    let dy = p.y - by;
-                    if dx * dx + dy * dy <= br * br {
+                    if layout.hit_send(p.x, p.y) {
                         send = true;
                     }
                 }
@@ -758,6 +880,11 @@ impl bindings::Guest for Component {
                 Some(types::Event::CloseRequested(_)) => {
                     done = true;
                 }
+                // Resized: recompute the layout from the canvas's new size.
+                // Hit-testing follows, because it reads this same layout.
+                Some(types::Event::Resized(_)) | Some(types::Event::RedrawRequested(_)) => {
+                    dirty = true;
+                }
                 _ => {}
             }
             if send {
@@ -772,7 +899,9 @@ impl bindings::Guest for Component {
                 dirty = true;
             }
             if dirty {
-                let _ = draw(canvas, &entries, &draft, clock::now_millis());
+                if let Ok(fresh) = draw(canvas, &entries, &draft, clock::now_millis()) {
+                    layout = fresh;
+                }
             }
             if done {
                 break;

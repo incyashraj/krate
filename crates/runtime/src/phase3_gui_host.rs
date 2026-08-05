@@ -686,6 +686,29 @@ impl Phase3GuiHost {
         }
     }
 
+    /// Re-fit a bound canvas's pixel buffer to its widget's current laid-out
+    /// rect. A no-op when the size has not changed. Called before reporting
+    /// `canvas_size` so an app that lays out from the reported size is laying
+    /// out from the size it will actually be shown at.
+    fn refit_canvas(&self, canvas: u64) -> Result<(), gfx::types::GfxError> {
+        let (window, widget) = {
+            let canvases = self.canvases.borrow();
+            let Some((window, widget, _)) = canvases.get(&canvas) else {
+                return Err(gfx::types::GfxError::InvalidTarget);
+            };
+            (*window, *widget)
+        };
+        let rect = self.canvas_widget_rect(window, widget)?;
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Err(gfx::types::GfxError::InvalidTarget);
+        };
+        surface
+            .resize(rect.0.max(1.0) as u32, rect.1.max(1.0) as u32)
+            .map_err(|error| gfx::types::GfxError::Unsupported(error.to_string()))?;
+        Ok(())
+    }
+
     /// Push a canvas's pixels through the image path and re-lower.
     fn publish_canvas(&self, canvas: u64) -> Result<(), gfx::types::GfxError> {
         let (window, widget, image) = {
@@ -1464,6 +1487,13 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         &mut self,
         canvas: u64,
     ) -> wasmtime::Result<Result<gfx::types::Size, gfx::types::GfxError>> {
+        // Re-fit to the widget's current rect before answering. The window is
+        // resizable, so the rect the canvas was bound to is not the rect it
+        // still has. Asking is how an app learns it was resized, and a stale
+        // answer here is what makes every hit-box drift after a resize.
+        if let Err(error) = self.refit_canvas(canvas) {
+            return Ok(Err(error));
+        }
         let canvases = self.canvases.borrow();
         let Some((_, _, surface)) = canvases.get(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
