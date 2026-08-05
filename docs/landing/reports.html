@@ -6,6 +6,11 @@
   <meta name="theme-color" content="#0b0d12" />
   <meta name="description" content="Krate's measured results: app sizes, startup times, sandbox cost, and what the runtime can and cannot do. Every chart is drawn from a real measurement." />
   <link rel="canonical" href="https://krate.tech/reports/" />
+  <!-- Both pages live one level down (/reports/, /progress/), so the icon path
+       must be root-absolute. A relative one would 404 and the tab would fall
+       back to a blank page icon. -->
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <meta property="og:title" content="Krate: the measurements" />
   <meta property="og:description" content="A 2D game in 11 KB. Sandboxed code at native speed. Every chart drawn from a real measurement, with the limits published beside them." />
   <meta property="og:type" content="website" />
@@ -15,6 +20,19 @@
   <title>Krate: the measurements</title>
   <link rel="stylesheet" href="/krate.css" />
   <style>
+    /* A branded header, so these pages are recognisably part of the site and
+       there is a way back. Both live one level down, so every path here is
+       root-absolute. */
+    .page-nav { border-bottom: 1px solid #23262e; }
+    .page-nav-inner { max-width: 48rem; margin: 0 auto; padding: 1rem 1.5rem;
+      display: flex; align-items: center; gap: .6rem; }
+    .page-nav a { display: inline-flex; align-items: center; gap: .6rem;
+      color: inherit; text-decoration: none; font-weight: 700;
+      letter-spacing: -.02em; }
+    .page-nav img { width: 26px; height: 26px; display: block; }
+    .page-nav .home { margin-left: auto; font-weight: 400; font-size: .9rem;
+      color: #98a1b3; }
+    .page-nav .home:hover { color: #f5f7fb; }
     .report { max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
     .report section { margin: 0 0 4.5rem; }
     .report h1 { font-size: clamp(2.1rem, 5vw, 3rem); line-height: 1.1; margin: 0.4rem 0 1rem; }
@@ -47,6 +65,16 @@
   </style>
 </head>
 <body>
+  <nav class="page-nav" aria-label="Primary">
+    <div class="page-nav-inner">
+      <a href="/" aria-label="Krate home">
+        <img src="/krate-glyph-blue.png" alt="" />
+        <span>Krate</span>
+      </a>
+      <a class="home" href="/">Back to the home page</a>
+    </div>
+  </nav>
+
   <main class="report">
     <p class="eyebrow">Reports</p>
     <h1>The measurements.</h1>
@@ -57,7 +85,7 @@
       not contain. Where a number cannot be re-measured automatically, the method
       is written underneath it.
     </p>
-    <p class="method">Generated 2026-08-03. Anyone can reproduce it: <code>python3 scripts/build-reports-page.py</code>.</p>
+    <p class="method">Generated 2026-08-05. Anyone can reproduce it: <code>python3 scripts/build-reports-page.py</code>.</p>
 
     <section>
       <p class="eyebrow">Size</p>
@@ -70,21 +98,35 @@
         bundled inside it that your computer already has: no browser, no
         framework, no runtime copy.
       </p>
-      <svg viewBox="0 0 640 374" role="img" class="chart" aria-label="Bar chart, longest bar is 75.7 KB">
+      <svg viewBox="0 0 640 850" role="img" class="chart" aria-label="Bar chart, longest bar is 75.7 KB">
   <text x="0" y="17" class="bl">eo2</text><rect x="132" y="5" width="412.0" height="18" rx="4" fill="#5c93f8"/><text x="554.0" y="19" class="bv">75.7 KB</text>
   <text x="0" y="51" class="bl">grex</text><rect x="132" y="39" width="287.4" height="18" rx="4" fill="#5c93f8"/><text x="429.4" y="53" class="bv">52.8 KB</text>
   <text x="0" y="85" class="bl">mdview</text><rect x="132" y="73" width="275.9" height="18" rx="4" fill="#5c93f8"/><text x="417.9" y="87" class="bv">50.7 KB</text>
   <text x="0" y="119" class="bl">envelope</text><rect x="132" y="107" width="103.4" height="18" rx="4" fill="#5c93f8"/><text x="245.4" y="121" class="bv">19 KB</text>
   <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="96.3" height="18" rx="4" fill="#5c93f8"/><text x="238.3" y="155" class="bv">17.7 KB</text>
   <text x="0" y="187" class="bl">ddh</text><rect x="132" y="175" width="94.7" height="18" rx="4" fill="#5c93f8"/><text x="236.7" y="189" class="bv">17.4 KB</text>
-  <text x="0" y="221" class="bl">hexyl</text><rect x="132" y="209" width="78.9" height="18" rx="4" fill="#5c93f8"/><text x="220.9" y="223" class="bv">14.5 KB</text>
-  <text x="0" y="255" class="bl">savings</text><rect x="132" y="243" width="73.5" height="18" rx="4" fill="#5c93f8"/><text x="215.5" y="257" class="bv">13.5 KB</text>
-  <text x="0" y="289" class="bl">bounce</text><rect x="132" y="277" width="70.2" height="18" rx="4" fill="#5c93f8"/><text x="212.2" y="291" class="bv">12.9 KB</text>
-  <text x="0" y="323" class="bl">cubes</text><rect x="132" y="311" width="68.0" height="18" rx="4" fill="#5c93f8"/><text x="210.0" y="325" class="bv">12.5 KB</text>
-  <text x="0" y="357" class="bl">chart</text><rect x="132" y="345" width="59.3" height="18" rx="4" fill="#5c93f8"/><text x="201.3" y="359" class="bv">10.9 KB</text>
+  <text x="0" y="221" class="bl">journal</text><rect x="132" y="209" width="93.1" height="18" rx="4" fill="#5c93f8"/><text x="235.1" y="223" class="bv">17.1 KB</text>
+  <text x="0" y="255" class="bl">nova</text><rect x="132" y="243" width="86.5" height="18" rx="4" fill="#5c93f8"/><text x="228.5" y="257" class="bv">15.9 KB</text>
+  <text x="0" y="289" class="bl">notes</text><rect x="132" y="277" width="81.1" height="18" rx="4" fill="#5c93f8"/><text x="223.1" y="291" class="bv">14.9 KB</text>
+  <text x="0" y="323" class="bl">fetch</text><rect x="132" y="311" width="78.9" height="18" rx="4" fill="#5c93f8"/><text x="220.9" y="325" class="bv">14.5 KB</text>
+  <text x="0" y="357" class="bl">hexyl</text><rect x="132" y="345" width="78.9" height="18" rx="4" fill="#5c93f8"/><text x="220.9" y="359" class="bv">14.5 KB</text>
+  <text x="0" y="391" class="bl">contacts</text><rect x="132" y="379" width="76.2" height="18" rx="4" fill="#5c93f8"/><text x="218.2" y="393" class="bv">14 KB</text>
+  <text x="0" y="425" class="bl">clip</text><rect x="132" y="413" width="74.6" height="18" rx="4" fill="#5c93f8"/><text x="216.6" y="427" class="bv">13.7 KB</text>
+  <text x="0" y="459" class="bl">savings</text><rect x="132" y="447" width="73.5" height="18" rx="4" fill="#5c93f8"/><text x="215.5" y="461" class="bv">13.5 KB</text>
+  <text x="0" y="493" class="bl">pulse</text><rect x="132" y="481" width="73.5" height="18" rx="4" fill="#5c93f8"/><text x="215.5" y="495" class="bv">13.5 KB</text>
+  <text x="0" y="527" class="bl">checklist</text><rect x="132" y="515" width="72.9" height="18" rx="4" fill="#5c93f8"/><text x="214.9" y="529" class="bv">13.4 KB</text>
+  <text x="0" y="561" class="bl">bounce</text><rect x="132" y="549" width="70.2" height="18" rx="4" fill="#5c93f8"/><text x="212.2" y="563" class="bv">12.9 KB</text>
+  <text x="0" y="595" class="bl">clocks</text><rect x="132" y="583" width="69.1" height="18" rx="4" fill="#5c93f8"/><text x="211.1" y="597" class="bv">12.7 KB</text>
+  <text x="0" y="629" class="bl">cubes</text><rect x="132" y="617" width="68.0" height="18" rx="4" fill="#5c93f8"/><text x="210.0" y="631" class="bv">12.5 KB</text>
+  <text x="0" y="663" class="bl">focus</text><rect x="132" y="651" width="65.3" height="18" rx="4" fill="#5c93f8"/><text x="207.3" y="665" class="bv">12 KB</text>
+  <text x="0" y="697" class="bl">weather</text><rect x="132" y="685" width="63.7" height="18" rx="4" fill="#5c93f8"/><text x="205.7" y="699" class="bv">11.7 KB</text>
+  <text x="0" y="731" class="bl">chart</text><rect x="132" y="719" width="62.0" height="18" rx="4" fill="#5c93f8"/><text x="204.0" y="733" class="bv">11.4 KB</text>
+  <text x="0" y="765" class="bl">keyvault</text><rect x="132" y="753" width="58.8" height="18" rx="4" fill="#5c93f8"/><text x="200.8" y="767" class="bv">10.8 KB</text>
+  <text x="0" y="799" class="bl">paint</text><rect x="132" y="787" width="57.7" height="18" rx="4" fill="#5c93f8"/><text x="199.7" y="801" class="bv">10.6 KB</text>
+  <text x="0" y="833" class="bl">fractal</text><rect x="132" y="821" width="46.3" height="18" rx="4" fill="#5c93f8"/><text x="188.3" y="835" class="bv">8.5 KB</text>
 </svg>
       <p>
-        All 11 apps together come to <strong>298&nbsp;KB</strong>.
+        All 25 apps together come to <strong>481&nbsp;KB</strong>.
       </p>
       <p class="method">
         Sizes read from the packaged <code>.krate</code> files in the public
@@ -122,43 +164,6 @@
       </p>
     </section>
 
-
-    <section>
-      <p class="eyebrow">Speed</p>
-      <h2>An app opens in 11&ndash;98 milliseconds.</h2>
-      <p>
-        One frame of 60&nbsp;fps video lasts 16.7&nbsp;ms. Most Krate apps have
-        finished opening before a screen finishes drawing a single frame. The
-        slowest here are the two ported desktop applications, which do real
-        work on startup.
-      </p>
-      <svg viewBox="0 0 640 306" role="img" class="chart" aria-label="Bar chart, longest bar is 98.5 ms">
-  <text x="0" y="17" class="bl">chart</text><rect x="132" y="5" width="44.3" height="18" rx="4" fill="#7cc4a4"/><text x="186.3" y="19" class="bv">10.6 ms</text>
-  <text x="0" y="51" class="bl">savings</text><rect x="132" y="39" width="47.7" height="18" rx="4" fill="#7cc4a4"/><text x="189.7" y="53" class="bv">11.4 ms</text>
-  <text x="0" y="85" class="bl">envelope</text><rect x="132" y="73" width="61.9" height="18" rx="4" fill="#7cc4a4"/><text x="203.9" y="87" class="bv">14.8 ms</text>
-  <text x="0" y="119" class="bl">cubes</text><rect x="132" y="107" width="67.8" height="18" rx="4" fill="#7cc4a4"/><text x="209.8" y="121" class="bv">16.2 ms</text>
-  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="71.1" height="18" rx="4" fill="#7cc4a4"/><text x="213.1" y="155" class="bv">17 ms</text>
-  <text x="0" y="187" class="bl">mdview</text><rect x="132" y="175" width="102.9" height="18" rx="4" fill="#7cc4a4"/><text x="244.9" y="189" class="bv">24.6 ms</text>
-  <text x="0" y="221" class="bl">eo2</text><rect x="132" y="209" width="103.3" height="18" rx="4" fill="#7cc4a4"/><text x="245.3" y="223" class="bv">24.7 ms</text>
-  <text x="0" y="255" class="bl">grex</text><rect x="132" y="243" width="123.0" height="18" rx="4" fill="#7cc4a4"/><text x="265.0" y="257" class="bv">29.4 ms</text>
-  <text x="0" y="289" class="bl">bounce</text><rect x="132" y="277" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="291" class="bv">98.5 ms</text>
-</svg>
-      <p class="method">
-        Measured while this page was generated: five runs of each app on this
-        machine, median reported, whole-process time including everything the
-        app itself does. These numbers were hardcoded once and had drifted
-        within a day, so the page now runs the apps instead of remembering them.
-        Two of the ten are missing from this chart because they take a file path
-        rather than a fixed argument, and one command cannot start every app.
-      </p>
-      <p class="method">
-        Every run includes the permission check. Krate reads the app's
-        manifest and grants each capability it declares before a line of the
-        app runs. That safety work is about 10&nbsp;ms of the times above, and
-        it is counted, because an app that has not been checked is not an app
-        anyone should time.
-      </p>
-    </section>
 
     <section>
       <p class="eyebrow">Cost of safety</p>
@@ -304,11 +309,25 @@
         <tr><td><code>envelope</code></td><td>Database</td><td class="num">19,495</td><td>Budgeting, with real SQL and secure storage</td><td class="mid">Nightly</td></tr>
         <tr><td><code>rssfwd</code></td><td>Internet</td><td class="num">18,084</td><td>Feed forwarder over scoped HTTPS</td><td class="mid">—</td></tr>
         <tr><td><code>ddh</code></td><td>Filesystem</td><td class="num">17,778</td><td>Duplicate-file finder</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>journal</code></td><td></td><td class="num">17,494</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>nova</code></td><td></td><td class="num">16,260</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>notes</code></td><td></td><td class="num">15,269</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>fetch</code></td><td></td><td class="num">14,878</td><td></td><td class="mid">—</td></tr>
         <tr><td><code>hexyl</code></td><td>Command line</td><td class="num">14,872</td><td>Hex viewer with byte-identical output to the original</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>contacts</code></td><td></td><td class="num">14,350</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>clip</code></td><td></td><td class="num">14,015</td><td></td><td class="mid">—</td></tr>
         <tr><td><code>savings</code></td><td>Everyday app</td><td class="num">13,791</td><td>A window, a form, state that survives a restart</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>pulse</code></td><td></td><td class="num">13,780</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>checklist</code></td><td></td><td class="num">13,717</td><td></td><td class="mid">—</td></tr>
         <tr><td><code>bounce</code></td><td>2D game</td><td class="num">13,161</td><td>A playable Breakout: paddle, bricks, lives, a win</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>cubes</code></td><td></td><td class="num">12,785</td><td></td><td class="mid">Nightly</td></tr>
-        <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,147</td><td>Draws its own bar chart, with no image files</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>clocks</code></td><td></td><td class="num">13,012</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>cubes</code></td><td></td><td class="num">12,762</td><td></td><td class="mid">Nightly</td></tr>
+        <tr><td><code>focus</code></td><td></td><td class="num">12,308</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>weather</code></td><td></td><td class="num">12,007</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,713</td><td>Draws its own bar chart, with no image files</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>keyvault</code></td><td></td><td class="num">11,057</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>paint</code></td><td></td><td class="num">10,901</td><td></td><td class="mid">—</td></tr>
+        <tr><td><code>fractal</code></td><td></td><td class="num">8,689</td><td></td><td class="mid">—</td></tr>
         </tbody>
       </table>
       </div>

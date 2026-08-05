@@ -25,7 +25,10 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-BUNDLES = ROOT / "evidence/ported"
+# Both shelves. `ported` holds the programs brought over from other languages;
+# `store` holds the apps written for Krate that the store actually lists.
+# Counting only `ported` made this page report 11 apps while 17 shipped.
+BUNDLE_DIRS = (ROOT / "evidence/ported", ROOT / "evidence/store")
 KRATE = ROOT / "target/release/krate"
 
 # Cross-platform desktop apps to size ourselves against, measured live from
@@ -96,10 +99,17 @@ APPS = {
 
 
 def bundles():
-    return sorted(
-        ((p.stem, p.stat().st_size) for p in BUNDLES.glob("*.krate")),
-        key=lambda pair: -pair[1],
-    )
+    # De-duplicate by name: a few apps exist on both shelves (the store rebuilt
+    # them with modern UIs), and counting one app twice would inflate every
+    # figure on the page.
+    seen = {}
+    for directory in BUNDLE_DIRS:
+        if not directory.is_dir():
+            continue
+        for path in directory.glob("*.krate"):
+            name = path.stem.removeprefix("krate-")
+            seen.setdefault(name, path.stat().st_size)
+    return sorted(seen.items(), key=lambda pair: -pair[1])
 
 
 def nightly():
@@ -134,8 +144,12 @@ def measure_startup(names, runs=5):
 
     measured, skipped = [], []
     for name in names:
-        bundle = BUNDLES / f"{name}.krate"
-        if not bundle.is_file():
+        # Look on both shelves, and under the store's `krate-` prefix, so a
+        # renamed or rebuilt app is still found rather than silently skipped.
+        candidates = [d / f"{name}.krate" for d in BUNDLE_DIRS]
+        candidates += [d / f"krate-{name}.krate" for d in BUNDLE_DIRS]
+        bundle = next((c for c in candidates if c.is_file()), None)
+        if bundle is None:
             continue
         times = []
         for _ in range(runs):
@@ -355,6 +369,11 @@ def main():
   <meta name="theme-color" content="#0b0d12" />
   <meta name="description" content="Krate's measured results: app sizes, startup times, sandbox cost, and what the runtime can and cannot do. Every chart is drawn from a real measurement." />
   <link rel="canonical" href="https://krate.tech/reports/" />
+  <!-- Both pages live one level down (/reports/, /progress/), so the icon path
+       must be root-absolute. A relative one would 404 and the tab would fall
+       back to a blank page icon. -->
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <meta property="og:title" content="Krate: the measurements" />
   <meta property="og:description" content="A 2D game in 11 KB. Sandboxed code at native speed. Every chart drawn from a real measurement, with the limits published beside them." />
   <meta property="og:type" content="website" />
@@ -364,6 +383,19 @@ def main():
   <title>Krate: the measurements</title>
   <link rel="stylesheet" href="/krate.css" />
   <style>
+    /* A branded header, so these pages are recognisably part of the site and
+       there is a way back. Both live one level down, so every path here is
+       root-absolute. */
+    .page-nav {{ border-bottom: 1px solid #23262e; }}
+    .page-nav-inner {{ max-width: 48rem; margin: 0 auto; padding: 1rem 1.5rem;
+      display: flex; align-items: center; gap: .6rem; }}
+    .page-nav a {{ display: inline-flex; align-items: center; gap: .6rem;
+      color: inherit; text-decoration: none; font-weight: 700;
+      letter-spacing: -.02em; }}
+    .page-nav img {{ width: 26px; height: 26px; display: block; }}
+    .page-nav .home {{ margin-left: auto; font-weight: 400; font-size: .9rem;
+      color: #98a1b3; }}
+    .page-nav .home:hover {{ color: #f5f7fb; }}
     .report {{ max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }}
     .report section {{ margin: 0 0 4.5rem; }}
     .report h1 {{ font-size: clamp(2.1rem, 5vw, 3rem); line-height: 1.1; margin: 0.4rem 0 1rem; }}
@@ -396,6 +428,16 @@ def main():
   </style>
 </head>
 <body>
+  <nav class="page-nav" aria-label="Primary">
+    <div class="page-nav-inner">
+      <a href="/" aria-label="Krate home">
+        <img src="/krate-glyph-blue.png" alt="" />
+        <span>Krate</span>
+      </a>
+      <a class="home" href="/">Back to the home page</a>
+    </div>
+  </nav>
+
   <main class="report">
     <p class="eyebrow">Reports</p>
     <h1>The measurements.</h1>
