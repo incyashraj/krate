@@ -255,7 +255,7 @@ try {
     Write-Say 'someone sent you, or browse what people have published.'
     Write-Say ''
     Write-Say 'If a new terminal says "krate is not recognized", run it by full path:'
-    Write-Say "  & `"$dir\$binary`" --version""
+    Write-Say "  & `"$dir\$binary`" --version"
 } finally {
     Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }
