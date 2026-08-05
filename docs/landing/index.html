@@ -323,7 +323,7 @@
         <p class="hero-lead">Make an app by asking. Publish it. It opens on any computer, and shows what it wants before it runs.</p>
         <div class="actions">
           <a class="button primary" href="#start">Get Krate</a>
-          <a class="button" href="/cloud/">Open the store</a>
+          <a class="button" href="/cloud/">Browse Krate Cloud</a>
         </div>
       </div>
     </section>
@@ -431,8 +431,8 @@
       <div class="wrap">
         <div class="section-heading">
           <p class="label">See it work</p>
-          <h2>Two minutes, start to finish.</h2>
-          <p>Making an app, and opening one someone sent you. Both are real commands.</p>
+          <h2>One word to start.</h2>
+          <p>Making an app, opening one someone sent you, and putting one on Krate Cloud.</p>
         </div>
 
         <div class="product-window">
@@ -442,9 +442,9 @@
           </div>
 
           <div class="journey-tabs" role="tablist" aria-label="Krate product walkthrough">
-            <button class="journey-tab active" id="demoTabCreate" type="button" role="tab" aria-selected="true" aria-controls="terminalDemoPanel" tabindex="0" data-demo="create"><strong>01</strong> Making an app</button>
+            <button class="journey-tab active" id="demoTabCreate" type="button" role="tab" aria-selected="true" aria-controls="terminalDemoPanel" tabindex="0" data-demo="create"><strong>01</strong> Making one</button>
             <button class="journey-tab" id="demoTabOpen" type="button" role="tab" aria-selected="false" aria-controls="terminalDemoPanel" tabindex="-1" data-demo="open"><strong>02</strong> Opening one</button>
-            <button class="journey-tab" id="demoTabCloud" type="button" role="tab" aria-selected="false" aria-controls="terminalDemoPanel" tabindex="-1" data-demo="cloud"><strong>03</strong> The store <span class="tab-planned">beta</span></button>
+            <button class="journey-tab" id="demoTabCloud" type="button" role="tab" aria-selected="false" aria-controls="terminalDemoPanel" tabindex="-1" data-demo="cloud"><strong>03</strong> Krate Cloud <span class="tab-planned">early access</span></button>
           </div>
 
           <div class="journey-panel demo-panel" id="terminalDemoPanel" role="tabpanel" aria-labelledby="demoTabCreate"></div>
@@ -492,7 +492,7 @@
       <div class="wrap">
         <div class="section-heading">
           <p class="label">Start here</p>
-          <h2>It works like Python.</h2>
+          <h2>Install once. Open anything.</h2>
           <p>You install the runtime once. After that, you can open any <code>.krate</code> app someone sends you. Double-click it, or run it from a terminal. That is the whole idea.</p>
         </div>
 
@@ -557,8 +557,8 @@
           <a class="path-card" href="/cloud/">
             <span class="path-number">02 / GET</span>
             <h3>I want to try some apps</h3>
-            <p>Krate Cloud is the store. Browse and download apps, then open them the same way. Twenty-five are on the shelf today.</p>
-            <span class="path-link">Open the store &rarr;</span>
+            <p>Browse what people have published, copy one command, and it opens the same way as any other app.</p>
+            <span class="path-link">Browse Krate Cloud &rarr;</span>
           </a>
 
           <a class="path-card" href="/open/">
@@ -773,7 +773,7 @@
 
         <div class="plain-block">
           <p class="eyebrow">Apps that run today</p>
-          <p>Calculator, temperature converter, notes, a 500-row scrolling list, a persistence counter that saves and reloads, HTTP fetch, real-time animation, tabbed settings with a slider, switch, and progress bar, a file tree, a stats dashboard with a bar chart beside the widgets, a weather card, a Pomodoro timer, a world clock, a contacts book backed by SQLite, a 3D scene, and a 2D arcade shooter you play with the arrow keys. Thirty-four example apps ship in <code>apps/krate-*</code>, twenty-five are on the store shelf, and twelve are shown as screenshots above.</p>
+          <p>Calculator, temperature converter, notes, a 500-row scrolling list, a persistence counter that saves and reloads, HTTP fetch, real-time animation, tabbed settings with a slider, switch, and progress bar, a file tree, a stats dashboard with a bar chart beside the widgets, a weather card, a Pomodoro timer, a world clock, a contacts book backed by SQLite, a 3D scene, and a 2D arcade shooter you play with the arrow keys. Twenty-seven example apps ship in <code>apps/krate-*</code>, ten are published on <a href="/cloud/">Krate Cloud</a>, and nine are shown as screenshots above.</p>
 
           <p class="eyebrow">Check one yourself</p>
           <p>Run any app and have the runtime paint its window to a PNG, on any machine, no display needed:</p>
@@ -847,15 +847,15 @@
       </div>
     </section>
 
-        <!-- The store is real and has its own page now, so this points at it
+        <!-- Krate Cloud is real and has its own page now, so this points at it
          rather than reproducing it with mock cards that would drift. -->
     <section class="section cloud-section" id="cloud">
       <div class="wrap plain-block">
         <h2>Krate Cloud</h2>
         <p>Apps you can look at before you trust them. Every listing is read out of the file itself: its size, its identity, and every permission it asks for, so nobody describes their own app more kindly than it behaves.</p>
-        <p>Publishing goes through the store. Running does not: apps open on your own computer, with exactly the access you allow.</p>
+        <p>Publishing goes through Krate Cloud. Running does not: apps open on your own computer, with exactly the access you allow.</p>
         <div class="actions">
-          <a class="button primary" href="/cloud/">Open the store</a>
+          <a class="button primary" href="/cloud/">Browse Krate Cloud</a>
           <a class="button" href="/cloud/#publish">Publish an app</a>
         </div>
       </div>
@@ -892,7 +892,7 @@
 <details class="faq-item">
             <summary><span class="faq-index">08 / Today</span><span>What can Krate apps do today, and can it convert my existing app?</span></summary>
             <div class="faq-answer">
-              <p>Today Krate runs a real range of small apps that fit its current UI and capability set: a calculator, a temperature converter, notes and lists, tabbed settings with sliders, switches, and progress bars, a file tree, a stats dashboard with a bar chart, a weather card, a Pomodoro timer, a world clock, real-time animation, a 3D scene, a 2D arcade shooter you play with the arrow keys, HTTP fetch, local persistence, database-backed apps on SQLite, and portable command-line tools. Thirty-four example apps ship in the repo, twenty-five are on the store shelf, and twelve are shown above as real screenshots. The one gap left: clipboard works on Mac and Linux, but the Windows clipboard is not wired up yet.</p>
+              <p>Today Krate runs a real range of small apps that fit its current UI and capability set: a calculator, a temperature converter, notes and lists, tabbed settings with sliders, switches, and progress bars, a file tree, a stats dashboard with a bar chart, a weather card, a Pomodoro timer, a world clock, real-time animation, a 3D scene, a 2D arcade shooter you play with the arrow keys, HTTP fetch, local persistence, database-backed apps on SQLite, and portable command-line tools. Twenty-seven example apps ship in the repository, and ten are published on <a href="/cloud/">Krate Cloud</a>. The one gap left: clipboard works on Mac and Linux, but the Windows clipboard is not wired up yet.</p>
               <p>It does not automatically convert an existing Swift, Electron, Tauri, or native application yet. Current apps must use Krate APIs. AI-assisted porting is a planned development target, and it will reimplement supported behavior rather than pretend an incompatible binary became portable.</p>
             </div>
           </details>
@@ -1021,22 +1021,29 @@
       create: {
         state: "Working today",
         stateClass: "",
-        title: "Just ask an AI. Get an app.",
-        description: "Describe what you want in your own words. An AI writes it, Krate checks it, and you get one file that opens anywhere.",
-        note: "Easiest way: connect Krate to Claude Desktop or Cursor and just talk. No terminal at all.",
-        terminalTitle: "making an app with AI",
-        linkLabel: "Make one yourself →",
+        title: "Type one word. Describe what you want.",
+        description: "`krate` opens a menu, asks what you want to make, and uses an AI you already have to write it. You get one file that opens anywhere.",
+        note: "Nothing to configure. If you would rather stay in Claude Desktop or Cursor, Krate connects to those too.",
+        terminalTitle: "making an app",
+        linkLabel: "See how it works \u2192",
         linkHref: "./docs/pages/make-an-app-with-ai.html",
         lines: [
-          { type: "label", text: "Easiest: talk to an AI you already use" },
-          { type: "command", text: "krate mcp" },
-          { type: "muted", text: "connects Krate to Claude Desktop or Cursor" },
-          { type: "info", text: 'Then just say: "build me a grocery list app"' },
-          { type: "muted", text: "the AI writes it, Krate checks it, you get the file" },
+          { type: "command", text: "krate" },
           { type: "gap", text: "" },
-          { type: "label", text: "Or type one word in a terminal" },
-          { type: "command", text: 'krate' },
-          { type: "muted", text: "pick \u201cMake an app\u201d, then say what you want" },
+          { type: "muted", text: "  KRATE" },
+          { type: "muted", text: "  make an app you can send to anyone" },
+          { type: "gap", text: "" },
+          { type: "info", text: "  1  Make an app          describe it, an AI writes it" },
+          { type: "muted", text: "  2  Connect an AI app    build from inside Claude or Cursor" },
+          { type: "muted", text: "  3  Open an app          one someone sent you" },
+          { type: "muted", text: "  4  My apps              everything you have made" },
+          { type: "gap", text: "" },
+          { type: "label", text: "What do you want to make?" },
+          { type: "command", text: "a grocery list that remembers what I buy" },
+          { type: "gap", text: "" },
+          { type: "success", text: "\u2713 read Krate's API reference        4s" },
+          { type: "success", text: "\u2713 wrote the app's code             1m 12s" },
+          { type: "success", text: "\u2713 checked it builds and runs         38s" },
           { type: "gap", text: "" },
           { type: "success", text: "Created groceries.krate  (13 KB)" },
           { type: "info", text: "Send that one file to anyone, on any of the three systems." }
@@ -1045,27 +1052,23 @@
       open: {
         state: "Working today",
         stateClass: "",
-        title: "You get sent a file. You double-click it.",
-        description: "Same as any other app on your computer. Krate shows you what it wants before it starts. You decide, and it gets nothing else.",
-        note: "Double-click works on Mac, Windows, and Linux once Krate is installed.",
+        title: "Double-click it. That is the whole thing.",
+        description: "The only thing the person needs is Krate installed. No build step, no unzipping, no developer tools, nothing to sign up for.",
+        note: "Works the same on Mac, Windows, and Linux.",
         terminalTitle: "opening an app",
-        linkLabel: "Try one now →",
+        linkLabel: "Open one now \u2192",
         linkHref: "/open/",
         lines: [
-          { type: "label", text: "The easy way: double-click the file" },
           { type: "success", text: "Double-click groceries.krate" },
-          { type: "muted", text: "that is it -- no terminal, no commands" },
+          { type: "muted", text: "no terminal, no commands, no install per app" },
           { type: "gap", text: "" },
-          { type: "label", text: "Krate asks first" },
-          { type: "info", text: "This app wants to:" },
-          { type: "info", text: "   show a window" },
-          { type: "info", text: "   save its own list" },
-          { type: "muted", text: "   it did not ask for the internet, or your files" },
+          { type: "label", text: "Krate asks before it starts" },
+          { type: "info", text: "  This app wants to:" },
+          { type: "info", text: "    show a window" },
+          { type: "info", text: "    save its own list" },
+          { type: "muted", text: "    it did not ask for the internet, or your files" },
           { type: "gap", text: "" },
-          { type: "success", text: "You say yes. It opens. It gets nothing else." },
-          { type: "gap", text: "" },
-          { type: "label", text: "Prefer a terminal? That works too" },
-          { type: "command", text: "krate run groceries.krate" }
+          { type: "success", text: "You say yes. It opens. It gets nothing else." }
         ]
       },
       cloud: {
