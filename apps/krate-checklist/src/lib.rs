@@ -482,7 +482,11 @@ fn save(list: &Checklist) -> bool {
         if !item.used {
             continue;
         }
-        push(if item.done { b"[x] " } else { b"[ ] " }, &mut out, &mut len);
+        push(
+            if item.done { b"[x] " } else { b"[ ] " },
+            &mut out,
+            &mut len,
+        );
         push(item.text_str().as_bytes(), &mut out, &mut len);
         push(b"\n", &mut out, &mut len);
     }
@@ -497,13 +501,48 @@ fn save(list: &Checklist) -> bool {
 // Palette
 // ------------------------------------------------------------------
 
-const BG_TOP: gfx::Color = gfx::Color { r: 0.075, g: 0.086, b: 0.125, a: 1.0 };
-const BG_BOT: gfx::Color = gfx::Color { r: 0.043, g: 0.051, b: 0.078, a: 1.0 };
-const CARD: gfx::Color = gfx::Color { r: 0.129, g: 0.145, b: 0.196, a: 1.0 };
-const CARD_DONE: gfx::Color = gfx::Color { r: 0.102, g: 0.118, b: 0.161, a: 1.0 };
-const INK: gfx::Color = gfx::Color { r: 0.902, g: 0.925, b: 0.98, a: 1.0 };
-const INK_DIM: gfx::Color = gfx::Color { r: 0.478, g: 0.525, b: 0.627, a: 1.0 };
-const INK_DONE: gfx::Color = gfx::Color { r: 0.435, g: 0.475, b: 0.561, a: 1.0 };
+const BG_TOP: gfx::Color = gfx::Color {
+    r: 0.075,
+    g: 0.086,
+    b: 0.125,
+    a: 1.0,
+};
+const BG_BOT: gfx::Color = gfx::Color {
+    r: 0.043,
+    g: 0.051,
+    b: 0.078,
+    a: 1.0,
+};
+const CARD: gfx::Color = gfx::Color {
+    r: 0.129,
+    g: 0.145,
+    b: 0.196,
+    a: 1.0,
+};
+const CARD_DONE: gfx::Color = gfx::Color {
+    r: 0.102,
+    g: 0.118,
+    b: 0.161,
+    a: 1.0,
+};
+const INK: gfx::Color = gfx::Color {
+    r: 0.902,
+    g: 0.925,
+    b: 0.98,
+    a: 1.0,
+};
+const INK_DIM: gfx::Color = gfx::Color {
+    r: 0.478,
+    g: 0.525,
+    b: 0.627,
+    a: 1.0,
+};
+const INK_DONE: gfx::Color = gfx::Color {
+    r: 0.435,
+    g: 0.475,
+    b: 0.561,
+    a: 1.0,
+};
 
 // ------------------------------------------------------------------
 // Rendering
@@ -537,7 +576,12 @@ fn draw_with(
     // Deep, considered ground -- a soft vertical gradient, not flat black.
     canvas2d::linear_gradient(
         canvas,
-        gfx::Rect { x: 0.0, y: 0.0, width: layout.width, height: layout.height },
+        gfx::Rect {
+            x: 0.0,
+            y: 0.0,
+            width: layout.width,
+            height: layout.height,
+        },
         BG_TOP,
         BG_BOT,
     )?;
@@ -561,12 +605,27 @@ fn draw_with(
     let sub = progress_label(done as u32, total as u32, &mut buf);
     if let Ok(txt) = core::str::from_utf8(sub) {
         let size = (layout.title_size * 0.44).clamp(11.0, 15.0);
-        draw_text(canvas, txt, layout.margin, layout.progress_baseline, size, INK_DIM)?;
+        draw_text(
+            canvas,
+            txt,
+            layout.margin,
+            layout.progress_baseline,
+            size,
+            INK_DIM,
+        )?;
     }
 
     // Progress bar track + accent fill.
     let bar = layout.bar;
-    rounded_rect(canvas, bar.x, bar.y, bar.w, bar.h, bar.h * 0.5, color(0.16, 0.18, 0.24, 1.0))?;
+    rounded_rect(
+        canvas,
+        bar.x,
+        bar.y,
+        bar.w,
+        bar.h,
+        bar.h * 0.5,
+        color(0.16, 0.18, 0.24, 1.0),
+    )?;
     if total > 0 {
         let frac = (done as f32 / total as f32).clamp(0.0, 1.0);
         let fw = (bar.w * frac).max(if done > 0 { 10.0 } else { 0.0 });
@@ -609,7 +668,15 @@ fn draw_with(
             } else {
                 0.0
             };
-            rounded_rect(canvas, track_x, track_y, 4.0, track_h, 2.0, color(0.16, 0.18, 0.24, 1.0))?;
+            rounded_rect(
+                canvas,
+                track_x,
+                track_y,
+                4.0,
+                track_h,
+                2.0,
+                color(0.16, 0.18, 0.24, 1.0),
+            )?;
             rounded_rect(
                 canvas,
                 track_x,
@@ -636,30 +703,75 @@ fn draw_with(
             accent_soft,
         )?;
     }
-    rounded_rect(canvas, field.x, field.y, field.w, field.h, radius, color(0.11, 0.125, 0.17, 1.0))?;
-    stroke_rounded(canvas, field.x, field.y, field.w, field.h, radius, color(0.24, 0.27, 0.35, 1.0))?;
+    rounded_rect(
+        canvas,
+        field.x,
+        field.y,
+        field.w,
+        field.h,
+        radius,
+        color(0.11, 0.125, 0.17, 1.0),
+    )?;
+    stroke_rounded(
+        canvas,
+        field.x,
+        field.y,
+        field.w,
+        field.h,
+        radius,
+        color(0.24, 0.27, 0.35, 1.0),
+    )?;
 
     let pad = (field.w * 0.06).clamp(8.0, 16.0);
     let text_x = field.x + pad;
     let text_y = field.y + field.h * 0.5 + layout.input_text_size * 0.36;
     if draft.is_empty() {
-        draw_text(canvas, "Add an item...", text_x, text_y, layout.input_text_size, INK_DIM)?;
+        draw_text(
+            canvas,
+            "Add an item...",
+            text_x,
+            text_y,
+            layout.input_text_size,
+            INK_DIM,
+        )?;
     } else {
-        draw_text(canvas, draft.as_str(), text_x, text_y, layout.input_text_size, INK)?;
+        draw_text(
+            canvas,
+            draft.as_str(),
+            text_x,
+            text_y,
+            layout.input_text_size,
+            INK,
+        )?;
     }
     if field_focus {
         let cx = text_x + text_width(draft.as_str(), layout.input_text_size) + 2.0;
         // Never let the caret escape the field it belongs to.
         let cx = cx.min(field.x + field.w - 4.0);
-        fill(canvas, cx, field.y + field.h * 0.24, 2.0, field.h * 0.52, accent)?;
+        fill(
+            canvas,
+            cx,
+            field.y + field.h * 0.24,
+            2.0,
+            field.h * 0.52,
+            accent,
+        )?;
     }
 
     // Add button: filled accent rounded rect with a centered label.
     let add = layout.add;
     let can_add = !draft.is_empty();
-    let btn = if can_add { accent } else { color(0.2, 0.24, 0.33, 1.0) };
+    let btn = if can_add {
+        accent
+    } else {
+        color(0.2, 0.24, 0.33, 1.0)
+    };
     rounded_rect(canvas, add.x, add.y, add.w, add.h, radius, btn)?;
-    let label_ink = if can_add { color(0.05, 0.08, 0.16, 1.0) } else { INK_DIM };
+    let label_ink = if can_add {
+        color(0.05, 0.08, 0.16, 1.0)
+    } else {
+        INK_DIM
+    };
     let label_size = (layout.input_text_size + 1.0).min(add.w * 0.34);
     let lw = text_width("Add", label_size);
     draw_text(
@@ -696,7 +808,15 @@ fn draw_row(
     let check = layout.checkbox(index);
     let check_radius = check.w * 0.29;
     if item.done {
-        rounded_rect(canvas, check.x, check.y, check.w, check.h, check_radius, accent)?;
+        rounded_rect(
+            canvas,
+            check.x,
+            check.y,
+            check.w,
+            check.h,
+            check_radius,
+            accent,
+        )?;
         draw_tick(canvas, check.x, check.y, check.w)?;
     } else {
         rounded_rect(
@@ -729,7 +849,14 @@ fn draw_row(
     draw_text(canvas, label, tx, ty, layout.row_text_size, ink)?;
     if item.done {
         let w = text_width(label, layout.row_text_size).min(avail);
-        fill(canvas, tx, ty - layout.row_text_size * 0.36, w, 1.5, INK_DONE)?;
+        fill(
+            canvas,
+            tx,
+            ty - layout.row_text_size * 0.36,
+            w,
+            1.5,
+            INK_DONE,
+        )?;
     }
     Ok(())
 }
@@ -766,11 +893,28 @@ fn draw_tick(canvas: u64, bx: f32, by: f32, s: f32) -> Result<(), gfx::GfxError>
 // ------------------------------------------------------------------
 
 fn fill(canvas: u64, x: f32, y: f32, w: f32, h: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    canvas2d::fill_rect(canvas, gfx::Rect { x, y, width: w, height: h }, c)
+    canvas2d::fill_rect(
+        canvas,
+        gfx::Rect {
+            x,
+            y,
+            width: w,
+            height: h,
+        },
+        c,
+    )
 }
 
 /// A filled rounded rectangle: a cross of two rects plus four corner discs.
-fn rounded_rect(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+fn rounded_rect(
+    canvas: u64,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    r: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
     let r = r.min(w * 0.5).min(h * 0.5);
     fill(canvas, x + r, y, w - r * 2.0, h, c)?;
     fill(canvas, x, y + r, w, h - r * 2.0, c)?;
@@ -782,7 +926,15 @@ fn rounded_rect(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Col
 }
 
 /// A thin rounded-rect outline: four inset edges plus tiny corner dots.
-fn stroke_rounded(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+fn stroke_rounded(
+    canvas: u64,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    r: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
     let t = 1.5;
     let r = r.min(w * 0.5).min(h * 0.5);
     fill(canvas, x + r, y, w - r * 2.0, t, c)?;
@@ -801,7 +953,15 @@ fn disc(canvas: u64, cx: f32, cy: f32, r: f32, c: gfx::Color) -> Result<(), gfx:
 }
 
 /// A thick line drawn as a chain of small discs so any angle reads smooth.
-fn thick_line(canvas: u64, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+fn thick_line(
+    canvas: u64,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    width: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
     let dx = x1 - x0;
     let dy = y1 - y0;
     let len = sqrtf(dx * dx + dy * dy).max(0.001);
@@ -815,7 +975,14 @@ fn thick_line(canvas: u64, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, c: gf
     Ok(())
 }
 
-fn draw_text(canvas: u64, text: &str, x: f32, y: f32, size: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
+fn draw_text(
+    canvas: u64,
+    text: &str,
+    x: f32,
+    y: f32,
+    size: f32,
+    c: gfx::Color,
+) -> Result<(), gfx::GfxError> {
     canvas2d::draw_text(canvas, text, gfx::Point { x, y }, size, c)
 }
 
@@ -1005,7 +1172,15 @@ impl bindings::Guest for Component {
             let sizes = [(440u32, 620u32), (900u32, 500u32), (320u32, 760u32)];
             let mut all_ok = true;
             for (w, h) in sizes {
-                if window::set_size(win, types::WindowSize { width: w, height: h }).is_err() {
+                if window::set_size(
+                    win,
+                    types::WindowSize {
+                        width: w,
+                        height: h,
+                    },
+                )
+                .is_err()
+                {
                     all_ok = false;
                     continue;
                 }
@@ -1034,9 +1209,10 @@ impl bindings::Guest for Component {
                 let row_ok = hit == Some(target);
 
                 // And at the middle of the Add button it just drew.
-                let add_ok = layout
-                    .add
-                    .contains(layout.add.x + layout.add.w * 0.5, layout.add.y + layout.add.h * 0.5);
+                let add_ok = layout.add.contains(
+                    layout.add.x + layout.add.w * 0.5,
+                    layout.add.y + layout.add.h * 0.5,
+                );
                 // A point just outside the row must NOT hit it, or a pass here
                 // would only mean the hit-box is enormous.
                 let miss_ok = layout.hit_row(list.len, cx, row.y - 4.0) != Some(target);

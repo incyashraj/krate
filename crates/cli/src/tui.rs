@@ -240,13 +240,49 @@ fn change_an_app(bundle: &Path) -> Result<()> {
         return Ok(());
     }
 
-    let Some(source) = crate::bundle_source_dir(bundle)? else {
-        println!();
-        println!("  This app was made before Krate started shipping source, so");
-        println!("  there is nothing to change -- only the compiled app is inside.");
-        println!("  Making it again will produce one that can be changed.");
-        println!();
-        return Ok(());
+    // An older bundle has no source inside, but the request that made it is
+    // still in history -- so the change can be made by asking again with both
+    // the original request and the change, rather than dead-ending someone who
+    // just told us what they wanted.
+    let source = match crate::bundle_source_dir(bundle)? {
+        Some(source) => Some(source),
+        None => {
+            let original = history()
+                .into_iter()
+                .find(|entry| entry.bundle.as_deref() == Some(bundle))
+                .map(|entry| entry.request);
+            println!();
+            match &original {
+                Some(request) => {
+                    println!(
+                        "  {}",
+                        style::dim("this app was made before Krate kept source inside the file,")
+                    );
+                    println!(
+                        "  {}",
+                        style::dim(
+                            "so it will be rebuilt from your original request plus the change"
+                        )
+                    );
+                    println!();
+                    println!("  {}  {}", style::dim("originally:"), truncate(request, 52));
+                }
+                None => {
+                    println!(
+                        "  {}",
+                        style::dim(
+                            "this app has no source inside and no record of how it was made,"
+                        )
+                    );
+                    println!(
+                        "  {}",
+                        style::dim("so it will be built fresh from your change")
+                    );
+                }
+            }
+            println!();
+            None
+        }
     };
 
     let Some(provider) = choose_provider()? else {
@@ -259,7 +295,25 @@ fn change_an_app(bundle: &Path) -> Result<()> {
     println!();
 
     let started = Instant::now();
-    match crate::revise_app_for_tui(&source, &change, provider, bundle) {
+    let outcome = match &source {
+        Some(source) => crate::revise_app_for_tui(source, &change, provider, bundle),
+        None => {
+            // No source to edit, so restate the whole app: the original
+            // request if we have it, plus what should be different.
+            let original = history()
+                .into_iter()
+                .find(|entry| entry.bundle.as_deref() == Some(bundle))
+                .map(|entry| entry.request)
+                .unwrap_or_default();
+            let request = if original.is_empty() {
+                change.clone()
+            } else {
+                format!("{original}\n\nAlso, change this: {change}")
+            };
+            crate::author_app_for_tui(&request, provider, bundle)
+        }
+    };
+    match outcome {
         Ok(()) => {
             println!();
             println!("  Changed in {}.", humanise(started.elapsed()));
@@ -443,8 +497,34 @@ fn connect_ai() -> Result<()> {
         );
     }
     println!();
-    println!("  Pick one to connect it, or to disconnect it if it already is.");
-    println!("  b  Back");
+
+    // Being told "connected" and nothing else leaves the obvious question
+    // unanswered: it is connected, so how do I use it? Say exactly what to do
+    // next, with the sentence to type.
+    if let Some((target, _)) = targets.iter().find(|(_, connected)| *connected) {
+        println!("  {}", style::bold(&format!("To use {}:", target.label)));
+        println!(
+            "  {}",
+            style::dim("open it and ask, in the chat, for the app you want --")
+        );
+        println!();
+        println!(
+            "    {}",
+            style::accent("build me a habit tracker and package it as a .krate")
+        );
+        println!();
+        println!(
+            "  {}",
+            style::dim("if it says it has no Krate tools, quit and reopen it first")
+        );
+        println!();
+    }
+
+    println!(
+        "  {}",
+        style::dim("pick a number to connect one, or to disconnect it if it already is")
+    );
+    println!("  {}  Back", style::key("b"));
     println!();
 
     let answer = prompt("  > ")?;

@@ -81,6 +81,12 @@ pub struct Phase3GuiHost {
     /// host synthesises a close request so the guest exits the way it would if
     /// a person had closed the window.
     idle_waits: std::cell::Cell<u32>,
+    /// How many times the person has asked to close the window.
+    ///
+    /// The first request goes to the guest untouched. A second means the guest
+    /// is not listening, and the runtime closes the window itself rather than
+    /// leaving a button that does nothing.
+    close_requests: std::cell::Cell<u32>,
     /// When this headless run began waiting for events, for [`HEADLESS_RUN_BUDGET`].
     /// Set on the first wait rather than at construction, so time spent
     /// building the window tree is not charged against the budget.
@@ -211,6 +217,7 @@ impl Phase3GuiHost {
             // person saw on their first `krate run`.
             headless: headless_backend,
             idle_waits: std::cell::Cell::new(0),
+            close_requests: std::cell::Cell::new(0),
             headless_started: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             canvases: std::cell::RefCell::new(std::collections::BTreeMap::new()),
@@ -969,6 +976,31 @@ impl Phase3GuiHost {
         }
     }
 
+    /// Note a close request going past, and say whether the guest has ignored
+    /// enough of them that the runtime should act.
+    /// Close the window ourselves when the guest ignores the request.
+    ///
+    /// `windowShouldClose` defers to the app by design, so an app that never
+    /// handles `CloseRequested` leaves a window nothing can shut. Every app an
+    /// AI has written for us so far is in that category. The first request is
+    /// still delivered to the guest untouched -- an app that wants to save on
+    /// the way out gets its chance -- and only a request that goes unanswered
+    /// while the app keeps running is honoured on its behalf.
+    fn close_ignored_by_guest(&self) -> bool {
+        let asked = self.close_requests.get();
+        if asked < 2 {
+            return false;
+        }
+        // Two presses with the app still looping means it is not listening.
+        true
+    }
+
+    fn note_close_request(&self, event: &ui::types::Event) {
+        if matches!(event, ui::types::Event::CloseRequested(_)) {
+            self.close_requests.set(self.close_requests.get() + 1);
+        }
+    }
+
     fn poll_one_event(&self) -> Result<Option<ui::types::Event>, UiDispatchError> {
         let dispatcher = self.dispatcher();
         for window in &self.windows {
@@ -1676,8 +1708,16 @@ impl ui::events::Host for Phase3GuiHost {
                 return Ok(Some(event));
             }
         }
-        self.poll_one_event()
-            .map_err(|err| wasmtime::Error::msg(err.to_string()))
+        let event = self
+            .poll_one_event()
+            .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
+        if let Some(event) = &event {
+            self.note_close_request(event);
+        }
+        if self.close_ignored_by_guest() {
+            return Ok(None);
+        }
+        Ok(event)
     }
 
     fn key_held(&mut self, key: String) -> wasmtime::Result<bool> {

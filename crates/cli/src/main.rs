@@ -2569,12 +2569,24 @@ pub(crate) fn reopen_app(target: &ClientTarget) -> Result<bool> {
 /// itself and the menu survives it.
 pub(crate) fn run_bundle_for_tui(bundle: &Path) -> Result<()> {
     let exe = std::env::current_exe().context("could not find Krate's own binary")?;
+    // Ctrl-C goes to the whole foreground process group, so it reaches this
+    // process as well as the child -- which killed the menu along with the app
+    // it was running. Ignoring it here for the duration of the run means the
+    // child takes the interrupt, exits, and control comes back to the menu.
+    #[cfg(unix)]
+    let previous = unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) };
+
     let status = std::process::Command::new(exe)
         .arg("run")
         .arg(bundle)
         .arg("--auto-grant")
         .status()
         .context("could not start the app")?;
+
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(libc::SIGINT, previous);
+    }
 
     // 130 is the shell's convention for "ended by Ctrl-C", which is a normal
     // way to close an app here rather than a failure worth reporting.
@@ -3236,10 +3248,18 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     let packed_manifest = pack_dir.path().join("manifest.toml");
     write_manifest_with_entry(&manifest_src, &packed_manifest, "code.wasm")?;
     let assets = app_dir.join("assets");
-    let size = krate_bundle::pack_with_assets(
+    // Ship the source. Every app an AI writes is a first draft, and the
+    // person who asked for it will want it changed -- without this the
+    // bundle is a dead end and "make a change" has nothing to work from.
+    // This was the one pack call that still dropped it.
+    let size = krate_bundle::pack_with_source(
         &packed_manifest,
         &code,
         assets.is_dir().then_some(assets.as_path()),
+        app_dir
+            .join("Cargo.toml")
+            .is_file()
+            .then_some(app_dir.as_path()),
         &req.output,
     )
     .with_context(|| format!("pack {}", req.output.display()))?;

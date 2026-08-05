@@ -37,6 +37,10 @@ serde.workspace = true
 serde_json.workspace = true
 sha2 = "0.10.9"
 ureq.workspace = true
+# For ignoring SIGINT while a child app runs, so Ctrl-C ends the app rather
+# than the menu that launched it.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 tracing-subscriber.workspace = true
 
 # The native consent window is macOS-only today (P3-OPEN-01). Gated by target
