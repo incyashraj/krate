@@ -12,6 +12,7 @@ members = [
     "crates/policy",
     "crates/runtime",
     "crates/cli",
+    "crates/mcp",
     "crates/krate-hub",
     "crates/tools",
     "crates/author",

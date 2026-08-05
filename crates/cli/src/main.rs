@@ -458,9 +458,15 @@ enum Command {
         no_install: bool,
     },
 
-    /// Run the Krate MCP server so an AI agent can execute components under the
-    /// capability sandbox. Speaks JSON-RPC 2.0 over stdio; wire an agent at it
-    /// with e.g. `claude mcp add krate -- krate mcp`.
+    /// Run the Krate MCP server, so a model can build Krate apps and run them
+    /// by talking rather than by anyone typing commands.
+    ///
+    /// Exposes the authoring loop as tools -- the API reference, complete
+    /// example apps, an async build job, the six-stage check-app oracle,
+    /// packaging, and rendering an app's first frame -- plus the sandboxed
+    /// execution tools. Speaks JSON-RPC 2.0 over stdio. Add it once to Claude
+    /// Desktop or Cursor; see docs/mcp-setup.md. Builds run here, on this
+    /// machine, never on a server.
     Mcp,
 
     /// Internal: drive a supported AI agent to author the app. `krate create

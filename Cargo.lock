@@ -1920,6 +1920,7 @@ dependencies = [
  "krate-author",
  "krate-bundle",
  "krate-manifest",
+ "krate-mcp",
  "krate-policy",
  "krate-port",
  "krate-runtime",
@@ -1957,6 +1958,17 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "toml",
+]
+
+[[package]]
+name = "krate-mcp"
+version = "0.1.0-dev"
+dependencies = [
+ "anyhow",
+ "krate-author",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

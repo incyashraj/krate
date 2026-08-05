@@ -27,6 +27,7 @@ krate-policy = { path = "../policy", version = "0.1.0-dev" }
 krate-bundle = { path = "../bundle", version = "0.1.0-dev" }
 krate-runtime = { path = "../runtime", version = "0.1.0-dev", default-features = false, features = ["phase2-bindings"] }
 krate-author = { path = "../author", version = "0.1.0-dev" }
+krate-mcp = { path = "../mcp", version = "0.1.0-dev" }
 krate-port = { path = "../port", version = "0.1.0-dev" }
 # For the widget list in the generated agent reference, so a widget cannot be
 # added to the system and stay missing from the page the agent reads.
