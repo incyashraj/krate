@@ -170,6 +170,78 @@ jobs:
           version="${KRATE_VERSION#v}"
           (cd dist && zip -qry "krate-app-${version}-${{ matrix.target }}.zip" Krate.app)
 
+      # Sign and notarize, so Gatekeeper lets a downloaded build open without
+      # a right-click workaround. Ad-hoc signing plus curl setting no
+      # quarantine flag meant Gatekeeper never looked at all -- an install path
+      # that steps around the exact guarantee Krate sells. Skipped, loudly,
+      # when the secrets are absent, so a fork still builds.
+      - name: Sign and notarize Krate.app
+        if: contains(matrix.target, 'apple-darwin')
+        shell: bash
+        env:
+          CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          KRATE_VERSION: ${{ github.ref_name }}
+        run: |
+          if [ -z "$CERT_P12" ]; then
+            echo "::warning::No Apple signing secrets; shipping ad-hoc signed."
+            echo "Gatekeeper will warn on download. Set APPLE_CERT_P12,"
+            echo "APPLE_CERT_PASSWORD, APPLE_ID, APPLE_TEAM_ID and"
+            echo "APPLE_APP_PASSWORD to sign properly."
+            exit 0
+          fi
+
+          # A throwaway keychain, so the runner's default one is untouched.
+          KEYCHAIN=build.keychain
+          security create-keychain -p actions "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          security unlock-keychain -p actions "$KEYCHAIN"
+          echo "$CERT_P12" | base64 --decode > /tmp/cert.p12
+          security import /tmp/cert.p12 -k "$KEYCHAIN" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k actions "$KEYCHAIN" >/dev/null
+          rm -f /tmp/cert.p12
+
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | grep "Developer ID Application" | head -1 \
+            | sed -E 's/.*"(.*)"/\1/')"
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::No Developer ID Application certificate in the p12."
+            echo "An 'Apple Development' certificate is for local testing only."
+            exit 1
+          fi
+          echo "signing with: $IDENTITY"
+
+          # The nested CLI is signed before the bundle that contains it;
+          # codesign refuses to seal a bundle whose contents change afterwards.
+          codesign --force --options runtime --timestamp \
+            --sign "$IDENTITY" dist/Krate.app/Contents/MacOS/krate-cli
+          codesign --force --options runtime --timestamp \
+            --sign "$IDENTITY" dist/Krate.app
+          codesign --verify --deep --strict --verbose=2 dist/Krate.app
+
+          # The bare CLI is downloaded and run directly, so it needs signing too.
+          codesign --force --options runtime --timestamp \
+            --sign "$IDENTITY" "target/${{ matrix.target }}/release/krate"
+
+          version="${KRATE_VERSION#v}"
+          zip_name="krate-app-${version}-${{ matrix.target }}.zip"
+          (cd dist && rm -f "$zip_name" && zip -qry "$zip_name" Krate.app)
+
+          xcrun notarytool submit "dist/$zip_name" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" \
+            --wait
+          # Staple the ticket so the app opens offline as well.
+          xcrun stapler staple dist/Krate.app
+          (cd dist && rm -f "$zip_name" && zip -qry "$zip_name" Krate.app)
+          echo "notarized and stapled"
+
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v7
         with:
