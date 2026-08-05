@@ -105,6 +105,23 @@ workstation lands, so a session that dies mid-flight loses nothing.
 
 ---
 
+## Progress log
+
+- **2026-08-05** — **Krate Cloud is live.** A Cloudflare Worker at
+  `hub.krate.tech` with bundles in R2 and metadata in KV; GitHub device-flow
+  sign-in with a registered OAuth app; `/cloud/` shows what people have
+  published; `/publish/` uploads from the browser and reads the bundle itself
+  to show its name, size, and every permission with the app's own words. The
+  first real app is published and runs from the link.
+- **2026-08-05** — Anonymous usage counting, opt-out, with `krate telemetry
+  off`. Sends a random id, version, OS, one of install/make/open/publish, and
+  whether an AI wrote it and whether it worked. Nothing else.
+- **2026-08-05** — macOS never delivered clicks to a drawn app. Same hole as
+  scroll, same file: AppKit sent mouse events down a responder chain a canvas
+  app does not answer. That was K-017, and it is why a generated news app
+  showed sample data -- its live fetch was behind a button nobody could press.
+- **2026-08-05** — CI green again after being red since rc20.
+
 ## Parked work — not merged, do not lose
 
 Two workstations finished but are NOT merged. Their branches hold real,

@@ -522,6 +522,50 @@ Fix:      Reproduce first with a minimal app. Suspect the app is inside a
           long-running call when the callback arrives, or a redraw loop that
           never yields, rather than a missing event path.
 
+### K-033 — The usage notice printed into a pipe and broke the site build
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-05, lead, from a failed Pages deploy
+Evidence: `bounce.krate: krate did not return listing JSON. got: Krate counts
+          how many people use it...` -- scripts/store-listing.py parses krate's
+          output as JSON, and the build helper merges stderr into stdout, so a
+          one-time notice became the answer the script read.
+Fix:      The notice prints only when both streams are a terminal. Counting is
+          unaffected; only the notice waits for someone to read it. Verified
+          silent when piped and shown under a pty.
+
+### K-034 — The hub dropped every install event
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-05, lead, checking /stats against what the CLI sent
+Evidence: The CLI sent install/open/open; /stats showed installs rising and
+          `open` stuck at 1. The Worker's allow-list was
+          `["make","open","publish"]`, so install -- the top-of-funnel number
+          the whole feature exists to answer -- was silently discarded.
+Fix:      install added to the list. Failures and AI-authored runs are counted
+          separately too, since a failed make folded into one total is
+          invisible.
+
+### K-035 — Evidence bundles predate the WIT and fail replay
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-05, CI, on all three systems
+Evidence: `savings: FAILED to run (exit 1) -- this app needs a newer version of
+          Krate than you have installed`. The message is backwards: the apps
+          are older. Their bundles were built before W12 added the wheel event
+          to the WIT.
+Fix:      Six rebuilt from source in apps/; five have no source and were
+          already passing. Three expectations were also stale -- eo2 and mdview
+          asserted strings the apps stopped printing when they moved to the
+          key:value quick shape (K-015), and savings asserted a widget caption
+          rather than its arithmetic.
+
 ---
 
 ## Fixed
