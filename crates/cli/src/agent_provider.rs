@@ -13,6 +13,7 @@
 //! are in `Plan/ai-providers-2026-08.md`.
 
 use std::process::{Command as ProcessCommand, ExitStatus, Stdio};
+use std::time::{Duration, Instant};
 
 /// One AI coding agent Krate knows how to drive.
 pub trait AgentProvider: Send + Sync {
@@ -33,6 +34,19 @@ pub trait AgentProvider: Send + Sync {
 
     /// The arguments for one headless authoring run of `prompt`.
     fn author_args(&self, prompt: &str) -> Vec<String>;
+
+    /// A cheap round trip that proves the tool works, not merely that it is on
+    /// PATH. Defaults to asking it to echo one word: short enough to be quick,
+    /// real enough that an expired sign-in fails it the way it would fail a
+    /// genuine authoring run.
+    fn probe_args(&self) -> Vec<String> {
+        self.author_args("Reply with the single word: ok")
+    }
+
+    /// What to run to sign in, for the provider whose credentials have expired.
+    fn login_hint(&self) -> String {
+        format!("{} login", self.program())
+    }
 
     /// Provider-specific spawn setup.
     ///
@@ -102,6 +116,155 @@ pub fn resolve(name: &str) -> Result<&'static dyn AgentProvider, String> {
 /// wrong.
 pub fn is_installed(provider: &dyn AgentProvider) -> bool {
     which_on_path(provider.program()).is_some()
+}
+
+/// What a provider can actually do right now, as opposed to whether its binary
+/// exists.
+///
+/// `is_installed` only looks at PATH, and PATH lies. Tested cold on a clean
+/// machine, three of four "installed" tools could not write an app: Claude's
+/// sign-in had expired, Codex refused outside a git repository, and Copilot
+/// exited 1 with empty stdout *and* empty stderr. Offering those in a menu is
+/// worse than not offering them, because the person picks one and blames Krate
+/// for the failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Readiness {
+    /// Ran, answered, and can be used right now.
+    Working,
+    /// Installed, but refused to work, with the reason it gave.
+    NotReady {
+        /// One line fit to print in a menu.
+        summary: String,
+        /// The command that most likely fixes it, if there is an obvious one.
+        remedy: Option<String>,
+    },
+    /// Not on PATH at all.
+    Missing,
+}
+
+impl Readiness {
+    pub fn is_working(&self) -> bool {
+        matches!(self, Readiness::Working)
+    }
+}
+
+/// Actually run the provider and see whether it answers.
+///
+/// Deliberately a real invocation rather than a version check: `--version`
+/// passes for a tool whose sign-in has expired, which is the single most common
+/// way these fail. The prompt is trivial so the round trip is short, and the
+/// whole thing is bounded by `timeout` so a hung tool cannot freeze a menu.
+pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
+    let Some(path) = which_on_path(provider.program()) else {
+        return Readiness::Missing;
+    };
+
+    let mut command = ProcessCommand::new(&path);
+    for arg in provider.probe_args() {
+        command.arg(arg);
+    }
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let started = Instant::now();
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(err) => {
+            return Readiness::NotReady {
+                summary: format!("could not be started ({err})"),
+                remedy: None,
+            };
+        }
+    };
+
+    // Poll rather than wait, so a tool that never answers is reported as slow
+    // instead of hanging the caller forever.
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let output = child.wait_with_output().ok();
+                let stdout = output
+                    .as_ref()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                    .unwrap_or_default();
+                let stderr = output
+                    .as_ref()
+                    .map(|o| String::from_utf8_lossy(&o.stderr).trim().to_string())
+                    .unwrap_or_default();
+                // Exit 0 with output on *either* stream. Codex reports a
+                // healthy login on stderr, so demanding stdout marked a working
+                // tool as broken. The empty-and-failed case is still caught
+                // below, which is the one that matters.
+                if status.success() && !(stdout.is_empty() && stderr.is_empty()) {
+                    return Readiness::Working;
+                }
+                return diagnose(provider, &stdout, &stderr);
+            }
+            Ok(None) => {
+                if started.elapsed() >= timeout {
+                    let _ = child.kill();
+                    return Readiness::NotReady {
+                        summary: format!("did not answer within {}s", timeout.as_secs()),
+                        remedy: None,
+                    };
+                }
+                std::thread::sleep(Duration::from_millis(80));
+            }
+            Err(err) => {
+                return Readiness::NotReady {
+                    summary: format!("could not be checked ({err})"),
+                    remedy: None,
+                };
+            }
+        }
+    }
+}
+
+/// Turn whatever the tool printed into one line a person can act on.
+///
+/// The hardest case is a tool that fails with nothing printed at all. Saying
+/// "unknown" is honest and still useful, because the menu can then offer a
+/// different AI rather than pretending the choice was fine.
+fn diagnose(provider: &dyn AgentProvider, stdout: &str, stderr: &str) -> Readiness {
+    let blob = format!("{stdout}\n{stderr}").to_lowercase();
+    let name = provider.name();
+
+    let (summary, remedy) = if blob.contains("not logged in")
+        || blob.contains("unauthorized")
+        || blob.contains("authentication")
+        || blob.contains("expired")
+        || blob.contains("sign in")
+        || blob.contains("login")
+        || blob.contains("api key")
+    {
+        (
+            "is installed but not signed in".to_string(),
+            Some(provider.login_hint().to_string()),
+        )
+    } else if blob.contains("git repository") || blob.contains("not a git repo") {
+        (
+            "will only run inside a git repository".to_string(),
+            Some("git init".to_string()),
+        )
+    } else if blob.contains("rate limit") || blob.contains("quota") {
+        ("has hit its usage limit".to_string(), None)
+    } else if stdout.is_empty() && stderr.is_empty() {
+        ("fails to start, and prints no reason why".to_string(), None)
+    } else {
+        let first = stderr
+            .lines()
+            .chain(stdout.lines())
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("failed for an unknown reason")
+            .trim();
+        let clipped: String = first.chars().take(90).collect();
+        (clipped, None)
+    };
+
+    let _ = name;
+    Readiness::NotReady { summary, remedy }
 }
 
 /// The error for a provider whose CLI is not installed.
@@ -381,6 +544,17 @@ impl AgentProvider for CodexProvider {
 
     fn configure(&self, command: &mut ProcessCommand) {
         command.stdin(Stdio::null());
+    }
+
+    /// Codex prints a stdin notice on every `exec`, which a generic probe reads
+    /// as a failure. `login status` answers the question the menu actually
+    /// needs -- is this usable right now -- and returns immediately.
+    fn probe_args(&self) -> Vec<String> {
+        vec!["login".to_string(), "status".to_string()]
+    }
+
+    fn login_hint(&self) -> String {
+        "codex login".to_string()
     }
 
     fn progress_line(&self, line: &str) -> Option<String> {

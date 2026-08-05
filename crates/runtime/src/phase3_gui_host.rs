@@ -396,10 +396,7 @@ impl Phase3GuiHost {
                 // reports as a defect the app does not have. Give up on the
                 // comparisons and go watch that it at least stays open, which
                 // is still worth knowing.
-                if driver
-                    .started
-                    .is_some_and(|s| s.elapsed() >= SETTLE_GRACE)
-                {
+                if driver.started.is_some_and(|s| s.elapsed() >= SETTLE_GRACE) {
                     let reason = "the app opened a window but never drew anything into it, so \
                                   there was no frame to compare";
                     if driver.plan.check_resize {
@@ -512,9 +509,8 @@ impl Phase3GuiHost {
                 if grew {
                     crate::usability::Observation::Held
                 } else {
-                    let (target_w, target_h) = driver
-                        .resized_to
-                        .unwrap_or(crate::usability::SECOND_SIZE);
+                    let (target_w, target_h) =
+                        driver.resized_to.unwrap_or(crate::usability::SECOND_SIZE);
                     crate::usability::Observation::broke(format!(
                         "the window was resized to {target_w}x{target_h} and the app's canvas \
                          stayed {:.0}x{:.0}, so its layout is not following the window",
@@ -671,9 +667,7 @@ impl Phase3GuiHost {
 
     /// Where the report should be written, if this is a driven run.
     pub fn usability_report_path(&self) -> Option<std::path::PathBuf> {
-        self.usability
-            .as_ref()
-            .map(|d| d.plan.report_path.clone())
+        self.usability.as_ref().map(|d| d.plan.report_path.clone())
     }
 
     fn headless_budget_close_request(&self) -> Option<ui::types::Event> {

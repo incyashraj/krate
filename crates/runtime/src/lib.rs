@@ -568,7 +568,8 @@ impl Runtime {
         // that dies halfway is exactly the kind this stage exists to describe,
         // and a missing report would read as "could not measure".
         if let Some(gui) = store.data().phase3_gui.as_ref() {
-            if let (Some(report), Some(path)) = (gui.usability_report(), gui.usability_report_path())
+            if let (Some(report), Some(path)) =
+                (gui.usability_report(), gui.usability_report_path())
             {
                 if let Err(error) = report.write(&path) {
                     tracing::debug!(?error, "could not write the usability report");

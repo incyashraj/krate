@@ -3595,9 +3595,48 @@ fn ai_status() -> Result<u8> {
         return Ok(0);
     }
 
-    println!("Ready to use:");
-    for provider in &installed {
-        println!("  {:<9}{}", provider.name(), provider.description());
+    // Probe rather than trust PATH. Every provider is checked in parallel so
+    // the whole listing costs one round trip rather than four.
+    let probes: Vec<_> = std::thread::scope(|scope| {
+        let handles: Vec<_> = installed
+            .iter()
+            .map(|provider| {
+                scope.spawn(move || {
+                    (
+                        **provider,
+                        agent_provider::probe(**provider, std::time::Duration::from_secs(20)),
+                    )
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|handle| handle.join().ok())
+            .collect()
+    });
+
+    let working: Vec<_> = probes.iter().filter(|(_, r)| r.is_working()).collect();
+    let broken: Vec<_> = probes.iter().filter(|(_, r)| !r.is_working()).collect();
+
+    if !working.is_empty() {
+        println!("Ready to use:");
+        for (provider, _) in &working {
+            println!("  {:<9}{}", provider.name(), provider.description());
+        }
+        println!();
+    }
+
+    if !broken.is_empty() {
+        println!("Installed, but not usable yet:");
+        for (provider, readiness) in &broken {
+            if let agent_provider::Readiness::NotReady { summary, remedy } = readiness {
+                println!("  {:<9}{}", provider.name(), summary);
+                if let Some(remedy) = remedy {
+                    println!("           fix it with: {remedy}");
+                }
+            }
+        }
+        println!();
     }
 
     let missing: Vec<_> = agent_provider::PROVIDERS
@@ -3612,8 +3651,12 @@ fn ai_status() -> Result<u8> {
         }
     }
 
-    let first = installed[0].name();
-    println!();
+    // Suggest a provider that actually answered, not merely one on PATH.
+    let Some(first) = working.first().map(|(provider, _)| provider.name()) else {
+        println!("None of the installed tools can write an app right now.");
+        println!("Fix one of the above, or install another, then run `krate ai` again.");
+        return Ok(0);
+    };
     println!("Make an app:");
     println!("  krate create \"a habit tracker\" --output habit.krate --agent {first}");
     Ok(0)

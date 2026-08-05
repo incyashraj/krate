@@ -310,8 +310,8 @@ Fix:      Likely downstream of K-002 (no text measurement, now fixed) since
           treating it as separate.
 
 ### K-019 — `krate ai` reports broken providers as ready
-Status:   open
-Owner:    unclaimed
+Status:   fixed
+Owner:    lead
 Severity: serious
 Class:    our-code
 Found:    2026-08-05, W17, outsider testing, cold start
@@ -319,8 +319,21 @@ Evidence: `krate ai` lists Claude and Codex under "Ready to use" when both fail
           on invocation -- Claude's auth is expired, Codex needs a newer CLI.
           It only checks whether the binary is on PATH. A newcomer follows that
           advice, picks Claude, and gets a failure that looks like Krate's.
-Fix:      Either probe the provider cheaply, or soften the wording from "Ready
-          to use" to "installed" and say a sign-in may still be needed.
+Fix:      Fixed by actually running each tool rather than looking at PATH.
+          `agent_provider::probe` spawns a cheap round trip, bounded by a
+          timeout, and reads the failure into one actionable line: not signed
+          in (with the login command), needs a git repo, hit a usage limit, or
+          -- the Copilot case -- "fails to start, and prints no reason why".
+          All providers are probed in parallel, so the listing costs about six
+          seconds rather than four sequential round trips.
+
+          On this machine it now prints exactly what W17 found by hand:
+          codex and grok ready, claude not signed in, copilot failing silently.
+
+          Two things found while building it. Codex prints a stdin notice on
+          every `exec`, so it gets `login status` as its probe instead. And
+          Codex reports a healthy login on *stderr*, so the first version
+          demanded stdout and marked a working tool broken.
 
 ### K-020 — Double-clicking a .krate opened a file picker, not the app
 Status:   open
