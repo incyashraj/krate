@@ -495,6 +495,13 @@ enum Command {
         no_install: bool,
     },
 
+    /// Turn the anonymous usage count on or off, or see what it sends.
+    Telemetry {
+        /// `off` stops it, `on` resumes it, `status` shows what is sent.
+        #[arg(value_parser = ["on", "off", "status"], default_value = "status")]
+        state: String,
+    },
+
     /// Run the Krate MCP server, so a model can build Krate apps and run them
     /// by talking rather than by anyone typing commands.
     ///
@@ -776,6 +783,7 @@ fn run() -> Result<u8> {
             manifest,
             output,
         } => pack_bundle(&file, &manifest, &output),
+        Command::Telemetry { state } => usage::telemetry_command(&state),
         Command::Publish {
             bundle,
             hub,
@@ -2417,9 +2425,15 @@ pub(crate) fn author_app_for_tui(
         json: false,
         force: false,
     })?;
+    usage::record_with(
+        usage::Action::Make,
+        usage::Facts {
+            ai: Some(true),
+            ok: Some(code == 0),
+        },
+    );
     if code == 0 {
         remember_app(output);
-        usage::record(usage::Action::Make);
         Ok(())
     } else {
         Err(anyhow::anyhow!("the app could not be built"))
@@ -4858,7 +4872,21 @@ fn resolve_run_target(
 fn run_component(request: RunRequest) -> Result<u8> {
     // Every way an app is opened lands here: the menu, a double-click, and a
     // bare `krate run`. Counting anywhere else would miss most of them.
-    usage::record(usage::Action::Open);
+    usage::record_install_once();
+    // Whether the app actually started is the number that matters: an open
+    // that fails is exactly what a count of successes alone would hide.
+    let opened = run_component_inner(request);
+    usage::record_with(
+        usage::Action::Open,
+        usage::Facts {
+            ai: None,
+            ok: Some(matches!(opened, Ok(0))),
+        },
+    );
+    return opened;
+}
+
+fn run_component_inner(request: RunRequest) -> Result<u8> {
     validate_app_args(&request.app_args)?;
 
     // Held for the whole run: dropping it removes the extracted bundle.

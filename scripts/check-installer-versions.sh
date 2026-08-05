@@ -26,7 +26,12 @@ status=0
 for file in scripts/install.sh scripts/install.ps1; do
   path="$ROOT/$file"
   [ -f "$path" ] || continue
-  # Only lines a person is told to type. Comments explaining the archive naming
+  # A pinned example has to be bumped every release, and it was missed twice
+# before this check existed. The installers now say <tag> and point at the
+# releases page, so there is nothing left to go stale -- this check stays as
+# the guard against anyone reintroducing a hard-coded version.
+#
+# Only lines a person is told to type. Comments explaining the archive naming
   # convention mention old tags on purpose and are not instructions, so a check
   # that flagged them would be noise -- and a noisy check gets ignored, which
   # is how the stale one survived two releases in the first place.

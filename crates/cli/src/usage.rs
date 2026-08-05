@@ -28,6 +28,9 @@ use std::time::Duration;
 /// would eventually carry something about the person.
 #[derive(Debug, Clone, Copy)]
 pub enum Action {
+    /// First run on this machine. The top of the funnel: how many people got
+    /// as far as installing, whether or not they ever made anything.
+    Install,
     /// Someone made an app.
     Make,
     /// Someone opened an app.
@@ -39,11 +42,28 @@ pub enum Action {
 impl Action {
     fn as_str(self) -> &'static str {
         match self {
+            Action::Install => "install",
             Action::Make => "make",
             Action::Open => "open",
             Action::Publish => "publish",
         }
     }
+}
+
+/// The two extra facts worth knowing, both about the software rather than the
+/// person.
+///
+/// `ai` answers "does the AI path actually work", which is the whole product
+/// thesis. `ok` answers "did it start" -- a make that fails and an open that
+/// crashes are the numbers that matter most, and counting only successes would
+/// flatter us into thinking nothing is broken.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Facts {
+    /// Whether an AI agent wrote the app. None where the question does not
+    /// apply, such as opening one.
+    pub ai: Option<bool>,
+    /// Whether the thing succeeded.
+    pub ok: Option<bool>,
 }
 
 fn krate_dir() -> Option<PathBuf> {
@@ -133,8 +153,27 @@ fn announce_once() -> bool {
     true
 }
 
-/// Record that something happened. Returns immediately.
+/// Record that something happened, with nothing else known about it.
 pub fn record(action: Action) {
+    record_with(action, Facts::default());
+}
+
+/// Note the first run on this machine, once, ever.
+///
+/// Called before the install id exists, so the same file that makes the id
+/// tells us whether this is the first time it has been used.
+pub fn record_install_once() {
+    let Some(dir) = krate_dir() else {
+        return;
+    };
+    if dir.join("install-id").exists() {
+        return;
+    }
+    record(Action::Install);
+}
+
+/// Record that something happened, with what is known about it.
+pub fn record_with(action: Action, facts: Facts) {
     if opted_out() {
         return;
     }
@@ -154,10 +193,21 @@ pub fn record(action: Action) {
     // Detached, with a short timeout. A count is never worth making someone
     // wait, and a hub that is down or slow must not be able to hang a command
     // or change its exit code.
-    std::thread::spawn(move || {
-        let body = format!(
-            r#"{{"id":"{id}","version":"{version}","os":"{os}","action":"{action}"}}"#
+    //
+    // The handle is joined with a deadline rather than dropped: a plain
+    // detached thread loses the race with process exit, and the last event
+    // before a command ends -- which is most of them -- was never sent.
+    let handle = std::thread::spawn(move || {
+        let mut body = format!(
+            r#"{{"id":"{id}","version":"{version}","os":"{os}","action":"{action}""#
         );
+        if let Some(ai) = facts.ai {
+            body.push_str(&format!(r#","ai":{ai}"#));
+        }
+        if let Some(ok) = facts.ok {
+            body.push_str(&format!(r#","ok":{ok}"#));
+        }
+        body.push('}');
         let _ = ureq::AgentBuilder::new()
             .timeout_connect(Duration::from_secs(3))
             .timeout_read(Duration::from_secs(3))
@@ -166,6 +216,52 @@ pub fn record(action: Action) {
             .set("content-type", "application/json")
             .send_string(&body);
     });
+
+    // Give it a moment to leave the machine, then stop caring. Well under the
+    // three-second network timeout above, so a dead hub costs a fraction of a
+    // second rather than the full wait.
+    let deadline = std::time::Instant::now() + Duration::from_millis(600);
+    while !handle.is_finished() && std::time::Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// `krate telemetry [on|off|status]`.
+pub fn telemetry_command(state: &str) -> anyhow::Result<u8> {
+    let Some(dir) = krate_dir() else {
+        println!("No home directory, so there is nothing to configure.");
+        return Ok(0);
+    };
+    let marker = dir.join("no-usage");
+
+    match state {
+        "off" => {
+            std::fs::create_dir_all(&dir)?;
+            std::fs::write(&marker, "1")?;
+            println!("Usage counting is off. Nothing further will be sent.");
+        }
+        "on" => {
+            let _ = std::fs::remove_file(&marker);
+            println!("Usage counting is on.");
+        }
+        _ => {
+            println!("Krate counts how many people use it, and nothing about them.");
+            println!();
+            println!("Sent:      a random id, the Krate version, the operating system,");
+            println!("           and one of install/make/open/publish -- plus whether an");
+            println!("           AI wrote the app and whether it worked.");
+            println!("Not sent:  app names, prompts, file paths, your name, your machine.");
+            println!();
+            if opted_out() {
+                println!("Right now: off.");
+                println!("Turn it on with: krate telemetry on");
+            } else {
+                println!("Right now: on.");
+                println!("Turn it off with: krate telemetry off");
+            }
+        }
+    }
+    Ok(0)
 }
 
 #[cfg(test)]
