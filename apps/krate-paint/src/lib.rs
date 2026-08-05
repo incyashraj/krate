@@ -140,7 +140,11 @@ impl bindings::Guest for Component {
         let mut frames = 0u32;
         let mut closed = false;
 
-        while frames < frame_cap {
+        // Only the quick path is bounded. This loop runs flat out with no
+        // wait, so 5000 frames went by in 1.5 seconds and the window closed
+        // itself while somebody was drawing -- caught by check-app's usability
+        // stage. An interactive session ends when the person closes it.
+        while !quick || frames < frame_cap {
             let now = clock::monotonic_nanos();
             let dt = (now.saturating_sub(last) as f32 / 1_000_000_000.0).min(0.05);
             last = now;

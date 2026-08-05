@@ -418,6 +418,21 @@ Fix:      Same shape as K-003: drop the fixed style on the canvas node, lay out
           unclaimed rather than fixed here, because K-003 is W13's and this is
           the same repair on a second app -- it should go with that work.
 
+### K-025 — Four older apps fail check-app at the run stage
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-05, lead, sweeping every app after the W12/W13/W14 merges
+Evidence: After a clean rebuild, 23 of 27 apps pass every stage. These four
+          fail at `run` with "failed to run headless with all grants (exit 1)":
+          krate-hello-gui, krate-curl, krate-nova2, krate-spriteproof.
+          Pre-existing, not caused by the merges -- they were failing before.
+          krate-curl needs a live server, so its failure may be expected rather
+          than a defect.
+Fix:      Diagnose each. None is a reference app the authoring pack recommends,
+          so none blocks a user making an app.
+
 ---
 
 ## Fixed
