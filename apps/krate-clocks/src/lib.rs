@@ -294,7 +294,7 @@ fn draw_header(canvas: u64, now_secs: i64, local: Option<i64>) -> Result<(), gfx
             push_hhmm(&mut buf, day_seconds(now_secs, 0));
         }
     }
-    let tw = text_width(title, tsize);
+    let tw = text_width(canvas, title, tsize);
     draw_text(canvas, buf.as_str(), PAD + tw + 18.0, baseline, 15.0, INK_DIM)?;
     Ok(())
 }
@@ -335,7 +335,7 @@ fn draw_card(
 
     // City name.
     let nsize = 16.0;
-    let nw = text_width(name, nsize);
+    let nw = text_width(canvas, name, nsize);
     let nx = cx - nw * 0.5;
     let ny = y + 168.0;
     draw_text(canvas, name, nx, ny, nsize, INK)?;
@@ -345,12 +345,12 @@ fn draw_card(
     let mut tb = TextBuf::new();
     push_hhmm(&mut tb, sod);
     let tsize = 14.0;
-    let tw = text_width(tb.as_str(), tsize);
+    let tw = text_width(canvas, tb.as_str(), tsize);
 
     let mut cb = TextBuf::new();
     push_offset(&mut cb, off_minutes - base_off);
     let csize = 11.0;
-    let ctw = text_width(cb.as_str(), csize);
+    let ctw = text_width(canvas, cb.as_str(), csize);
     let chip_w = ctw + 16.0;
     let chip_h = 18.0;
 
@@ -583,10 +583,18 @@ fn draw_text(
     canvas2d::draw_text(canvas, text, gfx::Point { x, y }, size, c)
 }
 
-/// Approximate rendered width of the system sans: ~0.53em per character.
-/// Only used to center text; generous padding absorbs the error.
-fn text_width(s: &str, size: f32) -> f32 {
-    (s.chars().count() as f32) * size * 0.53
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be character count times an invented constant. On a
+/// proportional face `i` and `W` differ about four times in real width, so a
+/// centred label was not centred and a caret sat beside its text rather than
+/// after it. `measure_text` is the true answer.
+fn text_width(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 // ----- widget builders (one canvas filling the window) -----

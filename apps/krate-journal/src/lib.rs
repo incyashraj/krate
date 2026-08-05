@@ -136,11 +136,18 @@ fn parse_u64(bytes: &[u8]) -> u64 {
     value
 }
 
-/// Approximate rendered width of system-sans text. Measured off real shots:
-/// mixed-case SF at 15px averages ~0.46em per char; 0.47 leaves a hair of
-/// safety for wrap decisions without the caret drifting away from the text.
-fn text_width(s: &str, size: f32) -> f32 {
-    (s.chars().count() as f32) * size * 0.47
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be character count times an invented constant. On a
+/// proportional face `i` and `W` differ about four times in real width, so a
+/// bubble was sized for the wrong text and its timestamp tucked beside a line
+/// it did not actually fit next to. `measure_text` is the true answer.
+fn text_width(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 // ------------------------------------------------------------------
@@ -262,23 +269,23 @@ fn day_label(entry_day: u64, today: u64) -> &'static str {
 }
 
 /// Measure one entry's bubble. Returns (width, height, timestamp-beside-text).
-fn measure_bubble(text: &str, ts: &str) -> (f32, f32, bool) {
+fn measure_bubble(canvas: u64, text: &str, ts: &str) -> (f32, f32, bool) {
     let max_text_w = BUBBLE_MAX_W - BUBBLE_PAD_X * 2.0;
     let lines = wrap_lines(text, max_text_w);
     let mut widest = 0.0f32;
     for (a, b) in lines.iter() {
         if let Some(line) = text.get(*a..*b) {
-            let w = text_width(line, BODY_SIZE);
+            let w = text_width(canvas, line, BODY_SIZE);
             if w > widest {
                 widest = w;
             }
         }
     }
-    let ts_w = text_width(ts, TS_SIZE);
+    let ts_w = text_width(canvas, ts, TS_SIZE);
     let last_w = lines
         .last()
         .and_then(|(a, b)| text.get(*a..*b))
-        .map(|l| text_width(l, BODY_SIZE))
+        .map(|l| text_width(canvas, l, BODY_SIZE))
         .unwrap_or(0.0);
     // WhatsApp tucks the timestamp beside the last line when it fits.
     let beside = last_w + 10.0 + ts_w <= max_text_w;
@@ -294,7 +301,7 @@ fn measure_bubble(text: &str, ts: &str) -> (f32, f32, bool) {
     (content_w + BUBBLE_PAD_X * 2.0, h, beside)
 }
 
-fn build_items(entries: &[Entry], today: u64) -> Vec<Item> {
+fn build_items(canvas: u64, entries: &[Entry], today: u64) -> Vec<Item> {
     let mut items = Vec::new();
     let mut prev_day: Option<u64> = None;
     for (i, entry) in entries.iter().enumerate() {
@@ -304,7 +311,7 @@ fn build_items(entries: &[Entry], today: u64) -> Vec<Item> {
             prev_day = Some(d);
         }
         let ts = time_label(entry.millis);
-        let (w, h, beside) = measure_bubble(&entry.text, &ts);
+        let (w, h, beside) = measure_bubble(canvas, &entry.text, &ts);
         items.push(Item::Bubble {
             entry_index: i,
             width: w,
@@ -332,7 +339,7 @@ fn draw(canvas: u64, entries: &[Entry], draft: &str, now: u64) -> Result<(), gfx
 }
 
 fn draw_feed(canvas: u64, entries: &[Entry], now: u64) -> Result<(), gfx::GfxError> {
-    let items = build_items(entries, day_of(now));
+    let items = build_items(canvas, entries, day_of(now));
 
     // Anchor the newest item just above the input bar and stack upward,
     // like a real chat: history scrolls away under the top bar.
@@ -371,7 +378,7 @@ fn draw_feed(canvas: u64, entries: &[Entry], now: u64) -> Result<(), gfx::GfxErr
     if first_top > BAR_H + 120.0 {
         let note = "Only you can see this — entries stay on this device";
         let size = 11.5;
-        let tw = text_width(note, size);
+        let tw = text_width(canvas, note, size);
         let pw = tw + 28.0;
         let ph = 24.0;
         let px = (WIDTH - pw) * 0.5;
@@ -399,7 +406,7 @@ fn draw_feed(canvas: u64, entries: &[Entry], now: u64) -> Result<(), gfx::GfxErr
 
 fn draw_separator(canvas: u64, label: &str, top: f32) -> Result<(), gfx::GfxError> {
     let size = 11.5;
-    let tw = text_width(label, size);
+    let tw = text_width(canvas, label, size);
     let pill_w = tw + 26.0;
     let pill_h = 22.0;
     let x = (WIDTH - pill_w) * 0.5;
@@ -431,7 +438,7 @@ fn draw_bubble(
     }
 
     let ts = time_label(entry.millis);
-    let ts_w = text_width(&ts, TS_SIZE);
+    let ts_w = text_width(canvas, &ts, TS_SIZE);
     let ts_x = x + w - BUBBLE_PAD_X - ts_w;
     let ts_y = if ts_beside {
         // Sit on (just under) the last text baseline, WhatsApp-style.
@@ -451,7 +458,7 @@ fn draw_top_bar(canvas: u64, count: usize) -> Result<(), gfx::GfxError> {
     let cx = 24.0 + 20.0;
     let cy = BAR_H * 0.5;
     disc(canvas, cx, cy, 20.0, color(0.298, 0.553, 1.0, 0.16))?;
-    let iw = text_width("M", 17.0);
+    let iw = text_width(canvas, "M", 17.0);
     draw_text(canvas, "M", cx - iw * 0.5 - 1.0, cy + 6.0, 17.0, ACCENT)?;
 
     draw_text(canvas, "My Journal", 78.0, 28.0, 17.0, INK)?;
@@ -492,7 +499,7 @@ fn draw_input_bar(canvas: u64, draft: &str) -> Result<(), gfx::GfxError> {
             .unwrap_or(0);
         let shown = draft.get(start..).unwrap_or(draft);
         draw_text(canvas, shown, tx, ty, BODY_SIZE, INK)?;
-        let cw = text_width(shown, BODY_SIZE);
+        let cw = text_width(canvas, shown, BODY_SIZE);
         fill(canvas, tx + cw + 3.0, fy + 12.0, 2.0, fh - 24.0, ACCENT)?;
     }
 

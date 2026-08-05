@@ -107,8 +107,21 @@ fn char_w(size: f32) -> f32 {
     size * 0.44
 }
 
-fn text_width(s: &str, size: f32) -> f32 {
-    (s.len() as f32) * char_w(size)
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be `s.len() * char_w(size)`, byte count times an invented
+/// constant. On a proportional face `i` and `W` differ about four times in real
+/// width, so a centred label was not centred and the caret sat beside the title
+/// rather than after it. `measure_text` is the true answer.
+///
+/// `char_w` survives below only where it is used as a rough characters-per-line
+/// budget, which is a count and not a width.
+fn text_width(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 // ------------------------------------------------------------------
@@ -501,7 +514,7 @@ fn draw_frame(
     // ---- "+ New" ghost button ----
     stroke_rounded(canvas, ROW_X, NEW_BTN_Y, ROW_W, NEW_BTN_H, 12.0, GHOST_BORDER, SIDEBAR_BG)?;
     let label = "+ New";
-    let lw = text_width(label, 15.0);
+    let lw = text_width(canvas, label, 15.0);
     draw_text(
         canvas,
         label,
@@ -515,7 +528,7 @@ fn draw_frame(
     let date = dates.get(selected).copied().unwrap_or("Today");
     let mut dbuf = [0u8; 32];
     let date_line = edited_label(date, &mut dbuf);
-    let dw = text_width(date_line, 12.5);
+    let dw = text_width(canvas, date_line, 12.5);
     draw_text(
         canvas,
         date_line,
@@ -549,7 +562,7 @@ fn draw_frame(
         let has_break = text.len() > title.len(); // a newline exists
         if !has_break {
             // Still typing the first line: caret rides the title.
-            caret_x = CONTENT_X + text_width(title, TITLE_SIZE);
+            caret_x = CONTENT_X + text_width(canvas, title, TITLE_SIZE);
             caret_y = TITLE_BASELINE;
         } else if body.is_empty() {
             caret_x = CONTENT_X;

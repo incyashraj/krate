@@ -380,7 +380,7 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
     // Quiet caption up top, hand-tracked with spaces so it reads as a wordmark.
     let cap = "P O M O D O R O";
     let csize = 13.0;
-    let cw = text_width(cap, csize);
+    let cw = text_width(canvas, cap, csize);
     draw_text(canvas, cap, CX - cw * 0.5, 64.0, csize, INK_QUIET)?;
 
     draw_ring(canvas, timer.progress())?;
@@ -401,7 +401,7 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
     // ---- session label under the time ----
     let label = timer.phase.label();
     let lsize = 15.0;
-    let lw = text_width(label, lsize);
+    let lw = text_width(canvas, label, lsize);
     draw_text(canvas, label, CX - lw * 0.5, RING_CY + 46.0, lsize, INK_DIM)?;
 
     // ---- session dots: pomodoros banked this cycle ----
@@ -419,7 +419,7 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
     rounded_rect(canvas, pr.x, pr.y, pr.width, pr.height, 12.0, ACCENT)?;
     let verb = timer.verb();
     let vsize = 17.0;
-    let vw = text_width(verb, vsize);
+    let vw = text_width(canvas, verb, vsize);
     draw_text(
         canvas,
         verb,
@@ -436,7 +436,7 @@ fn draw(canvas: u64, timer: &Timer) -> Result<(), gfx::GfxError> {
     let inner = bg_at((gr.y + gr.height * 0.5) / HEIGHT);
     rounded_rect(canvas, gr.x + 1.0, gr.y + 1.0, gr.width - 2.0, gr.height - 2.0, 11.0, inner)?;
     let reset = "Reset";
-    let rw = text_width(reset, vsize);
+    let rw = text_width(canvas, reset, vsize);
     draw_text(
         canvas,
         reset,
@@ -571,9 +571,18 @@ fn bg_at(t: f32) -> gfx::Color {
     }
 }
 
-/// Rough advance for UI labels in the system face: ~0.52em per char.
-fn text_width(s: &str, size: f32) -> f32 {
-    (s.chars().count() as f32) * size * 0.52
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be character count times an invented constant. On a
+/// proportional face `i` and `W` differ about four times in real width, so a
+/// centred label was not centred and a caret sat beside its text rather than
+/// after it. `measure_text` is the true answer.
+fn text_width(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 /// Advance for the mm:ss readout: digits are wider than the colon.

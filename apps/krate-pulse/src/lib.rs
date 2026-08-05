@@ -137,13 +137,23 @@ fn text(canvas: u64, s: &str, x: f32, y: f32, size: f32, c: gfx::Color) {
     let _ = canvas2d::draw_text(canvas, s, gfx::Point { x, y }, size, c);
 }
 
-/// Rough advance for right-aligning: the system face averages ~0.52em.
-fn est_width(s: &str, size: f32) -> f32 {
-    s.chars().count() as f32 * size * 0.52
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be character count times an invented constant, with a comment
+/// claiming the host face was monospace or near-monospace. It is not: it is
+/// proportional, and `i` and `W` differ about four times in real width. So a
+/// centred label was not centred and a right-aligned number did not line up.
+/// `measure_text` is the true answer.
+fn est_width(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 fn text_right(canvas: u64, s: &str, right: f32, y: f32, size: f32, c: gfx::Color) {
-    text(canvas, s, right - est_width(s, size), y, size, c);
+    text(canvas, s, right - est_width(canvas, s, size), y, size, c);
 }
 
 fn rounded(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
@@ -284,19 +294,19 @@ fn draw_balance(canvas: u64) {
     text(canvas, bal, MARGIN - 2.0, BAL_Y, 56.0, INK);
 
     // Delta chip to the right of the number.
-    let bal_w = est_width(bal, 56.0);
+    let bal_w = est_width(canvas, bal, 56.0);
     let chip_x = MARGIN + bal_w + 22.0;
     let mut dbuf = [0u8; 24];
     let delta = money(&mut dbuf, DELTA, true);
     // "+$1,240.00 this month" -> drop the cents for the chip.
     let delta_short = delta.get(..delta.len().saturating_sub(3)).unwrap_or(delta);
-    let label_w = est_width(delta_short, 14.0) + est_width(" this month", 14.0);
+    let label_w = est_width(canvas, delta_short, 14.0) + est_width(canvas, " this month", 14.0);
     let _ = rounded(canvas, chip_x, BAL_Y - 32.0, label_w + 30.0, 30.0, 15.0, CHIP_GREEN);
     text(canvas, delta_short, chip_x + 14.0, BAL_Y - 10.0, 14.0, GREEN);
     text(
         canvas,
         " this month",
-        chip_x + 14.0 + est_width(delta_short, 14.0),
+        chip_x + 14.0 + est_width(canvas, delta_short, 14.0),
         BAL_Y - 10.0,
         14.0,
         INK_DIM,
@@ -372,7 +382,7 @@ fn draw_chart(canvas: u64) -> Result<(), gfx::GfxError> {
     disc(canvas, today_x, today_y, 5.0, ACCENT)?;
     disc(canvas, today_x, today_y, 2.2, INK)?;
     let tag = "$68 today";
-    let tag_w = est_width(tag, 12.5) + 20.0;
+    let tag_w = est_width(canvas, tag, 12.5) + 20.0;
     rounded(canvas, today_x - tag_w - 12.0, today_y - 52.0, tag_w, 26.0, 13.0, rgb(0.153, 0.184, 0.247))?;
     text(canvas, tag, today_x - tag_w - 2.0, today_y - 34.0, 12.5, INK);
     Ok(())

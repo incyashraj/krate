@@ -389,7 +389,7 @@ fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Resu
         draw_text(canvas, draft.as_str(), text_x, text_y, 16.0, INK)?;
     }
     if field_focus {
-        let cx = text_x + text_width(draft.as_str(), 16.0) + 2.0;
+        let cx = text_x + text_width(canvas, draft.as_str(), 16.0) + 2.0;
         fill(canvas, cx, iy + 12.0, 2.0, INPUT_H - 24.0, accent)?;
     }
 
@@ -399,7 +399,7 @@ fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Resu
     let btn = if can_add { accent } else { color(0.2, 0.24, 0.33, 1.0) };
     rounded_rect(canvas, ax, iy, ADD_W, INPUT_H, 12.0, btn)?;
     let label_ink = if can_add { color(0.05, 0.08, 0.16, 1.0) } else { INK_DIM };
-    let lw = text_width("Add", 17.0);
+    let lw = text_width(canvas, "Add", 17.0);
     draw_text(canvas, "Add", ax + (ADD_W - lw) * 0.5, text_y, 17.0, label_ink)?;
 
     canvas2d::present(canvas)?;
@@ -428,7 +428,7 @@ fn draw_row(canvas: u64, index: usize, item: &Item, accent: gfx::Color) -> Resul
     let ink = if item.done { INK_DONE } else { INK };
     draw_text(canvas, item.text_str(), tx, ty, 17.0, ink)?;
     if item.done {
-        let w = text_width(item.text_str(), 17.0);
+        let w = text_width(canvas, item.text_str(), 17.0);
         fill(canvas, tx, ty - 6.0, w, 1.5, INK_DONE)?;
     }
     Ok(())
@@ -507,10 +507,20 @@ fn color(r: f32, g: f32, b: f32, a: f32) -> gfx::Color {
     gfx::Color { r, g, b, a }
 }
 
-/// Approximate rendered width of a string at a given font size (~0.52em avg
-/// advance). Good enough to place a caret and center a label.
-fn text_width(s: &str, size: f32) -> f32 {
-    (s.chars().count() as f32) * size * 0.52
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be `chars * size * 0.52`, an invented constant on a
+/// proportional face where `i` and `W` differ about four times in real width,
+/// so a centred label was not centred and a caret sat beside its text rather
+/// than after it. `measure_text` is the true answer; the fallback is only
+/// reached if the canvas handle is bad, in which case nothing else draws
+/// either.
+fn text_width(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 fn sqrtf(x: f32) -> f32 {

@@ -214,7 +214,7 @@ fn draw(canvas: u64, income: &Money, computed: u64, field_focus: bool) -> Result
         if let Ok(txt) = core::str::from_utf8(s) {
             draw_text(canvas, txt, num_x, ty, 26.0, INK)?;
             if field_focus {
-                let cx = num_x + text_width(txt, 26.0) + 3.0;
+                let cx = num_x + text_width(canvas, txt, 26.0) + 3.0;
                 fill(canvas, cx, fy + 14.0, 2.0, fh - 28.0, accent)?;
             }
         }
@@ -223,7 +223,7 @@ fn draw(canvas: u64, income: &Money, computed: u64, field_focus: bool) -> Result
     // ---- Calculate button ----
     let (cx0, cy0, cw, ch) = calc_rect();
     rounded_rect(canvas, cx0, cy0, cw, ch, 14.0, accent)?;
-    let lw = text_width("Calculate", 16.0);
+    let lw = text_width(canvas, "Calculate", 16.0);
     draw_text(canvas, "Calculate", cx0 + (cw - lw) * 0.5, cy0 + ch * 0.5 + 6.0, 16.0, color(0.05, 0.08, 0.16, 1.0))?;
 
     // ---- the allocation card ----
@@ -291,7 +291,7 @@ fn draw(canvas: u64, income: &Money, computed: u64, field_focus: bool) -> Result
             let mut abuf = [0u8; 24];
             let asr = dollars(amt, &mut abuf);
             if let Ok(txt) = core::str::from_utf8(asr) {
-                let aw = text_width(txt, 17.0);
+                let aw = text_width(canvas, txt, 17.0);
                 draw_text(canvas, txt, inner + inner_w - aw, ly + 4.0, 17.0, c)?;
             }
             ly += row_h;
@@ -364,10 +364,18 @@ fn color(r: f32, g: f32, b: f32, a: f32) -> gfx::Color {
     gfx::Color { r, g, b, a }
 }
 
-/// Approximate rendered width. The host bitmap font is roughly monospace at
-/// ~0.62em advance; good enough to place a caret and right-align an amount.
-fn text_width(s: &str, size: f32) -> f32 {
-    (s.chars().count() as f32) * size * 0.62
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be character count times an invented constant. On a
+/// proportional face `i` and `W` differ about four times in real width, so a
+/// centred label was not centred and a caret sat beside its text rather than
+/// after it. `measure_text` is the true answer.
+fn text_width(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 // ------------------------------------------------------------------

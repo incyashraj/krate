@@ -30,6 +30,27 @@ interface types {
     height: f32,
   }
 
+  /// What a text run will actually occupy once drawn.
+  ///
+  /// Returned by `canvas2d::measure-text`, computed by the same font layout
+  /// that `draw-text` draws with, so the numbers describe the pixels that
+  /// will appear rather than an estimate of them.
+  ///
+  /// `draw-text` takes a baseline as its origin, which is why `ascent` is
+  /// here: to put a run's top edge at `y`, draw it at `y + ascent`. To centre
+  /// a run in a box of height `h`, draw at `y + (h - height) * 0.5 + ascent`.
+  record text-metrics {
+    /// Advance width of the run: how far the pen moves, and the width to use
+    /// for centring, right-aligning, or placing a caret after the text.
+    width: f32,
+    /// Full line height, ascent + descent (plus the face's leading).
+    height: f32,
+    /// Distance from the top of the line box down to the baseline.
+    ascent: f32,
+    /// Distance from the baseline down to the bottom of the line box.
+    descent: f32,
+  }
+
   /// Rectangle in logical pixels.
   record rect {
     /// Left edge.
@@ -74,7 +95,7 @@ interface types {
 /// `present` publishes it to the widget. That keeps a hundred fills from
 /// re-rendering the window a hundred times.
 interface canvas2d {
-  use types.{color, point, rect, size, gfx-error};
+  use types.{color, point, rect, size, text-metrics, gfx-error};
 
   /// Create or bind a 2D canvas for a window widget.
   bind: func(window: u64, widget: u64) -> result<u64, gfx-error>;
@@ -105,6 +126,25 @@ interface canvas2d {
   linear-gradient: func(canvas: u64, area: rect, top: color, bottom: color) -> result<_, gfx-error>;
   /// Draw one text run with the host's built-in face; `origin` is the baseline.
   draw-text: func(canvas: u64, text: string, origin: point, font-size: f32, ink: color) -> result<_, gfx-error>;
+  /// How big will that text be once drawn?
+  ///
+  /// The face is proportional: `i` and `W` differ by roughly four times in
+  /// real width, so character-count times a constant is not an approximation,
+  /// it is wrong -- it is why captions overflow their cards, labels are not
+  /// really centred, and carets sit beside the text instead of after it. Ask
+  /// instead. The host measures with the same font layout `draw-text` draws
+  /// with, so the answer describes the pixels that will appear.
+  ///
+  /// Use it before drawing, not after: centre a label with
+  /// `x + (box_w - m.width) * 0.5`, place a caret at `text_x + m.width`,
+  /// stack paragraph lines by `m.height`, and turn a run into a box by
+  /// drawing at `top + m.ascent`.
+  ///
+  /// The measurement is unwrapped and single-line -- it reports what
+  /// `draw-text` will do with the same string and size, and `draw-text` does
+  /// not wrap. An app laying out a paragraph measures word by word and breaks
+  /// the lines itself.
+  measure-text: func(canvas: u64, text: string, font-size: f32) -> result<text-metrics, gfx-error>;
   /// Draw decoded RGBA pixels into a rectangle, scaled to fit and centred.
   ///
   /// The same straight-RGBA bytes an image widget takes, so a sprite sheet is
