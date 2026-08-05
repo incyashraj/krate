@@ -100,6 +100,8 @@ def main():
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/progress/" />
   <title>Krate: where we are, measured</title>
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="stylesheet" href="/krate.css" />
   <style>
     .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
@@ -110,6 +112,23 @@ def main():
   </style>
 </head>
 <body>
+  <!-- The logo was missing here. Links are absolute because this page is
+       served from /progress/, not from the site root. -->
+  <nav class="site-nav" aria-label="Primary navigation">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="Krate home">
+        <img src="/krate-glyph-blue.png" alt="" />
+        <span>Krate</span>
+      </a>
+      <div class="nav-links">
+        <a class="nav-link" href="/#start">Start</a>
+        <a class="nav-link" href="/cloud/">Store</a>
+        <a class="nav-link" href="/#faq">FAQ</a>
+        <a class="nav-link" href="/docs/">Docs</a>
+      </div>
+    </div>
+  </nav>
+
   <main class="wrap" style="max-width: 60rem; margin: 0 auto; padding: 3rem 1.5rem;">
     <p class="label">Measured</p>
     <h1>Where Krate is today.</h1>

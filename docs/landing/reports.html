@@ -13,6 +13,8 @@
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <title>Krate: the measurements</title>
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="stylesheet" href="/krate.css" />
   <style>
     .report { max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }
@@ -47,6 +49,24 @@
   </style>
 </head>
 <body>
+  <!-- The logo was missing here, so this page read as somebody else's. It is
+       the page a doubter is sent to, which is the worst one to look unhosted.
+       Links are absolute because this page is served from /reports/. -->
+  <nav class="site-nav" aria-label="Primary navigation">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="Krate home">
+        <img src="/krate-glyph-blue.png" alt="" />
+        <span>Krate</span>
+      </a>
+      <div class="nav-links">
+        <a class="nav-link" href="/#start">Start</a>
+        <a class="nav-link" href="/cloud/">Store</a>
+        <a class="nav-link" href="/#faq">FAQ</a>
+        <a class="nav-link" href="/docs/">Docs</a>
+      </div>
+    </div>
+  </nav>
+
   <main class="report">
     <p class="eyebrow">Reports</p>
     <h1>The measurements.</h1>
@@ -57,7 +77,7 @@
       not contain. Where a number cannot be re-measured automatically, the method
       is written underneath it.
     </p>
-    <p class="method">Generated 2026-08-03. Anyone can reproduce it: <code>python3 scripts/build-reports-page.py</code>.</p>
+    <p class="method">Generated 2026-08-05. Anyone can reproduce it: <code>python3 scripts/build-reports-page.py</code>.</p>
 
     <section>
       <p class="eyebrow">Size</p>
@@ -81,7 +101,7 @@
   <text x="0" y="255" class="bl">savings</text><rect x="132" y="243" width="73.5" height="18" rx="4" fill="#5c93f8"/><text x="215.5" y="257" class="bv">13.5 KB</text>
   <text x="0" y="289" class="bl">bounce</text><rect x="132" y="277" width="70.2" height="18" rx="4" fill="#5c93f8"/><text x="212.2" y="291" class="bv">12.9 KB</text>
   <text x="0" y="323" class="bl">cubes</text><rect x="132" y="311" width="68.0" height="18" rx="4" fill="#5c93f8"/><text x="210.0" y="325" class="bv">12.5 KB</text>
-  <text x="0" y="357" class="bl">chart</text><rect x="132" y="345" width="59.3" height="18" rx="4" fill="#5c93f8"/><text x="201.3" y="359" class="bv">10.9 KB</text>
+  <text x="0" y="357" class="bl">chart</text><rect x="132" y="345" width="62.0" height="18" rx="4" fill="#5c93f8"/><text x="204.0" y="359" class="bv">11.4 KB</text>
 </svg>
       <p>
         All 11 apps together come to <strong>298&nbsp;KB</strong>.
@@ -125,23 +145,23 @@
 
     <section>
       <p class="eyebrow">Speed</p>
-      <h2>An app opens in 11&ndash;98 milliseconds.</h2>
+      <h2>An app opens in 13&ndash;195 milliseconds.</h2>
       <p>
         One frame of 60&nbsp;fps video lasts 16.7&nbsp;ms. Most Krate apps have
         finished opening before a screen finishes drawing a single frame. The
         slowest here are the two ported desktop applications, which do real
         work on startup.
       </p>
-      <svg viewBox="0 0 640 306" role="img" class="chart" aria-label="Bar chart, longest bar is 98.5 ms">
-  <text x="0" y="17" class="bl">chart</text><rect x="132" y="5" width="44.3" height="18" rx="4" fill="#7cc4a4"/><text x="186.3" y="19" class="bv">10.6 ms</text>
-  <text x="0" y="51" class="bl">savings</text><rect x="132" y="39" width="47.7" height="18" rx="4" fill="#7cc4a4"/><text x="189.7" y="53" class="bv">11.4 ms</text>
-  <text x="0" y="85" class="bl">envelope</text><rect x="132" y="73" width="61.9" height="18" rx="4" fill="#7cc4a4"/><text x="203.9" y="87" class="bv">14.8 ms</text>
-  <text x="0" y="119" class="bl">cubes</text><rect x="132" y="107" width="67.8" height="18" rx="4" fill="#7cc4a4"/><text x="209.8" y="121" class="bv">16.2 ms</text>
-  <text x="0" y="153" class="bl">rssfwd</text><rect x="132" y="141" width="71.1" height="18" rx="4" fill="#7cc4a4"/><text x="213.1" y="155" class="bv">17 ms</text>
-  <text x="0" y="187" class="bl">mdview</text><rect x="132" y="175" width="102.9" height="18" rx="4" fill="#7cc4a4"/><text x="244.9" y="189" class="bv">24.6 ms</text>
-  <text x="0" y="221" class="bl">eo2</text><rect x="132" y="209" width="103.3" height="18" rx="4" fill="#7cc4a4"/><text x="245.3" y="223" class="bv">24.7 ms</text>
-  <text x="0" y="255" class="bl">grex</text><rect x="132" y="243" width="123.0" height="18" rx="4" fill="#7cc4a4"/><text x="265.0" y="257" class="bv">29.4 ms</text>
-  <text x="0" y="289" class="bl">bounce</text><rect x="132" y="277" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="291" class="bv">98.5 ms</text>
+      <svg viewBox="0 0 640 306" role="img" class="chart" aria-label="Bar chart, longest bar is 195.2 ms">
+  <text x="0" y="17" class="bl">savings</text><rect x="132" y="5" width="28.3" height="18" rx="4" fill="#7cc4a4"/><text x="170.3" y="19" class="bv">13.4 ms</text>
+  <text x="0" y="51" class="bl">envelope</text><rect x="132" y="39" width="38.2" height="18" rx="4" fill="#7cc4a4"/><text x="180.2" y="53" class="bv">18.1 ms</text>
+  <text x="0" y="85" class="bl">rssfwd</text><rect x="132" y="73" width="41.4" height="18" rx="4" fill="#7cc4a4"/><text x="183.4" y="87" class="bv">19.6 ms</text>
+  <text x="0" y="119" class="bl">cubes</text><rect x="132" y="107" width="50.2" height="18" rx="4" fill="#7cc4a4"/><text x="192.2" y="121" class="bv">23.8 ms</text>
+  <text x="0" y="153" class="bl">mdview</text><rect x="132" y="141" width="59.1" height="18" rx="4" fill="#7cc4a4"/><text x="201.1" y="155" class="bv">28 ms</text>
+  <text x="0" y="187" class="bl">eo2</text><rect x="132" y="175" width="60.2" height="18" rx="4" fill="#7cc4a4"/><text x="202.2" y="189" class="bv">28.5 ms</text>
+  <text x="0" y="221" class="bl">grex</text><rect x="132" y="209" width="69.4" height="18" rx="4" fill="#7cc4a4"/><text x="211.4" y="223" class="bv">32.9 ms</text>
+  <text x="0" y="255" class="bl">chart</text><rect x="132" y="243" width="106.2" height="18" rx="4" fill="#7cc4a4"/><text x="248.2" y="257" class="bv">50.3 ms</text>
+  <text x="0" y="289" class="bl">bounce</text><rect x="132" y="277" width="412.0" height="18" rx="4" fill="#7cc4a4"/><text x="554.0" y="291" class="bv">195.2 ms</text>
 </svg>
       <p class="method">
         Measured while this page was generated: five runs of each app on this
@@ -307,8 +327,8 @@
         <tr><td><code>hexyl</code></td><td>Command line</td><td class="num">14,872</td><td>Hex viewer with byte-identical output to the original</td><td class="mid">Nightly</td></tr>
         <tr><td><code>savings</code></td><td>Everyday app</td><td class="num">13,791</td><td>A window, a form, state that survives a restart</td><td class="mid">Nightly</td></tr>
         <tr><td><code>bounce</code></td><td>2D game</td><td class="num">13,161</td><td>A playable Breakout: paddle, bricks, lives, a win</td><td class="mid">Nightly</td></tr>
-        <tr><td><code>cubes</code></td><td></td><td class="num">12,785</td><td></td><td class="mid">Nightly</td></tr>
-        <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,147</td><td>Draws its own bar chart, with no image files</td><td class="mid">Nightly</td></tr>
+        <tr><td><code>cubes</code></td><td></td><td class="num">12,762</td><td></td><td class="mid">Nightly</td></tr>
+        <tr><td><code>chart</code></td><td>Drawing</td><td class="num">11,713</td><td>Draws its own bar chart, with no image files</td><td class="mid">Nightly</td></tr>
         </tbody>
       </table>
       </div>

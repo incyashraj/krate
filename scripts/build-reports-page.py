@@ -362,6 +362,8 @@ def main():
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
   <meta name="twitter:card" content="summary_large_image" />
   <title>Krate: the measurements</title>
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="stylesheet" href="/krate.css" />
   <style>
     .report {{ max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }}
@@ -396,6 +398,24 @@ def main():
   </style>
 </head>
 <body>
+  <!-- The logo was missing here, so this page read as somebody else's. It is
+       the page a doubter is sent to, which is the worst one to look unhosted.
+       Links are absolute because this page is served from /reports/. -->
+  <nav class="site-nav" aria-label="Primary navigation">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="Krate home">
+        <img src="/krate-glyph-blue.png" alt="" />
+        <span>Krate</span>
+      </a>
+      <div class="nav-links">
+        <a class="nav-link" href="/#start">Start</a>
+        <a class="nav-link" href="/cloud/">Store</a>
+        <a class="nav-link" href="/#faq">FAQ</a>
+        <a class="nav-link" href="/docs/">Docs</a>
+      </div>
+    </div>
+  </nav>
+
   <main class="report">
     <p class="eyebrow">Reports</p>
     <h1>The measurements.</h1>

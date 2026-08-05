@@ -2230,12 +2230,17 @@
       overflow: hidden;
     }
 
+    /* contain, not cover: these are proof shots, and cover cropped the claim
+       out of the picture -- the balance was sliced off the money dashboard and
+       half the clock faces were gone. The app windows are portrait and
+       ultra-wide, so nothing but the whole window is worth showing. The
+       checkerboard behind fills what letterboxing leaves. */
     .shot-frame img {
       display: block;
       width: 100%;
       height: 100%;
-      object-fit: cover;
-      object-position: top center;
+      object-fit: contain;
+      object-position: center;
     }
 
     .shot-card figcaption {

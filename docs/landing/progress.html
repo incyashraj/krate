@@ -11,6 +11,8 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/progress/" />
   <title>Krate: where we are, measured</title>
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="stylesheet" href="/krate.css" />
   <style>
     .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -21,6 +23,23 @@
   </style>
 </head>
 <body>
+  <!-- The logo was missing here. Links are absolute because this page is
+       served from /progress/, not from the site root. -->
+  <nav class="site-nav" aria-label="Primary navigation">
+    <div class="wrap nav-inner">
+      <a class="brand" href="/" aria-label="Krate home">
+        <img src="/krate-glyph-blue.png" alt="" />
+        <span>Krate</span>
+      </a>
+      <div class="nav-links">
+        <a class="nav-link" href="/#start">Start</a>
+        <a class="nav-link" href="/cloud/">Store</a>
+        <a class="nav-link" href="/#faq">FAQ</a>
+        <a class="nav-link" href="/docs/">Docs</a>
+      </div>
+    </div>
+  </nav>
+
   <main class="wrap" style="max-width: 60rem; margin: 0 auto; padding: 3rem 1.5rem;">
     <p class="label">Measured</p>
     <h1>Where Krate is today.</h1>
@@ -29,7 +48,7 @@
       night on Mac, Windows, and Linux. This page is generated from the
       repository. If a number here is wrong, the code is wrong.
     </p>
-    <p class="generated">Generated 2026-08-03 from commit <code>ba078c6</code>.</p>
+    <p class="generated">Generated 2026-08-05 from commit <code>15e862e</code>.</p>
 
     <h2>Apps that exist and run</h2>
     <table>
@@ -46,14 +65,14 @@
           <tr><td><code>hexyl</code></td><td class="num">14,872</td><td class="num">30,361&times;</td><td>Hex viewer, byte-identical output to the original</td><td>Yes</td></tr>
           <tr><td><code>savings</code></td><td class="num">13,791</td><td class="num">32,741&times;</td><td>Budget splitter with a window and saved state</td><td>Yes</td></tr>
           <tr><td><code>bounce</code></td><td class="num">13,161</td><td class="num">34,308&times;</td><td>2D game: a playable Breakout with paddle, bricks, lives, a win</td><td>Yes</td></tr>
-          <tr><td><code>cubes</code></td><td class="num">12,785</td><td class="num">35,317&times;</td><td></td><td>Yes</td></tr>
-          <tr><td><code>chart</code></td><td class="num">11,147</td><td class="num">40,507&times;</td><td>Draws its own bar chart, no image files</td><td>Yes</td></tr>
+          <tr><td><code>cubes</code></td><td class="num">12,762</td><td class="num">35,381&times;</td><td></td><td>Yes</td></tr>
+          <tr><td><code>chart</code></td><td class="num">11,713</td><td class="num">38,549&times;</td><td>Draws its own bar chart, no image files</td><td>Yes</td></tr>
       </tbody>
     </table>
     <p>
-      <strong>All 11 apps together: 304,644 bytes (298&nbsp;KB).</strong>
+      <strong>All 11 apps together: 305,187 bytes (298&nbsp;KB).</strong>
       Discord, which solves the same one-codebase-three-systems problem with a
-      browser inside the app, is 1,482.1&times; that on its own.
+      browser inside the app, is 1,479.5&times; that on its own.
     </p>
     <p class="generated">
       One app is not re-run nightly on purpose: <code>rssfwd</code> reaches the
