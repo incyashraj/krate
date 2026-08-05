@@ -122,6 +122,72 @@ pub struct Phase3GuiHost {
     /// the first drawn frame is the one captured.
     screenshot: Option<(std::path::PathBuf, f32)>,
     screenshot_taken: std::cell::Cell<bool>,
+    /// The usability script, when this run is a driven one. `None` on every
+    /// ordinary run, which is what keeps this whole mechanism off the path a
+    /// person's app takes.
+    usability: Option<UsabilityDriver>,
+}
+
+/// The scripted half of a driven run: which step is next, and what each one saw.
+///
+/// Kept beside the host rather than inside it because the driver is a
+/// verification harness, not part of what an app can observe. Nothing here is
+/// reachable from the guest.
+struct UsabilityDriver {
+    plan: crate::usability::UsabilityPlan,
+    /// Where the script is up to.
+    step: DriveStep,
+    /// When the driven run started waiting, for the stay-open watch.
+    started: Option<std::time::Instant>,
+    /// The frame painted just before the pending action, to compare against.
+    before: Option<crate::usability::FrameBuffer>,
+    /// What the run has seen so far.
+    report: crate::usability::UsabilityReport,
+    /// Whether the current step has already delivered its action and is now
+    /// waiting one turn of the app's loop before comparing frames.
+    action_delivered: bool,
+    /// Whether the pending press landed on a control the host actually knows
+    /// the rectangle of. A canvas app draws its own buttons, so a press there
+    /// is an educated guess and no verdict may be built on it.
+    press_was_confident: bool,
+    /// The app's canvas rectangle before the resize, which is what the resize
+    /// check compares against.
+    canvas_before: Option<(f32, f32)>,
+    /// The size the window was actually grown to, for the failure message.
+    resized_to: Option<(u32, u32)>,
+    /// When the script last advanced, so a polling game and an event-loop app
+    /// are driven at the same pace.
+    last_step: Option<std::time::Instant>,
+}
+
+/// How long the driver leaves between steps of its script.
+///
+/// Long enough that the app gets a real turn of its own loop to react to each
+/// action before the next observation is taken, short enough that the whole
+/// script fits inside the stay-open watch with room to spare.
+const STEP_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// How long the driver waits for an app to draw its first frame before giving
+/// up on the comparisons and just watching that the window stays open.
+///
+/// Bounded so an app that paints nothing cannot hold the run open until the
+/// outer verification watchdog kills it -- a killed run would be reported as a
+/// defect the app does not have.
+const SETTLE_GRACE: std::time::Duration = std::time::Duration::from_millis(3_000);
+
+/// The steps of a driven run, in order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DriveStep {
+    /// Let the app settle and draw its first real frame.
+    Settle,
+    /// Capture the frame, then resize the window.
+    Resize,
+    /// Compare the post-resize frame, then deliver a pointer press.
+    Click,
+    /// Compare the post-click frame, then just watch that it stays open.
+    Watch,
+    /// The script is finished; end the run.
+    Done,
 }
 
 impl Phase3GuiHost {
@@ -157,11 +223,33 @@ impl Phase3GuiHost {
             speech: LocalSpeechRuntime::default(),
             screenshot: None,
             screenshot_taken: std::cell::Cell::new(false),
+            usability: None,
         })
     }
 
     pub fn with_asset_root(mut self, root: Option<std::path::PathBuf>) -> Self {
         self.speech = LocalSpeechRuntime::default().with_asset_root(root);
+        self
+    }
+
+    /// Drive this run against a usability script instead of letting it idle out.
+    ///
+    /// Only ever set by `check-app`'s usability stage. An ordinary run passes
+    /// `None` and behaves exactly as it always has, which is the point: this is
+    /// a harness bolted onto the side of the real run, not a change to it.
+    pub fn with_usability(mut self, plan: Option<crate::usability::UsabilityPlan>) -> Self {
+        self.usability = plan.map(|plan| UsabilityDriver {
+            plan,
+            step: DriveStep::Settle,
+            started: None,
+            before: None,
+            report: crate::usability::UsabilityReport::default(),
+            action_delivered: false,
+            press_was_confident: false,
+            canvas_before: None,
+            resized_to: None,
+            last_step: None,
+        });
         self
     }
 
@@ -247,6 +335,347 @@ impl Phase3GuiHost {
         }
     }
 
+    /// Advance the usability script by one step, at the app's own event wait.
+    ///
+    /// Returns `Some(event)` only to end the run once the script is finished.
+    /// Every other step returns `None`, which leaves the app waiting exactly as
+    /// it was -- the driver's actions arrive as ordinary queued events the app
+    /// picks up on its next poll, so nothing here is a path a real app cannot
+    /// take.
+    ///
+    /// Each step runs one wait apart rather than back to back, so the app has a
+    /// turn of its own loop to react to the last action before the next frame
+    /// is compared against it.
+    fn drive_usability_step(&mut self) -> Option<ui::types::Event> {
+        let window = self.windows.first().copied();
+        let Some(window) = window else {
+            // No window yet. A CLI app never opens one and the stage skips on
+            // exactly this signal.
+            return None;
+        };
+        {
+            let now = std::time::Instant::now();
+            let driver = self.usability.as_mut()?;
+            driver.report.opened_window = true;
+            if driver.started.is_none() {
+                driver.started = Some(now);
+            }
+            // Pace the script by wall clock, not by how often the app asks for
+            // events. An event-loop app calls in about thirty times a second; a
+            // game polling at the top of every frame calls in thousands of
+            // times a second. Without this the whole script would run out in
+            // the first few milliseconds of a game, before it had drawn
+            // anything, and every observation would be of a blank window.
+            match driver.last_step {
+                Some(last) if now.duration_since(last) < STEP_INTERVAL => return None,
+                _ => driver.last_step = Some(now),
+            }
+        }
+
+        let step = self.usability.as_ref()?.step;
+        match step {
+            DriveStep::Settle => {
+                // A little grace so the first fully-drawn frame is the
+                // baseline, not a half-built tree.
+                let frame = self.capture_frame(window);
+                let driver = self.usability.as_mut()?;
+                if frame.as_ref().is_some_and(|f| f.has_content()) {
+                    driver.before = frame;
+                    driver.step = if driver.plan.check_resize {
+                        DriveStep::Resize
+                    } else if driver.plan.check_click {
+                        DriveStep::Click
+                    } else {
+                        DriveStep::Watch
+                    };
+                    return None;
+                }
+                // Nothing drawn yet. Keep waiting, but not forever: an app that
+                // opens a window and paints nothing would otherwise hold the
+                // run until the outer watchdog killed it, and a killed run
+                // reports as a defect the app does not have. Give up on the
+                // comparisons and go watch that it at least stays open, which
+                // is still worth knowing.
+                if driver
+                    .started
+                    .is_some_and(|s| s.elapsed() >= SETTLE_GRACE)
+                {
+                    let reason = "the app opened a window but never drew anything into it, so \
+                                  there was no frame to compare";
+                    if driver.plan.check_resize {
+                        driver.report.resize =
+                            Some(crate::usability::Observation::unobserved(reason));
+                    }
+                    if driver.plan.check_click {
+                        driver.report.click =
+                            Some(crate::usability::Observation::unobserved(reason));
+                    }
+                    driver.step = DriveStep::Watch;
+                }
+                None
+            }
+            DriveStep::Resize => {
+                self.drive_resize(window);
+                None
+            }
+            DriveStep::Click => {
+                self.drive_click(window);
+                None
+            }
+            DriveStep::Watch => {
+                let driver = self.usability.as_mut()?;
+                let started = driver.started?;
+                if std::time::Instant::now().duration_since(started)
+                    < crate::usability::STAY_OPEN_WATCH
+                {
+                    return None;
+                }
+                // The app was still running at the end of the watch, which is
+                // the whole question for the stay-open check.
+                if driver.plan.check_stay_open {
+                    driver.report.stay_open = Some(crate::usability::Observation::Held);
+                }
+                driver.step = DriveStep::Done;
+                Some(ui::types::Event::CloseRequested(window.get()))
+            }
+            DriveStep::Done => Some(ui::types::Event::CloseRequested(window.get())),
+        }
+    }
+
+    /// Resize the window, then see whether the app's own canvas followed it.
+    ///
+    /// Runs across two visits: the first records the canvas rectangle and
+    /// queues the resize, the second reads the canvas rectangle back.
+    ///
+    /// The canvas is the measurement, not the window. Resizing the window
+    /// always changes the window -- that is the host obeying itself, and an
+    /// app that ignores the whole event still "passes" if you look there. The
+    /// canvas is sized by the app's own widget style, so a canvas that stayed
+    /// put is an app whose drawing surface is nailed to compile-time
+    /// constants: exactly the shape where clicks land in the wrong place after
+    /// a resize.
+    fn drive_resize(&mut self, window: WindowId) {
+        let resized_already = self.usability.as_ref().is_some_and(|d| d.action_delivered);
+
+        if !resized_already {
+            let before_rect = self.canvas_rect(window);
+            // Grow the app's *own* window rather than jump to a fixed size, so
+            // the resize is always a real change no matter what size the app
+            // chose. An app that happened to open at the driver's target size
+            // would otherwise be asked to resize to the size it already was,
+            // and reported as ignoring an event that never happened.
+            let current = self
+                .dispatcher()
+                .window(window)
+                .ok()
+                .flatten()
+                .map(|record| (record.size.width, record.size.height));
+            let (target_w, target_h) = match current {
+                Some((w, h)) => (w.saturating_add(220), h.saturating_add(140)),
+                None => crate::usability::SECOND_SIZE,
+            };
+            let size = match WindowSize::new(target_w, target_h) {
+                Ok(size) => size,
+                Err(_) => return,
+            };
+            if self.dispatcher().set_size(window, size).is_err() {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.report.resize = Some(crate::usability::Observation::unobserved(
+                        "the window could not be resized on this host",
+                    ));
+                    driver.step = Self::next_after_resize(driver);
+                }
+                return;
+            }
+            // The resize is queued; compare on the next visit, once the app has
+            // had a turn of its own loop to react to it.
+            if let Some(driver) = self.usability.as_mut() {
+                driver.action_delivered = true;
+                driver.canvas_before = before_rect;
+                driver.resized_to = Some((target_w, target_h));
+            }
+            return;
+        }
+
+        let after_rect = self.canvas_rect(window);
+        let after_frame = self.capture_frame(window);
+        let driver = match self.usability.as_mut() {
+            Some(driver) => driver,
+            None => return,
+        };
+        driver.action_delivered = false;
+        driver.report.resize = Some(match (driver.canvas_before, after_rect) {
+            (Some(before), Some(after)) => {
+                // Compared with a tolerance because these are laid-out floats,
+                // and a one-pixel rounding difference is not an app reacting.
+                let grew = (after.0 - before.0).abs() > 1.0 || (after.1 - before.1).abs() > 1.0;
+                if grew {
+                    crate::usability::Observation::Held
+                } else {
+                    let (target_w, target_h) = driver
+                        .resized_to
+                        .unwrap_or(crate::usability::SECOND_SIZE);
+                    crate::usability::Observation::broke(format!(
+                        "the window was resized to {target_w}x{target_h} and the app's canvas \
+                         stayed {:.0}x{:.0}, so its layout is not following the window",
+                        before.0, before.1
+                    ))
+                }
+            }
+            // An app with no canvas draws through ordinary widgets, which the
+            // layout engine reflows on its own. There is nothing here that the
+            // app could get wrong, so there is nothing to report.
+            _ => crate::usability::Observation::unobserved(
+                "this app draws with laid-out widgets rather than a canvas, so the layout \
+                 engine handles resizing for it",
+            ),
+        });
+        driver.before = after_frame;
+        driver.step = Self::next_after_resize(driver);
+    }
+
+    fn next_after_resize(driver: &UsabilityDriver) -> DriveStep {
+        if driver.plan.check_click {
+            DriveStep::Click
+        } else {
+            DriveStep::Watch
+        }
+    }
+
+    /// Deliver a pointer press, then judge the next frame against the one
+    /// before it. Runs across two visits, like the resize.
+    fn drive_click(&mut self, window: WindowId) {
+        let clicked_already = self.usability.as_ref().is_some_and(|d| d.action_delivered);
+        let before = self.usability.as_ref().and_then(|d| d.before.clone());
+
+        if !clicked_already {
+            let Some((x, y, confident)) = self.usability_press_target(window) else {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.report.click = Some(crate::usability::Observation::unobserved(
+                        "the app drew nothing that could be pressed",
+                    ));
+                    driver.step = DriveStep::Watch;
+                }
+                return;
+            };
+            // Press and release, because an app may act on either. Routed the
+            // same way a real click is, so it hit-tests against the tree the
+            // app actually built and arrives carrying the widget it landed on.
+            let viewport = self
+                .window_placements(window)
+                .ok()
+                .flatten()
+                .and_then(|(size, _)| {
+                    LayoutViewport::new(size.width as f32, size.height as f32).ok()
+                });
+            let Some(viewport) = viewport else {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.report.click = Some(crate::usability::Observation::unobserved(
+                        "the window had no laid-out frame to press into",
+                    ));
+                    driver.step = DriveStep::Watch;
+                }
+                return;
+            };
+            let dispatcher = self.dispatcher();
+            let press = |pressed: bool| {
+                dispatcher.route_pointer_event(crate::phase3_ui::PointerRouteRequest {
+                    window,
+                    viewport,
+                    x,
+                    y,
+                    button: Some(krate_adapter_common::ui::PointerButton::Primary),
+                    pressed,
+                    modifiers: Default::default(),
+                })
+            };
+            let pressed = press(true);
+            let released = press(false);
+            if pressed.is_err() || released.is_err() {
+                if let Some(driver) = self.usability.as_mut() {
+                    driver.report.click = Some(crate::usability::Observation::unobserved(
+                        "this host could not deliver a pointer press",
+                    ));
+                    driver.step = DriveStep::Watch;
+                }
+                return;
+            }
+            if let Some(driver) = self.usability.as_mut() {
+                driver.action_delivered = true;
+                driver.press_was_confident = confident;
+            }
+            return;
+        }
+
+        let after = self.capture_frame(window);
+        let driver = match self.usability.as_mut() {
+            Some(driver) => driver,
+            None => return,
+        };
+        let confident = driver.press_was_confident;
+        driver.action_delivered = false;
+        driver.report.click = Some(match (before, after.clone()) {
+            (Some(before), Some(after)) => {
+                let difference = crate::usability::frame_difference(&before, &after);
+                if difference > 0.0 {
+                    crate::usability::Observation::Held
+                } else if confident {
+                    // The press landed on a control the host laid out, so the
+                    // app was pressed exactly where its own widget is and
+                    // nothing at all happened.
+                    crate::usability::Observation::broke(
+                        "a press on the middle of the app's own clickable control changed \
+                         nothing on screen",
+                    )
+                } else {
+                    // A canvas app draws its own controls, so the host has no
+                    // idea where they are and pressed the middle of the canvas.
+                    // Landing on empty space looks exactly like a dead button,
+                    // and guessing wrong must never fail an app.
+                    crate::usability::Observation::unobserved(
+                        "the frame did not change after a press, but this app draws its own \
+                         controls so the press may simply have landed on empty space",
+                    )
+                }
+            }
+            _ => crate::usability::Observation::unobserved(
+                "no frame could be painted around the press",
+            ),
+        });
+        driver.before = after;
+        driver.step = DriveStep::Watch;
+    }
+
+    /// Hand the finished report back so the run can write it out.
+    ///
+    /// This is where the stay-open verdict is really decided. The driver only
+    /// ever records `Held` from inside the watch, after the full window has
+    /// elapsed. If the run reaches here with the watch unfinished, the app
+    /// returned from its own event loop while the driver was still watching --
+    /// which is precisely "the window closed by itself".
+    pub fn usability_report(&self) -> Option<crate::usability::UsabilityReport> {
+        self.usability.as_ref().map(|d| {
+            let mut report = d.report.clone();
+            let ran = d.started.map(|s| s.elapsed()).unwrap_or_default();
+            report.ran_millis = ran.as_millis() as u64;
+            if d.plan.check_stay_open && report.stay_open.is_none() && report.opened_window {
+                report.stay_open = Some(crate::usability::Observation::broke(format!(
+                    "the app opened a window and then closed it by itself after {:.1}s, with \
+                     nobody asking it to",
+                    ran.as_secs_f32()
+                )));
+            }
+            report
+        })
+    }
+
+    /// Where the report should be written, if this is a driven run.
+    pub fn usability_report_path(&self) -> Option<std::path::PathBuf> {
+        self.usability
+            .as_ref()
+            .map(|d| d.plan.report_path.clone())
+    }
+
     fn headless_budget_close_request(&self) -> Option<ui::types::Event> {
         if !self.headless {
             return None;
@@ -266,8 +695,73 @@ impl Phase3GuiHost {
         Some(ui::types::Event::CloseRequested(window))
     }
 
+    /// Paint the current frame into memory, for comparing one moment to another.
+    ///
+    /// The same placements and the same painter `render_window_png` uses, so a
+    /// comparison here is a comparison of what a person would have seen.
+    fn capture_frame(&self, window: WindowId) -> Option<crate::usability::FrameBuffer> {
+        let (size, placements) = self.window_placements(window).ok()??;
+        let width = (size.width as f32).round().max(1.0) as u32;
+        let height = (size.height as f32).round().max(1.0) as u32;
+        let mut buffer = vec![0u32; width as usize * height as usize];
+        krate_adapter_common::painter::paint_placements(
+            &mut buffer,
+            width,
+            height,
+            1.0,
+            &placements,
+            krate_adapter_common::painter::PaintInteraction::default(),
+        );
+        Some(crate::usability::FrameBuffer::new(width, height, buffer))
+    }
+
+    /// The laid-out rectangle of the app's canvas, if it drew into one.
+    ///
+    /// This is the number the resize check turns on, and it is deliberately not
+    /// the window's size. The window always changes when the host resizes it --
+    /// that is the host obeying itself and says nothing about the app. The
+    /// canvas is the app's own drawing surface, sized by the app's own widget
+    /// style, so a canvas that refuses to follow the window is the app pinning
+    /// its layout to compile-time constants.
+    fn canvas_rect(&self, window: WindowId) -> Option<(f32, f32)> {
+        let (_, placements) = self.window_placements(window).ok()??;
+        placements
+            .iter()
+            .find(|placement| placement.kind == WidgetKind::Canvas)
+            .map(|placement| (placement.width, placement.height))
+    }
+
+    /// Pick a point that is worth pressing, and say whether it is a real
+    /// control or only a guess.
+    ///
+    /// A canvas app draws its own buttons, so the host sees one big canvas and
+    /// cannot know where anything is. Pressing the middle of the canvas is the
+    /// best available guess -- and because it is a guess, a canvas app that
+    /// does not react is reported as *unobserved*, never as broken. Only a real
+    /// lowered control, whose rectangle the host does know, can produce a
+    /// confident failure.
+    fn usability_press_target(&self, window: WindowId) -> Option<(f32, f32, bool)> {
+        let (size, placements) = self.window_placements(window).ok()??;
+        for placement in &placements {
+            if placement.clickable && placement.width > 1.0 && placement.height > 1.0 {
+                return Some((
+                    placement.x + placement.width / 2.0,
+                    placement.y + placement.height / 2.0,
+                    true,
+                ));
+            }
+        }
+        Some((size.width as f32 / 2.0, size.height as f32 / 2.0, false))
+    }
+
     fn headless_close_request(&self) -> Option<ui::types::Event> {
         if !self.headless {
+            return None;
+        }
+        // A driven run has its own script and its own ending. Closing it here,
+        // after eight quiet waits, would end the watch about a second in and
+        // report every well-behaved app as one that closed by itself.
+        if self.usability.is_some() {
             return None;
         }
         let waits = self.idle_waits.get().saturating_add(1);
@@ -1129,6 +1623,17 @@ impl ui::events::Host for Phase3GuiHost {
         // the top of a frame loop, before this frame is drawn. wait (widget
         // apps) and present (canvas and scene apps) are the capture points.
         self.pump_native_windows();
+        // A game never calls `wait` -- it polls at the top of every frame and
+        // draws regardless. Driving only from `wait` means such an app is never
+        // stepped and never released, so the run hangs until the outer
+        // watchdog kills it and the stage blames the app for a defect it does
+        // not have. Stepping here too is what makes the driver work for a
+        // frame loop as well as an event loop.
+        if self.usability.is_some() {
+            if let Some(event) = self.drive_usability_step() {
+                return Ok(Some(event));
+            }
+        }
         self.poll_one_event()
             .map_err(|err| wasmtime::Error::msg(err.to_string()))
     }
@@ -1166,13 +1671,23 @@ impl ui::events::Host for Phase3GuiHost {
         let deadline = timeout_millis
             .map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(u64::from(ms)));
 
-        // Checked before polling, deliberately. An animation loop calls
-        // `request-redraw` every frame and immediately receives that redraw
-        // back, so the queue is never empty and the app looks busy forever --
-        // but nothing is happening that a person would recognise as activity.
-        // The budget is wall-clock precisely so a loop cannot feed itself past
-        // it.
-        if let Some(close) = self.headless_budget_close_request() {
+        // A driven run is scripted, so it owns the budget question outright:
+        // the driver decides when this run has seen enough and ends it itself.
+        // The ordinary wall-clock budget below would cut the run off at five
+        // seconds, which is before the ten-second self-close the driver exists
+        // to catch.
+        if self.usability.is_some() {
+            if let Some(event) = self.drive_usability_step() {
+                self.idle_waits.set(0);
+                return Ok(Some(event));
+            }
+        } else if let Some(close) = self.headless_budget_close_request() {
+            // Checked before polling, deliberately. An animation loop calls
+            // `request-redraw` every frame and immediately receives that redraw
+            // back, so the queue is never empty and the app looks busy forever
+            // -- but nothing is happening that a person would recognise as
+            // activity. The budget is wall-clock precisely so a loop cannot
+            // feed itself past it.
             self.idle_waits.set(0);
             return Ok(Some(close));
         }

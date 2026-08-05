@@ -71,6 +71,57 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-014 — krate-pulse pins its canvas to constants, so it ignores a resize
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    example-bug
+Found:    2026-08-05, W14, first run of the new usability stage across apps/
+Evidence: Found by the usability stage, not by a person -- which is what the
+          stage is for:
+
+              $ ./target/release/krate check-app apps/krate-pulse
+              FAILED at usability
+              the window was resized to 1300x840 and the app's canvas stayed
+              1080x700, so its layout is not following the window
+              EXIT=16
+
+          `apps/krate-pulse/src/lib.rs:503` and `:518` set
+          `width: Some(WIDTH), height: Some(HEIGHT)` on the canvas node, with
+          `const WIDTH: f32 = 1080.0` at :33. The file has zero matches for
+          both `canvas_size` and `Resized`, so nothing re-lays it out.
+          It is the only shipped app that pins its canvas this way
+          (`grep -ln "width: Some(WIDTH)" apps/*/src/lib.rs`).
+Fix:      Same shape as K-003: drop the fixed style on the canvas node, lay out
+          from `canvas2d::canvas_size`, and handle `Event::Resized`. Left
+          unclaimed rather than fixed here, because K-003 is W13's and this is
+          the same repair on a second app -- it should go with that work.
+
+### K-013 — Eleven shipped apps have no `krate` dependency and cannot build
+Status:   open
+Owner:    unclaimed
+Severity: blocker
+Class:    our-code
+Found:    2026-08-05, W14, sweeping check-app across every app in apps/
+Evidence: `grep -L '^krate = ' apps/*/Cargo.toml` on clean main names eleven:
+          bigscroll, bounce, calc, chart, clip, convert, cubes, dashboard,
+          fetch, filetree, hello-gui. Each fails check-app at stage `layout`,
+          exit 10:
+
+              $ ./target/release/krate check-app apps/krate-bounce
+              FAILED at layout
+              Cargo.toml has no `krate` dependency.
+              EXIT=10
+
+          Confirmed pre-existing and not a worktree artifact:
+          `git show main:apps/krate-bounce/Cargo.toml | grep -c '^krate = '`
+          returns 0. This is the same defect as the fixed K-011, which was
+          repaired in `krate create`'s template but evidently never backfilled
+          into the apps already in the tree.
+Fix:      Put `krate = { path = "../../crates/bindings-rust" }` back under
+          [dependencies] in each of the eleven. Worth a test that walks apps/
+          and fails when any app is missing it, since this is K-011 returning.
+
 ### K-001 — Canvas apps cannot scroll: there is no scroll event
 Status:   claimed
 Owner:    W12
@@ -134,19 +185,6 @@ Evidence: `redraw-requested` and `request-redraw` exist; zero matches for
           `vsync|frame-time|animation`. Games poll `events::wait(Some(16))`.
 Fix:      A frame/tick event carrying elapsed time, so animation is time-based.
 
-### K-006 — Nothing checks whether an app is usable, only whether it is valid
-Status:   claimed
-Owner:    W14
-Severity: serious
-Class:    our-code
-Found:    2026-08-05, lead, after a user got a green-checked unusable app
-Evidence: check-app has six stages -- layout, manifest, build, imports, run,
-          shoot. Every one asks whether the app compiles and paints. None asks
-          whether a click lands, whether it survives a resize, or whether it
-          stays open. An app with all three defects passed every stage.
-Fix:      A usability stage. Must not produce false failures -- a flaky gate
-          gets skipped and then protects nothing.
-
 ### K-007 — This machine's AI accounts are unusable
 Status:   open
 Owner:    unclaimed
@@ -164,6 +202,50 @@ Fix:      Not ours. Yashraj re-authenticates Claude and updates Codex. Recorded
 ---
 
 ## Fixed
+
+### K-006 — Nothing checks whether an app is usable, only whether it is valid
+Status:   fixed
+Owner:    W14
+Severity: serious
+Class:    our-code
+Found:    2026-08-05, lead, after a user got a green-checked unusable app
+Evidence: check-app had six stages -- layout, manifest, build, imports, run,
+          shoot. Every one asks whether the app compiles and paints. None asked
+          whether a click lands, whether it survives a resize, or whether it
+          stays open. An app with all three defects passed every stage.
+Fix:      A seventh stage, `usability`, exit code 16. It drives the app inside
+          an ordinary headless run: grows the window and checks the app's own
+          canvas followed it, routes a real pointer press and checks something
+          changed, then watches 15 s that the window is still open.
+
+          Proved it catches the real bugs, by reverting each fix in a scratch
+          copy of krate-checklist and running the stage on it:
+
+              # K-009 reverted (one line: `quick &&` removed)
+              FAILED at usability
+              the app opened a window and then closed it by itself after
+              11.7s, with nobody asking it to
+              EXIT=16
+              # same fixture, that one line restored -> OK, exit 0
+
+              # K-003 shape (canvas node pinned to const WIDTH/HEIGHT)
+              FAILED at usability
+              the window was resized to 660x760 and the app's canvas stayed
+              440x620, so its layout is not following the window
+              EXIT=16
+              # same app without the pin -> OK, exit 0
+
+          Proved it does not fail good apps: swept all 34 apps in apps/. The
+          only usability failure is K-014, a real defect the stage found. Every
+          other failure is at `layout` (K-013) or `run`, both of which stop the
+          check before this stage runs.
+
+          Two things it does *not* do, said plainly rather than papered over:
+          it cannot tell a re-laid-out frame from a stretched one, so the
+          resize check turns on whether the canvas followed the window at all;
+          and for a canvas app it cannot know where a drawn button is, so a
+          press that changes nothing is reported as unobserved, not failed.
+          Only a press on a control the host itself laid out can fail.
 
 ### K-008 — MCP reported success for an app nobody asked for
 Status:   fixed
