@@ -90,6 +90,12 @@
 
 - [Announcing Krate](blog/0001-announcing-krate.md)
 - [Every AI sandbox in 2026 runs in someone else's cloud](blog/0002-every-sandbox-is-cloud.md)
+- [Why sharing a desktop app is still hard in 2026](blog/0003-why-sharing-a-desktop-app-is-still-hard.md)
+- [What happens when you let an AI write eight desktop apps](blog/0004-what-happens-when-an-ai-writes-a-desktop-app.md)
+- [How to run AI-generated code without reading it](blog/0005-how-to-run-ai-generated-code-safely.md)
+- [WebAssembly for desktop apps: what actually works in 2026](blog/0006-webassembly-outside-the-browser.md)
+- [Six automated checks passed an app that could not be clicked](blog/0007-testing-software-like-a-stranger.md)
+- [How to make a desktop app without being a programmer](blog/0008-make-a-desktop-app-without-being-a-programmer.md)
 
 # Appendix
 
