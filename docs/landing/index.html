@@ -547,7 +547,7 @@
 
         <p class="paths-lead">Now that Krate is installed, pick your path.</p>
         <div class="path-grid">
-          <a class="path-card" href="./docs/pages/build-an-app.html">
+          <a class="path-card" href="./docs/pages/make-an-app-with-ai.html">
             <span class="path-number">01 / MAKE</span>
             <h3>I want to build one</h3>
             <p>Describe the app you want and an AI writes it. Type <code>krate</code> and it walks you through it, or connect Krate to Claude Desktop and just ask in chat.</p>
@@ -1069,27 +1069,27 @@
         ]
       },
       cloud: {
-        state: "Beta",
-        stateClass: "planned",
-        title: "A store for apps that show their hands.",
-        description: "Krate Cloud is where apps get found and downloaded. Every listing shows what the app asks for before you open it, and the app still runs on your own computer.",
-        note: "The store is open in beta, with 25 apps on the shelf today. Publishing your own is next.",
-        terminalTitle: "the store",
-        linkLabel: "Open the store →",
+        state: "Working today",
+        stateClass: "",
+        title: "Publish it, and send a link.",
+        description: "Krate Cloud is where apps get published and found. Every listing shows what the app asks for before you open it, and the app still runs on your own computer.",
+        note: "Sign in with GitHub, publish from the terminal or the website, and anyone with the link can run it.",
+        terminalTitle: "krate cloud",
+        linkLabel: "See what people have published \u2192",
         linkHref: "/cloud/",
         lines: [
-          { type: "label", text: "Krate Cloud, listing to open" },
-          { type: "success", text: "01  Browse the store at krate.tech/cloud" },
-          { type: "muted", text: "    25 apps you can download and run right now" },
-          { type: "success", text: "02  The listing shows what the app asks for" },
-          { type: "muted", text: "    open a window · save its own settings and data" },
-          { type: "success", text: "03  The file is checked against its identity" },
-          { type: "info", text: "    krate run app.krate --dump-caps" },
-          { type: "muted", text: "    Identity  b8243d1fd518677d41fb679c1ec5d93e…" },
-          { type: "success", text: "04  You open it, and review the ask" },
-          { type: "muted", text: "    the same permission window as any .krate" },
-          { type: "planned", text: "05  Publishing your own app is coming next" },
-          { type: "success", text: "The store distributes. Your computer runs it, and decides." }
+          { type: "label", text: "Publishing an app you made" },
+          { type: "command", text: "krate publish habit-tracker.krate" },
+          { type: "muted", text: "signs you in with GitHub the first time" },
+          { type: "gap", text: "" },
+          { type: "success", text: "Published. Anyone can run it with:" },
+          { type: "info", text: "  krate run https://hub.krate.tech/a/fa32e9bc\u2026" },
+          { type: "gap", text: "" },
+          { type: "label", text: "Or from the website" },
+          { type: "success", text: "krate.tech/publish  \u2014  drop the file, describe it, publish" },
+          { type: "muted", text: "it reads the app itself: name, size, and every permission" },
+          { type: "gap", text: "" },
+          { type: "success", text: "The cloud distributes. Your computer runs it, and decides." }
         ]
       }
     };
