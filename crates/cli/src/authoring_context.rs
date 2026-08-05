@@ -278,6 +278,13 @@ compute the layout from that, and recompute when it changes:\n\n\
 **Handle the resize event.** The runtime sends `Event::Resized(window-size)` \
 when the window changes. Re-read the canvas size, recompute the layout, and \
 redraw. An app that ignores it is only correct at its opening size.\n\n\
+**If the app has live data, fetch it when it starts.** Sample data is a \
+fallback for when the network fails, never the state a person sees first. An \
+app asked for \"open source news\" declared `net.connect:hnrss.org:443`, wrote a \
+correct fetch, and put it behind a Refresh button -- so it opened showing \
+fifteen hardcoded headlines and looked like it was faking. Fetch on startup, \
+show what you got, and fall back to samples only after a real failure, saying \
+so.\n\n\
 **Do not close yourself. This is the most common way a generated app fails.** \
 A real session ends when the person closes the window \
 (`Event::CloseRequested`), and only then. Do NOT put a round limit, a frame \

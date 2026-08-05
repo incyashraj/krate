@@ -177,7 +177,7 @@ Evidence: check-app has six stages -- layout, manifest, build, imports, run,
 Fix:      A usability stage. Must not produce false failures -- a flaky gate
           gets skipped and then protects nothing.
 
-### K-007 — Two of this machine's three AI accounts are unusable
+### K-028 — Two of this machine's three AI accounts are unusable
 Status:   open
 Owner:    unclaimed
 Severity: annoyance
@@ -194,7 +194,7 @@ Fix:      Not ours. Yashraj re-authenticates Claude and updates Codex. Recorded
           because it once turned a 14/14 pass rate into a reported 23% and must
           not be mistaken for a product failure again.
 
-### K-013 — Our development history leaks into every app a user makes
+### K-029 — Our development history leaks into every app a user makes
 Status:   open
 Owner:    unclaimed
 Severity: annoyance
@@ -212,7 +212,7 @@ Evidence: `crates/author/src/lib.rs:1045` writes this into every generated
 Fix:      Comments in generated files should explain the code to the person who
           now owns it. The history belongs in our repo, not in their app.
 
-### K-014 — A debug build shadows the real release on PATH
+### K-030 — A debug build shadows the real release on PATH
 Status:   open
 Owner:    unclaimed
 Severity: serious
@@ -229,7 +229,7 @@ Fix:      Not a product defect, but it silently invalidates measurements and has
           ~/.local/bin/krate explicitly.
 
 ### K-015 — The `quick` run says "print something", so nothing can read what an app printed
-Status:   open
+Status:   fixed (5478426)
 Owner:    unclaimed
 Severity: serious
 Class:    teaching-hole
@@ -262,7 +262,7 @@ Fix:      State the contract in the pack, do not just demonstrate it: on
           and it makes every future app readable by machine.
 
 ### K-016 — Generated apps bound their interactive loop and quit mid-use
-Status:   claimed
+Status:   fixed (5478426)
 Owner:    lead
 Severity: blocker
 Class:    teaching-hole
@@ -279,7 +279,7 @@ Fix:      The pack now says plainly that the interactive loop takes no bound at
           belongs only on the `quick` path.
 
 ### K-017 — Nothing anyone can click reliably works
-Status:   claimed
+Status:   fixed (c85dec7)
 Owner:    lead
 Severity: blocker
 Class:    unknown -- needs diagnosis
@@ -447,7 +447,7 @@ Fix:      Diagnose each. None is a reference app the authoring pack recommends,
           so none blocks a user making an app.
 
 ### K-026 — An app's only route to live data is a button, and buttons do not work
-Status:   claimed
+Status:   fixed (c85dec7 + the pack fix here)
 Owner:    lead
 Severity: blocker
 Class:    our-code
