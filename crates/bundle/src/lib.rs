@@ -86,8 +86,20 @@ pub enum BundleError {
     MissingEntry(&'static str),
     #[error("bundle manifest is not valid: {0}")]
     Manifest(String),
+    // Both forms are correct in their own place -- a development manifest points
+    // at the build output, a bundle manifest points at the name inside the
+    // bundle -- and we only ever documented the first. So the person who
+    // follows our own instructions lands here, and the old message stated the
+    // rule without saying what to do about it. Someone hit this through the MCP
+    // server and worked around it with an unexplained `sed`.
     #[error(
-        "bundle manifest declares entry `{declared}`, but a bundle always runs `{COMPONENT_ENTRY}`"
+        "bundle manifest declares entry `{declared}`, but a bundle always runs \
+         `{COMPONENT_ENTRY}`.\n\n\
+         Inside a bundle the component is stored under one fixed name, so the \
+         manifest that goes in has to say that name. Your development \
+         manifest is right to point at the build output -- make a copy for \
+         packing with:\n\n    entry = \"{COMPONENT_ENTRY}\"\n\n\
+         Or let `krate create` do the packing, which handles this for you."
     )]
     EntryMismatch { declared: String },
     #[error("bundle is {size} bytes, larger than the {MAX_BUNDLE_BYTES} byte limit")]

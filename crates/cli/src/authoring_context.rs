@@ -265,6 +265,37 @@ Read stdin to end, do the work, print the result. This is how a formatter or a \
 pretty-printer should take its input -- the same shape as `column`, `jq`, or \
 `sort`, where you pipe data in. An app that tries to take a multi-line document \
 as an argument will be refused before it runs.\n\n\
+## Making a window that actually works\n\n\
+The API list above says what you may call. This says what an interactive app \
+has to do with it, because getting this wrong produces an app that builds, \
+passes every check, and is useless in a person's hands.\n\n\
+**Lay out from the real canvas size, never from constants.** A window can be \
+resized. If you hard-code `WIDTH`/`HEIGHT` and hit-test against them, the \
+canvas stretches while your click targets stay where they were, and every \
+click lands in the wrong place or nowhere. Ask the canvas how big it is, \
+compute the layout from that, and recompute when it changes:\n\n\
+\u{20}\u{20}\u{20}\u{20}let size = canvas2d::canvas_size(canvas)?;   // width, height right now\n\n\
+**Handle the resize event.** The runtime sends `Event::Resized(window-size)` \
+when the window changes. Re-read the canvas size, recompute the layout, and \
+redraw. An app that ignores it is only correct at its opening size.\n\n\
+**Do not close yourself.** A real session ends when the person closes the \
+window (`Event::CloseRequested`). If you use an idle timeout so the automated \
+`quick` run cannot hang, gate it on `quick` -- an unconditional one closes the \
+window while somebody is reading it.\n\n\
+**Hit-test against what you actually drew.** There is no widget tree behind a \
+canvas: a drawn button is only clickable because you compare the pointer \
+position to the same rectangle you filled. Keep the layout in one place so the \
+drawing and the hit-testing cannot disagree.\n\n\
+**Content taller than the window is currently unreachable.** There is no wheel \
+or scroll event in this version, so a canvas app cannot scroll. Design for what \
+fits, and say so plainly in your report rather than drawing rows nobody can \
+reach.\n\n\
+## Packing: the entry name changes\n\n\
+Your `manifest.toml` points `entry` at the build output, which is right for \
+building and for `check-app`. Inside a packed `.krate` the component is stored \
+under one fixed name, so the manifest that goes into the bundle must say \
+`entry = \"code.wasm\"` instead. `krate create` handles this for you; `krate \
+pack` expects the bundle form and will refuse the development one.\n\n\
 ## The verification run\n\n\
 `check-app` (and `create`) run the app once with every capability granted and \
 one argument, requiring exit 0. The argument is the bare word `quick` (not \
