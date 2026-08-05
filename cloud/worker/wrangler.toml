@@ -15,7 +15,7 @@ bucket_name = "krate-bundles"
 
 [[kv_namespaces]]
 binding = "APPS"
-id = "PLACEHOLDER_FILLED_BY_SETUP"
+id = "184313bf18694dff800e580de42b2cda"
 
 [vars]
 PUBLIC_BASE = "https://hub.krate.tech"

@@ -59,12 +59,17 @@ fi
 echo "    namespace: $KV_ID"
 
 # Write the real id into wrangler.toml so the deploy binds to it.
+#
+# Anchored to a line that is exactly `id = "..."`. The first version matched
+# `id = "..."` anywhere, which hit `account_id` -- the line above it -- and
+# replaced the account with the namespace, so the deploy authenticated against
+# an account that does not exist.
 python3 - "$KV_ID" <<'PY'
 import re, sys
 kv_id = sys.argv[1]
 path = "wrangler.toml"
 text = open(path).read()
-text = re.sub(r'id = "[^"]*"', f'id = "{kv_id}"', text, count=1)
+text = re.sub(r'^id = "[^"]*"$', f'id = "{kv_id}"', text, count=1, flags=re.M)
 open(path, "w").write(text)
 PY
 
