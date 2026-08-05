@@ -4247,3 +4247,94 @@ fn ai_lists_what_this_machine_can_author_with() {
         "krate ai must show the next command: {stdout}"
     );
 }
+
+/// `krate connect` must set up an AI app without anyone editing JSON, and must
+/// be careful with a file it did not write.
+///
+/// The reason this command exists: the alternative was a page telling a
+/// moderately technical person to hand-edit JSON in a file whose path differs
+/// per operating system, after first explaining what MCP is. That is a wall in
+/// front of the product for exactly the people we most want.
+///
+/// The three things it must never get wrong are all checked here: it must keep
+/// servers somebody else configured, it must not overwrite a file it cannot
+/// parse, and running it twice must be safe.
+#[test]
+fn connect_sets_up_an_ai_app_without_touching_anything_else() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config = home.path().join(".cursor/mcp.json");
+    std::fs::create_dir_all(config.parent().expect("parent")).expect("mkdir");
+    std::fs::write(
+        &config,
+        r#"{"mcpServers":{"github":{"command":"npx","args":["-y","server-github"]}}}"#,
+    )
+    .expect("seed config");
+
+    let output = krate()
+        .args(["connect", "cursor", "--yes"])
+        .env("HOME", home.path())
+        .output()
+        .expect("run connect");
+    assert!(
+        output.status.success(),
+        "connect failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&config).expect("read")).expect("valid json");
+    assert!(
+        written.pointer("/mcpServers/github").is_some(),
+        "connect deleted a server somebody else configured: {written}"
+    );
+    assert_eq!(
+        written.pointer("/mcpServers/krate/args"),
+        Some(&serde_json::json!(["mcp"])),
+        "krate must be wired to `krate mcp`: {written}"
+    );
+    // The command must be a real path, not a bare name: a client launches the
+    // server with its own environment, where PATH may not have our install dir,
+    // and a bare name would find an older installed Krate anyway.
+    let command = written
+        .pointer("/mcpServers/krate/command")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default();
+    assert!(
+        command.contains('/') || command.contains('\\'),
+        "the command must be an absolute path, got {command:?}"
+    );
+
+    // Running it again is safe and says so rather than writing again.
+    let again = krate()
+        .args(["connect", "cursor"])
+        .env("HOME", home.path())
+        .output()
+        .expect("run connect again");
+    assert!(again.status.success());
+    assert!(
+        String::from_utf8_lossy(&again.stdout).contains("already set up"),
+        "a second run should report it is already done"
+    );
+}
+
+/// A config file that is not valid JSON must be left exactly as it was.
+#[test]
+fn connect_refuses_to_overwrite_a_file_it_cannot_read() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let config = home.path().join(".cursor/mcp.json");
+    std::fs::create_dir_all(config.parent().expect("parent")).expect("mkdir");
+    let original = "{ this is not json";
+    std::fs::write(&config, original).expect("seed config");
+
+    let output = krate()
+        .args(["connect", "cursor", "--yes"])
+        .env("HOME", home.path())
+        .output()
+        .expect("run connect");
+    assert!(!output.status.success(), "it must refuse, not guess");
+    assert_eq!(
+        std::fs::read_to_string(&config).expect("read"),
+        original,
+        "the file must be untouched"
+    );
+}

@@ -122,7 +122,7 @@ pub fn missing_cli_error(provider: &dyn AgentProvider) -> String {
 }
 
 /// Find an executable on PATH, honoring PATHEXT on Windows.
-fn which_on_path(program: &str) -> Option<std::path::PathBuf> {
+pub fn which_on_path(program: &str) -> Option<std::path::PathBuf> {
     let path = std::env::var_os("PATH")?;
     // On Windows a bare name resolves against a list of extensions; on Unix the
     // file itself must be executable.

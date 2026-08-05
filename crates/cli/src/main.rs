@@ -199,6 +199,23 @@ enum Command {
     /// author apps with. Reads nothing but your PATH.
     Ai,
 
+    /// Set up Claude Desktop or Cursor to build Krate apps for you.
+    ///
+    /// Edits the app's config file so you never have to. Shows you the change
+    /// and asks before writing anything.
+    Connect {
+        /// Which app to set up: `claude-desktop` or `cursor`. Omit to be asked.
+        app: Option<String>,
+
+        /// Write the change without asking first.
+        #[arg(long)]
+        yes: bool,
+
+        /// Print what would change and stop.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Build, import-check, and run an app directory, printing one clear
     /// verdict. This is the oracle an AI author (or a human, or CI) runs after
     /// every change: it compiles the crate with the right toolchain, confirms
@@ -800,6 +817,7 @@ fn run() -> Result<u8> {
         }
         Command::Doctor => doctor(),
         Command::Ai => ai_status(),
+        Command::Connect { app, yes, dry_run } => connect(app.as_deref(), yes, dry_run),
         Command::CheckApp {
             dir,
             shoot,
@@ -3292,6 +3310,248 @@ fn agent_failure_reason(transcript: &Path) -> Option<String> {
         let trimmed: String = reason.chars().take(300).collect();
         trimmed
     })
+}
+
+/// Ask a yes/no question. Defaults to no when there is nobody to answer.
+///
+/// EOF means no terminal -- the command was piped or run by a script -- and
+/// silently writing to somebody's config file in that case would be the wrong
+/// guess. `--yes` is the way to say yes without a terminal.
+fn confirm(question: &str) -> Result<bool> {
+    eprint!("{question} [y/N] ");
+    io::stderr().flush()?;
+    let mut answer = String::new();
+    if io::stdin().read_line(&mut answer)? == 0 {
+        eprintln!();
+        return Ok(false);
+    }
+    let answer = answer.trim().to_lowercase();
+    Ok(answer == "y" || answer == "yes")
+}
+
+/// Where a client keeps its MCP config, and what to call it in a sentence.
+struct ClientTarget {
+    key: &'static str,
+    label: &'static str,
+    path: PathBuf,
+    /// What the person does after the file is written.
+    restart: &'static str,
+}
+
+/// The config files we know how to edit, on this machine.
+///
+/// Paths are the ones the vendors document. Claude Desktop ships for macOS and
+/// Windows only, so on Linux it simply is not offered rather than pointing at a
+/// path nobody has verified.
+fn connect_targets() -> Vec<ClientTarget> {
+    let home = dirs_home();
+    let mut targets = Vec::new();
+
+    let claude = if cfg!(target_os = "macos") {
+        Some(home.join("Library/Application Support/Claude/claude_desktop_config.json"))
+    } else if cfg!(target_os = "windows") {
+        std::env::var_os("APPDATA")
+            .map(|appdata| PathBuf::from(appdata).join("Claude/claude_desktop_config.json"))
+    } else {
+        None
+    };
+    if let Some(path) = claude {
+        targets.push(ClientTarget {
+            key: "claude-desktop",
+            label: "Claude Desktop",
+            path,
+            restart: "Quit Claude Desktop and open it again.",
+        });
+    }
+
+    targets.push(ClientTarget {
+        key: "cursor",
+        label: "Cursor",
+        path: home.join(".cursor/mcp.json"),
+        restart: "Reload Cursor.",
+    });
+    targets
+}
+
+fn dirs_home() -> PathBuf {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Set up an AI app to build Krate apps, by editing its config file.
+///
+/// This exists because the alternative was a documentation page telling people
+/// to hand-edit JSON in a file whose path differs per operating system. That is
+/// a wall in front of the product for anyone who does not already know what MCP
+/// is, and the people we most want are exactly those people.
+///
+/// It is careful with a file it did not write: it merges into whatever is
+/// already there, keeps every other server, shows the change, and asks before
+/// writing.
+fn connect(app: Option<&str>, yes: bool, dry_run: bool) -> Result<u8> {
+    let targets = connect_targets();
+
+    let chosen = match app {
+        Some(name) => {
+            let name = name.trim().to_lowercase();
+            match targets.iter().find(|t| t.key == name) {
+                Some(target) => target,
+                None => {
+                    println!("I do not know how to set up \"{name}\".");
+                    println!();
+                    println!("I can set up:");
+                    for target in &targets {
+                        println!("  {:<16}{}", target.key, target.label);
+                    }
+                    return Ok(1);
+                }
+            }
+        }
+        None => {
+            // No argument: pick the one that is actually installed, and say so.
+            let installed: Vec<&ClientTarget> =
+                targets.iter().filter(|t| connect_app_present(t)).collect();
+            match installed.len() {
+                1 => installed[0],
+                0 => {
+                    println!("I could not find Claude Desktop or Cursor on this computer.");
+                    println!();
+                    println!("Install one of them, sign in, then run this again. Or make an app");
+                    println!("right now without either:");
+                    println!();
+                    println!(
+                        "  krate create \"a habit tracker\" --output habit.krate --agent claude"
+                    );
+                    return Ok(0);
+                }
+                _ => {
+                    println!("Which one do you want to set up?");
+                    println!();
+                    for target in &installed {
+                        println!("  krate connect {}", target.key);
+                    }
+                    return Ok(0);
+                }
+            }
+        }
+    };
+
+    // The path to this binary, not a bare `krate`. A client launches the server
+    // with its own environment, where PATH may not include the install
+    // directory -- and a bare name would find an older installed Krate anyway,
+    // which is how a fixed bug appeared to come back once already.
+    let exe = std::env::current_exe()
+        .context("locate the krate binary")?
+        .to_string_lossy()
+        .to_string();
+
+    let existing = fs::read_to_string(&chosen.path).unwrap_or_default();
+    let mut config: serde_json::Value = if existing.trim().is_empty() {
+        serde_json::json!({})
+    } else {
+        serde_json::from_str(&existing).with_context(|| {
+            format!(
+                "{} is not valid JSON. Fix or move it, then run this again -- \
+                 I will not overwrite a file I cannot read.",
+                chosen.path.display()
+            )
+        })?
+    };
+
+    let already = config
+        .pointer("/mcpServers/krate/command")
+        .and_then(|v| v.as_str())
+        .map(|command| command == exe)
+        .unwrap_or(false);
+    if already {
+        println!("{} is already set up.", chosen.label);
+        println!();
+        println!("{}", chosen.restart);
+        println!("Then ask it: \"build me a habit tracker and package it as a .krate\".");
+        return Ok(0);
+    }
+
+    let servers = config
+        .as_object_mut()
+        .context("the config file's top level is not a JSON object")?
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+    let servers = servers
+        .as_object_mut()
+        .context("`mcpServers` in the config file is not a JSON object")?;
+    let other_count = servers.len();
+    servers.insert(
+        "krate".to_string(),
+        serde_json::json!({ "command": exe, "args": ["mcp"] }),
+    );
+
+    let rendered = format!("{}\n", serde_json::to_string_pretty(&config)?);
+
+    println!("Setting up {}.", chosen.label);
+    println!();
+    println!("  file:  {}", chosen.path.display());
+    if other_count > 0 {
+        println!("  keeps: {other_count} other server(s) already in the file");
+    }
+    println!();
+
+    if dry_run {
+        println!("Would write:");
+        println!();
+        for line in rendered.lines() {
+            println!("  {line}");
+        }
+        return Ok(0);
+    }
+
+    if !yes && !confirm("Write this change?")? {
+        println!("Nothing was changed.");
+        return Ok(0);
+    }
+
+    if let Some(parent) = chosen.path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    // Back up a file somebody else wrote, before touching it.
+    if !existing.trim().is_empty() {
+        let backup = chosen.path.with_extension("json.krate-backup");
+        if fs::write(&backup, &existing).is_ok() {
+            println!("Saved a copy of the old file at {}", backup.display());
+        }
+    }
+    fs::write(&chosen.path, rendered)
+        .with_context(|| format!("write {}", chosen.path.display()))?;
+
+    println!();
+    println!("Done. Two more steps:");
+    println!();
+    println!("  1. {}", chosen.restart);
+    println!("  2. Ask it: \"build me a habit tracker and package it as a .krate\"");
+    println!();
+    println!("It will take a few minutes and hand you a file you can send to anyone.");
+    Ok(0)
+}
+
+/// Whether the app looks installed, so `krate connect` with no argument can
+/// pick the right one instead of asking a question the machine can answer.
+fn connect_app_present(target: &ClientTarget) -> bool {
+    if target.path.exists() {
+        return true;
+    }
+    match target.key {
+        "claude-desktop" => {
+            Path::new("/Applications/Claude.app").exists()
+                || dirs_home().join("Applications/Claude.app").exists()
+        }
+        "cursor" => {
+            Path::new("/Applications/Cursor.app").exists()
+                || dirs_home().join("Applications/Cursor.app").exists()
+                || agent_provider::which_on_path("cursor").is_some()
+        }
+        _ => false,
+    }
 }
 
 /// Show which AI coding tools are on this machine.

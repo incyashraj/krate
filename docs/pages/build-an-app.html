@@ -813,68 +813,29 @@
         <p class="label">Way 1 &middot; The best one</p>
         <h2>Connect Krate to your AI.</h2>
         <div class="prose">
-          <p>Krate ships an MCP server. Once it is connected, your AI can build Krate apps itself: you describe what you want in chat, and it writes the code, builds it, checks it, and hands you the finished <code>.krate</code> file. You never type a command.</p>
-          <p>Setup is one config block, pasted once.</p>
+          <p>If you use Claude Desktop or Cursor, you can describe an app in the chat you already have open and get a working file back. It writes the code, builds it, checks it, and hands you the finished <code>.krate</code>. You never type a command.</p>
+          <p>One command sets it up.</p>
         </div>
 
         <div class="step">
           <div class="step-head">
             <span class="step-num" aria-hidden="true">1</span>
-            <h3>Check what you have.</h3>
+            <h3>Run one command.</h3>
           </div>
-          <p class="step-body">You need Krate installed, and an AI app to connect it to. This prints the AI tools Krate can find on your machine.</p>
+          <p class="step-body">It finds Claude Desktop or Cursor on your computer, shows you the one line it wants to change, and asks before changing anything. Nothing else in the file is touched, and a copy of the old one is kept.</p>
           <div class="cmd">
-            <pre id="cmd-ai"><span class="p">krate</span> ai</pre>
-            <button class="copy-button" type="button" data-target="cmd-ai" aria-label="Copy command">Copy</button>
+            <pre id="cmd-connect"><span class="p">krate</span> connect</pre>
+            <button class="copy-button" type="button" data-target="cmd-connect" aria-label="Copy command">Copy</button>
           </div>
+          <p class="step-body">Not sure what you have installed? <code>krate ai</code> prints the AI tools Krate can find on your machine.</p>
         </div>
 
-        <div class="step">
+<div class="step">
           <div class="step-head">
             <span class="step-num" aria-hidden="true">2</span>
-            <h3>Add Krate to the config.</h3>
-          </div>
-          <p class="step-body">In <strong>Claude Desktop</strong>, the reliable way to find the file is from inside the app: Claude menu, then Settings, then Developer, then Edit Config. That button creates the file if it does not exist yet. In <strong>Cursor</strong>, create <code>.cursor/mcp.json</code> in your project, or <code>~/.cursor/mcp.json</code> to have it everywhere.</p>
-          <p class="step-body">Add Krate under <code>mcpServers</code>. If the file is empty or new, this is the whole file, and it is the same block for both apps:</p>
-          <div class="cmd">
-            <pre id="cmd-config" class="block">{
-  <span class="k">"mcpServers"</span>: {
-    <span class="k">"krate"</span>: {
-      <span class="k">"command"</span>: <span class="s">"krate"</span>,
-      <span class="k">"args"</span>: [<span class="s">"mcp"</span>]
-    }
-  }
-}</pre>
-            <button class="copy-button" type="button" data-target="cmd-config" aria-label="Copy the config block">Copy</button>
-          </div>
-
-          <div class="ai-table" role="list">
-            <div class="ai-row" role="listitem">
-              <div class="ai-name">Claude Desktop, macOS</div>
-              <div class="ai-install"><code>~/Library/Application Support/Claude/claude_desktop_config.json</code></div>
-            </div>
-            <div class="ai-row" role="listitem">
-              <div class="ai-name">Claude Desktop, Windows</div>
-              <div class="ai-install"><code>%APPDATA%\Claude\claude_desktop_config.json</code></div>
-            </div>
-            <div class="ai-row" role="listitem">
-              <div class="ai-name">Cursor</div>
-              <div class="ai-install"><code>.cursor/mcp.json</code> in your project, or <code>~/.cursor/mcp.json</code> for every project</div>
-            </div>
-          </div>
-
-          <div class="note-box">
-            <p>Claude Desktop is published for macOS and Windows. If you are on Linux with a community build, use its own config location -- we have not verified one, so trust the app's own Edit Config button over any path written here.</p>
-            <p><strong>If <code>krate</code> is not on your PATH inside the app,</strong> put the full path in <code>"command"</code> instead. <code>which krate</code> on macOS or Linux, <code>where krate</code> on Windows, tells you what to write.</p>
-          </div>
-        </div>
-
-        <div class="step">
-          <div class="step-head">
-            <span class="step-num" aria-hidden="true">3</span>
             <h3>Restart, and check it worked.</h3>
           </div>
-          <p class="step-body">Restart Claude Desktop, or reload Cursor. Then ask your AI:</p>
+          <p class="step-body">Quit Claude Desktop properly and open it again, or reload Cursor. Closing the window is not enough. Then ask your AI:</p>
           <p class="say">What Krate tools do you have?</p>
           <p class="step-body" style="margin-top:16px">These seven are the ones that build apps:</p>
           <ul class="tool-list">
@@ -891,7 +852,7 @@
 
         <div class="step">
           <div class="step-head">
-            <span class="step-num" aria-hidden="true">4</span>
+            <span class="step-num" aria-hidden="true">3</span>
             <h3>Then just talk.</h3>
           </div>
           <p class="step-body">That is the whole setup. From here you describe apps in ordinary sentences:</p>

@@ -59,8 +59,10 @@ pub fn serve() -> Result<()> {
         eprintln!("Nothing will happen here. This command is not meant to be run by hand --");
         eprintln!("it is what Claude Desktop or Cursor starts for you in the background.");
         eprintln!();
-        eprintln!("To connect it, see https://krate.tech/docs/pages/build-an-app.html");
-        eprintln!("To make an app right now, run:  krate create \"your app\" --output app.krate --agent claude");
+        eprintln!("To set it up, run:   krate connect");
+        eprintln!(
+            "To make an app now:  krate create \"your app\" --output app.krate --agent claude"
+        );
         eprintln!();
         eprintln!("Press Ctrl-C to stop.");
     }
