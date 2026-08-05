@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Contact and feedback | Krate</title>
+  <meta name="description" content="Report a bug, ask a question, or tell us what is wrong with Krate. Everything happens in the open on GitHub." />
+  <link rel="stylesheet" href="/krate.css" />
+  <link rel="icon" href="/krate-favicon.png" />
+  <style>
+    .wrap { max-width: 680px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
+    .masthead { display: flex; align-items: center; gap: .6rem; margin-bottom: 2.4rem; }
+    .masthead img { width: 30px; height: 30px; border-radius: 7px; }
+    .masthead > a { color: var(--text); text-decoration: none; font-weight: 600; letter-spacing: -.01em; }
+    .masthead nav { margin-left: auto; display: flex; gap: 1.1rem; font-size: .9rem; }
+    .masthead nav a { color: var(--muted); text-decoration: none; }
+    .masthead nav a:hover { color: var(--text); }
+
+    h1 { margin: 0 0 .4rem; font-size: 1.9rem; letter-spacing: -.02em; }
+    .lede { color: var(--muted); margin: 0 0 2.4rem; line-height: 1.65; }
+
+    .route {
+      display: block; text-decoration: none;
+      border: 1px solid var(--line); border-radius: 13px;
+      background: var(--panel); padding: 1.15rem 1.3rem; margin-bottom: .9rem;
+      transition: border-color .15s ease, transform .15s ease;
+    }
+    .route:hover { border-color: var(--blue); transform: translateY(-2px); }
+    .route h2 { margin: 0 0 .35rem; font-size: 1.02rem; color: var(--text); }
+    .route p { margin: 0; color: var(--muted); line-height: 1.6; font-size: .92rem; }
+    .route .go { color: var(--blue-soft); font-size: .86rem; margin-top: .6rem; display: block; }
+
+    .note { color: var(--quiet); font-size: .89rem; line-height: 1.7; margin-top: 2.4rem;
+            border-top: 1px solid var(--line); padding-top: 1.5rem; }
+    .note code {
+      font-family: var(--mono); font-size: .82rem;
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 5px; padding: .1rem .4rem; color: var(--blue-soft);
+    }
+    .note a { color: var(--blue-soft); }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="masthead">
+      <img src="/krate-glyph-blue.png" alt="" />
+      <a href="/">Krate</a>
+      <nav>
+        <a href="/cloud/">Cloud</a>
+        <a href="/publish/">Publish</a>
+        <a href="/docs/">Docs</a>
+      </nav>
+    </header>
+
+    <h1>Get in touch</h1>
+    <p class="lede">
+      Krate is built in the open, so everything below is public and gets a
+      reply in public. Pick whichever fits &mdash; if you are not sure, the
+      first one is always fine.
+    </p>
+
+    <a class="route" href="https://github.com/incyashraj/krate/discussions" rel="noopener">
+      <h2>Ask a question, or say what is confusing</h2>
+      <p>
+        GitHub Discussions. Anything that is not obviously a bug: how to do
+        something, why a thing works the way it does, or that a page made no
+        sense.
+      </p>
+      <span class="go">Open Discussions &rarr;</span>
+    </a>
+
+    <a class="route" href="https://github.com/incyashraj/krate/issues/new" rel="noopener">
+      <h2>Report a bug</h2>
+      <p>
+        Something crashed, an app would not open, a command failed. Paste what
+        you ran and what it printed &mdash; that alone is usually enough to
+        find it.
+      </p>
+      <span class="go">Open an issue &rarr;</span>
+    </a>
+
+    <a class="route" href="https://github.com/incyashraj/krate/discussions/categories/ideas" rel="noopener">
+      <h2>Suggest something</h2>
+      <p>
+        A capability Krate does not have, an app you tried to make and
+        couldn't, or a rough edge worth smoothing.
+      </p>
+      <span class="go">Share an idea &rarr;</span>
+    </a>
+
+    <p class="note">
+      <strong>Reporting an app on Krate Cloud</strong> is different: every
+      listing has a report link that opens an issue naming that app, so it does
+      not get lost among everything else.
+      <br /><br />
+      <strong>Before reporting a bug</strong>, <code>krate doctor</code> checks
+      your setup and prints what it finds. Including that output saves a round
+      trip. If it is a security problem, please open a private advisory on
+      <a href="https://github.com/incyashraj/krate/security/advisories/new" rel="noopener">the security tab</a>
+      rather than a public issue.
+    </p>
+  </main>
+</body>
+</html>

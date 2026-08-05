@@ -124,6 +124,39 @@
       letter-spacing: -.02em;
     }
 
+    .tui-steps { list-style: none; counter-reset: s; padding: 0; margin: 2rem 0 0; }
+    .tui-steps li {
+      counter-increment: s; position: relative;
+      padding: 0 0 1.6rem 3rem; border-left: 1px solid var(--line);
+      margin-left: .9rem;
+    }
+    .tui-steps li:last-child { border-left-color: transparent; padding-bottom: 0; }
+    .tui-steps li::before {
+      content: counter(s);
+      position: absolute; left: -.9rem; top: 0;
+      width: 1.8rem; height: 1.8rem; border-radius: 50%;
+      display: grid; place-items: center;
+      background: var(--panel-raised); border: 1px solid var(--line-strong);
+      color: var(--blue-soft); font-size: .8rem; font-weight: 600;
+    }
+    .tui-steps h3 { margin: 0 0 .4rem; font-size: 1.02rem; color: var(--text); }
+    .tui-steps p { margin: 0 0 .7rem; color: var(--muted); line-height: 1.65; }
+    .tui-steps pre {
+      background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+      padding: .7rem .85rem; margin: 0; overflow-x: auto;
+      font-family: var(--mono); font-size: .82rem; color: var(--blue-soft);
+      line-height: 1.6;
+    }
+    .aside {
+      margin-top: 2rem; padding-top: 1.2rem; border-top: 1px solid var(--line);
+      color: var(--quiet); font-size: .9rem; line-height: 1.65;
+    }
+    .aside code {
+      font-family: var(--mono); font-size: .82rem;
+      background: var(--bg); border: 1px solid var(--line);
+      border-radius: 5px; padding: .1rem .4rem;
+    }
+
     .brand-mark {
       display: block;
       width: 30px;
@@ -847,7 +880,7 @@
       </a>
       <div class="nav-links">
         <a class="nav-link" href="/#start">Start</a>
-        <a class="nav-link" href="/cloud/">Store</a>
+        <a class="nav-link" href="/cloud/">Cloud</a>
         <a class="nav-link" href="/docs/">Docs</a>
         <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
         <a class="nav-cta" href="/#start">Get Krate</a>
@@ -875,7 +908,7 @@
           <p>You also need the <strong>Rust build tools</strong>. This is what turns the AI's code into a real running app. You do not have to write any Rust yourself.</p>
         </div>
         <div class="note-box">
-          <p><strong>You do not install the build tools by hand.</strong> The first time you run <code>krate create</code>, it checks what is missing and offers to set it up for you. Say yes and it installs.</p>
+          <p><strong>You do not install the build tools by hand.</strong> The first time you make an app, Krate checks what is missing and offers to set it up for you. Say yes and it installs.</p>
           <p>It is a one-time setup of about five minutes. After that, every app you make builds fast. You can check your setup any time with <code>krate doctor</code>.</p>
         </div>
       </div>
@@ -940,12 +973,67 @@
     <!-- 3. The command builder. Nobody should hand-assemble a create command.
          Without JavaScript this still renders a real, runnable example command
          in the output block, so the section is never an empty box. -->
+    <section class="band">
+      <div class="wrap">
+        <h2>One word, then a conversation.</h2>
+        <p class="lead">
+          Everything below happens inside <code>krate</code>. You do not need to
+          remember a flag, name an output file, or know which AI you have
+          installed.
+        </p>
+
+        <ol class="tui-steps">
+          <li>
+            <h3>Type <code>krate</code></h3>
+            <p>It opens a short menu. Pick <strong>Make an app</strong>.</p>
+            <pre>krate</pre>
+          </li>
+          <li>
+            <h3>Say what you want</h3>
+            <p>
+              Plain words. Krate checks which AI tools actually work on your
+              machine and asks which should write it. One that is installed but
+              not signed in is shown with the command that fixes it, so you
+              cannot pick one that will fail.
+            </p>
+            <pre>a checklist that saves my todos</pre>
+          </li>
+          <li>
+            <h3>Watch it build</h3>
+            <p>
+              It reads Krate's API reference, writes the code, compiles it, and
+              checks the app runs and paints a window. Two to five minutes,
+              with each stage and its elapsed time on screen.
+            </p>
+            <pre>&#10003; wrote the app's code        1m 12s
+&#10003; checked it builds and runs    38s
+
+Created checklist.krate  (14 KB)</pre>
+          </li>
+          <li>
+            <h3>Open it, change it, or publish it</h3>
+            <p>
+              Krate offers all three when it finishes. Changing it means saying
+              what should be different &mdash; the app carries its own source,
+              so the AI edits what is there instead of starting over.
+            </p>
+          </li>
+        </ol>
+
+        <p class="aside">
+          Prefer one line with no prompts?
+          <code>krate create "a checklist" --output checklist.krate</code>
+          does the same thing, for scripts and CI.
+        </p>
+      </div>
+    </section>
+
     <section class="section" id="build-your-command">
       <div class="wrap">
         <p class="label">Build your command</p>
-        <h2>Describe it, copy the command.</h2>
+        <h2>Or build the one-line version.</h2>
         <div class="prose">
-          <p>Type what you want below. The exact command to run is written for you, with the quoting already handled. Copy it and paste it into your terminal.</p>
+          <p>Typing <code>krate</code> is the short way and asks you everything it needs. If you want the single command instead &mdash; for a script, or to keep in your notes &mdash; describe the app here and it is written out with the quoting handled.</p>
         </div>
 
         <div class="builder">
@@ -999,9 +1087,7 @@
               <pre tabindex="0">krate</pre>
             </div>
             <p class="builder-status">
-              Type that on its own and Krate asks what you want to make, shows
-              which AI tools are ready, and builds it. The command below does
-              the same thing in one line if you would rather not be asked.
+              Asks you everything it needs. Nothing below is required.
             </p>
           </div>
 
@@ -1018,70 +1104,12 @@
     </section>
 
     <!-- 4. The steps -->
-    <section class="section" id="steps">
-      <div class="wrap">
-        <p class="label">The steps</p>
-        <h2>Three commands, start to shared.</h2>
-
-        <!-- Step 1 -->
-        <div class="step">
-          <div class="step-head">
-            <span class="step-num" aria-hidden="true">1</span>
-            <h3>Describe the app.</h3>
-          </div>
-          <p class="step-body">Write what you want in the quotes. Krate hands your request to the AI, and the AI writes the whole app into <code>./mytodo</code> and packages it into one file you can run. This is the step where the toolchain prompt appears the first time.</p>
-          <div class="cmd">
-            <pre id="cmd-1"><span class="p">krate</span> create <span class="s">"a checklist that saves my todos"</span> --output ./mytodo --agent claude</pre>
-            <button class="copy-button" type="button" data-target="cmd-1" aria-label="Copy command">Copy</button>
-          </div>
-        </div>
-
-        <!-- Step 2 -->
-        <div class="step">
-          <div class="step-head">
-            <span class="step-num" aria-hidden="true">2</span>
-            <h3>Open what you made.</h3>
-          </div>
-          <p class="step-body">Run the app you just built. On a desktop you can also double-click the <code>.krate</code> file instead of typing anything.</p>
-          <div class="cmd">
-            <pre id="cmd-2"><span class="p">krate</span> run ./mytodo</pre>
-            <button class="copy-button" type="button" data-target="cmd-2" aria-label="Copy command">Copy</button>
-          </div>
-        </div>
-
-        <!-- Step 3 -->
-        <div class="step">
-          <div class="step-head">
-            <span class="step-num" aria-hidden="true">3</span>
-            <h3>Share it.</h3>
-          </div>
-          <p class="step-body">Your app is one <code>.krate</code> file. There are two ways to get it to someone else.</p>
-          <div class="two-up">
-            <div class="share-card">
-              <h3>Send the file</h3>
-              <p>Attach the <code>.krate</code> file to an email or a chat, the way you would send a photo. Whoever gets it double-clicks it, or runs <code>krate run</code> on it. This works today, with no account.</p>
-            </div>
-            <div class="share-card">
-              <h3>Publish for a link</h3>
-              <p>Upload it to a hub and get back a URL. Then anyone can run it straight from the link.</p>
-              <div class="cmd">
-                <pre id="cmd-3"><span class="p">krate</span> publish ./mytodo.krate</pre>
-                <button class="copy-button" type="button" data-target="cmd-3" aria-label="Copy command">Copy</button>
-              </div>
-              <p style="margin-top:12px">It prints a line like <code>krate run &lt;url&gt;</code> that anyone can paste.</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 5. What to expect -->
     <section class="section" id="what-to-expect">
       <div class="wrap">
         <p class="label">What to expect</p>
         <h2>It writes real apps, and checks its own work.</h2>
         <div class="prose">
-          <p>When you run <code>krate create ... --agent claude</code>, the AI does not write blind. It is handed a full reference to what Krate can do, then works in a <strong>loop</strong>: write the code, run Krate's own checker, read exactly what failed, fix it -- and it does not stop until the app builds, imports only what it declared, and actually runs. What you get is a real, working <code>.krate</code>, not a mockup.</p>
+          <p>When Krate hands your request to an AI, that AI does not write blind. It is handed a full reference to what Krate can do, then works in a <strong>loop</strong>: write the code, run Krate's own checker, read exactly what failed, fix it -- and it does not stop until the app builds, imports only what it declared, and actually runs. What you get is a real, working <code>.krate</code>, not a mockup.</p>
           <p>It is at its best with <strong>focused apps</strong>: a tool, a form, a game, a utility. Each of these was built from a single plain-English line, and each is a real working app:</p>
         </div>
 
@@ -1178,7 +1206,7 @@
       <div class="footer-links">
         <a href="/">Home</a>
         <a href="/docs/">Docs</a>
-        <a href="/cloud/">Store</a>
+        <a href="/cloud/">Cloud</a>
         <a href="https://github.com/incyashraj/krate">GitHub</a>
         <a href="https://github.com/incyashraj/krate/discussions">Ask a question</a>
       </div>
