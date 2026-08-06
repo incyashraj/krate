@@ -240,6 +240,43 @@ registered. Do not hand-shim it. Add `features = [\"getrandom-backend\"]` to the
 `rustflags = [\"--cfg\", \"getrandom_backend=\\\"custom\\\"\"]`, and declare the \
 `random.bytes` capability. The SDK then routes every draw to the host. \
 `apps/krate-diceroll` is a working example.\n\n\
+## Making it look built, not sketched\n\n\
+The difference between an app that looks like a prototype and one that looks \
+finished is mostly four things, and none of them are hard:\n\n\
+**Measure text before you place it.** `canvas2d::measure_text` is the \
+difference between a centred label and a nearly-centred one. Never estimate a \
+width from the character count -- the face is proportional, so `i` and `W` \
+differ about four times.\n\n\
+**Use gradients and rounded corners.** A flat rectangle reads as unfinished. \
+`linear_gradient` for panels and backdrops, a rounded rect for every card and \
+button (fill the middle rectangle, then the four corner circles with \
+`fill_circle`), and `radial_gradient` with a transparent outer colour for a \
+soft glow behind something important.\n\n\
+**Give things room.** Cramped is the commonest reason a generated app looks \
+wrong: 16-24px of padding inside a card, 12-16px between rows, and a clear \
+margin around the window edge. Space costs nothing and reads as care.\n\n\
+**Pick three colours and stop.** A dark background, one bright accent for the \
+thing you want clicked, and one ink colour for text. Every extra hue makes it \
+look less designed, not more.\n\n\
+## Texturing a 3D scene\n\n\
+`scene3d` fills flat-shaded triangles by default, which looks like 1995. \
+Textures are what make it look like a game: upload an image once, then draw \
+triangles wearing it.\n\n\
+\u{20}\u{20}\u{20}\u{20}// Once, at startup -- never per frame.\n\
+\u{20}\u{20}\u{20}\u{20}let tex = scene3d::upload_texture(scene, w, h, &rgba)?;\n\n\
+\u{20}\u{20}\u{20}\u{20}// Per frame: uvs are u,v per corner, six floats per triangle.\n\
+\u{20}\u{20}\u{20}\u{20}scene3d::textured(scene, &verts, &uvs, tex, white)?;\n\n\
+Coordinates outside 0..1 wrap, so a small image tiles across a large surface -- \
+one 64x64 tile can cover a whole road or floor. `tint` multiplies the sample, \
+so one grey texture becomes a red wall and a blue one without uploading it \
+twice.\n\n\
+An app with no image files can still generate a texture in code: fill an RGBA \
+buffer with a checker, a noise pattern, or stripes, and upload that. A tiled \
+procedural texture on the ground and the walls is the single biggest \
+improvement available to a 3D scene, and it costs no assets.\n\n\
+Turn `cull_back_faces` on for closed shapes (a cube, a crate, a character) and \
+roughly half the triangles stop being drawn. Leave it off for a flat floor or a \
+billboard, which have one visible side and vanish when seen from behind.\n\n\
 ## Showing a picture\n\n\
 Do not reach for the `image` crate: it requires `std` unconditionally and drags \
 in the whole `wasi:*` surface. Decode PNG/JPEG yourself with `zune-png` / \
