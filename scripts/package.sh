@@ -50,6 +50,17 @@ if [ "${target#*windows}" != "$target" ]; then
   else
     echo "warning: krate-open.exe missing; double-click will show a console" >&2
   fi
+
+  # The document icon Explorer draws for a .krate. The association script
+  # looks for KrateDoc.ico beside the binary; without it in the archive there
+  # is nothing to point at and every .krate gets the blank-page icon.
+  if python3 scripts/make-app-icon.py "$package_dir" >/dev/null 2>&1 \
+     && [ -f "$package_dir/KrateDoc.ico" ]; then
+    rm -rf "$package_dir"/*.iconset "$package_dir"/*-1024.png "$package_dir"/*.icns
+    echo "packaged KrateDoc.ico (Explorer document icon)"
+  else
+    echo "warning: no KrateDoc.ico; .krate files will show a blank icon" >&2
+  fi
 fi
 
 # Ship cargo-component beside the runtime when the release build produced one.

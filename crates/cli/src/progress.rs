@@ -1,5 +1,9 @@
-//! The waiting screen: what someone looks at for two to five minutes while an
-//! app is compiled.
+//! The waiting screen: what someone looks at for five to twelve minutes while
+//! an app is written and compiled.
+//!
+//! The number matters. It said two to five, measured before apps got as
+//! ambitious as the ones people actually ask for, and somebody told it would
+//! be five minutes at minute nine assumes it has hung.
 //!
 //! This is the longest a person spends looking at Krate, so it is worth doing
 //! properly. A bare spinner says only "not dead yet". Named stages with elapsed

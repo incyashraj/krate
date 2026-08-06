@@ -196,12 +196,29 @@ def main() -> int:
                 pixels = points * scale
                 name = f"icon_{points}x{points}" + ("@2x" if scale == 2 else "") + ".png"
                 master.resize((pixels, pixels), Image.LANCZOS).save(iconset / name)
-        icns = out_dir / f"{stem}.icns"
-        subprocess.run(
-            ["/usr/bin/iconutil", "-c", "icns", str(iconset), "-o", str(icns)],
-            check=True,
+        # Windows: a .ico carrying every size Explorer picks from. Written
+        # first and unconditionally, because iconutil is macOS-only -- doing
+        # the .icns first meant the Windows icon could never be generated on
+        # the Windows runner, so .krate files got the blank-page icon and
+        # nobody noticed the file association was pointing at nothing.
+        ico = out_dir / f"{stem}.ico"
+        master.save(
+            ico,
+            format="ICO",
+            sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
         )
-        print(f"wrote {icns}")
+        print(f"wrote {ico}")
+
+        # macOS: .icns, which needs iconutil and therefore only works here.
+        icns = out_dir / f"{stem}.icns"
+        if Path("/usr/bin/iconutil").exists():
+            subprocess.run(
+                ["/usr/bin/iconutil", "-c", "icns", str(iconset), "-o", str(icns)],
+                check=True,
+            )
+            print(f"wrote {icns}")
+        else:
+            print(f"skipped {icns} (iconutil is macOS-only)")
     return 0
 
 

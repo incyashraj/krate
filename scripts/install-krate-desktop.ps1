@@ -44,7 +44,10 @@ if (-not (Test-Path $binary)) { throw "krate.exe not found: $binary" }
 
 # The document icon, if a source .ico/.png is available.
 $icon = ""
-foreach ($src in @($DocIcon, "dist\icon\KrateDoc.ico", "docs\landing\krate-document-icon.png")) {
+# Beside the binary first: that is where a real install puts it, and the repo
+# paths below only exist in a checkout.
+$besideBinary = Join-Path (Split-Path $binary) "KrateDoc.ico"
+foreach ($src in @($DocIcon, $besideBinary, "dist\icon\KrateDoc.ico", "docs\landing\krate-document-icon.png")) {
   if ($src -ne "" -and (Test-Path $src)) { $icon = (Resolve-Path $src).Path; break }
 }
 

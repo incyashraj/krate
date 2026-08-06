@@ -11,7 +11,7 @@
 //!
 //! 1. There is no app schema to fill in, so there is no `create_app` returning
 //!    a structure. These tools wrap the authoring loop that already exists.
-//! 2. A build takes two to five minutes, so the build tools are async-shaped:
+//! 2. A build takes five to twelve minutes, so the build tools are async-shaped:
 //!    start a job, get an id, poll it. A tool call that blocked that long would
 //!    hit the client's timeout and be cancelled mid-build.
 //! 3. The oracle is the valuable part. Anyone can prompt a model to write Rust;

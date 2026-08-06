@@ -1,6 +1,6 @@
 //! Build jobs: the async shape a slow tool needs.
 //!
-//! A Krate build takes two to five minutes. An MCP tool call that blocks that
+//! A Krate build takes five to twelve minutes. An MCP tool call that blocks that
 //! long hits the client's request timeout, and the client cancels a build that
 //! is going fine. So a build is a *job*: `krate_start_build` spawns it and
 //! returns an id straight away, and `krate_build_status` reports where it got

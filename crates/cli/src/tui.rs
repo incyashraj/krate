@@ -285,7 +285,7 @@ fn make_named_app_with(request: &str, attachments: &[PathBuf]) -> Result<()> {
     );
     println!(
         "  {}",
-        style::dim("2-5 minutes: it compiles real Rust, not a template")
+        style::dim("usually 5-12 minutes: an AI writes real Rust and a compiler builds it")
     );
     println!();
 
@@ -527,7 +527,11 @@ fn change_an_app(bundle: &Path) -> Result<()> {
 
     println!();
     println!("  Changing your app with {}.", provider.name());
-    println!("  Usually quicker than the first build -- it already has the code.");
+    // Not "usually quicker". A small change measured six minutes: the compile
+    // is incremental, but the AI still reads the whole app to find where the
+    // change goes, and that is the long part. Promising quick and taking six
+    // minutes is worse than saying six.
+    println!("  Still a few minutes -- the AI reads the whole app before it edits.");
     println!();
 
     let started = Instant::now();

@@ -71,6 +71,47 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-048 -- .krate files have no icon on Windows, and could not have one
+Status:   fixed
+Owner:    lead
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-07, Windows 11, looking at a .krate in Explorer
+Evidence: Every .krate shows the generic blank-page icon.
+
+          The association script looks for `dist\icon\KrateDoc.ico`. No .ico
+          exists anywhere in the repository, so `$icon` stayed empty and the
+          DefaultIcon key was never written.
+
+          The generator that draws the icons only emitted .icns, and it called
+          iconutil unconditionally -- a macOS-only tool. So the Windows icon
+          could not be produced on the Windows runner even in principle.
+Impact:   A .krate is meant to look like a thing you double-click. A blank page
+          icon says "unknown file type", which is the opposite.
+Fix:      The generator writes .ico with all seven sizes Explorer picks from,
+          before the .icns and unconditionally; iconutil is now skipped rather
+          than assumed. package.sh puts KrateDoc.ico in the Windows archives
+          and the association script looks beside the binary first, which is
+          where a real install has it.
+
+### K-049 -- "2-5 minutes" was wrong; it is 5-12
+Status:   fixed
+Owner:    lead
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-07, Windows 11, timing real runs
+Evidence: The menu promised "2-5 minutes". Measured runs took 5-12, and a
+          small change to an existing app took six -- against a line promising
+          it would be "usually quicker than the first build".
+Impact:   Worse than a cosmetic error. Somebody told five minutes, watching a
+          silent screen at minute nine, concludes it has hung and kills it --
+          which is exactly what happened on an earlier eight-minute run.
+Fix:      The menu says 5-12 minutes. The change flow says it is still a few
+          minutes and explains why: the compile is incremental but the AI
+          still reads the whole app to find where the edit goes, and that is
+          the long part. Also corrected in the MCP docs and source comments.
+
+
 ### K-045 -- The progress display shows nothing for AIs that do not stream
 Status:   fixed
 Owner:    lead

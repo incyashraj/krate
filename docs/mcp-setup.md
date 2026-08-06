@@ -26,7 +26,7 @@ That is the whole setup.
 
 1. It reads Krate's API reference, so it writes against the real thing rather
    than guessing.
-2. It builds the app. **This takes two to five minutes.** It will tell you what
+2. It builds the app. **This takes five to twelve minutes.** It will tell you what
    stage it is at.
 3. It checks the result: the app has to build, stay inside the sandbox, run,
    and draw its first screen.
