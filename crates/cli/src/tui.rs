@@ -401,7 +401,15 @@ fn ensure_build_tools() -> Result<bool> {
             println!();
             println!(
                 "  {}",
-                style::dim("you can install it yourself with the command above, then try again")
+                style::dim("if a tool was just installed, open a new terminal and try again --")
+            );
+            println!(
+                "  {}",
+                style::dim("a shell that was already running does not see the new PATH.")
+            );
+            println!(
+                "  {}",
+                style::dim("otherwise run the command above yourself.")
             );
             println!();
             Ok(false)

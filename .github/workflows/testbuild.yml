@@ -1,0 +1,64 @@
+# Build a binary to try before tagging anything.
+#
+# Three releases went out in one day and two of them were broken on Windows,
+# because the only way to get a Windows binary was to cut a release. This does
+# the same build and uploads it as an artifact, so a fix can be tested on the
+# machine that found the bug before anyone tags it.
+#
+# Run it from the Actions tab, or: gh workflow run testbuild.yml -f target=...
+
+name: Test build
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Which platform to build
+        required: true
+        default: aarch64-pc-windows-msvc
+        type: choice
+        options:
+          - aarch64-pc-windows-msvc
+          - x86_64-pc-windows-msvc
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+          - x86_64-unknown-linux-gnu
+
+jobs:
+  build:
+    name: ${{ inputs.target }}
+    runs-on: >-
+      ${{ contains(inputs.target, 'windows') && 'windows-latest'
+       || contains(inputs.target, 'darwin') && 'macos-latest'
+       || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install the target
+        shell: bash
+        run: rustup target add ${{ inputs.target }}
+
+      - name: Build
+        shell: bash
+        run: cargo build --release -p krate-cli --target ${{ inputs.target }}
+
+      - name: Collect the binary
+        shell: bash
+        run: |
+          mkdir -p out
+          if [[ "${{ inputs.target }}" == *windows* ]]; then
+            cp "target/${{ inputs.target }}/release/krate.exe" out/
+          else
+            cp "target/${{ inputs.target }}/release/krate" out/
+          fi
+          ls -la out
+
+      # Unsigned on purpose: this is for testing a fix, not for distribution.
+      # Anything that reaches a user goes through the release workflow, which
+      # signs and notarizes.
+      - name: Upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: krate-test-${{ inputs.target }}
+          path: out/*
+          retention-days: 7

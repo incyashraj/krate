@@ -4479,10 +4479,30 @@ at `$KRATE_SDK_DIR`.\n\
 /// toolchain with the target is installed. Prepending rustup's own toolchain
 /// bin to the child PATH makes the right cargo/rustc win.
 fn rustup_toolchain_bin() -> Option<PathBuf> {
-    let out = ProcessCommand::new("rustup")
-        .args(["which", "cargo"])
-        .output()
-        .ok()?;
+    // Prefer PATH, then rustup's own home. A shell that was already open when
+    // rustup installed does not see the new PATH entry, so a run that just
+    // installed rustup would otherwise report it as still missing -- which is
+    // exactly what happened on Windows right after a successful winget
+    // install.
+    let exe = if cfg!(windows) {
+        "rustup.exe"
+    } else {
+        "rustup"
+    };
+    let fallback = std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cargo")))
+        .or_else(|| std::env::var_os("USERPROFILE").map(|h| PathBuf::from(h).join(".cargo")))
+        .map(|home| home.join("bin").join(exe))
+        .filter(|path| path.exists());
+
+    let mut command = match &fallback {
+        Some(path) if agent_provider::which_on_path("rustup").is_none() => {
+            ProcessCommand::new(path)
+        }
+        _ => ProcessCommand::new("rustup"),
+    };
+    let out = command.args(["which", "cargo"]).output().ok()?;
     if !out.status.success() {
         return None;
     }
@@ -7292,6 +7312,23 @@ fn run_install_command(cmd: &[String]) -> Result<()> {
             .status()
             .context("run the rustup installer")?;
         sh
+    } else if program == "cargo" {
+        // rustup was very likely just installed in this same run, and a shell
+        // that was already open does not pick up a PATH change. Asking rustup
+        // where cargo is works immediately; relying on PATH fails with
+        // "install cargo-component" and no reason, which is what a Windows
+        // user hit right after a successful rustup install.
+        let cargo = rustup_toolchain_bin()
+            .map(|bin| bin.join(if cfg!(windows) { "cargo.exe" } else { "cargo" }))
+            .filter(|path| path.exists());
+        let mut command = match &cargo {
+            Some(path) => ProcessCommand::new(path),
+            None => ProcessCommand::new(program),
+        };
+        command
+            .args(args)
+            .status()
+            .with_context(|| format!("run {program}"))?
     } else {
         ProcessCommand::new(program)
             .args(args)
