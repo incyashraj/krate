@@ -71,6 +71,40 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-041 -- Krate has no memory on Windows: HOME is not set there
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-07, Windows 11 Pro (Azure), reopening the menu after
+          building an app
+Evidence: Build an app successfully, reopen the front door, choose "My apps":
+
+              No apps yet. Pick 1 from the menu and make one.
+
+          The app existed and was on the Desktop. On that machine:
+
+              $env:HOME         -> empty
+              $env:USERPROFILE  -> C:\Users\krateuser.krate-win
+
+          `recent_apps_file()` read `HOME` and returned None, so `remember_app`
+          saved nothing and `recent_apps` found nothing.
+
+          Ten call sites read `HOME` directly while a correct `home_dir()` with
+          a USERPROFILE fallback already existed a few hundred lines away.
+          Four of them are user-facing: "My apps" (recent-apps), History
+          (history.tsv), the Desktop default (dirs_desktop), and GitHub
+          sign-in (github.json). Telemetry and two cache paths as well.
+Impact:   Krate appears to have no memory on Windows. Every one failed by
+          returning None rather than erroring, so nothing was ever logged and
+          it read as a product that simply does not remember anything.
+Fix:      `home_dir()` is now `pub(crate)` and every site goes through it. It
+          also treats an empty HOME as unset, which is what Windows actually
+          presents. A test walks crates/cli/src and fails on any read of HOME
+          without a USERPROFILE fallback, so the next one cannot be added
+          silently.
+
+
 ### K-039 -- Reading a key destroyed the window's close request
 Status:   fixed
 Owner:    lead

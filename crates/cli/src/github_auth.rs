@@ -55,8 +55,10 @@ impl Identity {
 }
 
 fn credentials_path() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join(".krate").join("github.json"))
+    // Not `HOME` directly: Windows does not set it, and sign-in then had
+    // nowhere to save the token.
+    let home = crate::home_dir()?;
+    Some(home.join(".krate").join("github.json"))
 }
 
 /// The signed-in identity, if there is one.

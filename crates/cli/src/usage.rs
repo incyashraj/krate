@@ -68,8 +68,8 @@ pub struct Facts {
 }
 
 fn krate_dir() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(PathBuf::from(home).join(".krate"))
+    let home = crate::home_dir()?;
+    Some(home.join(".krate"))
 }
 
 fn opted_out() -> bool {

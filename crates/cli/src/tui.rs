@@ -917,8 +917,10 @@ pub struct HistoryEntry {
 }
 
 fn history_path() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(Path::new(&home).join(".krate").join("history.tsv"))
+    // Windows sets USERPROFILE, not HOME. Reading HOME alone meant history
+    // was never written and never read there.
+    let home = crate::home_dir()?;
+    Some(home.join(".krate").join("history.tsv"))
 }
 
 /// Record a request as soon as it is made, before the build starts.
@@ -1010,8 +1012,8 @@ fn prompt(label: &str) -> Result<String> {
 /// Expand a leading `~` so a pasted path from a file manager works.
 fn shell_expand(path: &str) -> String {
     if let Some(rest) = path.strip_prefix("~/") {
-        if let Some(home) = std::env::var_os("HOME") {
-            return Path::new(&home).join(rest).to_string_lossy().to_string();
+        if let Some(home) = crate::home_dir() {
+            return home.join(rest).to_string_lossy().to_string();
         }
     }
     path.to_string()
@@ -1046,8 +1048,8 @@ fn default_output_path(request: &str) -> PathBuf {
 }
 
 fn dirs_desktop() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    let desktop = Path::new(&home).join("Desktop");
+    let home = crate::home_dir()?;
+    let desktop = home.join("Desktop");
     desktop.is_dir().then_some(desktop)
 }
 

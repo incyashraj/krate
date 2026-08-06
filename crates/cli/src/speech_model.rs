@@ -59,8 +59,8 @@ fn cache_dir() -> Result<PathBuf> {
     if let Some(root) = std::env::var_os("LOCALAPPDATA") {
         return Ok(PathBuf::from(root).join("Krate").join("cache"));
     }
-    if let Some(home) = std::env::var_os("HOME") {
-        return Ok(PathBuf::from(home).join(".cache").join("krate"));
+    if let Some(home) = crate::home_dir() {
+        return Ok(home.join(".cache").join("krate"));
     }
     Ok(std::env::temp_dir().join("krate-cache"))
 }

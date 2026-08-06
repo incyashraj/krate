@@ -2719,8 +2719,8 @@ pub(crate) fn run_bundle_inline(bundle: &Path) -> Result<()> {
 
 /// Where the list of made apps is kept.
 fn recent_apps_file() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    Some(Path::new(&home).join(".krate").join("recent-apps"))
+    let home = home_dir()?;
+    Some(home.join(".krate").join("recent-apps"))
 }
 
 /// Note that an app was made, so "My apps" can list it later.
@@ -4004,10 +4004,7 @@ fn connect_targets() -> Vec<ClientTarget> {
 }
 
 fn dirs_home() -> PathBuf {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."))
+    home_dir().unwrap_or_else(|| PathBuf::from("."))
 }
 
 /// Set up an AI app to build Krate apps, by editing its config file.
@@ -7960,10 +7957,80 @@ fn machine_key() -> Vec<u8> {
     key
 }
 
-fn home_dir() -> Option<PathBuf> {
+/// The person's home directory, on every system Krate runs on.
+///
+/// `HOME` alone is wrong: Windows does not set it. Ten places read `HOME`
+/// directly and every one of them silently did nothing on Windows -- "My apps"
+/// listed nothing the moment the menu was reopened, history was never kept,
+/// the Desktop default never resolved, and GitHub sign-in could not be saved.
+/// Each failed by returning `None` rather than by erroring, so it looked like
+/// a product with no memory instead of a bug.
+///
+/// `pub(crate)` so nothing has to reimplement this. If a new call site needs a
+/// home directory, it uses this.
+pub(crate) fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
+        .filter(|home| !home.is_empty())
         .or_else(|| std::env::var_os("USERPROFILE"))
+        .filter(|home| !home.is_empty())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod home_tests {
+    /// Windows does not set HOME. Ten places read it directly and every one
+    /// silently did nothing there: "My apps" listed nothing the moment the
+    /// menu was reopened, though the app had just been built and was sitting
+    /// on the Desktop. History, the Desktop default and GitHub sign-in failed
+    /// the same way, all by returning None rather than by erroring.
+    ///
+    /// This guards the rule rather than the symptom: nothing under crates/cli
+    /// may read HOME without a USERPROFILE fallback.
+    #[test]
+    fn nothing_reads_home_without_a_windows_fallback() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut offenders = Vec::new();
+        for entry in std::fs::read_dir(&dir).expect("read src") {
+            let path = entry.expect("entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let source = std::fs::read_to_string(&path).expect("read source");
+            // This test's own body names the pattern it looks for, so stop at
+            // the module that holds it rather than matching itself.
+            let source = match source.find("mod home_tests {") {
+                Some(at) => source[..at].to_string(),
+                None => source,
+            };
+            for (number, line) in source.lines().enumerate() {
+                if !line.contains(r#"var_os("HOME")"#) && !line.contains(r#"var("HOME")"#) {
+                    continue;
+                }
+                // The one definition allowed to read HOME is home_dir itself,
+                // which is the function everything else must go through. It is
+                // recognised by the USERPROFILE fallback on the next lines.
+                let rest: String = source
+                    .lines()
+                    .skip(number)
+                    .take(4)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if rest.contains("USERPROFILE") {
+                    continue;
+                }
+                offenders.push(format!(
+                    "{}:{}",
+                    path.file_name().unwrap().to_string_lossy(),
+                    number + 1
+                ));
+            }
+        }
+        assert!(
+            offenders.is_empty(),
+            "these read HOME with no USERPROFILE fallback, so they do nothing \
+             on Windows -- use crate::home_dir(): {offenders:?}"
+        );
+    }
 }
 
 #[cfg(test)]
