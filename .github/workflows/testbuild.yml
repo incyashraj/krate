@@ -40,7 +40,18 @@ jobs:
 
       - name: Build
         shell: bash
-        run: cargo build --release -p krate-cli --target ${{ inputs.target }}
+        run: |
+          # arm64 Windows and arm64 Linux build without speech-to-text, for the
+          # same reason the release workflow does: whisper.cpp goes through
+          # CMake and does not cross-compile to those targets from an x86_64
+          # runner. Shipping everything else beats shipping nothing.
+          args=()
+          case "${{ inputs.target }}" in
+            aarch64-pc-windows-msvc|aarch64-unknown-linux-gnu)
+              args+=(--no-default-features)
+              ;;
+          esac
+          cargo build --release -p krate-cli --target ${{ inputs.target }} "${args[@]}"
 
       - name: Collect the binary
         shell: bash
