@@ -80,10 +80,13 @@ Found:    2026-08-07, Ubuntu 24.04 and Windows 11, both fresh Azure VMs
 Evidence: Neither README.md nor docs/ names a single build dependency. Found by
           hitting them one at a time on machines with nothing installed:
 
-          Ubuntu 24.04, needed before `cargo build -p krate-cli` gets through:
+          Ubuntu 24.04, needed before `cargo build -p krate-cli` gets through.
+          Found one at a time, each as a separate failed build:
             build-essential pkg-config libssl-dev cmake
             libwayland-dev          (wayland-sys build script panics without it)
             libxkbcommon-dev        (also what K-036 needs at runtime)
+            libasound2-dev          (alsa-sys, for audio)
+            libudev-dev             (gamepads)
 
           Windows 11:
             Visual Studio Build Tools with the VC++ workload
