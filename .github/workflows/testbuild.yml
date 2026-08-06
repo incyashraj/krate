@@ -53,6 +53,15 @@ jobs:
           esac
           cargo build --release -p krate-cli --target ${{ inputs.target }} "${args[@]}"
 
+      # A real install places cargo-component beside krate, and Krate looks
+      # for it there. Shipping only krate.exe made a test binary compile that
+      # tool from source -- a problem the test build created, not the product.
+      - name: Build cargo-component for this target
+        shell: bash
+        run: |
+          cargo install cargo-component --locked --version 0.21.1 \
+            --target ${{ inputs.target }} --root out-tool
+
       - name: Collect the binary
         shell: bash
         run: |
@@ -61,6 +70,11 @@ jobs:
             cp "target/${{ inputs.target }}/release/krate.exe" out/
           else
             cp "target/${{ inputs.target }}/release/krate" out/
+          fi
+          if [[ "${{ inputs.target }}" == *windows* ]]; then
+            cp out-tool/bin/cargo-component.exe out/ 2>/dev/null || true
+          else
+            cp out-tool/bin/cargo-component out/ 2>/dev/null || true
           fi
           ls -la out
 
