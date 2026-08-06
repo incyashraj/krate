@@ -325,14 +325,47 @@ You need the Rust toolchain named in `rust-toolchain.toml`, Git, your platform's
 build tools, and `cargo-component` for building apps. Check your machine with
 `krate doctor`.
 
-**On Linux, install the ALSA development headers first.** The runtime records
-audio for the microphone capability, and without them the build stops in
-`alsa-sys` with a `pkg-config` error that does not explain itself:
+### Linux
+
+Five development packages, found one at a time on a machine with nothing
+installed. Each is a separate failed build, and none of the errors names the
+package you actually need:
 
 ```bash
-sudo apt-get install libasound2-dev    # Debian and Ubuntu
-sudo dnf install alsa-lib-devel        # Fedora
+sudo apt-get install build-essential pkg-config libssl-dev cmake \
+  libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
 ```
+
+```bash
+sudo dnf install gcc-c++ pkgconf openssl-devel cmake \
+  alsa-lib-devel wayland-devel libxkbcommon-devel systemd-devel
+```
+
+What each is for, and what it looks like when it is missing:
+
+- **libasound2-dev** — the microphone capability. Stops in `alsa-sys` with a
+  `pkg-config` error that does not explain itself.
+- **libwayland-dev** — windowing. The worst failure of the five: a *panic
+  inside `wayland-sys`'s build script*, which reads as a broken crate rather
+  than a missing package.
+- **libxkbcommon-dev** — the keyboard. Also needed at runtime: the versioned
+  `libxkbcommon-x11.so.0` from the runtime package is not enough, because what
+  gets loaded is the unversioned name that only `-dev` provides.
+- **libudev-dev** — gamepads.
+- **cmake** — builds whisper.cpp for speech-to-text. Skip the whole thing with
+  `--no-default-features` if you do not need it.
+
+### Windows
+
+Visual Studio Build Tools with the "Desktop development with C++" workload.
+Two things beyond that, both of which cost real time to discover:
+
+- **libclang**, for the default feature set — whisper's bindgen needs it.
+  Without it, build with `--no-default-features`.
+- **A pagefile.** With 16 GB of RAM and no pagefile, the release link runs out
+  of memory and Windows kills the process **with no message and an empty
+  log**. Three builds died silently before that was the answer. An automatic
+  pagefile fixes it.
 
 Build just the CLI:
 

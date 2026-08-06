@@ -231,8 +231,8 @@ Fix:      krate-open.exe, built for the "windows" subsystem, which is the only
 
 
 ### K-044 -- Building Krate on a clean Linux or Windows machine is undocumented
-Status:   open
-Owner:    unclaimed
+Status:   fixed
+Owner:    lead
 Severity: annoyance
 Class:    environment
 Found:    2026-08-07, Ubuntu 24.04 and Windows 11, both fresh Azure VMs
@@ -260,8 +260,14 @@ Impact:   Anybody who clones the repo to try a change hits these one at a time,
           each as an unexplained failure. The wayland one is the worst: a
           panic inside a dependency's build script, which reads as a broken
           crate rather than a missing apt package.
-Fix:      Not started. A short "building from source" section naming the
-          packages per platform, and the pagefile note for Windows.
+Fix:      README's "Build from source" now names all of them per platform,
+          with what each is for and what its absence looks like -- the wayland
+          one especially, since a panic inside a build script reads as a broken
+          crate. The Windows pagefile note is there too.
+
+          The apt line was checked against the Linux VM where the build now
+          succeeds: all eight packages present and accounted for. Documenting
+          an untested command would have been worse than documenting none.
 
 
 ### K-043 -- Five shipped apps closed their own window after ten seconds
