@@ -325,10 +325,15 @@ one scroll offset, add the delta, clamp it, and redraw:\n\n\
 \u{20}\u{20}\u{20}\u{20}}\n\n\
 Then subtract `scroll` from every row's y when you draw it, and **subtract it \
 again when you hit-test** -- the two must use the same number or clicks land on \
-the wrong row the moment somebody scrolls. Skip rows that fall outside the \
-visible region rather than drawing them over your header: there is no clip \
-rectangle yet, so anything you draw above the list region lands on top of it. \
-`apps/krate-checklist` scrolls this way and is the one to copy.\n\n\
+the wrong row the moment somebody scrolls.\n\n\
+**Clip the list region before you draw the rows.** Without it a row scrolled \
+past the top paints over your header. Set the clip to the list's rectangle, \
+draw every row including the partly-visible ones, then clear it:\n\n\
+\u{20}\u{20}\u{20}\u{20}canvas2d::set_clip(canvas, list_x, list_y, list_w, list_h);\n\
+\u{20}\u{20}\u{20}\u{20}// draw every row; the ones outside the rectangle are trimmed\n\
+\u{20}\u{20}\u{20}\u{20}canvas2d::clear_clip(canvas);\n\n\
+Do not try to skip out-of-view rows by hand instead. It works until rows have \
+different heights, and then it cannot be done correctly at all.\n\n\
 ## Packing: the entry name changes\n\n\
 Your `manifest.toml` points `entry` at the build output, which is right for \
 building and for `check-app`. Inside a packed `.krate` the component is stored \
@@ -488,24 +493,42 @@ fn normalize_wit_signature(sig: &str) -> String {
 /// each app is proven working (it ships and passes CI), so the agent reads the
 /// closest one and adapts real no_std code rather than writing blind.
 fn example_index_section(app_dir: &Path) -> String {
+    let mut out = String::from("\n---\n\n# 5. A complete worked example\n\n");
+    out.push_str(
+        "This is a whole working GUI app, inlined rather than referenced, because \
+         adapting proven code beats writing the `#![no_std]` and `krate:*` discipline \
+         from a blank page. Copy its shape: the imports, the panic-free style, the \
+         event loop, the redraw-when-dirty pattern.\n\n",
+    );
+    out.push_str(WORKED_EXAMPLE);
+    out.push('\n');
+
+    // The index of every shipped app is only useful when those files are
+    // actually on this machine. Printing paths that do not exist is worse than
+    // printing nothing: an agent told to read `apps/krate-paint/src/lib.rs`
+    // goes looking for it, and `find /` on a machine without the repo is how a
+    // two-minute authoring run became an eight-minute one on Windows.
     let Some(apps_dir) = find_apps_dir(app_dir) else {
-        // No apps tree to index (e.g. a released binary without the repo). The
-        // rest of the pack stands on its own; say the corpus is elsewhere.
-        return String::from(
-            "\n---\n\n# 5. Example apps\n\nThe shipped example apps are the best teacher \
-             for a new app's shape. They live under `apps/` in the Krate repository.\n",
+        out.push_str(
+            "\n## Other examples\n\nKrate ships around thirty more example apps, but \
+             their source is **not on this machine** -- it lives in the Krate \
+             repository. Do not go looking for an `apps/` directory and do not search \
+             the filesystem for one. Everything you need to write this app is in this \
+             file: the example above, the API reference in section 1, and the rules in \
+             section 3.\n",
         );
+        return out;
     };
 
     let mut examples = collect_examples(&apps_dir);
     examples.sort_by(|a, b| a.name.cmp(&b.name));
 
-    let mut out = String::from("\n---\n\n# 5. Example apps: read the closest one first\n\n");
-    out.push_str(
-        "Every app here ships and passes CI, so its code is a proven pattern to adapt \
-         -- especially its `#![no_std]` shape and its manifest. Find the row closest to \
-         your request and start from that app's `src/lib.rs` and `manifest.toml`.\n\n",
-    );
+    out.push_str("\n## Other examples on this machine\n\n");
+    out.push_str(&format!(
+        "These are readable at `{}`. Find the row closest to your request and read \
+         that app's `src/lib.rs` and `manifest.toml`.\n\n",
+        apps_dir.display()
+    ));
     out.push_str("| app | kind | capabilities | what it shows |\n");
     out.push_str("|---|---|---|---|\n");
     for ex in &examples {
@@ -524,6 +547,238 @@ fn example_index_section(app_dir: &Path) -> String {
     out.push('\n');
     out
 }
+
+/// A whole small GUI app, carried in the pack itself.
+///
+/// Every other example lives under `apps/` in the repository, which a person who
+/// installed a release does not have. Naming those paths sent the agent hunting
+/// the filesystem for them. This one is always present, so there is real working
+/// code to adapt no matter where the pack is generated.
+const WORKED_EXAMPLE: &str = r####"### `src/lib.rs`
+
+```rust
+#![no_std]
+
+// The SDK owns the allocator, the panic handler, and the memory intrinsics
+// this guest needs. Nothing calls it directly, so link it explicitly or the
+// build fails with "`#[panic_handler]` function required".
+extern crate krate as _krate_runtime;
+
+#[allow(warnings)]
+mod bindings;
+
+use bindings::krate::gfx::{canvas2d, types as gfx};
+use bindings::krate::io::{args, stdio};
+use bindings::krate::ui::{events, tree, types, window};
+
+// Widget ids are yours to choose. Keep them as constants: the tree refers to
+// them and so does `canvas2d::bind`.
+const ROOT_ID: u64 = 1;
+const CANVAS_ID: u64 = 2;
+
+const WIDTH: f32 = 420.0;
+const HEIGHT: f32 = 320.0;
+
+struct Component;
+
+/// The button rectangle, defined once. Drawing and hit-testing both call this,
+/// so they cannot disagree about where the button is.
+fn button_rect(width: f32, height: f32) -> gfx::Rect {
+    gfx::Rect { x: width / 2.0 - 60.0, y: height - 80.0, width: 120.0, height: 40.0 }
+}
+
+fn rgb(r: f32, g: f32, b: f32) -> gfx::Color {
+    gfx::Color { r, g, b, a: 1.0 }
+}
+
+impl bindings::Guest for Component {
+    // The world exports `run: func() -> s32`. No arguments, no Result: read
+    // arguments with `args::raw()` and return 0 for success.
+    fn run() -> i32 {
+        // check-app runs every app once with the bare word `quick`, and kills
+        // it after 60 seconds. `args::raw()` is one string, arguments
+        // separated by newlines.
+        let raw = args::raw();
+        let quick = raw
+            .as_bytes()
+            .split(|byte| *byte == b'\n')
+            .any(|arg| arg == b"quick");
+
+        let size = types::WindowSize { width: WIDTH as u32, height: HEIGHT as u32 };
+        let Ok(win) = window::create("Counter", size) else { return 30 };
+        if window::show(win).is_err() {
+            return 31;
+        }
+        // A window has no widgets until you build the tree.
+        if tree::set_root(win, &node(ROOT_ID, None, types::WidgetKind::Stack)).is_err()
+            || tree::upsert_node(
+                win,
+                &node(CANVAS_ID, Some(ROOT_ID), types::WidgetKind::Canvas),
+            )
+            .is_err()
+        {
+            let _ = window::close(win);
+            return 32;
+        }
+        let Ok(canvas) = canvas2d::bind(win, CANVAS_ID) else {
+            let _ = window::close(win);
+            return 33;
+        };
+
+        let mut count: i32 = 0;
+        let mut dirty = true;
+        // Wait in short rounds rather than blocking forever or spinning.
+        //
+        // This is the shape that passes the usability stage, and getting it
+        // wrong is the most common way a finished app fails its last check.
+        // `wait(None)` blocks until an event arrives, so a headless run hangs
+        // and is killed at 60 seconds. `poll()` never waits, so the loop spins
+        // a core and a quick run ends before the checker can click anything.
+        // A timeout does both jobs: idle costs nothing, and a quick run gives
+        // the checker its ten seconds and then exits on its own.
+        const ROUND_MILLIS: u32 = 33;
+        const QUICK_IDLE_ROUNDS: u32 = 300; // ~10 seconds of quiet
+        let mut idle: u32 = 0;
+
+        loop {
+            if dirty {
+                let Ok(size) = canvas2d::canvas_size(canvas) else { break };
+                canvas2d::clear(canvas, rgb(0.11, 0.12, 0.15)).ok();
+
+                let mut label = [0u8; 12];
+                let text = format_int(count, &mut label);
+                canvas2d::draw_text(
+                    canvas,
+                    text,
+                    gfx::Point { x: size.width / 2.0 - 14.0, y: size.height / 2.0 },
+                    48.0,
+                    rgb(0.93, 0.94, 0.96),
+                )
+                .ok();
+
+                let b = button_rect(size.width, size.height);
+                canvas2d::fill_rect(canvas, b, rgb(0.22, 0.45, 0.85)).ok();
+                canvas2d::draw_text(
+                    canvas,
+                    "Add one",
+                    gfx::Point { x: b.x + 20.0, y: b.y + 26.0 },
+                    16.0,
+                    rgb(1.0, 1.0, 1.0),
+                )
+                .ok();
+
+                canvas2d::present(canvas).ok();
+                dirty = false;
+            }
+
+            // Interactive: block until something happens, so the app sits idle
+            // instead of burning a core. Quick: never block, and stop after a
+            // bounded number of rounds.
+            let event = if quick {
+                rounds += 1;
+                if rounds > QUICK_ROUNDS {
+                    break;
+                }
+                events::poll()
+            } else {
+                events::wait(None)
+            };
+
+            match event {
+                // Always handle this. It is what the window's close button and
+                // Ctrl-C both send; an app that ignores it cannot be closed.
+                Some(types::Event::CloseRequested(_)) => break,
+                // One Pointer event covers press and release; check `pressed`.
+                Some(types::Event::Pointer(p)) if p.pressed => {
+                    if let Ok(size) = canvas2d::canvas_size(canvas) {
+                        let b = button_rect(size.width, size.height);
+                        if p.x >= b.x && p.x <= b.x + b.width
+                            && p.y >= b.y && p.y <= b.y + b.height
+                        {
+                            count += 1;
+                            dirty = true;
+                        }
+                    }
+                }
+                Some(types::Event::Resized(_)) => dirty = true,
+                _ => {}
+            }
+        }
+
+        if quick {
+            let out = stdio::stdout();
+            let _ = out.write(b"counter: window ran\n");
+        }
+        let _ = window::close(win);
+        0
+    }
+}
+
+/// Integers to text without `alloc` or `format!`.
+fn format_int(mut value: i32, buffer: &mut [u8; 12]) -> &str {
+    let negative = value < 0;
+    let mut at = buffer.len();
+    if value == 0 {
+        at -= 1;
+        buffer[at] = b'0';
+    }
+    while value != 0 {
+        at -= 1;
+        buffer[at] = b'0' + (value % 10).unsigned_abs() as u8;
+        value /= 10;
+    }
+    if negative {
+        at -= 1;
+        buffer[at] = b'-';
+    }
+    core::str::from_utf8(&buffer[at..]).unwrap_or("0")
+}
+
+/// One widget node with the default style.
+fn node(id: u64, parent: Option<u64>, kind: types::WidgetKind) -> types::WidgetNode {
+    types::WidgetNode {
+        id,
+        parent,
+        kind,
+        label: None,
+        role: None,
+        style: types::Style { width: None, height: None, grow: 0.0, padding: 0.0 },
+        checked: None,
+        value: None,
+        selected: None,
+        text_cursor: None,
+    }
+}
+
+bindings::export!(Component with_types_in bindings);
+```
+
+### `manifest.toml`
+
+```toml
+[app]
+id = "dev.krate.counter"
+name = "Counter"
+version = "0.1.0"
+entry = "target/wasm32-wasip1/release/counter.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the counter window"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report the count on a quick run"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated checks"
+required = true
+```
+"####;
 
 /// One row of the example index.
 struct Example {

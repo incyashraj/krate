@@ -2363,10 +2363,30 @@ pub(crate) fn print_help_summary() -> Result<u8> {
 static PROGRESS_SINK: std::sync::Mutex<Option<std::sync::Arc<progress::Progress>>> =
     std::sync::Mutex::new(None);
 
+/// Set on the authoring child when the parent is drawing a progress display.
+///
+/// The front door re-invokes this binary (`krate author-agent <name>`) to do
+/// the authoring, so the display and the code that knows what the AI is doing
+/// end up in different processes. This variable tells the child to report over
+/// stdout instead of drawing, and [`PROGRESS_PREFIX`] tags those lines so the
+/// parent can tell them apart from the agent's own output.
+const PROGRESS_CHANNEL: &str = "KRATE_PROGRESS_CHANNEL";
+
+/// Marks a line as a progress report from the authoring child.
+///
+/// Deliberately unlikely to occur in compiler output or an agent transcript:
+/// anything that is not this is passed through as ordinary output.
+const PROGRESS_PREFIX: &str = "\u{1}krate-progress\u{1}";
+
 fn set_progress_sink(sink: Option<std::sync::Arc<progress::Progress>>) {
     if let Ok(mut slot) = PROGRESS_SINK.lock() {
         *slot = sink;
     }
+}
+
+/// The display currently drawing, if there is one.
+fn progress_sink() -> Option<std::sync::Arc<progress::Progress>> {
+    PROGRESS_SINK.lock().ok().and_then(|slot| slot.clone())
 }
 
 /// Report one line of agent progress, if anything is listening.
@@ -3719,11 +3739,27 @@ fn run_provider_author(
                         continue;
                     }
                     steps += 1;
-                    // When the front door is drawing, its display owns the
-                    // terminal; printing here as well would fight it.
+                    // Three cases, and the middle one used to be missed.
+                    //
+                    // In-process: hand it to the display directly.
+                    //
+                    // In the child of a front-door run: the display lives in
+                    // the parent, so `report_progress` finds nothing here. Emit
+                    // a tagged line the parent parses instead of printing --
+                    // printing is what made the display and cargo's output
+                    // fight over the same terminal, leaving the first stage
+                    // frozen for five minutes while the app really was
+                    // compiling.
+                    //
+                    // Plain CLI run with no display anywhere: print it.
                     if !report_progress(&step) {
-                        eprintln!("    {steps:>2}. {step}");
-                        let _ = io::stderr().flush();
+                        if std::env::var_os(PROGRESS_CHANNEL).is_some() {
+                            println!("{PROGRESS_PREFIX}{step}");
+                            let _ = io::stdout().flush();
+                        } else {
+                            eprintln!("    {steps:>2}. {step}");
+                            let _ = io::stderr().flush();
+                        }
                     }
                     last = step;
                 }
@@ -4278,7 +4314,8 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
     )?;
 
     let shell = author_shell();
-    let status = std::process::Command::new(shell)
+    let mut command = std::process::Command::new(shell);
+    command
         .arg("-c")
         .arg(ctx.cmd)
         .env("KRATE_APP_DIR", ctx.app_dir)
@@ -4286,9 +4323,68 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
         .env("KRATE_REQUEST", ctx.request)
         .env("KRATE_APP_KIND", app_kind_name(ctx.kind))
         // The materialized SDK: the agent resolves WIT/bindings from here.
-        .env("KRATE_SDK_DIR", ctx.sdk_dir)
-        .status()
-        .context("run --author-cmd")?;
+        .env("KRATE_SDK_DIR", ctx.sdk_dir);
+
+    // With a display running, take the child's output rather than letting it
+    // reach the terminal. Inheriting meant the child's progress lines and the
+    // compiler's warnings scrolled through the display's own redraw region:
+    // the first stage appeared frozen for the whole run while the app really
+    // was being written, compiled and packed.
+    let drawing = progress_sink().is_some();
+    let status = if drawing {
+        command.env(PROGRESS_CHANNEL, "1");
+        command.stdout(std::process::Stdio::piped());
+        command.stderr(std::process::Stdio::piped());
+        let mut child = command.spawn().context("run --author-cmd")?;
+
+        // stderr is where cargo writes. Drain it so a full pipe cannot block
+        // the child, but keep it for the failure message rather than showing
+        // it: a warning about an unused variable is not something the person
+        // asked to see.
+        let stderr = child.stderr.take();
+        let drain = stderr.map(|stderr| {
+            std::thread::spawn(move || {
+                use std::io::BufRead;
+                let mut kept = String::new();
+                for line in io::BufReader::new(stderr).lines().map_while(Result::ok) {
+                    if kept.len() < 64 * 1024 {
+                        kept.push_str(&line);
+                        kept.push('\n');
+                    }
+                }
+                kept
+            })
+        });
+
+        if let Some(stdout) = child.stdout.take() {
+            use std::io::BufRead;
+            for line in io::BufReader::new(stdout).lines().map_while(Result::ok) {
+                match line.strip_prefix(PROGRESS_PREFIX) {
+                    Some(step) => {
+                        report_progress(step);
+                    }
+                    // Anything untagged is the agent's own chatter. It is in
+                    // the transcript already, so it does not go on screen.
+                    None => {}
+                }
+            }
+        }
+        let status = child.wait().context("wait for --author-cmd")?;
+        if !status.success() {
+            let detail = drain
+                .and_then(|handle| handle.join().ok())
+                .unwrap_or_default();
+            let tail: Vec<&str> = detail.lines().rev().take(20).collect();
+            let tail = tail.into_iter().rev().collect::<Vec<_>>().join("\n");
+            if tail.trim().is_empty() {
+                anyhow::bail!("author command failed");
+            }
+            anyhow::bail!("author command failed:\n\n{tail}");
+        }
+        status
+    } else {
+        command.status().context("run --author-cmd")?
+    };
     if !status.success() {
         anyhow::bail!("author command failed");
     }

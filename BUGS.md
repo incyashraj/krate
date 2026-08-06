@@ -71,6 +71,117 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-036 -- A GUI app panics on stock Ubuntu: libxkbcommon-x11.so is missing
+Status:   open
+Owner:    unclaimed
+Severity: blocker
+Class:    our-code
+Found:    2026-08-06, Azure Ubuntu 24.04 + XFCE, x86_64, by running a
+          Grok-authored app from the front door
+Evidence: The app built, packed, and was written to the Desktop. Opening it:
+
+              thread 'main' (3992) panicked at
+              xkbcommon-dl-0.4.2/src/x11.rs:59:28:
+              Library libxkbcommon-x11.so could not be loaded.
+
+          On that machine `libxkbcommon.so.0` IS present but the X11 bridge is
+          not -- they are separate Ubuntu packages (libxkbcommon0 vs
+          libxkbcommon-x11-0), and Ubuntu Desktop installs only the first.
+
+          crates/adapter-linux builds winit with the `x11` feature, which
+          dlopens libxkbcommon-x11.so at window creation.
+Impact:   Two failures, not one. The app cannot open at all, and the person is
+          shown a Rust panic with a crate path and a line number -- exactly the
+          thing Krate promises a non-developer never sees.
+Fix:      Not started. Needs both halves: name the dependency so it is
+          installed, and catch the load failure so a missing library reads as
+          one plain sentence naming the package to install, never a panic.
+
+### K-037 -- `krate` exits silently on Windows: no menu, no error
+Status:   open
+Owner:    unclaimed
+Severity: blocker
+Class:    our-code
+Found:    2026-08-06, Windows 11 Pro 25H2 x86_64 (Azure), fresh install
+Evidence: In PowerShell:
+
+              PS C:\Users\krateuser.krate-win> krate
+              PS C:\Users\krateuser.krate-win>
+
+          Returns immediately. No menu, no error, no exit message. The same
+          binary opens the menu on Linux.
+Impact:   The front door does not open. Everything Krate offers a Windows user
+          is behind this, so on Windows there is currently no product.
+Root cause found 2026-08-06. The exit code is the whole answer:
+
+              & krate.exe --version
+              EXIT=-1073741515
+
+          -1073741515 is 0xC0000135, STATUS_DLL_NOT_FOUND. Windows refuses to
+          start the process, so nothing runs -- not even `--version`, which is
+          why there is no output and no error to show.
+
+          The missing DLL is the Visual C++ runtime. On that fresh machine:
+
+              Test-Path C:\Windows\System32\vcruntime140.dll   -> False
+              Test-Path C:\Windows\System32\msvcp140.dll       -> False
+
+          Only the .NET-bundled variants (vcruntime140_clr0400.dll) are there,
+          and those do not satisfy the import. The x64 VC++ Redistributable is
+          not installed, and Windows 11 does not ship it by default.
+
+          The MSVC toolchain links these dynamically. We neither ship them, nor
+          install them, nor mention them anywhere.
+Proven 2026-08-06 by changing one thing on that machine: installing the
+          x64 VC++ Redistributable and nothing else.
+
+              & krate.exe --version
+              krate v0.1.0-rc24
+              EXIT=0
+
+          Same binary, same shell, same session. The missing DLL was the whole
+          of it.
+Fix:      Static CRT chosen, .cargo/config.toml sets
+          `-C target-feature=+crt-static` for both Windows targets. NOT YET
+          VERIFIED on Windows -- it cannot be cross-built from macOS (needs the
+          MSVC linker), so it has to be built and run on a Windows machine
+          before this is closed. Three candidates were considered: build the
+          Windows target with a static CRT (`-C target-feature=+crt-static`),
+          which removes the dependency entirely and keeps the install one file;
+          or have the installer install the redistributable; or ship the DLLs
+          beside krate.exe. The static build is the one that cannot regress on
+          a machine we never see. Whatever is chosen, the loader failure must
+          also stop being silent -- an installed program that exits with no
+          output is indistinguishable from one that does nothing.
+
+### K-038 -- The progress display freezes at stage one for the whole run
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-06, Ubuntu 24.04, authoring a 2D game with Grok
+Evidence: "reading Krate's API reference 5:31" stayed on screen for the entire
+          five and a half minutes, while cargo warnings scrolled through the
+          display's own redraw region, and the finished app was announced
+          before the display admitted stage one was done.
+
+          Cause: the front door re-invokes this binary as a child
+          (`krate author-agent <name>`) to do the authoring. PROGRESS_SINK is a
+          process-local static, so the child's report_progress always found
+          nothing and fell through to eprintln!, printing into the terminal the
+          parent's display was redrawing. Two writers, one terminal.
+
+          The comment at the fallback said the display "owns the terminal" --
+          true, and impossible for the child to honour across a process
+          boundary.
+Impact:   Reads as a hang. It is why an eight-minute Windows run was killed by
+          hand: nothing on screen distinguished a working run from a dead one.
+Fix:      The child now reports over stdout behind KRATE_PROGRESS_CHANNEL,
+          tagged with a control-character prefix; the parent captures that pipe
+          and drives the one real display. cargo's stderr is drained and kept
+          for the failure message rather than shown.
+
+
 ### K-014 — This machine is out of disk, and cargo cannot finish a test run
 Status:   open
 Owner:    unclaimed

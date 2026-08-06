@@ -1,0 +1,19 @@
+# Link the C runtime statically on Windows.
+#
+# Without this, krate.exe imports vcruntime140.dll and msvcp140.dll from the
+# Visual C++ Redistributable. Windows 11 does not ship that, so on a clean
+# machine the loader refuses to start the process and the program exits with
+# 0xC0000135 (STATUS_DLL_NOT_FOUND) before `main` runs -- no menu, no error,
+# no output at all, not even from `--version`. It looks like the command does
+# nothing. (K-037, found on a fresh Windows 11 Pro install.)
+#
+# Static linking is the fix that cannot regress on a machine we never see. The
+# alternatives -- installing the redistributable, or shipping the DLLs beside
+# the exe -- both leave a way for the binary to meet a machine that lacks them.
+# The cost is a few hundred KB of binary, against a product that does not start.
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
