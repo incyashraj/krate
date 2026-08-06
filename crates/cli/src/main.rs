@@ -2636,12 +2636,9 @@ pub(crate) fn revise_app_for_tui(
             }
         }
     }
-    let request = format!(
-        "The Krate app in this directory already works. Change it as follows, \
-         and change nothing else: {change}{attached}\n\n\
-         Keep the same crate name and manifest. When you are done, run \
-         `krate check-app .` and make sure every stage passes."
-    );
+    // Marked as a change so the prompt builder gives it edit instructions
+    // rather than build-an-app-from-scratch instructions.
+    let request = format!("{CHANGE_MARKER}{change}{attached}");
     let code = create_krate(CreateRequest {
         request,
         output: output.to_path_buf(),
@@ -3236,6 +3233,17 @@ fn report_refusal(
 fn create_krate(req: CreateRequest) -> Result<u8> {
     use krate_author::{generate, AppKind, AppRequest};
 
+    // A change carries a marker so the prompt builder can tell the two jobs
+    // apart. Everything else here -- the name, the feasibility screen, the
+    // history entry, what is printed -- must see the person's own words, so
+    // strip it once, here, rather than in each of those places.
+    let mut req = req;
+    let is_change = req.request.starts_with(CHANGE_MARKER);
+    let marked_request = req.request.clone();
+    if is_change {
+        req.request = req.request[CHANGE_MARKER.len()..].to_string();
+    }
+
     // Reject an empty or too-short request before doing any work: authoring
     // needs something to go on, and a blank request otherwise burns a full
     // toolchain probe and build on nothing. In --json mode report it as data.
@@ -3395,7 +3403,10 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
             cmd,
             app_dir: &app_dir,
             name: &name,
-            request: &req.request,
+            // The MARKED request goes to the agent, so the prompt builder in
+            // the child can tell a change from a new app. Everything the
+            // person sees uses req.request, which has the marker stripped.
+            request: &marked_request,
             sdk_dir: &sdk_root,
             sdk_prefix: &sdk_prefix,
             kind,
@@ -3709,7 +3720,64 @@ fn run_author_agent(agent: &str) -> Result<u8> {
 /// wrong, and fix it. So the prompt is short: build the app, and do not stop
 /// until the oracle says OK. Everything the agent needs to know is in the pack,
 /// which is generated from real sources, not restated here where it could drift.
+/// The marker that tells the prompt builder this is a change, not a new app.
+///
+/// Set by `revise_app_for_tui` and read here. A string rather than a parameter
+/// because the request travels through `create_krate` and the author-agent
+/// child process as one environment variable, and threading a second flag
+/// through both would be more machinery than the distinction needs.
+pub(crate) const CHANGE_MARKER: &str = "\u{1}krate-change\u{1}";
+
+/// The instructions for changing an app that already works.
+///
+/// A change is a different job from writing an app, and it used to get the
+/// same prompt: "find the closest example and adapt it", "write the app". So
+/// an AI asked to move a button re-derived how to write a Krate app from
+/// scratch, read a worked example it did not need, and took as long as the
+/// original build.
+///
+/// What a change actually needs is: the app is already correct, find the one
+/// place this belongs, change that, leave everything else alone. The API
+/// reference stays available for a call it has not used before -- reading less
+/// is not the goal, doing less is.
+fn change_prompt(app_dir: &str, change: &str, krate_bin: &str) -> String {
+    format!(
+        "You are changing a Krate app that already works. It is in {app_dir}.\n\
+\n\
+    {change}\n\
+\n\
+This is an edit, not a rewrite. The app compiles, passes `check-app`, and\n\
+already demonstrates the no_std and krate:* discipline in its own source --\n\
+you do not need to re-derive any of that, and you do not need a worked\n\
+example. Its code is the example.\n\
+\n\
+How to work:\n\
+1. Read src/lib.rs and find the one place this change belongs. Most changes\n\
+   are a few lines in one function. Search for the label, colour, number or\n\
+   behaviour named in the request rather than reading the file end to end.\n\
+2. Make that change and nothing else. Do not reformat, do not rename, do not\n\
+   restructure code you were not asked about, and do not \"improve\" things in\n\
+   passing. A diff that touches one function is the goal.\n\
+3. KRATE_AUTHORING.md is in this directory if you need a function you have not\n\
+   used before, or a capability the manifest does not declare yet. Consult it\n\
+   for that; do not read it front to back.\n\
+4. Run `{krate_bin} check-app .` from {app_dir} when you are done. If it\n\
+   fails, fix what it names and run it again. Do not stop until it prints OK.\n\
+\n\
+Keep the same crate name, the same package name, and the same manifest unless\n\
+the change genuinely needs a new capability. Changing them breaks the app's\n\
+identity for somebody who already has it.\n\
+\n\
+Do not explain what you did; make the change until the check passes."
+    )
+}
+
 fn claude_author_prompt(app_dir: &str, request: &str, krate_bin: &str) -> String {
+    // A change carries a marker rather than a flag, because the request
+    // travels to the author-agent child as one environment variable.
+    if let Some(change) = request.strip_prefix(CHANGE_MARKER) {
+        return change_prompt(app_dir, change, krate_bin);
+    }
     format!(
         "You are building a Krate desktop app in Rust from this request:\n\
 \n\
@@ -8170,6 +8238,49 @@ mod home_tests {
 
 #[cfg(test)]
 mod create_tests {
+    use super::{change_prompt, CHANGE_MARKER};
+
+    /// A change and a new app are different jobs and must get different
+    /// instructions. They used to share one prompt, so an AI asked to move a
+    /// button was told to "find the closest example and adapt it" and
+    /// "write the app" -- and re-derived a whole Krate app to change one line.
+    #[test]
+    fn a_change_is_told_to_edit_not_to_write_an_app() {
+        let marked = format!("{CHANGE_MARKER}make the button blue");
+        let prompt = claude_author_prompt("/work/app", &marked, "/usr/local/bin/krate");
+
+        assert!(prompt.contains("This is an edit, not a rewrite"));
+        assert!(prompt.contains("make the button blue"));
+        // The things that make a fresh build slow must NOT be asked for.
+        assert!(
+            !prompt.contains("Find the closest example"),
+            "an edit must not go hunting for an example app"
+        );
+        assert!(
+            prompt.contains("KRATE_AUTHORING.md is in this directory"),
+            "the reference stays available, consulted rather than read whole"
+        );
+        // And the marker itself must never be shown to the model as text.
+        assert!(!prompt.contains(CHANGE_MARKER), "marker leaked into the prompt");
+    }
+
+    #[test]
+    fn a_new_app_still_gets_the_full_instructions() {
+        let prompt = claude_author_prompt("/work/app", "a tip calculator", "/usr/local/bin/krate");
+        assert!(prompt.contains("Read KRATE_AUTHORING.md"));
+        assert!(prompt.contains("Find the closest example"));
+        assert!(!prompt.contains("This is an edit"));
+    }
+
+    #[test]
+    fn the_change_prompt_keeps_the_app_identity() {
+        // Renaming the crate or the package breaks the app for somebody who
+        // already has a copy, which is the one thing an edit must not do.
+        let prompt = change_prompt("/work/app", "add a reset button", "/k");
+        assert!(prompt.contains("Keep the same crate name"));
+        assert!(prompt.contains("check-app"));
+    }
+
     use super::{
         app_kind_name, author_contract, claude_author_prompt, has_tool, human_label,
         name_from_request, toml_path, validate_create_request, MAX_DERIVED_NAME_WORDS,
