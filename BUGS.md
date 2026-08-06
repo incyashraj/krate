@@ -71,6 +71,35 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-043 -- Five shipped apps closed their own window after ten seconds
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    example-bug
+Found:    2026-08-07, macOS, running check-app while verifying the release
+Evidence: `krate check-app apps/krate-savings`:
+
+              FAILED at usability
+              the app opened a window and then closed it by itself after
+              11.7s, with nobody asking it to
+
+          Every one of these apps counts quiet rounds and gives up after
+          MAX_IDLE_ROUNDS, so a headless check cannot hang. The count was not
+          gated on the `quick` argument, so it ran in a real session too: open
+          the app, think for ten seconds, and the window closes itself.
+
+          krate-savings, krate-checklist, krate-journal, krate-focus,
+          krate-pulse. krate-notes and krate-timer already gated it, which is
+          what the correct shape looks like.
+Impact:   Worse than it sounds, because these are the example apps. Every
+          generated app copies their loop, so the pattern spreads: this is
+          exactly the class the bug board calls example-bug, highest leverage
+          per line changed.
+Fix:      `if quick && idle_rounds >= MAX_IDLE_ROUNDS`. Four of the five now
+          pass all six stages. krate-pulse still fails, on an unrelated resize
+          bug that is K-003 -- filed, not detoured into.
+
+
 ### K-042 -- Every 3D scene was mirrored, so steering went the wrong way
 Status:   fixed
 Owner:    lead

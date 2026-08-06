@@ -581,7 +581,11 @@ impl bindings::Guest for Component {
             let event = events::wait(Some(WAIT_ROUND_MILLIS));
             if event.is_none() {
                 idle_rounds += 1;
-                if idle_rounds >= MAX_IDLE_ROUNDS {
+                // Only a headless check gives up on silence. A person who
+                // opens this and thinks for a moment must not watch the
+                // window close itself -- which is exactly what happened here,
+                // after eleven seconds, with nobody asking it to.
+                if quick && idle_rounds >= MAX_IDLE_ROUNDS {
                     break;
                 }
                 continue;

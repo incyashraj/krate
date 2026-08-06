@@ -635,7 +635,9 @@ impl bindings::Guest for Component {
                 Some(_) => idle = 0,
                 None => {
                     idle += 1;
-                    if idle > MAX_IDLE_ROUNDS * 20 {
+                    // Only a headless check gives up on silence; a real window
+                    // stays until the person closes it.
+                    if quick && idle > MAX_IDLE_ROUNDS * 20 {
                         break;
                     }
                 }

@@ -290,7 +290,10 @@ impl bindings::Guest for Component {
                     idle_rounds = 0;
                 } else {
                     idle_rounds += 1;
-                    if idle_rounds >= MAX_IDLE_ROUNDS {
+                    // Only a headless check gives up on silence. A person who
+                    // pauses the timer and walks away must not come back to a
+                    // window that closed itself.
+                    if quick && idle_rounds >= MAX_IDLE_ROUNDS {
                         break;
                     }
                 }
