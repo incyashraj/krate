@@ -429,7 +429,7 @@ fn draw_button(
     }
 
     // Centered-ish label. Estimate width from glyph count to center it.
-    let approx = label_width(label, 18.0);
+    let approx = label_width(canvas, label, 18.0);
     let lx = x + (w - approx) * 0.5;
     let ink = if filled {
         color(1.0, 1.0, 1.0, 1.0)
@@ -560,11 +560,19 @@ fn color(r: f32, g: f32, b: f32, a: f32) -> gfx::Color {
     gfx::Color { r, g, b, a }
 }
 
-/// A rough label width for centering: the host font reads near-monospace, so
-/// count characters times a per-glyph advance.
-fn label_width(label: &str, size: f32) -> f32 {
-    let n = label.as_bytes().len() as f32;
-    n * size * 0.60
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be character count times an invented constant, with a comment
+/// claiming the host face was monospace or near-monospace. It is not: it is
+/// proportional, and `i` and `W` differ about four times in real width. So a
+/// centred label was not centred and a right-aligned number did not line up.
+/// `measure_text` is the true answer.
+fn label_width(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 // ------------------------------------------------------------------

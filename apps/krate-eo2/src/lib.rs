@@ -586,7 +586,7 @@ fn draw(
     // the header never contradicts the picture on screen.
     if total == 0 {
         let pill = "DEMO";
-        let tw = text_w(pill, 12.0);
+        let tw = text_w(canvas, pill, 12.0);
         let pw = tw + 24.0;
         let px = WIDTH - 28.0 - pw;
         fill_round(canvas, px, 21.0, pw, 24.0, 12.0, color(0.42, 0.72, 1.0, 0.16))?;
@@ -601,7 +601,7 @@ fn draw(
         let mut cbuf = [0u8; 40];
         let counter = counter_str(index, total, &mut cbuf);
         if let Ok(txt) = core::str::from_utf8(counter) {
-            let tw = text_w(txt, 16.0);
+            let tw = text_w(canvas, txt, 16.0);
             canvas2d::draw_text(
                 canvas,
                 txt,
@@ -763,7 +763,7 @@ fn draw_button(canvas: u64, b: &Button, hover: bool, press: bool) -> Result<(), 
     }
 
     let label = action_label(b.action);
-    let tw = text_w(label, 15.0);
+    let tw = text_w(canvas, label, 15.0);
     canvas2d::draw_text(
         canvas,
         label,
@@ -895,10 +895,19 @@ fn color(r: f32, g: f32, b: f32, a: f32) -> gfx::Color {
     gfx::Color { r, g, b, a }
 }
 
-/// Advance-width estimate for centring text drawn by the host. The host renders
-/// a MONOSPACE face, so every glyph is ~0.6em wide.
-fn text_w(s: &str, size: f32) -> f32 {
-    (s.chars().count() as f32) * size * 0.6
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be character count times an invented constant, with a comment
+/// claiming the host face was monospace or near-monospace. It is not: it is
+/// proportional, and `i` and `W` differ about four times in real width. So a
+/// centred label was not centred and a right-aligned number did not line up.
+/// `measure_text` is the true answer.
+fn text_w(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 // ------------------------------------------------------------------

@@ -2327,6 +2327,28 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         Ok(Ok(()))
     }
 
+    fn measure_text(
+        &mut self,
+        canvas: u64,
+        text: String,
+        font_size: f32,
+    ) -> wasmtime::Result<Result<gfx::types::TextMetrics, gfx::types::GfxError>> {
+        let canvases = self.canvases.borrow();
+        let Some((_, _, surface)) = canvases.get(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        // Measured through the same surface that will draw it, so the answer
+        // comes from whichever face -- vector or bitmap fallback -- this host
+        // actually paints with.
+        let m = surface.measure_text(&text, font_size);
+        Ok(Ok(gfx::types::TextMetrics {
+            width: m.width,
+            height: m.height,
+            ascent: m.ascent,
+            descent: m.descent,
+        }))
+    }
+
     fn draw_pixels(
         &mut self,
         canvas: u64,

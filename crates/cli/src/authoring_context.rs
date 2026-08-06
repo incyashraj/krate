@@ -396,7 +396,34 @@ pub(crate) fn gui_world_section() -> String {
         out.push_str(&render_wit_interfaces(package, wit));
     }
     out.push_str(
-        "\nStart from the closest example in section 5 rather than these signatures \
+        "\n## Never guess how wide text is -- measure it\n\n\
+         `canvas2d::measure_text(canvas, text, font_size)` returns `width`, \
+         `height`, `ascent`, and `descent` for the run `draw_text` is about to \
+         draw. Use it any time a position depends on the size of text: \
+         centring a label, right-aligning a number, placing a caret after \
+         what has been typed, sizing a card or a pill around its own text, or \
+         stacking lines of a paragraph.\n\n\
+         **Do not write a `text_width` helper that multiplies character count \
+         by a constant.** It is wrong, not approximate. The face is \
+         proportional -- `i` and `W` differ about four times in real width -- \
+         so `\"iiii\"` and `\"WWWW\"` get the same made-up answer while the \
+         drawn pixels differ several times over. That single mistake is why \
+         labels are not really centred, captions overflow their cards, and \
+         carets sit beside the text instead of after it. The host already \
+         knows the true number; ask for it.\n\n\
+         \u{20}\u{20}\u{20}\u{20}// centre a label in a box\n\
+         \u{20}\u{20}\u{20}\u{20}let m = canvas2d::measure_text(canvas, label, 17.0)?;\n\
+         \u{20}\u{20}\u{20}\u{20}let x = box_x + (box_w - m.width) * 0.5;\n\n\
+         \u{20}\u{20}\u{20}\u{20}// a caret sitting just after the typed text\n\
+         \u{20}\u{20}\u{20}\u{20}let caret_x = text_x + canvas2d::measure_text(canvas, typed, 16.0)?.width;\n\n\
+         `draw_text` takes a **baseline** as its origin, which is what `ascent` \
+         is for: to put a run's top edge at `y`, draw it at `y + m.ascent`; to \
+         centre it vertically in a box of height `h`, draw at \
+         `y + (h - m.height) * 0.5 + m.ascent`. Stack paragraph lines by \
+         `m.height`.\n\n\
+         The measurement is single-line and unwrapped, because `draw_text` is \
+         too. To wrap a paragraph, measure words and break the lines yourself.\n\n\
+         Start from the closest example in section 5 rather than these signatures \
          alone -- the samples show the call order (bind a canvas, draw, present) that \
          the signatures do not.\n",
     );

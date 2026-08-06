@@ -696,7 +696,7 @@ fn draw(canvas: u64, name: &str, blocks: &[Block], scroll: f32) -> Result<(), gf
     // Reading hint, right side. A small pill so it reads as a tag and never
     // crowds the window edge.
     let hint = "MARKDOWN";
-    let tw = text_w(hint, 12.0);
+    let tw = text_w(canvas, hint, 12.0);
     let pw = tw + 24.0;
     let px = WIDTH - 28.0 - pw;
     fill_round(canvas, px, 16.0, pw, 24.0, 12.0, color(0.42, 0.72, 1.0, 0.12))?;
@@ -945,8 +945,19 @@ fn pt(x: f32, y: f32) -> gfx::Point {
 fn color(r: f32, g: f32, b: f32, a: f32) -> gfx::Color {
     gfx::Color { r, g, b, a }
 }
-fn text_w(s: &str, size: f32) -> f32 {
-    (s.chars().count() as f32) * size * 0.6
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be character count times an invented constant, with a comment
+/// claiming the host face was monospace or near-monospace. It is not: it is
+/// proportional, and `i` and `W` differ about four times in real width. So a
+/// centred label was not centred and a right-aligned number did not line up.
+/// `measure_text` is the true answer.
+fn text_w(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 // ------------------------------------------------------------------

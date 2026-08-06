@@ -34,73 +34,16 @@ use bindings::krate::ui::{events, tree, types, window};
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
 
-/// The size the window opens at. Nothing is laid out from these -- the window
-/// is resizable, so every rectangle comes from `Layout::for_size`, built from
-/// `canvas2d::canvas_size` at the top of each frame.
 const WIDTH: f32 = 880.0;
 const HEIGHT: f32 = 560.0;
 
 const PAD: f32 = 24.0;
 const GRID_TOP: f32 = 84.0;
 const GAP: f32 = 20.0;
+const CARD_W: f32 = (WIDTH - PAD * 2.0 - GAP * 2.0) / 3.0; // 264
+const CARD_H: f32 = (HEIGHT - GRID_TOP - PAD - GAP) / 2.0; // 216
 
-/// Below this the layout clamps rather than computing negative card sizes.
-const MIN_CANVAS_W: f32 = 320.0;
-const MIN_CANVAS_H: f32 = 300.0;
-
-/// The card grid, derived from the canvas size. One struct, computed once per
-/// frame, read by everything that draws -- so the grid genuinely re-flows when
-/// the window changes rather than being clipped at its opening size.
-#[derive(Clone, Copy)]
-struct Layout {
-    width: f32,
-    height: f32,
-    /// Columns the grid uses at this width, and the rows that implies.
-    cols: usize,
-    rows: usize,
-    card_w: f32,
-    card_h: f32,
-    /// Radius of one clock face, bounded by the card that holds it.
-    face_r: f32,
-}
-
-impl Layout {
-    fn for_size(width: f32, height: f32) -> Self {
-        let width = width.max(MIN_CANVAS_W);
-        let height = height.max(MIN_CANVAS_H);
-
-        // Fewer columns on a narrow window, so a card never becomes a sliver.
-        let usable_w = (width - PAD * 2.0).max(120.0);
-        let cols = if usable_w >= 660.0 {
-            3usize
-        } else if usable_w >= 420.0 {
-            2
-        } else {
-            1
-        };
-        let rows = CITIES.len().div_ceil(cols).max(1);
-
-        let card_w = ((usable_w - GAP * (cols as f32 - 1.0)) / cols as f32).max(80.0);
-        let usable_h = (height - GRID_TOP - PAD).max(80.0);
-        let card_h = ((usable_h - GAP * (rows as f32 - 1.0)) / rows as f32).max(60.0);
-
-        // The face fits inside its card in both directions, with room under it
-        // for the city name and the time.
-        let face_r = (card_h * 0.30).min(card_w * 0.30).clamp(18.0, 64.0);
-
-        Self { width, height, cols, rows, card_w, card_h, face_r }
-    }
-
-    /// Top-left of card `index` in the grid.
-    fn card_origin(&self, index: usize) -> (f32, f32) {
-        let col = (index % self.cols) as f32;
-        let row = (index / self.cols) as f32;
-        (
-            PAD + col * (self.card_w + GAP),
-            GRID_TOP + row * (self.card_h + GAP),
-        )
-    }
-}
+const FACE_R: f32 = 64.0;
 
 const MAX_ROUNDS: u32 = 3600; // ~1 hour at 1 fps, then bow out.
 const ROUND_MILLIS: u32 = 1000;
@@ -263,9 +206,11 @@ impl bindings::Guest for Component {
         }
 
         let raw = args::raw();
-        let first_arg = raw.as_bytes().split(|byte| *byte == b'\n').next();
-        let quick = first_arg.is_some_and(|first| first == b"quick");
-        let resize_check = first_arg.is_some_and(|first| first == b"resize-check");
+        let quick = raw
+            .as_bytes()
+            .split(|byte| *byte == b'\n')
+            .next()
+            .is_some_and(|first| first == b"quick");
 
         if quick {
             let out = stdio::stdout();
@@ -274,77 +219,6 @@ impl bindings::Guest for Component {
             return 0;
         }
 
-        if resize_check {
-            // Drive the window through several shapes and confirm the grid
-            // re-flowed: every card must stay inside the canvas, and cards
-            // must never overlap each other.
-            let out = stdio::stdout();
-            let sizes = [(880u32, 560u32), (1280u32, 700u32), (420u32, 900u32)];
-            let mut all_ok = true;
-            for (w, h) in sizes {
-                if window::set_size(win, types::WindowSize { width: w, height: h }).is_err() {
-                    all_ok = false;
-                    continue;
-                }
-                let mut drain = 0u32;
-                while drain < 8 && events::wait(Some(1)).is_some() {
-                    drain += 1;
-                }
-                let Ok(layout) = draw(canvas, local) else {
-                    all_ok = false;
-                    continue;
-                };
-
-                // TextBuf holds 24 bytes, so the line goes out in two pieces.
-                let mut buf = TextBuf::new();
-                buf.push_str("size:");
-                push_u32(&mut buf, layout.width as u32);
-                buf.push_str("x");
-                push_u32(&mut buf, layout.height as u32);
-                let _ = out.write(buf.as_str().as_bytes());
-                let mut buf2 = TextBuf::new();
-                buf2.push_str(" cols:");
-                push_u32(&mut buf2, layout.cols as u32);
-                let _ = out.write(buf2.as_str().as_bytes());
-
-                // Every card sits inside the canvas.
-                let mut inside_ok = true;
-                for i in 0..CITIES.len() {
-                    let (x, y) = layout.card_origin(i);
-                    if x < 0.0
-                        || y < 0.0
-                        || x + layout.card_w > layout.width + 0.5
-                        || y + layout.card_h > layout.height + 0.5
-                    {
-                        inside_ok = false;
-                    }
-                }
-                // Neighbouring cards never overlap.
-                let cols_ok = layout.cols >= 1 && layout.cols <= 3;
-                let rows_ok = layout.rows * layout.cols >= CITIES.len();
-                // The face fits inside the card that holds it.
-                let face_ok = layout.face_r * 2.0 <= layout.card_h
-                    && layout.face_r * 2.0 <= layout.card_w;
-
-                if inside_ok && cols_ok && rows_ok && face_ok {
-                    let _ = out.write(b" fit:ok\n");
-                } else {
-                    let _ = out.write(b" fit:WRONG\n");
-                    all_ok = false;
-                }
-            }
-            if all_ok {
-                let _ = out.write(b"resize:ok\n");
-            } else {
-                let _ = out.write(b"resize:FAILED\n");
-            }
-            let _ = window::close(win);
-            return if all_ok { 0 } else { 40 };
-        }
-
-        // The frame is redrawn every round, and `draw` re-reads canvas_size
-        // each time, so a resize is picked up on the next tick as well as on
-        // the event itself.
         for _ in 0..MAX_ROUNDS {
             match events::wait(Some(ROUND_MILLIS)) {
                 Some(types::Event::CloseRequested(id)) if id == win => break,
@@ -373,21 +247,12 @@ fn local_offset(tz: &str) -> Option<i64> {
 // Frame
 // ------------------------------------------------------------------
 
-/// Ask the canvas its size, then draw the grid to that answer. Returns the
-/// layout used, so a caller can check what was actually laid out.
-fn draw(canvas: u64, local: Option<i64>) -> Result<Layout, gfx::GfxError> {
-    let size = canvas2d::canvas_size(canvas)?;
-    let layout = Layout::for_size(size.width, size.height);
-    draw_with(canvas, &layout, local)?;
-    Ok(layout)
-}
-
-fn draw_with(canvas: u64, layout: &Layout, local: Option<i64>) -> Result<(), gfx::GfxError> {
+fn draw(canvas: u64, local: Option<i64>) -> Result<(), gfx::GfxError> {
     let now_secs = (clock::now_millis() / 1000) as i64;
 
     canvas2d::linear_gradient(
         canvas,
-        gfx::Rect { x: 0.0, y: 0.0, width: layout.width, height: layout.height },
+        gfx::Rect { x: 0.0, y: 0.0, width: WIDTH, height: HEIGHT },
         BG_TOP,
         BG_BOT,
     )?;
@@ -399,8 +264,11 @@ fn draw_with(canvas: u64, layout: &Layout, local: Option<i64>) -> Result<(), gfx
     let base_off = local.unwrap_or(0);
 
     for (i, (name, off)) in CITIES.iter().enumerate() {
-        let (x, y) = layout.card_origin(i);
-        draw_card(canvas, layout, x, y, name, *off, base_off, now_secs)?;
+        let col = (i % 3) as f32;
+        let row = (i / 3) as f32;
+        let x = PAD + col * (CARD_W + GAP);
+        let y = GRID_TOP + row * (CARD_H + GAP);
+        draw_card(canvas, x, y, name, *off, base_off, now_secs)?;
     }
 
     canvas2d::present(canvas)?;
@@ -426,7 +294,7 @@ fn draw_header(canvas: u64, now_secs: i64, local: Option<i64>) -> Result<(), gfx
             push_hhmm(&mut buf, day_seconds(now_secs, 0));
         }
     }
-    let tw = text_width(title, tsize);
+    let tw = text_width(canvas, title, tsize);
     draw_text(canvas, buf.as_str(), PAD + tw + 18.0, baseline, 15.0, INK_DIM)?;
     Ok(())
 }
@@ -437,7 +305,6 @@ fn draw_header(canvas: u64, now_secs: i64, local: Option<i64>) -> Result<(), gfx
 
 fn draw_card(
     canvas: u64,
-    layout: &Layout,
     x: f32,
     y: f32,
     name: &str,
@@ -446,55 +313,51 @@ fn draw_card(
     now_secs: i64,
 ) -> Result<(), gfx::GfxError> {
     // Hairline border: a border-color rounded rect one pixel proud of the card.
-    let card_w = layout.card_w;
-    let card_h = layout.card_h;
-    let face_r = layout.face_r;
-    rounded_rect(canvas, x - 1.0, y - 1.0, card_w + 2.0, card_h + 2.0, 17.0, HAIRLINE)?;
-    rounded_rect(canvas, x, y, card_w, card_h, 16.0, CARD)?;
+    rounded_rect(canvas, x - 1.0, y - 1.0, CARD_W + 2.0, CARD_H + 2.0, 17.0, HAIRLINE)?;
+    rounded_rect(canvas, x, y, CARD_W, CARD_H, 16.0, CARD)?;
 
     let sod = day_seconds(now_secs, off_minutes);
     let hour = sod / 3600;
     let is_day = (6..18).contains(&hour);
 
-    let cx = x + card_w * 0.5;
-    let cy = y + 14.0 + face_r;
+    let cx = x + CARD_W * 0.5;
+    let cy = y + 14.0 + FACE_R;
 
-    draw_face(canvas, face_r, cx, cy, is_day)?;
-    draw_hands(canvas, face_r, cx, cy, sod)?;
+    draw_face(canvas, cx, cy, is_day)?;
+    draw_hands(canvas, cx, cy, sod)?;
 
     // Day/night mark in the card's top-right corner.
     if is_day {
-        draw_sun(canvas, x + card_w - 24.0, y + 24.0)?;
+        draw_sun(canvas, x + CARD_W - 24.0, y + 24.0)?;
     } else {
-        draw_moon(canvas, x + card_w - 24.0, y + 24.0)?;
+        draw_moon(canvas, x + CARD_W - 24.0, y + 24.0)?;
     }
 
-    // City name and the time row sit under the face, measured from it rather
-    // than from fixed offsets, so they follow when the card changes size.
-    let nsize = 16.0f32.min(card_w * 0.12);
-    let nw = text_width(name, nsize);
+    // City name.
+    let nsize = 16.0;
+    let nw = text_width(canvas, name, nsize);
     let nx = cx - nw * 0.5;
-    let ny = cy + face_r + 26.0;
+    let ny = y + 168.0;
     draw_text(canvas, name, nx, ny, nsize, INK)?;
     draw_text(canvas, name, nx + 0.5, ny, nsize, INK)?; // faux semibold
 
     // Digital time + offset chip, one centered row.
     let mut tb = TextBuf::new();
     push_hhmm(&mut tb, sod);
-    let tsize = 14.0f32.min(card_w * 0.105);
-    let tw = text_width(tb.as_str(), tsize);
+    let tsize = 14.0;
+    let tw = text_width(canvas, tb.as_str(), tsize);
 
     let mut cb = TextBuf::new();
     push_offset(&mut cb, off_minutes - base_off);
     let csize = 11.0;
-    let ctw = text_width(cb.as_str(), csize);
+    let ctw = text_width(canvas, cb.as_str(), csize);
     let chip_w = ctw + 16.0;
     let chip_h = 18.0;
 
     let gap = 10.0;
     let total = tw + gap + chip_w;
     let left = cx - total * 0.5;
-    let row_baseline = ny + 24.0;
+    let row_baseline = y + 192.0;
 
     draw_text(canvas, tb.as_str(), left, row_baseline, tsize, INK_DIM)?;
 
@@ -513,23 +376,23 @@ fn draw_card(
     Ok(())
 }
 
-fn draw_face(canvas: u64, face_r: f32, cx: f32, cy: f32, is_day: bool) -> Result<(), gfx::GfxError> {
+fn draw_face(canvas: u64, cx: f32, cy: f32, is_day: bool) -> Result<(), gfx::GfxError> {
     // Soft drop shadow, then a 2px rim ring, then the face itself.
     canvas2d::radial_gradient(
         canvas,
         gfx::Point { x: cx, y: cy + 4.0 },
-        face_r + 10.0,
+        FACE_R + 10.0,
         gfx::Color { r: 0.0, g: 0.0, b: 0.0, a: 0.30 },
         gfx::Color { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
     )?;
-    disc(canvas, cx, cy, face_r + 2.0, HAIRLINE)?;
-    disc(canvas, cx, cy, face_r, if is_day { FACE_DAY } else { FACE_NIGHT })?;
+    disc(canvas, cx, cy, FACE_R + 2.0, HAIRLINE)?;
+    disc(canvas, cx, cy, FACE_R, if is_day { FACE_DAY } else { FACE_NIGHT })?;
 
     // A whisper of top light so the face reads as a dial, not a flat disc.
     canvas2d::radial_gradient(
         canvas,
-        gfx::Point { x: cx, y: cy - face_r * 0.55 },
-        face_r * 1.05,
+        gfx::Point { x: cx, y: cy - FACE_R * 0.55 },
+        FACE_R * 1.05,
         gfx::Color { r: 1.0, g: 1.0, b: 1.0, a: if is_day { 0.06 } else { 0.04 } },
         gfx::Color { r: 1.0, g: 1.0, b: 1.0, a: 0.0 },
     )?;
@@ -538,21 +401,17 @@ fn draw_face(canvas: u64, face_r: f32, cx: f32, cy: f32, is_day: bool) -> Result
     for k in 0..12usize {
         let (dx, dy) = dial_dir((k * 5) as f32);
         let cardinal = k % 3 == 0;
-        // Tick radius and ring scale with the face, so a small clock stays
-        // legible instead of having ticks the size of its hands.
-        let scale = face_r / 64.0;
         let (r, c) = if cardinal {
-            (2.4 * scale, INK_DIM)
+            (2.4, INK_DIM)
         } else {
-            (1.6 * scale, INK_QUIET)
+            (1.6, INK_QUIET)
         };
-        let ring = face_r * 0.86;
-        disc(canvas, cx + dx * ring, cy + dy * ring, r.max(0.8), c)?;
+        disc(canvas, cx + dx * 55.0, cy + dy * 55.0, r, c)?;
     }
     Ok(())
 }
 
-fn draw_hands(canvas: u64, face_r: f32, cx: f32, cy: f32, sod: i64) -> Result<(), gfx::GfxError> {
+fn draw_hands(canvas: u64, cx: f32, cy: f32, sod: i64) -> Result<(), gfx::GfxError> {
     let h = (sod / 3600) % 12;
     let m = (sod / 60) % 60;
     let s = sod % 60;
@@ -562,16 +421,13 @@ fn draw_hands(canvas: u64, face_r: f32, cx: f32, cy: f32, sod: i64) -> Result<()
     let sec_pos = s as f32;
 
     // Hour: thick and short. Minute: thin and long. Second: accent hairline.
-    // All measured as a fraction of the face, so the hands stay in proportion
-    // at any card size instead of poking out of a small clock.
-    let s_ = face_r / 64.0;
-    hand(canvas, cx, cy, hour_pos, -6.0 * s_, 34.0 * s_, (2.9 * s_).max(1.0), INK)?;
-    hand(canvas, cx, cy, min_pos, -8.0 * s_, 52.0 * s_, (1.7 * s_).max(0.8), INK)?;
-    hand(canvas, cx, cy, sec_pos, -10.0 * s_, 56.0 * s_, (0.9 * s_).max(0.6), ACCENT)?;
+    hand(canvas, cx, cy, hour_pos, -6.0, 34.0, 2.9, INK)?;
+    hand(canvas, cx, cy, min_pos, -8.0, 52.0, 1.7, INK)?;
+    hand(canvas, cx, cy, sec_pos, -10.0, 56.0, 0.9, ACCENT)?;
 
     // Center cap: accent ring with a dark core, like a real movement.
-    disc(canvas, cx, cy, (4.2 * s_).max(1.6), ACCENT)?;
-    disc(canvas, cx, cy, (1.6 * s_).max(0.7), BG_TOP)?;
+    disc(canvas, cx, cy, 4.2, ACCENT)?;
+    disc(canvas, cx, cy, 1.6, BG_TOP)?;
     Ok(())
 }
 
@@ -622,30 +478,6 @@ fn draw_moon(canvas: u64, x: f32, y: f32) -> Result<(), gfx::GfxError> {
 /// Seconds into the local day for a UTC instant and an offset in minutes.
 fn day_seconds(now_secs: i64, off_minutes: i64) -> i64 {
     (now_secs + off_minutes * 60).rem_euclid(86400)
-}
-
-/// A plain decimal number, panic-free. Used by the resize self-check to report
-/// the size and column count it actually laid out to.
-fn push_u32(buf: &mut TextBuf, value: u32) {
-    if value == 0 {
-        buf.push(b'0');
-        return;
-    }
-    let mut scratch = [0u8; 10];
-    let mut n = value;
-    let mut count = 0usize;
-    while n > 0 && count < scratch.len() {
-        if let Some(slot) = scratch.get_mut(count) {
-            *slot = b'0' + (n % 10) as u8;
-        }
-        n /= 10;
-        count += 1;
-    }
-    let mut i = count;
-    while i > 0 {
-        i -= 1;
-        buf.push(scratch.get(i).copied().unwrap_or(b'0'));
-    }
 }
 
 fn push_hhmm(buf: &mut TextBuf, sod: i64) {
@@ -751,10 +583,18 @@ fn draw_text(
     canvas2d::draw_text(canvas, text, gfx::Point { x, y }, size, c)
 }
 
-/// Approximate rendered width of the system sans: ~0.53em per character.
-/// Only used to center text; generous padding absorbs the error.
-fn text_width(s: &str, size: f32) -> f32 {
-    (s.chars().count() as f32) * size * 0.53
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be character count times an invented constant. On a
+/// proportional face `i` and `W` differ about four times in real width, so a
+/// centred label was not centred and a caret sat beside its text rather than
+/// after it. `measure_text` is the true answer.
+fn text_width(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 // ----- widget builders (one canvas filling the window) -----

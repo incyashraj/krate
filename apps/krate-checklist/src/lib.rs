@@ -36,8 +36,6 @@ use bindings::krate::ui::{events, tree, types, window};
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
 
-/// The size the window opens at, and nothing more. The person can resize it,
-/// so no rectangle in this app is computed from these -- see `Layout`.
 const WIDTH: f32 = 440.0;
 const HEIGHT: f32 = 620.0;
 
@@ -58,244 +56,18 @@ const WAIT_ROUND_MILLIS: u32 = 33;
 /// Consecutive quiet rounds before a headless run stops waiting (~10s).
 const MAX_IDLE_ROUNDS: u32 = 300;
 
-// ------------------------------------------------------------------
-// Layout
-// ------------------------------------------------------------------
-//
-// The window is resizable, so nothing here is a constant. `Layout::for_size`
-// is computed once from `canvas2d::canvas_size` at the top of every frame, and
-// BOTH the drawing code and the hit-testing code read their rectangles from
-// it. That single source is the whole point: when a rectangle is drawn from
-// one set of numbers and clicked against another, the two drift apart the
-// moment the window changes size, and clicks land in the wrong row.
-//
-// If you copy this app as a starting point, copy this shape. Do not put
-// coordinates in `const`s and do not compute a rect twice.
+// ---- layout constants (the rectangles the app draws and hit-tests) ----
+const MARGIN: f32 = 28.0;
+const CONTENT_W: f32 = WIDTH - MARGIN * 2.0;
+const LIST_TOP: f32 = 148.0;
+const ROW_H: f32 = 52.0;
+const ROW_GAP: f32 = 10.0;
+/// How many rows fit in the region before the input strip.
+const VISIBLE_ROWS: usize = 6;
+const CHECK_SIZE: f32 = 24.0;
 
-/// A rectangle in canvas coordinates. The unit both drawing and hit-testing
-/// speak, so a control can only ever be clicked where it was painted.
-#[derive(Clone, Copy)]
-struct Rect {
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-}
-
-impl Rect {
-    fn contains(&self, x: f32, y: f32) -> bool {
-        x >= self.x && x <= self.x + self.w && y >= self.y && y <= self.y + self.h
-    }
-}
-
-/// Smallest canvas the layout will lay out against. Below this the app clamps
-/// rather than computing negative widths and drawing controls on top of each
-/// other.
-const MIN_CANVAS_W: f32 = 240.0;
-const MIN_CANVAS_H: f32 = 260.0;
-
-/// Every rectangle in the UI, derived from the canvas's current size.
-struct Layout {
-    width: f32,
-    height: f32,
-    /// How far the list is scrolled, in pixels from the top. Every row rect is
-    /// shifted by this, so drawing and hit-testing move together and a row you
-    /// can see is a row you can click.
-    scroll: f32,
-    margin: f32,
-    content_w: f32,
-    /// Title baseline and the two lines under it.
-    title_size: f32,
-    title_baseline: f32,
-    progress_baseline: f32,
-    bar: Rect,
-    list_top: f32,
-    row_h: f32,
-    row_gap: f32,
-    /// How many rows fit between the header and the input strip at this size.
-    visible_rows: usize,
-    check_size: f32,
-    /// Text size for a row's label, shrunk on a narrow window.
-    row_text_size: f32,
-    field: Rect,
-    add: Rect,
-    input_text_size: f32,
-}
-
-impl Layout {
-    /// Derive the whole layout from the canvas size. This is the only place
-    /// coordinates are decided.
-    fn for_size(width: f32, height: f32) -> Self {
-        let width = width.max(MIN_CANVAS_W);
-        let height = height.max(MIN_CANVAS_H);
-
-        // Margins and type scale gently with width so a narrow window is tight
-        // but readable and a wide one does not look empty.
-        let margin = (width * 0.064).clamp(14.0, 40.0);
-        let content_w = (width - margin * 2.0).max(80.0);
-
-        let title_size = (width * 0.077).clamp(20.0, 34.0);
-        let title_baseline = margin + title_size * 0.85;
-        let progress_baseline = title_baseline + title_size * 0.88;
-
-        let bar = Rect {
-            x: margin,
-            y: progress_baseline + 12.0,
-            w: content_w,
-            h: 8.0,
-        };
-
-        // The input strip is pinned to the bottom; the list gets what is left.
-        let input_h = (height * 0.074).clamp(38.0, 52.0);
-        let input_top = height - margin - input_h;
-        // The Add button keeps a sane share of the width on a narrow window so
-        // its label never overruns the field beside it.
-        let add_w = (content_w * 0.28).clamp(58.0, 96.0);
-        let gap = 12.0;
-        let field_w = (content_w - add_w - gap).max(60.0);
-
-        let field = Rect {
-            x: margin,
-            y: input_top,
-            w: field_w,
-            h: input_h,
-        };
-        let add = Rect {
-            x: margin + content_w - add_w,
-            y: input_top,
-            w: add_w,
-            h: input_h,
-        };
-
-        let list_top = bar.y + bar.h + 24.0;
-        let row_h = (height * 0.084).clamp(40.0, 56.0);
-        let row_gap = (row_h * 0.19).clamp(6.0, 12.0);
-
-        // Rows fill the space between the header and the input strip. Leave a
-        // little room so the "+ N more" line has somewhere to sit.
-        let list_space = (input_top - 22.0 - list_top).max(0.0);
-        let stride = row_h + row_gap;
-        let visible_rows = if stride > 0.0 {
-            (list_space / stride) as usize
-        } else {
-            0
-        };
-
-        let check_size = (row_h * 0.46).clamp(18.0, 26.0);
-        let row_text_size = (width * 0.039).clamp(12.0, 17.0);
-        let input_text_size = (input_h * 0.35).clamp(12.0, 16.0);
-
-        Self {
-            width,
-            height,
-            // A fresh layout starts unscrolled; the caller applies the current
-            // offset with `scrolled_by` so the scroll position survives a
-            // resize and a redraw.
-            scroll: 0.0,
-            margin,
-            content_w,
-            title_size,
-            title_baseline,
-            progress_baseline,
-            bar,
-            list_top,
-            row_h,
-            row_gap,
-            visible_rows,
-            check_size,
-            row_text_size,
-            field,
-            add,
-            input_text_size,
-        }
-    }
-
-    /// The card rectangle for row `index`. Drawing fills this; hit-testing
-    /// tests this. One function, so they cannot disagree.
-    fn row(&self, index: usize) -> Rect {
-        Rect {
-            x: self.margin,
-            y: self.list_top + (index as f32) * (self.row_h + self.row_gap) - self.scroll,
-            w: self.content_w,
-            h: self.row_h,
-        }
-    }
-
-    /// The checkbox inside row `index`, centred vertically in the card.
-    fn checkbox(&self, index: usize) -> Rect {
-        let row = self.row(index);
-        Rect {
-            x: row.x + self.margin * 0.5,
-            y: row.y + (row.h - self.check_size) * 0.5,
-            w: self.check_size,
-            h: self.check_size,
-        }
-    }
-
-    /// How many rows this list actually shows: fewer than fit, if it is short.
-    /// The same layout, scrolled. Clamped to the real content, so a flick past
-    /// the end springs back to the last row rather than showing empty space.
-    fn scrolled_by(mut self, offset: f32, len: usize) -> Self {
-        self.scroll = offset.clamp(0.0, self.max_scroll(len));
-        self
-    }
-
-    /// How far this list can scroll before the last row sits at the bottom of
-    /// the visible strip. Zero when everything already fits.
-    fn max_scroll(&self, len: usize) -> f32 {
-        let step = self.row_h + self.row_gap;
-        let content = (len as f32) * step;
-        let visible = (self.visible_rows as f32) * step;
-        (content - visible).max(0.0)
-    }
-
-    /// Rows that could be on screen at the current offset. With scrolling the
-    /// list is no longer capped at `visible_rows`: every row is reachable, and
-    /// the ones outside the strip are skipped when drawing.
-    fn first_visible(&self, len: usize) -> usize {
-        let step = self.row_h + self.row_gap;
-        if step <= 0.0 {
-            return 0;
-        }
-        let first = (self.scroll / step) as usize;
-        first.min(len.saturating_sub(1))
-    }
-
-    /// The last row worth drawing or hit-testing at the current offset: one
-    /// past the visible strip, so a partly-scrolled row is still handled.
-    fn last_visible(&self, len: usize) -> usize {
-        let first = self.first_visible(len);
-        (first + self.visible_rows + 1).min(len)
-    }
-
-    fn shown_rows(&self, len: usize) -> usize {
-        if len < self.visible_rows {
-            len
-        } else {
-            self.visible_rows
-        }
-    }
-
-    /// Which row, if any, contains this point.
-    fn hit_row(&self, len: usize, x: f32, y: f32) -> Option<usize> {
-        // Scan the scrolled window, not the first N rows: with a scroll offset
-        // the row under the pointer may be row 20.
-        let shown = self.last_visible(len);
-        let mut i = self.first_visible(len);
-        // A row scrolled above the list must not be clickable through the
-        // header, so reject anything above the strip before testing.
-        if y < self.list_top {
-            return None;
-        }
-        while i < shown {
-            if self.row(i).contains(x, y) {
-                return Some(i);
-            }
-            i += 1;
-        }
-        None
-    }
-}
+const INPUT_H: f32 = 46.0;
+const ADD_W: f32 = 92.0;
 
 struct Component;
 
@@ -482,106 +254,75 @@ fn save(list: &Checklist) -> bool {
         if !item.used {
             continue;
         }
-        push(
-            if item.done { b"[x] " } else { b"[ ] " },
-            &mut out,
-            &mut len,
-        );
+        push(if item.done { b"[x] " } else { b"[ ] " }, &mut out, &mut len);
         push(item.text_str().as_bytes(), &mut out, &mut len);
         push(b"\n", &mut out, &mut len);
     }
     store_kv::set(DATA_KEY, out.get(..len).unwrap_or(&[])).is_ok()
 }
 
-// Hit testing lives on `Layout` (see `Layout::hit_row`, `layout.add`,
-// `layout.field`) so a control is tested against the rectangle it was drawn
-// from, at whatever size the window happens to be right now.
+// ------------------------------------------------------------------
+// Hit testing: which control, if any, contains (x, y)?
+// ------------------------------------------------------------------
+
+fn row_y(index: usize) -> f32 {
+    LIST_TOP + (index as f32) * (ROW_H + ROW_GAP)
+}
+
+fn hit_row(list: &Checklist, x: f32, y: f32) -> Option<usize> {
+    if x < MARGIN || x > WIDTH - MARGIN {
+        return None;
+    }
+    let shown = if list.len < VISIBLE_ROWS { list.len } else { VISIBLE_ROWS };
+    let mut i = 0usize;
+    while i < shown {
+        let ry = row_y(i);
+        if y >= ry && y <= ry + ROW_H {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+fn input_y() -> f32 {
+    HEIGHT - 76.0
+}
+
+fn hit_add(x: f32, y: f32) -> bool {
+    let ay = input_y();
+    let ax = WIDTH - MARGIN - ADD_W;
+    x >= ax && x <= ax + ADD_W && y >= ay && y <= ay + INPUT_H
+}
+
+fn hit_field(x: f32, y: f32) -> bool {
+    let ay = input_y();
+    let fx = MARGIN;
+    let fw = CONTENT_W - ADD_W - 12.0;
+    x >= fx && x <= fx + fw && y >= ay && y <= ay + INPUT_H
+}
 
 // ------------------------------------------------------------------
 // Palette
 // ------------------------------------------------------------------
 
-const BG_TOP: gfx::Color = gfx::Color {
-    r: 0.075,
-    g: 0.086,
-    b: 0.125,
-    a: 1.0,
-};
-const BG_BOT: gfx::Color = gfx::Color {
-    r: 0.043,
-    g: 0.051,
-    b: 0.078,
-    a: 1.0,
-};
-const CARD: gfx::Color = gfx::Color {
-    r: 0.129,
-    g: 0.145,
-    b: 0.196,
-    a: 1.0,
-};
-const CARD_DONE: gfx::Color = gfx::Color {
-    r: 0.102,
-    g: 0.118,
-    b: 0.161,
-    a: 1.0,
-};
-const INK: gfx::Color = gfx::Color {
-    r: 0.902,
-    g: 0.925,
-    b: 0.98,
-    a: 1.0,
-};
-const INK_DIM: gfx::Color = gfx::Color {
-    r: 0.478,
-    g: 0.525,
-    b: 0.627,
-    a: 1.0,
-};
-const INK_DONE: gfx::Color = gfx::Color {
-    r: 0.435,
-    g: 0.475,
-    b: 0.561,
-    a: 1.0,
-};
+const BG_TOP: gfx::Color = gfx::Color { r: 0.075, g: 0.086, b: 0.125, a: 1.0 };
+const BG_BOT: gfx::Color = gfx::Color { r: 0.043, g: 0.051, b: 0.078, a: 1.0 };
+const CARD: gfx::Color = gfx::Color { r: 0.129, g: 0.145, b: 0.196, a: 1.0 };
+const CARD_DONE: gfx::Color = gfx::Color { r: 0.102, g: 0.118, b: 0.161, a: 1.0 };
+const INK: gfx::Color = gfx::Color { r: 0.902, g: 0.925, b: 0.98, a: 1.0 };
+const INK_DIM: gfx::Color = gfx::Color { r: 0.478, g: 0.525, b: 0.627, a: 1.0 };
+const INK_DONE: gfx::Color = gfx::Color { r: 0.435, g: 0.475, b: 0.561, a: 1.0 };
 
 // ------------------------------------------------------------------
 // Rendering
 // ------------------------------------------------------------------
 
-/// Ask the canvas how big it is, then draw the frame to that answer.
-///
-/// This is the shape to copy: read the size every frame rather than trusting a
-/// constant, build one `Layout` from it, and hand that same `Layout` to both
-/// the drawing below and the hit-testing in the event loop.
-fn draw(
-    canvas: u64,
-    list: &Checklist,
-    draft: &Draft,
-    field_focus: bool,
-    scroll: f32,
-) -> Result<Layout, gfx::GfxError> {
-    let size = canvas2d::canvas_size(canvas)?;
-    let layout = Layout::for_size(size.width, size.height).scrolled_by(scroll, list.len);
-    draw_with(canvas, &layout, list, draft, field_focus)?;
-    Ok(layout)
-}
-
-fn draw_with(
-    canvas: u64,
-    layout: &Layout,
-    list: &Checklist,
-    draft: &Draft,
-    field_focus: bool,
-) -> Result<(), gfx::GfxError> {
+fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Result<(), gfx::GfxError> {
     // Deep, considered ground -- a soft vertical gradient, not flat black.
     canvas2d::linear_gradient(
         canvas,
-        gfx::Rect {
-            x: 0.0,
-            y: 0.0,
-            width: layout.width,
-            height: layout.height,
-        },
+        gfx::Rect { x: 0.0, y: 0.0, width: WIDTH, height: HEIGHT },
         BG_TOP,
         BG_BOT,
     )?;
@@ -590,208 +331,76 @@ fn draw_with(
     let accent_soft = color(0.42, 0.62, 1.0, 0.16);
 
     // ---- header: bold title + progress ----
-    draw_text(
-        canvas,
-        "Checklist",
-        layout.margin,
-        layout.title_baseline,
-        layout.title_size,
-        INK,
-    )?;
+    draw_text(canvas, "Checklist", MARGIN, 58.0, 34.0, INK)?;
 
     let total = list.len;
     let done = list.done_count();
     let mut buf = [0u8; 32];
     let sub = progress_label(done as u32, total as u32, &mut buf);
     if let Ok(txt) = core::str::from_utf8(sub) {
-        let size = (layout.title_size * 0.44).clamp(11.0, 15.0);
-        draw_text(
-            canvas,
-            txt,
-            layout.margin,
-            layout.progress_baseline,
-            size,
-            INK_DIM,
-        )?;
+        draw_text(canvas, txt, MARGIN, 88.0, 15.0, INK_DIM)?;
     }
 
     // Progress bar track + accent fill.
-    let bar = layout.bar;
-    rounded_rect(
-        canvas,
-        bar.x,
-        bar.y,
-        bar.w,
-        bar.h,
-        bar.h * 0.5,
-        color(0.16, 0.18, 0.24, 1.0),
-    )?;
+    let bar_y = 108.0;
+    let bar_w = CONTENT_W;
+    rounded_rect(canvas, MARGIN, bar_y, bar_w, 8.0, 4.0, color(0.16, 0.18, 0.24, 1.0))?;
     if total > 0 {
         let frac = (done as f32 / total as f32).clamp(0.0, 1.0);
-        let fw = (bar.w * frac).max(if done > 0 { 10.0 } else { 0.0 });
+        let fw = (bar_w * frac).max(if done > 0 { 10.0 } else { 0.0 });
         if fw > 0.0 {
-            rounded_rect(canvas, bar.x, bar.y, fw, bar.h, bar.h * 0.5, accent)?;
+            rounded_rect(canvas, MARGIN, bar_y, fw, 8.0, 4.0, accent)?;
         }
     }
 
     // ---- item rows as cards ----
-    // Clip to the list strip, then draw every row that could be on screen. A
-    // row scrolled half off the top is drawn and trimmed rather than skipped,
-    // which is what makes the scroll look continuous instead of snapping row
-    // by row. Before clipping existed this was a hand-written bounds check
-    // that could not handle a partly-visible row at all.
-    canvas2d::set_clip(
-        canvas,
-        layout.margin,
-        layout.list_top,
-        layout.content_w,
-        (layout.field.y - 12.0 - layout.list_top).max(0.0),
-    )?;
-    let mut i = layout.first_visible(list.len);
-    let last = layout.last_visible(list.len);
-    while i < last {
+    let shown = if list.len < VISIBLE_ROWS { list.len } else { VISIBLE_ROWS };
+    let mut i = 0usize;
+    while i < shown {
         if let Some(item) = list.items.get(i) {
             if item.used {
-                draw_row(canvas, layout, i, item, accent)?;
+                draw_row(canvas, i, item, accent)?;
             }
         }
         i += 1;
     }
-    canvas2d::clear_clip(canvas)?;
-    // A scrollbar instead of a "+ N more" label. The label used to be the only
-    // sign that rows existed below the fold, and it was a dead end -- there was
-    // no way to reach them. Now the thumb says how much list there is and where
-    // you are in it.
-    let max_scroll = layout.max_scroll(list.len);
-    if max_scroll > 0.0 {
-        let track_x = layout.margin + layout.content_w - 5.0;
-        let track_y = layout.list_top;
-        let track_h = (layout.field.y - 12.0 - track_y).max(0.0);
-        if track_h > 20.0 {
-            let step = layout.row_h + layout.row_gap;
-            let content = (list.len as f32) * step;
-            let frac = (track_h / content).clamp(0.08, 1.0);
-            let thumb_h = (track_h * frac).max(24.0);
-            let travel = track_h - thumb_h;
-            let pos = if max_scroll > 0.0 {
-                (layout.scroll / max_scroll).clamp(0.0, 1.0)
-            } else {
-                0.0
-            };
-            rounded_rect(
-                canvas,
-                track_x,
-                track_y,
-                4.0,
-                track_h,
-                2.0,
-                color(0.16, 0.18, 0.24, 1.0),
-            )?;
-            rounded_rect(
-                canvas,
-                track_x,
-                track_y + travel * pos,
-                4.0,
-                thumb_h,
-                2.0,
-                color(0.35, 0.39, 0.49, 1.0),
-            )?;
+    if list.len > VISIBLE_ROWS {
+        let mut mbuf = [0u8; 24];
+        let more = more_label((list.len - VISIBLE_ROWS) as u32, &mut mbuf);
+        if let Ok(txt) = core::str::from_utf8(more) {
+            draw_text(canvas, txt, MARGIN, row_y(VISIBLE_ROWS) + 4.0, 13.0, INK_DIM)?;
         }
     }
 
     // ---- input strip: text field + Add button ----
-    let field = layout.field;
-    let radius = (field.h * 0.26).clamp(8.0, 14.0);
+    let iy = input_y();
+    let fw = CONTENT_W - ADD_W - 12.0;
     if field_focus {
-        rounded_rect(
-            canvas,
-            field.x - 2.0,
-            field.y - 2.0,
-            field.w + 4.0,
-            field.h + 4.0,
-            radius + 2.0,
-            accent_soft,
-        )?;
+        rounded_rect(canvas, MARGIN - 2.0, iy - 2.0, fw + 4.0, INPUT_H + 4.0, 14.0, accent_soft)?;
     }
-    rounded_rect(
-        canvas,
-        field.x,
-        field.y,
-        field.w,
-        field.h,
-        radius,
-        color(0.11, 0.125, 0.17, 1.0),
-    )?;
-    stroke_rounded(
-        canvas,
-        field.x,
-        field.y,
-        field.w,
-        field.h,
-        radius,
-        color(0.24, 0.27, 0.35, 1.0),
-    )?;
+    rounded_rect(canvas, MARGIN, iy, fw, INPUT_H, 12.0, color(0.11, 0.125, 0.17, 1.0))?;
+    stroke_rounded(canvas, MARGIN, iy, fw, INPUT_H, 12.0, color(0.24, 0.27, 0.35, 1.0))?;
 
-    let pad = (field.w * 0.06).clamp(8.0, 16.0);
-    let text_x = field.x + pad;
-    let text_y = field.y + field.h * 0.5 + layout.input_text_size * 0.36;
+    let text_x = MARGIN + 16.0;
+    let text_y = iy + INPUT_H * 0.5 + 6.0;
     if draft.is_empty() {
-        draw_text(
-            canvas,
-            "Add an item...",
-            text_x,
-            text_y,
-            layout.input_text_size,
-            INK_DIM,
-        )?;
+        draw_text(canvas, "Add an item...", text_x, text_y, 16.0, INK_DIM)?;
     } else {
-        draw_text(
-            canvas,
-            draft.as_str(),
-            text_x,
-            text_y,
-            layout.input_text_size,
-            INK,
-        )?;
+        draw_text(canvas, draft.as_str(), text_x, text_y, 16.0, INK)?;
     }
     if field_focus {
-        let cx = text_x + text_width(draft.as_str(), layout.input_text_size) + 2.0;
-        // Never let the caret escape the field it belongs to.
-        let cx = cx.min(field.x + field.w - 4.0);
-        fill(
-            canvas,
-            cx,
-            field.y + field.h * 0.24,
-            2.0,
-            field.h * 0.52,
-            accent,
-        )?;
+        let cx = text_x + text_width(canvas, draft.as_str(), 16.0) + 2.0;
+        fill(canvas, cx, iy + 12.0, 2.0, INPUT_H - 24.0, accent)?;
     }
 
     // Add button: filled accent rounded rect with a centered label.
-    let add = layout.add;
+    let ax = WIDTH - MARGIN - ADD_W;
     let can_add = !draft.is_empty();
-    let btn = if can_add {
-        accent
-    } else {
-        color(0.2, 0.24, 0.33, 1.0)
-    };
-    rounded_rect(canvas, add.x, add.y, add.w, add.h, radius, btn)?;
-    let label_ink = if can_add {
-        color(0.05, 0.08, 0.16, 1.0)
-    } else {
-        INK_DIM
-    };
-    let label_size = (layout.input_text_size + 1.0).min(add.w * 0.34);
-    let lw = text_width("Add", label_size);
-    draw_text(
-        canvas,
-        "Add",
-        add.x + (add.w - lw) * 0.5,
-        add.y + add.h * 0.5 + label_size * 0.36,
-        label_size,
-        label_ink,
-    )?;
+    let btn = if can_add { accent } else { color(0.2, 0.24, 0.33, 1.0) };
+    rounded_rect(canvas, ax, iy, ADD_W, INPUT_H, 12.0, btn)?;
+    let label_ink = if can_add { color(0.05, 0.08, 0.16, 1.0) } else { INK_DIM };
+    let lw = text_width(canvas, "Add", 17.0);
+    draw_text(canvas, "Add", ax + (ADD_W - lw) * 0.5, text_y, 17.0, label_ink)?;
 
     canvas2d::present(canvas)?;
     Ok(())
@@ -799,92 +408,30 @@ fn draw_with(
 
 /// One item row: a rounded card, a drawn checkbox that fills with accent when
 /// checked (with a drawn tick), and the item text (dimmed + struck when done).
-///
-/// Every rectangle here comes from `layout`, and the checkbox comes from
-/// `layout.checkbox(index)` -- the same call the event loop tests a click
-/// against, so the drawn box and the clickable box are one rectangle.
-fn draw_row(
-    canvas: u64,
-    layout: &Layout,
-    index: usize,
-    item: &Item,
-    accent: gfx::Color,
-) -> Result<(), gfx::GfxError> {
-    let row = layout.row(index);
+fn draw_row(canvas: u64, index: usize, item: &Item, accent: gfx::Color) -> Result<(), gfx::GfxError> {
+    let y = row_y(index);
     let card = if item.done { CARD_DONE } else { CARD };
-    let radius = (row.h * 0.27).clamp(8.0, 14.0);
-    rounded_rect(canvas, row.x, row.y, row.w, row.h, radius, card)?;
+    rounded_rect(canvas, MARGIN, y, CONTENT_W, ROW_H, 14.0, card)?;
 
-    let check = layout.checkbox(index);
-    let check_radius = check.w * 0.29;
+    let bx = MARGIN + 16.0;
+    let by = y + (ROW_H - CHECK_SIZE) * 0.5;
     if item.done {
-        rounded_rect(
-            canvas,
-            check.x,
-            check.y,
-            check.w,
-            check.h,
-            check_radius,
-            accent,
-        )?;
-        draw_tick(canvas, check.x, check.y, check.w)?;
+        rounded_rect(canvas, bx, by, CHECK_SIZE, CHECK_SIZE, 7.0, accent)?;
+        draw_tick(canvas, bx, by, CHECK_SIZE)?;
     } else {
-        rounded_rect(
-            canvas,
-            check.x,
-            check.y,
-            check.w,
-            check.h,
-            check_radius,
-            color(0.17, 0.19, 0.26, 1.0),
-        )?;
-        stroke_rounded(
-            canvas,
-            check.x,
-            check.y,
-            check.w,
-            check.h,
-            check_radius,
-            color(0.35, 0.39, 0.49, 1.0),
-        )?;
+        rounded_rect(canvas, bx, by, CHECK_SIZE, CHECK_SIZE, 7.0, color(0.17, 0.19, 0.26, 1.0))?;
+        stroke_rounded(canvas, bx, by, CHECK_SIZE, CHECK_SIZE, 7.0, color(0.35, 0.39, 0.49, 1.0))?;
     }
 
-    let tx = check.x + check.w + (layout.margin * 0.5).clamp(10.0, 18.0);
-    let ty = row.y + row.h * 0.5 + layout.row_text_size * 0.36;
+    let tx = bx + CHECK_SIZE + 16.0;
+    let ty = y + ROW_H * 0.5 + 6.0;
     let ink = if item.done { INK_DONE } else { INK };
-    // Clip the label to what the card can hold, so a long item on a narrow
-    // window stops at the card edge instead of running off it.
-    let avail = (row.x + row.w - tx - 10.0).max(0.0);
-    let label = clip_to_width(item.text_str(), layout.row_text_size, avail);
-    draw_text(canvas, label, tx, ty, layout.row_text_size, ink)?;
+    draw_text(canvas, item.text_str(), tx, ty, 17.0, ink)?;
     if item.done {
-        let w = text_width(label, layout.row_text_size).min(avail);
-        fill(
-            canvas,
-            tx,
-            ty - layout.row_text_size * 0.36,
-            w,
-            1.5,
-            INK_DONE,
-        )?;
+        let w = text_width(canvas, item.text_str(), 17.0);
+        fill(canvas, tx, ty - 6.0, w, 1.5, INK_DONE)?;
     }
     Ok(())
-}
-
-/// The longest prefix of `s` that fits in `avail` at `size`. Returns a
-/// sub-slice, so nothing allocates.
-fn clip_to_width(s: &str, size: f32, avail: f32) -> &str {
-    if text_width(s, size) <= avail {
-        return s;
-    }
-    let mut end = 0usize;
-    for (index, _) in s.char_indices() {
-        if text_width(s.get(..index).unwrap_or(""), size) > avail {
-            break;
-        }
-        end = index;
-    }
-    s.get(..end).unwrap_or("")
 }
 
 /// A white checkmark inside a box at (bx, by) of side `s`.
@@ -903,28 +450,11 @@ fn draw_tick(canvas: u64, bx: f32, by: f32, s: f32) -> Result<(), gfx::GfxError>
 // ------------------------------------------------------------------
 
 fn fill(canvas: u64, x: f32, y: f32, w: f32, h: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    canvas2d::fill_rect(
-        canvas,
-        gfx::Rect {
-            x,
-            y,
-            width: w,
-            height: h,
-        },
-        c,
-    )
+    canvas2d::fill_rect(canvas, gfx::Rect { x, y, width: w, height: h }, c)
 }
 
 /// A filled rounded rectangle: a cross of two rects plus four corner discs.
-fn rounded_rect(
-    canvas: u64,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    r: f32,
-    c: gfx::Color,
-) -> Result<(), gfx::GfxError> {
+fn rounded_rect(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
     let r = r.min(w * 0.5).min(h * 0.5);
     fill(canvas, x + r, y, w - r * 2.0, h, c)?;
     fill(canvas, x, y + r, w, h - r * 2.0, c)?;
@@ -936,15 +466,7 @@ fn rounded_rect(
 }
 
 /// A thin rounded-rect outline: four inset edges plus tiny corner dots.
-fn stroke_rounded(
-    canvas: u64,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    r: f32,
-    c: gfx::Color,
-) -> Result<(), gfx::GfxError> {
+fn stroke_rounded(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
     let t = 1.5;
     let r = r.min(w * 0.5).min(h * 0.5);
     fill(canvas, x + r, y, w - r * 2.0, t, c)?;
@@ -963,15 +485,7 @@ fn disc(canvas: u64, cx: f32, cy: f32, r: f32, c: gfx::Color) -> Result<(), gfx:
 }
 
 /// A thick line drawn as a chain of small discs so any angle reads smooth.
-fn thick_line(
-    canvas: u64,
-    x0: f32,
-    y0: f32,
-    x1: f32,
-    y1: f32,
-    width: f32,
-    c: gfx::Color,
-) -> Result<(), gfx::GfxError> {
+fn thick_line(canvas: u64, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
     let dx = x1 - x0;
     let dy = y1 - y0;
     let len = sqrtf(dx * dx + dy * dy).max(0.001);
@@ -985,14 +499,7 @@ fn thick_line(
     Ok(())
 }
 
-fn draw_text(
-    canvas: u64,
-    text: &str,
-    x: f32,
-    y: f32,
-    size: f32,
-    c: gfx::Color,
-) -> Result<(), gfx::GfxError> {
+fn draw_text(canvas: u64, text: &str, x: f32, y: f32, size: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
     canvas2d::draw_text(canvas, text, gfx::Point { x, y }, size, c)
 }
 
@@ -1000,10 +507,20 @@ fn color(r: f32, g: f32, b: f32, a: f32) -> gfx::Color {
     gfx::Color { r, g, b, a }
 }
 
-/// Approximate rendered width of a string at a given font size (~0.52em avg
-/// advance). Good enough to place a caret and center a label.
-fn text_width(s: &str, size: f32) -> f32 {
-    (s.chars().count() as f32) * size * 0.52
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be `chars * size * 0.52`, an invented constant on a
+/// proportional face where `i` and `W` differ about four times in real width,
+/// so a centred label was not centred and a caret sat beside its text rather
+/// than after it. `measure_text` is the true answer; the fallback is only
+/// reached if the canvas handle is bad, in which case nothing else draws
+/// either.
+fn text_width(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 fn sqrtf(x: f32) -> f32 {
@@ -1123,11 +640,11 @@ impl bindings::Guest for Component {
         let mut field_focus = false;
 
         let raw = args::raw();
-        let first_arg = raw.as_bytes().split(|byte| *byte == b'\n').next();
-        let quick = first_arg.is_some_and(|first| first == b"quick");
-        // `resize-check` drives the app's own window through several sizes and
-        // asserts the hit-boxes followed the drawing. See below.
-        let resize_check = first_arg.is_some_and(|first| first == b"resize-check");
+        let quick = raw
+            .as_bytes()
+            .split(|byte| *byte == b'\n')
+            .next()
+            .is_some_and(|first| first == b"quick");
 
         let commit_draft = |list: &mut Checklist, draft: &mut Draft| -> bool {
             if draft.is_empty() || list.len >= MAX_ITEMS {
@@ -1158,104 +675,16 @@ impl bindings::Guest for Component {
             if save(&list) {
                 saved_any = true;
             }
-            let _ = draw(canvas, &list, &draft, false, 0.0);
+            let _ = draw(canvas, &list, &draft, false);
             report(&list, saved_any);
             let _ = window::close(win);
             return 0;
         }
 
-        if resize_check {
-            // The resize proof. Grow and shrink the window, and after each
-            // change confirm three things a person would notice:
-            //   1. canvas_size reports the new size, so the layout moved;
-            //   2. a click at the centre of what row 2 was JUST drawn at
-            //      toggles row 2 and not some other row;
-            //   3. a click at the centre of the drawn Add button still adds.
-            // Before this work, (2) failed at every size but the original --
-            // that is the bug this app taught every generated app.
-            list = Checklist::new();
-            list.push("Buy milk", false);
-            list.push("Write the pitch", false);
-            list.push("Ship the demo", false);
-
-            let out = stdio::stdout();
-            let sizes = [(440u32, 620u32), (900u32, 500u32), (320u32, 760u32)];
-            let mut all_ok = true;
-            for (w, h) in sizes {
-                if window::set_size(
-                    win,
-                    types::WindowSize {
-                        width: w,
-                        height: h,
-                    },
-                )
-                .is_err()
-                {
-                    all_ok = false;
-                    continue;
-                }
-                // Drain the resize event the host just queued.
-                let mut drain = 0u32;
-                while drain < 8 && events::wait(Some(1)).is_some() {
-                    drain += 1;
-                }
-                let Ok(layout) = draw(canvas, &list, &draft, false, 0.0) else {
-                    all_ok = false;
-                    continue;
-                };
-
-                let _ = out.write(b"size:");
-                let mut nbuf = [0u8; 10];
-                let _ = out.write(number_bytes(layout.width as u32, &mut nbuf));
-                let _ = out.write(b"x");
-                let _ = out.write(number_bytes(layout.height as u32, &mut nbuf));
-
-                // Aim at the middle of the row the frame just drew.
-                let target = 1usize;
-                let row = layout.row(target);
-                let cx = row.x + row.w * 0.5;
-                let cy = row.y + row.h * 0.5;
-                let hit = layout.hit_row(list.len, cx, cy);
-                let row_ok = hit == Some(target);
-
-                // And at the middle of the Add button it just drew.
-                let add_ok = layout.add.contains(
-                    layout.add.x + layout.add.w * 0.5,
-                    layout.add.y + layout.add.h * 0.5,
-                );
-                // A point just outside the row must NOT hit it, or a pass here
-                // would only mean the hit-box is enormous.
-                let miss_ok = layout.hit_row(list.len, cx, row.y - 4.0) != Some(target);
-
-                if row_ok && add_ok && miss_ok {
-                    let _ = out.write(b" hit:ok\n");
-                } else {
-                    let _ = out.write(b" hit:WRONG\n");
-                    all_ok = false;
-                }
-            }
-            if all_ok {
-                let _ = out.write(b"resize:ok\n");
-            } else {
-                let _ = out.write(b"resize:FAILED\n");
-            }
+        if draw(canvas, &list, &draft, field_focus).is_err() {
             let _ = window::close(win);
-            return if all_ok { 0 } else { 40 };
+            return 34;
         }
-
-        // The layout the last frame was drawn with. Clicks are tested against
-        // exactly this, so a click can only ever be judged against the picture
-        // the person is actually looking at.
-        // How far the list is scrolled. Lives here so it survives redraws and
-        // resizes; `scrolled_by` clamps it to whatever the new size can show.
-        let mut scroll = 0.0f32;
-        let mut layout = match draw(canvas, &list, &draft, field_focus, scroll) {
-            Ok(layout) => layout,
-            Err(_) => {
-                let _ = window::close(win);
-                return 34;
-            }
-        };
 
         let mut idle_rounds = 0u32;
         let mut round = 0u32;
@@ -1263,13 +692,8 @@ impl bindings::Guest for Component {
             round += 1;
             let event = events::wait(Some(WAIT_ROUND_MILLIS));
             if event.is_none() {
-                // The idle timeout exists so a headless verification run cannot
-                // hang forever waiting for a window nobody will close. That is
-                // only a need on the automated path. Applying it to a real
-                // session closed the window after ten quiet seconds, which is
-                // what "the app closes by itself" turned out to be.
                 idle_rounds += 1;
-                if quick && idle_rounds >= MAX_IDLE_ROUNDS {
+                if idle_rounds >= MAX_IDLE_ROUNDS {
                     break;
                 }
                 continue;
@@ -1279,40 +703,25 @@ impl bindings::Guest for Component {
             let mut done = false;
             match event {
                 Some(types::Event::Pointer(p)) if p.pressed => {
-                    if let Some(index) = layout.hit_row(list.len, p.x, p.y) {
+                    if let Some(index) = hit_row(&list, p.x, p.y) {
                         list.toggle(index);
                         if save(&list) {
                             saved_any = true;
                         }
                         field_focus = false;
                         dirty = true;
-                    } else if layout.add.contains(p.x, p.y) {
+                    } else if hit_add(p.x, p.y) {
                         if commit_draft(&mut list, &mut draft) {
                             saved_any = true;
                         }
                         dirty = true;
-                    } else if layout.field.contains(p.x, p.y) {
+                    } else if hit_field(p.x, p.y) {
                         field_focus = true;
                         dirty = true;
                     } else {
                         field_focus = false;
                         dirty = true;
                     }
-                }
-                // The window changed size, so every rectangle changed with it.
-                // Redrawing recomputes the layout from the canvas's new size,
-                // and the hit-testing above follows automatically because it
-                // reads the same `layout` the frame was drawn with.
-                Some(types::Event::Wheel(w)) => {
-                    // Positive dy scrolls down, matching the direction the
-                    // offset grows. The clamp lives in `scrolled_by`, so a
-                    // flick past either end springs back instead of showing
-                    // blank space.
-                    scroll = (scroll + w.dy).clamp(0.0, layout.max_scroll(list.len));
-                    dirty = true;
-                }
-                Some(types::Event::Resized(_)) | Some(types::Event::RedrawRequested(_)) => {
-                    dirty = true;
                 }
                 Some(types::Event::TextChanged(changed)) => {
                     draft.set(&changed.text);
@@ -1347,9 +756,7 @@ impl bindings::Guest for Component {
                 _ => {}
             }
             if dirty {
-                if let Ok(fresh) = draw(canvas, &list, &draft, field_focus, scroll) {
-                    layout = fresh;
-                }
+                let _ = draw(canvas, &list, &draft, field_focus);
             }
             if done {
                 break;

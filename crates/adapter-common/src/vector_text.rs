@@ -224,6 +224,88 @@ pub fn draw_canvas_text(
     })
 }
 
+/// What a canvas text run will occupy: advance width, line height, and the
+/// two halves of that height either side of the baseline.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct CanvasTextMetrics {
+    /// Advance width of the run in canvas pixels.
+    pub width: f32,
+    /// Full line height (ascent + descent + leading).
+    pub height: f32,
+    /// Top of the line box down to the baseline.
+    pub ascent: f32,
+    /// Baseline down to the bottom of the line box.
+    pub descent: f32,
+}
+
+/// Measure a canvas text run with the same parley layout `draw_canvas_text`
+/// draws it with.
+///
+/// Returns `None` for exactly the case `draw_canvas_text` returns `false` --
+/// a non-empty run that produces no glyphs, meaning this host has no usable
+/// system fonts and the caller will fall back to the 5x7 bitmap face. The
+/// caller then measures that face instead, so the number an app is told always
+/// matches the pixels it will get.
+///
+/// The font size is clamped identically to `draw_canvas_text`, so an app that
+/// asks for a 1000pt heading is measured at the 256pt it will actually be
+/// drawn at.
+pub fn measure_canvas_text(text: &str, font_size: f32) -> Option<CanvasTextMetrics> {
+    let font_size = font_size.clamp(4.0, 256.0);
+    TEXT_ENGINE.with(|engine| {
+        let engine = &mut *engine.borrow_mut();
+        // An empty run has no width, but it still has a line: an app sizing an
+        // empty input field or placing a caret in it needs the height of the
+        // line that is about to hold text. "Xg" spans ascender and descender
+        // and is the same proxy the widget path uses.
+        let probe = if text.is_empty() { "Xg" } else { text };
+        let layout = engine.layout_canvas(probe, font_size);
+        let line = layout.lines().next()?;
+        let metrics = line.metrics();
+        if !text.is_empty() && !layout_has_glyphs(&layout) {
+            // No usable fonts: the drawing path will fall back to the bitmap
+            // face, so refuse to answer with vector numbers it will not honor.
+            return None;
+        }
+        // The drawing path rasterizes into a `u16`-indexed pixmap and gives up
+        // on the vector face when the run does not fit, falling back to the
+        // bitmap font. Measurement has to give up on exactly the same runs, or
+        // a very long string would be measured in one face and drawn in
+        // another. Same arithmetic as `draw_canvas_text`.
+        let pad = 2.0f32;
+        let pm_w = (layout.width() + pad * 2.0).ceil() as u32;
+        let pm_h = (layout.height() + pad * 2.0).ceil() as u32;
+        if u16::try_from(pm_w).is_err() || u16::try_from(pm_h).is_err() {
+            return None;
+        }
+        Some(CanvasTextMetrics {
+            // `full_width`, not `width`: parley's `width()` drops trailing
+            // whitespace, which is exactly wrong for the commonest caller. An
+            // app placing a caret after someone has typed "hello " needs the
+            // pen position, and `width()` would put the caret back on the "o".
+            width: if text.is_empty() {
+                0.0
+            } else {
+                layout.full_width()
+            },
+            height: metrics.line_height,
+            ascent: metrics.ascent,
+            descent: metrics.descent,
+        })
+    })
+}
+
+/// Whether a laid-out run produced any glyphs at all. The same emptiness test
+/// `draw_layout` reports through its drawn count, without rasterizing.
+fn layout_has_glyphs(layout: &Layout<()>) -> bool {
+    layout.lines().any(|line| {
+        line.items().any(|item| match item {
+            PositionedLayoutItem::GlyphRun(run) => run.glyphs().count() > 0,
+            PositionedLayoutItem::InlineBox(_) => false,
+        })
+    })
+}
+
 /// Clamp a character offset to a string's character count, so a caret past the
 /// end of the text lands at the end rather than out of range.
 fn clamp_char_offset(text: &str, offset: usize) -> usize {

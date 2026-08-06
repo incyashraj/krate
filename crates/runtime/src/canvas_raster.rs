@@ -110,6 +110,23 @@ fn lerp_color(a: u32, b: u32, t: f32) -> u32 {
     (mix(24) << 24) | (mix(16) << 16) | (mix(8) << 8) | mix(0)
 }
 
+/// Integer scale for the 5x7 bitmap face at a requested font size. One place,
+/// so drawing and measuring cannot pick different scales.
+fn bitmap_scale(font_size: f32) -> u32 {
+    ((font_size / 7.0).round() as u32).clamp(1, 16)
+}
+
+/// What a text run will occupy once drawn: advance width, line height, and the
+/// split of that height either side of the baseline. The canvas draw-text
+/// origin is the baseline, which is why `ascent` is reported separately.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct TextMetrics {
+    pub width: f32,
+    pub height: f32,
+    pub ascent: f32,
+    pub descent: f32,
+}
+
 impl CanvasSurface {
     pub fn new(width: u32, height: u32) -> Result<Self, UiAdapterError> {
         if width == 0 || height == 0 || width > MAX_CANVAS_EDGE || height > MAX_CANVAS_EDGE {
@@ -372,7 +389,7 @@ impl CanvasSurface {
         ) {
             return;
         }
-        let scale = ((font_size / 7.0).round() as u32).clamp(1, 16);
+        let scale = bitmap_scale(font_size);
         // The WIT origin is the baseline; drawtext takes the top-left corner.
         let top = y - drawtext::text_height(scale) as f32;
         drawtext::draw_text(
@@ -384,6 +401,34 @@ impl CanvasSurface {
             color,
             text,
         );
+    }
+
+    /// How big `text` will be once `text()` has drawn it.
+    ///
+    /// Deliberately reads the same two paths in the same order `text()` does:
+    /// ask parley first, and when parley cannot produce glyphs -- a host with
+    /// no usable system fonts -- measure the 5x7 bitmap face that will draw
+    /// instead. A measurement that disagreed with the pixels would be worse
+    /// than none, because an app cannot tell it is wrong.
+    pub fn measure_text(&self, text: &str, font_size: f32) -> TextMetrics {
+        if let Some(m) = krate_adapter_common::vector_text::measure_canvas_text(text, font_size) {
+            return TextMetrics {
+                width: m.width,
+                height: m.height,
+                ascent: m.ascent,
+                descent: m.descent,
+            };
+        }
+        // Bitmap fallback. `text()` puts the cell's bottom on the baseline, so
+        // the whole cell is ascent and there is no descent below the line.
+        let scale = bitmap_scale(font_size);
+        let height = drawtext::text_height(scale) as f32;
+        TextMetrics {
+            width: drawtext::text_width(text, scale) as f32,
+            height,
+            ascent: height,
+            descent: 0.0,
+        }
     }
 
     /// Draw decoded RGBA into a rectangle, scaled to fit and centred.
@@ -685,6 +730,203 @@ mod tests {
                 .chunks(4)
                 .any(|px| px[0] < 128 && px[1] < 128 && px[2] < 128 && px[3] == 255),
             "drawing text must change at least one pixel"
+        );
+    }
+
+    /// The whole of K-002 in one assertion.
+    ///
+    /// Seven shipped apps measured text as `chars * size * constant`, which
+    /// returns the *same* width for "iiii" and "WWWW" because both are four
+    /// characters. On the real proportional face they differ several times
+    /// over. If this assertion ever passes trivially again, the measurement
+    /// has gone back to counting characters.
+    #[test]
+    fn narrow_and_wide_strings_do_not_measure_the_same() {
+        let canvas = CanvasSurface::new(400, 80).expect("canvas");
+        let narrow = canvas.measure_text("iiii", 32.0);
+        let wide = canvas.measure_text("WWWW", 32.0);
+
+        // The old guess: identical, because both are four characters.
+        let guess = |s: &str| (s.chars().count() as f32) * 32.0 * 0.52;
+        assert_eq!(
+            guess("iiii"),
+            guess("WWWW"),
+            "the constant-per-character guess cannot tell these apart -- that is the bug"
+        );
+
+        assert!(
+            wide.width > narrow.width * 2.0,
+            "W is far wider than i: measured iiii={} WWWW={}",
+            narrow.width,
+            wide.width
+        );
+        assert!(narrow.width > 0.0, "a non-empty string has a width");
+    }
+
+    /// Measurement has to describe the pixels, not an idea of them: draw the
+    /// run and compare the reported width against the actual inked extent.
+    #[test]
+    fn a_measured_width_matches_the_width_that_gets_drawn() {
+        for text in ["iiii", "WWWW", "Hello, world", "1234567890"] {
+            let size = 24.0;
+            let mut canvas = CanvasSurface::new(600, 60).expect("canvas");
+            canvas.clear(pack_color(1.0, 1.0, 1.0, 1.0));
+            let m = canvas.measure_text(text, size);
+            let x0 = 20.0f32;
+            canvas.text(text, x0, 44.0, size, pack_color(0.0, 0.0, 0.0, 1.0));
+
+            let image = canvas.to_image().expect("image");
+            let (w, h) = (image.width as usize, image.height as usize);
+            let mut min_x = usize::MAX;
+            let mut max_x = 0usize;
+            for y in 0..h {
+                for x in 0..w {
+                    let px = &image.rgba[(y * w + x) * 4..(y * w + x) * 4 + 4];
+                    // Any pixel meaningfully darker than the white ground.
+                    if px[0] < 200 && px[1] < 200 && px[2] < 200 {
+                        min_x = min_x.min(x);
+                        max_x = max_x.max(x);
+                    }
+                }
+            }
+            assert!(min_x != usize::MAX, "{text:?} drew nothing to measure");
+
+            // Inked extent is the ink, and advance width includes the side
+            // bearings the ink does not cover, so inked <= advance. Both ends
+            // are bounded: the ink must not overflow the reported width, and
+            // must not fall far short of it either.
+            let inked = (max_x + 1) as f32 - min_x as f32;
+            assert!(
+                inked <= m.width + 4.0,
+                "{text:?} inked {inked}px past its reported width {}",
+                m.width
+            );
+            assert!(
+                inked >= m.width - size * 0.6,
+                "{text:?} reported {} but only inked {inked}px",
+                m.width
+            );
+            // Ink starts at the pen position, within a bearing of it.
+            assert!(
+                (min_x as f32) >= x0 - 2.0 && (min_x as f32) <= x0 + size * 0.5,
+                "{text:?} ink starts at {min_x}, pen was at {x0}"
+            );
+        }
+    }
+
+    /// The baseline contract: `draw_text` takes a baseline, so `ascent` has to
+    /// be the distance from the top of the drawn ink up to it. Draw at a known
+    /// baseline and check the ink sits inside `[baseline - ascent, baseline +
+    /// descent]`.
+    #[test]
+    fn ascent_and_descent_bracket_the_drawn_ink() {
+        let size = 32.0;
+        let baseline = 60.0f32;
+        let mut canvas = CanvasSurface::new(400, 100).expect("canvas");
+        canvas.clear(pack_color(1.0, 1.0, 1.0, 1.0));
+        let m = canvas.measure_text("Hgjy", size);
+        canvas.text("Hgjy", 10.0, baseline, size, pack_color(0.0, 0.0, 0.0, 1.0));
+
+        let image = canvas.to_image().expect("image");
+        let (w, h) = (image.width as usize, image.height as usize);
+        let mut min_y = usize::MAX;
+        let mut max_y = 0usize;
+        for y in 0..h {
+            for x in 0..w {
+                let px = &image.rgba[(y * w + x) * 4..(y * w + x) * 4 + 4];
+                if px[0] < 200 && px[1] < 200 && px[2] < 200 {
+                    min_y = min_y.min(y);
+                    max_y = max_y.max(y);
+                }
+            }
+        }
+        assert!(min_y != usize::MAX, "nothing drawn");
+        assert!(
+            (min_y as f32) >= baseline - m.ascent - 2.0,
+            "ink starts at {min_y}, above the reported ascent top {}",
+            baseline - m.ascent
+        );
+        assert!(
+            (max_y as f32) <= baseline + m.descent + 2.0,
+            "ink ends at {max_y}, below the reported descent bottom {}",
+            baseline + m.descent
+        );
+        assert!(m.height >= m.ascent + m.descent - 0.01);
+    }
+
+    /// An empty string has no width but still has a line: an app placing a
+    /// caret in an empty field needs the height of the line about to hold text.
+    #[test]
+    fn an_empty_string_has_no_width_but_a_real_line_height() {
+        let canvas = CanvasSurface::new(100, 40).expect("canvas");
+        let m = canvas.measure_text("", 20.0);
+        assert_eq!(m.width, 0.0);
+        assert!(m.height > 0.0 && m.ascent > 0.0);
+    }
+
+    /// Whitespace draws nothing but still advances the pen, and an app laying
+    /// out words needs that advance or every space collapses.
+    #[test]
+    fn a_space_has_width_even_though_it_inks_nothing() {
+        let canvas = CanvasSurface::new(200, 40).expect("canvas");
+        let one = canvas.measure_text("a a", 20.0).width;
+        let two = canvas.measure_text("a  a", 20.0).width;
+        assert!(
+            two > one,
+            "an extra space must widen the run: {one} then {two}"
+        );
+    }
+
+    /// The caret case, which is most of why apps measure at all. Someone types
+    /// "hello " and the caret belongs after the space, not back on the "o".
+    /// The text layout engine's plain width drops trailing whitespace, so this
+    /// is a real trap and not a hypothetical one.
+    #[test]
+    fn trailing_space_counts_toward_the_measured_width() {
+        let canvas = CanvasSurface::new(300, 40).expect("canvas");
+        let bare = canvas.measure_text("hello", 20.0).width;
+        let trailing = canvas.measure_text("hello ", 20.0).width;
+        assert!(
+            trailing > bare,
+            "a trailing space must move the pen: \"hello\"={bare} \"hello \"={trailing}"
+        );
+    }
+
+    /// A run too wide for the vector rasterizer's pixmap is drawn with the
+    /// bitmap face instead. Measurement has to switch faces on exactly the
+    /// same runs, or a very long string is measured in one face and drawn in
+    /// another -- the precise failure this whole change exists to remove.
+    #[test]
+    fn an_enormous_run_is_measured_in_the_face_that_will_draw_it() {
+        let canvas = CanvasSurface::new(64, 32).expect("canvas");
+        let huge: String = core::iter::repeat_n('W', 4000).collect();
+        let m = canvas.measure_text(&huge, 256.0);
+        // The bitmap face is a fixed cell per character, so its width is
+        // exactly cell * scale * chars. Landing on that number proves the
+        // measurement took the same fallback the drawing will.
+        let scale = bitmap_scale(256.0);
+        let bitmap = krate_adapter_common::drawtext::text_width(&huge, scale) as f32;
+        assert_eq!(
+            m.width, bitmap,
+            "a run past the vector rasterizer's limit must be measured with the bitmap face"
+        );
+    }
+
+    /// Font size is clamped identically on both paths, so an app that asks for
+    /// an absurd heading is told the size it will actually be drawn at rather
+    /// than the size it asked for.
+    #[test]
+    fn measurement_clamps_font_size_the_same_way_drawing_does() {
+        let canvas = CanvasSurface::new(400, 60).expect("canvas");
+        assert_eq!(
+            canvas.measure_text("ab", 4000.0).width,
+            canvas.measure_text("ab", 256.0).width,
+            "an oversized size is clamped to the size that will be drawn"
+        );
+        assert_eq!(
+            canvas.measure_text("ab", 0.5).width,
+            canvas.measure_text("ab", 4.0).width,
+            "an undersized size is clamped to the size that will be drawn"
         );
     }
 }

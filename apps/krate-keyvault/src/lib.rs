@@ -156,7 +156,7 @@ fn draw(canvas: u64, count: u64) -> Result<(), gfx::GfxError> {
     // ---- small uppercase label above ----
     let label = "TIMES OPENED";
     let lsize = 14.0;
-    let lw = text_width(label, lsize);
+    let lw = text_width(canvas, label, lsize);
     draw_text(canvas, label, cx - lw * 0.5, 74.0, lsize, INK_DIM)?;
 
     // ---- the large count, centered, the focal point ----
@@ -164,7 +164,7 @@ fn draw(canvas: u64, count: u64) -> Result<(), gfx::GfxError> {
     let digits = u64_to_bytes(count, &mut buf);
     if let Ok(txt) = core::str::from_utf8(digits) {
         let nsize = 92.0;
-        let nw = text_width(txt, nsize);
+        let nw = text_width(canvas, txt, nsize);
         let nx = cx - nw * 0.5;
         // Baseline placed so the glyph body sits centered in the window's middle
         // band, clear of the label above and the subtitle below.
@@ -177,7 +177,7 @@ fn draw(canvas: u64, count: u64) -> Result<(), gfx::GfxError> {
     // ---- quiet subtitle below ----
     let sub = "Reopen it — this keeps climbing.";
     let ssize = 14.0;
-    let sw = text_width(sub, ssize);
+    let sw = text_width(canvas, sub, ssize);
     draw_text(canvas, sub, cx - sw * 0.5, HEIGHT - 46.0, ssize, INK_DIM)?;
 
     // A short accent underline centered beneath the subtitle for a finished feel.
@@ -219,10 +219,18 @@ fn color(r: f32, g: f32, b: f32, a: f32) -> gfx::Color {
     gfx::Color { r, g, b, a }
 }
 
-/// Approximate rendered width. The host bitmap font is roughly monospace at
-/// ~0.82em advance; good enough to center a label and the count.
-fn text_width(s: &str, size: f32) -> f32 {
-    (s.chars().count() as f32) * size * 0.82
+/// Rendered width of a string at a given font size, measured by the host with
+/// the same font layout `draw_text` draws with.
+///
+/// This used to be character count times an invented constant. On a
+/// proportional face `i` and `W` differ about four times in real width, so a
+/// centred label was not centred and a caret sat beside its text rather than
+/// after it. `measure_text` is the true answer.
+fn text_width(canvas: u64, s: &str, size: f32) -> f32 {
+    match canvas2d::measure_text(canvas, s, size) {
+        Ok(m) => m.width,
+        Err(_) => 0.0,
+    }
 }
 
 // ------------------------------------------------------------------

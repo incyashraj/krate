@@ -341,8 +341,8 @@ Fix:      Add a manifest.toml so it is a real app, or delete the directory. As
           `apps/krate-checklist` is.
 
 ### K-002 — No text measurement, so every app guesses text width
-Status:   fixed-pending-merge
-Owner:    W15
+Status:   fixed
+Owner:    lead
 Severity: serious
 Class:    runtime-hole
 Found:    2026-08-05, lead, capability audit
