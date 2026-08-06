@@ -2451,6 +2451,31 @@ pub(crate) fn bundle_source_dir(bundle: &Path) -> Result<Option<PathBuf>> {
     let target = std::env::temp_dir().join(format!("krate-edit-{}", std::process::id()));
     let _ = fs::remove_dir_all(&target);
     copy_tree(source, &target)?;
+
+    // The bundle carries {KRATE_SDK} where this machine's SDK path goes, so
+    // the source rebuilds anywhere rather than only where it was made. Point
+    // it at the local SDK now that there is one to point at.
+    let manifest = target.join("Cargo.toml");
+    if let Ok(text) = fs::read_to_string(&manifest) {
+        if text.contains(krate_bundle::SDK_PLACEHOLDER) {
+            // The SDK inside the bundle wins: it is the one this source was
+            // written against, so it compiles where the current one may not.
+            let sdk = match opened.sdk_path() {
+                Some(bundled) => {
+                    let kept = target.join("..").join("krate-sdk");
+                    let _ = fs::remove_dir_all(&kept);
+                    copy_tree(bundled, &kept)?;
+                    kept
+                }
+                None => sdk::ensure_materialized()?,
+            };
+            let resolved = text.replace(
+                krate_bundle::SDK_PLACEHOLDER,
+                &sdk.to_string_lossy().replace('\\', "/"),
+            );
+            fs::write(&manifest, resolved)?;
+        }
+    }
     Ok(Some(target))
 }
 
@@ -2699,11 +2724,20 @@ fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
             }
         })
         .filter(|parent| parent.join("Cargo.toml").is_file());
-    let size = krate_bundle::pack_with_source(
+    // Ship the SDK alongside the source. Source alone does not survive an SDK
+    // change -- an app written before a WIT change fails to compile against
+    // the current one -- so an app is only genuinely editable later if it
+    // carries what it was written against.
+    let sdk = source
+        .as_deref()
+        .and_then(|_| sdk::ensure_materialized().ok())
+        .filter(|path| path.is_dir());
+    let size = krate_bundle::pack_with_sdk(
         manifest,
         file,
         assets.as_deref(),
         source.as_deref(),
+        sdk.as_deref(),
         output,
     )
     .with_context(|| format!("could not pack {}", output.display()))?;

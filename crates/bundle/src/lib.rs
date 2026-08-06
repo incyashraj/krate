@@ -55,6 +55,18 @@ pub const MANIFEST_ENTRY: &str = "manifest.toml";
 pub const COMPONENT_ENTRY: &str = "code.wasm";
 /// Root for optional portable resources inside the bundle.
 pub const ASSETS_PREFIX: &str = "assets/";
+/// Root for the SDK the app was built against.
+///
+/// Shipping the source alone is not enough to rebuild an app later: the source
+/// is written against whatever SDK existed when it was made, and Krate's SDK
+/// still changes. An app built before a WIT change fails to compile against
+/// the current one -- "missing field `pixels`" and the like -- so an app is
+/// only genuinely editable if it carries the SDK it was written for.
+///
+/// About 75 KB compressed, which is real against a 17 KB app and is the price
+/// of an app that still opens for editing in a year.
+pub const SDK_PREFIX: &str = "sdk/";
+
 /// Root for the app's own source, so a bundle can be changed and rebuilt.
 ///
 /// A `.krate` used to carry only compiled wasm, which meant an app could be
@@ -263,6 +275,25 @@ pub fn pack_with_source(
     source_dir: Option<&Path>,
     output_path: &Path,
 ) -> Result<u64> {
+    pack_with_sdk(
+        manifest_path,
+        component_path,
+        assets_dir,
+        source_dir,
+        None,
+        output_path,
+    )
+}
+
+/// Pack a bundle carrying its source and the SDK that source was built with.
+pub fn pack_with_sdk(
+    manifest_path: &Path,
+    component_path: &Path,
+    assets_dir: Option<&Path>,
+    source_dir: Option<&Path>,
+    sdk_dir: Option<&Path>,
+    output_path: &Path,
+) -> Result<u64> {
     let manifest_text =
         fs::read_to_string(manifest_path).map_err(|err| io_err(manifest_path, err))?;
     let manifest =
@@ -297,6 +328,25 @@ pub fn pack_with_source(
     }
     if let Some(source_dir) = source_dir.filter(|path| path.is_dir()) {
         for (entry_name, source) in collect_source(source_dir)? {
+            zip.start_file(&entry_name, options)?;
+            // Cargo.toml points at the SDK by absolute path, because that is
+            // where this machine materialised it. Shipped as-is, the source in
+            // a bundle only rebuilds on the machine that made it -- which
+            // defeats the point of shipping source at all. Rewriting to a
+            // placeholder lets any Krate install substitute its own SDK.
+            if entry_name.ends_with("Cargo.toml") {
+                let text = fs::read_to_string(&source).map_err(|err| io_err(&source, err))?;
+                let rewritten = rewrite_sdk_paths(&text);
+                zip.write_all(rewritten.as_bytes())
+                    .map_err(|err| io_err(output_path, err))?;
+                continue;
+            }
+            let mut input = File::open(&source).map_err(|err| io_err(&source, err))?;
+            io::copy(&mut input, &mut zip).map_err(|err| io_err(output_path, err))?;
+        }
+    }
+    if let Some(sdk_dir) = sdk_dir.filter(|path| path.is_dir()) {
+        for (entry_name, source) in collect_tree(sdk_dir, SDK_PREFIX)? {
             zip.start_file(entry_name, options)?;
             let mut input = File::open(&source).map_err(|err| io_err(&source, err))?;
             io::copy(&mut input, &mut zip).map_err(|err| io_err(output_path, err))?;
@@ -321,6 +371,7 @@ pub struct OpenBundle {
     component_path: PathBuf,
     assets_path: Option<PathBuf>,
     source_path: Option<PathBuf>,
+    sdk_path: Option<PathBuf>,
     manifest: Manifest,
 }
 
@@ -347,6 +398,15 @@ impl OpenBundle {
     /// nothing. `None` for bundles packed before source shipped.
     pub fn source_path(&self) -> Option<&Path> {
         self.source_path.as_deref()
+    }
+
+    /// Path to the SDK this app was built against, when the bundle carries it.
+    ///
+    /// This is what makes an old app still editable: its source compiles
+    /// against the SDK it was written for, not whichever one the reader
+    /// happens to have.
+    pub fn sdk_path(&self) -> Option<&Path> {
+        self.sdk_path.as_deref()
     }
 
     /// The parsed manifest.
@@ -450,6 +510,26 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
         extract_asset_entry(&mut archive, name, &destination)?;
     }
 
+    let sdk_path = dir.path().join("sdk");
+    let sdk_names: Vec<String> = {
+        let mut names = Vec::new();
+        for index in 0..archive.len() {
+            let name = archive.by_index(index)?.name().to_string();
+            if name.starts_with(SDK_PREFIX) && !name.ends_with('/') {
+                names.push(name);
+            }
+        }
+        names
+    };
+    for name in &sdk_names {
+        let relative = safe_prefixed_relative_path(name, SDK_PREFIX)?;
+        let destination = sdk_path.join(relative);
+        if let Some(parent) = destination.parent() {
+            fs::create_dir_all(parent).map_err(|err| io_err(parent, err))?;
+        }
+        extract_asset_entry(&mut archive, name, &destination)?;
+    }
+
     let manifest_text =
         fs::read_to_string(&manifest_path).map_err(|err| io_err(&manifest_path, err))?;
     let manifest =
@@ -466,6 +546,7 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
         component_path,
         assets_path: (!asset_names.is_empty()).then_some(assets_path),
         source_path: (!source_names.is_empty()).then_some(source_path),
+        sdk_path: (!sdk_names.is_empty()).then_some(sdk_path),
         manifest,
     })
 }
@@ -477,12 +558,82 @@ pub fn open_reader<R: Read + io::Seek>(reader: R) -> Result<OpenBundle> {
 /// pins versions that may not resolve on someone else's machine, and
 /// `bindings.rs` is regenerated from the WIT on every build. Everything else
 /// under the crate root is taken as-is.
-fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
-    fn skip(name: &str) -> bool {
-        matches!(name, "target" | "Cargo.lock" | "bindings.rs" | ".git")
-    }
+/// The token a bundle carries instead of this machine's SDK path.
+pub const SDK_PLACEHOLDER: &str = "{KRATE_SDK}";
 
-    fn visit(root: &Path, current: &Path, out: &mut Vec<(String, PathBuf)>) -> Result<()> {
+/// Replace any absolute path into a materialised SDK with [`SDK_PLACEHOLDER`].
+///
+/// The cache path contains a content hash, so it differs per machine and per
+/// Krate version. Matching on the `.cache/krate/sdk/<hash>` shape rather than
+/// on one literal keeps this working when either changes.
+pub fn rewrite_sdk_paths(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        match sdk_root_in(line) {
+            Some(root) => out.push_str(&line.replace(&root, SDK_PLACEHOLDER)),
+            None => out.push_str(line),
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// The SDK root inside a line, if it holds one.
+fn sdk_root_in(line: &str) -> Option<String> {
+    let marker = "/krate/sdk/";
+    let at = line.find(marker)?;
+    let start = line[..at].rfind(['"', '\'', ' ', '=']).map_or(0, |i| i + 1);
+    // The hash segment ends at the next separator after the marker.
+    let after = at + marker.len();
+    let end = line[after..]
+        .find('/')
+        .map(|offset| after + offset)
+        .unwrap_or(line.len());
+    Some(line[start..end].to_string())
+}
+
+/// Gather every file under `root`, prefixed for the archive.
+///
+/// Shares the skip list and the symlink refusal with [`collect_source`], since
+/// an SDK tree carries the same hazards: a `target/` directory from a stray
+/// build, and links that would reach outside the tree.
+fn collect_tree(root: &Path, prefix: &str) -> Result<Vec<(String, PathBuf)>> {
+    // `bindings.rs` is skipped for an app, where it is regenerated on every
+    // build. In the SDK it is the opposite: it is generated by a specific
+    // wit-bindgen version that the reader may not have, so leaving it out
+    // ships an SDK that cannot compile -- "file not found for module
+    // `bindings`". Keep it here.
+    let mut out = collect_files(root, &|name| {
+        matches!(name, "target" | "Cargo.lock" | ".git")
+    })?;
+    for (name, _) in out.iter_mut() {
+        *name = format!("{prefix}{}", &name[SOURCE_PREFIX.len()..]);
+    }
+    Ok(out)
+}
+
+fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
+    collect_files(root, &|name| {
+        matches!(
+            name,
+            "target"
+                | "Cargo.lock"
+                | "bindings.rs"
+                | ".git"
+                | ".agent-transcript.txt"
+                | "KRATE_AUTHORING.md"
+        )
+    })
+}
+
+/// Walk a tree, skipping whatever `skip` rejects.
+fn collect_files(root: &Path, skip: &dyn Fn(&str) -> bool) -> Result<Vec<(String, PathBuf)>> {
+    fn visit(
+        root: &Path,
+        current: &Path,
+        skip: &dyn Fn(&str) -> bool,
+        out: &mut Vec<(String, PathBuf)>,
+    ) -> Result<()> {
         let mut entries = fs::read_dir(current)
             .map_err(|err| io_err(current, err))?
             .collect::<std::result::Result<Vec<_>, _>>()
@@ -495,13 +646,13 @@ fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
                 continue;
             }
             let metadata = fs::symlink_metadata(&path).map_err(|err| io_err(&path, err))?;
-            // A symlink out of the crate would pull in arbitrary files, the
+            // A symlink out of the tree would pull in arbitrary files, the
             // same reason assets refuse them.
             if metadata.file_type().is_symlink() {
                 return Err(BundleError::AssetSymlink { path });
             }
             if metadata.is_dir() {
-                visit(root, &path, out)?;
+                visit(root, &path, skip, out)?;
                 continue;
             }
             let relative = path
@@ -515,7 +666,7 @@ fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
     }
 
     let mut out = Vec::new();
-    visit(root, root, &mut out)?;
+    visit(root, root, skip, &mut out)?;
     Ok(out)
 }
 
@@ -633,6 +784,29 @@ fn safe_asset_relative_path(name: &str) -> Result<PathBuf> {
 /// Deliberately a copy rather than a shared generic: these two prefixes are
 /// security boundaries, and a future change to one should not silently loosen
 /// the other.
+fn safe_prefixed_relative_path(name: &str, prefix: &str) -> Result<PathBuf> {
+    let relative = name
+        .strip_prefix(prefix)
+        .ok_or_else(|| BundleError::UnsafeAssetPath {
+            path: name.to_string(),
+        })?;
+    if relative.is_empty() || relative.contains('\\') {
+        return Err(BundleError::UnsafeAssetPath {
+            path: name.to_string(),
+        });
+    }
+    let path = Path::new(relative);
+    if path
+        .components()
+        .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err(BundleError::UnsafeAssetPath {
+            path: name.to_string(),
+        });
+    }
+    Ok(path.to_path_buf())
+}
+
 fn safe_source_relative_path(name: &str) -> Result<PathBuf> {
     let relative =
         name.strip_prefix(SOURCE_PREFIX)
