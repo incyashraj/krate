@@ -71,6 +71,34 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-052 -- No stroke-circle, so round things got square outlines
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    runtime-hole
+Found:    2026-08-07, comparing two AIs given the same request
+Evidence: Grok's screensaver draws every bubble inside a visible thin square
+          box, and the DVD logo inside a hard red rectangle. Its own comment
+          says what it wanted:
+
+              // Thin rim.
+              canvas2d::stroke_rect(...)
+
+          `gfx.wit` has `fill-circle` and no `stroke-circle`. Told to put a rim
+          on a round bubble, the nearest available call was `stroke-rect`, so
+          that is what it used. The model did the best it could with what was
+          exposed; the gap was ours.
+Impact:   Every rim, ring, dial and unfilled dot -- ordinary UI, not an edge
+          case. And the failure is silent: the app builds, passes all six
+          stages, and just looks wrong, so no check catches it.
+Fix:      `canvas2d::stroke-circle(canvas, center, radius, width, stroke)`,
+          anti-aliased by coverage the same way fill-circle is, so a thin rim
+          reads as a smooth curve. Tested for the three things that make it a
+          ring: the edge is drawn, the centre stays empty, and nothing appears
+          where a rect's corner would be. The pack now says to use it and not
+          to reach for stroke-rect.
+
+
 ### K-051 -- An expired AI sign-in reported nothing useful
 Status:   fixed
 Owner:    lead

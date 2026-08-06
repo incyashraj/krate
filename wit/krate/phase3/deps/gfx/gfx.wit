@@ -134,6 +134,13 @@ interface canvas2d {
   /// The edge is smooth and the fill blends over the canvas by its color's
   /// alpha, so a translucent fill reads as soft light rather than a hard disc.
   fill-circle: func(canvas: u64, center: point, radius: f32, fill: color) -> result<_, gfx-error>;
+  /// Stroke a circle's edge: a ring `width` pixels thick, centred on `radius`.
+  ///
+  /// The outline counterpart to `fill-circle`, and the thing to reach for when
+  /// you want a rim, a ring, a dial, or an unfilled dot. Without it the
+  /// nearest available call is `stroke-rect`, which puts a square box around a
+  /// round shape -- a real screensaver shipped exactly that.
+  stroke-circle: func(canvas: u64, center: point, radius: f32, width: f32, stroke: color) -> result<_, gfx-error>;
   /// A radial gradient disc: `inner` color at the centre easing to `outer` at
   /// `radius`. With `outer` transparent this is a soft glow -- the primitive a
   /// modern look is built from (bloom, light, soft particles).

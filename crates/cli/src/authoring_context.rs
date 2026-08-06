@@ -247,6 +247,11 @@ finished is mostly four things, and none of them are hard:\n\n\
 difference between a centred label and a nearly-centred one. Never estimate a \
 width from the character count -- the face is proportional, so `i` and `W` \
 differ about four times.\n\n\
+**Outline round things with `stroke_circle`, never `stroke_rect`.** A rim on \
+a bubble, a ring, a dial, an unfilled dot -- all `stroke_circle(canvas, \
+center, radius, width, colour)`. Reaching for `stroke_rect` instead puts a \
+visible square box around a round shape, which a real generated app shipped \
+with.\n\n\
 **Use gradients and rounded corners.** A flat rectangle reads as unfinished. \
 `linear_gradient` for panels and backdrops, a rounded rect for every card and \
 button (fill the middle rectangle, then the four corner circles with \

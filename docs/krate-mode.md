@@ -481,6 +481,7 @@ takes the arguments is the function.
 - `canvas2d::fill-rect: func(canvas: u64, area: rect, fill: color) -> result<_, gfx-error>`
 - `canvas2d::stroke-rect: func(canvas: u64, area: rect, stroke: color, width: f32) -> result<_, gfx-error>`
 - `canvas2d::fill-circle: func(canvas: u64, center: point, radius: f32, fill: color) -> result<_, gfx-error>`
+- `canvas2d::stroke-circle: func(canvas: u64, center: point, radius: f32, width: f32, stroke: color) -> result<_, gfx-error>`
 - `canvas2d::radial-gradient: func(canvas: u64, center: point, radius: f32, inner: color, outer: color) -> result<_, gfx-error>`
 - `canvas2d::linear-gradient: func(canvas: u64, area: rect, top: color, bottom: color) -> result<_, gfx-error>`
 - `canvas2d::draw-text: func(canvas: u64, text: string, origin: point, font-size: f32, ink: color) -> result<_, gfx-error>`

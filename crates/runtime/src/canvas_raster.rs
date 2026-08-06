@@ -274,6 +274,58 @@ impl CanvasSurface {
         }
     }
 
+    /// Stroke a circle's edge: a ring of `width` pixels centred on `radius`.
+    ///
+    /// Anti-aliased the same way `fill_circle` is, by coverage across a
+    /// one-pixel band, so a thin rim reads as a smooth curve rather than a
+    /// staircase.
+    ///
+    /// This exists because an AI asked for one and could not have it. Told to
+    /// put "a thin rim" on a bubble, with only `fill_circle` and `stroke_rect`
+    /// available, it reached for `stroke_rect` -- and every round bubble in
+    /// that screensaver got a visible square box around it. The model did the
+    /// best it could with what we exposed; the gap was ours.
+    pub fn stroke_circle(&mut self, cx: f32, cy: f32, radius: f32, width: f32, color: u32) {
+        if radius <= 0.0 || width <= 0.0 {
+            return;
+        }
+        let half = width * 0.5;
+        let outer = radius + half;
+        let (w, h) = (self.width, self.height);
+        let x0 = ((cx - outer).floor().max(0.0) as u32).min(w);
+        let x1 = (((cx + outer).ceil()).max(0.0) as u32).min(w);
+        let y0 = ((cy - outer).floor().max(0.0) as u32).min(h);
+        let y1 = (((cy + outer).ceil()).max(0.0) as u32).min(h);
+        let base_a = (color >> 24) & 0xFF;
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let dx = px as f32 + 0.5 - cx;
+                let dy = py as f32 + 0.5 - cy;
+                let dist = (dx * dx + dy * dy).sqrt();
+                // Distance from the ring's centre line. Coverage fades across
+                // a one-pixel band on both sides, so a sub-pixel width still
+                // draws as a faint line rather than vanishing.
+                let from_ring = (dist - radius).abs();
+                let coverage = (half - from_ring + 0.5).clamp(0.0, 1.0);
+                if coverage <= 0.0 {
+                    continue;
+                }
+                let a = ((base_a as f32) * coverage) as u32;
+                if a == 0 {
+                    continue;
+                }
+                if !self.allowed(px, py) {
+                    continue;
+                }
+                let px_color = (a << 24) | (color & 0x00FF_FFFF);
+                let idx = (py * w + px) as usize;
+                if let Some(slot) = self.buffer.get_mut(idx) {
+                    *slot = krate_adapter_common::painter::blend_over(px_color, *slot);
+                }
+            }
+        }
+    }
+
     /// A radial gradient disc: `inner` color at the center easing to `outer`
     /// color (typically transparent) at `radius`. This is the real glow/bloom
     /// primitive -- a soft light falloff instead of a flat disc, which is the
@@ -933,6 +985,37 @@ mod tests {
 
 #[cfg(test)]
 mod clip_tests {
+    #[test]
+    fn a_stroked_circle_is_a_ring_not_a_disc() {
+        // The gap that put square boxes around round bubbles in a shipped
+        // screensaver: an app wanting a rim had only stroke_rect to reach for.
+        let mut c = CanvasSurface::new(80, 80).expect("surface");
+        c.clear(0xFF00_0000);
+        c.stroke_circle(40.0, 40.0, 20.0, 3.0, 0xFFFF_FFFF);
+
+        let at = |x: u32, y: u32| c.buffer[(y * 80 + x) as usize];
+        // On the ring: bright.
+        assert!(at(60, 40) & 0x00FF_FFFF > 0x0080_8080, "right of the ring is drawn");
+        assert!(at(20, 40) & 0x00FF_FFFF > 0x0080_8080, "left of the ring is drawn");
+        assert!(at(40, 20) & 0x00FF_FFFF > 0x0080_8080, "top of the ring is drawn");
+        // The middle must stay empty -- that is what makes it a ring.
+        assert_eq!(at(40, 40), 0xFF00_0000, "the centre is not filled");
+        // And the corner: a circle must not paint where a rect would.
+        assert_eq!(at(22, 22), 0xFF00_0000, "no square corner");
+    }
+
+    #[test]
+    fn a_stroked_circle_ignores_nonsense_sizes() {
+        let mut c = CanvasSurface::new(20, 20).expect("surface");
+        c.clear(0xFF00_0000);
+        c.stroke_circle(10.0, 10.0, -5.0, 2.0, 0xFFFF_FFFF);
+        c.stroke_circle(10.0, 10.0, 5.0, 0.0, 0xFFFF_FFFF);
+        assert!(
+            c.buffer.iter().all(|p| *p == 0xFF00_0000),
+            "a negative radius or zero width draws nothing"
+        );
+    }
+
     use super::*;
 
     fn pixel(s: &CanvasSurface, x: u32, y: u32) -> u32 {

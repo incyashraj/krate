@@ -2239,6 +2239,28 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         Ok(Ok(()))
     }
 
+    fn stroke_circle(
+        &mut self,
+        canvas: u64,
+        center: gfx::types::Point,
+        radius: f32,
+        width: f32,
+        stroke: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.stroke_circle(
+            center.x,
+            center.y,
+            radius,
+            width,
+            pack_color(stroke.r, stroke.g, stroke.b, stroke.a),
+        );
+        Ok(Ok(()))
+    }
+
     fn radial_gradient(
         &mut self,
         canvas: u64,
