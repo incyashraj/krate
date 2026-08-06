@@ -3761,8 +3761,11 @@ How to work:\n\
 3. KRATE_AUTHORING.md is in this directory if you need a function you have not\n\
    used before, or a capability the manifest does not declare yet. Consult it\n\
    for that; do not read it front to back.\n\
-4. Run `{krate_bin} check-app .` from {app_dir} when you are done. If it\n\
-   fails, fix what it names and run it again. Do not stop until it prints OK.\n\
+4. Check your edit with `{krate_bin} check-app . --no-run` from {app_dir}.\n\
+   That builds it and confirms the imports in about two seconds.\n\
+5. Once that passes, run the full `{krate_bin} check-app .` once to prove it\n\
+   still opens and works. That takes around twenty seconds, so run it when\n\
+   you are done rather than after every edit. Do not stop until it prints OK.\n\
 \n\
 Keep the same crate name, the same package name, and the same manifest unless\n\
 the change genuinely needs a new capability. Changing them breaks the app's\n\
@@ -3798,13 +3801,24 @@ How to work:\n\
    do not write the no_std/krate:* discipline from a blank page.\n\
 3. Write the app: edit src/lib.rs, and set manifest.toml to exactly the\n\
    capabilities the app uses.\n\
-4. After every change, run exactly this from {app_dir}:\n\
+4. While you are working, check with:\n\
+\n\
+       {krate_bin} check-app . --no-run\n\
+\n\
+   That builds the app and confirms it imports only krate:* -- the two things\n\
+   that actually break -- in about two seconds. Use it after every edit.\n\
+\n\
+5. When it passes and you believe the app is done, run the full check once:\n\
 \n\
        {krate_bin} check-app .\n\
 \n\
-   It builds the app, checks it imports only krate:*, and runs it once. On\n\
-   failure it names the stage and the exact fix -- including how to remove a\n\
-   leaked wasi:* import. Do whatever it says, then run it again.\n\
+   This also runs the app, resizes its window and clicks it, which takes\n\
+   around twenty seconds. It is the real verdict, so it has to pass -- but\n\
+   running it after every small edit is the single biggest waste of time in\n\
+   authoring an app. Iterate with --no-run, prove with the full check.\n\
+\n\
+   Either way, on failure it names the stage and the exact fix, including how\n\
+   to remove a leaked wasi:* import. Do what it says, then check again.\n\
 \n\
 Use `{krate_bin} check-app .` to build -- do NOT run `cargo build` or\n\
 `cargo component build` yourself. check-app builds with the correct rustup\n\
@@ -8244,6 +8258,33 @@ mod create_tests {
     /// instructions. They used to share one prompt, so an AI asked to move a
     /// button was told to "find the closest example and adapt it" and
     /// "write the app" -- and re-derived a whole Krate app to change one line.
+    /// The dominant cost of authoring an app was measured, not guessed.
+    ///
+    /// An incremental app compile is 0.7s and a clean one 1.7s -- compilation
+    /// is under one percent. But `check-app` is 17s, because it also runs the
+    /// app twice under a headless budget, resizes its window and clicks it.
+    /// The AI ran it five times, and said so in its own transcript: "The
+    /// check-app is taking a long time - probably building. Let me wait."
+    ///
+    /// `--no-run` is 2.0s and still catches what actually breaks: it returns
+    /// the build error and the wasi-import error before it stops. So the loop
+    /// is iterate with --no-run, prove once with the full check.
+    #[test]
+    fn both_prompts_teach_the_fast_check_loop() {
+        let fresh = claude_author_prompt("/work/app", "a tip calculator", "/k");
+        assert!(fresh.contains("check-app . --no-run"), "fresh: fast loop");
+        assert!(
+            fresh.contains("run the full check once")
+                || fresh.contains("full check"),
+            "fresh: full check still required"
+        );
+
+        let marked = format!("{CHANGE_MARKER}make the button blue");
+        let edit = claude_author_prompt("/work/app", &marked, "/k");
+        assert!(edit.contains("check-app . --no-run"), "edit: fast loop");
+        assert!(edit.contains("full"), "edit: full check still required");
+    }
+
     #[test]
     fn a_change_is_told_to_edit_not_to_write_an_app() {
         let marked = format!("{CHANGE_MARKER}make the button blue");

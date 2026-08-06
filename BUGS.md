@@ -71,6 +71,51 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-050 -- Authoring waits on check-app, not on the AI reading or thinking
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, measured on macOS after a six-minute Windows edit
+Evidence: Measured rather than assumed, in this order:
+
+            incremental app compile        0.7s
+            clean app compile, 6 crates    1.7s
+            check-app --no-run             2.0s   (4 stages)
+            check-app full                17.1s   (6 stages)
+
+          The AI's own transcript, for a one-line change:
+
+              "The check-app is taking a long time - probably building.
+               Let me wait for it."
+
+          and it ran check-app five times. Five times seventeen seconds is
+          most of the six minutes, plus a model round trip between each.
+
+          The 43 KB context pack was the suspected cause and is not: the whole
+          run held only 3,354 characters of reasoning. Reading is seconds.
+
+          The seventeen seconds is not the build. It is the run stage and the
+          usability stage, which each start the app under a five-second
+          headless budget, then resize its window and click it.
+Impact:   Every app and every edit pays it. It is also why an edit costs about
+          as much as a first build, which reads as the tool being slow at the
+          one thing that should be quick.
+Fix:      `--no-run` already existed and stops after imports. Both prompts now
+          teach the loop: iterate with `check-app . --no-run` (2s), prove once
+          with the full `check-app .` (17s).
+
+          Verified that --no-run still catches what matters -- it returns the
+          build failure and the wasi-import failure before the no_run branch,
+          confirmed by reading the code path and by breaking an app on
+          purpose (compile error caught in 0.1s).
+
+          Quality cannot regress: `create` runs its own full check-app after
+          the agent finishes (`check_app_verdict`, no_run: false) and refuses
+          to package an app that fails. The fast loop is the AI's inner loop;
+          the gate is still ours.
+
+
 ### K-048 -- .krate files have no icon on Windows, and could not have one
 Status:   fixed
 Owner:    lead
