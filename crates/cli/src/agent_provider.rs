@@ -710,10 +710,24 @@ impl AgentProvider for GrokProvider {
     }
 
     fn author_args(&self, prompt: &str) -> Vec<String> {
-        ["--single", prompt, "--output-format", "json"]
-            .iter()
-            .map(|s| s.to_string())
-            .collect()
+        // --always-approve is not optional here. Writing an app means writing
+        // files, and a headless run has no terminal to approve that in: Grok
+        // falls back to explaining the app instead, which Krate then rejects
+        // as "the agent finished without changing the app".
+        //
+        // It went unnoticed because a machine that had used Grok interactively
+        // carries permission_mode = "always-approve" in ~/.grok/config.toml,
+        // so authoring worked there and failed on every fresh install.
+        [
+            "--single",
+            prompt,
+            "--always-approve",
+            "--output-format",
+            "json",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
     }
 
     fn configure(&self, command: &mut ProcessCommand) {
