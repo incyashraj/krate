@@ -91,6 +91,15 @@ pub struct Phase3GuiHost {
     /// is not listening, and the runtime closes the window itself rather than
     /// leaving a button that does nothing.
     close_requests: std::cell::Cell<u32>,
+    /// Events pumped by `key-held` that the app has not been given yet.
+    ///
+    /// `key-held` has to pump the platform queue, or a game that never calls
+    /// `poll` would read stale input. But pumping returns whatever event came
+    /// out, and throwing that away destroyed it: a game reading ten keys a
+    /// frame swallowed the window's close request before its own `poll` could
+    /// see it, so clicking the close button did nothing. Pumped events wait
+    /// here and are handed over by the next `poll` or `wait`.
+    pending_events: std::cell::RefCell<std::collections::VecDeque<ui::types::Event>>,
     /// When this headless run began waiting for events, for [`HEADLESS_RUN_BUDGET`].
     /// Set on the first wait rather than at construction, so time spent
     /// building the window tree is not charged against the budget.
@@ -248,6 +257,7 @@ impl Phase3GuiHost {
             last_present: std::cell::Cell::new(None),
             interrupts: std::cell::Cell::new(0),
             close_requests: std::cell::Cell::new(0),
+            pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
             headless_started: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             canvases: std::cell::RefCell::new(std::collections::BTreeMap::new()),
@@ -1022,6 +1032,11 @@ impl Phase3GuiHost {
             return false;
         }
         // Two presses with the app still looping means it is not listening.
+        //
+        // Two rather than one on purpose: an app is allowed to answer the
+        // first close by saving, asking, or tidying up. But a person who
+        // clicks the close button and sees nothing happen clicks it again, so
+        // the second press is where patience actually runs out.
         true
     }
 
@@ -1032,6 +1047,11 @@ impl Phase3GuiHost {
     }
 
     fn poll_one_event(&self) -> Result<Option<ui::types::Event>, UiDispatchError> {
+        // Anything `key-held` pumped comes out first, in arrival order. It is
+        // a real event that simply has not been delivered yet.
+        if let Some(event) = self.pending_events.borrow_mut().pop_front() {
+            return Ok(Some(event));
+        }
         let dispatcher = self.dispatcher();
         for window in &self.windows {
             // Native pumps refresh window state and drain delegate callbacks;
@@ -1771,7 +1791,14 @@ impl ui::events::Host for Phase3GuiHost {
         // Pump first: a game that only ever calls `key-held` in a tight frame
         // loop never drains the queue, and without this its input would be
         // whatever arrived before the last `poll`.
-        let _ = self.poll_one_event();
+        //
+        // Keep whatever the pump produced. Discarding it here is what stopped
+        // the close button working: a game reading ten keys a frame pumped ten
+        // times, and the CloseRequested that came out of one of them was
+        // thrown away before the game's own `poll` could match on it.
+        if let Ok(Some(event)) = self.poll_one_event() {
+            self.pending_events.borrow_mut().push_back(event);
+        }
         Ok(self.held_keys.borrow().contains(&key))
     }
 
@@ -3170,6 +3197,34 @@ mod tests {
             .expect("set_root call")
             .expect("a canvas may be the root");
         (host, window, widget)
+    }
+
+    #[test]
+    fn reading_a_key_does_not_swallow_the_close_request() {
+        // The bug that made the window's close button do nothing.
+        //
+        // `key-held` pumps the platform queue so a game that never calls
+        // `poll` still reads live input. It used to discard whatever the pump
+        // returned. A game reading ten keys a frame therefore pumped ten
+        // times, and a CloseRequested that surfaced during any of them was
+        // destroyed before the game's own `poll` could match on it -- so the
+        // app kept running and the person clicking X saw nothing happen.
+        let (mut host, window, _widget) = host_with_canvas_widget();
+
+        // A close request arrives, then the app reads a key -- the order a
+        // game actually produces at the top of its frame.
+        host.pending_events
+            .borrow_mut()
+            .push_back(ui::types::Event::CloseRequested(window));
+        let _ = ui::events::Host::key_held(&mut host, "ArrowLeft".to_string())
+            .expect("key-held call");
+
+        // The close must still be there to be delivered.
+        let event = ui::events::Host::poll(&mut host).expect("poll call");
+        assert!(
+            matches!(event, Some(ui::types::Event::CloseRequested(id)) if id == window),
+            "the close request must survive a key-held call, got {event:?}"
+        );
     }
 
     #[test]

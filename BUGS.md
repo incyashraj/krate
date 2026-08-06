@@ -71,6 +71,55 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-039 -- Reading a key destroyed the window's close request
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-07, macOS and Linux, closing an AI-written game
+Evidence: A generated game handled `Event::CloseRequested(_) => break` at the
+          top of its loop, and clicking the window's close button still did
+          nothing. Ctrl-C was the only way out, on both systems.
+
+          `key-held` pumps the platform queue on purpose, so a game that reads
+          input every frame and never calls `poll` still sees live keys. It
+          then threw the pumped event away:
+
+              let _ = self.poll_one_event();
+
+          That game reads ten keys per frame. Ten pumps per frame, and a
+          CloseRequested surfacing during any of them was discarded before the
+          game's own `poll` could match on it. The app was written correctly
+          and could not be closed.
+Impact:   Every canvas game is unclosable by its own close button, which is the
+          first thing anyone tries. It also masked K-032: the two-press
+          backstop never fired, because the first press was being eaten rather
+          than ignored.
+Fix:      Events pumped by `key-held` are held in `pending_events` and handed
+          over by the next `poll` or `wait`, in arrival order. Test
+          `reading_a_key_does_not_swallow_the_close_request` covers it.
+
+          NOT yet confirmed by clicking a real close button -- verified by test
+          and by reading the path. The click needs a machine where automation
+          has accessibility permission.
+
+### K-040 -- The TUI asks which AI before every single change
+Status:   fixed
+Owner:    lead
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-07, macOS, changing a game twice in one session
+Evidence: Build an app, pick grok. Choose "Make a change" -- asked again, with
+          a full five-tool probe first. Change it again -- asked again. Making
+          an app is build, look, change, look again, and each loop re-asked a
+          question already answered.
+Impact:   Nobody switches AI halfway through changing one game. The probe also
+          costs a round trip against every installed tool each time.
+Fix:      The choice is remembered for the session and shown as a reminder
+          ("using grok -- press a to use a different AI"), so it stays visible
+          and reversible without being asked again.
+
+
 ### K-036 -- A GUI app panics on stock Ubuntu: libxkbcommon-x11.so is missing
 Status:   open
 Owner:    unclaimed

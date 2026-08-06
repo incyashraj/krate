@@ -134,7 +134,7 @@ fn make_named_app(request: &str) -> Result<()> {
         return Ok(());
     }
 
-    let Some(provider) = choose_provider()? else {
+    let Some(provider) = provider_for_this_session()? else {
         return Ok(());
     };
 
@@ -247,6 +247,14 @@ fn change_an_app(bundle: &Path) -> Result<()> {
         println!();
         return Ok(());
     }
+    // "a" here means "and use a different AI", so somebody who does want to
+    // switch can, without everyone else being asked every time.
+    if change.eq_ignore_ascii_case("a") {
+        let Some(_) = choose_provider()? else {
+            return Ok(());
+        };
+        return change_an_app(bundle);
+    }
 
     // An older bundle has no source inside, but the request that made it is
     // still in history -- so the change can be made by asking again with both
@@ -293,7 +301,7 @@ fn change_an_app(bundle: &Path) -> Result<()> {
         }
     };
 
-    let Some(provider) = choose_provider()? else {
+    let Some(provider) = provider_for_this_session()? else {
         return Ok(());
     };
 
@@ -428,6 +436,49 @@ fn ensure_build_tools() -> Result<bool> {
 /// waits, fails, and blames Krate instead of the tool. A broken provider is
 /// still listed, with its reason and its fix, so the menu teaches rather than
 /// hides.
+/// The AI picked earlier in this session.
+///
+/// Making an app is not one question and one answer -- it is build, look,
+/// change, look again. Asking "which AI?" before every one of those, and
+/// re-probing all five tools to do it, is asking somebody to re-decide
+/// something they already decided. Nobody switches AI halfway through changing
+/// a game.
+static CHOSEN: std::sync::Mutex<Option<&'static dyn AgentProvider>> = std::sync::Mutex::new(None);
+
+fn remembered_provider() -> Option<&'static dyn AgentProvider> {
+    CHOSEN.lock().ok().and_then(|slot| *slot)
+}
+
+fn remember_provider(provider: &'static dyn AgentProvider) {
+    if let Ok(mut slot) = CHOSEN.lock() {
+        *slot = Some(provider);
+    }
+}
+
+/// Use the AI already chosen, or ask if there is not one yet.
+///
+/// The reminder line is deliberate: the choice is visible and reversible, so
+/// keeping it never feels like being trapped with it.
+fn provider_for_this_session() -> Result<Option<&'static dyn AgentProvider>> {
+    let Some(provider) = remembered_provider() else {
+        let chosen = choose_provider()?;
+        if let Some(provider) = chosen {
+            remember_provider(provider);
+        }
+        return Ok(chosen);
+    };
+
+    println!();
+    println!(
+        "  {} {}   {}",
+        style::dim("using"),
+        style::bold(provider.name()),
+        style::dim("press a to use a different AI")
+    );
+    Ok(Some(provider))
+}
+
+/// Ask which AI, when the person asked to change it or has not chosen yet.
 fn choose_provider() -> Result<Option<&'static dyn AgentProvider>> {
     println!();
     println!("  Checking which AI tools are ready...");
@@ -512,7 +563,9 @@ fn choose_provider() -> Result<Option<&'static dyn AgentProvider>> {
         }
         match answer.parse::<usize>() {
             Ok(n) if n >= 1 && n <= working.len() => {
-                return Ok(Some(working[n - 1].0));
+                let provider = working[n - 1].0;
+                remember_provider(provider);
+                return Ok(Some(provider));
             }
             _ => println!("  Pick a number from the ready list, or b to go back."),
         }
