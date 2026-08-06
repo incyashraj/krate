@@ -71,6 +71,37 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-044 -- Building Krate on a clean Linux or Windows machine is undocumented
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    environment
+Found:    2026-08-07, Ubuntu 24.04 and Windows 11, both fresh Azure VMs
+Evidence: Neither README.md nor docs/ names a single build dependency. Found by
+          hitting them one at a time on machines with nothing installed:
+
+          Ubuntu 24.04, needed before `cargo build -p krate-cli` gets through:
+            build-essential pkg-config libssl-dev cmake
+            libwayland-dev          (wayland-sys build script panics without it)
+            libxkbcommon-dev        (also what K-036 needs at runtime)
+
+          Windows 11:
+            Visual Studio Build Tools with the VC++ workload
+            libclang, for the default feature set -- whisper's bindgen needs
+            it. Without it, build with --no-default-features.
+            A pagefile. 16 GB of RAM and no pagefile kills the LTO link with
+            no message and an empty log; three builds died silently.
+
+          None of this affects somebody INSTALLING Krate -- the released
+          binaries carry what they need. It is only the from-source path.
+Impact:   Anybody who clones the repo to try a change hits these one at a time,
+          each as an unexplained failure. The wayland one is the worst: a
+          panic inside a dependency's build script, which reads as a broken
+          crate rather than a missing apt package.
+Fix:      Not started. A short "building from source" section naming the
+          packages per platform, and the pagefile note for Windows.
+
+
 ### K-043 -- Five shipped apps closed their own window after ten seconds
 Status:   fixed
 Owner:    lead
