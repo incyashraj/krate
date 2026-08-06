@@ -10,7 +10,7 @@
 //! waited on here is a two-to-five minute build, which a fancier interface does
 //! not shorten.
 
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -116,7 +116,7 @@ fn make_an_app() -> Result<()> {
         "  {}",
         style::dim("describe it -- or drag in a screenshot, a design, or an app you already have")
     );
-    let request = prompt("  What do you want to make?\n  > ")?;
+    let request = prompt_remembered("  What do you want to make?\n  > ")?;
     let request = request.trim().to_string();
     if request.is_empty() {
         println!("  {}", style::dim("nothing to build yet"));
@@ -396,7 +396,7 @@ impl AsDerefOrNone for String {
 /// existing app plus a sentence instead of starting from nothing.
 fn change_an_app(bundle: &Path) -> Result<()> {
     println!();
-    let change = prompt("  What should change?\n  > ")?;
+    let change = prompt_remembered("  What should change?\n  > ")?;
     let change = change.trim().to_string();
     if change.is_empty() {
         println!();
@@ -1169,17 +1169,39 @@ fn pad(text: &str, width: usize) -> String {
     format!("{text}{}", " ".repeat(width - visible))
 }
 
+/// The line editor for this session, so Up recalls what was typed earlier.
+///
+/// One editor rather than one per prompt: history that resets every question
+/// is not history. Seeded from the saved request log, so Up on a fresh start
+/// still offers what was asked for last time.
+static EDITOR: std::sync::Mutex<Option<crate::lineedit::Editor>> = std::sync::Mutex::new(None);
+
+/// A menu keystroke or a short answer: editable, but not remembered.
+///
+/// Menu choices must not enter the history, or pressing Up at "what do you
+/// want to make?" offers "1" and "q" -- the keys pressed to get there, not the
+/// things asked for.
 fn prompt(label: &str) -> Result<String> {
-    print!("{label}");
-    io::stdout().flush()?;
-    let mut line = String::new();
-    // End of input means the terminal went away; treat it as quitting rather
-    // than looping forever on an empty read.
-    if io::stdin().read_line(&mut line)? == 0 {
-        println!();
-        std::process::exit(0);
-    }
-    Ok(line)
+    let mut editor = crate::lineedit::Editor::new();
+    Ok(editor.read(label)?)
+}
+
+/// A prompt whose answers are worth recalling: what to build, what to change.
+fn prompt_remembered(label: &str) -> Result<String> {
+    let mut slot = match EDITOR.lock() {
+        Ok(slot) => slot,
+        // A poisoned lock is not a reason to lose the prompt.
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    let editor = slot.get_or_insert_with(|| {
+        let past: Vec<String> = history()
+            .into_iter()
+            .rev()
+            .map(|entry| entry.request)
+            .collect();
+        crate::lineedit::Editor::with_history(past)
+    });
+    Ok(editor.read(label)?)
 }
 
 /// Expand a leading `~` so a pasted path from a file manager works.

@@ -21,6 +21,7 @@ mod agent_provider;
 mod authoring_context;
 mod github_auth;
 mod krate_mode;
+mod lineedit;
 mod mcp;
 mod port_report;
 mod progress;
