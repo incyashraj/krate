@@ -133,7 +133,7 @@ Fix:      Lay out from canvas_size, handle Event::Resized, keep layout in one
           place so drawing and hit-testing cannot disagree.
 
 ### K-004 — No clipping, so a scrolling list would draw over its own header
-Status:   open
+Status:   fixed (f5820f0)
 Owner:    unclaimed
 Severity: serious
 Class:    runtime-hole
@@ -155,7 +155,7 @@ Fix:      A clip rectangle on canvas2d. Left unclaimed by W12: the scroll work
           strip in `draw`) -- both exist only because there is no clip rect.
 
 ### K-005 — No frame timing, so animation polls a timeout and hopes
-Status:   open
+Status:   fixed
 Owner:    unclaimed
 Severity: annoyance
 Class:    runtime-hole

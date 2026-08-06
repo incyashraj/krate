@@ -81,6 +81,8 @@ pub struct Phase3GuiHost {
     /// host synthesises a close request so the guest exits the way it would if
     /// a person had closed the window.
     idle_waits: std::cell::Cell<u32>,
+    /// When the last frame was published, for pacing the next one.
+    last_present: std::cell::Cell<Option<std::time::Instant>>,
     /// How many times the person has asked to close the window.
     ///
     /// The first request goes to the guest untouched. A second means the guest
@@ -217,6 +219,7 @@ impl Phase3GuiHost {
             // person saw on their first `krate run`.
             headless: headless_backend,
             idle_waits: std::cell::Cell::new(0),
+            last_present: std::cell::Cell::new(None),
             close_requests: std::cell::Cell::new(0),
             headless_started: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
@@ -2296,6 +2299,25 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
     fn present(&mut self, canvas: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         // The one call that reaches the widget. Draw calls mutate the raster;
         // this publishes it, so a hundred fills cost one render.
+        // Pace the frame. A game loop calls poll and present with no sleep of
+        // its own, which spins a core flat out to produce frames no display
+        // can show -- a laptop's fan tells you before the frame rate does.
+        // Sleeping the remainder of a 60Hz budget here means every app is
+        // paced without every author having to think about it, and an app that
+        // is already slower than the budget waits for nothing.
+        //
+        // Deliberately not in the guest: an app that forgets to sleep should
+        // not be able to melt the machine, and one that sleeps by hand still
+        // works because this only ever waits for the time left over.
+        const FRAME_BUDGET: std::time::Duration = std::time::Duration::from_micros(16_667);
+        if let Some(previous) = self.last_present.get() {
+            let elapsed = previous.elapsed();
+            if elapsed < FRAME_BUDGET {
+                std::thread::sleep(FRAME_BUDGET - elapsed);
+            }
+        }
+        self.last_present.set(Some(std::time::Instant::now()));
+
         let result = self.publish_canvas(canvas);
         // A presented canvas is a real drawn frame -- the right moment to
         // capture a 2D game or drawing, which may never call wait.
