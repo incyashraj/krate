@@ -2388,6 +2388,17 @@ fn set_progress_sink(sink: Option<std::sync::Arc<progress::Progress>>) {
     }
 }
 
+/// Put a line of detail under the current stage, without changing the stage.
+///
+/// Returns false when nothing is drawing, so the caller can print instead.
+fn report_progress_note(text: &str) -> bool {
+    if let Some(progress) = progress_sink() {
+        progress.note(text.to_string());
+        return true;
+    }
+    false
+}
+
 /// The display currently drawing, if there is one.
 fn progress_sink() -> Option<std::sync::Arc<progress::Progress>> {
     PROGRESS_SINK.lock().ok().and_then(|slot| slot.clone())
@@ -3331,6 +3342,18 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
              words that each start with a lowercase letter, like `tile-game`."
         );
     }
+    // An app may not be called `krate`. The SDK dependency is named `krate`,
+    // so a package with the same name collides in the lockfile and the build
+    // fails with "package collision in the lockfile" -- which names neither
+    // the app nor the SDK. An AI handed that spent most of a run fighting it,
+    // wrote CANNOT-BUILD, and only then found a workaround.
+    let name = if name == "krate" {
+        // "krate-app" rather than an error: the person asked for something
+        // buildable and the clash is our naming, not their request.
+        "krate-app".to_string()
+    } else {
+        name
+    };
 
     // The app is built inside a work dir. A temp dir is cleaned up; --work-dir
     // keeps it for inspection.
@@ -3356,7 +3379,15 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // Step 1: author. Either an agent command writes the source, or the
     // built-in generator does.
     if !req.json {
-        println!("==> authoring \"{}\"", req.request);
+        // Some AIs stream what they are doing; Grok reports nothing until it
+        // finishes. Say so, rather than showing a silent spinner that reads as
+        // a hang -- which is when somebody kills the process.
+        report_progress("working out what to build");
+        if !report_progress_note(
+            "the AI is thinking -- some tools report nothing until they finish",
+        ) {
+            println!("==> authoring \"{}\"", req.request);
+        }
     }
     let author_note = if let Some(cmd) = &req.author_cmd {
         let sdk_prefix = relative_sdk_prefix(&app_dir, &sdk_root)?;
@@ -3401,6 +3432,12 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
 
     // Step 2: build to a wasm component.
     if !req.json {
+        // Drive the display from what we know, not from what the AI says.
+        // Grok emits one JSON object when it finishes rather than a stream,
+        // so a run driven only by parsed agent output shows nothing at all
+        // until it is over -- which is exactly when somebody gives up and
+        // kills it. These four calls are facts about our own pipeline.
+        report_progress("building the app");
         println!("==> building the component");
     }
     let wasm = build_component(&app_dir)?;
@@ -3420,6 +3457,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
 
     // Step 4: pack. Copy the manifest and point its entry at code.wasm.
     if !req.json {
+        report_progress("packaging it");
         println!("==> packing {}", req.output.display());
     }
     let manifest_src = app_dir.join("manifest.toml");
@@ -3451,6 +3489,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     // Step 5: verify the permission wall by running the packed bundle with all
     // grants (must succeed) and without the gating capability (must refuse).
     if !req.json {
+        report_progress("checking it runs and paints a frame");
         println!("==> verifying the permission wall");
     }
     let gating = gating_capability(&manifest);

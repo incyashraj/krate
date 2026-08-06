@@ -71,6 +71,79 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-045 -- The progress display shows nothing for AIs that do not stream
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, Windows 11, making an app with Grok
+Evidence: "working out what to build" for the whole run, then straight to
+          completed. No intermediate progress at all.
+
+          The display was driven entirely by parsing the AI's streamed output.
+          Grok does not stream: its transcript is ONE JSON object written when
+          the run finishes, holding the whole session. So there is nothing to
+          parse until it is over, and nothing to show. Claude streams per-tool
+          events, which is why this looked fixed on macOS.
+Impact:   Reads as a hang for minutes. In the reporter's words, "that's where
+          almost everyone will close the process because they'll think its
+          stuck" -- which is exactly what happened on an earlier eight-minute
+          Windows run.
+Fix:      Drive the display from our own pipeline, which knows the real phases
+          regardless of the AI: building, verifying, packaging each report as
+          they start. The authoring phase now also says plainly that some AI
+          tools report nothing until they finish, so silence is explained
+          rather than mysterious. Parsed agent output still refines the detail
+          line when a provider does stream.
+
+### K-046 -- An app named "krate" collides with the SDK and cannot build
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, Windows 11, reading a Grok transcript
+Evidence: The app package takes its name from the request; the SDK dependency
+          is always named `krate`. Ask for something that derives the name
+          "krate" and cargo sees two packages with that name.
+
+          From the transcript, the AI spent most of its run on it and wrote:
+
+              KRATE-CANNOT-BUILD: ... the skeleton already contains a package
+              collision between the app and the SDK (both named "krate" with
+              identical version)
+
+          It eventually worked around it by changing the version, but the run
+          cost several minutes and nearly failed outright.
+Impact:   A whole authoring run wasted, and the error names neither the app nor
+          the SDK -- so nobody reading it would know what to change.
+Fix:      An app that would be called `krate` is called `krate-app` instead.
+          Renaming rather than erroring: the request was buildable, the clash
+          is our naming.
+
+### K-047 -- Double-clicking a .krate opens a console window beside the app
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, Windows 11, double-clicking a .krate in Explorer
+Evidence: A black console window appears next to the app and stays for the
+          whole session.
+
+          The file association ran `krate.exe run "%1" --consent`, and
+          krate.exe is a console application -- so Windows allocates a console
+          for it. Correct for a terminal, wrong for Explorer.
+Impact:   Undermines the thing Krate sells. "Someone sends you an app and you
+          double-click it" is the whole pitch, and a stray terminal makes it
+          look like a developer tool.
+Fix:      krate-open.exe, built for the "windows" subsystem, which is the only
+          way to avoid the console. It hands the file to the same
+          `krate run --consent`, so there is one runner rather than two that
+          drift. Failures go to a message box, because with no console there
+          is nowhere else for them to go. Shipped in the Windows archives and
+          registered by the association script, which falls back to krate.exe
+          when it is missing.
+
+
 ### K-044 -- Building Krate on a clean Linux or Windows machine is undocumented
 Status:   open
 Owner:    unclaimed

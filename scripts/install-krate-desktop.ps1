@@ -54,7 +54,20 @@ Set-ItemProperty -Path $extKey -Name "(default)" -Value $progId
 New-Item -Path "$extKey\OpenWithProgids" -Force | Out-Null
 Set-ItemProperty -Path "$extKey\OpenWithProgids" -Name $progId -Value ([byte[]]@()) -Type Binary
 
-# 2. The ProgID: friendly name, icon, and the open command with --consent.
+# The double-click handler is krate-open.exe, not krate.exe.
+#
+# krate.exe is a console application, so Explorer allocated a console for it
+# and a black window sat beside the app for the whole session. krate-open.exe
+# is built for the "windows" subsystem, which is the only way to avoid that; it
+# hands the file straight to `krate run --consent`, so there is one runner
+# rather than two that can drift.
+#
+# Falls back to krate.exe when the opener is missing (an older install, a build
+# that predates it): a console window is worse than nothing happening.
+$opener = Join-Path (Split-Path $binary) "krate-open.exe"
+if (-not (Test-Path $opener)) { $opener = $binary }
+
+# 2. The ProgID: friendly name, icon, and the open command.
 New-Item -Path $progKey -Force | Out-Null
 Set-ItemProperty -Path $progKey -Name "(default)" -Value "Krate app bundle"
 if ($icon -ne "") {
@@ -63,7 +76,7 @@ if ($icon -ne "") {
 }
 New-Item -Path "$progKey\shell\open\command" -Force | Out-Null
 Set-ItemProperty -Path "$progKey\shell\open\command" -Name "(default)" `
-  -Value "`"$binary`" run `"%1`" --consent"
+  -Value "`"$opener`" `"%1`""
 
 # 3. Nudge Explorer to pick up the new association.
 $sig = '[System.Runtime.InteropServices.DllImport("shell32.dll")] public static extern void SHChangeNotify(int eventId, int flags, System.IntPtr item1, System.IntPtr item2);'

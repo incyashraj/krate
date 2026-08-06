@@ -36,6 +36,22 @@ mkdir -p "$package_dir"
 cp "$binary_path" "$package_dir/"
 cp README.md LICENSE-MIT LICENSE-APACHE "$package_dir/"
 
+# Windows only: the double-click handler. krate.exe is a console application,
+# so Explorer opened a black console window beside every double-clicked app.
+# krate-open.exe is built for the "windows" subsystem, which is what avoids
+# that, and it hands the file straight to `krate run --consent`. The file
+# association points at it; without it in the archive, a double-click falls
+# back to the console binary and the console comes back.
+if [ "${target#*windows}" != "$target" ]; then
+  opener_path="target/${target}/release/krate-open.exe"
+  if [ -f "$opener_path" ]; then
+    cp "$opener_path" "$package_dir/"
+    echo "packaged krate-open.exe (double-click handler)"
+  else
+    echo "warning: krate-open.exe missing; double-click will show a console" >&2
+  fi
+fi
+
 # Ship cargo-component beside the runtime when the release build produced one.
 # Upstream publishes no binaries for it, so without this every person who wants
 # to make an app compiles it from source first -- minutes of waiting before

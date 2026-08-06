@@ -12,6 +12,14 @@ build = "build.rs"
 name = "krate"
 path = "src/main.rs"
 
+# The Windows double-click handler. A separate binary because it is built for
+# the "windows" subsystem, which is what stops a console appearing beside a
+# double-clicked app -- and that subsystem is wrong for `krate` itself, which
+# has to print in a terminal.
+[[bin]]
+name = "krate-open"
+path = "src/bin/krate-open.rs"
+
 [features]
 # Speech is on by default and can be dropped for a platform whose toolchain
 # cannot build whisper.cpp. Kept as a passthrough so `cargo build -p krate-cli
