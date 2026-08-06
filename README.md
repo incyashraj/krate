@@ -62,7 +62,9 @@ no browser and no runtime of its own, so the apps in this repo have a median
 size of **13.5 KB**. You install the runtime once; every app after that is
 kilobytes.
 
-Krate is open source and pre-alpha.
+Krate is open source. `v0.1.0` is the first release where the whole path
+works end to end: install it, describe an app, an AI writes it, and the file
+it hands you opens on macOS, Windows and Linux.
 
 ## Make an app
 
@@ -300,7 +302,8 @@ Known limits, stated plainly:
 - An AI has to write against the current Krate APIs, which are still changing.
 - Permission review and desktop polish differ between operating systems.
 - File formats and interfaces will change before 1.0.
-- This is pre-alpha. Use it for your own apps and the published examples, not as
+- This is a first release, not a frozen API. Use it for your own apps and the
+  published examples, not as
   a shield against hostile third-party code.
 
 The runtime ships for six targets: macOS, Windows, and Linux, on both Intel and
@@ -435,9 +438,9 @@ costs about 16 milliseconds and can never change a command's result.
 
 ## Project status
 
-- Stage: pre-alpha
+- Stage: first release -- works end to end, API not yet frozen
 - Current release:
-  [`v0.1.0-rc19`](https://github.com/incyashraj/krate/releases/tag/v0.1.0-rc19)
+  [`v0.1.0`](https://github.com/incyashraj/krate/releases/tag/v0.1.0)
 - Company: Krate Labs
 - Maintainer: [Yashraj Pardeshi](https://github.com/incyashraj)
 - License: MIT OR Apache-2.0
