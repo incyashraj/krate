@@ -68,6 +68,8 @@ impl Editor {
         let mut recalled: Option<usize> = None;
         let mut stashed: Option<Vec<char>> = None;
 
+        // Print the whole label once. Everything before the final newline is
+        // static; only the last line is redrawn as the person types.
         print!("{label}");
         io::stdout().flush()?;
 
@@ -254,8 +256,15 @@ fn word_start(buffer: &[char], cursor: usize) -> usize {
 fn redraw(label: &str, buffer: &[char], cursor: usize) -> io::Result<()> {
     let text: String = buffer.iter().collect();
     let mut out = io::stdout();
-    // Carriage return, clear to end of line, then the prompt and the text.
-    write!(out, "\r\x1b[K{label}{text}")?;
+    // Only the LAST line of the label is redrawn.
+    //
+    // `\r\x1b[K` returns to the start of the current line and clears it, which
+    // is exactly one line. A label containing a newline ("One line about it\n
+    // > ") was reprinted whole on every keystroke, so the question marched
+    // down the screen once per character typed. The earlier lines are printed
+    // once, before editing starts, and never touched again.
+    let last_line = label.rsplit('\n').next().unwrap_or(label);
+    write!(out, "\r\x1b[K{last_line}{text}")?;
     // Walk the cursor back to where it actually is. Counted in characters,
     // not bytes, or a multi-byte character puts the caret in the wrong place.
     let behind = buffer.len().saturating_sub(cursor);
@@ -337,6 +346,21 @@ impl RawMode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_last_line_of_a_multi_line_label_is_redrawn() {
+        // "One line about it (or press enter to skip)\n  > " marched down the
+        // screen once per character typed, because the redraw cleared one line
+        // and reprinted the whole label. Sixteen copies of the question before
+        // the word was finished.
+        let label = "  One line about it (or press enter to skip)\n  > ";
+        let last = label.rsplit('\n').next().unwrap_or(label);
+        assert_eq!(last, "  > ", "only the prompt line is repainted");
+
+        // A single-line label is unaffected: it is its own last line.
+        let plain = "  What do you want to make?  > ";
+        assert_eq!(plain.rsplit('\n').next().unwrap_or(plain), plain);
+    }
 
     #[test]
     fn ctrl_w_deletes_one_word_and_its_trailing_space() {

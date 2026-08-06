@@ -71,6 +71,32 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-057 -- A two-line prompt reprinted itself once per keystroke
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, macOS, publishing an app from the menu
+Evidence: Typing a one-line description produced sixteen copies of the
+          question marching down the screen:
+
+              One line about it (or press enter to skip)
+              One line about it (or press enter to skip)
+              ... x16
+              > DVD Screensaver
+
+          The line editor redraws with `\r\x1b[K`, which returns to the start
+          of the CURRENT line and clears it -- exactly one line. Two prompts
+          embed a newline in their label ("One line about it...\n  > " and
+          "Path to the .krate file\n  > "), so every keystroke cleared the
+          `> ` line and reprinted the whole label under it.
+Impact:   The publish flow, which is the one thing a .krate exists for, looked
+          broken at the moment somebody was trying to share their app.
+Fix:      The label is printed once when the prompt opens; only its LAST line
+          is repainted while typing. Verified through a pty on both prompts:
+          the question now appears zero further times as characters arrive.
+
+
 ### K-053 -- A finished edit was thrown away by the permission-wall check
 Status:   fixed
 Owner:    lead
