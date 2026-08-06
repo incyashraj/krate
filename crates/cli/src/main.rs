@@ -2606,6 +2606,25 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 ///
 /// The AI is handed the app's own source and told what to change, which is why
 /// this is quicker and more faithful than describing the whole app again.
+/// Revise an app with a live progress display driving the terminal.
+///
+/// The watched form matters for more than the display: with a sink installed,
+/// the authoring child's output is piped rather than inherited, so cargo's
+/// warnings stop pouring raw through the screen.
+pub(crate) fn revise_app_for_tui_watched(
+    source: &Path,
+    change: &str,
+    provider: &'static dyn agent_provider::AgentProvider,
+    output: &Path,
+    attachments: &[PathBuf],
+    progress: &std::sync::Arc<progress::Progress>,
+) -> Result<()> {
+    set_progress_sink(Some(std::sync::Arc::clone(progress)));
+    let result = revise_app_for_tui(source, change, provider, output, attachments);
+    set_progress_sink(None);
+    result
+}
+
 pub(crate) fn revise_app_for_tui(
     source: &Path,
     change: &str,
@@ -2744,12 +2763,25 @@ pub(crate) fn run_bundle_for_tui(bundle: &Path) -> Result<()> {
     #[cfg(unix)]
     let previous = unsafe { libc::signal(libc::SIGINT, handle_interrupt as libc::sighandler_t) };
 
-    let status = std::process::Command::new(exe)
+    // Take the app's stdout rather than letting it into the menu.
+    //
+    // Apps print machine-readable lines for check-app to assert on --
+    // "screensavers:4", "frames:782", "seconds:14". Useful to the checker,
+    // meaningless to the person who just closed a screensaver and finds that
+    // underneath their menu. stderr stays inherited: that is where a real
+    // error would go, and swallowing those would be worse than showing noise.
+    let output = std::process::Command::new(exe)
         .arg("run")
         .arg(bundle)
         .arg("--auto-grant")
-        .status()
+        .stdout(std::process::Stdio::piped())
+        .output()
         .context("could not start the app")?;
+    let status = output.status;
+    // Keep what it said for a failure message. An app that exits non-zero
+    // usually explains itself on stdout, and that is exactly when the lines
+    // are worth showing.
+    let said = String::from_utf8_lossy(&output.stdout);
 
     #[cfg(unix)]
     unsafe {
@@ -2760,7 +2792,15 @@ pub(crate) fn run_bundle_for_tui(bundle: &Path) -> Result<()> {
     // way to close an app here rather than a failure worth reporting.
     match status.code() {
         Some(0) | Some(130) | None => Ok(()),
-        Some(code) => anyhow::bail!("the app exited with code {code}"),
+        Some(code) => {
+            // Now the lines matter: an app that failed usually said why.
+            let tail: Vec<&str> = said.lines().rev().take(6).collect();
+            let tail = tail.into_iter().rev().collect::<Vec<_>>().join("\n  ");
+            if tail.trim().is_empty() {
+                anyhow::bail!("the app exited with code {code}");
+            }
+            anyhow::bail!("the app exited with code {code}:\n\n  {tail}");
+        }
     }
 }
 
@@ -5117,11 +5157,31 @@ fn gating_capability(manifest: &krate_manifest::Manifest) -> Option<String> {
             return Some(cap.clone());
         }
     }
-    // Otherwise any capability that is not granted by default and is not the
-    // window itself, since withholding the window just closes the app.
-    required
-        .into_iter()
-        .find(|c| !c.starts_with("io.") && !c.starts_with("ui.window"))
+    // Otherwise any capability whose absence would actually stop the app.
+    //
+    // "Not granted by default" has to be asked of the registry, not guessed
+    // from a prefix. The old check excluded `io.` and `ui.window` by name and
+    // let `gfx.gpu:basic` through -- which the runtime grants to every app, so
+    // withholding it changes nothing, the app runs fine, and the wall check
+    // reports "should refuse with exit 5, got 0" and throws the work away.
+    // That is what killed a finished edit after it had already built and
+    // packed.
+    let granted_anyway: std::collections::BTreeSet<String> =
+        krate_manifest::supported_capability_specs()
+            .iter()
+            .filter(|spec| spec.default_granted())
+            .map(|spec| spec.name())
+            .collect();
+    required.into_iter().find(|c| {
+        // Withholding the window just closes the app rather than refusing it.
+        if c.starts_with("ui.window") {
+            return false;
+        }
+        // Scoped names arrive as `module.action:scope`; the registry knows
+        // them by `module.action`.
+        let base = c.split(':').next().unwrap_or(c);
+        !granted_anyway.contains(base) && !granted_anyway.contains(c.as_str())
+    })
 }
 
 /// Create the data directories the app expects under the verify dir, so a
@@ -8211,6 +8271,65 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|home| !home.is_empty())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod gating_tests {
+    use super::gating_capability;
+
+    fn manifest_with(caps: &[(&str, bool)]) -> krate_manifest::Manifest {
+        let mut toml = String::from(
+            "[app]\nid = \"dev.krate.t\"\nname = \"T\"\nversion = \"0.1.0\"\n\
+             entry = \"a.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n",
+        );
+        for (cap, required) in caps {
+            toml.push_str(&format!(
+                "\n[[capabilities]]\ncap = \"{cap}\"\nrationale = \"t\"\nrequired = {required}\n"
+            ));
+        }
+        krate_manifest::Manifest::parse(&toml).expect("manifest parses")
+    }
+
+    /// The bug that threw away a finished edit.
+    ///
+    /// A screensaver declared `gfx.gpu:basic` as required. That capability is
+    /// granted to every app by default, so withholding it changes nothing --
+    /// the app ran fine and exited 0, and the permission-wall check reported
+    /// "withholding gfx.gpu:basic should refuse with exit 5, got 0" and
+    /// discarded work that had already built and packed.
+    #[test]
+    fn a_capability_granted_to_everyone_is_never_the_gate() {
+        let manifest = manifest_with(&[
+            ("ui.window:create", true),
+            ("gfx.gpu:basic", true),
+            ("io.stdout", true),
+        ]);
+        assert_eq!(
+            gating_capability(&manifest),
+            None,
+            "nothing here can be withheld, so there is no wall to test"
+        );
+    }
+
+    #[test]
+    fn a_real_capability_is_still_chosen() {
+        let manifest = manifest_with(&[
+            ("ui.window:create", true),
+            ("gfx.gpu:basic", true),
+            ("store.kv", true),
+        ]);
+        assert_eq!(gating_capability(&manifest), Some("store.kv".to_string()));
+    }
+
+    #[test]
+    fn filesystem_access_is_preferred_when_present() {
+        let manifest = manifest_with(&[("store.kv", true), ("fs.write:notes/**", true)]);
+        assert_eq!(
+            gating_capability(&manifest),
+            Some("fs.write:notes/**".to_string()),
+            "the clearest thing to show being withheld"
+        );
+    }
 }
 
 #[cfg(test)]

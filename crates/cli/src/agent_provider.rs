@@ -65,6 +65,17 @@ pub trait AgentProvider: Send + Sync {
     /// nothing, and the raw line still reaches the transcript.
     fn progress_line(&self, line: &str) -> Option<String>;
 
+    /// Whether this provider streams what it is doing while it works.
+    ///
+    /// Claude Code emits an event per tool call, so a progress display can
+    /// follow along. Grok writes one JSON object when the whole run finishes,
+    /// so there is genuinely nothing to show in between -- and somebody
+    /// watching a still screen for ten minutes concludes it has hung and kills
+    /// it. Providers that cannot stream say so, and the front door warns.
+    fn reports_progress(&self) -> bool {
+        true
+    }
+
     /// Whether the run failed. Exit status is the truth for most providers; one
     /// that reports failure inside its final event can override this.
     fn failed(&self, status: &ExitStatus) -> bool {
@@ -784,6 +795,13 @@ impl AgentProvider for CopilotProvider {
 struct GrokProvider;
 
 impl AgentProvider for GrokProvider {
+    fn reports_progress(&self) -> bool {
+        // Verified from a real transcript: the whole session arrives as one
+        // JSON object written when the run ends, so nothing can be reported
+        // while it works.
+        false
+    }
+
     fn name(&self) -> &'static str {
         "grok"
     }

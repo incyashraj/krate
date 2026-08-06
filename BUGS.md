@@ -71,6 +71,91 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-053 -- A finished edit was thrown away by the permission-wall check
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-07, macOS, adding a DVD screensaver to a working app
+Evidence: The AI made the change, it compiled, it packed, and then:
+
+              ✗ that change did not work -- your app is untouched
+              withholding gfx.gpu:basic should refuse with exit 5, got 0
+
+          `gating_capability` picks a required capability to withhold, to
+          prove the permission wall refuses without it. It excluded `io.` and
+          `ui.window` by prefix and let `gfx.gpu:basic` through -- which the
+          runtime grants to EVERY app by default. Withholding it changes
+          nothing, so the app ran fine and exited 0, and that correct
+          behaviour was read as a failure.
+Impact:   Ten minutes of work discarded after everything real had succeeded.
+          It hits any app declaring a default-granted capability as required.
+Fix:      Ask the registry which capabilities are default-granted instead of
+          guessing from prefixes. An app with nothing withholdable now
+          correctly has no wall to test rather than a fake one.
+
+          Two more things that made it worse, also fixed: the message said
+          "your app is untouched" while the source directory HAD been edited
+          (only the bundle was not replaced), and a failed change dropped to
+          the top-level menu, so the app looked gone. It now stays with the
+          app so trying again is one keypress.
+
+### K-054 -- An app's own output leaked into the menu
+Status:   fixed
+Owner:    lead
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-07, macOS, closing a screensaver
+Evidence: Closing an app left this under the menu:
+
+              screensavers:4
+              current:Starfield
+              frames:782
+
+          Apps print machine-readable lines for check-app to assert on. The
+          TUI ran the app with stdout inherited, so those landed on screen.
+Fix:      stdout is captured and kept for the failure message -- an app that
+          exits non-zero usually explains itself there, which is exactly when
+          the lines are worth showing. stderr stays inherited, since that is
+          where a real error goes.
+
+### K-055 -- Changing an app showed raw cargo output; making one did not
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, macOS, comparing the make and change flows in one log
+Evidence: A fresh build showed clean named stages. A change showed
+          "warning: function `pure_string` is never used" and a full cargo
+          dump through the middle of the display.
+
+          The change flow never started a Progress display. With no sink
+          installed, `drawing` is false, so the authoring child inherits the
+          terminal instead of being piped -- the same mechanism that was fixed
+          for the make flow, on a path that never got it.
+Fix:      `revise_app_for_tui_watched`, mirroring the make flow. The display
+          is what causes the child's output to be captured, so this fixes the
+          stage reporting and the noise together.
+
+### K-056 -- Nothing said Grok cannot report progress
+Status:   fixed
+Owner:    lead
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-07, from the transcript evidence behind K-045
+Evidence: Grok writes one JSON object when the whole run ends, so a progress
+          display has nothing to show in between. Somebody watching a still
+          screen for ten minutes concludes it has hung -- which has already
+          happened once, on an eight-minute Windows run that was killed by
+          hand while working normally.
+Fix:      The picker recommends Claude Code and says why. Choosing a provider
+          that cannot stream now prints, before the wait starts: "grok does
+          not report progress while it works, so the steps below will not move
+          until it finishes. It is not stuck." A `reports_progress` method on
+          the provider trait carries it, so a new provider declares its own
+          behaviour rather than the menu hardcoding names.
+
+
 ### K-052 -- No stroke-circle, so round things got square outlines
 Status:   fixed
 Owner:    lead

@@ -535,9 +535,16 @@ fn change_an_app(bundle: &Path) -> Result<()> {
     println!();
 
     let started = Instant::now();
+    // A change needs the same display a fresh build gets. Without it the sink
+    // is empty, so the authoring child inherits the terminal and cargo's
+    // warnings pour through raw -- which is exactly what a change looked like
+    // while a new app looked clean.
+    let progress = std::sync::Arc::new(crate::progress::Progress::start(
+        crate::progress::AUTHOR_STAGES,
+    ));
     let outcome = match &source {
         Some(source) => {
-            crate::revise_app_for_tui(source, &change, provider, bundle, &attachments)
+            crate::revise_app_for_tui_watched(source, &change, provider, bundle, &attachments, &progress)
         }
         None => {
             // No source to edit, so restate the whole app: the original
@@ -552,9 +559,11 @@ fn change_an_app(bundle: &Path) -> Result<()> {
             } else {
                 format!("{original}\n\nAlso, change this: {change}")
             };
-            crate::author_app_for_tui(&request, provider, bundle, &[])
+            crate::author_app_for_tui_watched(&request, provider, bundle, &progress, &[])
         }
     };
+    crate::progress::Progress::stop(&progress);
+
     match outcome {
         Ok(()) => {
             println!();
@@ -568,13 +577,22 @@ fn change_an_app(bundle: &Path) -> Result<()> {
             println!(
                 "  {} {}",
                 style::bad(glyphs().cross),
-                style::bad("that change did not work -- your app is untouched")
+                style::bad("that change did not finish")
+            );
+            println!(
+                "  {}",
+                style::dim("your app is exactly as it was -- the file was not replaced")
             );
             println!();
             for line in err.to_string().lines().take(12) {
                 println!("  {line}");
             }
             println!();
+            // Offer the app again rather than dropping to the main menu. A
+            // failed change left somebody staring at the top-level menu with
+            // their app apparently gone, and the obvious next move -- try the
+            // change again, or just open it -- was several steps away.
+            return after_build(bundle);
         }
     }
     Ok(())
@@ -708,6 +726,10 @@ fn provider_for_this_session() -> Result<Option<&'static dyn AgentProvider>> {
 fn choose_provider() -> Result<Option<&'static dyn AgentProvider>> {
     println!();
     println!("  Checking which AI tools are ready...");
+    println!(
+        "  {}",
+        style::dim("Claude Code works best -- it reports what it is doing as it goes")
+    );
 
     let probes = probe_all();
     let working: Vec<_> = probes.iter().filter(|(_, r)| r.is_working()).collect();
@@ -791,6 +813,21 @@ fn choose_provider() -> Result<Option<&'static dyn AgentProvider>> {
             Ok(n) if n >= 1 && n <= working.len() => {
                 let provider = working[n - 1].0;
                 remember_provider(provider);
+                // Say it now rather than let somebody watch a still screen and
+                // conclude it has hung. Grok reports nothing until it finishes
+                // -- its whole session arrives as one object at the end -- so
+                // the middle of a run genuinely has nothing to show.
+                if !provider.reports_progress() {
+                    println!();
+                    println!(
+                        "  {}",
+                        style::dim(&format!(
+                            "{} does not report progress while it works, so the steps below \
+                             will not move until it finishes. It is not stuck.",
+                            provider.name()
+                        ))
+                    );
+                }
                 return Ok(Some(provider));
             }
             _ => println!("  Pick a number from the ready list, or b to go back."),
