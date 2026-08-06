@@ -276,10 +276,13 @@ Fix:      Static CRT, .cargo/config.toml sets
 
           Two things the build itself taught, both worth keeping:
 
-          - x86_64 Windows cannot build the default feature set: whisper's
-            bindgen needs libclang, which is not present. The release workflow
-            skips speech only on ARM targets, so this would have failed there
-            too and nobody had noticed. Built with --no-default-features.
+          - The test VM could not build the default feature set: whisper's
+            bindgen needs libclang, which a bare Windows install does not have.
+            Built with --no-default-features there. NOT a workflow bug -- the
+            GitHub runner ships libclang, and rc24's
+            x86_64-pc-windows-msvc.zip was built with speech and shipped
+            fine. It is a note about what a Windows machine needs to build
+            Krate from source, not about the release.
           - The VM had 16 GB of RAM and NO pagefile. The LTO link needs more
             than the free physical memory, and Windows kills the process with
             no message and an empty log. Three builds died silently before
