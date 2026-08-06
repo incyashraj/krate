@@ -20,9 +20,11 @@
     /* The hero states the one thing a visitor needs before browsing: these
        open on your own machine, and they say what they want first. */
     .hero { margin-bottom: 2.6rem; }
-    /* The product mark, above its name. Sized so it reads as a badge for the
-       page rather than competing with the heading under it. */
-    .hero-mark { display: block; width: 72px; height: 72px; margin-bottom: 1rem; }
+    /* The product mark, directly above its name. Big enough to read as the
+       product's face rather than a decoration, and tight to the heading so
+       the two are one unit -- it used to sit above the badge with a gap, so
+       it looked like a stray image at the top of the page. */
+    .hero-mark { display: block; width: 128px; height: 128px; margin: 0 0 .6rem -.15rem; }
     .hero h1 { margin: 0 0 .5rem; font-size: 2.1rem; letter-spacing: -.025em; }
     .hero p { color: var(--muted); margin: 0; line-height: 1.65; max-width: 46rem; }
     .hero .badge {
@@ -107,9 +109,9 @@
     </header>
 
     <div class="hero">
-      <img class="hero-mark" src="/krate-glyph-white.png"
-           alt="" width="72" height="72" />
       <span class="badge">Early access</span>
+      <img class="hero-mark" src="/krate-glyph-white.png"
+           alt="" width="128" height="128" />
       <h1>Krate Cloud</h1>
       <p>
         Apps people have published. Each one is a single file that runs on your
