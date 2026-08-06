@@ -20,6 +20,13 @@ const MAX_CANVAS_EDGE: u32 = 8_192;
 
 /// One bound canvas: a CPU pixel buffer the app draws into with commands.
 pub struct CanvasSurface {
+    /// Where drawing is allowed, as (x, y, w, h) in logical pixels.
+    ///
+    /// Without this a scrolling list paints over its own header, and every
+    /// app that scrolls has to skip rows by hand -- which works until rows
+    /// have different heights, and then it cannot be done at all. One rect
+    /// checked in `blend` is enough, because every draw call lands there.
+    clip: Option<(f32, f32, f32, f32)>,
     width: u32,
     height: u32,
     /// `0xAARRGGBB`, row-major from the top — the drawn painter's format.
@@ -111,6 +118,7 @@ impl CanvasSurface {
             )));
         }
         Ok(Self {
+            clip: None,
             width,
             height,
             // Opaque white, so a canvas an app forgets to clear reads as a
@@ -135,11 +143,71 @@ impl CanvasSurface {
         Ok(true)
     }
 
+    /// Restrict drawing to a rectangle. Anything outside is dropped.
+    ///
+    /// Deliberately a single rect rather than a stack: nested clips are what
+    /// a widget toolkit needs, and a canvas app needs "this list, this
+    /// region". Adding a stack later does not break this.
+    pub fn set_clip(&mut self, rect: Option<(f32, f32, f32, f32)>) {
+        self.clip = rect;
+    }
+
+    /// Whether a pixel may be written. Used by the per-pixel primitives.
+    fn allowed(&self, x: u32, y: u32) -> bool {
+        match self.clip {
+            None => true,
+            Some((cx, cy, cw, ch)) => {
+                let px = x as f32;
+                let py = y as f32;
+                px >= cx && py >= cy && px < cx + cw && py < cy + ch
+            }
+        }
+    }
+
+    /// Trim a rectangle to the clip, returning nothing when it falls outside.
+    ///
+    /// Rect-shaped draws are clipped by shrinking the rect rather than by
+    /// testing every pixel: same result, and it keeps the fast path fast.
+    fn clipped(&self, x: f32, y: f32, w: f32, h: f32) -> Option<(f32, f32, f32, f32)> {
+        let Some((cx, cy, cw, ch)) = self.clip else {
+            return Some((x, y, w, h));
+        };
+        let left = x.max(cx);
+        let top = y.max(cy);
+        let right = (x + w).min(cx + cw);
+        let bottom = (y + h).min(cy + ch);
+        if right <= left || bottom <= top {
+            return None;
+        }
+        Some((left, top, right - left, bottom - top))
+    }
+
     pub fn clear(&mut self, color: u32) {
-        self.buffer.fill(color);
+        // Clear respects the clip too, so "clear this region" works -- which
+        // is what a scrolling list needs before redrawing its rows.
+        match self.clipped(0.0, 0.0, self.width as f32, self.height as f32) {
+            Some((0.0, 0.0, w, h)) if w >= self.width as f32 && h >= self.height as f32 => {
+                self.buffer.fill(color);
+            }
+            Some((x, y, w, h)) => self.fill_rect_unclipped(x, y, w, h, color),
+            None => {}
+        }
+    }
+
+    fn fill_rect_unclipped(&mut self, x: f32, y: f32, w: f32, h: f32, color: u32) {
+        fill_rect(
+            &mut self.buffer,
+            self.width,
+            self.height,
+            (x, y, w, h),
+            color,
+        );
     }
 
     pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: u32) {
+        let Some((x, y, w, h)) = self.clipped(x, y, w, h) else {
+            return;
+        };
         fill_rect(
             &mut self.buffer,
             self.width,
@@ -179,6 +247,9 @@ impl CanvasSurface {
                 }
                 let px_color = (a << 24) | (color & 0x00FF_FFFF);
                 let idx = (py * w + px) as usize;
+                if !self.allowed(px, py) {
+                    continue;
+                }
                 if let Some(slot) = self.buffer.get_mut(idx) {
                     *slot = krate_adapter_common::painter::blend_over(px_color, *slot);
                 }
@@ -216,6 +287,9 @@ impl CanvasSurface {
                     continue;
                 }
                 let idx = (py * w + px) as usize;
+                if !self.allowed(px, py) {
+                    continue;
+                }
                 if let Some(slot) = self.buffer.get_mut(idx) {
                     *slot = krate_adapter_common::painter::blend_over(c, *slot);
                 }
@@ -261,6 +335,29 @@ impl CanvasSurface {
     /// `font-family` is accepted and ignored: one good face everywhere beats
     /// honoring a font name on one system.
     pub fn text(&mut self, text: &str, x: f32, y: f32, font_size: f32, color: u32) {
+        // Text is rendered by a shared painter that writes into the buffer
+        // directly, so it cannot be gated per pixel the way the primitives
+        // are. Snapshot what lies outside the clip, let the painter run, then
+        // put it back -- correct for any glyph shape, and only as expensive as
+        // the region actually clipped.
+        let saved = self.clip.map(|_| self.buffer.clone());
+        self.draw_text_unclipped(text, x, y, font_size, color);
+        if let Some(before) = saved {
+            for y in 0..self.height {
+                for x in 0..self.width {
+                    if self.allowed(x, y) {
+                        continue;
+                    }
+                    let idx = (y * self.width + x) as usize;
+                    if let (Some(slot), Some(old)) = (self.buffer.get_mut(idx), before.get(idx)) {
+                        *slot = *old;
+                    }
+                }
+            }
+        }
+    }
+
+    fn draw_text_unclipped(&mut self, text: &str, x: f32, y: f32, font_size: f32, color: u32) {
         if krate_adapter_common::vector_text::draw_canvas_text(
             krate_adapter_common::vector_text::CanvasTarget {
                 buffer: &mut self.buffer,
@@ -379,6 +476,9 @@ impl CanvasSurface {
                     continue;
                 }
                 let idx = (py * self.width + px) as usize;
+                if !self.allowed(px, py) {
+                    continue;
+                }
                 if let Some(slot) = self.buffer.get_mut(idx) {
                     *slot = krate_adapter_common::painter::blend_over(sample, *slot);
                 }
@@ -586,5 +686,49 @@ mod tests {
                 .any(|px| px[0] < 128 && px[1] < 128 && px[2] < 128 && px[3] == 255),
             "drawing text must change at least one pixel"
         );
+    }
+}
+
+#[cfg(test)]
+mod clip_tests {
+    use super::*;
+
+    fn pixel(s: &CanvasSurface, x: u32, y: u32) -> u32 {
+        s.to_image().expect("image").rgba[((y * s.width + x) * 4) as usize] as u32
+    }
+
+    #[test]
+    fn a_clip_keeps_drawing_inside_its_rectangle() {
+        let mut s = CanvasSurface::new(40, 40).expect("surface");
+        s.clear(0xFF00_0000);
+        // Allow only the lower half, then fill the whole canvas.
+        s.set_clip(Some((0.0, 20.0, 40.0, 20.0)));
+        s.fill_rect(0.0, 0.0, 40.0, 40.0, 0xFFFF_FFFF);
+        // The header region is exactly what a scrolling list must protect.
+        assert_eq!(pixel(&s, 5, 5), 0, "drew above the clip");
+        assert_ne!(pixel(&s, 5, 30), 0, "did not draw inside the clip");
+    }
+
+    #[test]
+    fn clearing_the_clip_restores_the_whole_canvas() {
+        let mut s = CanvasSurface::new(20, 20).expect("surface");
+        s.set_clip(Some((0.0, 10.0, 20.0, 10.0)));
+        s.set_clip(None);
+        s.fill_rect(0.0, 0.0, 20.0, 20.0, 0xFFFF_FFFF);
+        assert_ne!(pixel(&s, 2, 2), 0, "clip was not cleared");
+    }
+
+    #[test]
+    fn a_circle_is_clipped_too() {
+        // Circles are drawn per pixel rather than as a rect, so they take a
+        // different path and need their own proof.
+        let mut s = CanvasSurface::new(40, 40).expect("surface");
+        // The canvas starts opaque white, so clear to black first -- otherwise
+        // "still white" and "drew white" are the same reading.
+        s.clear(0xFF00_0000);
+        s.set_clip(Some((0.0, 20.0, 40.0, 20.0)));
+        s.fill_circle(20.0, 20.0, 15.0, 0xFFFF_FFFF);
+        assert_eq!(pixel(&s, 20, 8), 0, "circle drew above the clip");
+        assert_ne!(pixel(&s, 20, 30), 0, "circle missing inside the clip");
     }
 }

@@ -475,6 +475,8 @@ takes the arguments is the function.
 
 - `canvas2d::bind: func(window: u64, widget: u64) -> result<u64, gfx-error>`
 - `canvas2d::canvas-size: func(canvas: u64) -> result<size, gfx-error>`
+- `canvas2d::set-clip: func(canvas: u64, x: f32, y: f32, w: f32, h: f32) -> result<_, gfx-error>`
+- `canvas2d::clear-clip: func(canvas: u64) -> result<_, gfx-error>`
 - `canvas2d::clear: func(canvas: u64, fill: color) -> result<_, gfx-error>`
 - `canvas2d::fill-rect: func(canvas: u64, area: rect, fill: color) -> result<_, gfx-error>`
 - `canvas2d::stroke-rect: func(canvas: u64, area: rect, stroke: color, width: f32) -> result<_, gfx-error>`
@@ -1300,19 +1302,29 @@ fn draw_with(
     }
 
     // ---- item rows as cards ----
-    // Draw the scrolled window, skipping anything above the strip so a row
-    // scrolled off the top cannot paint over the header. There is no clip
-    // rectangle in this version (K-004), so the bounds are checked by hand.
+    // Clip to the list strip, then draw every row that could be on screen. A
+    // row scrolled half off the top is drawn and trimmed rather than skipped,
+    // which is what makes the scroll look continuous instead of snapping row
+    // by row. Before clipping existed this was a hand-written bounds check
+    // that could not handle a partly-visible row at all.
+    canvas2d::set_clip(
+        canvas,
+        layout.margin,
+        layout.list_top,
+        layout.content_w,
+        (layout.field.y - 12.0 - layout.list_top).max(0.0),
+    )?;
     let mut i = layout.first_visible(list.len);
     let last = layout.last_visible(list.len);
     while i < last {
         if let Some(item) = list.items.get(i) {
-            if item.used && layout.row(i).y + layout.row_h > layout.list_top {
+            if item.used {
                 draw_row(canvas, layout, i, item, accent)?;
             }
         }
         i += 1;
     }
+    canvas2d::clear_clip(canvas)?;
     // A scrollbar instead of a "+ N more" label. The label used to be the only
     // sign that rows existed below the fold, and it was a dead end -- there was
     // no way to reach them. Now the thumb says how much list there is and where

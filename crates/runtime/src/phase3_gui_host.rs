@@ -2092,6 +2092,34 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         Ok(Ok(()))
     }
 
+    fn set_clip(
+        &mut self,
+        canvas: u64,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        // A zero or negative rect clips everything away rather than being an
+        // error: an app computing a region from a resized window can land
+        // there legitimately, and drawing nothing is the right answer.
+        surface.set_clip(Some((x, y, w.max(0.0), h.max(0.0))));
+        Ok(Ok(()))
+    }
+
+    fn clear_clip(&mut self, canvas: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.set_clip(None);
+        Ok(Ok(()))
+    }
+
     fn fill_rect(
         &mut self,
         canvas: u64,

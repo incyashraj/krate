@@ -86,7 +86,24 @@ interface canvas2d {
   /// with a title bar draws a picture that is clipped or half empty. Returns
   /// the size that `clear` fills and `present` publishes.
   canvas-size: func(canvas: u64) -> result<size, gfx-error>;
-  /// Fill the whole canvas with one color.
+  /// Restrict drawing to a rectangle, in logical pixels. Every later draw on
+  /// this canvas is trimmed to it until `clear-clip`.
+  ///
+  /// This is what makes a scrolling list possible. Without it a row scrolled
+  /// past the top paints over the header, and an app has to skip rows by hand
+  /// -- which works until rows have different heights, and then it cannot be
+  /// done at all.
+  ///
+  ///   set-clip(canvas, list-x, list-y, list-w, list-h);
+  ///   // draw every row, including partly-visible ones
+  ///   clear-clip(canvas);
+  set-clip: func(canvas: u64, x: f32, y: f32, w: f32, h: f32) -> result<_, gfx-error>;
+
+  /// Draw to the whole canvas again.
+  clear-clip: func(canvas: u64) -> result<_, gfx-error>;
+
+  /// Fill the whole canvas with one color. Respects the clip, so this is also
+  /// how a region is cleared before its rows are redrawn.
   clear: func(canvas: u64, fill: color) -> result<_, gfx-error>;
   /// Fill a rectangle.
   fill-rect: func(canvas: u64, area: rect, fill: color) -> result<_, gfx-error>;
