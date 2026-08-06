@@ -2378,6 +2378,9 @@ const PROGRESS_CHANNEL: &str = "KRATE_PROGRESS_CHANNEL";
 /// anything that is not this is passed through as ordinary output.
 const PROGRESS_PREFIX: &str = "\u{1}krate-progress\u{1}";
 
+/// Marks a "still working, same step" report from the authoring child.
+const PROGRESS_TICK: &str = "\u{1}krate-tick\u{1}";
+
 fn set_progress_sink(sink: Option<std::sync::Arc<progress::Progress>>) {
     if let Ok(mut slot) = PROGRESS_SINK.lock() {
         *slot = sink;
@@ -2389,6 +2392,20 @@ fn progress_sink() -> Option<std::sync::Arc<progress::Progress>> {
     PROGRESS_SINK.lock().ok().and_then(|slot| slot.clone())
 }
 
+/// Tell the display the agent is still working, without changing the stage.
+///
+/// Sent for a step identical to the previous one. The person needs to know the
+/// difference between "reading, still" and "stopped", and the elapsed clock
+/// alone cannot say which -- it counts up either way.
+fn report_progress_alive(step: &str) {
+    if let Some(progress) = progress_sink() {
+        progress.tick(step);
+    } else if std::env::var_os(PROGRESS_CHANNEL).is_some() {
+        println!("{PROGRESS_TICK}{step}");
+        let _ = io::stdout().flush();
+    }
+}
+
 /// Report one line of agent progress, if anything is listening.
 fn report_progress(step: &str) -> bool {
     let Ok(slot) = PROGRESS_SINK.lock() else {
@@ -2398,12 +2415,19 @@ fn report_progress(step: &str) -> bool {
         return false;
     };
     // Map what the agent says it is doing onto a stage a person understands.
-    // Writing code is the long middle; the compile and check stages are driven
-    // by check-app's own output further down.
+    //
+    // Reading comes first, writing is the long middle, and anything that
+    // mentions the compiler or the oracle means it has got as far as building.
+    // Matching on "read" is deliberate and load-bearing: the old test looked
+    // for "krate_authoring" in a sentence that never contained it, so every
+    // read was reported as "writing the app's code" -- the display claimed
+    // progress the agent had not made, then sat there.
     let lower = step.to_lowercase();
     if lower.contains("check-app") || lower.contains("cargo") || lower.contains("build") {
         progress.advance(2);
-    } else if lower.contains("read") && lower.contains("krate_authoring") {
+    } else if lower.starts_with("reading") || lower.starts_with("searching")
+        || lower.starts_with("looking")
+    {
         progress.advance(0);
     } else {
         progress.advance(1);
@@ -3735,7 +3759,15 @@ fn run_provider_author(
                 if let Some(step) = provider.progress_line(&line) {
                     // Collapse repeats: an agent editing one file five times
                     // should not print the same sentence five times.
+                    //
+                    // But send it onward anyway when a display is drawing. The
+                    // display shows one live line, not a list, and it uses
+                    // each report as proof the agent is still working. Skipping
+                    // repeats here is what let it sit on one sentence for ten
+                    // minutes while the agent was reading steadily -- the run
+                    // was healthy and looked dead.
                     if step == last {
+                        report_progress_alive(&step);
                         continue;
                     }
                     steps += 1;
@@ -4363,6 +4395,8 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
                 // transcript already, so it does not go on screen.
                 if let Some(step) = line.strip_prefix(PROGRESS_PREFIX) {
                     report_progress(step);
+                } else if let Some(step) = line.strip_prefix(PROGRESS_TICK) {
+                    report_progress_alive(step);
                 }
             }
         }

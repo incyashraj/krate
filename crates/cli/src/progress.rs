@@ -47,6 +47,8 @@ pub const AUTHOR_STAGES: &[Stage] = &[
 enum Message {
     Advance(usize),
     Note(String),
+    /// The same work as last time, happening again.
+    Tick(String),
     Finish,
 }
 
@@ -82,6 +84,18 @@ impl Progress {
     /// agent is editing. Replaced each time rather than accumulating.
     pub fn note(&self, text: impl Into<String>) {
         let _ = self.tx.send(Message::Note(text.into()));
+    }
+
+    /// The same work again: keep the note, but count it.
+    ///
+    /// An agent that reads twelve files in a row reports the same sentence
+    /// twelve times. Showing that sentence once and nothing else is how a
+    /// working run came to look hung for ten minutes -- the spinner turns on a
+    /// timer, so it spins just as happily when nothing is happening. A count
+    /// that goes up is the one thing on screen that cannot be faked by a
+    /// stalled agent.
+    pub fn tick(&self, text: impl Into<String>) {
+        let _ = self.tx.send(Message::Tick(text.into()));
     }
 
     /// Stop a display held behind a shared handle.
@@ -123,6 +137,9 @@ fn draw_loop(stages: &'static [Stage], rx: Receiver<Message>, stopped: Arc<Atomi
     let mut stage_started = Instant::now();
     let mut elapsed_per_stage: Vec<Duration> = vec![Duration::ZERO; stages.len()];
     let mut note = String::new();
+    // How many times the current note has repeated. Shown beside it, because
+    // a spinner turns on a timer and proves nothing about the agent.
+    let mut repeats = 0usize;
     let mut frame = 0usize;
     let mut drawn_lines = 0usize;
 
@@ -137,7 +154,7 @@ fn draw_loop(stages: &'static [Stage], rx: Receiver<Message>, stopped: Arc<Atomi
                         last = index;
                     }
                 }
-                Ok(Message::Note(_)) => {}
+                Ok(Message::Note(_)) | Ok(Message::Tick(_)) => {}
                 Ok(Message::Finish) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if stopped.load(Ordering::SeqCst) {
@@ -164,7 +181,14 @@ fn draw_loop(stages: &'static [Stage], rx: Receiver<Message>, stopped: Arc<Atomi
                     note.clear();
                 }
             }
-            Ok(Message::Note(text)) => note = text,
+            Ok(Message::Note(text)) => {
+                note = text;
+                repeats = 0;
+            }
+            Ok(Message::Tick(text)) => {
+                note = text;
+                repeats += 1;
+            }
             Ok(Message::Finish) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 if stopped.load(Ordering::SeqCst) {
@@ -180,6 +204,7 @@ fn draw_loop(stages: &'static [Stage], rx: Receiver<Message>, stopped: Arc<Atomi
             current,
             &elapsed_per_stage,
             &note,
+            repeats,
             frame,
             started,
             drawn_lines,
@@ -193,6 +218,7 @@ fn draw_loop(stages: &'static [Stage], rx: Receiver<Message>, stopped: Arc<Atomi
         current,
         &elapsed_per_stage,
         "",
+        0,
         frame,
         started,
         drawn_lines,
@@ -208,6 +234,7 @@ fn render(
     current: usize,
     elapsed: &[Duration],
     note: &str,
+    repeats: usize,
     frame: usize,
     started: Instant,
     previous_lines: usize,
@@ -248,7 +275,14 @@ fn render(
         lines += 1;
 
         if index == current && !note.is_empty() && !final_frame {
-            out.push_str(&format!("      {}\n", style::dim(&truncate(note, 56))));
+            let detail = if repeats > 0 {
+                // "(x7)" is the proof of life. It only moves when the agent
+                // actually did something.
+                format!("{} (x{})", truncate(note, 48), repeats + 1)
+            } else {
+                truncate(note, 56)
+            };
+            out.push_str(&format!("      {}\n", style::dim(&detail)));
             lines += 1;
         }
     }

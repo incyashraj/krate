@@ -431,11 +431,17 @@ impl AgentProvider for ClaudeProvider {
                         other => format!("writing {other}"),
                     }
                 }
-                // Every read collapses to one line. Naming each file made the
-                // opening of every run a wall of "reading X" that told the
-                // person nothing -- what matters is that it is studying the
-                // reference before it writes, which is one fact, not six.
-                "Read" | "Glob" | "Grep" => "reading Krate's API reference".to_string(),
+                // Name what is being read.
+                //
+                // These used to collapse to one fixed sentence, on the theory
+                // that "it is studying the reference" is one fact rather than
+                // six. But the reporter drops a step identical to the last
+                // one, so twenty consecutive reads produced a single line and
+                // the display sat frozen on it -- ten minutes on one machine,
+                // with the person believing it had hung when it was working.
+                // A changing line is the difference between waiting and
+                // giving up.
+                "Read" | "Glob" | "Grep" => describe_read(name, input),
                 "Bash" => {
                     let cmd = arg("command").unwrap_or_default();
                     if cmd.contains("check-app") {
@@ -453,6 +459,77 @@ impl AgentProvider for ClaudeProvider {
         }
         None
     }
+}
+
+/// What a read-shaped tool call is looking at, in plain words.
+///
+/// The point is that consecutive reads read *differently*. A person watching a
+/// five-minute run needs to see it moving; a fixed sentence is the same as a
+/// frozen one, and the reporter drops exact repeats so a fixed sentence
+/// literally stops the display.
+fn describe_read(tool: &str, input: Option<&serde_json::Value>) -> String {
+    let field = |key: &str| -> Option<String> {
+        Some(input?.get(key)?.as_str()?.to_string())
+    };
+
+    if let Some(pattern) = field("pattern") {
+        let pattern = pattern.trim();
+        if !pattern.is_empty() {
+            let short = truncate_middle(pattern, 40);
+            return if tool == "Grep" {
+                format!("searching the reference for {short}")
+            } else {
+                format!("looking for {short}")
+            };
+        }
+    }
+
+    let Some(path) = field("file_path").or_else(|| field("path")) else {
+        return "reading Krate's API reference".to_string();
+    };
+    let file = path
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(&path)
+        .to_string();
+    match file.as_str() {
+        "KRATE_AUTHORING.md" => "reading Krate's API reference".to_string(),
+        "manifest.toml" => "reading the app's capabilities".to_string(),
+        "Cargo.toml" => "reading the build setup".to_string(),
+        "lib.rs" => {
+            // Which app's lib.rs matters: reading an example is a different
+            // activity from re-reading the app being written.
+            match example_app_name(&path) {
+                Some(app) => format!("reading the {app} example"),
+                None => "re-reading the app's code".to_string(),
+            }
+        }
+        "" => "reading Krate's API reference".to_string(),
+        other => format!("reading {}", truncate_middle(other, 40)),
+    }
+}
+
+/// The example app a path points into, e.g. `apps/krate-paint/src/lib.rs`.
+fn example_app_name(path: &str) -> Option<String> {
+    let normalized = path.replace('\\', "/");
+    let rest = normalized.split("apps/").nth(1)?;
+    let app = rest.split('/').next()?;
+    if app.is_empty() {
+        return None;
+    }
+    Some(app.trim_start_matches("krate-").to_string())
+}
+
+/// Shorten with an ellipsis in the middle, keeping both ends readable.
+fn truncate_middle(text: &str, max: usize) -> String {
+    let count = text.chars().count();
+    if count <= max {
+        return text.to_string();
+    }
+    let keep = max.saturating_sub(1) / 2;
+    let head: String = text.chars().take(keep).collect();
+    let tail: String = text.chars().skip(count - keep).collect();
+    format!("{head}…{tail}")
 }
 
 /// A shared plain-English translation of a tool-use event.
@@ -480,7 +557,23 @@ fn describe_tool_use(tool: &str, path: Option<&str>, command: Option<&str>) -> O
         || tool.contains("search")
         || tool.contains("list")
     {
-        return Some("reading Krate's API reference".to_string());
+        // Name the file for the same reason the Claude path does: identical
+        // consecutive lines are dropped, so a fixed sentence freezes the
+        // display for as long as the agent keeps reading.
+        let Some(path) = path.filter(|path| !path.is_empty()) else {
+            return Some("reading Krate's API reference".to_string());
+        };
+        let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
+        return Some(match file {
+            "KRATE_AUTHORING.md" | "" => "reading Krate's API reference".to_string(),
+            "manifest.toml" => "reading the app's capabilities".to_string(),
+            "Cargo.toml" => "reading the build setup".to_string(),
+            "lib.rs" => match example_app_name(path) {
+                Some(app) => format!("reading the {app} example"),
+                None => "re-reading the app's code".to_string(),
+            },
+            other => format!("reading {}", truncate_middle(other, 40)),
+        });
     }
     if tool.contains("bash")
         || tool.contains("shell")
@@ -751,6 +844,66 @@ impl AgentProvider for GrokProvider {
 
 #[cfg(test)]
 mod tests {
+    /// The bug that made a working eleven-minute run look hung.
+    ///
+    /// Every Read/Glob/Grep used to collapse to the one sentence "reading
+    /// Krate's API reference". The reporter drops a step identical to the
+    /// previous one, so a run that read twenty files reported one line and the
+    /// display froze on it. Three people on three operating systems concluded
+    /// the tool had hung while it was working normally; one waited eleven
+    /// minutes and saw the screen go straight from that line to "done".
+    #[test]
+    fn consecutive_reads_do_not_all_say_the_same_thing() {
+        let paths = [
+            "/tmp/app/KRATE_AUTHORING.md",
+            "/tmp/app/manifest.toml",
+            "/tmp/app/Cargo.toml",
+            "/repo/apps/krate-paint/src/lib.rs",
+            "/repo/apps/krate-checklist/src/lib.rs",
+        ];
+        let lines: Vec<String> = paths
+            .iter()
+            .map(|path| {
+                let input = serde_json::json!({ "file_path": path });
+                describe_read("Read", Some(&input))
+            })
+            .collect();
+
+        // Adjacent duplicates are exactly what the reporter discards.
+        for pair in lines.windows(2) {
+            assert_ne!(
+                pair[0], pair[1],
+                "consecutive reads must differ or the display freezes: {lines:?}"
+            );
+        }
+        assert!(lines[3].contains("paint"), "names the example: {:?}", lines[3]);
+        assert!(lines[4].contains("checklist"), "names the example: {:?}", lines[4]);
+    }
+
+    #[test]
+    fn a_search_says_what_it_is_searching_for() {
+        let input = serde_json::json!({ "pattern": "Event::Pointer" });
+        let line = describe_read("Grep", Some(&input));
+        assert!(line.contains("Event::Pointer"), "got {line:?}");
+    }
+
+    #[test]
+    fn a_read_with_nothing_to_name_still_says_something() {
+        assert_eq!(
+            describe_read("Read", None),
+            "reading Krate's API reference"
+        );
+    }
+
+    #[test]
+    fn the_app_being_written_is_not_confused_with_an_example() {
+        let mine = serde_json::json!({ "file_path": "/tmp/work/tip-calc/src/lib.rs" });
+        assert_eq!(
+            describe_read("Read", Some(&mine)),
+            "re-reading the app's code"
+        );
+    }
+
     use super::*;
 
     /// Resolve a name that must succeed, without requiring `Debug` on the
