@@ -299,6 +299,86 @@ fn truncate(text: &str, max: usize) -> String {
     format!("{kept}…")
 }
 
+/// An indeterminate progress bar for work with no measurable percentage.
+///
+/// A long install has no honest percentage -- winget and rustup report their
+/// own progress in shapes we cannot read reliably. What matters is that the
+/// person can see it is alive, so this sweeps a filled band across a track on
+/// its own thread. A frozen bar reads as a hung program, which is the whole
+/// thing this exists to prevent.
+pub struct Bar {
+    stop: Arc<AtomicBool>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl Bar {
+    pub fn start(label: &'static str) -> Self {
+        let stop = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&stop);
+        let handle = std::thread::spawn(move || {
+            // Piped output gets one line rather than a redrawing bar, so a log
+            // does not fill with escape codes.
+            if !io::stderr().is_terminal() {
+                eprintln!("  {label}...");
+                while !flag.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(200));
+                }
+                return;
+            }
+
+            let width = 44usize;
+            let band = 12usize;
+            let mut at = 0usize;
+            let _ = write!(io::stderr(), "\x1b[?25l");
+            while !flag.load(Ordering::SeqCst) {
+                let mut track = String::with_capacity(width);
+                for cell in 0..width {
+                    // The band wraps, so the sweep is continuous rather than
+                    // snapping back to the left edge.
+                    let lit = (cell + width - (at % width)) % width < band;
+                    track.push(if lit { '█' } else { '░' });
+                }
+                let _ = write!(
+                    io::stderr(),
+                    "\r  {} {}",
+                    style::accent(&track),
+                    style::dim(label)
+                );
+                let _ = io::stderr().flush();
+                at += 1;
+                std::thread::sleep(Duration::from_millis(70));
+            }
+            // Clear the line so whatever prints next starts clean.
+            let _ = write!(io::stderr(), "\r\x1b[2K\x1b[?25h");
+            let _ = io::stderr().flush();
+        });
+        Self {
+            stop,
+            handle: Some(handle),
+        }
+    }
+
+    pub fn finish(mut self) {
+        self.shutdown();
+    }
+
+    fn shutdown(&mut self) {
+        if self.stop.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
+impl Drop for Bar {
+    fn drop(&mut self) {
+        // A failed install must still leave the cursor visible.
+        self.shutdown();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

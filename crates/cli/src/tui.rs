@@ -356,43 +356,49 @@ fn ensure_build_tools() -> Result<bool> {
         return Ok(true);
     }
 
+    // Say what this costs and why, then get on with it. Hiding a ten-minute
+    // download reads as a hung program; asking permission for something the
+    // person has already chosen by picking "make an app" is a question with
+    // one answer. Being straight about the size is the honest middle.
     println!();
     println!(
         "  {}",
-        style::bold("Making an app needs a compiler, and it is not installed yet.")
+        style::bold("Your app gets compiled to real machine code, so this needs a compiler.")
     );
     println!(
         "  {}",
-        style::dim("about five minutes, once. Every app after this is fast.")
+        style::dim("We have kept Krate itself to a few megabytes, but this part is")
+    );
+    println!(
+        "  {}",
+        style::dim("Rust's and Microsoft's, and there is no smaller version of it.")
     );
     println!();
-    for (what, how) in &missing {
-        println!("  {} {}", style::dim(glyphs().dot), style::bold(what));
-        println!("      {}", style::dim(&truncate(how, 62)));
+    for (what, _) in &missing {
+        println!("  {} {}", style::dim(glyphs().dot), style::dim(what));
     }
     println!();
-
-    let answer = prompt("  Install it now? [Y/n]  > ")?;
-    if answer.trim().eq_ignore_ascii_case("n") {
-        println!();
-        println!(
-            "  {}",
-            style::dim("no problem. `krate doctor` shows this list again any time.")
-        );
-        println!();
-        return Ok(false);
-    }
-
+    println!(
+        "  {}",
+        style::dim("It sets up once and takes a few minutes. Every app after this is fast,")
+    );
+    println!(
+        "  {}",
+        style::dim("and opening an app someone sends you never needs any of it.")
+    );
     println!();
-    match crate::install_build_tools() {
+
+    let bar = crate::progress::Bar::start("setting up the compiler");
+    let outcome = crate::install_build_tools();
+    bar.finish();
+
+    match outcome {
         Ok(()) => {
-            println!();
             println!("  {} ready", style::good(glyphs().tick));
             println!();
             Ok(true)
         }
         Err(err) => {
-            println!();
             println!(
                 "  {} {}",
                 style::warn(glyphs().cross),
@@ -401,15 +407,11 @@ fn ensure_build_tools() -> Result<bool> {
             println!();
             println!(
                 "  {}",
-                style::dim("if a tool was just installed, open a new terminal and try again --")
+                style::dim("if something was just installed, open a new terminal and try again --")
             );
             println!(
                 "  {}",
                 style::dim("a shell that was already running does not see the new PATH.")
-            );
-            println!(
-                "  {}",
-                style::dim("otherwise run the command above yourself.")
             );
             println!();
             Ok(false)

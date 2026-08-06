@@ -4479,6 +4479,33 @@ at `$KRATE_SDK_DIR`.\n\
 /// toolchain with the target is installed. Prepending rustup's own toolchain
 /// bin to the child PATH makes the right cargo/rustc win.
 fn rustup_toolchain_bin() -> Option<PathBuf> {
+    // On Windows, prefer the gnullvm toolchain when it is installed: it links
+    // host build scripts with LLVM's linker, so a build works without Visual
+    // Studio Build Tools. Falling through to the default toolchain keeps
+    // machines that already have MSVC working exactly as before.
+    #[cfg(windows)]
+    if gnullvm_toolchain_present() {
+        let out = ProcessCommand::new("rustup")
+            .args([
+                "run",
+                gnullvm_toolchain_name(),
+                "rustc",
+                "--print",
+                "sysroot",
+            ])
+            .output()
+            .ok();
+        if let Some(out) = out {
+            if out.status.success() {
+                let sysroot = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                let bin = PathBuf::from(sysroot).join("bin");
+                if bin.join("cargo.exe").exists() {
+                    return Some(bin);
+                }
+            }
+        }
+    }
+
     // Prefer PATH, then rustup's own home. A shell that was already open when
     // rustup installed does not see the new PATH entry, so a run that just
     // installed rustup would otherwise report it as still missing -- which is
@@ -7067,10 +7094,84 @@ pub(crate) fn build_tools_missing() -> Vec<(String, String)> {
 /// Install everything `build_tools_missing` reported, in order.
 pub(crate) fn install_build_tools() -> Result<()> {
     for tool in missing_create_tools() {
-        println!("  installing {}...", tool.what);
-        run_install_command(&tool.install_cmd).with_context(|| format!("install {}", tool.what))?;
+        // Silent on purpose: a progress bar is drawing over this, and rustup
+        // and winget both narrate at length. Their output is captured and
+        // shown only on failure, where it is the thing worth reading.
+        let out = run_install_command_quiet(&tool.install_cmd)
+            .with_context(|| format!("install {}", tool.what))?;
+        if !out.status.success() {
+            let text = String::from_utf8_lossy(&out.stderr);
+            let detail = text
+                .lines()
+                .filter(|line| !line.trim().is_empty())
+                .next_back()
+                .unwrap_or("no reason given");
+            anyhow::bail!("{}: {detail}", tool.what);
+        }
     }
     Ok(())
+}
+
+/// The rustup toolchain name that carries its own linker on this machine.
+///
+/// `gnullvm` is Rust's Windows toolchain built around LLVM's linker rather
+/// than Microsoft's `link.exe`. It is what lets a Windows user build an app
+/// without installing three gigabytes of Visual Studio Build Tools.
+#[cfg(windows)]
+fn gnullvm_toolchain_name() -> &'static str {
+    if cfg!(target_arch = "aarch64") {
+        "stable-aarch64-pc-windows-gnullvm"
+    } else {
+        "stable-x86_64-pc-windows-gnullvm"
+    }
+}
+
+/// Whether that toolchain is already installed.
+#[cfg(windows)]
+fn gnullvm_toolchain_present() -> bool {
+    ProcessCommand::new("rustup")
+        .args(["toolchain", "list"])
+        .output()
+        .map(|out| String::from_utf8_lossy(&out.stdout).contains("gnullvm"))
+        .unwrap_or(false)
+}
+
+/// Whether the MSVC linker is reachable.
+///
+/// `link.exe` is not on PATH in an ordinary shell even when Build Tools are
+/// installed -- it lives inside the VC toolchain and is normally put on PATH
+/// by a developer prompt. Looking for the install root is the reliable check;
+/// cargo finds the linker itself once the tools exist.
+#[cfg(windows)]
+fn msvc_linker_present() -> bool {
+    if agent_provider::which_on_path("link.exe").is_some() {
+        return true;
+    }
+    // vswhere ships with any modern Visual Studio installer and is the
+    // supported way to ask whether the C++ tools are present.
+    let vswhere = PathBuf::from(
+        std::env::var("ProgramFiles(x86)")
+            .unwrap_or_else(|_| "C:\\Program Files (x86)".to_string()),
+    )
+    .join("Microsoft Visual Studio")
+    .join("Installer")
+    .join("vswhere.exe");
+    if !vswhere.exists() {
+        return false;
+    }
+    ProcessCommand::new(vswhere)
+        .args([
+            "-latest",
+            "-products",
+            "*",
+            "-requires",
+            "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "-property",
+            "installationPath",
+        ])
+        .output()
+        .map(|out| out.status.success() && !out.stdout.is_empty())
+        .unwrap_or(false)
 }
 
 fn missing_create_tools() -> Vec<MissingTool> {
@@ -7107,6 +7208,30 @@ fn missing_create_tools() -> Vec<MissingTool> {
                 "https://sh.rustup.rs".into(),
             ],
             note: "installs the Rust toolchain via rustup (https://rustup.rs)",
+        });
+    }
+
+    // Windows needs a linker for host build scripts -- `wit-bindgen-rt` carries
+    // one, so every app build links something for the host even though the app
+    // itself targets wasm.
+    //
+    // The obvious answer is Visual Studio Build Tools, which is roughly three
+    // gigabytes and an install almost nobody outside C++ already has. The
+    // better answer is rustup's `gnullvm` toolchain, which brings its own LLVM
+    // linker and needs no Microsoft tooling at all. Prefer that, and only ask
+    // for Build Tools when it is not available.
+    #[cfg(windows)]
+    if !gnullvm_toolchain_present() && !msvc_linker_present() {
+        missing.push(MissingTool {
+            what: "a linker for Windows",
+            install_cmd: vec![
+                "rustup".into(),
+                "toolchain".into(),
+                "install".into(),
+                gnullvm_toolchain_name().into(),
+            ],
+            note: "rustup's gnullvm toolchain brings its own linker, so Visual \
+Studio Build Tools are not needed",
         });
     }
 
@@ -7288,6 +7413,45 @@ fn install_command_line(cmd: &[String]) -> String {
     } else {
         joined
     }
+}
+
+/// Run an install command, capturing its output instead of printing it.
+///
+/// The interactive path draws a progress bar, and an installer narrating
+/// underneath it produces a mess that hides both. Captured output is kept for
+/// the failure message, where it is the only thing worth showing.
+fn run_install_command_quiet(cmd: &[String]) -> Result<std::process::Output> {
+    let (program, args) = cmd.split_first().context("empty install command")?;
+
+    if program == "curl" {
+        let curl = ProcessCommand::new("curl")
+            .args(args)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .context("run curl for rustup")?;
+        return ProcessCommand::new("sh")
+            .args(["-s", "--", "-y", "--no-modify-path"])
+            .stdin(curl.stdout.context("curl produced no output")?)
+            .output()
+            .context("run the rustup installer");
+    }
+
+    let program = if program == "cargo" {
+        // rustup may have been installed moments ago, and an already-open
+        // shell does not see the new PATH.
+        rustup_toolchain_bin()
+            .map(|bin| bin.join(if cfg!(windows) { "cargo.exe" } else { "cargo" }))
+            .filter(|path| path.exists())
+            .unwrap_or_else(|| PathBuf::from(program))
+    } else {
+        PathBuf::from(program)
+    };
+
+    ProcessCommand::new(&program)
+        .args(args)
+        .output()
+        .with_context(|| format!("run {}", program.display()))
 }
 
 fn run_install_command(cmd: &[String]) -> Result<()> {

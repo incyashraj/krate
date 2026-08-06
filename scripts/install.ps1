@@ -184,6 +184,17 @@ try {
 
     Write-Say "Installed krate $version to $dir\$binary"
 
+    # Newer releases carry cargo-component beside the runtime, and the shell
+    # installer has always placed it. Windows did not, so a Windows user fell
+    # back to `cargo install cargo-component`: 378 crates downloaded and
+    # compiled before their first app could exist. Same archive, same fix.
+    $tooling = Get-ChildItem -Path $tmp -Recurse -File `
+        -Filter 'cargo-component*' -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($tooling) {
+        Copy-Item -Path $tooling.FullName -Destination (Join-Path $dir $tooling.Name) -Force
+        Write-Say "Installed $($tooling.Name) too, so you can make apps without a long build."
+    }
+
     # Being on PATH is what makes the next command work, so fix it rather than
     # leaving the person to discover the problem themselves.
     #
