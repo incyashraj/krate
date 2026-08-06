@@ -510,7 +510,11 @@ fn stack_root() -> types::WidgetNode {
         kind: types::WidgetKind::Stack,
         label: None,
         role: None,
-        style: types::Style { width: Some(WIDTH), height: Some(HEIGHT), grow: 0.0, padding: 0.0 },
+        // No fixed size, and grow so the canvas fills the window. Pinning
+        // these to WIDTH/HEIGHT meant the canvas stayed 1080x700 no matter
+        // how the window was resized -- the layout engine was obeying the
+        // app, and the app was asking for the wrong thing (K-003).
+        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0 },
         checked: None,
         value: None,
         selected: None,
@@ -525,7 +529,11 @@ fn canvas_node() -> types::WidgetNode {
         kind: types::WidgetKind::Canvas,
         label: None,
         role: Some(pure_string("canvas")),
-        style: types::Style { width: Some(WIDTH), height: Some(HEIGHT), grow: 0.0, padding: 0.0 },
+        // No fixed size, and grow so the canvas fills the window. Pinning
+        // these to WIDTH/HEIGHT meant the canvas stayed 1080x700 no matter
+        // how the window was resized -- the layout engine was obeying the
+        // app, and the app was asking for the wrong thing (K-003).
+        style: types::Style { width: None, height: None, grow: 1.0, padding: 0.0 },
         checked: None,
         value: None,
         selected: None,

@@ -593,8 +593,8 @@ Evidence: `gfx.wit` has draw-text and zero matches for
 Fix:      canvas2d::measure-text through the same parley path draw-text uses.
 
 ### K-003 — Canvas apps break when the window is resized
-Status:   fixed-pending-merge
-Owner:    W13
+Status:   fixed
+Owner:    lead
 Severity: serious
 Class:    example-bug
 Found:    2026-08-05, user report, first real MCP session
@@ -605,6 +605,15 @@ Evidence: `hit_row` in apps/krate-checklist compares against `const WIDTH`. No
           seem broken" -- one bug, two symptoms.
 Fix:      Lay out from canvas_size, handle Event::Resized, keep layout in one
           place so drawing and hit-testing cannot disagree.
+
+          The last app still failing this (krate-pulse) turned out to have a
+          different cause than the entry assumed, and a much smaller fix. It
+          set `Style { width: Some(WIDTH), height: Some(HEIGHT) }` on both its
+          root and its canvas, so the canvas was pinned to 1080x700 and could
+          not grow. The layout engine was obeying the app; the app was asking
+          for the wrong thing. `width: None, height: None, grow: 1.0` on both
+          nodes, and it passes all six stages -- verified by screenshot too,
+          since a fill can stretch a layout that a check cannot see.
 
 ### K-004 — No clipping, so a scrolling list would draw over its own header
 Status:   fixed (f5820f0)
