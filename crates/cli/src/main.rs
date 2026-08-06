@@ -2442,9 +2442,10 @@ pub(crate) fn author_app_for_tui_watched(
     provider: &'static dyn agent_provider::AgentProvider,
     output: &Path,
     progress: &std::sync::Arc<progress::Progress>,
+    attachments: &[PathBuf],
 ) -> Result<()> {
     set_progress_sink(Some(std::sync::Arc::clone(progress)));
-    let result = author_app_for_tui(request, provider, output);
+    let result = author_app_for_tui(request, provider, output, attachments);
     set_progress_sink(None);
     result
 }
@@ -2453,15 +2454,57 @@ pub(crate) fn author_app_for_tui(
     request: &str,
     provider: &'static dyn agent_provider::AgentProvider,
     output: &Path,
+    attachments: &[PathBuf],
 ) -> Result<()> {
+    // Attachments are staged into the app directory, so the agent can open
+    // them with the ordinary file tools it already has. Passing an image
+    // through the prompt is not possible for every provider; a file on disk
+    // beside the code works for all of them.
+    let staged = if attachments.is_empty() {
+        None
+    } else {
+        Some(tempfile::tempdir().context("make a working directory for the app")?)
+    };
+    let mut request = request.to_string();
+    if let Some(staged) = &staged {
+        let inbox = staged.path().join("attached");
+        fs::create_dir_all(&inbox).context("make the attachments directory")?;
+        let mut named = Vec::new();
+        for source in attachments {
+            let Some(name) = source.file_name() else {
+                continue;
+            };
+            let destination = inbox.join(name);
+            if fs::copy(source, &destination).is_ok() {
+                named.push(format!("attached/{}", name.to_string_lossy()));
+            }
+        }
+        if !named.is_empty() {
+            request.push_str(
+                "\n\nThe person attached these files, in this directory. Read them \
+                 before you write any code -- they are part of the request, and \
+                 usually say more about what is wanted than the sentence above:\n",
+            );
+            for name in &named {
+                request.push_str(&format!("  {name}\n"));
+            }
+            request.push_str(
+                "\nIf one is a screenshot or a design, build something that looks like \
+                 it. If one is the source of an app they already have, build the same \
+                 thing as a Krate app -- keeping what it does, not how it was written, \
+                 since it was written against a different system.",
+            );
+        }
+    }
+
     let code = create_krate(CreateRequest {
-        request: request.to_string(),
+        request,
         output: output.to_path_buf(),
         author_cmd: Some(agent_author_command(provider)),
         kind: None,
         name: None,
         transcript: None,
-        work_dir: None,
+        work_dir: staged.as_ref().map(|dir| dir.path().to_path_buf()),
         // The menu already asked; asking again inside would be a second
         // question about a decision the person has made.
         yes: true,
@@ -2822,6 +2865,20 @@ const DEFAULT_HUB_URL: &str = "https://hub.krate.tech";
 /// bundle twice hands back the same URL. All the interesting failure modes are
 /// "the hub is not reachable" and "that file is not a bundle", and both get a
 /// plain message rather than a stack of transport errors.
+/// Publish from the front door.
+///
+/// The menu could build an app and open it but never offered to share it,
+/// which is the one thing a `.krate` exists for. This is the same code path as
+/// `krate publish`, so there is one publisher rather than two that can drift.
+pub(crate) fn publish_bundle_for_tui(bundle: &Path, description: Option<&str>) -> Result<()> {
+    let code = publish_bundle(bundle, None, description)?;
+    if code == 0 {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("the upload did not finish"))
+    }
+}
+
 fn publish_bundle(
     bundle: &Path,
     hub_override: Option<&str>,

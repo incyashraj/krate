@@ -112,6 +112,10 @@ fn main_menu() -> Result<MenuChoice> {
 
 fn make_an_app() -> Result<()> {
     println!();
+    println!(
+        "  {}",
+        style::dim("describe it -- or drag in a screenshot, a design, or an app you already have")
+    );
     let request = prompt("  What do you want to make?\n  > ")?;
     let request = request.trim().to_string();
     if request.is_empty() {
@@ -119,13 +123,108 @@ fn make_an_app() -> Result<()> {
         println!();
         return Ok(());
     }
-    make_named_app(&request)
+    // A path typed or dragged into the prompt is an attachment, not a
+    // description: "make it look like this" plus a screenshot says more than a
+    // paragraph, and somebody porting an app they already have should not have
+    // to describe it screen by screen.
+    let (request, attachments) = split_off_attachments(&request);
+    if request.trim().is_empty() && attachments.is_empty() {
+        println!("  {}", style::dim("nothing to build yet"));
+        println!();
+        return Ok(());
+    }
+    make_named_app_with(&request, &attachments)
+}
+
+/// Pull file paths out of what the person typed.
+///
+/// Terminals paste a dragged file as its path, so a request and its
+/// attachments arrive on one line. Anything that exists on disk is an
+/// attachment; the rest is the description.
+fn split_off_attachments(typed: &str) -> (String, Vec<PathBuf>) {
+    let mut description = String::new();
+    let mut attachments = Vec::new();
+
+    for token in shell_split(typed) {
+        let expanded = shell_expand(&token);
+        let path = Path::new(&expanded);
+        if path.is_file() {
+            attachments.push(path.to_path_buf());
+        } else {
+            if !description.is_empty() {
+                description.push(' ');
+            }
+            description.push_str(&token);
+        }
+    }
+    (description.trim().to_string(), attachments)
+}
+
+/// Split a line into tokens, honouring quotes and backslash-escaped spaces.
+///
+/// Both matter here: macOS drags in `/Users/me/My Design.png` with the space
+/// escaped, and other terminals quote the whole path instead.
+fn shell_split(line: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+    let mut escaped = false;
+
+    for character in line.chars() {
+        if escaped {
+            current.push(character);
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' if quote != Some('\'') => escaped = true,
+            '"' | '\'' if quote.is_none() => quote = Some(character),
+            c if Some(c) == quote => quote = None,
+            c if c.is_whitespace() && quote.is_none() => {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+            }
+            c => current.push(c),
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    tokens
 }
 
 /// Build one named request. Shared by the prompt and by history, so making
 /// something again is the same path as making it the first time.
 fn make_named_app(request: &str) -> Result<()> {
+    make_named_app_with(request, &[])
+}
+
+/// Build one request, with any files the person attached.
+fn make_named_app_with(request: &str, attachments: &[PathBuf]) -> Result<()> {
     let request = request.to_string();
+
+    if !attachments.is_empty() {
+        println!();
+        for path in attachments {
+            let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+            println!(
+                "  {} {}  {}",
+                style::good(glyphs().tick),
+                style::bold(
+                    &path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default()
+                ),
+                style::dim(&humanise_bytes(size))
+            );
+        }
+        println!(
+            "  {}",
+            style::dim("the AI will be given these along with your description")
+        );
+    }
 
     // Check the compiler before anything else. Finding out mid-build -- after
     // picking an AI and reading "cooking with grok" -- means the person has
@@ -160,7 +259,8 @@ fn make_named_app(request: &str) -> Result<()> {
     let progress = std::sync::Arc::new(crate::progress::Progress::start(
         crate::progress::AUTHOR_STAGES,
     ));
-    let result = crate::author_app_for_tui_watched(&request, provider, &output, &progress);
+    let result =
+        crate::author_app_for_tui_watched(&request, provider, &output, &progress, attachments);
     crate::progress::Progress::stop(&progress);
 
     match result {
@@ -214,7 +314,8 @@ fn after_build(bundle: &Path) -> Result<()> {
     loop {
         item("1", "Open it now", "");
         item("2", "Make a change", "tell the AI what to change");
-        item("3", "Back", "");
+        item("3", "Share it", "put it online, get a link to send");
+        item("4", "Back", "");
         println!();
         match prompt("  > ")?.trim() {
             "1" => {
@@ -225,11 +326,65 @@ fn after_build(bundle: &Path) -> Result<()> {
                 change_an_app(bundle)?;
                 return Ok(());
             }
-            "3" | "" => {
+            "3" => {
+                publish_app(bundle)?;
+            }
+            "4" | "" => {
                 println!();
                 return Ok(());
             }
             other => println!("  There is no option {other}."),
+        }
+    }
+}
+
+/// Put an app on Krate Cloud and print the link.
+///
+/// The front door could build an app and open it, but not share it -- and
+/// sending somebody an app is the entire point of a `.krate`. `krate publish`
+/// existed the whole time; nothing in the menu ever said so.
+fn publish_app(bundle: &Path) -> Result<()> {
+    println!();
+    println!("  {}", style::dim("This uploads the app so anyone can run it from a link."));
+    println!(
+        "  {}",
+        style::dim("Your GitHub name goes on it, so it will ask you to sign in once.")
+    );
+    println!();
+
+    let description = prompt("  One line about it (or press enter to skip)\n  > ")?;
+    let description = description.trim().to_string();
+    println!();
+
+    match crate::publish_bundle_for_tui(bundle, description.as_deref_or_none()) {
+        Ok(()) => {}
+        Err(err) => {
+            println!();
+            println!(
+                "  {} {}",
+                style::bad(glyphs().cross),
+                style::bad("could not publish it")
+            );
+            for line in err.to_string().lines().take(8) {
+                println!("  {line}");
+            }
+        }
+    }
+    println!();
+    Ok(())
+}
+
+/// `Some(&str)` for a non-empty string, `None` otherwise.
+trait AsDerefOrNone {
+    fn as_deref_or_none(&self) -> Option<&str>;
+}
+
+impl AsDerefOrNone for String {
+    fn as_deref_or_none(&self) -> Option<&str> {
+        if self.trim().is_empty() {
+            None
+        } else {
+            Some(self.as_str())
         }
     }
 }
@@ -326,7 +481,7 @@ fn change_an_app(bundle: &Path) -> Result<()> {
             } else {
                 format!("{original}\n\nAlso, change this: {change}")
             };
-            crate::author_app_for_tui(&request, provider, bundle)
+            crate::author_app_for_tui(&request, provider, bundle, &[])
         }
     };
     match outcome {
@@ -769,9 +924,27 @@ fn my_apps() -> Result<()> {
         );
     }
     println!();
-    let answer = prompt("  Open which one? (or b to go back)  > ")?;
-    let answer = answer.trim();
+    println!(
+        "  {}",
+        style::dim("a number opens it -- or s3 to share the third one")
+    );
+    println!();
+    let answer = prompt("  Which one? (or b to go back)  > ")?;
+    let answer = answer.trim().to_string();
     if answer.eq_ignore_ascii_case("b") || answer.is_empty() {
+        println!();
+        return Ok(());
+    }
+    // "s3" shares the third app. One prompt rather than a second menu: the
+    // list is already on screen and the person is already pointing at a row.
+    if let Some(rest) = answer.strip_prefix(['s', 'S']) {
+        if let Ok(n) = rest.trim().parse::<usize>() {
+            if n >= 1 && n <= apps.len() {
+                publish_app(&apps[n - 1])?;
+                return Ok(());
+            }
+        }
+        println!("  {}", style::dim("share which one? try s1, s2, ..."));
         println!();
         return Ok(());
     }
@@ -1074,6 +1247,50 @@ fn humanise_bytes(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_dragged_file_becomes_an_attachment_not_a_description() {
+        // Terminals paste a dragged file as its path, so the description and
+        // the attachment arrive on one line. A screenshot says more about
+        // what somebody wants than a paragraph does, and somebody porting an
+        // app they already have should not describe it screen by screen.
+        let file = std::env::temp_dir().join("krate-attach-test.png");
+        std::fs::write(&file, b"not really a png").expect("write fixture");
+
+        let typed = format!("make it look like this {}", file.display());
+        let (description, attachments) = split_off_attachments(&typed);
+
+        assert_eq!(description, "make it look like this");
+        assert_eq!(attachments, vec![file.clone()]);
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
+    fn a_path_with_spaces_survives_being_dragged_in() {
+        // macOS escapes the space; other terminals quote the whole path.
+        // Both have to work or the feature fails on the commonest filenames.
+        let dir = std::env::temp_dir();
+        let file = dir.join("My Design.png");
+        std::fs::write(&file, b"x").expect("write fixture");
+
+        let escaped = format!("copy this {}", file.display().to_string().replace(' ', "\\ "));
+        let (_, from_escaped) = split_off_attachments(&escaped);
+        assert_eq!(from_escaped, vec![file.clone()], "backslash-escaped space");
+
+        let quoted = format!("copy this \"{}\"", file.display());
+        let (_, from_quoted) = split_off_attachments(&quoted);
+        assert_eq!(from_quoted, vec![file.clone()], "quoted path");
+
+        let _ = std::fs::remove_file(&file);
+    }
+
+    #[test]
+    fn words_that_are_not_files_stay_in_the_description() {
+        let (description, attachments) =
+            split_off_attachments("a notes app with tags.txt support");
+        assert!(attachments.is_empty(), "nothing on disk, nothing attached");
+        assert_eq!(description, "a notes app with tags.txt support");
+    }
+
     use super::*;
 
     #[test]
