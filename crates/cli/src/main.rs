@@ -2415,24 +2415,33 @@ fn report_progress(step: &str) -> bool {
     let Some(progress) = slot.as_ref() else {
         return false;
     };
-    // Map what the agent says it is doing onto a stage a person understands.
+    // Map what the agent says it is doing onto a phase a person understands,
+    // and never move backwards.
     //
-    // Reading comes first, writing is the long middle, and anything that
-    // mentions the compiler or the oracle means it has got as far as building.
-    // Matching on "read" is deliberate and load-bearing: the old test looked
-    // for "krate_authoring" in a sentence that never contained it, so every
-    // read was reported as "writing the app's code" -- the display claimed
-    // progress the agent had not made, then sat there.
+    // An AI reads all the way through a run -- it re-reads the reference while
+    // fixing a compile error, and looks at an example again while packaging.
+    // Sending it back to stage one for each of those is what kept the display
+    // pinned on the first line for a whole five-minute run while the app was
+    // being written, built and packed. What it is reading right now belongs on
+    // the detail line, not in the stage.
     let lower = step.to_lowercase();
-    if lower.contains("check-app") || lower.contains("cargo") || lower.contains("build") {
-        progress.advance(2);
-    } else if lower.starts_with("reading") || lower.starts_with("searching")
-        || lower.starts_with("looking")
+    let stage = if lower.contains("check-app")
+        || lower.contains("cargo")
+        || lower.contains("build")
+        || lower.contains("compil")
     {
-        progress.advance(0);
+        2
+    } else if lower.starts_with("writing")
+        || lower.starts_with("editing")
+        || lower.starts_with("setting up")
+        || lower.starts_with("declaring")
+    {
+        1
     } else {
-        progress.advance(1);
-    }
+        // Reading, searching, anything else: whatever phase we are already in.
+        0
+    };
+    progress.advance_to_at_least(stage);
     progress.note(step.to_string());
     true
 }

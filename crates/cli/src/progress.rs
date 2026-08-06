@@ -26,9 +26,16 @@ pub struct Stage {
 }
 
 /// The stages of authoring an app, in the order they happen.
+/// The stages of authoring an app, in the order they happen.
+///
+/// Named for phases of work, not for the tool the AI happened to call. The
+/// first stage used to be "reading Krate's API reference", which is not a
+/// phase -- an AI reads all the way through, so every read dragged the display
+/// back to stage one while the app was already compiling. What is actually
+/// happening goes on the detail line underneath.
 pub const AUTHOR_STAGES: &[Stage] = &[
     Stage {
-        label: "reading Krate's API reference",
+        label: "working out what to build",
     },
     Stage {
         label: "writing the app's code",
@@ -45,7 +52,12 @@ pub const AUTHOR_STAGES: &[Stage] = &[
 ];
 
 enum Message {
-    Advance(usize),
+    /// Move forward to this stage, or stay where we are if already past it.
+    ///
+    /// Only ever forward: work does not run strictly in order (an AI re-reads
+    /// the reference while fixing a compile error), but a display that goes
+    /// backwards reads as broken.
+    AdvanceAtLeast(usize),
     Note(String),
     /// The same work as last time, happening again.
     Tick(String),
@@ -75,9 +87,14 @@ impl Progress {
         }
     }
 
-    /// Move to a stage by index. Everything before it is marked done.
-    pub fn advance(&self, index: usize) {
-        let _ = self.tx.send(Message::Advance(index));
+    /// Move forward to `index`, or stay put if already past it.
+    ///
+    /// Work does not run strictly in order -- an AI re-reads the reference
+    /// while fixing a compile error -- but a progress display that goes
+    /// backwards reads as broken, and a person watching one bounce between
+    /// stages cannot tell whether anything is happening.
+    pub fn advance_to_at_least(&self, index: usize) {
+        let _ = self.tx.send(Message::AdvanceAtLeast(index));
     }
 
     /// Show a line of detail under the current stage, such as which file the
@@ -148,8 +165,8 @@ fn draw_loop(stages: &'static [Stage], rx: Receiver<Message>, stopped: Arc<Atomi
         let mut last = usize::MAX;
         loop {
             match rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(Message::Advance(index)) => {
-                    if index != last && index < stages.len() {
+                Ok(Message::AdvanceAtLeast(index)) => {
+                    if (index > last || last == usize::MAX) && index < stages.len() {
                         eprintln!("  {}", stages[index].label);
                         last = index;
                     }
@@ -171,14 +188,13 @@ fn draw_loop(stages: &'static [Stage], rx: Receiver<Message>, stopped: Arc<Atomi
 
     loop {
         match rx.recv_timeout(Duration::from_millis(90)) {
-            Ok(Message::Advance(index)) => {
-                if index < stages.len() {
-                    if index > current {
-                        elapsed_per_stage[current] = stage_started.elapsed();
-                    }
+            Ok(Message::AdvanceAtLeast(index)) => {
+                if index > current && index < stages.len() {
+                    elapsed_per_stage[current] = stage_started.elapsed();
                     current = index;
                     stage_started = Instant::now();
                     note.clear();
+                    repeats = 0;
                 }
             }
             Ok(Message::Note(text)) => {
@@ -418,6 +434,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_display_never_goes_backwards() {
+        // A run that read the reference again while compiling used to drag the
+        // display back to stage one, so it sat on "reading Krate's API
+        // reference" for five minutes while the app was being built and packed.
+        let progress = std::sync::Arc::new(Progress::start(AUTHOR_STAGES));
+        progress.advance_to_at_least(2);
+        // A late read must not undo that.
+        progress.advance_to_at_least(0);
+        progress.note("reading the paint example");
+        Progress::stop(&progress);
+        // No panic and no hang is the assertion here: the draw thread owns the
+        // stage index, and this exercises the ordering it has to enforce.
+    }
+
+    #[test]
     fn times_read_the_way_a_person_says_them() {
         assert_eq!(short_time(Duration::from_secs(42)), "42s");
         assert_eq!(short_time(Duration::from_secs(154)), "2:34");
@@ -442,7 +473,7 @@ mod tests {
         // In CI there is no tty; starting and finishing must still be clean
         // rather than panicking or hanging on the draw thread.
         let progress = std::sync::Arc::new(Progress::start(AUTHOR_STAGES));
-        progress.advance(1);
+        progress.advance_to_at_least(1);
         progress.note("writing lib.rs");
         Progress::stop(&progress);
     }
