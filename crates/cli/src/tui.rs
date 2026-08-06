@@ -126,6 +126,14 @@ fn make_an_app() -> Result<()> {
 /// something again is the same path as making it the first time.
 fn make_named_app(request: &str) -> Result<()> {
     let request = request.to_string();
+
+    // Check the compiler before anything else. Finding out mid-build -- after
+    // picking an AI and reading "cooking with grok" -- means the person has
+    // already waited for news that was available before they started.
+    if !ensure_build_tools()? {
+        return Ok(());
+    }
+
     let Some(provider) = choose_provider()? else {
         return Ok(());
     };
@@ -336,6 +344,69 @@ fn change_an_app(bundle: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Make sure the build toolchain is present, offering to install it.
+///
+/// Returns false when the person declined or the install failed, so the caller
+/// stops rather than starting a build that cannot finish.
+fn ensure_build_tools() -> Result<bool> {
+    let missing = crate::build_tools_missing();
+    if missing.is_empty() {
+        return Ok(true);
+    }
+
+    println!();
+    println!(
+        "  {}",
+        style::bold("Making an app needs a compiler, and it is not installed yet.")
+    );
+    println!(
+        "  {}",
+        style::dim("about five minutes, once. Every app after this is fast.")
+    );
+    println!();
+    for (what, how) in &missing {
+        println!("  {} {}", style::dim(glyphs().dot), style::bold(what));
+        println!("      {}", style::dim(&truncate(how, 62)));
+    }
+    println!();
+
+    let answer = prompt("  Install it now? [Y/n]  > ")?;
+    if answer.trim().eq_ignore_ascii_case("n") {
+        println!();
+        println!(
+            "  {}",
+            style::dim("no problem. `krate doctor` shows this list again any time.")
+        );
+        println!();
+        return Ok(false);
+    }
+
+    println!();
+    match crate::install_build_tools() {
+        Ok(()) => {
+            println!();
+            println!("  {} ready", style::good(glyphs().tick));
+            println!();
+            Ok(true)
+        }
+        Err(err) => {
+            println!();
+            println!(
+                "  {} {}",
+                style::warn(glyphs().cross),
+                style::warn(&err.to_string())
+            );
+            println!();
+            println!(
+                "  {}",
+                style::dim("you can install it yourself with the command above, then try again")
+            );
+            println!();
+            Ok(false)
+        }
+    }
 }
 
 // ------------------------------------------------------------- choosing an AI

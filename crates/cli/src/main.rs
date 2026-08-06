@@ -7025,6 +7025,34 @@ struct MissingTool {
 }
 
 /// Gather what `krate create` needs but does not have. Empty means ready.
+/// What the front door needs before it starts a build.
+///
+/// The toolchain used to be discovered mid-run: the person picked an AI,
+/// watched "cooking with grok", and only then found out a compiler was
+/// missing -- and on Windows the install command was a Unix shell script that
+/// could not work, so it failed with "curl: (23) Failure writing output".
+/// Checking first means the answer arrives before anyone has waited.
+pub(crate) fn build_tools_missing() -> Vec<(String, String)> {
+    missing_create_tools()
+        .into_iter()
+        .map(|tool| {
+            (
+                tool.what.to_string(),
+                install_command_line(&tool.install_cmd),
+            )
+        })
+        .collect()
+}
+
+/// Install everything `build_tools_missing` reported, in order.
+pub(crate) fn install_build_tools() -> Result<()> {
+    for tool in missing_create_tools() {
+        println!("  installing {}...", tool.what);
+        run_install_command(&tool.install_cmd).with_context(|| format!("install {}", tool.what))?;
+    }
+    Ok(())
+}
+
 fn missing_create_tools() -> Vec<MissingTool> {
     let mut missing = Vec::new();
 
@@ -7034,6 +7062,22 @@ fn missing_create_tools() -> Vec<MissingTool> {
             what: "Rust (cargo)",
             // rustup is the supported installer; we print its official command
             // and only run it with consent.
+            //
+            // Windows needs a different one entirely. The shell script at
+            // sh.rustup.rs cannot run there, and piping it produced
+            // "curl: (23) Failure writing output to destination" -- a message
+            // that tells a first-time user nothing about what went wrong.
+            #[cfg(windows)]
+            install_cmd: vec![
+                "winget".into(),
+                "install".into(),
+                "--id".into(),
+                "Rustlang.Rustup".into(),
+                "-e".into(),
+                "--accept-source-agreements".into(),
+                "--accept-package-agreements".into(),
+            ],
+            #[cfg(not(windows))]
             install_cmd: vec![
                 "curl".into(),
                 "--proto".into(),
