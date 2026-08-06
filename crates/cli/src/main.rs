@@ -5247,10 +5247,15 @@ fn run_component(request: RunRequest) -> Result<u8> {
 /// and being wrong in the optimistic direction just restores the panic.
 #[cfg(all(unix, not(target_os = "macos")))]
 fn check_window_libraries() -> Result<()> {
-    // Only X11 needs this. Under Wayland winit never loads the X11 bridge.
-    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
-    let x11 = std::env::var_os("DISPLAY").is_some();
-    if wayland || !x11 {
+    // No display at all means no window, so nothing to check.
+    //
+    // Deliberately NOT skipped when WAYLAND_DISPLAY is set. A Wayland session
+    // running XWayland sets both variables, and winit may still take the X11
+    // path -- skipping there would restore the panic on exactly the setup most
+    // modern Linux desktops have. The check is a dlopen that costs microseconds
+    // and closes the handle again, so running it needlessly costs nothing while
+    // skipping it needlessly costs a Rust backtrace in somebody's face.
+    if std::env::var_os("DISPLAY").is_none() {
         return Ok(());
     }
 
