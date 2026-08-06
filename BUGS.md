@@ -223,7 +223,7 @@ Fix:      Not started. Needs both halves: name the dependency so it is
           one plain sentence naming the package to install, never a panic.
 
 ### K-037 -- `krate` exits silently on Windows: no menu, no error
-Status:   open
+Status:   fixed
 Owner:    unclaimed
 Severity: blocker
 Class:    our-code
@@ -266,11 +266,24 @@ Proven 2026-08-06 by changing one thing on that machine: installing the
 
           Same binary, same shell, same session. The missing DLL was the whole
           of it.
-Fix:      Static CRT chosen, .cargo/config.toml sets
-          `-C target-feature=+crt-static` for both Windows targets. NOT YET
-          VERIFIED on Windows -- it cannot be cross-built from macOS (needs the
-          MSVC linker), so it has to be built and run on a Windows machine
-          before this is closed. Three candidates were considered: build the
+Fix:      Static CRT, .cargo/config.toml sets
+          `-C target-feature=+crt-static` for both Windows targets.
+
+          VERIFIED 2026-08-07 by building on Windows 11 and inspecting the
+          binary: it imports none of VCRUNTIME140.dll, MSVCP140.dll, or
+          api-ms-win-crt. The dependency is gone rather than satisfied, so a
+          clean machine that never had the redistributable can run it.
+
+          Two things the build itself taught, both worth keeping:
+
+          - x86_64 Windows cannot build the default feature set: whisper's
+            bindgen needs libclang, which is not present. The release workflow
+            skips speech only on ARM targets, so this would have failed there
+            too and nobody had noticed. Built with --no-default-features.
+          - The VM had 16 GB of RAM and NO pagefile. The LTO link needs more
+            than the free physical memory, and Windows kills the process with
+            no message and an empty log. Three builds died silently before
+            that was found. Enabling an automatic pagefile fixed it. Three candidates were considered: build the
           Windows target with a static CRT (`-C target-feature=+crt-static`),
           which removes the dependency entirely and keeps the install one file;
           or have the installer install the redistributable; or ship the DLLs
