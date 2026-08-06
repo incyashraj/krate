@@ -4,6 +4,18 @@ on:
   push:
     tags:
       - "v*.*.*"
+  # Manual trigger, because a tag push does not always create a run.
+  # v0.1.0 was tagged, the tag reached the remote, the workflow was active at
+  # that tag -- and no run was ever created. A manually dispatched build on the
+  # same repository started a runner immediately, so Actions and minutes were
+  # both fine; the push event simply never fired. Without this the release was
+  # blocked on retrying a push and hoping.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The existing tag to build and publish, e.g. v0.1.0
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -81,6 +93,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          # A dispatch defaults to the branch; build the tag being released.
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Install Linux audio development files
         if: matrix.os == 'ubuntu-latest' && matrix.cross != true
@@ -110,7 +125,7 @@ jobs:
           # Stamp the release tag (without the leading v) into the binary so
           # `krate --version` reports the real version rather than the crate's
           # 0.1.0-dev placeholder.
-          KRATE_RELEASE_VERSION: ${{ github.ref_name }}
+          KRATE_RELEASE_VERSION: ${{ inputs.tag || github.ref_name }}
         run: |
           # Some targets cannot build every feature. Speech compiles
           # whisper.cpp, which needs a C++17 compiler, and the arm64 Linux
@@ -155,14 +170,14 @@ jobs:
       - name: Package
         shell: bash
         env:
-          KRATE_VERSION: ${{ github.ref_name }}
+          KRATE_VERSION: ${{ inputs.tag || github.ref_name }}
         run: scripts/package.sh "${{ matrix.target }}" "${{ matrix.ext }}"
 
       - name: Assemble Krate.app (macOS double-click entry point)
         if: contains(matrix.target, 'apple-darwin')
         shell: bash
         env:
-          KRATE_VERSION: ${{ github.ref_name }}
+          KRATE_VERSION: ${{ inputs.tag || github.ref_name }}
         run: |
           # Pillow renders the app icon; ship without an icon rather than fail.
           python3 -m pip install --quiet pillow || true
@@ -184,7 +199,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-          KRATE_VERSION: ${{ github.ref_name }}
+          KRATE_VERSION: ${{ inputs.tag || github.ref_name }}
         run: |
           if [ -z "$CERT_P12" ]; then
             echo "::warning::No Apple signing secrets; shipping ad-hoc signed."
@@ -340,7 +355,11 @@ jobs:
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          prerelease: ${{ contains(github.ref_name, '-rc') }}
+          # Named explicitly: on a manual dispatch github.ref_name is the
+          # branch, so the release would be created against `main` rather than
+          # the tag being published.
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          prerelease: ${{ contains(inputs.tag || github.ref_name, '-rc') }}
           files: |
             dist/**/*.tar.gz
             dist/**/*.zip
