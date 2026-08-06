@@ -3383,10 +3383,15 @@ fn authoring_context_writes_a_pack_with_every_section() {
         "# 2. Capabilities",
         "# 3. Passing the import check",
         "# 4. The GUI world",
-        "# 5. Example apps",
+        "# 5. A complete worked example",
         "canvas2d::present",
         "random.bytes",
         "krate-notes",
+        // The example is inlined rather than pointed at, so that a machine
+        // without the repo has real code to copy instead of a path to hunt
+        // for. Losing this would restore the eight-minute filesystem search.
+        "#![no_std]",
+        "### `manifest.toml`",
     ] {
         assert!(pack.contains(needle), "pack should contain {needle:?}");
     }

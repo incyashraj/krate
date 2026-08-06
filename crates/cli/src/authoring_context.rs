@@ -493,6 +493,16 @@ fn normalize_wit_signature(sig: &str) -> String {
 /// each app is proven working (it ships and passes CI), so the agent reads the
 /// closest one and adapts real no_std code rather than writing blind.
 fn example_index_section(app_dir: &Path) -> String {
+    example_index_section_for(find_apps_dir(app_dir))
+}
+
+/// The section body, given an already-resolved apps tree.
+///
+/// Split out so the no-tree branch -- the one a person who installed a release
+/// actually gets -- can be tested. Resolving inside made that untestable here:
+/// `find_apps_dir` falls back to the workspace this binary was built in, which
+/// always exists on a development machine and never exists on a user's.
+fn example_index_section_for(apps_dir: Option<std::path::PathBuf>) -> String {
     let mut out = String::from("\n---\n\n# 5. A complete worked example\n\n");
     out.push_str(
         "This is a whole working GUI app, inlined rather than referenced, because \
@@ -508,7 +518,7 @@ fn example_index_section(app_dir: &Path) -> String {
     // printing nothing: an agent told to read `apps/krate-paint/src/lib.rs`
     // goes looking for it, and `find /` on a machine without the repo is how a
     // two-minute authoring run became an eight-minute one on Windows.
-    let Some(apps_dir) = find_apps_dir(app_dir) else {
+    let Some(apps_dir) = apps_dir else {
         out.push_str(
             "\n## Other examples\n\nKrate ships around thirty more example apps, but \
              their source is **not on this machine** -- it lives in the Krate \
@@ -991,12 +1001,58 @@ interface api {
         assert!(pack.contains("# 2. Capabilities"));
         assert!(pack.contains("# 3. Passing the import check"));
         assert!(pack.contains("# 4. The GUI world"));
-        assert!(pack.contains("# 5. Example apps"));
+        assert!(pack.contains("# 5. A complete worked example"));
         // Real, load-bearing facts must appear, from their real sources.
         assert!(pack.contains("random.bytes"), "capability catalog");
         assert!(pack.contains("canvas2d::present"), "gfx WIT");
         assert!(pack.contains("krate-notes"), "example index");
         assert!(pack.contains("getrandom-backend"), "the getrandom remedy");
+    }
+
+    #[test]
+    fn a_machine_without_the_repo_is_told_not_to_go_looking() {
+        // The pack used to say the examples "live under `apps/` in the Krate
+        // repository" and the prompt told the agent to read the closest one.
+        // On a machine with no repo that became `find / -name krate-paint`,
+        // and an authoring run that should take two minutes took eight.
+        //
+        // `example_index_section` is called with the apps tree already
+        // resolved, so this exercises the no-repo branch directly rather than
+        // relying on a temp dir -- find_apps_dir falls back to the workspace
+        // this binary was built in, which exists here and never exists on a
+        // user's machine.
+        let pack = example_index_section_for(None);
+
+        assert!(
+            pack.contains("not on this machine"),
+            "must say plainly that the example sources are absent"
+        );
+        assert!(
+            pack.contains("do not search the filesystem"),
+            "must forbid the search that caused the hang"
+        );
+        // And it must still carry real code, or the agent has nothing to copy.
+        assert!(pack.contains("#![no_std]"), "the worked example is inlined");
+        assert!(pack.contains("events::wait"), "its event loop is inlined");
+    }
+
+    #[test]
+    fn the_worked_example_is_always_present() {
+        // With or without the apps tree, the pack carries one complete app.
+        // This is what replaced pointing at files that may not exist.
+        let with_repo = find_apps_dir(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."));
+        assert!(with_repo.is_some(), "this repo has an apps tree");
+        for apps in [None, with_repo] {
+            let pack = example_index_section_for(apps);
+            assert!(pack.contains("### `src/lib.rs`"), "example source");
+            assert!(pack.contains("### `manifest.toml`"), "example manifest");
+            // The manifest shape a real app needs, not a plausible-looking one.
+            assert!(pack.contains("[app]"), "manifest [app] table");
+            assert!(
+                pack.contains("required = true"),
+                "capabilities are required"
+            );
+        }
     }
 
     #[test]

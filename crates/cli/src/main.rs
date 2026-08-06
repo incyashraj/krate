@@ -4359,13 +4359,10 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
         if let Some(stdout) = child.stdout.take() {
             use std::io::BufRead;
             for line in io::BufReader::new(stdout).lines().map_while(Result::ok) {
-                match line.strip_prefix(PROGRESS_PREFIX) {
-                    Some(step) => {
-                        report_progress(step);
-                    }
-                    // Anything untagged is the agent's own chatter. It is in
-                    // the transcript already, so it does not go on screen.
-                    None => {}
+                // Anything untagged is the agent's own chatter. It is in the
+                // transcript already, so it does not go on screen.
+                if let Some(step) = line.strip_prefix(PROGRESS_PREFIX) {
+                    report_progress(step);
                 }
             }
         }
@@ -5095,6 +5092,9 @@ fn run_component(request: RunRequest) -> Result<u8> {
     // wasm keeps looping, and the window stays open -- which is what three
     // unanswered presses looked like.
     krate_runtime::phase3_gui_host::install_interrupt_handler();
+    // Check the X11 keyboard library before anything opens a window, so a
+    // machine without it gets one sentence instead of a Rust panic.
+    check_window_libraries()?;
     // Every way an app is opened lands here: the menu, a double-click, and a
     // bare `krate run`. Counting anywhere else would miss most of them.
     usage::record_install_once();
@@ -5109,6 +5109,52 @@ fn run_component(request: RunRequest) -> Result<u8> {
         },
     );
     opened
+}
+
+/// Fail early, and in plain words, when the X11 keyboard library is absent.
+///
+/// winit loads `libxkbcommon-x11.so` with dlopen when it opens a window, and
+/// **panics** if it is not there. On a stock Ubuntu desktop it is not: the
+/// runtime package ships `libxkbcommon-x11.so.0`, and the unversioned name
+/// winit asks for only comes with the `-dev` package. So a person who was
+/// promised they would never see a compiler error gets a Rust backtrace with a
+/// crate path and a line number, for an app that built and packed perfectly.
+///
+/// The check is deliberately the same dlopen winit will do, rather than a
+/// filesystem guess: the loader searches paths we do not want to reimplement,
+/// and being wrong in the optimistic direction just restores the panic.
+#[cfg(all(unix, not(target_os = "macos")))]
+fn check_window_libraries() -> Result<()> {
+    // Only X11 needs this. Under Wayland winit never loads the X11 bridge.
+    let wayland = std::env::var_os("WAYLAND_DISPLAY").is_some();
+    let x11 = std::env::var_os("DISPLAY").is_some();
+    if wayland || !x11 {
+        return Ok(());
+    }
+
+    const LIBRARY: &[u8] = b"libxkbcommon-x11.so\0";
+    // SAFETY: a null-terminated literal, and the handle is closed on success.
+    let handle = unsafe { libc::dlopen(LIBRARY.as_ptr().cast(), libc::RTLD_LAZY) };
+    if !handle.is_null() {
+        unsafe { libc::dlclose(handle) };
+        return Ok(());
+    }
+
+    anyhow::bail!(
+        "this computer is missing a library apps need to read the keyboard.\n\n\
+         Install it with:\n\n    \
+         sudo apt install libxkbcommon-x11-dev\n\n\
+         (on Fedora: sudo dnf install libxkbcommon-x11-devel)\n\n\
+         The plain `libxkbcommon-x11-0` package is not enough -- it provides \
+         libxkbcommon-x11.so.0, and the name that has to exist is \
+         libxkbcommon-x11.so, which only the dev package creates."
+    )
+}
+
+/// Nothing to check: macOS and Windows do not use X11.
+#[cfg(any(not(unix), target_os = "macos"))]
+fn check_window_libraries() -> Result<()> {
+    Ok(())
 }
 
 fn run_component_inner(request: RunRequest) -> Result<u8> {
