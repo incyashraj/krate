@@ -71,6 +71,48 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-042 -- Every 3D scene was mirrored, so steering went the wrong way
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-07, Windows 11 (Azure), playing an AI-written racing game
+Evidence: Pressing right steered left and pressing left steered right. The
+          game's own code was correct -- right increments its x, and it draws
+          the world relative to that -- so the fault was in ours.
+
+          `Scene::project` built the camera basis with
+
+              let right = forward.cross(world_up).normalized();
+
+          With up at +Y, `forward x up` points at -X. Worked through by hand
+          for a camera at the origin looking down +Z:
+
+              forward x up = (-1, 0, 0)     a point at +X projects to -1: LEFT
+              up x forward = ( 1, 0, 0)     the same point projects to +1: RIGHT
+
+          So an object to the player's right was drawn on their left, and the
+          whole scene was mirrored horizontally.
+
+          `up` comes out correct with either order, which is why nothing looked
+          upside down and a road -- roughly symmetric -- still looked right.
+          The only visible symptom was inverted controls.
+Impact:   Every 3D app on every platform. Not a Windows bug; it was found
+          there because that is where a 3D game was first played.
+Fix:      `up.cross(forward)`, with `up = forward.cross(right)` to match.
+
+          Culling had to flip with it: mirroring reversed screen-space winding,
+          so `area > 0.0` preserved the documented
+          counter-clockwise-from-outside rule only because two errors
+          cancelled. It is now `area < 0.0`, computed rather than guessed.
+
+          Two existing tests encoded the mirrored world and were corrected --
+          they had been passing on the strength of the bug. Test
+          `something_on_the_right_is_drawn_on_the_right` pins the handedness,
+          and also asserts up stays up so a future fix cannot trade one axis
+          for the other.
+
+
 ### K-041 -- Krate has no memory on Windows: HOME is not set there
 Status:   fixed
 Owner:    lead

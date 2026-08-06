@@ -211,10 +211,16 @@ impl Scene {
     /// Whether a projected triangle should be skipped as back-facing.
     ///
     /// The signed screen area already says which way the corners wind, so
-    /// culling is a sign test rather than another dot product. Positive area
-    /// is a back face here, matching counter-clockwise-when-seen-from-outside.
+    /// culling is a sign test rather than another dot product. Negative area
+    /// is a back face here, matching counter-clockwise-when-seen-from-outside
+    /// as the WIT documents.
+    ///
+    /// The sign flipped when the camera basis was corrected: `forward x up`
+    /// mirrored every scene horizontally, which also reversed screen-space
+    /// winding, so the old `area > 0.0` kept the documented behaviour only
+    /// because two errors cancelled.
     fn culled(&self, area: f32) -> bool {
-        self.cull_back_faces && area > 0.0
+        self.cull_back_faces && area < 0.0
     }
 
     pub fn set_light(&mut self, direction: [f32; 3]) {
@@ -233,8 +239,18 @@ impl Scene {
     fn project(&self, point: Vec3) -> Option<(f32, f32, f32)> {
         let forward = self.look_at.sub(self.eye).normalized();
         let world_up = Vec3::new(0.0, 1.0, 0.0);
-        let right = forward.cross(world_up).normalized();
-        let up = right.cross(forward);
+        // `up × forward`, not `forward × up`. The other order points "right"
+        // at -X, which mirrors the whole scene horizontally: a car at +X, to
+        // the player's right, is drawn on the left. The picture still looks
+        // plausible -- a road is roughly symmetric -- so it surfaced as
+        // steering that went the wrong way, in a racing game where pressing
+        // right moved the rider left.
+        //
+        // Only this axis was wrong. `up` comes out correct either way, which
+        // is why nothing looked upside down and the bug hid in a scene that
+        // renders fine.
+        let right = world_up.cross(forward).normalized();
+        let up = forward.cross(right);
 
         let relative = point.sub(self.eye);
         let camera_x = relative.dot(right);
@@ -691,6 +707,48 @@ mod tests {
     use super::*;
 
     #[test]
+    fn something_on_the_right_is_drawn_on_the_right() {
+        // The bug that made a racing game steer backwards.
+        //
+        // The camera basis used `forward x up`, which points "right" at -X and
+        // mirrors the scene horizontally. A road is roughly symmetric, so the
+        // picture still looked correct -- it surfaced as pressing right and
+        // watching the rider move left. `up` came out correct either way,
+        // which is why nothing appeared upside down and it hid for so long.
+        let mut scene = Scene::new(200, 100).expect("scene");
+        // Standing at the origin, looking down +Z, up is +Y.
+        scene.set_camera([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 60.0);
+
+        let middle = scene.project(Vec3::new(0.0, 0.0, 10.0)).expect("ahead");
+        let right = scene.project(Vec3::new(5.0, 0.0, 10.0)).expect("to the right");
+        let left = scene.project(Vec3::new(-5.0, 0.0, 10.0)).expect("to the left");
+
+        assert!(
+            right.0 > middle.0,
+            "a point at +X is to the player's right and must draw right of centre \
+             (got x={} against centre {})",
+            right.0,
+            middle.0
+        );
+        assert!(
+            left.0 < middle.0,
+            "a point at -X must draw left of centre (got x={} against centre {})",
+            left.0,
+            middle.0
+        );
+
+        // And up must still be up, which the broken basis also satisfied --
+        // asserted so a future "fix" cannot trade one axis for the other.
+        let above = scene.project(Vec3::new(0.0, 5.0, 10.0)).expect("above");
+        assert!(
+            above.1 < middle.1,
+            "a point at +Y is above and screen y grows downward (got y={} against {})",
+            above.1,
+            middle.1
+        );
+    }
+
+    #[test]
     fn hostile_guest_geometry_never_panics_or_hangs() {
         // A guest is untrusted code. It can send a NaN vertex, an infinite
         // camera, a zero field of view, a triangle list whose length is not a
@@ -1071,11 +1129,17 @@ mod tests {
         scene.textured(&quad, &uvs, texture, (1.0, 1.0, 1.0, 1.0));
         let image = scene.render_image().expect("image");
 
-        let top_left = pixel(&image, 20, 20);
-        let bottom_right = pixel(&image, 44, 44);
+        // The camera sits at +Z looking back down -Z, so world -X is on the
+        // viewer's right -- turn around and left and right swap. uv(0,0) is
+        // at world -X, so the red corner is top-RIGHT on screen. This used to
+        // read top-left, which passed only because the camera basis was
+        // mirrored and every scene was drawn backwards.
+        let top_right = pixel(&image, 44, 20);
+        let bottom_left = pixel(&image, 20, 44);
+        let bottom_right = bottom_left;
         assert!(
-            top_left[0] > top_left[2],
-            "the top-left of the image is red: {top_left:?}"
+            top_right[0] > top_right[2],
+            "the top-right of the image is red: {top_right:?}"
         );
         // White is equal parts red, green and blue. Compared as a ratio
         // rather than a brightness, because how lit the surface is depends on
