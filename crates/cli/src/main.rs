@@ -2591,10 +2591,34 @@ pub(crate) fn revise_app_for_tui(
     change: &str,
     provider: &'static dyn agent_provider::AgentProvider,
     output: &Path,
+    attachments: &[PathBuf],
 ) -> Result<()> {
+    // The change is authored in the app's own directory, so an attachment
+    // goes in beside the code the same way it does for a new app.
+    let mut attached = String::new();
+    if !attachments.is_empty() {
+        let inbox = source.join("attached");
+        let _ = fs::create_dir_all(&inbox);
+        let mut named = Vec::new();
+        for file in attachments {
+            let Some(name) = file.file_name() else { continue };
+            if fs::copy(file, inbox.join(name)).is_ok() {
+                named.push(format!("attached/{}", name.to_string_lossy()));
+            }
+        }
+        if !named.is_empty() {
+            attached.push_str(
+                "\n\nThe person attached these files. Read them first -- they say \
+                 what the change should look like:\n",
+            );
+            for name in &named {
+                attached.push_str(&format!("  {name}\n"));
+            }
+        }
+    }
     let request = format!(
         "The Krate app in this directory already works. Change it as follows, \
-         and change nothing else: {change}\n\n\
+         and change nothing else: {change}{attached}\n\n\
          Keep the same crate name and manifest. When you are done, run \
          `krate check-app .` and make sure every stage passes."
     );

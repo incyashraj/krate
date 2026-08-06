@@ -112,11 +112,27 @@ fn main_menu() -> Result<MenuChoice> {
 
 fn make_an_app() -> Result<()> {
     println!();
+    println!("  {}", style::bold("What do you want to make?"));
+    println!();
+    // Say it plainly and show the shape of the answer. The old hint was one
+    // dim line saying "drag in a screenshot", which nobody found -- and
+    // dragging a file into a terminal does nothing at all on Windows, so the
+    // one instruction given was also the one that does not work there.
     println!(
         "  {}",
-        style::dim("describe it -- or drag in a screenshot, a design, or an app you already have")
+        style::dim("Describe it. To copy a design or an app you already have, put the")
     );
-    let request = prompt_remembered("  What do you want to make?\n  > ")?;
+    println!(
+        "  {}",
+        style::dim("file's path in as well -- type it, paste it, or drag the file in:")
+    );
+    println!();
+    println!(
+        "    {}",
+        style::dim("a habit tracker like this  C:\\Users\\me\\Pictures\\design.png")
+    );
+    println!();
+    let request = prompt_remembered("  > ")?;
     let request = request.trim().to_string();
     if request.is_empty() {
         println!("  {}", style::dim("nothing to build yet"));
@@ -150,6 +166,16 @@ fn split_off_attachments(typed: &str) -> (String, Vec<PathBuf>) {
         let path = Path::new(&expanded);
         if path.is_file() {
             attachments.push(path.to_path_buf());
+        } else if looks_like_a_path(&token) {
+            // Looks like a path but is not one: a typo, or a file that moved.
+            // Silently folding it into the description would send the AI a
+            // sentence with a stray path in it and no picture, which is worse
+            // than saying so.
+            println!(
+                "  {} {}",
+                style::warn(glyphs().cross),
+                style::dim(&format!("no file at {token} -- ignoring it"))
+            );
         } else {
             if !description.is_empty() {
                 description.push(' ');
@@ -158,6 +184,20 @@ fn split_off_attachments(typed: &str) -> (String, Vec<PathBuf>) {
         }
     }
     (description.trim().to_string(), attachments)
+}
+
+/// Whether a token was probably meant to be a file path.
+///
+/// Used only to warn about one that does not exist. Deliberately narrow: an
+/// ordinary word in a description must never trip this, so it wants a
+/// directory separator or a drive letter, not merely a dot.
+fn looks_like_a_path(token: &str) -> bool {
+    token.starts_with('/')
+        || token.starts_with("~/")
+        || token.starts_with("./")
+        || token.starts_with("..")
+        || token.contains('\\')
+        || token.chars().nth(1) == Some(':')
 }
 
 /// Split a line into tokens, honouring quotes and backslash-escaped spaces.
@@ -396,11 +436,36 @@ impl AsDerefOrNone for String {
 /// existing app plus a sentence instead of starting from nothing.
 fn change_an_app(bundle: &Path) -> Result<()> {
     println!();
-    let change = prompt_remembered("  What should change?\n  > ")?;
+    println!("  {}", style::bold("What should change?"));
+    println!(
+        "  {}",
+        style::dim("a file path here works too, to show what you mean")
+    );
+    println!();
+    let change = prompt_remembered("  > ")?;
     let change = change.trim().to_string();
     if change.is_empty() {
         println!();
         return Ok(());
+    }
+    // A path in a change works the same way it does in a new request: "make it
+    // look like this" plus a picture is a clearer instruction than a paragraph.
+    let (change, attachments) = split_off_attachments(&change);
+    if change.trim().is_empty() && attachments.is_empty() {
+        println!();
+        return Ok(());
+    }
+    for path in &attachments {
+        println!(
+            "  {} {}",
+            style::good(glyphs().tick),
+            style::bold(
+                &path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default()
+            )
+        );
     }
     // "a" here means "and use a different AI", so somebody who does want to
     // switch can, without everyone else being asked every time.
@@ -467,7 +532,9 @@ fn change_an_app(bundle: &Path) -> Result<()> {
 
     let started = Instant::now();
     let outcome = match &source {
-        Some(source) => crate::revise_app_for_tui(source, &change, provider, bundle),
+        Some(source) => {
+            crate::revise_app_for_tui(source, &change, provider, bundle, &attachments)
+        }
         None => {
             // No source to edit, so restate the whole app: the original
             // request if we have it, plus what should be different.
