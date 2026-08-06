@@ -2592,14 +2592,28 @@ pub(crate) fn reopen_app(target: &ClientTarget) -> Result<bool> {
 /// one process that interrupt kills the front door too -- the person loses
 /// their whole session to close one app. A child takes the interrupt by
 /// itself and the menu survives it.
+/// Absorb a Ctrl-C while an app is running.
+///
+/// Doing nothing here is the point: the same signal reaches the app, which
+/// exits, and the menu survives to show itself again. A handler that exits
+/// would take the menu down with the app; ignoring the signal instead would
+/// be inherited by the app, which is why neither worked.
+#[cfg(unix)]
+extern "C" fn handle_interrupt(_signal: libc::c_int) {}
+
 pub(crate) fn run_bundle_for_tui(bundle: &Path) -> Result<()> {
     let exe = std::env::current_exe().context("could not find Krate's own binary")?;
-    // Ctrl-C goes to the whole foreground process group, so it reaches this
-    // process as well as the child -- which killed the menu along with the app
-    // it was running. Ignoring it here for the duration of the run means the
-    // child takes the interrupt, exits, and control comes back to the menu.
+    // Ctrl-C reaches the whole foreground process group, so it hits the menu
+    // as well as the app. Two earlier attempts were both wrong: ignoring the
+    // signal here made the child inherit the ignore, so three presses did
+    // nothing; setsid would detach the app from the terminal, so the signal
+    // would reach neither.
+    //
+    // The right shape is to let the signal reach both, and simply not die
+    // from it. The menu installs a handler that records the interrupt rather
+    // than exiting, so the app takes it and quits while the menu carries on.
     #[cfg(unix)]
-    let previous = unsafe { libc::signal(libc::SIGINT, libc::SIG_IGN) };
+    let previous = unsafe { libc::signal(libc::SIGINT, handle_interrupt as libc::sighandler_t) };
 
     let status = std::process::Command::new(exe)
         .arg("run")
@@ -4981,6 +4995,10 @@ fn resolve_run_target(
 }
 
 fn run_component(request: RunRequest) -> Result<u8> {
+    // Ctrl-C must reach a running app. Without this the signal arrives, the
+    // wasm keeps looping, and the window stays open -- which is what three
+    // unanswered presses looked like.
+    krate_runtime::phase3_gui_host::install_interrupt_handler();
     // Every way an app is opened lands here: the menu, a double-click, and a
     // bare `krate run`. Counting anywhere else would miss most of them.
     usage::record_install_once();

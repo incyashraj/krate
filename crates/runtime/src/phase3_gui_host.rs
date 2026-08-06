@@ -83,6 +83,8 @@ pub struct Phase3GuiHost {
     idle_waits: std::cell::Cell<u32>,
     /// When the last frame was published, for pacing the next one.
     last_present: std::cell::Cell<Option<std::time::Instant>>,
+    /// How many times an interrupt has been turned into a close request.
+    interrupts: std::cell::Cell<u32>,
     /// How many times the person has asked to close the window.
     ///
     /// The first request goes to the guest untouched. A second means the guest
@@ -198,6 +200,30 @@ enum DriveStep {
     Done,
 }
 
+/// Set when the person presses Ctrl-C.
+///
+/// A guest loop does not stop on its own: the signal reaches the process and
+/// the wasm keeps running, so three presses did nothing and the window stayed
+/// open. Recording it here lets the event paths turn it into the close the
+/// app already knows how to handle, which also means an app that saves on the
+/// way out still gets to.
+pub static INTERRUPTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Install the Ctrl-C handler. Safe to call more than once.
+pub fn install_interrupt_handler() {
+    #[cfg(unix)]
+    unsafe {
+        extern "C" fn on_interrupt(_signal: i32) {
+            INTERRUPTED.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+        libc::signal(libc::SIGINT, on_interrupt as libc::sighandler_t);
+    }
+}
+
+fn interrupted() -> bool {
+    INTERRUPTED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 impl Phase3GuiHost {
     /// Create the GUI host with the requested host UI mode.
     pub fn new(guard: UapiGuard, mode: Phase3HostUiMode) -> Result<Self, UiDispatchError> {
@@ -220,6 +246,7 @@ impl Phase3GuiHost {
             headless: headless_backend,
             idle_waits: std::cell::Cell::new(0),
             last_present: std::cell::Cell::new(None),
+            interrupts: std::cell::Cell::new(0),
             close_requests: std::cell::Cell::new(0),
             headless_started: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
@@ -1711,6 +1738,19 @@ impl ui::events::Host for Phase3GuiHost {
                 return Ok(Some(event));
             }
         }
+        if interrupted() {
+            // First interrupt is reported as a close, so an app that saves on
+            // the way out does. An app that ignores it keeps looping and comes
+            // straight back here, so the second press ends the process --
+            // otherwise Ctrl-C is a suggestion the app can decline.
+            self.interrupts.set(self.interrupts.get() + 1);
+            if self.interrupts.get() > 1 {
+                std::process::exit(130);
+            }
+            if let Some(window) = self.windows.first().copied() {
+                return Ok(Some(ui::types::Event::CloseRequested(window.get())));
+            }
+        }
         let event = self
             .poll_one_event()
             .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
@@ -1778,6 +1818,15 @@ impl ui::events::Host for Phase3GuiHost {
         }
 
         loop {
+            if interrupted() {
+                self.interrupts.set(self.interrupts.get() + 1);
+                if self.interrupts.get() > 1 {
+                    std::process::exit(130);
+                }
+                if let Some(window) = self.windows.first().copied() {
+                    return Ok(Some(ui::types::Event::CloseRequested(window.get())));
+                }
+            }
             self.pump_native_windows();
             let event = self
                 .poll_one_event()
@@ -2309,6 +2358,14 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         // Deliberately not in the guest: an app that forgets to sleep should
         // not be able to melt the machine, and one that sleeps by hand still
         // works because this only ever waits for the time left over.
+        // A game loop lives in present, not in wait or poll, so an interrupt
+        // has to be answered here as well or Ctrl-C does nothing to a game.
+        if interrupted() {
+            self.interrupts.set(self.interrupts.get() + 1);
+            if self.interrupts.get() > 1 {
+                std::process::exit(130);
+            }
+        }
         const FRAME_BUDGET: std::time::Duration = std::time::Duration::from_micros(16_667);
         if let Some(previous) = self.last_present.get() {
             let elapsed = previous.elapsed();
