@@ -4128,6 +4128,12 @@ fn agent_failure_reason(transcript: &Path) -> Option<String> {
         let raw = event
             .pointer("/error/message")
             .or_else(|| event.pointer("/item/message"))
+            // Claude Code puts the sentence in `result` on its final event,
+            // with is_error set. Without this the useful line -- "OAuth
+            // session expired and could not be refreshed" -- was skipped and
+            // the person got a bare "the agent did not finish successfully",
+            // which names neither the cause nor the fix.
+            .or_else(|| event.get("result"))
             .or_else(|| event.get("message"))
             .and_then(|v| v.as_str());
         let Some(raw) = raw else { continue };
@@ -4142,7 +4148,10 @@ fn agent_failure_reason(transcript: &Path) -> Option<String> {
             .unwrap_or_else(|| raw.to_string());
         let is_error = event.get("type").and_then(|t| t.as_str()) == Some("error")
             || event.pointer("/item/type").and_then(|t| t.as_str()) == Some("error")
-            || event.get("error").is_some();
+            || event.get("error").is_some()
+            // Claude's final event is type "result" with this flag, not type
+            // "error", so the flag is what has to be read.
+            || event.get("is_error").and_then(|v| v.as_bool()) == Some(true);
         if is_error && !unwrapped.trim().is_empty() {
             last = Some(unwrapped.trim().to_string());
         }
@@ -4150,6 +4159,17 @@ fn agent_failure_reason(transcript: &Path) -> Option<String> {
     last.map(|reason| {
         // One sentence, not a wall. Long provider errors repeat themselves.
         let trimmed: String = reason.chars().take(300).collect();
+        // An expired sign-in is the commonest failure of all and the message
+        // for it never says what to do. Add the command.
+        let lower = trimmed.to_lowercase();
+        if lower.contains("oauth")
+            || lower.contains("authenticate")
+            || lower.contains("authentication")
+            || lower.contains("session expired")
+            || lower.contains("not logged in")
+        {
+            return format!("{trimmed}\n\n  Sign in again, then try once more.");
+        }
         trimmed
     })
 }

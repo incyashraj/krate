@@ -71,6 +71,40 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-051 -- An expired AI sign-in reported nothing useful
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, macOS, generating a test app with an expired login
+Evidence: The whole message was:
+
+              error: the claude agent did not finish successfully;
+              see .../.agent-transcript.txt
+              error: author command failed
+
+          The transcript held the real answer all along:
+
+              "Failed to authenticate: OAuth session expired and could
+               not be refreshed"
+
+          `agent_failure_reason` looked in `/error/message`, `/item/message`
+          and `message`. Claude Code puts the sentence in `result` on its final
+          event, flagged with `is_error: true` and typed "result", not "error".
+          So the one useful line was skipped every time.
+
+          Worse, on failure the temp work directory is cleaned up -- so the
+          error named a transcript that had already been deleted.
+Impact:   The commonest failure of all (a sign-in that quietly lapsed) looked
+          like Krate being broken, and the file it pointed at was gone.
+Fix:      Read `result` and honour `is_error`. An expired sign-in also gets
+          "Sign in again, then try once more" appended, since the provider's
+          own wording never says what to do about it.
+
+          Verified against the real transcript from the failed run rather than
+          a constructed one.
+
+
 ### K-050 -- Authoring waits on check-app, not on the AI reading or thinking
 Status:   fixed
 Owner:    lead
