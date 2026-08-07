@@ -71,25 +71,32 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
-### K-068 -- the standalone macOS CLI is signed hardened with no entitlements
+### K-068 -- the CLI tarball has never contained the binary the workflow signs
 Status:   fixed
 Owner:    lead
-Severity: blocker
+Severity: serious
 Class:    our-code
-Found:    2026-08-07, while cutting v0.1.2, reading the signing step
-Evidence: .github/workflows/release.yml signed the bare `krate` binary with
-          `--options runtime` and no `--entitlements`:
+Found:    2026-08-07, verifying the published v0.1.2 assets
+Evidence: The workflow signs the bare CLI in the "Sign and notarize" step, but
+          Package -- which builds the tarball -- runs before it. The signed
+          binary in target/ is never read again. The published asset proves it:
 
-            codesign --force --options runtime --timestamp \
-              --sign "$IDENTITY" "target/${{ matrix.target }}/release/krate"
+            $ codesign -dvv krate-0.1.2-aarch64-apple-darwin/krate
+            flags=0x20002(adhoc,linker-signed)
 
-          That is the exact combination that killed the app bundle in K-063:
-          hardened runtime forbids writable-executable memory and wasmtime JITs
-          every component. The bundle was caught because people double-click it;
-          this one is what somebody gets from install.sh and runs as `krate run`.
-          Never released with entitlements, so never worked signed.
-Fix:      Pass the same $ENTITLEMENTS file used for the bundle. Shipped in
-          v0.1.2.
+          Two defects hid each other here. The signing step also passed
+          `--options runtime` with no entitlements -- the K-063 combination the
+          kernel kills -- so if the signed binary HAD reached the tarball,
+          `krate run` would have died on every launch. Shipping the unsigned
+          one is why it worked. First filed as "signed hardened with no
+          entitlements, shipped in v0.1.2"; both halves of that were wrong,
+          which is what verifying the published asset rather than the workflow
+          diff is for.
+Fix:      Entitlements on the codesign call, and the tarball repacked after
+          signing so it carries what was signed. In the workflow after v0.1.2;
+          first release to ship a properly signed CLI will be the next one.
+          v0.1.2's CLI is adhoc like every release before it -- it runs, it is
+          simply not Developer-ID signed.
 
 ### K-067 -- a window is created at the wrong size on any display that is not 100%
 Status:   fixed

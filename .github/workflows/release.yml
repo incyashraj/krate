@@ -291,6 +291,13 @@ jobs:
             --entitlements "$ENTITLEMENTS" \
             --sign "$IDENTITY" "target/${{ matrix.target }}/release/krate"
 
+          # Repack the CLI tarball. Package ran before this step, so the
+          # tarball in dist/ still carries the unsigned binary -- v0.1.2
+          # shipped exactly that way (K-068): the signing above was applied
+          # to a file nothing ever read again. package.sh only rebuilds its
+          # own directory, so Krate.app in dist/ is untouched.
+          bash scripts/package.sh "${{ matrix.target }}" tar.gz
+
           version="${KRATE_VERSION#v}"
           zip_name="krate-app-${version}-${{ matrix.target }}.zip"
           (cd dist && rm -f "$zip_name" && zip -qry "$zip_name" Krate.app)
