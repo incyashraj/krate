@@ -71,6 +71,36 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-064 -- "needs a newer version of Krate" is a guess, and usually the wrong one
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, macOS, opening an app from Downloads through the menu
+Evidence: Opening a .krate built on 4 August with a runtime built today:
+
+              error: this app needs a newer version of Krate than you have
+              installed. Update Krate and try again:
+                curl -fsSL https://krate.tech/install.sh | sh
+
+          Exactly backwards. The app is older, not newer; the interface grew
+          under it (`krate:ui/events@0.1.0` gained events, and canvas2d has
+          gone from 7 functions to 26 since). Updating Krate cannot fix it,
+          so the one instruction given was the one that does not work.
+
+          K-035 recorded this same backwards message on 5 August and fixed the
+          bundles rather than the wording, so it was still there today.
+Impact:   Somebody follows the instruction, reinstalls, sees the identical
+          error, and concludes the product is broken. It also hides the real
+          fix, which is to rebuild the app.
+Fix:      Stop guessing which side is older. The message now names the actual
+          condition -- the app and this Krate were built against different
+          versions of the interface -- and gives both moves: update Krate if
+          the app arrived recently, or rebuild it through "Make a change" if
+          it is one you made a while ago. The wasmtime line is appended as
+          Details, so the missing interface is visible rather than swallowed.
+
+
 ### K-063 -- Double-clicking a .krate on macOS killed the app instantly
 Status:   fixed-pending-release
 Owner:    lead

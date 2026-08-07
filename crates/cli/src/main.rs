@@ -685,11 +685,28 @@ fn friendly_error(err: &anyhow::Error) -> String {
         if text.contains("matching implementation was not found")
             || (text.contains("imports instance") && text.contains("not found"))
         {
-            return "this app needs a newer version of Krate than you have installed. \
-                    Update Krate and try again:\n  \
-                    curl -fsSL https://krate.tech/install.sh | sh\n\
-                    (on Windows: irm https://krate.tech/install.ps1 | iex)"
-                .to_string();
+            // Deliberately does not guess which side is older.
+            //
+            // This said "this app needs a newer version of Krate" and pointed
+            // at the installer. That is one of two possibilities and, in
+            // practice, the rarer one: an app built before an interface grew
+            // fails exactly the same way, and no amount of updating Krate
+            // fixes it. K-035 recorded the message as backwards a day after
+            // it was written and rebuilt the bundles rather than the wording.
+            //
+            // A person cannot act on a guess. Name the real condition and give
+            // both moves.
+            return format!(
+                "this app and this copy of Krate were built against different \
+                 versions of the app interface, so it cannot start.\n\n  \
+                 If somebody sent you this app recently, update Krate:\n    \
+                 curl -fsSL https://krate.tech/install.sh | sh\n    \
+                 (on Windows: irm https://krate.tech/install.ps1 | iex)\n\n  \
+                 If it is an app you made a while ago, it predates a change to \
+                 the interface. Open it with `krate` and choose \"Make a \
+                 change\" -- rebuilding it against this version is the fix.\n\n\
+                 Details: {text}"
+            );
         }
     }
     format!("{err:#}")
