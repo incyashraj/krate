@@ -720,8 +720,12 @@ mod tests {
         scene.set_camera([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 60.0);
 
         let middle = scene.project(Vec3::new(0.0, 0.0, 10.0)).expect("ahead");
-        let right = scene.project(Vec3::new(5.0, 0.0, 10.0)).expect("to the right");
-        let left = scene.project(Vec3::new(-5.0, 0.0, 10.0)).expect("to the left");
+        let right = scene
+            .project(Vec3::new(5.0, 0.0, 10.0))
+            .expect("to the right");
+        let left = scene
+            .project(Vec3::new(-5.0, 0.0, 10.0))
+            .expect("to the left");
 
         assert!(
             right.0 > middle.0,

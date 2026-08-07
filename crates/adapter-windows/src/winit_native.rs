@@ -145,10 +145,7 @@ mod real {
                     // one corner. It reads as "bad graphics" but it is purely a
                     // unit mismatch, and it is invisible at 100% and close to
                     // invisible on a 2x Retina Mac, which is why it survived.
-                    .with_inner_size(PhysicalSize::new(
-                        pending.size.width,
-                        pending.size.height,
-                    ))
+                    .with_inner_size(PhysicalSize::new(pending.size.width, pending.size.height))
                     // Visible on creation, matching macOS. Hidden-until-shown
                     // assumed every app calls `window.show`, and none of them
                     // do: the samples create a window and start drawing. On

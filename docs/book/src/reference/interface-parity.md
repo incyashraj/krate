@@ -19,9 +19,9 @@ not be drawn into. That pair reads `works` on both tables now.
 | --- | --- | --- |
 | `audio.capture` | 4 | **works** |
 | `audio.playback` | 7 | **works** |
-| `gfx.canvas2d` | 12 | **works** |
+| `gfx.canvas2d` | 16 | **works** |
 | `gfx.scene3d` | 10 | **works** |
-| `speech.transcription` | 26 | **works** |
+| `speech.transcription` | 27 | **works** |
 | `ui.clipboard` | 2 | **works** |
 | `ui.dialog` | 3 | **works** |
 | `ui.events` | 6 | **works** |

@@ -479,9 +479,7 @@ impl AgentProvider for ClaudeProvider {
 /// frozen one, and the reporter drops exact repeats so a fixed sentence
 /// literally stops the display.
 fn describe_read(tool: &str, input: Option<&serde_json::Value>) -> String {
-    let field = |key: &str| -> Option<String> {
-        Some(input?.get(key)?.as_str()?.to_string())
-    };
+    let field = |key: &str| -> Option<String> { Some(input?.get(key)?.as_str()?.to_string()) };
 
     if let Some(pattern) = field("pattern") {
         let pattern = pattern.trim();
@@ -498,11 +496,7 @@ fn describe_read(tool: &str, input: Option<&serde_json::Value>) -> String {
     let Some(path) = field("file_path").or_else(|| field("path")) else {
         return "reading Krate's API reference".to_string();
     };
-    let file = path
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(&path)
-        .to_string();
+    let file = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
     match file.as_str() {
         "KRATE_AUTHORING.md" => "reading Krate's API reference".to_string(),
         "manifest.toml" => "reading the app's capabilities".to_string(),
@@ -894,8 +888,16 @@ mod tests {
                 "consecutive reads must differ or the display freezes: {lines:?}"
             );
         }
-        assert!(lines[3].contains("paint"), "names the example: {:?}", lines[3]);
-        assert!(lines[4].contains("checklist"), "names the example: {:?}", lines[4]);
+        assert!(
+            lines[3].contains("paint"),
+            "names the example: {:?}",
+            lines[3]
+        );
+        assert!(
+            lines[4].contains("checklist"),
+            "names the example: {:?}",
+            lines[4]
+        );
     }
 
     #[test]
@@ -907,10 +909,7 @@ mod tests {
 
     #[test]
     fn a_read_with_nothing_to_name_still_says_something() {
-        assert_eq!(
-            describe_read("Read", None),
-            "reading Krate's API reference"
-        );
+        assert_eq!(describe_read("Read", None), "reading Krate's API reference");
     }
 
     #[test]

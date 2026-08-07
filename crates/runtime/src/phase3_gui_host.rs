@@ -3264,8 +3264,8 @@ mod tests {
         host.pending_events
             .borrow_mut()
             .push_back(ui::types::Event::CloseRequested(window));
-        let _ = ui::events::Host::key_held(&mut host, "ArrowLeft".to_string())
-            .expect("key-held call");
+        let _ =
+            ui::events::Host::key_held(&mut host, "ArrowLeft".to_string()).expect("key-held call");
 
         // The close must still be there to be delivered.
         let event = ui::events::Host::poll(&mut host).expect("poll call");

@@ -2673,7 +2673,9 @@ pub(crate) fn revise_app_for_tui(
         let _ = fs::create_dir_all(&inbox);
         let mut named = Vec::new();
         for file in attachments {
-            let Some(name) = file.file_name() else { continue };
+            let Some(name) = file.file_name() else {
+                continue;
+            };
             if fs::copy(file, inbox.join(name)).is_ok() {
                 named.push(format!("attached/{}", name.to_string_lossy()));
             }
@@ -8696,8 +8698,7 @@ mod create_tests {
         let fresh = claude_author_prompt("/work/app", "a tip calculator", "/k");
         assert!(fresh.contains("check-app . --no-run"), "fresh: fast loop");
         assert!(
-            fresh.contains("run the full check once")
-                || fresh.contains("full check"),
+            fresh.contains("run the full check once") || fresh.contains("full check"),
             "fresh: full check still required"
         );
 
@@ -8724,7 +8725,10 @@ mod create_tests {
             "the reference stays available, consulted rather than read whole"
         );
         // And the marker itself must never be shown to the model as text.
-        assert!(!prompt.contains(CHANGE_MARKER), "marker leaked into the prompt");
+        assert!(
+            !prompt.contains(CHANGE_MARKER),
+            "marker leaked into the prompt"
+        );
     }
 
     #[test]

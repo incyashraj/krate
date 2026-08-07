@@ -136,10 +136,7 @@ mod real {
                     // adapter. Every other size here comes from `inner_size()`,
                     // which is physical, so a fractional-scaling desktop got a
                     // window bigger than the app painted.
-                    .with_inner_size(PhysicalSize::new(
-                        pending.size.width,
-                        pending.size.height,
-                    ))
+                    .with_inner_size(PhysicalSize::new(pending.size.width, pending.size.height))
                     // Visible on creation, matching macOS. See the same note in
                     // the Windows adapter: hidden-until-shown assumed every app
                     // calls `window.show`, and none of the samples do. A user

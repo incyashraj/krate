@@ -995,9 +995,18 @@ mod clip_tests {
 
         let at = |x: u32, y: u32| c.buffer[(y * 80 + x) as usize];
         // On the ring: bright.
-        assert!(at(60, 40) & 0x00FF_FFFF > 0x0080_8080, "right of the ring is drawn");
-        assert!(at(20, 40) & 0x00FF_FFFF > 0x0080_8080, "left of the ring is drawn");
-        assert!(at(40, 20) & 0x00FF_FFFF > 0x0080_8080, "top of the ring is drawn");
+        assert!(
+            at(60, 40) & 0x00FF_FFFF > 0x0080_8080,
+            "right of the ring is drawn"
+        );
+        assert!(
+            at(20, 40) & 0x00FF_FFFF > 0x0080_8080,
+            "left of the ring is drawn"
+        );
+        assert!(
+            at(40, 20) & 0x00FF_FFFF > 0x0080_8080,
+            "top of the ring is drawn"
+        );
         // The middle must stay empty -- that is what makes it a ring.
         assert_eq!(at(40, 40), 0xFF00_0000, "the centre is not filled");
         // And the corner: a circle must not paint where a rect would.

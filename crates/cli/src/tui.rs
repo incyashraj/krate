@@ -385,7 +385,10 @@ fn after_build(bundle: &Path) -> Result<()> {
 /// existed the whole time; nothing in the menu ever said so.
 fn publish_app(bundle: &Path) -> Result<()> {
     println!();
-    println!("  {}", style::dim("This uploads the app so anyone can run it from a link."));
+    println!(
+        "  {}",
+        style::dim("This uploads the app so anyone can run it from a link.")
+    );
     println!(
         "  {}",
         style::dim("Your GitHub name goes on it, so it will ask you to sign in once.")
@@ -543,9 +546,14 @@ fn change_an_app(bundle: &Path) -> Result<()> {
         crate::progress::AUTHOR_STAGES,
     ));
     let outcome = match &source {
-        Some(source) => {
-            crate::revise_app_for_tui_watched(source, &change, provider, bundle, &attachments, &progress)
-        }
+        Some(source) => crate::revise_app_for_tui_watched(
+            source,
+            &change,
+            provider,
+            bundle,
+            &attachments,
+            &progress,
+        ),
         None => {
             // No source to edit, so restate the whole app: the original
             // request if we have it, plus what should be different.
@@ -1065,7 +1073,6 @@ fn my_apps() -> Result<()> {
     Ok(())
 }
 
-
 /// Print what an app can reach, in words rather than capability names.
 ///
 /// Read from the bundle's own manifest, so this is what the sandbox will
@@ -1105,7 +1112,6 @@ fn show_permissions(bundle: &Path) {
     }
     println!();
 }
-
 
 /// Turn a capability's path glob into a folder name a person would say.
 ///
@@ -1574,7 +1580,10 @@ mod tests {
         let file = dir.join("My Design.png");
         std::fs::write(&file, b"x").expect("write fixture");
 
-        let escaped = format!("copy this {}", file.display().to_string().replace(' ', "\\ "));
+        let escaped = format!(
+            "copy this {}",
+            file.display().to_string().replace(' ', "\\ ")
+        );
         let (_, from_escaped) = split_off_attachments(&escaped);
         assert_eq!(from_escaped, vec![file.clone()], "backslash-escaped space");
 
@@ -1587,8 +1596,7 @@ mod tests {
 
     #[test]
     fn words_that_are_not_files_stay_in_the_description() {
-        let (description, attachments) =
-            split_off_attachments("a notes app with tags.txt support");
+        let (description, attachments) = split_off_attachments("a notes app with tags.txt support");
         assert!(attachments.is_empty(), "nothing on disk, nothing attached");
         assert_eq!(description, "a notes app with tags.txt support");
     }
