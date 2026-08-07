@@ -281,8 +281,14 @@ jobs:
             fi
           done
 
-          # The bare CLI is downloaded and run directly, so it needs signing too.
+          # The bare CLI is downloaded and run directly, so it needs signing too
+          # -- and it JITs exactly like the one in the bundle, so it needs the
+          # same entitlements. `--options runtime` without them is the precise
+          # combination that made a double-clicked Krate.app die with
+          # "Code Signature Invalid" (K-063); the only reason nobody hit it here
+          # first is that the bundle is what people open.
           codesign --force --options runtime --timestamp \
+            --entitlements "$ENTITLEMENTS" \
             --sign "$IDENTITY" "target/${{ matrix.target }}/release/krate"
 
           version="${KRATE_VERSION#v}"
