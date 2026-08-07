@@ -1,0 +1,165 @@
+/* The book, dressed as the rest of krate.tech.
+ *
+ * mdBook's own themes stay installed; this file re-points the variables of
+ * the default (navy) theme at the site's palette -- see docs/landing/site.css,
+ * the 2026 shell -- and restyles the chrome the variables do not reach. The
+ * book is served at /docs/ on krate.tech, so /fonts/ resolves to the fonts
+ * the landing page already ships; a local `mdbook serve` falls back to Inter
+ * or the system stack, which is fine for writing.
+ */
+
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/geist-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("/fonts/geist-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ------------------------------------------------- the palette, one theme */
+
+html.navy, html.light {
+  --bg: #0a0a0a;
+  --fg: rgba(255, 255, 255, 0.86);
+
+  --sidebar-bg: #0a0a0a;
+  --sidebar-fg: rgba(255, 255, 255, 0.55);
+  --sidebar-non-existant: rgba(255, 255, 255, 0.2);
+  --sidebar-active: #ffffff;
+  --sidebar-spacer: #1f2228;
+
+  --scrollbar: #2e323a;
+
+  --icons: rgba(255, 255, 255, 0.4);
+  --icons-hover: #ffffff;
+
+  --links: #a9c2ff;
+
+  --inline-code-color: #e6e6e6;
+
+  --theme-popup-bg: #0f1012;
+  --theme-popup-border: #1f2228;
+  --theme-hover: rgba(255, 255, 255, 0.06);
+
+  --quote-bg: #0f1012;
+  --quote-border: #1f2228;
+
+  --table-border-color: #1f2228;
+  --table-header-bg: #0f1012;
+  --table-alternate-bg: rgba(255, 255, 255, 0.02);
+
+  --searchbar-border-color: #1f2228;
+  --searchbar-bg: #0f1012;
+  --searchbar-fg: #ffffff;
+  --searchbar-shadow-color: transparent;
+  --searchresults-header-fg: rgba(255, 255, 255, 0.55);
+  --searchresults-border-color: #1f2228;
+  --searchresults-li-bg: #0f1012;
+  --search-mark-bg: rgba(98, 145, 255, 0.35);
+
+  --color-scheme: dark;
+}
+
+/* --------------------------------------------------------------- typeface */
+
+html.navy body, html.light body,
+html.navy .sidebar, html.light .sidebar {
+  font-family: "Geist", Inter, ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+}
+
+html.navy h1, html.navy h2, html.navy h3, html.navy h4 {
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+html.navy .content h1 { font-size: 2.1rem; }
+html.navy .content h2, html.light .content h2 {
+  font-size: 1.4rem;
+  margin-top: 2.4em;
+  padding-bottom: 0.35em;
+  border-bottom: 1px solid #1f2228;
+}
+
+html.navy .content { line-height: 1.65; }
+html.navy .content p { color: rgba(255, 255, 255, 0.7); }
+html.navy .content li { color: rgba(255, 255, 255, 0.7); }
+
+/* ----------------------------------------------------------------- chrome */
+
+/* The top bar: sticky, translucent, hairline -- the same header the rest of
+   the site wears. */
+html.navy #menu-bar, html.light #menu-bar {
+  background: rgba(10, 10, 10, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid #1f2228;
+}
+html.navy #menu-bar .menu-title, html.light #menu-bar .menu-title {
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: #ffffff;
+}
+
+/* One brand, one look: the theme picker would undo this file. A stored
+   "light" preference from before the toggle was hidden gets the same skin --
+   that is what the html.light selectors across this file are for. */
+html.navy #theme-toggle, html.light #theme-toggle { display: none; }
+
+/* The sidebar reads like the site's panels: quiet until active. */
+html.navy .sidebar, html.light .sidebar {
+  font-size: 0.9em;
+}
+html.navy .chapter li.chapter-item { margin-top: 0.5em; }
+html.navy .chapter li a, html.light .chapter li a {
+  padding: 2px 0;
+  transition: color 0.15s;
+}
+html.navy .chapter li a:hover, html.light .chapter li a:hover {
+  color: #ffffff;
+  text-decoration: none;
+}
+html.navy .chapter li a.active { color: #ffffff; font-weight: 500; }
+
+/* Code: the terminal component's look. */
+html.navy pre, html.light pre,
+html.navy .content pre > code, html.light .content pre > code {
+  background: #0c0d0f !important;
+  border-radius: 12px;
+}
+html.navy .content pre, html.light .content pre {
+  border: 1px solid #1f2228;
+  padding: 14px 16px;
+  font-size: 0.86em;
+  line-height: 1.7;
+}
+html.navy :not(pre) > code, html.light :not(pre) > code {
+  background: #0f1012;
+  border: 1px solid #1f2228;
+  border-radius: 5px;
+  padding: 0.1em 0.4em;
+  font-size: 0.86em;
+}
+
+/* Links in body copy: soft blue, underline on hover only. */
+html.navy .content a { color: #a9c2ff; text-decoration: none; }
+html.navy .content a:hover { text-decoration: underline; }
+
+/* Search box as a pill. */
+html.navy #searchbar, html.light #searchbar {
+  border-radius: 999px;
+  padding: 8px 16px;
+}
+
+/* Print keeps its own rules; nothing here should reach paper. */
+@media print {
+  html.navy #menu-bar { position: static; background: none; }
+}

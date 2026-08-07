@@ -16,7 +16,11 @@ git-repository-url = "https://github.com/incyashraj/krate"
 git-repository-icon = "fa-github"
 edit-url-template = "https://github.com/incyashraj/krate/edit/main/docs/book/{path}"
 no-section-label = false
-additional-css = []
+# The site is one dark brand (site.css, the 2026 shell); the book must not
+# open in a different one. Navy is the base we restyle in krate-theme.css.
+default-theme = "navy"
+preferred-dark-theme = "navy"
+additional-css = ["krate-theme.css"]
 additional-js = ["mermaid-render.js"]
 
 [output.html.fold]
