@@ -2782,7 +2782,7 @@ pub(crate) fn reopen_app(target: &ClientTarget) -> Result<bool> {
 /// would take the menu down with the app; ignoring the signal instead would
 /// be inherited by the app, which is why neither worked.
 #[cfg(unix)]
-extern "C" fn handle_interrupt(_signal: libc::c_int) {}
+pub(crate) extern "C" fn handle_interrupt(_signal: libc::c_int) {}
 
 pub(crate) fn run_bundle_for_tui(bundle: &Path) -> Result<()> {
     let exe = std::env::current_exe().context("could not find Krate's own binary")?;

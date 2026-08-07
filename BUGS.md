@@ -96,7 +96,8 @@ Fix:      Not attempted -- found while verifying the site deploy, filed so
           the red X on every push is not mistaken for the day's changes.
 
 ### K-070 -- typing a request with no AI connected throws the request away
-Status:   fixed
+Status:   fixed in main (commit 126df35); not yet in a release -- v0.1.2
+          predates it
 Owner:    lead
 Severity: serious
 Class:    our-code
@@ -113,7 +114,9 @@ Fix:      The request is held. The no-AI gate shows what to install, waits on
           the request is one up-arrow away (it is in prompt history).
 
 ### K-069 -- first-run setup on Windows demanded three terminal restarts
-Status:   fixed
+Status:   fixed in main (commit 126df35); not yet in a release -- v0.1.2
+          predates it. The trimmed installers ARE live (they deploy from the
+          site, not from a release).
 Owner:    lead
 Severity: blocker
 Class:    our-code
@@ -261,7 +264,8 @@ Fix:      Stop guessing which side is older. The message now names the actual
 
 
 ### K-063 -- Double-clicking a .krate on macOS killed the app instantly
-Status:   fixed-pending-release
+Status:   fixed (shipped v0.1.2; verified on the published bundle: entitlements
+          present, LaunchServices launch survives, app draws)
 Owner:    lead
 Severity: blocker
 Class:    our-code
@@ -449,7 +453,7 @@ Fix:      KRATE_QUIET_LAUNCH, set by the front door only. A bare `krate run`
 
 
 ### K-058 -- v0.1.0 shipped without the Windows document icon
-Status:   fixed-pending-release
+Status:   fixed (shipped v0.1.1)
 Owner:    lead
 Severity: annoyance
 Class:    our-code

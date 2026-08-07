@@ -23,6 +23,52 @@ use crate::style::{self, glyphs};
 /// start on a slow network is not the same as being broken.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// The session's own screen.
+///
+/// Entering flips the terminal to its alternate buffer -- the same isolated
+/// surface vim and every modern agent CLI use -- so the session neither
+/// scrolls someone's shell history away nor leaves a transcript behind when
+/// it ends. Leaving restores the shell exactly as it was, on every exit path,
+/// because restore lives in Drop.
+///
+/// Ctrl-C is survived rather than obeyed for the whole session (the same
+/// trick `run_bundle_for_tui` uses per-launch): the signal still reaches
+/// whatever child is working -- an AI author, a build, an open app -- and
+/// kills that, while the menu carries on. That is the behaviour a person
+/// pressing Ctrl-C during a build actually wants, and it also means an
+/// interrupt cannot strand the terminal on the alternate screen.
+struct Screen {
+    #[cfg(unix)]
+    previous: libc::sighandler_t,
+}
+
+impl Screen {
+    fn enter() -> Self {
+        use std::io::Write;
+        print!("\x1b[?1049h\x1b[2J\x1b[H");
+        let _ = io::stdout().flush();
+        #[cfg(unix)]
+        let previous =
+            unsafe { libc::signal(libc::SIGINT, crate::handle_interrupt as libc::sighandler_t) };
+        Screen {
+            #[cfg(unix)]
+            previous,
+        }
+    }
+}
+
+impl Drop for Screen {
+    fn drop(&mut self) {
+        use std::io::Write;
+        print!("\x1b[?1049l");
+        let _ = io::stdout().flush();
+        #[cfg(unix)]
+        unsafe {
+            libc::signal(libc::SIGINT, self.previous);
+        }
+    }
+}
+
 pub fn run() -> Result<u8> {
     // Piped or redirected means a script, not a person. Printing a menu into a
     // pipe helps nobody and would break anything parsing our output today.
@@ -30,6 +76,7 @@ pub fn run() -> Result<u8> {
         return crate::print_help_summary();
     }
 
+    let _screen = Screen::enter();
     banner();
     the_ask();
 
@@ -797,6 +844,33 @@ fn choose_provider() -> Result<Option<&'static dyn AgentProvider>> {
         println!("  Fix one of those and come back -- it is checked fresh each time.");
         println!();
         return Ok(None);
+    }
+
+    // One AI ready is not a decision, so no menu: connecting is one click
+    // only when there is nothing to choose between. Anyone who installs a
+    // second tool gets the menu back, and `a` at the prompt re-opens it.
+    if working.len() == 1 {
+        let provider = working[0].0;
+        remember_provider(provider);
+        println!();
+        println!(
+            "  {} {}  {}",
+            style::good(glyphs().tick),
+            style::bold(provider.name()),
+            style::dim("connected -- the only AI ready on this machine")
+        );
+        if !provider.reports_progress() {
+            println!(
+                "  {}",
+                style::dim(&format!(
+                    "{} does not report progress while it works, so the steps will \
+not move until it finishes. It is not stuck.",
+                    provider.name()
+                ))
+            );
+        }
+        println!();
+        return Ok(Some(provider));
     }
 
     println!();
