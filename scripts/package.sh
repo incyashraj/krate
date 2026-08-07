@@ -60,7 +60,11 @@ if [ "${target#*windows}" != "$target" ]; then
   # is nothing to point at and every .krate gets the blank-page icon.
   if python3 scripts/make-app-icon.py "$package_dir" >/dev/null 2>&1 \
      && [ -f "$package_dir/KrateDoc.ico" ]; then
-    rm -rf "$package_dir"/*.iconset "$package_dir"/*-1024.png "$package_dir"/*.icns
+    # The generator writes both marks; only the document one belongs in the
+    # archive. Krate.ico is the app icon, which nothing on Windows reads from
+    # here -- shipping it is just an unexplained file next to the binary.
+    rm -rf "$package_dir"/*.iconset "$package_dir"/*-1024.png "$package_dir"/*.icns \
+           "$package_dir/Krate.ico"
     echo "packaged KrateDoc.ico (Explorer document icon)"
   else
     # Fail, do not warn. v0.1.0 shipped with blank-page icons because this was
