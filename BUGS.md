@@ -92,12 +92,14 @@ Evidence: Library tests (windows-latest) and Test (ubuntu? no -- windows only):
           the Windows library-tests job until it is addressed (ggml needs
           the UCRT import lib the new image stopped providing implicitly, or
           whisper-rs needs a version bump built against it).
-Fix:      Not attempted -- found while verifying the site deploy, filed so
-          the red X on every push is not mistaken for the day's changes.
+Fix:      Mitigated 2026-08-07: release and runtime-linking CI jobs pinned
+          to windows-2022, which still links ggml correctly; v0.1.3 built
+          green on it. The real fix (whisper-rs/ggml against the new UCRT
+          arrangement, or an upstream bump) is still open before the pin can
+          come off -- windows-2022 will be retired eventually.
 
 ### K-070 -- typing a request with no AI connected throws the request away
-Status:   fixed in main (commit 126df35); not yet in a release -- v0.1.2
-          predates it
+Status:   fixed, shipped in v0.1.3
 Owner:    lead
 Severity: serious
 Class:    our-code
@@ -114,8 +116,7 @@ Fix:      The request is held. The no-AI gate shows what to install, waits on
           the request is one up-arrow away (it is in prompt history).
 
 ### K-069 -- first-run setup on Windows demanded three terminal restarts
-Status:   fixed in main (commit 126df35); not yet in a release -- v0.1.2
-          predates it. The trimmed installers ARE live (they deploy from the
+Status:   fixed, shipped in v0.1.3. The trimmed installers ARE live (they deploy from the
           site, not from a release).
 Owner:    lead
 Severity: blocker
@@ -161,10 +162,9 @@ Evidence: The workflow signs the bare CLI in the "Sign and notarize" step, but
           which is what verifying the published asset rather than the workflow
           diff is for.
 Fix:      Entitlements on the codesign call, and the tarball repacked after
-          signing so it carries what was signed. In the workflow after v0.1.2;
-          first release to ship a properly signed CLI will be the next one.
-          v0.1.2's CLI is adhoc like every release before it -- it runs, it is
-          simply not Developer-ID signed.
+          signing so it carries what was signed. Shipped and verified in
+          v0.1.3: the published tarball's krate is hardened, Developer-ID
+          signed, carries allow-jit, and ran a component to a painted frame.
 
 ### K-067 -- a window is created at the wrong size on any display that is not 100%
 Status:   fixed

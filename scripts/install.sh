@@ -143,7 +143,7 @@ case "$target" in
   *)                        friendly="$target" ;;
 esac
 say "Installing Krate ${version} (${friendly})..."
-curl -fSL "${base}/${archive}" -o "${tmp}/${archive}" \
+curl -fSL --progress-bar "${base}/${archive}" -o "${tmp}/${archive}" \
   || {
     # Naming the likely cause beats asking the person to go and check. arm64
     die "download failed. Does a binary exist for ${target} in release ${version}?"
