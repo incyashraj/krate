@@ -71,6 +71,79 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-061 -- A generated app closed itself after thirty seconds, mid-read
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    example-bug
+Found:    2026-08-07, Windows 11, reading a news app made with the TUI
+Evidence: The app bounded its interactive loop:
+
+              const MAX_ROUNDS: u32 = 600;      // 50ms a round
+              let rounds = if quick { QUICK_ROUNDS } else { MAX_ROUNDS };
+
+          600 x 50ms is thirty seconds, and then the window vanishes while
+          somebody is still reading the news.
+
+          The authoring pack already forbids this, at length, in its own
+          section headed "Do not close yourself. This is the most common way a
+          generated app fails." The AI wrote it anyway.
+
+          check-app cannot catch it: the usability driver watches for five
+          seconds (HEADLESS_RUN_BUDGET), records the app as having stayed
+          open, then closes it itself. Any bound longer than five seconds
+          passes the check and still quits on the person.
+Impact:   The commonest way a finished, correct-looking app fails its user,
+          and nothing in six stages saw it.
+Fix:      A layout-stage check that reads the source and fails when the
+          interactive branch of a `if quick { A } else { B }` bound is a
+          finite round count. It runs in 0.1s, before any build.
+
+          Deliberately narrow, verified against eleven shipped apps with zero
+          false positives:
+            - a bound only reachable when quick (`while !quick || frames < n`)
+              is the correct shape and passes -- krate-paint
+            - a bound measured in hours is a runaway backstop, not a session
+              limit -- krate-notes at 600_000 rounds is 8.3 hours
+            - a frame-paced game with no wait constant is paced by the
+              runtime's 60fps present -- krate-nova's 100_000 frames is 28
+              minutes
+          The bar is five minutes: below it somebody reaches the bound while
+          using the app, above it they do not.
+
+          Teaching was already there and was not enough. This is the
+          difference between asking and checking.
+
+### K-062 -- Double-clicking a .krate flashed a console and opened nothing
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-07, Windows 11, double-clicking an app in Explorer
+Evidence: The registered handler on that machine:
+
+              "…\AppData\Local\Krate\bin\krate.exe" "%1"
+
+          No `run` subcommand. Running it by hand reproduces what the person
+          sees for an instant:
+
+              error: unrecognized subcommand '…\make-a-newspaper-app.krate'
+              Usage: krate.exe [COMMAND]
+
+          The console appears, prints that, and closes -- too fast to read.
+
+          An older release registered the association this way. The current
+          installer registers krate-open.exe correctly, but machines carrying
+          the old association are already out there and no new installer can
+          reach the association a previous one wrote.
+Impact:   "Somebody sends you an app and you double-click it" is the whole
+          pitch, and it did nothing at all with no explanation.
+Fix:      `krate <file>.krate` now means `krate run <file>.krate`. The binary
+          understands what it was asked for regardless of what the association
+          says, so every machine with the old registration is fixed by the
+          next update rather than needing the association repaired.
+
+
 ### K-059 -- Opening an app from the menu never said what it could reach
 Status:   fixed
 Owner:    lead

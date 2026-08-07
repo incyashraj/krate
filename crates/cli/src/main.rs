@@ -696,7 +696,23 @@ fn friendly_error(err: &anyhow::Error) -> String {
 }
 
 fn run() -> Result<u8> {
-    let cli = Cli::parse();
+    // `krate <file>.krate` means open it.
+    //
+    // Older releases registered the Windows file association as
+    // `krate.exe "%1"`, with no subcommand, so a double-click ran the CLI with
+    // a bundle path where a command should be. It printed "unrecognized
+    // subcommand", the console flashed and closed, and nothing opened -- with
+    // no way for the person to see what it said. Machines carrying that
+    // association are already out there and a new installer cannot reach them,
+    // so the binary has to understand what it was asked for.
+    let mut args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    if args.len() >= 2 {
+        let candidate = std::path::PathBuf::from(&args[1]);
+        if candidate.extension().and_then(|e| e.to_str()) == Some("krate") && candidate.is_file() {
+            args.insert(1, std::ffi::OsString::from("run"));
+        }
+    }
+    let cli = Cli::parse_from(args);
 
     let Some(command) = cli.command else {
         return tui::run();
@@ -4574,6 +4590,126 @@ fn author_stalled_error(app_dir: &str, transcript: &Path, timeout_secs: u64) -> 
 /// Run the check-app oracle against an authored app and return its verdict as a
 /// string on failure. This is the same check the agent was told to satisfy, run
 /// once more so `create` reports the true blocker instead of a generic message.
+/// Whether the interactive loop is bounded by a round or frame count.
+///
+/// The single most common way a generated app fails a person: it runs for
+/// thirty or forty seconds and closes itself while they are reading. The
+/// authoring pack says not to, at length, and apps still do it -- a news app
+/// bounded its loop at 600 rounds of 50ms and quit after half a minute.
+///
+/// check-app's usability stage cannot catch this: it watches for five seconds,
+/// marks the app as having stayed open, and closes it. Anything with a longer
+/// bound passes and still quits on the user.
+///
+/// Deliberately looks for a bound that is NOT gated on `quick`. A limit on the
+/// quick path is correct and required -- that is how a headless check finishes.
+fn bounded_interactive_loop(lib: &str) -> Option<String> {
+    for (number, line) in lib.lines().enumerate() {
+        let trimmed = line.trim();
+        // The shape that bites: the loop's limit is picked by `quick`, and the
+        // else branch -- the real session -- still gets a finite number.
+        //
+        //     let rounds = if quick { QUICK_ROUNDS } else { MAX_ROUNDS };
+        //
+        // A news app wrote exactly that and closed itself after thirty
+        // seconds, mid-read.
+        let Some(rest) = trimmed.split(" else ").nth(1) else {
+            continue;
+        };
+        if !trimmed.contains("if quick") {
+            continue;
+        }
+        let interactive = rest
+            .trim()
+            .trim_start_matches('{')
+            .trim_end_matches(';')
+            .trim_end_matches('}')
+            .trim();
+        // An unbounded interactive branch is the correct shape and common:
+        // u32::MAX, usize::MAX, or a literal nobody will reach.
+        if interactive.contains("::MAX") {
+            continue;
+        }
+        // A bare identifier in SCREAMING_CASE is a constant round count.
+        let is_const = !interactive.is_empty()
+            && interactive
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+        if !is_const {
+            continue;
+        }
+        // How long does that bound actually last? A limit measured in hours is
+        // a practical "forever" and not the bug -- krate-notes uses 600_000
+        // rounds of 50ms, which is 8.3 hours and nobody's session. The bug is
+        // a bound somebody reaches while reading: the news app's 600 rounds is
+        // thirty seconds.
+        // Five minutes. Below it, somebody reading or playing will hit the
+        // bound and watch the app vanish -- the news app's thirty seconds is
+        // the case this exists for. Above it, the bound is a backstop against
+        // a runaway rather than a limit on the session: krate-nova's 100_000
+        // frames is about twenty-eight minutes of play, which nobody reaches
+        // by accident and which is not what closes an app mid-sentence.
+        const A_REAL_SESSION_SECS: u64 = 5 * 60;
+        if let Some(seconds) = loop_bound_seconds(lib, interactive) {
+            if seconds >= A_REAL_SESSION_SECS {
+                continue;
+            }
+        }
+        // Now confirm it actually bounds the loop rather than being read on the
+        // quick path only. `while !quick || frames < cap` is correct: the bound
+        // applies only when quick, which is what krate-paint does.
+        let guarded = lib
+            .lines()
+            .any(|l| l.contains("while !quick") || l.contains("while quick"));
+        if guarded {
+            continue;
+        }
+        return Some(format!(
+            "line {}: the interactive loop is bounded by a round count ({interactive}), so \
+             the app closes itself while somebody is still using it. A limit on the \
+             `quick` path is right and necessary; the same limit on a real session is the \
+             commonest way a generated app fails the person using it.",
+            number + 1
+        ));
+    }
+    None
+}
+
+/// Roughly how many seconds a round-count bound lasts, if both the count and
+/// the per-round wait can be read from the source.
+///
+/// Returns None when either is not a plain literal, in which case the caller
+/// treats the bound as suspicious -- a limit nobody can measure is one nobody
+/// checked.
+fn loop_bound_seconds(lib: &str, bound_name: &str) -> Option<u64> {
+    let literal = |name: &str| -> Option<u64> {
+        lib.lines()
+            .find(|l| l.trim_start().starts_with(&format!("const {name}")))
+            .and_then(|l| l.split('=').nth(1))
+            .map(|v| v.trim().trim_end_matches(';').replace('_', ""))
+            .and_then(|v| {
+                v.trim_end_matches(|c: char| c.is_ascii_alphabetic())
+                    .parse::<u64>()
+                    .ok()
+            })
+    };
+    let rounds = literal(bound_name)?;
+    // The wait is whatever constant ends in MILLIS; apps name it variously.
+    let millis = lib
+        .lines()
+        .filter(|l| l.trim_start().starts_with("const ") && l.contains("MILLIS"))
+        .find_map(|l| {
+            let name = l.split_whitespace().nth(1)?.trim_end_matches(':');
+            literal(name)
+        })
+        // A game with no wait constant runs flat out and its bound counts
+        // frames, not rounds. The runtime paces `present` to 60fps, so 16ms a
+        // frame is the honest number -- krate-nova's 100_000 frames is about
+        // 28 minutes, not the thirty seconds this check is looking for.
+        .unwrap_or(16);
+    Some(rounds.saturating_mul(millis) / 1000)
+}
+
 fn check_app_verdict(app_dir: &str) -> std::result::Result<(), String> {
     match run_check_app(Path::new(app_dir), None, false) {
         Ok(_) => Ok(()),
@@ -6978,6 +7114,19 @@ fn run_check_app(
             });
         }
     }
+    // A round limit on the interactive loop closes the app while somebody is
+    // using it. The authoring pack says not to, in strong words, and an AI did
+    // it anyway -- so this is checked rather than asked for.
+    if let Ok(lib) = fs::read_to_string(dir.join("src/lib.rs")) {
+        if let Some(detail) = bounded_interactive_loop(&lib) {
+            return Err(CheckFailure {
+                stage: CheckStage::Layout,
+                detail,
+                fix: "Bound the `quick` path, never the interactive one:\n\n                          if quick {\n        // draw one frame, print key:value, exit 0\n                          }\n    // interactive: no round limit at all\n    loop {\n                              match events::wait(None) {\n                                  Some(Event::CloseRequested(_)) => break,\n            _ => {}\n                              }\n    }\n\nA real session ends when the person closes the window,                       and only then."
+                    .to_string(),
+            });
+        }
+    }
     passed.push("layout");
 
     // Stage: manifest. Parse it now so a bad manifest is named here, not as a
@@ -8275,6 +8424,82 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .filter(|home| !home.is_empty())
         .map(PathBuf::from)
+}
+
+#[cfg(test)]
+mod bounded_loop_tests {
+    use super::bounded_interactive_loop;
+
+    /// The news app that closed itself after thirty seconds while somebody
+    /// was reading it. The authoring pack forbids this at length and an AI
+    /// wrote it anyway, so it is checked rather than asked for.
+    #[test]
+    fn a_thirty_second_bound_on_a_real_session_is_caught() {
+        let lib = r#"
+const MAX_ROUNDS: u32 = 600;
+const QUICK_ROUNDS: u32 = 20;
+const ROUND_MILLIS: u32 = 50;
+fn run() -> i32 {
+    let rounds = if quick { QUICK_ROUNDS } else { MAX_ROUNDS };
+    while r < rounds { }
+}
+"#;
+        let found = bounded_interactive_loop(lib);
+        assert!(found.is_some(), "600 rounds of 50ms is thirty seconds");
+        assert!(found.unwrap().contains("MAX_ROUNDS"));
+    }
+
+    /// A bound measured in hours is a backstop against a runaway, not a limit
+    /// on the session. krate-notes uses 600_000 rounds of 50ms -- 8.3 hours.
+    #[test]
+    fn a_bound_nobody_reaches_is_left_alone() {
+        let lib = r#"
+const MAX_WAIT_ROUNDS: u32 = 600_000;
+const QUICK_WAIT_ROUNDS: u32 = 20;
+const WAIT_ROUND_MILLIS: u32 = 50;
+fn run() -> i32 {
+    let rounds = if quick { QUICK_WAIT_ROUNDS } else { MAX_WAIT_ROUNDS };
+}
+"#;
+        assert!(bounded_interactive_loop(lib).is_none());
+    }
+
+    /// A game with no wait constant counts frames, and the runtime paces
+    /// present to 60fps. krate-nova's 100_000 frames is about 28 minutes.
+    #[test]
+    fn a_frame_paced_game_is_left_alone() {
+        let lib = r#"
+const MAX_FRAMES: u32 = 100_000;
+const QUICK_FRAMES: u32 = 90;
+fn run() -> i32 {
+    let frame_cap = if quick { QUICK_FRAMES } else { MAX_FRAMES };
+}
+"#;
+        assert!(bounded_interactive_loop(lib).is_none());
+    }
+
+    /// The correct shape: the bound applies only when quick.
+    #[test]
+    fn a_bound_that_only_applies_to_quick_is_correct() {
+        let lib = r#"
+const MAX_FRAMES: u32 = 5000;
+const QUICK_FRAMES: u32 = 90;
+fn run() -> i32 {
+    let frame_cap = if quick { QUICK_FRAMES } else { MAX_FRAMES };
+    while !quick || frames < frame_cap { }
+}
+"#;
+        assert!(
+            bounded_interactive_loop(lib).is_none(),
+            "while !quick || ... bounds only the quick path"
+        );
+    }
+
+    #[test]
+    fn an_unbounded_loop_is_correct() {
+        let lib = "fn run() -> i32 { loop { match events::wait(None) { _ => {} } } }";
+        assert!(bounded_interactive_loop(lib).is_none());
+    }
 }
 
 #[cfg(test)]
