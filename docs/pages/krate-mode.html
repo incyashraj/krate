@@ -56,34 +56,23 @@
       background:
         radial-gradient(circle at 50% -20%, rgba(98, 145, 255, .13), transparent 34rem),
         var(--bg);
-      font-family: var(--mono);
-      font-size: 15px;
+      font-family: var(--sans);
+      font-size: 15.5px;
       line-height: 1.65;
     }
 
-    body::before {
-      content: "";
-      position: fixed;
-      z-index: 100;
-      inset: 0;
-      pointer-events: none;
-      opacity: .035;
-      background: repeating-linear-gradient(
-        to bottom,
-        #ffffff 0,
-        #ffffff 1px,
-        transparent 1px,
-        transparent 4px
-      );
-    }
+    /* The body moved to the site's sans (the 2026 shell); everything that
+       is actually code keeps the mono it always had. */
+    pre, code, kbd, samp { font-family: var(--mono); }
+
 
     a { color: inherit; }
     button { font: inherit; }
     img { display: block; max-width: 100%; }
 
     ::selection {
-      color: var(--bg);
-      background: var(--cyan);
+      color: #ffffff;
+      background: rgba(98, 145, 255, 0.45);
     }
 
     .skip {
@@ -108,8 +97,8 @@
       position: sticky;
       z-index: 80;
       top: 0;
-      background: rgba(11, 13, 18, .88);
-      border-bottom: 1px solid rgba(65, 74, 92, .55);
+      background: rgba(10, 10, 10, .8);
+      border-bottom: 1px solid var(--line);
       backdrop-filter: blur(18px);
     }
 
@@ -198,10 +187,11 @@
     h1 {
       max-width: 20ch;
       margin-bottom: 22px;
-      font-family: var(--mono);
-      font-size: clamp(38px, 6.5vw, 66px);
+      font-family: var(--sans);
+      font-weight: 500;
+      font-size: clamp(36px, 6vw, 58px);
       line-height: 1.04;
-      letter-spacing: -.055em;
+      letter-spacing: -.025em;
     }
 
     .hero-lead {
@@ -657,6 +647,19 @@
         animation-duration: .01ms !important;
       }
     }
+
+    /* The "On this page" rail (populated by the script at the end). */
+    .krate-rail {
+      position: fixed; top: 100px; right: 24px; width: 200px;
+      max-height: calc(100vh - 140px); overflow-y: auto;
+      font-size: 13px; line-height: 1.5; font-family: var(--sans);
+    }
+    .krate-rail-title { color: var(--text); font-weight: 500; margin-bottom: 10px; }
+    .krate-rail-link {
+      display: block; color: var(--quiet); padding: 3px 0;
+      text-decoration: none; transition: color .15s;
+    }
+    .krate-rail-link:hover, .krate-rail-link.active { color: var(--text); }
   </style>
 </head>
 <body>
@@ -960,6 +963,43 @@
         document.body.removeChild(area);
         if (ok) { done(); } else { failed(); }
       }
+    })();
+  </script>
+
+  <script>
+    /* The "On this page" rail, same as the book's: built from the page's own
+       h2 sections on screens wide enough to carry it. */
+    (function () {
+      "use strict";
+      if (!window.matchMedia("(min-width: 1400px)").matches) return;
+      var sections = document.querySelectorAll("section[id]");
+      if (sections.length < 2) return;
+      var rail = document.createElement("nav");
+      rail.className = "krate-rail";
+      rail.setAttribute("aria-label", "On this page");
+      rail.innerHTML = '<div class="krate-rail-title">On this page</div>';
+      var links = [];
+      sections.forEach(function (s) {
+        var h = s.querySelector("h2");
+        if (!h) return;
+        var a = document.createElement("a");
+        a.href = "#" + s.id;
+        a.className = "krate-rail-link";
+        a.textContent = h.textContent.trim();
+        rail.appendChild(a);
+        links.push({ a: a, s: s });
+      });
+      if (links.length < 2) return;
+      document.body.appendChild(rail);
+      var spy = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          links.forEach(function (l) {
+            l.a.classList.toggle("active", l.s === e.target);
+          });
+        });
+      }, { rootMargin: "-80px 0px -60% 0px" });
+      links.forEach(function (l) { spy.observe(l.s); });
     })();
   </script>
 </body>

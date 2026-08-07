@@ -159,7 +159,77 @@ html.navy #searchbar, html.light #searchbar {
   padding: 8px 16px;
 }
 
+/* -------------------------------------------- the "On this page" rail
+   Built by krate-theme.js from the page's own h2/h3 on screens wide enough
+   to carry a third column, exactly where a reader's eye expects it from
+   every modern docs site. Fixed rather than sticky because it is appended
+   to <body>, outside mdBook's scroll wrapper. */
+
+.krate-rail {
+  position: fixed;
+  top: 100px;
+  right: 24px;
+  width: 210px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.krate-rail-title {
+  color: rgba(255, 255, 255, 0.86);
+  font-weight: 500;
+  margin-bottom: 10px;
+}
+.krate-rail-link {
+  display: block;
+  color: rgba(255, 255, 255, 0.45);
+  padding: 3px 0;
+  text-decoration: none;
+  transition: color 0.15s;
+}
+.krate-rail-link:hover { color: #ffffff; text-decoration: none; }
+.krate-rail-link.active { color: #ffffff; }
+.krate-rail-link.sub { padding-left: 14px; }
+
+/* Leave the rail its column. mdBook centres .content with auto margins, so
+   only the very wide screens that show the rail need to give ground. */
+@media (min-width: 1400px) {
+  html.navy .content, html.light .content { margin-right: 270px; }
+}
+
+/* ------------------------------------------------- code block header bar
+   krate-theme.js labels each fence with its language and moves mdBook's
+   copy button into the label bar, so a block reads as a titled card. */
+
+.krate-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #0f1012;
+  border: 1px solid #1f2228;
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  padding: 7px 14px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
+  font-family: "Geist", Inter, ui-sans-serif, system-ui, sans-serif;
+}
+.krate-code-head button {
+  position: static !important;
+  visibility: visible !important;
+  background: none;
+  border: 0;
+  color: rgba(255, 255, 255, 0.4);
+  cursor: pointer;
+}
+.krate-code-head button:hover { color: #ffffff; }
+html.navy .content pre.has-head, html.light .content pre.has-head {
+  border-radius: 0 0 12px 12px;
+  margin-top: 0;
+}
+
 /* Print keeps its own rules; nothing here should reach paper. */
 @media print {
   html.navy #menu-bar { position: static; background: none; }
+  .krate-rail { display: none; }
 }

@@ -21,7 +21,7 @@ no-section-label = false
 default-theme = "navy"
 preferred-dark-theme = "navy"
 additional-css = ["krate-theme.css"]
-additional-js = ["mermaid-render.js"]
+additional-js = ["mermaid-render.js", "krate-theme.js"]
 
 [output.html.fold]
 enable = true
