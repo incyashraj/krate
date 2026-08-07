@@ -38,7 +38,7 @@ mod real {
     use std::rc::Rc;
 
     use winit::application::ApplicationHandler;
-    use winit::dpi::LogicalSize;
+    use winit::dpi::PhysicalSize;
     use winit::event::WindowEvent;
     use winit::event_loop::{ActiveEventLoop, EventLoop};
     use winit::platform::pump_events::EventLoopExtPumpEvents;
@@ -132,9 +132,13 @@ mod real {
             for pending in self.pending_creates.drain(..) {
                 let attributes = WindowAttributes::default()
                     .with_title(pending.title)
-                    .with_inner_size(LogicalSize::new(
-                        pending.size.width as f64,
-                        pending.size.height as f64,
+                    // Physical, not logical -- see the same note in the Windows
+                    // adapter. Every other size here comes from `inner_size()`,
+                    // which is physical, so a fractional-scaling desktop got a
+                    // window bigger than the app painted.
+                    .with_inner_size(PhysicalSize::new(
+                        pending.size.width,
+                        pending.size.height,
                     ))
                     // Visible on creation, matching macOS. See the same note in
                     // the Windows adapter: hidden-until-shown assumed every app

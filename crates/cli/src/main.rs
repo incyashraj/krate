@@ -4834,7 +4834,11 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
             let tail: Vec<&str> = detail.lines().rev().take(20).collect();
             let tail = tail.into_iter().rev().collect::<Vec<_>>().join("\n");
             if tail.trim().is_empty() {
-                anyhow::bail!("author command failed");
+                // A shell reports a missing program on stderr and exits 127.
+                // Nothing was captured, so the exit code is the only evidence
+                // we have -- and "the AI tool is not installed" is a different
+                // problem from "the AI tried and failed", with a different fix.
+                anyhow::bail!("{}", silent_author_failure(status.code()));
             }
             anyhow::bail!("author command failed:\n\n{tail}");
         }
@@ -5086,7 +5090,8 @@ fn rustup_toolchain_bin() -> Option<PathBuf> {
     // machines that already have MSVC working exactly as before.
     #[cfg(windows)]
     if gnullvm_toolchain_present() {
-        let out = ProcessCommand::new("rustup")
+        let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
+        let out = ProcessCommand::new(rustup)
             .args([
                 "run",
                 gnullvm_toolchain_name(),
@@ -5136,6 +5141,26 @@ fn rustup_toolchain_bin() -> Option<PathBuf> {
     }
     let path = String::from_utf8(out.stdout).ok()?;
     PathBuf::from(path.trim()).parent().map(Path::to_path_buf)
+}
+
+/// What to say when the author command failed and wrote nothing we captured.
+///
+/// The exit code is the whole story here. A shell uses 127 for "command not
+/// found" and 126 for "found but not executable", and both mean the AI tool is
+/// not really installed -- telling somebody "author command failed" in that
+/// case sends them to debug their request when the fix is an install.
+fn silent_author_failure(code: Option<i32>) -> String {
+    match code {
+        Some(127) => "that AI tool is not installed on this machine, or the shell \
+cannot find it. Install it, open a new terminal so the new PATH is picked up, \
+and try again."
+            .to_string(),
+        Some(126) => "that AI tool is installed but could not be run -- it may not \
+have permission to execute."
+            .to_string(),
+        Some(code) => format!("the AI tool stopped with error {code} and said nothing."),
+        None => "the AI tool was stopped before it finished.".to_string(),
+    }
 }
 
 /// Build the app dir to a wasm component with cargo-component, returning the
@@ -7743,7 +7768,10 @@ fn has_tool(program: &str, args: &[&str]) -> bool {
 /// Whether a rustup target is installed. Returns None when rustup itself is
 /// absent (we cannot tell), so callers can treat that distinctly.
 fn has_rust_target(target: &str) -> Option<bool> {
-    let output = ProcessCommand::new("rustup")
+    // Same reason as gnullvm_toolchain_present: a just-installed rustup is in
+    // ~/.cargo/bin before it is on this process's PATH.
+    let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
+    let output = ProcessCommand::new(rustup)
         .args(["target", "list", "--installed"])
         .output()
         .ok()?;
@@ -7819,9 +7847,17 @@ fn gnullvm_toolchain_name() -> &'static str {
 }
 
 /// Whether that toolchain is already installed.
+///
+/// Resolved through `resolve_tool` rather than invoked bare. rustup is often
+/// installed moments earlier by our own toolchain step, and a process that was
+/// already running does not inherit the PATH that install just wrote. Asking
+/// PATH alone reported "no linker" on a machine that had one, and the retry
+/// happened in the same stale process, so it could never come right -- the
+/// only way out was to quit and rerun, which is what people actually did.
 #[cfg(windows)]
 fn gnullvm_toolchain_present() -> bool {
-    ProcessCommand::new("rustup")
+    let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
+    ProcessCommand::new(rustup)
         .args(["toolchain", "list"])
         .output()
         .map(|out| String::from_utf8_lossy(&out.stdout).contains("gnullvm"))
@@ -8207,7 +8243,8 @@ fn print_tool_status(program: &str, args: &[&str]) {
 }
 
 fn print_target_status(target: &str) -> Result<()> {
-    let output = ProcessCommand::new("rustup")
+    let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
+    let output = ProcessCommand::new(rustup)
         .args(["target", "list", "--installed"])
         .output();
 
@@ -8709,7 +8746,8 @@ mod create_tests {
 
     use super::{
         app_kind_name, author_contract, claude_author_prompt, has_tool, human_label,
-        name_from_request, toml_path, validate_create_request, MAX_DERIVED_NAME_WORDS,
+        name_from_request, silent_author_failure, toml_path, validate_create_request,
+        MAX_DERIVED_NAME_WORDS,
     };
     use krate_author::AppKind;
     use krate_manifest::Capability;
@@ -9181,6 +9219,37 @@ mod create_tests {
             "krate-definitely-not-a-real-tool-xyz",
             &["--version"]
         ));
+    }
+
+    /// A missing AI tool must be named as missing, not reported as a failed
+    /// build. Somebody sent to debug their request when the real problem is an
+    /// uninstalled binary will not find anything, which is what happened on a
+    /// fresh Windows machine.
+    #[test]
+    fn silent_author_failure_names_a_missing_tool() {
+        let not_found = silent_author_failure(Some(127));
+        assert!(not_found.contains("not installed"), "{not_found}");
+        assert!(not_found.contains("new terminal"), "{not_found}");
+
+        assert!(silent_author_failure(Some(126)).contains("permission"));
+        assert!(silent_author_failure(Some(3)).contains("error 3"));
+        assert!(silent_author_failure(None).contains("stopped before"));
+    }
+
+    /// anyhow's `Display` prints only the outermost context, so a failure that
+    /// was wrapped with `.context("run --author-cmd")` showed exactly that
+    /// string and hid the cause. The TUI must use the alternate form.
+    #[test]
+    fn error_display_keeps_the_cause() {
+        let err = anyhow::Error::new(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "program not found",
+        ))
+        .context("run --author-cmd");
+
+        assert_eq!(err.to_string(), "run --author-cmd");
+        let shown = format!("{err:#}");
+        assert!(shown.contains("program not found"), "{shown}");
     }
 
     #[test]

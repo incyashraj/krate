@@ -334,7 +334,7 @@ fn make_named_app_with(request: &str, attachments: &[PathBuf]) -> Result<()> {
                 style::bad("that did not work")
             );
             println!();
-            for line in err.to_string().lines().take(12) {
+            for line in format!("{err:#}").lines().take(12) {
                 println!("  {line}");
             }
             println!();
@@ -405,7 +405,7 @@ fn publish_app(bundle: &Path) -> Result<()> {
                 style::bad(glyphs().cross),
                 style::bad("could not publish it")
             );
-            for line in err.to_string().lines().take(8) {
+            for line in format!("{err:#}").lines().take(8) {
                 println!("  {line}");
             }
         }
@@ -584,7 +584,7 @@ fn change_an_app(bundle: &Path) -> Result<()> {
                 style::dim("your app is exactly as it was -- the file was not replaced")
             );
             println!();
-            for line in err.to_string().lines().take(12) {
+            for line in format!("{err:#}").lines().take(12) {
                 println!("  {line}");
             }
             println!();
@@ -654,7 +654,7 @@ fn ensure_build_tools() -> Result<bool> {
             println!(
                 "  {} {}",
                 style::warn(glyphs().cross),
-                style::warn(&err.to_string())
+                style::warn(&format!("{err:#}"))
             );
             println!();
             println!(
@@ -934,7 +934,7 @@ fn connect_ai() -> Result<()> {
         match crate::github_sign_out() {
             Ok(true) => println!("\n  {} signed out", style::good(glyphs().tick)),
             Ok(false) => println!("\n  {}", style::dim("you were not signed in")),
-            Err(err) => println!("\n  {} {err}", style::warn(glyphs().cross)),
+            Err(err) => println!("\n  {} {err:#}", style::warn(glyphs().cross)),
         }
         println!();
         return Ok(());
@@ -1218,7 +1218,7 @@ fn open_bundle(bundle: &Path) -> Result<()> {
             println!(
                 "  {} {}",
                 style::warn(glyphs().cross),
-                style::dim(&err.to_string())
+                style::dim(&format!("{err:#}"))
             );
         }
     }

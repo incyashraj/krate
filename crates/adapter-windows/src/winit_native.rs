@@ -38,7 +38,7 @@ mod real {
     use std::rc::Rc;
 
     use winit::application::ApplicationHandler;
-    use winit::dpi::LogicalSize;
+    use winit::dpi::PhysicalSize;
     use winit::event::WindowEvent;
     use winit::event_loop::{ActiveEventLoop, EventLoop};
     use winit::platform::pump_events::EventLoopExtPumpEvents;
@@ -135,9 +135,19 @@ mod real {
             for pending in self.pending_creates.drain(..) {
                 let attributes = WindowAttributes::default()
                     .with_title(pending.title)
-                    .with_inner_size(LogicalSize::new(
-                        pending.size.width as f64,
-                        pending.size.height as f64,
+                    // Physical, not logical. Every other place we touch a size
+                    // -- the snapshot the app is given, the softbuffer resize,
+                    // the paint -- uses `inner_size()`, which is physical.
+                    // Asking for a *logical* size meant a 150% display created
+                    // a window 1.5x wider than the app requested, while the app
+                    // still painted the size it asked for: the rest of the
+                    // window stayed blank and the picture looked squashed into
+                    // one corner. It reads as "bad graphics" but it is purely a
+                    // unit mismatch, and it is invisible at 100% and close to
+                    // invisible on a 2x Retina Mac, which is why it survived.
+                    .with_inner_size(PhysicalSize::new(
+                        pending.size.width,
+                        pending.size.height,
                     ))
                     // Visible on creation, matching macOS. Hidden-until-shown
                     // assumed every app calls `window.show`, and none of them

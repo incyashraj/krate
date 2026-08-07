@@ -71,6 +71,73 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-067 -- a window is created at the wrong size on any display that is not 100%
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, on a friend's Windows PC, running krate-nova
+Evidence: The window is created with a *logical* size while every other size in
+          the adapter is *physical*:
+
+            crates/adapter-windows/src/winit_native.rs:138  with_inner_size(LogicalSize::new(..))
+            crates/adapter-windows/src/winit_native.rs:327  tracked.window.inner_size()   // physical
+            crates/adapter-windows/src/winit_native.rs:466  tracked.window.inner_size()   // physical
+
+          At 150% scaling an app asking for 800x600 gets a 1200x900 window and
+          paints 800x600 of it. The remaining band stays blank and the picture
+          looks squashed into a corner -- it reads as "the graphics are worse on
+          Windows" but no drawing code is involved. Invisible at 100%, and
+          nearly invisible on a 2x Retina Mac, which is why it survived.
+          adapter-linux carried the identical defect at line 135.
+Fix:      Create with PhysicalSize so the requested size means what every other
+          call site already means. Both adapters. NOT yet compile-checked on a
+          real Windows/Linux host -- the module is behind
+          #[cfg(target_os = "windows")] so a macOS `cargo check` skips it.
+
+### K-066 -- a just-installed toolchain is invisible, so the linker check never passes
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-07, on a friend's Windows PC, first run
+Evidence: Two tabs of the same session disagreed: one reported cargo ready, the
+          other demanded "install a linker for Windows". has_tool() resolves via
+          resolve_tool(), which falls back to ~/.cargo/bin; the rustup checks
+          called the binary bare and consulted PATH only:
+
+            crates/cli/src/main.rs:7824  ProcessCommand::new("rustup")   // gnullvm_toolchain_present
+            crates/cli/src/main.rs:7746  ProcessCommand::new("rustup")   // has_rust_target
+            crates/cli/src/main.rs:5089  ProcessCommand::new("rustup")   // on the build path
+
+          rustup is installed by our own toolchain step moments earlier, and a
+          running process does not inherit the PATH that install wrote. So the
+          check fails, and the retry runs in the same stale process and fails
+          again. The only escape was to quit and rerun the installer, which is
+          what the person actually did.
+Fix:      Route every rustup invocation through resolve_tool(), same as cargo.
+
+### K-065 -- every TUI failure hides its own cause
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, on a friend's Windows PC, "Make an app" with grok
+Evidence: The whole failure shown to the person was the string `run --author-cmd`.
+          anyhow's Display prints only the outermost context; six call sites used
+          it:
+
+            $ cargo test -p krate-cli --bins error_display_keeps_the_cause
+            DISPLAY:   run --author-cmd
+            ALTERNATE: run --author-cmd: program not found
+
+          Separately, when the author command failed having written nothing we
+          captured, the message was the bare "author command failed" -- which
+          sends somebody to debug their request when the real problem is that
+          the AI tool is not installed (a shell exits 127 for that).
+Fix:      Print `{err:#}` at all six sites, and name exit 127/126 as a missing
+          or non-executable tool rather than a failed build.
+
 ### K-064 -- "needs a newer version of Krate" is a guess, and usually the wrong one
 Status:   fixed
 Owner:    lead
