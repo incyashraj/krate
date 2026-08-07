@@ -366,7 +366,7 @@ def main():
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0b0d12" />
+  <meta name="theme-color" content="#0a0a0a" />
   <meta name="description" content="Krate's measured results: app sizes, startup times, sandbox cost, and what the runtime can and cannot do. Every chart is drawn from a real measurement." />
   <link rel="canonical" href="https://krate.tech/reports/" />
   <meta property="og:title" content="Krate: the measurements" />
@@ -378,7 +378,7 @@ def main():
   <title>Krate: the measurements</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
-  <link rel="stylesheet" href="/krate.css" />
+  <link rel="stylesheet" href="/site.css" />
   <style>
     .report {{ max-width: 48rem; margin: 0 auto; padding: 4rem 1.5rem 6rem; }}
     .report section {{ margin: 0 0 4.5rem; }}
@@ -412,23 +412,20 @@ def main():
   </style>
 </head>
 <body>
-  <!-- The logo was missing here, so this page read as somebody else's. It is
-       the page a doubter is sent to, which is the worst one to look unhosted.
-       Links are absolute because this page is served from /reports/. -->
-  <nav class="site-nav" aria-label="Primary navigation">
-    <div class="wrap nav-inner">
-      <a class="brand" href="/" aria-label="Krate home">
-        <img src="/krate-glyph-blue.png" alt="" />
-        <span>Krate</span>
-      </a>
-      <div class="nav-links">
-        <a class="nav-link" href="/#start">Start</a>
-        <a class="nav-link" href="/cloud/">Store</a>
-        <a class="nav-link" href="/#faq">FAQ</a>
-        <a class="nav-link" href="/docs/">Docs</a>
-      </div>
+  <!-- This is the page a doubter is sent to, which is the worst one to look
+       unhosted. Links are absolute because it is served from /reports/. -->
+  <header class="subnav">
+    <div class="wrap subnav-inner">
+      <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
+      <nav>
+        <a href="/#install">Start</a>
+        <a href="/docs/">Docs</a>
+        <a href="/cloud/">Cloud</a>
+        <a href="/progress/">Progress</a>
+      </nav>
+      <a class="pill pill-primary" href="/#install">Install</a>
     </div>
-  </nav>
+  </header>
 
   <main class="report">
     <p class="eyebrow">Reports</p>
@@ -661,6 +658,16 @@ def main():
       <a href="/">Back to krate.tech</a>
     </div>
   </main>
+  <footer class="subfoot">
+    <div class="wrap subfoot-inner">
+      <span>© 2026 Krate Labs</span>
+      <span>
+        <a href="/docs/">Docs</a>
+        <a href="/progress/">Progress</a>
+        <a href="https://github.com/incyashraj/krate">GitHub</a>
+      </span>
+    </div>
+  </footer>
 </body>
 </html>
 """

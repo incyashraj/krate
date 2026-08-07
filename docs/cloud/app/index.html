@@ -5,17 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>App | Krate Cloud</title>
   <meta name="description" content="What this app does, who made it, and exactly what it asks for before it runs." />
-  <link rel="stylesheet" href="/krate.css" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <link rel="stylesheet" href="/site.css" />
   <link rel="icon" href="/krate-favicon.png" />
   <style>
-    .wrap { max-width: 860px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
-
-    .masthead { display: flex; align-items: center; gap: .6rem; margin-bottom: 2rem; }
-    .masthead img.logo { width: 30px; height: 30px; border-radius: 7px; }
-    .masthead > a { color: var(--text); text-decoration: none; font-weight: 600; }
-    .masthead nav { margin-left: auto; display: flex; gap: 1.1rem; font-size: .9rem; }
-    .masthead nav a { color: var(--muted); text-decoration: none; }
-    .masthead nav a:hover { color: var(--text); }
+    /* This page's own components; the shell comes from site.css. */
 
     .back { color: var(--quiet); text-decoration: none; font-size: .88rem; display: inline-block; margin-bottom: 1.4rem; }
     .back:hover { color: var(--text); }
@@ -83,17 +77,20 @@
   </style>
 </head>
 <body>
-  <main class="wrap">
-    <header class="masthead">
-      <img class="logo" src="/krate-glyph-blue.png" alt="" />
-      <a href="/">Krate</a>
+  <header class="subnav">
+    <div class="wrap subnav-inner">
+      <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
       <nav>
         <a href="/cloud/">Cloud</a>
         <a href="/publish/">Publish</a>
         <a href="/docs/">Docs</a>
         <a href="/contact/">Contact</a>
       </nav>
-    </header>
+      <a class="pill pill-primary" href="/#install">Install</a>
+    </div>
+  </header>
+
+  <main class="page-wide" style="max-width: 860px">
 
     <a class="back" href="/cloud/">&larr; All apps</a>
     <div id="app"><p class="loading">Loading…</p></div>

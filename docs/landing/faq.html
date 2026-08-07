@@ -3,138 +3,104 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0b0d12" />
-  <meta name="description" content="Create AI-made apps as one portable file for Mac, Windows, and Linux with controlled access. Krate Cloud will add publishing and distribution." />
-  <!-- The github.io project page redirects here, so name the canonical home
-       once. Without it the same page is reachable at two hosts and search
-       engines have to guess which one is real. -->
+  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="description" content="Direct answers about Krate: how one .krate file opens on Mac, Windows, and Linux, what the permission wall actually enforces, and what is not ready yet." />
   <link rel="canonical" href="https://krate.tech/faq.html" />
-  <meta property="og:title" content="Krate | AI apps, built to travel." />
-  <meta property="og:description" content="Create AI-made apps as one portable file for Mac, Windows, and Linux. Krate shows what each app wants to access before it runs." />
+  <meta property="og:title" content="Krate | Questions" />
+  <meta property="og:description" content="Direct answers about Krate. The short answer first, the technical boundary underneath." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://krate.tech/" />
+  <meta property="og:url" content="https://krate.tech/faq.html" />
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:image:alt" content="Krate turns an AI request into one app file for Mac, Windows, and Linux." />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="Krate | AI apps, built to travel." />
-  <meta name="twitter:description" content="Create AI-made apps as one portable file for Mac, Windows, and Linux. Krate shows what each app wants to access before it runs." />
-  <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
   <title>Krate | Questions</title>
-  <link rel="icon" href="./krate-favicon.png" />
-  <link rel="apple-touch-icon" href="./krate-favicon.png" />
-  <link rel="stylesheet" href="./krate.css" />
-  <style>
-/* The command reads as something you could type, not a slogan. It shrinks
-       hard on small screens because a wrapped command looks broken. */
-    .hero-command {
-      max-width: none;
-      font-size: clamp(23px, 5.2vw, 62px);
-      letter-spacing: -.045em;
-      white-space: nowrap;
-    }
-
-    .hero-lead {
-      max-width: 620px;
-      margin: 18px auto 38px;
-      color: var(--muted);
-      font-family: var(--mono);
-      font-size: clamp(13px, 1.5vw, 15px);
-      line-height: 1.6;
-    }
-  </style>
+  <link rel="icon" href="/krate-favicon.png" />
+  <link rel="apple-touch-icon" href="/krate-favicon.png" />
+  <link rel="stylesheet" href="/site.css" />
 </head>
 <body>
-<nav class="site-nav" aria-label="Primary navigation">
-    <div class="wrap nav-inner">
-      <a class="brand" href="./index.html#" aria-label="Krate home">
-        <img src="./krate-glyph-blue.png" alt="" />
-        <span>Krate</span>
-      </a>
 
-      <button class="menu-button" id="menuButton" type="button" aria-expanded="false" aria-controls="navLinks" aria-label="Open navigation">☰</button>
+<header class="subnav">
+  <div class="wrap subnav-inner">
+    <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
+    <nav>
+      <a href="/#install">Start</a>
+      <a href="/docs/">Docs</a>
+      <a href="/cloud/">Cloud</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+    </nav>
+    <a class="pill pill-primary" href="/#install">Install</a>
+  </div>
+</header>
 
-      <div class="nav-links" id="navLinks">
-        <!-- Four links. Eight made a first-time visitor choose before they
-             knew what any of them meant. -->
-        <a class="nav-link" href="./index.html#start">Start</a>
-        <a class="nav-link" href="./index.html#cloud">Store</a>
-        <a class="nav-link" href="./index.html#faq">FAQ</a>
-        <a class="nav-link" href="./docs/">Docs</a>
-        <a class="nav-link" href="./docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
-        <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
-        <a class="nav-cta" href="./docs/pages/make-an-app-with-ai.html">Make an app</a>
-      </div>
+<main class="page-wrap">
+  <p class="page-kicker">QUESTIONS</p>
+  <h1>Direct answers about Krate.</h1>
+  <p class="page-lede">These came from people seeing Krate for the first time.
+  The short answer is first, with the technical boundary underneath.</p>
+
+  <details class="faq-item">
+    <summary><span class="faq-index">01</span><span>How can the same .krate file open on Mac, Windows, and Linux?</span></summary>
+    <div class="faq-answer">
+      <p>The app does not call AppKit, Win32, or Linux APIs directly. It calls Krate interfaces described with WIT. The Krate host on each operating system translates approved calls into local behavior.</p>
+      <p>The <code>.krate</code> file carries the WebAssembly component and its requested access. It is one portable app artifact, not three native installers hidden in one download.</p>
     </div>
-  </nav>
-    <main id="main">
-    <section class="section">
-      <div class="wrap">
-        <div class="section-heading">
-          <p class="label">Questions</p>
-          <h2>Direct answers about Krate.</h2>
-          <p>These came from people seeing Krate for the first time. The short answer is first, with the technical boundary underneath.</p>
-        </div>
-        <div class="faq-list">
-<details class="faq-item">
-            <summary><span class="faq-index">03 / Portable</span><span>How can the same .krate file open on Mac, Windows, and Linux?</span></summary>
-            <div class="faq-answer">
-              <p>The app does not call AppKit, Win32, or Linux APIs directly. It calls Krate interfaces described with WIT. The Krate host on each operating system translates approved calls into local behavior.</p>
-              <p>The <code>.krate</code> file carries the WebAssembly component and its requested access. It is one portable app artifact, not three native installers hidden in one download.</p>
-            </div>
-          </details>
-<details class="faq-item">
-            <summary><span class="faq-index">10 / Name</span><span>Does the name collide with a Rust “crate”?</span></summary>
-            <div class="faq-answer">
-              <p>Rust calls a package a crate, so the similarity is real. Krate uses a different spelling and refers to the portable container that carries an application and its requested access.</p>
-              <p>We will keep making the distinction explicit wherever Rust developers could reasonably confuse the two.</p>
-            </div>
-          </details>
-<details class="faq-item">
-            <summary><span class="faq-index">02 / Web</span><span>Why not use an HTML file, browser link, or Electron?</span></summary>
-            <div class="faq-answer">
-              <p>A browser link is the right answer when an app fits inside the browser. Krate is for local software that needs files, desktop behavior, or other host features that a web page cannot use cleanly.</p>
-              <p>An Electron app ships a browser engine and still needs platform packaging. A Krate app is a WebAssembly component. It does not bundle a browser per app, and the shared runtime controls its access to the computer.</p>
-            </div>
-          </details>
-<details class="faq-item">
-            <summary><span class="faq-index">05 / Access</span><span>Can an app hide what it accesses or ignore the permission screen?</span></summary>
-            <div class="faq-answer">
-              <p>The permission list is not only a label written by the app. Krate checks supported host operations at the runtime boundary. If the app tries an operation that was not granted, the call is denied before the host adapter performs it.</p>
-              <p>If a required permission is denied, the current app flow refuses to start and explains what is missing.</p>
-            </div>
-          </details>
-<details class="faq-item">
-            <summary><span class="faq-index">06 / Security</span><span>Is Krate ready for any untrusted app from the internet?</span></summary>
-            <div class="faq-answer">
-              <p><strong>Not yet.</strong> The capability boundary is working and useful, but <code>v0.1.2</code> is a first release and the project is not claiming production hardening against hostile third-party code today.</p>
-              <p>Use the published examples or apps you are testing yourself. The current limits and <a href="./docs/phase2/threat-model-v0-2.html">threat model</a> are public.</p>
-            </div>
-          </details>
-<details class="faq-item">
-            <summary><span class="faq-index">07 / Runtime</span><span>Why does the person receiving an app need the Krate runtime?</span></summary>
-            <div class="faq-answer">
-              <p>The runtime is the stable layer that makes one app file portable and enforces its access. Without it, every app would need to bring a separate engine and separate operating-system code.</p>
-              <p>You install Krate once. After that, each <code>.krate</code> file can use the same host, permission model, and opening flow.</p>
-            </div>
-          </details>
-        </div>
-        <p class="faq-more"><a href="./index.html">&larr; Back to Krate</a></p>
-      </div>
-    </section>
-    </main>
-<footer>
-    <div class="wrap footer-inner">
-      <span>© 2026 Krate Labs</span>
-      <div class="footer-links">
-        <a href="./docs/">Docs</a>
-        <a href="./docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
-        <a href="https://github.com/incyashraj/krate">GitHub</a>
-        <a href="https://github.com/incyashraj/krate/discussions">Ask a question</a>
-        <a href="https://github.com/incyashraj/krate/releases">Releases</a>
-      </div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-index">02</span><span>Why not use an HTML file, browser link, or Electron?</span></summary>
+    <div class="faq-answer">
+      <p>A browser link is the right answer when an app fits inside the browser. Krate is for local software that needs files, desktop behavior, or other host features that a web page cannot use cleanly.</p>
+      <p>An Electron app ships a browser engine and still needs platform packaging. A Krate app is a WebAssembly component. It does not bundle a browser per app, and the shared runtime controls its access to the computer.</p>
     </div>
-  </footer>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-index">03</span><span>Can an app hide what it accesses or ignore the permission screen?</span></summary>
+    <div class="faq-answer">
+      <p>The permission list is not only a label written by the app. Krate checks supported host operations at the runtime boundary. If the app tries an operation that was not granted, the call is denied before the host adapter performs it.</p>
+      <p>If a required permission is denied, the current app flow refuses to start and explains what is missing.</p>
+    </div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-index">04</span><span>Is Krate ready for any untrusted app from the internet?</span></summary>
+    <div class="faq-answer">
+      <p><strong>Not yet.</strong> The capability boundary is working and useful, but <code>v0.1.2</code> is a first release and the project is not claiming production hardening against hostile third-party code today.</p>
+      <p>Use the published examples or apps you are testing yourself. The current limits and <a href="/docs/phase2/threat-model-v0-2.html">threat model</a> are public.</p>
+    </div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-index">05</span><span>Why does the person receiving an app need the Krate runtime?</span></summary>
+    <div class="faq-answer">
+      <p>The runtime is the stable layer that makes one app file portable and enforces its access. Without it, every app would need to bring a separate engine and separate operating-system code.</p>
+      <p>You install Krate once. After that, each <code>.krate</code> file can use the same host, permission model, and opening flow.</p>
+    </div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-index">06</span><span>Does the name collide with a Rust "crate"?</span></summary>
+    <div class="faq-answer">
+      <p>Rust calls a package a crate, so the similarity is real. Krate uses a different spelling and refers to the portable container that carries an application and its requested access.</p>
+      <p>We will keep making the distinction explicit wherever Rust developers could reasonably confuse the two.</p>
+    </div>
+  </details>
+
+  <p style="margin-top: 40px"><a href="/">&larr; Back to Krate</a></p>
+</main>
+
+<footer class="subfoot">
+  <div class="wrap subfoot-inner">
+    <span>© 2026 Krate Labs</span>
+    <span>
+      <a href="/docs/">Docs</a>
+      <a href="/reports/">Reports</a>
+      <a href="/progress/">Progress</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+      <a href="/contact/">Contact</a>
+    </span>
+  </div>
+</footer>
+
 </body>
 </html>

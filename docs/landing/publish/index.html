@@ -5,17 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Publish an app | Krate</title>
   <meta name="description" content="Sign in with GitHub, choose a .krate file, and publish it so anyone can run it." />
-  <link rel="stylesheet" href="/krate.css" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <link rel="stylesheet" href="/site.css" />
   <link rel="icon" href="/krate-favicon.png" />
   <style>
-    .wrap { max-width: 660px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
-    .masthead { display: flex; align-items: center; gap: .6rem; margin-bottom: 2.4rem; }
-    .masthead img { width: 30px; height: 30px; border-radius: 7px; }
-    .masthead > a { color: var(--text); text-decoration: none; font-weight: 600; letter-spacing: -.01em; }
-    .masthead nav { margin-left: auto; display: flex; gap: 1.1rem; font-size: .9rem; }
-    .masthead nav a { color: var(--muted); text-decoration: none; font-weight: 400; }
-    .masthead nav a:hover { color: var(--text); }
-    h1 { margin: 0 0 .35rem; font-size: 1.9rem; letter-spacing: -.02em; }
+    /* The step flow below is this page's own; the shell (header, footer,
+       type, tokens) comes from site.css like every other page. */
     .lede { color: var(--muted); margin: 0 0 2.5rem; line-height: 1.6; }
 
     /* Each step is dimmed until the one before it is done, so the page reads
@@ -124,17 +119,21 @@
   </style>
 </head>
 <body>
-  <main class="wrap">
-    <header class="masthead">
-      <img src="/krate-glyph-blue.png" alt="" />
-      <a href="/">Krate</a>
+  <header class="subnav">
+    <div class="wrap subnav-inner">
+      <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
       <nav>
-        <a href="/cloud/">Cloud</a>
-        <a href="/publish/">Publish</a>
+        <a href="/#install">Start</a>
         <a href="/docs/">Docs</a>
+        <a href="/cloud/">Cloud</a>
+        <a href="https://github.com/incyashraj/krate">GitHub</a>
       </nav>
-    </header>
+      <a class="pill pill-primary" href="/#install">Install</a>
+    </div>
+  </header>
 
+  <main class="page-wrap" style="max-width: 680px">
+    <p class="page-kicker">PUBLISH</p>
     <h1>Publish an app</h1>
     <p class="lede">
       Put a <code>.krate</code> somewhere anyone can run it. You need a file you
@@ -449,5 +448,16 @@
 
     refresh();
   </script>
+
+  <footer class="subfoot">
+    <div class="wrap subfoot-inner">
+      <span>© 2026 Krate Labs</span>
+      <span>
+        <a href="/docs/">Docs</a>
+        <a href="/cloud/">Cloud</a>
+        <a href="https://github.com/incyashraj/krate">GitHub</a>
+      </span>
+    </div>
+  </footer>
 </body>
 </html>

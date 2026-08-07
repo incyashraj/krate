@@ -5,27 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Krate Cloud | Apps you can open in one click</title>
   <meta name="description" content="Browse apps people have published to Krate Cloud. Every one is a single file that runs in a sandbox and tells you what it wants before it starts." />
-  <link rel="stylesheet" href="/krate.css" />
+  <meta name="theme-color" content="#0a0a0a" />
+  <link rel="stylesheet" href="/site.css" />
   <link rel="icon" href="/krate-favicon.png" />
   <style>
-    .wrap { max-width: 1060px; margin: 0 auto; padding: 2.5rem 1.25rem 5rem; }
-
-    .masthead { display: flex; align-items: center; gap: .6rem; margin-bottom: 2.6rem; }
-    .masthead img.logo { width: 30px; height: 30px; border-radius: 7px; }
-    .masthead > a { color: var(--text); text-decoration: none; font-weight: 600; letter-spacing: -.01em; }
-    .masthead nav { margin-left: auto; display: flex; gap: 1.1rem; font-size: .9rem; }
-    .masthead nav a { color: var(--muted); text-decoration: none; }
-    .masthead nav a:hover { color: var(--text); }
+    /* This page's own components; the shell comes from site.css. */
 
     /* The hero states the one thing a visitor needs before browsing: these
        open on your own machine, and they say what they want first. */
     .hero { margin-bottom: 2.6rem; }
-    /* The product mark, directly above its name. Big enough to read as the
-       product's face rather than a decoration, and tight to the heading so
-       the two are one unit -- it used to sit above the badge with a gap, so
-       it looked like a stray image at the top of the page. */
-    .hero-mark { display: block; width: 128px; height: 128px; margin: 0 0 .6rem -.15rem; }
-    .hero h1 { margin: 0 0 .5rem; font-size: 2.1rem; letter-spacing: -.025em; }
+    .hero-mark { display: block; width: 96px; height: 96px; margin: 0 0 .8rem -.15rem; }
     .hero p { color: var(--muted); margin: 0; line-height: 1.65; max-width: 46rem; }
     .hero .badge {
       display: inline-block; margin-bottom: .8rem;
@@ -96,22 +85,24 @@
   </style>
 </head>
 <body>
-  <main class="wrap">
-    <header class="masthead">
-      <img class="logo" src="/krate-glyph-blue.png" alt="" />
-      <a href="/">Krate</a>
+  <header class="subnav">
+    <div class="wrap subnav-inner">
+      <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
       <nav>
-        <a href="/cloud/">Cloud</a>
-        <a href="/publish/">Publish</a>
+        <a href="/#install">Start</a>
         <a href="/docs/">Docs</a>
+        <a href="/publish/">Publish</a>
         <a href="/contact/">Contact</a>
       </nav>
-    </header>
+      <a class="pill pill-primary" href="/#install">Install</a>
+    </div>
+  </header>
 
+  <main class="page-wide">
     <div class="hero">
       <span class="badge">Early access</span>
       <img class="hero-mark" src="/krate-glyph-white.png"
-           alt="" width="128" height="128" />
+           alt="" width="96" height="96" />
       <h1>Krate Cloud</h1>
       <p>
         Apps people have published. Each one is a single file that runs on your
@@ -233,5 +224,17 @@
       }
     })();
   </script>
+
+  <footer class="subfoot">
+    <div class="wrap subfoot-inner">
+      <span>© 2026 Krate Labs</span>
+      <span>
+        <a href="/docs/">Docs</a>
+        <a href="/publish/">Publish</a>
+        <a href="https://github.com/incyashraj/krate">GitHub</a>
+        <a href="/contact/">Contact</a>
+      </span>
+    </div>
+  </footer>
 </body>
 </html>

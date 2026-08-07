@@ -247,7 +247,7 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
 
 /* ---------------------------------------------------------------- badge */
 
-.hero-badge {
+.home-hero-badge {
   display: inline-flex;
   align-items: center;
   gap: 9px;
@@ -259,8 +259,8 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   background: rgba(255, 255, 255, 0.03);
   transition: border-color 0.15s;
 }
-.hero-badge:hover { border-color: rgba(255, 255, 255, 0.25); }
-.hero-badge .new {
+.home-hero-badge:hover { border-color: rgba(255, 255, 255, 0.25); }
+.home-hero-badge .new {
   background: rgba(98, 145, 255, 0.15);
   color: var(--accent);
   border: 1px solid rgba(98, 145, 255, 0.4);
@@ -270,18 +270,18 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   padding: 2px 8px;
   border-radius: var(--radius-pill);
 }
-.hero-badge b { color: var(--text); font-weight: 500; }
+.home-hero-badge b { color: var(--text); font-weight: 500; }
 
 /* ---------------------------------------------------------------- hero */
 
-.hero {
+.home-hero {
   padding: 96px 0 72px;
   text-align: center;
 }
 
-.hero .display { margin: 26px auto 18px; max-width: 15ch; }
+.home-hero .display { margin: 26px auto 18px; max-width: 15ch; }
 
-.hero-sub {
+.home-hero-sub {
   color: var(--muted);
   font-size: 17px;
   max-width: 52ch;
@@ -318,7 +318,7 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   100% { background-position: -120% 0; }
 }
 
-.hero-links {
+.home-hero-links {
   display: flex;
   justify-content: center;
   gap: 26px;
@@ -326,9 +326,9 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   font-size: 14px;
   color: var(--muted);
 }
-.hero-links a { transition: color 0.15s; }
-.hero-links a:hover { color: var(--text); }
-.hero-links .arr { opacity: 0.5; }
+.home-hero-links a { transition: color 0.15s; }
+.home-hero-links a:hover { color: var(--text); }
+.home-hero-links .arr { opacity: 0.5; }
 
 /* ---------------------------------------------------------------- command */
 
@@ -444,7 +444,7 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   color: var(--quiet);
 }
 
-.hero-term { max-width: 660px; margin: 56px auto 0; }
+.home-hero-term { max-width: 660px; margin: 56px auto 0; }
 
 /* ---------------------------------------------------------------- scroller */
 
@@ -643,7 +643,195 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   .cap-grid { grid-template-columns: 1fr; }
   .hero { padding-top: 64px; }
   .cmd { font-size: 12px; }
-  .hero-links { flex-wrap: wrap; gap: 14px; }
+  .home-hero-links { flex-wrap: wrap; gap: 14px; }
+}
+
+/* ------------------------------------------------------------- subpages
+   Everything below exists so the secondary pages (faq, progress, reports,
+   publish, contact, cloud, open, answers) can swap /krate.css for this file
+   without rewriting their own inline components. */
+
+/* Legacy variable aliases. The subpages' inline styles were written against
+   krate.css's palette; aliasing keeps every one of them working while the
+   base tokens (background, text, borders, fonts) move to the new shell. */
+:root {
+  --panel-raised: #16171b;
+  --line-strong: #2e323a;
+  --blue: var(--accent);
+  --blue-soft: #a9c2ff;
+  --cyan: #6cf4d7;
+  --yellow: var(--warn);
+  --danger: #ff7f95;
+}
+
+/* The compact subpage header: brand, a few links, the install pill. No
+   hover panels here -- a person on /faq is reading, not shopping. */
+.subnav {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(10, 10, 10, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.subnav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  height: 60px;
+}
+.subnav nav {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+.subnav nav a {
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  border-radius: var(--radius-pill);
+  transition: color 0.15s;
+}
+.subnav nav a:hover { color: var(--text); }
+.subnav .pill { padding: 6px 16px; font-size: 13.5px; }
+
+/* Page shells: narrow for reading, wide for tables and grids. */
+.page-wrap { max-width: 760px; margin: 0 auto; padding: 56px 24px 96px; }
+.page-wide { max-width: 1000px; margin: 0 auto; padding: 56px 24px 96px; }
+
+.page-kicker {
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+.page-wrap h1, .page-wide h1 {
+  font-size: clamp(30px, 4.5vw, 40px);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  margin-bottom: 12px;
+}
+.page-lede {
+  color: var(--muted);
+  font-size: 16.5px;
+  max-width: 58ch;
+  margin-bottom: 40px;
+}
+
+/* Prose: the reading defaults every subpage shares. */
+.page-wrap h2, .page-wide h2 {
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  margin: 44px 0 12px;
+}
+.page-wrap p, .page-wide p { color: var(--muted); margin-bottom: 14px; }
+.page-wrap ul, .page-wide ul { color: var(--muted); margin: 0 0 14px 20px; }
+.page-wrap li, .page-wide li { margin-bottom: 8px; }
+.page-wrap a, .page-wide a { color: var(--blue-soft); }
+.page-wrap a:hover, .page-wide a:hover { text-decoration: underline; }
+.page-wrap strong, .page-wide strong { color: var(--text); font-weight: 500; }
+.page-wrap code, .page-wide code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.1em 0.4em;
+}
+
+/* Tables, for the generated progress and reports pages. */
+.page-wide table, .page-wrap table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 20px 0 26px;
+  font-size: 14.5px;
+}
+.page-wide th, .page-wrap th {
+  font-weight: 500;
+  color: var(--quiet);
+  font-size: 12.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.page-wide th, .page-wide td, .page-wrap th, .page-wrap td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.page-wide td { color: var(--muted); }
+.page-wide td code, .page-wrap td code { border: 0; background: none; color: var(--text); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* FAQ accordion. */
+.faq-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--panel);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.faq-item summary {
+  display: flex;
+  gap: 14px;
+  align-items: baseline;
+  padding: 16px 18px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 500;
+  color: var(--text);
+  font-size: 15.5px;
+}
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--quiet);
+  font-size: 18px;
+  line-height: 1;
+  transition: transform 0.15s;
+}
+.faq-item[open] summary::after { transform: rotate(45deg); }
+.faq-index {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--quiet);
+  letter-spacing: 0.04em;
+}
+.faq-answer { padding: 0 18px 16px; }
+.faq-answer p { font-size: 14.5px; }
+
+/* The compact subpage footer. */
+.subfoot {
+  border-top: 1px solid var(--line);
+  padding: 28px 0;
+  font-size: 13px;
+  color: var(--quiet);
+}
+.subfoot-inner {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.subfoot a { color: var(--muted); margin-left: 18px; }
+.subfoot a:first-child { margin-left: 0; }
+.subfoot a:hover { color: var(--text); }
+
+@media (max-width: 700px) {
+  .subnav nav { display: none; }
+  /* Wide tables scroll inside themselves rather than widening the page. */
+  .page-wide table, .page-wrap table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
 }
 
 /* ------------------------------------------------------- reduced motion */

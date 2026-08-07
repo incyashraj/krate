@@ -112,7 +112,7 @@ def main():
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0b0d12" />
+  <meta name="theme-color" content="#0a0a0a" />
   <meta name="description" content="Where Krate is today, measured: every app we have shipped, its size, and whether it is re-tested nightly on Mac, Windows, and Linux." />
   <link rel="canonical" href="https://krate.tech/progress/" />
   <meta property="og:title" content="Krate: where we are, measured" />
@@ -122,35 +122,28 @@ def main():
   <title>Krate: where we are, measured</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
-  <link rel="stylesheet" href="/krate.css" />
+  <link rel="stylesheet" href="/site.css" />
   <style>
-    .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
-    table {{ border-collapse: collapse; width: 100%; margin: 1.5rem 0; }}
-    th, td {{ padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.08); text-align: left; }}
-    th {{ font-weight: 600; opacity: 0.7; font-size: 0.9em; }}
-    .generated {{ opacity: 0.6; font-size: 0.9em; }}
+    .generated {{ color: var(--quiet); font-size: 0.9em; }}
   </style>
 </head>
 <body>
-  <!-- The logo was missing here. Links are absolute because this page is
-       served from /progress/, not from the site root. -->
-  <nav class="site-nav" aria-label="Primary navigation">
-    <div class="wrap nav-inner">
-      <a class="brand" href="/" aria-label="Krate home">
-        <img src="/krate-glyph-blue.png" alt="" />
-        <span>Krate</span>
-      </a>
-      <div class="nav-links">
-        <a class="nav-link" href="/#start">Start</a>
-        <a class="nav-link" href="/cloud/">Store</a>
-        <a class="nav-link" href="/#faq">FAQ</a>
-        <a class="nav-link" href="/docs/">Docs</a>
-      </div>
+  <!-- Links are absolute because this page is served from /progress/. -->
+  <header class="subnav">
+    <div class="wrap subnav-inner">
+      <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
+      <nav>
+        <a href="/#install">Start</a>
+        <a href="/docs/">Docs</a>
+        <a href="/cloud/">Cloud</a>
+        <a href="/reports/">Reports</a>
+      </nav>
+      <a class="pill pill-primary" href="/#install">Install</a>
     </div>
-  </nav>
+  </header>
 
-  <main class="wrap" style="max-width: 60rem; margin: 0 auto; padding: 3rem 1.5rem;">
-    <p class="label">Measured</p>
+  <main class="page-wide">
+    <p class="page-kicker">MEASURED</p>
     <h1>Where Krate is today.</h1>
     <p>
       Every app we have shipped, its real size, and whether it is re-tested every
@@ -221,8 +214,19 @@ def main():
           fixed the instructions that led it there.</li>
     </ul>
 
-    <p style="margin-top:3rem"><a href="/">Back to krate.tech</a></p>
+    <p style="margin-top:3rem"><a href="/">&larr; Back to krate.tech</a></p>
   </main>
+
+  <footer class="subfoot">
+    <div class="wrap subfoot-inner">
+      <span>© 2026 Krate Labs</span>
+      <span>
+        <a href="/docs/">Docs</a>
+        <a href="/reports/">Reports</a>
+        <a href="https://github.com/incyashraj/krate">GitHub</a>
+      </span>
+    </div>
+  </footer>
 </body>
 </html>
 """
