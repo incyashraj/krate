@@ -1065,6 +1065,121 @@ fn my_apps() -> Result<()> {
     Ok(())
 }
 
+
+/// Print what an app can reach, in words rather than capability names.
+///
+/// Read from the bundle's own manifest, so this is what the sandbox will
+/// actually allow -- not a description of it. An app that asks for nothing
+/// beyond its window says so, because "it can only draw" is the reassuring
+/// case and worth stating.
+fn show_permissions(bundle: &Path) {
+    let Ok(opened) = krate_bundle::open(bundle) else {
+        return;
+    };
+    let mut wants: Vec<String> = Vec::new();
+    for cap in opened.manifest().capabilities.iter() {
+        if let Some(line) = plain_capability(&cap.cap) {
+            if !wants.contains(&line) {
+                wants.push(line);
+            }
+        }
+    }
+
+    println!();
+    if wants.is_empty() {
+        println!(
+            "  {} {}",
+            style::good(glyphs().tick),
+            style::dim("this app can draw its window and nothing else")
+        );
+    } else {
+        println!("  {}", style::dim("this app can:"));
+        for line in &wants {
+            println!("    {} {}", style::good(glyphs().tick), style::dim(line));
+        }
+        println!(
+            "    {} {}",
+            style::bad(glyphs().cross),
+            style::dim("nothing else -- not your files, not the network")
+        );
+    }
+    println!();
+}
+
+
+/// Turn a capability's path glob into a folder name a person would say.
+///
+/// A manifest scopes filesystem access with a glob -- `./notes/**` -- which is
+/// exact and unreadable. Somebody deciding whether to open an app wants to
+/// know it touches "a folder called notes", not to parse a pattern.
+fn readable_folder(scope: &str) -> String {
+    let trimmed = scope
+        .trim_start_matches("./")
+        .trim_end_matches("**")
+        .trim_end_matches('*')
+        .trim_end_matches('/');
+    if trimmed.is_empty() {
+        return "its own folder".to_string();
+    }
+    format!("a folder called {trimmed}")
+}
+
+/// One capability, in words somebody outside the project would use.
+///
+/// Deliberately not the developer-facing note from the authoring pack: that
+/// says "read files under a folder", which is right for somebody writing an
+/// app and wrong for somebody deciding whether to open one. Returns None for
+/// the capabilities every app gets, which are not worth a line each.
+fn plain_capability(cap: &str) -> Option<String> {
+    let (name, scope) = match cap.split_once(':') {
+        Some((name, scope)) => (name, Some(scope)),
+        None => (cap, None),
+    };
+    let text = match name {
+        // Granted to every app; listing them is noise, not information.
+        "io.stdout" | "io.stderr" | "io.stdin" | "io.args" | "io.log" | "time.clock"
+        | "time.monotonic" | "time.sleep" | "locale.info" | "locale.format" | "gfx.gpu" => {
+            return None
+        }
+        "ui.window" => return None,
+        "fs.read" => {
+            return Some(match scope.map(readable_folder) {
+                Some(where_) => format!("read files in {where_}"),
+                None => "read files you choose".to_string(),
+            })
+        }
+        "fs.write" => {
+            return Some(match scope.map(readable_folder) {
+                Some(where_) => format!("save files in {where_}"),
+                None => "save files you choose".to_string(),
+            })
+        }
+        "fs.list" => "see what is in a folder you choose",
+        "fs.remove" => "delete files it created",
+        "fs.mkdir" => "make folders for its own files",
+        "store.kv" | "store.sql" => "remember things between runs",
+        "store.secret" => "use your keychain for passwords",
+        "random.bytes" => "use random numbers",
+        "net.connect" => {
+            return Some(match scope {
+                Some(host) => format!("reach {host} on the internet"),
+                None => "reach the internet".to_string(),
+            })
+        }
+        "ui.clipboard" => "read and write the clipboard",
+        "ui.menu" => "add a menu",
+        "ui.open-url" => "open a link in your browser",
+        "ui.notify" => "show notifications",
+        "ui.dropzone" => "accept files you drag onto it",
+        "ui.dialog" => "ask you to pick a file",
+        "audio.playback" => "play sound",
+        "audio.capture" => "record from your microphone",
+        "speech.transcribe" => "turn speech into text, on this computer",
+        _ => return None,
+    };
+    Some(text.to_string())
+}
+
 fn open_bundle(bundle: &Path) -> Result<()> {
     println!(
         "  {} {}",
@@ -1076,6 +1191,15 @@ fn open_bundle(bundle: &Path) -> Result<()> {
                 .unwrap_or_default()
         )
     );
+    // Say what it can reach, before it runs.
+    //
+    // Opening an app from this menu grants everything its manifest asks for
+    // without a prompt -- reasonable, since it is the person's own app and a
+    // question per capability is friction with no decision behind it. But
+    // saying nothing at all is a different thing: Krate's whole claim is that
+    // an app tells you what it wants before it starts, and the front door was
+    // the one place that did not.
+    show_permissions(bundle);
     println!(
         "  {}",
         style::dim("close its window, or press Ctrl-C, to come back here")
@@ -1377,6 +1501,54 @@ fn humanise_bytes(bytes: u64) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn permissions_are_said_in_words_a_person_would_use() {
+        // Opening an app from the menu grants everything its manifest asks
+        // for, without a prompt. That is defensible -- it is the person's own
+        // app. Saying nothing at all was not: Krate's claim is that an app
+        // tells you what it wants before it runs, and the front door was the
+        // one place that did not.
+        assert_eq!(
+            plain_capability("fs.write:./notes/**").as_deref(),
+            Some("save files in a folder called notes"),
+            "a path glob is exact and unreadable; say the folder"
+        );
+        assert_eq!(
+            plain_capability("net.connect:api.example.com:443").as_deref(),
+            Some("reach api.example.com:443 on the internet")
+        );
+        assert_eq!(
+            plain_capability("store.kv").as_deref(),
+            Some("remember things between runs")
+        );
+        assert_eq!(
+            plain_capability("audio.capture").as_deref(),
+            Some("record from your microphone")
+        );
+    }
+
+    #[test]
+    fn the_capabilities_every_app_gets_are_not_listed() {
+        // Listing "print to stdout" and "read the clock" for every app buries
+        // the one line that matters under five that never vary.
+        for cap in [
+            "ui.window:create",
+            "io.stdout",
+            "io.args",
+            "time.clock",
+            "gfx.gpu:basic",
+        ] {
+            assert_eq!(plain_capability(cap), None, "{cap} should not be listed");
+        }
+    }
+
+    #[test]
+    fn a_folder_scope_with_no_name_still_reads() {
+        assert_eq!(readable_folder("./**"), "its own folder");
+        assert_eq!(readable_folder("notes/**"), "a folder called notes");
+        assert_eq!(readable_folder("./data"), "a folder called data");
+    }
+
     #[test]
     fn a_dragged_file_becomes_an_attachment_not_a_description() {
         // Terminals paste a dragged file as its path, so the description and

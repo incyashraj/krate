@@ -2774,6 +2774,10 @@ pub(crate) fn run_bundle_for_tui(bundle: &Path) -> Result<()> {
         .arg("run")
         .arg(bundle)
         .arg("--auto-grant")
+        // The menu has already said which app is opening and how to get back,
+        // so the runtime's own "krate: opened window ..." line is a second
+        // copy of that in blunter words.
+        .env("KRATE_QUIET_LAUNCH", "1")
         .stdout(std::process::Stdio::piped())
         .output()
         .context("could not start the app")?;

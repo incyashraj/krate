@@ -1551,7 +1551,11 @@ impl ui::window::Host for Phase3GuiHost {
                 // between "opened" and "nothing on my screen" would have been
                 // one glance wide. Stderr so JSON on stdout stays parseable,
                 // and never on the headless path so replay logs stay quiet.
-                if !self.headless {
+                // Not when the front door is running the app: it has already
+                // said which app is opening and how to come back, so this is a
+                // second, blunter copy of the same sentence -- and it names the
+                // window's own title, which the person can see.
+                if !self.headless && std::env::var_os("KRATE_QUIET_LAUNCH").is_none() {
                     eprintln!(
                         "krate: opened window {title_note:?} (close it or press Ctrl-C to quit)"
                     );

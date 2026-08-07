@@ -71,6 +71,70 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-059 -- Opening an app from the menu never said what it could reach
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, user question: "we say our app asks for permission on
+          what they'll be accessing -- then any app I made, opening it in the
+          TUI by clicking open it now?"
+Evidence: The whole of it was:
+
+              opening i-want-roadrash-like.krate
+              close its window, or press Ctrl-C, to come back here
+
+          `run_bundle_for_tui` passes `--auto-grant`, so every capability in
+          the manifest is granted with no prompt and no listing.
+
+          The grant itself is defensible: it is the person's own app, and a
+          yes/no per capability is friction with no decision behind it. Saying
+          nothing is a different thing. "An app tells you what it wants before
+          it starts" is the sentence on the front page, and the front door was
+          the one place that did not.
+Impact:   The capability wall is the product's whole differentiator and it was
+          invisible at the moment somebody was actually using it.
+Fix:      The manifest is read and stated in plain words before the app runs:
+
+              ✓ this app can draw its window and nothing else
+
+          or, for one that asks for more:
+
+              this app can:
+                ✓ save files in a folder called notes
+                ✗ nothing else -- not your files, not the network
+
+          Deliberately not the developer wording from the authoring pack --
+          that says "write files under a folder", which is right for somebody
+          writing an app and wrong for somebody deciding whether to open one.
+          Path globs are turned into folder names for the same reason:
+          `./notes/**` is exact and unreadable.
+
+          Capabilities every app gets (stdout, args, the clock, the window)
+          are not listed, or the one line that matters is buried under five
+          that never vary.
+
+### K-060 -- The runtime's launch line duplicated what the menu just said
+Status:   fixed
+Owner:    lead
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-07, macOS, opening an app from the menu
+Evidence: krate: opened window "Krate Road Rash" (close it or press Ctrl-C to
+          quit)
+
+          printed directly under the menu's own "opening ... close its window,
+          or press Ctrl-C, to come back here". Two sentences saying the same
+          thing, the second one blunter and naming a window title the person
+          can already see.
+
+          It goes to stderr, which the front door inherits deliberately -- a
+          real error must not be swallowed -- so capturing stdout did not
+          silence it.
+Fix:      KRATE_QUIET_LAUNCH, set by the front door only. A bare `krate run`
+          in a terminal still prints it, which is where it is useful.
+
+
 ### K-058 -- v0.1.0 shipped without the Windows document icon
 Status:   fixed-pending-release
 Owner:    lead
