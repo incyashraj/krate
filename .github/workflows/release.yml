@@ -250,11 +250,24 @@ jobs:
           # back Invalid with "not signed with a valid Developer ID
           # certificate" -- the notary service checks every Mach-O and script
           # in Contents/MacOS, not just the one named in the plist.
+          # --entitlements is not optional here. Hardened runtime forbids
+          # writable-executable memory, and wasmtime JIT-compiles every
+          # component it runs, so a signed-but-unentitled build is killed by
+          # the kernel the moment somebody opens an app:
+          #
+          #     SIGKILL (Code Signature Invalid)
+          #     CODESIGNING / Invalid Page
+          #
+          # It passes spctl, passes notarization, and crashes on every launch
+          # -- silently, because a double-clicked app has no terminal.
+          ENTITLEMENTS=scripts/krate.entitlements
           codesign --force --options runtime --timestamp \
+            --entitlements "$ENTITLEMENTS" \
             --sign "$IDENTITY" dist/Krate.app/Contents/MacOS/krate-cli
           codesign --force --options runtime --timestamp \
             --sign "$IDENTITY" dist/Krate.app/Contents/MacOS/Krate
           codesign --force --options runtime --timestamp \
+            --entitlements "$ENTITLEMENTS" \
             --sign "$IDENTITY" dist/Krate.app
           codesign --verify --deep --strict --verbose=2 dist/Krate.app
 

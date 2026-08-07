@@ -71,6 +71,57 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-063 -- Double-clicking a .krate on macOS killed the app instantly
+Status:   fixed-pending-release
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-07, macOS 27, double-clicking an app in Finder
+Evidence: Nothing happened. No window, no error, no message -- and a fresh
+          crash report every time:
+
+              signal: SIGKILL (Code Signature Invalid)
+              termination: CODESIGNING / Invalid Page
+
+          The bundle is signed and notarized and passes every check:
+
+              spctl -a -vv Krate.app
+              accepted   source=Notarized Developer ID
+
+          But it carries NO entitlements:
+
+              codesign -d --entitlements - .../krate-cli
+              (empty)
+
+          Hardened runtime (`--options runtime`, required for notarization)
+          forbids writable-executable memory. Wasmtime JIT-compiles every
+          component it runs, so the kernel kills the process the moment an app
+          is opened. Silently, because a double-clicked app has no terminal.
+
+          Proven on one machine, same binary, same app:
+            unentitled  -- crash reports 6 -> 7, nothing rendered
+            entitled    -- crash reports 6 -> 6, app ran and drew a frame
+Impact:   Double-clicking a .krate has never worked on a signed macOS build.
+          It is the headline promise -- "somebody sends you an app and you
+          double-click it" -- and every notarized release has shipped with it
+          broken. It survived because every check we had passes: the signature
+          is valid, notarization succeeds, spctl accepts it. Only running it
+          fails.
+Fix:      scripts/krate.entitlements, with allow-jit and
+          allow-unsigned-executable-memory, passed to codesign for the inner
+          binary and the bundle.
+
+          Note for anyone editing that file: AMFI rejects XML comments inside
+          the dict. Two signing attempts failed with "AMFIUnserializeXML:
+          syntax error" before the comments came out.
+
+          Found alongside a second problem on this machine: three Krate.app
+          copies were registered as .krate handlers, two of them unsigned
+          (~/Applications from an old install, and one in /private/tmp).
+          macOS picked among them unpredictably. Removed, and the surviving
+          one re-registered.
+
+
 ### K-061 -- A generated app closed itself after thirty seconds, mid-read
 Status:   fixed
 Owner:    lead
