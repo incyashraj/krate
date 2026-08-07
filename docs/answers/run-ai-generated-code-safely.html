@@ -3,11 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="theme-color" content="#0b0d12" />
+  <meta name="theme-color" content="#0a0a0a" />
   <meta name="description" content="AI wrote it and you have not read all of it. Krate runs the app with no access to your files or network until you allow each thing, and refuses to package an app that reaches outside what it declared." />
-  <!-- The github.io project page redirects here, so name the canonical home
-       once. Without it the same page is reachable at two hosts and search
-       engines have to guess which one is real. -->
   <link rel="canonical" href="https://krate.tech/run-ai-generated-code-safely.html" />
   <meta property="og:title" content="Krate: the cloud for AI-made software" />
   <meta property="og:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
@@ -21,178 +18,12 @@
   <meta name="twitter:title" content="Krate: the cloud for AI-made software" />
   <meta name="twitter:description" content="Make an app by asking. Share it as one file that opens on Mac, Windows, and Linux, and shows what it wants before it runs." />
   <meta name="twitter:image" content="https://krate.tech/og-v2.png" />
-  <title>Krate: the cloud for AI-made software | One app file for Mac, Windows, Linux</title>
+  <title>How to run AI-generated code safely — Krate</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
-  <link rel="stylesheet" href="/krate.css" />
-  <style>
-/* The command reads as something you could type, not a slogan. It shrinks
-       hard on small screens because a wrapped command looks broken. */
-    /* One file, three machines. The file lifts out of the middle and settles
-       on each in turn: the claim of the page, drawn once, quietly. */
-    .hero-travel {
-      position: relative;
-      width: 260px;
-      height: 74px;
-      margin: 0 auto 34px;
-    }
-
-    .travel-machine {
-      position: absolute;
-      bottom: 0;
-      width: 54px;
-      height: 38px;
-      border: 1px solid var(--line-strong);
-      border-radius: 5px;
-      background: var(--panel);
-    }
-
-    /* The screen glow, so each shape reads as a computer rather than a box. */
-    .travel-machine::after {
-      content: "";
-      position: absolute;
-      inset: 6px 6px 10px;
-      border-radius: 2px;
-      background: rgba(98, 145, 255, .16);
-      transition: background .4s ease;
-    }
-
-    .travel-machine[data-os="mac"] { left: 0; }
-    .travel-machine[data-os="win"] { left: 103px; }
-    .travel-machine[data-os="linux"] { right: 0; }
-
-    /* Each machine lights as the file lands on it, on the same 9s cycle. */
-    .travel-machine::after { animation: travel-lit 9s ease-in-out infinite; }
-    .travel-machine[data-os="mac"]::after { animation-delay: 0s; }
-    .travel-machine[data-os="win"]::after { animation-delay: 3s; }
-    .travel-machine[data-os="linux"]::after { animation-delay: 6s; }
-
-    @keyframes travel-lit {
-      0%, 8% { background: rgba(108, 244, 215, .55); }
-      26%, 100% { background: rgba(98, 145, 255, .16); }
-    }
-
-    /* The file: three stacked bars, the Krate mark, travelling between them. */
-    .travel-file {
-      position: absolute;
-      top: 8px;
-      left: 14px;
-      width: 26px;
-      height: 26px;
-      background:
-        linear-gradient(var(--cyan), var(--cyan)) 0 0 / 100% 6px no-repeat,
-        linear-gradient(rgba(108, 244, 215, .6), rgba(108, 244, 215, .6)) 0 10px / 100% 6px no-repeat,
-        linear-gradient(rgba(108, 244, 215, .3), rgba(108, 244, 215, .3)) 0 20px / 100% 6px no-repeat;
-      animation: travel-move 9s ease-in-out infinite;
-    }
-
-    @keyframes travel-move {
-      0%, 6% { transform: translate(0, 14px); }
-      17% { transform: translate(52px, -6px); }
-      28%, 39% { transform: translate(103px, 14px); }
-      50% { transform: translate(155px, -6px); }
-      61%, 72% { transform: translate(206px, 14px); }
-      86% { transform: translate(103px, -6px); }
-      94%, 100% { transform: translate(0, 14px); }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      .travel-file,
-      .travel-machine::after {
-        animation: none;
-      }
-    }
-
-    .hero-command {
-      max-width: 15ch;
-      margin-inline: auto;
-      font-size: clamp(34px, 6vw, 68px);
-      letter-spacing: -.045em;
-      line-height: 1.04;
-    }
-
-    /* Two columns of platforms: what runs today, and what is next. Collapses
-       to one on a phone rather than squeezing two lists side by side. */
-    .platform-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 2rem;
-      margin-top: 1.6rem;
-    }
-
-    .platform-col h3 {
-      margin: 0 0 .9rem;
-      font-size: 15px;
-      letter-spacing: .02em;
-    }
-
-    .platform-list {
-      margin: 0;
-      padding: 0;
-      list-style: none;
-      display: flex;
-      flex-direction: column;
-      gap: .6rem;
-    }
-
-    .platform-list li {
-      padding-left: 1.1rem;
-      position: relative;
-      line-height: 1.5;
-      color: var(--muted);
-    }
-
-    .platform-list strong { color: var(--text, #e8ecf4); }
-
-    /* A tick for what ships, so the two columns read differently at a glance
-       without relying on colour alone. */
-    .platform-col:first-child .platform-list li::before {
-      content: "\2713";
-      position: absolute;
-      left: 0;
-      color: var(--cyan);
-    }
-
-    .platform-col:last-child .platform-list li::before {
-      content: "\2192";
-      position: absolute;
-      left: 0;
-      color: var(--muted);
-    }
-
-    .chip {
-      display: inline-block;
-      margin-left: .4rem;
-      padding: .05rem .45rem;
-      border-radius: 999px;
-      font-size: 11px;
-      letter-spacing: .04em;
-      text-transform: uppercase;
-      vertical-align: middle;
-    }
-
-    .chip-on {
-      background: rgba(108, 244, 215, .14);
-      border: 1px solid rgba(108, 244, 215, .35);
-      color: var(--cyan);
-    }
-
-    .platform-col .method {
-      margin-top: 1rem;
-      font-size: 13px;
-      line-height: 1.6;
-      color: var(--muted);
-    }
-
-    .hero-lead {
-      max-width: 540px;
-      margin: 18px auto 38px;
-      color: var(--muted);
-      font-family: var(--mono);
-      font-size: clamp(13px, 1.5vw, 15px);
-      line-height: 1.6;
-    }
-  </style>
+  <link rel="preload" href="/fonts/geist-400.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="/fonts/geist-500.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/site.css" />
   <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -227,50 +58,29 @@
   </script>
 </head>
 <body>
-<nav class="site-nav" aria-label="Primary navigation">
-    <div class="wrap nav-inner">
-      <a class="brand" href="/#" aria-label="Krate home">
-        <img src="./krate-glyph-blue.png" alt="" />
-        <span>Krate</span>
-      </a>
+<header class="subnav">
+  <div class="wrap subnav-inner">
+    <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
+    <nav>
+      <a href="/#install">Start</a>
+      <a href="/docs/">Docs</a>
+      <a href="/cloud/">Cloud</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+    </nav>
+    <a class="pill pill-primary" href="/#install">Install</a>
+  </div>
+</header>
+    <main id="main" class="page-wrap">
+    <h1>How to run AI-generated code safely</h1>
+    <p class="page-lede">You did not read every line, and honestly you were not going to. The question is what the app can reach if it turns out to be wrong.</p>
 
-      <button class="menu-button" id="menuButton" type="button" aria-expanded="false" aria-controls="navLinks" aria-label="Open navigation">☰</button>
-
-      <div class="nav-links" id="navLinks">
-        <!-- Kept short. Eight made a first-time visitor choose before they
-             knew what any of them meant, and this list has drifted upward
-             before -- add one only by replacing one.
-             Reports is here because the numbers are the argument: a visitor
-             who doubts the claims should not have to scroll two thirds of the
-             page to find where they are proved. -->
-        <a class="nav-link" href="/#start">Start</a>
-        <a class="nav-link" href="/reports/">Reports</a>
-        <a class="nav-link" href="/cloud/">Cloud</a>
-        <a class="nav-link" href="/publish/">Publish</a>
-        <a class="nav-link" href="/docs/">Docs</a>
-        <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
-        <a class="nav-cta" href="/#start">Make an app</a>
-      </div>
-    </div>
-  </nav>
-    <main id="main">
-    <section class="section">
-      <div class="wrap plain-block">
-        <h1 class="answer-title">How to run AI-generated code safely</h1>
-        <p class="answer-lead">You did not read every line, and honestly you were not going to. The question is what the app can reach if it turns out to be wrong.</p>
-      </div>
-    </section>
-
-    <section class="section">
-      <div class="wrap plain-block">
-        <h2>The real risk is not bad code, it is reach</h2>
+    <section>
+      <h2>The real risk is not bad code, it is reach</h2>
         <p>Most AI-generated code is not malicious. It is confidently wrong. It deletes the wrong directory, uploads something it should not have, or loops until the disk fills.</p>
         <p>Reading it all is not realistic once it is more than a page long. The useful question is not whether the code is correct, but what it can touch when it is not.</p>
-      </div>
     </section>
-    <section class="section">
-      <div class="wrap plain-block">
-        <h2>Look at it before you run it</h2>
+    <section>
+      <h2>Look at it before you run it</h2>
         <p>You can inspect a Krate app without executing a single instruction:</p>
         <pre class="answer-cmd">$ krate run notes.krate --dump-caps
 
@@ -283,11 +93,9 @@ This app will ask for
   - read from the clipboard (ui.clipboard:read)
   - copy to the clipboard (ui.clipboard:write)</pre>
         <p>That is the real output. The identity is computed from the file's contents, so you can check that what you received is what somebody else verified.</p>
-      </div>
     </section>
-    <section class="section">
-      <div class="wrap plain-block">
-        <h2>Refusing actually refuses</h2>
+    <section>
+      <h2>Refusing actually refuses</h2>
         <p>Withhold something the app needs and it does not start. It does not run in a degraded mode and quietly fail later:</p>
         <pre class="answer-cmd">$ krate run notes.krate --grant ui.window:create
 
@@ -296,46 +104,38 @@ It needs to:
   - read files in notes (fs.read:notes/**)
   - save files in notes (fs.write:notes/**)</pre>
         <p>The check happens before the host is touched, not inside the app where a bug could skip it.</p>
-      </div>
     </section>
-    <section class="section">
-      <div class="wrap plain-block">
-        <h2>Why an app cannot lie about this</h2>
+    <section>
+      <h2>Why an app cannot lie about this</h2>
         <p>A Krate app is a WebAssembly component. It has no way to call the operating system directly &mdash; only Krate's own interfaces, and every one of those verifies the capability first.</p>
                 <p>An app that imports anything outside that boundary is rejected while it is being packaged, so it never becomes a shareable file at all. That check runs whether the code came from a person or a model.</p>
-      </div>
     </section>
-    <section class="section">
-      <div class="wrap plain-block">
-        <h2>What it does not claim</h2>
+    <section>
+      <h2>What it does not claim</h2>
         <p>Krate limits what an app can reach and enforces your decision. It does not prove the app is correct, and it is not yet a safe way to run arbitrary untrusted software from the internet.</p>
         <p>Saying so matters: a security claim that overstates itself is worse than a smaller true one.</p>
-      </div>
     </section>
 
-    <section class="section">
-      <div class="wrap plain-block">
-        <h2>Try it</h2>
-        <p>Krate is open source and installs with one command. Nothing to sign up for.</p>
-        <div class="actions">
-          <a class="button primary" href="/#start">Get Krate</a>
-          <a class="button" href="/cloud/">Open the store</a>
-        </div>
-      </div>
+    <section>
+      <h2>Try it</h2>
+      <p>Krate is open source and installs with one command. Nothing to sign up for.</p>
+      <p style="display:flex; gap:12px; margin-top:18px">
+        <a class="pill pill-primary" href="/#install">Get Krate</a>
+        <a class="pill" href="/cloud/">Open the store</a>
+      </p>
     </section>
     </main>
-<footer>
-    <div class="wrap footer-inner">
-      <span>© 2026 Krate Labs</span>
-      <div class="footer-links">
-        <a href="/#about">About</a>
-        <a href="/docs/">Docs</a>
-        <a href="/docs/blog/0002-every-sandbox-is-cloud.html">Blog</a>
-        <a href="https://github.com/incyashraj/krate">GitHub</a>
-        <a href="https://github.com/incyashraj/krate/discussions">Ask a question</a>
-        <a href="https://github.com/incyashraj/krate/releases">Releases</a>
-      </div>
-    </div>
-  </footer>
+<footer class="subfoot">
+  <div class="wrap subfoot-inner">
+    <span>© 2026 Krate Labs</span>
+    <span>
+      <a href="/docs/">Docs</a>
+      <a href="/reports/">Reports</a>
+      <a href="/progress/">Progress</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+      <a href="/contact/">Contact</a>
+    </span>
+  </div>
+</footer>
 </body>
 </html>

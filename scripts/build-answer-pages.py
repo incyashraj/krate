@@ -23,26 +23,47 @@ OUT = ROOT / "docs" / "answers"
 
 
 def chrome():
-    """Head, nav, and footer lifted from the landing page.
+    """Head from the landing page; nav and footer as the subpage shell.
 
-    Taken from the real page rather than copied into this script, so these pages
-    cannot fall behind a change to the site's own header.
+    The head is lifted from the real landing page so meta and stylesheet
+    choices cannot drift. The nav and footer are NOT scraped: the landing
+    page's header is the mega-panel one, and scraping it broke silently when
+    the landing was rebuilt -- find() missed, and every answer page shipped
+    with no navigation at all. The subpage shell (the same subnav/subfoot as
+    /faq.html) is what these pages actually want, so it is written out here.
     """
     s = LANDING.read_text()
     head = s[: s.find("</head>") + len("</head>")]
     # Drop the landing page's own structured data; each answer page has its own.
     head = re.sub(r"  <!-- Structured data.*?</script>\n", "", head, flags=re.S)
-    # These live one directory down.
-    head = head.replace('href="./krate.css"', 'href="/krate.css"')
+    # These live at the site root; the landing's relative links do not.
     head = head.replace('href="./', 'href="/').replace('src="./', 'src="/')
 
-    ns = s.find('<nav class="site-nav"')
-    nav = s[ns : s.find("</nav>", ns) + len("</nav>")]
-    nav = nav.replace('href="#', 'href="/#').replace('href="./', 'href="/')
+    nav = """<header class="subnav">
+  <div class="wrap subnav-inner">
+    <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
+    <nav>
+      <a href="/#install">Start</a>
+      <a href="/docs/">Docs</a>
+      <a href="/cloud/">Cloud</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+    </nav>
+    <a class="pill pill-primary" href="/#install">Install</a>
+  </div>
+</header>"""
 
-    fs = s.find("<footer")
-    foot = s[fs : s.find("</footer>", fs) + len("</footer>")] if fs > 0 else ""
-    foot = foot.replace('href="#', 'href="/#').replace('href="./', 'href="/')
+    foot = """<footer class="subfoot">
+  <div class="wrap subfoot-inner">
+    <span>© 2026 Krate Labs</span>
+    <span>
+      <a href="/docs/">Docs</a>
+      <a href="/reports/">Reports</a>
+      <a href="/progress/">Progress</a>
+      <a href="https://github.com/incyashraj/krate">GitHub</a>
+      <a href="/contact/">Contact</a>
+    </span>
+  </div>
+</footer>"""
     return head, nav, foot
 
 
@@ -68,9 +89,12 @@ def faq_schema(pairs):
 def render(page):
     head, nav, foot = chrome()
 
-    head = head.replace(
-        "<title>Krate — The cloud for AI-made software | One app file for Mac, Windows, Linux</title>",
+    head = re.sub(
+        r"<title>.*?</title>",
         f"<title>{html.escape(page['title'])}</title>",
+        head,
+        count=1,
+        flags=re.S,
     )
     head = re.sub(
         r'<meta name="description" content="[^"]*" />',
@@ -88,11 +112,9 @@ def render(page):
     )
 
     sections = "\n".join(
-        f'''    <section class="section">
-      <div class="wrap plain-block">
-        <h2>{html.escape(t)}</h2>
+        f'''    <section>
+      <h2>{html.escape(t)}</h2>
 {b}
-      </div>
     </section>'''
         for t, b in page["sections"]
     )
@@ -100,25 +122,19 @@ def render(page):
     return f"""{head}
 <body>
 {nav}
-    <main id="main">
-    <section class="section">
-      <div class="wrap plain-block">
-        <h1 class="answer-title">{html.escape(page["h1"])}</h1>
-        <p class="answer-lead">{page["lead"]}</p>
-      </div>
-    </section>
+    <main id="main" class="page-wrap">
+    <h1>{html.escape(page["h1"])}</h1>
+    <p class="page-lede">{page["lead"]}</p>
 
 {sections}
 
-    <section class="section">
-      <div class="wrap plain-block">
-        <h2>Try it</h2>
-        <p>Krate is open source and installs with one command. Nothing to sign up for.</p>
-        <div class="actions">
-          <a class="button primary" href="/#start">Get Krate</a>
-          <a class="button" href="/cloud/">Open the store</a>
-        </div>
-      </div>
+    <section>
+      <h2>Try it</h2>
+      <p>Krate is open source and installs with one command. Nothing to sign up for.</p>
+      <p style="display:flex; gap:12px; margin-top:18px">
+        <a class="pill pill-primary" href="/#install">Get Krate</a>
+        <a class="pill" href="/cloud/">Open the store</a>
+      </p>
     </section>
     </main>
 {foot}
