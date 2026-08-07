@@ -71,6 +71,30 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-071 -- whisper-rs stopped linking on the windows-latest CI image
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    environment
+Found:    2026-08-07, CI run 31162680943, on a commit touching only a workflow
+          file and BUGS.md -- so the code did not cause it
+Evidence: Library tests (windows-latest) and Test (ubuntu? no -- windows only):
+
+            libwhisper_rs_sys-...rlib(ops.obj) : error LNK2019: unresolved
+              external symbol __imp_fminf ...
+            fatal error LNK1120: 20 unresolved externals
+
+          Twenty unresolved CRT math symbols (__imp_fmaxf, __imp_erff,
+          __imp_lroundf...) linking krate-runtime's test binary against
+          whisper-rs/ggml. The same code linked fine in earlier runs; the
+          runner image updated (MSBuild/MSVC), so this is the machine
+          changing under us, not a regression in Krate. Every push now fails
+          the Windows library-tests job until it is addressed (ggml needs
+          the UCRT import lib the new image stopped providing implicitly, or
+          whisper-rs needs a version bump built against it).
+Fix:      Not attempted -- found while verifying the site deploy, filed so
+          the red X on every push is not mistaken for the day's changes.
+
 ### K-070 -- typing a request with no AI connected throws the request away
 Status:   fixed
 Owner:    lead
