@@ -53,7 +53,6 @@ switch ($arch) {
 
 $version = $env:KRATE_VERSION
 if (-not $version) {
-    Write-Say 'Finding the latest release...'
     # /releases/latest excludes pre-releases and Krate is pre-release only, so
     # query the list and take the newest v-tag instead.
     try {
@@ -78,7 +77,8 @@ if (-not $version) {
     # before, and the raw failure explains nothing. The releases page is plain
     # HTML and is not limited the same way, so read a tag out of it instead.
     if (-not $version) {
-        Write-Say 'The GitHub API did not answer; reading the releases page instead...'
+        # The API did not answer (usually rate limiting on a shared address);
+        # the releases page is plain HTML and is not limited the same way.
         try {
             $page = Invoke-WebRequest -Uri "https://github.com/$repo/releases" `
                 -Headers @{ 'User-Agent' = 'krate-installer' } -UseBasicParsing
@@ -119,12 +119,21 @@ if ($existing) {
 }
 if ($installed) {
     if ($installed -eq $version -or $installed -eq $version.TrimStart('v')) {
-        Write-Say "krate $installed is already installed and up to date."
-        Write-Say 'Re-running will reinstall the same version.'
+        Write-Say "krate $installed is up to date."
     } else {
         Write-Say "Updating krate $installed -> $version."
     }
 }
+
+# One line that says what is happening; the details stay out of the way the
+# way any polished installer's do. Every check still runs -- a checksum
+# mismatch still refuses loudly -- quiet is not the same as careless.
+switch ($target) {
+    'x86_64-pc-windows-msvc'  { $friendly = 'windows-x86_64' }
+    'aarch64-pc-windows-msvc' { $friendly = 'windows-arm64' }
+    default                   { $friendly = $target }
+}
+Write-Say "Installing Krate $version ($friendly)..."
 
 $archiveVersion = $version.TrimStart('v')
 $archive = "krate-$archiveVersion-$target.zip"
@@ -133,7 +142,6 @@ $base = "https://github.com/$repo/releases/download/$version"
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("krate-install-" + [guid]::NewGuid())
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 try {
-    Write-Say "Downloading $archive..."
     $archivePath = Join-Path $tmp $archive
     try {
         Invoke-WebRequest -Uri "$base/$archive" -OutFile $archivePath -UseBasicParsing
@@ -161,9 +169,9 @@ try {
         if ($actual -ne $expected.ToLower()) {
             Stop-Install "checksum mismatch for $archive; refusing to install"
         }
-        Write-Say 'Checksum verified.'
+        Write-Say '  Downloading... done (verified)'
     } else {
-        Write-Say 'Note: no SHA256SUMS published for this release, skipping checksum.'
+        Write-Say '  Downloading... done (no SHA256SUMS published, checksum skipped)'
     }
 
     Expand-Archive -Path $archivePath -DestinationPath $tmp -Force
@@ -182,17 +190,17 @@ try {
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     Copy-Item -Path $binaryPath.FullName -Destination (Join-Path $dir $binary) -Force
 
-    Write-Say "Installed krate $version to $dir\$binary"
+    Write-Say "  Installed to $dir"
 
     # Newer releases carry cargo-component beside the runtime, and the shell
     # installer has always placed it. Windows did not, so a Windows user fell
     # back to `cargo install cargo-component`: 378 crates downloaded and
     # compiled before their first app could exist. Same archive, same fix.
+    # Placed silently: it is our packaging detail, not the person's business.
     $tooling = Get-ChildItem -Path $tmp -Recurse -File `
         -Filter 'cargo-component*' -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($tooling) {
         Copy-Item -Path $tooling.FullName -Destination (Join-Path $dir $tooling.Name) -Force
-        Write-Say "Installed $($tooling.Name) too, so you can make apps without a long build."
     }
 
     # Being on PATH is what makes the next command work, so fix it rather than
@@ -217,7 +225,6 @@ try {
     if (-not $already) {
         $updated = (($entries + $dir) -join ';')
         [Environment]::SetEnvironmentVariable('Path', $updated, 'User')
-        Write-Say "Added $dir to your PATH."
     }
     # This session, so the next command works here and not only in a new window.
     if (($env:Path -split ';' | Where-Object { $_.TrimEnd('\') -ieq $dir.TrimEnd('\') }).Count -eq 0) {
@@ -250,23 +257,16 @@ try {
             # being on PATH.
             & powershell -NoProfile -ExecutionPolicy Bypass -File $desktopScript -KrateBinary $installedBinary | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "association script exited with code $LASTEXITCODE" }
-            Write-Say 'Registered the .krate handler -- you can double-click a .krate now.'
+            Write-Say '  .krate files now open on double-click.'
         } catch {
-            Write-Say 'Note: could not register the .krate double-click handler; the CLI still works.'
-            Write-Say "You can run it later: krate is installed, and you can always use 'krate run <file>'."
+            Write-Say '  Note: could not register double-click for .krate files; krate itself works.'
         }
     }
 
     Write-Say ''
-    Write-Say 'Start here:'
-    Write-Say ''
-    Write-Say '  krate'
-    Write-Say ''
-    Write-Say 'That opens a short menu: make an app by describing it, open one'
-    Write-Say 'someone sent you, or browse what people have published.'
-    Write-Say ''
-    Write-Say 'If a new terminal says "krate is not recognized", run it by full path:'
-    Write-Say "  & `"$dir\$binary`" --version"
+    # The one line the person needs, in the colour that says "you are done".
+    # Everything else above was bookkeeping; this is the invitation.
+    Write-Host "Run 'krate' to get started!" -ForegroundColor Green
 } finally {
     Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
 }

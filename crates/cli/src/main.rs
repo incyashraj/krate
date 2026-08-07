@@ -7814,8 +7814,22 @@ pub(crate) fn build_tools_missing() -> Vec<(String, String)> {
 }
 
 /// Install everything `build_tools_missing` reported, in order.
+///
+/// One tool at a time, and the missing list is recomputed after every one.
+/// The list is a dependency chain -- rustup brings cargo, cargo runs the
+/// component build -- so a snapshot taken up front goes stale the moment the
+/// first install lands: later commands ran against a PATH from before that
+/// install and failed, and the advice was "open a new terminal". Three
+/// installs deep, that was three restarts to make one app. Refreshing the
+/// process PATH between steps is what a new terminal would have done.
 pub(crate) fn install_build_tools() -> Result<()> {
-    for tool in missing_create_tools() {
+    // Bounded by the full list length: every pass must shrink the list by at
+    // least the tool it just installed, and a pass that does not is a failure.
+    for _ in 0..=missing_create_tools().len() {
+        refresh_process_path();
+        let Some(tool) = missing_create_tools().into_iter().next() else {
+            return Ok(());
+        };
         // Silent on purpose: a progress bar is drawing over this, and rustup
         // and winget both narrate at length. Their output is captured and
         // shown only on failure, where it is the thing worth reading.
@@ -7831,7 +7845,19 @@ pub(crate) fn install_build_tools() -> Result<()> {
             anyhow::bail!("{}: {detail}", tool.what);
         }
     }
-    Ok(())
+    refresh_process_path();
+    let still: Vec<String> = missing_create_tools()
+        .into_iter()
+        .map(|tool| tool.what.to_string())
+        .collect();
+    if still.is_empty() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "installed, but still not usable: {} -- the install reported success \
+and the tool is nowhere this process can see",
+        still.join(", ")
+    );
 }
 
 /// The rustup toolchain name that carries its own linker on this machine.
@@ -8173,9 +8199,14 @@ fn run_install_command_quiet(cmd: &[String]) -> Result<std::process::Output> {
         rustup_toolchain_bin()
             .map(|bin| bin.join(if cfg!(windows) { "cargo.exe" } else { "cargo" }))
             .filter(|path| path.exists())
+            .or_else(|| resolve_tool(program))
             .unwrap_or_else(|| PathBuf::from(program))
     } else {
-        PathBuf::from(program)
+        // Same staleness for every other tool in the chain: rustup itself,
+        // winget-installed binaries. resolve_tool knows ~/.cargo/bin and the
+        // directory beside our own exe, which is where a just-finished
+        // install put the thing this command is about to run.
+        resolve_tool(program).unwrap_or_else(|| PathBuf::from(program))
     };
 
     ProcessCommand::new(&program)
@@ -8290,6 +8321,152 @@ fn tool_status_line(program: &str, args: &[&str]) -> Option<String> {
     }
     let version = String::from_utf8_lossy(&output.stdout);
     Some(format!("{program:<15} {}", version.trim()))
+}
+
+/// Pick up PATH changes made since this process started, without a restart.
+///
+/// Installers write the new PATH where *future* processes read it -- the
+/// registry on Windows, shell profiles on Unix -- and a process that is
+/// already running never sees it. That one fact produced three separate
+/// "close this terminal and reopen it" moments during a first `krate` run on
+/// Windows: install Rust, restart; install the linker, restart; install an AI
+/// tool, restart. A new terminal fixes each one only because a new terminal
+/// re-reads the registry. This does the same re-read in place.
+///
+/// Idempotent and cheap, so callers run it before any probe or retry rather
+/// than trying to guess whether something was installed in between.
+pub(crate) fn refresh_process_path() {
+    let current = std::env::var("PATH").unwrap_or_default();
+    let mut merged: Vec<String> = std::env::split_paths(&current)
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+
+    for entry in freshly_visible_path_entries() {
+        if !merged.iter().any(|have| same_path_entry(have, &entry)) {
+            merged.push(entry);
+        }
+    }
+
+    if let Ok(joined) = std::env::join_paths(merged.iter().map(std::ffi::OsString::from)) {
+        // Set for this process only; nothing here writes anywhere persistent.
+        std::env::set_var("PATH", joined);
+    }
+}
+
+/// PATH entries a *new* terminal would see that this process might not.
+#[cfg(windows)]
+fn freshly_visible_path_entries() -> Vec<String> {
+    // The two places Windows assembles a fresh PATH from. reg.exe ships with
+    // every Windows and needs no elevation to read either key.
+    let mut entries = Vec::new();
+    for (root, key) in [
+        ("HKCU", "Environment"),
+        (
+            "HKLM",
+            "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
+        ),
+    ] {
+        let output = ProcessCommand::new("reg")
+            .args(["query", &format!("{root}\\{key}"), "/v", "Path"])
+            .output();
+        if let Ok(output) = output {
+            if let Some(value) = parse_reg_path_value(&String::from_utf8_lossy(&output.stdout)) {
+                for entry in value.split(';').filter(|e| !e.trim().is_empty()) {
+                    entries.push(expand_windows_env(entry.trim()));
+                }
+            }
+        }
+    }
+    entries
+}
+
+/// On Unix the equivalent staleness is a tool home written into a shell
+/// profile this process never sourced. The homes are few and well known.
+#[cfg(not(windows))]
+fn freshly_visible_path_entries() -> Vec<String> {
+    let Some(home) = home_dir() else {
+        return Vec::new();
+    };
+    [".cargo/bin", ".grok/bin", ".local/bin"]
+        .iter()
+        .map(|tail| home.join(tail))
+        .filter(|dir| dir.is_dir())
+        .map(|dir| dir.to_string_lossy().to_string())
+        .collect()
+}
+
+/// Pull the data out of a `reg query ... /v Path` answer.
+///
+/// The value line looks like `    Path    REG_EXPAND_SZ    C:\a;C:\b` -- the
+/// data is everything after the type token, and it may contain spaces, so
+/// splitting on whitespace would truncate it.
+// Only the Windows refresh calls these two; they stay compiled (and tested)
+// everywhere because they are pure string work and the tests must not be
+// Windows-only.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn parse_reg_path_value(output: &str) -> Option<String> {
+    for line in output.lines() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with("Path") {
+            continue;
+        }
+        for kind in ["REG_EXPAND_SZ", "REG_SZ"] {
+            if let Some(index) = trimmed.find(kind) {
+                let value = trimmed[index + kind.len()..].trim();
+                if !value.is_empty() {
+                    return Some(value.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Expand `%NAME%` references the registry stores unexpanded.
+///
+/// REG_EXPAND_SZ values routinely say `%USERPROFILE%\.cargo\bin`; a new
+/// terminal expands them and so must we, or the entry is a directory that
+/// does not exist and the refresh silently does nothing.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn expand_windows_env(entry: &str) -> String {
+    let mut result = String::with_capacity(entry.len());
+    let mut rest = entry;
+    while let Some(start) = rest.find('%') {
+        result.push_str(&rest[..start]);
+        let after = &rest[start + 1..];
+        match after.find('%') {
+            Some(end) => {
+                let name = &after[..end];
+                match std::env::var(name) {
+                    Ok(value) => result.push_str(&value),
+                    // Unknown variable: keep the literal text, matching cmd.
+                    Err(_) => {
+                        result.push('%');
+                        result.push_str(name);
+                        result.push('%');
+                    }
+                }
+                rest = &after[end + 1..];
+            }
+            None => {
+                result.push('%');
+                rest = after;
+            }
+        }
+    }
+    result.push_str(rest);
+    result
+}
+
+/// Whether two PATH entries name the same directory, the way the installer
+/// compares them: case-insensitively on Windows, ignoring a trailing slash.
+fn same_path_entry(a: &str, b: &str) -> bool {
+    let trim = |s: &str| s.trim_end_matches(['\\', '/']).to_string();
+    if cfg!(windows) {
+        trim(a).eq_ignore_ascii_case(&trim(b))
+    } else {
+        trim(a) == trim(b)
+    }
 }
 
 fn resolve_tool(program: &str) -> Option<PathBuf> {
@@ -8749,9 +8926,9 @@ mod create_tests {
     }
 
     use super::{
-        app_kind_name, author_contract, claude_author_prompt, has_tool, human_label,
-        name_from_request, silent_author_failure, toml_path, validate_create_request,
-        MAX_DERIVED_NAME_WORDS,
+        app_kind_name, author_contract, claude_author_prompt, expand_windows_env, has_tool,
+        human_label, name_from_request, parse_reg_path_value, same_path_entry,
+        silent_author_failure, toml_path, validate_create_request, MAX_DERIVED_NAME_WORDS,
     };
     use krate_author::AppKind;
     use krate_manifest::Capability;
@@ -9238,6 +9415,50 @@ mod create_tests {
         assert!(silent_author_failure(Some(126)).contains("permission"));
         assert!(silent_author_failure(Some(3)).contains("error 3"));
         assert!(silent_author_failure(None).contains("stopped before"));
+    }
+
+    /// The registry answer for PATH has the data after a type token, and the
+    /// data itself contains spaces and semicolons. Parsing must take the
+    /// whole remainder, not the next whitespace-delimited word.
+    #[test]
+    fn reg_path_value_survives_spaces_and_expand_type() {
+        let output = "\r\nHKEY_CURRENT_USER\\Environment\r\n    \
+                      Path    REG_EXPAND_SZ    C:\\Program Files\\Krate\\bin;%USERPROFILE%\\.cargo\\bin\r\n";
+        assert_eq!(
+            parse_reg_path_value(output).as_deref(),
+            Some("C:\\Program Files\\Krate\\bin;%USERPROFILE%\\.cargo\\bin")
+        );
+        assert_eq!(parse_reg_path_value("no value here"), None);
+    }
+
+    /// `%NAME%` must expand from the environment, and an unknown name must
+    /// stay literal -- that is what cmd does, and inventing an empty path
+    /// entry would be worse than keeping the odd literal.
+    #[test]
+    fn windows_env_expansion_matches_cmd() {
+        std::env::set_var("KRATE_TEST_EXPAND", "C:\\Users\\me");
+        assert_eq!(
+            expand_windows_env("%KRATE_TEST_EXPAND%\\.cargo\\bin"),
+            "C:\\Users\\me\\.cargo\\bin"
+        );
+        assert_eq!(
+            expand_windows_env("%KRATE_TEST_MISSING_VAR%\\bin"),
+            "%KRATE_TEST_MISSING_VAR%\\bin"
+        );
+        assert_eq!(expand_windows_env("plain"), "plain");
+        std::env::remove_var("KRATE_TEST_EXPAND");
+    }
+
+    /// Refreshing must never duplicate an entry that is already present, or
+    /// PATH grows on every call for the life of the process.
+    #[test]
+    fn path_refresh_is_idempotent_about_known_entries() {
+        assert!(same_path_entry("/usr/local/bin", "/usr/local/bin/"));
+        if cfg!(windows) {
+            assert!(same_path_entry("C:\\Krate\\bin", "c:\\krate\\bin\\"));
+        } else {
+            assert!(!same_path_entry("/a/b", "/A/B"));
+        }
     }
 
     /// anyhow's `Display` prints only the outermost context, so a failure that

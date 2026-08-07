@@ -31,39 +31,82 @@ pub fn run() -> Result<u8> {
     }
 
     banner();
+    the_ask();
 
+    // The prompt is the front door, not an option on a menu. Typing what you
+    // want is the whole product; the actions live on one dim line above it,
+    // reachable by number, and the prompt comes straight back after each one.
     loop {
-        let choice = main_menu()?;
-        match choice {
-            MenuChoice::MakeAnApp => make_an_app()?,
-            MenuChoice::ConnectAi => connect_ai()?,
-            MenuChoice::OpenAnApp => open_an_app()?,
-            MenuChoice::MyApps => my_apps()?,
-            MenuChoice::History => show_history()?,
-            MenuChoice::Quit => {
+        let typed = prompt_remembered("  > ")?;
+        let typed = typed.trim().to_string();
+        match typed.to_lowercase().as_str() {
+            "" => continue,
+            "1" => connect_provider()?,
+            "2" => open_an_app()?,
+            "3" => my_apps()?,
+            "4" => show_history()?,
+            "5" => connect_ai()?,
+            "q" | "quit" | "exit" => {
                 println!();
                 return Ok(0);
             }
+            _ => {
+                // A path typed or dragged into the prompt is an attachment,
+                // not a description: "make it look like this" plus a
+                // screenshot says more than a paragraph.
+                let (request, attachments) = split_off_attachments(&typed);
+                if request.trim().is_empty() && attachments.is_empty() {
+                    println!("  {}", style::dim("nothing to build yet"));
+                    println!();
+                    continue;
+                }
+                make_named_app_with(&request, &attachments)?;
+            }
         }
+        the_ask();
     }
 }
 
-enum MenuChoice {
-    MakeAnApp,
-    ConnectAi,
-    OpenAnApp,
-    MyApps,
-    History,
-    Quit,
-}
-
-/// The wordmark and one line saying what this is. Drawn once, at the top.
+/// The wordmark, what this is, and the one line of actions. Drawn once.
 fn banner() {
     let width = style::content_width();
     println!();
-    println!("  {}", style::bold(&style::accent("KRATE")));
+    println!(
+        "  {}  {}",
+        style::bold(&style::accent("KRATE")),
+        style::dim(&format!("v{}", env!("CARGO_PKG_VERSION")))
+    );
     println!("  {}", style::dim("make an app you can send to anyone"));
     println!("  {}", style::rule(width.saturating_sub(2)));
+    println!();
+    println!(
+        "  {}",
+        style::dim(
+            "1 choose your AI   2 open an app   3 my apps   4 history   \
+5 use from Claude/Cursor   q quit"
+        )
+    );
+    println!();
+}
+
+/// The question the whole product is for, asked immediately.
+fn the_ask() {
+    println!("  {}", style::bold("What do you want to make?"));
+    println!(
+        "  {}",
+        style::dim("Describe it. To copy a design or an app you have, add the file's path:")
+    );
+    let example = if cfg!(windows) {
+        "a habit tracker like this  C:\\Users\\me\\Pictures\\design.png"
+    } else {
+        "a habit tracker like this  ~/Pictures/design.png"
+    };
+    println!("    {}", style::dim(example));
+    let status = match remembered_provider() {
+        Some(provider) => format!("AI: {} connected", provider.name()),
+        None => "AI: none chosen yet -- just type, connecting is handled after".to_string(),
+    };
+    println!("  {}", style::dim(&status));
     println!();
 }
 
@@ -76,80 +119,14 @@ fn item(k: &str, title: &str, hint: &str) {
     }
 }
 
-fn main_menu() -> Result<MenuChoice> {
-    item("1", "Make an app", "describe it, an AI writes it");
-    item(
-        "2",
-        "Connect an AI app",
-        "build from inside Claude or Cursor",
-    );
-    item("3", "Open an app", "one someone sent you");
-    item("4", "My apps", "everything you have made");
-    item("5", "History", "what you asked for before");
-    println!();
-    item("q", "Quit", "");
-    println!();
-
-    loop {
-        match prompt("  > ")?.trim().to_lowercase().as_str() {
-            "1" => return Ok(MenuChoice::MakeAnApp),
-            "2" => return Ok(MenuChoice::ConnectAi),
-            "3" => return Ok(MenuChoice::OpenAnApp),
-            "4" => return Ok(MenuChoice::MyApps),
-            "5" => return Ok(MenuChoice::History),
-            "q" | "quit" | "exit" => return Ok(MenuChoice::Quit),
-            "" => continue,
-            other => println!(
-                "  {} {}",
-                style::warn(glyphs().cross),
-                style::dim(&format!("no option {other} -- pick 1-5, or q to quit"))
-            ),
-        }
-    }
-}
-
 // ---------------------------------------------------------------- make an app
 
-fn make_an_app() -> Result<()> {
-    println!();
-    println!("  {}", style::bold("What do you want to make?"));
-    println!();
-    // Say it plainly and show the shape of the answer. The old hint was one
-    // dim line saying "drag in a screenshot", which nobody found -- and
-    // dragging a file into a terminal does nothing at all on Windows, so the
-    // one instruction given was also the one that does not work there.
-    println!(
-        "  {}",
-        style::dim("Describe it. To copy a design or an app you already have, put the")
-    );
-    println!(
-        "  {}",
-        style::dim("file's path in as well -- type it, paste it, or drag the file in:")
-    );
-    println!();
-    println!(
-        "    {}",
-        style::dim("a habit tracker like this  C:\\Users\\me\\Pictures\\design.png")
-    );
-    println!();
-    let request = prompt_remembered("  > ")?;
-    let request = request.trim().to_string();
-    if request.is_empty() {
-        println!("  {}", style::dim("nothing to build yet"));
-        println!();
-        return Ok(());
+/// Action 1: pick the AI that writes apps here, or see what is missing.
+fn connect_provider() -> Result<()> {
+    if let Some(provider) = choose_provider()? {
+        remember_provider(provider);
     }
-    // A path typed or dragged into the prompt is an attachment, not a
-    // description: "make it look like this" plus a screenshot says more than a
-    // paragraph, and somebody porting an app they already have should not have
-    // to describe it screen by screen.
-    let (request, attachments) = split_off_attachments(&request);
-    if request.trim().is_empty() && attachments.is_empty() {
-        println!("  {}", style::dim("nothing to build yet"));
-        println!();
-        return Ok(());
-    }
-    make_named_app_with(&request, &attachments)
+    Ok(())
 }
 
 /// Pull file paths out of what the person typed.
@@ -270,11 +247,30 @@ fn make_named_app_with(request: &str, attachments: &[PathBuf]) -> Result<()> {
     // picking an AI and reading "cooking with grok" -- means the person has
     // already waited for news that was available before they started.
     if !ensure_build_tools()? {
+        println!(
+            "  {}",
+            style::dim("your request is kept -- press the up arrow to bring it back")
+        );
+        println!();
         return Ok(());
     }
 
-    let Some(provider) = provider_for_this_session()? else {
-        return Ok(());
+    // The request outlives whatever interrupts it. Discarding what somebody
+    // just typed because no AI is connected yet -- and making them retype it
+    // after they connect one -- was the single worst moment in a first run.
+    let provider = match provider_for_this_session()? {
+        Some(provider) => provider,
+        None => match hold_until_provider(&request)? {
+            Some(provider) => provider,
+            None => {
+                println!(
+                    "  {}",
+                    style::dim("your request is kept -- press the up arrow to bring it back")
+                );
+                println!();
+                return Ok(());
+            }
+        },
     };
 
     println!();
@@ -659,19 +655,13 @@ fn ensure_build_tools() -> Result<bool> {
             Ok(true)
         }
         Err(err) => {
+            // No "open a new terminal" advice here any more: the installer
+            // now re-reads the PATH between steps itself, so a failure that
+            // lands here is a real one and the error is the useful part.
             println!(
                 "  {} {}",
                 style::warn(glyphs().cross),
                 style::warn(&format!("{err:#}"))
-            );
-            println!();
-            println!(
-                "  {}",
-                style::dim("if something was just installed, open a new terminal and try again --")
-            );
-            println!(
-                "  {}",
-                style::dim("a shell that was already running does not see the new PATH.")
             );
             println!();
             Ok(false)
@@ -707,6 +697,45 @@ fn remember_provider(provider: &'static dyn AgentProvider) {
     }
 }
 
+/// Wait, holding the request, until an AI is installed and working.
+///
+/// `choose_provider` just printed what is missing and how to get each one.
+/// The person installs in another window; Enter here re-reads the PATH the
+/// install wrote (no new terminal needed) and re-probes. The moment one
+/// works, the build starts with the request they already typed -- nothing is
+/// retyped, which is the entire point of holding it.
+fn hold_until_provider(request: &str) -> Result<Option<&'static dyn AgentProvider>> {
+    let short: String = request.chars().take(40).collect();
+    let short = if short.len() < request.len() {
+        format!("{short}...")
+    } else {
+        short
+    };
+    loop {
+        println!(
+            "  {} {}",
+            style::dim("Held:"),
+            style::bold(&format!("\"{short}\""))
+        );
+        println!(
+            "  {}",
+            style::dim(
+                "Install one of those in another window, then press Enter here -- no \
+restart needed, I will find it and start straight away."
+            )
+        );
+        println!();
+        let line = prompt("  Enter to check again, b to go back  > ")?;
+        if line.trim().eq_ignore_ascii_case("b") {
+            return Ok(None);
+        }
+        if let Some(provider) = choose_provider()? {
+            remember_provider(provider);
+            return Ok(Some(provider));
+        }
+    }
+}
+
 /// Use the AI already chosen, or ask if there is not one yet.
 ///
 /// The reminder line is deliberate: the choice is visible and reversible, so
@@ -732,6 +761,10 @@ fn provider_for_this_session() -> Result<Option<&'static dyn AgentProvider>> {
 
 /// Ask which AI, when the person asked to change it or has not chosen yet.
 fn choose_provider() -> Result<Option<&'static dyn AgentProvider>> {
+    // An AI installed a moment ago wrote its directory to a PATH this
+    // process has never re-read. Re-read it, so "checked fresh each time"
+    // includes tools installed while krate was open -- without a restart.
+    crate::refresh_process_path();
     println!();
     println!("  Checking which AI tools are ready...");
     println!(

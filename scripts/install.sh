@@ -68,7 +68,6 @@ highest_version() {
 
 version="${KRATE_VERSION:-}"
 if [ -z "$version" ]; then
-  say "Finding the latest release..."
   # /releases/latest excludes pre-releases and Krate is pre-release only, so
   # query the full list directly (newest first) and take the newest tag that
   # starts with v. Those carry the krate binaries; the notes-* bundle releases
@@ -84,7 +83,8 @@ if [ -z "$version" ]; then
   # The releases page itself is plain HTML and is not rate limited the same
   # way, so fall back to reading a tag out of it.
   if [ -z "$version" ]; then
-    say "The GitHub API did not answer; reading the releases page instead..."
+    # The API did not answer (usually rate limiting); the releases page is
+    # plain HTML and is not limited the same way.
     version="$(curl -fsSL "https://github.com/${REPO}/releases" \
       | grep -o "/${REPO}/releases/tag/v[0-9][^\"]*" \
       | cut -d / -f 6 | highest_version || true)"
@@ -133,7 +133,16 @@ base="https://github.com/${REPO}/releases/download/${version}"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-say "Downloading ${archive}..."
+# One line that says what is happening. Every check still runs -- a checksum
+# mismatch still refuses loudly -- quiet is not the same as careless.
+case "$target" in
+  x86_64-apple-darwin)      friendly="macos-intel" ;;
+  aarch64-apple-darwin)     friendly="macos-apple-silicon" ;;
+  x86_64-unknown-linux-gnu) friendly="linux-x86_64" ;;
+  aarch64-unknown-linux-gnu) friendly="linux-arm64" ;;
+  *)                        friendly="$target" ;;
+esac
+say "Installing Krate ${version} (${friendly})..."
 curl -fSL "${base}/${archive}" -o "${tmp}/${archive}" \
   || {
     # Naming the likely cause beats asking the person to go and check. arm64
@@ -161,12 +170,12 @@ if curl -fsSL "${base}/SHA256SUMS" -o "${tmp}/SHA256SUMS" 2>/dev/null; then
   fi
   if [ -n "$actual" ]; then
     [ "$actual" = "$expected" ] || die "checksum mismatch for ${archive}; refusing to install"
-    say "Checksum verified."
+    say "  Downloading... done (verified)"
   else
-    say "Note: no sha256 tool found, skipping checksum verification."
+    say "  Downloading... done (no sha256 tool found, checksum skipped)"
   fi
 else
-  say "Note: no SHA256SUMS published for this release, skipping checksum."
+  say "  Downloading... done (no SHA256SUMS published, checksum skipped)"
 fi
 
 tar -xzf "${tmp}/${archive}" -C "$tmp"
@@ -193,8 +202,7 @@ else
   sudo cp "$binary_path" "${dir}/${BINARY}"
 fi
 
-say ""
-say "Installed ${BINARY} ${version} to ${dir}/${BINARY}"
+say "  Installed to ${dir}"
 
 # ---- double-click: install Krate.app so a .krate opens from Finder ----------
 #
@@ -226,7 +234,7 @@ if [ "$os" = "Darwin" ] && [ "${KRATE_NO_DESKTOP:-}" != "1" ]; then
           if command -v /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister >/dev/null 2>&1; then
             /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -f "${apps_dir}/Krate.app" >/dev/null 2>&1 || true
           fi
-          say "Installed Krate.app to ${apps_dir} -- you can double-click a .krate now."
+          say "  .krate files now open on double-click."
         fi
       fi
     fi
@@ -241,7 +249,7 @@ if [ "$os" = "Linux" ] && [ "${KRATE_NO_DESKTOP:-}" != "1" ]; then
   desktop_script="${tmp}/install-krate-desktop.sh"
   if curl -fsSL "https://raw.githubusercontent.com/${REPO}/main/scripts/install-krate-desktop.sh" -o "$desktop_script" 2>/dev/null; then
     if KRATE_BINARY="${dir}/${BINARY}" sh "$desktop_script" >/dev/null 2>&1; then
-      say "Registered the .krate handler -- double-clicking a .krate in your file manager opens it."
+      say "  .krate files now open on double-click."
     fi
   fi
 fi
@@ -260,35 +268,31 @@ if [ -n "$tooling_path" ]; then
   else
     sudo cp "$tooling_path" "${dir}/${tooling_name}"
   fi
-  say "Installed ${tooling_name} too, so you can make apps without a long build."
 fi
 
 # ---- tell them if it is not on PATH ----------------------------------------
 
 case ":${PATH}:" in
-  *":${dir}:"*)
-    say "Run it:  krate --version"
-    ;;
+  *":${dir}:"*) : ;;
   *)
     say ""
     say "${dir} is not on your PATH. Add it:"
     say "  export PATH=\"${dir}:\$PATH\""
-    say "Then:  krate --version"
     ;;
 esac
 
-# ---- opening and making apps ------------------------------------------------
+# ---- the invitation ---------------------------------------------------------
 
+# End on the one word, in the colour that says "you are done". Someone who
+# has just installed something wants to know how to start it, and `krate` is
+# the answer to every question they have next. The `krate run` line stays: it
+# is the command for an app somebody was sent, and the cold-install walk
+# checks the installer suggests it.
 say ""
-say "To update later, just run this installer again."
+say "Sent an app? Double-click the .krate file, or: krate run app.krate"
 say ""
-# End on the one word, not on a URL to paste. Someone who has just installed
-# something wants to know how to start it, and `krate` is the answer to every
-# question they have next -- make one, open one, publish one. A sample app
-# to run is a demo; this is the product.
-say "Start here:"
-say ""
-say "  krate"
-say ""
-say "That opens a short menu: make an app by describing it, open one someone"
-say "sent you, or browse what people have published."
+if [ -t 1 ]; then
+  printf '\033[32m%s\033[0m\n' "Run 'krate' to get started!"
+else
+  say "Run 'krate' to get started!"
+fi

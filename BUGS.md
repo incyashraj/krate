@@ -71,6 +71,47 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-070 -- typing a request with no AI connected throws the request away
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-07, first run on a stranger's Windows PC, next to Grok's CLI
+Evidence: crates/cli/src/tui.rs:766 -- choose_provider() returns Ok(None) when
+          nothing probes as working, make_named_app_with unwinds, and the
+          sentence the person just typed is gone. They install an AI, come
+          back, and type it again. For a first-time user this is the worst
+          moment in the product, and it sits directly on the first thing they
+          try.
+Fix:      The request is held. The no-AI gate shows what to install, waits on
+          Enter, re-reads PATH (see K-069), re-probes, and starts the build
+          with the held request the moment a provider works. Backing out says
+          the request is one up-arrow away (it is in prompt history).
+
+### K-069 -- first-run setup on Windows demanded three terminal restarts
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-07, first run on a stranger's Windows PC
+Evidence: install_build_tools (crates/cli/src/main.rs:7817 before the fix)
+          computed the missing-tool list once and ran the installs in order.
+          The list is a dependency chain -- winget installs rustup, the next
+          command runs `rustup`, the next needs `cargo` -- and each command
+          was executed by bare name against the PATH this process captured at
+          startup. Installs write PATH to the registry, which running
+          processes never re-read, so step N+1 could not see step N's work,
+          failed, and tui.rs:670 said "open a new terminal and try again".
+          Three dependent steps, three restarts. K-066 fixed one symptom
+          (rustup lookups); this is the mechanism behind the whole class.
+Fix:      refresh_process_path() re-reads HKCU/HKLM PATH from the registry
+          (reg.exe, no elevation) and merges it into the process -- what a
+          new terminal does, minus the terminal. Called between install
+          steps, and before every toolchain and AI probe. The missing list is
+          recomputed after every step. The "open a new terminal" advice is
+          deleted because the condition it described can no longer occur.
+          Plan/krate-front-door-2026-08.md holds the full trace.
+
 ### K-068 -- the CLI tarball has never contained the binary the workflow signs
 Status:   fixed
 Owner:    lead
