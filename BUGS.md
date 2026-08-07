@@ -71,6 +71,26 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-068 -- the standalone macOS CLI is signed hardened with no entitlements
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-07, while cutting v0.1.2, reading the signing step
+Evidence: .github/workflows/release.yml signed the bare `krate` binary with
+          `--options runtime` and no `--entitlements`:
+
+            codesign --force --options runtime --timestamp \
+              --sign "$IDENTITY" "target/${{ matrix.target }}/release/krate"
+
+          That is the exact combination that killed the app bundle in K-063:
+          hardened runtime forbids writable-executable memory and wasmtime JITs
+          every component. The bundle was caught because people double-click it;
+          this one is what somebody gets from install.sh and runs as `krate run`.
+          Never released with entitlements, so never worked signed.
+Fix:      Pass the same $ENTITLEMENTS file used for the bundle. Shipped in
+          v0.1.2.
+
 ### K-067 -- a window is created at the wrong size on any display that is not 100%
 Status:   fixed
 Owner:    lead
