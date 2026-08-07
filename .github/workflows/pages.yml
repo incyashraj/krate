@@ -73,6 +73,12 @@ jobs:
           mkdir -p _site
           cp docs/landing/index.html _site/index.html
           cp docs/landing/krate.css _site/krate.css
+          # The 2026 shell: the landing page's own stylesheet and its
+          # self-hosted fonts (Geist, SIL OFL). Secondary pages still use
+          # krate.css until they are restyled onto this shell.
+          cp docs/landing/site.css _site/site.css
+          mkdir -p _site/fonts
+          cp docs/landing/fonts/*.woff2 _site/fonts/
           # One page per question people actually search, generated from one
           # template so they cannot drift the way four copies of a stylesheet did.
           python3 scripts/build-answer-pages.py

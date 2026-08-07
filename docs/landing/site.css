@@ -1,0 +1,657 @@
+/* krate.tech -- the 2026 shell.
+   Measured against x.ai/build (see Plan/krate-website-2026-08.md): neutral
+   near-black, one muted alpha, hairline borders, pill buttons, a display
+   scale with tight tracking. Fonts are Geist (SIL OFL, self-hosted) -- the
+   closest freely licensed grotesque to theirs. Everything here is
+   hand-written CSS; the budget for the whole page is under 150 KB. */
+
+/* ---------------------------------------------------------------- fonts */
+
+@font-face {
+  font-family: "Geist";
+  src: url("./fonts/geist-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist";
+  src: url("./fonts/geist-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ---------------------------------------------------------------- tokens */
+
+:root {
+  color-scheme: dark;
+  --bg: #0a0a0a;
+  --panel: #0f1012;
+  --line: #1f2228;
+  --text: #ffffff;
+  --muted: rgba(255, 255, 255, 0.55);
+  --quiet: rgba(255, 255, 255, 0.35);
+  --accent: #6291ff;
+  --good: #4ade80;
+  --warn: #f4dc74;
+  --radius-card: 14px;
+  --radius-pill: 999px;
+  --max: 1100px;
+  --sans: "Geist", Inter, ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --mono: "SFMono-Regular", "Cascadia Code", Menlo, Consolas,
+    "Liberation Mono", monospace;
+}
+
+/* ---------------------------------------------------------------- base */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+
+.wrap {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ---------------------------------------------------------------- type */
+
+h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
+
+.display {
+  font-size: clamp(40px, 7vw, 62px);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.02;
+}
+
+.section-h {
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.grid-h {
+  font-size: 36px;
+  font-weight: 400;
+  letter-spacing: -0.015em;
+}
+
+.cta-h {
+  font-size: clamp(34px, 5vw, 48px);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.muted { color: var(--muted); }
+.quiet { color: var(--quiet); }
+
+/* ---------------------------------------------------------------- header */
+
+.site-head {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(10, 10, 10, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s;
+}
+.site-head.scrolled { border-bottom-color: var(--line); }
+
+.head-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  gap: 16px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  font-size: 15px;
+}
+.brand img { width: 22px; height: 22px; }
+
+.head-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-item { position: relative; }
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  border-radius: var(--radius-pill);
+  transition: color 0.15s;
+  background: none;
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+.nav-link:hover, .nav-item:focus-within > .nav-link { color: var(--text); }
+.nav-link .chev { font-size: 10px; opacity: 0.6; transition: transform 0.15s; }
+.nav-item:hover .chev, .nav-item:focus-within .chev { transform: rotate(180deg); }
+
+/* The hover panel: links on the left, a small live terminal on the right.
+   Hover and keyboard focus both open it; a click toggles it on touch. */
+.nav-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  min-width: 430px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 14px;
+  display: grid;
+  grid-template-columns: 1fr 190px;
+  gap: 14px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s, transform 0.15s, visibility 0.15s;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+}
+.nav-item:hover .nav-panel,
+.nav-item:focus-within .nav-panel,
+.nav-item.open .nav-panel {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+}
+
+.panel-links { display: flex; flex-direction: column; gap: 2px; }
+.panel-links a {
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+}
+.panel-links a:hover { background: rgba(255, 255, 255, 0.05); }
+.panel-links a .d {
+  display: block;
+  font-size: 12px;
+  color: var(--quiet);
+  line-height: 1.4;
+}
+
+.panel-mini {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--muted);
+  overflow: hidden;
+  align-self: start;
+}
+.panel-mini .g { color: var(--good); }
+
+.head-cta { display: flex; align-items: center; gap: 8px; }
+
+/* ---------------------------------------------------------------- pills */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 18px;
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+.pill:hover { border-color: rgba(255, 255, 255, 0.28); }
+
+.pill-primary {
+  background: #fff;
+  color: #0a0a0a;
+  border-color: #fff;
+}
+.pill-primary:hover { background: rgba(255, 255, 255, 0.88); border-color: transparent; }
+
+/* ---------------------------------------------------------------- badge */
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 14px 6px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 0.15s;
+}
+.hero-badge:hover { border-color: rgba(255, 255, 255, 0.25); }
+.hero-badge .new {
+  background: rgba(98, 145, 255, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(98, 145, 255, 0.4);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+}
+.hero-badge b { color: var(--text); font-weight: 500; }
+
+/* ---------------------------------------------------------------- hero */
+
+.hero {
+  padding: 96px 0 72px;
+  text-align: center;
+}
+
+.hero .display { margin: 26px auto 18px; max-width: 15ch; }
+
+.hero-sub {
+  color: var(--muted);
+  font-size: 17px;
+  max-width: 52ch;
+  margin: 0 auto 34px;
+}
+
+/* The rotating word and its gradient bar. The bar is a real element under
+   the word; its colored band sweeps across by animating background
+   position -- measured off x.ai's hero and rebuilt by hand. */
+.rot {
+  position: relative;
+  display: inline-block;
+  white-space: nowrap;
+}
+.rot .word { display: inline-block; }
+.rot .word span { display: inline-block; will-change: transform, opacity, filter; }
+
+.rot .bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background-image: linear-gradient(90deg,
+    rgba(255, 255, 255, 0.25) 0%, rgba(255, 255, 255, 0.25) 35%,
+    #6366f1 40%, #a855f7 45%, #ec4899 50%, #f97316 55%, #eab308 60%,
+    rgba(255, 255, 255, 0.25) 65%, rgba(255, 255, 255, 0.25) 100%);
+  background-size: 300% 100%;
+  animation: sweep 3.2s linear infinite;
+}
+@keyframes sweep {
+  0% { background-position: 120% 0; }
+  100% { background-position: -120% 0; }
+}
+
+.hero-links {
+  display: flex;
+  justify-content: center;
+  gap: 26px;
+  margin-top: 26px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.hero-links a { transition: color 0.15s; }
+.hero-links a:hover { color: var(--text); }
+.hero-links .arr { opacity: 0.5; }
+
+/* ---------------------------------------------------------------- command */
+
+.cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 13px 16px;
+  font-family: var(--mono);
+  font-size: 13.5px;
+  max-width: 100%;
+  transition: border-color 0.15s;
+}
+.cmd:hover { border-color: rgba(255, 255, 255, 0.22); }
+.cmd .dollar { color: var(--quiet); user-select: none; }
+.cmd code { color: var(--text); overflow-x: auto; white-space: nowrap; }
+.cmd .copy {
+  background: none;
+  border: 0;
+  color: var(--quiet);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  transition: color 0.15s;
+  flex: none;
+}
+.cmd .copy:hover { color: var(--text); }
+.cmd .copy.done { color: var(--good); }
+
+.os-toggle {
+  display: inline-flex;
+  gap: 2px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 3px;
+  font-size: 12.5px;
+}
+.os-toggle button {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: inherit;
+  padding: 4px 14px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+}
+.os-toggle button[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+
+.free-note { margin-top: 14px; font-size: 13px; color: var(--quiet); }
+
+/* ---------------------------------------------------------------- terminal */
+
+.term {
+  background: #0c0d0f;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.75;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+}
+
+.term-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--quiet);
+}
+.term-dots { display: flex; gap: 6px; }
+.term-dots i {
+  width: 11px; height: 11px; border-radius: 50%;
+}
+.term-dots i:nth-child(1) { background: #ff5f57; }
+.term-dots i:nth-child(2) { background: #febc2e; }
+.term-dots i:nth-child(3) { background: #28c840; }
+.term-title { flex: 1; text-align: center; }
+.term-meta { font-variant-numeric: tabular-nums; }
+
+.term-body { padding: 16px 18px; color: rgba(255, 255, 255, 0.82); overflow-x: auto; }
+.term-body .p { color: var(--quiet); }        /* prompt/dim */
+.term-body .g { color: var(--good); }         /* good/tick */
+.term-body .b { color: var(--accent); }       /* accent */
+.term-body .y { color: var(--warn); }         /* caution */
+.term-body .w { color: #fff; font-weight: 500; }
+.term-body .cursor {
+  display: inline-block;
+  width: 7px; height: 15px;
+  background: var(--text);
+  vertical-align: -2px;
+  animation: blink 1.1s steps(1) infinite;
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+.term-status {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--quiet);
+}
+
+.hero-term { max-width: 660px; margin: 56px auto 0; }
+
+/* ---------------------------------------------------------------- scroller */
+
+.scroller { padding: 40px 0 20px; }
+
+.scroller-inner {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 64px;
+  /* No align-items: start here. The right column must stretch to the full
+     height of the text column, or the sticky element has no track to slide
+     along and scrolls straight off with its 460px parent -- which is
+     exactly what it did on the first render. */
+}
+
+.feat {
+  min-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-right: 8px;
+}
+.feat:first-child { min-height: 70vh; }
+.feat:last-child { min-height: 70vh; }
+
+.feat .kicker {
+  font-size: 13px;
+  color: var(--accent);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  margin-bottom: 10px;
+}
+.feat h2 { margin-bottom: 14px; }
+.feat p { color: var(--muted); max-width: 46ch; }
+
+.feat ul {
+  list-style: none;
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.feat li {
+  display: flex;
+  gap: 10px;
+  font-size: 14.5px;
+  color: var(--muted);
+}
+.feat li::before { content: "✓"; color: var(--quiet); flex: none; }
+
+.stick-col { position: relative; min-width: 0; }
+.stick {
+  position: sticky;
+  top: calc(50vh - 230px);
+  height: 460px;
+  min-width: 0;
+}
+.stick .demo {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+.stick .demo.active { opacity: 1; pointer-events: auto; }
+.stick .term { height: 100%; display: flex; flex-direction: column; }
+.stick .term-body { flex: 1; }
+
+/* Inline copies for small screens; hidden while the sticky column works. */
+.demo-inline { display: none; margin-top: 26px; }
+
+/* ---------------------------------------------------------------- grid */
+
+.gridsec { padding: 110px 0; border-top: 1px solid var(--line); }
+.gridsec .grid-h { margin-bottom: 10px; }
+.gridsec .lead { color: var(--muted); margin-bottom: 56px; }
+
+.cap-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 40px 48px;
+}
+.cap {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+.cap .ic {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  color: var(--quiet);
+}
+.cap b { display: block; font-weight: 500; font-size: 15px; margin-bottom: 3px; }
+.cap span { font-size: 13.5px; color: var(--muted); line-height: 1.5; }
+
+/* ---------------------------------------------------------------- band */
+
+.band {
+  margin: 20px 0 0;
+  padding: 90px 0;
+  border-top: 1px solid var(--line);
+}
+.band-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 44px 48px;
+}
+.band-card h2 { margin-bottom: 8px; }
+.band-card p { color: var(--muted); font-size: 15px; }
+
+/* ---------------------------------------------------------------- CTA */
+
+.final {
+  padding: 130px 0 110px;
+  text-align: center;
+  border-top: 1px solid var(--line);
+}
+.final .cta-h { margin-bottom: 12px; }
+.final p { color: var(--muted); margin-bottom: 34px; }
+.final .actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 30px;
+}
+
+/* ---------------------------------------------------------------- footer */
+
+.site-foot {
+  border-top: 1px solid var(--line);
+  padding: 64px 0 48px;
+  font-size: 13.5px;
+}
+.foot-grid {
+  display: grid;
+  grid-template-columns: 1.4fr repeat(3, 1fr);
+  gap: 40px;
+}
+.foot-brand img { width: 26px; height: 26px; margin-bottom: 14px; }
+.foot-brand .c { color: var(--quiet); font-size: 12.5px; margin-top: 6px; }
+.foot-col b {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+.foot-col a {
+  display: block;
+  color: var(--muted);
+  padding: 4px 0;
+  transition: color 0.15s;
+}
+.foot-col a:hover { color: var(--text); }
+.foot-note {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+  color: var(--quiet);
+  font-size: 12.5px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* ---------------------------------------------------------------- reveal */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.reveal.in { opacity: 1; transform: none; }
+
+/* ---------------------------------------------------------------- mobile */
+
+@media (max-width: 1023px) {
+  .head-nav { display: none; }
+  .scroller-inner { grid-template-columns: 1fr; gap: 0; }
+  .stick-col { display: none; }
+  .feat { min-height: 0; padding: 56px 0; }
+  .demo-inline { display: block; }
+  .cap-grid { grid-template-columns: 1fr 1fr; }
+  .band-card { flex-direction: column; text-align: center; }
+  .foot-grid { grid-template-columns: 1fr 1fr; }
+}
+
+@media (max-width: 600px) {
+  .cap-grid { grid-template-columns: 1fr; }
+  .hero { padding-top: 64px; }
+  .cmd { font-size: 12px; }
+  .hero-links { flex-wrap: wrap; gap: 14px; }
+}
+
+/* ------------------------------------------------------- reduced motion */
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .rot .bar { animation: none; background-size: 100% 100%; }
+  .rot .word span { transition: none !important; }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  .stick .demo { transition: none; }
+}
