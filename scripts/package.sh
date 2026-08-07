@@ -48,7 +48,11 @@ if [ "${target#*windows}" != "$target" ]; then
     cp "$opener_path" "$package_dir/"
     echo "packaged krate-open.exe (double-click handler)"
   else
-    echo "warning: krate-open.exe missing; double-click will show a console" >&2
+    # Same reasoning: without it, double-clicking a .krate opens a console
+    # window beside the app, which is the thing krate-open.exe exists to stop.
+    echo "error: krate-open.exe missing from the build; a double-clicked app" >&2
+    echo "       would open a console window beside it." >&2
+    exit 1
   fi
 
   # The document icon Explorer draws for a .krate. The association script
@@ -59,7 +63,13 @@ if [ "${target#*windows}" != "$target" ]; then
     rm -rf "$package_dir"/*.iconset "$package_dir"/*-1024.png "$package_dir"/*.icns
     echo "packaged KrateDoc.ico (Explorer document icon)"
   else
-    echo "warning: no KrateDoc.ico; .krate files will show a blank icon" >&2
+    # Fail, do not warn. v0.1.0 shipped with blank-page icons because this was
+    # a warning: the log said so on both Windows targets and the release went
+    # out anyway. A missing icon is a defect in the archive, so the build that
+    # produced it should stop.
+    echo "error: could not generate KrateDoc.ico -- Windows .krate files would" >&2
+    echo "       show a blank icon. Install Pillow (python3 -m pip install pillow)." >&2
+    exit 1
   fi
 fi
 

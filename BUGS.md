@@ -71,6 +71,37 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-058 -- v0.1.0 shipped without the Windows document icon
+Status:   fixed-pending-release
+Owner:    lead
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-07, verifying the published v0.1.0 assets
+Evidence: The Windows archive carries krate.exe, krate-open.exe and
+          cargo-component.exe, but no KrateDoc.ico -- so a .krate still shows
+          the blank-page icon, which is the whole of K-048.
+
+          The release log said so on both Windows targets:
+
+              warning: no KrateDoc.ico; .krate files will show a blank icon
+
+          Cause: the icon generator needs Pillow, and the only `pip install
+          pillow` in the workflow lives in the macOS-only Krate.app step --
+          which runs AFTER packaging and never on Windows at all.
+Impact:   K-048 was fixed in the repository and not in the product. The fix
+          was verified by generating an icon locally, which is exactly the
+          check that could not catch this.
+Fix:      Pillow is installed before the Package step on Windows targets.
+
+          The bigger fix is that package.sh now FAILS instead of warning. A
+          warning printed twice in a release log and shipped anyway is not a
+          safeguard. Same change for a missing krate-open.exe, which would put
+          a console window back beside every double-clicked app.
+
+          Needs the next release to reach anyone. v0.1.0's Windows archive
+          keeps the blank icon.
+
+
 ### K-057 -- A two-line prompt reprinted itself once per keystroke
 Status:   fixed
 Owner:    lead

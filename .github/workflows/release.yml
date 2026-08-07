@@ -167,6 +167,17 @@ jobs:
           fi
           ls -la "$PWD/tooling/bin" || true
 
+      # The Windows archive carries KrateDoc.ico, which Explorer draws for a
+      # .krate. Generating it needs Pillow, and v0.1.0 shipped without the icon
+      # because the only pip install in this workflow was in the macOS-only
+      # app-bundle step -- which runs after packaging and never on Windows. The
+      # package script warns and continues rather than failing, so the release
+      # went out with blank-page icons and nothing stopped it.
+      - name: Install Pillow (Windows document icon)
+        if: contains(matrix.target, 'windows')
+        shell: bash
+        run: python3 -m pip install --quiet pillow
+
       - name: Package
         shell: bash
         env:
