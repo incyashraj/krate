@@ -477,13 +477,21 @@ jobs:
             # spec forbids (K-074). Flattening makes this step test the
             # binary rather than trip over the layout; the layout itself is
             # checked separately below, so the defect is still caught.
-            *.zip) unzip -q -j "$archive" -d unpacked ;;
+            # `|| true` because unzip exits 1 on the backslash *warning*
+            # even though extraction succeeded -- with set -e that killed
+            # this step and hid every check after it. The extraction is
+            # verified by the ls below instead of by the exit code.
+            *.zip) unzip -q -j "$archive" -d unpacked || true ;;
             *)     tar xzf "$archive" ;;
           esac
           case "$archive" in
             *.zip) dir="unpacked" ;;
             *)     dir="krate-${TAG#v}-${{ matrix.target }}" ;;
           esac
+          # unzip's exit code is untrustworthy here, so confirm the unpack
+          # by looking at what it produced.
+          test -d "$dir" || { echo "::error::archive did not unpack"; exit 1; }
+          ls "$dir"
           case "${{ matrix.target }}" in
             *windows*) bin="$dir/krate.exe" ;;
             *)         bin="$dir/krate" ;;
