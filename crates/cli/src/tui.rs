@@ -1239,9 +1239,9 @@ fn readable_folder(scope: &str) -> String {
         .trim_end_matches('*')
         .trim_end_matches('/');
     if trimmed.is_empty() {
-        return "its own folder".to_string();
+        return "its own private folder".to_string();
     }
-    format!("a folder called {trimmed}")
+    format!("{trimmed}, inside its own private folder")
 }
 
 /// One capability, in words somebody outside the project would use.
@@ -1262,21 +1262,27 @@ fn plain_capability(cap: &str) -> Option<String> {
             return None
         }
         "ui.window" => return None,
+        // Every fs scope resolves inside the app's own sandbox folder --
+        // symlink-checked, containment-verified, never your files. The wall
+        // must SAY that: a reviewer reading `fs.list:**` without the boundary
+        // named concluded the app wanted his whole disk, and that reading was
+        // the only one the old words allowed. Scary-but-safe is still a
+        // failed permission wall.
         "fs.read" => {
             return Some(match scope.map(readable_folder) {
-                Some(where_) => format!("read files in {where_}"),
-                None => "read files you choose".to_string(),
+                Some(where_) => format!("read files in {where_} -- never your files"),
+                None => "read files in its own private folder".to_string(),
             })
         }
         "fs.write" => {
             return Some(match scope.map(readable_folder) {
-                Some(where_) => format!("save files in {where_}"),
-                None => "save files you choose".to_string(),
+                Some(where_) => format!("save files in {where_} -- never your files"),
+                None => "save files in its own private folder".to_string(),
             })
         }
-        "fs.list" => "see what is in a folder you choose",
-        "fs.remove" => "delete files it created",
-        "fs.mkdir" => "make folders for its own files",
+        "fs.list" => "see what is in its own private folder",
+        "fs.remove" => "delete files in its own private folder",
+        "fs.mkdir" => "make folders inside its own private folder",
         "store.kv" | "store.sql" => "remember things between runs",
         "store.secret" => "use your keychain for passwords",
         "random.bytes" => "use random numbers",
@@ -1628,10 +1634,18 @@ mod tests {
         // app. Saying nothing at all was not: Krate's claim is that an app
         // tells you what it wants before it runs, and the front door was the
         // one place that did not.
+        // The boundary is the sentence. A reviewer reading `fs.list:**`
+        // without "its own private folder" named concluded the app wanted
+        // his whole disk -- and the old words allowed no other reading.
         assert_eq!(
             plain_capability("fs.write:./notes/**").as_deref(),
-            Some("save files in a folder called notes"),
-            "a path glob is exact and unreadable; say the folder"
+            Some("save files in notes, inside its own private folder -- never your files"),
+            "a path glob is exact and unreadable; say the folder AND the boundary"
+        );
+        assert_eq!(
+            plain_capability("fs.list:**").as_deref(),
+            Some("see what is in its own private folder"),
+            "an unscoped glob must not read as the whole disk"
         );
         assert_eq!(
             plain_capability("net.connect:api.example.com:443").as_deref(),
@@ -1664,9 +1678,15 @@ mod tests {
 
     #[test]
     fn a_folder_scope_with_no_name_still_reads() {
-        assert_eq!(readable_folder("./**"), "its own folder");
-        assert_eq!(readable_folder("notes/**"), "a folder called notes");
-        assert_eq!(readable_folder("./data"), "a folder called data");
+        assert_eq!(readable_folder("./**"), "its own private folder");
+        assert_eq!(
+            readable_folder("notes/**"),
+            "notes, inside its own private folder"
+        );
+        assert_eq!(
+            readable_folder("./data"),
+            "data, inside its own private folder"
+        );
     }
 
     #[test]

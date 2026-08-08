@@ -85,21 +85,26 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // call on every host -- so today this grants nothing, and the permission
     // list a person reads names something the app cannot do.
     //
-    // Kept default-granted rather than promoted to an explicit ask: making an
-    // app request a capability that does not work would put a line in front of
-    // a person that means nothing. When dialogs land on all three systems this
-    // should become an explicit request, because choosing a file is a real
-    // decision. See docs/book/src/reference/interface-parity.md.
+    // The wildcard covers message/confirm boxes, which show text and take a
+    // click -- no data moves, so they stay granted.
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "*", true),
-    CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "file-open", true),
-    CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "file-save", true),
-    // Drawing with the GPU. Default-granted, and it currently gates nothing:
-    // the only two gfx interfaces are canvas2d and gpu3d, and both refuse every
-    // call, so this name appears in every app's permission list and controls
-    // no behaviour. Kept rather than removed because the widget layer will need
-    // it once canvas2d lands, and churning a capability name that apps already
-    // declare would break their manifests for no gain today.
-    // See docs/book/src/reference/interface-parity.md.
+    // The file dialogs are explicit asks. They were default-granted while
+    // unimplemented ("a request that does not work would put a line in front
+    // of a person that means nothing"), with a note that said to promote them
+    // the day dialogs landed on all three systems. That day came and the note
+    // sat stale -- rfd serves the picker on macOS, Windows and Linux
+    // (choose_file_on_host) -- until an outside reviewer quoted the comment
+    // back as proof the permission list names things that do not work.
+    // Choosing a file is a real decision, so it is asked for.
+    CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "file-open", false),
+    CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "file-save", false),
+    // Drawing with the GPU. Default-granted. When this was written canvas2d
+    // refused every call; it now carries 16 working functions and shipped
+    // games sit on it, so the name gates real behaviour. The stale version of
+    // this comment ("refuse every call") was quoted in the same review as
+    // proof the list cannot be trusted -- comments about capability reality
+    // rot faster than any other kind, which is why interface-parity.md is
+    // generated instead. See docs/book/src/reference/interface-parity.md.
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "gfx", "gpu", "basic", true),
     // GPU compute, which is a general-purpose processor an app can keep busy,
     // so it is asked for rather than granted. Also not implemented yet.

@@ -440,8 +440,8 @@ to exactly what the app needs, e.g. `fs.read:notes/**`.
 | `ui.notify` | no | a desktop notification |
 | `ui.dropzone:<mime-type>` | no | accept dragged files |
 | `ui.dialog:*` | yes | system file dialogs (choose a file) |
-| `ui.dialog:file-open` | yes | system file dialogs (choose a file) |
-| `ui.dialog:file-save` | yes | system file dialogs (choose a file) |
+| `ui.dialog:file-open` | no | system file dialogs (choose a file) |
+| `ui.dialog:file-save` | no | system file dialogs (choose a file) |
 | `gfx.gpu:basic` | yes | GPU drawing (canvas2d present today) |
 | `gfx.gpu:compute` | no | GPU drawing (canvas2d present today) |
 | `audio.playback` | no | play sound |

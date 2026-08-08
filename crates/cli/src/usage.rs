@@ -153,11 +153,30 @@ fn announce_once() -> bool {
     }
     let _ = std::fs::create_dir_all(&dir);
     let _ = std::fs::write(&marker, "1");
+    // Ask, once, before the first count -- not announce after it. A reviewer
+    // put it exactly: for a tool whose whole argument is asking before
+    // taking, taking first and explaining matches nothing else in the
+    // product (K-081). Enter keeps it on; `n` writes the same no-usage
+    // marker `krate telemetry off` writes. Non-interactive runs never reach
+    // here (the terminal check above), so scripts and CI are never prompted
+    // and stay counted unless KRATE_NO_USAGE says otherwise.
     eprintln!();
     eprintln!("  Krate counts how many people use it: a random id, the version,");
     eprintln!("  and which of make/open/publish happened. No names, no prompts,");
     eprintln!("  no file paths, nothing about you or your apps.");
-    eprintln!("  Turn it off with KRATE_NO_USAGE=1 -- everything still works.");
+    eprint!("  Is that ok? [Y/n]  ");
+    let mut answer = String::new();
+    let said_no = std::io::stdin()
+        .read_line(&mut answer)
+        .map(|_| answer.trim().eq_ignore_ascii_case("n"))
+        .unwrap_or(false);
+    if said_no {
+        let _ = std::fs::write(dir.join("no-usage"), "1");
+        eprintln!("  Off, and staying off. Everything else works the same.");
+        eprintln!();
+        return false;
+    }
+    eprintln!("  Ok. Turn it off any time with `krate telemetry off`.");
     eprintln!();
     true
 }

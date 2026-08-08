@@ -834,6 +834,16 @@ bindings::export!(Component with_types_in bindings);
 
 ### `manifest.toml`
 
+**Keep the world the starter chose.** The skeleton you were handed already
+declares the right world for this request -- `krate:app/gui@0.2.0` for an app
+with a window, `krate:app/cli@0.1.0` for a command-line tool that prints and
+exits (check `KRATE_APP_KIND`, or the `world =` line already in the manifest).
+Do not change it to match this example: a request for "a command-line tool"
+built as a window app fails the checks over and over, because a window must
+stay open and a CLI must exit. The example below happens to be a GUI app;
+a CLI manifest is identical except `world = "krate:app/cli@0.1.0"` and no
+`ui.window` capability.
+
 ```toml
 [app]
 id = "dev.krate.counter"

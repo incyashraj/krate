@@ -211,6 +211,10 @@ fn display_list(values: &[String], empty: &str) -> String {
 #[derive(Default)]
 struct Analysis {
     languages: BTreeSet<String>,
+    /// Direct dependencies from every Cargo.toml in the project. The std
+    /// question is decided per-dependency, and it is the wall most ports
+    /// actually hit (K-079).
+    direct_dependencies: BTreeSet<String>,
     frameworks: BTreeSet<String>,
     entry_points: BTreeSet<String>,
     capabilities: BTreeSet<String>,
@@ -258,6 +262,7 @@ pub fn analyze(source: impl AsRef<Path>) -> Result<PortPlan> {
     let mut analysis = Analysis::default();
     scan_dir(&canonical, &canonical, &mut analysis)?;
     scan_cargo_lock(&canonical, &mut analysis);
+    scan_std_wall(&mut analysis);
     finish_plan(canonical, analysis)
 }
 
@@ -295,6 +300,151 @@ pub fn analyze(source: impl AsRef<Path>) -> Result<PortPlan> {
 /// It stays a blocker only when the binding is the app's actual job, which the
 /// caller decides: a JPEG compressor built on `mozjpeg-sys` has nothing left
 /// once that crate is gone.
+/// Direct dependencies out of a Cargo.toml, by walking its sections.
+///
+/// A line parser rather than a TOML parse on purpose: the crate has no toml
+/// dependency, and section-plus-key is all that is needed. `[dependencies]`,
+/// `[dev-dependencies]` and target-specific tables all count -- the port has
+/// to survive whichever of them the build actually uses.
+fn collect_direct_dependencies(text: &str, deps: &mut BTreeSet<String>) {
+    let mut in_deps = false;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_deps = trimmed.contains("dependencies");
+            // `[dependencies.serde]` names the dependency in the header.
+            if let Some(rest) = trimmed.strip_prefix("[dependencies.") {
+                if let Some(name) = rest.strip_suffix(']') {
+                    deps.insert(name.to_string());
+                }
+            }
+            continue;
+        }
+        if !in_deps || trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        if let Some((name, _)) = trimmed.split_once('=') {
+            let name = name.trim().trim_matches('"');
+            if !name.is_empty() && name != "features" && name != "workspace" {
+                deps.insert(name.to_string());
+            }
+        }
+    }
+}
+
+/// Crates known to build without std (with the right features), from ports
+/// that actually shipped. Everything absent from both lists is "not
+/// verified", which the report says out loud rather than guessing.
+const KNOWN_NO_STD: &[&str] = &[
+    "rand",
+    "rand_core",
+    "getrandom",
+    "uuid",
+    "serde",
+    "serde_json",
+    "heapless",
+    "libm",
+    "hashbrown",
+    "itoa",
+    "ryu",
+    "bitflags",
+    "arrayvec",
+    "smallvec",
+    "zune-png",
+    "zune-jpeg",
+    "zune-core",
+    "nb",
+    "embedded-hal",
+    "micromath",
+    "regex-lite",
+    "krate",
+];
+
+/// Crates that require std, from documentation or from a port that hit the
+/// wall. One of these in the tree means the port cannot proceed as-is.
+const KNOWN_STD_ONLY: &[&str] = &[
+    "tokio",
+    "reqwest",
+    "hyper",
+    "image",
+    "lopdf",
+    "printpdf",
+    "pdf",
+    "pdfium-render",
+    "clap",
+    "regex",
+    "chrono",
+    "rusqlite",
+    "notify",
+    "walkdir",
+    "rayon",
+    "crossterm",
+    "ratatui",
+    "eframe",
+    "egui",
+    "iced",
+    "druid",
+    "gtk",
+    "winit",
+];
+
+fn scan_std_wall(analysis: &mut Analysis) {
+    if analysis.direct_dependencies.is_empty() {
+        return;
+    }
+    let std_only: Vec<String> = analysis
+        .direct_dependencies
+        .iter()
+        .filter(|d| KNOWN_STD_ONLY.contains(&d.as_str()))
+        .cloned()
+        .collect();
+    let unverified: Vec<String> = analysis
+        .direct_dependencies
+        .iter()
+        .filter(|d| !KNOWN_NO_STD.contains(&d.as_str()) && !KNOWN_STD_ONLY.contains(&d.as_str()))
+        .cloned()
+        .collect();
+
+    // The report that earned this check said "needs changes, one finding,
+    // map your file paths" about a project whose PDF crate needs std -- a
+    // weekend-sized omission delivered in a confident voice. The std verdict
+    // now leads whenever it is not clean.
+    if !std_only.is_empty() {
+        add_evidence_finding(
+            analysis,
+            FindingSpec {
+                id: "std-dependency-wall".to_string(),
+                severity: Severity::Blocker,
+                confidence: Confidence::High,
+                title: "A dependency needs std, and Krate guests build without it".to_string(),
+                detail: format!(
+                    "Krate apps are `#![no_std]`: reaching the OS through std pulls `wasi:*` imports and the app is rejected. These direct dependencies are known to require std: {}. The port cannot proceed until each is replaced with a no_std equivalent or dropped -- this is the wall, and everything else in this report comes after it.",
+                    std_only.join(", ")
+                ),
+                capability: None,
+            },
+            Evidence { path: "Cargo.toml".to_string(), line: None },
+        );
+    }
+    if !unverified.is_empty() {
+        add_evidence_finding(
+            analysis,
+            FindingSpec {
+                id: "std-dependency-unverified".to_string(),
+                severity: Severity::Change,
+                confidence: Confidence::Medium,
+                title: "Every dependency must work without std -- these are unverified".to_string(),
+                detail: format!(
+                    "Krate guests build `#![no_std]`, and most of the crates people reach for do not (every common PDF, image and document crate needs std; `rand` works because it supports no_std, which makes it the exception rather than the rule). Not yet verified either way: {}. Check each crate's docs for no_std support before starting -- one std-only dependency is enough to stop the port.",
+                    unverified.join(", ")
+                ),
+                capability: None,
+            },
+            Evidence { path: "Cargo.toml".to_string(), line: None },
+        );
+    }
+}
+
 fn scan_cargo_lock(root: &Path, analysis: &mut Analysis) {
     let lock = root.join("Cargo.lock");
     let Ok(text) = fs::read_to_string(&lock) else {
@@ -767,6 +917,9 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
     if !should_analyze_content(path) {
         return;
     }
+    if path.ends_with("Cargo.toml") {
+        collect_direct_dependencies(text, &mut analysis.direct_dependencies);
+    }
     inspect_krate_manifest(path, text, analysis);
     let lower = text.to_ascii_lowercase();
     if path.ends_with(".swift")
@@ -824,6 +977,36 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         "These are separate Krate capabilities from reading and writing: `fs.list`, `fs.mkdir`, and `fs.remove`. Scope each to the narrowest path the app actually needs.",
         Some("fs.list:<path> / fs.mkdir:<path> / fs.remove:<path>"),
     );
+    // The system open/save dialog. Promoted to an explicit ask the day rfd
+    // landed on all three hosts, which made it requestable -- and a
+    // requestable capability the analyzer cannot spot means a ported app's
+    // plan omits a permission it will need (the cross-check test enforces
+    // exactly that).
+    detect_pattern(
+        analysis,
+        "file-dialog",
+        &[
+            "rfd::",
+            "filedialog",
+            "file_dialog",
+            "pick_file",
+            "nsopenpanel",
+            "nssavepanel",
+            "getopenfilename",
+            "getsavefilename",
+            "qfiledialog",
+            "showopendialog",
+            "showsavedialog",
+            "tkinter.filedialog",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Asks the person to pick a file",
+        "Krate has this as `ui.dialog:file-open` / `ui.dialog:file-save`: the person's click is the grant, and the app receives a token for the one file chosen, never a path. Declare it, and drop any code that remembers file locations between runs -- the token does not survive the session.",
+        Some("ui.dialog:file-open / ui.dialog:file-save"),
+    );
+
     // Playing sound. Distinct from capturing it: a person granting a metronome
     // permission to make noise is not granting it the microphone.
     detect_pattern(
@@ -1705,7 +1888,7 @@ fn next_steps(analysis: &Analysis, verdict: &Verdict, profile: &str) -> Vec<Stri
 
 #[cfg(test)]
 mod tests {
-    use super::{analyze, snapshot, Verdict};
+    use super::{analyze, snapshot, Severity, Verdict};
     use std::fs;
 
     #[test]
@@ -2408,5 +2591,54 @@ dependencies = [
         let plan = analyze(dir.path()).unwrap();
         assert_eq!(plan.scan.symlinks_skipped, 1);
         assert!(!plan.findings.iter().any(|finding| finding.id == "process"));
+    }
+
+    /// Denis ran `report` on his PDF tool and got "needs changes, one
+    /// finding, map your file paths" -- twenty-three lines, no word about
+    /// std, when the true answer was "cannot port: the PDF crate needs std"
+    /// (K-079). The std verdict must lead.
+    #[test]
+    fn a_std_only_dependency_is_reported_as_the_wall_it_is() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"pdftool\"\n[dependencies]\nlopdf = \"0.32\"\nserde = \"1\"\n",
+        )
+        .unwrap();
+        fs::write(dir.path().join("main.rs"), "fn main() {}\n").unwrap();
+
+        let plan = analyze(dir.path()).unwrap();
+        let wall = plan
+            .findings
+            .iter()
+            .find(|f| f.id == "std-dependency-wall")
+            .expect("the std wall must be a finding");
+        assert!(matches!(wall.severity, Severity::Blocker));
+        assert!(wall.detail.contains("lopdf"), "{}", wall.detail);
+        assert!(
+            !wall.detail.contains("serde"),
+            "serde is known no_std and must not be accused: {}",
+            wall.detail
+        );
+    }
+
+    /// A project whose dependencies are all known no_std gets no std finding
+    /// at all -- the check informs, it does not nag.
+    #[test]
+    fn known_no_std_dependencies_raise_no_wall() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("Cargo.toml"),
+            "[package]\nname = \"dice\"\n[dependencies]\nrand = \"0.9\"\nserde = \"1\"\n",
+        )
+        .unwrap();
+        let plan = analyze(dir.path()).unwrap();
+        assert!(
+            !plan
+                .findings
+                .iter()
+                .any(|f| f.id.starts_with("std-dependency")),
+            "all-known-no_std must stay clean"
+        );
     }
 }

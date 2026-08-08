@@ -3309,6 +3309,40 @@ fn report_refusal(
 /// or an agent command), build it to a component, check it imports only Krate
 /// APIs, pack it, and verify its permission wall by running the packed bundle
 /// with and without its gating capability. A transcript records every step.
+/// Keeps the temp workspace alive if `create` fails, so the transcript the
+/// error points at still exists when the person goes to read it.
+///
+/// The old shape held the TempDir in a local, so any `?` between authoring
+/// and packaging deleted the workspace on the way out -- and the failure
+/// message had just printed a path into it (K-078). Drop-based, so every
+/// early return is covered without threading a flag through each one.
+struct WorkspaceKeeper {
+    temp: Option<tempfile::TempDir>,
+    armed: bool,
+}
+
+impl WorkspaceKeeper {
+    /// Call on the success path: the workspace served its purpose.
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for WorkspaceKeeper {
+    fn drop(&mut self) {
+        if !self.armed {
+            return; // success: the TempDir cleans up as normal
+        }
+        if let Some(temp) = self.temp.take() {
+            let kept = temp.keep();
+            eprintln!(
+                "the workspace is kept at {} -- the agent transcript and any code written so far are inside",
+                kept.display()
+            );
+        }
+    }
+}
+
 fn create_krate(req: CreateRequest) -> Result<u8> {
     use krate_author::{generate, AppKind, AppRequest};
 
@@ -3442,9 +3476,12 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         name
     };
 
-    // The app is built inside a work dir. A temp dir is cleaned up; --work-dir
-    // keeps it for inspection.
-    let held_temp;
+    // The app is built inside a work dir. A temp dir is cleaned up on
+    // success; --work-dir keeps it for inspection either way.
+    let mut keeper = WorkspaceKeeper {
+        temp: None,
+        armed: true,
+    };
     let app_dir = match &req.work_dir {
         Some(dir) => {
             fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
@@ -3453,12 +3490,18 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         None => {
             let temp = tempfile::tempdir().context("create work dir")?;
             let path = temp.path().join(&name);
-            held_temp = temp;
-            let _ = &held_temp;
+            keeper.temp = Some(temp);
             path
         }
     };
-    let _ = fs::remove_dir_all(&app_dir);
+    // A previous attempt in this workspace is evidence and progress, not
+    // debris. The stall error promises that a retry "resumes from the code
+    // already written" and points at the transcript in this directory --
+    // wiping here made both claims false on every retry (K-078). Only a
+    // directory that never produced source is cleared.
+    if !app_dir.join("src").join("lib.rs").exists() {
+        let _ = fs::remove_dir_all(&app_dir);
+    }
     fs::create_dir_all(&app_dir).with_context(|| format!("create {}", app_dir.display()))?;
 
     let mut steps: Vec<serde_json::Value> = Vec::new();
@@ -3724,6 +3767,7 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
         "Send {} to someone; they can double-click it to open it.",
         req.output.display()
     );
+    keeper.disarm();
     Ok(0)
 }
 
@@ -4761,7 +4805,14 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
             if let Some(parent) = dest.parent() {
                 let _ = fs::create_dir_all(parent);
             }
-            let _ = fs::write(&dest, &file.contents);
+            // Write only what is not already there. A retry runs over the
+            // previous attempt's workspace, and the stall error promises it
+            // "resumes from the code already written" -- a promise this loop
+            // used to break by putting the starter back over the agent's
+            // src/lib.rs before every run (K-078).
+            if !dest.exists() {
+                let _ = fs::write(&dest, &file.contents);
+            }
         }
     }
     // The context pack: the real facts the agent builds against (the SDK
@@ -6737,6 +6788,12 @@ fn print_rust_toolchain_status() {
         Some(rustup_bin) => {
             let rustup_cargo = rustup_bin.join("cargo");
             println!("  rustup cargo  {}", rustup_cargo.display());
+            // Existing is not the same as fitting. A reviewer on Rust 1.85
+            // watched doctor print paths, say nothing about versions, and
+            // suggest commands that did not include `rustup update` -- then
+            // hit the build wall doctor exists to predict (K-080). Say the
+            // version next to the path, and say the fix when it is short.
+            print_rust_version_fit(&rustup_cargo);
             // Warn when the cargo a plain build would pick up is not the rustup
             // one. Compare the resolved cargo against rustup's bin dir.
             let path_is_rustup = path_cargo
@@ -6766,6 +6823,45 @@ fn print_rust_toolchain_status() {
             }
         }
     }
+}
+
+/// The minimum Rust the workspace builds with, from Cargo.toml's
+/// rust-version. Compiled in so doctor cannot drift from the real bound.
+const MIN_RUST: (u32, u32) = (1, 91);
+
+/// Print the toolchain's version beside its path, and `rustup update` when it
+/// is older than the workspace needs.
+fn print_rust_version_fit(cargo: &Path) {
+    let reported = ProcessCommand::new(cargo)
+        .arg("--version")
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string());
+    let Some(reported) = reported else {
+        println!("  version       could not run cargo --version");
+        return;
+    };
+    println!("  version       {reported}");
+    match rust_version_fits(&reported, MIN_RUST) {
+        Some(true) => {}
+        Some(false) => println!(
+            "  warning: Krate needs Rust {}.{} or newer to build apps. Update with: rustup update",
+            MIN_RUST.0, MIN_RUST.1
+        ),
+        // Unparseable is reported, not guessed at.
+        None => println!("  note: could not read a version number out of that line"),
+    }
+}
+
+/// Whether a `cargo --version` line satisfies a minimum. None when no version
+/// number can be found in the line at all.
+fn rust_version_fits(version_line: &str, min: (u32, u32)) -> Option<bool> {
+    let number = version_line.split_whitespace().nth(1)?;
+    let mut parts = number.split('.');
+    let major: u32 = parts.next()?.parse().ok()?;
+    let minor: u32 = parts.next()?.parse().ok()?;
+    Some((major, minor) >= min)
 }
 
 /// The stage of `check-app` a failure happened in. Ordered as the check runs.
@@ -8954,8 +9050,8 @@ mod create_tests {
     use super::{
         app_kind_name, author_contract, claude_author_prompt, expand_windows_env, has_tool,
         human_label, install_made_progress, name_from_request, parse_reg_path_value,
-        same_path_entry, silent_author_failure, toml_path, validate_create_request,
-        MAX_DERIVED_NAME_WORDS,
+        rust_version_fits, same_path_entry, silent_author_failure, toml_path,
+        validate_create_request, MAX_DERIVED_NAME_WORDS,
     };
     use krate_author::AppKind;
     use krate_manifest::Capability;
@@ -9442,6 +9538,22 @@ mod create_tests {
         assert!(silent_author_failure(Some(126)).contains("permission"));
         assert!(silent_author_failure(Some(3)).contains("error 3"));
         assert!(silent_author_failure(None).contains("stopped before"));
+    }
+
+    /// Doctor must compare versions, not admire paths (K-080): 1.85 on a
+    /// 1.91 workspace passed silently and failed at build time.
+    #[test]
+    fn a_toolchain_older_than_the_workspace_needs_is_called_out() {
+        assert_eq!(
+            rust_version_fits("cargo 1.91.1 (abc 2026-01-01)", (1, 91)),
+            Some(true)
+        );
+        assert_eq!(
+            rust_version_fits("cargo 1.85.1 (abc 2025-01-01)", (1, 91)),
+            Some(false)
+        );
+        assert_eq!(rust_version_fits("cargo 2.0.0", (1, 91)), Some(true));
+        assert_eq!(rust_version_fits("garbage with no number", (1, 91)), None);
     }
 
     /// The install loop must stop when a pass changes nothing.

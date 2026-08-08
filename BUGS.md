@@ -72,7 +72,9 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-081 -- telemetry is on by default, against the product's own principle
-Status:   open
+Status:   fixed in main -- first interactive run asks [Y/n] before the first
+          count; `n` writes the same marker `krate telemetry off` writes;
+          non-interactive runs are never prompted
 Owner:    lead
 Severity: annoyance
 Class:    our-code
@@ -84,7 +86,9 @@ Fix:      Ask once on first interactive run, remember the answer. Headless and
           CI stay silent and off.
 
 ### K-080 -- doctor checks that tools exist, not that they fit
-Status:   open
+Status:   fixed in main -- doctor prints the toolchain version beside the
+          path, compares against the workspace minimum (compiled in), and
+          says `rustup update` when older; version parsing is tested
 Owner:    lead
 Severity: serious
 Class:    our-code
@@ -97,7 +101,10 @@ Fix:      Print the toolchain version beside the path, compare against the
           minimum, and say `rustup update` when it is older.
 
 ### K-079 -- port never checks the one wall that blocks most ports: std
-Status:   open
+Status:   fixed in main -- every Cargo.toml's direct dependencies are
+          collected; known-std crates raise a Blocker naming them, everything
+          unverified raises a Change saying to check no_std support first.
+          Denis's exact shape (lopdf) is the regression test
 Owner:    lead
 Severity: serious
 Class:    our-code
@@ -114,7 +121,11 @@ Fix:      For every dependency in the analyzed Cargo.toml, say plainly that it
           document/PDF/image crates do not.
 
 ### K-078 -- create deletes the evidence its own error points at
-Status:   open
+Status:   fixed in main -- a Drop-armed keeper persists the temp workspace on
+          any failure and prints where; a workspace holding a previous
+          attempt's src/lib.rs is no longer wiped; the skeleton writes only
+          missing files, so "resumes from the code already written" is now
+          true instead of promised
 Owner:    lead
 Severity: serious
 Class:    our-code
@@ -133,7 +144,9 @@ Fix:      On failure, persist the workspace (tempdir into_path) and print the
           person to inspect, or stop promising resume.
 
 ### K-077 -- the authoring pack teaches every AI to build a GUI, whatever was asked
-Status:   open
+Status:   fixed in main -- the pack now says to keep the starter's world,
+          names both worlds, and warns that a CLI request built as a window
+          app fails the checks over and over
 Owner:    lead
 Severity: serious
 Class:    teaching-hole
@@ -150,7 +163,11 @@ Fix:      The pack shows both worlds, says to keep the skeleton's choice, and
           KRATE_APP_KIND is stated in the pack rather than only in the env.
 
 ### K-076 -- the permission list describes capabilities that do not work, in stale words
-Status:   open
+Status:   fixed in main -- file-open/file-save promoted to explicit asks (the
+          stale comment's own stated condition: rfd serves all three hosts),
+          both rotten comments rewritten to today's truth, and the port
+          analyzer taught to detect dialog use so the promotion is coherent
+          end to end (its own cross-check test caught that gap)
 Owner:    lead
 Severity: serious
 Class:    our-code
@@ -199,8 +216,10 @@ Fix:      In Denis's order, which is right: (1) ship ui.dialog:open-folder --
           unscoped fs.*:** and a capability the component's imports never
           justify, the same way it rejects a stray wasi:* import. Doing (2)
           first would only make the generator fail instead of overreach.
-          Immediate wording fix shipped separately: every fs line on the wall
-          now says "inside its own private folder".
+          The wording half is in main: every fs line on the wall now names
+          the boundary ("inside its own private folder -- never your files"),
+          locked by tests including `fs.list:**` specifically. The dialog and
+          the check-app tightening remain, in that order.
 
 ### K-074 -- every Windows zip has used backslash separators, which the spec forbids
 Status:   fixed, shipped and verified in v0.1.4
