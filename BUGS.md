@@ -71,6 +71,137 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-081 -- telemetry is on by default, against the product's own principle
+Status:   open
+Owner:    lead
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-09, Denis's second review, finding 7
+Evidence: crates/cli/src/usage.rs:18 -- "It is opt-out and says so." One line on
+          first run, but for a tool whose pitch is asking before taking, taking
+          first and explaining is the wrong order.
+Fix:      Ask once on first interactive run, remember the answer. Headless and
+          CI stay silent and off.
+
+### K-080 -- doctor checks that tools exist, not that they fit
+Status:   open
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-09, Denis's second review, finding 6: pinned Rust 1.91.1,
+          his 1.85.1, doctor printed the rustup path and no version
+Evidence: No doctor line compares the installed toolchain against the
+          workspace's rust-version (1.91); the printed fix list never includes
+          `rustup update`.
+Fix:      Print the toolchain version beside the path, compare against the
+          minimum, and say `rustup update` when it is older.
+
+### K-079 -- port never checks the one wall that blocks most ports: std
+Status:   open
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-09, Denis's second review, finding 3: his PDF tool got
+          "needs changes, one finding" when the true answer is "cannot port:
+          the PDF crate needs std"
+Evidence: crates/cli/src/port_report.rs mentions no_std exactly once, as an
+          aside. No per-dependency check exists. Same shape as the doctor bug
+          fixed last review: confident advice about a wall never checked for.
+Fix:      For every dependency in the analyzed Cargo.toml, say plainly that it
+          must work without std, mark the ones not known to, and lead the
+          report with that when any are unverified. Also say prominently in
+          the docs that diceroll works because rand supports no_std -- most
+          document/PDF/image crates do not.
+
+### K-078 -- create deletes the evidence its own error points at
+Status:   open
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-09, Denis's second review, finding 5
+Evidence: Two mechanisms, either sufficient:
+          - crates/cli/src/main.rs:3461: `let _ = fs::remove_dir_all(&app_dir)`
+            at the START of every create run, so a retry wipes the previous
+            attempt before "resuming" -- while the failure text promises the
+            run will resume from the code already written.
+          - The no-output-dir branch holds the workspace in a tempdir whose
+            guard drops when create returns, so the .agent-transcript.txt path
+            printed in the failure message is deleted before the person can
+            open it.
+Fix:      On failure, persist the workspace (tempdir into_path) and print the
+          real path; stop wiping a previous attempt that the error told the
+          person to inspect, or stop promising resume.
+
+### K-077 -- the authoring pack teaches every AI to build a GUI, whatever was asked
+Status:   open
+Owner:    lead
+Severity: serious
+Class:    teaching-hole
+Found:    2026-08-09, Denis's second review, finding 4: asked for a
+          command-line tidier, got a window app, 18 rounds and 15 minutes lost
+Evidence: The world inference exists and is right -- "command-line" is in
+          wants_gui's CLI signals (crates/author/src/lib.rs:58) and the
+          skeleton is written with the inferred world (main.rs:4757). But the
+          pack's only manifest example hardcodes
+          `world = "krate:app/gui@0.2.0"` (authoring_context.rs:843), so the
+          AI "corrects" the CLI skeleton back to GUI by copying the example.
+          Then the checks fight the mismatch for the rest of the run.
+Fix:      The pack shows both worlds, says to keep the skeleton's choice, and
+          KRATE_APP_KIND is stated in the pack rather than only in the env.
+
+### K-076 -- the permission list describes capabilities that do not work, in stale words
+Status:   open
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-09, Denis's second review, finding 2, quoting our own comment
+Evidence: crates/manifest/src/lib.rs:96 still says canvas2d "refuses every
+          call" -- false since v0.1.0-rc5; the bounce game ships on it. Lines
+          88-92 keep dialogs default-granted "until dialogs land on all three
+          systems" -- but choose_file_on_host is implemented through rfd
+          (phase3_gui_host.rs:3026), which serves macOS, Windows and Linux.
+          The comments froze while the code moved, and the wall inherits the
+          confusion: a reader cannot tell which lines are real.
+Fix:      Promote ui.dialog file-open/file-save to explicit asks now that they
+          are implemented (the comment's own stated condition), correct the
+          stale comments, and never let the wall name a capability the host
+          cannot honor without saying so.
+
+### K-075 -- a "tidy my folder" app is impossible, so the generator reaches for **
+Status:   claimed
+Owner:    lead
+Severity: blocker
+Class:    runtime-hole
+Found:    2026-08-09, Denis's second review, finding 1 -- the deepest one
+Evidence: Four connected facts, each verified:
+          1. Every fs path resolves inside the app's sandbox root with
+             symlink and containment checks (runtime/src/lib.rs:859-877), so
+             `fs.list:**` reaches the app's own folder and nothing else.
+             Denis's "asks for my whole disk" is factually wrong -- but it is
+             the only reading the wall's words allow, because no fs line says
+             the boundary ("see what is in a folder you choose", tui.rs:1277).
+             An app that scares reviewers while being safe is still a failed
+             wall.
+          2. Host folders cannot be named by design (absolute paths refused),
+             and there is no folder dialog -- only file-open. So a folder
+             tidier has no correct manifest at all; ** is merely the one that
+             LOOKS like it might work. The generator is not careless; the
+             runtime has a hole.
+          3. Grants cannot narrow: manifest fs.list:** is satisfied only by a
+             grant at least as wide, so the person's only choices are
+             everything or nothing.
+          4. The tidier's manifest asks fs.remove:** and the code never calls
+             remove -- check-app proves imports stay inside krate:* but never
+             that the manifest asks no more than the code uses.
+Fix:      In Denis's order, which is right: (1) ship ui.dialog:open-folder --
+          a person picks a real host folder and the pick IS a scoped grant,
+          same trust shape as file-open's token; (2) then check-app rejects an
+          unscoped fs.*:** and a capability the component's imports never
+          justify, the same way it rejects a stray wasi:* import. Doing (2)
+          first would only make the generator fail instead of overreach.
+          Immediate wording fix shipped separately: every fs line on the wall
+          now says "inside its own private folder".
+
 ### K-074 -- every Windows zip has used backslash separators, which the spec forbids
 Status:   fixed, shipped and verified in v0.1.4
 Owner:    lead
