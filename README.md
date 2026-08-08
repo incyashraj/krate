@@ -207,6 +207,9 @@ Windows PowerShell, no administrator rights needed:
 irm https://krate.tech/install.ps1 | iex
 ```
 
+`irm` is a PowerShell alias, so that line does not work in Command Prompt.
+From `cmd.exe`, type `powershell` first and then paste it.
+
 Then run an app, from a file or straight from a URL:
 
 ```bash

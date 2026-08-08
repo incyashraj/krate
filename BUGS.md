@@ -71,6 +71,34 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-072 -- the Windows install command fails in Command Prompt, and nothing says so
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-08, a friend's Windows PC, first command they ever typed
+Evidence: 'irm' is not recognized as an internal or external command,
+          operable program or batch file.
+
+          `irm` is a PowerShell alias for Invoke-RestMethod; in cmd.exe it
+          does not exist. The site published it under a tab labelled only
+          "Windows" in four places, and auto-selects that tab for every
+          Windows visitor -- so a first-time user in Command Prompt was
+          *handed* a command that cannot work, with nothing naming the shell.
+          This is the first command a Windows user ever runs, so the failure
+          rate here is the adoption rate.
+Fix:      The toggle now reads "Windows (PowerShell)", and a cmd.exe line
+          appears with it: run `powershell` first, then paste. README says
+          the same.
+
+          Considered and rejected: publishing
+          `powershell -NoProfile -Command "irm ... | iex"`, which works
+          verbatim in both shells. It runs the installer in a CHILD process,
+          so the session PATH patch dies with it and the current window
+          cannot see `krate` afterwards -- reintroducing exactly the
+          "open a new terminal" friction K-069 removed. Naming the shell
+          keeps the zero-restart property.
+
 ### K-071 -- whisper-rs stopped linking on the windows-latest CI image
 Status:   open
 Owner:    unclaimed

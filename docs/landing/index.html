@@ -117,7 +117,7 @@
   <div id="install">
     <div class="os-toggle" role="tablist" aria-label="Operating system">
       <button aria-pressed="true" data-os="unix" type="button">macOS / Linux</button>
-      <button aria-pressed="false" data-os="win" type="button">Windows</button>
+      <button aria-pressed="false" data-os="win" type="button">Windows (PowerShell)</button>
     </div>
     <br />
     <span class="cmd">
@@ -126,6 +126,7 @@
       <code data-cmd="win" hidden>irm https://krate.tech/install.ps1 | iex</code>
       <button class="copy" type="button" aria-label="Copy install command">⧉</button>
     </span>
+    <p class="free-note win-note" hidden>In Command Prompt instead? Run <code>powershell</code> first, then paste the line above.</p>
     <p class="free-note">Free and open source · works with the AI you already have</p>
   </div>
 
@@ -494,6 +495,13 @@
       });
       document.querySelectorAll(".cmd code").forEach(function (c) {
         c.hidden = c.dataset.cmd !== os;
+      });
+      // The cmd.exe hint belongs to the Windows tab only. `irm` is a
+      // PowerShell alias, and a first-time visitor in Command Prompt gets
+      // "'irm' is not recognized" -- which is where somebody's friend
+      // actually stopped.
+      document.querySelectorAll(".win-note").forEach(function (n) {
+        n.hidden = os !== "win";
       });
     });
   });
