@@ -71,6 +71,36 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-074 -- every Windows zip has used backslash separators, which the spec forbids
+Status:   fixed (in main; ships with the next release)
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-08, by K-073's new release-verification gate on its first run
+Evidence: The published v0.1.3 archive, read with a spec-compliant tool:
+
+            $ python3 -c "import zipfile; print(zipfile.ZipFile(
+                'krate-0.1.3-x86_64-pc-windows-msvc.zip').namelist()[:1])"
+            ['krate-0.1.3-x86_64-pc-windows-msvc\\cargo-component.exe']
+
+            $ unzip krate-0.1.3-x86_64-pc-windows-msvc.zip
+            warning: appears to use backslashes as path separators
+
+          ZIP requires forward slashes (APPNOTE 4.4.17). scripts/package.sh
+          prefers `zip`, but the Windows runner has none, so it falls back to
+          PowerShell's Compress-Archive -- which writes backslashes. Windows
+          Explorer copes, which is why this shipped unnoticed in every Windows
+          release. Nothing else does: extracting with Python, WSL, Git Bash or
+          CI produces seven files with literal backslashes in their names and
+          no folder at all.
+Fix:      package.sh now builds the archive through .NET's ZipArchive, naming
+          each entry explicitly with forward slashes, and then refuses to ship
+          any zip whose entries contain a backslash. The release gate checks
+          the same property on the published asset, so the two are independent.
+
+          Verified by running the new guard against the real published v0.1.3
+          zip: it exits 1 and names the offending entries.
+
 ### K-073 -- nothing verified the published release, so three defects shipped
 Status:   fixed
 Owner:    lead

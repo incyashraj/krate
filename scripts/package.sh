@@ -98,11 +98,49 @@ case "$ext" in
     if command -v zip >/dev/null 2>&1; then
       (cd "$dist_root" && zip -qr "${name}.zip" "$name")
     elif command -v powershell >/dev/null 2>&1; then
-      powershell -NoProfile -Command \
-        "Compress-Archive -Path '${package_dir}' -DestinationPath '${dist_root}/${name}.zip' -Force"
+      # Compress-Archive writes entry names with backslashes, which the ZIP
+      # spec forbids (APPNOTE 4.4.17: the separator is always a forward
+      # slash). Windows Explorer copes, so this shipped unnoticed; anything
+      # spec-compliant does not -- Python's zipfile, WSL, and CI all extract
+      # seven files with literal backslashes in their names and no folder at
+      # all. Every Windows release so far carries this.
+      #
+      # .NET's ZipArchive lets each entry be named explicitly, so the paths
+      # go in correct rather than being corrected afterwards.
+      powershell -NoProfile -Command "
+        Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+        \$out = [System.IO.Path]::GetFullPath('${dist_root}/${name}.zip')
+        if (Test-Path \$out) { Remove-Item \$out -Force }
+        \$root = [System.IO.Path]::GetFullPath('${package_dir}')
+        \$zip = [System.IO.Compression.ZipFile]::Open(\$out, 'Create')
+        try {
+          Get-ChildItem -Path \$root -Recurse -File | ForEach-Object {
+            \$rel = \$_.FullName.Substring(\$root.Length).TrimStart('\\','/')
+            \$entry = '${name}/' + (\$rel -replace '\\\\','/')
+            [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+              \$zip, \$_.FullName, \$entry)
+          }
+        } finally { \$zip.Dispose() }
+      "
     else
       echo "zip packaging requires zip or powershell" >&2
       exit 1
+    fi
+
+    # Refuse to ship an archive that unpacks into a mess. This is cheap and
+    # catches the exact defect above, whichever tool built the file.
+    if command -v python3 >/dev/null 2>&1; then
+      python3 - "${dist_root}/${name}.zip" <<'PY'
+import sys, zipfile
+names = zipfile.ZipFile(sys.argv[1]).namelist()
+bad = [n for n in names if "\\" in n]
+if bad:
+    print("error: zip entries use backslash separators, which the ZIP spec "
+          "forbids and spec-compliant tools mis-extract:", file=sys.stderr)
+    for n in bad[:5]:
+        print("  " + n, file=sys.stderr)
+    sys.exit(1)
+PY
     fi
     ;;
   *)

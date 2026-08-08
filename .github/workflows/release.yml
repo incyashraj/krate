@@ -472,10 +472,18 @@ jobs:
           set -euo pipefail
           cd verify
           case "$archive" in
-            *.zip) unzip -q "$archive" ;;
+            # -j flattens, because releases up to v0.1.3 were zipped by
+            # Compress-Archive, which writes backslash separators the ZIP
+            # spec forbids (K-074). Flattening makes this step test the
+            # binary rather than trip over the layout; the layout itself is
+            # checked separately below, so the defect is still caught.
+            *.zip) unzip -q -j "$archive" -d unpacked ;;
             *)     tar xzf "$archive" ;;
           esac
-          dir="krate-${TAG#v}-${{ matrix.target }}"
+          case "$archive" in
+            *.zip) dir="unpacked" ;;
+            *)     dir="krate-${TAG#v}-${{ matrix.target }}" ;;
+          esac
           case "${{ matrix.target }}" in
             *windows*) bin="$dir/krate.exe" ;;
             *)         bin="$dir/krate" ;;
@@ -489,6 +497,32 @@ jobs:
             *) echo "::error::published binary reports '$reported', tag is $TAG"; exit 1 ;;
           esac
           echo "bin=$bin" >> "$GITHUB_ENV"
+
+      - name: The archive unpacks into a folder, not backslash-named files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd verify
+          case "$archive" in
+            *.zip) ;;
+            *) echo "not a zip, nothing to check"; exit 0 ;;
+          esac
+          # ZIP entry names must use forward slashes (APPNOTE 4.4.17).
+          # Compress-Archive writes backslashes: Explorer copes, every
+          # spec-compliant tool extracts a pile of backslash-named files
+          # with no folder. Every Windows release through v0.1.3 shipped
+          # that way, and nothing noticed until this gate existed.
+          python3 - "$archive" <<'PY'
+          import sys, zipfile
+          bad = [n for n in zipfile.ZipFile(sys.argv[1]).namelist() if "\\" in n]
+          if bad:
+              print("::error::zip entries use backslash separators; "
+                    "spec-compliant tools mis-extract this archive")
+              for n in bad[:5]:
+                  print("  " + n)
+              sys.exit(1)
+          print("entry names use forward slashes")
+          PY
 
       - name: cargo-component ships beside it
         shell: bash
