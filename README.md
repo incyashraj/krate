@@ -62,8 +62,7 @@ no browser and no runtime of its own, so the apps in this repo have a median
 size of **13.5 KB**. You install the runtime once; every app after that is
 kilobytes.
 
-Krate is open source. `v0.1.0` is the first release where the whole path
-works end to end: install it, describe an app, an AI writes it, and the file
+Krate is open source, and the whole path works end to end: install it, describe an app, an AI writes it, and the file
 it hands you opens on macOS, Windows and Linux.
 
 ## Make an app
@@ -182,11 +181,10 @@ in the MCP server, so it protects the chat path too.
 The simplest way, and no terminal involved.
 
 On macOS, download the `krate-app` zip for your Mac from the
-[current release](https://github.com/incyashraj/krate/releases/tag/v0.1.0-rc19)
-and unzip
-`Krate.app`. The app is not signed yet, so the first time you open it:
-right-click `Krate.app`, choose **Open**, then double-click any `.krate` file. A
-permission window appears before the app runs.
+[latest release](https://github.com/incyashraj/krate/releases/latest) and unzip
+`Krate.app` into Applications. It is signed and notarized, so it opens
+normally -- double-click any `.krate` file and a permission window appears
+before the app runs.
 
 On Windows and Linux, install the runtime below, then register `.krate` files
 with [`scripts/install-krate-desktop.ps1`](scripts/install-krate-desktop.ps1) or
@@ -443,7 +441,7 @@ costs about 16 milliseconds and can never change a command's result.
 
 - Stage: first release -- works end to end, API not yet frozen
 - Current release:
-  [`v0.1.3`](https://github.com/incyashraj/krate/releases/tag/v0.1.3)
+  [`v0.1.4`](https://github.com/incyashraj/krate/releases/tag/v0.1.4)
 - Company: Krate Labs
 - Maintainer: [Yashraj Pardeshi](https://github.com/incyashraj)
 - License: MIT OR Apache-2.0
