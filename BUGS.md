@@ -71,6 +71,50 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-073 -- nothing verified the published release, so three defects shipped
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-08, reading the board as data rather than as a list
+Evidence: Counting how each entry was discovered:
+
+            found by a person on a machine:  14
+            found by CI before shipping:      0
+
+          1041 tests, and not one has ever caught a shipping bug. The reason
+          is structural, not lazy: everything verified the build, and nothing
+          verified the download. Three defects reached users through that gap
+          and were each found by hand afterwards --
+
+            K-058  the Windows zip shipped with no document icon
+            K-063  Krate.app signed without allow-jit, so every double-click
+                   was killed by the kernel; passed signing, notarization and
+                   spctl on the way out
+            K-068  the tarball was packed before signing ran, so the signed
+                   binary was never the one shipped
+
+          All three are checkable in seconds against the published asset, and
+          CI never looked at a published asset. The cold-install walk, the one
+          gate that behaves like a person, ran only on a nightly schedule or a
+          hand-typed [full-ci] tag -- never on a release.
+Fix:      A `verify` job in release.yml, needs: publish, on macOS/Linux/Windows.
+          It downloads what the public downloads and behaves like somebody who
+          just got it: checksum, unpack, `--version` must match the tag (content,
+          never timestamps), cargo-component present, the Windows icon and
+          console-less opener present, macOS signed non-adhoc with allow-jit on
+          both the CLI and the bundle plus spctl, then builds a real app with
+          the published binary and confirms the permission wall still refuses
+          without grants. A bad release is now loud before anyone is told to
+          install it.
+
+          Also closed the regression gap behind K-069 and K-070: the install
+          loop's termination rule is now a pure function with a test (a pass
+          that changes nothing is not progress -- the exact shape of the
+          three-restart bug), and the alternate-screen contract is a tested
+          property (enter must be undone, restore must live in Drop). Both
+          tests were mutation-checked: reintroducing each bug makes them fail.
+
 ### K-072 -- the Windows install command fails in Command Prompt, and nothing says so
 Status:   fixed
 Owner:    lead

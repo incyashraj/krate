@@ -402,3 +402,170 @@ jobs:
             dist/**/*.zip
             SHA256SUMS
           generate_release_notes: true
+
+  # ---------------------------------------------------------------- the gate
+  #
+  # Every release defect this project has shipped got through because the
+  # thing verified was the build, not the download: K-058 (no Windows icon in
+  # the zip), K-063 (bundle signed without the JIT entitlement, so every
+  # double-click died), K-068 (the tarball packaged before signing ran, so
+  # the signed binary was never in it). All three were found by a person
+  # afterwards, and all three are checkable in seconds against the published
+  # asset.
+  #
+  # So: after publishing, download what the public downloads and behave like
+  # somebody who just got it. A failure here does not unpublish anything --
+  # it cannot, the assets are already up -- but it turns a silent bad release
+  # into a loud one, before anybody is told to install it.
+  verify:
+    name: Verify the published assets (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: publish
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - name: Download the published assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p verify && cd verify
+          version="${TAG#v}"
+          case "${{ matrix.target }}" in
+            *windows*) archive="krate-${version}-${{ matrix.target }}.zip" ;;
+            *)         archive="krate-${version}-${{ matrix.target }}.tar.gz" ;;
+          esac
+          gh release download "$TAG" -R "${{ github.repository }}" \
+            -p "$archive" -p SHA256SUMS
+          echo "archive=$archive" >> "$GITHUB_ENV"
+
+      - name: The checksum a careful person would check
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd verify
+          if command -v shasum >/dev/null; then
+            shasum -a 256 -c SHA256SUMS --ignore-missing
+          else
+            grep " $archive\$" SHA256SUMS | sha256sum -c -
+          fi
+
+      - name: Unpack, and prove the binary is the version on the tin
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd verify
+          case "$archive" in
+            *.zip) unzip -q "$archive" ;;
+            *)     tar xzf "$archive" ;;
+          esac
+          dir="krate-${TAG#v}-${{ matrix.target }}"
+          case "${{ matrix.target }}" in
+            *windows*) bin="$dir/krate.exe" ;;
+            *)         bin="$dir/krate" ;;
+          esac
+          # A stale binary in a fresh archive is the failure that shipped
+          # twice by hand; compare content, never timestamps.
+          reported="$("$bin" --version)"
+          echo "reported: $reported"
+          case "$reported" in
+            *"${TAG#v}"*) ;;
+            *) echo "::error::published binary reports '$reported', tag is $TAG"; exit 1 ;;
+          esac
+          echo "bin=$bin" >> "$GITHUB_ENV"
+
+      - name: cargo-component ships beside it
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd verify
+          dir="$(dirname "$bin")"
+          # Without this the first app somebody makes compiles 378 crates
+          # first. It has silently gone missing on Windows before.
+          ls "$dir" | grep -i cargo-component \
+            || { echo "::error::cargo-component missing from the archive"; exit 1; }
+
+      - name: The Windows document icon (K-058 shipped without it)
+        if: contains(matrix.target, 'windows')
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd verify
+          dir="$(dirname "$bin")"
+          ls "$dir" | grep -i 'KrateDoc.ico' \
+            || { echo "::error::KrateDoc.ico missing -- .krate files get no icon"; exit 1; }
+          ls "$dir" | grep -i 'krate-open.exe' \
+            || { echo "::error::krate-open.exe missing -- double-click flashes a console"; exit 1; }
+
+      - name: macOS signing, entitlements, and Gatekeeper (K-063, K-068)
+        if: contains(matrix.target, 'apple')
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          cd verify
+          # The bare CLI: signed, hardened, and entitled. It JITs, so
+          # `--options runtime` without allow-jit is the combination the
+          # kernel kills on launch.
+          if codesign -dvv "$bin" 2>&1 | grep -q adhoc; then
+            echo "::error::the published CLI is ad-hoc signed, not Developer ID"; exit 1
+          fi
+          codesign -d --entitlements - "$bin" 2>&1 | grep -q allow-jit \
+            || { echo "::error::published CLI has no allow-jit entitlement"; exit 1; }
+
+          # The app bundle: the thing a double-click actually runs.
+          gh release download "$TAG" -R "${{ github.repository }}" \
+            -p "krate-app-${TAG#v}-${{ matrix.target }}.zip"
+          unzip -q "krate-app-${TAG#v}-${{ matrix.target }}.zip"
+          codesign -d --entitlements - Krate.app/Contents/MacOS/krate-cli 2>&1 \
+            | grep -q allow-jit \
+            || { echo "::error::Krate.app has no allow-jit -- double-click will die"; exit 1; }
+          spctl --assess --type execute -v Krate.app
+
+      - name: Build an app with the published binary, and run it headless
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd verify
+          # The whole product in one line: the published runtime packs a real
+          # example and paints a frame with it. Uses the repo's own example so
+          # this needs no AI and no network beyond the download above.
+          "$bin" check-app ../apps/krate-bounce --no-run \
+            || { echo "::error::the published binary cannot build an app"; exit 1; }
+
+      - name: The permission wall still refuses without grants
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd verify
+          set +e
+          out="$("$bin" run --headless https://krate.tech/notes.krate 2>&1)"
+          code=$?
+          set -e
+          # 5 is "refused for want of permission". A release that opens an
+          # app without asking is the worst possible regression, so it is
+          # checked on the shipped artifact, not only in unit tests.
+          if [ "$code" -ne 5 ]; then
+            echo "::error::expected exit 5 without grants, got $code: $out"; exit 1
+          fi
+          case "$out" in
+            *"needs permission"*) ;;
+            *) echo "::error::the refusal did not explain itself: $out"; exit 1 ;;
+          esac

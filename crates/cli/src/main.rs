@@ -7822,11 +7822,24 @@ pub(crate) fn build_tools_missing() -> Vec<(String, String)> {
 /// install and failed, and the advice was "open a new terminal". Three
 /// installs deep, that was three restarts to make one app. Refreshing the
 /// process PATH between steps is what a new terminal would have done.
+/// Whether an install pass made progress.
+///
+/// Pulled out of the loop below so the decision can be tested without running
+/// winget. The rule that matters: a pass that installed something and left the
+/// missing list exactly as long as it found it is stuck, and looping again
+/// would repeat the same install forever. That is the shape of the bug that
+/// cost three terminal restarts (K-069) -- there the list never shrank because
+/// nothing re-read PATH, and each pass "succeeded" while changing nothing.
+fn install_made_progress(before: usize, after: usize) -> bool {
+    after < before
+}
+
 pub(crate) fn install_build_tools() -> Result<()> {
     // Bounded by the full list length: every pass must shrink the list by at
     // least the tool it just installed, and a pass that does not is a failure.
     for _ in 0..=missing_create_tools().len() {
         refresh_process_path();
+        let before = missing_create_tools().len();
         let Some(tool) = missing_create_tools().into_iter().next() else {
             return Ok(());
         };
@@ -7843,6 +7856,19 @@ pub(crate) fn install_build_tools() -> Result<()> {
                 .next_back()
                 .unwrap_or("no reason given");
             anyhow::bail!("{}: {detail}", tool.what);
+        }
+        // The install reported success. If the tool is still missing after a
+        // fresh PATH read, looping would run the identical command again and
+        // again until the bound runs out, then blame the person. Say what is
+        // actually true instead.
+        refresh_process_path();
+        if !install_made_progress(before, missing_create_tools().len()) {
+            anyhow::bail!(
+                "{} installed without error, but is still not visible to this \
+process. Open a new terminal and run `krate` again -- if it is still \
+missing there, the install did not land.",
+                tool.what
+            );
         }
     }
     refresh_process_path();
@@ -8927,8 +8953,9 @@ mod create_tests {
 
     use super::{
         app_kind_name, author_contract, claude_author_prompt, expand_windows_env, has_tool,
-        human_label, name_from_request, parse_reg_path_value, same_path_entry,
-        silent_author_failure, toml_path, validate_create_request, MAX_DERIVED_NAME_WORDS,
+        human_label, install_made_progress, name_from_request, parse_reg_path_value,
+        same_path_entry, silent_author_failure, toml_path, validate_create_request,
+        MAX_DERIVED_NAME_WORDS,
     };
     use krate_author::AppKind;
     use krate_manifest::Capability;
@@ -9415,6 +9442,23 @@ mod create_tests {
         assert!(silent_author_failure(Some(126)).contains("permission"));
         assert!(silent_author_failure(Some(3)).contains("error 3"));
         assert!(silent_author_failure(None).contains("stopped before"));
+    }
+
+    /// The install loop must stop when a pass changes nothing.
+    ///
+    /// K-069: each pass ran an install that reported success while the missing
+    /// list stayed the same length, because nothing re-read PATH. Looping on
+    /// that repeats one install forever; the loop now treats "no shrink" as
+    /// the failure it is.
+    #[test]
+    fn an_install_pass_that_changes_nothing_is_not_progress() {
+        assert!(install_made_progress(3, 2), "one fewer is progress");
+        assert!(install_made_progress(1, 0), "reaching zero is progress");
+        assert!(!install_made_progress(2, 2), "same length is stuck");
+        assert!(
+            !install_made_progress(2, 3),
+            "growing is stuck, not progress"
+        );
     }
 
     /// The registry answer for PATH has the data after a type token, and the

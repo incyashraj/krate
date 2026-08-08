@@ -37,6 +37,13 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(20);
 /// kills that, while the menu carries on. That is the behaviour a person
 /// pressing Ctrl-C during a build actually wants, and it also means an
 /// interrupt cannot strand the terminal on the alternate screen.
+///
+/// Switch to the alternate buffer, clear it, and home the cursor.
+const ENTER_SCREEN: &str = "\x1b[?1049h\x1b[2J\x1b[H";
+/// Switch back. Must undo ENTER_SCREEN exactly, or the shell is left on a
+/// blank alternate buffer with the person's scrollback apparently gone.
+const LEAVE_SCREEN: &str = "\x1b[?1049l";
+
 struct Screen {
     #[cfg(unix)]
     previous: libc::sighandler_t,
@@ -45,7 +52,7 @@ struct Screen {
 impl Screen {
     fn enter() -> Self {
         use std::io::Write;
-        print!("\x1b[?1049h\x1b[2J\x1b[H");
+        print!("{ENTER_SCREEN}");
         let _ = io::stdout().flush();
         #[cfg(unix)]
         let previous =
@@ -60,7 +67,7 @@ impl Screen {
 impl Drop for Screen {
     fn drop(&mut self) {
         use std::io::Write;
-        print!("\x1b[?1049l");
+        print!("{LEAVE_SCREEN}");
         let _ = io::stdout().flush();
         #[cfg(unix)]
         unsafe {
@@ -1733,5 +1740,30 @@ mod tests {
         assert_eq!(humanise_bytes(512), "512 B");
         assert_eq!(humanise_bytes(29303), "28 KB");
         assert_eq!(humanise(Duration::from_secs(154)), "2m 34s");
+    }
+
+    /// The session must always hand the terminal back.
+    ///
+    /// Entering the alternate buffer without leaving it strands the person on
+    /// a blank screen with their scrollback apparently gone -- and the only
+    /// exit is closing the window. The pairing is a property of the two
+    /// constants, so it is checked rather than assumed: 1049h must be matched
+    /// by 1049l, and restore must live in Drop so every exit path runs it,
+    /// including `q`, an error, and a panic.
+    #[test]
+    fn entering_the_alternate_screen_is_always_undone() {
+        assert!(ENTER_SCREEN.contains("?1049h"), "must enter the alt buffer");
+        assert!(LEAVE_SCREEN.contains("?1049l"), "must leave the alt buffer");
+        assert!(
+            !LEAVE_SCREEN.contains("?1049h"),
+            "leaving must not re-enter"
+        );
+        // Drop is what makes this hold on every exit path -- `q`, an error,
+        // a panic. If Screen ever stops implementing Drop, or gains a field
+        // that makes it trivially droppable, this stops being true.
+        assert!(
+            std::mem::needs_drop::<Screen>(),
+            "Screen must restore the terminal in Drop, not at a return"
+        );
     }
 }
