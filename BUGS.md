@@ -72,7 +72,7 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-074 -- every Windows zip has used backslash separators, which the spec forbids
-Status:   fixed (in main; ships with the next release)
+Status:   fixed, shipped and verified in v0.1.4
 Owner:    lead
 Severity: serious
 Class:    our-code
@@ -99,7 +99,16 @@ Fix:      package.sh now builds the archive through .NET's ZipArchive, naming
           the same property on the published asset, so the two are independent.
 
           Verified by running the new guard against the real published v0.1.3
-          zip: it exits 1 and names the offending entries.
+          zip: it exits 1 and names the offending entries. Then verified on
+          the published v0.1.4 asset -- entries use forward slashes, Python's
+          zipfile creates a real folder, and unzip exits 0 with no warning
+          where the same asset one release earlier produced a backslash mess.
+
+          One trap the gate hit on itself, worth keeping: unzip exits 1 on the
+          backslash *warning* even when extraction fully succeeded, so with
+          set -e the verification step died and hid every check after it --
+          including the one meant to report this defect by name. A gate that
+          fails for the wrong reason is a gate that teaches you nothing.
 
 ### K-073 -- nothing verified the published release, so three defects shipped
 Status:   fixed
