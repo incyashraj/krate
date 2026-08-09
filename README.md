@@ -441,7 +441,7 @@ costs about 16 milliseconds and can never change a command's result.
 
 - Stage: first release -- works end to end, API not yet frozen
 - Current release:
-  [`v0.1.5`](https://github.com/incyashraj/krate/releases/tag/v0.1.5)
+  [`v0.1.6`](https://github.com/incyashraj/krate/releases/tag/v0.1.6)
 - Company: Krate Labs
 - Maintainer: [Yashraj Pardeshi](https://github.com/incyashraj)
 - License: MIT OR Apache-2.0
