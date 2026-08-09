@@ -257,29 +257,28 @@ async function usage(request, env) {
   const os = String(event.os || "").slice(0, 16);
   const day = new Date().toISOString().slice(0, 10);
 
-  // Two keys: one marking this install seen today, one counting the action.
-  // Together they answer "how many people" and "how much are they doing"
-  // without keeping a log of individual events.
-  await env.APPS.put(`seen:${day}:${id}`, JSON.stringify({ version, os }), {
-    // Ninety days is long enough to see a trend and short enough that this
-    // never becomes an archive.
-    expirationTtl: 90 * 24 * 60 * 60,
-  });
-  await bump(env, `count:${day}:${action}`);
-  if (event.ok === false) {
-    await bump(env, `count:${day}:${action}-failed`);
-  }
-  if (event.ai === true) {
-    await bump(env, `count:${day}:${action}-by-ai`);
+  // One Analytics Engine data point, and no KV at all. The first version
+  // wrote two KV keys per ping (seen: plus a read-modify-write count:), and
+  // a single busy day -- CI replays plus one developer -- blew the free
+  // tier's 1,000 puts. Because publishes and sign-ins share the namespace,
+  // telemetry exhaustion took down the product: counting must never sit on
+  // the same budget as publishing. Analytics Engine is Cloudflare's counter
+  // product, unmetered at this scale, and uniques fall out of the index.
+  if (env.USAGE) {
+    env.USAGE.writeDataPoint({
+      blobs: [
+        action,
+        version,
+        os,
+        event.ok === false ? "failed" : "ok",
+        event.ai === true ? "by-ai" : "direct",
+        day,
+      ],
+      doubles: [1],
+      indexes: [id],
+    });
   }
   return text("ok");
-}
-
-async function bump(env, key) {
-  const current = parseInt((await env.APPS.get(key)) || "0", 10);
-  await env.APPS.put(key, String(current + 1), {
-    expirationTtl: 90 * 24 * 60 * 60,
-  });
 }
 
 /// The numbers, for us. Distinct installs and action counts by day.
@@ -303,6 +302,12 @@ async function stats(env) {
   }
 
   return json({
+    // KV history stops on 2026-08-10; its TTLs retire it over 90 days.
+    // Everything after that date is in the USAGE Analytics Engine dataset
+    // (krate_usage), queryable from the dashboard or the SQL API -- moved
+    // there so counting can never again exhaust the namespace publishes
+    // and sign-ins live in.
+    legacy_kv_until: "2026-08-10",
     distinct_installs_90d: allInstalls.size,
     active_installs_by_day: installsByDay,
     actions_by_day: actions,

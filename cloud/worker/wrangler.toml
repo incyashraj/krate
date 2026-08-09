@@ -19,3 +19,11 @@ id = "184313bf18694dff800e580de42b2cda"
 
 [vars]
 PUBLIC_BASE = "https://hub.krate.tech"
+
+# Usage counting lives here, not in KV. Analytics Engine is unmetered at this
+# scale and exists for exactly this shape of data; the day telemetry shared a
+# KV budget with publishes, one busy day of counting returned 429s to every
+# publish and sign-in (2026-08-10). The dataset is created on first write.
+[[analytics_engine_datasets]]
+binding = "USAGE"
+dataset = "krate_usage"

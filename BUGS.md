@@ -71,6 +71,35 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-082 -- telemetry shared a KV budget with publishing, and spent it
+Status:   fixed in main; NEEDS DEPLOY (cloud/deploy.sh with the Cloudflare token)
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-10, Cloudflare email: "KV requests are temporarily blocked",
+          free tier's 1,000 puts/day exceeded, reset 00:00 UTC
+Evidence: cloud/worker/src/index.js wrote TWO KV puts per usage ping (a
+          seen:day:id marker plus a read-modify-write count: bump), into the
+          same APPS namespace that holds publish metadata and the auth
+          identity cache. 1,000 puts / 2 = 500 pings a day, and one busy day
+          -- CI replay matrices, cold-install walks, release verification,
+          plus ordinary development -- crossed it. Until the daily reset,
+          every `krate publish` and GitHub sign-in gets a 429: counting took
+          the product down. The client is unharmed by design (usage posts are
+          detached with a short timeout), so only the hub-side operations
+          broke.
+Fix:      Telemetry moved to a Cloudflare Analytics Engine dataset
+          (krate_usage): one writeDataPoint per ping, no KV involvement,
+          uniques via the index, unmetered at this scale. KV keeps only what
+          it should have held all along -- apps and auth. The stats endpoint
+          keeps reading the 90 days of legacy KV history until its TTLs
+          retire it, and names the cutover date. CI workflows now set
+          KRATE_NO_USAGE=1: a replay matrix is not a user, for the metrics
+          as much as the quota.
+
+          The principle worth keeping: counting must never sit on the same
+          budget as the thing being counted.
+
 ### K-081 -- telemetry is on by default, against the product's own principle
 Status:   fixed in main -- first interactive run asks [Y/n] before the first
           count; `n` writes the same marker `krate telemetry off` writes;
