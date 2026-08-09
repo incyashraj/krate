@@ -1239,6 +1239,15 @@ pub struct RawWheelSample {
 }
 
 pub trait UiAdapter: WindowAdapter {
+    /// The display scale of a window, physical pixels per logical pixel.
+    ///
+    /// 1.0 everywhere a host has not wired it. Adapters that know better --
+    /// a phone at 2.6x, a HiDPI desktop -- override it, and the canvas
+    /// rasterizes at physical resolution while apps keep logical units.
+    fn window_scale(&self, _id: WindowId) -> f32 {
+        1.0
+    }
+
     /// Set or replace the root widget tree for a window.
     fn set_root(&self, window: WindowId, root: WidgetNode) -> Result<(), UiAdapterError>;
 

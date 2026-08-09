@@ -465,6 +465,10 @@ impl WindowAdapter for AndroidWinitPrototypeUiAdapter {
 }
 
 impl UiAdapter for AndroidWinitPrototypeUiAdapter {
+    fn window_scale(&self, id: WindowId) -> f32 {
+        winit_native::window_scale(id)
+    }
+
     fn drain_raw_pointer_input(&self) -> Vec<RawPointerSample> {
         winit_native::drain_pointer_samples()
     }

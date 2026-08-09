@@ -54,6 +54,17 @@ mod real {
             const { RefCell::new(None) };
     }
 
+    /// Display scale of a tracked window, 1.0 when unknown.
+    pub fn window_scale(krate: WindowId) -> f32 {
+        if !host_initialized() {
+            return 1.0;
+        }
+        with_tracked(krate, |tracked| tracked.window.scale_factor() as f32)
+            .ok()
+            .flatten()
+            .unwrap_or(1.0)
+    }
+
     /// The player takes AndroidApp from here so both crates share one
     /// winit by construction.
     pub use winit::platform::android::activity::AndroidApp;
@@ -201,7 +212,16 @@ mod real {
             let mapped = match event {
                 WindowEvent::CloseRequested => Some(WinitWindowNativeEvent::CloseRequested),
                 WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => {
-                    WindowSize::new(size.width, size.height)
+                    // Logical, like every other size the app sees.
+                    let scale = self
+                        .windows
+                        .get(&native)
+                        .map(|tracked| tracked.window.scale_factor())
+                        .unwrap_or(1.0)
+                        .max(0.25);
+                    let logical_w = ((size.width as f64 / scale).round() as u32).max(1);
+                    let logical_h = ((size.height as f64 / scale).round() as u32).max(1);
+                    WindowSize::new(logical_w, logical_h)
                         .ok()
                         .map(WinitWindowNativeEvent::Resized)
                 }
@@ -504,9 +524,15 @@ mod real {
             // fixed offset keeps both truths.
             let raw_handle = u64::from(tracked.window.id()) + 1;
             let inner = tracked.window.inner_size();
+            // Everything the app sees is logical pixels (the K-067 rule):
+            // divide winit's physical size by the display scale here, once,
+            // at the boundary. Input events already do the same.
+            let scale = tracked.window.scale_factor().max(0.25);
+            let logical_w = (inner.width.max(1) as f64 / scale).round() as u32;
+            let logical_h = (inner.height.max(1) as f64 / scale).round() as u32;
             let snapshot = WinitWindowSnapshot::new(
                 krate,
-                WindowSize::new(inner.width.max(1), inner.height.max(1))?,
+                WindowSize::new(logical_w.max(1), logical_h.max(1))?,
                 false,
                 tracked.window.has_focus(),
                 tracked.window.scale_factor() as f32,
@@ -672,6 +698,10 @@ mod stub {
         _size: WindowSize,
     ) -> Result<(u64, WinitWindowSnapshot), UiAdapterError> {
         unsupported()
+    }
+
+    pub fn window_scale(_krate: WindowId) -> f32 {
+        1.0
     }
 
     /// Winit windows are only available in Linux builds.

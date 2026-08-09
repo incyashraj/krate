@@ -1295,12 +1295,13 @@ impl Phase3GuiHost {
             (*window, *widget)
         };
         let rect = self.canvas_widget_rect(window, widget)?;
+        let scale = self.dispatcher().window_scale(window);
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Err(gfx::types::GfxError::InvalidTarget);
         };
         surface
-            .resize(rect.0.max(1.0) as u32, rect.1.max(1.0) as u32)
+            .resize_scaled(rect.0.max(1.0) as u32, rect.1.max(1.0) as u32, scale)
             .map_err(|error| gfx::types::GfxError::Unsupported(error.to_string()))?;
         Ok(())
     }
@@ -2284,7 +2285,14 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
             Ok(rect) => rect,
             Err(error) => return Ok(Err(error)),
         };
-        let surface = match CanvasSurface::new(rect.0.max(1.0) as u32, rect.1.max(1.0) as u32) {
+        // Raster at the display's density, keep the app in logical units
+        // (K-088): the placement blit is then 1:1 instead of an upscale.
+        let scale = self.dispatcher().window_scale(window_id);
+        let surface = match CanvasSurface::new_scaled(
+            rect.0.max(1.0) as u32,
+            rect.1.max(1.0) as u32,
+            scale,
+        ) {
             Ok(surface) => surface,
             Err(error) => return Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
         };

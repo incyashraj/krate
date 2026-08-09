@@ -72,7 +72,7 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-088 -- the Android blit ignores display scale, so every app is pixelated
-Status:   open
+Status:   fixed
 Owner:    lead (M1 workstream)
 Severity: serious
 Class:    our-code
@@ -85,12 +85,22 @@ Evidence: The first-light screenshot. The Pixel 7 surface is 1080x2400
           the snapshot's scale_factor and does not yet paint at physical
           resolution. Also visible: a white band where the aspect-mismatched
           remainder of the surface goes unpainted.
-Fix:      Paint at physical resolution and cover the whole surface, the
-          same contract the desktop adapters honor. Part of M1's remaining
-          rendering work, alongside touch input.
+Fix:      Two halves, both landed. The Android adapter now converts every
+          size at its boundary (create snapshot and Resized events divide
+          by scale_factor), so the app and layout live in logical pixels
+          like the input path already did. And CanvasSurface rasters at
+          physical resolution: new_scaled keeps logical dimensions for the
+          app while the buffer is logical x scale, every public draw call
+          converts once at entry, and the three delegating calls (text,
+          full-sweep arc, one-stop gradient) delegate on raw arguments so
+          nothing scales twice -- locked by
+          a_scaled_surface_rasters_physical_and_reports_logical. The
+          placement blit is then 1:1. Desktop is bit-identical at scale 1:
+          the whole suite passed untouched, and the gram desktop shot
+          matches. Verified on the emulator: full-bleed, crisp.
 
 ### K-087 -- krate-gram hardcodes its size instead of reading canvas-size
-Status:   open
+Status:   fixed
 Owner:    lead (M1 workstream)
 Severity: serious
 Class:    example-bug
@@ -101,9 +111,14 @@ Evidence: apps/krate-gram/src/lib.rs WIDTH/HEIGHT constants drive every
           because of exactly this class -- and the example apps are what
           every generated app learns from. On a phone the feed letterboxes
           into the wrong aspect instead of filling the screen.
-Fix:      Lay out from canvas-size each frame (widths from the surface,
-          the feed column centered), and say so in the pack's example
-          index line so generated apps inherit the fix, not the bug.
+Fix:      A Layout struct computed from canvas-size at the top of every
+          frame drives every coordinate: the feed column caps at 480 and
+          centers on wide surfaces, the photo rect derives from the column,
+          scroll extents and hit boxes from the same struct. The window
+          size request is explicitly labeled a request, not the truth. The
+          pack's index line for krate-gram now names the canvas-size
+          pattern so generated apps inherit the fix. Verified: fills a
+          Pixel 7 edge to edge, desktop shot unchanged.
 
 ### K-086 -- the dialog wall was hollow at every layer below the words
 Status:   fixed (three layers, each locked by a test)

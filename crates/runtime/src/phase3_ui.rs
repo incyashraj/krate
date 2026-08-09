@@ -178,6 +178,11 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.info()
     }
 
+    /// Display scale for a window; 1.0 wherever the adapter has no answer.
+    pub fn window_scale(&self, id: WindowId) -> f32 {
+        self.adapter.window_scale(id)
+    }
+
     pub fn create_window(&self, options: WindowOptions) -> UiDispatchResult<WindowId> {
         self.check_window_access()?;
         let id = self.adapter.create_window(options)?;

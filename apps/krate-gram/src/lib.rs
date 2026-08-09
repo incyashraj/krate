@@ -36,15 +36,60 @@ use libm::{cosf, sinf, sqrtf};
 const ROOT_ID: u64 = 1;
 const CANVAS_ID: u64 = 2;
 
-const WIDTH: f32 = 390.0;
-const HEIGHT: f32 = 720.0;
+/// The size the window is asked for. What the host actually grants is the
+/// law -- a phone hands back its whole screen -- so every frame lays out
+/// from canvas-size, never from these numbers (K-087).
+const REQUEST_W: f32 = 390.0;
+const REQUEST_H: f32 = 720.0;
 
 const HEADER_H: f32 = 56.0;
 const TABBAR_H: f32 = 56.0;
 
-/// The feed photo, generated once per post.
+/// The generated art's own resolution. It is drawn into whatever rect the
+/// layout gives it; the sampler scales.
 const ART_W: u32 = 358;
 const ART_H: u32 = 300;
+
+/// Everything the frame needs to know about the surface it is drawing on,
+/// asked fresh every frame so a resize -- or a phone-sized surface -- is
+/// simply the next frame's truth.
+#[derive(Clone, Copy)]
+struct Layout {
+    w: f32,
+    h: f32,
+    /// The feed column: capped for readability, centered when the surface
+    /// is wider than a phone.
+    col_x: f32,
+    col_w: f32,
+    /// The photo rect inside the column, aspect matched to the art.
+    photo_w: f32,
+    photo_h: f32,
+}
+
+impl Layout {
+    fn from_canvas(w: f32, h: f32) -> Self {
+        let col_w = w.min(480.0);
+        let col_x = (w - col_w) / 2.0;
+        let photo_w = col_w - 32.0;
+        let photo_h = photo_w * ART_H as f32 / ART_W as f32;
+        Layout {
+            w,
+            h,
+            col_x,
+            col_w,
+            photo_w,
+            photo_h,
+        }
+    }
+
+    fn post_h(&self) -> f32 {
+        POST_HEADER_H + self.photo_h + POST_FOOTER_H + POST_GAP
+    }
+
+    fn content_height(&self, posts: usize) -> f32 {
+        STORIES_H + posts as f32 * self.post_h() + 12.0
+    }
+}
 
 fn color(r: f32, g: f32, b: f32, a: f32) -> gfx::Color {
     gfx::Color { r, g, b, a }
@@ -188,7 +233,6 @@ struct Post {
 const POST_HEADER_H: f32 = 54.0;
 const POST_FOOTER_H: f32 = 96.0;
 const POST_GAP: f32 = 18.0;
-const POST_H: f32 = POST_HEADER_H + ART_H as f32 + POST_FOOTER_H + POST_GAP;
 const STORIES_H: f32 = 108.0;
 
 fn posts() -> Vec<Post> {
@@ -210,10 +254,6 @@ fn posts() -> Vec<Post> {
             avatar_hue,
         })
         .collect()
-}
-
-fn content_height(post_count: usize) -> f32 {
-    STORIES_H + post_count as f32 * POST_H + 12.0
 }
 
 /// One story circle: a ring of arc segments walking a warm gradient, an
@@ -307,14 +347,14 @@ impl Feed {
         }
     }
 
-    fn max_offset(&self) -> f32 {
-        (content_height(self.posts.len()) - (HEIGHT - HEADER_H - TABBAR_H)).max(0.0)
+    fn max_offset(&self, l: &Layout) -> f32 {
+        (l.content_height(self.posts.len()) - (l.h - HEADER_H - TABBAR_H)).max(0.0)
     }
 
     /// Momentum + rubber-band. Direct deltas apply with resistance past the
     /// edges; the glide decays; overshoot springs home.
-    fn scroll_by(&mut self, dy: f32) {
-        let max = self.max_offset();
+    fn scroll_by(&mut self, dy: f32, l: &Layout) {
+        let max = self.max_offset(l);
         let resisted = if self.offset < 0.0 || self.offset > max {
             dy * 0.35
         } else {
@@ -324,8 +364,8 @@ impl Feed {
         self.velocity = self.velocity * 0.35 + dy * 24.0;
     }
 
-    fn glide(&mut self, dt: f32) {
-        let max = self.max_offset();
+    fn glide(&mut self, dt: f32, l: &Layout) {
+        let max = self.max_offset(l);
         if self.offset < 0.0 {
             self.offset += (0.0 - self.offset) * (dt * 12.0).min(1.0);
             self.velocity = 0.0;
@@ -342,19 +382,20 @@ impl Feed {
     }
 
     /// The post whose photo contains this screen point, if any.
-    fn photo_at(&self, x: f32, y: f32) -> Option<usize> {
+    fn photo_at(&self, x: f32, y: f32, l: &Layout) -> Option<usize> {
         let content_y = y - HEADER_H + self.offset;
-        if y < HEADER_H || y > HEIGHT - TABBAR_H {
+        if y < HEADER_H || y > l.h - TABBAR_H {
             return None;
         }
         let feed_y = content_y - STORIES_H;
         if feed_y < 0.0 {
             return None;
         }
-        let index = (feed_y / POST_H) as usize;
-        let within = feed_y - index as f32 * POST_H;
-        let on_photo = within >= POST_HEADER_H && within < POST_HEADER_H + ART_H as f32;
-        (index < self.posts.len() && on_photo && x >= 16.0 && x <= 16.0 + ART_W as f32)
+        let index = (feed_y / l.post_h()) as usize;
+        let within = feed_y - index as f32 * l.post_h();
+        let on_photo = within >= POST_HEADER_H && within < POST_HEADER_H + l.photo_h;
+        let px = l.col_x + 16.0;
+        (index < self.posts.len() && on_photo && x >= px && x <= px + l.photo_w)
             .then_some(index)
     }
 
@@ -371,8 +412,8 @@ impl Feed {
         });
     }
 
-    fn tick(&mut self, dt: f32) {
-        self.glide(dt);
+    fn tick(&mut self, dt: f32, l: &Layout) {
+        self.glide(dt, l);
         if let Some(burst) = &mut self.burst {
             burst.scale.tick(1.0, dt);
             burst.alpha -= dt * 1.6;
@@ -382,22 +423,22 @@ impl Feed {
         }
     }
 
-    fn settled(&self) -> bool {
-        let max = self.max_offset();
+    fn settled(&self, l: &Layout) -> bool {
+        let max = self.max_offset(l);
         self.velocity == 0.0
             && self.offset >= -0.01
             && self.offset <= max + 0.01
             && self.burst.is_none()
     }
 
-    fn draw(&self, canvas: u64) -> Result<(), gfx::GfxError> {
+    fn draw(&self, canvas: u64, l: &Layout) -> Result<(), gfx::GfxError> {
         canvas2d::clear(canvas, color(0.043, 0.051, 0.07, 1.0))?;
 
         // Content scrolls; header and tab bar paint over it afterwards.
-        canvas2d::set_clip(canvas, 0.0, HEADER_H, WIDTH, HEIGHT - HEADER_H - TABBAR_H)?;
+        canvas2d::set_clip(canvas, 0.0, HEADER_H, l.w, l.h - HEADER_H - TABBAR_H)?;
         let top = HEADER_H - self.offset;
 
-        // Stories row.
+        // Stories row, spread across the column.
         let stories = [
             ("you", (0.45, 0.45, 0.55)),
             ("dune.wanderer", (0.95, 0.55, 0.30)),
@@ -405,16 +446,24 @@ impl Feed {
             ("tidepool", (0.25, 0.55, 0.90)),
             ("magma.room", (0.90, 0.35, 0.25)),
         ];
-        if top + STORIES_H > HEADER_H && top < HEIGHT {
+        if top + STORIES_H > HEADER_H && top < l.h {
+            let step = (l.col_w - 88.0) / (stories.len() - 1) as f32;
             for (i, (name, hue)) in stories.iter().enumerate() {
-                draw_story(canvas, 44.0 + i as f32 * 76.0, top + 40.0, name, *hue)?;
+                draw_story(
+                    canvas,
+                    l.col_x + 44.0 + i as f32 * step,
+                    top + 40.0,
+                    name,
+                    *hue,
+                )?;
             }
         }
 
         // Posts, culled to the viewport.
+        let left = l.col_x + 16.0;
         for (i, post) in self.posts.iter().enumerate() {
-            let py = top + STORIES_H + i as f32 * POST_H;
-            if py > HEIGHT || py + POST_H < HEADER_H {
+            let py = top + STORIES_H + i as f32 * l.post_h();
+            if py > l.h || py + l.post_h() < HEADER_H {
                 continue;
             }
 
@@ -422,7 +471,7 @@ impl Feed {
             canvas2d::radial_gradient(
                 canvas,
                 gfx::Point {
-                    x: 34.0,
+                    x: left + 18.0,
                     y: py + 26.0,
                 },
                 17.0,
@@ -438,7 +487,7 @@ impl Feed {
                 canvas,
                 post.user,
                 gfx::Point {
-                    x: 60.0,
+                    x: left + 44.0,
                     y: py + 24.0,
                 },
                 14.0,
@@ -449,7 +498,7 @@ impl Feed {
                 canvas,
                 "original art",
                 gfx::Point {
-                    x: 60.0,
+                    x: left + 44.0,
                     y: py + 40.0,
                 },
                 11.5,
@@ -457,7 +506,7 @@ impl Feed {
             )?;
 
             // The photo: rounded, shadowed, and the reason this app exists.
-            let art_rect = rect(16.0, py + POST_HEADER_H, ART_W as f32, ART_H as f32);
+            let art_rect = rect(left, py + POST_HEADER_H, l.photo_w, l.photo_h);
             canvas2d::drop_shadow_round_rect(
                 canvas,
                 rect(art_rect.x, art_rect.y + 8.0, art_rect.width, art_rect.height),
@@ -475,18 +524,18 @@ impl Feed {
             )?;
 
             // Action row: the heart, then the counts and caption.
-            let fy = py + POST_HEADER_H + ART_H as f32 + 12.0;
+            let fy = py + POST_HEADER_H + l.photo_h + 12.0;
             let heart = if post.liked {
                 &self.heart_small_red
             } else {
                 &self.heart_small
             };
-            canvas2d::draw_pixels(canvas, rect(20.0, fy, 26.0, 26.0), 26, 26, heart)?;
+            canvas2d::draw_pixels(canvas, rect(left + 4.0, fy, 26.0, 26.0), 26, 26, heart)?;
             canvas2d::draw_text_styled(
                 canvas,
                 &format!("{} likes", post.likes),
                 gfx::Point {
-                    x: 20.0,
+                    x: left + 4.0,
                     y: fy + 46.0,
                 },
                 13.5,
@@ -497,7 +546,7 @@ impl Feed {
                 canvas,
                 post.user,
                 gfx::Point {
-                    x: 20.0,
+                    x: left + 4.0,
                     y: fy + 66.0,
                 },
                 13.0,
@@ -509,7 +558,7 @@ impl Feed {
                 canvas,
                 post.caption,
                 gfx::Point {
-                    x: 26.0 + name_w.width,
+                    x: left + 10.0 + name_w.width,
                     y: fy + 66.0,
                 },
                 13.0,
@@ -542,85 +591,83 @@ impl Feed {
         // Header, painted over the scrolled content.
         canvas2d::fill_rect(
             canvas,
-            rect(0.0, 0.0, WIDTH, HEADER_H),
+            rect(0.0, 0.0, l.w, HEADER_H),
             color(0.043, 0.051, 0.07, 1.0),
         )?;
         canvas2d::draw_text_styled(
             canvas,
             "Krategram",
-            gfx::Point { x: 20.0, y: 38.0 },
+            gfx::Point {
+                x: l.col_x + 20.0,
+                y: 38.0,
+            },
             24.0,
             color(1.0, 1.0, 1.0, 1.0),
             style(750, -0.6),
         )?;
         canvas2d::fill_rect(
             canvas,
-            rect(0.0, HEADER_H - 1.0, WIDTH, 1.0),
+            rect(0.0, HEADER_H - 1.0, l.w, 1.0),
             color(1.0, 1.0, 1.0, 0.08),
         )?;
 
-        // Tab bar: five glyphs from primitives.
-        let bar_y = HEIGHT - TABBAR_H;
+        // Tab bar: five glyphs from primitives, spread across the column.
+        let bar_y = l.h - TABBAR_H;
         canvas2d::fill_rect(
             canvas,
-            rect(0.0, bar_y, WIDTH, TABBAR_H),
+            rect(0.0, bar_y, l.w, TABBAR_H),
             color(0.043, 0.051, 0.07, 1.0),
         )?;
         canvas2d::fill_rect(
             canvas,
-            rect(0.0, bar_y, WIDTH, 1.0),
+            rect(0.0, bar_y, l.w, 1.0),
             color(1.0, 1.0, 1.0, 0.08),
         )?;
         let cy = bar_y + TABBAR_H / 2.0;
-        let slot = WIDTH / 5.0;
+        let slot = l.col_w / 5.0;
+        let sx = |n: f32| l.col_x + slot * n;
         // Home: filled rounded square. Search: ring. Create: plus in a round
         // square. Likes: the heart. Profile: a disc.
         canvas2d::fill_round_rect(
             canvas,
-            rect(slot * 0.5 - 9.0, cy - 9.0, 18.0, 18.0),
+            rect(sx(0.5) - 9.0, cy - 9.0, 18.0, 18.0),
             radii(5.0),
             color(1.0, 1.0, 1.0, 0.95),
         )?;
         canvas2d::stroke_circle(
             canvas,
-            gfx::Point {
-                x: slot * 1.5,
-                y: cy,
-            },
+            gfx::Point { x: sx(1.5), y: cy },
             8.0,
             2.0,
             color(1.0, 1.0, 1.0, 0.6),
         )?;
         canvas2d::stroke_round_rect(
             canvas,
-            rect(slot * 2.5 - 9.0, cy - 9.0, 18.0, 18.0),
+            rect(sx(2.5) - 9.0, cy - 9.0, 18.0, 18.0),
             radii(6.0),
             2.0,
             color(1.0, 1.0, 1.0, 0.6),
         )?;
         canvas2d::fill_rect(
             canvas,
-            rect(slot * 2.5 - 5.0, cy - 1.0, 10.0, 2.0),
+            rect(sx(2.5) - 5.0, cy - 1.0, 10.0, 2.0),
             color(1.0, 1.0, 1.0, 0.6),
         )?;
         canvas2d::fill_rect(
             canvas,
-            rect(slot * 2.5 - 1.0, cy - 5.0, 2.0, 10.0),
+            rect(sx(2.5) - 1.0, cy - 5.0, 2.0, 10.0),
             color(1.0, 1.0, 1.0, 0.6),
         )?;
         canvas2d::draw_pixels(
             canvas,
-            rect(slot * 3.5 - 11.0, cy - 11.0, 22.0, 22.0),
+            rect(sx(3.5) - 11.0, cy - 11.0, 22.0, 22.0),
             26,
             26,
             &self.heart_small,
         )?;
         canvas2d::radial_gradient(
             canvas,
-            gfx::Point {
-                x: slot * 4.5,
-                y: cy,
-            },
+            gfx::Point { x: sx(4.5), y: cy },
             9.0,
             color(0.45, 0.45, 0.55, 1.0),
             color(0.25, 0.25, 0.35, 1.0),
@@ -660,8 +707,8 @@ impl bindings::Guest for Component {
         let win = match window::create(
             "Krategram",
             types::WindowSize {
-                width: WIDTH as u32,
-                height: HEIGHT as u32,
+                width: REQUEST_W as u32,
+                height: REQUEST_H as u32,
             },
         ) {
             Ok(win) => win,
@@ -692,6 +739,13 @@ impl bindings::Guest for Component {
         let mut frames: u32 = 0;
 
         loop {
+            // The surface is the law, asked fresh every frame: a desktop
+            // resize or a phone-sized surface is just the next layout.
+            let layout = match canvas2d::canvas_size(canvas) {
+                Ok(size) => Layout::from_canvas(size.width.max(1.0), size.height.max(1.0)),
+                Err(_) => Layout::from_canvas(REQUEST_W, REQUEST_H),
+            };
+
             let now = clock::monotonic_nanos();
             let dt = if quick {
                 1.0 / 60.0
@@ -704,14 +758,14 @@ impl bindings::Guest for Component {
             if quick {
                 // Synthetic session: scroll deep, spring back, double-tap.
                 match frames {
-                    5..=20 => feed.scroll_by(60.0),
+                    5..=20 => feed.scroll_by(60.0, &layout),
                     30 => feed.like(1),
                     _ => {}
                 }
             }
-            feed.tick(dt);
+            feed.tick(dt, &layout);
 
-            if feed.draw(canvas).is_err() {
+            if feed.draw(canvas, &layout).is_err() {
                 out("draw:no");
                 return 1;
             }
@@ -726,11 +780,11 @@ impl bindings::Guest for Component {
 
             let _ = window::request_redraw(win);
             // Block for input when everything is at rest; poll while moving.
-            let wait = if feed.settled() { None } else { Some(16) };
+            let wait = if feed.settled(&layout) { None } else { Some(16) };
             match events::wait(wait) {
                 Some(types::Event::CloseRequested(_)) => break,
                 Some(types::Event::Wheel(wheel)) => {
-                    feed.scroll_by(wheel.dy);
+                    feed.scroll_by(wheel.dy, &layout);
                 }
                 Some(types::Event::Pointer(p)) => {
                     if p.pressed && p.button.is_some() {
@@ -738,7 +792,7 @@ impl bindings::Guest for Component {
                             && (p.y - last_press_at.1).abs() < 30.0;
                         let quick_pair = now.saturating_sub(last_press_nanos) < 400_000_000;
                         if near && quick_pair {
-                            if let Some(index) = feed.photo_at(p.x, p.y) {
+                            if let Some(index) = feed.photo_at(p.x, p.y, &layout) {
                                 feed.like(index);
                             }
                             last_press_nanos = 0;
@@ -753,11 +807,12 @@ impl bindings::Guest for Component {
         }
 
         if quick {
+            let layout = Layout::from_canvas(REQUEST_W, REQUEST_H);
             out(&format!(
                 "scrolled:{} liked:{} settled:{}",
                 feed.offset as i32,
                 feed.posts.iter().filter(|p| p.liked).count(),
-                feed.settled()
+                feed.settled(&layout)
             ));
         }
         out("gram:ready");

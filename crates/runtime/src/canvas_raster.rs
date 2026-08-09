@@ -29,6 +29,13 @@ pub struct CanvasSurface {
     clip: Option<(f32, f32, f32, f32)>,
     width: u32,
     height: u32,
+    /// The size the app sees and draws in. The buffer above is this times
+    /// `scale`: on a 2.6x phone a 411-wide canvas rasters 1080 columns, so
+    /// the pixels are native-sharp while every app coordinate stays logical
+    /// (K-088). At scale 1 the two sizes are identical and nothing changes.
+    logical_width: u32,
+    logical_height: u32,
+    scale: f32,
     /// `0xAARRGGBB`, row-major from the top — the drawn painter's format.
     buffer: Vec<u32>,
 }
@@ -129,18 +136,40 @@ pub struct TextMetrics {
 
 impl CanvasSurface {
     pub fn new(width: u32, height: u32) -> Result<Self, UiAdapterError> {
+        Self::new_scaled(width, height, 1.0)
+    }
+
+    /// A surface whose buffer is `scale` times its logical size, for HiDPI
+    /// hosts. The app draws in logical coordinates; every public draw call
+    /// multiplies by `scale` on the way in, and `to_image` hands the
+    /// physical-resolution pixels to the painter, which blits them 1:1.
+    pub fn new_scaled(width: u32, height: u32, scale: f32) -> Result<Self, UiAdapterError> {
         if width == 0 || height == 0 || width > MAX_CANVAS_EDGE || height > MAX_CANVAS_EDGE {
             return Err(UiAdapterError::Unsupported(format!(
                 "a canvas must be between 1x1 and {MAX_CANVAS_EDGE}x{MAX_CANVAS_EDGE}, got {width}x{height}"
             )));
         }
+        // A hostile or broken scale must not make the buffer explode or
+        // vanish; the clamp bounds are wider than any real display.
+        let scale = if scale.is_finite() {
+            scale.clamp(0.25, 8.0)
+        } else {
+            1.0
+        };
+        let phys_w = ((width as f32 * scale).round() as u32)
+            .clamp(1, MAX_CANVAS_EDGE);
+        let phys_h = ((height as f32 * scale).round() as u32)
+            .clamp(1, MAX_CANVAS_EDGE);
         Ok(Self {
             clip: None,
-            width,
-            height,
+            width: phys_w,
+            height: phys_h,
+            logical_width: width,
+            logical_height: height,
+            scale,
             // Opaque white, so a canvas an app forgets to clear reads as a
             // blank sheet rather than a black hole in the window.
-            buffer: vec![0xFFFF_FFFF; width as usize * height as usize],
+            buffer: vec![0xFFFF_FFFF; phys_w as usize * phys_h as usize],
         })
     }
 
@@ -152,12 +181,31 @@ impl CanvasSurface {
     /// draws to the wrong extent, and every hit-box is off. Returns whether the
     /// size actually changed, so callers can skip redundant work.
     pub fn resize(&mut self, width: u32, height: u32) -> Result<bool, UiAdapterError> {
-        if width == self.width && height == self.height {
+        self.resize_scaled(width, height, self.scale)
+    }
+
+    /// `resize` that can also change the raster scale, for a window that
+    /// moved to a display with a different density.
+    pub fn resize_scaled(
+        &mut self,
+        width: u32,
+        height: u32,
+        scale: f32,
+    ) -> Result<bool, UiAdapterError> {
+        if width == self.logical_width
+            && height == self.logical_height
+            && (scale - self.scale).abs() < f32::EPSILON
+        {
             return Ok(false);
         }
-        let fitted = Self::new(width, height)?;
+        let fitted = Self::new_scaled(width, height, scale)?;
         *self = fitted;
         Ok(true)
+    }
+
+    /// The raster scale this surface was built with.
+    pub fn scale(&self) -> f32 {
+        self.scale
     }
 
     /// Restrict drawing to a rectangle. Anything outside is dropped.
@@ -166,7 +214,8 @@ impl CanvasSurface {
     /// a widget toolkit needs, and a canvas app needs "this list, this
     /// region". Adding a stack later does not break this.
     pub fn set_clip(&mut self, rect: Option<(f32, f32, f32, f32)>) {
-        self.clip = rect;
+        let k = self.scale;
+        self.clip = rect.map(|(x, y, w, h)| (x * k, y * k, w * k, h * k));
     }
 
     /// Whether a pixel may be written. Used by the per-pixel primitives.
@@ -222,6 +271,8 @@ impl CanvasSurface {
     }
 
     pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: u32) {
+        let k = self.scale;
+        let (x, y, w, h) = (x * k, y * k, w * k, h * k);
         let Some((x, y, w, h)) = self.clipped(x, y, w, h) else {
             return;
         };
@@ -239,6 +290,8 @@ impl CanvasSurface {
     /// is smooth rather than stair-stepped -- the primitive that makes round
     /// things look drawn instead of plotted.
     pub fn fill_circle(&mut self, cx: f32, cy: f32, radius: f32, color: u32) {
+        let k = self.scale;
+        let (cx, cy, radius) = (cx * k, cy * k, radius * k);
         if radius <= 0.0 {
             return;
         }
@@ -286,6 +339,8 @@ impl CanvasSurface {
     /// that screensaver got a visible square box around it. The model did the
     /// best it could with what we exposed; the gap was ours.
     pub fn stroke_circle(&mut self, cx: f32, cy: f32, radius: f32, width: f32, color: u32) {
+        let k = self.scale;
+        let (cx, cy, radius, width) = (cx * k, cy * k, radius * k, width * k);
         if radius <= 0.0 || width <= 0.0 {
             return;
         }
@@ -394,6 +449,9 @@ impl CanvasSurface {
         if w <= 0.0 || h <= 0.0 {
             return;
         }
+        let k = self.scale;
+        let (x, y, w, h) = (x * k, y * k, w * k, h * k);
+        let radii = (radii.0 * k, radii.1 * k, radii.2 * k, radii.3 * k);
         let (bw, bh) = (self.width, self.height);
         let x0 = (x.floor().max(0.0) as u32).min(bw);
         let x1 = ((x + w).ceil().max(0.0) as u32).min(bw);
@@ -427,6 +485,9 @@ impl CanvasSurface {
         if w <= 0.0 || h <= 0.0 || width <= 0.0 {
             return;
         }
+        let k = self.scale;
+        let (x, y, w, h, width) = (x * k, y * k, w * k, h * k, width * k);
+        let radii = (radii.0 * k, radii.1 * k, radii.2 * k, radii.3 * k);
         let half = width * 0.5;
         let (bw, bh) = (self.width, self.height);
         let x0 = ((x - half).floor().max(0.0) as u32).min(bw);
@@ -464,6 +525,8 @@ impl CanvasSurface {
         if w <= 0.0 || h <= 0.0 {
             return;
         }
+        let k = self.scale;
+        let (x, y, w, h, blur) = (x * k, y * k, w * k, h * k, blur * k);
         let blur = blur.max(0.5);
         let (bw, bh) = (self.width, self.height);
         let x0 = ((x - blur).floor().max(0.0) as u32).min(bw);
@@ -496,9 +559,12 @@ impl CanvasSurface {
             return;
         }
         if stops.len() == 1 {
+            // Delegate on the raw arguments: fill_rect scales them itself.
             self.fill_rect(x, y, w, h, stops[0].1);
             return;
         }
+        let k = self.scale;
+        let (x, y, w, h) = (x * k, y * k, w * k, h * k);
         let Some((cx0, cy0, cw, ch)) = self.clipped(x, y, w, h) else {
             return;
         };
@@ -553,9 +619,12 @@ impl CanvasSurface {
             (start_degrees, sweep_degrees)
         };
         if sweep >= 360.0 {
+            // Delegate on the raw arguments: stroke_circle scales them.
             self.stroke_circle(cx, cy, radius, width, color);
             return;
         }
+        let k = self.scale;
+        let (cx, cy, radius, width) = (cx * k, cy * k, radius * k, width * k);
         let half = width * 0.5;
         let outer = radius + half;
         let (w, h) = (self.width, self.height);
@@ -591,6 +660,8 @@ impl CanvasSurface {
     /// primitive -- a soft light falloff instead of a flat disc, which is the
     /// single biggest difference between a modern look and a flat one.
     pub fn radial_gradient(&mut self, cx: f32, cy: f32, radius: f32, inner: u32, outer: u32) {
+        let k = self.scale;
+        let (cx, cy, radius) = (cx * k, cy * k, radius * k);
         if radius <= 0.0 {
             return;
         }
@@ -629,6 +700,8 @@ impl CanvasSurface {
     /// A vertical linear gradient filling a rectangle: `top` color at `y`
     /// easing to `bottom` at `y + h`. For skies, panels, backdrops.
     pub fn linear_gradient_v(&mut self, x: f32, y: f32, w: f32, h: f32, top: u32, bottom: u32) {
+        let k = self.scale;
+        let (x, y, w, h) = (x * k, y * k, w * k, h * k);
         if h <= 0.0 || w <= 0.0 {
             return;
         }
@@ -644,6 +717,8 @@ impl CanvasSurface {
 
     /// Four thin fills; a stroke is its edges.
     pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32, stroke: f32, color: u32) {
+        let k = self.scale;
+        let (x, y, w, h, stroke) = (x * k, y * k, w * k, h * k, stroke * k);
         let stroke = stroke.max(1.0);
         self.fill_rect(x, y, w, stroke, color);
         self.fill_rect(x, y + h - stroke, w, stroke, color);
@@ -685,6 +760,8 @@ impl CanvasSurface {
         color: u32,
         style: krate_adapter_common::vector_text::CanvasTextStyle,
     ) {
+        let k = self.scale;
+        let (x, y, font_size) = (x * k, y * k, font_size * k);
         // Text is rendered by a shared painter that writes into the buffer
         // directly, so it cannot be gated per pixel the way the primitives
         // are. Snapshot what lies outside the clip, let the painter run, then
@@ -798,6 +875,8 @@ impl CanvasSurface {
     /// and alpha blending on all three systems, and there is one place where
     /// that behaviour can ever drift.
     pub fn draw_pixels(&mut self, x: f32, y: f32, w: f32, h: f32, image: &ImagePixels) {
+        let k = self.scale;
+        let (x, y, w, h) = (x * k, y * k, w * k, h * k);
         draw_image(
             &mut self.buffer,
             self.width,
@@ -826,6 +905,9 @@ impl CanvasSurface {
         if w <= 0.0 || h <= 0.0 || image.width == 0 || image.height == 0 {
             return;
         }
+        let k = self.scale;
+        let (x, y, w, h) = (x * k, y * k, w * k, h * k);
+        let radii = (radii.0 * k, radii.1 * k, radii.2 * k, radii.3 * k);
         // Cover: scale so the image fills the frame, cropping the overflow
         // equally on both sides.
         let scale = (w / image.width as f32).max(h / image.height as f32);
@@ -874,6 +956,8 @@ impl CanvasSurface {
         angle: f32,
         image: &ImagePixels,
     ) {
+        let k = self.scale;
+        let (cx, cy, dst_w, dst_h) = (cx * k, cy * k, dst_w * k, dst_h * k);
         let (iw, ih) = (image.width, image.height);
         if iw == 0 || ih == 0 || dst_w <= 0.0 || dst_h <= 0.0 {
             return;
@@ -941,7 +1025,14 @@ impl CanvasSurface {
     /// The surface's size in pixels, which is its size in logical points too
     /// -- the canvas renders at 1x, and the display scale is applied when the
     /// host lifts the image onto the screen.
+    /// The logical size -- the coordinate space the app draws in. The
+    /// physical buffer behind it is this times `scale`.
     pub fn dimensions(&self) -> (u32, u32) {
+        (self.logical_width, self.logical_height)
+    }
+
+    #[allow(dead_code)]
+    fn physical_dimensions(&self) -> (u32, u32) {
         (self.width, self.height)
     }
 
@@ -981,6 +1072,34 @@ fn sample_stops(stops: &[(f32, u32)], t: f32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// K-088's lock: a scaled surface reports logical size, rasters
+    /// physical pixels, and puts a logical-coordinate fill exactly where
+    /// the physical buffer says it should be.
+    #[test]
+    fn a_scaled_surface_rasters_physical_and_reports_logical() {
+        let mut s = CanvasSurface::new_scaled(100, 50, 2.0).expect("surface");
+        assert_eq!(s.dimensions(), (100, 50), "apps see logical size");
+        assert_eq!(s.physical_dimensions(), (200, 100), "buffer is physical");
+
+        // A fill at logical (10, 10, 5, 5) lands at physical (20, 20, 10, 10).
+        s.fill_rect(10.0, 10.0, 5.0, 5.0, 0xFF00_0000);
+        let image = s.to_image().expect("image");
+        assert_eq!((image.width, image.height), (200, 100));
+        let px = |x: usize, y: usize| image.rgba[(y * 200 + x) * 4];
+        assert_eq!(px(25, 25), 0, "inside the scaled fill is black");
+        assert_eq!(px(15, 25), 255, "left of the scaled fill is untouched");
+        assert_eq!(px(35, 25), 255, "right of the scaled fill is untouched");
+
+        // The one-stop gradient delegates to fill_rect on raw arguments;
+        // if scaling ever runs twice the fill lands at (40, 40) instead.
+        let mut g = CanvasSurface::new_scaled(100, 50, 2.0).expect("surface");
+        g.linear_gradient_stops(10.0, 10.0, 5.0, 5.0, 0.0, &[(0.0, 0xFF00_0000)]);
+        let gi = g.to_image().expect("image");
+        let gpx = |x: usize, y: usize| gi.rgba[(y * 200 + x) * 4];
+        assert_eq!(gpx(25, 25), 0, "delegation scales exactly once");
+        assert_eq!(gpx(45, 45), 255, "a double-scale would land here");
+    }
 
     /// The arc lights its sweep and only its sweep: a quarter arc from 12
     /// o'clock leaves 9 o'clock dark. Full sweep degrades to the circle.
