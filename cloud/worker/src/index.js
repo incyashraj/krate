@@ -63,7 +63,7 @@ export default {
         return cors(await getShot(pathname.slice(6), env));
       }
       if (request.method === "GET" && pathname.startsWith("/a/")) {
-        return cors(await fetchBundle(pathname.slice(3), env));
+        return cors(await fetchBundle(request, url, pathname.slice(3), env));
       }
       return cors(text("not found", 404));
     } catch (err) {
@@ -184,7 +184,22 @@ async function getShot(hash, env) {
 
 // ----------------------------------------------------------------- fetching
 
-async function fetchBundle(hash, env) {
+/// What kind of client is on the other end of a /a/ hit. The CLI and every
+/// other tool asks for bytes; only a human's browser says `Accept:
+/// text/html`. Among browsers the user agent splits phone from desktop.
+/// This is the M0 measurement from the mobile plan: what fraction of
+/// shared-link opens land on a device that cannot run the app today.
+function classifyClient(request) {
+  const accept = request.headers.get("accept") || "";
+  if (!accept.includes("text/html")) return "tool";
+  const ua = request.headers.get("user-agent") || "";
+  if (/Android/i.test(ua)) return "mobile-android";
+  if (/iPhone|iPad|iPod/i.test(ua)) return "mobile-ios";
+  if (/Mobile/i.test(ua)) return "mobile-other";
+  return "desktop-browser";
+}
+
+async function fetchBundle(request, url, hash, env) {
   // The hash is the object key, so it must be a bare hex string. Rejecting
   // anything else closes off every path-traversal shape at once.
   if (!/^[0-9a-f]{64}$/.test(hash)) {
@@ -193,6 +208,25 @@ async function fetchBundle(hash, env) {
   const object = await env.BUNDLES.get(hash);
   if (!object) {
     return text("not found", 404);
+  }
+
+  // Count the hit before deciding what to serve, one Analytics Engine point
+  // in the same dataset the CLI feeds: action "link", the client class in
+  // the os slot, the app's hash as the index. No KV -- the K-082 rule.
+  const client = classifyClient(request);
+  if (env.USAGE) {
+    env.USAGE.writeDataPoint({
+      blobs: ["link", "-", client, "ok", "direct", new Date().toISOString().slice(0, 10)],
+      doubles: [1],
+      indexes: [hash],
+    });
+  }
+
+  // A phone browser gets a small page instead of a file the phone cannot
+  // open -- the soft landing from the mobile plan. `?dl=1` still hands the
+  // raw bytes to anyone who insists.
+  if (client.startsWith("mobile-") && !url.searchParams.has("dl")) {
+    return await mobileLanding(hash, env);
   }
 
   // Name the download after the app, not its hash. "84380a400d91.krate" tells
@@ -218,9 +252,75 @@ async function fetchBundle(hash, env) {
     headers: {
       "content-type": "application/octet-stream",
       // Content-addressed, so a bundle at a given URL can never change and
-      // may be cached forever.
+      // may be cached forever. Vary, because the same URL serves a phone a
+      // landing page instead.
       "cache-control": "public, max-age=31536000, immutable",
+      vary: "accept, user-agent",
       "content-disposition": `attachment; filename="${filename}"`,
+    },
+  });
+}
+
+/// The page a phone sees when it taps a shared app link. Honest about
+/// today's boundary, and it keeps the link alive instead of dumping a file
+/// the phone cannot open: copy the link, open it on a computer, done.
+async function mobileLanding(hash, env) {
+  let name = "A Krate app";
+  let author = "";
+  const meta = await env.APPS.get(`app:${hash}`);
+  if (meta) {
+    try {
+      const parsed = JSON.parse(meta);
+      if (parsed.name) name = parsed.name;
+      if (parsed.author) author = parsed.author;
+    } catch (_) {
+      // A bad metadata record must not stop the page.
+    }
+  }
+  const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
+  const link = `${base}/a/${hash}`;
+  const shot = (await env.BUNDLES.head(`shot:${hash}`))
+    ? `${base}/shot/${hash}`
+    : null;
+  const esc = (s) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(name)} — a Krate app</title>
+<style>
+  body { margin: 0; background: #0b0d12; color: #fff; font-family: -apple-system, system-ui, sans-serif;
+         min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  main { max-width: 340px; padding: 32px 24px; text-align: center; }
+  img { width: 100%; border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); margin-bottom: 20px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .by { color: rgba(255,255,255,0.5); font-size: 14px; margin: 0 0 20px; }
+  p { color: rgba(255,255,255,0.7); font-size: 15px; line-height: 1.5; margin: 0 0 24px; }
+  button { width: 100%; padding: 14px; border: 0; border-radius: 24px; background: #6b8cff;
+           color: #fff; font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+  a { color: rgba(255,255,255,0.55); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  ${shot ? `<img src="${shot}" alt="">` : ""}
+  <h1>${esc(name)}</h1>
+  ${author ? `<p class="by">by ${esc(author)}</p>` : ""}
+  <p>This is a Krate app. Krate runs on computers today -- open this link on your Mac, Windows, or Linux machine and it runs there.</p>
+  <button onclick="navigator.clipboard.writeText('${link}').then(()=>this.textContent='Copied')">Copy the link</button>
+  <a href="https://krate.tech">What is Krate?</a> · <a href="${link}?dl=1">Download the file anyway</a>
+</main>
+</body>
+</html>`;
+  return new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      // The page may change as mobile support lands; never let a phone pin it.
+      "cache-control": "no-cache",
+      vary: "accept, user-agent",
     },
   });
 }
