@@ -71,6 +71,40 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-088 -- the Android blit ignores display scale, so every app is pixelated
+Status:   open
+Owner:    lead (M1 workstream)
+Severity: serious
+Class:    our-code
+Found:    2026-08-09, first light on the Android emulator: krate-gram drew
+          correctly but visibly pixelated
+Evidence: The first-light screenshot. The Pixel 7 surface is 1080x2400
+          physical at scale ~2.6; the painter rasterized at logical 390x720
+          and the blit stretched it. Desktop learned this exact lesson as
+          K-067 (logical pixels, host owns scale) -- the Android adapter has
+          the snapshot's scale_factor and does not yet paint at physical
+          resolution. Also visible: a white band where the aspect-mismatched
+          remainder of the surface goes unpainted.
+Fix:      Paint at physical resolution and cover the whole surface, the
+          same contract the desktop adapters honor. Part of M1's remaining
+          rendering work, alongside touch input.
+
+### K-087 -- krate-gram hardcodes its size instead of reading canvas-size
+Status:   open
+Owner:    lead (M1 workstream)
+Severity: serious
+Class:    example-bug
+Found:    2026-08-09, first light on Android: the phone's surface is not
+          390x720, and the flagship modern-UI example cannot adapt
+Evidence: apps/krate-gram/src/lib.rs WIDTH/HEIGHT constants drive every
+          coordinate; canvas2d::canvas_size is never called. W13 exists
+          because of exactly this class -- and the example apps are what
+          every generated app learns from. On a phone the feed letterboxes
+          into the wrong aspect instead of filling the screen.
+Fix:      Lay out from canvas-size each frame (widths from the surface,
+          the feed column centered), and say so in the pack's example
+          index line so generated apps inherit the fix, not the bug.
+
 ### K-086 -- the dialog wall was hollow at every layer below the words
 Status:   fixed (three layers, each locked by a test)
 Owner:    lead

@@ -94,9 +94,22 @@ the runtime dispatches to it behind `cfg(target_os = "android")`; and
 ARM64, embeds krate-gram as the first-light app). `scripts/build-android.sh`
 holds the whole fragile env (rustup-not-Homebrew rustc, NDK compilers, API
 26 floor -- cpal's AAudio needs 26+). rfd is desktop-only now; Android
-dialogs answer as cancelled until the document picker (M3). Next: APK
-packaging around the .so, an emulator AVD, and first light on a screen.
-Then intents, then the wall sheet -- the ship gate.
+dialogs answer as cancelled until the document picker (M3).
+
+**First light achieved, same day.** `scripts/package-android.sh` builds the
+7.9 MB APK by hand (aapt2 + zipalign + apksigner, hasCode=false, no
+Gradle); a Pixel 7 AVD ran it; the screenshot shows Krategram rendering --
+wasmtime ran the component, the wall granted, the painter rasterized,
+softbuffer hit the NativeActivity surface. Two launch bugs found by
+probing stderr through logcat, both fixed: window creation pumped once and
+gave up before Android delivered Resumed (now a bounded pump-wait), and
+Android's first winit window is id 0, which the shared handle validation
+reads as null (now offset locally; the desktop null-check stays). Two
+bugs found by looking at the pixels, filed: K-088 (blit ignores display
+scale -- the K-067 lesson, again, on a new surface) and K-087 (krate-gram
+hardcodes 390x720 instead of reading canvas-size -- example-bug). Next:
+K-088 + K-087, touch input mapped to pointer/wheel, then intents, then
+the wall sheet -- the ship gate.
 
 ## M2 -- iOS player (second, because Apple makes you earn it)
 

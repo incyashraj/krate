@@ -370,10 +370,19 @@ impl WindowAdapter for AndroidWinitPrototypeUiAdapter {
     }
 
     fn create_window(&self, options: WindowOptions) -> Result<WindowId, UiAdapterError> {
-        let id = WindowAdapter::create_window(&self.headless, options.clone())?;
+        let id = WindowAdapter::create_window(&self.headless, options.clone()).map_err(|e| {
+            eprintln!("krate-adapter: headless create failed: {e:?}");
+            e
+        })?;
         let (raw_handle, snapshot) =
-            winit_native::create_native_window(id, &options.title, options.size)?;
-        self.attach_winit_session(id, raw_handle, snapshot)?;
+            winit_native::create_native_window(id, &options.title, options.size).map_err(|e| {
+                eprintln!("krate-adapter: native create failed: {e:?}");
+                e
+            })?;
+        self.attach_winit_session(id, raw_handle, snapshot).map_err(|e| {
+            eprintln!("krate-adapter: attach failed: {e:?}");
+            e
+        })?;
         Ok(id)
     }
 

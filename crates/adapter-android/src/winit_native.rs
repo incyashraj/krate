@@ -434,6 +434,7 @@ mod real {
                     builder.with_android_app(android_app);
                 }
                 let event_loop = builder.build().map_err(|err| {
+                    eprintln!("krate-adapter: event loop build failed: {err}");
                     UiAdapterError::Unsupported(format!(
                         "winit event loop unavailable: {err}"
                     ))
@@ -466,7 +467,23 @@ mod real {
                 title: title.to_string(),
                 size,
             });
-            pump(host);
+            // Android delivers Resumed on its own schedule, and a window can
+            // only be created once it has -- one pump is not enough right
+            // after launch. Pump until the window exists, bounded so a
+            // platform that never resumes fails loudly instead of hanging.
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            loop {
+                pump(host);
+                let created = host
+                    .app
+                    .windows
+                    .values()
+                    .any(|tracked| tracked.krate == krate);
+                if created || std::time::Instant::now() >= deadline {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
 
             let tracked = host
                 .app
@@ -474,12 +491,18 @@ mod real {
                 .values()
                 .find(|tracked| tracked.krate == krate)
                 .ok_or_else(|| {
+                    eprintln!("krate-adapter: window never appeared after pumping");
                     UiAdapterError::Unsupported(
                         "winit did not create the requested window".to_string(),
                     )
                 })?;
 
-            let raw_handle = u64::from(tracked.window.id());
+            // Android numbers its first (only) window 0, and the shared
+            // handle validation reads 0 as "null handle" -- a real bug class
+            // on desktops, kept there. This value is an opaque token minted
+            // and consumed only by this adapter, never dereferenced, so a
+            // fixed offset keeps both truths.
+            let raw_handle = u64::from(tracked.window.id()) + 1;
             let inner = tracked.window.inner_size();
             let snapshot = WinitWindowSnapshot::new(
                 krate,

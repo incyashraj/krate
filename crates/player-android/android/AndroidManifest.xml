@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Krate player is pure native code: NativeActivity loads
+     libkrate_player.so and calls android_main. hasCode=false because there
+     is not one line of Java or Kotlin in it, and extractNativeLibs=true so
+     the packaging stays a plain zip without page-alignment ceremony. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="tech.krate.player"
+    android:versionCode="1"
+    android:versionName="0.1.8">
+
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
+
+  <application
+      android:label="Krate"
+      android:hasCode="false"
+      android:extractNativeLibs="true">
+    <activity
+        android:name="android.app.NativeActivity"
+        android:exported="true"
+        android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density">
+      <meta-data android:name="android.app.lib_name" android:value="krate_player" />
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>
