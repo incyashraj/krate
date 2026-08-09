@@ -528,6 +528,64 @@ impl CanvasSurface {
         }
     }
 
+    /// Stroke part of a circle: the progress-ring primitive. Angles in
+    /// degrees, 0 at 3 o'clock, increasing clockwise on screen; `sweep` runs
+    /// clockwise from `start`. Radially anti-aliased like `stroke_circle`,
+    /// and feathered at both angular ends so the arc tips look cut, not torn.
+    #[allow(clippy::too_many_arguments)]
+    pub fn stroke_arc(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        radius: f32,
+        start_degrees: f32,
+        sweep_degrees: f32,
+        width: f32,
+        color: u32,
+    ) {
+        if radius <= 0.0 || width <= 0.0 || sweep_degrees == 0.0 {
+            return;
+        }
+        // Normalise to a clockwise sweep in [0, 360].
+        let (start, sweep) = if sweep_degrees < 0.0 {
+            (start_degrees + sweep_degrees, -sweep_degrees)
+        } else {
+            (start_degrees, sweep_degrees)
+        };
+        if sweep >= 360.0 {
+            self.stroke_circle(cx, cy, radius, width, color);
+            return;
+        }
+        let half = width * 0.5;
+        let outer = radius + half;
+        let (w, h) = (self.width, self.height);
+        let x0 = ((cx - outer).floor().max(0.0) as u32).min(w);
+        let x1 = ((cx + outer).ceil().max(0.0) as u32).min(w);
+        let y0 = ((cy - outer).floor().max(0.0) as u32).min(h);
+        let y1 = ((cy + outer).ceil().max(0.0) as u32).min(h);
+        // One pixel of angular feather, expressed in degrees at this radius.
+        let feather_deg = (1.0 / radius.max(1.0)).to_degrees();
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let dx = px as f32 + 0.5 - cx;
+                let dy = py as f32 + 0.5 - cy;
+                let dist = (dx * dx + dy * dy).sqrt();
+                let ring = (half - (dist - radius).abs() + 0.5).clamp(0.0, 1.0);
+                if ring <= 0.0 {
+                    continue;
+                }
+                // Screen y grows downward, so atan2(dy, dx) already runs
+                // clockwise visually; degrees into the sweep from `start`.
+                let ang = dy.atan2(dx).to_degrees();
+                let into = (ang - start).rem_euclid(360.0);
+                let angular = ((sweep - into) / feather_deg + 1.0)
+                    .min(into / feather_deg + 1.0)
+                    .clamp(0.0, 1.0);
+                self.blend_coverage(px, py, color, ring * angular);
+            }
+        }
+    }
+
     /// A radial gradient disc: `inner` color at the center easing to `outer`
     /// color (typically transparent) at `radius`. This is the real glow/bloom
     /// primitive -- a soft light falloff instead of a flat disc, which is the
@@ -606,13 +664,34 @@ impl CanvasSurface {
     /// `font-family` is accepted and ignored: one good face everywhere beats
     /// honoring a font name on one system.
     pub fn text(&mut self, text: &str, x: f32, y: f32, font_size: f32, color: u32) {
+        self.text_styled(
+            text,
+            x,
+            y,
+            font_size,
+            color,
+            krate_adapter_common::vector_text::CanvasTextStyle::default(),
+        )
+    }
+
+    /// `text()` with weight, italic, tracking and family. One text path:
+    /// the plain call is this call at defaults.
+    pub fn text_styled(
+        &mut self,
+        text: &str,
+        x: f32,
+        y: f32,
+        font_size: f32,
+        color: u32,
+        style: krate_adapter_common::vector_text::CanvasTextStyle,
+    ) {
         // Text is rendered by a shared painter that writes into the buffer
         // directly, so it cannot be gated per pixel the way the primitives
         // are. Snapshot what lies outside the clip, let the painter run, then
         // put it back -- correct for any glyph shape, and only as expensive as
         // the region actually clipped.
         let saved = self.clip.map(|_| self.buffer.clone());
-        self.draw_text_unclipped(text, x, y, font_size, color);
+        self.draw_text_unclipped(text, x, y, font_size, color, style);
         if let Some(before) = saved {
             for y in 0..self.height {
                 for x in 0..self.width {
@@ -628,8 +707,16 @@ impl CanvasSurface {
         }
     }
 
-    fn draw_text_unclipped(&mut self, text: &str, x: f32, y: f32, font_size: f32, color: u32) {
-        if krate_adapter_common::vector_text::draw_canvas_text(
+    fn draw_text_unclipped(
+        &mut self,
+        text: &str,
+        x: f32,
+        y: f32,
+        font_size: f32,
+        color: u32,
+        style: krate_adapter_common::vector_text::CanvasTextStyle,
+    ) {
+        if krate_adapter_common::vector_text::draw_canvas_text_styled(
             krate_adapter_common::vector_text::CanvasTarget {
                 buffer: &mut self.buffer,
                 width: self.width,
@@ -640,6 +727,7 @@ impl CanvasSurface {
             y,
             font_size,
             color,
+            style,
         ) {
             return;
         }
@@ -665,7 +753,25 @@ impl CanvasSurface {
     /// instead. A measurement that disagreed with the pixels would be worse
     /// than none, because an app cannot tell it is wrong.
     pub fn measure_text(&self, text: &str, font_size: f32) -> TextMetrics {
-        if let Some(m) = krate_adapter_common::vector_text::measure_canvas_text(text, font_size) {
+        self.measure_text_styled(
+            text,
+            font_size,
+            krate_adapter_common::vector_text::CanvasTextStyle::default(),
+        )
+    }
+
+    /// `measure_text` for a styled run, reading the same layout the styled
+    /// draw uses -- a measurement that disagreed with the pixels would be
+    /// worse than none.
+    pub fn measure_text_styled(
+        &self,
+        text: &str,
+        font_size: f32,
+        style: krate_adapter_common::vector_text::CanvasTextStyle,
+    ) -> TextMetrics {
+        if let Some(m) =
+            krate_adapter_common::vector_text::measure_canvas_text_styled(text, font_size, style)
+        {
             return TextMetrics {
                 width: m.width,
                 height: m.height,
@@ -700,6 +806,52 @@ impl CanvasSurface {
             image,
             None,
         );
+    }
+
+    /// Blit an image clipped to a rounded rectangle: the photo-card
+    /// primitive. Fills the whole `area` (cover, centre-cropped, like CSS
+    /// `object-fit: cover`) rather than letterboxing -- a photo card wants
+    /// its frame full. Corners take the SDF's coverage, so the crop is
+    /// anti-aliased like every other rounded edge here.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_pixels_round(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radii: (f32, f32, f32, f32),
+        image: &ImagePixels,
+    ) {
+        if w <= 0.0 || h <= 0.0 || image.width == 0 || image.height == 0 {
+            return;
+        }
+        // Cover: scale so the image fills the frame, cropping the overflow
+        // equally on both sides.
+        let scale = (w / image.width as f32).max(h / image.height as f32);
+        let src_w = w / scale;
+        let src_h = h / scale;
+        let src_x = (image.width as f32 - src_w) / 2.0;
+        let src_y = (image.height as f32 - src_h) / 2.0;
+
+        let (bw, bh) = (self.width, self.height);
+        let x0 = (x.floor().max(0.0) as u32).min(bw);
+        let x1 = ((x + w).ceil().max(0.0) as u32).min(bw);
+        let y0 = (y.floor().max(0.0) as u32).min(bh);
+        let y1 = ((y + h).ceil().max(0.0) as u32).min(bh);
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
+                let coverage = (0.5 - d).clamp(0.0, 1.0);
+                if coverage <= 0.0 {
+                    continue;
+                }
+                let u = src_x + (px as f32 + 0.5 - x) / w * src_w;
+                let v = src_y + (py as f32 + 0.5 - y) / h * src_h;
+                let sampled = sample_bilinear(image, u, v);
+                self.blend_coverage(px, py, sampled, coverage);
+            }
+        }
     }
 
     /// Draw a decoded RGBA sprite centred at `(cx, cy)`, scaled to `dst_w` x
@@ -829,6 +981,87 @@ fn sample_stops(stops: &[(f32, u32)], t: f32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The arc lights its sweep and only its sweep: a quarter arc from 12
+    /// o'clock leaves 9 o'clock dark. Full sweep degrades to the circle.
+    #[test]
+    fn an_arc_covers_its_sweep_and_nothing_else() {
+        let mut s = CanvasSurface::new(100, 100).expect("surface");
+        s.clear(0xFF00_0000);
+        // From 12 o'clock (-90), a quarter turn clockwise ends at 3 o'clock.
+        s.stroke_arc(50.0, 50.0, 30.0, -90.0, 90.0, 5.0, 0xFFFF_FFFF);
+        let at = |x: u32, y: u32| s.buffer[(y * 100 + x) as usize] & 0x00FF_FFFF;
+        assert!(at(50, 20) > 0x0080_8080, "12 o'clock is on the arc");
+        assert!(at(80, 50) > 0x0080_8080, "3 o'clock is on the arc");
+        assert_eq!(at(20, 50), 0, "9 o'clock is dark");
+        assert_eq!(at(50, 80), 0, "6 o'clock is dark");
+    }
+
+    /// Styled text really changes the pixels: bold covers more than thin at
+    /// the same size, and tracking widens the measured run. Guarded so a
+    /// host with no system fonts (bitmap fallback) skips rather than lies.
+    #[test]
+    fn text_style_reaches_the_glyphs() {
+        use krate_adapter_common::vector_text::{CanvasFontFamily, CanvasTextStyle};
+        let s = CanvasSurface::new(300, 60).expect("surface");
+        let plain = s.measure_text("Workouts", 24.0);
+        if plain.width == 0.0 {
+            return; // no system fonts here; the fallback has no weights
+        }
+        let spaced = s.measure_text_styled(
+            "Workouts",
+            24.0,
+            CanvasTextStyle {
+                letter_spacing: 3.0,
+                ..CanvasTextStyle::default()
+            },
+        );
+        assert!(
+            spaced.width > plain.width + 10.0,
+            "tracking must widen the run: {} vs {}",
+            spaced.width,
+            plain.width
+        );
+        let mono = s.measure_text_styled(
+            "iiii",
+            24.0,
+            CanvasTextStyle {
+                family: CanvasFontFamily::Mono,
+                ..CanvasTextStyle::default()
+            },
+        );
+        let sans = s.measure_text("iiii", 24.0);
+        assert!(
+            (mono.width - sans.width).abs() > 1.0,
+            "mono and sans must differ on iiii: {} vs {}",
+            mono.width,
+            sans.width
+        );
+    }
+
+    /// The rounded blit crops the corner and fills the frame: corner pixel
+    /// untouched, centre carrying image color, cover-scaled.
+    #[test]
+    fn a_rounded_blit_crops_its_corners() {
+        let mut s = CanvasSurface::new(100, 100).expect("surface");
+        s.clear(0xFF00_0000);
+        // A solid green source image.
+        let rgba = alloc_image(8, 8, [0u8, 255, 0, 255]);
+        let image = ImagePixels::new(8, 8, rgba).expect("image");
+        s.draw_pixels_round(10.0, 10.0, 80.0, 80.0, (20.0, 20.0, 20.0, 20.0), &image);
+        let at = |x: u32, y: u32| s.buffer[(y * 100 + x) as usize];
+        assert_eq!((at(50, 50) >> 8) & 0xFF, 255, "centre is image green");
+        assert_eq!(at(11, 11) & 0x00FF_FFFF, 0, "corner cropped");
+        assert_eq!((at(50, 11) >> 8) & 0xFF, 255, "edge midpoint filled");
+    }
+
+    fn alloc_image(w: u32, h: u32, px: [u8; 4]) -> Vec<u8> {
+        let mut v = Vec::with_capacity((w * h * 4) as usize);
+        for _ in 0..w * h {
+            v.extend_from_slice(&px);
+        }
+        v
+    }
 
     /// The card primitive must actually round its corners: the very corner
     /// pixel stays untouched while the centre and edge midpoints fill.

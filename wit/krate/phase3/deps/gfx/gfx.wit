@@ -71,6 +71,38 @@ interface types {
     color: color,
   }
 
+  /// A generic font family, resolved against the system's fonts by the
+  /// host. `sans` is the default everything else on the canvas uses;
+  /// `serif` reads editorial; `mono` is for numbers that must line up and
+  /// anything code-like. Exact metrics differ per platform the way web
+  /// font stacks do, so measure with `measure-text-styled` rather than
+  /// assuming widths.
+  enum font-family {
+    /// The system sans-serif (SF on macOS, Segoe on Windows, DejaVu Sans
+    /// or similar on Linux).
+    sans,
+    /// The system serif.
+    serif,
+    /// The system monospace.
+    mono,
+  }
+
+  /// How text is drawn, beyond size and color.
+  record text-style {
+    /// Weight 100-900 in hundreds like CSS: 400 regular, 500 medium,
+    /// 600 semibold, 700 bold. Big display numbers read best at 600-700;
+    /// captions at 400.
+    weight: u16,
+    /// True for italic.
+    italic: bool,
+    /// Extra space between letters, in pixels; negative tightens. Modern
+    /// display headings sit around -0.5 to -1.0 at large sizes; all-caps
+    /// labels open up at +1.0 or more.
+    letter-spacing: f32,
+    /// The family to resolve against system fonts.
+    family: font-family,
+  }
+
   /// Radii for the four corners of a rounded rectangle, clockwise from
   /// top-left. Use one value in all four for a uniform card; zero a corner
   /// to square it off.
@@ -117,7 +149,7 @@ interface types {
 /// `present` publishes it to the widget. That keeps a hundred fills from
 /// re-rendering the window a hundred times.
 interface canvas2d {
-  use types.{color, point, rect, size, text-metrics, gfx-error, gradient-stop, corner-radii};
+  use types.{color, point, rect, size, text-metrics, gfx-error, gradient-stop, corner-radii, text-style, font-family};
 
   /// Create or bind a 2D canvas for a window widget.
   bind: func(window: u64, widget: u64) -> result<u64, gfx-error>;
@@ -179,6 +211,30 @@ interface canvas2d {
   /// fade; three or more make the rich backgrounds modern designs use --
   /// e.g. deep blue at 0.0, bright blue at 0.55, near-white at 1.0.
   linear-gradient-stops: func(canvas: u64, area: rect, angle-degrees: f32, stops: list<gradient-stop>) -> result<_, gfx-error>;
+
+  /// Draw text with full styling: weight, italic, letter spacing, and a
+  /// generic family. `draw-text` stays as the plain-regular shorthand; this
+  /// is what headings, big numbers, and captions want. The same weight
+  /// range every design tool uses: a screen usually needs only 400 for
+  /// body, 600-700 for emphasis.
+  draw-text-styled: func(canvas: u64, text: string, origin: point, font-size: f32, ink: color, style: text-style) -> result<_, gfx-error>;
+
+  /// Measure a styled run with the same layout `draw-text-styled` uses, so
+  /// right-aligned numbers and centred labels land exactly.
+  measure-text-styled: func(canvas: u64, text: string, font-size: f32, style: text-style) -> result<text-metrics, gfx-error>;
+
+  /// Stroke part of a circle: the progress-ring primitive. `start-degrees`
+  /// is where the arc begins (0 is 3 o'clock, 90 is 6 o'clock -- angles run
+  /// clockwise on screen), `sweep-degrees` how far it runs clockwise. A
+  /// progress ring is two calls: the full track at low alpha, then the arc
+  /// from -90 (12 o'clock) sweeping `progress * 360`.
+  stroke-arc: func(canvas: u64, center: point, radius: f32, start-degrees: f32, sweep-degrees: f32, width: f32, stroke: color) -> result<_, gfx-error>;
+
+  /// Blit RGBA pixels clipped to a rounded rectangle: the photo-card
+  /// primitive. Same pixel format as `draw-pixels`; the corners outside the
+  /// radii stay untouched, so an image sits inside a card without a mask in
+  /// the app.
+  draw-pixels-round: func(canvas: u64, area: rect, radii: corner-radii, width: u32, height: u32, rgba: list<u8>) -> result<_, gfx-error>;
   /// Fill an anti-aliased circle centred at `center` with radius `radius`.
   /// The edge is smooth and the fill blends over the canvas by its color's
   /// alpha, so a translucent fill reads as soft light rather than a hard disc.

@@ -484,6 +484,10 @@ takes the arguments is the function.
 - `canvas2d::stroke-round-rect: func(canvas: u64, area: rect, radii: corner-radii, width: f32, stroke: color) -> result<_, gfx-error>`
 - `canvas2d::drop-shadow-round-rect: func(canvas: u64, area: rect, radii: corner-radii, blur: f32, shadow: color) -> result<_, gfx-error>`
 - `canvas2d::linear-gradient-stops: func(canvas: u64, area: rect, angle-degrees: f32, stops: list<gradient-stop>) -> result<_, gfx-error>`
+- `canvas2d::draw-text-styled: func(canvas: u64, text: string, origin: point, font-size: f32, ink: color, style: text-style) -> result<_, gfx-error>`
+- `canvas2d::measure-text-styled: func(canvas: u64, text: string, font-size: f32, style: text-style) -> result<text-metrics, gfx-error>`
+- `canvas2d::stroke-arc: func(canvas: u64, center: point, radius: f32, start-degrees: f32, sweep-degrees: f32, width: f32, stroke: color) -> result<_, gfx-error>`
+- `canvas2d::draw-pixels-round: func(canvas: u64, area: rect, radii: corner-radii, width: u32, height: u32, rgba: list<u8>) -> result<_, gfx-error>`
 - `canvas2d::fill-circle: func(canvas: u64, center: point, radius: f32, fill: color) -> result<_, gfx-error>`
 - `canvas2d::stroke-circle: func(canvas: u64, center: point, radius: f32, width: f32, stroke: color) -> result<_, gfx-error>`
 - `canvas2d::radial-gradient: func(canvas: u64, center: point, radius: f32, inner: color, outer: color) -> result<_, gfx-error>`

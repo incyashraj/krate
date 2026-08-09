@@ -2107,6 +2107,23 @@ impl ui::menu::Host for Phase3GuiHost {
 
 impl gfx::types::Host for Phase3GuiHost {}
 
+/// Map the WIT text style onto the raster's, field for field.
+fn canvas_style(
+    style: &gfx::types::TextStyle,
+) -> krate_adapter_common::vector_text::CanvasTextStyle {
+    use krate_adapter_common::vector_text::{CanvasFontFamily, CanvasTextStyle};
+    CanvasTextStyle {
+        weight: style.weight,
+        italic: style.italic,
+        letter_spacing: style.letter_spacing,
+        family: match style.family {
+            gfx::types::FontFamily::Sans => CanvasFontFamily::Sans,
+            gfx::types::FontFamily::Serif => CanvasFontFamily::Serif,
+            gfx::types::FontFamily::Mono => CanvasFontFamily::Mono,
+        },
+    }
+}
+
 impl gfx::canvas2d::Host for Phase3GuiHost {
     fn bind(
         &mut self,
@@ -2489,6 +2506,109 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
             ascent: m.ascent,
             descent: m.descent,
         }))
+    }
+
+    fn draw_text_styled(
+        &mut self,
+        canvas: u64,
+        text: String,
+        origin: gfx::types::Point,
+        font_size: f32,
+        ink: gfx::types::Color,
+        style: gfx::types::TextStyle,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.text_styled(
+            &text,
+            origin.x,
+            origin.y,
+            font_size,
+            pack_color(ink.r, ink.g, ink.b, ink.a),
+            canvas_style(&style),
+        );
+        Ok(Ok(()))
+    }
+
+    fn measure_text_styled(
+        &mut self,
+        canvas: u64,
+        text: String,
+        font_size: f32,
+        style: gfx::types::TextStyle,
+    ) -> wasmtime::Result<Result<gfx::types::TextMetrics, gfx::types::GfxError>> {
+        let canvases = self.canvases.borrow();
+        let Some((_, _, surface)) = canvases.get(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        let m = surface.measure_text_styled(&text, font_size, canvas_style(&style));
+        Ok(Ok(gfx::types::TextMetrics {
+            width: m.width,
+            height: m.height,
+            ascent: m.ascent,
+            descent: m.descent,
+        }))
+    }
+
+    fn stroke_arc(
+        &mut self,
+        canvas: u64,
+        center: gfx::types::Point,
+        radius: f32,
+        start_degrees: f32,
+        sweep_degrees: f32,
+        width: f32,
+        stroke: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.stroke_arc(
+            center.x,
+            center.y,
+            radius,
+            start_degrees,
+            sweep_degrees,
+            width,
+            pack_color(stroke.r, stroke.g, stroke.b, stroke.a),
+        );
+        Ok(Ok(()))
+    }
+
+    fn draw_pixels_round(
+        &mut self,
+        canvas: u64,
+        area: gfx::types::Rect,
+        radii: gfx::types::CornerRadii,
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let image = match ImagePixels::new(width, height, rgba) {
+            Ok(image) => image,
+            Err(error) => return Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
+        };
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.draw_pixels_round(
+            area.x,
+            area.y,
+            area.width,
+            area.height,
+            (
+                radii.top_left,
+                radii.top_right,
+                radii.bottom_right,
+                radii.bottom_left,
+            ),
+            &image,
+        );
+        Ok(Ok(()))
     }
 
     fn draw_pixels(

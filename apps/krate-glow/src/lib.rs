@@ -41,6 +41,24 @@ fn rect(x: f32, y: f32, width: f32, height: f32) -> gfx::Rect {
     }
 }
 
+fn style(weight: u16, spacing: f32) -> gfx::TextStyle {
+    gfx::TextStyle {
+        weight,
+        italic: false,
+        letter_spacing: spacing,
+        family: gfx::FontFamily::Sans,
+    }
+}
+
+fn mono(weight: u16) -> gfx::TextStyle {
+    gfx::TextStyle {
+        weight,
+        italic: false,
+        letter_spacing: 0.0,
+        family: gfx::FontFamily::Mono,
+    }
+}
+
 fn radii(all: f32) -> gfx::CornerRadii {
     gfx::CornerRadii {
         top_left: all,
@@ -92,12 +110,13 @@ fn draw(canvas: u64, t: f32) -> Result<(), gfx::GfxError> {
     )?;
 
     // Header.
-    canvas2d::draw_text(
+    canvas2d::draw_text_styled(
         canvas,
         "Workouts",
         gfx::Point { x: 24.0, y: 64.0 },
         34.0,
         color(1.0, 1.0, 1.0, 1.0),
+        style(700, -0.8),
     )?;
     canvas2d::draw_text(
         canvas,
@@ -130,15 +149,29 @@ fn draw(canvas: u64, t: f32) -> Result<(), gfx::GfxError> {
         5.0,
         color(1.0, 1.0, 1.0, 0.12),
     )?;
-    let sweep = t * 0.9;
+    // 65% progress, drawn as a real arc from 12 o'clock; the tip dot
+    // rides the arc's end and the whole ring eases in over the first
+    // moments so the screen opens alive.
+    let progress = 0.65 * (t * 1.2).min(1.0);
+    let sweep_deg = progress * 360.0;
+    canvas2d::stroke_arc(
+        canvas,
+        gfx::Point { x: cx, y: cy },
+        30.0,
+        -90.0,
+        sweep_deg,
+        5.0,
+        color(0.55, 0.66, 1.0, 1.0),
+    )?;
+    let tip = (-90.0 + sweep_deg).to_radians();
     canvas2d::fill_circle(
         canvas,
         gfx::Point {
-            x: cx + 30.0 * libm::cosf(sweep),
-            y: cy + 30.0 * libm::sinf(sweep),
+            x: cx + 30.0 * libm::cosf(tip),
+            y: cy + 30.0 * libm::sinf(tip),
         },
         4.5,
-        color(0.55, 0.66, 1.0, 1.0),
+        color(0.85, 0.90, 1.0, 1.0),
     )?;
     canvas2d::draw_text(
         canvas,
@@ -174,7 +207,7 @@ fn draw(canvas: u64, t: f32) -> Result<(), gfx::GfxError> {
     // Card two: the big number.
     let card2 = rect(192.0, 112.0, 144.0, 168.0);
     glass_card(canvas, card2, 20.0)?;
-    canvas2d::draw_text(
+    canvas2d::draw_text_styled(
         canvas,
         "190",
         gfx::Point {
@@ -183,6 +216,7 @@ fn draw(canvas: u64, t: f32) -> Result<(), gfx::GfxError> {
         },
         40.0,
         color(1.0, 1.0, 1.0, 1.0),
+        style(650, -1.0),
     )?;
     canvas2d::draw_text(
         canvas,
@@ -293,15 +327,16 @@ fn draw(canvas: u64, t: f32) -> Result<(), gfx::GfxError> {
         12.0,
         color(1.0, 1.0, 1.0, 0.40),
     )?;
-    canvas2d::draw_text(
+    canvas2d::draw_text_styled(
         canvas,
         "3,200 lbs",
         gfx::Point {
-            x: bar.x + 190.0,
+            x: bar.x + 178.0,
             y: bar.y + 40.0,
         },
-        22.0,
+        21.0,
         color(1.0, 1.0, 1.0, 1.0),
+        mono(600),
     )?;
 
     // The pill button: full-round corners make the pill, and the gradient
@@ -322,15 +357,16 @@ fn draw(canvas: u64, t: f32) -> Result<(), gfx::GfxError> {
         1.0,
         color(1.0, 1.0, 1.0, 0.35),
     )?;
-    canvas2d::draw_text(
+    canvas2d::draw_text_styled(
         canvas,
         "Start workout",
         gfx::Point {
-            x: pill.x + 104.0,
+            x: pill.x + 102.0,
             y: pill.y + 33.0,
         },
         17.0,
         color(1.0, 1.0, 1.0, 1.0),
+        style(600, 0.2),
     )?;
 
     canvas2d::present(canvas)

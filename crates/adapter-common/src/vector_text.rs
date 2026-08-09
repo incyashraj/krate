@@ -104,16 +104,66 @@ impl TextEngine {
     /// The widget path fixes the size at `LABEL_FONT_SIZE` and varies the
     /// display scale; a canvas run is the opposite -- the guest names the size
     /// in the draw-text call, so it is pushed directly.
-    fn layout_canvas(&mut self, text: &str, font_size: f32) -> Layout<()> {
+    fn layout_canvas_styled(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        style: CanvasTextStyle,
+    ) -> Layout<()> {
         let mut builder = self
             .layout_cx
             .ranged_builder(&mut self.font_cx, text, 1.0, true);
-        builder.push_default(GenericFamily::SansSerif);
+        builder.push_default(match style.family {
+            CanvasFontFamily::Sans => GenericFamily::SansSerif,
+            CanvasFontFamily::Serif => GenericFamily::Serif,
+            CanvasFontFamily::Mono => GenericFamily::Monospace,
+        });
         builder.push_default(StyleProperty::FontSize(font_size));
+        builder.push_default(StyleProperty::FontWeight(parley::FontWeight::new(
+            // CSS-style hundreds, clamped to the range every font maps.
+            (style.weight as f32).clamp(100.0, 900.0),
+        )));
+        if style.italic {
+            builder.push_default(StyleProperty::FontStyle(parley::FontStyle::Italic));
+        }
+        if style.letter_spacing != 0.0 {
+            builder.push_default(StyleProperty::LetterSpacing(style.letter_spacing));
+        }
         let mut layout = builder.build(text);
         layout.break_all_lines(None);
         layout.align(Alignment::Start, AlignmentOptions::default());
         layout
+    }
+}
+
+/// The generic families the canvas exposes, resolved by fontique against
+/// whatever the system has -- the same contract as a web font stack.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CanvasFontFamily {
+    #[default]
+    Sans,
+    Serif,
+    Mono,
+}
+
+/// Style for a canvas text run. `Default` reproduces plain `draw-text`
+/// exactly: regular weight, upright, no tracking, sans.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CanvasTextStyle {
+    pub weight: u16,
+    pub italic: bool,
+    pub letter_spacing: f32,
+    pub family: CanvasFontFamily,
+}
+
+impl Default for CanvasTextStyle {
+    fn default() -> Self {
+        Self {
+            weight: 400,
+            italic: false,
+            letter_spacing: 0.0,
+            family: CanvasFontFamily::Sans,
+        }
     }
 }
 
@@ -152,6 +202,29 @@ pub fn draw_canvas_text(
     font_size: f32,
     color: u32,
 ) -> bool {
+    draw_canvas_text_styled(
+        target,
+        text,
+        x,
+        baseline_y,
+        font_size,
+        color,
+        CanvasTextStyle::default(),
+    )
+}
+
+/// `draw_canvas_text` with weight, italic, tracking and family. The plain
+/// call is the styled call at defaults, so there is exactly one text path.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_canvas_text_styled(
+    target: CanvasTarget<'_>,
+    text: &str,
+    x: f32,
+    baseline_y: f32,
+    font_size: f32,
+    color: u32,
+    style: CanvasTextStyle,
+) -> bool {
     let CanvasTarget {
         buffer,
         width,
@@ -163,7 +236,7 @@ pub fn draw_canvas_text(
     let font_size = font_size.clamp(4.0, 256.0);
     TEXT_ENGINE.with(|engine| {
         let engine = &mut *engine.borrow_mut();
-        let layout = engine.layout_canvas(text, font_size);
+        let layout = engine.layout_canvas_styled(text, font_size, style);
         let Some(first_line) = layout.lines().next() else {
             // Whitespace-only text: nothing to draw, nothing to fall back for.
             return true;
@@ -251,6 +324,15 @@ pub struct CanvasTextMetrics {
 /// asks for a 1000pt heading is measured at the 256pt it will actually be
 /// drawn at.
 pub fn measure_canvas_text(text: &str, font_size: f32) -> Option<CanvasTextMetrics> {
+    measure_canvas_text_styled(text, font_size, CanvasTextStyle::default())
+}
+
+/// `measure_canvas_text` for a styled run, sharing its layout exactly.
+pub fn measure_canvas_text_styled(
+    text: &str,
+    font_size: f32,
+    style: CanvasTextStyle,
+) -> Option<CanvasTextMetrics> {
     let font_size = font_size.clamp(4.0, 256.0);
     TEXT_ENGINE.with(|engine| {
         let engine = &mut *engine.borrow_mut();
@@ -259,7 +341,7 @@ pub fn measure_canvas_text(text: &str, font_size: f32) -> Option<CanvasTextMetri
         // line that is about to hold text. "Xg" spans ascender and descender
         // and is the same proxy the widget path uses.
         let probe = if text.is_empty() { "Xg" } else { text };
-        let layout = engine.layout_canvas(probe, font_size);
+        let layout = engine.layout_canvas_styled(probe, font_size, style);
         let line = layout.lines().next()?;
         let metrics = line.metrics();
         if !text.is_empty() && !layout_has_glyphs(&layout) {
