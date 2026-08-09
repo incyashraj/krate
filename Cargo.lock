@@ -1887,7 +1887,7 @@ dependencies = [
 
 [[package]]
 name = "krate"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "dlmalloc",
  "getrandom 0.3.4",
@@ -1896,7 +1896,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-android"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "krate-adapter-common",
  "libc",
@@ -1906,7 +1906,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-common"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "fontique",
  "parley",
@@ -1916,7 +1916,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-linux"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "arboard",
  "krate-adapter-common",
@@ -1927,7 +1927,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-macos"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "arboard",
  "krate-adapter-common",
@@ -1939,7 +1939,7 @@ dependencies = [
 
 [[package]]
 name = "krate-adapter-windows"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "arboard",
  "krate-adapter-common",
@@ -1949,7 +1949,7 @@ dependencies = [
 
 [[package]]
 name = "krate-author"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -1957,7 +1957,7 @@ dependencies = [
 
 [[package]]
 name = "krate-bundle"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "krate-manifest",
  "sha2",
@@ -1970,7 +1970,7 @@ dependencies = [
 
 [[package]]
 name = "krate-cli"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "clap",
@@ -1994,7 +1994,7 @@ dependencies = [
 
 [[package]]
 name = "krate-hub"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "sha2",
  "zip",
@@ -2002,7 +2002,7 @@ dependencies = [
 
 [[package]]
 name = "krate-layout"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "criterion",
  "krate-adapter-common",
@@ -2012,7 +2012,7 @@ dependencies = [
 
 [[package]]
 name = "krate-manifest"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "krate-adapter-common",
  "serde",
@@ -2022,7 +2022,7 @@ dependencies = [
 
 [[package]]
 name = "krate-mcp"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "krate-author",
@@ -2033,7 +2033,7 @@ dependencies = [
 
 [[package]]
 name = "krate-player-android"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "android_logger",
  "jni 0.21.1",
@@ -2048,7 +2048,7 @@ dependencies = [
 
 [[package]]
 name = "krate-policy"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "krate-adapter-common",
  "krate-manifest",
@@ -2057,7 +2057,7 @@ dependencies = [
 
 [[package]]
 name = "krate-port"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "krate-manifest",
  "serde",
@@ -2068,7 +2068,7 @@ dependencies = [
 
 [[package]]
 name = "krate-runtime"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "cpal",
  "criterion",
@@ -2099,7 +2099,7 @@ dependencies = [
 
 [[package]]
 name = "krate-tools"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "krate-bundle",
