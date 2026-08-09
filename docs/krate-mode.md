@@ -445,7 +445,9 @@ to exactly what the app needs, e.g. `fs.read:notes/**`.
 | `ui.open-url` | no | hand a link to the browser |
 | `ui.notify` | no | a desktop notification |
 | `ui.dropzone:<mime-type>` | no | accept dragged files |
-| `ui.dialog:*` | yes | system file dialogs (choose a file) |
+| `ui.dialog:message` | yes | system file dialogs (choose a file) |
+| `ui.dialog:confirm` | yes | system file dialogs (choose a file) |
+| `ui.dialog:*` | no | system file dialogs (choose a file) |
 | `ui.dialog:file-open` | no | system file dialogs (choose a file) |
 | `ui.dialog:file-save` | no | system file dialogs (choose a file) |
 | `ui.dialog:open-folder` | no | system file dialogs (choose a file) |

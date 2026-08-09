@@ -71,6 +71,38 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-086 -- the dialog wall was hollow at every layer below the words
+Status:   fixed (three layers, each locked by a test)
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-09, building the tidier example: an end-to-end guard test
+          written before the app exposed the first layer, and pulling that
+          thread exposed two more
+Evidence: Layer by layer, worst last:
+          1. The default-granted `ui.dialog:*` wildcard silently covered
+             file-open, file-save and open-folder at the policy layer -- so
+             K-076's "explicit ask" promotion changed the wall's words and
+             changed nothing real: every app had the privileged dialogs
+             without declaring anything.
+          2. `picked/...` paths were checked as fs.* capabilities, so the
+             pick-is-the-grant design would have required the very fs scopes
+             it exists to remove (caught only because the guard was tested
+             instead of just the adapter).
+          3. UiDialogResource existed and was referenced by NO host code:
+             message, confirm, open-file and open-folder ran with no
+             capability check at all. message/confirm would also block a
+             headless run forever on a dialog nobody can dismiss.
+Fix:      Defaults now grant exactly the harmless pair (message, confirm);
+          the wildcard is an explicit ask meaning "all dialogs" and walls as
+          one. `picked/` paths ride the ui.dialog:open-folder grant -- the
+          pick converts dialog authority into scoped fs authority, and fs
+          scopes can NOT substitute (locked both directions). All four
+          dialog host functions check their capability before revealing
+          anything, and all four are headless-safe (file/folder cancel,
+          message no-ops, confirm answers no -- its own dismissed-means-no
+          rule). Policy, guard and host layers each carry their own test.
+
 ### K-085 -- publish died on a cache write when the KV quota was spent
 Status:   fixed and deployed (hub); CLI note-surfacing rides the next release
 Owner:    lead

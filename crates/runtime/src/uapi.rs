@@ -127,6 +127,16 @@ pub enum FsCall {
 
 impl FsCall {
     fn to_capability_string(&self) -> String {
+        // A path under `picked/` is inside a folder the person chose in the
+        // open-folder dialog. The pick IS the grant there: authority comes
+        // from `ui.dialog:open-folder`, not from any fs scope -- that is the
+        // whole design (K-075), and it is what lets a folder app declare no
+        // fs capability at all. Which subtree the token reaches is enforced
+        // at the adapter, where an invalid token resolves to nothing; this
+        // layer only decides WHOSE authority applies.
+        if is_picked_path(self.path()) {
+            return "ui.dialog:open-folder".to_string();
+        }
         match self {
             Self::Read { path } => format!("fs.read:{path}"),
             Self::Write { path } => format!("fs.write:{path}"),
@@ -135,6 +145,27 @@ impl FsCall {
             Self::Mkdir { path } => format!("fs.mkdir:{path}"),
         }
     }
+
+    fn path(&self) -> &str {
+        match self {
+            Self::Read { path }
+            | Self::Write { path }
+            | Self::List { path }
+            | Self::Remove { path }
+            | Self::Mkdir { path } => path,
+        }
+    }
+}
+
+/// Whether a logical path addresses a dialog-picked folder. Matches the
+/// resolver's own prefix rule (split_picked_path in lib.rs): an optional
+/// leading `/` or `./`, then the `picked/` namespace.
+fn is_picked_path(path: &str) -> bool {
+    let trimmed = path
+        .strip_prefix("./")
+        .or_else(|| path.strip_prefix('/'))
+        .unwrap_or(path);
+    trimmed == "picked" || trimmed.starts_with("picked/")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -204,16 +235,22 @@ impl UiCall {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiDialogResource {
     Any,
+    Message,
+    Confirm,
     FileOpen,
     FileSave,
+    OpenFolder,
 }
 
 impl fmt::Display for UiDialogResource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Any => "*",
+            Self::Message => "message",
+            Self::Confirm => "confirm",
             Self::FileOpen => "file-open",
             Self::FileSave => "file-save",
+            Self::OpenFolder => "open-folder",
         })
     }
 }
@@ -258,6 +295,64 @@ pub type Result<T> = std::result::Result<T, UapiError>;
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+
+    /// K-075's full-stack rule, tested at the layer the adapter tests
+    /// skipped: a `picked/` path is authorized by the DIALOG grant, so a
+    /// folder app needs no fs capability at all -- and without the dialog
+    /// grant, `picked/` is refused like anything else. Every fs operation
+    /// follows the same rule, because a tidier lists, writes, makes
+    /// folders and removes.
+    #[test]
+    fn picked_paths_ride_the_dialog_grant_not_fs_scopes() {
+        use krate_policy::SessionPolicy;
+
+        let dialog_only = UapiGuard::new(SessionPolicy::from_grants(vec!["ui.dialog:open-folder"
+            .parse()
+            .expect("cap")]));
+        let calls = [
+            UapiCall::Fs(FsCall::List {
+                path: "picked/folder-1".into(),
+            }),
+            UapiCall::Fs(FsCall::Read {
+                path: "picked/folder-1/a.txt".into(),
+            }),
+            UapiCall::Fs(FsCall::Write {
+                path: "picked/folder-1/Images/a.jpg".into(),
+            }),
+            UapiCall::Fs(FsCall::Mkdir {
+                path: "./picked/folder-1/Images".into(),
+            }),
+            UapiCall::Fs(FsCall::Remove {
+                path: "picked/folder-1/old.tmp".into(),
+            }),
+        ];
+        for call in &calls {
+            dialog_only
+                .check(call)
+                .unwrap_or_else(|e| panic!("dialog grant must cover {call:?}: {e}"));
+        }
+        // And ordinary sandbox paths still need their fs scopes.
+        assert!(
+            dialog_only
+                .check(&UapiCall::Fs(FsCall::List {
+                    path: "notes".into()
+                }))
+                .is_err(),
+            "the dialog grant must not leak onto ordinary paths"
+        );
+
+        let no_dialog = UapiGuard::new(SessionPolicy::from_grants(vec!["fs.list:**"
+            .parse()
+            .expect("cap")]));
+        assert!(
+            no_dialog
+                .check(&UapiCall::Fs(FsCall::List {
+                    path: "picked/folder-1".into()
+                }))
+                .is_err(),
+            "picked/ must require the dialog grant, not be satisfiable by fs scopes"
+        );
+    }
 
     use krate_manifest::supported_phase2_capability_specs;
 

@@ -81,9 +81,16 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
         "<mime-type>",
         false,
     ),
-    // The wildcard covers message/confirm boxes, which show text and take a
-    // click -- no data moves, so they stay granted.
-    CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "*", true),
+    // Message and confirm boxes show text and take a click -- no data
+    // moves -- so they are granted to every app. The WILDCARD is not: a
+    // default-granted `ui.dialog:*` silently covered file-open, file-save
+    // and open-folder at the policy layer, which made the "explicit ask"
+    // promotion of the file dialogs hollow -- every app had them through
+    // the star without declaring anything (K-086). `*` stays declarable,
+    // as an explicit ask meaning "all dialogs", and walls as one.
+    CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "message", true),
+    CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "confirm", true),
+    CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "*", false),
     // The file dialogs are explicit asks. They were default-granted while
     // unimplemented ("a request that does not work would put a line in front
     // of a person that means nothing"), with a note that said to promote them
@@ -643,7 +650,14 @@ fn validate_ui_resource(action: &str, resource: &str) -> std::result::Result<(),
             // Kept in step with the spec table above by the cross-check test:
             // this list rotting behind a new spec entry is exactly what
             // blocked open-folder for one build.
-            &["file-open", "file-save", "open-folder", "*"],
+            &[
+                "message",
+                "confirm",
+                "file-open",
+                "file-save",
+                "open-folder",
+                "*",
+            ],
             "dialog resource",
         ),
         "dropzone" => validate_mime_resource(resource),
@@ -970,7 +984,10 @@ mod tests {
         assert_eq!(window.to_string(), "ui.window:create");
         assert!(window.is_default_granted());
         assert_eq!(dialog.resource(), Some("*"));
-        assert!(dialog.is_default_granted());
+        // The wildcard stopped being default-granted the day it was found
+        // silently covering the privileged dialogs (K-086): it is now an
+        // explicit ask meaning "all dialogs".
+        assert!(!dialog.is_default_granted());
         assert_eq!(gfx.to_string(), "gfx.gpu:basic");
         assert!(gfx.is_default_granted());
         assert_eq!(playback.to_string(), "audio.playback");

@@ -1960,6 +1960,19 @@ impl ui::dialog::Host for Phase3GuiHost {
         title: String,
         filter: String,
     ) -> wasmtime::Result<Result<Option<ui::dialog::ChosenFile>, ui::types::UiError>> {
+        // Checked before anything else happens or is revealed -- the dialog
+        // host functions ran completely unguarded until K-086, so any app
+        // could pop pickers its manifest never asked for.
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Dialog {
+                resource: crate::uapi::UiDialogResource::FileOpen,
+            }))
+            .is_err()
+        {
+            return Ok(Err(ui::types::UiError::PermissionDenied));
+        }
         // Headless runs -- --shoot, check-app, CI -- must never block on a
         // native dialog nobody can click. A cancelled dialog is the honest
         // answer there, and it is a normal outcome the app already handles.
@@ -1995,6 +2008,16 @@ impl ui::dialog::Host for Phase3GuiHost {
         _window: u64,
         title: String,
     ) -> wasmtime::Result<Result<Option<ui::dialog::ChosenFolder>, ui::types::UiError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Dialog {
+                resource: crate::uapi::UiDialogResource::OpenFolder,
+            }))
+            .is_err()
+        {
+            return Ok(Err(ui::types::UiError::PermissionDenied));
+        }
         if self.headless {
             return Ok(Ok(None));
         }
@@ -2021,6 +2044,21 @@ impl ui::dialog::Host for Phase3GuiHost {
         title: String,
         body: String,
     ) -> wasmtime::Result<Result<(), ui::types::UiError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Dialog {
+                resource: crate::uapi::UiDialogResource::Message,
+            }))
+            .is_err()
+        {
+            return Ok(Err(ui::types::UiError::PermissionDenied));
+        }
+        // Headless: nobody is there to dismiss it, and rfd would block the
+        // run forever. Shown-and-dismissed is the honest no-op.
+        if self.headless {
+            return Ok(Ok(()));
+        }
         rfd::MessageDialog::new()
             .set_title(&title)
             .set_description(&body)
@@ -2039,6 +2077,21 @@ impl ui::dialog::Host for Phase3GuiHost {
         title: String,
         body: String,
     ) -> wasmtime::Result<Result<bool, ui::types::UiError>> {
+        if self
+            .runtime
+            .guard()
+            .check(&UapiCall::Ui(UiCall::Dialog {
+                resource: crate::uapi::UiDialogResource::Confirm,
+            }))
+            .is_err()
+        {
+            return Ok(Err(ui::types::UiError::PermissionDenied));
+        }
+        // Headless: a dismissed dialog counts as "no" by this function's own
+        // rule, and nobody is there to answer -- so the answer is no.
+        if self.headless {
+            return Ok(Ok(false));
+        }
         let answer = rfd::MessageDialog::new()
             .set_title(&title)
             .set_description(&body)

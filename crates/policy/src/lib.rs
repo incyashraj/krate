@@ -249,6 +249,36 @@ pub type Result<T> = std::result::Result<T, PolicyError>;
 mod tests {
     use super::*;
 
+    /// K-086: the default-granted dialog wildcard silently covered the
+    /// privileged dialogs, so promoting file-open/file-save to explicit
+    /// asks changed the wall and changed nothing at the policy layer. The
+    /// defaults now grant exactly the harmless pair; everything that moves
+    /// data must be declared and shown to a person.
+    #[test]
+    fn default_dialog_grants_cover_message_boxes_and_nothing_privileged() {
+        let policy = SessionPolicy::from_grants(vec![]);
+        for req in ["ui.dialog:message", "ui.dialog:confirm"] {
+            let cap: Capability = req.parse().expect("cap");
+            assert!(policy.allows(&cap), "default must allow {req}");
+        }
+        for req in [
+            "ui.dialog:open-folder",
+            "ui.dialog:file-open",
+            "ui.dialog:file-save",
+        ] {
+            let cap: Capability = req.parse().expect("cap");
+            assert!(!policy.allows(&cap), "default must NOT allow {req}");
+        }
+        // A DECLARED wildcard is an explicit ask for all dialogs and does
+        // cover them -- the person saw it on the wall.
+        let starred = SessionPolicy::from_grants(vec!["ui.dialog:*".parse().expect("cap")]);
+        let folder: Capability = "ui.dialog:open-folder".parse().expect("cap");
+        assert!(
+            starred.allows(&folder),
+            "a declared wildcard covers the dialogs"
+        );
+    }
+
     #[test]
     fn a_list_glob_covers_the_folder_itself_and_a_remove_glob_does_not() {
         // `fs.list:images/**` grants "see what is in images". Listing the
