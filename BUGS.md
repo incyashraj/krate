@@ -71,6 +71,35 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-084 -- a finished app was thrown away because the AI did not exit fast enough
+Status:   fixed in main; rides the next release
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-10, Yashraj's own TUI run, minutes before the outreach push
+Evidence: The error convicts itself, verbatim:
+
+            error: the AI agent did not finish within 15 minutes and was stopped.
+            The last check-app run actually passed -- re-running the command
+            should finish the packaging.
+
+          The stall path ran check_app_verdict, learned the app was DONE,
+          printed that fact, and errored anyway. And the retry the message
+          recommends could not resume in the TUI: author_app_for_tui handed
+          create a fresh tempdir every attempt (work_dir None / a per-attempt
+          staging dir), so "resumes from the code already written" -- true in
+          the CLI since K-078 -- was structurally false at the front door.
+          Fifteen minutes of written, PASSING code abandoned per attempt.
+Fix:      Two halves. At the deadline, if the oracle passes, the run is
+          salvaged: the agent is stopped and the pipeline continues to
+          packaging, with one note line -- an app that passes every check is
+          done regardless of whether its author said goodbye. And the TUI
+          now builds in a stable workspace (~/.krate/builds/<name>), so a
+          retry genuinely resumes and attachments survive attempts; the
+          workspace is cleared per-app on success (target/ is hundreds of
+          MB), and only when the name is derivable -- a guessed name might
+          delete a different app's resumable state.
+
 ### K-083 -- the dialog host and the fs host each had their own token registry
 Status:   fixed (mutation-locked)
 Owner:    lead

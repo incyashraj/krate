@@ -2510,18 +2510,20 @@ pub(crate) fn author_app_for_tui(
     output: &Path,
     attachments: &[PathBuf],
 ) -> Result<()> {
-    // Attachments are staged into the app directory, so the agent can open
-    // them with the ordinary file tools it already has. Passing an image
-    // through the prompt is not possible for every provider; a file on disk
-    // beside the code works for all of them.
-    let staged = if attachments.is_empty() {
-        None
-    } else {
-        Some(tempfile::tempdir().context("make a working directory for the app")?)
-    };
+    // A STABLE workspace under ~/.krate/builds, not a tempdir. The stall
+    // error promises a retry "resumes from the code already written", and
+    // create honors that -- but only if the retry lands in the same
+    // directory. The TUI handed create a fresh tempdir every attempt, so
+    // fifteen minutes of written code was abandoned on every "try again"
+    // (K-084). One directory per app name: the retry resumes, the
+    // transcript survives at a path that still exists, and attachments
+    // stay staged across attempts.
+    let builds = krate_home().join("builds");
+    fs::create_dir_all(&builds).context("make the builds directory")?;
+
     let mut request = request.to_string();
-    if let Some(staged) = &staged {
-        let inbox = staged.path().join("attached");
+    if !attachments.is_empty() {
+        let inbox = builds.join("attached");
         fs::create_dir_all(&inbox).context("make the attachments directory")?;
         let mut named = Vec::new();
         for source in attachments {
@@ -2551,6 +2553,15 @@ pub(crate) fn author_app_for_tui(
         }
     }
 
+    // Derived before `request` moves: the name create will derive, for
+    // clearing exactly this app's build dir on success.
+    let cleanup_name = name_from_request(&request).map(|name| {
+        if name == "krate" {
+            "krate-app".to_string()
+        } else {
+            name
+        }
+    });
     let code = create_krate(CreateRequest {
         request,
         output: output.to_path_buf(),
@@ -2558,7 +2569,7 @@ pub(crate) fn author_app_for_tui(
         kind: None,
         name: None,
         transcript: None,
-        work_dir: staged.as_ref().map(|dir| dir.path().to_path_buf()),
+        work_dir: Some(builds),
         // The menu already asked; asking again inside would be a second
         // question about a decision the person has made.
         yes: true,
@@ -2575,6 +2586,16 @@ pub(crate) fn author_app_for_tui(
     );
     if code == 0 {
         remember_app(output);
+        // The stable workspace did its job; a finished app does not need its
+        // build tree kept (target/ alone is hundreds of megabytes). Derive
+        // the same name create derived and clear exactly that app's dir --
+        // other apps' resumable failures stay untouched.
+        // Only when the request yields a name -- a kind-fallback guess here
+        // might delete a different app's resumable state.
+        if let Some(name) = cleanup_name {
+            let _ = fs::remove_dir_all(krate_home().join("builds").join(name));
+        }
+        let _ = fs::remove_dir_all(krate_home().join("builds").join("attached"));
         Ok(())
     } else {
         Err(anyhow::anyhow!("the app could not be built"))
@@ -4136,16 +4157,28 @@ fn run_provider_author(
 
     let start = std::time::Instant::now();
     let deadline = start + std::time::Duration::from_secs(timeout_secs);
-    let status = loop {
+    // None means the agent was stopped at the deadline but the app it had
+    // already written passes every check -- salvaged, not stalled.
+    let status: Option<std::process::ExitStatus> = loop {
         match child.try_wait() {
-            Ok(Some(status)) => break status,
+            Ok(Some(status)) => break Some(status),
             Ok(None) => {
                 if std::time::Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
-                    // Report what actually blocked it, not a generic stall: run
-                    // the same oracle the agent was running and surface its last
-                    // verdict.
+                    // The old shape errored here unconditionally -- while the
+                    // error text itself said "the last check-app run actually
+                    // passed, re-running should finish the packaging". A
+                    // finished app was being thrown away over the ceremony of
+                    // the agent not exiting fast enough (K-084). If the oracle
+                    // passes, the app is done: package it.
+                    if check_app_verdict(app_dir).is_ok() {
+                        eprintln!(
+                            "note: the AI overran its {} minute budget, but the app it wrote already passes every check -- packaging it.",
+                            timeout_secs / 60
+                        );
+                        break None;
+                    }
                     return Err(author_stalled_error(app_dir, &transcript, timeout_secs));
                 }
                 std::thread::sleep(std::time::Duration::from_millis(200));
@@ -4174,7 +4207,7 @@ fn run_provider_author(
              think it is wrong, re-run with --force."
         );
     }
-    if provider.failed(&status) {
+    if status.map(|s| provider.failed(&s)).unwrap_or(false) {
         // Surface the agent's own error rather than pointing at a file. A
         // failure here is usually about the person's AI account, not their
         // app -- an expired login, a model their plan cannot reach, a CLI
