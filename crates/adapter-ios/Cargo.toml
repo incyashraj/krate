@@ -1,0 +1,56 @@
+[package]
+name = "krate-adapter-ios"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev", features = [
+    "vector-text",
+] }
+libc.workspace = true
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# UIKit-direct, not winit: winit cannot pump on iOS, and the adapter
+# contract is a non-blocking pump. Same objc2 family the macOS adapter
+# uses, so the patterns (define_class, autoreleasepool blits) carry over.
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSDate",
+    "NSEnumerator",
+    "NSObject",
+    "NSRunLoop",
+    "NSSet",
+    "NSString",
+    "objc2-core-foundation",
+] }
+objc2-ui-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "UIApplication",
+    "UIDevice",
+    "UIEvent",
+    "UIImage",
+    "UIImageView",
+    "UIResponder",
+    "UIScreen",
+    "UITouch",
+    "UIView",
+    "UIViewController",
+    "UIWindow",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = [
+    "CFCGTypes",
+] }
+objc2-core-graphics = { version = "0.3.2", default-features = false, features = [
+    "CGBitmapContext",
+    "CGColorSpace",
+    "CGContext",
+    "CGImage",
+] }

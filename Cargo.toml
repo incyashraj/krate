@@ -3,7 +3,9 @@ resolver = "2"
 members = [
     "crates/adapter-common",
     "crates/adapter-android",
+    "crates/adapter-ios",
     "crates/player-android",
+    "crates/player-ios",
     "crates/adapter-linux",
     "crates/adapter-macos",
     "crates/adapter-windows",

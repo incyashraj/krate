@@ -1915,6 +1915,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "krate-adapter-ios"
+version = "0.1.9"
+dependencies = [
+ "krate-adapter-common",
+ "libc",
+ "objc2 0.6.4",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "objc2-ui-kit 0.3.2",
+]
+
+[[package]]
 name = "krate-adapter-linux"
 version = "0.1.9"
 dependencies = [
@@ -2047,6 +2060,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "krate-player-ios"
+version = "0.1.9"
+dependencies = [
+ "krate-adapter-ios",
+ "krate-bundle",
+ "krate-manifest",
+ "krate-policy",
+ "krate-runtime",
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
+ "objc2-ui-kit 0.3.2",
+]
+
+[[package]]
 name = "krate-policy"
 version = "0.1.9"
 dependencies = [
@@ -2075,6 +2102,7 @@ dependencies = [
  "gilrs",
  "krate-adapter-android",
  "krate-adapter-common",
+ "krate-adapter-ios",
  "krate-adapter-linux",
  "krate-adapter-macos",
  "krate-adapter-windows",
@@ -2731,6 +2759,19 @@ dependencies = [
  "objc2-symbols",
  "objc2-uniform-type-identifiers",
  "objc2-user-notifications",
+]
+
+[[package]]
+name = "objc2-ui-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d87d638e33c06f577498cbcc50491496a3ed4246998a7fbba7ccb98b1e7eab22"
+dependencies = [
+ "bitflags 2.11.1",
+ "objc2 0.6.4",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
 ]
 
 [[package]]
@@ -5008,7 +5049,7 @@ dependencies = [
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
- "objc2-ui-kit",
+ "objc2-ui-kit 0.2.2",
  "orbclient",
  "percent-encoding",
  "pin-project",

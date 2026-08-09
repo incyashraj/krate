@@ -1,0 +1,36 @@
+[package]
+name = "krate-player-ios"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[[bin]]
+name = "krate-player-ios"
+path = "src/main.rs"
+
+[dependencies]
+krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
+krate-policy = { path = "../policy", version = "0.1.0-dev" }
+krate-bundle = { path = "../bundle", version = "0.1.0-dev" }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+# Speech stays off, same as Android: whisper.cpp on phones is its own
+# project and the capability degrades honestly.
+krate-runtime = { path = "../runtime", version = "0.1.0-dev", default-features = false, features = [
+    "phase2-bindings",
+] }
+krate-adapter-ios = { path = "../adapter-ios", version = "0.1.0-dev" }
+objc2 = "0.6.4"
+objc2-foundation = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "NSObject",
+    "NSString",
+] }
+objc2-ui-kit = { version = "0.3.2", default-features = false, features = [
+    "std",
+    "UIApplication",
+    "UIResponder",
+] }

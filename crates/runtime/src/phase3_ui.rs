@@ -550,11 +550,17 @@ fn discover_host_ui_adapter() -> Box<dyn UiAdapter> {
         Box::new(krate_adapter_android::discover_ui_adapter())
     }
 
+    #[cfg(target_os = "ios")]
+    {
+        Box::new(krate_adapter_ios::discover_ui_adapter())
+    }
+
     #[cfg(not(any(
         target_os = "linux",
         target_os = "macos",
         target_os = "windows",
-        target_os = "android"
+        target_os = "android",
+        target_os = "ios"
     )))]
     {
         Box::new(krate_adapter_common::ui::DraftUiAdapter::new())
@@ -611,11 +617,19 @@ fn discover_native_prototype_ui_adapter() -> UiDispatchResult<Box<dyn UiAdapter>
         ))
     }
 
+    #[cfg(target_os = "ios")]
+    {
+        Ok(Box::new(
+            krate_adapter_ios::discover_winit_prototype_ui_adapter()?,
+        ))
+    }
+
     #[cfg(not(any(
         target_os = "linux",
         target_os = "macos",
         target_os = "windows",
-        target_os = "android"
+        target_os = "android",
+        target_os = "ios"
     )))]
     {
         Err(UiDispatchError::Unsupported)

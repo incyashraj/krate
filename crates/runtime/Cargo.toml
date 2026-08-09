@@ -55,6 +55,9 @@ gilrs = "0.11.0"
 [target.'cfg(target_os = "android")'.dependencies]
 krate-adapter-android = { path = "../adapter-android", version = "0.1.0-dev" }
 
+[target.'cfg(target_os = "ios")'.dependencies]
+krate-adapter-ios = { path = "../adapter-ios", version = "0.1.0-dev" }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 krate-adapter-linux = { path = "../adapter-linux", version = "0.1.0-dev" }
 

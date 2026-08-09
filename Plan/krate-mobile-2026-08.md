@@ -214,6 +214,41 @@ painter's buffer blitted into a CALayer-backed view, UITouch feeding the
 same tap/scroll synthesis Android proved. First light belongs on the
 iPhone simulator, which needs no signing and runs on the build machine.
 
+### M2 first light 2026-08-10: the wall and the feed, on an iPhone
+
+`crates/adapter-ios` is the committed UIKit-direct design, real: one
+screen-sized UIWindow whose KrateSurfaceView (a UIImageView subclass)
+receives UITouch and shows the painter's frames -- CGBitmapContext over
+the 0xAARRGGBB buffer, premultiplied-first + 32-little, inside an
+autoreleasepool per blit (the 46 GB lesson honored from day one).
+`NSRunLoop runMode:beforeDate:` is the pump. Touches run the same
+slop/tap/scroll synthesis as Android. One window re-dresses for each
+sequential guest.
+
+`crates/player-ios` wraps the M1 flow in UIApplicationMain: the app
+delegate's first applicationDidBecomeActive runs the player and never
+returns; the guest's frame pacing pumps the loop, so the launch
+watchdog is satisfied and the app stays responsive.
+`scripts/package-ios-sim.sh` builds the bare .app (no storyboard --
+UILaunchScreen dict; no scene manifest on purpose) and ad-hoc signs it.
+
+Verified on the iPhone 17 Pro simulator: launch shows the wall
+full-screen (two bugs found and fixed by pixels-then-probes: the
+adapter must push a Resized truth event after create, and the initial
+snapshot must repeat the guest's requested size or the session diffs
+the truth away as a no-change); tapping Open runs Krategram full-bleed
+and crisp at scale 3 under Pulley. That one tap proved the UITouch
+path, sequential guests, and the interpreter driving a real GUI app.
+
+Still open in M2: fling/scroll verification on the simulator, the
+lifecycle (suspend/resume) legs, link/file opening (universal links
+and UTIs arrive with the Apple developer account), and the device
+build + TestFlight + the 4.7 submission -- all account-gated. The
+simulator toolchain needs `sudo xcode-select -s
+/Applications/Xcode.app/Contents/Developer` on this machine before the
+native tap tooling works; verification meanwhile drives the Simulator
+window by UI scripting, stated openly.
+
 ## M3 -- the contract grows mobile truths (with M1/M2, not after)
 
 Small WIT additions, all degrading to no-ops on desktop so apps never fork:
