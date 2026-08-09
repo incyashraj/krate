@@ -1292,12 +1292,22 @@ fn plain_capability(cap: &str) -> Option<String> {
                 None => "reach the internet".to_string(),
             })
         }
+        // The dialog asks are grants a person makes AT RUN TIME by
+        // clicking; the wall line's job is to say what the click will mean.
+        "ui.dialog" => {
+            return Some(match scope {
+                Some("file-open") => "ask you to pick files while it runs".to_string(),
+                Some("file-save") => "ask you where to save files".to_string(),
+                Some("open-folder") => "ask you to pick a folder -- it can then work only inside what you pick, this run"
+                    .to_string(),
+                _ => return None, // message/confirm boxes are not worth a line
+            });
+        }
         "ui.clipboard" => "read and write the clipboard",
         "ui.menu" => "add a menu",
         "ui.open-url" => "open a link in your browser",
         "ui.notify" => "show notifications",
         "ui.dropzone" => "accept files you drag onto it",
-        "ui.dialog" => "ask you to pick a file",
         "audio.playback" => "play sound",
         "audio.capture" => "record from your microphone",
         "speech.transcribe" => "turn speech into text, on this computer",

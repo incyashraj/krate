@@ -492,7 +492,8 @@ impl Runtime {
                 .clone()
                 .map(|path| (path, config.screenshot_scale)),
         )
-        .with_usability(config.usability_plan.clone());
+        .with_usability(config.usability_plan.clone())
+        .with_chosen_files(store.data().chosen.clone());
         store.data_mut().phase3_gui = Some(gui_host);
 
         let mut linker = wasmtime::component::Linker::new(&self.engine);
@@ -605,6 +606,11 @@ struct HostState {
     phase2: phase2_host::Phase2Host<'static>,
     #[cfg(feature = "phase2-bindings")]
     phase3_gui: Option<phase3_gui_host::Phase3GuiHost>,
+    /// One registry for dialog-chosen files and folders, shared into both
+    /// hosts. Two independent registries is K-083: the picker issued tokens
+    /// into one and fs resolved against the other, so every token failed.
+    #[cfg(feature = "phase2-bindings")]
+    chosen: Rc<RefCell<chosen_files::ChosenFiles>>,
 }
 
 impl HostState {
@@ -613,6 +619,8 @@ impl HostState {
             .map_err(|_| RuntimeError::EngineInit("memory limit is too large".to_string()))?;
         let output = Rc::new(RefCell::new(output));
         create_dir_all_on_host(&config.sandbox_root)?;
+        #[cfg(feature = "phase2-bindings")]
+        let chosen: Rc<RefCell<chosen_files::ChosenFiles>> = Default::default();
 
         Ok(Self {
             exit_code: None,
@@ -630,10 +638,12 @@ impl HostState {
                     config.app_args.clone(),
                     config.max_http_response_bytes,
                     config.sandbox_root.clone(),
+                    chosen.clone(),
                 )),
                 config.default_http_timeout_millis,
             )
             .with_asset_root(config.bundle_assets_root.clone())
+            .with_chosen_files(chosen.clone())
             .with_store(
                 config.app_store_path.clone(),
                 // The grant is resolved from the session policy here, once, so
@@ -671,6 +681,8 @@ impl HostState {
             ),
             #[cfg(feature = "phase2-bindings")]
             phase3_gui: None,
+            #[cfg(feature = "phase2-bindings")]
+            chosen,
         })
     }
 
@@ -783,10 +795,17 @@ struct LocalPhase2Adapter {
     app_args: Vec<String>,
     max_http_response_bytes: usize,
     sandbox_root: PathBuf,
+    /// Folders the person picked in a dialog this run, shared with the
+    /// dialog host. `picked/<token>/...` paths resolve against these roots
+    /// with the same symlink and containment discipline as the sandbox.
+    chosen: Rc<RefCell<chosen_files::ChosenFiles>>,
 }
 
 #[cfg(feature = "phase2-bindings")]
 impl LocalPhase2Adapter {
+    // Eight arguments: the adapter genuinely has eight independent inputs,
+    // and a builder here would obscure which test overrides what.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         output: Rc<RefCell<OutputMode>>,
         test_time_millis: Option<u64>,
@@ -795,6 +814,7 @@ impl LocalPhase2Adapter {
         app_args: Vec<String>,
         max_http_response_bytes: usize,
         sandbox_root: PathBuf,
+        chosen: Rc<RefCell<chosen_files::ChosenFiles>>,
     ) -> Self {
         Self {
             output,
@@ -804,6 +824,7 @@ impl LocalPhase2Adapter {
             app_args,
             max_http_response_bytes,
             sandbox_root,
+            chosen,
         }
     }
 
@@ -861,6 +882,38 @@ impl LocalPhase2Adapter {
         path: &LogicalPath,
         missing_leaf: MissingLeaf,
     ) -> std::result::Result<PathBuf, AdapterError> {
+        // `picked/<token>/...` mounts a dialog-picked folder for this run:
+        // the token swaps the root and everything else -- normalization,
+        // symlink refusal, containment -- runs unchanged against the picked
+        // folder instead of the sandbox. One choke point, so every fs
+        // operation inherits the same discipline, and there is no way to
+        // reach a picked folder except through a token this run issued.
+        if let Some((token, rest)) = split_picked_path(path) {
+            let Some(picked) = self
+                .chosen
+                .borrow()
+                .resolve_folder(&token)
+                .map(Path::to_path_buf)
+            else {
+                return Err(AdapterError::NotFound);
+            };
+            let root = canonicalize_path_on_host(picked.as_path()).map_err(map_io_error)?;
+            let host_path = root.join(rest);
+            ensure_no_symlink_segments(&root, &host_path, missing_leaf)?;
+            return match canonicalize_path_on_host(host_path.as_path()) {
+                Ok(real_path) => {
+                    ensure_path_in_sandbox(&root, &real_path)?;
+                    Ok(host_path)
+                }
+                Err(err)
+                    if err.kind() == std::io::ErrorKind::NotFound
+                        && missing_leaf == MissingLeaf::Allow =>
+                {
+                    Ok(host_path)
+                }
+                Err(err) => Err(map_io_error(err)),
+            };
+        }
         let root = canonicalize_path_on_host(self.sandbox_root.as_path()).map_err(map_io_error)?;
         let sandbox_relative = logical_path_to_sandbox_relative(path);
         let host_path = root.join(sandbox_relative);
@@ -999,6 +1052,31 @@ fn format_number_on_host(value: f64, style: HostNumberStyle, locale: &HostLocale
     {
         HostLocale::format_number(value, style, locale)
     }
+}
+
+/// Split a `picked/<token>/rest` logical path into its token and the
+/// relative remainder. `LogicalPath` has already normalized separators and
+/// refused `..`, control characters, and absolute prefixes, so the remainder
+/// is safe to join under the mounted root.
+#[cfg(feature = "phase2-bindings")]
+fn split_picked_path(path: &LogicalPath) -> Option<(String, PathBuf)> {
+    let normalized = path.as_str();
+    let trimmed = normalized.strip_prefix('/').unwrap_or(normalized);
+    let rest = trimmed.strip_prefix("picked/")?;
+    let (token, tail) = match rest.split_once('/') {
+        Some((token, tail)) => (token, tail),
+        // `picked/<token>` alone names the folder itself, e.g. for list.
+        None => (rest, ""),
+    };
+    if token.is_empty() {
+        return None;
+    }
+    let tail_path = if tail.is_empty() {
+        PathBuf::from(".")
+    } else {
+        tail.split('/').collect()
+    };
+    Some((token.to_string(), tail_path))
 }
 
 #[cfg(feature = "phase2-bindings")]
@@ -2462,6 +2540,7 @@ mod tests {
             Vec::new(),
             1024,
             sandbox.path().to_path_buf(),
+            Default::default(),
         );
 
         // A shared bundle runs from a fresh folder: nothing under the sandbox
@@ -2487,6 +2566,7 @@ mod tests {
             Vec::new(),
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
 
         let locale = adapter.current().expect("read locale");
@@ -2511,6 +2591,7 @@ mod tests {
             Vec::new(),
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
 
         let locale = adapter.current().expect("read locale");
@@ -2541,6 +2622,7 @@ mod tests {
             Vec::new(),
             1024,
             temp.clone(),
+            Default::default(),
         );
         let path = "./fixtures\\public//note.txt";
         let handle = adapter
@@ -2580,6 +2662,7 @@ mod tests {
             Vec::new(),
             1024,
             temp.clone(),
+            Default::default(),
         );
 
         let handle = adapter
@@ -2619,6 +2702,7 @@ mod tests {
             vec!["clock".to_string(), "--utc".to_string()],
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
 
         let raw = adapter.args_raw().expect("encode raw args");
@@ -2636,6 +2720,7 @@ mod tests {
             vec!["ok".to_string(), "".to_string()],
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
         let empty_err = empty_arg_adapter
             .args_raw()
@@ -2653,6 +2738,7 @@ mod tests {
             vec!["bad\narg".to_string()],
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
         let newline_err = newline_arg_adapter
             .args_raw()
@@ -2675,6 +2761,7 @@ mod tests {
             vec![oversized],
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
 
         let err = adapter
@@ -2697,6 +2784,7 @@ mod tests {
             vec!["x".to_string(); MAX_PHASE2_ARG_COUNT + 1],
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
 
         let err = adapter
@@ -2731,6 +2819,7 @@ mod tests {
             Vec::new(),
             1024,
             temp.clone(),
+            Default::default(),
         );
 
         let handle = adapter
@@ -2765,6 +2854,7 @@ mod tests {
             Vec::new(),
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
 
         let handle = adapter.stdout().expect("open stdout");
@@ -2792,6 +2882,7 @@ mod tests {
             Vec::new(),
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
 
         for _ in 0..MAX_PHASE2_OPEN_RESOURCES {
@@ -2818,6 +2909,7 @@ mod tests {
             Vec::new(),
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
 
         let mut handles = Vec::new();
@@ -2854,6 +2946,7 @@ mod tests {
             Vec::new(),
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
 
         let first = adapter.stdout().expect("open first stream");
@@ -2887,6 +2980,7 @@ mod tests {
             Vec::new(),
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
 
         {
@@ -2922,6 +3016,7 @@ mod tests {
             Vec::new(),
             1024,
             temp.clone(),
+            Default::default(),
         );
 
         let handle = adapter
@@ -2970,6 +3065,7 @@ mod tests {
             Vec::new(),
             1024,
             temp.clone(),
+            Default::default(),
         );
 
         let err = adapter
@@ -3007,6 +3103,7 @@ mod tests {
             Vec::new(),
             1024,
             temp.clone(),
+            Default::default(),
         );
 
         let remove_err = adapter
@@ -3064,6 +3161,7 @@ mod tests {
             Vec::new(),
             1024,
             sandbox,
+            Default::default(),
         );
 
         let read_err = adapter
@@ -3115,6 +3213,7 @@ mod tests {
             Vec::new(),
             1024,
             sandbox,
+            Default::default(),
         );
 
         let open_err = adapter
@@ -3194,6 +3293,7 @@ mod tests {
             Vec::new(),
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
         let req = HttpRequest {
             method: uapi_dispatch::HttpMethod::Get,
@@ -3347,6 +3447,7 @@ mod tests {
             Vec::new(),
             1024,
             PathBuf::from("."),
+            Default::default(),
         );
         let response = adapter
             .fetch(HttpRequest {
@@ -3434,5 +3535,134 @@ mod tests {
         .expect("Phase 2 UAPI imports should link");
 
         store.limiter(|state| &mut state.limits);
+    }
+    /// K-083: the dialog host and the fs host must share ONE chosen-files
+    /// registry. They each defaulted their own, so a token the picker issued
+    /// went into one map while fs.open-chosen read the other -- every
+    /// dialog-picked file in a GUI app answered NotFound, and a comment
+    /// claimed the sharing existed. This walks the wiring the way the real
+    /// construction does.
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn a_token_from_the_picker_resolves_in_the_fs_host() {
+        let state = HostState::new(&Config::default(), OutputMode::Sink).expect("host state");
+        // The picker's side: remember a file, as open_file does on a click.
+        let token = state
+            .chosen
+            .borrow_mut()
+            .remember(std::path::PathBuf::from("/tmp/picked.txt"))
+            .expect("token");
+        // The fs side reads the SAME registry through the phase2 host's Rc:
+        // if the wiring regresses to two registries, this resolve fails.
+        let resolved = state
+            .phase2
+            .chosen_files_for_test()
+            .borrow()
+            .resolve(&token)
+            .map(|p| p.to_path_buf());
+        assert_eq!(
+            resolved.as_deref(),
+            Some(std::path::Path::new("/tmp/picked.txt")),
+            "one registry, both hosts"
+        );
+    }
+
+    /// K-075's mount: a dialog-picked folder is reachable only through its
+    /// token, with the sandbox's full discipline. This is the security core
+    /// of "the pick is the grant", so every edge is pinned: the happy path,
+    /// the forged token, the traversal, and the symlink escape.
+    #[cfg(feature = "phase2-bindings")]
+    #[test]
+    fn a_picked_folder_is_reachable_by_token_and_only_by_token() {
+        let sandbox = tempfile::tempdir().expect("sandbox");
+        let picked_dir = tempfile::tempdir().expect("picked");
+        std::fs::write(picked_dir.path().join("inside.txt"), b"tidy me").expect("seed");
+
+        let chosen: Rc<RefCell<chosen_files::ChosenFiles>> = Default::default();
+        let token = chosen
+            .borrow_mut()
+            .remember_folder(picked_dir.path().to_path_buf())
+            .expect("token");
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            sandbox.path().to_path_buf(),
+            chosen,
+        );
+
+        // The happy path: list and read through the token.
+        let names = FsAdapter::list(&adapter, &format!("picked/{token}")).expect("list");
+        assert_eq!(names, vec!["inside.txt".to_string()]);
+        let handle = FsAdapter::open(
+            &adapter,
+            &format!("picked/{token}/inside.txt"),
+            OpenMode::Read,
+        )
+        .expect("open picked file");
+        drop(handle);
+
+        // A forged token resolves to nothing.
+        assert!(
+            FsAdapter::list(&adapter, "picked/folder-999").is_err(),
+            "an invented token must not resolve"
+        );
+
+        // Traversal out of the mount dies in normalization, before any IO.
+        assert!(
+            FsAdapter::list(&adapter, &format!("picked/{token}/../escape")).is_err(),
+            "parent traversal under a mount must be refused"
+        );
+
+        // And the picked folder does NOT leak into the plain sandbox space.
+        assert!(
+            FsAdapter::open(&adapter, "inside.txt", OpenMode::Read).is_err(),
+            "the mount must not alias into the sandbox root"
+        );
+    }
+
+    /// A symlink inside a picked folder pointing outside it is refused the
+    /// same way sandbox symlinks are -- the person granted the folder, not
+    /// wherever its links lead.
+    #[cfg(all(feature = "phase2-bindings", unix))]
+    #[test]
+    fn a_symlink_cannot_walk_out_of_a_picked_folder() {
+        let picked_dir = tempfile::tempdir().expect("picked");
+        let outside = tempfile::tempdir().expect("outside");
+        std::fs::write(outside.path().join("secret.txt"), b"no").expect("seed");
+        std::os::unix::fs::symlink(
+            outside.path().join("secret.txt"),
+            picked_dir.path().join("link.txt"),
+        )
+        .expect("symlink");
+
+        let chosen: Rc<RefCell<chosen_files::ChosenFiles>> = Default::default();
+        let token = chosen
+            .borrow_mut()
+            .remember_folder(picked_dir.path().to_path_buf())
+            .expect("token");
+        let adapter = LocalPhase2Adapter::new(
+            Rc::new(RefCell::new(OutputMode::Sink)),
+            None,
+            None,
+            None,
+            Vec::new(),
+            1024,
+            tempfile::tempdir().expect("sandbox").path().to_path_buf(),
+            chosen,
+        );
+
+        assert!(
+            FsAdapter::open(
+                &adapter,
+                &format!("picked/{token}/link.txt"),
+                OpenMode::Read
+            )
+            .is_err(),
+            "a link out of the picked folder must be refused"
+        );
     }
 }

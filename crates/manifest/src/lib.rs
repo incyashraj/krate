@@ -81,10 +81,6 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
         "<mime-type>",
         false,
     ),
-    // System file dialogs. Default-granted, and the interface refuses every
-    // call on every host -- so today this grants nothing, and the permission
-    // list a person reads names something the app cannot do.
-    //
     // The wildcard covers message/confirm boxes, which show text and take a
     // click -- no data moves, so they stay granted.
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "*", true),
@@ -98,6 +94,18 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // Choosing a file is a real decision, so it is asked for.
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "file-open", false),
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "ui", "dialog", "file-save", false),
+    // The folder pick is the biggest dialog grant -- a subtree, not one
+    // file -- so it is an explicit ask like the file dialogs. It is also the
+    // designed answer to K-075: apps that work on "a folder of yours" ask
+    // for this instead of an fs scope, and the person's pick draws the
+    // boundary at run time.
+    CapabilitySpec::resource_scoped(
+        CapabilityPhase::Phase3,
+        "ui",
+        "dialog",
+        "open-folder",
+        false,
+    ),
     // Drawing with the GPU. Default-granted. When this was written canvas2d
     // refused every call; it now carries 16 working functions and shipped
     // games sit on it, so the name gates real behaviour. The stale version of

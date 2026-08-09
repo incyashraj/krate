@@ -24,6 +24,11 @@ const MAX_CHOSEN_FILES: usize = 64;
 #[derive(Debug, Default)]
 pub struct ChosenFiles {
     by_token: HashMap<String, PathBuf>,
+    /// Folders picked in a dialog. A folder token grants the subtree under
+    /// it -- reached through `picked/<token>/...` paths -- for this run
+    /// only, which is the answer to "a tidier cannot name a folder" (K-075):
+    /// the person names it by picking, and the pick is the grant.
+    folders_by_token: HashMap<String, PathBuf>,
     /// Counts every token ever issued in this run, so a token is never reused
     /// even after one is dropped.
     issued: u64,
@@ -49,6 +54,24 @@ impl ChosenFiles {
         let token = format!("chosen-{}", self.issued);
         self.by_token.insert(token.clone(), path);
         Some(token)
+    }
+
+    /// Record a chosen folder and return the token the app will use.
+    /// Shares the run-wide bound with files: one budget for everything a
+    /// person can be asked to click through.
+    pub fn remember_folder(&mut self, path: PathBuf) -> Option<String> {
+        if self.by_token.len() + self.folders_by_token.len() >= MAX_CHOSEN_FILES {
+            return None;
+        }
+        self.issued += 1;
+        let token = format!("folder-{}", self.issued);
+        self.folders_by_token.insert(token.clone(), path);
+        Some(token)
+    }
+
+    /// The folder behind a token, if this run issued it.
+    pub fn resolve_folder(&self, token: &str) -> Option<&Path> {
+        self.folders_by_token.get(token).map(PathBuf::as_path)
     }
 
     /// The path behind a token, if this run issued it.

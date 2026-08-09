@@ -490,6 +490,30 @@ interface dialog {
   /// empty string for any file. It is a hint to the dialog, not a rule the
   /// runtime enforces -- what the person picks is what the app gets.
   open-file: func(window: u64, title: string, filter: string) -> result<option<chosen-file>, ui-error>;
+
+  /// A folder the person picked; carried by token, never by path.
+  record chosen-folder {
+    /// The folder's display name, for showing which folder is in use.
+    name: string,
+    /// Prefix paths with `picked/<token>/` to reach files inside it through
+    /// the ordinary fs calls -- list, read, write, mkdir, remove all work
+    /// under that prefix, and only there.
+    token: string,
+  }
+
+  /// Ask the person to choose a folder, and return what they chose.
+  ///
+  /// This is how an app reaches a real folder of theirs: not by naming a
+  /// path (no path can be named), and not by asking for everything, but by
+  /// the person picking one -- and the pick IS the grant. The app can then
+  /// use every fs call under `picked/<token>/...` for this run: list what
+  /// is there, read files, write results, make subfolders. The grant ends
+  /// with the run; nothing about the folder's location is learnable; and a
+  /// tidy-my-folder app needs exactly this and no fs capability at all.
+  ///
+  /// `none` means they cancelled, which is a normal outcome and not an
+  /// error. Requires the `ui.dialog:open-folder` capability.
+  open-folder: func(window: u64, title: string) -> result<option<chosen-folder>, ui-error>;
 }
 
 /// Clipboard calls.

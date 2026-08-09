@@ -284,6 +284,16 @@ impl Phase3GuiHost {
     /// Only ever set by `check-app`'s usability stage. An ordinary run passes
     /// `None` and behaves exactly as it always has, which is the point: this is
     /// a harness bolted onto the side of the real run, not a change to it.
+    /// Share the chosen-files registry with the fs host (see
+    /// Phase2Host::with_chosen_files -- K-083).
+    pub fn with_chosen_files(
+        mut self,
+        chosen: std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>>,
+    ) -> Self {
+        self.chosen_files = chosen;
+        self
+    }
+
     pub fn with_usability(mut self, plan: Option<crate::usability::UsabilityPlan>) -> Self {
         self.usability = plan.map(|plan| UsabilityDriver {
             plan,
@@ -1950,6 +1960,12 @@ impl ui::dialog::Host for Phase3GuiHost {
         title: String,
         filter: String,
     ) -> wasmtime::Result<Result<Option<ui::dialog::ChosenFile>, ui::types::UiError>> {
+        // Headless runs -- --shoot, check-app, CI -- must never block on a
+        // native dialog nobody can click. A cancelled dialog is the honest
+        // answer there, and it is a normal outcome the app already handles.
+        if self.headless {
+            return Ok(Ok(None));
+        }
         let chosen = match choose_file_on_host(&title, &filter) {
             Ok(Some(path)) => path,
             // Cancelling is a normal answer, not a failure.
@@ -1964,6 +1980,38 @@ impl ui::dialog::Host for Phase3GuiHost {
             )));
         };
         Ok(Ok(Some(ui::dialog::ChosenFile { name, token })))
+    }
+
+    /// Show the system's folder picker; the pick is the grant.
+    ///
+    /// The app receives a name and a token. Files inside the picked folder
+    /// are reached through `picked/<token>/...` paths on the ordinary fs
+    /// calls -- the resolver mounts the token for this run and containment
+    /// is enforced against the picked folder exactly as it is against the
+    /// sandbox. Nothing about the folder's location reaches the app, and
+    /// the grant dies with the run.
+    fn open_folder(
+        &mut self,
+        _window: u64,
+        title: String,
+    ) -> wasmtime::Result<Result<Option<ui::dialog::ChosenFolder>, ui::types::UiError>> {
+        if self.headless {
+            return Ok(Ok(None));
+        }
+        let mut dialog = rfd::FileDialog::new();
+        if !title.is_empty() {
+            dialog = dialog.set_title(title);
+        }
+        let Some(folder) = dialog.pick_folder() else {
+            return Ok(Ok(None));
+        };
+        let name = crate::chosen_files::ChosenFiles::display_name(&folder);
+        let Some(token) = self.chosen_files.borrow_mut().remember_folder(folder) else {
+            return Ok(Err(ui::types::UiError::Unsupported(
+                "too many files or folders chosen in one run".to_string(),
+            )));
+        };
+        Ok(Ok(Some(ui::dialog::ChosenFolder { name, token })))
     }
 
     /// Show a message and wait for the person to dismiss it.

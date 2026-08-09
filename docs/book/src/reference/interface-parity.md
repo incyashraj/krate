@@ -23,7 +23,7 @@ not be drawn into. That pair reads `works` on both tables now.
 | `gfx.scene3d` | 10 | **works** |
 | `speech.transcription` | 27 | **works** |
 | `ui.clipboard` | 2 | **works** |
-| `ui.dialog` | 3 | **works** |
+| `ui.dialog` | 4 | **works** |
 | `ui.events` | 6 | **works** |
 | `ui.image` | 2 | **works** |
 | `ui.launcher` | 1 | **works** |

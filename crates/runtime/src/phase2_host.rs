@@ -74,6 +74,30 @@ impl<'a> Phase2Host<'a> {
         }
     }
 
+    /// Test-only view of the registry, so the K-083 lock can prove both
+    /// hosts hold the same one without making the field public.
+    #[cfg(test)]
+    pub(crate) fn chosen_files_for_test(
+        &self,
+    ) -> &std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>> {
+        &self.chosen_files
+    }
+
+    /// Share the chosen-files registry with the dialog host.
+    ///
+    /// Both hosts used to build their own registry independently, so a token
+    /// the phase-3 picker issued resolved against an always-empty map here
+    /// and every `fs.open-chosen` in a GUI app answered NotFound (K-083).
+    /// The comment on the picker claimed the two were shared; this is what
+    /// actually shares them.
+    pub fn with_chosen_files(
+        mut self,
+        chosen: std::rc::Rc<std::cell::RefCell<crate::chosen_files::ChosenFiles>>,
+    ) -> Self {
+        self.chosen_files = chosen;
+        self
+    }
+
     pub fn with_asset_root(mut self, asset_root: Option<PathBuf>) -> Self {
         self.asset_root = asset_root;
         self

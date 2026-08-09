@@ -442,6 +442,7 @@ to exactly what the app needs, e.g. `fs.read:notes/**`.
 | `ui.dialog:*` | yes | system file dialogs (choose a file) |
 | `ui.dialog:file-open` | no | system file dialogs (choose a file) |
 | `ui.dialog:file-save` | no | system file dialogs (choose a file) |
+| `ui.dialog:open-folder` | no | system file dialogs (choose a file) |
 | `gfx.gpu:basic` | yes | GPU drawing (canvas2d present today) |
 | `gfx.gpu:compute` | no | GPU drawing (canvas2d present today) |
 | `audio.playback` | no | play sound |
@@ -533,6 +534,7 @@ takes the arguments is the function.
 - `dialog::message: func(window: u64, title: string, body: string) -> result<_, ui-error>`
 - `dialog::confirm: func(window: u64, title: string, body: string) -> result<bool, ui-error>`
 - `dialog::open-file: func(window: u64, title: string, filter: string) -> result<option<chosen-file>, ui-error>`
+- `dialog::open-folder: func(window: u64, title: string) -> result<option<chosen-folder>, ui-error>`
 - `clipboard::read-text: func() -> result<string, ui-error>`
 - `clipboard::write-text: func(text: string) -> result<_, ui-error>`
 - `menu::set-items: func(window: u64, items: list<menu-item>) -> result<_, ui-error>`

@@ -71,6 +71,28 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-083 -- the dialog host and the fs host each had their own token registry
+Status:   fixed (mutation-locked)
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-10, tracing K-075's fix through the file-token lane it was
+          meant to reuse
+Evidence: phase2_host.rs:71 and phase3_gui_host.rs:245 each built their own
+          ChosenFiles with Default::default(), and nothing wired them
+          together. The picker issued tokens into one map; fs.open-chosen
+          resolved against the other, which was always empty -- so every
+          dialog-picked file in a GUI app has answered NotFound since the
+          feature existed. The comment on the picker said "the picker writes
+          here and fs.open-chosen reads": the sharing it described did not
+          exist. Nothing noticed because the dialogs were default-granted
+          decoration until two days ago, and no test walked pick-then-open.
+Fix:      One registry, created in HostState::new and handed to both hosts
+          (and the fs adapter) by Rc. The regression lock builds the state
+          the way production does and proves a picker-issued token resolves
+          in the fs host's registry; commenting out the wiring makes it fail
+          with "one registry, both hosts", verified by mutation.
+
 ### K-082 -- telemetry shared a KV budget with publishing, and spent it
 Status:   fixed in main; NEEDS DEPLOY (cloud/deploy.sh with the Cloudflare token)
 Owner:    lead
@@ -214,7 +236,18 @@ Fix:      Promote ui.dialog file-open/file-save to explicit asks now that they
           cannot honor without saying so.
 
 ### K-075 -- a "tidy my folder" app is impossible, so the generator reaches for **
-Status:   claimed
+Status:   step 1 shipped in main -- ui.dialog:open-folder exists end to end.
+          The pick is the grant: the app gets a token, reaches the subtree
+          through picked/<token>/... on the ordinary fs calls, and the mount
+          runs through the same resolver choke point as the sandbox, so
+          symlink refusal and containment come free (security tests pin the
+          forged token, the traversal, the symlink escape, and non-aliasing
+          into the sandbox). Grant dies with the run -- revoke-on-exit chosen
+          as the safer boundary; Denis may argue for persist-per-app and the
+          registry can grow that later. Headless runs auto-cancel every
+          dialog so CI can never hang. Step 2 (check-app rejects unscoped
+          fs.*:** and manifest-asks the imports never justify) remains, after
+          the pack teaches the picker.
 Owner:    lead
 Severity: blocker
 Class:    runtime-hole
