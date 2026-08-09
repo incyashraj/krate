@@ -32,35 +32,57 @@ One shot; don't burn it on a Monday or a weekend. Reply to every comment
 for the first 3 hours. HN rewards the honest-limitations paragraph — our
 whole brand is already that.
 
+**The selling rule:** HN flags superlatives ("smallest possible",
+"fastest") and upvotes numbers it can check in one command. Every claim
+below is concrete, true today, and verifiable from the released binary --
+which sells HARDER than the adjective form, because a skeptic who checks
+one number and finds it true believes the rest.
+
 **Title (pick one, ≤80 chars):**
-> Show HN: Krate – AI writes a desktop app, you get one 16 KB file that runs anywhere
-> Show HN: I made AI-written desktop apps shareable as one small sandboxed file
+> Show HN: A playable game in a 13 KB file that runs on Mac, Windows and Linux
+> Show HN: AI writes you a desktop app; you get one 13 KB file, sandboxed, shareable
+> Show HN: Desktop apps as single tiny files – AI-written, sandboxed, run from a URL
 
 **Text:**
-> AI can write a useful little desktop app in minutes. Sharing it is still
-> the broken part: a repo, a toolchain, "works on my machine."
+> Here is a playable Breakout: 13,047 bytes. Not the installer -- the whole
+> app. It opens by double-click on macOS, Windows, and Linux, from the same
+> file. Discord, which solves the same one-codebase-three-OS problem by
+> shipping a browser, is 34,000x larger.
 >
-> Krate packs the app and its permissions into one file (typically 15–60
-> KB — real WebAssembly compiled from Rust the AI writes, no Electron, no
-> bundled browser). The same file opens on macOS, Windows, and Linux by
-> double-click. Before it runs, it shows what it wants in plain words —
-> "save files in its own private folder, never your files" — and the
-> runtime enforces the answer. Deny something and the app still opens,
-> just without that power.
+> Krate is a runtime that makes AI-written desktop apps shareable. You type
+> `krate`, describe an app, and the AI CLI you already have (Claude, Codex,
+> Gemini, Copilot, Grok) writes real Rust that compiles to a WebAssembly
+> component -- machine code under wasmtime, no Electron, no bundled
+> browser. The median app in our repo is 13.5 KB; all eleven reference
+> apps together are 209 KB, smaller than one screenshot of them.
 >
-> You bring your own AI CLI (Claude, Codex, Gemini, Copilot, Grok — it
-> drives whichever you have). Type `krate`, describe the app, ~5–12 min
-> later you have a file you can email to someone.
+> Sharing is the actual product:
+> - Send the file like a photo. Double-click opens it on all three OSes.
+> - Or publish it: one command puts it on Krate Cloud and hands you a URL
+>   anyone can run directly -- `krate run https://...` -- permission wall
+>   included.
+> - Before ANY app runs, it says what it wants in plain words ("save files
+>   in its own private folder -- never your files") and the runtime
+>   enforces the answer. Deny something and the app still opens, minus
+>   that power. An app that works on your folders never names a path: it
+>   asks you to pick one, and the pick is the grant, for that run only.
 >
-> Honest limits: the permission boundary works but I'm not yet claiming
-> hardening against hostile code; heavy 3D and video aren't there; apps
-> are Rust-compiled components so the AI writes real code, which sometimes
-> takes a retry. An outside reviewer's findings and my fixes are all on
-> the public bug board in the repo.
+> The UI is drawn by our own renderer -- rounded cards, soft shadows,
+> gradient backgrounds, springs, system-font typography -- so generated
+> apps look like software from this year. The workout-dashboard screenshot
+> on the site is a 16 KB file.
 >
-> Install: curl -fsSL https://krate.tech/install.sh | sh (Windows in
-> PowerShell: irm https://krate.tech/install.ps1 | iex)
-> Site: https://krate.tech — Source: https://github.com/incyashraj/krate
+> Honest limits: the capability boundary works but I am not yet claiming
+> hardening against hostile code; heavy 3D and video are not there; the AI
+> writes real code, so a build takes 5-12 minutes and occasionally needs a
+> retry. Every outside finding lands on a public bug board in the repo,
+> with the fix commits next to it.
+>
+> Install (macOS/Linux): curl -fsSL https://krate.tech/install.sh | sh
+> Windows (PowerShell): irm https://krate.tech/install.ps1 | iex
+> Then type `krate` and describe something.
+>
+> Site: https://krate.tech -- Source: https://github.com/incyashraj/krate
 
 ### 2. r/rust (same week, day after HN)
 Angle: the engineering, not the pitch. Rustaceans respect no_std war
