@@ -107,11 +107,93 @@ pub use bindings::Guest;
 /// ```no_run
 /// use krate::prelude::*;
 /// ```
+/// Motion: the math that makes an app feel alive.
+///
+/// Everything here is pure `no_std` arithmetic -- no WIT, no host calls --
+/// so it costs nothing at the sandbox boundary. The pattern every animated
+/// app uses: measure `dt` from `time::clock::monotonic-nanos` each frame,
+/// tick your springs and eases with it, draw, request the next frame.
+///
+/// Design rules that make motion read as polish rather than spectacle:
+/// ease-out for things arriving (fast start, gentle landing), springs for
+/// things that follow input, 150-300ms for interface moves, and nothing
+/// that loops forever except ambient glow.
+pub mod motion {
+    /// Ease-out cubic: fast start, gentle landing. The default for anything
+    /// entering the screen. `t` in 0..=1.
+    pub fn ease_out(t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
+        let inv = 1.0 - t;
+        1.0 - inv * inv * inv
+    }
+
+    /// Ease-in-out cubic: gentle both ends. For things moving between two
+    /// resting places, like a card sliding across.
+    pub fn ease_in_out(t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
+        if t < 0.5 {
+            4.0 * t * t * t
+        } else {
+            let f = -2.0 * t + 2.0;
+            1.0 - f * f * f / 2.0
+        }
+    }
+
+    /// Smoothstep: the classic S-curve, cheap and shapeless enough for
+    /// crossfades and glow pulses.
+    pub fn smoothstep(t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
+        t * t * (3.0 - 2.0 * t)
+    }
+
+    /// A critically-damped spring: follows a moving target without
+    /// overshoot, which is what a knob, a scroll position, or a follower
+    /// card wants. Tick it once per frame with the frame's `dt` seconds.
+    ///
+    /// `stiffness` sets the speed; 10.0 is a calm follow, 30.0 is snappy.
+    #[derive(Clone, Copy, Debug)]
+    pub struct Spring {
+        pub value: f32,
+        pub velocity: f32,
+        pub stiffness: f32,
+    }
+
+    impl Spring {
+        /// A spring at rest on `value`.
+        pub fn rest_at(value: f32, stiffness: f32) -> Self {
+            Self {
+                value,
+                velocity: 0.0,
+                stiffness,
+            }
+        }
+
+        /// Advance toward `target` by `dt` seconds. Critically damped, so it
+        /// settles without bouncing; call every frame and read `.value`.
+        pub fn tick(&mut self, target: f32, dt: f32) {
+            let dt = dt.clamp(0.0, 0.1);
+            let omega = self.stiffness;
+            // Semi-implicit integration of x'' = -w^2 (x - target) - 2w x',
+            // stable at any frame rate an app will actually see.
+            let to_target = target - self.value;
+            let accel = omega * omega * to_target - 2.0 * omega * self.velocity;
+            self.velocity += accel * dt;
+            self.value += self.velocity * dt;
+        }
+
+        /// Whether the spring has effectively arrived, for stopping redraws.
+        pub fn settled(&self, target: f32) -> bool {
+            (self.value - target).abs() < 0.05 && self.velocity.abs() < 0.05
+        }
+    }
+}
+
 pub mod prelude {
     pub use crate::export;
     pub use crate::fs::{self, FileExt, OpenMode};
     pub use crate::io::{self, streams::OutputStreamExt, Guest};
     pub use crate::locale;
+    pub use crate::motion::{ease_in_out, ease_out, smoothstep, Spring};
     pub use crate::net;
     pub use crate::time;
 }
@@ -780,5 +862,52 @@ mod tests {
         );
 
         assert_eq!(io::args::first_raw("one\nthree\n"), Some("one"));
+    }
+}
+
+#[cfg(test)]
+mod motion_tests {
+    use super::motion::{ease_in_out, ease_out, smoothstep, Spring};
+
+    /// The eases are anchored at their ends and monotonic -- an ease that
+    /// dips or overshoots turns every animation using it into a glitch.
+    #[test]
+    fn eases_are_anchored_and_monotonic() {
+        for f in [ease_out, ease_in_out, smoothstep] {
+            assert!(f(0.0).abs() < 1e-6);
+            assert!((f(1.0) - 1.0).abs() < 1e-6);
+            let mut last = 0.0;
+            for i in 1..=100 {
+                let v = f(i as f32 / 100.0);
+                assert!(v + 1e-6 >= last, "monotonic");
+                last = v;
+            }
+        }
+    }
+
+    /// The spring reaches its target and does not meaningfully overshoot --
+    /// critically damped is the promise, because a bouncing scroll position
+    /// reads as broken, not lively.
+    #[test]
+    fn a_spring_settles_without_bouncing() {
+        let mut s = Spring::rest_at(0.0, 20.0);
+        let mut peak = 0.0f32;
+        for _ in 0..600 {
+            s.tick(100.0, 1.0 / 60.0);
+            peak = peak.max(s.value);
+        }
+        assert!(s.settled(100.0), "settled at {} v={}", s.value, s.velocity);
+        assert!(
+            peak <= 102.0,
+            "overshoot beyond 2% reads as a bounce: peaked {peak}"
+        );
+    }
+
+    /// A huge dt (a stalled frame) must not explode the integration.
+    #[test]
+    fn a_stalled_frame_does_not_explode_the_spring() {
+        let mut s = Spring::rest_at(0.0, 30.0);
+        s.tick(50.0, 5.0); // clamped internally
+        assert!(s.value.is_finite() && s.value.abs() < 1000.0);
     }
 }

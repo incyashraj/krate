@@ -7009,6 +7009,56 @@ fn sdk_prefix_from_cargo(cargo: &str) -> Option<String> {
 /// looping on the build. Two failures are common enough and cryptic enough to
 /// be worth naming: a `no_std` guest missing the SDK's lang items, and a `std`
 /// guest whose bindings were built with `std_feature` off.
+/// The manifest may not ask beyond the code. Returns the first problem
+/// found, or None when the asks and the imports line up.
+fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -> Option<String> {
+    let has_import = |needle: &str| imports.iter().any(|i| i.contains(needle));
+
+    for request in &manifest.capabilities {
+        let cap = request.cap.to_string();
+        let (family, scope) = match cap.split_once(':') {
+            Some((f, s)) => (f, Some(s)),
+            None => (cap.as_str(), None),
+        };
+
+        // Rule 1: unscoped fs globs.
+        if family.starts_with("fs.") {
+            let bare = scope
+                .map(|s| s.trim_start_matches("./").trim_start_matches('/'))
+                .unwrap_or("");
+            if bare == "**" || bare == "*" || bare.is_empty() {
+                return Some(format!(
+                    "the manifest asks for {cap}, which reads as everything. The sandbox contains it, but a person cannot tell -- and an app wide open on paper fails the permission wall even when the runtime holds"
+                ));
+            }
+        }
+
+        // Rule 2: a family whose interface the component never imports.
+        let needed: Option<&str> = match family {
+            f if f.starts_with("fs.") => Some(":fs/"),
+            "net.connect" => Some(":net/"),
+            "store.kv" => Some(":store/kv"),
+            "store.sql" => Some(":store/sql"),
+            "store.secret" => Some(":store/secret"),
+            "random.bytes" => Some(":random/"),
+            "audio.playback" => Some(":audio/playback"),
+            "audio.capture" => Some(":audio/capture"),
+            "ui.dialog" => Some(":ui/dialog"),
+            "ui.clipboard" => Some(":ui/clipboard"),
+            // System and always-on families carry no signal here.
+            _ => None,
+        };
+        if let Some(needle) = needed {
+            if !imports.is_empty() && !has_import(needle) {
+                return Some(format!(
+                    "the manifest asks for {cap}, but the component never imports the {needle} interface -- it is asking for something the code cannot even attempt"
+                ));
+            }
+        }
+    }
+    None
+}
+
 fn build_fix(detail: &str) -> String {
     let generic = "Fix the compiler errors above. The build uses rustup's toolchain and the \
                    wasm32-wasip1 target; run `krate doctor` if the target or toolchain looks \
@@ -7331,10 +7381,31 @@ fn run_check_app(
             fix: imports_fix(&bad, dir),
         });
     }
-    let imports = krate_bundle::imports::component_imports(&wasm_bytes)
+    let imports: Vec<String> = krate_bundle::imports::component_imports(&wasm_bytes)
         .map(|set| set.into_iter().collect())
         .unwrap_or_default();
     passed.push("imports");
+
+    // Stage extension: the manifest must not ask for more than the code can
+    // reach. Two rules, both from the review that found a tidier declaring
+    // filesystem-wide delete it never called (K-075):
+    //
+    // 1. An unscoped fs glob (`**`) is refused. The sandbox keeps it
+    //    contained, but a manifest line that READS as "everything" fails the
+    //    wall's whole purpose -- and the right tool exists now: a folder the
+    //    person picks via `ui.dialog:open-folder`, where the pick is the
+    //    grant and no fs capability is needed at all.
+    // 2. A capability family with no matching interface import is refused:
+    //    asking for fs while importing no krate:fs interface means the
+    //    manifest asks for something the component cannot even attempt.
+    if let Some(problem) = manifest_overreach(&manifest, &imports) {
+        return Err(CheckFailure {
+            stage: CheckStage::Manifest,
+            detail: problem,
+            fix: "Scope every fs capability to the narrowest folder the app actually uses (fs.write:./exports/**), or -- for an app that works on a folder the PERSON chooses -- drop the fs capability and use `ui.dialog:open-folder`: the pick is the grant, and files are reached through picked/<token>/... on the ordinary fs calls. Remove any capability whose interface the code never imports."
+                .to_string(),
+        });
+    }
 
     if no_run {
         return Ok(CheckSummary {
@@ -9049,8 +9120,8 @@ mod create_tests {
 
     use super::{
         app_kind_name, author_contract, claude_author_prompt, expand_windows_env, has_tool,
-        human_label, install_made_progress, name_from_request, parse_reg_path_value,
-        rust_version_fits, same_path_entry, silent_author_failure, toml_path,
+        human_label, install_made_progress, manifest_overreach, name_from_request,
+        parse_reg_path_value, rust_version_fits, same_path_entry, silent_author_failure, toml_path,
         validate_create_request, MAX_DERIVED_NAME_WORDS,
     };
     use krate_author::AppKind;
@@ -9554,6 +9625,53 @@ mod create_tests {
         );
         assert_eq!(rust_version_fits("cargo 2.0.0", (1, 91)), Some(true));
         assert_eq!(rust_version_fits("garbage with no number", (1, 91)), None);
+    }
+
+    /// K-075 step 2: the manifest may not ask beyond the code. Rule one --
+    /// an unscoped fs glob reads as "everything" and is refused with the
+    /// open-folder path named. Rule two -- a capability whose interface the
+    /// component never imports is an ask the code cannot even attempt,
+    /// which is exactly the reviewed tidier's fs.remove:** with no remove
+    /// call anywhere.
+    #[test]
+    fn a_manifest_may_not_ask_beyond_the_code() {
+        let manifest = |caps: &str| {
+            krate_manifest::Manifest::parse(&format!(
+                "[app]\nid = \"dev.krate.t\"\nname = \"T\"\nversion = \"0.1.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n{caps}"
+            ))
+            .expect("manifest parses")
+        };
+        let fs_imports = vec!["krate:fs/files@0.1.0".to_string()];
+
+        // Unscoped ** is refused even when fs IS imported.
+        let wide = manifest(
+            "[[capabilities]]\ncap = \"fs.list:**\"\nrationale = \"r\"\nrequired = true\n",
+        );
+        let problem = manifest_overreach(&wide, &fs_imports).expect("must refuse **");
+        assert!(problem.contains("reads as everything"), "{problem}");
+
+        // A scoped ask with the matching import passes.
+        let scoped = manifest(
+            "[[capabilities]]\ncap = \"fs.write:./out/**\"\nrationale = \"r\"\nrequired = true\n",
+        );
+        assert!(manifest_overreach(&scoped, &fs_imports).is_none());
+
+        // Asking for net while importing no net interface is refused.
+        let netless = manifest(
+            "[[capabilities]]\ncap = \"net.connect:api.example.com:443\"\nrationale = \"r\"\nrequired = true\n",
+        );
+        let problem =
+            manifest_overreach(&netless, &fs_imports).expect("must refuse importless net");
+        assert!(problem.contains("never"), "{problem}");
+
+        // The folder-picker path needs no fs capability at all: a manifest
+        // asking only for the dialog, with the dialog imported, is clean.
+        let picker = manifest(
+            "[[capabilities]]\ncap = \"ui.dialog:open-folder\"\nrationale = \"r\"\nrequired = true\n",
+        );
+        let dialog_imports = vec!["krate:ui/dialog@0.1.0".to_string()];
+        assert!(manifest_overreach(&picker, &dialog_imports).is_none());
     }
 
     /// The install loop must stop when a pass changes nothing.

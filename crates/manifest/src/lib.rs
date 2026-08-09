@@ -640,7 +640,10 @@ fn validate_ui_resource(action: &str, resource: &str) -> std::result::Result<(),
         "menu" => validate_one_of(resource, &["system"], "menu resource"),
         "dialog" => validate_one_of(
             resource,
-            &["file-open", "file-save", "*"],
+            // Kept in step with the spec table above by the cross-check test:
+            // this list rotting behind a new spec entry is exactly what
+            // blocked open-folder for one build.
+            &["file-open", "file-save", "open-folder", "*"],
             "dialog resource",
         ),
         "dropzone" => validate_mime_resource(resource),
@@ -797,6 +800,26 @@ fn is_valid_ipv4_host(host: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Two truths about dialog resources exist -- the spec table and the
+    /// validator's list -- and they drifted the day open-folder landed in
+    /// one but not the other. This walks every dialog spec through parse so
+    /// the drift cannot ship again.
+    #[test]
+    fn every_dialog_spec_resource_is_accepted_by_the_validator() {
+        for spec in supported_capability_specs() {
+            let name = spec.name();
+            if !name.starts_with("ui.dialog:") {
+                continue;
+            }
+            let manifest = format!(
+                "[app]\nid = \"dev.krate.d\"\nname = \"D\"\nversion = \"0.1.0\"\n\
+                 entry = \"code.wasm\"\nworld = \"krate:app/gui@0.2.0\"\n\
+                 [[capabilities]]\ncap = \"{name}\"\nrationale = \"r\"\nrequired = true\n"
+            );
+            Manifest::parse(&manifest).unwrap_or_else(|e| panic!("spec {name} must parse: {e:#}"));
+        }
+    }
 
     const EXAMPLE: &str = r#"
         [app]

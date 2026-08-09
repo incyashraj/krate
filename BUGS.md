@@ -245,9 +245,14 @@ Status:   step 1 shipped in main -- ui.dialog:open-folder exists end to end.
           into the sandbox). Grant dies with the run -- revoke-on-exit chosen
           as the safer boundary; Denis may argue for persist-per-app and the
           registry can grow that later. Headless runs auto-cancel every
-          dialog so CI can never hang. Step 2 (check-app rejects unscoped
-          fs.*:** and manifest-asks the imports never justify) remains, after
-          the pack teaches the picker.
+          dialog so CI can never hang. Step 2 SHIPPED in main: check-app
+          refuses an unscoped fs glob (naming the open-folder path as the
+          fix) and any capability whose interface the component never
+          imports -- both rules tested against the reviewed tidier's exact
+          shapes. The pack teaches the picker pattern and the motion module
+          in a new design-patterns section; the fleet was swept (no wide
+          scopes existed). Remaining for K-075: a worked tidier example app,
+          and Denis's answer on grant lifetime.
 Owner:    lead
 Severity: blocker
 Class:    runtime-hole

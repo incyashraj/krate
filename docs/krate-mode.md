@@ -322,6 +322,12 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 - `locale::format_number(value: f64, style: NumberStyle, loc: &LocaleId) -> String`
 - `locale::timezone() -> String`
 
+### `motion`
+
+- `motion::ease_in_out(t: f32) -> f32`
+- `motion::ease_out(t: f32) -> f32`
+- `motion::smoothstep(t: f32) -> f32`
+
 ### `net`
 
 - `net::fetch(req: Request) -> Result<Response, NetError>`

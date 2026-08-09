@@ -46,6 +46,7 @@ pub fn generate(app_dir: &Path) -> String {
     out.push_str(HEADER);
     out.push_str(&sdk_surface_section());
     out.push_str(&capability_catalog_section());
+    out.push_str(DESIGN_PATTERNS_SECTION);
     out.push_str(NO_STD_SECTION);
     out.push_str(&gui_world_section());
     out.push_str(&example_index_section(app_dir));
@@ -69,6 +70,41 @@ Reaching the operating system through `std` instead of through Krate pulls
 below is in service of writing an app that passes that check.
 
 ";
+
+/// The patterns that separate a modern app from a dated one, and the grant
+/// shape that separates a trustworthy manifest from a scary one. Hand-written
+/// because these are judgments, not signatures -- the WIT docs carry the
+/// per-function detail.
+const DESIGN_PATTERNS_SECTION: &str = "\n---\n\n\
+# 2b. Two patterns that decide how good the app feels\n\n\
+## Working on a folder the person chooses\n\n\
+Never declare a wide fs scope like `fs.list:**` -- check-app refuses it, and \
+a manifest that reads as \"everything\" fails the person reading it even \
+though the sandbox holds. For an app that works on THEIR folder (a tidier, a \
+batch renamer, a photo shrinker), declare only `ui.dialog:open-folder` and \
+call `ui.dialog.open-folder(window, title)`. The person's pick IS the grant: \
+you get `{ name, token }`, and every ordinary fs call works under \
+`picked/<token>/...` for this run -- list it, read files, write results, \
+make subfolders. No fs capability at all. For output the app keeps between \
+runs, use its own folder with a narrow scope like `fs.write:./exports/**`.\n\n\
+## Motion that reads as polish\n\n\
+The SDK ships `krate::motion` (no_std, no capability): `ease_out`, \
+`ease_in_out`, `smoothstep`, and a critically-damped `Spring`. Measure dt \
+from `time.clock` each frame, tick, draw, request the next frame:\n\n\
+```rust\n\
+use krate::motion::Spring;\n\
+let mut x = Spring::rest_at(0.0, 20.0);   // stiffness 10 calm, 30 snappy\n\
+// each frame:\n\
+x.tick(target, dt);\n\
+draw_at(x.value);\n\
+if !x.settled(target) { /* request another frame */ }\n\
+```\n\n\
+Rules that keep it tasteful: ease-out for anything arriving, springs for \
+anything following input, 150-300ms for interface moves, and nothing loops \
+forever except ambient glow. Cards get `fill-round-rect` + \
+`drop-shadow-round-rect` (shadow first, offset a few pixels down); progress \
+is `stroke-arc` from -90 degrees; big numbers read best at weight 600-700 \
+with slightly negative letter-spacing via `draw-text-styled`.\n";
 
 /// Section 1: the SDK API surface, reusing the same generated reference the
 /// authoring contract has always used.
