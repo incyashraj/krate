@@ -560,6 +560,13 @@ jobs:
         shell: bash
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
+          # This step downloads the app bundle with gh, and gh without a
+          # token is an anonymous API caller on a shared runner address --
+          # which is how the v0.1.5 gate failed with "rate limit exceeded"
+          # while every signature it exists to check was fine. A gate that
+          # fails for the wrong reason teaches nothing (the unzip lesson,
+          # again). Every step in this job that runs gh carries the token.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd verify
