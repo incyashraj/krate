@@ -240,14 +240,36 @@ the truth away as a no-change); tapping Open runs Krategram full-bleed
 and crisp at scale 3 under Pulley. That one tap proved the UITouch
 path, sequential guests, and the interpreter driving a real GUI app.
 
-Still open in M2: fling/scroll verification on the simulator, the
-lifecycle (suspend/resume) legs, link/file opening (universal links
-and UTIs arrive with the Apple developer account), and the device
-build + TestFlight + the 4.7 submission -- all account-gated. The
-simulator toolchain needs `sudo xcode-select -s
-/Applications/Xcode.app/Contents/Developer` on this machine before the
-native tap tooling works; verification meanwhile drives the Simulator
-window by UI scripting, stated openly.
+### M2 simulator-side COMPLETE 2026-08-10
+
+Performance first, because the founder felt it before any probe did:
+the player lagged. Measured cause (K-089): the blit alone cost 15-21 ms
+per frame at the iPhone's native 3x. Three cuts -- reused paint buffer,
+an identity fast path in the shared draw_image (1:1 opaque blits are
+row copies now, on every platform), and the iOS raster capped at 2x
+with UIKit's GPU doing the final stretch free -- brought the blit to
+5.8-6.7 ms, measured on the same probe. The full-density answer stays
+the wgpu backend (phase 3); Android's softbuffer path needs the same
+audit and is queued.
+
+Lifecycle: home suspends, refront resumes drawing, and the feed keeps
+its scrolled position across the round trip -- state survives.
+
+Scroll: the machinery (UITouch -> slop -> wheel deltas -> app momentum)
+demonstrably moves the feed on the simulator, and the synthesis code is
+line-identical to the Android adapter's device-verified version. What
+could NOT be verified cleanly is gesture fidelity under injection: every
+mouse-drag injection path available without the native tooling delivers
+deterministically corrupted move streams (absolute posts re-derived as
+deltas by the WindowServer). Clean verification needs the native
+simulator tooling, which needs `sudo xcode-select -s
+/Applications/Xcode.app/Contents/Developer` once on this machine --
+queued as the first M2 follow-up, before any TestFlight build.
+
+Remaining in M2, all Apple-account-gated: universal links and UTI file
+opening in the player, the device build, TestFlight, and the App Store
+4.7 submission. The product core -- wall, player flow, touch, Pulley,
+rendering -- is proven on the simulator.
 
 ## M3 -- the contract grows mobile truths (with M1/M2, not after)
 

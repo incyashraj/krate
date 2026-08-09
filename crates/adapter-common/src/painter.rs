@@ -96,6 +96,51 @@ pub fn draw_image(
     let ox = rx + (rw - draw_w) / 2.0;
     let oy = ry + (rh - draw_h) / 2.0;
 
+    // The identity case: a source already rendered at exactly the
+    // destination's size, landing on whole pixels, fully opaque -- which is
+    // precisely what a full-window canvas placement is on a HiDPI host.
+    // Bilinear-sampling 3 million pixels that need no sampling was the
+    // single largest cost in the phone frame budget; a straight row copy is
+    // the whole job.
+    if scale == 1.0
+        && ox.fract() == 0.0
+        && oy.fract() == 0.0
+        && clip.is_none()
+        && image.rgba.len() == image.width as usize * image.height as usize * 4
+    {
+        let dst_x = ox as i64;
+        let dst_y = oy as i64;
+        let mut all_opaque = true;
+        'rows: for sy in 0..image.height as i64 {
+            let ty = dst_y + sy;
+            if ty < 0 || ty >= height as i64 {
+                continue;
+            }
+            for sx in 0..image.width as i64 {
+                let tx = dst_x + sx;
+                if tx < 0 || tx >= width as i64 {
+                    continue;
+                }
+                let si = ((sy * image.width as i64 + sx) * 4) as usize;
+                let a = image.rgba[si + 3];
+                if a != 255 {
+                    // Fall back to the sampling path for translucent
+                    // sources rather than half-blending here.
+                    all_opaque = false;
+                    break 'rows;
+                }
+                let px = 0xFF00_0000u32
+                    | (u32::from(image.rgba[si]) << 16)
+                    | (u32::from(image.rgba[si + 1]) << 8)
+                    | u32::from(image.rgba[si + 2]);
+                buffer[(ty as usize) * width as usize + tx as usize] = px;
+            }
+        }
+        if all_opaque {
+            return;
+        }
+    }
+
     // Clamp to the buffer and to any scroll clip before touching a pixel, so
     // the sampling loop never has to bounds-check.
     // Both edges clamped to the buffer, top edge included. A hostile rect

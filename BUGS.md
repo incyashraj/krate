@@ -71,6 +71,32 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-089 -- phone-resolution CPU raster spent the whole frame budget
+Status:   fixed (three cuts, measured before and after)
+Owner:    lead (M2 workstream)
+Severity: serious
+Class:    our-code
+Found:    2026-08-10, by Yashraj using the simulator player: "lagging,
+          like very slow frames, clearly not the experience I or the
+          user want" -- the outside eye caught what screenshots cannot
+Evidence: A probe in the iOS adapter's blit: 15-21 ms per frame for the
+          blit ALONE, before the guest drew anything, at the iPhone's
+          native 3x (1206x2622 = 3.2M pixels). Three separate costs: a
+          fresh 12 MB buffer allocated and zeroed every frame; the
+          placement paint bilinear-resampling 3.2M pixels that needed no
+          resampling (the canvas was already at physical resolution);
+          and every pixel of that surface rasterized at 3x on the CPU.
+Fix:      Three cuts, blit measured 15-21 ms -> 5.8-6.7 ms. The paint
+          buffer lives in the host and is reused. The shared draw_image
+          gained an identity fast path -- 1:1 scale, whole-pixel origin,
+          opaque source is a row copy, not 4-tap sampling -- locked into
+          every platform's blit. And the iOS adapter caps its raster
+          scale at 2x, letting UIImageView's GPU compositor do the final
+          2x->3x stretch for free; the wgpu backend (mobile plan phase 3)
+          is the eventual full-density answer. Android's emulator hid
+          the same class of cost -- its softbuffer path has no free GPU
+          stretch, so the audit there is queued as M1 follow-up.
+
 ### K-088 -- the Android blit ignores display scale, so every app is pixelated
 Status:   fixed
 Owner:    lead (M1 workstream)

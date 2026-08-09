@@ -82,6 +82,9 @@ mod real {
         gesture: Option<TouchGesture>,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
+        /// The blit target, reused across frames: allocating and zeroing a
+        /// fresh 12 MB buffer per frame was measurable by itself.
+        paint_buffer: Vec<u32>,
     }
 
     define_class!(
@@ -179,7 +182,13 @@ mod real {
         })?;
         let screen = UIScreen::mainScreen(mtm);
         let bounds: CGRect = screen.bounds();
-        let scale = screen.scale() as f32;
+        // Capped at 2x deliberately: a modern iPhone reports 3x, and CPU-
+        // rasterizing 3.2 million pixels per frame spent the whole 60 fps
+        // budget before the app drew anything. At 2x the pixel work drops
+        // 2.25x and UIImageView's GPU compositor performs the final
+        // stretch for free. The visible cost at phone DPI is minor; the
+        // wgpu backend (plan phase 3) is the eventual full-density answer.
+        let scale = (screen.scale() as f32).min(2.0);
 
         let window = unsafe { UIWindow::initWithFrame(UIWindow::alloc(mtm), bounds) };
         let controller = unsafe { UIViewController::new(mtm) };
@@ -217,6 +226,7 @@ mod real {
             gesture: None,
             hovered: None,
             pressed_widget: None,
+            paint_buffer: Vec::new(),
         })
     }
 
@@ -332,7 +342,9 @@ mod real {
         if phys_w == 0 || phys_h == 0 {
             return;
         }
-        let mut buffer = vec![0u32; phys_w * phys_h];
+        host.paint_buffer.clear();
+        host.paint_buffer.resize(phys_w * phys_h, 0);
+        let mut buffer = std::mem::take(&mut host.paint_buffer);
         krate_adapter_common::painter::paint_placements(
             &mut buffer,
             phys_w as u32,
@@ -375,6 +387,7 @@ mod real {
             );
             host.image_view.setImage(Some(&ui_image));
         });
+        host.paint_buffer = buffer;
     }
 
     // ------------------------------------------------------------------
