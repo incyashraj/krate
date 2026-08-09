@@ -71,6 +71,33 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-085 -- publish died on a cache write when the KV quota was spent
+Status:   fixed and deployed (hub); CLI note-surfacing rides the next release
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-09, Yashraj's TUI "Share it" -- HTTP 500 mid-campaign-prep
+Evidence: A temporary debug deploy captured the truth in one reproduction:
+
+            DBG Error: KV put() limit exceeded for the day.
+                at verifyGitHub (index.js:314)
+
+          The GitHub identity CACHE write threw on the exhausted quota and
+          took the whole publish down -- an optimization killing the
+          product, K-082's disease in a second spot. The gallery metadata
+          put had the same fragility one screen later.
+Fix:      Deployed: the identity cache write is best-effort (a miss costs
+          one GitHub round trip); the gallery metadata write degrades
+          instead of dying -- the bundle is already safe in R2, the URL
+          works, and the response carries a note naming the deferred
+          listing. The CLI now surfaces that note instead of swallowing it
+          into a clean-looking success. Verified end to end on the live
+          hub: publish returns the URL, run-by-URL paints the app, and the
+          degraded case prints its note.
+
+          The rule, now twice-earned: no optimization and no side-write may
+          sit between a person and the thing they asked for.
+
 ### K-084 -- a finished app was thrown away because the AI did not exit fast enough
 Status:   fixed in main; rides the next release
 Owner:    lead

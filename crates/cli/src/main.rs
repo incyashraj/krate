@@ -3113,6 +3113,13 @@ fn publish_bundle(
         .ok_or_else(|| anyhow::anyhow!("the hub returned an unexpected response: {body}"))?;
 
     usage::record(usage::Action::Publish);
+    // The hub degrades rather than dies when a metadata write cannot land
+    // (a KV quota day): the app is live at its URL but the gallery row is
+    // deferred, and it says so in a `note`. Swallowing that note showed a
+    // clean success while the gallery quietly missed the app.
+    if let Some(note) = extract_json_string(&body, "note") {
+        println!("note: {note}");
+    }
     println!("Published. Anyone can run it with:");
     println!("  krate run {url}");
     Ok(0)

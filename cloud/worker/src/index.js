@@ -125,10 +125,24 @@ async function publish(request, env) {
 
   // Keyed so KV's own lexicographic listing comes back newest-first when
   // reversed, which saves sorting the whole set on every page load.
-  await env.APPS.put(`app:${hash}`, JSON.stringify(meta));
+  let listed = true;
+  try {
+    await env.APPS.put(`app:${hash}`, JSON.stringify(meta));
+  } catch (e) {
+    // KV write quota exhausted. The bundle is already safe in R2 and the
+    // URL works -- refusing the whole publish over the gallery row would
+    // let a metadata write take the product down. Say what degraded.
+    listed = false;
+  }
 
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
-  return json({ url: `${base}/a/${hash}`, id: hash });
+  const result = { url: `${base}/a/${hash}`, id: hash };
+  if (!listed) {
+    result.note =
+      "published and runnable at the URL, but the gallery listing is " +
+      "delayed -- republishing tomorrow will list it";
+  }
+  return json(result);
 }
 
 /// Store a screenshot for an app already published.
@@ -406,9 +420,16 @@ async function verifyGitHub(request, env) {
     name: user.name || "",
     avatar_url: user.avatar_url || "",
   };
-  await env.APPS.put(cacheKey, JSON.stringify(identity), {
-    expirationTtl: IDENTITY_TTL_SECONDS,
-  });
+  try {
+    await env.APPS.put(cacheKey, JSON.stringify(identity), {
+      expirationTtl: IDENTITY_TTL_SECONDS,
+    });
+  } catch (e) {
+    // The cache is an optimization. A publish died with "KV put() limit
+    // exceeded" thrown from THIS line -- a cache write taking the product
+    // down, the K-082 disease in a second spot. Without the cache the next
+    // call costs one extra GitHub round trip, which is nothing.
+  }
   return identity;
 }
 
