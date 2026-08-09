@@ -1983,12 +1983,12 @@ impl ui::dialog::Host for Phase3GuiHost {
         // Android has no rfd backend; until M3 wires the platform document
         // picker, a dialog there answers as cancelled -- the headless rule,
         // for the same reason: there is no desktop dialog to show.
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         {
             let _ = (&title, &filter);
             Ok(Ok(None))
         }
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             let chosen = match choose_file_on_host(&title, &filter) {
                 Ok(Some(path)) => path,
@@ -2035,12 +2035,12 @@ impl ui::dialog::Host for Phase3GuiHost {
         }
         // Android: cancelled until M3 wires the document picker (see
         // open_file).
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         {
             let _ = &title;
             Ok(Ok(None))
         }
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             let mut dialog = rfd::FileDialog::new();
             if !title.is_empty() {
@@ -2082,12 +2082,12 @@ impl ui::dialog::Host for Phase3GuiHost {
             return Ok(Ok(()));
         }
         // Android: shown-and-dismissed, the headless rule, until M3.
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         {
             let _ = (&title, &body);
             Ok(Ok(()))
         }
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             rfd::MessageDialog::new()
                 .set_title(&title)
@@ -2124,12 +2124,12 @@ impl ui::dialog::Host for Phase3GuiHost {
             return Ok(Ok(false));
         }
         // Android: dismissed means no, the function's own rule, until M3.
-        #[cfg(target_os = "android")]
+        #[cfg(any(target_os = "android", target_os = "ios"))]
         {
             let _ = (&title, &body);
             Ok(Ok(false))
         }
-        #[cfg(not(target_os = "android"))]
+        #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
             let answer = rfd::MessageDialog::new()
                 .set_title(&title)
@@ -3407,7 +3407,7 @@ fn match_error(error: SpeechError) -> speech::transcription::MatchError {
 /// `filter` is a comma-separated extension list. It narrows what the dialog
 /// offers and is not a rule the runtime enforces -- whatever the person picks
 /// is what the app gets, because the click is the grant.
-#[cfg(not(target_os = "android"))]
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn choose_file_on_host(title: &str, filter: &str) -> Result<Option<std::path::PathBuf>, String> {
     let mut dialog = rfd::FileDialog::new();
     if !title.is_empty() {

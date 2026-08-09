@@ -188,6 +188,32 @@ blitting the painter's buffer into a CALayer the way adapter-macos already
 blits into an NSImageView (the autoreleasepool lesson from the 46 GB leak
 carries straight over). Estimate: 6-10 weeks including review roulette.
 
+### M2 status 2026-08-10: the engine question is settled, on evidence
+
+Gate 1 passed whole: the runtime -- wasmtime with the `pulley` feature,
+cpal, gilrs, sqlite, everything but speech and rfd -- compiles for
+aarch64-apple-ios untouched, and the painter checks for both the device
+and simulator targets. rfd's desktop-only gate now covers iOS beside
+Android; on iOS the engine selects `pulley64` at init because executable
+pages cannot exist there.
+
+The measurement the plan demanded, taken without owning an iPhone:
+`KRATE_PULLEY=1` is a dev knob that forces the interpreter anywhere.
+krate-gram under Pulley on this Mac is **pixel-identical** to the JIT
+run (`cmp` on the shoot PNGs) with every behavior marker matching, the
+marginal guest cost is roughly +1.5 ms/frame, and end-to-end the
+interpreter is *faster* for short sessions (2.7 s vs 5.4 s wall) because
+skipping native codegen outweighs interpreting a small guest. Pulley is
+not a compromise for GUI apps; it is simply the iOS engine.
+
+One architecture finding that shapes the adapter: winit's iOS backend
+cannot pump (`pump_events` is unsupported there), so adapter-ios will
+not be the Android adapter's twin. It goes UIKit-direct in the macOS
+adapter's mold: CFRunLoopRunInMode as the per-frame pump primitive, the
+painter's buffer blitted into a CALayer-backed view, UITouch feeding the
+same tap/scroll synthesis Android proved. First light belongs on the
+iPhone simulator, which needs no signing and runs on the build machine.
+
 ## M3 -- the contract grows mobile truths (with M1/M2, not after)
 
 Small WIT additions, all degrading to no-ops on desktop so apps never fork:

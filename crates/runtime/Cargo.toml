@@ -7,11 +7,11 @@ repository.workspace = true
 rust-version.workspace = true
 publish = false
 
-# Native dialogs exist on the three desktop systems only. On Android the
-# platform document picker is a different mechanism (mobile plan, M3); until
-# it is wired, dialog calls there answer as cancelled -- the same honest
-# degradation headless runs use.
-[target.'cfg(not(target_os = "android"))'.dependencies]
+# Native dialogs exist on the three desktop systems only. On Android and
+# iOS the platform document picker is a different mechanism (mobile plan,
+# M3); until it is wired, dialog calls there answer as cancelled -- the
+# same honest degradation headless runs use.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 rfd.workspace = true
 
 [features]

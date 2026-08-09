@@ -225,6 +225,28 @@ impl Runtime {
         let mut wt_config = wasmtime::Config::new();
         wt_config.wasm_component_model(true);
 
+        // iOS forbids executable pages, so the JIT cannot exist there.
+        // Pulley is wasmtime's portable interpreter backend: guests are
+        // small and the painter is native host code, so the interpreter
+        // tax lands on the lightest part of the system (mobile plan, M2).
+        #[cfg(target_os = "ios")]
+        if let Err(err) = wt_config.target("pulley64") {
+            return Err(RuntimeError::EngineInit(format!(
+                "pulley backend unavailable: {err}"
+            )));
+        }
+        // The same interpreter, anywhere, on request: KRATE_PULLEY=1 is the
+        // dev knob that answers "how slow would this app be on an iPhone"
+        // without owning one. Not documented for users; measurement only.
+        #[cfg(not(target_os = "ios"))]
+        if std::env::var("KRATE_PULLEY").as_deref() == Ok("1") {
+            if let Err(err) = wt_config.target("pulley64") {
+                return Err(RuntimeError::EngineInit(format!(
+                    "pulley backend unavailable: {err}"
+                )));
+            }
+        }
+
         if config.fuel.is_some() {
             wt_config.consume_fuel(true);
         }
