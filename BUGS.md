@@ -339,8 +339,13 @@ Status:   step 1 shipped in main -- ui.dialog:open-folder exists end to end.
           imports -- both rules tested against the reviewed tidier's exact
           shapes. The pack teaches the picker pattern and the motion module
           in a new design-patterns section; the fleet was swept (no wide
-          scopes existed). Remaining for K-075: a worked tidier example app,
-          and Denis's answer on grant lifetime.
+          scopes existed). Step 3 SHIPPED: apps/krate-tidy is the worked
+          tidier -- manifest with zero fs capabilities (ui.dialog:open-folder
+          is the only privileged line), list/stat/mkdir/rename all under
+          picked/<token>/..., all six check-app stages green, quick mode
+          proves the classifier with no dialog (planned:6). The app Denis
+          proved impossible now exists on honest rails. Remaining: Denis's
+          answer on grant lifetime.
 Owner:    lead
 Severity: blocker
 Class:    runtime-hole

@@ -1,0 +1,30 @@
+[app]
+id = "dev.krate.tidy"
+name = "Tidy"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_tidy.wasm"
+world = "krate:app/gui@0.2.0"
+
+# Note what is NOT here: no fs capability at all. The app works on a folder
+# the person picks, and the pick is the grant -- files are reached through
+# picked/<token>/ paths under the open-folder authority. This manifest is
+# the worked example of that pattern.
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the tidy window"
+required = true
+
+[[capabilities]]
+cap = "ui.dialog:open-folder"
+rationale = "Ask you to pick the folder to tidy -- it can touch only what you pick, this run"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report what was planned for automated verification"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run argument used by automated verification"
+required = true
