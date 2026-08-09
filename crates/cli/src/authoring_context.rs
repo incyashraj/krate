@@ -85,8 +85,10 @@ batch renamer, a photo shrinker), declare only `ui.dialog:open-folder` and \
 call `ui.dialog.open-folder(window, title)`. The person's pick IS the grant: \
 you get `{ name, token }`, and every ordinary fs call works under \
 `picked/<token>/...` for this run -- list it, read files, write results, \
-make subfolders. No fs capability at all. For output the app keeps between \
-runs, use its own folder with a narrow scope like `fs.write:./exports/**`.\n\n\
+make subfolders. No fs capability at all. `apps/krate-tidy` is the worked \
+example: a folder tidier whose manifest has zero fs lines. For output the \
+app keeps between runs, use its own folder with a narrow scope like \
+`fs.write:./exports/**`.\n\n\
 ## Motion that reads as polish\n\n\
 The SDK ships `krate::motion` (no_std, no capability): `ease_out`, \
 `ease_in_out`, `smoothstep`, and a critically-damped `Spring`. Measure dt \
@@ -1007,6 +1009,7 @@ fn curated_shape(name: &str) -> Option<&'static str> {
         "krate-bounce" => "GUI canvas game, the smallest playable loop",
         "krate-cubes" => "GUI animated canvas, no input",
         "krate-fractal" => "GUI image widget via set_pixels (no_std)",
+        "krate-tidy" => "GUI folder tidier: pick-is-the-grant, zero fs capabilities (no_std)",
         "krate-spriteproof" => "GUI sprite-drawing proof, the draw-sprite pipeline",
         "krate-hello-gui" => "the smallest GUI app: one window, one label",
         "krate-fetch" => "GUI that fetches over the network and shows the result",
