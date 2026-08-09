@@ -1,0 +1,58 @@
+# An empty [workspace] table makes this app its own workspace root, so it
+# resolves the same wherever the directory sits -- including inside a git
+# worktree, where the repo's root Cargo.toml exclude list does not apply and
+# cargo otherwise fails with "current package believes it's in a workspace
+# when it's not". A shared app has no parent workspace, so this matches how
+# the app is actually used.
+[workspace]
+
+[package]
+name = "krate-gram"
+version = "0.1.0-dev"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/incyashraj/krate"
+rust-version = "1.91"
+
+[dependencies]
+wit-bindgen-rt = { version = "0.44.0", features = ["bitflags"] }
+# The SDK, for krate::motion's spring on the pill. No features needed.
+krate = { path = "../../crates/bindings-rust" }
+# Pure-math sin/cos for the breathing glow and the ring sweep. no_std by
+# design, so it costs nothing at the sandbox boundary.
+libm = "0.2"
+
+[lib]
+crate-type = ["cdylib"]
+
+# Gate the generated `impl std::error::Error` behind a feature nobody turns
+# on, so a GUI app that needs a real dependency can be `#![no_std]`.
+[package.metadata.component.bindings]
+std_feature = true
+
+[package.metadata.component]
+package = "krate:gram"
+
+[package.metadata.component.target]
+path = "../../wit/krate/phase3"
+world = "gui"
+
+[package.metadata.component.target.dependencies]
+"krate:io" = { path = "../../wit/krate/phase3/deps/io" }
+"krate:fs" = { path = "../../wit/krate/phase3/deps/fs" }
+"krate:net" = { path = "../../wit/krate/phase3/deps/net" }
+"krate:time" = { path = "../../wit/krate/phase3/deps/time" }
+"krate:locale" = { path = "../../wit/krate/phase3/deps/locale" }
+"krate:resources" = { path = "../../wit/krate/phase3/deps/resources" }
+"krate:store" = { path = "../../wit/krate/phase3/deps/store" }
+"krate:random" = { path = "../../wit/krate/phase3/deps/random" }
+"krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }
+"krate:gfx" = { path = "../../wit/krate/phase3/deps/gfx" }
+"krate:audio" = { path = "../../wit/krate/phase3/deps/audio" }
+"krate:speech" = { path = "../../wit/krate/phase3/deps/speech" }
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = "s"

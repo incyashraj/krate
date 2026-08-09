@@ -1010,6 +1010,7 @@ fn curated_shape(name: &str) -> Option<&'static str> {
         "krate-cubes" => "GUI animated canvas, no input",
         "krate-fractal" => "GUI image widget via set_pixels (no_std)",
         "krate-tidy" => "GUI folder tidier: pick-is-the-grant, zero fs capabilities (no_std)",
+        "krate-gram" => "GUI photo feed: momentum scroll, springs, shadows, styled text (no_std)",
         "krate-spriteproof" => "GUI sprite-drawing proof, the draw-sprite pipeline",
         "krate-hello-gui" => "the smallest GUI app: one window, one label",
         "krate-fetch" => "GUI that fetches over the network and shows the result",

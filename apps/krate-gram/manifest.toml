@@ -1,0 +1,26 @@
+# Krategram -- the acceptance test for "could Krate host an Instagram-class
+# UI". A photo feed with stories, cards, momentum scrolling and a double-tap
+# like animation, drawn entirely with canvas2d primitives. Note the manifest:
+# a feed app this rich needs exactly one privileged line -- a window.
+
+[app]
+id = "dev.krate.gram"
+name = "Krategram"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_gram.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the feed window"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print progress markers so a headless check can see it worked"
+required = false
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Recognize the quick self-test mode"
+required = false

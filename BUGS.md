@@ -324,7 +324,10 @@ Fix:      Promote ui.dialog file-open/file-save to explicit asks now that they
           cannot honor without saying so.
 
 ### K-075 -- a "tidy my folder" app is impossible, so the generator reaches for **
-Status:   step 1 shipped in main -- ui.dialog:open-folder exists end to end.
+Status:   fixed in main, ships in v0.1.8 -- all three steps done, worked
+          example in apps/krate-tidy; only Denis's grant-lifetime answer
+          remains, tracked below.
+          Step 1: ui.dialog:open-folder exists end to end.
           The pick is the grant: the app gets a token, reaches the subtree
           through picked/<token>/... on the ordinary fs calls, and the mount
           runs through the same resolver choke point as the sandbox, so

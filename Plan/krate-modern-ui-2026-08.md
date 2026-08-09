@@ -98,6 +98,17 @@ for a modern app in a screenshot, and after Phase 3 in motion.** Then it
 ships as an example, because example apps are what the AI learns from --
 highest leverage per line (the example-bug lesson, inverted).
 
+## Status 2026-08-09: the acceptance test exists and passes its screenshot
+
+`apps/krate-gram` is built: stories with gradient rings, rounded shadowed
+photo cards (generative art, no network), momentum scroll with rubber-band
+via the wheel event, double-tap heart on a spring, tab bar -- one privileged
+capability (a window), all six check-app stages green. The Phase 0 number
+on this Mac: ~6.5 ms of CPU per full feed frame headless (90 frames, 0.59 s
+user), so ~150 fps of raster headroom. Per the go/no-go rule the GPU
+backend waits. Still open from the plan: the official `frame` event (apps
+fake it with wait(16)), `fetch_image`, static backdrop blur, `net.stream`.
+
 ## What this does not try to be
 
 Not a browser: no CSS, no DOM -- the API stays immediate-mode drawing that
