@@ -326,6 +326,208 @@ impl CanvasSurface {
         }
     }
 
+    /// Signed distance from a point to a rounded rectangle's edge, negative
+    /// inside. Per-corner radii by quadrant selection: the corner whose
+    /// quadrant the point falls in decides the radius -- exact for radii that
+    /// do not overlap, which the clamp below guarantees.
+    fn round_rect_sdf(
+        px: f32,
+        py: f32,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radii: (f32, f32, f32, f32),
+    ) -> f32 {
+        let (tl, tr, br, bl) = radii;
+        let qx = px - (x + w * 0.5);
+        let qy = py - (y + h * 0.5);
+        let r = if qx < 0.0 {
+            if qy < 0.0 {
+                tl
+            } else {
+                bl
+            }
+        } else if qy < 0.0 {
+            tr
+        } else {
+            br
+        }
+        .clamp(0.0, (w * 0.5).min(h * 0.5));
+        let dx = qx.abs() - (w * 0.5 - r);
+        let dy = qy.abs() - (h * 0.5 - r);
+        let outside = (dx.max(0.0).powi(2) + dy.max(0.0).powi(2)).sqrt();
+        outside + dx.max(dy).min(0.0) - r
+    }
+
+    /// Blend one coverage-weighted pixel: the shared tail of every
+    /// anti-aliased primitive here.
+    #[inline]
+    fn blend_coverage(&mut self, px: u32, py: u32, color: u32, coverage: f32) {
+        if coverage <= 0.0 {
+            return;
+        }
+        let a = (((color >> 24) & 0xFF) as f32 * coverage) as u32;
+        if a == 0 || !self.allowed(px, py) {
+            return;
+        }
+        let px_color = (a << 24) | (color & 0x00FF_FFFF);
+        let idx = (py * self.width + px) as usize;
+        if let Some(slot) = self.buffer.get_mut(idx) {
+            *slot = krate_adapter_common::painter::blend_over(px_color, *slot);
+        }
+    }
+
+    /// A filled rounded rectangle with anti-aliased corners: the card
+    /// primitive. Panels, buttons, chips and list rows are all this shape in
+    /// any current design, and faking it from rects and circles never
+    /// survives a close look.
+    pub fn fill_round_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radii: (f32, f32, f32, f32),
+        color: u32,
+    ) {
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        let (bw, bh) = (self.width, self.height);
+        let x0 = (x.floor().max(0.0) as u32).min(bw);
+        let x1 = ((x + w).ceil().max(0.0) as u32).min(bw);
+        let y0 = (y.floor().max(0.0) as u32).min(bh);
+        let y1 = ((y + h).ceil().max(0.0) as u32).min(bh);
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
+                self.blend_coverage(px, py, color, (0.5 - d).clamp(0.0, 1.0));
+            }
+        }
+    }
+
+    /// Stroke a rounded rectangle's edge, `width` pixels thick, anti-aliased
+    /// on both sides the way `stroke_circle` is.
+    // Eight arguments because the shape genuinely has eight degrees of
+    // freedom (position, size, four radii collapse to one tuple, thickness
+    // or blur, color); a params struct here would make every call site
+    // longer for no clarity.
+    #[allow(clippy::too_many_arguments)]
+    pub fn stroke_round_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radii: (f32, f32, f32, f32),
+        width: f32,
+        color: u32,
+    ) {
+        if w <= 0.0 || h <= 0.0 || width <= 0.0 {
+            return;
+        }
+        let half = width * 0.5;
+        let (bw, bh) = (self.width, self.height);
+        let x0 = ((x - half).floor().max(0.0) as u32).min(bw);
+        let x1 = ((x + w + half).ceil().max(0.0) as u32).min(bw);
+        let y0 = ((y - half).floor().max(0.0) as u32).min(bh);
+        let y1 = ((y + h + half).ceil().max(0.0) as u32).min(bh);
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
+                self.blend_coverage(px, py, color, (half - d.abs() + 0.5).clamp(0.0, 1.0));
+            }
+        }
+    }
+
+    /// A soft shadow: the rounded silhouette with alpha falling off smoothly
+    /// across `blur` pixels either side of the edge. Analytic -- a smoothstep
+    /// over signed distance -- so it costs one pass and no buffers, and at
+    /// card sizes reads the same as a true Gaussian. Draw it first, then the
+    /// card over it: the depth cue that lifts a panel off the background.
+    // Eight arguments because the shape genuinely has eight degrees of
+    // freedom (position, size, four radii collapse to one tuple, thickness
+    // or blur, color); a params struct here would make every call site
+    // longer for no clarity.
+    #[allow(clippy::too_many_arguments)]
+    pub fn drop_shadow_round_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        radii: (f32, f32, f32, f32),
+        blur: f32,
+        color: u32,
+    ) {
+        if w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        let blur = blur.max(0.5);
+        let (bw, bh) = (self.width, self.height);
+        let x0 = ((x - blur).floor().max(0.0) as u32).min(bw);
+        let x1 = ((x + w + blur).ceil().max(0.0) as u32).min(bw);
+        let y0 = ((y - blur).floor().max(0.0) as u32).min(bh);
+        let y1 = ((y + h + blur).ceil().max(0.0) as u32).min(bh);
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
+                let t = ((blur - d) / (2.0 * blur)).clamp(0.0, 1.0);
+                self.blend_coverage(px, py, color, t * t * (3.0 - 2.0 * t));
+            }
+        }
+    }
+
+    /// Fill a rectangle with a gradient through any number of stops at any
+    /// angle (0 degrees is left-to-right, 90 top-to-bottom). Stops are
+    /// (offset, packed color), sorted. Two stops is a plain fade; three or
+    /// more is the rich background every current design reference uses.
+    pub fn linear_gradient_stops(
+        &mut self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        angle_degrees: f32,
+        stops: &[(f32, u32)],
+    ) {
+        if stops.is_empty() {
+            return;
+        }
+        if stops.len() == 1 {
+            self.fill_rect(x, y, w, h, stops[0].1);
+            return;
+        }
+        let Some((cx0, cy0, cw, ch)) = self.clipped(x, y, w, h) else {
+            return;
+        };
+        let theta = angle_degrees.to_radians();
+        let (dir_x, dir_y) = (theta.cos(), theta.sin());
+        // Project the rect's corners onto the axis so offsets 0 and 1 land
+        // on the rect's extremes at any angle, matching CSS.
+        let corners = [(x, y), (x + w, y), (x, y + h), (x + w, y + h)];
+        let mut lo = f32::MAX;
+        let mut hi = f32::MIN;
+        for (px, py) in corners {
+            let t = px * dir_x + py * dir_y;
+            lo = lo.min(t);
+            hi = hi.max(t);
+        }
+        let span = (hi - lo).max(1e-6);
+        let (bw, bh) = (self.width, self.height);
+        let x0 = (cx0.floor().max(0.0) as u32).min(bw);
+        let x1 = ((cx0 + cw).ceil().max(0.0) as u32).min(bw);
+        let y0 = (cy0.floor().max(0.0) as u32).min(bh);
+        let y1 = ((cy0 + ch).ceil().max(0.0) as u32).min(bh);
+        for py in y0..y1 {
+            for px in x0..x1 {
+                let t = ((px as f32 + 0.5) * dir_x + (py as f32 + 0.5) * dir_y - lo) / span;
+                self.blend_coverage(px, py, sample_stops(stops, t), 1.0);
+            }
+        }
+    }
+
     /// A radial gradient disc: `inner` color at the center easing to `outer`
     /// color (typically transparent) at `radius`. This is the real glow/bloom
     /// primitive -- a soft light falloff instead of a flat disc, which is the
@@ -603,9 +805,130 @@ impl CanvasSurface {
     }
 }
 
+/// Interpolate a color along sorted gradient stops, clamped at both ends.
+fn sample_stops(stops: &[(f32, u32)], t: f32) -> u32 {
+    let first = stops[0];
+    let last = stops[stops.len() - 1];
+    if t <= first.0 {
+        return first.1;
+    }
+    if t >= last.0 {
+        return last.1;
+    }
+    for pair in stops.windows(2) {
+        let (o0, c0) = pair[0];
+        let (o1, c1) = pair[1];
+        if t <= o1 {
+            let f = if o1 > o0 { (t - o0) / (o1 - o0) } else { 1.0 };
+            return lerp_color(c0, c1, f);
+        }
+    }
+    last.1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The card primitive must actually round its corners: the very corner
+    /// pixel stays untouched while the centre and edge midpoints fill.
+    #[test]
+    fn a_round_rect_fills_the_middle_and_spares_the_corner() {
+        let at = |s: &CanvasSurface, x: u32, y: u32| s.buffer[(y * 100 + x) as usize];
+        let mut s = CanvasSurface::new(100, 100).expect("surface");
+        s.clear(0xFF00_0000);
+        s.fill_round_rect(
+            10.0,
+            10.0,
+            80.0,
+            80.0,
+            (20.0, 20.0, 20.0, 20.0),
+            0xFFFF_FFFF,
+        );
+        assert_eq!(at(&s, 50, 50) & 0x00FF_FFFF, 0x00FF_FFFF, "centre filled");
+        assert_eq!(
+            at(&s, 50, 11) & 0x00FF_FFFF,
+            0x00FF_FFFF,
+            "edge midpoint filled"
+        );
+        assert_eq!(at(&s, 11, 11) & 0x00FF_FFFF, 0x0000_0000, "corner spared");
+
+        // Per-corner: square off only the top-left and that corner fills.
+        let mut sq = CanvasSurface::new(100, 100).expect("surface");
+        sq.clear(0xFF00_0000);
+        sq.fill_round_rect(10.0, 10.0, 80.0, 80.0, (0.0, 20.0, 20.0, 20.0), 0xFFFF_FFFF);
+        assert_eq!(
+            at(&sq, 11, 11) & 0x00FF_FFFF,
+            0x00FF_FFFF,
+            "squared corner fills"
+        );
+    }
+
+    /// The stroke is a ring: on the edge yes, inside the card no.
+    #[test]
+    fn a_round_rect_stroke_is_hollow() {
+        let at = |s: &CanvasSurface, x: u32, y: u32| s.buffer[(y * 100 + x) as usize];
+        let mut s = CanvasSurface::new(100, 100).expect("surface");
+        s.clear(0xFF00_0000);
+        s.stroke_round_rect(
+            10.0,
+            10.0,
+            80.0,
+            80.0,
+            (12.0, 12.0, 12.0, 12.0),
+            3.0,
+            0xFFFF_FFFF,
+        );
+        assert_eq!(at(&s, 50, 10) & 0x00FF_FFFF, 0x00FF_FFFF, "on the edge");
+        assert_eq!(at(&s, 50, 50) & 0x00FF_FFFF, 0x0000_0000, "hollow centre");
+    }
+
+    /// A shadow must fade with distance, monotonically: strongest under the
+    /// card, weaker outward, gone past the blur. A flat blob fails this.
+    #[test]
+    fn a_drop_shadow_fades_outward() {
+        let mut s = CanvasSurface::new(200, 200).expect("surface");
+        s.clear(0xFF00_0000);
+        s.drop_shadow_round_rect(
+            60.0,
+            60.0,
+            80.0,
+            80.0,
+            (12.0, 12.0, 12.0, 12.0),
+            16.0,
+            0xFFFF_FFFF,
+        );
+        let red = |x: u32| (s.buffer[(100 * 200 + x) as usize] >> 16) & 0xFF;
+        assert!(red(100) > red(52), "under the card beats near the edge");
+        assert!(red(52) > red(40), "near beats far");
+        assert_eq!(red(20), 0, "past the blur there is nothing");
+    }
+
+    /// Three stops at 0 degrees: each colour lands where its offset says,
+    /// left to right. One stop degrades to a plain fill, not a panic.
+    #[test]
+    fn gradient_stops_land_where_their_offsets_say() {
+        let mut s = CanvasSurface::new(100, 100).expect("surface");
+        s.clear(0xFF00_0000);
+        let stops = [
+            (0.0, 0xFFFF_0000u32),
+            (0.5, 0xFF00_FF00),
+            (1.0, 0xFF00_00FF),
+        ];
+        s.linear_gradient_stops(0.0, 0.0, 100.0, 100.0, 0.0, &stops);
+        let px = |x: u32, y: u32| s.buffer[(y * 100 + x) as usize];
+        assert!((px(1, 50) >> 16) & 0xFF > 240, "left is red");
+        assert!((px(50, 50) >> 8) & 0xFF > 240, "middle is green");
+        assert!(px(98, 50) & 0xFF > 240, "right is blue");
+
+        let mut one = CanvasSurface::new(10, 10).expect("surface");
+        one.linear_gradient_stops(0.0, 0.0, 10.0, 10.0, 0.0, &[(0.0, 0xFFAB_CDEF)]);
+        assert_eq!(
+            one.buffer[55] & 0x00FF_FFFF,
+            0x00AB_CDEF,
+            "one stop is a fill"
+        );
+    }
 
     #[test]
     fn resize_refits_the_buffer_and_reports_the_new_size() {

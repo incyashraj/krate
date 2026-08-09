@@ -2265,6 +2265,122 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         Ok(Ok(()))
     }
 
+    fn fill_round_rect(
+        &mut self,
+        canvas: u64,
+        area: gfx::types::Rect,
+        radii: gfx::types::CornerRadii,
+        fill: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.fill_round_rect(
+            area.x,
+            area.y,
+            area.width,
+            area.height,
+            (
+                radii.top_left,
+                radii.top_right,
+                radii.bottom_right,
+                radii.bottom_left,
+            ),
+            pack_color(fill.r, fill.g, fill.b, fill.a),
+        );
+        Ok(Ok(()))
+    }
+
+    fn stroke_round_rect(
+        &mut self,
+        canvas: u64,
+        area: gfx::types::Rect,
+        radii: gfx::types::CornerRadii,
+        width: f32,
+        stroke: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.stroke_round_rect(
+            area.x,
+            area.y,
+            area.width,
+            area.height,
+            (
+                radii.top_left,
+                radii.top_right,
+                radii.bottom_right,
+                radii.bottom_left,
+            ),
+            width,
+            pack_color(stroke.r, stroke.g, stroke.b, stroke.a),
+        );
+        Ok(Ok(()))
+    }
+
+    fn drop_shadow_round_rect(
+        &mut self,
+        canvas: u64,
+        area: gfx::types::Rect,
+        radii: gfx::types::CornerRadii,
+        blur: f32,
+        shadow: gfx::types::Color,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.drop_shadow_round_rect(
+            area.x,
+            area.y,
+            area.width,
+            area.height,
+            (
+                radii.top_left,
+                radii.top_right,
+                radii.bottom_right,
+                radii.bottom_left,
+            ),
+            blur,
+            pack_color(shadow.r, shadow.g, shadow.b, shadow.a),
+        );
+        Ok(Ok(()))
+    }
+
+    fn linear_gradient_stops(
+        &mut self,
+        canvas: u64,
+        area: gfx::types::Rect,
+        angle_degrees: f32,
+        stops: Vec<gfx::types::GradientStop>,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        let packed: Vec<(f32, u32)> = stops
+            .iter()
+            .map(|s| {
+                (
+                    s.offset,
+                    pack_color(s.color.r, s.color.g, s.color.b, s.color.a),
+                )
+            })
+            .collect();
+        surface.linear_gradient_stops(
+            area.x,
+            area.y,
+            area.width,
+            area.height,
+            angle_degrees,
+            &packed,
+        );
+        Ok(Ok(()))
+    }
+
     fn radial_gradient(
         &mut self,
         canvas: u64,

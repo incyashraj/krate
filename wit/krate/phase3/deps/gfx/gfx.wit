@@ -63,6 +63,28 @@ interface types {
     height: f32,
   }
 
+  /// One color stop along a gradient, for `linear-gradient-stops`.
+  record gradient-stop {
+    /// Position along the gradient, 0.0 at the start to 1.0 at the end.
+    offset: f32,
+    /// The color at that position.
+    color: color,
+  }
+
+  /// Radii for the four corners of a rounded rectangle, clockwise from
+  /// top-left. Use one value in all four for a uniform card; zero a corner
+  /// to square it off.
+  record corner-radii {
+    /// Radius of the top-left corner, in pixels.
+    top-left: f32,
+    /// Radius of the top-right corner, in pixels.
+    top-right: f32,
+    /// Radius of the bottom-right corner, in pixels.
+    bottom-right: f32,
+    /// Radius of the bottom-left corner, in pixels.
+    bottom-left: f32,
+  }
+
 
   /// Error shape returned by graphics calls.
   variant gfx-error {
@@ -95,7 +117,7 @@ interface types {
 /// `present` publishes it to the widget. That keeps a hundred fills from
 /// re-rendering the window a hundred times.
 interface canvas2d {
-  use types.{color, point, rect, size, text-metrics, gfx-error};
+  use types.{color, point, rect, size, text-metrics, gfx-error, gradient-stop, corner-radii};
 
   /// Create or bind a 2D canvas for a window widget.
   bind: func(window: u64, widget: u64) -> result<u64, gfx-error>;
@@ -130,6 +152,33 @@ interface canvas2d {
   fill-rect: func(canvas: u64, area: rect, fill: color) -> result<_, gfx-error>;
   /// Stroke a rectangle's edges.
   stroke-rect: func(canvas: u64, area: rect, stroke: color, width: f32) -> result<_, gfx-error>;
+
+  /// Fill a rectangle with rounded corners, anti-aliased.
+  ///
+  /// This is the modern-card primitive: panels, buttons, chips, list rows.
+  /// Reach for it whenever a design shows a container with soft corners --
+  /// drawing `fill-rect` and four `fill-circle`s by hand never looks right.
+  /// A radius of 10-16 reads as a card, height/2 as a pill.
+  fill-round-rect: func(canvas: u64, area: rect, radii: corner-radii, fill: color) -> result<_, gfx-error>;
+
+  /// Stroke a rounded rectangle's edge, anti-aliased, `width` pixels thick.
+  /// The outline counterpart to `fill-round-rect`, for bordered cards and
+  /// pill buttons drawn hollow.
+  stroke-round-rect: func(canvas: u64, area: rect, radii: corner-radii, width: f32, stroke: color) -> result<_, gfx-error>;
+
+  /// A soft shadow under a rounded rectangle: the card's silhouette, blurred
+  /// by `blur` pixels and filled with `shadow` (usually black at low alpha,
+  /// e.g. a=0.35). Draw it FIRST, offset a few pixels down from the card,
+  /// then draw the card over it -- shadow behind, never on top. This is what
+  /// lifts a card off the background; without it panels look flat and dated.
+  drop-shadow-round-rect: func(canvas: u64, area: rect, radii: corner-radii, blur: f32, shadow: color) -> result<_, gfx-error>;
+
+  /// Fill a rectangle with a gradient through any number of color stops,
+  /// running at `angle-degrees` (0 is left-to-right, 90 is top-to-bottom).
+  /// Stops must be sorted by offset, 0.0 to 1.0. Two stops make an ordinary
+  /// fade; three or more make the rich backgrounds modern designs use --
+  /// e.g. deep blue at 0.0, bright blue at 0.55, near-white at 1.0.
+  linear-gradient-stops: func(canvas: u64, area: rect, angle-degrees: f32, stops: list<gradient-stop>) -> result<_, gfx-error>;
   /// Fill an anti-aliased circle centred at `center` with radius `radius`.
   /// The edge is smooth and the fill blends over the canvas by its color's
   /// alpha, so a translucent fill reads as soft light rather than a hard disc.
