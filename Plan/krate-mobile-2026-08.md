@@ -81,6 +81,23 @@ Android is the easy half and proves the whole path:
 Estimate: 2-4 weeks of agent time. New CI target, player versioned and
 shipped separately from the CLI (the player is an app, not the dev tool).
 
+### M1 status 2026-08-09: the whole stack cross-compiles, the .so exists
+
+Five gates passed in one sitting, each verified by compiling, not hoped:
+the runtime (wasmtime 43 JIT, cpal, everything but speech and rfd) checks
+for aarch64-linux-android; the painter (vello_cpu + parley + fontique)
+checks; `crates/adapter-android` -- the Linux adapter's winit pump model
+with the AndroidApp deposited from android_main instead of a display-server
+probe -- checks for the target and passes its 38 unit tests on desktop;
+the runtime dispatches to it behind `cfg(target_os = "android")`; and
+`crates/player-android` builds to a release `libkrate_player.so` (19 MB,
+ARM64, embeds krate-gram as the first-light app). `scripts/build-android.sh`
+holds the whole fragile env (rustup-not-Homebrew rustc, NDK compilers, API
+26 floor -- cpal's AAudio needs 26+). rfd is desktop-only now; Android
+dialogs answer as cancelled until the document picker (M3). Next: APK
+packaging around the .so, an emulator AVD, and first light on a screen.
+Then intents, then the wall sheet -- the ship gate.
+
 ## M2 -- iOS player (second, because Apple makes you earn it)
 
 Two hard constraints, both survivable:

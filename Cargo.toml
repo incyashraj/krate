@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/adapter-common",
+    "crates/adapter-android",
+    "crates/player-android",
     "crates/adapter-linux",
     "crates/adapter-macos",
     "crates/adapter-windows",

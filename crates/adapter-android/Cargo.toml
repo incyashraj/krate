@@ -1,0 +1,27 @@
+[package]
+name = "krate-adapter-android"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev", features = [
+    "vector-text",
+] }
+libc.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+# The android-native-activity backend: the player is pure Rust with no Java
+# of its own, and NativeActivity is the path that needs none. winit pulls
+# android-activity underneath; the AndroidApp handle it hands android_main
+# is deposited into this crate's event-loop slot.
+winit = { version = "0.30", default-features = false, features = [
+    "android-native-activity",
+    "rwh_06",
+] }
+# CPU framebuffer presentation, same as the Linux adapter: the painter is
+# vello_cpu pixels and softbuffer blits them to the NativeWindow.
+softbuffer = { version = "0.4", default-features = false }

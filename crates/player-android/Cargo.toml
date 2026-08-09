@@ -1,0 +1,28 @@
+[package]
+name = "krate-player-android"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+# A cdylib: NativeActivity loads this as libkrate_player.so and calls
+# android_main. There is no Java in the player at all.
+[lib]
+name = "krate_player"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
+krate-policy = { path = "../policy", version = "0.1.0-dev" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+# Speech stays off: whisper.cpp on Android is its own project, and the
+# player degrades the capability honestly, the same as arm64 Linux did.
+krate-runtime = { path = "../runtime", version = "0.1.0-dev", default-features = false, features = [
+    "phase2-bindings",
+] }
+krate-adapter-android = { path = "../adapter-android", version = "0.1.0-dev" }
+log = "0.4"
+android_logger = "0.15"

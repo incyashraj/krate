@@ -1979,20 +1979,31 @@ impl ui::dialog::Host for Phase3GuiHost {
         if self.headless {
             return Ok(Ok(None));
         }
-        let chosen = match choose_file_on_host(&title, &filter) {
-            Ok(Some(path)) => path,
-            // Cancelling is a normal answer, not a failure.
-            Ok(None) => return Ok(Ok(None)),
-            Err(err) => return Ok(Err(ui::types::UiError::Unsupported(err))),
-        };
+        // Android has no rfd backend; until M3 wires the platform document
+        // picker, a dialog there answers as cancelled -- the headless rule,
+        // for the same reason: there is no desktop dialog to show.
+        #[cfg(target_os = "android")]
+        {
+            let _ = (&title, &filter);
+            Ok(Ok(None))
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let chosen = match choose_file_on_host(&title, &filter) {
+                Ok(Some(path)) => path,
+                // Cancelling is a normal answer, not a failure.
+                Ok(None) => return Ok(Ok(None)),
+                Err(err) => return Ok(Err(ui::types::UiError::Unsupported(err))),
+            };
 
-        let name = crate::chosen_files::ChosenFiles::display_name(&chosen);
-        let Some(token) = self.chosen_files.borrow_mut().remember(chosen) else {
-            return Ok(Err(ui::types::UiError::Unsupported(
-                "too many files chosen in one run".to_string(),
-            )));
-        };
-        Ok(Ok(Some(ui::dialog::ChosenFile { name, token })))
+            let name = crate::chosen_files::ChosenFiles::display_name(&chosen);
+            let Some(token) = self.chosen_files.borrow_mut().remember(chosen) else {
+                return Ok(Err(ui::types::UiError::Unsupported(
+                    "too many files chosen in one run".to_string(),
+                )));
+            };
+            Ok(Ok(Some(ui::dialog::ChosenFile { name, token })))
+        }
     }
 
     /// Show the system's folder picker; the pick is the grant.
@@ -2021,20 +2032,30 @@ impl ui::dialog::Host for Phase3GuiHost {
         if self.headless {
             return Ok(Ok(None));
         }
-        let mut dialog = rfd::FileDialog::new();
-        if !title.is_empty() {
-            dialog = dialog.set_title(title);
+        // Android: cancelled until M3 wires the document picker (see
+        // open_file).
+        #[cfg(target_os = "android")]
+        {
+            let _ = &title;
+            Ok(Ok(None))
         }
-        let Some(folder) = dialog.pick_folder() else {
-            return Ok(Ok(None));
-        };
-        let name = crate::chosen_files::ChosenFiles::display_name(&folder);
-        let Some(token) = self.chosen_files.borrow_mut().remember_folder(folder) else {
-            return Ok(Err(ui::types::UiError::Unsupported(
-                "too many files or folders chosen in one run".to_string(),
-            )));
-        };
-        Ok(Ok(Some(ui::dialog::ChosenFolder { name, token })))
+        #[cfg(not(target_os = "android"))]
+        {
+            let mut dialog = rfd::FileDialog::new();
+            if !title.is_empty() {
+                dialog = dialog.set_title(title);
+            }
+            let Some(folder) = dialog.pick_folder() else {
+                return Ok(Ok(None));
+            };
+            let name = crate::chosen_files::ChosenFiles::display_name(&folder);
+            let Some(token) = self.chosen_files.borrow_mut().remember_folder(folder) else {
+                return Ok(Err(ui::types::UiError::Unsupported(
+                    "too many files or folders chosen in one run".to_string(),
+                )));
+            };
+            Ok(Ok(Some(ui::dialog::ChosenFolder { name, token })))
+        }
     }
 
     /// Show a message and wait for the person to dismiss it.
@@ -2059,12 +2080,21 @@ impl ui::dialog::Host for Phase3GuiHost {
         if self.headless {
             return Ok(Ok(()));
         }
-        rfd::MessageDialog::new()
-            .set_title(&title)
-            .set_description(&body)
-            .set_buttons(rfd::MessageButtons::Ok)
-            .show();
-        Ok(Ok(()))
+        // Android: shown-and-dismissed, the headless rule, until M3.
+        #[cfg(target_os = "android")]
+        {
+            let _ = (&title, &body);
+            Ok(Ok(()))
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            rfd::MessageDialog::new()
+                .set_title(&title)
+                .set_description(&body)
+                .set_buttons(rfd::MessageButtons::Ok)
+                .show();
+            Ok(Ok(()))
+        }
     }
 
     /// Ask a yes/no question and return what the person chose.
@@ -2092,12 +2122,21 @@ impl ui::dialog::Host for Phase3GuiHost {
         if self.headless {
             return Ok(Ok(false));
         }
-        let answer = rfd::MessageDialog::new()
-            .set_title(&title)
-            .set_description(&body)
-            .set_buttons(rfd::MessageButtons::YesNo)
-            .show();
-        Ok(Ok(answer == rfd::MessageDialogResult::Yes))
+        // Android: dismissed means no, the function's own rule, until M3.
+        #[cfg(target_os = "android")]
+        {
+            let _ = (&title, &body);
+            Ok(Ok(false))
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let answer = rfd::MessageDialog::new()
+                .set_title(&title)
+                .set_description(&body)
+                .set_buttons(rfd::MessageButtons::YesNo)
+                .show();
+            Ok(Ok(answer == rfd::MessageDialogResult::Yes))
+        }
     }
 }
 
@@ -3360,6 +3399,7 @@ fn match_error(error: SpeechError) -> speech::transcription::MatchError {
 /// `filter` is a comma-separated extension list. It narrows what the dialog
 /// offers and is not a rule the runtime enforces -- whatever the person picks
 /// is what the app gets, because the click is the grant.
+#[cfg(not(target_os = "android"))]
 fn choose_file_on_host(title: &str, filter: &str) -> Result<Option<std::path::PathBuf>, String> {
     let mut dialog = rfd::FileDialog::new();
     if !title.is_empty() {
