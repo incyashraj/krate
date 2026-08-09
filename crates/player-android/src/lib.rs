@@ -78,5 +78,9 @@ mod player {
             Ok(outcome) => log::info!("app finished: {outcome:?}"),
             Err(err) => log::error!("app failed: {err:#}"),
         }
+        // The app is the process. When it exits -- close button, Android
+        // back, or its own choice -- a blank NativeActivity shell must not
+        // linger behind it.
+        std::process::exit(0);
     }
 }

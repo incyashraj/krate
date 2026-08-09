@@ -107,9 +107,28 @@ Android's first winit window is id 0, which the shared handle validation
 reads as null (now offset locally; the desktop null-check stays). Two
 bugs found by looking at the pixels, filed: K-088 (blit ignores display
 scale -- the K-067 lesson, again, on a new surface) and K-087 (krate-gram
-hardcodes 390x720 instead of reading canvas-size -- example-bug). Next:
-K-088 + K-087, touch input mapped to pointer/wheel, then intents, then
-the wall sheet -- the ship gate.
+hardcodes 390x720 instead of reading canvas-size -- example-bug). Both
+fixed and emulator-verified: full-bleed, native-sharp, desktop untouched.
+
+**Touch and phone behaviors, all device-verified.** A finger becomes
+Krate's existing event model, decided by movement: stay inside the 8 px
+slop and it is a tap (pointer press + release at the point -- double-tap
+detection in apps sees two of them), move past it and every further move
+is a synthesized wheel delta, so app-side momentum gives fling for free.
+Extra fingers are ignored rather than corrupting the gesture. The system
+back button (winit spells it BrowserBack, found by probing, not guessing)
+maps to close-requested, the guest exits, and the player ends its process
+so no blank activity shell lingers. Suspend drops every softbuffer
+surface (Android tears the native window down); the draw path lazily
+recreates on resume -- home-and-return keeps drawing. Verified on the
+Pixel 7 AVD: swipe scrolls, fling glides, double-tap likes (adb's ~0.4 s
+injection gap needed a temporarily widened window to prove it; human
+taps are ~0.25 s and the app keeps 400 ms), back exits, resume redraws.
+Not done, deliberately: long-press-as-secondary (the pointer-sample
+pipeline is primary-only), pinch (no WIT event for it), and the
+on-screen keyboard (M3, with insets and lifecycle events for guests).
+Next: intents (.krate files and krate.tech links), then the wall sheet
+-- the ship gate.
 
 ## M2 -- iOS player (second, because Apple makes you earn it)
 

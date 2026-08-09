@@ -91,9 +91,25 @@ mod real {
         WINIT_HOST.with(|slot| slot.borrow().is_some())
     }
 
+    /// One in-flight touch gesture. Krate's event model is pointer + wheel;
+    /// a phone's finger becomes both, decided by movement: stay within the
+    /// slop and it was a tap (pointer press + release), move past it and
+    /// every further move is a wheel delta -- the same conversion the wheel
+    /// contract already promises ("the host converts"). Only the first
+    /// finger drives; extra fingers are ignored rather than corrupting the
+    /// gesture.
+    struct TouchGesture {
+        finger: u64,
+        native: NativeWindowId,
+        start: (f32, f32),
+        last: (f32, f32),
+        scrolling: bool,
+    }
+
     #[derive(Default)]
     struct PumpApp {
         pending_creates: Vec<PendingCreate>,
+        touch: Option<TouchGesture>,
         windows: BTreeMap<NativeWindowId, TrackedWindow>,
         events: CollectedNativeEvents,
         cursor: BTreeMap<NativeWindowId, (f32, f32)>,
@@ -196,6 +212,18 @@ mod real {
             self.drain_pending_creates(event_loop);
         }
 
+        fn suspended(&mut self, _event_loop: &ActiveEventLoop) {
+            // Android tears the native window down when the app leaves the
+            // foreground. Drop every softbuffer surface now; the draw path
+            // lazily recreates one against the fresh native window on the
+            // first paint after resume. Keeping the old surface means
+            // presenting into a dead window -- black screen at best.
+            for tracked in self.windows.values_mut() {
+                tracked.surface = None;
+            }
+            self.touch = None;
+        }
+
         fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
             self.drain_pending_creates(event_loop);
         }
@@ -247,6 +275,140 @@ mod real {
                         if hovered != tracked.hovered {
                             tracked.hovered = hovered;
                             draw_placements(tracked);
+                        }
+                    }
+                    None
+                }
+                WindowEvent::Touch(touch) => {
+                    let scale = self
+                        .windows
+                        .get(&native)
+                        .map(|tracked| tracked.window.scale_factor())
+                        .unwrap_or(1.0)
+                        .max(0.25);
+                    let (x, y) = (
+                        (touch.location.x / scale) as f32,
+                        (touch.location.y / scale) as f32,
+                    );
+                    // Movement past this many logical pixels turns a touch
+                    // from a tap into a scroll -- the standard slop every
+                    // mobile toolkit uses so a wobbly finger still taps.
+                    const SLOP: f32 = 8.0;
+                    match touch.phase {
+                        winit::event::TouchPhase::Started => {
+                            if self.touch.is_none() {
+                                self.touch = Some(TouchGesture {
+                                    finger: touch.id,
+                                    native,
+                                    start: (x, y),
+                                    last: (x, y),
+                                    scrolling: false,
+                                });
+                                // The finger is the cursor: hit tests and
+                                // wheel positions read from here.
+                                self.cursor.insert(native, (x, y));
+                                if let Some(tracked) = self.windows.get_mut(&native) {
+                                    let hovered =
+                                        krate_adapter_common::painter::topmost_interactive_at(
+                                            &tracked.placements,
+                                            x,
+                                            y,
+                                        );
+                                    if hovered != tracked.hovered {
+                                        tracked.hovered = hovered;
+                                    }
+                                }
+                            }
+                        }
+                        winit::event::TouchPhase::Moved => {
+                            let same = self
+                                .touch
+                                .as_ref()
+                                .is_some_and(|g| g.finger == touch.id && g.native == native);
+                            if same {
+                                let gesture = self.touch.as_mut().expect("gesture checked");
+                                if !gesture.scrolling {
+                                    let sx = x - gesture.start.0;
+                                    let sy = y - gesture.start.1;
+                                    if sx * sx + sy * sy > SLOP * SLOP {
+                                        gesture.scrolling = true;
+                                    }
+                                }
+                                let dx = x - gesture.last.0;
+                                let dy = y - gesture.last.1;
+                                gesture.last = (x, y);
+                                let scrolling = gesture.scrolling;
+                                if scrolling && (dx.abs() > f32::EPSILON || dy.abs() > f32::EPSILON)
+                                {
+                                    self.cursor.insert(native, (x, y));
+                                    // Content follows the finger: a finger
+                                    // moving up drags the list deeper, which
+                                    // is positive dy in the wheel contract.
+                                    self.wheel_samples.push(RawWheelSample {
+                                        window: krate,
+                                        x,
+                                        y,
+                                        dx: -dx,
+                                        dy: -dy,
+                                        modifiers: self.modifiers,
+                                    });
+                                }
+                            }
+                        }
+                        winit::event::TouchPhase::Ended => {
+                            let same = self
+                                .touch
+                                .as_ref()
+                                .is_some_and(|g| g.finger == touch.id && g.native == native);
+                            if same {
+                                let gesture = self.touch.take().expect("gesture checked");
+                                if !gesture.scrolling {
+                                    // A tap: one press and one release at
+                                    // the touch point, exactly what a click
+                                    // delivers. Apps' double-tap detection
+                                    // sees two of these.
+                                    self.cursor.insert(native, (x, y));
+                                    self.pointer_samples.push(RawPointerSample {
+                                        window: krate,
+                                        x,
+                                        y,
+                                        pressed: true,
+                                    });
+                                    self.pointer_samples.push(RawPointerSample {
+                                        window: krate,
+                                        x,
+                                        y,
+                                        pressed: false,
+                                    });
+                                    if let Some(tracked) = self.windows.get_mut(&native) {
+                                        let hovered =
+                                            krate_adapter_common::painter::topmost_interactive_at(
+                                                &tracked.placements,
+                                                x,
+                                                y,
+                                            );
+                                        // Press feedback for drawn widgets:
+                                        // flash the pressed state through one
+                                        // repaint so a tapped button reads
+                                        // as tapped.
+                                        if hovered.is_some() {
+                                            tracked.pressed_widget = hovered;
+                                            draw_placements(tracked);
+                                            tracked.pressed_widget = None;
+                                            draw_placements(tracked);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        winit::event::TouchPhase::Cancelled => {
+                            let same = self
+                                .touch
+                                .as_ref()
+                                .is_some_and(|g| g.finger == touch.id && g.native == native);
+                            if same {
+                                self.touch = None;
+                            }
                         }
                     }
                     None
@@ -316,6 +478,22 @@ mod real {
                         meta: state.super_key(),
                     };
                     None
+                }
+                WindowEvent::KeyboardInput { event, .. }
+                    if matches!(
+                        event.logical_key,
+                        // winit spells the Android back button BrowserBack;
+                        // GoBack is matched too in case that ever changes.
+                        winit::keyboard::Key::Named(
+                            winit::keyboard::NamedKey::BrowserBack
+                                | winit::keyboard::NamedKey::GoBack
+                        )
+                    ) && event.state == winit::event::ElementState::Pressed =>
+                {
+                    // The system back gesture/button. Apps already handle
+                    // close-requested on every platform; back is Android's
+                    // spelling of the same intent.
+                    Some(WinitWindowNativeEvent::CloseRequested)
                 }
                 WindowEvent::KeyboardInput { event, .. } => {
                     if let Some(key) = key_name(&event.logical_key) {
