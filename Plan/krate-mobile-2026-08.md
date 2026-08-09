@@ -127,8 +127,41 @@ taps are ~0.25 s and the app keeps 400 ms), back exits, resume redraws.
 Not done, deliberately: long-press-as-secondary (the pointer-sample
 pipeline is primary-only), pinch (no WIT event for it), and the
 on-screen keyboard (M3, with insets and lifecycle events for guests).
-Next: intents (.krate files and krate.tech links), then the wall sheet
--- the ship gate.
+
+**M1 COMPLETE 2026-08-10: link -> fetch -> wall -> run, all on device.**
+
+The wall is itself a Krate guest (apps/krate-wall): a bottom sheet drawn
+by the same renderer the apps use -- rationale-first rows, cap names
+dimmed beneath, required rows locked on, the rest togglable, Open and
+Cancel. The player passes the capability lines in through args and reads
+one decision line back from captured stdout; it owns both sides of that
+pipe, so the sheet cannot be bypassed and cannot be lied to. Deny still
+opens: whatever was toggled off is simply absent from the session policy.
+Sequential guests in one process (wall window, then app window) work --
+proven before the design was committed to.
+
+Intents are read over JNI with no Java in the app: the VM and Activity
+handles come from android-activity (ndk-context is a trap here -- it
+stores the Application, which has no getIntent; found by making JNI
+describe its exception). Three ways in: an https hub link (fetched with
+rustls, 6 MB cap), a content:///file:// .krate (read through the
+ContentResolver), or a plain launch (the embedded demo, which faces the
+same wall). The manifest claims krate.tech/a/ links and .krate files;
+without a release signing cert there is no assetlinks auto-verify yet,
+so Android offers a chooser -- the honest default, noted for M2-era
+polish.
+
+Verified on the Pixel 7 AVD, every leg: a tapped hub link fetched "Add
+dvd screensaver" -- a real bundle a stranger could have published -- and
+its own manifest rendered as the wall ("Draw the bouncing DVD logo on a
+canvas"); Open ran it; Cancel on a fresh launch printed "the person said
+no; nothing runs" and the process exited -- fail closed is the wall's
+resting state, a crashed sheet grants nothing. The plain launch walls
+the demo the same way. Desktop: 1102 tests, untouched.
+
+What M2 (iOS) inherits ready-made: the player flow, the wall guest, the
+bundle path, and every touch behavior -- all of it above the adapter
+line.
 
 ## M2 -- iOS player (second, because Apple makes you earn it)
 

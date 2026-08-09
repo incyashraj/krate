@@ -1,0 +1,26 @@
+# The permission wall, as an app. The mobile player runs this trusted sheet
+# before any downloaded app: the player passes the capability lines in
+# through args and reads the person's decision back from stdout. The wall
+# cannot lie about what an app asked for -- the player owns both sides.
+
+[app]
+id = "dev.krate.wall"
+name = "Krate wall"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_wall.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Draw the permission sheet"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report the decision back to the player"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Receive the app name and its capability lines"
+required = true

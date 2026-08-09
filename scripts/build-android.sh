@@ -11,7 +11,8 @@
 # Prereqs, one time:
 #   rustup target add aarch64-linux-android
 #   sdkmanager "ndk;27.2.12479018"
-#   Build apps/krate-gram first -- the first-light player embeds it.
+#   Build apps/krate-gram and apps/krate-wall first (krate check-app) --
+#   the player embeds gram as its demo and the wall sheet as its chrome.
 
 set -euo pipefail
 

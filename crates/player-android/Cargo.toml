@@ -16,6 +16,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 krate-manifest = { path = "../manifest", version = "0.1.0-dev" }
 krate-policy = { path = "../policy", version = "0.1.0-dev" }
+krate-bundle = { path = "../bundle", version = "0.1.0-dev" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 # Speech stays off: whisper.cpp on Android is its own project, and the
@@ -26,3 +27,9 @@ krate-runtime = { path = "../runtime", version = "0.1.0-dev", default-features =
 krate-adapter-android = { path = "../adapter-android", version = "0.1.0-dev" }
 log = "0.4"
 android_logger = "0.15"
+# Reading the launch intent and content:// streams from the Java side.
+# android-activity fills ndk-context with the VM and activity for us.
+jni = "0.21"
+# Fetching a tapped krate.tech link from the hub. rustls underneath, so
+# no OpenSSL cross-compilation.
+ureq.workspace = true

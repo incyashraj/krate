@@ -10,6 +10,10 @@
 
   <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
 
+  <!-- Fetching a tapped krate.tech link, and apps' own granted net.fetch
+       calls, both go through the network. -->
+  <uses-permission android:name="android.permission.INTERNET" />
+
   <application
       android:label="Krate"
       android:hasCode="false"
@@ -22,6 +26,31 @@
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
         <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+      <!-- A shared app link: https://hub.krate.tech/a/<hash> runs the app
+           directly. Without assetlinks verification Android offers a
+           chooser next to the browser; that is the honest default until a
+           release signing certificate exists to pin. -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <category android:name="android.intent.category.BROWSABLE" />
+        <data android:scheme="https" android:host="hub.krate.tech" android:pathPrefix="/a/" />
+      </intent-filter>
+      <!-- A .krate file from Files, a share sheet, or a download. Content
+           resolvers usually report octet-stream and often drop the
+           extension, so both shapes are claimed. -->
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:scheme="content" android:mimeType="application/octet-stream" />
+        <data android:scheme="file" android:mimeType="application/octet-stream" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="android.intent.action.VIEW" />
+        <category android:name="android.intent.category.DEFAULT" />
+        <data android:scheme="content" android:mimeType="*/*" android:pathPattern=".*\\.krate" />
+        <data android:scheme="file" android:mimeType="*/*" android:pathPattern=".*\\.krate" />
       </intent-filter>
     </activity>
   </application>
