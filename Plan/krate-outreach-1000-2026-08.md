@@ -32,55 +32,55 @@ One shot; don't burn it on a Monday or a weekend. Reply to every comment
 for the first 3 hours. HN rewards the honest-limitations paragraph — our
 whole brand is already that.
 
-**The selling rule:** HN flags superlatives ("smallest possible",
-"fastest") and upvotes numbers it can check in one command. Every claim
-below is concrete, true today, and verifiable from the released binary --
-which sells HARDER than the adjective form, because a skeptic who checks
-one number and finds it true believes the rest.
+**The selling rule:** sell the suffering, not the product. Open with a
+pain every reader has personally felt, in the words they would use for it
+themselves. The numbers stay -- but they arrive as relief, not as specs.
+Plain words, short sentences, confident, zero hard vocabulary.
 
 **Title (pick one, ≤80 chars):**
-> Show HN: A playable game in a 13 KB file that runs on Mac, Windows and Linux
-> Show HN: AI writes you a desktop app; you get one 13 KB file, sandboxed, shareable
-> Show HN: Desktop apps as single tiny files – AI-written, sandboxed, run from a URL
+> Show HN: Sharing a small app you made is still miserable, so I fixed that
+> Show HN: You made a little app. Sending it to someone shouldn't be this hard
+> Show HN: Apps you can send like a photo – 13 KB, one file, any computer
 
 **Text:**
-> Here is a playable Breakout: 13,047 bytes. Not the installer -- the whole
-> app. It opens by double-click on macOS, Windows, and Linux, from the same
-> file. Discord, which solves the same one-codebase-three-OS problem by
-> shipping a browser, is 34,000x larger.
+> You know this one. You (or your AI) make a genuinely useful little app
+> in an afternoon. A folder tidier, a habit tracker, a tool for your mom's
+> invoices. And then you try to give it to someone.
 >
-> Krate is a runtime that makes AI-written desktop apps shareable. You type
-> `krate`, describe an app, and the AI CLI you already have (Claude, Codex,
-> Gemini, Copilot, Grok) writes real Rust that compiles to a WebAssembly
-> component -- machine code under wasmtime, no Electron, no bundled
-> browser. The median app in our repo is 13.5 KB; all eleven reference
-> apps together are 209 KB, smaller than one screenshot of them.
+> Now you're writing install instructions. "You'll need Python 3.11."
+> "Clone the repo." "It says the developer can't be verified, click Open
+> Anyway." Or you wrap it in Electron and your 200-line tool ships as 200
+> megabytes. Half the time the other person gives up. Honestly, half the
+> time you don't even bother sending it.
 >
-> Sharing is the actual product:
-> - Send the file like a photo. Double-click opens it on all three OSes.
-> - Or publish it: one command puts it on Krate Cloud and hands you a URL
->   anyone can run directly -- `krate run https://...` -- permission wall
->   included.
-> - Before ANY app runs, it says what it wants in plain words ("save files
->   in its own private folder -- never your files") and the runtime
->   enforces the answer. Deny something and the app still opens, minus
->   that power. An app that works on your folders never names a path: it
->   asks you to pick one, and the pick is the grant, for that run only.
+> So I built Krate. Your app becomes one small file. Really small -- a
+> playable Breakout is 13 KB, and that's the whole app, not the installer.
+> The same file opens by double-click on Mac, Windows, and Linux. You send
+> it like you'd send a photo. Or publish it with one command and send a
+> link that runs directly.
 >
-> The UI is drawn by our own renderer -- rounded cards, soft shadows,
-> gradient backgrounds, springs, system-font typography -- so generated
-> apps look like software from this year. The workout-dashboard screenshot
-> on the site is a 16 KB file.
+> And the trust problem -- "should I really run this thing you sent me?" --
+> is handled where it belongs. Before any app runs, it says what it wants
+> in plain words: "save files in its own private folder -- never your
+> files." Say no to something and the app still opens, just without that
+> power. An app that organizes your folders can't even name a folder; it
+> asks you to pick one, and your pick is the permission.
 >
-> Honest limits: the capability boundary works but I am not yet claiming
-> hardening against hostile code; heavy 3D and video are not there; the AI
-> writes real code, so a build takes 5-12 minutes and occasionally needs a
-> retry. Every outside finding lands on a public bug board in the repo,
-> with the fix commits next to it.
+> Making the app is the easy part now: type `krate`, describe what you
+> want, and whichever AI you already use (Claude, Codex, Gemini, Copilot,
+> Grok) writes it as real compiled code. No Electron, no bundled browser.
+> The generated apps get proper rounded cards, shadows, smooth animation --
+> they look like apps from this year, not a science project.
 >
-> Install (macOS/Linux): curl -fsSL https://krate.tech/install.sh | sh
+> What it doesn't do yet, so you're not surprised: I'm not claiming it's
+> hardened against actively hostile code; no heavy 3D or video; and since
+> an AI writes real code, a build takes 5-12 minutes and sometimes needs a
+> second try. Everything reviewers have found is on a public bug board in
+> the repo, with the fixes next to it.
+>
+> Try it (macOS/Linux): curl -fsSL https://krate.tech/install.sh | sh
 > Windows (PowerShell): irm https://krate.tech/install.ps1 | iex
-> Then type `krate` and describe something.
+> Then type `krate` and describe something you've been meaning to make.
 >
 > Site: https://krate.tech -- Source: https://github.com/incyashraj/krate
 
