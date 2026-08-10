@@ -12,7 +12,7 @@
 
 use std::sync::Arc;
 
-use krate_adapter_common::ui::ImagePixels;
+use crate::ui::ImagePixels;
 
 /// One recorded draw call, colors packed 0xAARRGGBB like the raster path.
 #[derive(Clone, Debug)]

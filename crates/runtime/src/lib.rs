@@ -29,7 +29,7 @@ pub mod uapi_dispatch;
 mod audio_capture;
 mod audio_playback;
 mod canvas_raster;
-pub mod canvas_list;
+pub use krate_adapter_common::canvas_list;
 pub mod chosen_files;
 pub mod desktop_host;
 pub mod embed;

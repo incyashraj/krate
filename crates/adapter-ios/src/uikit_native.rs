@@ -72,12 +72,20 @@ mod real {
         touches: Vec<RawTouch>,
         /// Set once the main thread has built the window.
         screen: Option<(WindowSize, f32)>,
+        /// The CAMetalLayer's raw pointer plus the FULL native scale --
+        /// the GPU renders at true density, so the CPU path's 2x quality
+        /// cap dies here.
+        metal_layer: Option<(usize, f32)>,
     }
 
     static SHARED: Mutex<Shared> = Mutex::new(Shared {
         touches: Vec::new(),
         screen: None,
+        metal_layer: None,
     });
+
+    /// Signaled by the touch callouts so a parked guest wakes instantly.
+    static INPUT_ARRIVED: Condvar = Condvar::new();
 
     /// Guest-thread state: gesture synthesis, samples, and the raster
     /// buffer. Only the guest thread touches it.
@@ -118,6 +126,7 @@ mod real {
     struct MainSide {
         _window: Retained<UIWindow>,
         _controller: Retained<UIViewController>,
+        _metal: Retained<objc2_quartz_core::CAMetalLayer>,
         view: Retained<KrateSurfaceView>,
     }
 
@@ -255,7 +264,26 @@ mod real {
                     (bounds.size.height as u32).max(1),
                 )
                 .map_err(|err| UiAdapterError::Unsupported(err.to_string()))?;
+
+                // The GPU canvas draws into a CAMetalLayer sublayer sized
+                // to the full view at FULL native density -- the 2x cap is
+                // a CPU-raster economy the GPU does not need.
+                let native_scale = screen.scale() as f32;
+                let metal: objc2::rc::Retained<objc2_quartz_core::CAMetalLayer> =
+                    unsafe { objc2_quartz_core::CAMetalLayer::new() };
+                unsafe {
+                    metal.setFrame(bounds);
+                    metal.setContentsScale(native_scale as f64);
+                    let as_uiview: &UIView = &view;
+                    as_uiview.layer().addSublayer(&metal);
+                }
+                let metal_ptr =
+                    objc2::rc::Retained::as_ptr(&metal) as usize;
+                SHARED.lock().expect("shared state lock").metal_layer =
+                    Some((metal_ptr, native_scale));
+
                 let _ = MAIN_SIDE.0.set(MainSide {
+                    _metal: metal,
                     _window: window,
                     _controller: controller,
                     view,
@@ -624,6 +652,91 @@ mod real {
         })
     }
 
+    thread_local! {
+        static GPU: RefCell<Option<crate::vello_canvas::GpuCanvas>> =
+            const { RefCell::new(None) };
+    }
+
+    /// Render one recorded canvas frame on the GPU. True when claimed;
+    /// false hands the frame back to the CPU path (init failed, wrong
+    /// window, not a list this consumer knows).
+    pub fn present_canvas_list(
+        krate: WindowId,
+        _widget: krate_adapter_common::ui::WidgetId,
+        list: &krate_adapter_common::ui::CanvasListHandle,
+    ) -> bool {
+        if !guest_initialized() {
+            return false;
+        }
+        let Some(list) = list.downcast_ref::<krate_adapter_common::canvas_list::CanvasList>()
+        else {
+            return false;
+        };
+        let owns = with_guest(|guest| Ok(guest.krate == Some(krate))).unwrap_or(false);
+        if !owns {
+            return false;
+        }
+        GPU.with(|slot| {
+            let mut slot = slot.borrow_mut();
+            if slot.is_none() {
+                let Some(((layer, native_scale), logical)) = ({
+                    let shared = SHARED.lock().expect("shared state lock");
+                    shared.metal_layer.zip(shared.screen.map(|(l, _)| l))
+                }) else {
+                    return false;
+                };
+                let width = (logical.width as f32 * native_scale) as u32;
+                let height = (logical.height as f32 * native_scale) as u32;
+                // wgpu panics on validation gaps (the simulator's Metal
+                // lacks indirect execution, for one); a missing GPU must
+                // mean CPU fallback, never a dead app.
+                let created = std::panic::catch_unwind(|| {
+                    crate::vello_canvas::GpuCanvas::new(
+                        layer as *mut std::ffi::c_void,
+                        width,
+                        height,
+                        native_scale,
+                    )
+                })
+                .unwrap_or_else(|_| Err("gpu init panicked (unsupported device)".into()));
+                match created {
+                    Ok(gpu) => {
+                        // The image view would cover the metal layer with
+                        // its last CPU frame; hide it once the GPU owns
+                        // the pixels.
+                        DispatchQueue::main().exec_sync(|| {
+                            if let Some(main_side) = MAIN_SIDE.0.get() {
+                                main_side.view.setHidden(false);
+                                unsafe {
+                                    let v: &UIView = &main_side.view;
+                                    v.setOpaque(false);
+                                }
+                                main_side.view.setImage(None);
+                            }
+                        });
+                        *slot = Some(gpu);
+                    }
+                    Err(why) => {
+                        eprintln!("krate-ios: gpu canvas unavailable: {why}");
+                        return false;
+                    }
+                }
+            }
+            let gpu = slot.as_mut().expect("gpu initialized");
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                gpu.present(list)
+            }))
+            .unwrap_or_else(|_| Err("gpu present panicked".into()));
+            match outcome {
+                Ok(()) => true,
+                Err(why) => {
+                    eprintln!("krate-ios: gpu present failed: {why}");
+                    false
+                }
+            }
+        })
+    }
+
     pub fn window_scale(krate: WindowId) -> f32 {
         if !guest_initialized() {
             return 1.0;
@@ -706,5 +819,13 @@ mod stub {
 
     pub fn window_scale(_krate: WindowId) -> f32 {
         1.0
+    }
+
+    pub fn present_canvas_list(
+        _krate: WindowId,
+        _widget: krate_adapter_common::ui::WidgetId,
+        _list: &krate_adapter_common::ui::CanvasListHandle,
+    ) -> bool {
+        false
     }
 }

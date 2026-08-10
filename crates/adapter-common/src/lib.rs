@@ -3,6 +3,7 @@
 //! This crate is for adapter behavior that must stay identical across Linux,
 //! macOS, Windows, and later mobile hosts.
 
+pub mod canvas_list;
 pub mod drawtext;
 pub mod locale;
 pub mod net;

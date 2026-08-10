@@ -31,6 +31,8 @@ pub const HOST_FAMILY: &str = "ios";
 /// This is still a headless draft adapter. It proves the Linux crate exposes
 /// the same UI contract as macOS and Windows before the winit bridge lands.
 pub mod uikit_native;
+#[cfg(target_os = "ios")]
+mod vello_canvas;
 
 mod clipboard;
 
@@ -465,6 +467,21 @@ impl WindowAdapter for IosUikitPrototypeUiAdapter {
 }
 
 impl UiAdapter for IosUikitPrototypeUiAdapter {
+    fn supports_canvas_lists(&self) -> bool {
+        // The GPU consumer. When its lazy init fails at first present, it
+        // returns false per frame and the CPU raster keeps the screen.
+        cfg!(target_os = "ios")
+    }
+
+    fn present_canvas_list(
+        &self,
+        window: WindowId,
+        widget: krate_adapter_common::ui::WidgetId,
+        list: krate_adapter_common::ui::CanvasListHandle,
+    ) -> Result<bool, UiAdapterError> {
+        Ok(uikit_native::present_canvas_list(window, widget, &list))
+    }
+
     fn park_for_events(&self, max: std::time::Duration) -> bool {
         uikit_native::park_for_events(max)
     }
