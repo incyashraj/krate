@@ -24,6 +24,7 @@ krate-runtime = { path = "../runtime", version = "0.1.0-dev", default-features =
 ] }
 krate-adapter-ios = { path = "../adapter-ios", version = "0.1.0-dev" }
 objc2 = "0.6.4"
+libc = "0.2"
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "std",
     "NSObject",

@@ -921,17 +921,40 @@ impl CanvasSurface {
         let x1 = ((x + w).ceil().max(0.0) as u32).min(bw);
         let y0 = (y.floor().max(0.0) as u32).min(bh);
         let y1 = ((y + h).ceil().max(0.0) as u32).min(bh);
+        // Corners only exist in the top and bottom radius bands. Rows
+        // between them are plain rectangles: coverage is the distance to
+        // the straight edges, no SDF -- and a fully covered, fully opaque
+        // sample is a direct store. At phone resolution this loop is the
+        // photo card's whole cost, and the SDF per interior pixel was most
+        // of it (K-090).
+        let top_band = y + radii.0.max(radii.1);
+        let bottom_band = y + h - radii.2.max(radii.3);
         for py in y0..y1 {
+            let fy = py as f32 + 0.5;
+            let plain_row = fy >= top_band && fy <= bottom_band;
             for px in x0..x1 {
-                let d = Self::round_rect_sdf(px as f32 + 0.5, py as f32 + 0.5, x, y, w, h, radii);
-                let coverage = (0.5 - d).clamp(0.0, 1.0);
+                let fx = px as f32 + 0.5;
+                let coverage = if plain_row {
+                    let d = (x - fx)
+                        .max(fx - (x + w))
+                        .max(y - fy)
+                        .max(fy - (y + h));
+                    (0.5 - d).clamp(0.0, 1.0)
+                } else {
+                    let d = Self::round_rect_sdf(fx, fy, x, y, w, h, radii);
+                    (0.5 - d).clamp(0.0, 1.0)
+                };
                 if coverage <= 0.0 {
                     continue;
                 }
-                let u = src_x + (px as f32 + 0.5 - x) / w * src_w;
-                let v = src_y + (py as f32 + 0.5 - y) / h * src_h;
+                let u = src_x + (fx - x) / w * src_w;
+                let v = src_y + (fy - y) / h * src_h;
                 let sampled = sample_bilinear(image, u, v);
-                self.blend_coverage(px, py, sampled, coverage);
+                if coverage >= 1.0 && sampled >> 24 == 0xFF && self.allowed(px, py) {
+                    self.buffer[(py * self.width + px) as usize] = sampled;
+                } else {
+                    self.blend_coverage(px, py, sampled, coverage);
+                }
             }
         }
     }

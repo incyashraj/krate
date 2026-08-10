@@ -43,6 +43,8 @@ thread_local! {
 struct TextEngine {
     font_cx: FontContext,
     layout_cx: LayoutContext<()>,
+    /// Finished canvas layouts, keyed by everything that shapes them.
+    canvas_layouts: std::collections::HashMap<CanvasLayoutKey, std::rc::Rc<Layout<()>>>,
 }
 
 impl TextEngine {
@@ -50,6 +52,7 @@ impl TextEngine {
         Self {
             font_cx: FontContext::new(),
             layout_cx: LayoutContext::new(),
+            canvas_layouts: std::collections::HashMap::new(),
         }
     }
 
@@ -109,6 +112,41 @@ impl TextEngine {
         text: &str,
         font_size: f32,
         style: CanvasTextStyle,
+    ) -> std::rc::Rc<Layout<()>> {
+        // A canvas app redraws the same strings every frame, and shaping is
+        // the expensive, resolution-independent half of text. Cache the
+        // finished layout keyed by everything that shapes it; a phone frame
+        // was paying ~12 fresh shapes per frame for text that had not
+        // changed since the last one (K-090).
+        let key = CanvasLayoutKey {
+            text: text.to_string(),
+            font_size_bits: font_size.to_bits(),
+            weight: style.weight,
+            italic: style.italic,
+            letter_spacing_bits: style.letter_spacing.to_bits(),
+            family: style.family,
+        };
+        if let Some(cached) = self.canvas_layouts.get(&key) {
+            // An Rc bump, not a deep clone: cloning the layout itself cost
+            // more than the shaping it saved.
+            return cached.clone();
+        }
+        let layout = std::rc::Rc::new(self.layout_canvas_styled_uncached(text, font_size, style));
+        // A bounded cache: a guest that generates unbounded distinct
+        // strings (a counter, a clock) must not grow the host without
+        // limit. Clearing wholesale is fine -- one frame of re-shaping.
+        if self.canvas_layouts.len() >= 512 {
+            self.canvas_layouts.clear();
+        }
+        self.canvas_layouts.insert(key, layout.clone());
+        layout
+    }
+
+    fn layout_canvas_styled_uncached(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        style: CanvasTextStyle,
     ) -> Layout<()> {
         let mut builder = self
             .layout_cx
@@ -136,9 +174,20 @@ impl TextEngine {
     }
 }
 
+/// Everything that decides a canvas layout's shape, as a cache key.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct CanvasLayoutKey {
+    text: String,
+    font_size_bits: u32,
+    weight: u16,
+    italic: bool,
+    letter_spacing_bits: u32,
+    family: CanvasFontFamily,
+}
+
 /// The generic families the canvas exposes, resolved by fontique against
 /// whatever the system has -- the same contract as a web font stack.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum CanvasFontFamily {
     #[default]
     Sans,

@@ -94,6 +94,15 @@ mod player {
                     .name("krate-guest".to_string())
                     .stack_size(8 * 1024 * 1024)
                     .spawn(|| {
+                        // The guest thread drives every visible frame; an
+                        // unqualified thread lands on efficiency cores and
+                        // a 10 ms raster became 40 (measured on-device).
+                        unsafe {
+                            libc::pthread_set_qos_class_self_np(
+                                libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE,
+                                0,
+                            );
+                        }
                         run_player();
                         std::process::exit(0);
                     })

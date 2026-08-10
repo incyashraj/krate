@@ -52,7 +52,8 @@ mod real {
     };
     use objc2_foundation::NSObjectProtocol;
     use objc2_ui_kit::{
-        UIImage, UIImageView, UIScreen, UITouch, UITouchPhase, UIView, UIViewController, UIWindow,
+        UIApplication, UIImage, UIImageView, UIScreen, UITouch, UITouchPhase, UIView,
+        UIViewController, UIWindow, UIWindowScene,
     };
 
     /// One raw touch, in logical points, straight from the main-thread
@@ -77,8 +78,6 @@ mod real {
         touches: Vec::new(),
         screen: None,
     });
-    /// Signaled by the touch callouts so a parked guest wakes instantly.
-    static INPUT_ARRIVED: Condvar = Condvar::new();
 
     /// Guest-thread state: gesture synthesis, samples, and the raster
     /// buffer. Only the guest thread touches it.
@@ -223,6 +222,20 @@ mod real {
                 let scale = (screen.scale() as f32).min(2.0);
 
                 let window = unsafe { UIWindow::initWithFrame(UIWindow::alloc(mtm), bounds) };
+                // The window MUST join the connected UIWindowScene: since
+                // iOS 13 an unattached window still renders but rides a
+                // legacy event path that starves continuous touch delivery
+                // -- a real 120 Hz phone produced 116 touch callouts in an
+                // entire scrolling session before this line existed.
+                unsafe {
+                    let scenes = UIApplication::sharedApplication(mtm).connectedScenes();
+                    for scene in scenes.allObjects() {
+                        if let Ok(window_scene) = scene.downcast::<UIWindowScene>() {
+                            window.setWindowScene(Some(&window_scene));
+                            break;
+                        }
+                    }
+                }
                 let controller = unsafe { UIViewController::new(mtm) };
                 let view: Retained<KrateSurfaceView> = {
                     let this = KrateSurfaceView::alloc(mtm).set_ivars(());
