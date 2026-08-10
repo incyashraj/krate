@@ -1238,7 +1238,30 @@ pub struct RawWheelSample {
     pub modifiers: Modifiers,
 }
 
+/// A canvas frame handed to a GPU-capable adapter as draw calls instead of
+/// pixels. Opaque here: the runtime defines the op list, the adapter's
+/// renderer consumes it, and this crate only carries it between them.
+pub type CanvasListHandle = std::sync::Arc<dyn std::any::Any + Send + Sync>;
+
 pub trait UiAdapter: WindowAdapter {
+    /// Whether this adapter renders canvas display lists itself (a GPU
+    /// backend). False everywhere the CPU raster remains the renderer.
+    fn supports_canvas_lists(&self) -> bool {
+        false
+    }
+
+    /// Present one canvas frame as a display list. Returns true when the
+    /// adapter rendered it -- the runtime then skips the CPU raster
+    /// publish for that frame entirely.
+    fn present_canvas_list(
+        &self,
+        _window: WindowId,
+        _widget: WidgetId,
+        _list: CanvasListHandle,
+    ) -> Result<bool, UiAdapterError> {
+        Ok(false)
+    }
+
     /// Park the calling thread until a native event arrives or `max`
     /// elapses, whichever is first. Returns true if this adapter actually
     /// waited natively -- the host then skips its own blind sleep, so a

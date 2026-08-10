@@ -178,6 +178,21 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.info()
     }
 
+    /// Whether the adapter renders canvas display lists (a GPU backend).
+    pub fn supports_canvas_lists(&self) -> bool {
+        self.adapter.supports_canvas_lists()
+    }
+
+    /// Hand one canvas frame to the adapter as a display list.
+    pub fn present_canvas_list(
+        &self,
+        window: WindowId,
+        widget: krate_adapter_common::ui::WidgetId,
+        list: krate_adapter_common::ui::CanvasListHandle,
+    ) -> UiDispatchResult<bool> {
+        Ok(self.adapter.present_canvas_list(window, widget, list)?)
+    }
+
     /// Park until a native event or the deadline; false means the adapter
     /// cannot wait natively and the caller should sleep itself.
     pub fn park_for_events(&self, max: std::time::Duration) -> bool {
