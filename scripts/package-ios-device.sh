@@ -41,6 +41,10 @@ OUT=target/ios-device/KratePlayer.app
 rm -rf "$OUT" && mkdir -p "$OUT"
 cp "$BIN" "$OUT/KratePlayer"
 cp "$PROFILE" "$OUT/embedded.mobileprovision"
+# The home-screen icon: full-bleed renders cropped from the same mark the
+# desktop app ships; iOS rounds the corners itself.
+cp crates/player-ios/icons/AppIcon60x60@2x.png "$OUT/"
+cp crates/player-ios/icons/AppIcon60x60@3x.png "$OUT/"
 cat > "$OUT/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -55,6 +59,11 @@ cat > "$OUT/Info.plist" <<'PLIST'
   <key>MinimumOSVersion</key><string>15.0</string>
   <key>UIDeviceFamily</key><array><integer>1</integer></array>
   <key>UILaunchScreen</key><dict/>
+  <key>CFBundleIcons</key><dict>
+    <key>CFBundlePrimaryIcon</key><dict>
+      <key>CFBundleIconFiles</key><array><string>AppIcon60x60</string></array>
+    </dict>
+  </dict>
 </dict></plist>
 PLIST
 
