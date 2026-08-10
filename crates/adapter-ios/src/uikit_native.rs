@@ -1,18 +1,26 @@
 //! Real UIKit windowing for the iOS adapter.
 //!
-//! Not winit: winit cannot pump on iOS, and this adapter's whole contract
-//! is a non-blocking pump the guest drives from inside its own calls. So
-//! this module is UIKit-direct in the macOS adapter's mold -- one
-//! UIWindow with an image view the CPU painter blits into,
-//! `NSRunLoop runMode:beforeDate:` as the per-frame pump, and UITouch
-//! feeding the same tap-or-scroll synthesis the Android adapter proved:
-//! within the slop a touch is a tap (pointer press + release), past it
-//! every move is a wheel delta.
+//! Two threads, on purpose. The main thread belongs to UIKit: it returns
+//! from every delegate callout and UIApplicationMain's own run loop runs
+//! free. The guest lives on a second thread, and every UIKit touch (create
+//! the window, put a frame on screen) is marshaled to the main queue with
+//! a synchronous dispatch. The first design ran the guest inside a
+//! delegate callout and pumped a nested run loop -- but a nested run loop
+//! never drains the main dispatch queue, iOS delivers parts of its own
+//! touch pipeline through that queue, and the result was input that
+//! arrived whenever something else happened to jostle the loop. A real
+//! iPhone said "very late in response"; this split is the answer.
 //!
-//! iOS has exactly one screen-sized window, so `create_native_window`
-//! creates it the first time and re-dresses it for every later guest
-//! (the wall sheet, then the app). The player never returns to a blank
-//! shell between them.
+//! Input flows the other way without blocking anyone: touch callouts on
+//! the main thread push raw samples into shared state and signal a
+//! condvar; the guest's park waits on that condvar and wakes the instant
+//! a finger lands. Rasterization happens on the guest thread -- the main
+//! thread only wraps finished pixels in a CGImage and hands them to the
+//! view.
+//!
+//! iOS has one screen-sized window; `create_native_window` creates it on
+//! first use and re-dresses it for each sequential guest (the wall sheet,
+//! then the app).
 
 #[cfg(target_os = "ios")]
 pub use real::*;
@@ -32,7 +40,9 @@ pub type CollectedNativeEvents = Vec<(WindowId, WinitWindowNativeEvent)>;
 mod real {
     use super::*;
     use std::cell::RefCell;
+    use std::sync::{Condvar, Mutex, OnceLock};
 
+    use dispatch2::DispatchQueue;
     use objc2::rc::Retained;
     use objc2::{define_class, msg_send, DefinedClass, MainThreadMarker, MainThreadOnly};
     use objc2_core_foundation::{CGPoint, CGRect};
@@ -40,13 +50,13 @@ mod real {
         CGBitmapContextCreate, CGBitmapContextCreateImage, CGColorSpaceCreateDeviceRGB,
         CGImageAlphaInfo, CGImageByteOrderInfo,
     };
-    use objc2_foundation::{NSDate, NSDefaultRunLoopMode, NSObjectProtocol, NSRunLoop};
+    use objc2_foundation::NSObjectProtocol;
     use objc2_ui_kit::{
         UIImage, UIImageView, UIScreen, UITouch, UITouchPhase, UIView, UIViewController, UIWindow,
     };
 
-    /// One raw touch, straight from the view's overrides, in logical
-    /// points. The gesture logic runs at pump time, not in the callout.
+    /// One raw touch, in logical points, straight from the main-thread
+    /// callouts. The gesture logic runs on the guest thread.
     #[derive(Clone, Copy)]
     struct RawTouch {
         phase: UITouchPhase,
@@ -55,22 +65,24 @@ mod real {
         finger: usize,
     }
 
-    thread_local! {
-        static HOST: RefCell<Option<Host>> = const { RefCell::new(None) };
-        /// Touches land here from the view callouts; the pump drains them.
-        static TOUCHES: RefCell<Vec<RawTouch>> = const { RefCell::new(Vec::new()) };
+    /// State both threads touch, under one lock. Kept deliberately small:
+    /// raw input in, screen geometry out.
+    struct Shared {
+        touches: Vec<RawTouch>,
+        /// Set once the main thread has built the window.
+        screen: Option<(WindowSize, f32)>,
     }
 
-    struct TouchGesture {
-        finger: usize,
-        start: (f32, f32),
-        last: (f32, f32),
-        scrolling: bool,
-    }
+    static SHARED: Mutex<Shared> = Mutex::new(Shared {
+        touches: Vec::new(),
+        screen: None,
+    });
+    /// Signaled by the touch callouts so a parked guest wakes instantly.
+    static INPUT_ARRIVED: Condvar = Condvar::new();
 
-    struct Host {
-        window: Retained<UIWindow>,
-        image_view: Retained<KrateSurfaceView>,
+    /// Guest-thread state: gesture synthesis, samples, and the raster
+    /// buffer. Only the guest thread touches it.
+    struct GuestSide {
         krate: Option<WindowId>,
         logical: WindowSize,
         scale: f32,
@@ -80,23 +92,42 @@ mod real {
         key_samples: Vec<RawKeySample>,
         wheel_samples: Vec<RawWheelSample>,
         gesture: Option<TouchGesture>,
-        /// Repaint only when something changed: the pump used to blit every
-        /// tick, doubling the frame cost for a still image (K-089's second
-        /// leg, shared with Android).
-        dirty: bool,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
-        /// The blit target, reused across frames: allocating and zeroing a
-        /// fresh 12 MB buffer per frame was measurable by itself.
         paint_buffer: Vec<u32>,
+        dirty: bool,
     }
+
+    struct TouchGesture {
+        finger: usize,
+        start: (f32, f32),
+        last: (f32, f32),
+        scrolling: bool,
+    }
+
+    thread_local! {
+        static GUEST: RefCell<Option<GuestSide>> = const { RefCell::new(None) };
+    }
+
+    /// Main-thread-only UIKit objects, created on first use via dispatch.
+    struct MainSide {
+        _window: Retained<UIWindow>,
+        _controller: Retained<UIViewController>,
+        view: Retained<KrateSurfaceView>,
+    }
+
+    struct MainSideCell(OnceLock<MainSide>);
+    // SAFETY: the cell is written and read only on the main thread, inside
+    // main-queue closures; it only crosses threads as an opaque pointer.
+    unsafe impl Send for MainSideCell {}
+    unsafe impl Sync for MainSideCell {}
+    static MAIN_SIDE: MainSideCell = MainSideCell(OnceLock::new());
 
     define_class!(
         // SAFETY:
         // - UIImageView has no extra subclassing requirements for touch
         //   overrides.
-        // - UIKit delivers touches on the main thread, which is also the
-        //   thread that owns every thread-local here.
+        // - UIKit delivers touches on the main thread.
         #[unsafe(super = UIImageView)]
         #[thread_kind = MainThreadOnly]
         #[ivars = ()]
@@ -147,151 +178,144 @@ mod real {
 
     fn record_touches(view: &KrateSurfaceView, touches: &objc2_foundation::NSSet<UITouch>) {
         let uiview: &UIView = view;
+        let mut shared = SHARED.lock().expect("shared state lock");
         for touch in touches.allObjects() {
             let location: CGPoint = unsafe { touch.locationInView(Some(uiview)) };
-            // The Retained pointer identifies the finger across its life.
             let finger = Retained::as_ptr(&touch) as usize;
-            TOUCHES.with(|queue| {
-                queue.borrow_mut().push(RawTouch {
-                    phase: unsafe { touch.phase() },
-                    x: location.x as f32,
-                    y: location.y as f32,
-                    finger,
-                })
+            shared.touches.push(RawTouch {
+                phase: unsafe { touch.phase() },
+                x: location.x as f32,
+                y: location.y as f32,
+                finger,
             });
         }
+        drop(shared);
+        INPUT_ARRIVED.notify_all();
     }
 
-    fn with_host<T>(
-        f: impl FnOnce(&mut Host) -> Result<T, UiAdapterError>,
+    /// Build the UIKit side, on the main queue, once.
+    fn ensure_main_side() -> Result<(WindowSize, f32), UiAdapterError> {
+        if let Some(screen) = SHARED.lock().expect("shared state lock").screen {
+            return Ok(screen);
+        }
+        let mut result: Result<(WindowSize, f32), UiAdapterError> =
+            Err(UiAdapterError::Internal(
+                "main-queue closure never ran".to_string(),
+            ));
+        DispatchQueue::main().exec_sync(|| {
+            result = (|| {
+                let mtm = MainThreadMarker::new().ok_or_else(|| {
+                    UiAdapterError::Internal(
+                        "main-queue closure ran off the main thread".to_string(),
+                    )
+                })?;
+                let screen = UIScreen::mainScreen(mtm);
+                let bounds: CGRect = screen.bounds();
+                // Capped at 2x deliberately: CPU-rasterizing full 3x spent
+                // the whole frame budget; the view's GPU compositor does
+                // the final stretch free (K-089).
+                let scale = (screen.scale() as f32).min(2.0);
+
+                let window = unsafe { UIWindow::initWithFrame(UIWindow::alloc(mtm), bounds) };
+                let controller = unsafe { UIViewController::new(mtm) };
+                let view: Retained<KrateSurfaceView> = {
+                    let this = KrateSurfaceView::alloc(mtm).set_ivars(());
+                    // SAFETY: UIView's initWithFrame is the designated
+                    // initializer.
+                    unsafe { msg_send![super(this), initWithFrame: bounds] }
+                };
+                unsafe {
+                    view.setUserInteractionEnabled(true);
+                    let as_uiview: &UIView = &view;
+                    controller.setView(Some(as_uiview));
+                    window.setRootViewController(Some(&controller));
+                    window.makeKeyAndVisible();
+                }
+                let logical = WindowSize::new(
+                    (bounds.size.width as u32).max(1),
+                    (bounds.size.height as u32).max(1),
+                )
+                .map_err(|err| UiAdapterError::Unsupported(err.to_string()))?;
+                let _ = MAIN_SIDE.0.set(MainSide {
+                    _window: window,
+                    _controller: controller,
+                    view,
+                });
+                Ok((logical, scale))
+            })();
+        });
+        let screen = result?;
+        SHARED.lock().expect("shared state lock").screen = Some(screen);
+        Ok(screen)
+    }
+
+    fn with_guest<T>(
+        f: impl FnOnce(&mut GuestSide) -> Result<T, UiAdapterError>,
     ) -> Result<T, UiAdapterError> {
-        HOST.with(|slot| {
+        GUEST.with(|slot| {
             let mut slot = slot.borrow_mut();
             if slot.is_none() {
-                *slot = Some(create_host()?);
+                let (logical, scale) = ensure_main_side()?;
+                *slot = Some(GuestSide {
+                    krate: None,
+                    logical,
+                    scale,
+                    placements: Vec::new(),
+                    events: Vec::new(),
+                    pointer_samples: Vec::new(),
+                    key_samples: Vec::new(),
+                    wheel_samples: Vec::new(),
+                    gesture: None,
+                    hovered: None,
+                    pressed_widget: None,
+                    paint_buffer: Vec::new(),
+                    dirty: false,
+                });
             }
-            f(slot.as_mut().expect("uikit host initialized"))
+            f(slot.as_mut().expect("guest side initialized"))
         })
     }
 
-    fn host_initialized() -> bool {
-        HOST.with(|slot| slot.borrow().is_some())
+    fn guest_initialized() -> bool {
+        GUEST.with(|slot| slot.borrow().is_some())
     }
 
-    fn create_host() -> Result<Host, UiAdapterError> {
-        let mtm = MainThreadMarker::new().ok_or_else(|| {
-            UiAdapterError::Unsupported(
-                "the iOS adapter must run on the main thread".to_string(),
-            )
-        })?;
-        let screen = UIScreen::mainScreen(mtm);
-        let bounds: CGRect = screen.bounds();
-        // Capped at 2x deliberately: a modern iPhone reports 3x, and CPU-
-        // rasterizing 3.2 million pixels per frame spent the whole 60 fps
-        // budget before the app drew anything. At 2x the pixel work drops
-        // 2.25x and UIImageView's GPU compositor performs the final
-        // stretch for free. The visible cost at phone DPI is minor; the
-        // wgpu backend (plan phase 3) is the eventual full-density answer.
-        let scale = (screen.scale() as f32).min(2.0);
-
-        let window = unsafe { UIWindow::initWithFrame(UIWindow::alloc(mtm), bounds) };
-        let controller = unsafe { UIViewController::new(mtm) };
-        let view: Retained<KrateSurfaceView> = {
-            let this = KrateSurfaceView::alloc(mtm).set_ivars(());
-            // SAFETY: UIView's initWithFrame is the designated initializer.
-            unsafe { msg_send![super(this), initWithFrame: bounds] }
-        };
-        unsafe {
-            view.setUserInteractionEnabled(true);
-            let as_uiview: &UIView = &view;
-            controller.setView(Some(as_uiview));
-            window.setRootViewController(Some(&controller));
-            window.makeKeyAndVisible();
-        }
-        let image_view = view;
-
-        let logical = WindowSize::new(
-            (bounds.size.width as u32).max(1),
-            (bounds.size.height as u32).max(1),
-        )
-        .map_err(|err| UiAdapterError::Unsupported(err.to_string()))?;
-
-        Ok(Host {
-            window,
-            image_view,
-            krate: None,
-            logical,
-            scale,
-            placements: Vec::new(),
-            events: Vec::new(),
-            pointer_samples: Vec::new(),
-            key_samples: Vec::new(),
-            wheel_samples: Vec::new(),
-            gesture: None,
-            dirty: true,
-            hovered: None,
-            pressed_widget: None,
-            paint_buffer: Vec::new(),
-        })
-    }
-
-    /// Let UIKit deliver whatever is pending, without blocking: one spin of
-    /// the main run loop up to now.
-    fn spin_run_loop() {
-        unsafe {
-            let run_loop = NSRunLoop::mainRunLoop();
-            let _ = run_loop.runMode_beforeDate(NSDefaultRunLoopMode, &NSDate::now());
-        }
-    }
-
-    /// Block in the run loop until an event arrives or the deadline passes.
-    /// This is what makes touch latency vanish: the loop wakes on input
-    /// instead of the host thread sleeping through it.
-    pub fn park_for_events(max: std::time::Duration) -> bool {
-        if !host_initialized() {
-            return false;
-        }
-        unsafe {
-            let run_loop = NSRunLoop::mainRunLoop();
-            let deadline = NSDate::dateWithTimeIntervalSinceNow(max.as_secs_f64());
-            let _ = run_loop.runMode_beforeDate(NSDefaultRunLoopMode, &deadline);
-        }
-        true
-    }
-
-    /// The tap-or-scroll synthesis, identical in spirit to the Android
-    /// adapter: within the slop a touch is a tap, past it a scroll.
-    fn digest_touches(host: &mut Host) {
+    /// The tap-or-scroll synthesis: within the slop a touch is a tap
+    /// (pointer press + release), past it every move is a wheel delta --
+    /// the contract the Android adapter proved on-device.
+    fn digest_touches(guest: &mut GuestSide) {
         const SLOP: f32 = 8.0;
-        let Some(krate) = host.krate else {
-            TOUCHES.with(|queue| queue.borrow_mut().clear());
+        let raw: Vec<RawTouch> = {
+            let mut shared = SHARED.lock().expect("shared state lock");
+            std::mem::take(&mut shared.touches)
+        };
+        let Some(krate) = guest.krate else {
             return;
         };
-        let raw: Vec<RawTouch> = TOUCHES.with(|queue| std::mem::take(&mut *queue.borrow_mut()));
         for touch in raw {
             match touch.phase {
                 UITouchPhase::Began => {
-                    if host.gesture.is_none() {
-                        host.gesture = Some(TouchGesture {
+                    if guest.gesture.is_none() {
+                        guest.gesture = Some(TouchGesture {
                             finger: touch.finger,
                             start: (touch.x, touch.y),
                             last: (touch.x, touch.y),
                             scrolling: false,
                         });
-                        host.hovered = krate_adapter_common::painter::topmost_interactive_at(
-                            &host.placements,
+                        guest.hovered = krate_adapter_common::painter::topmost_interactive_at(
+                            &guest.placements,
                             touch.x,
                             touch.y,
                         );
                     }
                 }
                 UITouchPhase::Moved => {
-                    let same = host
+                    let same = guest
                         .gesture
                         .as_ref()
                         .is_some_and(|g| g.finger == touch.finger);
                     if same {
-                        let gesture = host.gesture.as_mut().expect("gesture checked");
+                        let gesture = guest.gesture.as_mut().expect("gesture checked");
                         if !gesture.scrolling {
                             let sx = touch.x - gesture.start.0;
                             let sy = touch.y - gesture.start.1;
@@ -305,7 +329,7 @@ mod real {
                         if gesture.scrolling
                             && (dx.abs() > f32::EPSILON || dy.abs() > f32::EPSILON)
                         {
-                            host.wheel_samples.push(RawWheelSample {
+                            guest.wheel_samples.push(RawWheelSample {
                                 window: krate,
                                 x: touch.x,
                                 y: touch.y,
@@ -317,20 +341,20 @@ mod real {
                     }
                 }
                 UITouchPhase::Ended => {
-                    let same = host
+                    let same = guest
                         .gesture
                         .as_ref()
                         .is_some_and(|g| g.finger == touch.finger);
                     if same {
-                        let gesture = host.gesture.take().expect("gesture checked");
+                        let gesture = guest.gesture.take().expect("gesture checked");
                         if !gesture.scrolling {
-                            host.pointer_samples.push(RawPointerSample {
+                            guest.pointer_samples.push(RawPointerSample {
                                 window: krate,
                                 x: touch.x,
                                 y: touch.y,
                                 pressed: true,
                             });
-                            host.pointer_samples.push(RawPointerSample {
+                            guest.pointer_samples.push(RawPointerSample {
                                 window: krate,
                                 x: touch.x,
                                 y: touch.y,
@@ -340,12 +364,12 @@ mod real {
                     }
                 }
                 UITouchPhase::Cancelled => {
-                    let same = host
+                    let same = guest
                         .gesture
                         .as_ref()
                         .is_some_and(|g| g.finger == touch.finger);
                     if same {
-                        host.gesture = None;
+                        guest.gesture = None;
                     }
                 }
                 _ => {}
@@ -353,124 +377,92 @@ mod real {
         }
     }
 
-    /// Rasterize the placements and put them on screen. Everything inside
-    /// one autoreleasepool: the macOS adapter's 46 GB lesson, honored here
-    /// from day one.
-    fn blit(host: &mut Host) {
-        let t0 = std::time::Instant::now();
-        let phys_w = (host.logical.width as f32 * host.scale) as usize;
-        let phys_h = (host.logical.height as f32 * host.scale) as usize;
+    /// Rasterize on the guest thread, then hand finished pixels to the
+    /// main queue, which only wraps them in a CGImage and sets the view.
+    /// The autoreleasepool per frame is the macOS adapter's 46 GB lesson.
+    fn blit(guest: &mut GuestSide) {
+        let phys_w = (guest.logical.width as f32 * guest.scale) as usize;
+        let phys_h = (guest.logical.height as f32 * guest.scale) as usize;
         if phys_w == 0 || phys_h == 0 {
             return;
         }
-        host.paint_buffer.clear();
-        host.paint_buffer.resize(phys_w * phys_h, 0);
-        let mut buffer = std::mem::take(&mut host.paint_buffer);
+        guest.paint_buffer.clear();
+        guest.paint_buffer.resize(phys_w * phys_h, 0);
         krate_adapter_common::painter::paint_placements(
-            &mut buffer,
+            &mut guest.paint_buffer,
             phys_w as u32,
             phys_h as u32,
-            host.scale,
-            &host.placements,
+            guest.scale,
+            &guest.placements,
             krate_adapter_common::painter::PaintInteraction {
-                hovered: host.hovered,
-                pressed: host.pressed_widget,
+                hovered: guest.hovered,
+                pressed: guest.pressed_widget,
             },
         );
 
-        objc2::rc::autoreleasepool(|_| unsafe {
-            let color_space = CGColorSpaceCreateDeviceRGB();
-            // The painter writes 0xAARRGGBB u32s; on this little-endian
-            // machine that is BGRA in memory, which premultiplied-first +
-            // 32-bit-little byte order describes exactly. Alpha is always
-            // 0xFF, so "premultiplied" is trivially true.
-            let bitmap_info = CGImageAlphaInfo::PremultipliedFirst.0
-                | CGImageByteOrderInfo::Order32Little.0;
-            let context = CGBitmapContextCreate(
-                buffer.as_mut_ptr().cast(),
-                phys_w,
-                phys_h,
-                8,
-                phys_w * 4,
-                color_space.as_deref(),
-                bitmap_info,
-            );
-            let Some(context) = context else {
-                return;
-            };
-            let Some(image) = CGBitmapContextCreateImage(Some(&context)) else {
-                return;
-            };
-            let ui_image = UIImage::imageWithCGImage_scale_orientation(
-                &image,
-                host.scale as f64,
-                objc2_ui_kit::UIImageOrientation::Up,
-            );
-            host.image_view.setImage(Some(&ui_image));
-        });
-        host.paint_buffer = buffer;
-        host.dirty = false;
-        STATS.with(|stats| {
-            let mut stats = stats.borrow_mut();
-            let now = std::time::Instant::now();
-            if let Some(last) = stats.last_blit {
-                stats.interval_ms += (now - last).as_secs_f64() * 1000.0;
-            }
-            stats.last_blit = Some(now);
-            stats.blit_ms += t0.elapsed().as_secs_f64() * 1000.0;
-            stats.frames += 1;
-            if stats.frames % 60 == 0 {
-                eprintln!(
-                    "krate-ios: blit {:.1} ms, interval {:.1} ms (60-frame avg)",
-                    stats.blit_ms / 60.0,
-                    stats.interval_ms / 60.0
+        let buffer = &mut guest.paint_buffer;
+        let scale = guest.scale;
+        DispatchQueue::main().exec_sync(|| {
+            objc2::rc::autoreleasepool(|_| unsafe {
+                let Some(main_side) = MAIN_SIDE.0.get() else {
+                    return;
+                };
+                let color_space = CGColorSpaceCreateDeviceRGB();
+                // 0xAARRGGBB u32s are BGRA in little-endian memory:
+                // premultiplied-first + 32-little describes them exactly,
+                // and alpha is always 0xFF.
+                let bitmap_info = CGImageAlphaInfo::PremultipliedFirst.0
+                    | CGImageByteOrderInfo::Order32Little.0;
+                let context = CGBitmapContextCreate(
+                    buffer.as_mut_ptr().cast(),
+                    phys_w,
+                    phys_h,
+                    8,
+                    phys_w * 4,
+                    color_space.as_deref(),
+                    bitmap_info,
                 );
-                stats.blit_ms = 0.0;
-                stats.interval_ms = 0.0;
-            }
+                let Some(context) = context else {
+                    return;
+                };
+                let Some(image) = CGBitmapContextCreateImage(Some(&context)) else {
+                    return;
+                };
+                let ui_image = UIImage::imageWithCGImage_scale_orientation(
+                    &image,
+                    scale as f64,
+                    objc2_ui_kit::UIImageOrientation::Up,
+                );
+                main_side.view.setImage(Some(&ui_image));
+            });
         });
-    }
-
-    #[derive(Default)]
-    struct BlitStats {
-        frames: u64,
-        blit_ms: f64,
-        interval_ms: f64,
-        last_blit: Option<std::time::Instant>,
-    }
-
-    thread_local! {
-        static STATS: RefCell<BlitStats> = RefCell::new(BlitStats::default());
+        guest.dirty = false;
     }
 
     // ------------------------------------------------------------------
-    // The adapter surface, mirroring the Android module's contract.
+    // The adapter surface. Every function runs on the guest thread.
 
     pub fn create_native_window(
         krate: WindowId,
         _title: &str,
         size: WindowSize,
     ) -> Result<(u64, WinitWindowSnapshot), UiAdapterError> {
-        with_host(|host| {
-            // One screen, one window: a new guest re-dresses it.
-            host.krate = Some(krate);
-            host.placements.clear();
-            host.gesture = None;
-            host.pointer_samples.clear();
-            host.wheel_samples.clear();
-            // The screen is the law: whatever size the guest asked for, the
-            // next pump tells it the truth, the same way a resize would.
-            // Without this the window record keeps the requested size and
-            // the canvas letterboxes (K-087's lesson, host-side).
-            host.events
-                .push((krate, WinitWindowNativeEvent::Resized(host.logical)));
-            // The initial snapshot deliberately repeats the size the guest
-            // asked for: the session diffs snapshots to decide what to
-            // queue, so the Resized truth above only lands if this baseline
-            // differs from it.
-            let snapshot = WinitWindowSnapshot::new(krate, size, true, true, host.scale)?;
+        with_guest(|guest| {
+            guest.krate = Some(krate);
+            guest.placements.clear();
+            guest.gesture = None;
+            guest.pointer_samples.clear();
+            guest.wheel_samples.clear();
+            // The screen is the law: the next pump tells the guest its
+            // real size, exactly as a resize would. The initial snapshot
+            // repeats the requested size so the truth registers as a
+            // change (the session diffs snapshots).
+            guest
+                .events
+                .push((krate, WinitWindowNativeEvent::Resized(guest.logical)));
+            let snapshot = WinitWindowSnapshot::new(krate, size, true, true, guest.scale)?;
             // 0 reads as a null handle to the shared validation; any fixed
-            // nonzero token works -- this adapter never dereferences it.
+            // nonzero token works -- never dereferenced.
             Ok((1, snapshot))
         })
     }
@@ -479,82 +471,99 @@ mod real {
         krate: WindowId,
         placements: &[WidgetPlacement],
     ) -> Result<usize, UiAdapterError> {
-        if !host_initialized() {
+        if !guest_initialized() {
             return Ok(0);
         }
-        with_host(|host| {
-            if host.krate != Some(krate) {
+        with_guest(|guest| {
+            if guest.krate != Some(krate) {
                 return Ok(0);
             }
-            host.placements = placements
+            guest.placements = placements
                 .iter()
                 .filter(|placement| krate_adapter_common::painter::drawn_kind(placement.kind))
                 .cloned()
                 .collect();
-            let drawn = host.placements.len();
-            host.dirty = true;
-            blit(host);
+            let drawn = guest.placements.len();
+            guest.dirty = true;
+            blit(guest);
             Ok(drawn)
         })
     }
 
     pub fn pump_native_events() -> Result<CollectedNativeEvents, UiAdapterError> {
-        if !host_initialized() {
+        if !guest_initialized() {
             return Ok(Vec::new());
         }
-        spin_run_loop();
-        with_host(|host| {
-            digest_touches(host);
-            Ok(std::mem::take(&mut host.events))
+        with_guest(|guest| {
+            digest_touches(guest);
+            Ok(std::mem::take(&mut guest.events))
         })
     }
 
+    /// Park the guest thread until input arrives or the deadline passes.
+    /// The condvar is signaled by the main thread's touch callouts, so a
+    /// finger wakes the guest immediately -- no run loop involved.
+    pub fn park_for_events(max: std::time::Duration) -> bool {
+        if !guest_initialized() {
+            return false;
+        }
+        let shared = SHARED.lock().expect("shared state lock");
+        if !shared.touches.is_empty() {
+            return true;
+        }
+        let _ = INPUT_ARRIVED
+            .wait_timeout(shared, max)
+            .expect("shared state lock");
+        true
+    }
+
     pub fn drain_pointer_samples() -> Vec<RawPointerSample> {
-        if !host_initialized() {
+        if !guest_initialized() {
             return Vec::new();
         }
-        with_host(|host| Ok(std::mem::take(&mut host.pointer_samples))).unwrap_or_default()
+        with_guest(|guest| Ok(std::mem::take(&mut guest.pointer_samples))).unwrap_or_default()
     }
 
     pub fn drain_key_samples() -> Vec<RawKeySample> {
-        if !host_initialized() {
+        if !guest_initialized() {
             return Vec::new();
         }
-        with_host(|host| Ok(std::mem::take(&mut host.key_samples))).unwrap_or_default()
+        with_guest(|guest| Ok(std::mem::take(&mut guest.key_samples))).unwrap_or_default()
     }
 
     pub fn drain_wheel_samples() -> Vec<RawWheelSample> {
-        if !host_initialized() {
+        if !guest_initialized() {
             return Vec::new();
         }
-        with_host(|host| Ok(std::mem::take(&mut host.wheel_samples))).unwrap_or_default()
+        with_guest(|guest| Ok(std::mem::take(&mut guest.wheel_samples))).unwrap_or_default()
     }
 
     pub fn show_native_window(krate: WindowId) -> Result<bool, UiAdapterError> {
-        if !host_initialized() {
+        if !guest_initialized() {
             return Ok(false);
         }
-        with_host(|host| Ok(host.krate == Some(krate)))
+        with_guest(|guest| Ok(guest.krate == Some(krate)))
     }
 
     pub fn set_native_window_title(krate: WindowId, _title: &str) -> Result<bool, UiAdapterError> {
         // iOS windows have no title bars; accepting the call is the honest
-        // no-op, matching how the platform treats every app.
-        if !host_initialized() {
+        // no-op.
+        if !guest_initialized() {
             return Ok(false);
         }
-        with_host(|host| Ok(host.krate == Some(krate)))
+        with_guest(|guest| Ok(guest.krate == Some(krate)))
     }
 
     pub fn close_native_window(krate: WindowId) -> Result<bool, UiAdapterError> {
-        if !host_initialized() {
+        if !guest_initialized() {
             return Ok(false);
         }
-        with_host(|host| {
-            if host.krate == Some(krate) {
-                host.krate = None;
-                host.placements.clear();
-                blit(host);
+        with_guest(|guest| {
+            if guest.krate == Some(krate) {
+                guest.krate = None;
+                guest.placements.clear();
+                guest.dirty = true;
+                blit(guest);
                 Ok(true)
             } else {
                 Ok(false)
@@ -563,31 +572,31 @@ mod real {
     }
 
     pub fn has_native_window(krate: WindowId) -> Result<bool, UiAdapterError> {
-        if !host_initialized() {
+        if !guest_initialized() {
             return Ok(false);
         }
-        with_host(|host| Ok(host.krate == Some(krate)))
+        with_guest(|guest| Ok(guest.krate == Some(krate)))
     }
 
     pub fn redraw_all() -> Result<(), UiAdapterError> {
-        if !host_initialized() {
+        if !guest_initialized() {
             return Ok(());
         }
-        with_host(|host| {
-            if host.dirty {
-                blit(host);
+        with_guest(|guest| {
+            if guest.dirty {
+                blit(guest);
             }
             Ok(())
         })
     }
 
     pub fn window_scale(krate: WindowId) -> f32 {
-        if !host_initialized() {
+        if !guest_initialized() {
             return 1.0;
         }
-        with_host(|host| {
-            Ok(if host.krate == Some(krate) {
-                host.scale
+        with_guest(|guest| {
+            Ok(if guest.krate == Some(krate) {
+                guest.scale
             } else {
                 1.0
             })
@@ -623,6 +632,10 @@ mod stub {
 
     pub fn pump_native_events() -> Result<CollectedNativeEvents, UiAdapterError> {
         Ok(Vec::new())
+    }
+
+    pub fn park_for_events(_max: std::time::Duration) -> bool {
+        false
     }
 
     pub fn drain_pointer_samples() -> Vec<RawPointerSample> {

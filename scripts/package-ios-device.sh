@@ -71,10 +71,18 @@ echo "signed: $OUT"
 # Install over USB (or trusted Wi-Fi). devicectl ships with Xcode 15+.
 # The UUID column, not the model column: device names contain spaces, so
 # field splitting lies. The identifier is the only 36-char hex-dash token.
-DEVICE=$(xcrun devicectl list devices 2>/dev/null \
+# With several iPhones paired, guessing installed onto somebody else's
+# phone once -- so multiple matches now require an explicit DEVICE=<uuid>.
+FOUND=$(xcrun devicectl list devices 2>/dev/null \
   | grep 'available (paired)' | grep iPhone \
-  | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' \
-  | head -1)
+  | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}')
+COUNT=$(echo "$FOUND" | grep -c . || true)
+if [ -z "${DEVICE:-}" ] && [ "$COUNT" -gt 1 ]; then
+  echo "several iPhones are paired; pick one and rerun with DEVICE=<uuid>:" >&2
+  xcrun devicectl list devices | grep 'available (paired)' | grep iPhone >&2
+  exit 1
+fi
+DEVICE="${DEVICE:-$(echo "$FOUND" | head -1)}"
 if [ -n "${DEVICE:-}" ]; then
   xcrun devicectl device install app --device "$DEVICE" "$OUT"
   echo "installed on $DEVICE -- the Krate icon is on your home screen"

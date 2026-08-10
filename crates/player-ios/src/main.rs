@@ -80,15 +80,24 @@ mod player {
 
             #[unsafe(method(applicationDidBecomeActive:))]
             fn did_become_active(&self, _application: &UIApplication) {
-                // Launch has completed by the first activation, so a main
-                // that never returns cannot trip the launch watchdog; the
-                // adapter pumps the run loop from inside the guest's own
-                // frame pacing, so the app stays responsive.
+                // The guest gets its own thread and this callout RETURNS:
+                // the main thread belongs to UIKit. Running the guest here
+                // nested a run loop that never drained the main dispatch
+                // queue -- through which iOS delivers parts of its own
+                // touch pipeline -- and a real iPhone felt every missing
+                // drain as input lag. The adapter marshals UI work back to
+                // the main queue and wakes the guest through a condvar.
                 if self.ivars().started.replace(true) {
                     return;
                 }
-                run_player();
-                std::process::exit(0);
+                std::thread::Builder::new()
+                    .name("krate-guest".to_string())
+                    .stack_size(8 * 1024 * 1024)
+                    .spawn(|| {
+                        run_player();
+                        std::process::exit(0);
+                    })
+                    .expect("spawn the guest thread");
             }
         }
     );

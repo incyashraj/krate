@@ -1918,6 +1918,7 @@ dependencies = [
 name = "krate-adapter-ios"
 version = "0.1.9"
 dependencies = [
+ "dispatch2",
  "krate-adapter-common",
  "libc",
  "objc2 0.6.4",
