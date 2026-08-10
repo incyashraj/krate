@@ -91,6 +91,12 @@ mod real {
         pointer_samples: Vec<RawPointerSample>,
         key_samples: Vec<RawKeySample>,
         wheel_samples: Vec<RawWheelSample>,
+        /// Scroll deltas accumulate here between drains: an iPhone reports
+        /// touches at 120 Hz, and queueing one wheel event per report made
+        /// the app replay a two-second backlog after the finger stopped
+        /// (one frame per event, 16 ms floor). One coalesced delta per
+        /// drain is what a finger actually means.
+        pending_scroll: Option<(f32, f32, f32, f32)>,
         gesture: Option<TouchGesture>,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
@@ -265,6 +271,7 @@ mod real {
                     pointer_samples: Vec::new(),
                     key_samples: Vec::new(),
                     wheel_samples: Vec::new(),
+                    pending_scroll: None,
                     gesture: None,
                     hovered: None,
                     pressed_widget: None,
@@ -329,14 +336,12 @@ mod real {
                         if gesture.scrolling
                             && (dx.abs() > f32::EPSILON || dy.abs() > f32::EPSILON)
                         {
-                            guest.wheel_samples.push(RawWheelSample {
-                                window: krate,
-                                x: touch.x,
-                                y: touch.y,
-                                dx: -dx,
-                                dy: -dy,
-                                modifiers: Default::default(),
-                            });
+                            let pending =
+                                guest.pending_scroll.get_or_insert((0.0, 0.0, touch.x, touch.y));
+                            pending.0 -= dx;
+                            pending.1 -= dy;
+                            pending.2 = touch.x;
+                            pending.3 = touch.y;
                         }
                     }
                 }
@@ -535,7 +540,23 @@ mod real {
         if !guest_initialized() {
             return Vec::new();
         }
-        with_guest(|guest| Ok(std::mem::take(&mut guest.wheel_samples))).unwrap_or_default()
+        with_guest(|guest| {
+            let mut samples = std::mem::take(&mut guest.wheel_samples);
+            if let (Some((dx, dy, x, y)), Some(krate)) =
+                (guest.pending_scroll.take(), guest.krate)
+            {
+                samples.push(RawWheelSample {
+                    window: krate,
+                    x,
+                    y,
+                    dx,
+                    dy,
+                    modifiers: Default::default(),
+                });
+            }
+            Ok(samples)
+        })
+        .unwrap_or_default()
     }
 
     pub fn show_native_window(krate: WindowId) -> Result<bool, UiAdapterError> {

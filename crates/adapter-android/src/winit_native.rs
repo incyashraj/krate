@@ -116,6 +116,11 @@ mod real {
         pointer_samples: Vec<RawPointerSample>,
         key_samples: Vec<RawKeySample>,
         wheel_samples: Vec<RawWheelSample>,
+        /// Touch-scroll deltas accumulate here between drains: 120 Hz
+        /// panels flood one event per report, and an app that draws one
+        /// frame per event replays a seconds-long backlog after the finger
+        /// stops. One coalesced delta per drain is the gesture's meaning.
+        pending_scroll: Option<(WindowId, f32, f32, f32, f32)>,
         modifiers: Modifiers,
     }
 
@@ -354,17 +359,17 @@ mod real {
                                 if scrolling && (dx.abs() > f32::EPSILON || dy.abs() > f32::EPSILON)
                                 {
                                     self.cursor.insert(native, (x, y));
-                                    // Content follows the finger: a finger
-                                    // moving up drags the list deeper, which
-                                    // is positive dy in the wheel contract.
-                                    self.wheel_samples.push(RawWheelSample {
-                                        window: krate,
-                                        x,
-                                        y,
-                                        dx: -dx,
-                                        dy: -dy,
-                                        modifiers: self.modifiers,
-                                    });
+                                    // Content follows the finger (positive
+                                    // dy scrolls deeper); deltas coalesce
+                                    // so a 120 Hz flood cannot outrun the
+                                    // app's frame rate.
+                                    let pending = self
+                                        .pending_scroll
+                                        .get_or_insert((krate, 0.0, 0.0, x, y));
+                                    pending.1 -= dx;
+                                    pending.2 -= dy;
+                                    pending.3 = x;
+                                    pending.4 = y;
                                 }
                             }
                         }
@@ -839,12 +844,28 @@ mod real {
         if !host_initialized() {
             return Vec::new();
         }
-        WINIT_HOST.with(|slot| {
+        let coalesced = with_host(|host| {
+            Ok(host.app.pending_scroll.take().map(|(krate, dx, dy, x, y)| {
+                RawWheelSample {
+                    window: krate,
+                    x,
+                    y,
+                    dx,
+                    dy,
+                    modifiers: host.app.modifiers,
+                }
+            }))
+        })
+        .ok()
+        .flatten();
+        let mut samples = WINIT_HOST.with(|slot| {
             slot.borrow_mut()
                 .as_mut()
                 .map(|host| std::mem::take(&mut host.app.wheel_samples))
                 .unwrap_or_default()
-        })
+        });
+        samples.extend(coalesced);
+        samples
     }
 
     /// Whether a native window is currently tracked for the id.
