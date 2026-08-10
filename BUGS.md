@@ -93,9 +93,20 @@ Fix:      Three cuts, blit measured 15-21 ms -> 5.8-6.7 ms. The paint
           every platform's blit. And the iOS adapter caps its raster
           scale at 2x, letting UIImageView's GPU compositor do the final
           2x->3x stretch for free; the wgpu backend (mobile plan phase 3)
-          is the eventual full-density answer. Android's emulator hid
-          the same class of cost -- its softbuffer path has no free GPU
-          stretch, so the audit there is queued as M1 follow-up.
+          is the eventual full-density answer.
+          The Android leg, audited 2026-08-10: 129.8 ms per paint on the
+          emulator, three measured causes. The identity fast path missed
+          on float dust (2.625 x a rounded logical size = scale 1.000004;
+          strict equality sent 2.6M pixels through bilinear -- now snaps
+          within half a pixel). The painter wrote row-by-row into the
+          ANativeWindow's uncached write-combined memory (now paints a
+          cached staging Vec, bulk-copies once). And redraw_all repainted
+          every pump, dirty or not (both mobile adapters carry a dirty
+          flag now; a still image costs nothing, and iOS stops
+          double-blitting). Sections before: acquire 9.1, paint 41.8,
+          present 17.8; after: 2.7, 12.8, 10.6 -- 26-31 ms per paint,
+          ~5x, real devices expected faster. Full-density 60 fps remains
+          the wgpu backend's job.
 
 ### K-088 -- the Android blit ignores display scale, so every app is pixelated
 Status:   fixed
