@@ -27,6 +27,9 @@ dispatch2 = "0.3"
 # its matching wgpu, so the two can never drift apart.
 vello = "0.9"
 pollster = "0.4"
+# Shaping for the GPU text pass. One peniko across parley and vello, so
+# fonts flow between them without conversion.
+parley = "0.11"
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
     "std",
     "NSArray",

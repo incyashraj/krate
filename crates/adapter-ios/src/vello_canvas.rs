@@ -39,6 +39,11 @@ pub struct GpuCanvas {
     width: u32,
     height: u32,
     scale: f32,
+    /// Shaping contexts plus a cache of finished glyph runs: the same
+    /// strings redraw every frame, and shaping is the expensive half.
+    font_cx: parley::FontContext,
+    layout_cx: parley::LayoutContext<()>,
+    glyph_cache: HashMap<TextKey, Vec<ShapedRun>>,
     /// Uploaded images keyed by the source Arc's address: gram's photos
     /// are generated once and drawn every frame, and re-uploading 429 KB
     /// per photo per frame would waste the bus the GPU just freed.
@@ -112,7 +117,16 @@ impl GpuCanvas {
                 width: physical_width,
                 height: physical_height,
                 present_mode: wgpu::PresentMode::Fifo,
-                alpha_mode: caps.alpha_modes[0],
+                // Opaque when offered: a compositor blending our alpha
+                // with whatever sits beneath the layer reads as flicker.
+                alpha_mode: if caps
+                    .alpha_modes
+                    .contains(&wgpu::CompositeAlphaMode::Opaque)
+                {
+                    wgpu::CompositeAlphaMode::Opaque
+                } else {
+                    caps.alpha_modes[0]
+                },
                 view_formats: vec![],
                 desired_maximum_frame_latency: 2,
             },
@@ -136,6 +150,9 @@ impl GpuCanvas {
             height: physical_height,
             scale,
             images: HashMap::new(),
+            font_cx: parley::FontContext::new(),
+            layout_cx: parley::LayoutContext::new(),
+            glyph_cache: HashMap::new(),
         })
     }
 
@@ -411,9 +428,31 @@ impl GpuCanvas {
                         ));
                     scene.draw_image(&gpu_image, transform);
                 }
-                CanvasOp::Text { .. } => {
-                    // Glyph rendering joins in the next pass; the frame
-                    // stays honest about everything else meanwhile.
+                CanvasOp::Text {
+                    origin,
+                    font_size,
+                    color,
+                    weight,
+                    italic,
+                    letter_spacing,
+                    family,
+                    text,
+                } => {
+                    let runs = self
+                        .shape(text, *font_size, *weight, *italic, *letter_spacing, *family)
+                        .clone();
+                    let transform =
+                        base * Affine::translate((origin.0 as f64, origin.1 as f64));
+                    let brush = Brush::Solid(unpack(*color));
+                    for run in &runs {
+                        scene
+                            .draw_glyphs(&run.font)
+                            .font_size(run.font_size)
+                            .normalized_coords(&run.coords)
+                            .transform(transform)
+                            .brush(&brush)
+                            .draw(Fill::NonZero, run.glyphs.iter().copied());
+                    }
                 }
             }
         }
@@ -475,6 +514,110 @@ impl GpuCanvas {
         }
         self.images.insert(key, gpu_image.clone());
         gpu_image
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct TextKey {
+    text: String,
+    size_bits: u32,
+    weight: u16,
+    italic: bool,
+    spacing_bits: u32,
+    family: u8,
+}
+
+#[derive(Clone)]
+struct ShapedRun {
+    font: vello::peniko::FontData,
+    font_size: f32,
+    coords: Vec<i16>,
+    glyphs: Vec<vello::Glyph>,
+}
+
+impl GpuCanvas {
+    /// Shape a canvas text run: parley layout, glyphs positioned so the
+    /// draw origin is the first line's baseline -- the canvas draw-text
+    /// contract, matching the CPU raster.
+    fn shape(
+        &mut self,
+        text: &str,
+        font_size: f32,
+        weight: u16,
+        italic: bool,
+        letter_spacing: f32,
+        family: u8,
+    ) -> &Vec<ShapedRun> {
+        let key = TextKey {
+            text: text.to_string(),
+            size_bits: font_size.to_bits(),
+            weight,
+            italic,
+            spacing_bits: letter_spacing.to_bits(),
+            family,
+        };
+        if !self.glyph_cache.contains_key(&key) {
+            let mut builder =
+                self.layout_cx
+                    .ranged_builder(&mut self.font_cx, text, 1.0, true);
+            builder.push_default(match family {
+                1 => parley::GenericFamily::Serif,
+                2 => parley::GenericFamily::Monospace,
+                _ => parley::GenericFamily::SansSerif,
+            });
+            builder.push_default(parley::StyleProperty::FontSize(font_size));
+            builder.push_default(parley::StyleProperty::FontWeight(
+                parley::FontWeight::new((weight as f32).clamp(100.0, 900.0)),
+            ));
+            if italic {
+                builder.push_default(parley::StyleProperty::FontStyle(
+                    parley::FontStyle::Italic,
+                ));
+            }
+            if letter_spacing != 0.0 {
+                builder.push_default(parley::StyleProperty::LetterSpacing(letter_spacing));
+            }
+            let mut layout: parley::Layout<()> = builder.build(text);
+            layout.break_all_lines(None);
+            layout.align(parley::Alignment::Start, parley::AlignmentOptions::default());
+
+            let mut runs = Vec::new();
+            let mut first_baseline: Option<f32> = None;
+            for line in layout.lines() {
+                for item in line.items() {
+                    let parley::PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                        continue;
+                    };
+                    let run = glyph_run.run();
+                    let baseline = glyph_run.baseline();
+                    let shift = *first_baseline.get_or_insert(baseline);
+                    let mut x = glyph_run.offset();
+                    let glyphs: Vec<vello::Glyph> = glyph_run
+                        .glyphs()
+                        .map(|g| {
+                            let glyph = vello::Glyph {
+                                id: g.id as u32,
+                                x: x + g.x,
+                                y: baseline - shift + g.y,
+                            };
+                            x += g.advance;
+                            glyph
+                        })
+                        .collect();
+                    runs.push(ShapedRun {
+                        font: run.font().clone(),
+                        font_size: run.font_size(),
+                        coords: run.normalized_coords().to_vec(),
+                        glyphs,
+                    });
+                }
+            }
+            if self.glyph_cache.len() >= 512 {
+                self.glyph_cache.clear();
+            }
+            self.glyph_cache.insert(key.clone(), runs);
+        }
+        self.glyph_cache.get(&key).expect("just inserted")
     }
 }
 

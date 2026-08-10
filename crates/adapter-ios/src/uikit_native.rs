@@ -706,11 +706,9 @@ mod real {
                         // the pixels.
                         DispatchQueue::main().exec_sync(|| {
                             if let Some(main_side) = MAIN_SIDE.0.get() {
-                                main_side.view.setHidden(false);
-                                unsafe {
-                                    let v: &UIView = &main_side.view;
-                                    v.setOpaque(false);
-                                }
+                                // The stale CPU frame must not fight the
+                                // metal layer -- clearing the image is
+                                // what stops the flashing.
                                 main_side.view.setImage(None);
                             }
                         });
