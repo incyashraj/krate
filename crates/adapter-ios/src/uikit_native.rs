@@ -531,7 +531,9 @@ mod real {
                 .collect();
             let drawn = guest.placements.len();
             guest.dirty = true;
-            blit(guest);
+            if !GPU_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
+                blit(guest);
+            }
             Ok(drawn)
         })
     }
@@ -657,6 +659,12 @@ mod real {
             const { RefCell::new(None) };
     }
 
+    /// True once the GPU renders this app's frames: the CPU blit then has
+    /// nothing to show and painting 1.4 million invisible pixels per frame
+    /// is pure heat.
+    static GPU_ACTIVE: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
+
     /// Render one recorded canvas frame on the GPU. True when claimed;
     /// false hands the frame back to the CPU path (init failed, wrong
     /// window, not a list this consumer knows).
@@ -701,6 +709,7 @@ mod real {
                 .unwrap_or_else(|_| Err("gpu init panicked (unsupported device)".into()));
                 match created {
                     Ok(gpu) => {
+                        GPU_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
                         // The image view would cover the metal layer with
                         // its last CPU frame; hide it once the GPU owns
                         // the pixels.

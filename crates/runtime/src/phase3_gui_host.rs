@@ -2402,6 +2402,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::Clear(pack_color(fill.r, fill.g, fill.b, fill.a)));
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2419,6 +2422,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         h: f32,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::SetClip(Some((x, y, w, h))));
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2432,6 +2438,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
 
     fn clear_clip(&mut self, canvas: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::SetClip(None));
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2447,6 +2456,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::FillRect { rect: (area.x, area.y, area.width, area.height), color: pack_color(fill.r, fill.g, fill.b, fill.a) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2469,6 +2481,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::FillCircle { center: (center.x, center.y), radius, color: pack_color(fill.r, fill.g, fill.b, fill.a) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2491,6 +2506,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         stroke: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::StrokeCircle { center: (center.x, center.y), radius, width, color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2513,6 +2531,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::FillRoundRect { rect: (area.x, area.y, area.width, area.height), radii: (radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left), color: pack_color(fill.r, fill.g, fill.b, fill.a) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2542,6 +2563,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         stroke: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::StrokeRoundRect { rect: (area.x, area.y, area.width, area.height), radii: (radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left), width, color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2572,6 +2596,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         shadow: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::DropShadowRoundRect { rect: (area.x, area.y, area.width, area.height), radii: (radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left), blur, color: pack_color(shadow.r, shadow.g, shadow.b, shadow.a) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2601,6 +2628,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         stops: Vec<gfx::types::GradientStop>,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::LinearGradientStops { rect: (area.x, area.y, area.width, area.height), angle_degrees, stops: stops.iter().map(|s| (s.offset, pack_color(s.color.r, s.color.g, s.color.b, s.color.a))).collect() });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2634,6 +2664,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         outer: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::RadialGradient { center: (center.x, center.y), radius, inner: pack_color(inner.r, inner.g, inner.b, inner.a), outer: pack_color(outer.r, outer.g, outer.b, outer.a) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2656,6 +2689,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         bottom: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::LinearGradient { rect: (area.x, area.y, area.width, area.height), top: pack_color(top.r, top.g, top.b, top.a), bottom: pack_color(bottom.r, bottom.g, bottom.b, bottom.a) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2679,6 +2715,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         width: f32,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::StrokeRect { rect: (area.x, area.y, area.width, area.height), width, color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2703,6 +2742,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         ink: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::Text { origin: (origin.x, origin.y), font_size, color: pack_color(ink.r, ink.g, ink.b, ink.a), weight: 400, italic: false, letter_spacing: 0.0, family: 0, text: text.clone() });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2749,6 +2791,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         style: gfx::types::TextStyle,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::Text { origin: (origin.x, origin.y), font_size, color: pack_color(ink.r, ink.g, ink.b, ink.a), weight: style.weight, italic: style.italic, letter_spacing: style.letter_spacing, family: match style.family { gfx::types::FontFamily::Sans => 0, gfx::types::FontFamily::Serif => 1, gfx::types::FontFamily::Mono => 2 }, text: text.clone() });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2795,6 +2840,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         stroke: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::StrokeArc { center: (center.x, center.y), radius, start_degrees, sweep_degrees, width, color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let mut canvases = self.canvases.borrow_mut();
         let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
@@ -2821,6 +2869,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         rgba: Vec<u8>,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::PixelsRound { rect: (area.x, area.y, area.width, area.height), radii: (radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left), image: std::sync::Arc::new(krate_adapter_common::ui::ImagePixels { width, height, rgba: rgba.clone() }) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let image = match ImagePixels::new(width, height, rgba) {
             Ok(image) => image,
             Err(error) => return Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
@@ -2854,6 +2905,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         rgba: Vec<u8>,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::Pixels { rect: (area.x, area.y, area.width, area.height), image: std::sync::Arc::new(krate_adapter_common::ui::ImagePixels { width, height, rgba: rgba.clone() }) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         // The guest is the untrusted side: a buffer shorter than its stated
         // size would read past the end on the last row. ImagePixels checks
         // that once, here, rather than in the sampling loop.
@@ -2880,6 +2934,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         rgba: Vec<u8>,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
         self.record_op(canvas, crate::canvas_list::CanvasOp::Sprite { center: (center.x, center.y), dst: (dst.width, dst.height), angle, image: std::sync::Arc::new(krate_adapter_common::ui::ImagePixels { width, height, rgba: rgba.clone() }) });
+        if self.lists_enabled() {
+            return Ok(Ok(()));
+        }
         let image = match ImagePixels::new(width, height, rgba) {
             Ok(image) => image,
             Err(error) => return Ok(Err(gfx::types::GfxError::Unsupported(error.to_string()))),
@@ -2917,13 +2974,12 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         if let Some(previous) = self.last_present.get() {
             let elapsed = previous.elapsed();
             if elapsed < FRAME_BUDGET {
-                let remainder = FRAME_BUDGET - elapsed;
-                // Parking beats sleeping where the adapter can: the run
-                // loop keeps servicing lifecycle traffic between frames,
-                // which a dead sleep starves.
-                if !self.dispatcher().park_for_events(remainder) {
-                    std::thread::sleep(remainder);
-                }
+                // A plain sleep, deliberately NOT the input-waking park:
+                // waking on touches let a 120 Hz finger present at touch
+                // rate, exhaust the drawable pool, and stall the next
+                // acquire for its full one-second timeout -- the swipe
+                // itself caused the freeze the finger then felt.
+                std::thread::sleep(FRAME_BUDGET - elapsed);
             }
         }
         self.last_present.set(Some(std::time::Instant::now()));
