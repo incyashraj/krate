@@ -102,14 +102,20 @@ pub fn draw_image(
     // Bilinear-sampling 3 million pixels that need no sampling was the
     // single largest cost in the phone frame budget; a straight row copy is
     // the whole job.
-    if scale == 1.0
-        && ox.fract() == 0.0
-        && oy.fract() == 0.0
+    // Identity within float dust: a 2.625x display times a rounded logical
+    // size lands at scale 1.000004, and a strict equality sent 2.6 million
+    // pixels through bilinear for nothing (the Android player painted at 8
+    // frames a second because of exactly that). Within half a pixel of
+    // identity, snapping IS the honest interpretation.
+    let near_identity = (scale - 1.0).abs() < 2e-3
+        && (draw_w - image.width as f32).abs() < 1.0
+        && (draw_h - image.height as f32).abs() < 1.0;
+    if near_identity
         && clip.is_none()
         && image.rgba.len() == image.width as usize * image.height as usize * 4
     {
-        let dst_x = ox as i64;
-        let dst_y = oy as i64;
+        let dst_x = ox.round() as i64;
+        let dst_y = oy.round() as i64;
         let mut all_opaque = true;
         'rows: for sy in 0..image.height as i64 {
             let ty = dst_y + sy;

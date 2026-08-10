@@ -132,6 +132,16 @@ mod real {
         placements: Vec<WidgetPlacement>,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
+        /// Painted into by the CPU painter, then copied to the window
+        /// buffer in one pass. The window buffer is uncached
+        /// write-combined memory, and the painter's scattered row writes
+        /// there cost 40 ms a frame on the emulator; sequential bulk copy
+        /// is what that memory is for (K-089's Android leg).
+        staging: Vec<u32>,
+        /// Repaint only when something actually changed: the pump used to
+        /// repaint every tick, spending whole frames re-drawing a still
+        /// image.
+        dirty: bool,
     }
 
     /// Normalize a winit logical key into the portable key-name shape.
@@ -196,6 +206,8 @@ mod real {
                             placements: Vec::new(),
                             hovered: None,
                             pressed_widget: None,
+                            staging: Vec::new(),
+                            dirty: true,
                         },
                     );
                 }
@@ -220,6 +232,7 @@ mod real {
             // presenting into a dead window -- black screen at best.
             for tracked in self.windows.values_mut() {
                 tracked.surface = None;
+                tracked.dirty = true;
             }
             self.touch = None;
         }
@@ -550,11 +563,11 @@ mod real {
         if surface.resize(width, height).is_err() {
             return;
         }
-        let Ok(mut buffer) = surface.buffer_mut() else {
-            return;
-        };
+        let pixel_count = width.get() as usize * height.get() as usize;
+        tracked.staging.clear();
+        tracked.staging.resize(pixel_count, 0);
         krate_adapter_common::painter::paint_placements(
-            &mut buffer,
+            &mut tracked.staging,
             width.get(),
             height.get(),
             tracked.window.scale_factor() as f32,
@@ -564,7 +577,12 @@ mod real {
                 pressed: tracked.pressed_widget,
             },
         );
+        let Ok(mut buffer) = surface.buffer_mut() else {
+            return;
+        };
+        buffer.copy_from_slice(&tracked.staging);
         let _ = buffer.present();
+        tracked.dirty = false;
     }
 
     /// Store drawn-widget placements for a window and repaint it.
@@ -591,6 +609,7 @@ mod real {
                         .cloned()
                         .collect();
                     drawn = tracked.placements.len();
+                    tracked.dirty = true;
                     draw_placements(tracked);
                 }
             }
@@ -605,7 +624,12 @@ mod real {
         }
         with_host(|host| {
             for tracked in host.app.windows.values_mut() {
-                draw_placements(tracked);
+                // A clean window with a live surface has nothing to show
+                // that it is not already showing; repainting it anyway was
+                // a whole extra frame of work per pump.
+                if tracked.dirty || tracked.surface.is_none() {
+                    draw_placements(tracked);
+                }
             }
             Ok(())
         })

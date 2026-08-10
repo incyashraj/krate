@@ -80,6 +80,10 @@ mod real {
         key_samples: Vec<RawKeySample>,
         wheel_samples: Vec<RawWheelSample>,
         gesture: Option<TouchGesture>,
+        /// Repaint only when something changed: the pump used to blit every
+        /// tick, doubling the frame cost for a still image (K-089's second
+        /// leg, shared with Android).
+        dirty: bool,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
         /// The blit target, reused across frames: allocating and zeroing a
@@ -224,6 +228,7 @@ mod real {
             key_samples: Vec::new(),
             wheel_samples: Vec::new(),
             gesture: None,
+            dirty: true,
             hovered: None,
             pressed_widget: None,
             paint_buffer: Vec::new(),
@@ -388,6 +393,7 @@ mod real {
             host.image_view.setImage(Some(&ui_image));
         });
         host.paint_buffer = buffer;
+        host.dirty = false;
     }
 
     // ------------------------------------------------------------------
@@ -439,6 +445,7 @@ mod real {
                 .cloned()
                 .collect();
             let drawn = host.placements.len();
+            host.dirty = true;
             blit(host);
             Ok(drawn)
         })
@@ -520,7 +527,9 @@ mod real {
             return Ok(());
         }
         with_host(|host| {
-            blit(host);
+            if host.dirty {
+                blit(host);
+            }
             Ok(())
         })
     }
