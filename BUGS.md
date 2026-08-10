@@ -100,6 +100,22 @@ Fix:      A UiAdapter::park_for_events contract: an adapter that can wait
           effect as the watchdog kill, minus the kill, until M3's real
           suspend/resume. Desktop untouched: park defaults to false and
           the old sleep remains.
+          Second wave, each cut from an on-device number after the thumb
+          said "still the same". The guest moved to its own thread (a
+          nested run loop never drains the main dispatch queue, and iOS
+          routes parts of its own touch pipeline through it). Touch-scroll
+          deltas coalesce (120 Hz reports vs one frame per event queued a
+          two-second replay). The window joined its UIWindowScene (an
+          unattached window rides a legacy event path: 116 touch callouts
+          in a whole session became a steady 60 Hz stream, gap p50 16.7
+          ms, measured on-device). The guest thread runs user-interactive
+          QoS. Canvas text layouts cache behind an Rc; rounded photo
+          blits skip the SDF outside the corner bands.
+          What the numbers say remains: blit 0.5 ms, event turnaround
+          near zero, frames at ~37 ms -- CPU raster at phone resolution
+          IS the frame. A 120 Hz-native feel is not reachable by CPU
+          cuts; it is the wgpu backend's job, now the mobile plan of
+          record for rendering.
 
 ### K-089 -- phone-resolution CPU raster spent the whole frame budget
 Status:   fixed (three cuts, measured before and after)
