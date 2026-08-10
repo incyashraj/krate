@@ -465,6 +465,10 @@ impl WindowAdapter for IosUikitPrototypeUiAdapter {
 }
 
 impl UiAdapter for IosUikitPrototypeUiAdapter {
+    fn park_for_events(&self, max: std::time::Duration) -> bool {
+        uikit_native::park_for_events(max)
+    }
+
     fn window_scale(&self, id: WindowId) -> f32 {
         uikit_native::window_scale(id)
     }

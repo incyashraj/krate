@@ -178,6 +178,12 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.info()
     }
 
+    /// Park until a native event or the deadline; false means the adapter
+    /// cannot wait natively and the caller should sleep itself.
+    pub fn park_for_events(&self, max: std::time::Duration) -> bool {
+        self.adapter.park_for_events(max)
+    }
+
     /// Display scale for a window; 1.0 wherever the adapter has no answer.
     pub fn window_scale(&self, id: WindowId) -> f32 {
         self.adapter.window_scale(id)

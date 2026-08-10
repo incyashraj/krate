@@ -1893,7 +1893,20 @@ impl ui::events::Host for Phase3GuiHost {
                 // path and still saves on the way out.
                 return Ok(Some(close));
             }
-            std::thread::sleep(std::time::Duration::from_millis(WAIT_POLL_INTERVAL_MILLIS));
+            // An adapter that can park inside its native event loop wakes
+            // the instant input arrives, so its park can be LONG -- waking
+            // is event-driven, and short slices just burn battery (a phone
+            // reached thermal-serious from exactly that churn). The blind
+            // sleep stays short because nothing can interrupt it.
+            let park = std::time::Duration::from_millis(match deadline {
+                Some(_) => WAIT_POLL_INTERVAL_MILLIS,
+                None => 250,
+            });
+            if !self.dispatcher().park_for_events(park) {
+                std::thread::sleep(std::time::Duration::from_millis(
+                    WAIT_POLL_INTERVAL_MILLIS,
+                ));
+            }
         }
     }
 }
@@ -2829,7 +2842,13 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         if let Some(previous) = self.last_present.get() {
             let elapsed = previous.elapsed();
             if elapsed < FRAME_BUDGET {
-                std::thread::sleep(FRAME_BUDGET - elapsed);
+                let remainder = FRAME_BUDGET - elapsed;
+                // Parking beats sleeping where the adapter can: the run
+                // loop keeps servicing lifecycle traffic between frames,
+                // which a dead sleep starves.
+                if !self.dispatcher().park_for_events(remainder) {
+                    std::thread::sleep(remainder);
+                }
             }
         }
         self.last_present.set(Some(std::time::Instant::now()));

@@ -65,6 +65,19 @@ mod player {
         // SAFETY: the implemented methods match UIApplicationDelegate's
         // signatures.
         unsafe impl UIApplicationDelegate for KrateAppDelegate {
+            #[unsafe(method(applicationDidEnterBackground:))]
+            fn did_enter_background(&self, _application: &UIApplication) {
+                // The player's main never returns to UIKit, so iOS cannot
+                // suspend the process the normal way -- it waits ten
+                // seconds for a scene update that cannot come and then
+                // SIGKILLs (0x8BADF00D, read off a real device's crash
+                // log). Exiting on background is the honest v1: closing
+                // the player and reopening is exactly what relaunching
+                // after that kill looked like, minus the kill. Real
+                // suspend/resume arrives with M3's lifecycle work.
+                std::process::exit(0);
+            }
+
             #[unsafe(method(applicationDidBecomeActive:))]
             fn did_become_active(&self, _application: &UIApplication) {
                 // Launch has completed by the first activation, so a main

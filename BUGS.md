@@ -71,6 +71,36 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-090 -- the iOS player ran hot, died in the background, and felt late
+Status:   fixed in main (three cuts, each from a crash log or a measured
+          probe); device re-verification with the founder's thumb pending
+Owner:    lead (M2 workstream)
+Severity: blocker (a stranger's first iPhone impression)
+Class:    our-code
+Found:    2026-08-10, by Yashraj on his iPhone 13 Pro: "slow, laggy and
+          late in response" -- against a simulator that felt fine
+Evidence: The device's own crash logs, pulled over devicectl. One:
+          0x8BADF00D, "scene-update watchdog transgression ... exhausted
+          real time allowance of 10.00 seconds", WatchdogVisibility:
+          Background -- every backgrounding silently killed the app,
+          because the player's main never returns to UIKit and iOS could
+          not suspend it. Two: a cpu_resource violation with "Thermal
+          Level 4 / Thermal State serious" -- the 100 Hz idle poll churn
+          (park 10 ms, wake, poll, repeat, forever) heated the phone and
+          the throttled silicon made everything feel slow. Three: the
+          blind 10 ms sleep in events.wait meant a touch could land
+          mid-nap before anything noticed it.
+Fix:      A UiAdapter::park_for_events contract: an adapter that can wait
+          inside its native event loop does, and the host skips its blind
+          sleep -- iOS parks in NSRunLoop, which wakes the instant input
+          arrives. Idle parks are 250 ms (waking is event-driven; short
+          slices only burned battery); frame pacing parks instead of
+          sleeping so lifecycle traffic flows mid-animation; and
+          backgrounding exits the process cleanly -- the same visible
+          effect as the watchdog kill, minus the kill, until M3's real
+          suspend/resume. Desktop untouched: park defaults to false and
+          the old sleep remains.
+
 ### K-089 -- phone-resolution CPU raster spent the whole frame budget
 Status:   fixed (three cuts, measured before and after)
 Owner:    lead (M2 workstream)

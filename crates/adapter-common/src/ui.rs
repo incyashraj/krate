@@ -1239,6 +1239,15 @@ pub struct RawWheelSample {
 }
 
 pub trait UiAdapter: WindowAdapter {
+    /// Park the calling thread until a native event arrives or `max`
+    /// elapses, whichever is first. Returns true if this adapter actually
+    /// waited natively -- the host then skips its own blind sleep, so a
+    /// touch wakes the app immediately instead of landing mid-nap. The
+    /// default does not wait and the host sleeps as it always has.
+    fn park_for_events(&self, _max: std::time::Duration) -> bool {
+        false
+    }
+
     /// The display scale of a window, physical pixels per logical pixel.
     ///
     /// 1.0 everywhere a host has not wired it. Adapters that know better --

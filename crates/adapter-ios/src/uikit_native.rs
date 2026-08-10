@@ -244,6 +244,21 @@ mod real {
         }
     }
 
+    /// Block in the run loop until an event arrives or the deadline passes.
+    /// This is what makes touch latency vanish: the loop wakes on input
+    /// instead of the host thread sleeping through it.
+    pub fn park_for_events(max: std::time::Duration) -> bool {
+        if !host_initialized() {
+            return false;
+        }
+        unsafe {
+            let run_loop = NSRunLoop::mainRunLoop();
+            let deadline = NSDate::dateWithTimeIntervalSinceNow(max.as_secs_f64());
+            let _ = run_loop.runMode_beforeDate(NSDefaultRunLoopMode, &deadline);
+        }
+        true
+    }
+
     /// The tap-or-scroll synthesis, identical in spirit to the Android
     /// adapter: within the slop a touch is a tap, past it a scroll.
     fn digest_touches(host: &mut Host) {
@@ -342,6 +357,7 @@ mod real {
     /// one autoreleasepool: the macOS adapter's 46 GB lesson, honored here
     /// from day one.
     fn blit(host: &mut Host) {
+        let t0 = std::time::Instant::now();
         let phys_w = (host.logical.width as f32 * host.scale) as usize;
         let phys_h = (host.logical.height as f32 * host.scale) as usize;
         if phys_w == 0 || phys_h == 0 {
@@ -394,6 +410,37 @@ mod real {
         });
         host.paint_buffer = buffer;
         host.dirty = false;
+        STATS.with(|stats| {
+            let mut stats = stats.borrow_mut();
+            let now = std::time::Instant::now();
+            if let Some(last) = stats.last_blit {
+                stats.interval_ms += (now - last).as_secs_f64() * 1000.0;
+            }
+            stats.last_blit = Some(now);
+            stats.blit_ms += t0.elapsed().as_secs_f64() * 1000.0;
+            stats.frames += 1;
+            if stats.frames % 60 == 0 {
+                eprintln!(
+                    "krate-ios: blit {:.1} ms, interval {:.1} ms (60-frame avg)",
+                    stats.blit_ms / 60.0,
+                    stats.interval_ms / 60.0
+                );
+                stats.blit_ms = 0.0;
+                stats.interval_ms = 0.0;
+            }
+        });
+    }
+
+    #[derive(Default)]
+    struct BlitStats {
+        frames: u64,
+        blit_ms: f64,
+        interval_ms: f64,
+        last_blit: Option<std::time::Instant>,
+    }
+
+    thread_local! {
+        static STATS: RefCell<BlitStats> = RefCell::new(BlitStats::default());
     }
 
     // ------------------------------------------------------------------

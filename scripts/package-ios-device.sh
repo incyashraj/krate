@@ -69,7 +69,12 @@ codesign --force --sign "$IDENTITY" \
 echo "signed: $OUT"
 
 # Install over USB (or trusted Wi-Fi). devicectl ships with Xcode 15+.
-DEVICE=$(xcrun devicectl list devices 2>/dev/null | awk '/iPhone/ {print $NF; exit}')
+# The UUID column, not the model column: device names contain spaces, so
+# field splitting lies. The identifier is the only 36-char hex-dash token.
+DEVICE=$(xcrun devicectl list devices 2>/dev/null \
+  | grep 'available (paired)' | grep iPhone \
+  | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' \
+  | head -1)
 if [ -n "${DEVICE:-}" ]; then
   xcrun devicectl device install app --device "$DEVICE" "$OUT"
   echo "installed on $DEVICE -- the Krate icon is on your home screen"
