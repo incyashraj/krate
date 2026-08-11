@@ -71,6 +71,30 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-091 -- every app launch blocks ~68 ms on a telemetry round-trip
+Status:   open
+Owner:    unclaimed
+Severity: blocker
+Class:    our-code
+Found:    2026-08-11, decomposing the "is Krate slower than native"
+          question for outreach claims -- the answer was yes, and this
+          was 91% of the reason
+Evidence: Median wall time, `krate run` on an 18 KB app, this Mac:
+            normal                       73.9 ms
+            KRATE_NO_USAGE=1              6.4 ms
+            krate --version (load only)   5.9 ms
+            runtime compile+run           3.3 ms   (criterion)
+            steady state                    61 us  (criterion)
+          The runtime is fast. The product is not, because
+          crates/cli/src/usage.rs:250 joins the reporting thread against
+          a 600 ms deadline on the way out -- the right fix for a lost
+          event (a detached thread loses the race with process exit) put
+          in the wrong place: the user's launch path.
+Fix:      Never block a launch on the network. Queue the event to a local
+          file and flush it on the NEXT launch -- nothing is lost and the
+          cost is zero. Expected: ~74 ms -> ~7 ms per launch, a 10x
+          improvement in the only latency number a user can feel.
+
 ### K-090 -- the iOS player ran hot, died in the background, and felt late
 Status:   fixed in main (three cuts, each from a crash log or a measured
           probe); device re-verification with the founder's thumb pending
