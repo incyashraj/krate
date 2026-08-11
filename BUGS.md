@@ -72,8 +72,9 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-101 -- a network fetch freezes the app for its whole duration
-Status:   open
-Owner:    unclaimed
+Status:   fixed 2026-08-12 -- `begin`/`poll`/`cancel` ship alongside the
+          blocking `fetch`, which stays for one-shot CLI tools
+Owner:    lead
 Severity: serious
 Class:    runtime-hole
 Found:    2026-08-12, checking what Krate can actually build before starting
@@ -97,15 +98,37 @@ Impact:   **A progress bar during a download is impossible, and so is a
           unresponsive while it works or too trivial to notice. This is the
           single limit most likely to be hit by an outside developer
           building something real.
-Fix:      Needs a way for the guest to start a request and keep turning its
-          loop -- e.g. `begin-fetch` returning a handle, plus a poll that
-          reports pending/done, so `events::poll` and the fetch can share
-          one thread. Streaming bodies (chunks rather than one buffered
-          `list<u8>`) are the natural follow-on and would also lift the
-          in-memory ceiling on large downloads.
-Note:     Rank against K-099 and the unmeasured authoring benchmark before
-          claiming it is next. It is the biggest *capability* gap; it may
-          not be the biggest *adoption* gap.
+Fix:      Three new calls on `krate:net/http-client`: `begin` returns a
+          handle at once, `poll` answers immediately with
+          pending/ready/failed/unknown-handle, and `cancel` retires a
+          handle (what a cancel button calls). The work runs on an OS
+          thread; the guest keeps its own loop.
+
+          **The grant is checked at `begin`, on the calling thread, before
+          any worker exists** -- a handle is only ever issued for a host the
+          person allowed. Pinned by
+          `the_async_path_refuses_a_host_that_was_never_granted`.
+
+          The adapter hands over a `FetchJob` (a `Send` closure holding only
+          plain data) rather than being sent itself, because host state is
+          `Rc<RefCell<_>>`. Blocking and async run the *same*
+          `perform_http_request`, so there is no second HTTP path to drift.
+Verified: `apps/zz-asyncproof` against a server that stalls 3 seconds --
+          the same server, both paths:
+
+            blocking  krate-fetch:      8.36s wall, 0 turns of guest work
+            async     zz-asyncproof:    begin returned in 1 ms
+                                        turns_while_waiting: 258
+                                        status 200, total 3017 ms
+
+          258 turns is 258 frames the app could have drawn, or clicks it
+          could have answered, while the network was slow. Seven unit tests
+          cover the handle table, including that a retired handle does not
+          leak and that a double-cancel does not panic.
+Note:     `fetch` is unchanged and still right for a one-shot CLI tool where
+          nobody is watching a window. Streaming bodies (chunks rather than
+          one buffered `list<u8>`) remain the follow-on, and would lift the
+          in-memory ceiling on large downloads -- not filed yet.
 
 ### K-100 -- roughly one in eleven app opens fails, and nobody knows why
 Status:   fixed 2026-08-12 -- reason codes ship in v0.1.12; the cause of the

@@ -330,9 +330,12 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 
 ### `net`
 
+- `net::begin(req: Request) -> Result<u64, NetError>`
+- `net::cancel(handle: u64) -> ()`
 - `net::fetch(req: Request) -> Result<Response, NetError>`
 - `net::get(url: &str) -> Result<Vec<u8>, NetError>`
 - `net::get_text(url: &str) -> Result<String, NetError>`
+- `net::poll(handle: u64) -> FetchStatus`
 
 ### `random`
 

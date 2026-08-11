@@ -458,6 +458,28 @@ a defect, however good it looks in one window size.\n\n\
 list. Headers and footers are chrome -- 8-14% of the height each is plenty. \
 An app that spends a third of its window on a title is telling the person the \
 title matters more than their data.\n\n\
+**Never block the window on a request a person is watching.** `net::get` and \
+`net::fetch` block until the response is complete, and an app is single \
+threaded -- so a slow server freezes everything: no frame, no click, no cancel \
+button. Measured against a server that stalled three seconds, a blocking fetch \
+did zero work in that time; the same request through the calls below did 258 \
+turns of it.\n\n\
+Use `net::begin` for anything a person waits on. It returns a handle at once, \
+and `net::poll` answers immediately every time:\n\n\
+\u{20}\u{20}\u{20}\u{20}let handle = net::begin(req)?;   // returns in ~1ms\n\
+\u{20}\u{20}\u{20}\u{20}loop {\n\
+\u{20}\u{20}\u{20}\u{20}    match net::poll(handle) {\n\
+\u{20}\u{20}\u{20}\u{20}        FetchStatus::Pending => {}            // draw a spinner\n\
+\u{20}\u{20}\u{20}\u{20}        FetchStatus::Ready(res) => { show(res); break }\n\
+\u{20}\u{20}\u{20}\u{20}        FetchStatus::Failed(e) => { show_error(e); break }\n\
+\u{20}\u{20}\u{20}\u{20}        FetchStatus::UnknownHandle => break,\n\
+\u{20}\u{20}\u{20}\u{20}    }\n\
+\u{20}\u{20}\u{20}\u{20}    drain_events();  draw_frame();          // the app stays alive\n\
+\u{20}\u{20}\u{20}\u{20}}\n\n\
+`net::cancel(handle)` is what a cancel button calls, and it is safe to call \
+twice. The permission check happens at `begin`, so an ungranted host fails \
+there rather than at a later poll. Blocking `net::get` is still right for a \
+one-shot CLI tool where nobody is looking at a window.\n\n\
 **If the app has live data, fetch it when it starts.** Sample data is a \
 fallback for when the network fails, never the state a person sees first. An \
 app asked for \"open source news\" declared `net.connect:hnrss.org:443`, wrote a \

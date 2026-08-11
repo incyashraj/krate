@@ -48,6 +48,11 @@ pub struct Phase2Host<'a> {
     /// the OS on every call, so there is nothing to open, nothing to keep, and
     /// nothing to close.
     random_granted: bool,
+    /// Requests started with `http-client.begin` and not yet answered.
+    ///
+    /// Lives here so it dies with the run: a handle cannot outlive the app
+    /// that made it, the same way a chosen-file token cannot.
+    async_fetches: crate::async_fetch::AsyncFetches,
 }
 
 impl<'a> Phase2Host<'a> {
@@ -70,6 +75,7 @@ impl<'a> Phase2Host<'a> {
             secrets: None,
             chosen_files: Default::default(),
             random_granted: false,
+            async_fetches: crate::async_fetch::AsyncFetches::new(),
             default_http_timeout_millis,
         }
     }
@@ -808,6 +814,49 @@ impl net::http_client::Host for Phase2Host<'_> {
             .net_fetch(bridge::request_from_wit(req))
             .map(bridge::response_to_wit)
             .map_err(bridge::net_error_to_wit))
+    }
+
+    fn begin(
+        &mut self,
+        req: net::types::Request,
+    ) -> wasmtime::Result<Result<u64, net::types::NetError>> {
+        // The grant is checked here, before any worker exists, so a handle is
+        // only ever issued for a host the person allowed.
+        let job = match self
+            .dispatcher()
+            .net_fetch_job(bridge::request_from_wit(req))
+        {
+            Ok(Some(job)) => job,
+            // The grant passed but this adapter has no off-thread path. Say so
+            // rather than falling back to a blocking fetch, which would freeze
+            // the app -- the exact thing this call exists to avoid.
+            Ok(None) => {
+                return Ok(Err(net::types::NetError::Other(
+                    "this host cannot run a request in the background".to_string(),
+                )))
+            }
+            Err(err) => return Ok(Err(bridge::net_error_to_wit(err))),
+        };
+        Ok(Ok(self.async_fetches.begin(job)))
+    }
+
+    fn poll(&mut self, handle: u64) -> wasmtime::Result<net::types::FetchStatus> {
+        use crate::async_fetch::FetchStatus;
+        Ok(match self.async_fetches.poll(handle) {
+            FetchStatus::Pending => net::types::FetchStatus::Pending,
+            FetchStatus::Ready(response) => {
+                net::types::FetchStatus::Ready(bridge::response_to_wit(response))
+            }
+            FetchStatus::Failed(err) => {
+                net::types::FetchStatus::Failed(bridge::net_error_to_wit(err.into()))
+            }
+            FetchStatus::UnknownHandle => net::types::FetchStatus::UnknownHandle,
+        })
+    }
+
+    fn cancel(&mut self, handle: u64) -> wasmtime::Result<()> {
+        self.async_fetches.cancel(handle);
+        Ok(())
     }
 }
 

@@ -257,8 +257,29 @@ pub trait FsAdapter {
     fn close_file(&self, handle: &FileHandle) -> std::result::Result<(), AdapterError>;
 }
 
+/// A request packaged up to run somewhere else.
+///
+/// `Send` and owning everything it needs, so it can cross to a worker thread
+/// while the host -- which is `Rc<RefCell<_>>` and cannot move -- stays put.
+pub type FetchJob = Box<dyn FnOnce() -> std::result::Result<HttpResponse, AdapterError> + Send>;
+
 pub trait NetAdapter {
     fn fetch(&self, req: HttpRequest) -> std::result::Result<HttpResponse, AdapterError>;
+
+    /// Hand back a way to perform `req` that can run on another thread.
+    ///
+    /// The asynchronous path needs to do the work off the guest's thread, but
+    /// an adapter holds `Rc<RefCell<_>>` and cannot itself be sent anywhere.
+    /// So the adapter captures whatever plain data it needs (a byte cap, say)
+    /// into a closure and hands that over instead.
+    ///
+    /// The default returns `None`, meaning "this adapter has no off-thread
+    /// path" -- the host then reports the request as unsupported rather than
+    /// silently doing it synchronously and freezing the app, which would be
+    /// the same bug K-101 exists to fix.
+    fn fetch_job(&self, _req: HttpRequest) -> Option<FetchJob> {
+        None
+    }
 }
 
 pub trait TimeAdapter {
@@ -506,6 +527,33 @@ impl<'a> UapiDispatcher<'a> {
         &self,
         req: HttpRequest,
     ) -> std::result::Result<HttpResponse, NetDispatchError> {
+        self.check_net_request(&req)?;
+        self.adapter.net().fetch(req).map_err(Into::into)
+    }
+
+    /// Check the grant, then hand back an off-thread job for the request.
+    ///
+    /// The guard runs here, on the caller's thread, before any worker exists
+    /// -- so a handle is only issued for a host the person granted. `None`
+    /// means this adapter cannot work off-thread.
+    pub fn net_fetch_job(
+        &self,
+        req: HttpRequest,
+    ) -> std::result::Result<Option<FetchJob>, NetDispatchError> {
+        self.check_net_request(&req)?;
+        Ok(self.adapter.net().fetch_job(req))
+    }
+
+    /// The permission half of a fetch, on its own.
+    ///
+    /// Split out so the asynchronous path (`begin`/`poll`) runs exactly the
+    /// same check, on the calling thread, before any worker is spawned. A
+    /// handle is only ever issued for a host the person granted; moving this
+    /// onto the worker would take a permission decision off the guard's path.
+    pub fn check_net_request(
+        &self,
+        req: &HttpRequest,
+    ) -> std::result::Result<(), NetDispatchError> {
         let endpoint = parse_url_endpoint(&req.url).map_err(|_| NetDispatchError::InvalidUrl)?;
         self.guard
             .check(&UapiCall::Net(NetCall::Connect {
@@ -513,7 +561,7 @@ impl<'a> UapiDispatcher<'a> {
                 port: endpoint.port,
             }))
             .map_err(map_net_policy)?;
-        self.adapter.net().fetch(req).map_err(Into::into)
+        Ok(())
     }
 
     pub fn now_millis(&self) -> DispatchResult<u64> {
@@ -1513,6 +1561,52 @@ mod tests {
         dispatcher.net_fetch(req).expect("net grant should pass");
 
         assert_eq!(adapter.calls.borrow().net_fetch, 1);
+    }
+
+    /// The asynchronous path must be exactly as guarded as the blocking one.
+    /// This is the security property of `begin`/`poll`: a handle is issued
+    /// only for a host the person granted, and the check happens before any
+    /// worker thread exists. If this test ever fails, the async path has
+    /// become a way around the permission wall.
+    #[test]
+    fn the_async_path_refuses_a_host_that_was_never_granted() {
+        let adapter = RecordingAdapter::default();
+        let guard = UapiGuard::new(
+            SessionPolicy::from_cli_grants(&["net.connect:api.example.com:443".to_string()])
+                .expect("policy"),
+        );
+        let dispatcher = UapiDispatcher::new(&guard, &adapter);
+
+        let granted = HttpRequest {
+            method: HttpMethod::Get,
+            url: "https://api.example.com/v1/ping".to_string(),
+            headers: Vec::new(),
+            body: Vec::new(),
+            timeout_millis: None,
+        };
+        assert!(
+            dispatcher.check_net_request(&granted).is_ok(),
+            "a granted host must pass the async check"
+        );
+
+        let ungranted = HttpRequest {
+            url: "https://evil.example.net/steal".to_string(),
+            ..granted
+        };
+        assert!(
+            matches!(
+                dispatcher.check_net_request(&ungranted),
+                Err(NetDispatchError::PermissionDenied)
+            ),
+            "an ungranted host must be refused before any request is started"
+        );
+
+        // The check alone must never reach the network.
+        assert_eq!(
+            adapter.calls.borrow().net_fetch,
+            0,
+            "checking permission must not perform the request"
+        );
     }
 
     #[test]

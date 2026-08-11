@@ -667,6 +667,50 @@ pub mod net {
     pub fn fetch(req: Request) -> Result<Response, NetError> {
         crate::bindings::krate::net::http_client::fetch(&req)
     }
+
+    pub use crate::bindings::krate::net::types::FetchStatus;
+
+    /// Start a request and get a handle back immediately.
+    ///
+    /// Every function above blocks until the response is complete, and an app
+    /// is single threaded -- so a slow server freezes the window: no frame, no
+    /// click, no cancel button. Use this instead whenever a person is watching.
+    ///
+    /// The shape in an app's loop:
+    ///
+    /// ```ignore
+    /// let handle = net::begin(req)?;          // returns at once
+    /// loop {
+    ///     match net::poll(handle) {
+    ///         FetchStatus::Pending => {}       // draw a spinner, keep going
+    ///         FetchStatus::Ready(res) => { show(res); break }
+    ///         FetchStatus::Failed(e) => { show_error(e); break }
+    ///         FetchStatus::UnknownHandle => break,
+    ///     }
+    ///     draw_frame();                        // the app stays alive
+    ///     // ... handle events, and call net::cancel(handle) on a cancel click
+    /// }
+    /// ```
+    ///
+    /// The permission check happens here, so an ungranted host fails this
+    /// call rather than the later poll.
+    pub fn begin(req: Request) -> Result<u64, NetError> {
+        crate::bindings::krate::net::http_client::begin(&req)
+    }
+
+    /// Ask what happened to a request from `begin`. Returns immediately.
+    ///
+    /// `Pending` means keep going. Anything else is final and retires the
+    /// handle, so polling again answers `UnknownHandle`.
+    pub fn poll(handle: u64) -> FetchStatus {
+        crate::bindings::krate::net::http_client::poll(handle)
+    }
+
+    /// Abandon a request. This is what a cancel button calls, and it is safe
+    /// on a handle that has already answered.
+    pub fn cancel(handle: u64) {
+        crate::bindings::krate::net::http_client::cancel(handle)
+    }
 }
 
 /// Wall-clock, monotonic clock, and sleep helpers.

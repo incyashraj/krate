@@ -26,6 +26,7 @@ pub mod phase3_ui;
 pub mod uapi;
 pub mod uapi_dispatch;
 
+mod async_fetch;
 mod audio_capture;
 mod audio_playback;
 mod canvas_raster;
@@ -1894,13 +1895,37 @@ fn open_path_on_host(
 #[cfg(feature = "phase2-bindings")]
 impl NetAdapter for LocalPhase2Adapter {
     fn fetch(&self, req: HttpRequest) -> std::result::Result<HttpResponse, AdapterError> {
+        perform_http_request(req, self.max_http_response_bytes)
+    }
+
+    fn fetch_job(&self, req: HttpRequest) -> Option<crate::uapi_dispatch::FetchJob> {
+        // Only the byte cap is captured, and it is a `usize`. Nothing that
+        // belongs to the host crosses the thread boundary, and the closure
+        // calls the same function the blocking path does.
+        let max_bytes = self.max_http_response_bytes;
+        Some(Box::new(move || perform_http_request(req, max_bytes)))
+    }
+}
+
+/// Perform one HTTP request, with no host state involved.
+///
+/// Split out of the adapter so the asynchronous path can run it on a worker
+/// thread: the adapter holds `Rc<RefCell<_>>` and is not `Send`, but this
+/// takes only a request and a byte cap, both of which cross a thread boundary
+/// freely. The blocking adapter and the worker therefore run *identical*
+/// code -- there is no second HTTP implementation to drift.
+pub(crate) fn perform_http_request(
+    req: HttpRequest,
+    max_http_response_bytes: usize,
+) -> std::result::Result<HttpResponse, AdapterError> {
+    {
         let url = PlainHttpUrl::parse(&req.url).map_err(map_plain_http_error)?;
         // HTTPS goes through a real TLS stack. The hand-written framing below
         // speaks plaintext, so before this an https:// URL connected to port
         // 443 and then said "GET / HTTP/1.1" to a server waiting for a
         // handshake -- every API worth calling was unreachable.
         if url.tls {
-            return fetch_over_tls(&req, &url, self.max_http_response_bytes);
+            return fetch_over_tls(&req, &url, max_http_response_bytes);
         }
         let plain_req = plain_http_request_from_dispatch(&req);
         let request = build_plain_http_request(&plain_req, &url).map_err(map_plain_http_error)?;
@@ -1913,7 +1938,7 @@ impl NetAdapter for LocalPhase2Adapter {
 
         write_all_tcp_on_host(&mut stream, &request).map_err(map_net_io_error)?;
         let response =
-            read_plain_http_response_limited_on_host(&mut stream, self.max_http_response_bytes)
+            read_plain_http_response_limited_on_host(&mut stream, max_http_response_bytes)
                 .map_err(map_plain_http_read_error)?;
         let response = parse_plain_http_response(&response).map_err(map_plain_http_error)?;
         Ok(HttpResponse {

@@ -3098,6 +3098,130 @@ pub mod krate {
                 }
             }
             #[allow(unused_unsafe, clippy::all)]
+            /// Fix the coordinate system an app draws in, and let the host fit it to
+            /// whatever window the person has.
+            ///
+            /// Some apps -- games especially -- have a geometry that only makes sense
+            /// at one size: a paddle 48 wide, bricks laid out to span exactly 320.
+            /// Asking such an app to recompute every constant from `canvas-size` is a
+            /// rewrite, and the usual result is what a real person reported on a real
+            /// window: the text drew fine and the character and ground were off the
+            /// screen.
+            ///
+            /// Declare the size the app was designed for and keep drawing in those
+            /// coordinates forever. The host scales them UNIFORMLY to fill the window
+            /// and centres what is left over, so nothing is ever stretched out of
+            /// proportion -- the same letterboxing a console does on a widescreen TV.
+            /// Pointer coordinates arrive in design space too, so hit-testing keeps
+            /// working without a single change.
+            ///
+            /// An app that wants to use the extra room rather than letterbox it
+            /// should ignore this and lay out from `canvas-size` instead. Both are
+            /// honest; this one is for apps whose proportions are the design.
+            pub fn set_design_size(canvas: u64, size: Size) -> Result<(), GfxError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 4 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 4
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let super::super::super::krate::gfx::types::Size {
+                        width: width0,
+                        height: height0,
+                    } = size;
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:gfx/canvas2d@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "set-design-size"]
+                        fn wit_import2(_: i64, _: f32, _: f32, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: f32,
+                        _: f32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(
+                            _rt::as_i64(&canvas),
+                            _rt::as_f32(width0),
+                            _rt::as_f32(height0),
+                            ptr1,
+                        )
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result12 = match l3 {
+                        0 => {
+                            let e = ();
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::gfx::types::GfxError as V11;
+                                let v11 = match l4 {
+                                    0 => V11::PermissionDenied,
+                                    1 => V11::InvalidTarget,
+                                    2 => {
+                                        let e11 = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            _rt::string_lift(bytes7)
+                                        };
+                                        V11::Unsupported(e11)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 3, "invalid enum discriminant");
+                                        let e11 = {
+                                            let l8 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            _rt::string_lift(bytes10)
+                                        };
+                                        V11::Platform(e11)
+                                    }
+                                };
+                                v11
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result12
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
             /// Restrict drawing to a rectangle, in logical pixels. Every later draw on
             /// this canvas is trimmed to it until `clear-clip`.
             ///
@@ -8888,6 +9012,45 @@ pub mod krate {
             }
             #[cfg(feature = "std")]
             impl std::error::Error for NetError {}
+            /// What became of a request started with `http-client.begin`.
+            ///
+            /// One shape rather than a result, because "not finished yet" is a normal
+            /// answer here and not an error. `pending` is the only non-terminal
+            /// variant: the other three retire the handle.
+            #[derive(Clone)]
+            pub enum FetchStatus {
+                /// Still working. Draw a frame and ask again.
+                Pending,
+                /// Finished, with the response.
+                Ready(Response),
+                /// Finished, badly. The same errors `fetch` can return.
+                Failed(NetError),
+                /// This handle was never issued, or has already been answered or
+                /// cancelled. Distinct from `failed` so a double-poll is not mistaken
+                /// for a network problem.
+                UnknownHandle,
+            }
+            impl ::core::fmt::Debug for FetchStatus {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    match self {
+                        FetchStatus::Pending => {
+                            f.debug_tuple("FetchStatus::Pending").finish()
+                        }
+                        FetchStatus::Ready(e) => {
+                            f.debug_tuple("FetchStatus::Ready").field(e).finish()
+                        }
+                        FetchStatus::Failed(e) => {
+                            f.debug_tuple("FetchStatus::Failed").field(e).finish()
+                        }
+                        FetchStatus::UnknownHandle => {
+                            f.debug_tuple("FetchStatus::UnknownHandle").finish()
+                        }
+                    }
+                }
+            }
         }
         /// HTTP client calls for CLI components.
         /// Buffered HTTP requests to hosts the person allowed.
@@ -8911,6 +9074,7 @@ pub mod krate {
             pub type Request = super::super::super::krate::net::types::Request;
             pub type Response = super::super::super::krate::net::types::Response;
             pub type NetError = super::super::super::krate::net::types::NetError;
+            pub type FetchStatus = super::super::super::krate::net::types::FetchStatus;
             #[allow(unused_unsafe, clippy::all)]
             /// Perform a simple GET request and return only the response body.
             pub fn get(url: &str) -> Result<_rt::Vec<u8>, NetError> {
@@ -9070,6 +9234,12 @@ pub mod krate {
             }
             #[allow(unused_unsafe, clippy::all)]
             /// Perform a buffered HTTP request and return status, headers, and body.
+            ///
+            /// **This blocks until the response is complete.** A guest is single
+            /// threaded, so nothing else in the app runs meanwhile: no frame is drawn,
+            /// no click is answered. That is fine for a small request made while the
+            /// person is waiting anyway, and wrong for anything a person watches --
+            /// use `begin` / `poll` below when the app should stay alive.
             pub fn fetch(req: &Request) -> Result<Response, NetError> {
                 unsafe {
                     #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
@@ -9370,6 +9540,499 @@ pub mod krate {
                         _rt::alloc::dealloc(result5.cast(), layout5);
                     }
                     result41
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Start a request and return immediately with a handle.
+            ///
+            /// The work happens on a host thread while the guest keeps its own loop
+            /// turning, so the app can draw a spinner, animate, answer a click, or
+            /// offer a cancel button while the network is slow. This is the whole
+            /// point: a blocking `fetch` against a server that stalls three seconds
+            /// froze a real app for the full three seconds (K-101).
+            ///
+            /// The capability check happens here, at `begin`, exactly as it does for
+            /// `fetch` -- a handle is only ever issued for a host the person granted.
+            /// Failing that check fails this call, not the later `poll`.
+            ///
+            /// The handle is valid until `poll` returns a terminal answer or `cancel`
+            /// is called. Handles do not survive the run.
+            pub fn begin(req: &Request) -> Result<u64, NetError> {
+                unsafe {
+                    #[repr(align(8))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 16 + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 16
+                            + 2 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let super::super::super::krate::net::types::Request {
+                        method: method0,
+                        url: url0,
+                        headers: headers0,
+                        body: body0,
+                        timeout_millis: timeout_millis0,
+                    } = req;
+                    let vec1 = url0;
+                    let ptr1 = vec1.as_ptr().cast::<u8>();
+                    let len1 = vec1.len();
+                    let vec5 = headers0;
+                    let len5 = vec5.len();
+                    let layout5 = _rt::alloc::Layout::from_size_align_unchecked(
+                        vec5.len() * (4 * ::core::mem::size_of::<*const u8>()),
+                        ::core::mem::size_of::<*const u8>(),
+                    );
+                    let result5 = if layout5.size() != 0 {
+                        let ptr = _rt::alloc::alloc(layout5).cast::<u8>();
+                        if ptr.is_null() {
+                            _rt::alloc::handle_alloc_error(layout5);
+                        }
+                        ptr
+                    } else {
+                        ::core::ptr::null_mut()
+                    };
+                    for (i, e) in vec5.into_iter().enumerate() {
+                        let base = result5
+                            .add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                        {
+                            let super::super::super::krate::net::types::Header {
+                                name: name2,
+                                value: value2,
+                            } = e;
+                            let vec3 = name2;
+                            let ptr3 = vec3.as_ptr().cast::<u8>();
+                            let len3 = vec3.len();
+                            *base
+                                .add(::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len3;
+                            *base.add(0).cast::<*mut u8>() = ptr3.cast_mut();
+                            let vec4 = value2;
+                            let ptr4 = vec4.as_ptr().cast::<u8>();
+                            let len4 = vec4.len();
+                            *base
+                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                .cast::<usize>() = len4;
+                            *base
+                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                .cast::<*mut u8>() = ptr4.cast_mut();
+                        }
+                    }
+                    let vec6 = body0;
+                    let ptr6 = vec6.as_ptr().cast::<u8>();
+                    let len6 = vec6.len();
+                    let (result7_0, result7_1) = match timeout_millis0 {
+                        Some(e) => (1i32, _rt::as_i32(e)),
+                        None => (0i32, 0i32),
+                    };
+                    let ptr8 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "begin"]
+                        fn wit_import9(
+                            _: i32,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: *mut u8,
+                            _: usize,
+                            _: i32,
+                            _: i32,
+                            _: *mut u8,
+                        );
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import9(
+                        _: i32,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                        _: usize,
+                        _: i32,
+                        _: i32,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import9(
+                            method0.clone() as i32,
+                            ptr1.cast_mut(),
+                            len1,
+                            result5,
+                            len5,
+                            ptr6.cast_mut(),
+                            len6,
+                            result7_0,
+                            result7_1,
+                            ptr8,
+                        )
+                    };
+                    let l10 = i32::from(*ptr8.add(0).cast::<u8>());
+                    let result29 = match l10 {
+                        0 => {
+                            let e = {
+                                let l11 = *ptr8.add(8).cast::<i64>();
+                                l11 as u64
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l12 = i32::from(*ptr8.add(8).cast::<u8>());
+                                use super::super::super::krate::net::types::NetError as V28;
+                                let v28 = match l12 {
+                                    0 => V28::InvalidUrl,
+                                    1 => {
+                                        let e28 = {
+                                            let l13 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l14 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len15 = l14;
+                                            let bytes15 = _rt::Vec::from_raw_parts(
+                                                l13.cast(),
+                                                len15,
+                                                len15,
+                                            );
+                                            _rt::string_lift(bytes15)
+                                        };
+                                        V28::DnsFailure(e28)
+                                    }
+                                    2 => {
+                                        let e28 = {
+                                            let l16 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l17 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len18 = l17;
+                                            let bytes18 = _rt::Vec::from_raw_parts(
+                                                l16.cast(),
+                                                len18,
+                                                len18,
+                                            );
+                                            _rt::string_lift(bytes18)
+                                        };
+                                        V28::ConnectFailure(e28)
+                                    }
+                                    3 => {
+                                        let e28 = {
+                                            let l19 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l20 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len21 = l20;
+                                            let bytes21 = _rt::Vec::from_raw_parts(
+                                                l19.cast(),
+                                                len21,
+                                                len21,
+                                            );
+                                            _rt::string_lift(bytes21)
+                                        };
+                                        V28::TlsFailure(e28)
+                                    }
+                                    4 => V28::Timeout,
+                                    5 => V28::BodyTooLarge,
+                                    6 => V28::PermissionDenied,
+                                    7 => {
+                                        let e28 = {
+                                            let l22 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l23 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len24 = l23;
+                                            let bytes24 = _rt::Vec::from_raw_parts(
+                                                l22.cast(),
+                                                len24,
+                                                len24,
+                                            );
+                                            _rt::string_lift(bytes24)
+                                        };
+                                        V28::Protocol(e28)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e28 = {
+                                            let l25 = *ptr8
+                                                .add(8 + 1 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l26 = *ptr8
+                                                .add(8 + 2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len27 = l26;
+                                            let bytes27 = _rt::Vec::from_raw_parts(
+                                                l25.cast(),
+                                                len27,
+                                                len27,
+                                            );
+                                            _rt::string_lift(bytes27)
+                                        };
+                                        V28::Other(e28)
+                                    }
+                                };
+                                v28
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    if layout5.size() != 0 {
+                        _rt::alloc::dealloc(result5.cast(), layout5);
+                    }
+                    result29
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Ask what happened to a request started with `begin`.
+            ///
+            /// Returns immediately, always. `pending` means keep going -- draw a
+            /// frame and ask again later. Anything else is terminal and retires the
+            /// handle, so polling a finished request answers `unknown-handle`.
+            pub fn poll(handle: u64) -> FetchStatus {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 6 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 6
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let ptr0 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "poll"]
+                        fn wit_import1(_: i64, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import1(_: i64, _: *mut u8) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import1(_rt::as_i64(&handle), ptr0) };
+                    let l2 = i32::from(*ptr0.add(0).cast::<u8>());
+                    use super::super::super::krate::net::types::FetchStatus as V33;
+                    let v33 = match l2 {
+                        0 => V33::Pending,
+                        1 => {
+                            let e33 = {
+                                let l3 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u16>(),
+                                );
+                                let l4 = *ptr0
+                                    .add(2 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l5 = *ptr0
+                                    .add(3 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let base12 = l4;
+                                let len12 = l5;
+                                let mut result12 = _rt::Vec::with_capacity(len12);
+                                for i in 0..len12 {
+                                    let base = base12
+                                        .add(i * (4 * ::core::mem::size_of::<*const u8>()));
+                                    let e12 = {
+                                        let l6 = *base.add(0).cast::<*mut u8>();
+                                        let l7 = *base
+                                            .add(::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len8 = l7;
+                                        let bytes8 = _rt::Vec::from_raw_parts(
+                                            l6.cast(),
+                                            len8,
+                                            len8,
+                                        );
+                                        let l9 = *base
+                                            .add(2 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<*mut u8>();
+                                        let l10 = *base
+                                            .add(3 * ::core::mem::size_of::<*const u8>())
+                                            .cast::<usize>();
+                                        let len11 = l10;
+                                        let bytes11 = _rt::Vec::from_raw_parts(
+                                            l9.cast(),
+                                            len11,
+                                            len11,
+                                        );
+                                        super::super::super::krate::net::types::Header {
+                                            name: _rt::string_lift(bytes8),
+                                            value: _rt::string_lift(bytes11),
+                                        }
+                                    };
+                                    result12.push(e12);
+                                }
+                                _rt::cabi_dealloc(
+                                    base12,
+                                    len12 * (4 * ::core::mem::size_of::<*const u8>()),
+                                    ::core::mem::size_of::<*const u8>(),
+                                );
+                                let l13 = *ptr0
+                                    .add(4 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<*mut u8>();
+                                let l14 = *ptr0
+                                    .add(5 * ::core::mem::size_of::<*const u8>())
+                                    .cast::<usize>();
+                                let len15 = l14;
+                                super::super::super::krate::net::types::Response {
+                                    status: l3 as u16,
+                                    headers: result12,
+                                    body: _rt::Vec::from_raw_parts(l13.cast(), len15, len15),
+                                }
+                            };
+                            V33::Ready(e33)
+                        }
+                        2 => {
+                            let e33 = {
+                                let l16 = i32::from(
+                                    *ptr0.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::net::types::NetError as V32;
+                                let v32 = match l16 {
+                                    0 => V32::InvalidUrl,
+                                    1 => {
+                                        let e32 = {
+                                            let l17 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l18 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len19 = l18;
+                                            let bytes19 = _rt::Vec::from_raw_parts(
+                                                l17.cast(),
+                                                len19,
+                                                len19,
+                                            );
+                                            _rt::string_lift(bytes19)
+                                        };
+                                        V32::DnsFailure(e32)
+                                    }
+                                    2 => {
+                                        let e32 = {
+                                            let l20 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l21 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len22 = l21;
+                                            let bytes22 = _rt::Vec::from_raw_parts(
+                                                l20.cast(),
+                                                len22,
+                                                len22,
+                                            );
+                                            _rt::string_lift(bytes22)
+                                        };
+                                        V32::ConnectFailure(e32)
+                                    }
+                                    3 => {
+                                        let e32 = {
+                                            let l23 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l24 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len25 = l24;
+                                            let bytes25 = _rt::Vec::from_raw_parts(
+                                                l23.cast(),
+                                                len25,
+                                                len25,
+                                            );
+                                            _rt::string_lift(bytes25)
+                                        };
+                                        V32::TlsFailure(e32)
+                                    }
+                                    4 => V32::Timeout,
+                                    5 => V32::BodyTooLarge,
+                                    6 => V32::PermissionDenied,
+                                    7 => {
+                                        let e32 = {
+                                            let l26 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l27 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len28 = l27;
+                                            let bytes28 = _rt::Vec::from_raw_parts(
+                                                l26.cast(),
+                                                len28,
+                                                len28,
+                                            );
+                                            _rt::string_lift(bytes28)
+                                        };
+                                        V32::Protocol(e32)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 8, "invalid enum discriminant");
+                                        let e32 = {
+                                            let l29 = *ptr0
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l30 = *ptr0
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len31 = l30;
+                                            let bytes31 = _rt::Vec::from_raw_parts(
+                                                l29.cast(),
+                                                len31,
+                                                len31,
+                                            );
+                                            _rt::string_lift(bytes31)
+                                        };
+                                        V32::Other(e32)
+                                    }
+                                };
+                                v32
+                            };
+                            V33::Failed(e33)
+                        }
+                        n => {
+                            debug_assert_eq!(n, 3, "invalid enum discriminant");
+                            V33::UnknownHandle
+                        }
+                    };
+                    let result34 = v33;
+                    result34
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Abandon a request. The handle is retired whether or not the work had
+            /// finished, and any response already in flight is dropped.
+            ///
+            /// This is what a cancel button calls. It is safe on a handle that has
+            /// already been retired.
+            pub fn cancel(handle: u64) -> () {
+                unsafe {
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:net/http-client@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "cancel"]
+                        fn wit_import0(_: i64);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import0(_: i64) {
+                        unreachable!()
+                    }
+                    unsafe { wit_import0(_rt::as_i64(&handle)) };
                 }
             }
         }
@@ -17058,8 +17721,8 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 10922] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xb0T\x01A\x02\x01Ai\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 11140] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\x8aV\x01A\x02\x01Aj\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -17099,215 +17762,220 @@ paths\0\x10\x04\0\x04stat\x01\x16\x01ps\x01j\x01\x17\x01\x05\x01@\x01\x04paths\0
 \x18\x04\0\x04list\x01\x19\x01j\0\x01\x05\x01@\x01\x04paths\0\x1a\x04\0\x0bremov\
 e-file\x01\x1b\x04\0\x0aremove-dir\x01\x1b\x04\0\x05mkdir\x01\x1b\x01@\x02\x04fr\
 oms\x02tos\0\x1a\x04\0\x06rename\x01\x1c\x03\0\x14krate:fs/files@0.1.0\x05\x0d\x01\
-B\x0d\x01m\x07\x03get\x04post\x03put\x06delete\x05patch\x04head\x07options\x04\0\
+B\x0f\x01m\x07\x03get\x04post\x03put\x06delete\x05patch\x04head\x07options\x04\0\
 \x0bhttp-method\x03\0\0\x01r\x02\x04names\x05values\x04\0\x06header\x03\0\x02\x01\
 p\x03\x01p}\x01ky\x01r\x05\x06method\x01\x03urls\x07headers\x04\x04body\x05\x0et\
 imeout-millis\x06\x04\0\x07request\x03\0\x07\x01r\x03\x06status{\x07headers\x04\x04\
 body\x05\x04\0\x08response\x03\0\x09\x01q\x09\x0binvalid-url\0\0\x0bdns-failure\x01\
 s\0\x0fconnect-failure\x01s\0\x0btls-failure\x01s\0\x07timeout\0\0\x0ebody-too-l\
 arge\0\0\x11permission-denied\0\0\x08protocol\x01s\0\x05other\x01s\0\x04\0\x09ne\
-t-error\x03\0\x0b\x03\0\x15krate:net/types@0.1.0\x05\x0e\x02\x03\0\x07\x07reques\
-t\x02\x03\0\x07\x08response\x02\x03\0\x07\x09net-error\x01B\x0d\x02\x03\x02\x01\x0f\
-\x04\0\x07request\x03\0\0\x02\x03\x02\x01\x10\x04\0\x08response\x03\0\x02\x02\x03\
-\x02\x01\x11\x04\0\x09net-error\x03\0\x04\x01p}\x01j\x01\x06\x01\x05\x01@\x01\x03\
-urls\0\x07\x04\0\x03get\x01\x08\x01j\x01\x03\x01\x05\x01@\x01\x03req\x01\0\x09\x04\
-\0\x05fetch\x01\x0a\x03\0\x1bkrate:net/http-client@0.1.0\x05\x12\x01B\x03\x01@\0\
-\0w\x04\0\x0anow-millis\x01\0\x04\0\x0fmonotonic-nanos\x01\0\x03\0\x16krate:time\
-/clock@0.1.0\x05\x13\x01B\x02\x01@\x01\x06millisy\x01\0\x04\0\x0csleep-millis\x01\
-\0\x03\0\x16krate:time/sleep@0.1.0\x05\x14\x01B\x06\x01r\x01\x05bcp47s\x04\0\x09\
-locale-id\x03\0\0\x01m\x04\x05short\x06medium\x04long\x04full\x04\0\x0adate-styl\
-e\x03\0\x02\x01m\x03\x07decimal\x07percent\x08currency\x04\0\x0cnumber-style\x03\
-\0\x04\x03\0\x18krate:locale/types@0.1.0\x05\x15\x02\x03\0\x0b\x09locale-id\x01B\
-\x06\x02\x03\x02\x01\x16\x04\0\x09locale-id\x03\0\0\x01@\0\0\x01\x04\0\x07curren\
-t\x01\x02\x01@\0\0s\x04\0\x08timezone\x01\x03\x03\0\x17krate:locale/info@0.1.0\x05\
-\x17\x02\x03\0\x0b\x0adate-style\x02\x03\0\x0b\x0cnumber-style\x01B\x0a\x02\x03\x02\
-\x01\x16\x04\0\x09locale-id\x03\0\0\x02\x03\x02\x01\x18\x04\0\x0adate-style\x03\0\
-\x02\x02\x03\x02\x01\x19\x04\0\x0cnumber-style\x03\0\x04\x01@\x04\x06millisw\x02\
-tzs\x05style\x03\x03loc\x01\0s\x04\0\x0bformat-date\x01\x06\x01@\x03\x05valueu\x05\
-style\x05\x03loc\x01\0s\x04\0\x0dformat-number\x01\x07\x03\0\x19krate:locale/for\
-mat@0.1.0\x05\x1a\x01B\x0a\x01q\x04\x09not-found\0\0\x0cinvalid-path\0\0\x09too-\
-large\0\0\x02io\x01s\0\x04\0\x0eresource-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\
-\x01@\x01\x04paths\0\x03\x04\0\x04read\x01\x04\x01ps\x01j\x01\x05\x01\x01\x01@\x01\
-\x04paths\0\x06\x04\0\x04list\x01\x07\x03\0\x1ckrate:resources/assets@0.1.0\x05\x1b\
-\x01B\x12\x01q\x04\x06denied\0\0\x0binvalid-key\0\0\x09too-large\0\0\x02io\x01s\0\
-\x04\0\x0bstore-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x01\x03ke\
-ys\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x03keys\x05value\x02\0\x06\
-\x04\0\x03set\x01\x07\x01@\x01\x03keys\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\
-\x09\x01\x01\x01@\0\0\x0a\x04\0\x04keys\x01\x0b\x01@\0\0\x06\x04\0\x05clear\x01\x0c\
-\x03\0\x14krate:store/kv@0.1.0\x05\x1c\x01B\x15\x01p}\x01q\x05\x04null\0\0\x07in\
-teger\x01x\0\x04real\x01u\0\x04text\x01s\0\x04blob\x01\0\0\x04\0\x05value\x03\0\x01\
-\x01q\x05\x06denied\0\0\x11invalid-statement\x01s\0\x09forbidden\x01s\0\x09too-l\
-arge\0\0\x02io\x01s\0\x04\0\x09sql-error\x03\0\x03\x01p\x02\x01r\x01\x06values\x05\
-\x04\0\x03row\x03\0\x06\x01ps\x01p\x07\x01r\x02\x07columns\x08\x04rows\x09\x04\0\
-\x0cquery-result\x03\0\x0a\x01j\x01\x0b\x01\x04\x01@\x02\x09statements\x06params\
-\x05\0\x0c\x04\0\x05query\x01\x0d\x01j\x01w\x01\x04\x01@\x02\x09statements\x06pa\
-rams\x05\0\x0e\x04\0\x07execute\x01\x0f\x01j\0\x01\x04\x01@\x01\x0astatements\x08\
-\0\x10\x04\0\x0btransaction\x01\x11\x03\0\x15krate:store/sql@0.1.0\x05\x1d\x01B\x10\
-\x01q\x04\x06denied\0\0\x0cinvalid-name\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0c\
-secret-error\x03\0\0\x01p}\x01k\x02\x01j\x01\x03\x01\x01\x01@\x01\x04names\0\x04\
-\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01@\x02\x04names\x06secret\x02\0\x06\x04\0\
-\x03set\x01\x07\x01@\x01\x04names\0\x06\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\
-\x01\x01\x01@\0\0\x0a\x04\0\x05names\x01\x0b\x03\0\x18krate:store/secret@0.1.0\x05\
-\x1e\x01B\x0b\x01q\x04\x06denied\0\0\x09too-large\0\0\x0bempty-range\0\0\x0bunav\
-ailable\x01s\0\x04\0\x0crandom-error\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\
-\x05county\0\x03\x04\0\x03get\x01\x04\x01j\x01w\x01\x01\x01@\0\0\x05\x04\0\x08ne\
-xt-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\0\x05below\x01\x07\x03\0\x18krate:ra\
-ndom/bytes@0.1.0\x05\x1f\x01B)\x01m\x04\x06normal\x09minimized\x09maximized\x0af\
-ullscreen\x04\0\x0cwindow-state\x03\0\0\x01r\x02\x05widthy\x06heighty\x04\0\x0bw\
-indow-size\x03\0\x02\x01r\x04\x01xv\x01yv\x05widthv\x06heightv\x04\0\x04rect\x03\
-\0\x04\x01m\x03\x05light\x04dark\x07unknown\x04\0\x05theme\x03\0\x06\x01m\x04\x07\
-primary\x09secondary\x06middle\x05other\x04\0\x0epointer-button\x03\0\x08\x01r\x04\
-\x05shift\x7f\x07control\x7f\x03alt\x7f\x04meta\x7f\x04\0\x09modifiers\x03\0\x0a\
-\x01kw\x01k\x09\x01r\x07\x06windoww\x06widget\x0c\x01xv\x01yv\x06button\x0d\x07p\
-ressed\x7f\x09modifiers\x0b\x04\0\x0dpointer-event\x03\0\x0e\x01r\x07\x06windoww\
-\x06widget\x0c\x01xv\x01yv\x02dxv\x02dyv\x09modifiers\x0b\x04\0\x0bwheel-event\x03\
-\0\x10\x01r\x03\x06windoww\x06widgetw\x04texts\x04\0\x12text-changed-event\x03\0\
-\x12\x01r\x05\x06windoww\x06widget\x0c\x03keys\x07pressed\x7f\x09modifiers\x0b\x04\
-\0\x09key-event\x03\0\x14\x01q\x05\x11permission-denied\0\0\x0einvalid-window\0\0\
-\x0einvalid-widget\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x08ui-erro\
-r\x03\0\x16\x01m\x11\x05stack\x04grid\x06scroll\x04tabs\x06button\x08checkbox\x05\
-radio\x06switch\x06slider\x08progress\x04text\x0atext-field\x09text-area\x09list\
--view\x09tree-view\x05image\x06canvas\x04\0\x0bwidget-kind\x03\0\x18\x01r\x02\x06\
-cursory\x06anchory\x04\0\x0btext-cursor\x03\0\x1a\x01kv\x01r\x04\x05width\x1c\x06\
-height\x1c\x04growv\x07paddingv\x04\0\x05style\x03\0\x1d\x01ks\x01k\x7f\x01ky\x01\
-k\x1b\x01r\x0a\x02idw\x06parent\x0c\x04kind\x19\x05label\x1f\x04role\x1f\x05styl\
-e\x1e\x07checked\x20\x05value\x1c\x08selected!\x0btext-cursor\"\x04\0\x0bwidget-\
-node\x03\0#\x01r\x03\x02idw\x05labels\x07enabled\x7f\x04\0\x09menu-item\x03\0%\x01\
-q\x0b\x0fclose-requested\x01w\0\x07resized\x01\x03\0\x10redraw-requested\x01w\0\x07\
-pointer\x01\x0f\0\x03key\x01\x15\0\x05wheel\x01\x11\0\x0atext-input\x01s\0\x0cte\
-xt-changed\x01\x13\0\x06action\x01w\0\x0dfocus-changed\x01\x0c\0\x0dtheme-change\
-d\x01\x07\0\x04\0\x05event\x03\0'\x03\0\x14krate:ui/types@0.1.0\x05\x20\x02\x03\0\
-\x13\x08ui-error\x02\x03\0\x13\x0bwindow-size\x02\x03\0\x13\x0cwindow-state\x01B\
-\x14\x02\x03\x02\x01!\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01\"\x04\0\x0bwindo\
-w-size\x03\0\x02\x02\x03\x02\x01#\x04\0\x0cwindow-state\x03\0\x04\x01j\x01w\x01\x01\
-\x01@\x02\x05titles\x04size\x03\0\x06\x04\0\x06create\x01\x07\x01j\0\x01\x01\x01\
-@\x01\x06windoww\0\x08\x04\0\x04show\x01\x09\x04\0\x05close\x01\x09\x01@\x02\x06\
-windoww\x05titles\0\x08\x04\0\x09set-title\x01\x0a\x01@\x02\x06windoww\x04size\x03\
-\0\x08\x04\0\x08set-size\x01\x0b\x01@\x02\x06windoww\x05state\x05\0\x08\x04\0\x09\
-set-state\x01\x0c\x04\0\x0erequest-redraw\x01\x09\x03\0\x15krate:ui/window@0.1.0\
-\x05$\x02\x03\0\x13\x0bwidget-node\x01B\x0e\x02\x03\x02\x01!\x04\0\x08ui-error\x03\
-\0\0\x02\x03\x02\x01%\x04\0\x0bwidget-node\x03\0\x02\x01j\0\x01\x01\x01@\x02\x06\
-windoww\x04root\x03\0\x04\x04\0\x08set-root\x01\x05\x01@\x02\x06windoww\x04node\x03\
-\0\x04\x04\0\x0bupsert-node\x01\x06\x01@\x02\x06windoww\x06widgetw\0\x04\x04\0\x0b\
-remove-node\x01\x07\x04\0\x0afocus-node\x01\x07\x01@\x03\x06windoww\x06widgetw\x07\
-enabled\x7f\0\x04\x04\0\x0bset-enabled\x01\x08\x03\0\x13krate:ui/tree@0.1.0\x05&\
-\x01B\x0a\x02\x03\x02\x01!\x04\0\x08ui-error\x03\0\0\x01p}\x01r\x03\x05widthy\x06\
-heighty\x04rgba\x02\x04\0\x0cimage-pixels\x03\0\x03\x01j\0\x01\x01\x01@\x03\x06w\
-indoww\x06widgetw\x06pixels\x04\0\x05\x04\0\x0aset-pixels\x01\x06\x01@\x02\x06wi\
-ndoww\x06widgetw\0\x05\x04\0\x05clear\x01\x07\x03\0\x14krate:ui/image@0.1.0\x05'\
-\x02\x03\0\x13\x05event\x01B\x10\x02\x03\x02\x01(\x04\0\x05event\x03\0\0\x01k\x01\
-\x01@\0\0\x02\x04\0\x04poll\x01\x03\x01ky\x01@\x01\x0etimeout-millis\x04\0\x02\x04\
-\0\x04wait\x01\x05\x01@\x01\x03keys\0\x7f\x04\0\x08key-held\x01\x06\x01@\0\0\x7f\
-\x04\0\x11gamepad-connected\x01\x07\x01@\x01\x06buttons\0\x7f\x04\0\x0cgamepad-h\
-eld\x01\x08\x01@\x01\x04axiss\0v\x04\0\x0cgamepad-axis\x01\x09\x03\0\x15krate:ui\
-/events@0.1.0\x05)\x01B\x14\x02\x03\x02\x01!\x04\0\x08ui-error\x03\0\0\x01r\x02\x04\
-names\x05tokens\x04\0\x0bchosen-file\x03\0\x02\x01r\x02\x04names\x05tokens\x04\0\
-\x0dchosen-folder\x03\0\x04\x01j\0\x01\x01\x01@\x03\x06windoww\x05titles\x04body\
-s\0\x06\x04\0\x07message\x01\x07\x01j\x01\x7f\x01\x01\x01@\x03\x06windoww\x05tit\
-les\x04bodys\0\x08\x04\0\x07confirm\x01\x09\x01k\x03\x01j\x01\x0a\x01\x01\x01@\x03\
-\x06windoww\x05titles\x06filters\0\x0b\x04\0\x09open-file\x01\x0c\x01k\x05\x01j\x01\
-\x0d\x01\x01\x01@\x02\x06windoww\x05titles\0\x0e\x04\0\x0bopen-folder\x01\x0f\x03\
-\0\x15krate:ui/dialog@0.1.0\x05*\x01B\x08\x02\x03\x02\x01!\x04\0\x08ui-error\x03\
-\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\x01\
-@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1\
-.0\x05+\x02\x03\0\x13\x09menu-item\x01B\x08\x02\x03\x02\x01,\x04\0\x09menu-item\x03\
-\0\0\x02\x03\x02\x01!\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\x01@\x02\
-\x06windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui/menu\
-@0.1.0\x05-\x01B\x05\x01q\x03\x06denied\0\0\x0binvalid-url\x01s\0\x0bunavailable\
-\x01s\0\x04\0\x0claunch-error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03urls\0\x02\x04\0\
-\x08open-url\x01\x03\x03\0\x17krate:ui/launcher@0.1.0\x05.\x01B\x05\x01q\x03\x06\
-denied\0\0\x0finvalid-content\x01s\0\x0bunavailable\x01s\0\x04\0\x0cnotify-error\
-\x03\0\0\x01j\0\x01\x01\x01@\x02\x05titles\x04bodys\0\x02\x04\0\x04show\x01\x03\x03\
-\0\x15krate:ui/notify@0.1.0\x05/\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\
-\x05color\x03\0\0\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\x02\x05widt\
-hv\x06heightv\x04\0\x04size\x03\0\x04\x01r\x04\x05widthv\x06heightv\x06ascentv\x07\
-descentv\x04\0\x0ctext-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05widthv\x06heigh\
-tv\x04\0\x04rect\x03\0\x08\x01r\x02\x06offsetv\x05color\x01\x04\0\x0dgradient-st\
-op\x03\0\x0a\x01m\x03\x04sans\x05serif\x04mono\x04\0\x0bfont-family\x03\0\x0c\x01\
-r\x04\x06weight{\x06italic\x7f\x0eletter-spacingv\x06family\x0d\x04\0\x0atext-st\
-yle\x03\0\x0e\x01r\x04\x08top-leftv\x09top-rightv\x0cbottom-rightv\x0bbottom-lef\
-tv\x04\0\x0ccorner-radii\x03\0\x10\x01q\x04\x11permission-denied\0\0\x0einvalid-\
-target\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\0\x12\
-\x03\0\x15krate:gfx/types@0.1.0\x050\x02\x03\0\x1d\x05color\x02\x03\0\x1d\x05poi\
-nt\x02\x03\0\x1d\x04rect\x02\x03\0\x1d\x04size\x02\x03\0\x1d\x0ctext-metrics\x02\
-\x03\0\x1d\x09gfx-error\x02\x03\0\x1d\x0dgradient-stop\x02\x03\0\x1d\x0ccorner-r\
-adii\x02\x03\0\x1d\x0atext-style\x02\x03\0\x1d\x0bfont-family\x01BI\x02\x03\x02\x01\
-1\x04\0\x05color\x03\0\0\x02\x03\x02\x012\x04\0\x05point\x03\0\x02\x02\x03\x02\x01\
-3\x04\0\x04rect\x03\0\x04\x02\x03\x02\x014\x04\0\x04size\x03\0\x06\x02\x03\x02\x01\
-5\x04\0\x0ctext-metrics\x03\0\x08\x02\x03\x02\x016\x04\0\x09gfx-error\x03\0\x0a\x02\
-\x03\x02\x017\x04\0\x0dgradient-stop\x03\0\x0c\x02\x03\x02\x018\x04\0\x0ccorner-\
-radii\x03\0\x0e\x02\x03\x02\x019\x04\0\x0atext-style\x03\0\x10\x02\x03\x02\x01:\x04\
-\0\x0bfont-family\x03\0\x12\x01j\x01w\x01\x0b\x01@\x02\x06windoww\x06widgetw\0\x14\
-\x04\0\x04bind\x01\x15\x01j\x01\x07\x01\x0b\x01@\x01\x06canvasw\0\x16\x04\0\x0bc\
-anvas-size\x01\x17\x01j\0\x01\x0b\x01@\x05\x06canvasw\x01xv\x01yv\x01wv\x01hv\0\x18\
-\x04\0\x08set-clip\x01\x19\x01@\x01\x06canvasw\0\x18\x04\0\x0aclear-clip\x01\x1a\
-\x01@\x02\x06canvasw\x04fill\x01\0\x18\x04\0\x05clear\x01\x1b\x01@\x03\x06canvas\
-w\x04area\x05\x04fill\x01\0\x18\x04\0\x09fill-rect\x01\x1c\x01@\x04\x06canvasw\x04\
-area\x05\x06stroke\x01\x05widthv\0\x18\x04\0\x0bstroke-rect\x01\x1d\x01@\x04\x06\
-canvasw\x04area\x05\x05radii\x0f\x04fill\x01\0\x18\x04\0\x0ffill-round-rect\x01\x1e\
-\x01@\x05\x06canvasw\x04area\x05\x05radii\x0f\x05widthv\x06stroke\x01\0\x18\x04\0\
-\x11stroke-round-rect\x01\x1f\x01@\x05\x06canvasw\x04area\x05\x05radii\x0f\x04bl\
-urv\x06shadow\x01\0\x18\x04\0\x16drop-shadow-round-rect\x01\x20\x01p\x0d\x01@\x04\
-\x06canvasw\x04area\x05\x0dangle-degreesv\x05stops!\0\x18\x04\0\x15linear-gradie\
-nt-stops\x01\"\x01@\x06\x06canvasw\x04texts\x06origin\x03\x09font-sizev\x03ink\x01\
-\x05style\x11\0\x18\x04\0\x10draw-text-styled\x01#\x01j\x01\x09\x01\x0b\x01@\x04\
-\x06canvasw\x04texts\x09font-sizev\x05style\x11\0$\x04\0\x13measure-text-styled\x01\
-%\x01@\x07\x06canvasw\x06center\x03\x06radiusv\x0dstart-degreesv\x0dsweep-degree\
-sv\x05widthv\x06stroke\x01\0\x18\x04\0\x0astroke-arc\x01&\x01p}\x01@\x06\x06canv\
-asw\x04area\x05\x05radii\x0f\x05widthy\x06heighty\x04rgba'\0\x18\x04\0\x11draw-p\
-ixels-round\x01(\x01@\x04\x06canvasw\x06center\x03\x06radiusv\x04fill\x01\0\x18\x04\
-\0\x0bfill-circle\x01)\x01@\x05\x06canvasw\x06center\x03\x06radiusv\x05widthv\x06\
-stroke\x01\0\x18\x04\0\x0dstroke-circle\x01*\x01@\x05\x06canvasw\x06center\x03\x06\
-radiusv\x05inner\x01\x05outer\x01\0\x18\x04\0\x0fradial-gradient\x01+\x01@\x04\x06\
-canvasw\x04area\x05\x03top\x01\x06bottom\x01\0\x18\x04\0\x0flinear-gradient\x01,\
-\x01@\x05\x06canvasw\x04texts\x06origin\x03\x09font-sizev\x03ink\x01\0\x18\x04\0\
-\x09draw-text\x01-\x01@\x03\x06canvasw\x04texts\x09font-sizev\0$\x04\0\x0cmeasur\
-e-text\x01.\x01@\x05\x06canvasw\x04area\x05\x05widthy\x06heighty\x04rgba'\0\x18\x04\
-\0\x0bdraw-pixels\x01/\x01@\x07\x06canvasw\x06center\x03\x03dst\x07\x05anglev\x05\
-widthy\x06heighty\x04rgba'\0\x18\x04\0\x0bdraw-sprite\x010\x04\0\x07present\x01\x1a\
-\x03\0\x18krate:gfx/canvas2d@0.1.0\x05;\x01B\x1c\x02\x03\x02\x011\x04\0\x05color\
-\x03\0\0\x02\x03\x02\x016\x04\0\x09gfx-error\x03\0\x02\x01j\x01w\x01\x03\x01@\x02\
-\x06windoww\x06widgetw\0\x04\x04\0\x04bind\x01\x05\x01j\0\x01\x03\x01@\x02\x05sc\
-enew\x03sky\x01\0\x06\x04\0\x05clear\x01\x07\x01pv\x01@\x04\x05scenew\x03eye\x08\
-\x07look-at\x08\x0bfov-degreesv\0\x06\x04\0\x06camera\x01\x09\x01@\x02\x05scenew\
-\x09direction\x08\0\x06\x04\0\x05light\x01\x0a\x01@\x03\x05scenew\x08vertices\x08\
-\x04tint\x01\0\x06\x04\0\x09triangles\x01\x0b\x01@\x06\x05scenew\x08vertices\x08\
-\x09translate\x08\x0erotate-degrees\x08\x05scalev\x04tint\x01\0\x06\x04\0\x05pla\
-ce\x01\x0c\x01p}\x01@\x04\x05scenew\x05widthy\x06heighty\x04rgba\x0d\0\x04\x04\0\
-\x0eupload-texture\x01\x0e\x01@\x05\x05scenew\x08vertices\x08\x03uvs\x08\x07text\
-urew\x04tint\x01\0\x06\x04\0\x08textured\x01\x0f\x01@\x02\x05scenew\x07enabled\x7f\
-\0\x06\x04\0\x0fcull-back-faces\x01\x10\x01@\x01\x05scenew\0\x06\x04\0\x07presen\
-t\x01\x11\x03\0\x17krate:gfx/scene3d@0.1.0\x05<\x01B\x06\x01m\x02\x07pcm-s16\x07\
-float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0bsample-ratey\x08channels{\x06\
-format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\x03\0\x02\x01q\x05\x11permis\
-sion-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0bunsupported\x01\
-s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\x17krate:audio/types\
-@0.1.0\x05=\x02\x03\0\x20\x0baudio-error\x02\x03\0\x20\x0dstream-config\x01B\x15\
-\x02\x03\x02\x01>\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01?\x04\0\x0dstream-\
-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\
-\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04\
-stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-idw\x05bytes\x08\0\x09\x04\
-\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\0\x04\x04\0\x0aload-soun\
-d\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\x04\0\x0aplay-sound\x01\
-\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0astop-sound\x01\x0d\x03\0\x1a\
-krate:audio/playback@0.1.0\x05@\x01B\x0f\x02\x03\x02\x01>\x04\0\x0baudio-error\x03\
-\0\0\x02\x03\x02\x01?\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\
-\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\
-\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\x01\x01\x01\
-@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19krate:aud\
-io/capture@0.1.0\x05A\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\0\0\x01\
-q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01s\0\x0b\
-unsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01m\x05\x0f\
-invalid-request\x0fmodel-not-found\x0dmodel-invalid\x0bunsupported\x09inference\x04\
-\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\x01@\x04\x0bmodel-a\
-ssets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0atranscrib\
-e\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample\
--ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k}\x01j\
-\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08l\
-anguage\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11match-line-stream\x01\x0e\x03\
-\0\x20krate:speech/transcription@0.1.0\x05B\x01@\0\0z\x04\0\x03run\x01C\x04\0\x13\
-krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\x0cpr\
-ocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
+t-error\x03\0\x0b\x01q\x04\x07pending\0\0\x05ready\x01\x0a\0\x06failed\x01\x0c\0\
+\x0eunknown-handle\0\0\x04\0\x0cfetch-status\x03\0\x0d\x03\0\x15krate:net/types@\
+0.1.0\x05\x0e\x02\x03\0\x07\x07request\x02\x03\0\x07\x08response\x02\x03\0\x07\x09\
+net-error\x02\x03\0\x07\x0cfetch-status\x01B\x16\x02\x03\x02\x01\x0f\x04\0\x07re\
+quest\x03\0\0\x02\x03\x02\x01\x10\x04\0\x08response\x03\0\x02\x02\x03\x02\x01\x11\
+\x04\0\x09net-error\x03\0\x04\x02\x03\x02\x01\x12\x04\0\x0cfetch-status\x03\0\x06\
+\x01p}\x01j\x01\x08\x01\x05\x01@\x01\x03urls\0\x09\x04\0\x03get\x01\x0a\x01j\x01\
+\x03\x01\x05\x01@\x01\x03req\x01\0\x0b\x04\0\x05fetch\x01\x0c\x01j\x01w\x01\x05\x01\
+@\x01\x03req\x01\0\x0d\x04\0\x05begin\x01\x0e\x01@\x01\x06handlew\0\x07\x04\0\x04\
+poll\x01\x0f\x01@\x01\x06handlew\x01\0\x04\0\x06cancel\x01\x10\x03\0\x1bkrate:ne\
+t/http-client@0.1.0\x05\x13\x01B\x03\x01@\0\0w\x04\0\x0anow-millis\x01\0\x04\0\x0f\
+monotonic-nanos\x01\0\x03\0\x16krate:time/clock@0.1.0\x05\x14\x01B\x02\x01@\x01\x06\
+millisy\x01\0\x04\0\x0csleep-millis\x01\0\x03\0\x16krate:time/sleep@0.1.0\x05\x15\
+\x01B\x06\x01r\x01\x05bcp47s\x04\0\x09locale-id\x03\0\0\x01m\x04\x05short\x06med\
+ium\x04long\x04full\x04\0\x0adate-style\x03\0\x02\x01m\x03\x07decimal\x07percent\
+\x08currency\x04\0\x0cnumber-style\x03\0\x04\x03\0\x18krate:locale/types@0.1.0\x05\
+\x16\x02\x03\0\x0b\x09locale-id\x01B\x06\x02\x03\x02\x01\x17\x04\0\x09locale-id\x03\
+\0\0\x01@\0\0\x01\x04\0\x07current\x01\x02\x01@\0\0s\x04\0\x08timezone\x01\x03\x03\
+\0\x17krate:locale/info@0.1.0\x05\x18\x02\x03\0\x0b\x0adate-style\x02\x03\0\x0b\x0c\
+number-style\x01B\x0a\x02\x03\x02\x01\x17\x04\0\x09locale-id\x03\0\0\x02\x03\x02\
+\x01\x19\x04\0\x0adate-style\x03\0\x02\x02\x03\x02\x01\x1a\x04\0\x0cnumber-style\
+\x03\0\x04\x01@\x04\x06millisw\x02tzs\x05style\x03\x03loc\x01\0s\x04\0\x0bformat\
+-date\x01\x06\x01@\x03\x05valueu\x05style\x05\x03loc\x01\0s\x04\0\x0dformat-numb\
+er\x01\x07\x03\0\x19krate:locale/format@0.1.0\x05\x1b\x01B\x0a\x01q\x04\x09not-f\
+ound\0\0\x0cinvalid-path\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0eresource-err\
+or\x03\0\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x04paths\0\x03\x04\0\x04read\x01\x04\
+\x01ps\x01j\x01\x05\x01\x01\x01@\x01\x04paths\0\x06\x04\0\x04list\x01\x07\x03\0\x1c\
+krate:resources/assets@0.1.0\x05\x1c\x01B\x12\x01q\x04\x06denied\0\0\x0binvalid-\
+key\0\0\x09too-large\0\0\x02io\x01s\0\x04\0\x0bstore-error\x03\0\0\x01p}\x01k\x02\
+\x01j\x01\x03\x01\x01\x01@\x01\x03keys\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\
+\x01@\x02\x03keys\x05value\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x03keys\0\x06\
+\x04\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x04keys\x01\
+\x0b\x01@\0\0\x06\x04\0\x05clear\x01\x0c\x03\0\x14krate:store/kv@0.1.0\x05\x1d\x01\
+B\x15\x01p}\x01q\x05\x04null\0\0\x07integer\x01x\0\x04real\x01u\0\x04text\x01s\0\
+\x04blob\x01\0\0\x04\0\x05value\x03\0\x01\x01q\x05\x06denied\0\0\x11invalid-stat\
+ement\x01s\0\x09forbidden\x01s\0\x09too-large\0\0\x02io\x01s\0\x04\0\x09sql-erro\
+r\x03\0\x03\x01p\x02\x01r\x01\x06values\x05\x04\0\x03row\x03\0\x06\x01ps\x01p\x07\
+\x01r\x02\x07columns\x08\x04rows\x09\x04\0\x0cquery-result\x03\0\x0a\x01j\x01\x0b\
+\x01\x04\x01@\x02\x09statements\x06params\x05\0\x0c\x04\0\x05query\x01\x0d\x01j\x01\
+w\x01\x04\x01@\x02\x09statements\x06params\x05\0\x0e\x04\0\x07execute\x01\x0f\x01\
+j\0\x01\x04\x01@\x01\x0astatements\x08\0\x10\x04\0\x0btransaction\x01\x11\x03\0\x15\
+krate:store/sql@0.1.0\x05\x1e\x01B\x10\x01q\x04\x06denied\0\0\x0cinvalid-name\0\0\
+\x09too-large\0\0\x02io\x01s\0\x04\0\x0csecret-error\x03\0\0\x01p}\x01k\x02\x01j\
+\x01\x03\x01\x01\x01@\x01\x04names\0\x04\x04\0\x03get\x01\x05\x01j\0\x01\x01\x01\
+@\x02\x04names\x06secret\x02\0\x06\x04\0\x03set\x01\x07\x01@\x01\x04names\0\x06\x04\
+\0\x06delete\x01\x08\x01ps\x01j\x01\x09\x01\x01\x01@\0\0\x0a\x04\0\x05names\x01\x0b\
+\x03\0\x18krate:store/secret@0.1.0\x05\x1f\x01B\x0b\x01q\x04\x06denied\0\0\x09to\
+o-large\0\0\x0bempty-range\0\0\x0bunavailable\x01s\0\x04\0\x0crandom-error\x03\0\
+\0\x01p}\x01j\x01\x02\x01\x01\x01@\x01\x05county\0\x03\x04\0\x03get\x01\x04\x01j\
+\x01w\x01\x01\x01@\0\0\x05\x04\0\x08next-u64\x01\x06\x01@\x01\x05boundw\0\x05\x04\
+\0\x05below\x01\x07\x03\0\x18krate:random/bytes@0.1.0\x05\x20\x01B)\x01m\x04\x06\
+normal\x09minimized\x09maximized\x0afullscreen\x04\0\x0cwindow-state\x03\0\0\x01\
+r\x02\x05widthy\x06heighty\x04\0\x0bwindow-size\x03\0\x02\x01r\x04\x01xv\x01yv\x05\
+widthv\x06heightv\x04\0\x04rect\x03\0\x04\x01m\x03\x05light\x04dark\x07unknown\x04\
+\0\x05theme\x03\0\x06\x01m\x04\x07primary\x09secondary\x06middle\x05other\x04\0\x0e\
+pointer-button\x03\0\x08\x01r\x04\x05shift\x7f\x07control\x7f\x03alt\x7f\x04meta\
+\x7f\x04\0\x09modifiers\x03\0\x0a\x01kw\x01k\x09\x01r\x07\x06windoww\x06widget\x0c\
+\x01xv\x01yv\x06button\x0d\x07pressed\x7f\x09modifiers\x0b\x04\0\x0dpointer-even\
+t\x03\0\x0e\x01r\x07\x06windoww\x06widget\x0c\x01xv\x01yv\x02dxv\x02dyv\x09modif\
+iers\x0b\x04\0\x0bwheel-event\x03\0\x10\x01r\x03\x06windoww\x06widgetw\x04texts\x04\
+\0\x12text-changed-event\x03\0\x12\x01r\x05\x06windoww\x06widget\x0c\x03keys\x07\
+pressed\x7f\x09modifiers\x0b\x04\0\x09key-event\x03\0\x14\x01q\x05\x11permission\
+-denied\0\0\x0einvalid-window\0\0\x0einvalid-widget\0\0\x0bunsupported\x01s\0\x08\
+platform\x01s\0\x04\0\x08ui-error\x03\0\x16\x01m\x11\x05stack\x04grid\x06scroll\x04\
+tabs\x06button\x08checkbox\x05radio\x06switch\x06slider\x08progress\x04text\x0at\
+ext-field\x09text-area\x09list-view\x09tree-view\x05image\x06canvas\x04\0\x0bwid\
+get-kind\x03\0\x18\x01r\x02\x06cursory\x06anchory\x04\0\x0btext-cursor\x03\0\x1a\
+\x01kv\x01r\x04\x05width\x1c\x06height\x1c\x04growv\x07paddingv\x04\0\x05style\x03\
+\0\x1d\x01ks\x01k\x7f\x01ky\x01k\x1b\x01r\x0a\x02idw\x06parent\x0c\x04kind\x19\x05\
+label\x1f\x04role\x1f\x05style\x1e\x07checked\x20\x05value\x1c\x08selected!\x0bt\
+ext-cursor\"\x04\0\x0bwidget-node\x03\0#\x01r\x03\x02idw\x05labels\x07enabled\x7f\
+\x04\0\x09menu-item\x03\0%\x01q\x0b\x0fclose-requested\x01w\0\x07resized\x01\x03\
+\0\x10redraw-requested\x01w\0\x07pointer\x01\x0f\0\x03key\x01\x15\0\x05wheel\x01\
+\x11\0\x0atext-input\x01s\0\x0ctext-changed\x01\x13\0\x06action\x01w\0\x0dfocus-\
+changed\x01\x0c\0\x0dtheme-changed\x01\x07\0\x04\0\x05event\x03\0'\x03\0\x14krat\
+e:ui/types@0.1.0\x05!\x02\x03\0\x13\x08ui-error\x02\x03\0\x13\x0bwindow-size\x02\
+\x03\0\x13\x0cwindow-state\x01B\x14\x02\x03\x02\x01\"\x04\0\x08ui-error\x03\0\0\x02\
+\x03\x02\x01#\x04\0\x0bwindow-size\x03\0\x02\x02\x03\x02\x01$\x04\0\x0cwindow-st\
+ate\x03\0\x04\x01j\x01w\x01\x01\x01@\x02\x05titles\x04size\x03\0\x06\x04\0\x06cr\
+eate\x01\x07\x01j\0\x01\x01\x01@\x01\x06windoww\0\x08\x04\0\x04show\x01\x09\x04\0\
+\x05close\x01\x09\x01@\x02\x06windoww\x05titles\0\x08\x04\0\x09set-title\x01\x0a\
+\x01@\x02\x06windoww\x04size\x03\0\x08\x04\0\x08set-size\x01\x0b\x01@\x02\x06win\
+doww\x05state\x05\0\x08\x04\0\x09set-state\x01\x0c\x04\0\x0erequest-redraw\x01\x09\
+\x03\0\x15krate:ui/window@0.1.0\x05%\x02\x03\0\x13\x0bwidget-node\x01B\x0e\x02\x03\
+\x02\x01\"\x04\0\x08ui-error\x03\0\0\x02\x03\x02\x01&\x04\0\x0bwidget-node\x03\0\
+\x02\x01j\0\x01\x01\x01@\x02\x06windoww\x04root\x03\0\x04\x04\0\x08set-root\x01\x05\
+\x01@\x02\x06windoww\x04node\x03\0\x04\x04\0\x0bupsert-node\x01\x06\x01@\x02\x06\
+windoww\x06widgetw\0\x04\x04\0\x0bremove-node\x01\x07\x04\0\x0afocus-node\x01\x07\
+\x01@\x03\x06windoww\x06widgetw\x07enabled\x7f\0\x04\x04\0\x0bset-enabled\x01\x08\
+\x03\0\x13krate:ui/tree@0.1.0\x05'\x01B\x0a\x02\x03\x02\x01\"\x04\0\x08ui-error\x03\
+\0\0\x01p}\x01r\x03\x05widthy\x06heighty\x04rgba\x02\x04\0\x0cimage-pixels\x03\0\
+\x03\x01j\0\x01\x01\x01@\x03\x06windoww\x06widgetw\x06pixels\x04\0\x05\x04\0\x0a\
+set-pixels\x01\x06\x01@\x02\x06windoww\x06widgetw\0\x05\x04\0\x05clear\x01\x07\x03\
+\0\x14krate:ui/image@0.1.0\x05(\x02\x03\0\x13\x05event\x01B\x10\x02\x03\x02\x01)\
+\x04\0\x05event\x03\0\0\x01k\x01\x01@\0\0\x02\x04\0\x04poll\x01\x03\x01ky\x01@\x01\
+\x0etimeout-millis\x04\0\x02\x04\0\x04wait\x01\x05\x01@\x01\x03keys\0\x7f\x04\0\x08\
+key-held\x01\x06\x01@\0\0\x7f\x04\0\x11gamepad-connected\x01\x07\x01@\x01\x06but\
+tons\0\x7f\x04\0\x0cgamepad-held\x01\x08\x01@\x01\x04axiss\0v\x04\0\x0cgamepad-a\
+xis\x01\x09\x03\0\x15krate:ui/events@0.1.0\x05*\x01B\x14\x02\x03\x02\x01\"\x04\0\
+\x08ui-error\x03\0\0\x01r\x02\x04names\x05tokens\x04\0\x0bchosen-file\x03\0\x02\x01\
+r\x02\x04names\x05tokens\x04\0\x0dchosen-folder\x03\0\x04\x01j\0\x01\x01\x01@\x03\
+\x06windoww\x05titles\x04bodys\0\x06\x04\0\x07message\x01\x07\x01j\x01\x7f\x01\x01\
+\x01@\x03\x06windoww\x05titles\x04bodys\0\x08\x04\0\x07confirm\x01\x09\x01k\x03\x01\
+j\x01\x0a\x01\x01\x01@\x03\x06windoww\x05titles\x06filters\0\x0b\x04\0\x09open-f\
+ile\x01\x0c\x01k\x05\x01j\x01\x0d\x01\x01\x01@\x02\x06windoww\x05titles\0\x0e\x04\
+\0\x0bopen-folder\x01\x0f\x03\0\x15krate:ui/dialog@0.1.0\x05+\x01B\x08\x02\x03\x02\
+\x01\"\x04\0\x08ui-error\x03\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-te\
+xt\x01\x03\x01j\0\x01\x01\x01@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\
+\0\x18krate:ui/clipboard@0.1.0\x05,\x02\x03\0\x13\x09menu-item\x01B\x08\x02\x03\x02\
+\x01-\x04\0\x09menu-item\x03\0\0\x02\x03\x02\x01\"\x04\0\x08ui-error\x03\0\x02\x01\
+p\x01\x01j\0\x01\x03\x01@\x02\x06windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\
+\x06\x03\0\x13krate:ui/menu@0.1.0\x05.\x01B\x05\x01q\x03\x06denied\0\0\x0binvali\
+d-url\x01s\0\x0bunavailable\x01s\0\x04\0\x0claunch-error\x03\0\0\x01j\0\x01\x01\x01\
+@\x01\x03urls\0\x02\x04\0\x08open-url\x01\x03\x03\0\x17krate:ui/launcher@0.1.0\x05\
+/\x01B\x05\x01q\x03\x06denied\0\0\x0finvalid-content\x01s\0\x0bunavailable\x01s\0\
+\x04\0\x0cnotify-error\x03\0\0\x01j\0\x01\x01\x01@\x02\x05titles\x04bodys\0\x02\x04\
+\0\x04show\x01\x03\x03\0\x15krate:ui/notify@0.1.0\x050\x01B\x14\x01r\x04\x01rv\x01\
+gv\x01bv\x01av\x04\0\x05color\x03\0\0\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\
+\x01r\x02\x05widthv\x06heightv\x04\0\x04size\x03\0\x04\x01r\x04\x05widthv\x06hei\
+ghtv\x06ascentv\x07descentv\x04\0\x0ctext-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\
+\x05widthv\x06heightv\x04\0\x04rect\x03\0\x08\x01r\x02\x06offsetv\x05color\x01\x04\
+\0\x0dgradient-stop\x03\0\x0a\x01m\x03\x04sans\x05serif\x04mono\x04\0\x0bfont-fa\
+mily\x03\0\x0c\x01r\x04\x06weight{\x06italic\x7f\x0eletter-spacingv\x06family\x0d\
+\x04\0\x0atext-style\x03\0\x0e\x01r\x04\x08top-leftv\x09top-rightv\x0cbottom-rig\
+htv\x0bbottom-leftv\x04\0\x0ccorner-radii\x03\0\x10\x01q\x04\x11permission-denie\
+d\0\0\x0einvalid-target\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09gf\
+x-error\x03\0\x12\x03\0\x15krate:gfx/types@0.1.0\x051\x02\x03\0\x1d\x05color\x02\
+\x03\0\x1d\x05point\x02\x03\0\x1d\x04rect\x02\x03\0\x1d\x04size\x02\x03\0\x1d\x0c\
+text-metrics\x02\x03\0\x1d\x09gfx-error\x02\x03\0\x1d\x0dgradient-stop\x02\x03\0\
+\x1d\x0ccorner-radii\x02\x03\0\x1d\x0atext-style\x02\x03\0\x1d\x0bfont-family\x01\
+BK\x02\x03\x02\x012\x04\0\x05color\x03\0\0\x02\x03\x02\x013\x04\0\x05point\x03\0\
+\x02\x02\x03\x02\x014\x04\0\x04rect\x03\0\x04\x02\x03\x02\x015\x04\0\x04size\x03\
+\0\x06\x02\x03\x02\x016\x04\0\x0ctext-metrics\x03\0\x08\x02\x03\x02\x017\x04\0\x09\
+gfx-error\x03\0\x0a\x02\x03\x02\x018\x04\0\x0dgradient-stop\x03\0\x0c\x02\x03\x02\
+\x019\x04\0\x0ccorner-radii\x03\0\x0e\x02\x03\x02\x01:\x04\0\x0atext-style\x03\0\
+\x10\x02\x03\x02\x01;\x04\0\x0bfont-family\x03\0\x12\x01j\x01w\x01\x0b\x01@\x02\x06\
+windoww\x06widgetw\0\x14\x04\0\x04bind\x01\x15\x01j\x01\x07\x01\x0b\x01@\x01\x06\
+canvasw\0\x16\x04\0\x0bcanvas-size\x01\x17\x01j\0\x01\x0b\x01@\x02\x06canvasw\x04\
+size\x07\0\x18\x04\0\x0fset-design-size\x01\x19\x01@\x05\x06canvasw\x01xv\x01yv\x01\
+wv\x01hv\0\x18\x04\0\x08set-clip\x01\x1a\x01@\x01\x06canvasw\0\x18\x04\0\x0aclea\
+r-clip\x01\x1b\x01@\x02\x06canvasw\x04fill\x01\0\x18\x04\0\x05clear\x01\x1c\x01@\
+\x03\x06canvasw\x04area\x05\x04fill\x01\0\x18\x04\0\x09fill-rect\x01\x1d\x01@\x04\
+\x06canvasw\x04area\x05\x06stroke\x01\x05widthv\0\x18\x04\0\x0bstroke-rect\x01\x1e\
+\x01@\x04\x06canvasw\x04area\x05\x05radii\x0f\x04fill\x01\0\x18\x04\0\x0ffill-ro\
+und-rect\x01\x1f\x01@\x05\x06canvasw\x04area\x05\x05radii\x0f\x05widthv\x06strok\
+e\x01\0\x18\x04\0\x11stroke-round-rect\x01\x20\x01@\x05\x06canvasw\x04area\x05\x05\
+radii\x0f\x04blurv\x06shadow\x01\0\x18\x04\0\x16drop-shadow-round-rect\x01!\x01p\
+\x0d\x01@\x04\x06canvasw\x04area\x05\x0dangle-degreesv\x05stops\"\0\x18\x04\0\x15\
+linear-gradient-stops\x01#\x01@\x06\x06canvasw\x04texts\x06origin\x03\x09font-si\
+zev\x03ink\x01\x05style\x11\0\x18\x04\0\x10draw-text-styled\x01$\x01j\x01\x09\x01\
+\x0b\x01@\x04\x06canvasw\x04texts\x09font-sizev\x05style\x11\0%\x04\0\x13measure\
+-text-styled\x01&\x01@\x07\x06canvasw\x06center\x03\x06radiusv\x0dstart-degreesv\
+\x0dsweep-degreesv\x05widthv\x06stroke\x01\0\x18\x04\0\x0astroke-arc\x01'\x01p}\x01\
+@\x06\x06canvasw\x04area\x05\x05radii\x0f\x05widthy\x06heighty\x04rgba(\0\x18\x04\
+\0\x11draw-pixels-round\x01)\x01@\x04\x06canvasw\x06center\x03\x06radiusv\x04fil\
+l\x01\0\x18\x04\0\x0bfill-circle\x01*\x01@\x05\x06canvasw\x06center\x03\x06radiu\
+sv\x05widthv\x06stroke\x01\0\x18\x04\0\x0dstroke-circle\x01+\x01@\x05\x06canvasw\
+\x06center\x03\x06radiusv\x05inner\x01\x05outer\x01\0\x18\x04\0\x0fradial-gradie\
+nt\x01,\x01@\x04\x06canvasw\x04area\x05\x03top\x01\x06bottom\x01\0\x18\x04\0\x0f\
+linear-gradient\x01-\x01@\x05\x06canvasw\x04texts\x06origin\x03\x09font-sizev\x03\
+ink\x01\0\x18\x04\0\x09draw-text\x01.\x01@\x03\x06canvasw\x04texts\x09font-sizev\
+\0%\x04\0\x0cmeasure-text\x01/\x01@\x05\x06canvasw\x04area\x05\x05widthy\x06heig\
+hty\x04rgba(\0\x18\x04\0\x0bdraw-pixels\x010\x01@\x07\x06canvasw\x06center\x03\x03\
+dst\x07\x05anglev\x05widthy\x06heighty\x04rgba(\0\x18\x04\0\x0bdraw-sprite\x011\x04\
+\0\x07present\x01\x1b\x03\0\x18krate:gfx/canvas2d@0.1.0\x05<\x01B\x1c\x02\x03\x02\
+\x012\x04\0\x05color\x03\0\0\x02\x03\x02\x017\x04\0\x09gfx-error\x03\0\x02\x01j\x01\
+w\x01\x03\x01@\x02\x06windoww\x06widgetw\0\x04\x04\0\x04bind\x01\x05\x01j\0\x01\x03\
+\x01@\x02\x05scenew\x03sky\x01\0\x06\x04\0\x05clear\x01\x07\x01pv\x01@\x04\x05sc\
+enew\x03eye\x08\x07look-at\x08\x0bfov-degreesv\0\x06\x04\0\x06camera\x01\x09\x01\
+@\x02\x05scenew\x09direction\x08\0\x06\x04\0\x05light\x01\x0a\x01@\x03\x05scenew\
+\x08vertices\x08\x04tint\x01\0\x06\x04\0\x09triangles\x01\x0b\x01@\x06\x05scenew\
+\x08vertices\x08\x09translate\x08\x0erotate-degrees\x08\x05scalev\x04tint\x01\0\x06\
+\x04\0\x05place\x01\x0c\x01p}\x01@\x04\x05scenew\x05widthy\x06heighty\x04rgba\x0d\
+\0\x04\x04\0\x0eupload-texture\x01\x0e\x01@\x05\x05scenew\x08vertices\x08\x03uvs\
+\x08\x07texturew\x04tint\x01\0\x06\x04\0\x08textured\x01\x0f\x01@\x02\x05scenew\x07\
+enabled\x7f\0\x06\x04\0\x0fcull-back-faces\x01\x10\x01@\x01\x05scenew\0\x06\x04\0\
+\x07present\x01\x11\x03\0\x17krate:gfx/scene3d@0.1.0\x05=\x01B\x06\x01m\x02\x07p\
+cm-s16\x07float32\x04\0\x0dsample-format\x03\0\0\x01r\x04\x0bsample-ratey\x08cha\
+nnels{\x06format\x01\x0dbuffer-framesy\x04\0\x0dstream-config\x03\0\x02\x01q\x05\
+\x11permission-denied\0\0\x0einvalid-stream\0\0\x12device-unavailable\0\0\x0buns\
+upported\x01s\0\x08platform\x01s\0\x04\0\x0baudio-error\x03\0\x04\x03\0\x17krate\
+:audio/types@0.1.0\x05>\x02\x03\0\x20\x0baudio-error\x02\x03\0\x20\x0dstream-con\
+fig\x01B\x15\x02\x03\x02\x01?\x04\0\x0baudio-error\x03\0\0\x02\x03\x02\x01@\x04\0\
+\x0dstream-config\x03\0\x02\x01j\x01w\x01\x01\x01@\x01\x06config\x03\0\x04\x04\0\
+\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09stream-idw\0\x06\x04\0\x05start\x01\x07\
+\x04\0\x04stop\x01\x07\x01p}\x01j\x01y\x01\x01\x01@\x02\x09stream-idw\x05bytes\x08\
+\0\x09\x04\0\x05write\x01\x0a\x01@\x02\x09stream-idw\x05bytes\x08\0\x04\x04\0\x0a\
+load-sound\x01\x0b\x01@\x03\x09stream-idw\x05soundw\x04gainv\0\x06\x04\0\x0aplay\
+-sound\x01\x0c\x01@\x02\x09stream-idw\x05soundw\0\x06\x04\0\x0astop-sound\x01\x0d\
+\x03\0\x1akrate:audio/playback@0.1.0\x05A\x01B\x0f\x02\x03\x02\x01?\x04\0\x0baud\
+io-error\x03\0\0\x02\x03\x02\x01@\x04\0\x0dstream-config\x03\0\x02\x01j\x01w\x01\
+\x01\x01@\x01\x06config\x03\0\x04\x04\0\x04open\x01\x05\x01j\0\x01\x01\x01@\x01\x09\
+stream-idw\0\x06\x04\0\x05start\x01\x07\x04\0\x04stop\x01\x07\x01p}\x01j\x01\x08\
+\x01\x01\x01@\x02\x09stream-idw\x09max-bytesy\0\x09\x04\0\x04read\x01\x0a\x03\0\x19\
+krate:audio/capture@0.1.0\x05B\x01B\x12\x01r\x01\x04texts\x04\0\x0atranscript\x03\
+\0\0\x01q\x05\x0finvalid-request\x01s\0\x0fmodel-not-found\0\0\x0dmodel-invalid\x01\
+s\0\x0bunsupported\x01s\0\x09inference\x01s\0\x04\0\x0cspeech-error\x03\0\x02\x01\
+m\x05\x0finvalid-request\x0fmodel-not-found\x0dmodel-invalid\x0bunsupported\x09i\
+nference\x04\0\x0bmatch-error\x03\0\x04\x01p}\x01ks\x01j\x01\x01\x01\x03\x01@\x04\
+\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-ratey\x08language\x07\0\x08\x04\0\x0a\
+transcribe\x01\x09\x01j\x01}\x01\x05\x01@\x05\x0bmodel-assets\x0apcm-s16-le\x06\x0b\
+sample-ratey\x08language\x07\x08expecteds\0\x0a\x04\0\x0amatch-line\x01\x0b\x01k\
+}\x01j\x01\x0c\x01\x05\x01@\x06\x0bmodel-assets\x0apcm-s16-le\x06\x0bsample-rate\
+y\x08language\x07\x08expecteds\x06finish\x7f\0\x0d\x04\0\x11match-line-stream\x01\
+\x0e\x03\0\x20krate:speech/transcription@0.1.0\x05C\x01@\0\0z\x04\0\x03run\x01D\x04\
+\0\x13krate:app/gui@0.2.0\x04\0\x0b\x09\x01\0\x03gui\x03\0\0\0G\x09producers\x01\
+\x0cprocessed-by\x02\x0dwit-component\x070.227.1\x10wit-bindgen-rust\x060.41.0";
 #[inline(never)]
 #[doc(hidden)]
 pub fn __link_custom_section_describing_imports() {

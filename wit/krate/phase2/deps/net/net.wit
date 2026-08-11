@@ -52,6 +52,24 @@ interface types {
     body: list<u8>,
   }
 
+  /// What became of a request started with `http-client.begin`.
+  ///
+  /// One shape rather than a result, because "not finished yet" is a normal
+  /// answer here and not an error. `pending` is the only non-terminal
+  /// variant: the other three retire the handle.
+  variant fetch-status {
+    /// Still working. Draw a frame and ask again.
+    pending,
+    /// Finished, with the response.
+    ready(response),
+    /// Finished, badly. The same errors `fetch` can return.
+    failed(net-error),
+    /// This handle was never issued, or has already been answered or
+    /// cancelled. Distinct from `failed` so a double-poll is not mistaken
+    /// for a network problem.
+    unknown-handle,
+  }
+
   /// Network error shape returned by HTTP client calls.
   variant net-error {
     /// URL syntax or unsupported Phase 2 URL shape.
@@ -89,10 +107,40 @@ interface types {
 /// decision to the app keeps every host the request reaches one the person
 /// actually approved.
 interface http-client {
-  use types.{request, response, net-error};
+  use types.{request, response, net-error, fetch-status};
 
   /// Perform a simple GET request and return only the response body.
   get: func(url: string) -> result<list<u8>, net-error>;
   /// Perform a buffered HTTP request and return status, headers, and body.
   fetch: func(req: request) -> result<response, net-error>;
+
+  /// Start a request and return immediately with a handle.
+  ///
+  /// The work happens on a host thread while the guest keeps its own loop
+  /// turning, so the app can draw a spinner, animate, answer a click, or
+  /// offer a cancel button while the network is slow. This is the whole
+  /// point: a blocking `fetch` against a server that stalls three seconds
+  /// froze a real app for the full three seconds (K-101).
+  ///
+  /// The capability check happens here, at `begin`, exactly as it does for
+  /// `fetch` -- a handle is only ever issued for a host the person granted.
+  /// Failing that check fails this call, not the later `poll`.
+  ///
+  /// The handle is valid until `poll` returns a terminal answer or `cancel`
+  /// is called. Handles do not survive the run.
+  begin: func(req: request) -> result<u64, net-error>;
+
+  /// Ask what happened to a request started with `begin`.
+  ///
+  /// Returns immediately, always. `pending` means keep going -- draw a
+  /// frame and ask again later. Anything else is terminal and retires the
+  /// handle, so polling a finished request answers `unknown-handle`.
+  poll: func(handle: u64) -> fetch-status;
+
+  /// Abandon a request. The handle is retired whether or not the work had
+  /// finished, and any response already in flight is dropped.
+  ///
+  /// This is what a cancel button calls. It is safe on a handle that has
+  /// already been retired.
+  cancel: func(handle: u64);
 }

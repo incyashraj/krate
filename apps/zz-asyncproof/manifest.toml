@@ -1,0 +1,26 @@
+[app]
+id = "dev.krate.asyncproof"
+name = "Async proof"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_asyncproof.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the fetch window"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report the fetch result on exit for automated runs"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the URL to fetch and the quick-run flag"
+required = true
+
+[[capabilities]]
+cap = "net.connect:127.0.0.1:*"
+rationale = "Fetch from a local HTTP server in tests"
+required = true

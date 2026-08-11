@@ -581,6 +581,36 @@ krate::io::stdio::println(&body)?;
   - Performs a lower-level HTTP request and returns status, headers, and body.
   - The plain HTTP adapter now forwards the method, app headers, and buffered body while keeping `Host`, `Connection`, and `Content-Length` under host control.
   - Timeouts, oversized bodies, malformed responses, and missing grants are typed as `net-error` cases.
+> Start a request and return immediately with a handle.
+> 
+> The work happens on a host thread while the guest keeps its own loop
+> turning, so the app can draw a spinner, animate, answer a click, or
+> offer a cancel button while the network is slow. This is the whole
+> point: a blocking `fetch` against a server that stalls three seconds
+> froze a real app for the full three seconds (K-101).
+> 
+> The capability check happens here, at `begin`, exactly as it does for
+> `fetch` -- a handle is only ever issued for a host the person granted.
+> Failing that check fails this call, not the later `poll`.
+> 
+> The handle is valid until `poll` returns a terminal answer or `cancel`
+> is called. Handles do not survive the run.
+
+- `begin(req: request) -> result<u64, net-error>`
+> Ask what happened to a request started with `begin`.
+> 
+> Returns immediately, always. `pending` means keep going -- draw a
+> frame and ask again later. Anything else is terminal and retires the
+> handle, so polling a finished request answers `unknown-handle`.
+
+- `poll(handle: u64) -> fetch-status`
+> Abandon a request. The handle is retired whether or not the work had
+> finished, and any response already in flight is dropped.
+> 
+> This is what a cancel button calls. It is safe on a handle that has
+> already been retired.
+
+- `cancel(handle: u64)`
 
 
 ## `krate:net/types@0.1.0`
@@ -691,6 +721,29 @@ Shared network request, response, and error types.
 > Host-specific network error text.
 
 - `other`: `string`
+
+#### `fetch-status` variant
+
+> What became of a request started with `http-client.begin`.
+> 
+> One shape rather than a result, because "not finished yet" is a normal
+> answer here and not an error. `pending` is the only non-terminal
+> variant: the other three retire the handle.
+
+> Still working. Draw a frame and ask again.
+
+- `pending`
+> Finished, with the response.
+
+- `ready`: `response`
+> Finished, badly. The same errors `fetch` can return.
+
+- `failed`: `net-error`
+> This handle was never issued, or has already been answered or
+> cancelled. Distinct from `failed` so a double-poll is not mistaken
+> for a network problem.
+
+- `unknown-handle`
 
 
 ## `krate:random/bytes@0.1.0`
