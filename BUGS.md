@@ -71,6 +71,42 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-101 -- a network fetch freezes the app for its whole duration
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    runtime-hole
+Found:    2026-08-12, checking what Krate can actually build before starting
+          the compatibility programme (Plan/krate-compatibility-2026-08.md).
+Evidence: A guest is single-threaded -- no thread or concurrency primitive
+          exists anywhere in the WIT -- and the host's HTTP client is `ureq`,
+          which is synchronous (`Cargo.toml:86`). So `http_client::get`
+          blocks the guest's event loop until the response is complete.
+
+          Measured against a local server that stalls 3 seconds:
+
+            $ krate run krate_fetch.wasm --auto-grant --headless \
+                -- http://127.0.0.1:8799/
+            fetch:ok:356
+            ELAPSED: 5.37s
+
+          The app could not draw, animate, or answer a click for the whole
+          stall.
+Impact:   **A progress bar during a download is impossible, and so is a
+          cancel button.** Every networked Krate app is currently either
+          unresponsive while it works or too trivial to notice. This is the
+          single limit most likely to be hit by an outside developer
+          building something real.
+Fix:      Needs a way for the guest to start a request and keep turning its
+          loop -- e.g. `begin-fetch` returning a handle, plus a poll that
+          reports pending/done, so `events::poll` and the fetch can share
+          one thread. Streaming bodies (chunks rather than one buffered
+          `list<u8>`) are the natural follow-on and would also lift the
+          in-memory ceiling on large downloads.
+Note:     Rank against K-099 and the unmeasured authoring benchmark before
+          claiming it is next. It is the biggest *capability* gap; it may
+          not be the biggest *adoption* gap.
+
 ### K-100 -- roughly one in eleven app opens fails, and nobody knows why
 Status:   fixed 2026-08-12 -- reason codes ship in v0.1.12; the cause of the
           remaining real failures needs a week of data to name
