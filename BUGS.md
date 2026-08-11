@@ -71,6 +71,41 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-095 -- an interactive app handled one input event per frame
+Status:   fixed in the fleet and taught in the pack; the device verdict
+          on iOS responsiveness is still pending
+Owner:    lead
+Severity: blocker
+Class:    example-bug
+Found:    2026-08-11, on Yashraj's iPhone. His words named the shape
+          before the numbers did: "first swipe seems okayish, later ones
+          scroll with delay" -- the signature of a queue that grows
+          rather than a pipeline that is slow.
+Evidence: The device trace showed the pipeline was healthy where it was
+          measured -- scene 0.4 ms, render 3.7 ms, touch->wheel 0.9 ms --
+          while frames locked to exactly 33.3 ms and the app presented
+          precisely 50% of the vsyncs it was told about. Two causes
+          compounded:
+          1. The guest consumed ONE event per `events.wait` call and then
+             spent a whole frame drawing. A drag reports at up to 120 Hz,
+             so the backlog grows for as long as the finger moves; the
+             first swipe starts empty and every later swipe inherits it.
+          2. The runtime paced `present` with its own timer on top of a
+             GPU adapter that already blocks for the panel inside
+             get_current_texture. An earlier attempt to remove that made
+             the guest free-run instead -- visible in the trace as
+             gpu-present-done at 279.0 ms followed by gpu-present-start
+             at 280.2 -- so FIFO absorbed the wait and every frame landed
+             one refresh late.
+Fix:      Apps drain the queue with `events::poll()` before drawing, then
+          block once (krate-gram and krate-wall both did one-per-frame;
+          the wall is the sheet every app shows first, so its scroll is
+          the first thing anyone touches). The runtime no longer paces
+          present at all when the adapter blocks for vsync -- the display
+          is the only clock. The authoring pack now teaches the drain
+          pattern with the measurement behind it, so generated apps do
+          not inherit the bug.
+
 ### K-093 -- an app run from loose source can never see its own assets
 Status:   fixed 2026-08-11
 Owner:    lead

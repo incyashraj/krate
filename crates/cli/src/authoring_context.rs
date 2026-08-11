@@ -89,6 +89,28 @@ make subfolders. No fs capability at all. `apps/krate-tidy` is the worked \
 example: a folder tidier whose manifest has zero fs lines. For output the \
 app keeps between runs, use its own folder with a narrow scope like \
 `fs.write:./exports/**`.\n\n\
+## Draining input: the difference between smooth and laggy\n\n\
+A touch panel reports a drag up to 120 times a second, and every report \
+becomes an event. An app that handles ONE event per frame and then draws \
+can never catch up while a finger keeps moving: the backlog grows for as \
+long as the gesture lasts, and the screen falls seconds behind the thumb. \
+This was measured on a real iPhone -- the first swipe felt fine and every \
+later one felt broken. Always drain what is queued before drawing:\n\n\
+```rust\n\
+// Take everything already waiting, then draw once.\n\
+loop {\n\
+    match events::poll() {\n\
+        Some(Event::Wheel(w)) => scroll += w.dy,\n\
+        Some(Event::CloseRequested(_)) => return 0,\n\
+        Some(_) => {}\n\
+        None => break,\n\
+    }\n\
+}\n\
+// Then block for the next one (None) or poll briefly while animating.\n\
+match events::wait(if settled { None } else { Some(16) }) { /* ... */ }\n\
+```\n\n\
+`poll` returns immediately when nothing is queued, so this costs nothing \
+when the app is idle and everything when a finger is moving.\n\n\
 ## Motion that reads as polish\n\n\
 The SDK ships `krate::motion` (no_std, no capability): `ease_out`, \
 `ease_in_out`, `smoothstep`, and a critically-damped `Spring`. Measure dt \

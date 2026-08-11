@@ -2992,6 +2992,16 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
             }
         }
         const FRAME_BUDGET: std::time::Duration = std::time::Duration::from_micros(16_667);
+        // A GPU adapter's present blocks for the panel inside
+        // get_current_texture, and that IS the pacing. Adding our own timer
+        // on top made the guest free-run into FIFO's queue: measured on
+        // device as present-done immediately followed by present-start,
+        // every frame landing one refresh late, a hard 30 fps against a
+        // 60 Hz link, and acquire pinned at 27 ms. Let the display pace it.
+        if self.lists_enabled() {
+            self.last_present.set(Some(std::time::Instant::now()));
+            return Ok(self.publish_canvas(canvas));
+        }
         if let Some(previous) = self.last_present.get() {
             let elapsed = previous.elapsed();
             if elapsed < FRAME_BUDGET {
@@ -3007,7 +3017,12 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
                 // the drawable pool, and stall the next acquire for its full
                 // one-second timeout. Waking on VSYNC is bounded by the
                 // panel; waking on touches is not.
-                if !self.dispatcher().park_for_frame(remainder) {
+                // Only sleep when the adapter does NOT block for vsync
+                // itself. A GPU adapter's present already waits for the
+                // panel inside get_current_texture, so pacing here as well
+                // is the second wait that put input a frame behind
+                // (measured: 12 ms of a 15.3 ms frame in acquire).
+                if !self.dispatcher().supports_canvas_lists() {
                     std::thread::sleep(remainder);
                 }
             }

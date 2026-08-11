@@ -116,6 +116,14 @@ impl GpuCanvas {
                 format: surface_format,
                 width: physical_width,
                 height: physical_height,
+                // FIFO, and it is the ONLY pacer: get_current_texture
+                // blocks until the panel is ready, which is exactly the
+                // wait a frame loop should do. Immediate was tried and made
+                // things worse (acquire 12 ms -> 27 ms, 60 fps -> 30):
+                // without vsync backpressure the queue filled and the wait
+                // moved rather than disappeared. The double-pacing this was
+                // meant to fix is removed on the other side -- the display
+                // link no longer gates the frame loop as well.
                 present_mode: wgpu::PresentMode::Fifo,
                 // Opaque when offered: a compositor blending our alpha
                 // with whatever sits beneath the layer reads as flicker.
@@ -128,7 +136,10 @@ impl GpuCanvas {
                     caps.alpha_modes[0]
                 },
                 view_formats: vec![],
-                desired_maximum_frame_latency: 2,
+                // One frame in flight: with FIFO as the single pacer, a
+                // second queued frame is a whole extra frame of latency
+                // between the finger and the glass.
+                desired_maximum_frame_latency: 1,
             },
         );
 
@@ -158,6 +169,7 @@ impl GpuCanvas {
 
     /// Render one recorded frame and present it.
     pub fn present(&mut self, list: &CanvasList) -> Result<(), String> {
+        let t_scene = std::time::Instant::now();
         let mut scene = vello::Scene::new();
         let base = Affine::scale(self.scale as f64);
         let mut clip_depth = 0usize;
@@ -461,6 +473,8 @@ impl GpuCanvas {
             clip_depth -= 1;
         }
 
+        let scene_ms = t_scene.elapsed().as_secs_f64() * 1000.0;
+        let t_render = std::time::Instant::now();
         self.renderer
             .render_to_texture(
                 &self.device,
@@ -476,11 +490,15 @@ impl GpuCanvas {
             )
             .map_err(|e| format!("render: {e}"))?;
 
+        let render_ms = t_render.elapsed().as_secs_f64() * 1000.0;
+        let t_acquire = std::time::Instant::now();
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             other => return Err(format!("acquire: {other:?}")),
         };
+        let acquire_ms = t_acquire.elapsed().as_secs_f64() * 1000.0;
+        let t_submit = std::time::Instant::now();
         let frame_view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -491,6 +509,11 @@ impl GpuCanvas {
             .blit(&self.device, &mut encoder, &self.target_view, &frame_view);
         self.queue.submit([encoder.finish()]);
         frame.present();
+        let submit_ms = t_submit.elapsed().as_secs_f64() * 1000.0;
+        crate::uikit_native::diag(&format!(
+            "frame scene={scene_ms:.1} render={render_ms:.1} acquire={acquire_ms:.1} submit={submit_ms:.1} ops={}",
+            list.ops.len()
+        ));
         Ok(())
     }
 

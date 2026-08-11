@@ -779,6 +779,22 @@ impl bindings::Guest for Component {
             }
 
             let _ = window::request_redraw(win);
+            // Drain everything that is already queued before the next frame.
+            // One event per frame is what made a fast finger feel laggy: a
+            // 60 Hz drag produces a wheel delta every frame, so a loop that
+            // consumes one and then spends a whole frame drawing can never
+            // catch up -- the backlog grows for as long as the finger moves.
+            // Polling first costs nothing when the queue is empty.
+            loop {
+                match events::poll() {
+                    Some(types::Event::Wheel(wheel)) => {
+                        feed.scroll_by(wheel.dy, &layout);
+                    }
+                    Some(types::Event::CloseRequested(_)) => return 0,
+                    Some(_) => {}
+                    None => break,
+                }
+            }
             // Block for input when everything is at rest; poll while moving.
             let wait = if feed.settled(&layout) { None } else { Some(16) };
             match events::wait(wait) {

@@ -97,6 +97,32 @@ mod real {
     static VSYNC_PENDING: std::sync::atomic::AtomicBool =
         std::sync::atomic::AtomicBool::new(false);
 
+    /// TEMP on-device diagnostics for K-090: a timestamped log in the app
+    /// container, pulled over USB. Nothing else escapes a real iPhone.
+    pub fn diag(line: &str) {
+        use std::io::Write;
+        static FILE: OnceLock<Mutex<std::fs::File>> = OnceLock::new();
+        static EPOCH: OnceLock<std::time::Instant> = OnceLock::new();
+        let epoch = EPOCH.get_or_init(std::time::Instant::now);
+        let file = FILE.get_or_init(|| {
+            let path = std::env::var("HOME")
+                .map(|h| std::path::PathBuf::from(h).join("Documents/krate-diag.log"))
+                .unwrap_or_else(|_| "/tmp/krate-diag.log".into());
+            let _ = std::fs::create_dir_all(path.parent().unwrap());
+            Mutex::new(
+                std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .expect("diag log"),
+            )
+        });
+        let ms = epoch.elapsed().as_secs_f64() * 1000.0;
+        let mut file = file.lock().expect("diag lock");
+        let _ = writeln!(file, "{ms:.1} {line}");
+        let _ = file.flush();
+    }
+
     /// Guest-thread state: gesture synthesis, samples, and the raster
     /// buffer. Only the guest thread touches it.
     struct GuestSide {
@@ -169,6 +195,7 @@ mod real {
             #[unsafe(method(krateDisplayLinkFired:))]
             fn fired(&self, _link: &objc2_quartz_core::CADisplayLink) {
                 VSYNC_PENDING.store(true, std::sync::atomic::Ordering::Relaxed);
+                diag("vsync");
                 // Waking the guest costs nothing when it is already awake,
                 // and is the whole point when it is parked.
                 INPUT_ARRIVED.notify_all();
@@ -243,6 +270,7 @@ mod real {
             });
         }
         drop(shared);
+        diag("touch");
         INPUT_ARRIVED.notify_all();
     }
 
@@ -307,7 +335,13 @@ mod real {
                 // The GPU canvas draws into a CAMetalLayer sublayer sized
                 // to the full view at FULL native density -- the 2x cap is
                 // a CPU-raster economy the GPU does not need.
-                let native_scale = screen.scale() as f32;
+                // Cap the GPU raster at 2x too. Full 3x is 3.0 million
+                // pixels per frame; vello's compute passes could not finish
+                // one refresh in time, so get_current_texture waited for the
+                // NEXT vsync -- measured at 26 ms of acquire and a hard 30
+                // fps. At 2x the pixel work drops 2.25x and the layer's own
+                // contentsScale still presents it sharp on a 3x panel.
+                let native_scale = (screen.scale() as f32).min(2.0);
                 let metal: objc2::rc::Retained<objc2_quartz_core::CAMetalLayer> =
                     unsafe { objc2_quartz_core::CAMetalLayer::new() };
                 unsafe {
@@ -491,6 +525,7 @@ mod real {
     /// main queue, which only wraps them in a CGImage and sets the view.
     /// The autoreleasepool per frame is the macOS adapter's 46 GB lesson.
     fn blit(guest: &mut GuestSide) {
+        diag("cpu-blit-start");
         let phys_w = (guest.logical.width as f32 * guest.scale) as usize;
         let phys_h = (guest.logical.height as f32 * guest.scale) as usize;
         if phys_w == 0 || phys_h == 0 {
@@ -685,6 +720,7 @@ mod real {
             if let (Some((dx, dy, x, y)), Some(krate)) =
                 (guest.pending_scroll.take(), guest.krate)
             {
+                diag(&format!("wheel dy={dy:.0}"));
                 samples.push(RawWheelSample {
                     window: krate,
                     x,
@@ -826,13 +862,17 @@ mod real {
                     }
                 }
             }
+            diag("gpu-present-start");
             let gpu = slot.as_mut().expect("gpu initialized");
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 gpu.present(list)
             }))
             .unwrap_or_else(|_| Err("gpu present panicked".into()));
             match outcome {
-                Ok(()) => true,
+                Ok(()) => {
+                    diag("gpu-present-done");
+                    true
+                }
                 Err(why) => {
                     eprintln!("krate-ios: gpu present failed: {why}");
                     false

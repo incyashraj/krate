@@ -475,6 +475,29 @@ impl bindings::Guest for Component {
             } else {
                 Some(16)
             };
+            // Drain what is already queued before drawing again. Taking one
+            // event per frame means a 60 Hz drag outruns the loop and the
+            // backlog grows for as long as the finger moves -- the sheet
+            // would scroll seconds behind the thumb (the same bug found in
+            // krate-gram on a real iPhone). Polling costs nothing when the
+            // queue is empty.
+            loop {
+                match events::poll() {
+                    Some(types::Event::Wheel(wheel)) => {
+                        let max = (sheet.content_height() - l.h * 0.5).max(0.0);
+                        sheet.scroll = (sheet.scroll + wheel.dy).clamp(0.0, max);
+                    }
+                    Some(types::Event::CloseRequested(_)) => {
+                        decision = Some(false);
+                        break;
+                    }
+                    Some(_) => {}
+                    None => break,
+                }
+            }
+            if decision.is_some() {
+                break;
+            }
             match events::wait(wait) {
                 // Dismissed without answering is not consent: fail closed.
                 Some(types::Event::CloseRequested(_)) => {
