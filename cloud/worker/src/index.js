@@ -371,6 +371,26 @@ async function usage(request, env) {
   const os = String(event.os || "").slice(0, 16);
   const day = new Date().toISOString().slice(0, 10);
 
+  // Why an open did not end in a running app. A closed set here as well as in
+  // the CLI: this string is written straight into the dataset, so it must not
+  // be able to carry a path, a URL, or an app name. Anything unrecognised
+  // becomes "other", which is also the signal that the list needs a new entry.
+  //
+  // "refused" is the one to watch. The permission wall turning an app away is
+  // the product working, and it was previously counted as a plain failure --
+  // which is how the 9% open-failure rate (K-100) ended up unreadable.
+  const reasons = [
+    "refused",
+    "not-found",
+    "bad-bundle",
+    "bad-manifest",
+    "version-too-old",
+    "no-window",
+    "app-failed",
+    "other",
+  ];
+  const why = reasons.includes(event.why) ? event.why : event.ok === false ? "other" : "-";
+
   // One Analytics Engine data point, and no KV at all. The first version
   // wrote two KV keys per ping (seen: plus a read-modify-write count:), and
   // a single busy day -- CI replays plus one developer -- blew the free
@@ -387,6 +407,7 @@ async function usage(request, env) {
         event.ok === false ? "failed" : "ok",
         event.ai === true ? "by-ai" : "direct",
         day,
+        why,
       ],
       doubles: [1],
       indexes: [id],
@@ -425,6 +446,26 @@ async function stats(env) {
     distinct_installs_90d: allInstalls.size,
     active_installs_by_day: installsByDay,
     actions_by_day: actions,
+    // Why an open failed lives in the Analytics Engine dataset, not here:
+    // this endpoint only ever reads the retired KV keys. Until a reader for
+    // that dataset exists, say where the answer is rather than leave the
+    // impression that `open-failed` above has no explanation (K-100).
+    open_failure_reasons: {
+      note: "blob7 of the krate_usage dataset, from v0.1.12 onward",
+      query:
+        "SELECT blob7 AS why, sum(_sample_interval) AS n FROM krate_usage " +
+        "WHERE blob1 = 'open' AND blob4 = 'failed' GROUP BY why ORDER BY n DESC",
+      values: [
+        "refused",
+        "not-found",
+        "bad-bundle",
+        "bad-manifest",
+        "version-too-old",
+        "no-window",
+        "app-failed",
+        "other",
+      ],
+    },
   });
 }
 

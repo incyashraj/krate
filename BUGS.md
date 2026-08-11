@@ -72,8 +72,9 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-100 -- roughly one in eleven app opens fails, and nobody knows why
-Status:   open
-Owner:    unclaimed
+Status:   fixed 2026-08-12 -- reason codes ship in v0.1.12; the cause of the
+          remaining real failures needs a week of data to name
+Owner:    lead
 Severity: serious
 Class:    our-code
 Found:    2026-08-12, reading hub.krate.tech/stats while documenting real
@@ -90,12 +91,41 @@ Evidence: Five days of recorded actions from the live stats endpoint:
           telemetry records that an open failed but not why, so there is
           no way from here to tell a missing runtime from a bad bundle
           from an app that crashed on startup.
-Fix:      Two steps, in order. First give `open-failed` a reason code at
-          the point it is recorded, so the next week of data says what is
-          actually breaking. Then fix whatever dominates.
+Fix:      `usage::OpenFailure`, a closed enum of eight reasons, classified
+          from the finished run and sent as a `why` field. Closed rather
+          than free-form for the same reason `Action` is: a string would
+          eventually carry a path or an app name. The worker validates
+          against the same list and drops anything else.
+
+          Verified end to end against a local collector, not just in unit
+          tests -- each line below is a real run of the release binary:
+
+            $ krate run /nope/missing.krate
+            {"action":"open","ok":false,"why":"not-found"}
+
+            $ krate run seating3.krate --auto-grant
+            {"action":"open","ok":true}
+
+            $ krate run krate_tidy.wasm --manifest ... </dev/null
+            exit=5
+            {"action":"open","ok":false,"why":"refused"}
+
+          Twelve tests cover the classifier, including that the whole error
+          chain is read (the CLI wraps almost everything in context, so a
+          cause under a context line must still classify) and that every
+          reason is a fixed lowercase word.
+Finding:  **`refused` is not a failure.** The permission wall turning an
+          app away exits 5, and exit 5 was being counted as a failed open.
+          Some unknown share of the 425 was the product working correctly,
+          so the true defect rate is lower than 9.2% -- by how much, the
+          next week of data will say. This is why the fix had to be a
+          reason code and not a guess at a cause.
+Next:     Read blob7 of the krate_usage dataset once v0.1.12 has been out a
+          week, then fix whatever dominates after `refused` is excluded.
+          `/stats` carries the query to run.
 Note:     This is the highest-value signal we have that is not a guess --
           it is real people, on real machines, failing to open real apps.
-          Worth more than another install-count push: fixing a 9% failure
+          Worth more than another install-count push: fixing a real failure
           rate helps every future user, and G5 needs opens that work.
 
 ### K-099 -- nothing measures wasted space inside a generated app's window

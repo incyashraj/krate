@@ -2075,6 +2075,29 @@ open success rate means roughly one in eleven attempts to open an app
 failed. That is a product-quality signal we get for free, and it is the
 kind of thing worth fixing before chasing more installs.
 
+\begin{plainbox}{What happened when we looked --- a lesson in measurement}
+That 9.2\% was found by reading the live statistics while writing this
+document. Nobody had reported it. And when we went to fix it, the
+telemetry could say only \emph{that} an open failed, never \emph{why} ---
+so the number was alarming and unactionable at the same time.
+
+Failed opens now carry one word from a fixed list: \texttt{refused},
+\texttt{not-found}, \texttt{bad-bundle}, \texttt{bad-manifest},
+\texttt{version-too-old}, \texttt{no-window}, \texttt{app-failed},
+\texttt{other}. A closed list, not free text, so it can never carry a file
+path or an app name.
+
+\textbf{The first finding was definitional and it changes the number.}
+\texttt{refused} --- the permission wall turning an app away --- exits with
+code 5, and code 5 was being counted as a failed open. Some share of those
+425 failures was \emph{the product working exactly as designed}. The true
+defect rate is lower than 9.2\%; how much lower needs a week of data.
+
+If someone asks you about this number, that is the answer: we found it
+ourselves, we could not explain it, so we built the thing that explains it
+before quoting a cause.
+\end{plainbox}
+
 \section{The hard questions}
 
 \textbf{``289 commits in eight days. Is this AI-generated slop?''}\\

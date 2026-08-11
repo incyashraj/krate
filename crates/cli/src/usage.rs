@@ -51,6 +51,114 @@ impl Action {
     }
 }
 
+/// Why an open did not end in a running app.
+///
+/// A closed set for the same reason `Action` is one: a free-form string would
+/// eventually carry a path, a URL, or an app name, and none of those are ours
+/// to collect. Every variant below is a category of *our* behaviour, and none
+/// of them can vary with anything about the person or their files.
+///
+/// This exists because the telemetry recorded that 425 of 4,612 opens failed
+/// over five days (K-100) and could not say why -- so the number was alarming
+/// and unactionable at the same time. A count without a cause cannot be fixed.
+///
+/// The most important variant is `Refused`. The permission wall turning an app
+/// away is the product working, not breaking, and it was previously counted as
+/// a failure. Any read of the failure rate that does not separate it is wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenFailure {
+    /// The app asked for something the person did not grant, so the wall
+    /// refused it. **Not a defect** -- this is the product doing its job.
+    Refused,
+    /// The file or URL could not be found or fetched.
+    NotFound,
+    /// The bundle was there but could not be read: malformed, truncated, or
+    /// failing one of the format's own limits.
+    BadBundle,
+    /// The manifest would not parse or did not match the component.
+    BadManifest,
+    /// The app needs a newer Krate than this one.
+    VersionTooOld,
+    /// The machine could not open a window at all -- a missing system
+    /// library, or no display.
+    NoWindow,
+    /// The app started and then failed on its own: a trap, a panic, or a
+    /// non-zero exit of its own choosing.
+    AppFailed,
+    /// Anything not yet classified. A rising share here means the list above
+    /// needs another variant, and is itself the signal to look.
+    Other,
+}
+
+impl OpenFailure {
+    fn as_str(self) -> &'static str {
+        match self {
+            OpenFailure::Refused => "refused",
+            OpenFailure::NotFound => "not-found",
+            OpenFailure::BadBundle => "bad-bundle",
+            OpenFailure::BadManifest => "bad-manifest",
+            OpenFailure::VersionTooOld => "version-too-old",
+            OpenFailure::NoWindow => "no-window",
+            OpenFailure::AppFailed => "app-failed",
+            OpenFailure::Other => "other",
+        }
+    }
+
+    /// Classify a finished run into one of the categories above.
+    ///
+    /// Reads the error chain rather than the message text where it can, and
+    /// falls back to matching on the sentences the CLI itself prints -- those
+    /// are our own strings, fixed in this binary, not anything a person typed.
+    pub fn classify(outcome: &Result<u8, anyhow::Error>) -> Option<Self> {
+        match outcome {
+            // The wall refusing, and the manifest-entry mismatch, both exit 5.
+            Ok(5) => Some(OpenFailure::Refused),
+            Ok(0) => None,
+            Ok(_) => Some(OpenFailure::AppFailed),
+            Err(err) => Some(Self::from_error(err)),
+        }
+    }
+
+    fn from_error(err: &anyhow::Error) -> Self {
+        // The whole chain, lowercased once, so a cause deep in the stack is
+        // still visible to the match below.
+        let text = err
+            .chain()
+            .map(|cause| cause.to_string().to_lowercase())
+            .collect::<Vec<_>>()
+            .join(" :: ");
+
+        if text.contains("needs a newer version of krate")
+            || text.contains("version-too-old")
+            || text.contains("unsupported world")
+        {
+            OpenFailure::VersionTooOld
+        } else if text.contains("does not exist")
+            || text.contains("not found")
+            || text.contains("could not open bundle from")
+            || text.contains("no such file")
+        {
+            OpenFailure::NotFound
+        } else if text.contains("bundle") {
+            OpenFailure::BadBundle
+        } else if text.contains("manifest") {
+            OpenFailure::BadManifest
+        } else if text.contains("libxkbcommon")
+            || text.contains("could not open a window")
+            || text.contains("no display")
+        {
+            OpenFailure::NoWindow
+        } else if text.contains("wasm trap")
+            || text.contains("panicked")
+            || text.contains("unreachable")
+        {
+            OpenFailure::AppFailed
+        } else {
+            OpenFailure::Other
+        }
+    }
+}
+
 /// The two extra facts worth knowing, both about the software rather than the
 /// person.
 ///
@@ -65,6 +173,9 @@ pub struct Facts {
     pub ai: Option<bool>,
     /// Whether the thing succeeded.
     pub ok: Option<bool>,
+    /// When it did not succeed, which category of not-succeeding. Always
+    /// `None` alongside `ok: Some(true)`.
+    pub why: Option<OpenFailure>,
 }
 
 fn krate_dir() -> Option<PathBuf> {
@@ -228,6 +339,9 @@ pub fn record_with(action: Action, facts: Facts) {
     if let Some(ok) = facts.ok {
         body.push_str(&format!(r#","ok":{ok}"#));
     }
+    if let Some(why) = facts.why {
+        body.push_str(&format!(r#","why":"{}""#, why.as_str()));
+    }
     body.push('}');
 
     // Spool to disk, then try to drain in the background. Nothing on this
@@ -384,6 +498,9 @@ pub fn telemetry_command(state: &str) -> anyhow::Result<u8> {
             println!("Sent:      a random id, the Krate version, the operating system,");
             println!("           and one of install/make/open/publish -- plus whether an");
             println!("           AI wrote the app and whether it worked.");
+            println!("           When an app does not open, one word for why, from a");
+            println!("           fixed list: refused, not-found, bad-bundle, bad-manifest,");
+            println!("           version-too-old, no-window, app-failed, other.");
             println!("Not sent:  app names, prompts, file paths, your name, your machine.");
             println!();
             if opted_out() {
@@ -408,6 +525,106 @@ mod tests {
         assert_eq!(Action::Make.as_str(), "make");
         assert_eq!(Action::Open.as_str(), "open");
         assert_eq!(Action::Publish.as_str(), "publish");
+    }
+
+    /// A clean run is not a failure and carries no reason at all.
+    #[test]
+    fn a_successful_open_has_no_reason() {
+        assert_eq!(OpenFailure::classify(&Ok(0)), None);
+    }
+
+    /// The one that changes how the whole number reads: the permission wall
+    /// refusing an app is the product working, and it exits 5.
+    #[test]
+    fn the_permission_wall_refusing_is_its_own_category() {
+        assert_eq!(OpenFailure::classify(&Ok(5)), Some(OpenFailure::Refused));
+    }
+
+    /// Any other non-zero exit is the app's own choice, not ours.
+    #[test]
+    fn a_nonzero_exit_is_the_app_failing() {
+        assert_eq!(OpenFailure::classify(&Ok(1)), Some(OpenFailure::AppFailed));
+        assert_eq!(OpenFailure::classify(&Ok(42)), Some(OpenFailure::AppFailed));
+    }
+
+    #[test]
+    fn a_missing_file_is_not_found() {
+        let err = anyhow::anyhow!("input file does not exist: /x/y.krate");
+        assert_eq!(
+            OpenFailure::classify(&Err(err)),
+            Some(OpenFailure::NotFound)
+        );
+    }
+
+    /// The classifier reads the whole chain, so a cause buried under a
+    /// context line is still seen. This is the case that matters most in
+    /// practice, because the CLI wraps almost everything in context.
+    #[test]
+    fn a_cause_below_a_context_line_is_still_classified() {
+        let root = anyhow::anyhow!("no such file or directory");
+        let wrapped = root.context("could not open bundle /tmp/app.krate");
+        assert_eq!(
+            OpenFailure::classify(&Err(wrapped)),
+            Some(OpenFailure::NotFound)
+        );
+    }
+
+    #[test]
+    fn an_old_app_is_told_apart_from_a_broken_one() {
+        let err = anyhow::anyhow!("this app needs a newer version of Krate");
+        assert_eq!(
+            OpenFailure::classify(&Err(err)),
+            Some(OpenFailure::VersionTooOld)
+        );
+    }
+
+    #[test]
+    fn a_missing_window_library_is_its_own_category() {
+        let err = anyhow::anyhow!("libxkbcommon-x11.so is not installed");
+        assert_eq!(
+            OpenFailure::classify(&Err(err)),
+            Some(OpenFailure::NoWindow)
+        );
+    }
+
+    #[test]
+    fn a_trap_is_the_app_failing() {
+        let err = anyhow::anyhow!("wasm trap: wasm `unreachable` instruction executed");
+        assert_eq!(
+            OpenFailure::classify(&Err(err)),
+            Some(OpenFailure::AppFailed)
+        );
+    }
+
+    /// Anything unrecognised is `other` rather than a guess. A rising share
+    /// of `other` is the signal that the list needs another variant.
+    #[test]
+    fn an_unknown_failure_is_other_rather_than_a_guess() {
+        let err = anyhow::anyhow!("something nobody predicted");
+        assert_eq!(OpenFailure::classify(&Err(err)), Some(OpenFailure::Other));
+    }
+
+    /// The privacy property, stated as a test: every reason is a fixed word
+    /// from this file. None of them can carry a path or an app name.
+    #[test]
+    fn every_reason_is_a_fixed_plain_word() {
+        for reason in [
+            OpenFailure::Refused,
+            OpenFailure::NotFound,
+            OpenFailure::BadBundle,
+            OpenFailure::BadManifest,
+            OpenFailure::VersionTooOld,
+            OpenFailure::NoWindow,
+            OpenFailure::AppFailed,
+            OpenFailure::Other,
+        ] {
+            let word = reason.as_str();
+            assert!(!word.is_empty());
+            assert!(
+                word.chars().all(|c| c.is_ascii_lowercase() || c == '-'),
+                "{word} is not a plain word"
+            );
+        }
     }
 
     #[test]

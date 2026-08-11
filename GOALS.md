@@ -116,6 +116,12 @@ workstation lands, so a session that dies mid-flight loses nothing.
 - **2026-08-05** — Anonymous usage counting, opt-out, with `krate telemetry
   off`. Sends a random id, version, OS, one of install/make/open/publish, and
   whether an AI wrote it and whether it worked. Nothing else.
+- **2026-08-12** — That "whether it worked" bit turned out to be unactionable:
+  425 of 4,612 opens had failed and nothing recorded why (K-100). Failed opens
+  now carry one word from a closed list — `refused`, `not-found`, `bad-bundle`,
+  `bad-manifest`, `version-too-old`, `no-window`, `app-failed`, `other`. The
+  first finding is definitional: `refused` is the permission wall doing its
+  job, and counting it as a failure was overstating the real rate.
 - **2026-08-05** — macOS never delivered clicks to a drawn app. Same hole as
   scroll, same file: AppKit sent mouse events down a responder chain a canvas
   app does not answer. That was K-017, and it is why a generated news app

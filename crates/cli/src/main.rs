@@ -2602,6 +2602,7 @@ pub(crate) fn author_app_for_tui(
         usage::Facts {
             ai: Some(true),
             ok: Some(code == 0),
+            why: None,
         },
     );
     if code == 0 {
@@ -5720,12 +5721,20 @@ fn run_component(request: RunRequest) -> Result<u8> {
     usage::record_install_once();
     // Whether the app actually started is the number that matters: an open
     // that fails is exactly what a count of successes alone would hide.
+    //
+    // And *why* it failed is the number that can be acted on. Counting only
+    // the bit left us with "one open in eleven fails" and no way to tell a
+    // missing file from a crash from the permission wall doing its job
+    // (K-100). `classify` sorts a finished run into a closed set of
+    // categories, none of which can carry anything about the person.
     let opened = run_component_inner(request);
+    let why = usage::OpenFailure::classify(&opened);
     usage::record_with(
         usage::Action::Open,
         usage::Facts {
             ai: None,
-            ok: Some(matches!(opened, Ok(0))),
+            ok: Some(why.is_none()),
+            why,
         },
     );
     opened
