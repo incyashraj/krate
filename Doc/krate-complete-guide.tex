@@ -1281,12 +1281,57 @@ G5 is the only one that cannot be engineered around.
 
 \begin{enumerate}[leftmargin=*]
   \item Re-run the authoring benchmark and publish the number.
-  \item Make generated apps look good by default --- the visual quality of
-    an arbitrary new app is the current weak point.
   \item Finish smartphone responsiveness; port GPU rendering to Android.
   \item Windows code-signing certificate.
   \item Audit the 21 MB runtime.
 \end{enumerate}
+
+\section{One that just came off the list, and what it teaches}
+
+``Make an arbitrary new app look good by default'' was on this queue. It
+was fixed on 11 August 2026, and the shape of the bug is worth keeping,
+because it is a kind that will happen again.
+
+The runtime had grown proper drawing tools --- rounded rectangles, soft
+shadows, gradients with stops, and font weights. But the document the AI
+reads before writing an app still contained older advice, in prose, telling
+it to fake a rounded card by drawing a rectangle and four circles at the
+corners. Nine of our own example apps still did it that way, and the AI
+learns by copying those.
+
+The result was that Krate could draw beautifully and generated apps looked
+dated anyway. It was visible: in one app every empty checkbox and text
+field rendered as a \emph{broken dotted box}, because the hand-built
+outline drew its corners as single pixels.
+
+The fix was to rewrite the guidance around the tools that exist and convert
+all nine apps. Then it was tested the only way that counts --- by asking
+for an app nobody had built before, a wedding seating-chart planner:
+
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+\textbf{In the freshly generated app} & \textbf{Times used} \\
+\midrule
+\texttt{drop\_shadow\_round\_rect} (never taught before) & 2 \\
+\texttt{draw\_text\_styled} (never taught before) & 2 \\
+\texttt{measure\_text\_styled} (never taught before) & 2 \\
+\texttt{fill\_round\_rect} / \texttt{stroke\_round\_rect} & 2 \\
+The old four-circle corner hack & \textbf{0} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+It produced a serif display heading, a gold-on-charcoal palette it chose
+for a wedding, a floor plan of round tables with seat dots showing who is
+seated, and a side panel of unseated guests --- in a 29{,}762-byte file.
+
+\begin{factbox}{The lesson worth repeating}
+When a capability ships, the work is not finished until the \emph{prose}
+the AI reads changes and the examples stop demonstrating the old way. A
+function list that a model never reads is not teaching. This is why the bug
+board has a \texttt{teaching-hole} class at all.
+\end{factbox}
 
 % =====================================================================
 \chapter{Questions and Answers}
