@@ -225,7 +225,7 @@ impl FrameBuffer {
         let Some(&first) = margin.first() else {
             return false;
         };
-        return margin.iter().any(|p| *p != first);
+        margin.iter().any(|p| *p != first)
     }
 
     pub fn has_content(&self) -> bool {
@@ -268,7 +268,13 @@ mod tests {
             width: 8,
             height: 8,
             pixels: (0..64)
-                .map(|i| if i % 2 == 0 { 0xFF_00_00_00 } else { 0xFF_FF_FF_FF })
+                .map(|i| {
+                    if i % 2 == 0 {
+                        0xFF_00_00_00
+                    } else {
+                        0xFF_FF_FF_FF
+                    }
+                })
                 .collect(),
         };
         assert!(

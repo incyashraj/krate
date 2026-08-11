@@ -132,7 +132,8 @@ pub struct Phase3GuiHost {
     next_canvas_id: std::cell::Cell<u64>,
     /// Per-canvas display lists, recorded only when the adapter renders
     /// them (`lists_enabled`); the GPU consumer's frame food.
-    canvas_lists: std::cell::RefCell<std::collections::HashMap<u64, crate::canvas_list::CanvasList>>,
+    canvas_lists:
+        std::cell::RefCell<std::collections::HashMap<u64, crate::canvas_list::CanvasList>>,
     lists_enabled: std::cell::Cell<Option<bool>>,
     /// Native microphone streams owned by this one sandboxed app session.
     audio_capture: AudioCaptureRuntime,
@@ -1477,8 +1478,7 @@ impl Phase3GuiHost {
                 (*window, *widget, frame)
             };
             let (window, widget, frame) = taken;
-            let handle: krate_adapter_common::ui::CanvasListHandle =
-                std::sync::Arc::new(frame);
+            let handle: krate_adapter_common::ui::CanvasListHandle = std::sync::Arc::new(frame);
             if self
                 .dispatcher()
                 .present_canvas_list(window, widget, handle)
@@ -2104,9 +2104,7 @@ impl ui::events::Host for Phase3GuiHost {
                 None => 250,
             });
             if !self.dispatcher().park_for_events(park) {
-                std::thread::sleep(std::time::Duration::from_millis(
-                    WAIT_POLL_INTERVAL_MILLIS,
-                ));
+                std::thread::sleep(std::time::Duration::from_millis(WAIT_POLL_INTERVAL_MILLIS));
             }
         }
     }
@@ -2567,7 +2565,10 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         canvas: u64,
         fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::Clear(pack_color(fill.r, fill.g, fill.b, fill.a)));
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::Clear(pack_color(fill.r, fill.g, fill.b, fill.a)),
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2587,7 +2588,10 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         w: f32,
         h: f32,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::SetClip(Some((x, y, w, h))));
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::SetClip(Some((x, y, w, h))),
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2621,7 +2625,13 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         area: gfx::types::Rect,
         fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::FillRect { rect: (area.x, area.y, area.width, area.height), color: pack_color(fill.r, fill.g, fill.b, fill.a) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::FillRect {
+                rect: (area.x, area.y, area.width, area.height),
+                color: pack_color(fill.r, fill.g, fill.b, fill.a),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2646,7 +2656,14 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         radius: f32,
         fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::FillCircle { center: (center.x, center.y), radius, color: pack_color(fill.r, fill.g, fill.b, fill.a) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::FillCircle {
+                center: (center.x, center.y),
+                radius,
+                color: pack_color(fill.r, fill.g, fill.b, fill.a),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2671,7 +2688,15 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         width: f32,
         stroke: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::StrokeCircle { center: (center.x, center.y), radius, width, color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::StrokeCircle {
+                center: (center.x, center.y),
+                radius,
+                width,
+                color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2696,7 +2721,19 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         radii: gfx::types::CornerRadii,
         fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::FillRoundRect { rect: (area.x, area.y, area.width, area.height), radii: (radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left), color: pack_color(fill.r, fill.g, fill.b, fill.a) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::FillRoundRect {
+                rect: (area.x, area.y, area.width, area.height),
+                radii: (
+                    radii.top_left,
+                    radii.top_right,
+                    radii.bottom_right,
+                    radii.bottom_left,
+                ),
+                color: pack_color(fill.r, fill.g, fill.b, fill.a),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2728,7 +2765,20 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         width: f32,
         stroke: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::StrokeRoundRect { rect: (area.x, area.y, area.width, area.height), radii: (radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left), width, color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::StrokeRoundRect {
+                rect: (area.x, area.y, area.width, area.height),
+                radii: (
+                    radii.top_left,
+                    radii.top_right,
+                    radii.bottom_right,
+                    radii.bottom_left,
+                ),
+                width,
+                color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2761,7 +2811,20 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         blur: f32,
         shadow: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::DropShadowRoundRect { rect: (area.x, area.y, area.width, area.height), radii: (radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left), blur, color: pack_color(shadow.r, shadow.g, shadow.b, shadow.a) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::DropShadowRoundRect {
+                rect: (area.x, area.y, area.width, area.height),
+                radii: (
+                    radii.top_left,
+                    radii.top_right,
+                    radii.bottom_right,
+                    radii.bottom_left,
+                ),
+                blur,
+                color: pack_color(shadow.r, shadow.g, shadow.b, shadow.a),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2793,7 +2856,22 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         angle_degrees: f32,
         stops: Vec<gfx::types::GradientStop>,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::LinearGradientStops { rect: (area.x, area.y, area.width, area.height), angle_degrees, stops: stops.iter().map(|s| (s.offset, pack_color(s.color.r, s.color.g, s.color.b, s.color.a))).collect() });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::LinearGradientStops {
+                rect: (area.x, area.y, area.width, area.height),
+                angle_degrees,
+                stops: stops
+                    .iter()
+                    .map(|s| {
+                        (
+                            s.offset,
+                            pack_color(s.color.r, s.color.g, s.color.b, s.color.a),
+                        )
+                    })
+                    .collect(),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2829,7 +2907,15 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         inner: gfx::types::Color,
         outer: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::RadialGradient { center: (center.x, center.y), radius, inner: pack_color(inner.r, inner.g, inner.b, inner.a), outer: pack_color(outer.r, outer.g, outer.b, outer.a) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::RadialGradient {
+                center: (center.x, center.y),
+                radius,
+                inner: pack_color(inner.r, inner.g, inner.b, inner.a),
+                outer: pack_color(outer.r, outer.g, outer.b, outer.a),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2854,7 +2940,14 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         top: gfx::types::Color,
         bottom: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::LinearGradient { rect: (area.x, area.y, area.width, area.height), top: pack_color(top.r, top.g, top.b, top.a), bottom: pack_color(bottom.r, bottom.g, bottom.b, bottom.a) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::LinearGradient {
+                rect: (area.x, area.y, area.width, area.height),
+                top: pack_color(top.r, top.g, top.b, top.a),
+                bottom: pack_color(bottom.r, bottom.g, bottom.b, bottom.a),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2880,7 +2973,14 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         stroke: gfx::types::Color,
         width: f32,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::StrokeRect { rect: (area.x, area.y, area.width, area.height), width, color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::StrokeRect {
+                rect: (area.x, area.y, area.width, area.height),
+                width,
+                color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2907,7 +3007,19 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         font_size: f32,
         ink: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::Text { origin: (origin.x, origin.y), font_size, color: pack_color(ink.r, ink.g, ink.b, ink.a), weight: 400, italic: false, letter_spacing: 0.0, family: 0, text: text.clone() });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::Text {
+                origin: (origin.x, origin.y),
+                font_size,
+                color: pack_color(ink.r, ink.g, ink.b, ink.a),
+                weight: 400,
+                italic: false,
+                letter_spacing: 0.0,
+                family: 0,
+                text: text.clone(),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -2956,7 +3068,23 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         ink: gfx::types::Color,
         style: gfx::types::TextStyle,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::Text { origin: (origin.x, origin.y), font_size, color: pack_color(ink.r, ink.g, ink.b, ink.a), weight: style.weight, italic: style.italic, letter_spacing: style.letter_spacing, family: match style.family { gfx::types::FontFamily::Sans => 0, gfx::types::FontFamily::Serif => 1, gfx::types::FontFamily::Mono => 2 }, text: text.clone() });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::Text {
+                origin: (origin.x, origin.y),
+                font_size,
+                color: pack_color(ink.r, ink.g, ink.b, ink.a),
+                weight: style.weight,
+                italic: style.italic,
+                letter_spacing: style.letter_spacing,
+                family: match style.family {
+                    gfx::types::FontFamily::Sans => 0,
+                    gfx::types::FontFamily::Serif => 1,
+                    gfx::types::FontFamily::Mono => 2,
+                },
+                text: text.clone(),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -3005,7 +3133,17 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         width: f32,
         stroke: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::StrokeArc { center: (center.x, center.y), radius, start_degrees, sweep_degrees, width, color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::StrokeArc {
+                center: (center.x, center.y),
+                radius,
+                start_degrees,
+                sweep_degrees,
+                width,
+                color: pack_color(stroke.r, stroke.g, stroke.b, stroke.a),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -3034,7 +3172,23 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         height: u32,
         rgba: Vec<u8>,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::PixelsRound { rect: (area.x, area.y, area.width, area.height), radii: (radii.top_left, radii.top_right, radii.bottom_right, radii.bottom_left), image: std::sync::Arc::new(krate_adapter_common::ui::ImagePixels { width, height, rgba: rgba.clone() }) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::PixelsRound {
+                rect: (area.x, area.y, area.width, area.height),
+                radii: (
+                    radii.top_left,
+                    radii.top_right,
+                    radii.bottom_right,
+                    radii.bottom_left,
+                ),
+                image: std::sync::Arc::new(krate_adapter_common::ui::ImagePixels {
+                    width,
+                    height,
+                    rgba: rgba.clone(),
+                }),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -3070,7 +3224,17 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         height: u32,
         rgba: Vec<u8>,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::Pixels { rect: (area.x, area.y, area.width, area.height), image: std::sync::Arc::new(krate_adapter_common::ui::ImagePixels { width, height, rgba: rgba.clone() }) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::Pixels {
+                rect: (area.x, area.y, area.width, area.height),
+                image: std::sync::Arc::new(krate_adapter_common::ui::ImagePixels {
+                    width,
+                    height,
+                    rgba: rgba.clone(),
+                }),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }
@@ -3099,7 +3263,19 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         height: u32,
         rgba: Vec<u8>,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        self.record_op(canvas, crate::canvas_list::CanvasOp::Sprite { center: (center.x, center.y), dst: (dst.width, dst.height), angle, image: std::sync::Arc::new(krate_adapter_common::ui::ImagePixels { width, height, rgba: rgba.clone() }) });
+        self.record_op(
+            canvas,
+            crate::canvas_list::CanvasOp::Sprite {
+                center: (center.x, center.y),
+                dst: (dst.width, dst.height),
+                angle,
+                image: std::sync::Arc::new(krate_adapter_common::ui::ImagePixels {
+                    width,
+                    height,
+                    rgba: rgba.clone(),
+                }),
+            },
+        );
         if self.lists_enabled() {
             return Ok(Ok(()));
         }

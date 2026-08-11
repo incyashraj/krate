@@ -328,11 +328,12 @@ pub fn record_with(action: Action, facts: Facts) {
         return;
     };
 
-    let mut body =
-        format!(r#"{{"id":"{id}","version":"{version}","os":"{os}","action":"{action}""#,
-            version = crate::KRATE_VERSION,
-            os = std::env::consts::OS,
-            action = action.as_str());
+    let mut body = format!(
+        r#"{{"id":"{id}","version":"{version}","os":"{os}","action":"{action}""#,
+        version = crate::KRATE_VERSION,
+        os = std::env::consts::OS,
+        action = action.as_str()
+    );
     if let Some(ai) = facts.ai {
         body.push_str(&format!(r#","ai":{ai}"#));
     }

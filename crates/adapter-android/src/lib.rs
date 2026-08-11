@@ -379,10 +379,11 @@ impl WindowAdapter for AndroidWinitPrototypeUiAdapter {
                 eprintln!("krate-adapter: native create failed: {e:?}");
                 e
             })?;
-        self.attach_winit_session(id, raw_handle, snapshot).map_err(|e| {
-            eprintln!("krate-adapter: attach failed: {e:?}");
-            e
-        })?;
+        self.attach_winit_session(id, raw_handle, snapshot)
+            .map_err(|e| {
+                eprintln!("krate-adapter: attach failed: {e:?}");
+                e
+            })?;
         Ok(id)
     }
 
@@ -576,8 +577,8 @@ pub fn discover_ui_adapter() -> AndroidUiAdapter {
 }
 
 /// Build the opt-in Linux winit prototype UI adapter when it is ready.
-pub fn discover_winit_prototype_ui_adapter() -> Result<AndroidWinitPrototypeUiAdapter, UiAdapterError>
-{
+pub fn discover_winit_prototype_ui_adapter(
+) -> Result<AndroidWinitPrototypeUiAdapter, UiAdapterError> {
     let adapter = AndroidWinitPrototypeUiAdapter::new();
     if !adapter.native_windows_enabled() {
         return Err(UiAdapterError::Unsupported(
@@ -902,7 +903,10 @@ mod tests {
             WindowBackendKind::Winit
         );
         assert_eq!(prototype_info.native_windows, cfg!(target_os = "android"));
-        assert_eq!(prototype_info.native_event_loop, cfg!(target_os = "android"));
+        assert_eq!(
+            prototype_info.native_event_loop,
+            cfg!(target_os = "android")
+        );
         if cfg!(target_os = "android") {
             assert!(discover_winit_prototype_ui_adapter().is_ok());
         } else {

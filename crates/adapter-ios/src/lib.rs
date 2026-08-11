@@ -209,9 +209,9 @@ impl IosUikitPrototypeUiAdapter {
     fn sessions(
         &self,
     ) -> Result<MutexGuard<'_, BTreeMap<WindowId, WinitWindowSession>>, UiAdapterError> {
-        self.sessions.lock().map_err(|_| {
-            UiAdapterError::Internal("ios uikit session lock is poisoned".to_string())
-        })
+        self.sessions
+            .lock()
+            .map_err(|_| UiAdapterError::Internal("ios uikit session lock is poisoned".to_string()))
     }
 
     fn collectors(
@@ -381,10 +381,11 @@ impl WindowAdapter for IosUikitPrototypeUiAdapter {
                 eprintln!("krate-adapter: native create failed: {e:?}");
                 e
             })?;
-        self.attach_winit_session(id, raw_handle, snapshot).map_err(|e| {
-            eprintln!("krate-adapter: attach failed: {e:?}");
-            e
-        })?;
+        self.attach_winit_session(id, raw_handle, snapshot)
+            .map_err(|e| {
+                eprintln!("krate-adapter: attach failed: {e:?}");
+                e
+            })?;
         Ok(id)
     }
 
@@ -601,8 +602,7 @@ pub fn discover_ui_adapter() -> IosUiAdapter {
 }
 
 /// Build the opt-in Linux winit prototype UI adapter when it is ready.
-pub fn discover_winit_prototype_ui_adapter() -> Result<IosUikitPrototypeUiAdapter, UiAdapterError>
-{
+pub fn discover_winit_prototype_ui_adapter() -> Result<IosUikitPrototypeUiAdapter, UiAdapterError> {
     let adapter = IosUikitPrototypeUiAdapter::new();
     if !adapter.native_windows_enabled() {
         return Err(UiAdapterError::Unsupported(

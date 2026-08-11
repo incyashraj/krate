@@ -66,9 +66,8 @@ impl GpuCanvas {
         // SAFETY: the layer outlives the surface -- it belongs to the view
         // the adapter keeps for the app's whole life.
         let surface = unsafe {
-            instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::CoreAnimationLayer(
-                metal_layer,
-            ))
+            instance
+                .create_surface_unsafe(wgpu::SurfaceTargetUnsafe::CoreAnimationLayer(metal_layer))
         }
         .map_err(|e| format!("surface: {e}"))?;
 
@@ -127,10 +126,7 @@ impl GpuCanvas {
                 present_mode: wgpu::PresentMode::Fifo,
                 // Opaque when offered: a compositor blending our alpha
                 // with whatever sits beneath the layer reads as flicker.
-                alpha_mode: if caps
-                    .alpha_modes
-                    .contains(&wgpu::CompositeAlphaMode::Opaque)
-                {
+                alpha_mode: if caps.alpha_modes.contains(&wgpu::CompositeAlphaMode::Opaque) {
                     wgpu::CompositeAlphaMode::Opaque
                 } else {
                     caps.alpha_modes[0]
@@ -201,12 +197,7 @@ impl GpuCanvas {
                             vello::peniko::BlendMode::default(),
                             1.0,
                             base,
-                            &Rect::new(
-                                *x as f64,
-                                *y as f64,
-                                (*x + *w) as f64,
-                                (*y + *h) as f64,
-                            ),
+                            &Rect::new(*x as f64, *y as f64, (*x + *w) as f64, (*y + *h) as f64),
                         );
                         clip_depth += 1;
                     }
@@ -308,8 +299,7 @@ impl GpuCanvas {
                         .iter()
                         .map(|(offset, color)| (*offset, unpack(*color)))
                         .collect();
-                    let gradient =
-                        Gradient::new_linear(start, end).with_stops(pairs.as_slice());
+                    let gradient = Gradient::new_linear(start, end).with_stops(pairs.as_slice());
                     scene.fill(
                         Fill::NonZero,
                         base,
@@ -324,11 +314,9 @@ impl GpuCanvas {
                     inner,
                     outer,
                 } => {
-                    let gradient = Gradient::new_radial(
-                        (center.0 as f64, center.1 as f64),
-                        *radius,
-                    )
-                    .with_stops([unpack(*inner), unpack(*outer)]);
+                    let gradient =
+                        Gradient::new_radial((center.0 as f64, center.1 as f64), *radius)
+                            .with_stops([unpack(*inner), unpack(*outer)]);
                     scene.fill(
                         Fill::NonZero,
                         base,
@@ -453,8 +441,7 @@ impl GpuCanvas {
                     let runs = self
                         .shape(text, *font_size, *weight, *italic, *letter_spacing, *family)
                         .clone();
-                    let transform =
-                        base * Affine::translate((origin.0 as f64, origin.1 as f64));
+                    let transform = base * Affine::translate((origin.0 as f64, origin.1 as f64));
                     let brush = Brush::Solid(unpack(*color));
                     for run in &runs {
                         scene
@@ -580,29 +567,30 @@ impl GpuCanvas {
             family,
         };
         if !self.glyph_cache.contains_key(&key) {
-            let mut builder =
-                self.layout_cx
-                    .ranged_builder(&mut self.font_cx, text, 1.0, true);
+            let mut builder = self
+                .layout_cx
+                .ranged_builder(&mut self.font_cx, text, 1.0, true);
             builder.push_default(match family {
                 1 => parley::GenericFamily::Serif,
                 2 => parley::GenericFamily::Monospace,
                 _ => parley::GenericFamily::SansSerif,
             });
             builder.push_default(parley::StyleProperty::FontSize(font_size));
-            builder.push_default(parley::StyleProperty::FontWeight(
-                parley::FontWeight::new((weight as f32).clamp(100.0, 900.0)),
-            ));
+            builder.push_default(parley::StyleProperty::FontWeight(parley::FontWeight::new(
+                (weight as f32).clamp(100.0, 900.0),
+            )));
             if italic {
-                builder.push_default(parley::StyleProperty::FontStyle(
-                    parley::FontStyle::Italic,
-                ));
+                builder.push_default(parley::StyleProperty::FontStyle(parley::FontStyle::Italic));
             }
             if letter_spacing != 0.0 {
                 builder.push_default(parley::StyleProperty::LetterSpacing(letter_spacing));
             }
             let mut layout: parley::Layout<()> = builder.build(text);
             layout.break_all_lines(None);
-            layout.align(parley::Alignment::Start, parley::AlignmentOptions::default());
+            layout.align(
+                parley::Alignment::Start,
+                parley::AlignmentOptions::default(),
+            );
 
             let mut runs = Vec::new();
             let mut first_baseline: Option<f32> = None;
@@ -644,7 +632,11 @@ impl GpuCanvas {
     }
 }
 
-fn make_target(device: &wgpu::Device, width: u32, height: u32) -> (wgpu::Texture, wgpu::TextureView) {
+fn make_target(
+    device: &wgpu::Device,
+    width: u32,
+    height: u32,
+) -> (wgpu::Texture, wgpu::TextureView) {
     let target = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("vello-target"),
         size: wgpu::Extent3d {

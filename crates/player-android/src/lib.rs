@@ -105,8 +105,7 @@ mod player {
                         return;
                     }
                 };
-                manifest_text =
-                    std::fs::read_to_string(open.manifest_path()).unwrap_or_default();
+                manifest_text = std::fs::read_to_string(open.manifest_path()).unwrap_or_default();
                 component = match std::fs::read(open.component_path()) {
                     Ok(bytes) => bytes,
                     Err(err) => {

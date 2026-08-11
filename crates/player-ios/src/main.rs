@@ -112,8 +112,8 @@ mod player {
     );
 
     pub fn main() {
-        let mtm = objc2::MainThreadMarker::new()
-            .expect("the iOS player's main runs on the main thread");
+        let mtm =
+            objc2::MainThreadMarker::new().expect("the iOS player's main runs on the main thread");
         let delegate_class = NSString::from_class(KrateAppDelegate::class());
         UIApplication::main(None, Some(&delegate_class), mtm);
     }

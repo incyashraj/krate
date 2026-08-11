@@ -166,12 +166,24 @@ jobs:
         shell: bash
         run: |
           # A first user without the Rust build tools must get a clear, actionable
-          # message and a non-zero exit, not a raw cargo error mid-build. Run
-          # create with a stripped PATH (no cargo/cargo-component) and no TTY.
+          # message and a non-zero exit, not a raw cargo error mid-build.
+          #
+          # Stripping PATH is not enough to simulate that machine, and this step
+          # failed for several releases because of it: `resolve_tool` also looks
+          # in CARGO_HOME and ~/.cargo/bin on purpose, so that a shell with a
+          # badly ordered PATH still finds the toolchain. Passing the real HOME
+          # through let create find cargo there and succeed, which failed the
+          # assertion below and looked like a product regression. It was the
+          # test's premise that was stale.
+          #
+          # So point HOME at an empty directory as well, and clear CARGO_HOME
+          # (the workflow sets it), which is what a machine with no Rust
+          # actually looks like.
           cargo build -q -p krate-cli
           bin="$PWD/target/debug/krate"
+          empty_home="$(mktemp -d)"
           set +e
-          out="$(env -i HOME="$HOME" PATH=/usr/bin:/bin "$bin" \
+          out="$(env -i HOME="$empty_home" PATH=/usr/bin:/bin "$bin" \
             create "make a checklist" --output /tmp/x.krate </dev/null 2>&1)"
           code=$?
           set -e

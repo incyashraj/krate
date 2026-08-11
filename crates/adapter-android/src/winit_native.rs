@@ -363,9 +363,8 @@ mod real {
                                     // dy scrolls deeper); deltas coalesce
                                     // so a 120 Hz flood cannot outrun the
                                     // app's frame rate.
-                                    let pending = self
-                                        .pending_scroll
-                                        .get_or_insert((krate, 0.0, 0.0, x, y));
+                                    let pending =
+                                        self.pending_scroll.get_or_insert((krate, 0.0, 0.0, x, y));
                                     pending.1 -= dx;
                                     pending.2 -= dy;
                                     pending.3 = x;
@@ -662,9 +661,7 @@ mod real {
                 }
                 let event_loop = builder.build().map_err(|err| {
                     eprintln!("krate-adapter: event loop build failed: {err}");
-                    UiAdapterError::Unsupported(format!(
-                        "winit event loop unavailable: {err}"
-                    ))
+                    UiAdapterError::Unsupported(format!("winit event loop unavailable: {err}"))
                 })?;
                 *slot = Some(Host {
                     event_loop,
@@ -845,16 +842,18 @@ mod real {
             return Vec::new();
         }
         let coalesced = with_host(|host| {
-            Ok(host.app.pending_scroll.take().map(|(krate, dx, dy, x, y)| {
-                RawWheelSample {
+            Ok(host
+                .app
+                .pending_scroll
+                .take()
+                .map(|(krate, dx, dy, x, y)| RawWheelSample {
                     window: krate,
                     x,
                     y,
                     dx,
                     dy,
                     modifiers: host.app.modifiers,
-                }
-            }))
+                }))
         })
         .ok()
         .flatten();

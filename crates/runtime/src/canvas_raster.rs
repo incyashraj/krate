@@ -139,6 +139,11 @@ pub struct TextMetrics {
 }
 
 impl CanvasSurface {
+    /// A 1:1 surface. Used by tests and by the Linux winit adapter, which is
+    /// behind a feature flag -- so a macOS-only build sees no caller and
+    /// clippy's dead-code pass fires on CI while local builds stay quiet.
+    /// The method is real API, so it is kept rather than deleted.
+    #[allow(dead_code)]
     pub fn new(width: u32, height: u32) -> Result<Self, UiAdapterError> {
         Self::new_scaled(width, height, 1.0)
     }
@@ -160,10 +165,8 @@ impl CanvasSurface {
         } else {
             1.0
         };
-        let phys_w = ((width as f32 * scale).round() as u32)
-            .clamp(1, MAX_CANVAS_EDGE);
-        let phys_h = ((height as f32 * scale).round() as u32)
-            .clamp(1, MAX_CANVAS_EDGE);
+        let phys_w = ((width as f32 * scale).round() as u32).clamp(1, MAX_CANVAS_EDGE);
+        let phys_h = ((height as f32 * scale).round() as u32).clamp(1, MAX_CANVAS_EDGE);
         Ok(Self {
             clip: None,
             width: phys_w,
@@ -185,6 +188,7 @@ impl CanvasSurface {
     /// size: `canvas_size` reports a stale answer, an app that lays out from it
     /// draws to the wrong extent, and every hit-box is off. Returns whether the
     /// size actually changed, so callers can skip redundant work.
+    #[allow(dead_code)] // see `new`: tests and the feature-gated Linux adapter
     pub fn resize(&mut self, width: u32, height: u32) -> Result<bool, UiAdapterError> {
         self.resize_scaled(width, height, self.scale)
     }
@@ -214,6 +218,7 @@ impl CanvasSurface {
     }
 
     /// The raster scale this surface was built with.
+    #[allow(dead_code)] // see `new`: tests and the feature-gated Linux adapter
     pub fn scale(&self) -> f32 {
         self.scale
     }
@@ -1014,10 +1019,7 @@ impl CanvasSurface {
             for px in x0..x1 {
                 let fx = px as f32 + 0.5;
                 let coverage = if plain_row {
-                    let d = (x - fx)
-                        .max(fx - (x + w))
-                        .max(y - fy)
-                        .max(fy - (y + h));
+                    let d = (x - fx).max(fx - (x + w)).max(y - fy).max(fy - (y + h));
                     (0.5 - d).clamp(0.0, 1.0)
                 } else {
                     let d = Self::round_rect_sdf(fx, fy, x, y, w, h, radii);

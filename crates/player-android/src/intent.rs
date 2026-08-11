@@ -68,11 +68,7 @@ fn try_view_target(handles: ActivityHandles) -> Result<Option<String>, String> {
 
 /// Read every byte behind a content:// or file:// URI through the
 /// platform's ContentResolver -- the only path modern Android guarantees.
-pub fn read_uri(
-    handles: ActivityHandles,
-    uri: &str,
-    max_bytes: usize,
-) -> Result<Vec<u8>, String> {
+pub fn read_uri(handles: ActivityHandles, uri: &str, max_bytes: usize) -> Result<Vec<u8>, String> {
     let vm = unsafe { jni::JavaVM::from_raw(handles.vm.cast()) }.map_err(err)?;
     let mut env = vm.attach_current_thread().map_err(err)?;
     let activity = unsafe { JObject::from_raw(handles.activity.cast()) };

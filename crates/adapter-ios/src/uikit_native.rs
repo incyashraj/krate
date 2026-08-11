@@ -94,8 +94,7 @@ mod real {
     /// iPhone the panel decides when a frame is due, so frames land on the
     /// refresh instead of drifting against it (K-090's last structural
     /// cause).
-    static VSYNC_PENDING: std::sync::atomic::AtomicBool =
-        std::sync::atomic::AtomicBool::new(false);
+    static VSYNC_PENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
     /// TEMP on-device diagnostics for K-090: a timestamped log in the app
     /// container, pulled over USB. Nothing else escapes a real iPhone.
@@ -279,10 +278,9 @@ mod real {
         if let Some(screen) = SHARED.lock().expect("shared state lock").screen {
             return Ok(screen);
         }
-        let mut result: Result<(WindowSize, f32), UiAdapterError> =
-            Err(UiAdapterError::Internal(
-                "main-queue closure never ran".to_string(),
-            ));
+        let mut result: Result<(WindowSize, f32), UiAdapterError> = Err(UiAdapterError::Internal(
+            "main-queue closure never ran".to_string(),
+        ));
         DispatchQueue::main().exec_sync(|| {
             result = (|| {
                 let mtm = MainThreadMarker::new().ok_or_else(|| {
@@ -373,8 +371,7 @@ mod real {
                     );
                 }
 
-                let metal_ptr =
-                    objc2::rc::Retained::as_ptr(&metal) as usize;
+                let metal_ptr = objc2::rc::Retained::as_ptr(&metal) as usize;
                 SHARED.lock().expect("shared state lock").metal_layer =
                     Some((metal_ptr, native_scale));
 
@@ -472,11 +469,11 @@ mod real {
                         let dx = touch.x - gesture.last.0;
                         let dy = touch.y - gesture.last.1;
                         gesture.last = (touch.x, touch.y);
-                        if gesture.scrolling
-                            && (dx.abs() > f32::EPSILON || dy.abs() > f32::EPSILON)
+                        if gesture.scrolling && (dx.abs() > f32::EPSILON || dy.abs() > f32::EPSILON)
                         {
-                            let pending =
-                                guest.pending_scroll.get_or_insert((0.0, 0.0, touch.x, touch.y));
+                            let pending = guest
+                                .pending_scroll
+                                .get_or_insert((0.0, 0.0, touch.x, touch.y));
                             pending.0 -= dx;
                             pending.1 -= dy;
                             pending.2 = touch.x;
@@ -556,8 +553,8 @@ mod real {
                 // 0xAARRGGBB u32s are BGRA in little-endian memory:
                 // premultiplied-first + 32-little describes them exactly,
                 // and alpha is always 0xFF.
-                let bitmap_info = CGImageAlphaInfo::PremultipliedFirst.0
-                    | CGImageByteOrderInfo::Order32Little.0;
+                let bitmap_info =
+                    CGImageAlphaInfo::PremultipliedFirst.0 | CGImageByteOrderInfo::Order32Little.0;
                 let context = CGBitmapContextCreate(
                     buffer.as_mut_ptr().cast(),
                     phys_w,
@@ -717,8 +714,7 @@ mod real {
         }
         with_guest(|guest| {
             let mut samples = std::mem::take(&mut guest.wheel_samples);
-            if let (Some((dx, dy, x, y)), Some(krate)) =
-                (guest.pending_scroll.take(), guest.krate)
+            if let (Some((dx, dy, x, y)), Some(krate)) = (guest.pending_scroll.take(), guest.krate)
             {
                 diag(&format!("wheel dy={dy:.0}"));
                 samples.push(RawWheelSample {
@@ -795,8 +791,7 @@ mod real {
     /// True once the GPU renders this app's frames: the CPU blit then has
     /// nothing to show and painting 1.4 million invisible pixels per frame
     /// is pure heat.
-    static GPU_ACTIVE: std::sync::atomic::AtomicBool =
-        std::sync::atomic::AtomicBool::new(false);
+    static GPU_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
     /// Render one recorded canvas frame on the GPU. True when claimed;
     /// false hands the frame back to the CPU path (init failed, wrong
@@ -864,10 +859,9 @@ mod real {
             }
             diag("gpu-present-start");
             let gpu = slot.as_mut().expect("gpu initialized");
-            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                gpu.present(list)
-            }))
-            .unwrap_or_else(|_| Err("gpu present panicked".into()));
+            let outcome =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| gpu.present(list)))
+                    .unwrap_or_else(|_| Err("gpu present panicked".into()));
             match outcome {
                 Ok(()) => {
                     diag("gpu-present-done");
