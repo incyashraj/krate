@@ -84,8 +84,18 @@ mod real {
         metal_layer: None,
     });
 
-    /// Signaled by the touch callouts so a parked guest wakes instantly.
+    /// Signaled by the touch callouts AND by the display link, so a parked
+    /// guest wakes on input or on vsync, whichever comes first.
     static INPUT_ARRIVED: Condvar = Condvar::new();
+
+    /// Set by the display link each time the panel is about to refresh, and
+    /// cleared by the guest when it wakes. This is what replaces sleeping a
+    /// fixed 16 ms and hoping it lines up with the display: on a 120 Hz
+    /// iPhone the panel decides when a frame is due, so frames land on the
+    /// refresh instead of drifting against it (K-090's last structural
+    /// cause).
+    static VSYNC_PENDING: std::sync::atomic::AtomicBool =
+        std::sync::atomic::AtomicBool::new(false);
 
     /// Guest-thread state: gesture synthesis, samples, and the raster
     /// buffer. Only the guest thread touches it.
@@ -127,6 +137,9 @@ mod real {
         _window: Retained<UIWindow>,
         _controller: Retained<UIViewController>,
         _metal: Retained<objc2_quartz_core::CAMetalLayer>,
+        /// Held so the link's target outlives the link that calls it.
+        _link_target: Retained<KrateDisplayLinkTarget>,
+        _display_link: Retained<objc2_quartz_core::CADisplayLink>,
         view: Retained<KrateSurfaceView>,
     }
 
@@ -136,6 +149,32 @@ mod real {
     unsafe impl Send for MainSideCell {}
     unsafe impl Sync for MainSideCell {}
     static MAIN_SIDE: MainSideCell = MainSideCell(OnceLock::new());
+
+    define_class!(
+        // SAFETY:
+        // - NSObject has no subclassing requirements for a target-action
+        //   receiver.
+        // - CADisplayLink calls this on the main thread, which is where it
+        //   was added to the run loop.
+        #[unsafe(super = objc2_foundation::NSObject)]
+        #[thread_kind = MainThreadOnly]
+        #[ivars = ()]
+        struct KrateDisplayLinkTarget;
+
+        // SAFETY: NSObjectProtocol has no additional requirements.
+        unsafe impl NSObjectProtocol for KrateDisplayLinkTarget {}
+
+        impl KrateDisplayLinkTarget {
+            // SAFETY: matches CADisplayLink's target-action signature.
+            #[unsafe(method(krateDisplayLinkFired:))]
+            fn fired(&self, _link: &objc2_quartz_core::CADisplayLink) {
+                VSYNC_PENDING.store(true, std::sync::atomic::Ordering::Relaxed);
+                // Waking the guest costs nothing when it is already awake,
+                // and is the whole point when it is parked.
+                INPUT_ARRIVED.notify_all();
+            }
+        }
+    );
 
     define_class!(
         // SAFETY:
@@ -277,6 +316,29 @@ mod real {
                     let as_uiview: &UIView = &view;
                     as_uiview.layer().addSublayer(&metal);
                 }
+                // The display link: the panel tells us when a frame is due.
+                // Scheduled on the main run loop in the common modes so it
+                // keeps firing during tracking (a finger on the screen is
+                // exactly when frames matter most).
+                let link_target = {
+                    let this = KrateDisplayLinkTarget::alloc(mtm).set_ivars(());
+                    let this: objc2::rc::Retained<KrateDisplayLinkTarget> =
+                        unsafe { objc2::msg_send![super(this), init] };
+                    this
+                };
+                let display_link = unsafe {
+                    objc2_quartz_core::CADisplayLink::displayLinkWithTarget_selector(
+                        &link_target,
+                        objc2::sel!(krateDisplayLinkFired:),
+                    )
+                };
+                unsafe {
+                    display_link.addToRunLoop_forMode(
+                        &objc2_foundation::NSRunLoop::mainRunLoop(),
+                        objc2_foundation::NSRunLoopCommonModes,
+                    );
+                }
+
                 let metal_ptr =
                     objc2::rc::Retained::as_ptr(&metal) as usize;
                 SHARED.lock().expect("shared state lock").metal_layer =
@@ -284,6 +346,8 @@ mod real {
 
                 let _ = MAIN_SIDE.0.set(MainSide {
                     _metal: metal,
+                    _link_target: link_target,
+                    _display_link: display_link,
                     _window: window,
                     _controller: controller,
                     view,
@@ -551,17 +615,50 @@ mod real {
     /// Park the guest thread until input arrives or the deadline passes.
     /// The condvar is signaled by the main thread's touch callouts, so a
     /// finger wakes the guest immediately -- no run loop involved.
+    /// Park until the panel's next refresh, or `max`. Touches do NOT wake
+    /// this: pacing that wakes on input lets a fast finger present faster
+    /// than the display consumes and stalls the next acquire (K-090).
+    pub fn park_for_frame(max: std::time::Duration) -> bool {
+        if !guest_initialized() {
+            return false;
+        }
+        if VSYNC_PENDING.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            return true;
+        }
+        let deadline = std::time::Instant::now() + max;
+        loop {
+            let now = std::time::Instant::now();
+            if now >= deadline {
+                return true;
+            }
+            let shared = SHARED.lock().expect("shared state lock");
+            let (_guard, _timeout) = INPUT_ARRIVED
+                .wait_timeout(shared, deadline - now)
+                .expect("shared state lock");
+            if VSYNC_PENDING.swap(false, std::sync::atomic::Ordering::Relaxed) {
+                return true;
+            }
+            // A touch woke us, not the panel. Keep waiting for the frame.
+        }
+    }
+
     pub fn park_for_events(max: std::time::Duration) -> bool {
         if !guest_initialized() {
             return false;
+        }
+        // A frame is already due, or input is waiting: do not park at all.
+        if VSYNC_PENDING.swap(false, std::sync::atomic::Ordering::Relaxed) {
+            return true;
         }
         let shared = SHARED.lock().expect("shared state lock");
         if !shared.touches.is_empty() {
             return true;
         }
-        let _ = INPUT_ARRIVED
+        // Wake on whichever comes first, a finger or the panel's refresh.
+        let (_guard, _timeout) = INPUT_ARRIVED
             .wait_timeout(shared, max)
             .expect("shared state lock");
+        VSYNC_PENDING.store(false, std::sync::atomic::Ordering::Relaxed);
         true
     }
 
@@ -786,6 +883,10 @@ mod stub {
 
     pub fn pump_native_events() -> Result<CollectedNativeEvents, UiAdapterError> {
         Ok(Vec::new())
+    }
+
+    pub fn park_for_frame(_max: std::time::Duration) -> bool {
+        false
     }
 
     pub fn park_for_events(_max: std::time::Duration) -> bool {

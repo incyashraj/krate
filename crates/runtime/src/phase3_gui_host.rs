@@ -2995,12 +2995,21 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         if let Some(previous) = self.last_present.get() {
             let elapsed = previous.elapsed();
             if elapsed < FRAME_BUDGET {
-                // A plain sleep, deliberately NOT the input-waking park:
-                // waking on touches let a 120 Hz finger present at touch
-                // rate, exhaust the drawable pool, and stall the next
-                // acquire for its full one-second timeout -- the swipe
-                // itself caused the freeze the finger then felt.
-                std::thread::sleep(FRAME_BUDGET - elapsed);
+                let remainder = FRAME_BUDGET - elapsed;
+                // Prefer the display's own clock where the adapter has one:
+                // park until the panel says a frame is due (CADisplayLink on
+                // iOS), capped by our budget so a host without a link still
+                // paces itself. Sleeping a fixed 16 ms drifts against the
+                // real refresh; on a 120 Hz phone that drift is visible.
+                //
+                // NOT the plain input-waking park of an earlier attempt:
+                // that let a 120 Hz finger present at touch rate, exhaust
+                // the drawable pool, and stall the next acquire for its full
+                // one-second timeout. Waking on VSYNC is bounded by the
+                // panel; waking on touches is not.
+                if !self.dispatcher().park_for_frame(remainder) {
+                    std::thread::sleep(remainder);
+                }
             }
         }
         self.last_present.set(Some(std::time::Instant::now()));

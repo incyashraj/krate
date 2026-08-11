@@ -1262,6 +1262,17 @@ pub trait UiAdapter: WindowAdapter {
         Ok(false)
     }
 
+    /// Park until the display says the next frame is due, or `max`
+    /// elapses. Returns true if this adapter actually waited.
+    ///
+    /// Deliberately separate from `park_for_events`: pacing must wake on
+    /// the panel's refresh, never on touches. An earlier build paced on
+    /// input and a fast finger outran the drawable pool, stalling the next
+    /// frame acquire for a full second (K-090).
+    fn park_for_frame(&self, _max: std::time::Duration) -> bool {
+        false
+    }
+
     /// Park the calling thread until a native event arrives or `max`
     /// elapses, whichever is first. Returns true if this adapter actually
     /// waited natively -- the host then skips its own blind sleep, so a

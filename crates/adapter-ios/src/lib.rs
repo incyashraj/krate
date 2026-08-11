@@ -482,6 +482,10 @@ impl UiAdapter for IosUikitPrototypeUiAdapter {
         Ok(uikit_native::present_canvas_list(window, widget, &list))
     }
 
+    fn park_for_frame(&self, max: std::time::Duration) -> bool {
+        uikit_native::park_for_frame(max)
+    }
+
     fn park_for_events(&self, max: std::time::Duration) -> bool {
         uikit_native::park_for_events(max)
     }

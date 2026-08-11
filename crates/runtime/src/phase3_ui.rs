@@ -178,6 +178,12 @@ impl<'a> Phase3UiDispatcher<'a> {
         self.adapter.info()
     }
 
+    /// Park until the display's next frame is due; false means the caller
+    /// should pace itself.
+    pub fn park_for_frame(&self, max: std::time::Duration) -> bool {
+        self.adapter.park_for_frame(max)
+    }
+
     /// Whether the adapter renders canvas display lists (a GPU backend).
     pub fn supports_canvas_lists(&self) -> bool {
         self.adapter.supports_canvas_lists()
