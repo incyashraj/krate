@@ -71,6 +71,45 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-098 -- the pack taught a rounded-corner hack for a primitive that shipped
+Status:   fixed 2026-08-11 (commit e6df2bf)
+Owner:    lead
+Severity: serious
+Class:    teaching-hole + example-bug
+Found:    2026-08-11, asking why a first-time user's app of an unfamiliar
+          kind looks dated when the showcase apps look current.
+Evidence: `fill-round-rect`, `stroke-round-rect`, `drop-shadow-round-rect`,
+          `linear-gradient-stops` and `draw-text-styled` are all in
+          gfx.wit. The hand-written design section of the authoring pack
+          mentioned none of them, and instead prescribed:
+
+            "a rounded rect for every card and button (fill the middle
+             rectangle, then the four corner circles with `fill_circle`)"
+
+          So the pack's own prose contradicted the function list two
+          hundred lines below it, and prose is what a model follows.
+
+          Nine example apps still carried the hand-built helper, which is
+          the example-bug half: the AI copies these files.
+
+            $ grep -rl "corner disc\|cross of two rects" apps/*/src/*.rs
+            krate-checklist krate-clip krate-contacts krate-eo2
+            krate-fetch krate-journal krate-mdview krate-notes krate-pulse
+
+          Not cosmetic. krate-checklist's `stroke_rounded` drew corners as
+          1px discs, so every empty checkbox and the "Add an item" field
+          rendered as a broken dotted box -- confirmed by
+          `krate run --shoot` before and after.
+Fix:      Rewrote the pack's design section around the primitives that
+          exist (including shadows and font weight, neither taught before)
+          and converted all nine apps. Each helper is now one host call.
+          Per-corner radii replaced krate-journal's bubble tail and
+          krate-mdview's stacked strips; krate-pulse's offset opaque rect
+          became a real blurred shadow. Fleet 32/0 after.
+Lesson:   When a primitive ships, the teaching is not done until the pack's
+          *prose* changes and the examples stop demonstrating the old way.
+          A function list the model never reads is not teaching.
+
 ### K-097 -- a scripted fix gave seventeen apps a square design size
 Status:   fixed 2026-08-11, same day it shipped
 Owner:    lead
