@@ -1,7 +1,7 @@
 % The Krate Complete Guide
 % Everything about Krate, in the simplest language that is still true.
-% Written 2026-08-11. Every number in this document was measured or read
-% out of the repository on that date. Nothing here is estimated.
+% Written 2026-08-11, expanded 2026-08-12. Every number in this document was
+% measured or read out of the repository on those dates. Nothing is estimated.
 \documentclass[11pt,a4paper]{report}
 
 \usepackage[margin=2.4cm]{geometry}
@@ -55,7 +55,7 @@
   \normalsize Everything about what it is, how it works, how it was built,\\
   and how to answer any question about it\\[1cm]}
 \author{Krate Labs, Inc.}
-\date{11 August 2026}
+\date{12 August 2026}
 
 \begin{document}
 \maketitle
@@ -435,9 +435,75 @@ house, and walking them to one room and standing there while they work.}
 \end{tikzpicture}
 \end{center}
 
+\section{How big is this, really?}
+\label{sec:scale}
+
+There are several honest answers to ``how much code is Krate'', and they
+differ by a factor of eight. Knowing which is which matters, because the
+biggest number is the one a sceptic will check.
+
+\begin{center}
+\begin{tabular}{lrp{6.2cm}}
+\toprule
+\textbf{Measure} & \textbf{Lines} & \textbf{What it means} \\
+\midrule
+Lines added, all commits & 895{,}988 & What GitHub's contribution graph counts \\
+Lines deleted, all commits & 68{,}152 & \\
+Net & 827{,}836 & Added minus deleted \\
+\midrule
+All tracked files today & 921{,}897 & Everything in the repository \\
+\quad of which generated & 618{,}821 & \texttt{bindings.rs}, written by a machine \\
+\quad \textbf{hand-written Rust} & \textbf{112{,}831} & \textbf{The real engineering number} \\
+\quad documentation (Markdown) & 46{,}910 & 182 files \\
+\quad shell scripts & 9{,}498 & 111 files \\
+\quad web (HTML/TS/JSON) & 13{,}077 & \\
+\quad interface definitions (WIT) & 2{,}461 & 23 files \\
+\quad CI configuration (YAML) & 2{,}763 & 6 workflows \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{warnbox}{Use the right number, or lose the argument}
+``Nearly 900{,}000 lines'' is true and it is what GitHub shows --- but
+\textbf{618{,}821 lines of it is generated} \texttt{bindings.rs}, the glue
+the toolchain writes automatically from the interface definitions. Quote the
+big number without that caveat and the first person who runs
+\texttt{wc -l} destroys your credibility.
+
+The number that survives every check is \textbf{112{,}831 lines of
+hand-written Rust}, plus 46{,}910 lines of documentation, built between
+April and August 2026. For systems code --- a WebAssembly runtime, three
+desktop windowing backends, two phone players, a renderer, a package
+format, and a cloud --- that is a serious body of work, and it is one you
+can defend line by line.
+\end{warnbox}
+
+\subsection{What that hand-written code is spread across}
+
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+\textbf{Area} & \textbf{Hand-written lines} \\
+\midrule
+Runtime, CLI, adapters, tooling (\texttt{crates/}) & 90{,}888 \\
+Example applications (\texttt{apps/}) & 20{,}853 \\
+\midrule
+\textbf{Total} & \textbf{112{,}831} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Two files carry an unusual share and are worth knowing by name: the CLI's
+\texttt{main.rs} is 10{,}177 lines, and the runtime's GUI host
+(\texttt{phase3\_gui\_host.rs}) is 4{,}320. The GUI host is the piece that
+turns one portable app into a real window on any operating system, which is
+why it is the second-largest single file in the project.
+
 \section{What is inside the runtime}
 
-Krate is 112{,}860 lines of Rust across 20 components. The largest pieces,
+Krate is 112{,}831 lines of hand-written Rust across 20 components (see
+Section~\ref{sec:scale} for how that relates to the much larger total line
+count on GitHub). The largest pieces,
 measured on 11 August 2026:
 
 \begin{center}
@@ -521,6 +587,242 @@ Stage 6 is unusual and it is the one that catches what people actually
 complain about. On 11 August 2026 it caught 21 of our own 32 example apps
 drawing at a fixed size and ignoring the window --- the exact bug a
 first-time user reported from Windows.
+
+% =====================================================================
+\chapter{The Engineering, In Depth}
+
+The previous chapter showed the shape of the system. This one goes through
+the five hardest problems inside it and how each was solved. If someone
+technical wants to know whether there is real engineering here, this is the
+chapter to walk them through.
+
+\section{Problem 1: one app, three completely different windowing systems}
+
+macOS, Windows and Linux do not merely differ in details --- they disagree
+about what a window \emph{is}. macOS wants Objective-C objects and a run
+loop that owns the main thread. Windows wants a message pump. Linux wants
+you to talk to a display server that might be one of two incompatible
+kinds.
+
+\analogy{It is like being asked to write one set of driving instructions
+that works in a country that drives on the left, one that drives on the
+right, and one where the roads are numbered backwards. You cannot write one
+set of turns. You have to write directions in terms of \emph{intent} ---
+``go towards the river'' --- and have a local translate.}
+
+Krate's answer is the \textbf{adapter}: one small piece of code per
+operating system that knows only how to translate intent into that system's
+native calls.
+
+\begin{center}
+\begin{tikzpicture}[node distance=0.8cm and 0.45cm,
+  box/.style={draw=krategrey, rounded corners=3pt, fill=white,
+    minimum width=2.75cm, minimum height=0.85cm, align=center, font=\scriptsize},
+  kbox/.style={draw=krateblue, very thick, rounded corners=3pt, fill=kratebg,
+    minimum width=9.2cm, minimum height=0.85cm, align=center, font=\footnotesize},
+  arrow/.style={-{Stealth[length=2.6mm]}, thick, draw=krateblue}]
+  \node[kbox] (app) {The app: ``draw a rounded rectangle here''};
+  \node[kbox, below=of app] (host) {The GUI host --- one shared brain, 4{,}320 lines};
+  \node[box, below left=of host] (mac) {macOS adapter\\5{,}598 lines};
+  \node[box, below=of host] (win) {Windows adapter\\2{,}008 lines};
+  \node[box, below right=of host] (lin) {Linux adapter\\1{,}987 lines};
+  \draw[arrow] (app) -- (host);
+  \draw[arrow] (host) -- (mac);
+  \draw[arrow] (host) -- (win);
+  \draw[arrow] (host) -- (lin);
+\end{tikzpicture}
+\end{center}
+
+The important design choice is where the line sits. Everything an app can
+observe --- layout, drawing, event order --- lives \emph{above} the line, in
+the shared host, so it is identical everywhere by construction. Only the
+irreducible platform differences live below it. That is why the adapters are
+small: 2{,}008 lines for Windows against 4{,}320 for the shared host.
+
+\begin{factbox}{The rule is machine-enforced, not a convention}
+A tool called \texttt{check-adapter-boundary} runs in CI and reads the
+adapter source files to verify that they have not started making decisions
+that belong above the line. There are \textbf{21} such tools in
+\texttt{crates/tools/src/bin/}, each policing one architectural rule ---
+interface parity, widget parity, component imports, UAPI freeze locks.
+
+Most projects enforce behaviour with tests. This one also enforces its own
+\emph{architecture}, automatically, on every change.
+\end{factbox}
+
+\section{Problem 2: making the sandbox real at the call boundary}
+
+The permission wall is only as good as the place it is checked. Krate's
+check happens at what the source calls ``the narrow waist'': one dispatcher
+that every single call from an app must pass through.
+
+\begin{center}
+\begin{tikzpicture}[node distance=0.75cm,
+  box/.style={draw=krategrey, rounded corners=3pt, fill=white,
+    minimum width=10cm, minimum height=0.8cm, align=left, font=\footnotesize},
+  kbox/.style={draw=kratered, very thick, rounded corners=3pt, fill=white,
+    minimum width=10cm, minimum height=0.8cm, align=left, font=\footnotesize},
+  arrow/.style={-{Stealth[length=2.6mm]}, thick, draw=krateblue}]
+  \node[box] (a) {The app calls \texttt{fs.open("notes.txt")}};
+  \node[kbox, below=of a] (b) {\textbf{The guard} --- is \texttt{fs.read} in this session's grants?};
+  \node[box, below=of b] (c) {Path resolution --- is this path inside the sandbox?};
+  \node[box, below=of c] (d) {The adapter actually opens the file};
+  \draw[arrow] (a) -- (b);
+  \draw[arrow] (b) -- (c);
+  \draw[arrow] (c) -- (d);
+\end{tikzpicture}
+\end{center}
+
+There is no way around it, because the app has no other way to reach the
+outside. It cannot call the operating system directly --- WebAssembly gives
+it no instruction that could.
+
+\subsection{What the path check actually rejects}
+
+An app that has been granted file access still cannot wander. Before any
+path is used, it is rejected if it:
+
+\begin{itemize}[leftmargin=*]
+  \item is absolute (\texttt{/etc/passwd}, \texttt{C:\textbackslash Windows});
+  \item contains a backslash at all, which stops Windows-style escapes;
+  \item contains any control character;
+  \item contains \emph{any} component that is not an ordinary name --- which
+    is what rules out \texttt{..}, the classic ``climb out of the folder''
+    trick;
+  \item is empty.
+\end{itemize}
+
+Only a path made entirely of ordinary names, resolved underneath the app's
+own directory, survives. And \texttt{\textasciitilde} (your home folder) is
+refused when the manifest is parsed, before the app ever runs.
+
+\begin{plainbox}{Why the file picker is the interesting case}
+If an app cannot name a path, how does it open \emph{your} file?
+
+It doesn't. You pick the file, and Krate hands the app a \textbf{token} ---
+an opaque string that means ``the thing they chose''. The app calls
+\texttt{open\_chosen(token)}. It never learns where the file is, and the
+token store lives and dies with the run, so a token from yesterday resolves
+to nothing today.
+\end{plainbox}
+
+\section{Problem 3: drawing the same picture on every machine}
+
+An app says ``fill a rounded rectangle''. Something has to turn that into
+coloured pixels --- identically on a Mac, a PC, a Linux box, and a phone,
+or the same app looks different to different people.
+
+Krate does this in software, on the CPU, using a vector renderer
+(\texttt{vello\_cpu}) with real text shaping (\texttt{parley},
+\texttt{harfrust}, \texttt{skrifa}). Software rendering sounds like the slow
+choice, and it is a deliberate trade:
+
+\begin{center}
+\begin{tabular}{lp{4.7cm}p{4.7cm}}
+\toprule
+& \textbf{CPU rendering (chosen)} & \textbf{GPU rendering} \\
+\midrule
+Same pixels everywhere & Yes, by construction & No --- drivers differ \\
+Works on every machine & Yes & Needs a working driver \\
+Speed & $\approx$400M pixels/second & Faster \\
+Memory & Flat, about 80 MB & More \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+For the kind of app Krate is for, 400 million pixels a second is far more
+than enough --- a full 4K frame is about 8 million pixels. The GPU path was
+added on iPhone in August 2026 where it matters more, and was checked
+against the CPU path rather than assumed to match.
+
+\subsection{The three coordinate systems, and why they exist}
+
+This trips up everyone, so it is worth stating plainly. A canvas has three
+different sizes at once:
+
+\begin{center}
+\begin{tabular}{lp{8.6cm}}
+\toprule
+\textbf{Name} & \textbf{What it is} \\
+\midrule
+Design size & The made-up coordinates the app draws in, if it chose to have
+  one --- say ``my world is 800 by 600'' \\
+Logical size & The window's size in the units a person thinks in \\
+Physical size & The actual pixel buffer, which on a high-resolution screen
+  is two or three times bigger \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\analogy{A design size is like drawing a poster at A3 and letting the print
+shop scale it to whatever paper you bought. The proportions never distort,
+and any leftover paper becomes an even border.}
+
+The app declares a design size with \texttt{set-design-size}, and the
+runtime scales it uniformly to the window and centres it, so the app never
+distorts. Crucially, pointer and scroll events are converted \emph{back}
+into design coordinates before the app sees them, so a click lands where it
+looks like it landed. Getting that conversion wrong in one direction is the
+bug class that makes an app look fine but be unclickable.
+
+\section{Problem 4: the iPhone forbids the normal fast path}
+
+A WebAssembly runtime is normally fast because it compiles the app into
+real machine code as it loads --- ``just-in-time'' compilation. Apple does
+not allow an app to do this on an iPhone. On paper, that rules Krate out of
+iOS entirely.
+
+The answer was to switch engines rather than fight the rule: on iOS the
+runtime uses \textbf{Pulley}, wasmtime's portable interpreter, which
+executes the app without ever generating machine code. It is slower per
+instruction, but it is legal, and it was checked to produce
+\emph{pixel-identical} output to the compiled path rather than assumed to.
+
+\begin{plainbox}{Why this is a good answer and not a compromise}
+The alternative --- shipping a separate, hand-written iOS version of every
+app --- would have destroyed the entire premise, which is that one file runs
+everywhere. Taking a speed penalty on one platform to keep the promise
+intact is the right trade, and it is testable: the same file, the same
+pixels, one slower engine.
+\end{plainbox}
+
+\section{Problem 5: apps must not be able to smuggle in OS access}
+
+This is the subtlest problem in the project, and the one most likely to be
+asked about by someone who knows WebAssembly.
+
+An app is written in Rust. Ordinary Rust code uses the standard library,
+and the standard library assumes an operating system underneath --- so the
+moment an app calls something innocuous, the compiler quietly adds
+\texttt{wasi:*} imports (requests for operating-system services) that Krate
+never agreed to provide.
+
+\analogy{You hire a contractor who promises to work only with tools you
+hand them. But their toolbox has a hidden compartment that automatically
+packs a crowbar whenever they bring a hammer. Nobody is being dishonest ---
+the toolbox just works that way.}
+
+The fix is to build apps \texttt{\#![no\_std]}: without the standard
+library, with Krate's SDK supplying the few things that genuinely need to
+exist (memory allocation, panic handling). Then the only imports in the
+finished app are \texttt{krate:*} ones.
+
+And this is checked, not trusted: stage 4 of \texttt{check-app} reads the
+compiled component's import list and fails it if anything other than
+\texttt{krate:*} appears. When it fails, the error maps the leaked import
+back to the discipline that removes it.
+
+\begin{factbox}{The measured history of this problem}
+When eight apps were first authored by an AI, \textbf{three failed} for
+exactly this reason --- and the cause was not obvious code. One was
+\texttt{Vec::with\_capacity}, whose allocation-failure handler dragged in
+the whole operating-system surface. Another surfaced only when a database
+query returned a list.
+
+Each was tracked down to a specific line and fixed at the SDK level, so
+that app authors never have to think about it. This is the kind of problem
+that does not appear in a demo and takes weeks to find in production.
+\end{factbox}
 
 % =====================================================================
 \chapter{The Complete Technical Reference}
@@ -790,6 +1092,131 @@ systems and re-proves eight things about them, including that the
 permission wall still refuses. Most of those checks exist because we
 shipped that exact bug once.''
 \end{factbox}
+
+% =====================================================================
+\chapter{How the Quality Is Actually Enforced}
+
+``How do I know this works?'' deserves a better answer than ``we tested
+it''. Here is the whole apparatus, in layers.
+
+\section{The five layers}
+
+\begin{center}
+\begin{tabular}{lp{5.4cm}r}
+\toprule
+\textbf{Layer} & \textbf{What it catches} & \textbf{Size} \\
+\midrule
+Unit and integration tests & Ordinary defects & 1{,}141 tests \\
+Architecture tools & Design rules being broken & 21 tools \\
+Nightly fuzzing & Crashes on hostile input & 3 targets \\
+\texttt{check-app} & Apps that are valid but unusable & 6 stages \\
+Post-publish verification & Broken releases & 3 operating systems \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Each layer catches something the others structurally cannot. That is the
+point of having five.
+
+\section{Fuzzing: throwing garbage at the parsers}
+
+Every night, a machine spends 80 minutes per target feeding randomly
+corrupted input into the three most security-sensitive parsers in the
+project, looking for a crash:
+
+\begin{center}
+\begin{tabular}{lp{7.6cm}}
+\toprule
+\textbf{Target} & \textbf{Why this one} \\
+\midrule
+\texttt{manifest\_parse} & The manifest is the first thing read from an
+  untrusted file \\
+\texttt{policy\_match} & Deciding what is granted must not be trickable \\
+\texttt{logical\_path\_parse} & Path handling is where sandbox escapes live \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\analogy{Fuzzing is hiring someone to mash the keyboard at your app forever
+and tell you if it ever falls over. It is unglamorous and it finds the
+crashes that careful thinking misses, because it does not know what is
+``reasonable'' to try.}
+
+Those three were not chosen at random --- they are exactly the code paths
+that read data an attacker controls.
+
+\section{\texttt{check-app}, stage by stage}
+
+This is the machine that decides whether an app is real. It matters more
+than the tests, because it is what stands between an AI's output and a
+person's screen.
+
+\begin{center}
+\begin{longtable}{clp{5.9cm}p{2.8cm}}
+\toprule
+& \textbf{Stage} & \textbf{What it proves} & \textbf{Catches} \\
+\midrule
+\endhead
+1 & layout & The required files exist and the code is not obviously wrong & Missing pieces \\
+2 & manifest & Everything asked for is real, scoped, and actually used & Over-asking \\
+3 & build & It compiles to WebAssembly & Broken code \\
+4 & imports & It uses only \texttt{krate:*} & Smuggled OS access \\
+5 & run & It runs headless without crashing & Crashes \\
+6 & usability & Window opens, survives a resize, answers a click, stays open & Unusable apps \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\subsection{Why stage 6 exists, and what it does}
+
+Stages 1--5 are what any careful project would build. Stage 6 is the
+unusual one, and it exists because six passing stages once approved an app
+that could not be clicked.
+
+The driver behaves like an impatient person: it lets the app settle, grows
+the window, presses the middle of it, watches for fifteen seconds, and
+records what happened.
+
+\begin{plainbox}{The design rule that makes it trustworthy}
+\textbf{Observe, never require.} The driver reports what it saw. Anything it
+could not measure is recorded as ``not observed'' --- never as a failure.
+
+This sounds weak and is the opposite. A gate that fails apps it merely
+failed to measure gets switched off within a week, and a switched-off gate
+protects nothing. By refusing to guess, this one stays on.
+\end{plainbox}
+
+Two limits are stated in the source rather than hidden, and you should
+state them too if asked:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Resize measures the canvas, not the picture.} Nothing in a
+    painted frame distinguishes a layout that re-flowed from one that was
+    merely stretched. So the check asks whether the app's canvas followed
+    the window at all.
+  \item \textbf{A press on a canvas app is a guess.} A canvas app draws its
+    own buttons, so the host presses the middle and hopes. Landing on empty
+    space is indistinguishable from a dead button, so that case is reported
+    as unobserved rather than failed.
+\end{itemize}
+
+\section{What this apparatus actually caught}
+
+Not hypothetical. On 11 August 2026, stage 6 caught \textbf{21 of our own
+32 example apps} drawing at a fixed size and ignoring the window --- the
+same defect a first-time user had reported from Windows. The fleet went
+from 19 passing to 32 passing in one day.
+
+\begin{warnbox}{And what it did not catch}
+The same week, a scripted fix gave seventeen apps a \emph{square} design
+size through a bad regular expression, and it shipped in v0.1.10. The gate
+could not see it, because a square design size is a perfectly valid design
+size.
+
+A gate checks the property you thought to encode. This is why the outsider
+testing in Chapter 6 exists alongside it, and why ``it passed CI'' is never
+the last word.
+\end{warnbox}
 
 % =====================================================================
 \chapter{The Numbers}
@@ -1188,6 +1615,106 @@ is the actual product moat.
 \end{itemize}
 
 % =====================================================================
+\chapter{The Cloud and the Business}
+
+\section{What Krate Cloud is today}
+
+Krate Cloud went live on 5 August 2026. It is a Cloudflare Worker with
+object storage behind it, and it does nine things:
+
+\begin{center}
+\begin{tabular}{lp{7.8cm}}
+\toprule
+\textbf{Route} & \textbf{What it does} \\
+\midrule
+\texttt{POST /publish} & Takes a \texttt{.krate}, stores it, returns a URL \\
+\texttt{GET /a/<id>} & Serves the app so \texttt{krate run <url>} works \\
+\texttt{GET /apps} & The public gallery \\
+\texttt{GET /shot/<id>} & The app's screenshot \\
+\texttt{POST /auth/start} & Begins GitHub device-flow sign-in \\
+\texttt{GET /auth/poll} & Completes it \\
+\texttt{POST /usage} & Anonymous usage counting \\
+\texttt{GET /stats} & Aggregate numbers \\
+\texttt{GET /health} & Liveness \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Twelve apps are published on it. Publishing is free and requires no account
+to \emph{run} anything --- a link is enough.
+
+\begin{plainbox}{One design decision worth stealing}
+Apps are \textbf{content-addressed}: the storage key is a hash of the file
+itself, so the same app always lands at the same URL. There is nothing to
+overwrite and nothing to look up. It also means a URL is a proof of
+contents --- what you fetch is exactly what was published.
+\end{plainbox}
+
+\section{The business model, stated plainly}
+
+\begin{center}
+\begin{tabular}{lp{8.2cm}}
+\toprule
+\textbf{Layer} & \textbf{Status} \\
+\midrule
+The runtime & Free and open source, forever. This is the adoption engine,
+  not a product. \\
+Authoring & Free. You bring an AI tool you already pay for; Krate takes
+  nothing. \\
+Publishing & Free today, and free for individuals in any plausible future. \\
+\midrule
+\textbf{Revenue, later} & Private galleries, team distribution, usage above
+  a free tier, and support for organisations that need to distribute
+  internal tools. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{warnbox}{Nothing is priced yet, and that is deliberate}
+There is no pricing page, no paid tier, and no revenue. Charging before the
+adoption loop works would optimise the wrong thing --- and the honest state
+is that gate G5 (ten people outside this machine making an app and sending
+it to someone) is not met.
+
+If an investor asks ``what's the business model'', the answer is the table
+above plus that sentence. Inventing a revenue projection for a product with
+no users is the fastest way to lose a technical investor's confidence.
+\end{warnbox}
+
+\section{Why the free runtime is not a giveaway}
+
+The comparison is Docker, and the parallel is close enough to use out loud:
+the container runtime is free and everywhere, and the money is in the
+registry, the team features, and the enterprise controls. Nobody would have
+adopted Docker if the runtime cost money, and nobody would adopt Krate if
+receiving an app required a subscription.
+
+\analogy{The PDF reader was free. Adobe made its money on everything around
+it. Making the reader free is what made the format universal, and the format
+being universal is what made the rest worth anything.}
+
+\section{The market, in the only terms that are checkable}
+
+Avoid invented totals. The defensible framing is a sequence of facts:
+
+\begin{enumerate}[leftmargin=*]
+  \item AI coding tools went from niche to mainstream in about 18 months,
+    and the people using them increasingly cannot code.
+  \item Every app so produced needs somewhere to go, and the existing
+    options (app stores, web hosting, Electron) were built for companies
+    shipping to millions.
+  \item Software with an audience of one --- a tool for your mum's invoices,
+    a tracker for a team of four --- has no distribution channel at all.
+  \item That gap is what Krate fills, and it did not exist two years ago.
+\end{enumerate}
+
+\begin{plainbox}{The sentence to use}
+``I'm not going to give you a market size I made up. What I can tell you is
+that the number of people making software went up by an order of magnitude,
+the number of places to put it went up by zero, and that gap is new.''
+\end{plainbox}
+
+% =====================================================================
 \chapter{How Krate Compares}
 
 \section{The comparison table}
@@ -1398,6 +1925,76 @@ import only Krate's own interfaces. \texttt{check-app} verifies this.
 Today, you cannot do it. That is a real limit, tracked on the board as
 \texttt{runtime-hole}, and those are the entries we prioritise.
 
+\section{The hard technical questions}
+
+These are the ones that come from people who know the field. Each answer is
+short on purpose --- you should be able to say it out loud.
+
+\textbf{``Why not just use WASI? It already standardises this.''}\\
+WASI standardises an app's access to an operating system --- files,
+sockets, clocks. Krate deliberately does not give apps an operating system;
+it gives them a capability-checked set of interfaces and refuses
+\texttt{wasi:*} entirely. A Krate app importing WASI is a build failure, by
+design. Different goal, not a worse implementation of the same one.
+
+\textbf{``Isn't this just Java applets again?''}\\
+The comparison is fair and the differences are the ones that killed
+applets: applets needed a browser plugin, ran with a security model people
+could not see or reason about, and were separate from the ordinary way you
+open a file. A \texttt{.krate} is a file you double-click, its permissions
+are four lines of plain English shown before it runs, and it does not need
+a browser at all.
+
+\textbf{``Sandboxing at the interface boundary --- what about side
+channels, Spectre, resource exhaustion?''}\\
+Not defended against, and we say so rather than let someone find out. The
+wall stops honest apps from overreaching; it is not an adversarial security
+boundary. What \emph{is} bounded today: bundle sizes, decompressed entry
+sizes (the zip-bomb case), and path escapes. What is not: a deliberately
+hostile app burning CPU or exploiting the processor itself.
+
+\textbf{``What is the actual startup cost breakdown?''}\\
+3.3 ms to compile and instantiate the component, 61 microseconds of
+steady-state work per invocation, and about 11.3 ms end to end for a whole
+process. Until 11 August 2026 it was 73.9 ms, and 91\% of that was Krate
+blocking on a telemetry request --- not the runtime.
+
+\textbf{``Rust for app authors is a strange choice. Why not something
+easier?''}\\
+Because a person never writes it --- an AI does --- so the usual objection
+(the learning curve) does not apply, while the benefits do: no garbage
+collector, no language runtime to ship, and components in the tens of
+kilobytes. If a person wants to write one by hand, they can; the SDK is
+public.
+
+\textbf{``How do you handle versioning when the interfaces change?''}\\
+Worlds are versioned (\texttt{krate:app/gui@0.2.0}) and a tool called
+\texttt{check-uapi-freeze-lock} runs in CI to stop an interface being
+changed silently. When an app is too old for a runtime, it gets a plain
+sentence rather than a crash.
+
+\textbf{``What happens when the runtime has a security bug?''}\\
+The same thing that happens to a browser: it ships a new version. That is
+the trade of a shared runtime --- one place to fix, but everyone must
+update. Releases are signed and notarised on macOS, and the release gate
+verifies the published artefacts on three operating systems.
+
+\textbf{``Your example apps are hand-tuned. Does a real generated app look
+like that?''}\\
+That was a fair criticism and it was a real bug. As of 11--12 August 2026,
+the authoring pack's design guidance was still teaching a workaround for
+primitives that had shipped, so generated apps looked dated while our
+showcase apps did not. It is fixed, and it was verified by generating an
+app type nobody had built --- a wedding seating planner --- and checking
+which drawing calls it reached for. See Chapter 12.
+
+\textbf{``Nine hundred thousand lines in four months. Be serious.''}\\
+618{,}821 of those lines are machine-generated bindings. The hand-written
+figure is 112{,}831 lines of Rust plus 46{,}910 of documentation. Quote the
+smaller number --- it is the honest one, it is still a serious body of
+systems code, and it does not fall apart when someone checks. See
+Section~\ref{sec:scale}.
+
 \section{From an investor}
 
 \textbf{``What is the market?''}\\
@@ -1443,9 +2040,40 @@ usage beyond a free tier. Nothing is priced yet, deliberately --- adoption
 first.
 
 \textbf{``What are the traction numbers?''}\\
-External testers, not users, as of 11 August 2026. The engineering is
-ahead of the distribution, which is the honest position. Twelve apps are
-published on the live gallery.
+Small, real, and measured. The cloud counts anonymous usage, and as of
+12 August 2026 it reports:
+
+\begin{center}
+\begin{tabular}{lr}
+\toprule
+\textbf{Measure (from \texttt{hub.krate.tech/stats})} & \textbf{Value} \\
+\midrule
+Distinct installs, 90 days & 246 \\
+App opens, 5 days of records & 4{,}187 \\
+Failed opens, same period & 425 \\
+Open success rate & 90.8\% \\
+Apps made & 12 (all AI-authored) \\
+Apps published to the cloud & 2 \\
+Apps in the public gallery & 12 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\begin{warnbox}{State the caveat before they ask for it}
+Installs include continuous-integration machines and our own development
+machines --- they are not 246 people. The number that matters is the one
+that is still nearly zero: \textbf{2 apps published by anyone, and no
+outside person has yet made an app and sent it to a friend.} That is gate
+G5, and it is unmet.
+
+The engineering is far ahead of the distribution. Say that plainly; it is
+the correct read and pretending otherwise fails instantly.
+\end{warnbox}
+
+One number in that table is worth watching for a different reason: a 90.8\%
+open success rate means roughly one in eleven attempts to open an app
+failed. That is a product-quality signal we get for free, and it is the
+kind of thing worth fixing before chasing more installs.
 
 \section{The hard questions}
 
@@ -1508,6 +2136,216 @@ not see it. Both are in this document because both changed the product.
 \textbf{``What is the one metric that matters?''}\\
 Ten people who are not us making an app and sending it to someone. That is
 gate G5, and it is not met yet.
+
+% =====================================================================
+\chapter{Explaining Krate Out Loud}
+
+Everything so far is for you to \emph{know}. This chapter is for you to
+\emph{say}. Each version is complete on its own --- pick by who is asking
+and how long they have.
+
+\section{Ten seconds}
+
+\begin{plainbox}{The one-liner}
+``AI can write you an app in a minute, but you still can't send it to
+anyone. We make it one small file that opens on any computer and tells you
+what it wants before it runs.''
+\end{plainbox}
+
+\section{Sixty seconds}
+
+``You know how if you make something useful with AI --- a little tracker, a
+calculator for your work --- you basically can't give it to anyone? They'd
+need the right programming languages installed, or you'd have to put it on
+a website and pay for it forever, or it arrives as a 200-megabyte download
+that Windows warns them about.
+
+Krate makes it one file, about 20 kilobytes, that opens by double-click on
+Mac, Windows and Linux. And because nobody should run a program a
+stranger's AI wrote, it tells you what it wants first --- in plain words,
+like `save files in its own private folder, never yours' --- and you can
+say no and it still opens.
+
+It works today. Thirty-nine apps, six platforms, and it runs on phones
+too.''
+
+\section{Three minutes, for someone technical}
+
+Lead with the boundary, because that is the part that is actually novel:
+
+``It's a WebAssembly component runtime with a capability wall enforced at
+the dispatch boundary --- every host call checks the session's grants, and
+apps import only \texttt{krate:*}, never \texttt{wasi:*}, which is verified
+on the compiled artefact rather than trusted.
+
+The interesting bit is what we call `the pick is the grant'. A
+folder-tidying app cannot name a folder --- there is no capability that
+would let it. It asks the person to pick one, and the pick becomes a
+token scoped to that run. The example app ships with zero filesystem
+capabilities declared.
+
+The other half is the authoring loop: whatever AI you already pay for
+writes the app, and a six-stage checker decides whether the output is
+acceptable --- including a stage that opens the window, resizes it, clicks
+it, and watches whether it closes itself. That checker is the actual
+product, more than the runtime is.''
+
+\section{The questions that follow, and the short answers}
+
+\begin{center}
+\begin{longtable}{p{5.4cm}p{7.6cm}}
+\toprule
+\textbf{They ask} & \textbf{You say} \\
+\midrule
+\endhead
+``Is it faster than a normal app?'' & ``No --- about 6 milliseconds slower
+  to start, which nobody can feel. It's 19 times smaller, and once running
+  there's no per-operation cost.'' \\
+``How big is the runtime?'' & ``21 MB, installed once. The tenth app you
+  receive costs 20 KB, not another 21.'' \\
+``Who's it for?'' & ``The person who just had an AI build them something
+  and can't give it to anyone.'' \\
+``How many users?'' & ``Testers, not users. The engineering is ahead of the
+  distribution --- that's the honest position.'' \\
+``Is it secure?'' & ``It's real enforcement against apps that overreach.
+  It's not hardened against deliberately hostile code, and I'd rather say
+  that than have you find it.'' \\
+``What's stopping Apple doing this?'' & ``Nothing. If they do, the thesis
+  was right. We have a working implementation and no app store to
+  protect.'' \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\section{Three rules for talking about it}
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Name the baseline on every comparison.} ``Smaller'' is
+    meaningless; ``19 times smaller than the same program compiled
+    natively, thousands of times smaller than Electron'' is checkable.
+  \item \textbf{Volunteer the weakness before it is found.} Saying ``the
+    benchmark said 0 of 5 and I haven't re-run it'' buys more credibility
+    than any number you could quote instead.
+  \item \textbf{Never quote a number you haven't measured.} Every figure in
+    this document has a date attached for exactly this reason. If it is
+    older than the last big change, say so.
+\end{enumerate}
+
+% =====================================================================
+\chapter{A Worked Case Study: Making Generated Apps Look Good}
+
+This chapter follows one problem from complaint to fix, because it shows
+how the whole system --- runtime, teaching, examples, gate --- has to move
+together, and because it is a good story to tell.
+
+\section{The complaint}
+
+Two pieces of feedback, days apart. A friend testing on Windows: a
+generated game's character and ground were off screen. And, more generally,
+that Krate apps looked basic --- ``like from a few years back''.
+
+\section{What was actually wrong (three separate causes)}
+
+\subsection{Cause 1: apps ignored the window}
+
+Twenty-one of our own 32 example apps drew at a fixed size. On a window
+that was not exactly that size, content fell outside it. The gate could not
+see it, because it measured whether the \emph{canvas} followed the window,
+not whether the picture did.
+
+Fixed by \texttt{set-design-size}: the app declares its own coordinate
+system, and the runtime scales it uniformly and centres it. The gate was
+rewritten to compare what a person actually sees.
+
+\subsection{Cause 2: the teaching lagged the runtime}
+
+The renderer had grown rounded rectangles, soft shadows, gradients with
+stops, and font weights. But the document the AI reads still said, in prose,
+to fake a rounded card with a rectangle and four circles --- contradicting
+the function list further down the same file. \textbf{A model follows the
+prose.}
+
+\subsection{Cause 3: the examples taught it too}
+
+Nine example apps still hand-built rounded corners. An example app is
+documentation; the AI copies it. One of them drew its outlines with 1-pixel
+corner dots, so every empty checkbox and text field in that app rendered as
+a \emph{broken dotted box}.
+
+\begin{center}
+\begin{tikzpicture}[node distance=0.7cm,
+  box/.style={draw=krategrey, rounded corners=3pt, fill=white,
+    minimum width=10.4cm, minimum height=0.78cm, align=left, font=\footnotesize},
+  kbox/.style={draw=krateblue, very thick, rounded corners=3pt, fill=kratebg,
+    minimum width=10.4cm, minimum height=0.78cm, align=left, font=\footnotesize},
+  arrow/.style={-{Stealth[length=2.6mm]}, thick, draw=krateblue}]
+  \node[box] (a) {The runtime grows a new drawing primitive};
+  \node[box, below=of a] (b) {\ldots but the pack's prose still teaches the old workaround};
+  \node[box, below=of b] (c) {\ldots and the example apps still demonstrate it};
+  \node[kbox, below=of c] (d) {So every newly generated app inherits the old look};
+  \draw[arrow] (a) -- (b);
+  \draw[arrow] (b) -- (c);
+  \draw[arrow] (c) -- (d);
+\end{tikzpicture}
+\end{center}
+
+\section{How it was verified}
+
+Not by reading the code --- by generating an app of a type nobody had built
+(a wedding seating planner) and inspecting which drawing calls it reached
+for. A \texttt{.krate} bundle ships its own source, so this is checkable
+from the outside:
+
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+\textbf{Call} & \textbf{Before} & \textbf{After} \\
+\midrule
+\texttt{drop\_shadow\_round\_rect} & 0 & 2 \\
+\texttt{draw\_text\_styled} & 0 & 2 \\
+\texttt{measure\_text\_styled} & 0 & 2 \\
+\texttt{fill\_round\_rect} / \texttt{stroke\_round\_rect} & 0 & 2 \\
+The four-circle corner workaround & used & \textbf{0} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{The part that is still open}
+
+Then the layout guidance was added --- fill the window, size grid cells
+from the area, keep one elastic region --- and regenerating the same app
+showed the tables filling the room properly. But it also introduced a new
+defect: the guest names now overlapped the chairs, because the app measured
+from the table's radius while the chairs sat further out.
+
+That was fixed with a further rule (measure from the outermost edge, not
+the shape). But regenerating again produced a \emph{third} layout that
+cleared the overlap and was less dense again.
+
+\begin{warnbox}{The honest conclusion, filed as K-099}
+The AI trades density against overlap between runs, and prose guidance
+cannot hold both. This needs a machine check, the way the resize bug did.
+
+An edge-band check was written for it and \textbf{thrown away}: measured
+against six real screenshots it scored every app at 3--6\%, including one
+with an obviously dead region, because real apps put a full-width panel
+near each edge so no complete row is ever empty. A gate that detects
+nothing while claiming to is worse than no gate. The evidence sits in the
+bug entry so the next attempt starts from a region measure instead.
+\end{warnbox}
+
+\section{What this case study is for}
+
+Three lessons, all of which generalise:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{A shipped capability is not a delivered one.} It reaches
+    users only when the teaching and the examples change too.
+  \item \textbf{Test the cold path, not the code path.} The bug was found
+    by generating an unfamiliar app, not by reading source.
+  \item \textbf{Prose guidance drifts; gates hold.} Anything you cannot
+    encode as a check will regress the next time the model runs.
+\end{enumerate}
 
 % =====================================================================
 \chapter{Glossary}
