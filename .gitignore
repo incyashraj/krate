@@ -79,3 +79,6 @@ ehthumbs.db
 /notes/
 /Demo/
 /app-shots/
+
+# Personal reading material, not part of the product.
+/Essays/
