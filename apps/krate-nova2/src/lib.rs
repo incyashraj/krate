@@ -237,6 +237,16 @@ impl bindings::Guest for Component {
                 return 33;
             }
         };
+        // The app's own coordinate system: keep drawing in these numbers
+        // and the host scales them to any window, centred, never stretched
+        // out of proportion (K-096).
+        let _ = canvas2d::set_design_size(
+            canvas,
+            gfx::Size {
+                width: WIDTH,
+                height: WIDTH,
+            },
+        );
 
         let raw = args::raw();
         let quick = raw

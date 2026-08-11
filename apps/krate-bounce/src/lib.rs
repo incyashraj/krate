@@ -493,6 +493,19 @@ impl bindings::Guest for Component {
                 return 1;
             }
         };
+        // A Breakout court only makes sense at its own proportions: the
+        // paddle, the brick grid and the ball speeds are all tuned to this
+        // size. Declare it once and keep drawing in these coordinates --
+        // the host scales them to any window and centres the leftovers, so
+        // the game fills a resized window instead of sitting in a corner
+        // (K-096). Pointer coordinates come back in these units too.
+        let _ = canvas2d::set_design_size(
+            canvas,
+            gfx::Size {
+                width: WIDTH,
+                height: HEIGHT,
+            },
+        );
 
         let mut game = Game::new();
 

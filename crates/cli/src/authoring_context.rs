@@ -89,6 +89,25 @@ make subfolders. No fs capability at all. `apps/krate-tidy` is the worked \
 example: a folder tidier whose manifest has zero fs lines. For output the \
 app keeps between runs, use its own folder with a narrow scope like \
 `fs.write:./exports/**`.\n\n\
+## Filling the window, whatever size it is\n\n\
+A person resizes windows, and every screen is a different shape. An app \
+that draws from constants gets scaled up by the host to fit -- blurry \
+text, and in a game the world pushed off the edge. This was reported by \
+a real person on Windows: the character and the ground were off the \
+screen, and changing the window size did not help.\n\n\
+Two honest choices, and check-app enforces one of them:\n\n\
+1. **Lay out from the window** -- call `canvas2d::canvas_size(canvas)` at \
+   the top of every frame and compute positions from the answer. Best for \
+   anything list-shaped or text-heavy, where extra room should be used. \
+   Redraw on `Event::Resized`.\n\
+2. **Fix your coordinate system** -- call \
+   `canvas2d::set_design_size(canvas, Size { width: W, height: H })` once \
+   after `bind`, then keep drawing in those numbers forever. The host \
+   scales them uniformly to any window and centres what is left over, so \
+   proportions are never distorted, and pointer events arrive in the same \
+   coordinates. Best for games and anything whose layout IS its design.\n\n\
+Doing neither is the single commonest way a generated app fails the \
+person using it.\n\n\
 ## Draining input: the difference between smooth and laggy\n\n\
 A touch panel reports a drag up to 120 times a second, and every report \
 becomes an event. An app that handles ONE event per frame and then draws \

@@ -484,6 +484,7 @@ takes the arguments is the function.
 
 - `canvas2d::bind: func(window: u64, widget: u64) -> result<u64, gfx-error>`
 - `canvas2d::canvas-size: func(canvas: u64) -> result<size, gfx-error>`
+- `canvas2d::set-design-size: func(canvas: u64, size: size) -> result<_, gfx-error>`
 - `canvas2d::set-clip: func(canvas: u64, x: f32, y: f32, w: f32, h: f32) -> result<_, gfx-error>`
 - `canvas2d::clear-clip: func(canvas: u64) -> result<_, gfx-error>`
 - `canvas2d::clear: func(canvas: u64, fill: color) -> result<_, gfx-error>`
@@ -1333,6 +1334,16 @@ impl bindings::Guest for Component {
                 return 33;
             }
         };
+        // The app's own coordinate system: keep drawing in these numbers
+        // and the host scales them to any window, centred, never stretched
+        // out of proportion (K-096).
+        let _ = canvas2d::set_design_size(
+            canvas,
+            gfx::Size {
+                width: WIDTH,
+                height: WIDTH,
+            },
+        );
 
         let mut list = Checklist::new();
         if !load(&mut list) || list.len == 0 {

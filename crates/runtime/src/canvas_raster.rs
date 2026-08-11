@@ -36,6 +36,10 @@ pub struct CanvasSurface {
     logical_width: u32,
     logical_height: u32,
     scale: f32,
+    /// A fixed coordinate system the app draws in, if it asked for one.
+    /// Draw calls are mapped from here onto the real canvas: scaled
+    /// uniformly and centred, so proportions survive any window (K-096).
+    design: Option<(f32, f32)>,
     /// `0xAARRGGBB`, row-major from the top — the drawn painter's format.
     buffer: Vec<u32>,
 }
@@ -167,6 +171,7 @@ impl CanvasSurface {
             logical_width: width,
             logical_height: height,
             scale,
+            design: None,
             // Opaque white, so a canvas an app forgets to clear reads as a
             // blank sheet rather than a black hole in the window.
             buffer: vec![0xFFFF_FFFF; phys_w as usize * phys_h as usize],
@@ -198,7 +203,12 @@ impl CanvasSurface {
         {
             return Ok(false);
         }
-        let fitted = Self::new_scaled(width, height, scale)?;
+        let mut fitted = Self::new_scaled(width, height, scale)?;
+        // A resize changes the canvas, never the coordinate system the app
+        // chose to draw in. Replacing the whole surface silently dropped the
+        // design size, so an app that letterboxes correctly looked, one
+        // frame later, exactly like an app that ignores the window (K-096).
+        fitted.design = self.design;
         *self = fitted;
         Ok(true)
     }
@@ -208,6 +218,44 @@ impl CanvasSurface {
         self.scale
     }
 
+    /// Draw in a fixed coordinate system from now on.
+    pub fn set_design_size(&mut self, width: f32, height: f32) {
+        if width > 0.0 && height > 0.0 {
+            self.design = Some((width, height));
+        } else {
+            self.design = None;
+        }
+    }
+
+    /// The design system's scale and offset onto the real canvas: uniform,
+    /// centred, letterboxed. `(1.0, 0.0, 0.0)` when no design size is set,
+    /// so every draw path can apply it unconditionally.
+    fn design_transform(&self) -> (f32, f32, f32) {
+        let Some((dw, dh)) = self.design else {
+            return (1.0, 0.0, 0.0);
+        };
+        let (cw, ch) = (self.logical_width as f32, self.logical_height as f32);
+        // The smaller ratio is what fits both axes -- the larger would crop.
+        let k = (cw / dw).min(ch / dh);
+        ((k), (cw - dw * k) / 2.0, (ch - dh * k) / 2.0)
+    }
+
+    /// Map one design-space point onto the canvas.
+    fn map_point(&self, x: f32, y: f32) -> (f32, f32) {
+        let (k, ox, oy) = self.design_transform();
+        (x * k + ox, y * k + oy)
+    }
+
+    /// Map a design-space length.
+    fn map_len(&self, v: f32) -> f32 {
+        v * self.design_transform().0
+    }
+
+    /// The design size an app is drawing in, if it set one.
+    pub fn design_size(&self) -> Option<(f32, f32)> {
+        self.design
+    }
+
     /// Restrict drawing to a rectangle. Anything outside is dropped.
     ///
     /// Deliberately a single rect rather than a stack: nested clips are what
@@ -215,7 +263,10 @@ impl CanvasSurface {
     /// region". Adding a stack later does not break this.
     pub fn set_clip(&mut self, rect: Option<(f32, f32, f32, f32)>) {
         let k = self.scale;
-        self.clip = rect.map(|(x, y, w, h)| (x * k, y * k, w * k, h * k));
+        self.clip = rect.map(|(x, y, w, h)| {
+            let (mx, my) = self.map_point(x, y);
+            (mx * k, my * k, self.map_len(w) * k, self.map_len(h) * k)
+        });
     }
 
     /// Whether a pixel may be written. Used by the per-pixel primitives.
@@ -271,6 +322,8 @@ impl CanvasSurface {
     }
 
     pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: u32) {
+        let (x, y) = self.map_point(x, y);
+        let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
         let (x, y, w, h) = (x * k, y * k, w * k, h * k);
         let Some((x, y, w, h)) = self.clipped(x, y, w, h) else {
@@ -290,6 +343,8 @@ impl CanvasSurface {
     /// is smooth rather than stair-stepped -- the primitive that makes round
     /// things look drawn instead of plotted.
     pub fn fill_circle(&mut self, cx: f32, cy: f32, radius: f32, color: u32) {
+        let (cx, cy) = self.map_point(cx, cy);
+        let radius = self.map_len(radius);
         let k = self.scale;
         let (cx, cy, radius) = (cx * k, cy * k, radius * k);
         if radius <= 0.0 {
@@ -339,6 +394,8 @@ impl CanvasSurface {
     /// that screensaver got a visible square box around it. The model did the
     /// best it could with what we exposed; the gap was ours.
     pub fn stroke_circle(&mut self, cx: f32, cy: f32, radius: f32, width: f32, color: u32) {
+        let (cx, cy) = self.map_point(cx, cy);
+        let (radius, width) = (self.map_len(radius), self.map_len(width));
         let k = self.scale;
         let (cx, cy, radius, width) = (cx * k, cy * k, radius * k, width * k);
         if radius <= 0.0 || width <= 0.0 {
@@ -449,6 +506,8 @@ impl CanvasSurface {
         if w <= 0.0 || h <= 0.0 {
             return;
         }
+        let (x, y) = self.map_point(x, y);
+        let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
         let (x, y, w, h) = (x * k, y * k, w * k, h * k);
         let radii = (radii.0 * k, radii.1 * k, radii.2 * k, radii.3 * k);
@@ -485,6 +544,8 @@ impl CanvasSurface {
         if w <= 0.0 || h <= 0.0 || width <= 0.0 {
             return;
         }
+        let (x, y) = self.map_point(x, y);
+        let (w, h, width) = (self.map_len(w), self.map_len(h), self.map_len(width));
         let k = self.scale;
         let (x, y, w, h, width) = (x * k, y * k, w * k, h * k, width * k);
         let radii = (radii.0 * k, radii.1 * k, radii.2 * k, radii.3 * k);
@@ -525,6 +586,8 @@ impl CanvasSurface {
         if w <= 0.0 || h <= 0.0 {
             return;
         }
+        let (x, y) = self.map_point(x, y);
+        let (w, h, blur) = (self.map_len(w), self.map_len(h), self.map_len(blur));
         let k = self.scale;
         let (x, y, w, h, blur) = (x * k, y * k, w * k, h * k, blur * k);
         let blur = blur.max(0.5);
@@ -563,6 +626,8 @@ impl CanvasSurface {
             self.fill_rect(x, y, w, h, stops[0].1);
             return;
         }
+        let (x, y) = self.map_point(x, y);
+        let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
         let (x, y, w, h) = (x * k, y * k, w * k, h * k);
         let Some((cx0, cy0, cw, ch)) = self.clipped(x, y, w, h) else {
@@ -623,6 +688,8 @@ impl CanvasSurface {
             self.stroke_circle(cx, cy, radius, width, color);
             return;
         }
+        let (cx, cy) = self.map_point(cx, cy);
+        let (radius, width) = (self.map_len(radius), self.map_len(width));
         let k = self.scale;
         let (cx, cy, radius, width) = (cx * k, cy * k, radius * k, width * k);
         let half = width * 0.5;
@@ -660,6 +727,8 @@ impl CanvasSurface {
     /// primitive -- a soft light falloff instead of a flat disc, which is the
     /// single biggest difference between a modern look and a flat one.
     pub fn radial_gradient(&mut self, cx: f32, cy: f32, radius: f32, inner: u32, outer: u32) {
+        let (cx, cy) = self.map_point(cx, cy);
+        let radius = self.map_len(radius);
         let k = self.scale;
         let (cx, cy, radius) = (cx * k, cy * k, radius * k);
         if radius <= 0.0 {
@@ -700,6 +769,8 @@ impl CanvasSurface {
     /// A vertical linear gradient filling a rectangle: `top` color at `y`
     /// easing to `bottom` at `y + h`. For skies, panels, backdrops.
     pub fn linear_gradient_v(&mut self, x: f32, y: f32, w: f32, h: f32, top: u32, bottom: u32) {
+        let (x, y) = self.map_point(x, y);
+        let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
         let (x, y, w, h) = (x * k, y * k, w * k, h * k);
         if h <= 0.0 || w <= 0.0 {
@@ -717,6 +788,8 @@ impl CanvasSurface {
 
     /// Four thin fills; a stroke is its edges.
     pub fn stroke_rect(&mut self, x: f32, y: f32, w: f32, h: f32, stroke: f32, color: u32) {
+        let (x, y) = self.map_point(x, y);
+        let (w, h, stroke) = (self.map_len(w), self.map_len(h), self.map_len(stroke));
         let k = self.scale;
         let (x, y, w, h, stroke) = (x * k, y * k, w * k, h * k, stroke * k);
         let stroke = stroke.max(1.0);
@@ -760,6 +833,8 @@ impl CanvasSurface {
         color: u32,
         style: krate_adapter_common::vector_text::CanvasTextStyle,
     ) {
+        let (x, y) = self.map_point(x, y);
+        let font_size = self.map_len(font_size);
         let k = self.scale;
         let (x, y, font_size) = (x * k, y * k, font_size * k);
         // Text is rendered by a shared painter that writes into the buffer
@@ -875,6 +950,8 @@ impl CanvasSurface {
     /// and alpha blending on all three systems, and there is one place where
     /// that behaviour can ever drift.
     pub fn draw_pixels(&mut self, x: f32, y: f32, w: f32, h: f32, image: &ImagePixels) {
+        let (x, y) = self.map_point(x, y);
+        let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
         let (x, y, w, h) = (x * k, y * k, w * k, h * k);
         draw_image(
@@ -905,6 +982,8 @@ impl CanvasSurface {
         if w <= 0.0 || h <= 0.0 || image.width == 0 || image.height == 0 {
             return;
         }
+        let (x, y) = self.map_point(x, y);
+        let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
         let (x, y, w, h) = (x * k, y * k, w * k, h * k);
         let radii = (radii.0 * k, radii.1 * k, radii.2 * k, radii.3 * k);
@@ -979,6 +1058,8 @@ impl CanvasSurface {
         angle: f32,
         image: &ImagePixels,
     ) {
+        let (cx, cy) = self.map_point(cx, cy);
+        let (dst_w, dst_h) = (self.map_len(dst_w), self.map_len(dst_h));
         let k = self.scale;
         let (cx, cy, dst_w, dst_h) = (cx * k, cy * k, dst_w * k, dst_h * k);
         let (iw, ih) = (image.width, image.height);

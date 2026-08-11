@@ -214,11 +214,17 @@ impl bindings::Guest for Component {
             return 0;
         }
 
-        // Stay open until the person closes the window; redraw is not needed,
-        // the canvas keeps its raster.
+        // Stay open until the person closes the window, and redraw when the
+        // window changes size. The old comment here said redraw was not
+        // needed because "the canvas keeps its raster" -- true until the
+        // window is resized, at which point the canvas is refitted and the
+        // old picture is gone, leaving the app blank or stretched (K-096).
         loop {
             match events::wait(Some(1_000)) {
                 Some(types::Event::CloseRequested(_)) => break,
+                Some(types::Event::Resized(_)) => {
+                    let _ = draw_chart(canvas);
+                }
                 Some(_) | None => {}
             }
         }

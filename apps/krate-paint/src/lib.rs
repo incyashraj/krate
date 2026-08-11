@@ -104,6 +104,16 @@ impl bindings::Guest for Component {
                 return 33;
             }
         };
+        // The app's own coordinate system: keep drawing in these numbers
+        // and the host scales them to any window, centred, never stretched
+        // out of proportion (K-096).
+        let _ = canvas2d::set_design_size(
+            canvas,
+            gfx::Size {
+                width: WIDTH,
+                height: WIDTH,
+            },
+        );
 
         // Seed the balls from a simple hash so they spread across the field
         // with varied directions and colors, deterministic for a stable shot.

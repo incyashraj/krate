@@ -161,6 +161,28 @@ interface canvas2d {
   /// with a title bar draws a picture that is clipped or half empty. Returns
   /// the size that `clear` fills and `present` publishes.
   canvas-size: func(canvas: u64) -> result<size, gfx-error>;
+
+  /// Fix the coordinate system an app draws in, and let the host fit it to
+  /// whatever window the person has.
+  ///
+  /// Some apps -- games especially -- have a geometry that only makes sense
+  /// at one size: a paddle 48 wide, bricks laid out to span exactly 320.
+  /// Asking such an app to recompute every constant from `canvas-size` is a
+  /// rewrite, and the usual result is what a real person reported on a real
+  /// window: the text drew fine and the character and ground were off the
+  /// screen.
+  ///
+  /// Declare the size the app was designed for and keep drawing in those
+  /// coordinates forever. The host scales them UNIFORMLY to fill the window
+  /// and centres what is left over, so nothing is ever stretched out of
+  /// proportion -- the same letterboxing a console does on a widescreen TV.
+  /// Pointer coordinates arrive in design space too, so hit-testing keeps
+  /// working without a single change.
+  ///
+  /// An app that wants to use the extra room rather than letterbox it
+  /// should ignore this and lay out from `canvas-size` instead. Both are
+  /// honest; this one is for apps whose proportions are the design.
+  set-design-size: func(canvas: u64, size: size) -> result<_, gfx-error>;
   /// Restrict drawing to a rectangle, in logical pixels. Every later draw on
   /// this canvas is trimmed to it until `clear-clip`.
   ///

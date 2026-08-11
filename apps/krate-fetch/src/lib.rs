@@ -222,6 +222,16 @@ impl bindings::Guest for Component {
                 return 33;
             }
         };
+        // The app's own coordinate system: keep drawing in these numbers
+        // and the host scales them to any window, centred, never stretched
+        // out of proportion (K-096).
+        let _ = canvas2d::set_design_size(
+            canvas,
+            gfx::Size {
+                width: WIDTH,
+                height: WIDTH,
+            },
+        );
 
         // Perform the fetch up front: a live GET when a URL was given, else the
         // built-in sample so the reader is populated for the automated shot.

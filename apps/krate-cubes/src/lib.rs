@@ -19,6 +19,7 @@
 mod bindings;
 
 use bindings::krate::gfx::{scene3d, types as gfx};
+
 use bindings::krate::io::{args, stdio};
 use bindings::krate::time::clock;
 use bindings::krate::ui::{events, tree, types, window};

@@ -72,7 +72,7 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-096 -- 21 of 32 apps ignore the window size, and the gate could not see it
-Status:   gate fixed and locked by a test; the 21 apps are the work queue
+Status:   fixed -- gate, runtime, all 21 apps, and the authoring pack
 Owner:    lead
 Severity: blocker
 Class:    example-bug
@@ -102,9 +102,33 @@ Fix:      The resize check now asks what resolution the app is ACTUALLY
           that test caught a real bug in my first implementation -- it
           used the top-left pixel as "background", which in the very case
           this exists to catch is painted content.
-          Remaining: 21 apps to convert to canvas-size layout. They are
-          example-bug class, so every generated app inherits whatever
-          they teach -- which is exactly how the friend's game got built.
+          The apps were fixed by giving the runtime a better answer than
+          "rewrite every constant". `canvas2d.set-design-size` is new in
+          the WIT: an app declares the coordinate system it was designed
+          for, keeps drawing in those numbers, and the host scales them
+          UNIFORMLY to any window and centres the remainder -- letterboxed
+          like a console on a widescreen TV, never distorted. Pointer and
+          wheel events are converted back into design space on the way to
+          the guest, so hit-testing needs no change at all. Eighteen apps
+          took one call each; krate-chart and krate-weather already read
+          canvas-size and only needed to redraw on Event::Resized (their
+          own comment said "redraw is not needed, the canvas keeps its
+          raster" -- true until a resize refits the canvas and the old
+          picture is gone).
+          Two host bugs surfaced while proving it: a resize replaced the
+          whole surface and silently dropped the design size, so a correct
+          app looked wrong one frame later; and canvases only refitted when
+          an app called canvas-size, so an app that never asked kept
+          drawing at its opening size forever. Both fixed.
+          The gate now also exempts what it cannot judge: an app with no
+          canvas2d surface (krate-cubes draws through scene3d) is not
+          asked the render-size question, and a design-space app is
+          recognised as adapting rather than ignoring the window.
+          Fleet: 11 pass / 21 fail -> 32 pass / 0 fail. 1141 tests pass.
+          A regression guard confirms the gate still fails an app with the
+          fix removed. The pack teaches both honest strategies -- lay out
+          from canvas-size, or fix a design size -- so generated apps
+          inherit a choice instead of a bug.
 
 ### K-095 -- an interactive app handled one input event per frame
 Status:   fixed in the fleet and taught in the pack; the device verdict

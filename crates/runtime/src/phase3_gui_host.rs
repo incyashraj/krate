@@ -178,6 +178,8 @@ struct UsabilityDriver {
     canvas_before: Option<(f32, f32)>,
     /// The size the window was actually grown to, for the failure message.
     resized_to: Option<(u32, u32)>,
+    /// Whether the app has been given a turn to redraw after the resize.
+    resize_settled: bool,
     /// When the script last advanced, so a polling game and an event-loop app
     /// are driven at the same pace.
     last_step: Option<std::time::Instant>,
@@ -311,6 +313,7 @@ impl Phase3GuiHost {
             press_was_confident: false,
             canvas_before: None,
             resized_to: None,
+            resize_settled: false,
             last_step: None,
         });
         self
@@ -557,9 +560,23 @@ impl Phase3GuiHost {
             return;
         }
 
+        // Give the app a second turn before judging it. The first visit
+        // after a resize can arrive before the app has drawn its next frame,
+        // and a canvas is only refitted when it draws -- so judging here
+        // failed apps that were about to do exactly the right thing
+        // (krate-chart and krate-weather both read canvas-size every frame
+        // and were reported as ignoring the window).
+        if let Some(driver) = self.usability.as_mut() {
+            if !driver.resize_settled {
+                driver.resize_settled = true;
+                return;
+            }
+        }
+
         let after_rect = self.canvas_rect(window);
         let after_frame = self.capture_frame(window);
         let render_size = self.canvas_pixels_for_window(window);
+        let uses_design_space = self.canvas_design_size(window).is_some();
         let driver = match self.usability.as_mut() {
             Some(driver) => driver,
             None => return,
@@ -576,9 +593,17 @@ impl Phase3GuiHost {
                 // which looks blurry and, in a game with a camera, strands
                 // the world off-screen. Ask the surface what resolution the
                 // app is actually drawing at (K-096).
-                let redrew_at_new_size = render_size.is_some_and(|(w, h)| {
-                    (w as f32 - after.0).abs() <= 2.0 && (h as f32 - after.1).abs() <= 2.0
-                });
+                // An app that declared a design size IS adapting: it draws in
+                // fixed coordinates on purpose and the host scales them to
+                // the window, which is the letterboxed answer, not a bug.
+                // No canvas2d surface at all means a 3D scene or a widget
+                // app: the render-size question does not apply, and asking
+                // it failed krate-cubes, which draws through scene3d.
+                let redrew_at_new_size = uses_design_space
+                    || render_size.is_none()
+                    || render_size.is_some_and(|(w, h)| {
+                        (w as f32 - after.0).abs() <= 2.0 && (h as f32 - after.1).abs() <= 2.0
+                    });
                 if grew && !redrew_at_new_size {
                     crate::usability::Observation::broke(format!(
                         "the window grew to {:.0}x{:.0} but the app kept drawing at its old                          size, so the host had to stretch that picture to fit -- a person                          sees a blurry, wrongly-scaled app, and in a game the world falls                          off the screen. Lay out from canvas2d::canvas_size every frame.",
@@ -592,11 +617,16 @@ impl Phase3GuiHost {
                     // krate-bounce hardcodes 320x240, passed this gate, and
                     // a person resizing it sees the game stranded in a
                     // corner. Look at the new margin for paint (K-096).
-                    let painted_margin = after_frame.as_ref().is_some_and(|frame| {
-                        // Compare against the canvas size BEFORE the resize:
-                        // anything beyond it is space that only exists now.
-                        frame.content_in_margin(before.0.max(0.0) as u32, before.1.max(0.0) as u32)
-                    });
+                    let painted_margin = uses_design_space
+                        || after_frame.as_ref().is_some_and(|frame| {
+                            // Compare against the canvas size BEFORE the
+                            // resize: anything beyond it is space that only
+                            // exists now.
+                            frame.content_in_margin(
+                                before.0.max(0.0) as u32,
+                                before.1.max(0.0) as u32,
+                            )
+                        });
                     if painted_margin {
                         crate::usability::Observation::Held
                     } else {
@@ -816,6 +846,15 @@ impl Phase3GuiHost {
     /// its layout to compile-time constants.
     /// The pixel dimensions the app is really drawing at, from its canvas
     /// surface -- not the rect the layout gave it.
+    /// The design size an app fixed for this window's canvas, if any.
+    fn canvas_design_size(&self, window: WindowId) -> Option<(f32, f32)> {
+        let canvases = self.canvases.borrow();
+        canvases
+            .values()
+            .find(|(w, _, _)| *w == window)
+            .and_then(|(_, _, surface)| surface.design_size())
+    }
+
     fn canvas_pixels_for_window(&self, window: WindowId) -> Option<(u32, u32)> {
         let canvases = self.canvases.borrow();
         canvases
@@ -1106,11 +1145,52 @@ impl Phase3GuiHost {
         }
     }
 
+    /// Put an event into the app's own coordinate system.
+    ///
+    /// An app that fixed a design size draws in those coordinates, so a
+    /// pointer at window (500, 400) means nothing to it. Undo the host's
+    /// letterbox mapping here -- the one place every delivered event passes
+    /// through -- so hit-testing works with no change in the app (K-096).
+    fn to_design_space(&self, event: ui::types::Event) -> ui::types::Event {
+        let canvases = self.canvases.borrow();
+        let Some((_, _, surface)) = canvases.values().next() else {
+            return event;
+        };
+        let Some((dw, dh)) = surface.design_size() else {
+            return event;
+        };
+        let (cw, ch) = surface.dimensions();
+        let k = (cw as f32 / dw).min(ch as f32 / dh);
+        if k <= 0.0 {
+            return event;
+        }
+        let (ox, oy) = ((cw as f32 - dw * k) / 2.0, (ch as f32 - dh * k) / 2.0);
+        let back = |x: f32, y: f32| ((x - ox) / k, (y - oy) / k);
+        match event {
+            ui::types::Event::Pointer(mut p) => {
+                let (x, y) = back(p.x, p.y);
+                p.x = x;
+                p.y = y;
+                ui::types::Event::Pointer(p)
+            }
+            ui::types::Event::Wheel(mut w) => {
+                let (x, y) = back(w.x, w.y);
+                w.x = x;
+                w.y = y;
+                // Deltas are lengths, not positions: scale, do not offset.
+                w.dx /= k;
+                w.dy /= k;
+                ui::types::Event::Wheel(w)
+            }
+            other => other,
+        }
+    }
+
     fn poll_one_event(&self) -> Result<Option<ui::types::Event>, UiDispatchError> {
         // Anything `key-held` pumped comes out first, in arrival order. It is
         // a real event that simply has not been delivered yet.
         if let Some(event) = self.pending_events.borrow_mut().pop_front() {
-            return Ok(Some(event));
+            return Ok(Some(self.to_design_space(event)));
         }
         let dispatcher = self.dispatcher();
         for window in &self.windows {
@@ -1266,7 +1346,7 @@ impl Phase3GuiHost {
                 self.on_window_focus_changed(focused);
             }
             if let Some(event) = event_to_wit(event) {
-                return Ok(Some(event));
+                return Ok(Some(self.to_design_space(event)));
             }
         }
         Ok(None)
@@ -2439,6 +2519,19 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         Ok(Ok(canvas_id))
     }
 
+    fn set_design_size(
+        &mut self,
+        canvas: u64,
+        size: gfx::types::Size,
+    ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        let mut canvases = self.canvases.borrow_mut();
+        let Some((_, _, surface)) = canvases.get_mut(&canvas) else {
+            return Ok(Err(gfx::types::GfxError::InvalidTarget));
+        };
+        surface.set_design_size(size.width, size.height);
+        Ok(Ok(()))
+    }
+
     fn canvas_size(
         &mut self,
         canvas: u64,
@@ -2454,6 +2547,14 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         let Some((_, _, surface)) = canvases.get(&canvas) else {
             return Ok(Err(gfx::types::GfxError::InvalidTarget));
         };
+        // An app that fixed its coordinate system asks about THAT system,
+        // not the window: it draws in design space and the host maps it.
+        if let Some((dw, dh)) = surface.design_size() {
+            return Ok(Ok(gfx::types::Size {
+                width: dw,
+                height: dh,
+            }));
+        }
         let (width, height) = surface.dimensions();
         Ok(Ok(gfx::types::Size {
             width: width as f32,
@@ -3042,6 +3143,12 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         // device as present-done immediately followed by present-start,
         // every frame landing one refresh late, a hard 30 fps against a
         // 60 Hz link, and acquire pinned at 27 ms. Let the display pace it.
+        // Keep the canvas the same size as its window, even for an app that
+        // never calls canvas-size. Without this the app keeps drawing at its
+        // opening size and the host scales that picture up to fit: blurry
+        // text, and a game's world pushed off the edge (K-096). Refitting
+        // here means the very next frame is drawn at the real resolution.
+        let _ = self.refit_canvas(canvas);
         if self.lists_enabled() {
             self.last_present.set(Some(std::time::Instant::now()));
             return Ok(self.publish_canvas(canvas));

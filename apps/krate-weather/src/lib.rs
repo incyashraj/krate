@@ -90,6 +90,13 @@ impl bindings::Guest for Component {
         for _ in 0..rounds {
             match events::wait(Some(ROUND_MILLIS)) {
                 Some(types::Event::CloseRequested(id)) if id == win => break,
+                // Redraw when the window changes size: the canvas is
+                // refitted on a resize, so the old picture is gone and a
+                // person sees a blank or stretched app until something
+                // else happens to trigger a frame (K-096).
+                Some(types::Event::Resized(_)) => {
+                    let _ = draw_card(canvas);
+                }
                 _ => {}
             }
         }
