@@ -90,6 +90,13 @@ enum Command {
         #[arg(long)]
         fuel: Option<u64>,
 
+        /// Folder of read-only assets to give the app, as if it had been
+        /// packed into a `.krate`. Without this, an app run from loose
+        /// source can never see its own images or data files, because
+        /// assets otherwise only resolve out of a packed bundle (K-093).
+        #[arg(long)]
+        assets: Option<String>,
+
         /// Treat this app as untrusted: cap it with a default fuel budget so a
         /// runaway or infinite loop stops instead of hanging. This is what
         /// Krate uses when it verifies an app it just authored. An explicit
@@ -749,6 +756,7 @@ fn run() -> Result<u8> {
             max_http_response_bytes,
             http_timeout_millis,
             sandbox_root,
+            assets,
             manifest,
             grant,
             auto_grant,
@@ -784,6 +792,7 @@ fn run() -> Result<u8> {
             max_http_response_bytes,
             http_timeout_millis,
             sandbox_root,
+            assets_root: assets.map(PathBuf::from),
             manifest_path: manifest,
             grants: grant,
             auto_grant,
@@ -2291,6 +2300,8 @@ struct RunRequest {
     max_http_response_bytes: usize,
     http_timeout_millis: u32,
     sandbox_root: PathBuf,
+    /// Read-only assets for an app being run from loose source (K-093).
+    assets_root: Option<PathBuf>,
     manifest_path: Option<PathBuf>,
     grants: Vec<String>,
     auto_grant: bool,
@@ -2883,6 +2894,8 @@ pub(crate) fn run_bundle_inline(bundle: &Path) -> Result<()> {
     run_component(RunRequest {
         target: bundle.display().to_string(),
         file: PathBuf::new(),
+        // A packed bundle carries its own assets; nothing to override.
+        assets_root: None,
         insecure_http: false,
         fuel: None,
         mem_limit: 256,
@@ -5923,9 +5936,14 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             millis => Some(millis),
         },
         sandbox_root: request.sandbox_root,
-        bundle_assets_root: bundle
-            .as_ref()
-            .and_then(|bundle| bundle.assets_path().map(Path::to_path_buf)),
+        // An explicit --assets wins; otherwise a packed bundle's own assets
+        // are used. Without the flag, an app run from loose source could
+        // never see its images at all (K-093).
+        bundle_assets_root: request.assets_root.clone().or_else(|| {
+            bundle
+                .as_ref()
+                .and_then(|bundle| bundle.assets_path().map(Path::to_path_buf))
+        }),
         // Keyed on the app's declared id, so its data follows the app rather
         // than the file: renaming or moving the `.krate` keeps the same store,
         // and two different apps can never read each other's.
@@ -6181,6 +6199,7 @@ fn open_app() -> Result<u8> {
     run_component(RunRequest {
         target: target.display().to_string(),
         file: PathBuf::new(),
+        assets_root: None,
         insecure_http: false,
         fuel: None,
         mem_limit: 256,
@@ -7496,7 +7515,7 @@ fn run_check_app(
             fix: String::new(),
         })?
         .unwrap_or_else(|| "quick".to_string());
-    let run_args: Vec<String> = vec![
+    let mut run_args: Vec<String> = vec![
         "run".into(),
         wasm_str.clone(),
         "--manifest".into(),
@@ -7504,9 +7523,26 @@ fn run_check_app(
         "--untrusted".into(),
         "--auto-grant".into(),
         "--headless".into(),
-        "--".into(),
-        verify_arg,
     ];
+    // Hand the app its own assets folder. Packed bundles carry assets
+    // inside them, but this stage runs loose source, so without this an
+    // app that reads an image fails the gate for a reason that has nothing
+    // to do with the app -- which is exactly how krate-spriteproof and
+    // krate-nova2 failed (K-093).
+    let assets_dir = dir.join("assets");
+    if assets_dir.is_dir() {
+        // Absolute, like the wasm and manifest above: run_self sets the
+        // child's cwd, so a relative path would resolve against the wrong
+        // place and silently give the app no assets.
+        run_args.push("--assets".into());
+        run_args.push(
+            absolute_from_cwd(&assets_dir)
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+    run_args.push("--".into());
+    run_args.push(verify_arg);
     let run_arg_refs: Vec<&str> = run_args.iter().map(String::as_str).collect();
     let exit = run_self(verify_dir.path(), &run_arg_refs).map_err(|error| CheckFailure {
         stage: CheckStage::Run,

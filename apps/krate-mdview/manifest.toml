@@ -44,22 +44,15 @@ required = false
 
 # Replaces the source's rfd native picker. The person's click is the grant,
 # so this reaches files outside `docs/` without any path-shaped capability.
-[[capabilities]]
-cap = "ui.dialog:file-open"
-rationale = "Let you pick a markdown file to open from anywhere"
-required = false
+# No ui.dialog:file-open: the picker was planned and never wired, and the
+# component does not import the dialog interface at all. When it is built,
+# this line comes back with the code.
 
-# Session persistence: open tabs, theme, zoom, outline visibility, recents.
-[[capabilities]]
-cap = "store.kv"
-rationale = "Remember your open document, theme, and zoom"
-required = false
+# No store.kv either: session persistence is likewise planned, not built.
 
 # `Copy document`, from the source's clipboard use.
-[[capabilities]]
-cap = "ui.clipboard:write"
-rationale = "Copy the document text to the clipboard"
-required = false
+# No ui.clipboard:write: copying was planned and the interface is not
+# imported. It returns with the code that uses it.
 
 # Report state on exit for automated runs.
 [[capabilities]]

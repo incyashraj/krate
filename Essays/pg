@@ -1,0 +1,4 @@
+#!/bin/bash
+# Ask Paul Graham's essays a question.
+#   ./pg "how do you get startup ideas?"
+cd "$(dirname "$0")" && exec python3 ask.py "$@"

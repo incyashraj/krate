@@ -71,6 +71,47 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-093 -- an app run from loose source can never see its own assets
+Status:   fixed 2026-08-11
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-11, clearing the last of K-092's fleet failures:
+          krate-spriteproof and krate-nova2 both exited 40
+          ("asset:bg-missing") under check-app while running perfectly
+          when packed
+Evidence: `bundle_assets_root` was only ever filled from a packed
+          `.krate`, and `krate run` had no way to say where assets live.
+          check-app's run stage runs loose source, so any app that reads
+          an image failed the gate for a reason that had nothing to do
+          with the app. Every AI-authored app that uses a picture would
+          have hit this.
+Fix:      `krate run --assets <dir>` now exists and wins over a bundle's
+          own assets; check-app passes the app's `assets/` folder when
+          one is present, as an ABSOLUTE path -- run_self sets the
+          child's cwd, so a relative path silently resolved elsewhere and
+          handed the app nothing (the same trap the wasm and manifest
+          paths already documented). Both apps pass.
+
+### K-094 -- the usability driver stalls on an app that is behaving correctly
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-11, the last failure in the fleet sweep
+Evidence: apps/zz-example-check fails check-app with "the app did not
+          finish its verification run within 60 seconds and was stopped".
+          The app itself is fine and does exactly what the pack teaches:
+          `events::wait(None)` in a real session, a bounded quick path.
+          Run directly it exits 0 in 0.4 s:
+            krate run <wasm> --manifest ... --auto-grant --headless -- quick
+            -> "counter: window ran", exit 0, 0.4s
+          So the driver, not the app, is what cannot finish.
+Fix:      Find why the driver's scripted run never completes against an
+          app that blocks in wait(None). Do NOT "fix" the app to suit the
+          driver -- it is written the way the pack tells every author to
+          write one, and bending it would teach the wrong pattern.
+
 ### K-092 -- eight fleet apps close their own window mid-session
 Status:   fixed for the whole self-closing class 2026-08-11; the six
           remaining failures are unrelated causes, listed below

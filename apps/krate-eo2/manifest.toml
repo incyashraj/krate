@@ -33,11 +33,9 @@ cap = "fs.remove:images/**"
 rationale = "Delete the image you are viewing"
 required = false
 
-# The shuffle order for the slideshow is seeded from OS entropy.
-[[capabilities]]
-cap = "random.bytes"
-rationale = "Seed the slideshow shuffle order"
-required = false
+# No random.bytes: the shuffle was planned and never written, and a
+# manifest must describe what the code does, not what it might do. An ask
+# the component cannot even attempt is a scarier wall for no benefit.
 
 # Replaces ~/.config/eo2/config.toml. The app names a key, never a path, so it
 # needs no filesystem grant to keep its own settings.

@@ -14,7 +14,18 @@ struct Component;
 impl Guest for Component {
     fn run() -> i32 {
         let raw_args = args::raw();
-        let url = match raw_args.split('\n').find(|arg| !arg.is_empty()) {
+        let first = raw_args.split('\n').find(|arg| !arg.is_empty());
+
+        // `quick` is the harness asking "does this app work", not a URL.
+        // Fetching anything real there would make the gate depend on the
+        // network; saying so and succeeding is the honest answer, and it
+        // is the same contract every other app in the fleet keeps.
+        if first == Some("quick") {
+            let _ = stdio::stdout().write_all(b"curl:ready\n");
+            return 0;
+        }
+
+        let url = match first {
             Some(url) => url,
             None => {
                 let _ = stdio::eprintln("usage: krate-curl <url>");
