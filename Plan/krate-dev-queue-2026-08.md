@@ -1,182 +1,191 @@
-# The development work queue — what to fix next, and why
+# The development work queue — verified 2026-08-11
 
-Written 2026-08-11, rewritten the same day after a correction worth
-keeping: **this is a work plan, not a verdict.** Krate is eight days old
-in this repo and four months old as an idea. Almost everything below is
-either the next commit in work that is already moving, or a real defect
-worth naming. Neither is a criticism of the project.
+Every item below was checked against the code or measured on this machine
+today. **Each one says how it was verified.** Where a check disproved a
+claim, the claim is deleted and the correction is recorded at the bottom,
+because a stale item in a work queue costs more than no item at all.
 
-Two rules for this file:
-1. **Young is not broken.** GPU rendering started yesterday. The phone
-   players started days ago. Work that has just begun gets described as
-   "next step", never as "weakness".
-2. **Development only.** Traction, users and go-to-market are Yashraj's
-   lane and do not appear here.
+Two rules this file follows:
+1. **Young is not broken.** GPU rendering started 2026-08-10; the phone
+   players started 2026-08-09. Their gaps are next steps, not defects.
+2. **Development only.** Traction is not this file's business.
+
+Method note: the first draft of this file was written from impressions and
+got several things wrong. This one only contains findings with a
+reproducible check beside them. **The bug board is not a reliable source
+on its own -- three entries I quoted from it were fixed months of commits
+ago and never marked.** Verify against the code, then fix the board.
 
 ---
 
-# TIER 1 — Highest leverage, do these first
+# TIER 1 — Verified, high leverage
 
-## 1. Telemetry blocks every launch for ~68 ms
+## 1. Telemetry blocks every app launch for ~68 ms — K-091
 
-**The biggest single win available right now, and it is a one-afternoon
-fix.**
-
-Measured today on this Mac:
+**How verified:** measured on this Mac, and confirmed in source at
+`crates/cli/src/usage.rs:250` and the call site `crates/cli/src/main.rs:5702`.
 
 | | median |
 |---|---|
 | `krate run` (18 KB app) | **73.9 ms** |
 | same, `KRATE_NO_USAGE=1` | **6.4 ms** |
 | `krate --version` (binary load only) | 5.9 ms |
-| runtime compile + instantiate + run | 3.3 ms |
-| steady state, already loaded | 61 µs |
+| runtime compile + instantiate + run | 3.3 ms (criterion) |
+| steady state, already loaded | 61 µs (criterion) |
 
-The runtime is genuinely fast -- 3.3 ms to compile and start a component,
-61 microseconds of steady-state work. **91% of what a person waits for is
-an HTTP round-trip we block on.** `crates/cli/src/usage.rs:250` joins the
-reporting thread against a 600 ms deadline, which was the correct fix for
-a real bug (a detached thread lost the race with process exit) placed on
-the one path that should never wait.
+The runtime is fast. The product is not, because after the app finishes,
+`usage::record_with(Action::Open, ...)` spawns a reporting thread and
+**joins it against a 600 ms deadline, polling in 20 ms sleeps**. The
+comment explains why the join exists (a detached thread loses the race
+with process exit and the last event is never sent) -- correct reasoning,
+wrong location: it sits on the path every double-click takes, after the
+window has already closed.
 
-**Fix:** queue the event to a local file, flush it on the next launch.
-Nothing is lost and nothing waits. **Expected: ~74 ms → ~7 ms, a 10x
-improvement in the only latency a user can feel.** Filed as K-091.
+**Fix:** queue the event to a local file; flush the queue on the next
+launch. Nothing is lost and nothing waits. **Expected ~74 ms → ~7 ms.**
 
-This also matters for judging the phone work: some of what reads as
-mobile lag is this, on every platform.
+**Do this first.** It also cleans the signal for judging the phone work --
+some of what reads as mobile lag is this, on every platform.
 
-## 2. iPhone: wire CADisplayLink, then re-measure
+## 2. Thirteen of thirty-two fleet apps fail check-app — one cause dominates
 
-The phone work is days old and moving fast -- five real causes found and
-fixed with device evidence in two days (watchdog kills, thermal
-throttling, a starved touch pipeline, a self-inflicted stall, and the
-whole CPU→GPU renderer). The next step is known: **frames are paced with
-a 16 ms sleep instead of synced to the display.** CADisplayLink is the
-correct clock on iOS and would remove the last structural source of
-uneven frames.
+**How verified:** ran `check-app` over every app in `apps/` with a
+manifest. **19 pass, 13 fail.** (The board's K-025 said "four older
+apps"; that entry is stale. The real number is worse and the cause is
+more interesting.)
 
-Order matters here: do item 1 first, then wire the display link, then
-judge with the on-device log before writing more code. Two of the last
-five fixes came from measuring instead of guessing.
+Failures by stage:
 
-## 3. GPU text needs a fidelity pass
+| Stage | Apps | Cause |
+|---|---|---|
+| **layout** | krate-clip, krate-contacts, krate-fractal, krate-keyvault, krate-nova2, krate-spriteproof, krate-weather | **All seven share one bug:** the interactive loop is bounded by a round count (`MAX_ROUNDS`), so the app closes itself while somebody is still using it |
+| **usability** | krate-notes | the window closes itself after 12.6 s with nobody asking |
+| **manifest** | krate-eo2, krate-mdview | asks for a capability whose interface the component never imports (e.g. `ui.dialog:file-open`) |
+| **run** | krate-curl, krate-hello-gui | fails to run headless with all grants, exit 1 |
 
-Glyphs landed yesterday through parley → vello. They have not been
-compared against the CPU raster for spacing, weight, or baseline
-placement. Text is where "looks cheap" comes from, so a side-by-side
-screenshot diff on the same app is worth doing before anyone else sees
-it.
+**Why this is the highest-leverage item in the repo after K-091:** eight
+of the thirteen are the *same* self-closing-window bug, and this is the
+example-bug class -- the AI reads these apps as reference material, so
+every generated app inherits the pattern. `krate-hello-gui` failing is
+especially bad: it is "the smallest GUI app" in the pack's own index, the
+first thing an AI copies.
 
-## 4. Android gets the GPU consumer next
+**Fix:** gate every round limit on the `quick` argument so it never fires
+in a real session (the check-app message already prescribes exactly
+this), then re-run the sweep and fix the manifest/run stragglers
+individually.
 
-The display-list spine was built cross-platform on purpose; only iOS
-consumes it today. Android still CPU-rasterizes at 26-31 ms/frame after
-this week's fixes. The work is mostly shaped like the iOS pass already
-done -- wgpu on Vulkan instead of Metal, same scene builder, same list.
+## 3. iPhone: wire CADisplayLink, then re-measure
 
-## 5. Re-run the authoring benchmark
+**How verified:** read `crates/runtime/src/phase3_gui_host.rs` present
+pacing -- frames are paced by `std::thread::sleep(FRAME_BUDGET - elapsed)`
+against a fixed 16.667 ms budget. There is no display-link sync anywhere
+in the iOS adapter.
 
-The corpus and harness exist (W16). The last recorded run was 2026-08-05,
-before a lot of fixes; G1 in GOALS.md asks for a public number and there
-is no current one. Re-running it is a few hours and it turns "most apps
-work" into a number we can stand behind.
+Sleeping a fixed budget and syncing to the display are different things:
+the sleep drifts against the panel's actual refresh, which is the
+remaining structural source of uneven frames after this week's five
+fixes. **Order: do item 1 first** so the measurement is not polluted,
+then wire CADisplayLink, then judge with the on-device log.
+
+## 4. GPU text has never been compared to the CPU raster
+
+**How verified:** glyph rendering was added to
+`crates/adapter-ios/src/vello_canvas.rs` on 2026-08-10 (commit 1da4e6e);
+no comparison test or shoot-diff exists for it.
+
+Both paths now draw text -- CPU through `vector_text.rs`, GPU through
+parley → vello `draw_glyphs`. Nothing checks that they agree on baseline,
+spacing, or weight. Text is the first thing anyone judges.
+
+**Fix:** shoot the same app both ways and diff. `krate run --shoot`
+already exists for exactly this kind of pixel proof.
+
+## 5. Android has no GPU consumer yet
+
+**How verified:** `supports_canvas_lists()` returns true only in
+`adapter-ios`; `adapter-android` still paints through
+`paint_placements` into a staging buffer.
+
+The display-list spine in `adapter-common/src/canvas_list.rs` was built
+cross-platform deliberately. Android measured 26-31 ms/frame after this
+week's CPU fixes. The iOS pass is the template; the work is wgpu on
+Vulkan with the same scene builder.
+
+## 6. The authoring benchmark has no current number
+
+**How verified:** `evidence/benchmark/RESULTS.md` is dated 2026-08-05 and
+records 0/5 on authored apps; GOALS.md G1 asks for a public number.
+Dozens of fixes have landed since.
+
+**Fix:** re-run the corpus and publish whatever it says.
 
 ---
 
-# TIER 2 — Real defects, cheap to fix, high first-impression cost
+# TIER 2 — Verified, smaller
 
-## 6. A GUI app panics on stock Ubuntu (K-036)
+## 7. The runtime binary is 21 MB
 
-`libxkbcommon-x11.so` missing on a clean install means a Linux user's
-first app crashes. Static link or dlopen with a clear message.
+**How verified:** measured. Also measured the obvious suspect and **it
+was not the cause**: building with `--no-default-features` (dropping
+whisper/speech entirely) gives 20.1 MB. **Speech costs 1 MB, not 10.**
 
-## 7. Four of our own apps fail check-app at the run stage (K-025)
+So the size is elsewhere -- wasmtime with Cranelift, vello_cpu, parley +
+fontique, sqlite, gilrs, the 3D renderer. Not urgent (one-time download),
+but worth a real `cargo bloat` pass before anyone claims a cause. **I do
+not currently know what the 21 MB is made of, and neither should anyone
+else until it is measured.**
 
-Our reference fleet does not fully pass our own gate. This is the
-example-bug class -- generated apps learn from these, so it is the highest
-leverage per line changed anywhere in the repo.
+## 8. No frame-clock contract for apps
 
-## 8. Layout collapses past four controls in a row (K-018)
+**How verified:** searched `wit/krate/phase3/deps/ui/ui.wit` -- no frame
+event exists. Apps approximate animation timing with `wait(16)`.
 
-A limit an AI-authored app will hit and produce something visibly broken.
+In the modern-UI plan as phase 2, unbuilt. Every animated app is
+currently guessing at time.
 
-## 9. Development history leaks into generated apps (K-029)
+## 9. Windows code signing
 
-Generated apps carry this repo's fingerprints.
+**How verified:** `security find-identity` shows both a Developer ID
+Application and an Apple Development certificate; `.github/workflows/release.yml`
+signs, **notarizes** (`notarytool submit`) and staples the macOS build,
+and the release gate verifies it.
 
-## 10. Running an app from its source dir writes data into the repo (K-023)
-
-Sandbox root resolution picks the wrong place in a common developer case.
-
-## 11. A window sometimes will not close from its own close button (K-032)
-
-Intermittent, and it ends trust immediately when it happens.
-
-## 12. No scroll in the widget path (K-001)
-
-Canvas apps scroll (krate-gram proves it); the widget path does not.
-Referenced in GOALS.md as a G2 blocker.
+**macOS is done and iOS installs on a real device.** The gap is Windows:
+no OV/EV certificate, so SmartScreen warns. That is a purchase.
 
 ---
 
-# TIER 3 — Structural work, worth planning now
+# Corrections to the first draft of this file
 
-## 13. The runtime binary is 21 MB while apps are 15-30 KB
+Recorded so the same mistakes are not repeated, and as evidence for why
+the board needs a sweep:
 
-Not fatal -- it is a one-time download -- but whisper (speech), gilrs
-(gamepads), sqlite and the 3D renderer are linked into every install
-whether or not any app uses them. Feature-gating or lazy-loading would
-cut both the download and the process start.
+| Claim | What checking found |
+|---|---|
+| "No Apple/Microsoft certificates; Gatekeeper warns" | **Wrong.** Developer ID exists; releases are signed AND notarized in CI. Only Windows lacks a cert. |
+| "K-036: GUI app panics on stock Ubuntu" | **Stale.** `check_window_libraries()` already dlopens `libxkbcommon-x11.so` before any window and returns a plain sentence instead of a panic. |
+| "K-025: four older apps fail check-app" | **Stale and understated.** Thirteen fail; seven share one root cause. |
+| "K-001: no scroll in the widget path" | **Stale.** `scroll_offsets` and `clamped_scroll_offset` exist in the drawn widget path, with tests. |
+| "The 21 MB binary is whisper/gamepads/sqlite" | **Unproven.** Speech is only 1 MB of it. Cause unknown until measured. |
+| "GPU/phones being days old is a weakness" | **Wrong framing.** They are next steps in work that is on schedule. |
 
-## 14. No frame-clock contract for apps
-
-Apps approximate animation timing with `wait(16)`. A real `frame` event
-carrying a timestamp is in the modern-UI plan (phase 2) and unbuilt.
-Everything animated is currently guessing at time.
-
-## 15. Windows code signing
-
-macOS is **done** -- Developer ID certificate, signed and notarized in CI,
-stapled, and verified by the release gate, so a downloaded Krate opens
-clean on a stranger's Mac. iOS has an Apple Development certificate and
-installs on a real device. Windows has no OV/EV certificate, so
-SmartScreen still warns there. That is a purchase, not engineering.
-
-## 16. Documentation carries the bus factor
-
-275 commits of context lives in one head, mitigated deliberately by the
-bug board, GOALS.md and the plan docs. Worth keeping that discipline
-exactly as it is -- it is what makes the project legible to anyone else,
-including future me after a context loss.
-
-## 17. Not hardened against hostile code -- keep saying so
-
-The wall stops honest apps from overreaching; it is not an adversarial
-security boundary and is correctly disclosed everywhere. Worth protecting
-that discipline: the moment someone treats Krate as a security product
-and gets burned, the story changes.
-
-## 18. Authoring rides other people's CLIs
-
-Claude, Codex, Gemini, Copilot and Grok can each change their interfaces.
-Multi-provider support is the mitigation and it already exists; a thin
-contract test per provider would catch a break before a user does.
+**Action item from these corrections: sweep BUGS.md.** At least three
+open entries describe problems the code already solved. A board that
+carries fixed bugs as open is worse than no board -- it makes every other
+entry untrustworthy, which is exactly what happened here.
 
 ---
 
 # The order I would work in
 
-1. **K-091, telemetry off the launch path** — one afternoon, 10x on the
-   number every user feels, on every platform at once.
-2. **CADisplayLink on iOS, then re-measure** — the last known structural
-   source of uneven frames.
-3. **GPU text fidelity diff** — cheap, and it protects the thing people
-   judge first.
-4. **K-036 Ubuntu crash + K-025 the four failing fleet apps** — small,
-   and both are first-contact failures.
-5. **Android GPU consumer** — mostly a repeat of the iOS pass.
-6. **Re-run the benchmark** — turns a claim into a number.
-
-Items 1-4 are days, not weeks. Item 5 is the one that makes both phone
-platforms tell the same story.
+1. **K-091 telemetry** — one afternoon, 10x on the latency everyone
+   feels, and it de-noises the phone measurements.
+2. **The self-closing-window sweep** — one bug, eight apps, and the AI
+   learns from these files.
+3. **Sweep BUGS.md against the code** — cheap, and it restores the
+   board's trustworthiness.
+4. **CADisplayLink, then re-measure on the iPhone.**
+5. **GPU text diff** — protects the thing people judge first.
+6. **Android GPU consumer** — repeats the iOS pass.
+7. **Re-run the benchmark** — turns a claim into a number.

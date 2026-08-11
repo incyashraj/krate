@@ -71,6 +71,37 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-092 -- eight fleet apps close their own window mid-session
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    example-bug
+Found:    2026-08-11, sweeping check-app across the whole fleet while
+          verifying a work queue -- the board said "four older apps"
+          (K-025) and the truth was thirteen, with one cause under most
+          of them
+Evidence: `krate check-app` over every app in apps/ with a manifest:
+          19 pass, 13 fail.
+            layout stage (7): krate-clip, krate-contacts, krate-fractal,
+              krate-keyvault, krate-nova2, krate-spriteproof,
+              krate-weather -- all seven report the same thing, e.g.
+              "line 96: the interactive loop is bounded by a round count
+              (MAX_ROUNDS), so the app closes itself while somebody is
+              still using it"
+            usability (1): krate-notes -- "opened a window and then
+              closed it by itself after 12.6s, with nobody asking"
+            manifest (2): krate-eo2, krate-mdview -- ask for a capability
+              whose interface the component never imports
+            run (2): krate-curl, krate-hello-gui -- fail headless with
+              all grants, exit 1
+Fix:      Gate every round limit on the `quick` argument so it never
+          fires in a real session; check-app's own message prescribes
+          exactly this. Then re-run the sweep and take the manifest and
+          run failures individually. This is example-bug class and the
+          highest leverage left in the fleet: the authoring pack points
+          AIs at these files, and krate-hello-gui is indexed as "the
+          smallest GUI app" -- the first thing a generated app copies.
+
 ### K-091 -- every app launch blocks ~68 ms on a telemetry round-trip
 Status:   open
 Owner:    unclaimed
@@ -2087,7 +2118,9 @@ Fix:      Same shape as K-003: drop the fixed style on the canvas node, lay out
           the same repair on a second app -- it should go with that work.
 
 ### K-025 — Four older apps fail check-app at the run stage
-Status:   open
+Status:   superseded by K-092 -- verified 2026-08-11: the real count is
+          thirteen, and seven share one root cause (a round-limited
+          interactive loop). Tracking it there.
 Owner:    unclaimed
 Severity: annoyance
 Class:    our-code
