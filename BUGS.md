@@ -71,6 +71,33 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-100 -- roughly one in eleven app opens fails, and nobody knows why
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-12, reading hub.krate.tech/stats while documenting real
+          traction numbers for the guide. Not reported by anyone -- the
+          telemetry has been carrying this the whole time.
+Evidence: Five days of recorded actions from the live stats endpoint:
+
+            $ curl -s https://hub.krate.tech/stats
+            open          4187
+            open-failed    425
+            install        235
+
+          425 of 4612 open attempts failed: a 90.8% success rate. The
+          telemetry records that an open failed but not why, so there is
+          no way from here to tell a missing runtime from a bad bundle
+          from an app that crashed on startup.
+Fix:      Two steps, in order. First give `open-failed` a reason code at
+          the point it is recorded, so the next week of data says what is
+          actually breaking. Then fix whatever dominates.
+Note:     This is the highest-value signal we have that is not a guess --
+          it is real people, on real machines, failing to open real apps.
+          Worth more than another install-count push: fixing a 9% failure
+          rate helps every future user, and G5 needs opens that work.
+
 ### K-099 -- nothing measures wasted space inside a generated app's window
 Status:   open
 Owner:    unclaimed
