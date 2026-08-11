@@ -71,6 +71,46 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-102 -- krate-mode still says "print something", the exact contract that scored 0/5
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    teaching-hole
+Found:    2026-08-12, reading the old benchmark results before re-running it.
+Evidence: The 2026-08-05 benchmark scored 0 of 5 on authored apps, and every
+          one failed the same gate for the same reason: the app worked and
+          could not prove it. A tip calculator computed the right answer and
+          printed `bill:60 tip%:18 people:2 total_cents:7080` -- three keys
+          on one line with invented names. A dice roller printed nothing at
+          all. RESULTS.md traced the cause to the pack's own words:
+
+            "do the app's real work once against a small built-in sample,
+             print something, and exit 0"
+
+          The **authoring pack** (`krate authoring-context`, what `create`
+          uses) was since fixed and now says it properly:
+
+            "Print one `key:value` per line, and make the keys mean
+             something ... 'print something' is not enough: an app that
+             prints `ok` builds, runs, paints a frame, and proves nothing"
+
+          **`krate krate-mode` was not.** Line 54 of the published prompt
+          still reads "print something, and exit 0":
+
+            $ krate krate-mode | sed -n '54p'
+            once against a small built-in sample, print something, and exit 0
+
+          So the two authoring paths teach different contracts. Anyone who
+          pastes Krate Mode into a chat model gets the 2026-08-05 behaviour
+          that scored zero.
+Fix:      Carry the authoring pack's wording into `krate_mode.rs`, then
+          regenerate `docs/krate-mode.md`. Both paths must state the same
+          contract, and a test should pin that they agree on it.
+Note:     Found while re-running the benchmark, and it predicts the shape of
+          the result: `create` uses the fixed pack, so the number should be
+          better than 0/5 -- but that improvement would not reach anyone
+          using the paste-in path.
+
 ### K-101 -- a network fetch freezes the app for its whole duration
 Status:   fixed 2026-08-12 -- `begin`/`poll`/`cancel` ship alongside the
           blocking `fetch`, which stays for one-shot CLI tools
