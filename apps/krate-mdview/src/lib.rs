@@ -894,19 +894,11 @@ fn fill_round(
     r: f32,
     c: gfx::Color,
 ) -> Result<(), gfx::GfxError> {
-    let r = r.min(w * 0.5).min(h * 0.5);
-    canvas2d::fill_rect(canvas, rect(x + r, y, w - 2.0 * r, h), c)?;
-    canvas2d::fill_rect(canvas, rect(x, y + r, w, h - 2.0 * r), c)?;
-    canvas2d::fill_circle(canvas, pt(x + r, y + r), r, c)?;
-    canvas2d::fill_circle(canvas, pt(x + w - r, y + r), r, c)?;
-    canvas2d::fill_circle(canvas, pt(x + r, y + h - r), r, c)?;
-    canvas2d::fill_circle(canvas, pt(x + w - r, y + h - r), r, c)?;
-    Ok(())
+    canvas2d::fill_round_rect(canvas, rect(x, y, w, h), gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r }, c)
 }
 
-/// A code panel strip: rounded on top only when `round_top`, square-ish bottom
-/// so stacked strips join. Kept simple with a plain fill plus optional top
-/// corner discs.
+/// A code panel strip: rounded on top only when `round_top`, square bottom so
+/// stacked strips join. Per-corner radii do this in one call.
 fn fill_round_top(
     canvas: u64,
     x: f32,
@@ -916,16 +908,13 @@ fn fill_round_top(
     round_top: bool,
     c: gfx::Color,
 ) -> Result<(), gfx::GfxError> {
-    let r = 8.0f32.min(w * 0.5);
-    if round_top {
-        canvas2d::fill_rect(canvas, rect(x + r, y, w - 2.0 * r, h), c)?;
-        canvas2d::fill_rect(canvas, rect(x, y + r, w, h - r), c)?;
-        canvas2d::fill_circle(canvas, pt(x + r, y + r), r, c)?;
-        canvas2d::fill_circle(canvas, pt(x + w - r, y + r), r, c)?;
-    } else {
-        canvas2d::fill_rect(canvas, rect(x, y, w, h), c)?;
-    }
-    Ok(())
+    let r = if round_top { 8.0f32.min(w * 0.5) } else { 0.0 };
+    canvas2d::fill_round_rect(
+        canvas,
+        rect(x, y, w, h),
+        gfx::CornerRadii { top_left: r, top_right: r, bottom_right: 0.0, bottom_left: 0.0 },
+        c,
+    )
 }
 
 fn stroke_round(
@@ -937,13 +926,7 @@ fn stroke_round(
     r: f32,
     c: gfx::Color,
 ) -> Result<(), gfx::GfxError> {
-    let t = 1.0;
-    let r = r.min(w * 0.5).min(h * 0.5);
-    canvas2d::fill_rect(canvas, rect(x + r, y, w - 2.0 * r, t), c)?;
-    canvas2d::fill_rect(canvas, rect(x + r, y + h - t, w - 2.0 * r, t), c)?;
-    canvas2d::fill_rect(canvas, rect(x, y + r, t, h - 2.0 * r), c)?;
-    canvas2d::fill_rect(canvas, rect(x + w - t, y + r, t, h - 2.0 * r), c)?;
-    Ok(())
+    canvas2d::stroke_round_rect(canvas, rect(x, y, w, h), gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r }, 1.0, c)
 }
 
 fn rect(x: f32, y: f32, width: f32, height: f32) -> gfx::Rect {

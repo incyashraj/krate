@@ -593,41 +593,34 @@ fn fill(canvas: u64, x: f32, y: f32, w: f32, h: f32, c: gfx::Color) -> Result<()
 }
 
 fn rounded_rect(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    let r = r.min(w * 0.5).min(h * 0.5);
-    fill(canvas, x + r, y, w - r * 2.0, h, c)?;
-    fill(canvas, x, y + r, w, h - r * 2.0, c)?;
-    disc(canvas, x + r, y + r, r, c)?;
-    disc(canvas, x + w - r, y + r, r, c)?;
-    disc(canvas, x + r, y + h - r, r, c)?;
-    disc(canvas, x + w - r, y + h - r, r, c)?;
-    Ok(())
+    canvas2d::fill_round_rect(
+        canvas,
+        gfx::Rect { x, y, width: w, height: h },
+        gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r },
+        c,
+    )
 }
 
-/// Rounded rect with radius `r` everywhere except a small `s` at bottom-right —
-/// the chat-bubble tail corner. Full-alpha color only (pieces overlap).
+/// Rounded rect with radius `r` everywhere except a small `s` at bottom-right --
+/// the chat-bubble tail corner. Per-corner radii are what `corner-radii` is for,
+/// so this is one call instead of four fills and four discs.
 fn bubble_shape(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, s: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    let r = r.min(w * 0.5).min(h * 0.5);
-    // Middle column, full height.
-    fill(canvas, x + r, y, w - r * 2.0, h, c)?;
-    // Left column between the two big corners.
-    fill(canvas, x, y + r, r, h - r * 2.0, c)?;
-    // Right column from below the top-right corner down to the small corner.
-    fill(canvas, x + w - r, y + r, r, h - r - s, c)?;
-    // Bottom-right filler strip left of the small corner disc.
-    fill(canvas, x + w - r, y + h - s, r - s, s, c)?;
-    disc(canvas, x + r, y + r, r, c)?;
-    disc(canvas, x + w - r, y + r, r, c)?;
-    disc(canvas, x + r, y + h - r, r, c)?;
-    disc(canvas, x + w - s, y + h - s, s, c)?;
-    Ok(())
+    canvas2d::fill_round_rect(
+        canvas,
+        gfx::Rect { x, y, width: w, height: h },
+        gfx::CornerRadii { top_left: r, top_right: r, bottom_right: s, bottom_left: r },
+        c,
+    )
 }
 
 fn stroke_rounded(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    let t = 1.0;
-    let r = r.min(w * 0.5).min(h * 0.5);
-    fill(canvas, x + r, y, w - r * 2.0, t, c)?;
-    fill(canvas, x + r, y + h - t, w - r * 2.0, t, c)?;
-    Ok(())
+    canvas2d::stroke_round_rect(
+        canvas,
+        gfx::Rect { x, y, width: w, height: h },
+        gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r },
+        1.0,
+        c,
+    )
 }
 
 fn disc(canvas: u64, cx: f32, cy: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {

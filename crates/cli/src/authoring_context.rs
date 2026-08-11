@@ -321,7 +321,9 @@ registered. Do not hand-shim it. Add `features = [\"getrandom-backend\"]` to the
 `apps/krate-diceroll` is a working example.\n\n\
 ## Making it look built, not sketched\n\n\
 The difference between an app that looks like a prototype and one that looks \
-finished is mostly four things, and none of them are hard:\n\n\
+finished is a handful of habits, and none of them are hard. Apply them to \
+whatever the app is -- these are not decoration for showcase apps, they are \
+what an ordinary tool needs to look like it was built on purpose:\n\n\
 **Measure text before you place it.** `canvas2d::measure_text` is the \
 difference between a centred label and a nearly-centred one. Never estimate a \
 width from the character count -- the face is proportional, so `i` and `W` \
@@ -331,11 +333,30 @@ a bubble, a ring, a dial, an unfilled dot -- all `stroke_circle(canvas, \
 center, radius, width, colour)`. Reaching for `stroke_rect` instead puts a \
 visible square box around a round shape, which a real generated app shipped \
 with.\n\n\
-**Use gradients and rounded corners.** A flat rectangle reads as unfinished. \
-`linear_gradient` for panels and backdrops, a rounded rect for every card and \
-button (fill the middle rectangle, then the four corner circles with \
-`fill_circle`), and `radial_gradient` with a transparent outer colour for a \
+**Use the real rounded-rect call, never a hand-built one.** \
+`canvas2d::fill_round_rect(canvas, area, radii, colour)` draws a card or a \
+button in one call, correctly antialiased. Do not fake it by filling a \
+rectangle and four `fill_circle` corners: the seams show, the edges alias \
+differently from the curves, and it costs five calls to look worse. \
+`stroke_round_rect` is the bordered version. A radius of 8-12 reads as a \
+control, 16-20 as a card, and half the height as a pill.\n\n\
+**Put a soft shadow under anything that floats.** \
+`canvas2d::drop_shadow_round_rect(canvas, area, radii, blur, colour)`, drawn \
+*before* the card itself and offset a few pixels down, is the single change \
+that separates a flat 2015 layout from a current one. Use a low-alpha black \
+(alpha 0.15-0.3) and a blur near the corner radius. A card with no shadow on \
+a flat background looks painted on; one with a shadow looks placed.\n\n\
+**Reach for gradients, with stops.** `linear_gradient_stops(canvas, area, \
+angle_degrees, stops)` takes an angle and a list, so a backdrop can run \
+diagonally through three colours instead of straight down through two. \
+`radial_gradient` with a transparent outer colour is still the way to put a \
 soft glow behind something important.\n\n\
+**Vary the font weight -- this is what makes text look designed.** \
+`draw_text_styled` takes a weight (400 body, 600-700 headings and big \
+numbers), italic, and letter spacing. Big numbers read best at 600-700 with \
+slightly negative letter spacing. An app whose text is all one weight looks \
+like a form no matter how good the colours are; measure with \
+`measure_text_styled` so the styled width is the one you place against.\n\n\
 **Give things room.** Cramped is the commonest reason a generated app looks \
 wrong: 16-24px of padding inside a card, 12-16px between rows, and a clear \
 margin around the window edge. Space costs nothing and reads as care.\n\n\

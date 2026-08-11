@@ -239,19 +239,17 @@ fn disc(canvas: u64, cx: f32, cy: f32, r: f32, c: gfx::Color) -> Result<(), gfx:
 /// Opaque rounded rect: cross of two rects plus four corner discs. Pieces
 /// overlap, which is fine at full alpha.
 fn rounded_rect(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    let r = r.min(w * 0.5).min(h * 0.5);
-    fill(canvas, x + r, y, w - r * 2.0, h, c)?;
-    fill(canvas, x, y + r, w, h - r * 2.0, c)?;
-    disc(canvas, x + r, y + r, r, c)?;
-    disc(canvas, x + w - r, y + r, r, c)?;
-    disc(canvas, x + r, y + h - r, r, c)?;
-    disc(canvas, x + w - r, y + h - r, r, c)?;
-    Ok(())
+    canvas2d::fill_round_rect(
+        canvas,
+        gfx::Rect { x, y, width: w, height: h },
+        gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r },
+        c,
+    )
 }
 
-/// Hairline rounded border: a filled rounded rect in the border color with a
-/// slightly smaller rounded rect of the ground punched back over it, so the
-/// corners actually curve instead of leaving gaps.
+/// Hairline rounded border. The old version faked it by punching a
+/// ground-coloured rect back over a filled one, which only worked on an opaque
+/// background; `stroke_round_rect` strokes the curve directly.
 fn stroke_rounded(
     canvas: u64,
     x: f32,
@@ -260,12 +258,15 @@ fn stroke_rounded(
     h: f32,
     r: f32,
     c: gfx::Color,
-    ground: gfx::Color,
+    _ground: gfx::Color,
 ) -> Result<(), gfx::GfxError> {
-    let t = 1.5;
-    rounded_rect(canvas, x, y, w, h, r, c)?;
-    rounded_rect(canvas, x + t, y + t, w - t * 2.0, h - t * 2.0, r - t, ground)?;
-    Ok(())
+    canvas2d::stroke_round_rect(
+        canvas,
+        gfx::Rect { x, y, width: w, height: h },
+        gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r },
+        1.5,
+        c,
+    )
 }
 
 fn draw_text(canvas: u64, text: &str, x: f32, y: f32, size: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {

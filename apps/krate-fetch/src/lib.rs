@@ -566,43 +566,14 @@ fn round_rect(
     r: f32,
     c: gfx::Color,
 ) -> Result<(), gfx::GfxError> {
-    let r = if r * 2.0 > h { h * 0.5 } else { r };
-    let r = if r * 2.0 > w { w * 0.5 } else { r };
-    canvas2d::fill_rect(
+    // One host call, antialiased on the curve. The bands-plus-corner-discs
+    // version this replaced showed seams where the pieces met.
+    canvas2d::fill_round_rect(
         canvas,
-        gfx::Rect {
-            x,
-            y: y + r,
-            width: w,
-            height: h - 2.0 * r,
-        },
+        gfx::Rect { x, y, width: w, height: h },
+        gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r },
         c,
-    )?;
-    canvas2d::fill_rect(
-        canvas,
-        gfx::Rect {
-            x: x + r,
-            y,
-            width: w - 2.0 * r,
-            height: r,
-        },
-        c,
-    )?;
-    canvas2d::fill_rect(
-        canvas,
-        gfx::Rect {
-            x: x + r,
-            y: y + h - r,
-            width: w - 2.0 * r,
-            height: r,
-        },
-        c,
-    )?;
-    disc(canvas, x + r, y + r, r, c)?;
-    disc(canvas, x + w - r, y + r, r, c)?;
-    disc(canvas, x + r, y + h - r, r, c)?;
-    disc(canvas, x + w - r, y + h - r, r, c)?;
-    Ok(())
+    )
 }
 
 fn disc(canvas: u64, cx: f32, cy: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {

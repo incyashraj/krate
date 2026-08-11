@@ -854,15 +854,7 @@ fn fill_round(
     r: f32,
     c: gfx::Color,
 ) -> Result<(), gfx::GfxError> {
-    let r = r.min(w * 0.5).min(h * 0.5);
-    // Cross of two rects covers the middle; four corner discs round it.
-    canvas2d::fill_rect(canvas, rect(x + r, y, w - 2.0 * r, h), c)?;
-    canvas2d::fill_rect(canvas, rect(x, y + r, w, h - 2.0 * r), c)?;
-    canvas2d::fill_circle(canvas, pt(x + r, y + r), r, c)?;
-    canvas2d::fill_circle(canvas, pt(x + w - r, y + r), r, c)?;
-    canvas2d::fill_circle(canvas, pt(x + r, y + h - r), r, c)?;
-    canvas2d::fill_circle(canvas, pt(x + w - r, y + h - r), r, c)?;
-    Ok(())
+    canvas2d::fill_round_rect(canvas, rect(x, y, w, h), gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r }, c)
 }
 
 /// A thin rounded outline, approximated by a filled rounded rect minus an inset
@@ -876,14 +868,7 @@ fn stroke_round(
     r: f32,
     c: gfx::Color,
 ) -> Result<(), gfx::GfxError> {
-    let t = 1.0;
-    let r = r.min(w * 0.5).min(h * 0.5);
-    // Top, bottom, left, right hairlines between the rounded corners.
-    canvas2d::fill_rect(canvas, rect(x + r, y, w - 2.0 * r, t), c)?;
-    canvas2d::fill_rect(canvas, rect(x + r, y + h - t, w - 2.0 * r, t), c)?;
-    canvas2d::fill_rect(canvas, rect(x, y + r, t, h - 2.0 * r), c)?;
-    canvas2d::fill_rect(canvas, rect(x + w - t, y + r, t, h - 2.0 * r), c)?;
-    Ok(())
+    canvas2d::stroke_round_rect(canvas, rect(x, y, w, h), gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r }, 1.0, c)
 }
 
 fn lighten(c: gfx::Color, amt: f32) -> gfx::Color {

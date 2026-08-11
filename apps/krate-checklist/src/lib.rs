@@ -411,6 +411,7 @@ fn draw(canvas: u64, list: &Checklist, draft: &Draft, field_focus: bool) -> Resu
 fn draw_row(canvas: u64, index: usize, item: &Item, accent: gfx::Color) -> Result<(), gfx::GfxError> {
     let y = row_y(index);
     let card = if item.done { CARD_DONE } else { CARD };
+    shadow(canvas, MARGIN, y, CONTENT_W, ROW_H, 14.0)?;
     rounded_rect(canvas, MARGIN, y, CONTENT_W, ROW_H, 14.0, card)?;
 
     let bx = MARGIN + 16.0;
@@ -453,31 +454,32 @@ fn fill(canvas: u64, x: f32, y: f32, w: f32, h: f32, c: gfx::Color) -> Result<()
     canvas2d::fill_rect(canvas, gfx::Rect { x, y, width: w, height: h }, c)
 }
 
-/// A filled rounded rectangle: a cross of two rects plus four corner discs.
+/// A filled rounded rectangle. One host call, antialiased on the curve --
+/// the cross-of-rects-plus-corner-discs version this replaced showed seams
+/// where the bands met the discs.
 fn rounded_rect(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    let r = r.min(w * 0.5).min(h * 0.5);
-    fill(canvas, x + r, y, w - r * 2.0, h, c)?;
-    fill(canvas, x, y + r, w, h - r * 2.0, c)?;
-    disc(canvas, x + r, y + r, r, c)?;
-    disc(canvas, x + w - r, y + r, r, c)?;
-    disc(canvas, x + r, y + h - r, r, c)?;
-    disc(canvas, x + w - r, y + h - r, r, c)?;
-    Ok(())
+    canvas2d::fill_round_rect(canvas, gfx::Rect { x, y, width: w, height: h }, radii(r), c)
 }
 
-/// A thin rounded-rect outline: four inset edges plus tiny corner dots.
+/// A thin rounded-rect outline. The hand-built version drew the corners as
+/// 1px dots, so every empty checkbox and text field had four visible gaps.
 fn stroke_rounded(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    let t = 1.5;
-    let r = r.min(w * 0.5).min(h * 0.5);
-    fill(canvas, x + r, y, w - r * 2.0, t, c)?;
-    fill(canvas, x + r, y + h - t, w - r * 2.0, t, c)?;
-    fill(canvas, x, y + r, t, h - r * 2.0, c)?;
-    fill(canvas, x + w - t, y + r, t, h - r * 2.0, c)?;
-    disc(canvas, x + r, y + r, 1.0, c)?;
-    disc(canvas, x + w - r, y + r, 1.0, c)?;
-    disc(canvas, x + r, y + h - r, 1.0, c)?;
-    disc(canvas, x + w - r, y + h - r, 1.0, c)?;
-    Ok(())
+    canvas2d::stroke_round_rect(canvas, gfx::Rect { x, y, width: w, height: h }, radii(r), 1.5, c)
+}
+
+/// A soft shadow under a card, drawn before the card itself.
+fn shadow(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32) -> Result<(), gfx::GfxError> {
+    canvas2d::drop_shadow_round_rect(
+        canvas,
+        gfx::Rect { x, y: y + 2.0, width: w, height: h },
+        radii(r),
+        10.0,
+        color(0.0, 0.0, 0.0, 0.28),
+    )
+}
+
+fn radii(r: f32) -> gfx::CornerRadii {
+    gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r }
 }
 
 fn disc(canvas: u64, cx: f32, cy: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {

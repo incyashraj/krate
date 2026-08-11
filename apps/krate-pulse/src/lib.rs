@@ -157,19 +157,18 @@ fn text_right(canvas: u64, s: &str, right: f32, y: f32, size: f32, c: gfx::Color
 }
 
 fn rounded(canvas: u64, x: f32, y: f32, w: f32, h: f32, r: f32, c: gfx::Color) -> Result<(), gfx::GfxError> {
-    let r = r.min(w * 0.5).min(h * 0.5);
-    fill(canvas, x + r, y, w - r * 2.0, h, c)?;
-    fill(canvas, x, y + r, w, h - r * 2.0, c)?;
-    disc(canvas, x + r, y + r, r, c)?;
-    disc(canvas, x + w - r, y + r, r, c)?;
-    disc(canvas, x + r, y + h - r, r, c)?;
-    disc(canvas, x + w - r, y + h - r, r, c)?;
-    Ok(())
+    canvas2d::fill_round_rect(canvas, gfx::Rect { x, y, width: w, height: h }, gfx::CornerRadii { top_left: r, top_right: r, bottom_right: r, bottom_left: r }, c)
 }
 
 /// A card: soft shadow, panel fill, hairline top edge highlight.
 fn card(canvas: u64, x: f32, y: f32, w: f32, h: f32) -> Result<(), gfx::GfxError> {
-    rounded(canvas, x + 2.0, y + 4.0, w, h, 16.0, gfx::Color { r: 0.0, g: 0.0, b: 0.0, a: 0.28 })?;
+    canvas2d::drop_shadow_round_rect(
+        canvas,
+        gfx::Rect { x, y: y + 4.0, width: w, height: h },
+        gfx::CornerRadii { top_left: 16.0, top_right: 16.0, bottom_right: 16.0, bottom_left: 16.0 },
+        12.0,
+        gfx::Color { r: 0.0, g: 0.0, b: 0.0, a: 0.28 },
+    )?;
     rounded(canvas, x, y, w, h, 16.0, CARD)?;
     fill(canvas, x + 16.0, y, w - 32.0, 1.0, CARD_EDGE)?;
     Ok(())

@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "krate"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "dlmalloc",
  "getrandom",
