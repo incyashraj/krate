@@ -71,6 +71,32 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-097 -- a scripted fix gave seventeen apps a square design size
+Status:   fixed 2026-08-11, same day it shipped
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-11, screenshotting the example apps after people said
+          Krate needed "better UI and overall experience". krate-checklist
+          had a white band across its top with the title nearly invisible
+          against it, and its "Add an item" row was cut off entirely.
+Evidence: The K-096 conversion script matched each app's size constants
+          with a regex, and `const (\w*H(?:EIGHT)?)` matched WIDTH as
+          happily as HEIGHT -- so seventeen apps were told their design
+          size was WIDTH x WIDTH. A 440x440 design area inside a 440x620
+          window leaves 180 rows outside the app's coordinate system,
+          showing the surface's initial white.
+          It shipped in v0.1.10 and the gate did not catch it: a square
+          design size is still a valid design size, so every resize check
+          passed. Only looking at the pixels found it.
+Fix:      All seventeen corrected to their real height constant, verified
+          by screenshot (the white band is gone and the input row is back)
+          and by the fleet staying 32 pass / 0 fail.
+Lesson:   A scripted edit across many files needs its output READ, not
+          just its exit code. And an app's appearance needs an eye on it;
+          a gate that checks behaviour will pass something that looks
+          broken.
+
 ### K-096 -- 21 of 32 apps ignore the window size, and the gate could not see it
 Status:   fixed -- gate, runtime, all 21 apps, and the authoring pack
 Owner:    lead

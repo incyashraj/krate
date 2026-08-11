@@ -110,7 +110,7 @@ impl bindings::Guest for Component {
             canvas,
             gfx::Size {
                 width: WIDTH,
-                height: WIDTH,
+                height: HEIGHT,
             },
         );
 
