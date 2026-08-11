@@ -192,6 +192,42 @@ impl FrameBuffer {
     /// Whether this frame has any content at all -- more than one distinct
     /// colour. A single flat colour means the app cleared its canvas and drew
     /// nothing, which no comparison can say anything useful about.
+    /// Whether anything is drawn in the region that only exists after a
+    /// resize -- the right and bottom margins beyond the old size.
+    ///
+    /// This is the question the resize check was missing. An app whose
+    /// canvas grows but whose drawing is pinned to constants leaves that
+    /// new region empty, which is exactly what a person sees as "the game
+    /// is off the screen" after resizing the window.
+    pub fn content_in_margin(&self, old_width: u32, old_height: u32) -> bool {
+        if self.width <= old_width && self.height <= old_height {
+            return false;
+        }
+        // The background is the most common colour in the NEW region --
+        // taking the top-left corner instead was wrong, because in the very
+        // case this exists to catch (a layout pinned to the old size) that
+        // corner holds painted content while the margin holds background.
+        // A margin that is entirely one colour is an unpainted margin.
+        let mut margin: Vec<u32> = Vec::new();
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if x < old_width && y < old_height {
+                    continue;
+                }
+                if let Some(p) = self
+                    .pixels
+                    .get((y as usize) * (self.width as usize) + x as usize)
+                {
+                    margin.push(*p);
+                }
+            }
+        }
+        let Some(&first) = margin.first() else {
+            return false;
+        };
+        return margin.iter().any(|p| *p != first);
+    }
+
     pub fn has_content(&self) -> bool {
         let mut iter = self.pixels.iter();
         let Some(first) = iter.next() else {
@@ -204,6 +240,42 @@ impl FrameBuffer {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// K-096's lock: an app pinned to fixed numbers leaves the new space
+    /// empty after a resize, and that is exactly what the check must see.
+    #[test]
+    fn a_hardcoded_layout_leaves_the_new_margin_empty() {
+        // 8x8 frame; the app only ever painted the top-left 4x4.
+        let mut pixels = vec![0x00_00_00_00u32; 64];
+        for y in 0..4 {
+            for x in 0..4 {
+                pixels[y * 8 + x] = 0xFF_FF_FF_FF;
+            }
+        }
+        let frame = FrameBuffer {
+            width: 8,
+            height: 8,
+            pixels,
+        };
+        // Grown from 4x4: nothing new was painted, so this must be false.
+        assert!(
+            !frame.content_in_margin(4, 4),
+            "a layout pinned to 4x4 paints nothing in the margin"
+        );
+
+        // An app that follows the window paints across the whole frame.
+        let responsive = FrameBuffer {
+            width: 8,
+            height: 8,
+            pixels: (0..64)
+                .map(|i| if i % 2 == 0 { 0xFF_00_00_00 } else { 0xFF_FF_FF_FF })
+                .collect(),
+        };
+        assert!(
+            responsive.content_in_margin(4, 4),
+            "a responsive layout paints into the space that appeared"
+        );
+    }
 
     fn frame(width: u32, height: u32, fill: u32) -> FrameBuffer {
         FrameBuffer::new(width, height, vec![fill; (width * height) as usize])

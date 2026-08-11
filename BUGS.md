@@ -71,6 +71,41 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-096 -- 21 of 32 apps ignore the window size, and the gate could not see it
+Status:   gate fixed and locked by a test; the 21 apps are the work queue
+Owner:    lead
+Severity: blocker
+Class:    example-bug
+Found:    2026-08-11, by Yashraj's friend on Windows, trying an
+          AI-generated game: "the character and ground is out of screen
+          even after changing ratio and everything". The header and hint
+          text drew correctly; the game world did not.
+Evidence: 21 of 32 apps never call `canvas2d::canvas_size` -- they draw
+          from constants. The host then SCALES that fixed-size picture to
+          fill the window (adapter-common/painter.rs draw_image, "fit
+          inside, preserving proportions"), which is why a hardcoded app
+          looks stretched and blurry, and why a game with a camera puts
+          its world off the edge.
+          Worse, check-app passed every one of them. Its resize check
+          only asked whether the canvas RECT grew -- and it always does,
+          because the layout engine resizes it without the app's help.
+          Two further reasons the check never even ran: with the `quick`
+          argument most apps exit before opening a window, and the driver
+          runs in a child process, so its own diagnostics never reach the
+          parent's terminal.
+Fix:      The resize check now asks what resolution the app is ACTUALLY
+          drawing at (`CanvasSurface::dimensions`) and fails when the
+          window grew but the app kept rendering at its old size, naming
+          the consequence in the message. Verified both directions:
+          krate-bounce (hardcoded 320x240) -> broke, krate-gram (reads
+          canvas-size) -> held. A unit test locks the margin logic, and
+          that test caught a real bug in my first implementation -- it
+          used the top-left pixel as "background", which in the very case
+          this exists to catch is painted content.
+          Remaining: 21 apps to convert to canvas-size layout. They are
+          example-bug class, so every generated app inherits whatever
+          they teach -- which is exactly how the friend's game got built.
+
 ### K-095 -- an interactive app handled one input event per frame
 Status:   fixed in the fleet and taught in the pack; the device verdict
           on iOS responsiveness is still pending

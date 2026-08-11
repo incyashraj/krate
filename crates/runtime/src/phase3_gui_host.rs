@@ -559,6 +559,7 @@ impl Phase3GuiHost {
 
         let after_rect = self.canvas_rect(window);
         let after_frame = self.capture_frame(window);
+        let render_size = self.canvas_pixels_for_window(window);
         let driver = match self.usability.as_mut() {
             Some(driver) => driver,
             None => return,
@@ -569,8 +570,41 @@ impl Phase3GuiHost {
                 // Compared with a tolerance because these are laid-out floats,
                 // and a one-pixel rounding difference is not an app reacting.
                 let grew = (after.0 - before.0).abs() > 1.0 || (after.1 - before.1).abs() > 1.0;
-                if grew {
-                    crate::usability::Observation::Held
+                // The canvas rect growing only proves the LAYOUT followed the
+                // window. The app itself may still be drawing at its old
+                // size, with the painter scaling that picture up to fit --
+                // which looks blurry and, in a game with a camera, strands
+                // the world off-screen. Ask the surface what resolution the
+                // app is actually drawing at (K-096).
+                let redrew_at_new_size = render_size.is_some_and(|(w, h)| {
+                    (w as f32 - after.0).abs() <= 2.0 && (h as f32 - after.1).abs() <= 2.0
+                });
+                if grew && !redrew_at_new_size {
+                    crate::usability::Observation::broke(format!(
+                        "the window grew to {:.0}x{:.0} but the app kept drawing at its old                          size, so the host had to stretch that picture to fit -- a person                          sees a blurry, wrongly-scaled app, and in a game the world falls                          off the screen. Lay out from canvas2d::canvas_size every frame.",
+                        after.0, after.1
+                    ))
+                } else if grew {
+                    // The canvas growing proves the LAYOUT followed the
+                    // window -- the layout engine does that on its own. The
+                    // real question is whether the APP drew into the space
+                    // that appeared, and that is what this check missed:
+                    // krate-bounce hardcodes 320x240, passed this gate, and
+                    // a person resizing it sees the game stranded in a
+                    // corner. Look at the new margin for paint (K-096).
+                    let painted_margin = after_frame.as_ref().is_some_and(|frame| {
+                        // Compare against the canvas size BEFORE the resize:
+                        // anything beyond it is space that only exists now.
+                        frame.content_in_margin(before.0.max(0.0) as u32, before.1.max(0.0) as u32)
+                    });
+                    if painted_margin {
+                        crate::usability::Observation::Held
+                    } else {
+                        crate::usability::Observation::broke(format!(
+                            "the window grew to {:.0}x{:.0} and the app drew nothing in the                              new space -- its layout is pinned to fixed numbers, so a person                              who resizes the window sees the app stranded in a corner",
+                            after.0, after.1
+                        ))
+                    }
                 } else {
                     let (target_w, target_h) =
                         driver.resized_to.unwrap_or(crate::usability::SECOND_SIZE);
@@ -780,6 +814,16 @@ impl Phase3GuiHost {
     /// canvas is the app's own drawing surface, sized by the app's own widget
     /// style, so a canvas that refuses to follow the window is the app pinning
     /// its layout to compile-time constants.
+    /// The pixel dimensions the app is really drawing at, from its canvas
+    /// surface -- not the rect the layout gave it.
+    fn canvas_pixels_for_window(&self, window: WindowId) -> Option<(u32, u32)> {
+        let canvases = self.canvases.borrow();
+        canvases
+            .values()
+            .find(|(w, _, _)| *w == window)
+            .map(|(_, _, surface)| surface.dimensions())
+    }
+
     fn canvas_rect(&self, window: WindowId) -> Option<(f32, f32)> {
         let (_, placements) = self.window_placements(window).ok()??;
         placements
