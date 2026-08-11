@@ -1106,7 +1106,7 @@ it''. Here is the whole apparatus, in layers.
 \toprule
 \textbf{Layer} & \textbf{What it catches} & \textbf{Size} \\
 \midrule
-Unit and integration tests & Ordinary defects & 1{,}141 tests \\
+Unit and integration tests & Ordinary defects & 1{,}151 tests \\
 Architecture tools & Design rules being broken & 21 tools \\
 Nightly fuzzing & Crashes on hostile input & 3 targets \\
 \texttt{check-app} & Apps that are valid but unusable & 6 stages \\
@@ -1298,12 +1298,12 @@ is the bulk is wrong.
 \toprule
 \textbf{Measure} & \textbf{Value on 11 Aug 2026} \\
 \midrule
-Automated tests, all passing & 1{,}141 \\
+Automated tests, all passing & 1{,}151 \\
 Example apps in the repository & 39 \\
 Example apps passing every check & 32 of 32 \\
 Bugs recorded on the public board & 96 \\
 Bugs fixed & 82 \\
-Releases shipped & 36 \\
+Releases shipped & 38 \\
 Platforms built and verified per release & 6 \\
 \bottomrule
 \end{tabular}
@@ -1392,6 +1392,7 @@ July 2026 & Renamed from Layer36 to Krate --- the previous name collided with ot
 9 August 2026 & The Android player runs a real published app from a tapped link. \\
 10 August 2026 & The iOS player runs on a real iPhone, under Pulley. GPU rendering added on Metal. \\
 11 August 2026 & Seven numbered bugs (K-091 to K-097) fixed in one day; v0.1.10 and v0.1.11 ship. \\
+12 August 2026 & v0.1.12: generated apps get the modern drawing primitives (K-098), layout learns to fill the window, and failed opens start saying why (K-100). \\
 \bottomrule
 \end{longtable}
 \end{center}
@@ -2101,7 +2102,7 @@ before quoting a cause.
 \section{The hard questions}
 
 \textbf{``289 commits in eight days. Is this AI-generated slop?''}\\
-The defence is not volume, it is verification: 1{,}141 automated tests, a
+The defence is not volume, it is verification: 1{,}151 automated tests, a
 release pipeline that downloads its own published files on three operating
 systems and re-verifies them, and a public bug board with 96 numbered
 entries where the failures are documented with evidence. Judge the work by
