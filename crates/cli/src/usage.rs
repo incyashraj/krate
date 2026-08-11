@@ -205,6 +205,11 @@ pub fn record_with(action: Action, facts: Facts) {
     if opted_out() {
         return;
     }
+    // The flush helper is not a user session; it must never record its own
+    // run or spawn another helper.
+    if std::env::var_os("KRATE_USAGE_HELPER").is_some() {
+        return;
+    }
     if !announce_once() {
         return;
     }
@@ -212,44 +217,146 @@ pub fn record_with(action: Action, facts: Facts) {
         return;
     };
 
+    let mut body =
+        format!(r#"{{"id":"{id}","version":"{version}","os":"{os}","action":"{action}""#,
+            version = crate::KRATE_VERSION,
+            os = std::env::consts::OS,
+            action = action.as_str());
+    if let Some(ai) = facts.ai {
+        body.push_str(&format!(r#","ai":{ai}"#));
+    }
+    if let Some(ok) = facts.ok {
+        body.push_str(&format!(r#","ok":{ok}"#));
+    }
+    body.push('}');
+
+    // Spool to disk, then try to drain in the background. Nothing on this
+    // path waits for the network.
+    //
+    // The previous shape joined the sending thread against a 600 ms
+    // deadline, because a detached thread loses the race with process exit
+    // and the last event of a command -- which is most of them -- was
+    // never sent. That reasoning was right and the location was wrong: it
+    // put a network round-trip on the path a person waits behind, and it
+    // measured 68 ms of a 74 ms `krate run` (K-091). Writing the event
+    // down first means nothing is lost even if the process dies one
+    // instruction later, so the send no longer has to be waited on.
+    append_to_spool(&body);
+    drain_spool_in_background();
+}
+
+/// The file events wait in until a send succeeds. One JSON object per
+/// line, so a half-written line at the end of a crashed run costs exactly
+/// that line.
+fn spool_path() -> Option<std::path::PathBuf> {
+    krate_dir().map(|dir| dir.join("usage-spool.jsonl"))
+}
+
+/// Events kept before dropping the oldest. A person who is offline for a
+/// month must not grow an unbounded file, and stale counts have little
+/// value anyway.
+const SPOOL_MAX_EVENTS: usize = 200;
+
+fn append_to_spool(body: &str) {
+    let Some(path) = spool_path() else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    use std::io::Write;
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
+        let _ = writeln!(file, "{body}");
+    }
+}
+
+/// Hand the spool to a detached helper process and return immediately.
+///
+/// A thread cannot do this job: every command here exits in single-digit
+/// milliseconds and a network round-trip is hundreds, so the thread is
+/// killed by process exit every single time -- measured, not assumed (the
+/// spool grew to 21 events and never drained). A separate process
+/// outlives its parent, so the person waits for nothing and the events
+/// still leave the machine.
+fn drain_spool_in_background() {
+    // The helper is this same binary, so there is nothing extra to ship.
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    let mut command = std::process::Command::new(exe);
+    command
+        .arg("usage-flush")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    // Guard against a helper spawning a helper: the flush path must never
+    // re-enter this function.
+    command.env("KRATE_USAGE_HELPER", "1");
+    let _ = command.spawn();
+}
+
+/// Drain the spool synchronously. Only the detached helper calls this.
+pub fn flush_spool_now() {
+    let Some(path) = spool_path() else {
+        return;
+    };
     let endpoint = std::env::var("KRATE_USAGE_URL")
         .unwrap_or_else(|_| "https://hub.krate.tech/usage".to_string());
-    let version = crate::KRATE_VERSION;
-    let os = std::env::consts::OS;
-    let action = action.as_str();
 
-    // Detached, with a short timeout. A count is never worth making someone
-    // wait, and a hub that is down or slow must not be able to hang a command
-    // or change its exit code.
-    //
-    // The handle is joined with a deadline rather than dropped: a plain
-    // detached thread loses the race with process exit, and the last event
-    // before a command ends -- which is most of them -- was never sent.
-    let handle = std::thread::spawn(move || {
-        let mut body =
-            format!(r#"{{"id":"{id}","version":"{version}","os":"{os}","action":"{action}""#);
-        if let Some(ai) = facts.ai {
-            body.push_str(&format!(r#","ai":{ai}"#));
+    {
+        let Ok(contents) = std::fs::read_to_string(&path) else {
+            return;
+        };
+        let events: Vec<&str> = contents
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && line.starts_with('{') && line.ends_with('}'))
+            .collect();
+        if events.is_empty() {
+            let _ = std::fs::remove_file(&path);
+            return;
         }
-        if let Some(ok) = facts.ok {
-            body.push_str(&format!(r#","ok":{ok}"#));
-        }
-        body.push('}');
-        let _ = ureq::AgentBuilder::new()
+        // Oldest first, and never more than the cap: a long offline spell
+        // sends recent history rather than a flood.
+        let start = events.len().saturating_sub(SPOOL_MAX_EVENTS);
+        let agent = ureq::AgentBuilder::new()
             .timeout_connect(Duration::from_secs(3))
             .timeout_read(Duration::from_secs(3))
-            .build()
-            .post(&endpoint)
-            .set("content-type", "application/json")
-            .send_string(&body);
-    });
+            .build();
 
-    // Give it a moment to leave the machine, then stop caring. Well under the
-    // three-second network timeout above, so a dead hub costs a fraction of a
-    // second rather than the full wait.
-    let deadline = std::time::Instant::now() + Duration::from_millis(600);
-    while !handle.is_finished() && std::time::Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(20));
+        let mut unsent: Vec<&str> = Vec::new();
+        let mut failed = false;
+        for event in &events[start..] {
+            if failed {
+                // The hub is unreachable; keep the rest for next time
+                // rather than spending three seconds each proving it.
+                unsent.push(event);
+                continue;
+            }
+            match agent
+                .post(&endpoint)
+                .set("content-type", "application/json")
+                .send_string(event)
+            {
+                Ok(_) => {}
+                Err(_) => {
+                    failed = true;
+                    unsent.push(event);
+                }
+            }
+        }
+
+        // Rewrite the spool with only what did not go. Doing this once at
+        // the end keeps a crash mid-drain from losing more than a resend.
+        if unsent.is_empty() {
+            let _ = std::fs::remove_file(&path);
+        } else {
+            let _ = std::fs::write(&path, format!("{}\n", unsent.join("\n")));
+        }
     }
 }
 

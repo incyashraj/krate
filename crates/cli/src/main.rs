@@ -76,6 +76,11 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    /// Send any spooled usage events, then exit. Spawned detached by the
+    /// CLI itself; never meant to be typed by a person.
+    #[command(hide = true)]
+    UsageFlush,
+
     /// Run a WebAssembly component through the Krate runtime.
     Run {
         /// Path to a .wasm component, a .krate bundle, or an https URL to one.
@@ -817,6 +822,10 @@ fn run() -> Result<u8> {
             manifest,
             output,
         } => pack_bundle(&file, &manifest, &output),
+        Command::UsageFlush => {
+            usage::flush_spool_now();
+            Ok(0)
+        }
         Command::Telemetry { state } => usage::telemetry_command(&state),
         Command::Publish {
             bundle,

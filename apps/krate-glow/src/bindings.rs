@@ -15526,6 +15526,27 @@ pub mod krate {
                         .finish()
                 }
             }
+            /// A folder the person picked; carried by token, never by path.
+            #[derive(Clone)]
+            pub struct ChosenFolder {
+                /// The folder's display name, for showing which folder is in use.
+                pub name: _rt::String,
+                /// Prefix paths with `picked/<token>/` to reach files inside it through
+                /// the ordinary fs calls -- list, read, write, mkdir, remove all work
+                /// under that prefix, and only there.
+                pub token: _rt::String,
+            }
+            impl ::core::fmt::Debug for ChosenFolder {
+                fn fmt(
+                    &self,
+                    f: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
+                    f.debug_struct("ChosenFolder")
+                        .field("name", &self.name)
+                        .field("token", &self.token)
+                        .finish()
+                }
+            }
             #[allow(unused_unsafe, clippy::all)]
             /// Show a simple message dialog.
             pub fn message(window: u64, title: &str, body: &str) -> Result<(), UiError> {
@@ -15939,6 +15960,161 @@ pub mod krate {
                         _ => _rt::invalid_enum_discriminant(),
                     };
                     result20
+                }
+            }
+            #[allow(unused_unsafe, clippy::all)]
+            /// Ask the person to choose a folder, and return what they chose.
+            ///
+            /// This is how an app reaches a real folder of theirs: not by naming a
+            /// path (no path can be named), and not by asking for everything, but by
+            /// the person picking one -- and the pick IS the grant. The app can then
+            /// use every fs call under `picked/<token>/...` for this run: list what
+            /// is there, read files, write results, make subfolders. The grant ends
+            /// with the run; nothing about the folder's location is learnable; and a
+            /// tidy-my-folder app needs exactly this and no fs capability at all.
+            ///
+            /// `none` means they cancelled, which is a normal outcome and not an
+            /// error. Requires the `ui.dialog:open-folder` capability.
+            pub fn open_folder(
+                window: u64,
+                title: &str,
+            ) -> Result<Option<ChosenFolder>, UiError> {
+                unsafe {
+                    #[cfg_attr(target_pointer_width = "64", repr(align(8)))]
+                    #[cfg_attr(target_pointer_width = "32", repr(align(4)))]
+                    struct RetArea(
+                        [::core::mem::MaybeUninit<
+                            u8,
+                        >; 6 * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let mut ret_area = RetArea(
+                        [::core::mem::MaybeUninit::uninit(); 6
+                            * ::core::mem::size_of::<*const u8>()],
+                    );
+                    let vec0 = title;
+                    let ptr0 = vec0.as_ptr().cast::<u8>();
+                    let len0 = vec0.len();
+                    let ptr1 = ret_area.0.as_mut_ptr().cast::<u8>();
+                    #[cfg(target_arch = "wasm32")]
+                    #[link(wasm_import_module = "krate:ui/dialog@0.1.0")]
+                    unsafe extern "C" {
+                        #[link_name = "open-folder"]
+                        fn wit_import2(_: i64, _: *mut u8, _: usize, _: *mut u8);
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    unsafe extern "C" fn wit_import2(
+                        _: i64,
+                        _: *mut u8,
+                        _: usize,
+                        _: *mut u8,
+                    ) {
+                        unreachable!()
+                    }
+                    unsafe {
+                        wit_import2(_rt::as_i64(&window), ptr0.cast_mut(), len0, ptr1)
+                    };
+                    let l3 = i32::from(*ptr1.add(0).cast::<u8>());
+                    let result19 = match l3 {
+                        0 => {
+                            let e = {
+                                let l4 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                match l4 {
+                                    0 => None,
+                                    1 => {
+                                        let e = {
+                                            let l5 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l6 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len7 = l6;
+                                            let bytes7 = _rt::Vec::from_raw_parts(
+                                                l5.cast(),
+                                                len7,
+                                                len7,
+                                            );
+                                            let l8 = *ptr1
+                                                .add(4 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l9 = *ptr1
+                                                .add(5 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len10 = l9;
+                                            let bytes10 = _rt::Vec::from_raw_parts(
+                                                l8.cast(),
+                                                len10,
+                                                len10,
+                                            );
+                                            ChosenFolder {
+                                                name: _rt::string_lift(bytes7),
+                                                token: _rt::string_lift(bytes10),
+                                            }
+                                        };
+                                        Some(e)
+                                    }
+                                    _ => _rt::invalid_enum_discriminant(),
+                                }
+                            };
+                            Ok(e)
+                        }
+                        1 => {
+                            let e = {
+                                let l11 = i32::from(
+                                    *ptr1.add(::core::mem::size_of::<*const u8>()).cast::<u8>(),
+                                );
+                                use super::super::super::krate::ui::types::UiError as V18;
+                                let v18 = match l11 {
+                                    0 => V18::PermissionDenied,
+                                    1 => V18::InvalidWindow,
+                                    2 => V18::InvalidWidget,
+                                    3 => {
+                                        let e18 = {
+                                            let l12 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l13 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len14 = l13;
+                                            let bytes14 = _rt::Vec::from_raw_parts(
+                                                l12.cast(),
+                                                len14,
+                                                len14,
+                                            );
+                                            _rt::string_lift(bytes14)
+                                        };
+                                        V18::Unsupported(e18)
+                                    }
+                                    n => {
+                                        debug_assert_eq!(n, 4, "invalid enum discriminant");
+                                        let e18 = {
+                                            let l15 = *ptr1
+                                                .add(2 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<*mut u8>();
+                                            let l16 = *ptr1
+                                                .add(3 * ::core::mem::size_of::<*const u8>())
+                                                .cast::<usize>();
+                                            let len17 = l16;
+                                            let bytes17 = _rt::Vec::from_raw_parts(
+                                                l15.cast(),
+                                                len17,
+                                                len17,
+                                            );
+                                            _rt::string_lift(bytes17)
+                                        };
+                                        V18::Platform(e18)
+                                    }
+                                };
+                                v18
+                            };
+                            Err(e)
+                        }
+                        _ => _rt::invalid_enum_discriminant(),
+                    };
+                    result19
                 }
             }
         }
@@ -16882,8 +17058,8 @@ pub(crate) use __export_gui_impl as export;
 )]
 #[doc(hidden)]
 #[allow(clippy::octal_escapes)]
-pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 10842] = *b"\
-\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xe0S\x01A\x02\x01Ai\x01\
+pub static __WIT_BINDGEN_COMPONENT_TYPE: [u8; 10922] = *b"\
+\0asm\x0d\0\x01\0\0\x19\x16wit-component-encoding\x04\0\x07\xb0T\x01A\x02\x01Ai\x01\
 B\x04\x01m\x05\x05trace\x05debug\x04info\x04warn\x05error\x04\0\x09log-level\x03\
 \0\0\x01q\x05\x06closed\0\0\x0binterrupted\0\0\x0eunexpected-eof\0\0\x0cinvalid-\
 utf8\0\0\x05other\x01s\0\x04\0\x08io-error\x03\0\x02\x03\0\x14krate:io/types@0.1\
@@ -17024,34 +17200,36 @@ ndoww\x06widgetw\0\x05\x04\0\x05clear\x01\x07\x03\0\x14krate:ui/image@0.1.0\x05'
 \0\x04wait\x01\x05\x01@\x01\x03keys\0\x7f\x04\0\x08key-held\x01\x06\x01@\0\0\x7f\
 \x04\0\x11gamepad-connected\x01\x07\x01@\x01\x06buttons\0\x7f\x04\0\x0cgamepad-h\
 eld\x01\x08\x01@\x01\x04axiss\0v\x04\0\x0cgamepad-axis\x01\x09\x03\0\x15krate:ui\
-/events@0.1.0\x05)\x01B\x0e\x02\x03\x02\x01!\x04\0\x08ui-error\x03\0\0\x01r\x02\x04\
-names\x05tokens\x04\0\x0bchosen-file\x03\0\x02\x01j\0\x01\x01\x01@\x03\x06window\
-w\x05titles\x04bodys\0\x04\x04\0\x07message\x01\x05\x01j\x01\x7f\x01\x01\x01@\x03\
-\x06windoww\x05titles\x04bodys\0\x06\x04\0\x07confirm\x01\x07\x01k\x03\x01j\x01\x08\
-\x01\x01\x01@\x03\x06windoww\x05titles\x06filters\0\x09\x04\0\x09open-file\x01\x0a\
-\x03\0\x15krate:ui/dialog@0.1.0\x05*\x01B\x08\x02\x03\x02\x01!\x04\0\x08ui-error\
-\x03\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\
-\x01@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard\
-@0.1.0\x05+\x02\x03\0\x13\x09menu-item\x01B\x08\x02\x03\x02\x01,\x04\0\x09menu-i\
-tem\x03\0\0\x02\x03\x02\x01!\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\
-\x01@\x02\x06windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krat\
-e:ui/menu@0.1.0\x05-\x01B\x05\x01q\x03\x06denied\0\0\x0binvalid-url\x01s\0\x0bun\
-available\x01s\0\x04\0\x0claunch-error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03urls\0\
-\x02\x04\0\x08open-url\x01\x03\x03\0\x17krate:ui/launcher@0.1.0\x05.\x01B\x05\x01\
-q\x03\x06denied\0\0\x0finvalid-content\x01s\0\x0bunavailable\x01s\0\x04\0\x0cnot\
-ify-error\x03\0\0\x01j\0\x01\x01\x01@\x02\x05titles\x04bodys\0\x02\x04\0\x04show\
-\x01\x03\x03\0\x15krate:ui/notify@0.1.0\x05/\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\
-\x01av\x04\0\x05color\x03\0\0\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\
-\x02\x05widthv\x06heightv\x04\0\x04size\x03\0\x04\x01r\x04\x05widthv\x06heightv\x06\
-ascentv\x07descentv\x04\0\x0ctext-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05widt\
-hv\x06heightv\x04\0\x04rect\x03\0\x08\x01r\x02\x06offsetv\x05color\x01\x04\0\x0d\
-gradient-stop\x03\0\x0a\x01m\x03\x04sans\x05serif\x04mono\x04\0\x0bfont-family\x03\
-\0\x0c\x01r\x04\x06weight{\x06italic\x7f\x0eletter-spacingv\x06family\x0d\x04\0\x0a\
-text-style\x03\0\x0e\x01r\x04\x08top-leftv\x09top-rightv\x0cbottom-rightv\x0bbot\
-tom-leftv\x04\0\x0ccorner-radii\x03\0\x10\x01q\x04\x11permission-denied\0\0\x0ei\
-nvalid-target\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\
-\0\x12\x03\0\x15krate:gfx/types@0.1.0\x050\x02\x03\0\x1d\x05color\x02\x03\0\x1d\x05\
-point\x02\x03\0\x1d\x04rect\x02\x03\0\x1d\x04size\x02\x03\0\x1d\x0ctext-metrics\x02\
+/events@0.1.0\x05)\x01B\x14\x02\x03\x02\x01!\x04\0\x08ui-error\x03\0\0\x01r\x02\x04\
+names\x05tokens\x04\0\x0bchosen-file\x03\0\x02\x01r\x02\x04names\x05tokens\x04\0\
+\x0dchosen-folder\x03\0\x04\x01j\0\x01\x01\x01@\x03\x06windoww\x05titles\x04body\
+s\0\x06\x04\0\x07message\x01\x07\x01j\x01\x7f\x01\x01\x01@\x03\x06windoww\x05tit\
+les\x04bodys\0\x08\x04\0\x07confirm\x01\x09\x01k\x03\x01j\x01\x0a\x01\x01\x01@\x03\
+\x06windoww\x05titles\x06filters\0\x0b\x04\0\x09open-file\x01\x0c\x01k\x05\x01j\x01\
+\x0d\x01\x01\x01@\x02\x06windoww\x05titles\0\x0e\x04\0\x0bopen-folder\x01\x0f\x03\
+\0\x15krate:ui/dialog@0.1.0\x05*\x01B\x08\x02\x03\x02\x01!\x04\0\x08ui-error\x03\
+\0\0\x01j\x01s\x01\x01\x01@\0\0\x02\x04\0\x09read-text\x01\x03\x01j\0\x01\x01\x01\
+@\x01\x04texts\0\x04\x04\0\x0awrite-text\x01\x05\x03\0\x18krate:ui/clipboard@0.1\
+.0\x05+\x02\x03\0\x13\x09menu-item\x01B\x08\x02\x03\x02\x01,\x04\0\x09menu-item\x03\
+\0\0\x02\x03\x02\x01!\x04\0\x08ui-error\x03\0\x02\x01p\x01\x01j\0\x01\x03\x01@\x02\
+\x06windoww\x05items\x04\0\x05\x04\0\x09set-items\x01\x06\x03\0\x13krate:ui/menu\
+@0.1.0\x05-\x01B\x05\x01q\x03\x06denied\0\0\x0binvalid-url\x01s\0\x0bunavailable\
+\x01s\0\x04\0\x0claunch-error\x03\0\0\x01j\0\x01\x01\x01@\x01\x03urls\0\x02\x04\0\
+\x08open-url\x01\x03\x03\0\x17krate:ui/launcher@0.1.0\x05.\x01B\x05\x01q\x03\x06\
+denied\0\0\x0finvalid-content\x01s\0\x0bunavailable\x01s\0\x04\0\x0cnotify-error\
+\x03\0\0\x01j\0\x01\x01\x01@\x02\x05titles\x04bodys\0\x02\x04\0\x04show\x01\x03\x03\
+\0\x15krate:ui/notify@0.1.0\x05/\x01B\x14\x01r\x04\x01rv\x01gv\x01bv\x01av\x04\0\
+\x05color\x03\0\0\x01r\x02\x01xv\x01yv\x04\0\x05point\x03\0\x02\x01r\x02\x05widt\
+hv\x06heightv\x04\0\x04size\x03\0\x04\x01r\x04\x05widthv\x06heightv\x06ascentv\x07\
+descentv\x04\0\x0ctext-metrics\x03\0\x06\x01r\x04\x01xv\x01yv\x05widthv\x06heigh\
+tv\x04\0\x04rect\x03\0\x08\x01r\x02\x06offsetv\x05color\x01\x04\0\x0dgradient-st\
+op\x03\0\x0a\x01m\x03\x04sans\x05serif\x04mono\x04\0\x0bfont-family\x03\0\x0c\x01\
+r\x04\x06weight{\x06italic\x7f\x0eletter-spacingv\x06family\x0d\x04\0\x0atext-st\
+yle\x03\0\x0e\x01r\x04\x08top-leftv\x09top-rightv\x0cbottom-rightv\x0bbottom-lef\
+tv\x04\0\x0ccorner-radii\x03\0\x10\x01q\x04\x11permission-denied\0\0\x0einvalid-\
+target\0\0\x0bunsupported\x01s\0\x08platform\x01s\0\x04\0\x09gfx-error\x03\0\x12\
+\x03\0\x15krate:gfx/types@0.1.0\x050\x02\x03\0\x1d\x05color\x02\x03\0\x1d\x05poi\
+nt\x02\x03\0\x1d\x04rect\x02\x03\0\x1d\x04size\x02\x03\0\x1d\x0ctext-metrics\x02\
 \x03\0\x1d\x09gfx-error\x02\x03\0\x1d\x0dgradient-stop\x02\x03\0\x1d\x0ccorner-r\
 adii\x02\x03\0\x1d\x0atext-style\x02\x03\0\x1d\x0bfont-family\x01BI\x02\x03\x02\x01\
 1\x04\0\x05color\x03\0\0\x02\x03\x02\x012\x04\0\x05point\x03\0\x02\x02\x03\x02\x01\

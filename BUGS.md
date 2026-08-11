@@ -103,7 +103,7 @@ Fix:      Gate every round limit on the `quick` argument so it never
           smallest GUI app" -- the first thing a generated app copies.
 
 ### K-091 -- every app launch blocks ~68 ms on a telemetry round-trip
-Status:   open
+Status:   fixed 2026-08-11, verified by measurement and by delivery
 Owner:    unclaimed
 Severity: blocker
 Class:    our-code
@@ -121,10 +121,24 @@ Evidence: Median wall time, `krate run` on an 18 KB app, this Mac:
           a 600 ms deadline on the way out -- the right fix for a lost
           event (a detached thread loses the race with process exit) put
           in the wrong place: the user's launch path.
-Fix:      Never block a launch on the network. Queue the event to a local
-          file and flush it on the NEXT launch -- nothing is lost and the
-          cost is zero. Expected: ~74 ms -> ~7 ms per launch, a 10x
-          improvement in the only latency number a user can feel.
+Fix:      Two parts, because the obvious half was not enough. Events are
+          spooled to ~/.krate/usage-spool.jsonl (one JSON object per line,
+          capped at 200) before anything touches the network, so nothing
+          is lost even if the process dies immediately. Then a DETACHED
+          HELPER PROCESS (`krate usage-flush`, hidden, this same binary)
+          drains the spool and outlives its parent.
+          A background thread was tried first and provably does not work:
+          every command exits in single-digit milliseconds while a round
+          trip takes hundreds, so the thread is killed by process exit
+          every time -- observed as a spool that grew to 21 events and
+          never drained. That is the same race the original blocking join
+          existed to win; spooling first means it no longer has to be won.
+          Measured after: 73.9 ms -> 7.8 ms with telemetry on, identical
+          to having it off. A dead hub costs 9.9 ms instead of up to 600,
+          and its events survive on disk and are delivered on the next
+          launch (verified offline, then reconnected). The helper sets
+          KRATE_USAGE_HELPER so it can never record its own run or spawn
+          another helper. 1140 tests pass.
 
 ### K-090 -- the iOS player ran hot, died in the background, and felt late
 Status:   fixed in main (three cuts, each from a crash log or a measured
