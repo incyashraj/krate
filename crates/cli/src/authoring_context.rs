@@ -420,6 +420,44 @@ compute the layout from that, and recompute when it changes:\n\n\
 **Handle the resize event.** The runtime sends `Event::Resized(window-size)` \
 when the window changes. Re-read the canvas size, recompute the layout, and \
 redraw. An app that ignores it is only correct at its opening size.\n\n\
+**Fill the space you were given. Leftover emptiness is a bug, not a style.** \
+Laying out from the canvas size is only half the job -- the other half is \
+making the content actually consume it. A generated seating planner drew its \
+eight tables at a fixed radius from the top and left a third of the window \
+dead at the bottom, which reads as unfinished no matter how good the drawing \
+is. Three rules that fix this for any app:\n\n\
+\u{20}\u{20}1. **Divide the space, then fill each division.** Decide the \
+regions as fractions of the real canvas (\"the list takes the left 62%, the \
+detail panel the rest\"), not as pixel constants. Then size what is inside \
+each region from that region, so a taller window makes rows taller or shows \
+more of them -- it never just adds blank space at the bottom.\n\n\
+\u{20}\u{20}2. **Grids compute their cell size from the area, never the other \
+way round.** For `n` items in a region `w` by `h`: pick the column count \
+that best fills it, then `cell = (w - gaps) / cols` and let the cell drive \
+the item's radius or height. A table drawn at a hardcoded 90px radius in a \
+1400px-wide room is the same bug as a hardcoded window size.\n\n\
+\u{20}\u{20}3. **Give the leftover to the element that can use it.** One \
+region should be elastic -- usually the list, the canvas, or the feed -- and \
+absorb whatever is left after the fixed chrome (header, footer, toolbar) is \
+placed. If nothing is elastic, the window grows and the app does not.\n\n\
+**Measure from the outermost edge, not the shape's own size.** When \
+decorations stick out past a shape -- chairs around a table, a badge on a \
+card corner, a glow, a selection ring -- the next element must clear the \
+*decoration*, not the shape. A generated seating planner placed its guest \
+names at `centre.y + table_radius + gap` while its chairs sat at \
+`table_radius + chair_radius + 3`, so the first name landed exactly on the \
+bottom chair in every table. Compute one `outer` value and lay out against \
+it:\n\n\
+\u{20}\u{20}\u{20}\u{20}let outer = ring + decoration_r;   // what the shape really occupies\n\
+\u{20}\u{20}\u{20}\u{20}let text_y = centre.y + outer + gap;\n\n\
+Reserve space for the same `outer` when you compute how big the shape may \
+be, so the two calculations cannot disagree. Anything that overlaps text is \
+a defect, however good it looks in one window size.\n\n\
+**Weight the space by importance.** Within a region, the thing the app is \
+*for* gets the most room: a chart app is mostly chart, a list app is mostly \
+list. Headers and footers are chrome -- 8-14% of the height each is plenty. \
+An app that spends a third of its window on a title is telling the person the \
+title matters more than their data.\n\n\
 **If the app has live data, fetch it when it starts.** Sample data is a \
 fallback for when the network fails, never the state a person sees first. An \
 app asked for \"open source news\" declared `net.connect:hnrss.org:443`, wrote a \

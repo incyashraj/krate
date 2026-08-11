@@ -71,6 +71,42 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-099 -- nothing measures wasted space inside a generated app's window
+Status:   open
+Owner:    unclaimed
+Severity: moderate
+Class:    runtime-hole
+Found:    2026-08-12, after K-098's teaching fix. Generated apps now use the
+          right primitives, but an arbitrary new app still spends a third of
+          its window on nothing, and no gate can see it.
+Evidence: Wrote an edge-band check (largest fraction of the window, measured
+          in from an edge, containing no content) and measured it against
+          six real screenshots. It does not work:
+
+            seating.png    2240x1440  band=0.061
+            seating2.png   2360x1520  band=0.034
+            seating3.png   2240x1440  band=0.044   <- visibly wasteful
+            krate-savings  920x1120   band=0.041
+            krate-pulse    2160x1400  band=0.060
+
+          Every app scores 3-6%, including the one with an obvious dead
+          region, because real apps put a full-width header or footer near
+          each edge, so no complete row or column is ever empty. The check
+          only catches content pinned away from an edge, which is K-096's
+          resize bug and already covered.
+          Reverted rather than shipped: a gate that detects nothing while
+          claiming to is worse than no gate.
+Fix:      Needs a region measure, not an edge measure -- e.g. divide the
+          frame into a coarse grid and report the largest connected run of
+          cells that carry no content, ignoring cells the background
+          gradient alone fills. Must keep the false-positive guard: a
+          deliberately airy layout is not a defect, so the bar has to be
+          "nothing was drawn here at all", not "this looks sparse".
+Note:     The teaching half is done (see the density rules in
+          `authoring_context.rs`) and measurably helps, but the AI trades
+          density off against overlap between runs, which is exactly the
+          kind of regression only a machine check holds.
+
 ### K-098 -- the pack taught a rounded-corner hack for a primitive that shipped
 Status:   fixed 2026-08-11 (commit e6df2bf)
 Owner:    lead
