@@ -94,7 +94,7 @@ Fix:      `krate run --assets <dir>` now exists and wins over a bundle's
           paths already documented). Both apps pass.
 
 ### K-094 -- the usability driver stalls on an app that is behaving correctly
-Status:   open
+Status:   fixed 2026-08-11, verified in both directions
 Owner:    unclaimed
 Severity: annoyance
 Class:    our-code
@@ -107,10 +107,25 @@ Evidence: apps/zz-example-check fails check-app with "the app did not
             krate run <wasm> --manifest ... --auto-grant --headless -- quick
             -> "counter: window ran", exit 0, 0.4s
           So the driver, not the app, is what cannot finish.
-Fix:      Find why the driver's scripted run never completes against an
-          app that blocks in wait(None). Do NOT "fix" the app to suit the
-          driver -- it is written the way the pack tells every author to
-          write one, and bending it would teach the wrong pattern.
+Fix:      DONE, in the driver, with the app untouched. The cause: the
+          script only advanced where `events.wait` is ENTERED, but an app
+          blocked in `wait(None)` on an empty queue never enters it again
+          -- so the driver took one step and the wait loop slept until the
+          harness killed the run at 60 s. The loop now steps the driver
+          from inside an unbounded wait as well, delivering the script's
+          clicks and resizes as ordinary events, which is how a person's
+          input arrives anyway.
+          Verified both directions, because a gate that stops failing is
+          worthless if it also stops catching: zz-example-check now
+          passes in 16.6 s, and a deliberately planted self-closer (a
+          real session bounded at 40 rounds x 50 ms) is still caught --
+          "closed it by itself after 2.3s". Fleet: 32 pass, 0 fail. 1140
+          tests pass.
+          Worth recording: my first regression attempt planted a bound of
+          400 rounds, which is 20 seconds -- longer than the 15-second
+          stay-open watch, so the gate passed it correctly and I briefly
+          believed I had broken the gate. The test was wrong, not the
+          code.
 
 ### K-092 -- eight fleet apps close their own window mid-session
 Status:   fixed for the whole self-closing class 2026-08-11; the six

@@ -1947,6 +1947,21 @@ impl ui::events::Host for Phase3GuiHost {
                     // loop cannot outrun.
                     return Ok(None);
                 }
+            } else if self.usability.is_some() {
+                // A driven run on an unbounded wait: the driver is paced by
+                // wall clock and only advances when the app calls in, but an
+                // app blocked in `wait(None)` with an empty queue never calls
+                // in again -- so the script stalled here until the harness
+                // killed it at 60 seconds, and a correctly written app
+                // (wait(None) is exactly what the pack teaches) failed the
+                // gate (K-094). Stepping the driver from inside the wait is
+                // what closes that loop: it delivers the script's clicks and
+                // resizes as ordinary events, which is how a person's input
+                // would arrive anyway.
+                if let Some(event) = self.drive_usability_step() {
+                    self.idle_waits.set(0);
+                    return Ok(Some(event));
+                }
             } else if let Some(close) = self.headless_close_request() {
                 // An unbounded wait on a headless host can never return on its
                 // own: nothing exists that could deliver an event. Reporting
