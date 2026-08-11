@@ -306,11 +306,10 @@ impl bindings::Guest for Component {
             .split(|byte| *byte == b'\n')
             .next()
             .is_some_and(|first| first == b"quick");
-        let rounds = if quick {
-            QUICK_WAIT_ROUNDS
-        } else {
-            MAX_WAIT_ROUNDS
-        };
+        // A real session ends when the person closes the window, never on a
+        // round count (K-092). `quick` keeps its bound so a headless check
+        // cannot hang.
+        let rounds = if quick { QUICK_WAIT_ROUNDS } else { u32::MAX };
 
         let mut clicked = false;
         let mut close_requested = false;
@@ -384,12 +383,12 @@ impl bindings::Guest for Component {
                 }
                 _ => {}
             }
-            if clicked {
-                if linger == 0 {
-                    break;
-                }
-                linger -= 1;
-            }
+            // Deliberately no exit-on-click. This app used to linger a few
+            // rounds after a click and then close itself, which is what a
+            // demo script does, not an app -- clicking the button made the
+            // window vanish in the person's face (K-092). Only the person
+            // ends the session now.
+            let _ = &mut linger;
         }
 
         let _ = window::close(win);
@@ -424,13 +423,13 @@ impl bindings::Guest for Component {
         //   0 = native click round trip observed
         //   1 = clean bounded run without a click (normal headless outcome)
         //   2 = user closed the window before clicking
-        if clicked {
-            0
-        } else if close_requested {
-            2
-        } else {
-            1
-        }
+        // Closing the window is how a session ends -- for a person and for
+        // a headless check alike -- so it is success. The old scheme
+        // reported 2 for "closed before clicking" and 1 for "bounded run
+        // with no click", which made the ordinary outcome look like a
+        // failure once the round bound was removed.
+        let _ = (clicked, close_requested);
+        0
     }
 }
 

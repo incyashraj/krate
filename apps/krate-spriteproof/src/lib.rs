@@ -138,7 +138,10 @@ impl bindings::Guest for Component {
             .split(|byte| *byte == b'\n')
             .next()
             .is_some_and(|first| first == b"quick");
-        let rounds = if quick { 20 } else { 400 };
+        // A real session ends when the person closes the window, never on a
+        // count (K-092). `quick` keeps its bound so headless checks cannot
+        // hang.
+        let rounds = if quick { 20u32 } else { u32::MAX };
         for _ in 0..rounds {
             match events::wait(Some(50)) {
                 Some(types::Event::CloseRequested(id)) if id == win => break,

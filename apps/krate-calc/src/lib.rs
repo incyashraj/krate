@@ -235,7 +235,11 @@ impl bindings::Guest for Component {
             .split(|byte| *byte == b'\n')
             .next()
             .is_some_and(|first| first == b"quick");
-        let rounds = if quick { QUICK_ROUNDS } else { MAX_ROUNDS };
+        // A real session ends when the person closes the window, never
+        // on a round count: 600 rounds x 50 ms quietly shut the window
+        // after thirty seconds of use (K-092). `quick` keeps its bound
+        // so a headless check can never hang.
+        let rounds = if quick { QUICK_ROUNDS } else { u32::MAX };
 
         let mut calc = Calc::NEW;
         // Seed a visible sum so a screenshot shows a real number, not "0":

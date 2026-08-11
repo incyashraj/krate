@@ -181,7 +181,10 @@ impl bindings::Guest for Component {
 
         let _ = draw(canvas, &app);
 
-        let rounds = if quick { QUICK_ROUNDS } else { MAX_ROUNDS };
+        // A real session ends when the person closes the window, never on a
+        // round count (K-092). `quick` keeps its bound so a headless check
+        // cannot hang.
+        let rounds = if quick { QUICK_ROUNDS } else { u32::MAX };
         let mut r = 0u32;
         while r < rounds {
             match events::wait(Some(ROUND_MILLIS)) {

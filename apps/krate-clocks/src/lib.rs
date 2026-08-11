@@ -45,7 +45,6 @@ const CARD_H: f32 = (HEIGHT - GRID_TOP - PAD - GAP) / 2.0; // 216
 
 const FACE_R: f32 = 64.0;
 
-const MAX_ROUNDS: u32 = 3600; // ~1 hour at 1 fps, then bow out.
 const ROUND_MILLIS: u32 = 1000;
 
 // ------------------------------------------------------------------
@@ -219,7 +218,11 @@ impl bindings::Guest for Component {
             return 0;
         }
 
-        for _ in 0..MAX_ROUNDS {
+        // The quick path already returned above, so this loop is only ever
+        // a real session: it ends when the person closes the window, not
+        // on a count. The old one-hour bound closed a clock somebody was
+        // still watching (K-092).
+        loop {
             match events::wait(Some(ROUND_MILLIS)) {
                 Some(types::Event::CloseRequested(id)) if id == win => break,
                 _ => {}

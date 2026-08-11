@@ -70,7 +70,11 @@ impl bindings::Guest for Component {
             let _ = tree::upsert_node(win, &tab_strip(selected_tab));
         }
 
-        let rounds = if quick { QUICK_ROUNDS } else { MAX_ROUNDS };
+        // A real session ends when the person closes the window, never
+        // on a round count: 600 rounds x 50 ms quietly shut the window
+        // after thirty seconds of use (K-092). `quick` keeps its bound
+        // so a headless check can never hang.
+        let rounds = if quick { QUICK_ROUNDS } else { u32::MAX };
         for _ in 0..rounds {
             match events::wait(Some(ROUND_MILLIS)) {
                 // A press on the tab strip: the hit widget id is the tab strip

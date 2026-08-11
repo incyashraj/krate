@@ -244,7 +244,10 @@ impl bindings::Guest for Component {
             .split(|byte| *byte == b'\n')
             .next()
             .is_some_and(|first| first == b"quick");
-        let frame_cap = if quick { QUICK_FRAMES } else { MAX_FRAMES };
+        // A real session ends when the person closes the window, never on a
+        // count (K-092). `quick` keeps its bound so headless checks cannot
+        // hang.
+        let frame_cap = if quick { QUICK_FRAMES } else { u32::MAX };
 
         let mut w = World::new();
 

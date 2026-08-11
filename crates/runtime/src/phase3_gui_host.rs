@@ -1936,9 +1936,15 @@ impl ui::events::Host for Phase3GuiHost {
             if let Some(deadline) = deadline {
                 if std::time::Instant::now() >= deadline {
                     // The guest asked for a timeout and it has arrived. Hand
-                    // control back exactly as asked; it is the guest's own loop
-                    // bound that ends the run, and it stays free to treat the
-                    // quiet round however it likes.
+                    // control back exactly as asked, so it stays free to treat
+                    // the quiet round however it likes.
+                    //
+                    // A headless run does NOT need a counter here: the
+                    // wall-clock budget above is checked before polling for
+                    // exactly this reason -- an app that calls request-redraw
+                    // every round always has an event waiting and would never
+                    // look idle. Wall-clock is the only measure a self-feeding
+                    // loop cannot outrun.
                     return Ok(None);
                 }
             } else if let Some(close) = self.headless_close_request() {

@@ -72,7 +72,8 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-092 -- eight fleet apps close their own window mid-session
-Status:   open
+Status:   fixed for the whole self-closing class 2026-08-11; the six
+          remaining failures are unrelated causes, listed below
 Owner:    unclaimed
 Severity: serious
 Class:    example-bug
@@ -94,9 +95,32 @@ Evidence: `krate check-app` over every app in apps/ with a manifest:
               whose interface the component never imports
             run (2): krate-curl, krate-hello-gui -- fail headless with
               all grants, exit 1
-Fix:      Gate every round limit on the `quick` argument so it never
-          fires in a real session; check-app's own message prescribes
-          exactly this. Then re-run the sweep and take the manifest and
+Fix:      DONE. Fifteen apps carried a bounded interactive loop; each now
+          runs unbounded in a real session and keeps its bound only on the
+          `quick` path. Four shapes existed and all four are fixed:
+          `MAX_ROUNDS`, `MAX_FRAMES`, a bare literal (400), and
+          krate-clocks' hour-long cap (which loops plainly now, since its
+          quick path returns earlier).
+          Two more of the same family were found while verifying, one of
+          them by Yashraj clicking the app by hand:
+            - krate-hello-gui closed itself a moment after the button was
+              clicked (LINGER_ROUNDS_AFTER_CLICK, then break). A demo
+              script shipped as an app, and the first thing an AI copies.
+            - krate-notes closed after ~12 seconds of quiet
+              (MAX_IDLE_ROUNDS) -- a person reading a note is idle.
+          hello-gui also reported exit 2 for "closed before clicking" and
+          1 for a bounded run; closing a window is how a session ends, so
+          it is 0 now.
+          Fleet: 19 pass / 13 fail -> 26 pass / 6 fail. 1140 tests pass.
+          The headless side needs no counter: the wall-clock budget in
+          phase3_gui_host already ends a run that feeds itself redraws,
+          verified at 5.1s (a counter cannot work there, because
+          request-redraw resets any idle count).
+Left:     krate-curl (exit 20), krate-nova2 + krate-spriteproof (exit 40,
+          missing packaged assets bg.rgba/sprite.rgba), krate-eo2 +
+          krate-mdview (manifest asks for an interface the component
+          never imports), zz-example-check (a fixture, not an app).
+          None is a self-closing window; each is its own small bug. Then re-run the sweep and take the manifest and
           run failures individually. This is example-bug class and the
           highest leverage left in the fleet: the authoring pack points
           AIs at these files, and krate-hello-gui is indexed as "the

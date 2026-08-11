@@ -762,7 +762,8 @@ impl bindings::Guest for Component {
             return 34;
         }
 
-        let rounds = if quick { QUICK_WAIT_ROUNDS } else { MAX_WAIT_ROUNDS };
+        // A real session ends when the person closes the window (K-092).
+        let rounds = if quick { QUICK_WAIT_ROUNDS } else { u32::MAX };
         let mut idle_rounds = 0u32;
         let mut round = 0u32;
         while round < rounds {
@@ -772,10 +773,10 @@ impl bindings::Guest for Component {
                 if quick {
                     continue;
                 }
+                // No idle timeout in a real session: a person reading a
+                // note is "idle" for minutes, and this used to shut the
+                // window after 12 seconds of quiet (K-092).
                 idle_rounds += 1;
-                if idle_rounds >= MAX_IDLE_ROUNDS {
-                    break;
-                }
                 continue;
             }
             idle_rounds = 0;
