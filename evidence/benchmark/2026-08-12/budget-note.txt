@@ -1,0 +1,12 @@
+Requests 1-13  measured with TIMEOUT_SECS=900
+Requests 14-42 measured with TIMEOUT_SECS=1800
+
+Why: request 14 (a note-taking app) was cut off at 902 s having completed 41
+productive authoring steps. Easy-tier successes already take 417-656 s, so
+900 s left only 244 s of margin above the slowest passing run, and every
+remaining medium/hard request is larger than the one that ran out of time.
+Continuing at 900 s would have measured the timeout rather than the product
+(K-104).
+
+The 900 s rows are kept as measured. Request 14 was removed and re-attempted
+at the higher budget, so no row mixes the two.
