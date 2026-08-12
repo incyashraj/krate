@@ -227,3 +227,24 @@ So of the failures so far:
 
 That distinction is the useful output of this run. It says which part of the
 gap is ours to close and which part is the measure's.
+
+## req 23, and a note about reading the evidence
+
+  req 23 markdown preview  wanted headings>=1 bullets>=1
+                           printed  file:sample.md headings:6
+                                    list_items:11 blocks:27
+                                    source_lines:45 source_bytes:1187
+                           -- 6 headings and 11 list items parsed from 45
+                              lines. Failed on `list_items` vs `bullets`.
+
+This one nearly went into the record as "printed nothing". The output file
+was 95 bytes and my inspection command mangled it to empty. The TSV said 1
+of 2 asserts held, which is impossible for an app that printed nothing --
+that contradiction is what caught it.
+
+The lesson is small and worth keeping: when a tool and a record disagree,
+the record is usually right and the tool is usually the problem. There is
+now a `show.sh` beside the results that prints the request, the asserts, and
+the raw output without any pipeline in between, and the three earlier
+requests read through the old command were re-checked against it. All three
+were reported correctly.
