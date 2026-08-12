@@ -467,3 +467,33 @@ So of the three, one (`expenses`) is a genuine synonym the operator exists
 for, and two are corpus rows that should simply be spelled out.
 
 Standing: raw 20/21, against run 2's corpus 17/21.
+
+## The three interruptions, audited
+
+Run 3 stopped three times. Because a skip halts the runner rather than
+recording a failure and moving on, every one is visible and none could have
+been silently absorbed into the results.
+
+    req 5   FALSE POSITIVE  transcript env dump contained
+                            KRATE_AUTHOR_TIMEOUT_SECS
+                            -> row deleted, re-run, PASSED
+
+    req 11  GENUINE         "You've hit your session limit"
+                            -> row deleted, re-run, PASSED
+
+    req 22  FALSE POSITIVE  the JSON printer's own sample data contained
+                            "last_error":"connection reset by peer"
+                            -> row deleted, re-running
+
+The results file now contains no skipped rows.
+
+**Both false positives were mine, and both cost time rather than data.** The
+common cause is that the skip patterns scan the agent transcript, which
+records everything the AI read and wrote -- including the app's source and
+the process environment. Matching product-controlled text against
+infrastructure-failure patterns was the mistake, made twice.
+
+The guard added after req 22 addresses the class rather than the instance: a
+produced `.krate` proves authoring succeeded, so it overrides every skip
+reason, all of which mean "no finished app to judge". A future false positive
+is now harmless rather than run-stopping.
