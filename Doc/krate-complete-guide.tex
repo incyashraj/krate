@@ -1317,23 +1317,49 @@ app actually builds and runs.
 
 \section{The benchmark, stated honestly}
 
-There is a benchmark of how often the AI produces a usable app. Its last
-recorded run was 5 August 2026, and it scored \textbf{0 out of 5} on
-authored apps under a strict ``did it do what was asked'' test.
+There is a benchmark of how often the AI produces a usable app: a fixed
+corpus of 42 requests, each carrying machine-checkable properties the
+finished app must report. It was re-run on 12 August 2026.
 
-\begin{warnbox}{This number is old and must be re-run}
-Dozens of fixes have landed since that run, and apps written after it
-(a tip calculator, a JSON formatter, a Markdown table tool, a Pomodoro
-timer) do pass. But \textbf{we have not re-measured}, so there is no
-current number. If someone asks ``what is your success rate'', the correct
-answer is: ``the last honest measurement was before a lot of fixes and it
-was bad; re-running it is on the list, and I will not quote a number I
-have not measured.''
+\begin{center}
+\begin{tabular}{lrr}
+\toprule
+& \textbf{5 Aug 2026} & \textbf{12 Aug 2026} \\
+\midrule
+Authored apps passing & 0 of 5 & \textbf{10 of 38 (26\%)} \\
+Including trivial refusals & 4 of 9 (44\%) & 14 of 42 (33\%) \\
+Observable properties held & --- & 62 of 105 (59\%) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Quote 26\%.} The four ``refuse'' requests are correct fast
+rejections that write no code, and counting them is how the older 44\%
+was mostly freebies.
+
+\begin{plainbox}{The finding that matters more than the number}
+\textbf{Ten of the twenty-eight failures turned on a key name.} A base64
+encoder printed real base64, verified a round trip, tested known vectors
+and rejected bad input --- and failed because it wrote
+\texttt{round\_trip} where the corpus wanted \texttt{roundtrip}. One
+underscore. A table app measured five column widths in pixels and lost on
+\texttt{columns} versus \texttt{cols}.
+
+Replaying the archived outputs against the repaired harness takes them
+from 4 passes to 15. So roughly two thirds of the failures were the
+measure disagreeing with the app about a word, not the app failing to
+work. That is a repaired measure, not a new score --- only a full re-run
+produces a new number.
+\end{plainbox}
+
+\begin{warnbox}{What not to claim from this}
+26\% is a single-shot measurement. The same request has been observed
+taking 378 seconds and passing, then over 900 seconds and timing out ---
+at least 2.4$\times$ run-to-run variance, which nobody has yet quantified
+properly. Say ``roughly a quarter, on one attempt per request, on a
+process with large run-to-run variance'', not ``26\%'' as though it were
+stable to two figures.
 \end{warnbox}
-
-That is uncomfortable, and it is deliberately in this document, because
-quoting a number you cannot defend is worse than admitting you have not
-measured it yet.
 
 % =====================================================================
 \chapter{How It Was Built}
@@ -1808,7 +1834,13 @@ G5 is the only one that cannot be engineered around.
 \section{The engineering queue}
 
 \begin{enumerate}[leftmargin=*]
-  \item Re-run the authoring benchmark and publish the number.
+  \item Re-run the benchmark again, now that the harness is repaired and
+    five teaching gaps are closed. The 12 August run found those gaps; it
+    could not test the fixes, because changing the measure mid-run would
+    have invalidated it.
+  \item Measure the run-to-run spread. The same request has taken 378
+    seconds and over 900. Until that is quantified, no single-shot pass
+    rate deserves two significant figures.
   \item Finish smartphone responsiveness; port GPU rendering to Android.
   \item Windows code-signing certificate.
   \item Audit the 21 MB runtime.
@@ -2119,9 +2151,18 @@ demand only exists because AI can now write apps for non-programmers. Both
 halves are about two years old.
 
 \textbf{``Your own benchmark said 0 out of 5.''}\\
-It did, on 5 August 2026, under a deliberately strict test. That number is
-in this document rather than hidden, and it drove the fixes that came
-after. It has not been re-run, so we do not quote a better one.
+It did, on 5 August 2026, under a deliberately strict test. It was re-run
+on 12 August on a corpus four times larger and scored \textbf{10 of 38}
+authored apps. On the five requests both runs attempted under the same
+bar, 0 of 5 became 2 of 5.
+
+The more useful part is what the failures were. Ten of twenty-eight
+turned on a key name --- an app that did the work and called something by
+a different word. A base64 encoder that verified its own round trip
+against known test vectors failed on one underscore. Both numbers, the
+raw score and that breakdown, are published with every app's actual
+output so anyone can check the classification rather than take our word
+for it.
 
 \textbf{``You are one person. What happens if you are hit by a bus?''}\\
 That is a real risk and the reason for the documentation discipline: the

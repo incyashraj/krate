@@ -72,8 +72,9 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-105 -- an assert cannot accept a synonym, so eight correct apps failed
-Status:   open
-Owner:    unclaimed
+Status:   fixed 2026-08-12 (commit 7f06969) -- alternatives ship, corpus
+          updated, eleven archived apps recover on replay
+Owner:    lead
 Severity: serious
 Class:    our-code
 Found:    2026-08-12, at request 28 of the re-run, once the pattern was
@@ -139,8 +140,9 @@ Update:   2026-08-12, req 34 adds a second shape. A table app measured the
           Ten of twenty failures now turn on a key name.
 
 ### K-104 -- the benchmark's authoring budget is too small for its own corpus
-Status:   open
-Owner:    unclaimed
+Status:   fixed 2026-08-12 (commit b1cdeff) -- a timeout and a dropped
+          connection are now `skipped`, not `fail`; per-tier budget still open
+Owner:    lead
 Severity: serious
 Class:    our-code
 Found:    2026-08-12, request 14 of the re-run (a note-taking app).
