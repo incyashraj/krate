@@ -49,3 +49,34 @@ exactly the lack of this.
 Three requests, all easy tier, all passes. This is a signal that the teaching
 is being applied, not evidence that the pass rate has moved. The number is
 the number, and it is not in yet.
+
+## req 5 -- click counter (pass 1/1), and which fix is doing the work
+
+    count:6 clicks:6 pressed:7 decremented:1 saved:yes
+
+In run 2 this printed `clicks:60 frames:61 counts:yes` and failed `count>=1`.
+It now prints **both** `count` and `clicks`, drives the button seven times,
+and even decrements once.
+
+Two fixes could explain the pass -- the teaching (prefer the ordinary word,
+print both when ambiguous) and the harness (`count|clicks>=1`). It matters
+which, because one is the product improving and the other is the measure
+being more forgiving.
+
+Tested rather than assumed. `strict-check.sh` re-scores each recorded pass
+with the alternatives stripped out, so only the corpus's original key counts:
+
+    req 1  passes on the original key alone
+    req 2  passes on the original key alone
+    req 3  passes on the original key alone
+    req 4  passes on the original key alone
+    req 5  passes on the original key alone
+
+**All five passes hold without the alternatives operator.** So far the
+teaching is doing the work and the harness change has not been needed once.
+That is the more honest reading and the less flattering one for the fix I
+spent longest on.
+
+(First attempt at this check ran under zsh, where `read -a` is not supported,
+and reported the exact opposite for every request. The uniformity is what
+gave it away -- five different apps cannot all need the same thing.)
