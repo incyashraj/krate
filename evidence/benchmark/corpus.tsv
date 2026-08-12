@@ -90,7 +90,7 @@
 7	easy	a random password generator	password?;length>=8
 8	easy	a BMI calculator	height?;weight?;bmi>=1
 9	easy	a stopwatch with lap times	elapsed>=0;laps>=1
-10	easy	a text case converter: upper, lower, title case	upper~ABC;lower~abc;title?
+10	easy	a text case converter: upper, lower, title case	upper?;lower?;title?
 11	easy	a word and character counter for text I paste in	words>=1;chars>=1
 12	easy	a colour picker that shows me the hex code	hex~#;hex?
 

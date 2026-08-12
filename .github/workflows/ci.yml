@@ -236,19 +236,20 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target/
-          # K-071. The key used to be Cargo.lock alone, and `target/` is in the
-          # cache, so a `whisper-rs-sys` object file built under an older MSVC
-          # image was restored forever -- the lockfile never changes, so the
-          # cache never rotates. When the runner image updated, Rust started
-          # linking against a new UCRT while those cached C++ objects still
-          # expected the old one, and the link failed on twenty `__imp_*`
-          # symbols. The image was fine; the objects in the cache were stale.
+          # `target/` is in this cache and the key used to be Cargo.lock
+          # alone, so a `whisper-rs-sys` object built under an older MSVC
+          # image could be restored forever -- the lockfile never changes, so
+          # the cache never rotated. `whisper-rs-sys` is C++ compiled by
+          # CMake, so its output depends on the toolchain, not just on the
+          # lockfile. Including the image label rotates the cache when the
+          # image does. No `restore-keys`: falling back to an older key is
+          # how a stale object would come back.
           #
-          # `whisper-rs-sys` is C++ compiled by CMake, so its output depends on
-          # the toolchain, not just on the lockfile. Including the image label
-          # rotates the cache the moment the image does. `restore-keys` is
-          # deliberately absent: falling back to an older key is exactly how
-          # the stale objects came back.
+          # **This is hygiene, not the K-071 fix.** It was tried as the fix
+          # and it is not: a run with this key missed the cache, compiled
+          # whisper-rs-sys from source, and failed on the same 23 symbols.
+          # See the bug entry -- the real cause is that `libucrt.lib` is
+          # absent from the link line, and no cache key can add it.
           key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.os }}-cargo-libtest-${{ hashFiles('**/Cargo.lock') }}
       - name: Run the library tests
         run: cargo test --workspace --lib

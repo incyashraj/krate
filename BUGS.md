@@ -121,6 +121,18 @@ Evidence: Four of the first five failures are apps that **work**, failing on
           that assumes particular sample data.** Fixing it is a one-line
           corpus edit, and it must be made before the next run rather than
           after seeing this one's score.
+
+          Corpus corrected 2026-08-12: `upper~ABC;lower~abc;title?` becomes
+          `upper?;lower?;title?`. **This is weaker and that is worth saying
+          out loud** -- it now checks the three cases are reported, not that
+          they differ. The obvious stronger assert, `upper!=lower`, does not
+          work: `!=` compares a key's value against a *literal string*, so
+          it would ask whether `upper` is the text "lower", which is true of
+          almost anything. There is no key-to-key comparison in the five
+          operators.
+          That is the real limitation, and it argues for a sixth operator
+          rather than for a cleverer assert. Left unfiled as its own entry
+          because it is the same fix as this one.
 Impact:   **The headline number understates the product.** A benchmark that
           fails a correct BMI calculator because it wrote `height_cm`
           instead of `height` is measuring vocabulary agreement, not
@@ -1233,10 +1245,49 @@ Fix:      Mitigated 2026-08-07: release and runtime-linking CI jobs pinned
           green on it. The real fix (whisper-rs/ggml against the new UCRT
           arrangement, or an upstream bump) is still open before the pin can
           come off -- windows-2022 will be retired eventually.
-Update:   2026-08-12. Still failing, now on the pinned windows-2022 image
-          too, with the same class of symbol (`__imp_fgetc`, `__imp_fputs`,
-          `__imp_fgetpos` -- stdio rather than math this time). CI run
-          31528953170: **10 of 11 jobs green, this is the only red one.**
+Update:   2026-08-12. **Two wrong fixes, then the actual cause. Both wrong
+          attempts are recorded because each one looked right and each one
+          cost a CI cycle to disprove.**
+
+          Attempt 1 -- "CMake builds whisper against the dynamic CRT while
+          Rust links static". Wrong: the cmake crate already passes `-MT`,
+          the static runtime, so the two sides agreed all along. The
+          toolchain file also broke the build in a new way, because a bash
+          `$(pwd)` path means nothing to native CMake ("Could not find
+          toolchain file: /d/a/krate/..."). Reverted.
+
+          Attempt 2 -- "the cache restores whisper objects built under the
+          old image". The failing runs really do invoke cmake zero times, so
+          this was plausible. Rotating the cache key on the image label
+          worked as designed -- "Cache not found for input keys" -- and
+          whisper-rs-sys then **compiled from source and failed on the same
+          23 symbols**. So the cache was never the cause. The key change is
+          kept as hygiene, relabelled, because it is what produced the clean
+          rebuild that disproved it.
+
+          What the link line actually shows (run 31562047659):
+
+            /defaultlib:libcmt          <- Rust asks for the static CRT
+            legacy_stdio_definitions.lib
+            (no libucrt.lib anywhere)
+
+          `libcmt` does not itself carry the UCRT stdio and math functions;
+          those live in `libucrt.lib`, and nothing puts it on the line. That
+          is why every unresolved symbol is a UCRT one -- `__imp_fgetc`,
+          `__imp_fmaxf`, `__imp__aligned_malloc` -- and why no cache key or
+          CMake flag can help: the library simply is not being linked.
+
+          The fix therefore belongs in the link arguments, not the workflow:
+          `-C link-arg=/defaultlib:libucrt.lib` for the Windows targets in
+          `.cargo/config.toml`, beside the `+crt-static` that is already
+          there. **Not attempted yet** -- three speculative fixes in a row on
+          a platform I cannot test locally is worse than a red job with an
+          accurate diagnosis, and the next attempt should be made by someone
+          who can reproduce it on Windows.
+
+          Context that has not changed: CI run 31528953170 was **10 of 11
+          jobs green, this the only red one**, and releases ship regardless
+          because the release workflow builds Windows with `no-speech`.
 
           Why releases keep shipping anyway, which was not written down and
           should have been: the release workflow builds Windows with
