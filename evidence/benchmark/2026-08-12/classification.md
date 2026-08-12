@@ -402,3 +402,35 @@ It is a fifth distinct class, after: unguessable names, synonyms,
 self-exercise, print-the-thing-not-facts-about-it, and one plain product
 failure. The alternatives operator in K-105 does not fix this one; only a
 corpus edit does.
+
+## req 30, and the first hard-tier result answers the prediction
+
+  req 30 base64          wanted encoded? decoded? roundtrip!=no
+                         printed  mode:decode input_chars:40
+                                  output_chars:29
+                                  encoded:S3JhdGUgcnVucyBhcHBzIGluIGEgc2FuZGJveC4=
+                                  round_trip:yes known_vectors:yes
+                                  rejects_bad_input:yes drawn:yes
+                         -- real base64 output, a verified round trip,
+                            known test vectors, and bad-input rejection.
+                            Failed on `round_trip` vs `roundtrip` -- one
+                            underscore -- and on having no `decoded` key.
+
+  req 31 long list       wanted items>=200 scrolled>=1 visible>=1
+                         PASS  items:200 visible:8 scrolled:11896
+                               at_end:true selected:164
+
+**Request 31 tests the prediction recorded at req 24, and disconfirms its
+pessimistic half.** I said the hard tier might show that `quick` cannot
+demonstrate behaviour which only exists over time -- scrolling, ticking,
+bouncing -- and that this would be a real capability finding no naming fix
+touches.
+
+It scrolled 11,896 pixels, tracked 8 visible rows of 200, reached the end,
+and selected row 164. So the runtime and the `quick` contract CAN express
+dynamic behaviour, and an app can prove it. One data point, and the snake
+game and bouncing ball are the ones I flagged as most likely to fail; but on
+scrolling specifically, the pessimistic reading was wrong.
+
+That is worth as much as a failure would have been. It removes a suspected
+capability limit from the list rather than leaving it as a maybe.

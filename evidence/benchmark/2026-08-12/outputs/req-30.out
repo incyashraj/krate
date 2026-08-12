@@ -1,0 +1,8 @@
+mode:decode
+input_chars:40
+output_chars:29
+encoded:S3JhdGUgcnVucyBhcHBzIGluIGEgc2FuZGJveC4=
+round_trip:yes
+known_vectors:yes
+rejects_bad_input:yes
+drawn:yes
