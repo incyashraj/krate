@@ -225,6 +225,41 @@ Still open: the corpus needs a sweep for asserts that assume a name no
           request implies, and the harness needs a key-to-key operator. The
           run in flight keeps the old corpus -- changing the measure
           mid-run would invalidate it.
+Correction: 2026-08-12, at request 20. **The teaching fix above rests on a
+          premise that does not hold, and would not have saved most of the
+          failures it was written for.**
+
+          Request 20 ("a contact book I can search") exercised itself
+          properly -- `search:gra matches:1 added:1 selected:1
+          stored:sqlite` -- and failed one assert: it named the search term
+          `search` where the corpus wanted `query`. By the rule I had just
+          shipped ("use the request's own word") the app was **right** and
+          the corpus was wrong.
+
+          Swept the whole corpus for how often its keys can be inferred
+          from the request at all:
+
+            $ awk ... evidence/benchmark/corpus.tsv
+            corpus keys not present in their own request text: 79 of 105 (75%)
+
+          `bill` is not in "a tip calculator". `die1` is not in "a dice
+          roller that rolls two dice". `remaining` is not in "a countdown
+          timer". Three quarters of the corpus expects a name the app has
+          no way to guess, so **no amount of teaching can make an app match
+          it**, and the rule as written is not wrong so much as
+          unachievable.
+
+          What follows:
+          - The teaching half is worth keeping for the parts that ARE
+            derivable (units out of keys, bare numbers, print the generated
+            thing) but it must stop claiming it fixes the naming failures.
+          - The real fix is on the harness side: an assert should accept
+            alternatives (`count|clicks>=1`), or the corpus should publish
+            its expected key names as part of the request the app sees.
+          - **Do not expect the next run to improve much on naming.** I
+            predicted it would; that prediction was wrong before it was
+            tested, and the tier-gap note in the classification inherits the
+            same flaw.
 Impact:   **The headline number understates the product.** A benchmark that
           fails a correct BMI calculator because it wrote `height_cm`
           instead of `height` is measuring vocabulary agreement, not

@@ -131,3 +131,33 @@ So the tier gap is mostly the same reporting gap, concentrated where the
 corpus asks for it. That is a claim the next run can falsify: if the
 self-exercise fix is the cause, medium should close most of the distance to
 easy. If it does not, the difficulty reading was right after all.
+
+## The correction that matters most (found at req 20)
+
+  req 20 contact book    wanted contacts>=3 matches>=1 query?
+                         printed  contacts:9 seeded:8 search:gra matches:1
+                                  added:1 selected:1 stored:sqlite
+                         -- it searched, matched, added, selected, and used
+                            SQLite. It failed one assert: it called the
+                            search term `search`, the corpus wanted `query`.
+
+This one disproves the fix written for the others. The request is "a contact
+book I can search". The rule shipped earlier said "use the request's own
+word", so `search` was CORRECT by our own guidance and the corpus was the
+thing out of step.
+
+Swept the corpus to see how often its keys can be inferred from the request:
+
+  corpus keys not present in their own request text: 79 of 105 (75%)
+
+`bill` is not in "a tip calculator". `die1` is not in "a dice roller that
+rolls two dice". `remaining` is not in "a countdown timer". Three quarters
+of the expected names cannot be derived from what the app was asked for.
+
+So the earlier prediction -- that the naming fix would close the tier gap --
+was wrong before it was tested, and the tier-gap note above inherits the
+flaw. The teaching now says what an app can actually do: prefer the ordinary
+word, keep units and currency symbols out of numbers, and **when a name is
+ambiguous print both** (`query` and `search`), since extra lines cost
+nothing and a missing one is invisible. The rest belongs on the harness
+side: alternatives in an assert, or publishing the expected names.

@@ -18,3 +18,5 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 17	medium	a simple kanban board with three columns	fail	does	299	30623	2	3	moved>=1	2/3 observable properties held
 18	medium	a calculator with buttons for the four operations	fail	does	420	30147	1	3	result?,ops>=4	1/3 observable properties held
 19	medium	a settings panel with switches and a dropdown	fail	does	265	28133	1	3	toggled>=1,selected?	1/3 observable properties held
+20	medium	a contact book I can search	fail	does	494	33940	2	3	query?	2/3 observable properties held
+21	medium	a CSV viewer that shows a table	fail	does	383	32024	1	2	cols>=2	1/2 observable properties held

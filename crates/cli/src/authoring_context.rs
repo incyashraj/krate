@@ -581,23 +581,34 @@ and the total; a game prints the score and whether it is over:\n\n\
 Lower-case keys, no spaces around the colon, one pair per line, numbers as \
 bare digits. Seed enough state in the `quick` path that the numbers are \
 interesting -- a to-do list that prints `items:0` has proved nothing either.\n\n\
-**Name the key after the plain noun in the request, and print the number \
+**Name the key after the plain noun for the thing, and print the number \
 bare.** Whatever reads the output has to guess the name otherwise, and it \
-guesses the obvious one. Measured: six of seven benchmark failures were apps \
-that worked perfectly and were scored wrong because of a name --\n\n\
+guesses the ordinary one -- a tip calculator prints `bill` and `total`, a \
+dice roller prints `die1`, `die2` and `total`, a countdown prints \
+`remaining`. Reach for the word a person would use for that quantity, not \
+the one your variable happens to be called. Measured: six of seven benchmark \
+failures were apps that worked perfectly and were scored wrong because of a \
+name --\n\n\
 \u{20}\u{20}\u{20}\u{20}count:60          not  clicks:60\n\
 \u{20}\u{20}\u{20}\u{20}height:178        not  height_cm:178\n\
 \u{20}\u{20}\u{20}\u{20}marked:2          not  done-today:2\n\
 \u{20}\u{20}\u{20}\u{20}password:hT7x...  not  length:32 with no password\n\
 \u{20}\u{20}\u{20}\u{20}elapsed:140       not  elapsed:2:20.18\n\n\
-Three rules that follow. Use the request's own word: a click counter prints \
-`count`, a habit tracker prints `marked`, a BMI calculator prints `height` \
-and `weight`. Put units in the value or leave them out, never in the key -- \
-`height:178`, not `height_cm`. And print durations and amounts as bare \
-numbers; `elapsed:2:20.18` cannot be compared to anything, so print \
+Four rules that follow. Prefer the ordinary word for the quantity: a click \
+counter prints `count` rather than `clicks`, a habit tracker prints `marked` \
+rather than `done-today`. Put units in the value or leave them out, never in \
+the key -- `height:178`, not `height_cm`. Print durations and amounts as \
+bare numbers; `elapsed:2:20.18` cannot be compared to anything, so print \
 `elapsed:140` and add a formatted `elapsed_text` beside it if it helps a \
-person. If the app generates something -- a password, a colour, an id -- \
-print the thing itself, not only facts about it.\n";
+person, and never put a currency symbol in a number -- `total:289.93`, not \
+`total:$289.93`. If the app generates something -- a password, a colour, an \
+id -- print the thing itself, not only facts about it.\n\n\
+**When a name is genuinely ambiguous, print both.** Extra lines cost \
+nothing and no reader is confused by them, while a missing one is \
+invisible. A search box can print `query` and `search`; a list can print \
+`items` and `entries`. This is cheap insurance against the one thing you \
+cannot know from the request -- what the reader on the other side decided \
+to call it.\n";
 
 /// Section 4: the GUI world interfaces, extracted from the WIT. A GUI app calls
 /// these through its generated `bindings::krate::{ui,gfx,audio,speech}::*`, not
