@@ -114,6 +114,28 @@ Note:     Do not raise the budget mid-run and keep the earlier rows. Either
              remaining tiers at a higher budget and say which rows were
              measured under which. Changing the measure halfway and not
              saying so is how a number stops meaning anything.
+Correction: 2026-08-12, after the retry. Request 14 passed at the higher
+          budget **in 378 seconds, using 12 authoring steps** -- against 41
+          steps and a 902 s cutoff on the attempt before it. Same request,
+          same corpus, same binary.
+
+          So the original reading was wrong in an important way. A note-taking
+          app does **not** need more than 900 s; the first attempt wandered
+          down a long path and the second went almost straight there.
+          **Authoring time varies by more than 2x on the same request**, and
+          the budget is a ceiling on the variance, not on the work.
+
+          That changes what the fix is for. A per-tier budget is still worth
+          having, but the reason is to stop an unlucky run being recorded as
+          a product failure -- not because larger apps have a higher floor.
+          And it makes the case for the second half stronger, not weaker: a
+          timeout must be its own outcome, because it now clearly measures
+          luck as much as difficulty.
+
+          Worth measuring properly before tuning further: run one request
+          several times and record the spread. A benchmark whose per-request
+          time varies 2.4x is a benchmark whose single-shot pass rate carries
+          more noise than anyone has quantified.
 Also:     A restart clears `WORK_ROOT`, so the per-request `run.log` -- the
           actual stdout an app printed -- is lost for every row already
           recorded. The TSV keeps the assert tally and the missing keys,
