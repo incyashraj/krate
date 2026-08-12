@@ -394,7 +394,13 @@ for id in $targets; do
       skip_reason="the AI connection dropped mid-response: no finished app to judge"
       break
     fi
-    if grep -qE 'timed out after|KRATE_AUTHOR_TIMEOUT_SECS|Raise the budget' "$f" 2>/dev/null; then
+    # Match the sentence the CLI prints on a real timeout, and nothing else.
+    # The first version of this also matched `KRATE_AUTHOR_TIMEOUT_SECS` and
+    # `Raise the budget`, which appear in the agent transcript's environment
+    # dump on EVERY run -- so request 5 of run 3 was skipped as a timeout
+    # after finishing successfully in 406 s. A skip rule that fires on a
+    # healthy run is worse than the failure mode it was written for.
+    if grep -qE 'did not finish within [0-9]+ minutes and was stopped' "$f" 2>/dev/null; then
       rate_limited=1
       skip_reason="authoring hit the ${timeout_secs}s budget while still working (K-104): raise TIMEOUT_SECS and re-run this id"
       break
