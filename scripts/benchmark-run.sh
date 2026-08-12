@@ -377,6 +377,27 @@ for id in $targets; do
   #          quota rejection (K-104).
   rate_limited=0
   skip_reason=""
+
+  # **If a .krate exists, authoring succeeded. Nothing below can override
+  # that.** Every skip reason here means "no finished app to judge", so an
+  # app on disk is a direct contradiction of all of them.
+  #
+  # This guard exists because the patterns are matched against text the app
+  # itself can influence, and twice they fired on healthy runs. Request 5 was
+  # skipped because the transcript's environment dump contains
+  # KRATE_AUTHOR_TIMEOUT_SECS. Request 22 was skipped because a JSON pretty
+  # printer's own sample data contained
+  # `"last_error":"connection reset by peer"` -- a completely reasonable
+  # string for a JSON demo to hold, and indistinguishable from a real network
+  # error to a grep.
+  #
+  # Scanning the transcript at all is the underlying mistake: it records
+  # everything the AI read and wrote, including the app's source. The
+  # patterns stay because they catch failures that leave no other trace, and
+  # this guard makes a false positive harmless.
+  if [ -f "$out" ]; then
+    rate_limited=0
+  else
   for f in "$log" "$dir/create.err" "${app_dir:+$app_dir/.agent-transcript.txt}"; do
     [ -n "$f" ] && [ -f "$f" ] || continue
     if grep -q '"status":"rejected"' "$f" 2>/dev/null; then
@@ -406,6 +427,7 @@ for id in $targets; do
       break
     fi
   done
+  fi
 
   if [ "$rate_limited" = "1" ]; then
     result="skipped"
