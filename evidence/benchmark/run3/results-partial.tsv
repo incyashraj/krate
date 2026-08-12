@@ -7,3 +7,4 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 6	easy	a dice roller that rolls two dice	pass	-	500	23168	5	5	-	-
 7	easy	a random password generator	pass	-	327	29289	2	2	-	-
 8	easy	a BMI calculator	pass	-	347	33314	3	3	-	-
+9	easy	a stopwatch with lap times	pass	-	491	29151	2	2	-	-

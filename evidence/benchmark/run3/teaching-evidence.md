@@ -140,3 +140,29 @@ Four flips so far: req 2, 5, 7, 8. No regressions.
 request 14. So this is suggestive, not a controlled comparison -- the honest
 version arrives when run 3 reaches request 14 and the same requests can be
 compared directly.
+
+## req 9 -- stopwatch (pass 2/2), the most literal rule application yet
+
+    run 2:  elapsed:2:20.18 elapsed_ms:140180 laps:4 fastest_lap:3
+            -- failed elapsed>=0, because "2:20.18" is not a number
+
+    run 3:  elapsed:580 elapsed_text:0:00.58 laps:10 lap_count:10
+            fastest:33 slowest:94 scrolled:276
+
+The pack says, verbatim: "print `elapsed:140` and add a formatted
+`elapsed_text` beside it". The app printed `elapsed:580` and
+`elapsed_text:0:00.58` -- the same two key names, including the `_text`
+suffix convention.
+
+**A note against my own case.** This is a very literal match, and `elapsed`
+is one of the few keys the pack names explicitly. So req 9 is weaker evidence
+than req 3, where the same pattern was applied to `remaining` -- a quantity
+the pack never mentions. Copying an example is not the same as understanding
+a rule, and only the second generalises to requests nobody anticipated.
+
+Both kinds are present in this run, which is the encouraging part. But if
+someone wanted to argue the improvement is memorisation of the pack's worked
+examples rather than better reporting in general, req 9 is the exhibit they
+would use, and req 3 is the answer to it.
+
+Five flips: req 2, 5, 7, 8, 9. Strict check nine of nine.
