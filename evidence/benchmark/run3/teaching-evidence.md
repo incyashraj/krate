@@ -243,3 +243,38 @@ by design.
 **That is the strictest reading available and the one to quote.** Not "12/13
 after I fixed the corpus", but "12/13 against the corpus exactly as it was
 when it scored 0/5 in August".
+
+## req 14, a preserver race, and a corrected baseline
+
+  req 14 note taking (pass 2/2)
+
+    run 2:  notes:3 characters:753 open:Groceries saved:yes
+    run 3:  notes:5 items:5 characters:825 added:1 removed:1
+            saved:yes selected:4 title:Grocery run
+            note:Grocery run Oats, olive oil, the small tin of tomatoes...
+            started:5 restored:5
+
+**Two process failures caught here, both mine.**
+
+First, the archived copy of req 14 was 0 bytes. The preserver used `cp -n`,
+which raced the app: it copied the file while the app was still writing, and
+`-n` then never overwrote the empty version. The contradiction that caught it
+is the same one as before -- 2 of 2 asserts held, which no silent app can do.
+The preserver now skips empty files and re-copies whenever the source has
+grown. Audited every other archived output: all intact.
+
+Second, `score-against-original-corpus.sh` was baselined at commit 7ef2c85,
+the corpus's first version. But req 14's assert changed from `saved==1` to
+`saved!=no` in commit ed20f59 -- **before this session, not by me**. So the
+script was scoring run 3 against asserts that were not the ones run 2 faced,
+and it reported req 14 as a failure that run 2's own corpus would have
+passed.
+
+Rebaselined to eea8dd3, the corpus exactly as it stood when run 2 scored
+10/38:
+
+    against run 2 corpus (pre-my-edits): 14 of 14 recorded requests pass
+
+That is the honest comparison, and it is stronger than the one I published an
+hour ago. The earlier "12 of 13" was correct about my own edits but wrong
+about the baseline.
