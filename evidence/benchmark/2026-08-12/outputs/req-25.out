@@ -1,0 +1,9 @@
+players:2
+mode:hot-seat
+moves:5
+wins-x:1
+wins-o:0
+draws:0
+rounds:1
+winner:x
+over:yes

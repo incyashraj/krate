@@ -310,3 +310,33 @@ moves, the split is 8/8.
 The safest reading: **roughly half the failures are ours to fix and half are
 the measure's.** The next run tests the first half, and only the corpus or
 an assert-alternatives operator touches the second.
+
+## The medium tier, complete: 1 pass in 14
+
+  req 26 memory game     wanted cards>=8 flipped>=2 matched>=0
+                         printed  cards:16 pairs:8 matched:2 moves:3 won:no
+                         -- 16 cards, 8 pairs, 2 matched in 3 moves. Failed
+                            only on `flipped`: it reports matches, never
+                            how many cards were turned over.
+
+Asked the question the other way round -- what single change would have made
+each medium failure pass?
+
+  rename one key                 13, 15, 20, 21, 23, 24
+  exercise the verb, report it   16, 17, 19, 26
+  print state, not just outcome  18, 25
+  print the output itself        22
+
+**Every one is a reporting change. Not one requires the app to do something
+it could not already do.** No medium failure needed a capability the runtime
+lacks, a feature the app got wrong, or logic that did not work.
+
+That is either the most important finding of this run or the clearest sign I
+have been reading it the way I wanted to. Both are worth stating, so here is
+the check anyone can run: the outputs are in `outputs/`, one file per
+request, and `show.sh <id>` prints the request, the asserts and the raw text
+side by side. If a reader disagrees with a line above, the evidence to
+argue with is right there.
+
+The hard tier is next, and the prediction recorded at req 24 stands
+unchanged.

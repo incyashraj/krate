@@ -1,0 +1,11 @@
+valid:yes
+lines:18
+lines_indent4:18
+lines_minified:1
+objects:2
+arrays:2
+values:10
+depth:2
+bad_json_rejected:yes
+output_bytes:191
+style:2 spaces
