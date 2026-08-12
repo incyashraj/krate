@@ -340,3 +340,34 @@ argue with is right there.
 
 The hard tier is next, and the prediction recorded at req 24 stands
 unchanged.
+
+## req 27 passes, and it partly disconfirms my own hypothesis
+
+  req 27 reading list    wanted books>=3 read>=1 unread>=1
+                         printed  books:6 read:3 unread:3 saved:yes
+                         -- PASS. And notice why: "books", "read" and
+                            "unread" are all literally in the request,
+                            "a reading list of books with a read/unread
+                            mark". The app had nothing to guess.
+
+That invites the obvious test: does key-guessability predict passing? Across
+all 27 recorded requests, measuring what fraction of each request's expected
+keys appear in its own text:
+
+  passing requests: 47% of keys appear in the request (n=8)
+  failing requests: 27% (n=19)
+
+Real, and much weaker than my reading implied. The counter-examples matter
+more than the averages:
+
+  req 6  PASSED with 0 of 5 keys in the request -- it guessed `die1`,
+         `die2` and `total` correctly, from convention alone
+  req 10 FAILED with 3 of 3 keys present (the corpus bug)
+  req 5  FAILED with 1 of 1 present
+
+So "the corpus names are unguessable" is a genuine factor and **not the
+whole story**. Apps sometimes guess conventional names right, and having the
+name in front of them does not guarantee they use it. My earlier framing --
+half ours, half the measure's -- survives, but the "measure's half" is
+softer than I made it sound: some of those apps could have chosen better
+words and did not.
