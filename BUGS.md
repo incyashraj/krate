@@ -114,6 +114,14 @@ Note:     Do not raise the budget mid-run and keep the earlier rows. Either
              remaining tiers at a higher budget and say which rows were
              measured under which. Changing the measure halfway and not
              saying so is how a number stops meaning anything.
+Also:     A restart clears `WORK_ROOT`, so the per-request `run.log` -- the
+          actual stdout an app printed -- is lost for every row already
+          recorded. The TSV keeps the assert tally and the missing keys,
+          which is enough to classify a failure, but not enough to quote
+          what the app said. That evidence is exactly what turned "six
+          failures" into "six working apps with the wrong key name" (K-103),
+          so it is worth keeping: copy `run.log` beside the results row, or
+          fold its contents into a column.
 
 ### K-103 -- the benchmark scores correct apps as failures over key names
 Status:   half fixed 2026-08-12 -- the teaching half shipped; the corpus and
