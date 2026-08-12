@@ -363,6 +363,18 @@ for id in $targets; do
   #          in the transcript (K-007). Four seconds is far too fast to have
   #          authored anything, and recording it as a failed app would have put
   #          this machine's broken login into the product's score.
+  #   network the API dropped the connection part-way through. The 2026-08-12
+  #          run lost thirteen consecutive requests to "API Error: Connection
+  #          closed mid-response" after 20-60 minutes each; they were recorded
+  #          as `fail`, and would have produced a badly wrong number if the
+  #          rows had not been deleted by hand.
+  #   budget  the agent ran out of its time budget while still working. Also
+  #          measured: request 14 was cut off at 902 s having completed 41
+  #          productive authoring steps, then passed in 378 s on a retry with
+  #          a larger budget. **The same request, twice, differing 2.4x.** A
+  #          timeout therefore measures luck as much as difficulty, and
+  #          scoring it as a bad app is the same category error as scoring a
+  #          quota rejection (K-104).
   rate_limited=0
   skip_reason=""
   for f in "$log" "$dir/create.err" "${app_dir:+$app_dir/.agent-transcript.txt}"; do
@@ -375,6 +387,16 @@ for id in $targets; do
     if grep -qE 'OAuth session expired|could not be refreshed|Failed to authenticate|requires a newer version' "$f" 2>/dev/null; then
       rate_limited=1
       skip_reason="agent account unusable (K-007): the AI never saw this request"
+      break
+    fi
+    if grep -qE 'Connection closed mid-response|API Error: Connection|connection reset by peer' "$f" 2>/dev/null; then
+      rate_limited=1
+      skip_reason="the AI connection dropped mid-response: no finished app to judge"
+      break
+    fi
+    if grep -qE 'timed out after|KRATE_AUTHOR_TIMEOUT_SECS|Raise the budget' "$f" 2>/dev/null; then
+      rate_limited=1
+      skip_reason="authoring hit the ${timeout_secs}s budget while still working (K-104): raise TIMEOUT_SECS and re-run this id"
       break
     fi
   done
