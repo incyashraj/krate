@@ -248,3 +248,34 @@ now a `show.sh` beside the results that prints the request, the asserts, and
 the raw output without any pipeline in between, and the three earlier
 requests read through the old command were re-checked against it. All three
 were reported correctly.
+
+## req 24, and a prediction recorded before the hard tier runs
+
+  req 24 bar chart       wanted bars>=3 max>=1
+                         printed  bars:6 total:95.75 largest:31.5
+                                  typing:9 drawn:yes
+                         -- six bars drawn from typed numbers. Failed on
+                            `largest` vs `max`, the abbreviation case
+                            flagged two requests earlier.
+
+**Prediction, written now so it can be judged rather than adjusted.** The
+eight hard-tier requests ask for something the medium ones mostly did not:
+proof of dynamic behaviour over time.
+
+  31 scrolled>=1   32 scrolled>=1   33 scrolled>=1  tail!=no
+  34 measured!=no  35 wrapped>=2    36 ticks>=1 alive?
+  37 strokes>=1 points>=2           38 bounces>=1
+
+If the failures here look like the medium ones -- a working app with a
+different key name -- then the reading in this file holds, and the corpus is
+most of the gap.
+
+If instead the apps cannot show scrolling, ticking, or bouncing at all, that
+is a genuine capability finding: it would mean `quick` cannot demonstrate
+behaviour that only exists over time, and no naming fix touches it. That
+would be the most useful thing this run produces, and it is the outcome I
+would bet on for 36 and 38 specifically.
+
+The four `refuse` requests should pass trivially -- they cost no authoring
+and passed 4/4 on 2026-08-05 -- so they will inflate the final rate. State
+the number with and without them.
