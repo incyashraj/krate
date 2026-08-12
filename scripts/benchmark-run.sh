@@ -180,18 +180,48 @@ fi
 # that a person writing a corpus row cannot express something the harness
 # silently mis-evaluates. Anything richer would need a parser, and a parser
 # nobody trusts is worse than a bar nobody can game.
+#
+# A key may name alternatives with `|`, and the assert holds if ANY of them
+# holds: `count|clicks>=1`, `cols|columns>=2`, `recorded|logged>=1`.
+#
+# This is not a loosening of the bar. An app that never reports a property
+# still fails; this only stops two names for the SAME reported property
+# counting as a miss. The 2026-08-12 run made the case: ten of twenty-eight
+# failures turned on a key name, and a base64 encoder that verified its own
+# round trip against known vectors failed on `round_trip` versus
+# `roundtrip` -- one underscore (K-105).
 check_assert() {
-  local assert="$1" out="$2" key op want value
+  local assert="$1" out="$2" keys op want key
 
   case "$assert" in
-    *'>='*) key="${assert%%>=*}"; op=">="; want="${assert##*>=}" ;;
-    *'<='*) key="${assert%%<=*}"; op="<="; want="${assert##*<=}" ;;
-    *'=='*) key="${assert%%==*}"; op="=="; want="${assert##*==}" ;;
-    *'!='*) key="${assert%%!=*}"; op="!="; want="${assert##*!=}" ;;
-    *'~'*)  key="${assert%%~*}";  op="~";  want="${assert##*~}" ;;
-    *'?'*)  key="${assert%\?}";   op="?";  want="" ;;
+    *'>='*) keys="${assert%%>=*}"; op=">="; want="${assert##*>=}" ;;
+    *'<='*) keys="${assert%%<=*}"; op="<="; want="${assert##*<=}" ;;
+    *'=='*) keys="${assert%%==*}"; op="=="; want="${assert##*==}" ;;
+    *'!='*) keys="${assert%%!=*}"; op="!="; want="${assert##*!=}" ;;
+    *'~'*)  keys="${assert%%~*}";  op="~";  want="${assert##*~}" ;;
+    *'?'*)  keys="${assert%\?}";   op="?";  want="" ;;
     *) return 1 ;;
   esac
+
+  # Try each alternative in turn; the first that holds wins. `!=` is the one
+  # operator where this needs care: it must hold for every name the app
+  # actually printed, not merely for one, or `roundtrip!=no` would pass on an
+  # app that printed `roundtrip:no` alongside some other spelling that is
+  # absent. So `!=` requires a present key AND the inequality.
+  local IFS='|'
+  for key in $keys; do
+    unset IFS
+    check_one_key "$key" "$op" "$want" "$out" && return 0
+    local IFS='|'
+  done
+  unset IFS
+  return 1
+}
+
+# One key, one operator. Split out of `check_assert` so the alternatives loop
+# above reads as a loop rather than as a rewrite of the operator table.
+check_one_key() {
+  local key="$1" op="$2" want="$3" out="$4" value
 
   # Last wins: an app that prints a key repeatedly as it exercises itself is
   # reporting its final state on the last line, which is the state we mean.
