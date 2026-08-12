@@ -402,3 +402,39 @@ and left one; here it fixed one of the two failing asserts on its own.
 I said teaching could not reliably reach -- an app has no way to know the
 reader wants the short form. It is also the class the alternatives operator
 exists for, and it is doing its job.
+
+## req 20 -- the first failure of run 3, and it exposes my own corpus work
+
+  req 20 contact book (FAIL 2/3)
+
+    run 2:  contacts:9 seeded:8 search:gra matches:1 added:1 selected:1
+            -- failed `query?`, because the app said `search`
+
+    run 3:  contacts:24 entries:24 query:ma search:ma matched:3
+            results:3 selected:Hedy Lamarr cleared:24 saved:yes
+            -- `query?` now HOLDS. It fails `matches>=1` instead.
+
+Against run 2's exact asserts:
+
+    contacts>=3  holds
+    query?       holds   <- the run-2 failure, FIXED by teaching
+    matches>=1   FAILS   <- a NEW failure, on a different key
+
+The app applied the print-both rule to `query`/`search` and not to
+`matches`, where it chose `matched` and `results`.
+
+**This is evidence against my corpus work, not for it.** I added alternatives
+only where run 2 failed. `matches` passed in run 2, so I never touched it --
+and a differently-phrased app broke it. My edits were fitted to one run's
+failures rather than to the space of reasonable phrasings.
+
+Twenty single-name asserts remain in the requests still to run -- `rows`,
+`input`, `output`, `headings`, `bars`, `board`, `turn`, `cards`, `books`,
+`panels`, `encoded`, `decoded`, `scrolled` and more. Any of them can break
+the same way.
+
+The honest reading: the alternatives operator is the right mechanism and my
+application of it was incomplete, because I derived the list from failures I
+had seen instead of from what an app might reasonably say. That is a
+fit-to-the-data mistake and it will keep costing passes until the corpus
+lists alternatives systematically.
