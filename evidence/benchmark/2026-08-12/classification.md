@@ -371,3 +371,34 @@ name in front of them does not guarantee they use it. My earlier framing --
 half ours, half the measure's -- survives, but the "measure's half" is
 softer than I made it sound: some of those apps could have chosen better
 words and did not.
+
+## req 28 and 29: one synonym, one genuinely new kind
+
+  req 28 mood tracker    wanted days>=7 recorded>=1
+                         printed  days:31 logged:12 average:3.5
+                                  selected:12 selectedmood:Good saved:yes
+                         -- 31 days, 12 entries, average 3.5. `logged` for
+                            `recorded`. Pure synonym; see K-105.
+
+  req 29 dashboard       wanted panels==3 values>=3
+                         printed  panels:3 completion:72 events:1483
+                                  session_seconds:2 signal:89
+                         -- exactly three panels and four real numbers,
+                            each under its own meaningful name.
+
+Request 29 does NOT fit the synonym bucket and should not be forced into
+it. There is no synonym relationship between `completion` and `values`: the
+corpus asked for a key holding a COUNT of values, and the app printed the
+values themselves. Arguably the app's output is more useful than what was
+asked for, and the assert still cannot read it.
+
+Call this what it is -- a summary-vs-detail mismatch. An assert that wants
+`values>=3` can only be satisfied by an app that thinks to publish a tally
+of how many numbers it is showing, which is an odd thing for an app to do
+and impossible to infer from "a dashboard with three panels showing
+different numbers".
+
+It is a fifth distinct class, after: unguessable names, synonyms,
+self-exercise, print-the-thing-not-facts-about-it, and one plain product
+failure. The alternatives operator in K-105 does not fix this one; only a
+corpus edit does.

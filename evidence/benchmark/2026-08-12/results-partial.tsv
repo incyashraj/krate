@@ -27,3 +27,4 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 26	medium	a memory matching card game	fail	does	504	31708	2	3	flipped>=2	2/3 observable properties held
 27	medium	a reading list of books with a read/unread mark	pass	-	238	28762	3	3	-	-
 28	medium	a mood tracker with a face for each day	fail	does	246	27446	1	2	recorded>=1	1/2 observable properties held
+29	medium	a dashboard with three panels showing different numbers	fail	does	232	28181	1	2	values>=3	1/2 observable properties held
