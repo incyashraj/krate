@@ -72,7 +72,7 @@ request, the asserts and the app's text side by side.
 | summary vs detail (asked for a tally, got the values) | 1 | the measure's |
 | inverse (`over:yes` for `alive?`) | 1 | the measure's |
 | corpus bug (`upper~ABC` needs literal "ABC") | 1 | the measure's, fixed |
-| plain product failure (printed nothing at all) | 1 | ours, open |
+| under-reported: printed a count, never the second property | 1 | ours |
 | remainder, mixed/multiple causes | 6 | -- |
 
 **Almost none of these apps were broken.** A base64 encoder printed real
@@ -84,6 +84,20 @@ for not printing keys called `result` and `ops`.
 
 **Ten of twenty-eight failures turn on a key name.** That is the single
 clearest finding of this run, and it is filed as K-105.
+
+\newpage
+**Correction, made during run 3.** This document first recorded request 2 as
+a plain product failure that "printed nothing at all". That was wrong. The
+output preserver did not start until request 14, so requests 1-13 have no
+archived stdout, and an absent file was read as an empty one. The TSV shows
+request 2 held 1 of 2 asserts -- `items>=3` passed -- which is impossible for
+an app that printed nothing. It printed an item count and never reported
+anything checked.
+
+**So this run contained zero plain product failures.** Every one of the 28
+was a reporting gap or a measurement problem. That reads as better news for
+the product than the original text, which is exactly why it is flagged rather
+than quietly amended.
 
 ## What was fixed while the run was in flight
 

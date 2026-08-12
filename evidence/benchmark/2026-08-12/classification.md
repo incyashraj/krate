@@ -6,7 +6,22 @@ actually printed.
 
 ## Genuine failures
 
-  req 2  to-do list      printed NOTHING. No stdout call anywhere.
+  req 2  to-do list      wanted items>=3 checked>=1, held 1 of 2 --
+                         `items>=3` PASSED, so it printed an items count
+                         and simply never reported anything checked.
+
+                         CORRECTION (2026-08-12, during run 3): this entry
+                         first said "printed NOTHING. No stdout call
+                         anywhere." That was wrong, and the error was mine:
+                         the output preserver did not start until request
+                         14, so requests 1-13 have no archived stdout, and I
+                         read an absent file as an empty one. The TSV proves
+                         otherwise -- an app that printed nothing cannot
+                         hold `items>=3`.
+
+                         So this run had ZERO plain product failures, not
+                         one. Every failure was a reporting or measurement
+                         problem.
 
 ## Working apps scored as failures (K-103)
 
