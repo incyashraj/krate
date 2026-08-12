@@ -279,3 +279,34 @@ would bet on for 36 and 38 specifically.
 The four `refuse` requests should pass trivially -- they cost no authoring
 and passed 4/4 on 2026-08-05 -- so they will inflate the final rate. State
 the number with and without them.
+
+## req 25, and the split that matters for planning
+
+  req 25 tic tac toe     wanted moves>=3 board? turn?
+                         printed  players:2 mode:hot-seat moves:5
+                                  wins-x:1 wins-o:0 draws:0 rounds:1
+                                  winner:x over:yes
+                         -- a complete game: five moves, X wins, hot-seat,
+                            round tracking. It reported OUTCOMES and never
+                            the state a player looks at.
+
+`board` and `turn` are not in the request text, but they are the ordinary
+words for tic-tac-toe state -- which is what the shipped rule says to
+prefer. So this one the fix would catch.
+
+At 25 requests the failures split three ways:
+
+  Addressable by the guidance shipped today   7   (7,16,17,18,19,22,25)
+  Not addressable -- corpus name unguessable  9   (5,8,9,10,13,15,20,21,23,24)
+  Plain product failure                       1   (2, printed nothing)
+
+**Where this classification is soft.** The line between "ordinary word the
+app should have chosen" and "unguessable corpus name" is a judgement I am
+making, and I am the one whose fix is being judged. `board`/`turn` I put in
+the first group; `max` vs `largest` I put in the second, and someone could
+argue `max` is the ordinary word for a bar chart's tallest bar. If that one
+moves, the split is 8/8.
+
+The safest reading: **roughly half the failures are ours to fix and half are
+the measure's.** The next run tests the first half, and only the corpus or
+an assert-alternatives operator touches the second.
