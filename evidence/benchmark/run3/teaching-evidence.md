@@ -438,3 +438,32 @@ application of it was incomplete, because I derived the list from failures I
 had seen instead of from what an app might reasonably say. That is a
 fit-to-the-data mistake and it will keep costing passes until the corpus
 lists alternatives systematically.
+
+## req 21, and what the three divergences have in common
+
+  req 21 CSV viewer (pass 2/2)
+
+    run 3:  rows:240 columns:8 header:8 scrolled:900 selected:32 parsed:2
+            -- 240 rows parsed and 900 pixels scrolled, but still `columns`
+
+Three passes so far have needed the alternatives operator:
+
+    req 15  expenses  for  entries    the app used the DOMAIN word
+    req 18  operations for ops        the app wrote the word out in FULL
+    req 21  columns   for  cols       the app wrote the word out in FULL
+
+**Two of the three are the same shape, and the app is arguably right.**
+`columns` and `operations` are more readable than `cols` and `ops`. An app
+has no way to guess that a reader prefers the abbreviation, and writing the
+word out is the better default for a human reading the output.
+
+The pack says nothing about abbreviations, and **it should not start**. The
+right conclusion is that the corpus is at fault: `cols>=2` and `ops>=4` are
+asking for a shorthand no request implies. Teaching apps to guess a reader's
+preferred abbreviation would be fitting the product to the measure, which is
+the exact failure this whole exercise has been trying to avoid.
+
+So of the three, one (`expenses`) is a genuine synonym the operator exists
+for, and two are corpus rows that should simply be spelled out.
+
+Standing: raw 20/21, against run 2's corpus 17/21.
