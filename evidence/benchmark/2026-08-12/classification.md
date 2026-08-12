@@ -73,3 +73,34 @@ The teaching fix for this shipped mid-run (K-103) but the run in flight was
 already past those requests, so it cannot show here. That is the point of
 recording it: the next run tests the fix, this one measures what the fix was
 for.
+
+## Two more of the self-exercise kind (req 17, 18)
+
+  req 17 kanban board    wanted columns==3 cards>=3 moved>=1
+                         printed  cards:6 todo:2 doing:2 done:2
+                                  columns:3 saved:yes
+                         -- a correct three-column board with six cards.
+                            Missing only `moved`: it never demonstrates
+                            moving a card between columns.
+
+  req 18 calculator      wanted display? result? ops>=4
+                         printed  display:8 evaluated:2 add:14 subtract:4
+                                  multiply:45 divide:2.25 divzero:reported
+                         -- it demonstrably performs all four operations
+                            AND handles divide-by-zero. It failed for not
+                            printing literal keys named `result` and `ops`.
+                            This app proved MORE than was asked and still
+                            scored zero on the request.
+
+## A second measure, less binary than pass/fail
+
+At 18 requests recorded:
+
+  asserts held, all requests:   32 of 48   (67%)
+  asserts held, failures only:  11 of 27   (41%)
+  failures missing exactly one key: 6 of 11
+
+The pass rate is the headline and should stay the headline -- an app that
+misses one assert did not do what was asked. But "67% of observable
+properties held" says something the binary number hides: these are mostly
+near misses on reporting, not apps that do nothing.
