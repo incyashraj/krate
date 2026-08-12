@@ -16,3 +16,4 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 15	medium	an expense tracker with a running total	pass	-	468	34881	2	2	-	-
 16	medium	a shopping list I can add and remove items from	pass	-	389	28531	3	3	-	-
 17	medium	a simple kanban board with three columns	pass	-	719	31409	3	3	-	-
+18	medium	a calculator with buttons for the four operations	pass	-	638	29143	3	3	-	-

@@ -375,3 +375,30 @@ is what will expose it.
 If that second number stays close to the raw one through requests 20-28, the
 apps really did learn to name things better. If it diverges sharply, the
 harness is doing the work and I should say so.
+
+## req 18 -- calculator, and the split gets finer
+
+    run 2:  display:8 evaluated:2 add:14 subtract:4 multiply:45
+            divide:2.25 divzero:reported
+            -- proved all four operations AND divide-by-zero, and failed
+               `result?` and `ops>=4` on the key names
+
+    run 3:  sum:42 difference:25 product:96 quotient:11.25 decimal:10
+            result:42 display:42 operations:4 buttons:19
+            calculations:6 divide_by_zero:refused
+
+Against run 2's exact asserts:
+
+    display?   holds
+    result?    holds     <- TEACHING: the app learned the ordinary word
+    ops>=4     FAILS     <- it says `operations`; needed the alternative
+
+Second divergence, and finer than req 15's. There the app fixed two problems
+and left one; here it fixed one of the two failing asserts on its own.
+
+    against run 2 corpus: 16 of 18
+
+`ops` is an abbreviation of a word the app did use. That is exactly the class
+I said teaching could not reliably reach -- an app has no way to know the
+reader wants the short form. It is also the class the alternatives operator
+exists for, and it is doing its job.
