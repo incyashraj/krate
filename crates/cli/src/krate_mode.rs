@@ -115,10 +115,34 @@ std -- `String`, `Vec`, `HashMap`, iterators -- is fine and does not leak.
 
 **Handle the argument `quick`.** Before any other argument parsing, check for the
 bare word `quick` (not `--quick`, not a flag). On `quick`, do the app's real work
-once against a small built-in sample, print something, and exit 0 -- never wait
-for input, never sit on an open window. The verification run passes exactly this
-argument, and an app that parses arguments strictly and rejects it fails after
-building perfectly.
+once against a small built-in sample, print what the app is holding, and exit 0
+-- never wait for input, never sit on an open window. The verification run passes
+exactly this argument, and an app that parses arguments strictly and rejects it
+fails after building perfectly.
+
+**Print one `key:value` per line, and make the keys mean something.** This is the
+only way anything outside the app can tell whether it did what was asked --
+`check-app` reads it, CI reads it, and the benchmark reads it. Printing just
+`ok` is not enough: such an app builds, runs, paints a frame, and proves
+nothing about whether it works.
+
+Print the state a person would look at to judge the app. A to-do list prints how
+many items it holds and how many are done; a tip calculator prints the tip and
+the total; a game prints the score and whether it is over:
+
+    items:5
+    done:2
+    saved:yes
+
+Lower-case keys, no spaces around the colon, one pair per line, numbers as bare
+digits. Seed enough state in the `quick` path that the numbers are interesting --
+a to-do list that prints `items:0` has proved nothing either.
+
+This is not a style note. Five apps were measured on 2026-08-05 and every one of
+them worked and could not prove it: a tip calculator computed the right answer
+and printed `bill:60 tip%:18 people:2 total_cents:7080` -- three keys on one
+line, with invented names -- and a dice roller printed nothing at all. All five
+scored zero.
 
 ";
 
@@ -439,6 +463,42 @@ data wastes the person's build and is worse than a straight answer.
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Both authoring paths must teach the same `quick` contract.
+    ///
+    /// They did not, and it cost a benchmark run. The authoring pack that
+    /// `krate create` uses was fixed to demand one `key:value` per line; this
+    /// prompt -- what a person pastes into a chat model -- still said only
+    /// "print something", which is the exact contract under which five apps
+    /// scored zero on 2026-08-05 (K-102). Same product, two answers.
+    ///
+    /// The assertion is on the substance rather than the phrasing: the prompt
+    /// has to name the format, and must not tell anyone that printing
+    /// anything at all is enough.
+    #[test]
+    fn the_quick_contract_matches_what_the_authoring_pack_teaches() {
+        let prompt = generate();
+        assert!(
+            prompt.contains("key:value"),
+            "the prompt must name the key:value format, not just say to print"
+        );
+        assert!(
+            prompt.contains("items:5"),
+            "the prompt must show a worked example of the output"
+        );
+        assert!(
+            !prompt.contains("print something, and exit 0"),
+            "this is the 2026-08-05 wording that scored 0/5 -- see K-102"
+        );
+
+        // And the pack the `create` path uses must still agree, so a future
+        // edit to either one cannot silently split them again.
+        let pack = crate::authoring_context::generate(std::path::Path::new("."));
+        assert!(
+            pack.contains("key:value"),
+            "the authoring pack must teach the same contract"
+        );
+    }
 
     /// The prompt must carry every part a model needs: the framing, the output
     /// contract, both Cargo templates, the generated API, and the examples.

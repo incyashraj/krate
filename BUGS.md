@@ -72,8 +72,8 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-102 -- krate-mode still says "print something", the exact contract that scored 0/5
-Status:   open
-Owner:    unclaimed
+Status:   fixed 2026-08-12
+Owner:    lead
 Severity: serious
 Class:    teaching-hole
 Found:    2026-08-12, reading the old benchmark results before re-running it.
@@ -103,9 +103,22 @@ Evidence: The 2026-08-05 benchmark scored 0 of 5 on authored apps, and every
           So the two authoring paths teach different contracts. Anyone who
           pastes Krate Mode into a chat model gets the 2026-08-05 behaviour
           that scored zero.
-Fix:      Carry the authoring pack's wording into `krate_mode.rs`, then
-          regenerate `docs/krate-mode.md`. Both paths must state the same
-          contract, and a test should pin that they agree on it.
+Fix:      The prompt now carries the same contract as the pack: one
+          `key:value` per line, a worked example, the formatting rules, and
+          the 2026-08-05 evidence for why it matters (a tip calculator that
+          computed the right answer and still scored zero).
+
+          `the_quick_contract_matches_what_the_authoring_pack_teaches` pins
+          it, and asserts on substance rather than phrasing: the prompt must
+          name the format, must show an example, and **must not contain the
+          string "print something, and exit 0"**. It also checks the pack
+          still agrees, so a future edit to either one cannot split them
+          again silently.
+Note:     The first attempt did not compile -- quoting the old wording inside
+          the prompt's Rust string literal ended the literal early. Same
+          class of mistake as the earlier one where a friend's quoted words
+          broke the pack: prose that talks about prose needs its quotes
+          checked.
 Note:     Found while re-running the benchmark, and it predicts the shape of
           the result: `create` uses the fixed pack, so the number should be
           better than 0/5 -- but that improvement would not reach anyone

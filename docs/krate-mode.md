@@ -51,10 +51,34 @@ std -- `String`, `Vec`, `HashMap`, iterators -- is fine and does not leak.
 
 **Handle the argument `quick`.** Before any other argument parsing, check for the
 bare word `quick` (not `--quick`, not a flag). On `quick`, do the app's real work
-once against a small built-in sample, print something, and exit 0 -- never wait
-for input, never sit on an open window. The verification run passes exactly this
-argument, and an app that parses arguments strictly and rejects it fails after
-building perfectly.
+once against a small built-in sample, print what the app is holding, and exit 0
+-- never wait for input, never sit on an open window. The verification run passes
+exactly this argument, and an app that parses arguments strictly and rejects it
+fails after building perfectly.
+
+**Print one `key:value` per line, and make the keys mean something.** This is the
+only way anything outside the app can tell whether it did what was asked --
+`check-app` reads it, CI reads it, and the benchmark reads it. Printing just
+`ok` is not enough: such an app builds, runs, paints a frame, and proves
+nothing about whether it works.
+
+Print the state a person would look at to judge the app. A to-do list prints how
+many items it holds and how many are done; a tip calculator prints the tip and
+the total; a game prints the score and whether it is over:
+
+    items:5
+    done:2
+    saved:yes
+
+Lower-case keys, no spaces around the colon, one pair per line, numbers as bare
+digits. Seed enough state in the `quick` path that the numbers are interesting --
+a to-do list that prints `items:0` has proved nothing either.
+
+This is not a style note. Five apps were measured on 2026-08-05 and every one of
+them worked and could not prove it: a tip calculator computed the right answer
+and printed `bill:60 tip%:18 people:2 total_cents:7080` -- three keys on one
+line, with invented names -- and a dice roller printed nothing at all. All five
+scored zero.
 
 ---
 
