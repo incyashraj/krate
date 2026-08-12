@@ -548,3 +548,35 @@ by req 31, ticking by req 36 -- and only the bouncing ball is left. Two
 suspected capability limits have been removed from the list rather than left
 as maybes, which is the most valuable thing a prediction can do when it
 fails.
+
+## req 37 passes, and the tiers are not what the pass rates suggest
+
+  req 37 drawing pad     wanted strokes>=1 points>=2
+                         PASS  strokes:3 points:120 color:0 brush:7
+                         -- simulated three mouse strokes over 120 points
+                            and reported both. Exactly the self-exercise
+                            shape the failures lacked.
+
+With 37 recorded, the pass rates by tier read:
+
+  easy    6/12   medium  2/18   hard  2/7
+
+Hard is outscoring medium, which is the opposite of what the tier names
+imply, and it would be easy to write something clever about that. The
+assert-level view is duller and more honest:
+
+  easy    24/32 asserts (75%)
+  medium  24/47 asserts (51%)
+  hard     9/19 asserts (47%)
+
+That is a real gradient in the direction the tiers claim, and far gentler
+than 50%/11%/29% implies. Asserts per request are near-identical across
+tiers (2.7 / 2.6 / 2.8), so the difference is not that harder requests are
+asked more questions.
+
+What the pass rate is doing is amplifying: an all-or-nothing bar over ~2.7
+asserts turns a 51% assert rate into an 11% pass rate. Both numbers are
+true. The pass rate is the one that matters to a person -- an app that
+misses one property did not do what was asked -- but anyone reading 11% as
+"medium apps barely work" would be wrong, and the assert rate is the number
+that says so.
