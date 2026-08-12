@@ -4,3 +4,5 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 3	easy	a countdown timer for a 25 minute work session	pass	-	332	27208	3	3	-	-
 4	easy	a temperature converter between celsius and fahrenheit	pass	-	256	26530	3	3	-	-
 5	easy	a click counter that goes up when I press the button	pass	-	282	18797	1	1	-	-
+6	easy	a dice roller that rolls two dice	pass	-	500	23168	5	5	-	-
+7	easy	a random password generator	pass	-	327	29289	2	2	-	-

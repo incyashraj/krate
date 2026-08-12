@@ -80,3 +80,35 @@ spent longest on.
 (First attempt at this check ran under zsh, where `read -a` is not supported,
 and reported the exact opposite for every request. The uniformity is what
 gave it away -- five different apps cannot all need the same thing.)
+
+## req 6 and 7 -- the clearest before-and-after pair so far
+
+### req 6 -- dice roller (pass 5/5)
+
+    die1:6 die2:6 total:12 rolls:40 doubles:9 double:yes
+
+Worth noting because `die1`/`die2` are pure convention -- they appear nowhere
+in "a dice roller that rolls two dice", and the corpus gives them no
+alternatives. So nothing lenient was available here; the app simply guessed
+the conventional names and rolled forty times.
+
+### req 7 -- password generator (pass 2/2)
+
+    run 2:  length:32 chars:32 generated:3 history:2 bits:191
+            sets:3 copied:yes distinct:21
+            -- eight facts about a password, and no password
+
+    run 3:  password:lwRU+$i}ogA3dyQ$CNF]
+            length:20 characters:20 generated:6 bits:128 entropy:128
+            pool:86 strength:Excellent unique:yes sets:4 copied:yes
+
+The rule written after run 2's failure says, verbatim: "If the app generates
+something -- a password, a colour, an id -- print the thing itself, not only
+facts about it." The app now prints the password.
+
+That is a complete causal chain that can be checked by anyone: the failure is
+in run 2's archived output, the rule is in the pack, the changed behaviour is
+in run 3's archived output.
+
+Strict check still holds at seven of seven -- every pass survives with the
+alternatives stripped out, so none of this is the harness being lenient.
