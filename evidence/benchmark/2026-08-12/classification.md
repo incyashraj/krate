@@ -161,3 +161,40 @@ word, keep units and currency symbols out of numbers, and **when a name is
 ambiguous print both** (`query` and `search`), since extra lines cost
 nothing and a missing one is invisible. The rest belongs on the harness
 side: alternatives in an assert, or publishing the expected names.
+
+## Halfway audit (21 of 42), and a check on my own reading
+
+Medium stands at 1 pass in 9. Before attributing that to the contract again,
+here is every medium failure's actual output, so the claim can be checked
+rather than believed:
+
+  13  habits:4 days:7 done-today:2 best-streak:5 saved:yes
+  15  expenses:9 total:$289.93 month:$289.93 categories:4 added:yes saved:yes
+  16  items:5 got:3 remaining:2 saved:yes
+  17  cards:6 todo:2 doing:2 done:2 columns:3 saved:yes
+  18  display:8 evaluated:2 add:14 subtract:4 multiply:45 divide:2.25
+      divzero:reported
+  19  switches:5 on:3 theme:Solarized choices:4 textsize:140 saved:yes
+  20  contacts:9 seeded:8 search:gra matches:1 added:1 selected:1 stored:sqlite
+  21  rows:16 columns:5 quoted_fields:ok header:ok selected_row:3
+
+  21 CSV viewer      wanted rows>=3 cols>=2
+                     printed rows:16 columns:5 ...
+                     -- 16 rows and 5 columns of parsed CSV, with quoted
+                        fields and a header. Failed on `columns` vs `cols`.
+
+Not one of these is an app that does nothing. Every one holds real state,
+and several do more than asked (the calculator handles divide-by-zero; the
+contact book uses SQLite).
+
+**The caveat I owe this reading.** I have now explained twelve failures as
+problems with the contract or the corpus, and a story in which nothing is
+ever the product's fault should be distrusted. Two things keep it honest:
+the corpus sweep is a number (75% of keys unguessable), not an opinion; and
+the one prediction I made from this reading -- that the naming fix would
+close the tier gap -- was disproved at req 20 and is recorded as wrong
+above.
+
+What would change my mind: an app that prints nothing, crashes, or reports
+state that is plainly incorrect. Req 2 was the first kind. Nothing so far
+has been the third.
