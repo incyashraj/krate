@@ -104,3 +104,30 @@ The pass rate is the headline and should stay the headline -- an app that
 misses one assert did not do what was asked. But "67% of observable
 properties held" says something the binary number hides: these are mostly
 near misses on reporting, not apps that do nothing.
+
+## Why the medium tier scores worse, measured
+
+At 19 requests the tiers look very different:
+
+  easy    6/12 pass    24 of 32 asserts held (75%)
+  medium  1/7  pass     9 of 19 asserts held (47%)
+
+The tempting reading is "medium apps are harder and the AI is worse at
+them". The corpus says otherwise. Counting asserts that name an ACTION --
+added, removed, moved, toggled, marked, checked, selected, evaluated,
+result, count -- rather than a piece of state:
+
+  easy:    2 of 32 asserts name an action   (6%)
+  medium:  7 of 47 asserts name an action   (15%)
+
+Medium requests demand proof-of-operation at roughly three times the rate,
+and proof-of-operation is precisely what the under-specified `quick`
+contract did not produce (see req 16, 17, 18, 19). The apps themselves are
+not obviously worse: the kanban board had three columns and six cards
+correctly distributed, and the settings panel had five switches with three
+on and a theme saved.
+
+So the tier gap is mostly the same reporting gap, concentrated where the
+corpus asks for it. That is a claim the next run can falsify: if the
+self-exercise fix is the cause, medium should close most of the distance to
+easy. If it does not, the difficulty reading was right after all.
