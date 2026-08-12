@@ -523,3 +523,28 @@ Running count of what the failures turn on:
   boolean instead of a count                    1
   summary vs detail                             1
   plain product failure                         1
+
+## req 36: the snake game scores my prediction, and I lost the bet
+
+  req 36 snake           wanted length>=3 ticks>=1 alive?
+                         printed  score:7 length:10 best:7 ticks:85
+                                  over:yes saved:yes playable:yes
+                         -- 85 game ticks, snake grown to length 10, score
+                            7, reached game over. 2 of 3 asserts.
+
+At req 24 I wrote: "if the apps cannot show scrolling, ticking, or bouncing
+at all, that is a genuine capability finding... I would bet on 36 and 38."
+
+**Wrong on 36.** It ran 85 ticks of a real game loop and reported the length,
+the score, the best score and the end state. Tick-based behaviour over time
+is plainly demonstrable through `quick`.
+
+It failed `alive?` for an eighth reason: it printed `over:yes`, which is the
+same fact inverted. A snake that is over is a snake that is not alive. The
+information the assert wanted was there, expressed as its complement.
+
+So both halves of the hard-tier prediction are now disconfirmed -- scrolling
+by req 31, ticking by req 36 -- and only the bouncing ball is left. Two
+suspected capability limits have been removed from the list rather than left
+as maybes, which is the most valuable thing a prediction can do when it
+fails.
