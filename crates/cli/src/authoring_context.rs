@@ -581,6 +581,16 @@ and the total; a game prints the score and whether it is over:\n\n\
 Lower-case keys, no spaces around the colon, one pair per line, numbers as \
 bare digits. Seed enough state in the `quick` path that the numbers are \
 interesting -- a to-do list that prints `items:0` has proved nothing either.\n\n\
+**Seed at the scale the request describes.** If the person asked for \
+something long, deep or busy, the `quick` path has to actually be long, \
+deep or busy, or nothing it prints can show the behaviour they asked \
+about. Measured: a log viewer asked to \"keep the newest line in view\" \
+seeded 29 lines, which is fewer than fit on screen -- so it had nothing to \
+scroll, printed `scrolls:0`, and could not demonstrate the one thing the \
+request named. A long list means hundreds of rows, a big file means \
+thousands of lines, a busy log means more lines than a window holds. \
+Seeding is cheap; generate the rows in a loop rather than typing a \
+handful.\n\n\
 **Name the key after the plain noun for the thing, and print the number \
 bare.** Whatever reads the output has to guess the name otherwise, and it \
 guesses the ordinary one -- a tip calculator prints `bill` and `total`, a \

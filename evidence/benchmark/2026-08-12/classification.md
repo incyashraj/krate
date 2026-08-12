@@ -459,3 +459,30 @@ gap rather than a capability limit.
 Req 31 is the existence proof. Without it, req 32 would have looked like
 evidence that `quick` cannot show scrolling at all, and that reading would
 have been wrong.
+
+## req 33: the first hard-tier failure that is substantially ours
+
+  req 33 log viewer      wanted lines>=50 scrolled>=1 tail!=no
+                         printed  lines:29 shown:29 problems:5
+                                  following:yes newest:06:55:22.050
+                                  tailed_bytes:1600 scrolls:0 clicks:0
+                         -- 0 of 3 asserts. The worst score of the run so
+                            far, and the only failure where the app is
+                            genuinely short of what was asked.
+
+The app seeded 29 log lines. All 29 fit on screen, so there was nothing to
+scroll, and it honestly printed `scrolls:0`. The tail behaviour exists --
+`following:yes`, `newest:06:55:22.050` -- but the app could not demonstrate
+the one thing the request named, because it never generated enough data to
+need it.
+
+Not a naming problem, not a corpus problem. The pack said "seed enough state
+that the numbers are interesting", which is too vague to tell an app that a
+LONG list has to actually be long. Fixed today: seed at the scale the request
+describes, with this failure as the worked example -- a long list means
+hundreds of rows, a big file means thousands of lines, a busy log means more
+lines than a window holds.
+
+Sixth distinct class: under-seeded. And a useful counterweight to the
+classification so far, which had one plain product failure against fifteen
+contract and corpus problems. This one is ours.
