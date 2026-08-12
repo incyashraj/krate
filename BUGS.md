@@ -71,6 +71,53 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-103 -- the benchmark scores correct apps as failures over key names
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-12, mid-run of the benchmark re-run, when five consecutive
+          failures all turned out to be the same shape.
+Evidence: Four of the first five failures are apps that **work**, failing on
+          the name or format of a key rather than on behaviour:
+
+            req-5  click counter   wants count>=1
+                   printed: clicks:60 frames:61 counts:yes
+                   -- it clicked sixty times; the key is `clicks`
+
+            req-8  BMI calculator  wants height? weight?
+                   printed: bmi:22.8 category:Normal
+                            height_cm:178 weight_kg:72.5 units:metric
+                   -- entirely correct; the keys carry their units
+
+            req-9  stopwatch       wants elapsed>=0
+                   printed: elapsed:2:20.18 elapsed_ms:140180 laps:4
+                   -- `elapsed` is there, formatted as time, so the
+                      numeric compare cannot read it
+
+            req-7  password gen    wants password?
+                   printed: length:32 chars:32 bits:191 distinct:21 ...
+                   -- eight keys, none of them the password itself.
+                      This one is arguably a real gap.
+
+          Only req-2 (to-do list) is a plain failure: it printed nothing.
+Impact:   **The headline number understates the product.** A benchmark that
+          fails a correct BMI calculator because it wrote `height_cm`
+          instead of `height` is measuring vocabulary agreement, not
+          usability -- and the whole reason this harness exists is to stop
+          measuring the wrong thing.
+Fix:      Not by loosening the bar. Two honest options:
+          1. Teach the contract to include the key names, so the app and
+             the corpus share a vocabulary -- the same move that fixed the
+             "print something" gap (K-102).
+          2. Let an assert accept alternatives (`count|clicks>=1`) and a
+             numeric compare fall back to a `<key>_ms` sibling.
+          Option 1 is better: it makes generated apps more legible to
+          everything, not just to this harness.
+Note:     Do not quietly rescore the run. The number stands as measured;
+          this entry is what it means. Both figures belong in RESULTS.md --
+          the raw pass rate, and how much of the gap is vocabulary.
+
 ### K-102 -- krate-mode still says "print something", the exact contract that scored 0/5
 Status:   fixed 2026-08-12
 Owner:    lead
