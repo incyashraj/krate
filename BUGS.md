@@ -71,6 +71,50 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-104 -- the benchmark's authoring budget is too small for its own corpus
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-12, request 14 of the re-run (a note-taking app).
+Evidence: The per-request budget is 900 s (`TIMEOUT_SECS`). Request 14 was
+          cut off at 902 s having completed **41 authoring steps** -- read
+          the API reference, read the notes example, wrote code, checked it
+          built, iterated, wrote again. It was working the whole time. No
+          `.krate` was produced, and the row reads `fail / authored`, which
+          is indistinguishable from an app that was written badly.
+
+          The budget is not far above the working range:
+
+            req 1  tip calculator     417 s   pass
+            req 4  temperature conv   543 s   pass
+            req 7  password gen       656 s   fail (naming)
+            req 14 note taking       >900 s   cut off
+
+          Easy-tier apps that succeed already take 7-11 minutes. The margin
+          above the slowest success is 244 s, and **24 medium and hard
+          requests remain**, all of which are larger than the app that just
+          ran out of time.
+Impact:   Any medium or hard request that needs more than fifteen minutes is
+          recorded as a product failure. Run the rest of the corpus at 900 s
+          and the headline number measures the timeout, not the authoring
+          loop. Same category error as counting a rate-limit rejection as a
+          failure, which the harness's own header warns about at length.
+Fix:      Two parts.
+          1. Raise the budget for the tiers that need it -- the header
+             already takes per-tier behaviour for granted elsewhere, so a
+             per-tier `TIMEOUT_SECS` is in keeping.
+          2. **Record a timeout as its own outcome, not as `fail`.** The
+             harness distinguishes `skipped` for quota rejections for
+             exactly this reason: no code was written, so there is nothing
+             to judge. A timeout is the same situation with a different
+             cause.
+Note:     Do not raise the budget mid-run and keep the earlier rows. Either
+             finish this run at 900 s and mark the timeouts, or restart the
+             remaining tiers at a higher budget and say which rows were
+             measured under which. Changing the measure halfway and not
+             saying so is how a number stops meaning anything.
+
 ### K-103 -- the benchmark scores correct apps as failures over key names
 Status:   half fixed 2026-08-12 -- the teaching half shipped; the corpus and
           the missing operator are still open
