@@ -237,15 +237,6 @@ jobs:
             ~/.cargo/git
             target/
           key: ${{ runner.os }}-cargo-libtest-${{ hashFiles('**/Cargo.lock') }}
-      # whisper.cpp is built by CMake, which defaults to the dynamic MSVC
-      # runtime, while .cargo/config.toml forces Rust to link the static one
-      # (it must -- see K-037). The two disagreed and the link failed on
-      # twenty `__imp_*` UCRT symbols. This points CMake at the same runtime
-      # Rust uses. See the toolchain file for the whole story (K-071).
-      - name: Match whisper's C runtime to Rust's (Windows only)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: echo "CMAKE_TOOLCHAIN_FILE=$(pwd)/.github/windows/static-crt.cmake" >> "$GITHUB_ENV"
       - name: Run the library tests
         run: cargo test --workspace --lib
 
@@ -466,15 +457,6 @@ jobs:
             ~/.cargo/git
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      # Same reason as the library-tests job: CMake and Rust must agree on
-      # which MSVC runtime they link, or whisper.cpp fails on `__imp_*` UCRT
-      # symbols. This job only runs on a schedule or `[full-ci]`, so it was
-      # not part of the daily red, but it builds the workspace with speech on
-      # and would hit exactly the same wall (K-071).
-      - name: Match whisper's C runtime to Rust's (Windows only)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: echo "CMAKE_TOOLCHAIN_FILE=$(pwd)/.github/windows/static-crt.cmake" >> "$GITHUB_ENV"
       - name: Build workspace
         run: cargo build --workspace
       - name: Build release binary
