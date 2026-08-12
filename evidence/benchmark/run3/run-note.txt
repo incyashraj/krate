@@ -1,0 +1,25 @@
+Third run of the Krate App Benchmark. Started 2026-08-12.
+
+Binary:  krate 0.1.12 at commit 13e635f, copied to bench2/krate
+Agent:   claude
+Budget:  TIMEOUT_SECS=1800 for every request (uniform; no split to explain)
+Corpus:  updated -- 17 asserts carry alternatives (K-105), two unmeetable
+         asserts repaired (req 29, 38), one corpus bug fixed (req 10)
+Harness: alternatives operator; timeouts and dropped connections are now
+         `skipped` rather than `fail` (K-104)
+
+What this run is for: the 2026-08-12 run FOUND five teaching gaps and could
+not test them, because changing the measure mid-run would have invalidated
+it. This is the first run where the pack carries all five --
+  1. operate your own controls on `quick`, do not just describe yourself
+  2. name the key after the plain noun, print numbers bare
+  3. seed at the scale the request describes
+  4. print the count you have, not `yes`
+  5. print both names when one is genuinely ambiguous
+plus the repaired harness.
+
+Prediction, recorded before any result lands: the previous run scored 10/38
+authored, and replaying its outputs against the repaired harness alone gave
+15/25 on the subset with archived output. If the teaching fixes work, this
+run should land meaningfully above 10/38. If it lands at or below that, the
+fixes did not reach the apps and the teaching-gap reading was wrong.

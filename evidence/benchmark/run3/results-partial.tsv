@@ -1,0 +1,4 @@
+id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	missing	note
+1	easy	a tip calculator	pass	-	417	29013	4	4	-	-
+2	easy	a to-do list I can check things off in	pass	-	258	29818	2	2	-	-
+3	easy	a countdown timer for a 25 minute work session	pass	-	332	27208	3	3	-	-
