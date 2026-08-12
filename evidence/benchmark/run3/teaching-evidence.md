@@ -112,3 +112,31 @@ in run 3's archived output.
 
 Strict check still holds at seven of seven -- every pass survives with the
 alternatives stripped out, so none of this is the harness being lenient.
+
+## req 8 -- BMI calculator (pass 3/3), the units rule
+
+    run 2:  bmi:22.8 category:Normal height_cm:178 weight_kg:72.5
+            units:metric
+            -- correct arithmetic, failed height? and weight? because the
+               units were baked into the key names
+
+    run 3:  bmi:23.51 category:Healthy status:Healthy
+            height:178.0 weight:74.5 healthy_min:58.6 healthy_max:79.2
+            units:metric typed:2 stepped:3 dragged:137.5 toggled:1
+
+The rule -- "put units in the value or leave them out, never in the key --
+`height:178`, not `height_cm`" -- is applied exactly, with `units:metric`
+kept as its own key. The app also drives its own controls now (typed,
+stepped, dragged, toggled), which run 2's version did not.
+
+Four flips so far: req 2, 5, 7, 8. No regressions.
+
+## A measurable signal, with its caveat
+
+    run 3, requests 1-8:    9.8 keys per app
+    run 2, requests 14-38:  6.5 keys per app
+
+**These are different request sets**, because run 2 preserved no output before
+request 14. So this is suggestive, not a controlled comparison -- the honest
+version arrives when run 3 reaches request 14 and the same requests can be
+compared directly.
