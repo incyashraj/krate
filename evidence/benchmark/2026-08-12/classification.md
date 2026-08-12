@@ -486,3 +486,40 @@ lines than a window holds.
 Sixth distinct class: under-seeded. And a useful counterweight to the
 classification so far, which had one plain product failure against fifteen
 contract and corpus problems. This one is ours.
+
+## req 34 and 35: two more shapes, one of them teachable
+
+  req 34 table           wanted cols>=3 measured!=no widest>=1
+                         printed  columns:5 measured:yes widest_column:1
+                                  width_part:200 width_supplier:266
+                                  grid_width:816 widest_source_row:1
+                         -- measured five column widths in pixels, computed
+                            the grid width, found the widest column and its
+                            row. Lost on `columns` vs `cols` (abbreviation)
+                            and `widest_column` vs `widest` (a PREFIX, not
+                            a synonym -- see the K-105 update).
+
+  req 35 text wrap       wanted wrapped>=2 width>=1
+                         printed  paragraphs:4 words:230 lines:18
+                                  measure:590 longest_line_chars:82
+                                  wrapped:yes
+                         -- 230 words wrapped into 18 lines at a measured
+                            width of 590. It printed `wrapped:yes` where
+                            the assert counts, and a boolean cannot satisfy
+                            a numeric compare. The count it needed --
+                            18 -- was already in its hands.
+
+Seventh class: **a boolean where a count was wanted.** Unlike the naming
+cases this one is squarely teachable, and it is now in the pack: if you have
+a count, print the count, not `yes`. `saved:yes` stays right, because saving
+has no quantity.
+
+Running count of what the failures turn on:
+
+  a key name (synonym, abbreviation, prefix)   10
+  self-exercise                                 4
+  print the thing, not facts about it           2
+  under-seeded                                  1
+  boolean instead of a count                    1
+  summary vs detail                             1
+  plain product failure                         1

@@ -613,6 +613,14 @@ bare numbers; `elapsed:2:20.18` cannot be compared to anything, so print \
 person, and never put a currency symbol in a number -- `total:289.93`, not \
 `total:$289.93`. If the app generates something -- a password, a colour, an \
 id -- print the thing itself, not only facts about it.\n\n\
+**If you have a count, print the count, not `yes`.** A word like `yes` \
+tells a reader the thing happened; a number tells them how much, and \
+anything comparing the value can only work with the number. Measured: an \
+app that wrapped 230 words into 18 lines printed `wrapped:yes`, which \
+proves less than the `18` it already had. Prefer `wrapped:18`, \
+`scrolled:1200`, `matched:2`. Keep `yes`/`no` for things that genuinely \
+have no quantity -- `saved:yes` is right, because saving either happened or \
+did not.\n\n\
 **When a name is genuinely ambiguous, print both.** Extra lines cost \
 nothing and no reader is confused by them, while a missing one is \
 invisible. A search box can print `query` and `search`; a list can print \
