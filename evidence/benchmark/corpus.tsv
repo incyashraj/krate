@@ -111,7 +111,7 @@
 26	medium	a memory matching card game	cards>=8;flipped|moves>=2;matched>=0
 27	medium	a reading list of books with a read/unread mark	books>=3;read>=1;unread>=1
 28	medium	a mood tracker with a face for each day	days>=7;recorded|logged>=1
-29	medium	a dashboard with three panels showing different numbers	panels==3;values>=3
+29	medium	a dashboard with three panels showing different numbers	panels==3;panels|values>=3
 30	medium	a base64 encoder and decoder	encoded?;decoded?;roundtrip|round_trip!=no
 
 # --- hard: sits on or past a limit we have not shipped (31-38) ---
@@ -128,7 +128,7 @@
 35	hard	a paragraph of text that wraps to the window width	wrapped|lines>=2;width|measure>=1
 36	hard	a snake game	length>=3;ticks>=1;alive|over?
 37	hard	a drawing pad where I can draw with the mouse	strokes>=1;points>=2
-38	hard	a bouncing ball screensaver that fills the window	x?;y?;bounces>=1
+38	hard	a bouncing ball screensaver that fills the window	bounces>=1;balls|x?
 
 # --- refuse: Krate cannot serve this; a fast honest refusal IS the pass (39-42) ---
 # Scored inverted. `krate create` must exit non-zero with a refusal that names

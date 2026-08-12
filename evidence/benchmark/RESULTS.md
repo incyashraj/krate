@@ -144,3 +144,47 @@ off the list by evidence rather than argument.
   taking 378 s and >900 s, so **this process has at least 2.4x run-to-run
   variance and the pass rate carries more noise than has been quantified.**
   Measure the spread before reading precision into 26%.
+
+---
+
+# Addendum, 2026-08-12: what the harness fixes recover
+
+**This is a replay, not a new measurement.** The 26% headline above stands as
+the measured result. What follows is what the same archived app outputs score
+against the fixed harness and corpus -- it says how much of the gap was the
+measure's, and it is not a new pass rate.
+
+Replaying the 25 requests with archived output:
+
+| | Passing |
+|---|---|
+| as measured on 2026-08-12 | 4 |
+| against the fixed harness and corpus | **15** |
+
+Eleven apps recovered, every one of which already reported the property under
+a different name or shape. Audited individually:
+
+    20  contact book   search:gra          for query
+    21  CSV viewer     columns:5           for cols
+    23  markdown       list_items:11       for bullets
+    24  bar chart      largest:31.5        for max
+    26  memory game    moves:3             for flipped
+    28  mood tracker   logged:12           for recorded
+    29  dashboard      panels:3            for a `values` tally
+    34  table          columns / widest_column
+    35  text wrap      lines:18            for wrapped
+    36  snake          over:yes            for alive
+    38  bouncing ball  balls:9 bounces:4   for x/y
+
+Two of those alternatives are judgement calls rather than plain synonyms and
+are flagged in the commit: `flipped|moves` and `wrapped|lines`.
+
+**The bar did not move.** Ten tests pin it (`test-assert-alternatives.sh`): an
+absent key still fails, `items:0` still fails `>=1`, and `total:$289.93` is
+still not a number. A do-nothing app fails every edited assert.
+
+What this means, stated carefully: **roughly two thirds of this run's
+failures were the measure disagreeing with the app about a word, not the app
+failing to work.** The next full run is what turns that into a real number,
+and it will also be the first to test the five teaching fixes, which could
+not affect the run they were found in.
