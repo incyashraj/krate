@@ -497,3 +497,45 @@ The guard added after req 22 addresses the class rather than the instance: a
 produced `.krate` proves authoring succeeded, so it overrides every skip
 reason, all of which mean "no finished app to judge". A future false positive
 is now harmless rather than run-stopping.
+
+## req 22 -- the guard works, and the failure has two causes
+
+  req 22 JSON pretty printer (FAIL 2/3)
+
+    run 2:  valid:yes lines:18 objects:2 arrays:2 values:10 depth:2
+            bad_json_rejected:yes output_bytes:191
+            -- eleven facts about the output, and never the output
+
+    run 3:  input:1 bytes:492 lines:40 formatted:701 valid:yes indent:4
+            errors:1 error_line:1 error_column:21
+            out:{
+            out:  "name": "Krate",
+            out:  "version": "0.1.3",
+            ...
+
+First: **the guard did its job.** This request was skipped last attempt
+because its sample data contained "connection reset by peer". It now scores
+normally, and the score is a fail -- which is the correct outcome, not a
+convenient one.
+
+Second: the teaching landed. Run 2 printed facts about the output; run 3
+prints the formatted JSON itself, which is what the "print the thing, not
+facts about it" rule asks for.
+
+It still fails `output~{`, for two separate reasons:
+
+  1. **naming** -- the app called the key `out`, the corpus wants `output`
+  2. **a real harness interaction** -- the app emitted its multi-line output
+     by repeating the key on every line, and the harness takes the LAST
+     matching line. That last line is `out:    "desktop",` which contains no
+     brace. Even `out~{` fails.
+
+The second is not the app's fault. The pack says "one pair per line" and says
+nothing about what to do when the value is ITSELF multi-line, which is
+precisely a pretty-printer's situation. Repeating the key is a reasonable
+reading of the rule it was given.
+
+**Not fixing this mid-run.** It is a teaching gap and a harness limitation
+worth a considered answer -- probably "emit a multi-line value once, joined,
+or as a single key with escaped newlines" -- and changing the pack now would
+invalidate the comparison. Recorded for the next run.
