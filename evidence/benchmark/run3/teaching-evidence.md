@@ -193,3 +193,25 @@ Combined with the strict check -- all ten passes hold with the alternatives
 operator stripped out -- the easy-tier result is not the measure being
 softened. That is the claim I most wanted to be able to falsify, and it
 survived the two tests I could think of.
+
+## The easy tier is complete
+
+              run 2              run 3
+  pass        6/12               12/12
+  asserts     24/32  (75%)       32/32  (100%)
+
+Six flips, no regressions, and every pass survives the strict check with the
+alternatives operator stripped out. Five of the six flips ran against a
+corpus row I never touched; the sixth was an assert no correct app could
+satisfy.
+
+**What this does and does not show.** It shows the five teaching fixes reach
+the apps and change what they report. It does not show the apps are better
+*apps* -- the same request produced working software in run 2 too, and mostly
+failed on how it described itself. The honest sentence is that the reporting
+gap is closed on the easy tier, not that the product got twelve times better.
+
+The medium tier is the test that matters. Run 2 scored 2/18 there with 51% of
+asserts held, and I claimed nearly all of that was reporting rather than
+broken apps. If that reading was right, medium should move a long way. If it
+was rationalisation, it will not.

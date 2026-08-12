@@ -9,3 +9,5 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 8	easy	a BMI calculator	pass	-	347	33314	3	3	-	-
 9	easy	a stopwatch with lap times	pass	-	491	29151	2	2	-	-
 10	easy	a text case converter: upper, lower, title case	pass	-	245	42680	3	3	-	-
+11	easy	a word and character counter for text I paste in	pass	-	302	28857	2	2	-	-
+12	easy	a colour picker that shows me the hex code	pass	-	358	25597	2	2	-	-
