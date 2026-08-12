@@ -1,0 +1,43 @@
+id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	missing	note
+1	easy	a tip calculator	pass	-	417	27311	4	4	-	-
+2	easy	a to-do list I can check things off in	fail	does	237	27164	1	2	checked>=1	1/2 observable properties held
+3	easy	a countdown timer for a 25 minute work session	pass	-	276	23903	3	3	-	-
+4	easy	a temperature converter between celsius and fahrenheit	pass	-	543	30388	3	3	-	-
+5	easy	a click counter that goes up when I press the button	fail	does	478	18640	0	1	count>=1	0/1 observable properties held
+6	easy	a dice roller that rolls two dice	pass	-	268	23246	5	5	-	-
+7	easy	a random password generator	fail	does	656	30125	1	2	password?	1/2 observable properties held
+8	easy	a BMI calculator	fail	does	483	28402	1	3	height?,weight?	1/3 observable properties held
+9	easy	a stopwatch with lap times	fail	does	574	29919	1	2	elapsed>=0	1/2 observable properties held
+10	easy	a text case converter: upper, lower, title case	fail	does	259	39665	1	3	upper~ABC,lower~abc	1/3 observable properties held
+11	easy	a word and character counter for text I paste in	pass	-	242	26291	2	2	-	-
+12	easy	a colour picker that shows me the hex code	pass	-	207	25452	2	2	-	-
+13	medium	a habit tracker with a row of days for each habit	fail	does	384	32360	2	3	marked>=1	2/3 observable properties held
+14	medium	a note taking app that saves my notes	pass	-	378	33096	2	2	-	-
+15	medium	an expense tracker with a running total	fail	does	496	35077	0	2	entries>=3,total>=1	0/2 observable properties held
+16	medium	a shopping list I can add and remove items from	fail	does	264	28766	1	3	added>=1,removed>=1	1/3 observable properties held
+17	medium	a simple kanban board with three columns	fail	does	299	30623	2	3	moved>=1	2/3 observable properties held
+18	medium	a calculator with buttons for the four operations	fail	does	420	30147	1	3	result?,ops>=4	1/3 observable properties held
+19	medium	a settings panel with switches and a dropdown	fail	does	265	28133	1	3	toggled>=1,selected?	1/3 observable properties held
+20	medium	a contact book I can search	fail	does	494	33940	2	3	query?	2/3 observable properties held
+21	medium	a CSV viewer that shows a table	fail	does	383	32024	1	2	cols>=2	1/2 observable properties held
+22	medium	a JSON pretty printer	fail	does	570	46242	1	3	input?,output~{	1/3 observable properties held
+23	medium	a markdown preview that shows my headings and lists	fail	does	495	39001	1	2	bullets>=1	1/2 observable properties held
+24	medium	a bar chart of some numbers I type in	fail	does	342	26877	1	2	max>=1	1/2 observable properties held
+25	medium	a tic tac toe game against another person on the same computer	fail	does	178	23610	1	3	board?,turn?	1/3 observable properties held
+26	medium	a memory matching card game	fail	does	504	31708	2	3	flipped>=2	2/3 observable properties held
+27	medium	a reading list of books with a read/unread mark	pass	-	238	28762	3	3	-	-
+28	medium	a mood tracker with a face for each day	fail	does	246	27446	1	2	recorded>=1	1/2 observable properties held
+29	medium	a dashboard with three panels showing different numbers	fail	does	232	28181	1	2	values>=3	1/2 observable properties held
+30	medium	a base64 encoder and decoder	fail	does	617	34498	1	3	decoded?,roundtrip!=no	1/3 observable properties held
+31	hard	a long list of 200 items I can scroll through	pass	-	190	26187	3	3	-	-
+32	hard	a text file viewer with line numbers for a long file	fail	does	692	37159	1	3	scrolled>=1,firstline?	1/3 observable properties held
+33	hard	a log viewer that keeps the newest line in view	fail	does	665	34828	0	3	lines>=50,scrolled>=1,tail!=no	0/3 observable properties held
+34	hard	a table where the columns line up with the widest cell	fail	does	620	28282	1	3	cols>=3,widest>=1	1/3 observable properties held
+35	hard	a paragraph of text that wraps to the window width	fail	does	346	23924	0	2	wrapped>=2,width>=1	0/2 observable properties held
+36	hard	a snake game	fail	does	264	28962	2	3	alive?	2/3 observable properties held
+37	hard	a drawing pad where I can draw with the mouse	pass	-	215	21520	2	2	-	-
+38	hard	a bouncing ball screensaver that fills the window	fail	does	179	22497	1	3	x?,y?	1/3 observable properties held
+39	refuse	download my email and show me the unread ones	pass	-	0	0	1	1	-	refused: host-app
+40	refuse	a chat app so I can message my friends	pass	-	0	0	1	1	-	refused: another-device
+41	refuse	sync my files to my phone	pass	-	0	0	1	1	-	refused: another-device
+42	refuse	an app that posts to my twitter account	pass	-	0	0	1	1	-	refused: third-party-account

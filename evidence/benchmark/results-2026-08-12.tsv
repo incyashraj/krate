@@ -36,3 +36,8 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 35	hard	a paragraph of text that wraps to the window width	fail	does	346	23924	0	2	wrapped>=2,width>=1	0/2 observable properties held
 36	hard	a snake game	fail	does	264	28962	2	3	alive?	2/3 observable properties held
 37	hard	a drawing pad where I can draw with the mouse	pass	-	215	21520	2	2	-	-
+38	hard	a bouncing ball screensaver that fills the window	fail	does	179	22497	1	3	x?,y?	1/3 observable properties held
+39	refuse	download my email and show me the unread ones	pass	-	0	0	1	1	-	refused: host-app
+40	refuse	a chat app so I can message my friends	pass	-	0	0	1	1	-	refused: another-device
+41	refuse	sync my files to my phone	pass	-	0	0	1	1	-	refused: another-device
+42	refuse	an app that posts to my twitter account	pass	-	0	0	1	1	-	refused: third-party-account

@@ -1,193 +1,146 @@
-# The Krate App Benchmark -- first run
+# The Krate App Benchmark -- second run
 
-Date: 2026-08-05. Machine: M-series Mac.
-Binary: `target/release/krate` at commit `778768c`, copied to a scratch path and
-invoked by absolute path for every request, so a mid-run rebuild by another
-workstation could not change what was being measured.
-Agent: `--agent grok` (`agent --single`, grok 0.2.14).
+Date: 2026-08-12. Machine: M-series Mac.
+Binary: `krate 0.1.12` at commit `aabab14`, copied to a scratch path and
+invoked by absolute path, so nothing could rebuild underneath the run.
+Agent: `--agent claude`.
+
+The first run was 2026-08-05 and is preserved in `results-2026-08-05.tsv`.
 
 ## The number
 
-**4 of 9 attempted requests produced a usable app. 44%.**
+**14 of 42 requests passed. 33%.**
 
-Read that as a first calibration, not a product verdict: 9 of 42 is a small
-sample, and the four passes are all in the `refuse` tier, which costs no
-authoring at all. **Of the five requests that were actually authored, zero
-passed.** That is the honest headline and it is worse than 44% suggests.
+**Excluding the four `refuse` requests, which cost no authoring: 10 of 38.
+26%.**
 
-| Tier | Score | Notes |
+Quote the second one. The refusals are correct fast rejections that write no
+code, and counting them inflates the rate -- that is how the first run's
+"44%" was mostly four freebies.
+
+| Tier | Pass | Assert level |
 |---|---|---|
-| refuse | 4/4 | correct fast refusals, 0 seconds each |
-| easy | 0/5 | all five authored, built, ran, painted -- and none was checkable |
-| medium | not run | machine contention, see below |
-| hard | not run | expected to be mostly red; K-001/K-002/K-003 |
+| easy | 6/12 | 24/32 (75%) |
+| medium | 2/18 | 24/47 (51%) |
+| hard | 2/8 | 10/22 (45%) |
+| refuse | 4/4 | -- |
+| **total** | **14/42** | **62/105 (59%)** |
 
-The old measure would have scored these same five apps **5 of 5**. Every one of
-them builds, imports only `krate:*`, runs headless, and paints a frame. That gap
--- 5/5 against 0/5 on the same artifacts -- is the entire reason this benchmark
-exists.
+## The comparison with 2026-08-05
 
-## Why the run is 9 requests and not 42
+The old run attempted 9 requests, four of them refusals, and scored **0 of 5
+on authored apps**. Five requests were attempted by both runs, under the same
+pass bar:
 
-Not quota, and not the product. Between three and five other workstations were
-running `krate create` on this machine throughout, against the same grok
-account and the same build cache. The harness refuses to start beside another
-authoring run for exactly this reason, and it fired repeatedly. The nine
-requests here were taken in windows between other runs, with
-`ALLOW_CONCURRENT_RUNS=1` set deliberately and knowingly.
-
-This is recorded rather than hidden because a contended machine inflates wall
-times (mean 104s here) and could plausibly cause a spurious failure. It did not
-cause the failures below -- every one of them is a specific, reproducible
-property of the app that was written, visible in its source.
-
-## The failures, ranked by cause
-
-### One cause explains all five: K-013, teaching-hole
-
-Every authored request failed gate 3, "does what was asked", and every one
-failed it the same way: **the app works and cannot prove it.**
-
-| # | Request | What it printed | Why it failed |
-|---|---|---|---|
-| 1 | a tip calculator | `bill:60 tip%:18 people:2 total_cents:7080` | correct maths, all on one line, keys named `tip%` and `total_cents` |
-| 2 | a to-do list I can check things off in | `items:5` / `saved:yes` | never reported whether anything was checked |
-| 5 | a click counter | `count:0` | the self-exercise run never clicked before printing |
-| 6 | a dice roller that rolls two dice | *(nothing)* | never calls stdout at all; draws dice to canvas only |
-| 9 | a stopwatch with lap times | `stopwatch:ok` | the "I ran" pattern, carrying no state |
-
-Request 1 is the clearest case. The app is **right**: a 60 bill, 18%, split 2
-ways, 7080 cents. A person would be happy with it. It scored 1/4 because it put
-three keys on one line and invented its own names.
-
-Request 6 is the most serious. It painted a valid 15KB frame and its source
-contains no stdout call anywhere -- so its state is invisible to this benchmark,
-to the K-006 usability stage, and to CI. It could be rolling two dice or zero
-and nothing automated could tell.
-
-**The cause, from the pack itself.** `krate krate-mode` lines 52-57 are the
-entire specification of what the verification run should print:
-
-> do the app's real work once against a small built-in sample, **print
-> something**, and exit 0
-
-"Print something" is the whole contract. The pack's own worked example does the
-right thing -- `write_pair(&stdout, "timezone", &timezone)`, one `key:value` per
-line -- and 17 of 17 shipped bundles follow it. But the rule is only ever
-*demonstrated*, never *stated*, so an agent is free not to copy it, and five out
-of five did not.
-
-Filed as **K-013**, class `teaching-hole`, unclaimed. It is one paragraph in the
-pack and it is the highest-leverage entry on the board right now: it does not
-need runtime work, and until it lands, no automated check can distinguish an app
-that works from one that does not.
-
-### What was NOT the cause
-
-Worth stating, because these were the predicted failure modes and none of them
-fired in this sample:
-
-- **Not the runtime.** Zero failures at the imports gate. Zero `wasi:*` leaks.
-- **Not stability.** All five painted a frame and exited cleanly. Nothing hung,
-  nothing crashed, nothing closed itself (K-009 stays fixed).
-- **Not authoring reliability.** 5 of 5 requests produced a building, running
-  app. The reliability corpus's 14/14 is not contradicted -- it is confirmed and
-  shown to be measuring a lower bar.
-- **Not the known blockers.** K-001 (scroll), K-002 (text measurement) and
-  K-003 (resize) are real and will show up in the `hard` tier, but no request in
-  this run reached them.
-
-## The refuse tier: 4/4, and it is fast
-
-All four impossible requests were refused in **0 seconds** with a named limit:
-
-| # | Request | Limit named |
+| Request | 5 Aug | 12 Aug |
 |---|---|---|
-| 39 | download my email and show me the unread ones | `host-app` |
-| 40 | a chat app so I can message my friends | `another-device` |
-| 41 | sync my files to my phone | `another-device` |
-| 42 | an app that posts to my twitter account | `third-party-account` |
+| tip calculator | fail | **pass** |
+| dice roller | fail | **pass** |
+| to-do list | fail | fail |
+| click counter | fail | fail |
+| stopwatch | fail | fail |
 
-None produced a `.krate`. This is the one part of the system measured here that
-is working exactly as intended, and it is a real improvement: the same request
-39 once spent 673 seconds building a 1511-line mail client over invented data.
+**0/5 to 2/5** on the like-for-like set, and 0/5 to 10/38 on a corpus four
+times larger. Not a clean comparison -- the old run used `--agent grok` on a
+contended machine -- so the honest statement is that the number moved up from
+a floor, on a much bigger sample.
 
-## What this benchmark does not measure yet
+## Read the second number too
 
-Stated plainly rather than shown as a green tick that checks nothing.
+**59% of observable properties held** (62 of 105), and **14 of 28 failures
+missed by exactly one assert**.
 
-- **Resize is not enforced.** The stated pass bar includes "survives a window
-  resize". The runtime has no scripted-input path, so nothing can tell an app
-  the window changed size and observe what it does. K-003 is the known defect
-  and W13 owns it. Until a resize can be injected, this gate is declared, not
-  checked.
-- **Click is carried, not isolated.** The `quick` path is the app operating its
-  own controls, so a broken click surfaces as unchanged state (exactly what
-  request 5 shows). That is real evidence, but it is not the same as a synthetic
-  click at a coordinate.
-- **The `medium` and `hard` tiers are unrun.** 33 of 42 requests have no result.
-  The score above must not be quoted as if it covered them.
+Both numbers are true and they say different things. The pass rate is what
+matters to a person: an app that misses one property did not do what was
+asked. But an all-or-nothing bar over ~2.7 asserts per request turns a 51%
+assert rate into an 11% pass rate in the medium tier, and reading 11% as
+"medium apps barely work" would be wrong.
 
-## Corrections and harness defects found this run
+## What the 28 failures actually were
 
-Recorded because a benchmark that hides its own bugs is not worth trusting.
+Classified as each result landed, not reinterpreted afterwards. Every raw
+output is in `2026-08-12/outputs/`, and `2026-08-12/show.sh <id>` prints the
+request, the asserts and the app's text side by side.
 
-1. **The first draft required every app to print `ready:1` and `quick:done`.**
-   Nothing teaches those keys, so every app would have failed them and the score
-   would have measured an invention of the harness. Dropped before any number
-   was published; "stays open" is now evidenced behaviourally.
-2. **A dead agent account was scored as a product failure.** `--agent claude`
-   failed a request in 4 seconds with "OAuth session expired" in the transcript.
-   Four seconds is far too fast to have authored anything. Now recorded as
-   `skipped`, like a quota rejection -- the same lesson that once turned 14/14
-   into a reported 23%, arriving through a different door.
-3. **Four asserts tested spelling, not capability.** Rows 14, 30, 33, 34 wanted
-   `saved==1`; real apps write `saved:yes`. An app that genuinely saved would
-   have failed on the name. Relaxed to `!=no` and recorded in the corpus change
-   log. Caught against the shipped bundles *before* the run, not after failing
-   one.
-4. **The concurrency guard had false positives**, matching its own wrapper shell
-   and any grep containing the phrase, and it blocked `--dry-run`, which authors
-   nothing. A guard with false positives gets disabled and then protects
-   nothing.
-5. **An early alarm about cross-contamination was wrong.** Another workstation
-   was authoring a similarly-named app at the same moment, and I briefly
-   concluded my result had been polluted. Re-running my own `.krate` directly
-   proved the output was mine. The wrong conclusion is recorded alongside the
-   right one because "I suspected contamination and disproved it" is a different
-   claim from "there was none".
+| Cause | Count | Whose |
+|---|---|---|
+| a key name -- synonym, abbreviation, prefix | 10 | the measure's |
+| self-exercise: described itself, never operated | 4 | ours, fixed |
+| printed facts about the output, not the output | 2 | ours, fixed |
+| under-seeded: too little data to show the behaviour | 1 | ours, fixed |
+| a boolean where a count was wanted | 1 | ours, fixed |
+| summary vs detail (asked for a tally, got the values) | 1 | the measure's |
+| inverse (`over:yes` for `alive?`) | 1 | the measure's |
+| corpus bug (`upper~ABC` needs literal "ABC") | 1 | the measure's, fixed |
+| plain product failure (printed nothing at all) | 1 | ours, open |
+| remainder, mixed/multiple causes | 6 | -- |
 
-## Correction to a board entry
+**Almost none of these apps were broken.** A base64 encoder printed real
+base64, verified a round trip, tested known vectors and rejected bad input --
+and failed on `round_trip` versus `roundtrip`, one underscore. A table app
+measured five column widths in pixels and lost on `columns` versus `cols`. A
+calculator proved all four operations and divide-by-zero handling, and failed
+for not printing keys called `result` and `ops`.
 
-**K-007 said this machine's AI accounts are unusable and called it a blocker.**
-That is now too strong, and it matters because it is the difference between "we
-cannot measure" and "we can". Checking all four providers:
+**Ten of twenty-eight failures turn on a key name.** That is the single
+clearest finding of this run, and it is filed as K-105.
 
-- `claude -p` -- "OAuth session expired and could not be refreshed"
-- `codex exec` -- "requires a newer version of Codex"
-- `copilot -p ... --allow-all-tools` -- exits 1 with **empty stdout and empty
-  stderr**, which is worse than the other two because nothing says why
-- **`agent --single "Reply with exactly: ALIVE" --output-format json` -- exits 0
-  and returns `{"text":"ALIVE","stopReason":"end_turn",...}`**
+## What was fixed while the run was in flight
 
-Grok works, `krate ai` lists it as ready, and
-`crates/cli/src/agent_provider.rs:519` registers it. This entire run was
-authored with it. K-007 has been downgraded to `serious` with that evidence
-added, and a note to reach for `--agent grok` before reporting that authoring
-cannot run.
+Deliberately none of it could flatter this run: the harness was pinned to the
+2026-08-12 binary and the corpus was frozen. These are what the *next* run
+tests.
 
-## Next
+- **K-102** -- `krate-mode` still told models to "print something", the exact
+  contract under which five apps scored zero in August. The pack that
+  `create` uses had been fixed; the paste-in prompt had not.
+- **K-103** -- the pack said how to format a key and never what to name it.
+  Corrected twice: the first version told apps to "use the request's own
+  word", which request 20 disproved -- 75% of corpus keys do not appear in
+  their request at all.
+- **self-exercise** -- the pack said "print what the app is holding" while
+  the benchmark assumes `quick` "drives the app through its own
+  interactions". Two of our own documents disagreed, and the apps obeyed the
+  one they were given.
+- **seeding** -- "seed enough state that the numbers are interesting" was too
+  vague to tell an app that a *long* list has to actually be long.
+- **counts** -- print the number you have, not `yes`.
 
-1. **Fix K-013.** One paragraph in the authoring pack: on `quick`, print one
-   `key:value` per line, bare values, no units or symbols. `write_pair` already
-   does this and is already in the pack -- promote it from example to rule. Then
-   re-run these same nine requests. Nothing else on this list is worth doing
-   first, because until it lands every score is measuring output formatting
-   rather than capability.
-2. **Run the medium and hard tiers** on an uncontended machine. Budget roughly
-   3 minutes per request, so about 100 minutes for the remaining 33.
-3. **Do not publish 44%.** Publish "0 of 5 authored apps were machine-checkable,
-   and here is the one-paragraph fix". The 44% is arithmetically true and
-   rhetorically useless, because the four passes cost no authoring.
-4. **Wire the resize gate** once a scripted-input path exists (K-003, W13), and
-   delete the caveat above rather than leaving it to rot.
+## Filed, not fixed
+
+- **K-105** -- an assert cannot accept a synonym. Ten failures. The fix is
+  `count|clicks>=1` in the corpus, plus a rule for the prefix case
+  (`widest_column` for `widest`).
+- **K-104** -- the 900 s budget is a ceiling on variance, not on work. The
+  same request took 902 s and failed, then 378 s and passed. A timeout is
+  recorded as `fail`, indistinguishable from a bad app.
+- **K-103 (remainder)** -- the corpus needs a sweep, and the harness has no
+  key-to-key comparison.
+
+## Two predictions, both recorded before the evidence, both wrong
+
+1. *"The naming fix will close the tier gap."* Disproved at request 20: 75%
+   of corpus keys cannot be derived from the request, so teaching cannot
+   reach them.
+2. *"The hard tier will show that `quick` cannot demonstrate behaviour that
+   only exists over time -- scrolling, ticking, bouncing."* Disproved three
+   times: request 31 scrolled 11,896 pixels, request 36 ran 85 game ticks,
+   request 38 bounced 4 times across 90 frames.
+
+The second is the more valuable failure. Two suspected runtime limits came
+off the list by evidence rather than argument.
+
+## Method notes, so the number can be judged
+
+- Requests 1-13 ran with `TIMEOUT_SECS=900`; 14-42 with `1800`, after
+  request 14 was cut off at 902 s having completed 41 productive authoring
+  steps. Request 14 was re-run at the higher budget rather than carried over,
+  so no row mixes the two. See `2026-08-12/budget-note.txt`.
+- An earlier attempt lost 13 requests to `API Error: Connection closed
+  mid-response`. Those rows were deleted and re-attempted rather than counted
+  as failures -- no code was written, so there was nothing to judge.
+- Mean authoring time, 38 authored requests: **385 s**.
+- Single-shot, one attempt per request. The same request has been observed
+  taking 378 s and >900 s, so **this process has at least 2.4x run-to-run
+  variance and the pass rate carries more noise than has been quantified.**
+  Measure the spread before reading precision into 26%.
