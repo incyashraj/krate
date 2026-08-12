@@ -434,3 +434,28 @@ scrolling specifically, the pessimistic reading was wrong.
 
 That is worth as much as a failure would have been. It removes a suspected
 capability limit from the list rather than leaving it as a maybe.
+
+## req 32 against req 31: a natural experiment
+
+  req 32 text viewer     wanted lines>=100 scrolled>=1 firstline?
+                         printed  file:sample.txt lines:104 rows:104
+                                  bytes:5221 visible:28 scrollable:yes
+                                  top_line:1 source:built-in
+                         -- 104 lines parsed, 28 visible, and
+                            `scrollable:yes`. It never scrolls: top_line
+                            stays 1.
+
+Put the two scroll apps side by side, same runtime, same tier:
+
+  req 31 PASS   scrolled:11896  at_end:true  selected:164
+  req 32 FAIL   scrollable:yes  top_line:1
+
+One performed the action and reported the result. The other declared the
+capability and stood still. **That pair settles the question the hard tier
+was supposed to answer**: an app on this runtime can demonstrate scrolling,
+because one just did, so a failure to demonstrate it is the self-exercise
+gap rather than a capability limit.
+
+Req 31 is the existence proof. Without it, req 32 would have looked like
+evidence that `quick` cannot show scrolling at all, and that reading would
+have been wrong.
