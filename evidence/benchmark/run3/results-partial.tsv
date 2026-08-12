@@ -11,3 +11,4 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 10	easy	a text case converter: upper, lower, title case	pass	-	245	42680	3	3	-	-
 11	easy	a word and character counter for text I paste in	pass	-	302	28857	2	2	-	-
 12	easy	a colour picker that shows me the hex code	pass	-	358	25597	2	2	-	-
+13	medium	a habit tracker with a row of days for each habit	pass	-	366	31902	3	3	-	-

@@ -215,3 +215,31 @@ The medium tier is the test that matters. Run 2 scored 2/18 there with 51% of
 asserts held, and I claimed nearly all of that was reporting rather than
 broken apps. If that reading was right, medium should move a long way. If it
 was rationalisation, it will not.
+
+## req 13 (medium) and the strictest test available
+
+    run 2:  habits:4 days:7 done-today:2 best-streak:5 saved:yes
+            -- failed marked>=1, because the app said `done-today`
+
+    run 3:  habits:5 days:7 marked:2 done:2 week:8 streak:55
+            toggled:2 unmarked:1 added:1 removed:1 saved:yes
+
+The app now prints `marked` -- the ordinary word -- and self-exercises.
+
+This row's corpus assert WAS edited by me (I added `marked|done-today|logged`),
+so it is exactly the case where my changes could be flattering the result.
+Tested against the unedited original `habits>=3;days>=7;marked>=1`: all three
+hold. The alternative was not needed.
+
+Generalised into `score-against-original-corpus.sh`, which re-scores every
+recorded result against the corpus as it stood at commit 7ef2c85, before any
+edit of mine:
+
+    against the ORIGINAL unedited corpus: 12 of 13 recorded requests pass
+
+The one exception is req 10, whose original assert `upper~ABC` was unmeetable
+by design.
+
+**That is the strictest reading available and the one to quote.** Not "12/13
+after I fixed the corpus", but "12/13 against the corpus exactly as it was
+when it scored 0/5 in August".
