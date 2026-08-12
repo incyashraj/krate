@@ -278,3 +278,33 @@ Rebaselined to eea8dd3, the corpus exactly as it stood when run 2 scored
 That is the honest comparison, and it is stronger than the one I published an
 hour ago. The earlier "12 of 13" was correct about my own edits but wrong
 about the baseline.
+
+## req 15 -- the first pass that genuinely needed the harness fix
+
+  req 15 expense tracker (pass 2/2)
+
+    run 2:  expenses:9 total:$289.93 month:$289.93 categories:4
+            -- failed entries>=3 (said `expenses`) and total>=1 (the $)
+
+    run 3:  expenses:40 items:40 total:1878.40 running_total:1878.40
+            average:46.96 largest:240.00 added:1 removed:1
+            scrolled:2360 seeded:40 seeded_total:1851.65 saved:yes
+
+Its two run-2 failures were fixed by different things, and the split is worth
+being exact about:
+
+    total:$289.93 -> total:1878.40   TEACHING (no currency symbol in a number)
+    9 entries     -> 40 entries      TEACHING (seed at the scale asked)
+    expenses      -> expenses        UNCHANGED -- needed the alternatives
+                                     operator, because the app still does not
+                                     say `entries`
+
+So this is the first recorded pass that would NOT hold against run 2's exact
+corpus:
+
+    against run 2 corpus (pre-my-edits): 14 of 15 recorded requests pass
+
+**The streak breaks here, and it should.** Fourteen passes stood on the app
+improving; this one stands half on the app and half on me making the measure
+accept a synonym. Both numbers get reported: the raw pass rate, and the
+count that survives against the corpus as it was.

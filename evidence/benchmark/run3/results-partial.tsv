@@ -13,3 +13,4 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 12	easy	a colour picker that shows me the hex code	pass	-	358	25597	2	2	-	-
 13	medium	a habit tracker with a row of days for each habit	pass	-	366	31902	3	3	-	-
 14	medium	a note taking app that saves my notes	pass	-	630	35830	2	2	-	-
+15	medium	an expense tracker with a running total	pass	-	468	34881	2	2	-	-
