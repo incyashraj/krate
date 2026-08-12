@@ -346,3 +346,32 @@ Too early to call the tier -- run 2's medium tier had 18 requests and this is
 four of them. But the claim under test was that those failures were reporting
 rather than broken apps, and so far every one that has been retried reports
 better and passes.
+
+## req 17 -- kanban, and the medium tier at 5/5
+
+    run 2:  cards:6 todo:2 doing:2 done:2 columns:3 saved:yes
+            -- failed moved>=1: a correct board that never moved a card
+
+    run 3:  columns:3 cards:17 items:17 todo:7 doing:6 done:4
+            added:1 moved:3 scrolled:72 saved:yes
+
+`moved:3` is the exact assert that failed. Seeding also went from 6 cards to
+17.
+
+Standing at 17 recorded:
+
+    run 3        17/42 recorded, 17 passing, 45/45 asserts (100%)
+    medium        5/5   (run 2: 2/18)
+    vs run 2's corpus  16 of 17
+
+**What is still to come is harder for my reading, not easier.** Twelve of the
+thirteen remaining medium requests failed in run 2, and five of those failed
+on pure naming -- `query`, `cols`, `bullets`, `max`, `recorded` -- where the
+teaching has no reliable purchase, because 75% of corpus keys cannot be
+derived from the request. Those five are where the alternatives operator will
+carry the pass rather than the app, and the "against run 2's corpus" number
+is what will expose it.
+
+If that second number stays close to the raw one through requests 20-28, the
+apps really did learn to name things better. If it diverges sharply, the
+harness is doing the work and I should say so.
