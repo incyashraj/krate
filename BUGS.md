@@ -101,6 +101,26 @@ Evidence: Four of the first five failures are apps that **work**, failing on
                       This one is arguably a real gap.
 
           Only req-2 (to-do list) is a plain failure: it printed nothing.
+
+          A sixth landed after this entry was first written, and it is a
+          different bug -- in the corpus rather than in the apps:
+
+            req-10 case converter  wants upper~ABC;lower~abc
+                   printed: upper:HELLO WORLD. IT'S A FINE DAY!
+                            lower:hello world. it's a fine day!
+                            title:Hello World. It's A Fine Day!
+                   -- `~` is a literal substring match, so `upper~ABC`
+                      only passes if the app's own sample text happens to
+                      contain the letters ABC. The author meant "some
+                      uppercase text"; the assert says something narrower
+                      and unmeetable.
+
+          Swept the rest of the corpus for the same shape: three asserts use
+          `~`, and the other two (`hex~#`, `output~{`) match structural
+          characters any correct app emits. **Request 10 is the only one
+          that assumes particular sample data.** Fixing it is a one-line
+          corpus edit, and it must be made before the next run rather than
+          after seeing this one's score.
 Impact:   **The headline number understates the product.** A benchmark that
           fails a correct BMI calculator because it wrote `height_cm`
           instead of `height` is measuring vocabulary agreement, not
