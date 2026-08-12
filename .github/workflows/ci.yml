@@ -236,20 +236,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target/
-          # K-071. The key used to be Cargo.lock alone, and `target/` is in the
-          # cache, so a `whisper-rs-sys` object file built under an older MSVC
-          # image was restored forever -- the lockfile never changes, so the
-          # cache never rotates. When the runner image updated, Rust started
-          # linking against a new UCRT while those cached C++ objects still
-          # expected the old one, and the link failed on twenty `__imp_*`
-          # symbols. The image was fine; the objects in the cache were stale.
-          #
-          # `whisper-rs-sys` is C++ compiled by CMake, so its output depends on
-          # the toolchain, not just on the lockfile. Including the image label
-          # rotates the cache the moment the image does. `restore-keys` is
-          # deliberately absent: falling back to an older key is exactly how
-          # the stale objects came back.
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.os }}-cargo-libtest-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-libtest-${{ hashFiles('**/Cargo.lock') }}
       - name: Run the library tests
         run: cargo test --workspace --lib
 
@@ -469,10 +456,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target/
-          # Same stale-object trap as the library-tests job (K-071): this one
-          # also caches `target/` across a matrix that includes Windows, and
-          # builds the workspace with speech on.
-          key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Build workspace
         run: cargo build --workspace
       - name: Build release binary
