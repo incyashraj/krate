@@ -140,9 +140,33 @@ Update:   2026-08-12, req 34 adds a second shape. A table app measured the
           Ten of twenty failures now turn on a key name.
 
 ### K-104 -- the benchmark's authoring budget is too small for its own corpus
-Status:   fixed 2026-08-12 (commit b1cdeff) -- a timeout and a dropped
-          connection are now `skipped`, not `fail`; per-tier budget still open
+Status:   fixed 2026-08-12 (commits b1cdeff, 82e440f) -- a timeout and a
+          dropped connection are `skipped`, not `fail`; per-tier budget open
 Owner:    lead
+Regression: 2026-08-12, same day, caused by the fix above and caught four
+          requests into run 3. The detection matched
+          `KRATE_AUTHOR_TIMEOUT_SECS` and `Raise the budget`, and the agent
+          transcript carries an environment dump containing
+          `KRATE_AUTHOR_TIMEOUT_SECS=1800` on **every** run. So the rule
+          fired on any request that got far enough to write a transcript,
+          and the first one to do so halted the benchmark:
+
+            [5] easy skipped account 406s a click counter
+            note: authoring hit the 1800s budget while still working
+
+          406 seconds against an 1800 second budget cannot both be true, and
+          that contradiction is what prompted the check.
+
+          Now matches only the sentence the CLI prints on a real timeout:
+          `did not finish within N minutes and was stopped`. Verified against
+          a live transcript from the running benchmark -- the env var appears
+          once, the new pattern zero times.
+
+          **The regression was worse than the bug.** The original wrongly
+          failed working apps; this wrongly excused them and stopped the run,
+          which removes data silently rather than visibly. A skip rule needs
+          testing against a healthy run, not only against the failure it was
+          written for -- my test covered four failure texts and no success.
 Severity: serious
 Class:    our-code
 Found:    2026-08-12, request 14 of the re-run (a note-taking app).
