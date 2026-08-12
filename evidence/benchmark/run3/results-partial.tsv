@@ -21,3 +21,4 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 20	medium	a contact book I can search	fail	does	365	32722	2	3	matches>=1	2/3 observable properties held
 21	medium	a CSV viewer that shows a table	pass	-	254	36869	2	2	-	-
 22	medium	a JSON pretty printer	fail	does	554	42269	2	3	output~{	2/3 observable properties held
+23	medium	a markdown preview that shows my headings and lists	fail	does	522	39694	1	2	bullets|list_items>=1	1/2 observable properties held

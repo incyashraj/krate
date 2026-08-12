@@ -72,9 +72,46 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-105 -- an assert cannot accept a synonym, so eight correct apps failed
-Status:   fixed 2026-08-12 (commit 7f06969) -- alternatives ship, corpus
-          updated, eleven archived apps recover on replay
+Status:   partly fixed 2026-08-12 (commit 7f06969). The operator ships and
+          works; **enumerating synonyms by hand does not converge** -- see
+          the 2026-08-13 finding below.
 Owner:    lead
+Finding:  2026-08-13, run 3. I populated the alternatives from run 2's
+          observed failures, which is fitting to the data. Run 3 broke two
+          requests on words I had not seen and so had not listed:
+
+            req 20  I added `query|search` after run 2 failed on `query`.
+                    Run 3 printed `query` AND `search` -- the teaching
+                    worked -- then failed `matches>=1` by printing
+                    `matched:3` and `results:3`.
+
+            req 23  I added `bullets|list_items` after run 2 failed on
+                    `bullets`. Run 3 printed `lists:178` and `items:178`.
+
+          Counting the names apps have chosen for one concept:
+
+            list items:      list_items, lists, items, bullets    = 4
+            search results:  matches, matched, results            = 3
+            formatted output: output, out                         = 2
+
+          Each run produces new ones. A hand-maintained synonym list chases
+          a moving target and will always be one run behind, so the operator
+          is necessary and not sufficient.
+Better:   Three options, none yet chosen:
+          1. **Publish the expected key names to the app.** The corpus
+             already knows them; withholding them is what makes this a
+             guessing game. It weakens the test slightly -- the app is told
+             what to report -- but the test is meant to measure whether the
+             app DOES the thing, not whether it guesses vocabulary.
+          2. Match on meaning rather than spelling. Needs a judge, which the
+             benchmark README rejects for good reason: not reproducible.
+          3. Teach apps to print the request's nouns plus common variants.
+             Already partly done ("print both when ambiguous") and it is
+             what made req 20's `query`/`search` work -- but an app cannot
+             enumerate every reader's vocabulary either.
+          Option 1 is the only one that converges. Worth doing before the
+          next run, and it makes the pass rate mean "did the app do the
+          thing", which is what it was always supposed to mean.
 Severity: serious
 Class:    our-code
 Found:    2026-08-12, at request 28 of the re-run, once the pattern was
