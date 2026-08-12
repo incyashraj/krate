@@ -1166,6 +1166,21 @@ Fix:      Mitigated 2026-08-07: release and runtime-linking CI jobs pinned
           green on it. The real fix (whisper-rs/ggml against the new UCRT
           arrangement, or an upstream bump) is still open before the pin can
           come off -- windows-2022 will be retired eventually.
+Update:   2026-08-12. Still failing, now on the pinned windows-2022 image
+          too, with the same class of symbol (`__imp_fgetc`, `__imp_fputs`,
+          `__imp_fgetpos` -- stdio rather than math this time). CI run
+          31528953170: **10 of 11 jobs green, this is the only red one.**
+
+          Why releases keep shipping anyway, which was not written down and
+          should have been: the release workflow builds Windows with
+          `no-speech: true`, so it never links whisper at all. Only this CI
+          job builds the full feature set. That is the whole reason v0.1.12
+          published six platforms green while this stayed red.
+
+          The cost of leaving it: main has been red for five days, and a
+          permanently red board stops being read. The next failure that is a
+          real defect will look exactly like this one. That is the argument
+          for fixing it, not the speech feature itself.
 
 ### K-070 -- typing a request with no AI connected throws the request away
 Status:   fixed, shipped in v0.1.3
