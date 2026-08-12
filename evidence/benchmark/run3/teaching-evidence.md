@@ -166,3 +166,30 @@ examples rather than better reporting in general, req 9 is the exhibit they
 would use, and req 3 is the answer to it.
 
 Five flips: req 2, 5, 7, 8, 9. Strict check nine of nine.
+
+## Attribution: how much of the easy-tier gain is the app, and how much is me?
+
+Six easy-tier requests flipped from fail to pass. The obvious objection is
+that I also edited the corpus and the harness between runs, so some of the
+gain could be me moving the target. Checked against the original corpus at
+commit 7ef2c85, before any of my edits:
+
+  req 2   corpus UNCHANGED   the flip is the app
+  req 5   corpus edited      but `count>=1` -- the ORIGINAL assert -- passes
+                             on run 3's output anyway, so the edit was not
+                             needed
+  req 7   corpus UNCHANGED   the flip is the app
+  req 8   corpus UNCHANGED   the flip is the app
+  req 9   corpus UNCHANGED   the flip is the app
+  req 10  corpus edited      and the original `upper~ABC` still fails, because
+                             it was unmeetable by design -- a literal
+                             substring match that only passed if the app's
+                             sample text happened to contain "ABC"
+
+**So five of six flips are the app improving against an unchanged bar.** The
+sixth is a corpus bug that no correct app could ever have satisfied.
+
+Combined with the strict check -- all ten passes hold with the alternatives
+operator stripped out -- the easy-tier result is not the measure being
+softened. That is the claim I most wanted to be able to falsify, and it
+survived the two tests I could think of.

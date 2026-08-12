@@ -1,0 +1,11 @@
+text:the quick brown fox jumps over the LAZY dog
+input:the quick brown fox jumps over the LAZY dog
+upper:THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG
+lower:the quick brown fox jumps over the lazy dog
+title:The Quick Brown Fox Jumps Over The Lazy Dog
+result:The Quick Brown Fox Jumps Over The Lazy Dog
+mode:title
+conversions:3
+chars:43
+words:9
+copied:yes
