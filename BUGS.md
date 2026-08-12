@@ -117,6 +117,26 @@ Note:     Teaching cannot close this on its own -- see the correction in
           K-103, where 75% of corpus keys cannot be derived from the request
           at all. The pack now says to print both names when a name is
           ambiguous, which helps, but the harness is where this belongs.
+Update:   2026-08-12, req 34 adds a second shape. A table app measured the
+          pixel width of all five columns, computed the grid width, and
+          identified the widest column and the row it came from:
+
+            columns:5  measured:yes  widest_column:1
+            width_part:200  width_supplier:266  width_location:151
+            grid_width:816  widest_source_row:1
+
+          It failed `cols>=3` (abbreviation, as above) and `widest>=1` --
+          not a synonym this time but a **prefix**: it printed
+          `widest_column` where the assert wanted `widest`.
+
+          Alternatives alone would not have saved it. The fix needs either
+          the corpus to spell out `widest|widest_column`, or a rule that a
+          key matches when the assert's name is a prefix of it followed by
+          an underscore. The second is more general and riskier: under it
+          `width_part` still would not match `width`, which is right, but
+          the rule has to be stated deliberately rather than assumed to
+          behave.
+          Ten of twenty failures now turn on a key name.
 
 ### K-104 -- the benchmark's authoring budget is too small for its own corpus
 Status:   open
