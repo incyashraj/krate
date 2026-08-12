@@ -198,3 +198,32 @@ above.
 What would change my mind: an app that prints nothing, crashes, or reports
 state that is plainly incorrect. Req 2 was the first kind. Nothing so far
 has been the third.
+
+## req 22, and the first failure the shipped fix would have caught
+
+  req 22 JSON printer    wanted input? output~{ lines>=3
+                         printed  valid:yes lines:18 objects:2 arrays:2
+                                  values:10 depth:2 bad_json_rejected:yes
+                                  output_bytes:191 style:2 spaces
+                         -- eleven facts ABOUT the output, and never the
+                            output. It parses, counts, measures depth, and
+                            rejects bad JSON, but a pretty printer that
+                            never shows pretty-printed text has not
+                            demonstrated its one job.
+
+Unlike the naming failures, this is not the corpus being unguessable. The
+pack already says, in the section shipped earlier today: "If the app
+generates something -- a password, a colour, an id -- print the thing
+itself, not only facts about it." That is this case exactly, and the same
+rule covers req 7 (a password generator that printed length, bits and
+distinct-character counts, but no password).
+
+So of the failures so far:
+
+  genuinely unfixable by teaching (corpus name unguessable):  most
+  fixable, and now fixed in the pack:                         req 7, req 22
+  fixable, self-exercise:                                     req 16-19
+  plain product failure:                                      req 2
+
+That distinction is the useful output of this run. It says which part of the
+gap is ours to close and which part is the measure's.
