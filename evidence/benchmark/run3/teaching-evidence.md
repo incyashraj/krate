@@ -308,3 +308,41 @@ corpus:
 improving; this one stands half on the app and half on me making the measure
 accept a synonym. Both numbers get reported: the raw pass rate, and the
 count that survives against the corpus as it was.
+
+## req 16 -- the request that produced a rule now satisfies it
+
+  req 16 shopping list (pass 3/3)
+
+    run 2:  items:5 got:3 remaining:2 saved:yes
+            -- a correct snapshot with no evidence it can add or remove
+
+    run 3:  items:20 entries:20 added:1 removed:1 remaining:17
+            got:3 saved:yes
+
+This is a closed loop worth stating exactly, because every step is in the
+repository:
+
+  1. run 2's shopping list printed a snapshot and failed `added` and
+     `removed`
+  2. that failure produced the self-exercise rule, whose worked example
+     reads: "A shopping list asked for 'add and remove items' should add
+     one and remove one, then report both"
+  3. run 3's shopping list adds one, removes one, and reports both
+
+Its corpus row was never edited, so it passes against run 2's exact asserts.
+
+## The medium tier, four requests in
+
+    req 13 habit tracker    run 2 fail  ->  run 3 pass
+    req 14 note taking      run 2 fail  ->  run 3 pass   (timed out in run 2)
+    req 15 expense tracker  run 2 fail  ->  run 3 pass
+    req 16 shopping list    run 2 fail  ->  run 3 pass
+
+Four for four, against four failures at the same point in run 2. Against run
+2's own corpus the count is 15 of 16, the exception being req 15's
+`entries`/`expenses`.
+
+Too early to call the tier -- run 2's medium tier had 18 requests and this is
+four of them. But the claim under test was that those failures were reporting
+rather than broken apps, and so far every one that has been retried reports
+better and passes.
