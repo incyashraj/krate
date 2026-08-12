@@ -47,10 +47,27 @@ actually printed.
                          -- 9 entries and a real total; `expenses` not
                             `entries`, and the `$` makes total non-numeric
 
+## A third kind, found at request 16
+
+  req 16 shopping list   wanted items>=2 added>=1 removed>=1
+                         printed  items:5 got:3 remaining:2 saved:yes
+                         -- a snapshot, with no evidence it can add or
+                            remove. Not a naming problem and not a broken
+                            app: the pack told it to "print what the app is
+                            holding", while the benchmark assumes `quick`
+                            "drives the app through its own interactions".
+                            The app obeyed the pack. The two documents
+                            disagreed.
+
+                            This matters beyond one request: with no
+                            scripted-input path, self-exercise is the ONLY
+                            evidence that an app's controls respond at all.
+
 ## Running tally
 
   genuine product failures: 1
   vocabulary / format:      7  (one of which is a corpus bug)
+  contract disagreement:    1
 
 The teaching fix for this shipped mid-run (K-103) but the run in flight was
 already past those requests, so it cannot show here. That is the point of

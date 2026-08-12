@@ -551,6 +551,22 @@ sample file path instead. Handle `quick` before any other argument parsing: on \
 stdin), print what the app is holding, and exit 0. Never wait for input or open \
 a window nobody will close. An app that parses arguments strictly and rejects \
 the unknown `quick` fails here after building and packing correctly.\n\n\
+**On `quick`, operate your own controls -- do not just print a snapshot.** \
+The request names the things a person will do, and `quick` is where the app \
+proves it can do them. A shopping list asked for \"add and remove items\" \
+should add one and remove one, then report both; printing \
+`items:5 remaining:2` describes a list without showing it can be changed, \
+and nothing outside the app can tell the difference between working buttons \
+and a picture of some. Measured: a shopping list did exactly this and was \
+scored a failure while being, as far as anyone could tell, correct.\n\n\
+So drive the verbs in the request and report their result:\n\n\
+\u{20}\u{20}\u{20}\u{20}items:5      // after seeding\n\
+\u{20}\u{20}\u{20}\u{20}added:1      // it added one\n\
+\u{20}\u{20}\u{20}\u{20}removed:1    // and removed one\n\
+\u{20}\u{20}\u{20}\u{20}saved:yes\n\n\
+This is also the only evidence that clicking works at all: there is no \
+scripted-input path, so an app that cannot exercise its own controls cannot \
+show that they respond.\n\n\
 **Print one `key:value` per line, and make the keys mean something.** This is \
 the only way anything outside the app can tell whether it did what was asked. \
 `check-app` reads it, CI reads it, and a benchmark reads it. \"print something\" \
