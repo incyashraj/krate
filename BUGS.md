@@ -72,8 +72,9 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-103 -- the benchmark scores correct apps as failures over key names
-Status:   open
-Owner:    unclaimed
+Status:   half fixed 2026-08-12 -- the teaching half shipped; the corpus and
+          the missing operator are still open
+Owner:    lead
 Severity: serious
 Class:    our-code
 Found:    2026-08-12, mid-run of the benchmark re-run, when five consecutive
@@ -133,6 +134,23 @@ Evidence: Four of the first five failures are apps that **work**, failing on
           That is the real limitation, and it argues for a sixth operator
           rather than for a cleverer assert. Left unfiled as its own entry
           because it is the same fix as this one.
+Fixed:    2026-08-12, the teaching half. By request 13 the count was **six of
+          seven failures being working apps with different key names**
+          (`clicks` for `count`, `done-today` for `marked`, `height_cm` for
+          `height`, `elapsed:2:20.18` for a numeric `elapsed`), so the pack
+          now says what to name a key rather than only how to format one:
+          use the request's own noun, keep units out of the key, print
+          durations bare, and print a generated thing rather than only facts
+          about it. Every example in that section is one of the six real
+          failures.
+          The pack said "lower-case keys, no spaces" and never said what to
+          call them, so apps invented reasonable names and the corpus
+          expected different reasonable names. Same shape as K-102: the
+          contract was under-specified, not disobeyed.
+Still open: the corpus needs a sweep for asserts that assume a name no
+          request implies, and the harness needs a key-to-key operator. The
+          run in flight keeps the old corpus -- changing the measure
+          mid-run would invalidate it.
 Impact:   **The headline number understates the product.** A benchmark that
           fails a correct BMI calculator because it wrote `height_cm`
           instead of `height` is measuring vocabulary agreement, not

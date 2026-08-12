@@ -564,7 +564,24 @@ and the total; a game prints the score and whether it is over:\n\n\
 \u{20}\u{20}\u{20}\u{20}saved:yes\n\n\
 Lower-case keys, no spaces around the colon, one pair per line, numbers as \
 bare digits. Seed enough state in the `quick` path that the numbers are \
-interesting -- a to-do list that prints `items:0` has proved nothing either.\n";
+interesting -- a to-do list that prints `items:0` has proved nothing either.\n\n\
+**Name the key after the plain noun in the request, and print the number \
+bare.** Whatever reads the output has to guess the name otherwise, and it \
+guesses the obvious one. Measured: six of seven benchmark failures were apps \
+that worked perfectly and were scored wrong because of a name --\n\n\
+\u{20}\u{20}\u{20}\u{20}count:60          not  clicks:60\n\
+\u{20}\u{20}\u{20}\u{20}height:178        not  height_cm:178\n\
+\u{20}\u{20}\u{20}\u{20}marked:2          not  done-today:2\n\
+\u{20}\u{20}\u{20}\u{20}password:hT7x...  not  length:32 with no password\n\
+\u{20}\u{20}\u{20}\u{20}elapsed:140       not  elapsed:2:20.18\n\n\
+Three rules that follow. Use the request's own word: a click counter prints \
+`count`, a habit tracker prints `marked`, a BMI calculator prints `height` \
+and `weight`. Put units in the value or leave them out, never in the key -- \
+`height:178`, not `height_cm`. And print durations and amounts as bare \
+numbers; `elapsed:2:20.18` cannot be compared to anything, so print \
+`elapsed:140` and add a formatted `elapsed_text` beside it if it helps a \
+person. If the app generates something -- a password, a colour, an id -- \
+print the thing itself, not only facts about it.\n";
 
 /// Section 4: the GUI world interfaces, extracted from the WIT. A GUI app calls
 /// these through its generated `bindings::krate::{ui,gfx,audio,speech}::*`, not
