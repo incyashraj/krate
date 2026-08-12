@@ -71,6 +71,53 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-105 -- an assert cannot accept a synonym, so eight correct apps failed
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-12, at request 28 of the re-run, once the pattern was
+          countable rather than anecdotal.
+Evidence: Eight failures are a single synonym away from passing. The app's
+          word and the corpus's word mean the same thing:
+
+            req  wanted      app printed    kind
+             5   count       clicks         synonym
+            13   marked      done-today     synonym
+            15   entries     expenses       domain word
+            20   query       search         synonym (and `search` is the
+                                            word in the request itself)
+            21   cols        columns        abbreviation
+            23   bullets     list_items     synonym
+            24   max         largest        synonym
+            28   recorded    logged         synonym
+
+          Every one of these apps did the work. The mood tracker held 31
+          days, 12 entries and an average of 3.5; it failed because it wrote
+          `logged` where the corpus wanted `recorded`.
+Impact:   Eight of nineteen failures in this run. The benchmark exists to
+          stop measuring the wrong thing, and on this axis it is measuring
+          whether an app and a corpus author picked the same word from a
+          set of equally correct ones.
+Fix:      Let an assert name alternatives, and pass if any of them holds:
+
+            count|clicks>=1
+            cols|columns>=2
+            recorded|logged>=1
+
+          One character of syntax, and the operator table in
+          `scripts/benchmark-run.sh` already splits on the operator, so the
+          key half just needs splitting on `|` before the lookup. Then sweep
+          the corpus and add the obvious alternatives.
+Not the fix: loosening the bar in any other way. An app that does not report
+          a property still fails; this only stops two names for the same
+          reported property counting as a miss. The pass bar itself does not
+          move.
+Note:     Teaching cannot close this on its own -- see the correction in
+          K-103, where 75% of corpus keys cannot be derived from the request
+          at all. The pack now says to print both names when a name is
+          ambiguous, which helps, but the harness is where this belongs.
+
 ### K-104 -- the benchmark's authoring budget is too small for its own corpus
 Status:   open
 Owner:    unclaimed

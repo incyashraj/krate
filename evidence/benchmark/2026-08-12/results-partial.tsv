@@ -26,3 +26,4 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 25	medium	a tic tac toe game against another person on the same computer	fail	does	178	23610	1	3	board?,turn?	1/3 observable properties held
 26	medium	a memory matching card game	fail	does	504	31708	2	3	flipped>=2	2/3 observable properties held
 27	medium	a reading list of books with a read/unread mark	pass	-	238	28762	3	3	-	-
+28	medium	a mood tracker with a face for each day	fail	does	246	27446	1	2	recorded>=1	1/2 observable properties held
