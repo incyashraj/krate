@@ -414,6 +414,14 @@ impl Phase3GuiHost {
     /// nothing native ever fed. A window that existed but took no input and
     /// ignored its close button was the result. Headless runs skip it -- the
     /// draft adapter has no native loop to tick.
+    /// Pump the native event loop from outside the guest's own event calls.
+    ///
+    /// The epoch callback uses this: it fires *inside* running guest code,
+    /// where none of the ordinary event paths are reachable. See K-032.
+    pub fn pump_native_windows_for_epoch(&self) {
+        self.pump_native_windows();
+    }
+
     fn pump_native_windows(&self) {
         if self.headless {
             return;

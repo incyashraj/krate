@@ -97,6 +97,21 @@ pub enum Phase3HostUiMode {
     NativeWithHeadlessFallback,
 }
 
+impl Phase3HostUiMode {
+    /// Whether this run could put a real window on screen.
+    ///
+    /// Gates epoch interruption (K-032). A headless run has no close button,
+    /// so keeping the native event loop alive during guest computation buys
+    /// nothing there and the epoch check is pure cost.
+    pub fn can_open_a_window(self) -> bool {
+        match self {
+            Phase3HostUiMode::HeadlessDraft => false,
+            Phase3HostUiMode::NativePrototype
+            | Phase3HostUiMode::NativeWithHeadlessFallback => true,
+        }
+    }
+}
+
 /// Owns the Phase 3 UI guard and host adapter for one runtime session.
 pub struct Phase3UiRuntime {
     guard: UapiGuard,
@@ -676,6 +691,20 @@ fn map_ui_policy(err: UapiError) -> UiDispatchError {
 
 #[cfg(test)]
 mod tests {
+    /// K-032: the gate that decides whether a run pays for epoch
+    /// interruption. Epoch roughly doubles startup (0.226s -> 0.480s measured
+    /// on krate-savings), so a run that can never show a window must not
+    /// carry it.
+    #[test]
+    fn only_a_run_that_can_open_a_window_pays_for_epoch_checks() {
+        assert!(
+            !Phase3HostUiMode::HeadlessDraft.can_open_a_window(),
+            "a headless run has no close button, so the epoch cost buys nothing"
+        );
+        assert!(Phase3HostUiMode::NativePrototype.can_open_a_window());
+        assert!(Phase3HostUiMode::NativeWithHeadlessFallback.can_open_a_window());
+    }
+
     use krate_adapter_common::ui::{
         DraftUiAdapter, UiEvent, WidgetId, WidgetKind, WidgetNode, WidgetStyle, WindowBackendKind,
         WindowOptions, WindowSize,

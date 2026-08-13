@@ -227,6 +227,20 @@ pub struct Runtime {
     engine: Engine,
 }
 
+/// How often the epoch ticker fires. 8ms is about half a 60Hz frame, so a
+/// click is picked up well inside the time a person would notice, while the
+/// cost is one atomic increment per tick.
+const EPOCH_TICK_INTERVAL: std::time::Duration = std::time::Duration::from_millis(8);
+
+/// Ticks between epoch callbacks. One, so every tick pumps: the callback only
+/// runs while the guest is executing, and a busy guest is exactly the case
+/// that needs the window kept alive.
+const EPOCH_TICKS_PER_PUMP: u64 = 1;
+
+/// How many times the epoch callback has pumped the native loop. Read by
+/// `KRATE_EPOCH_STATS=1` so the fix can be shown to work rather than assumed.
+pub static EPOCH_PUMPS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 impl Runtime {
     pub fn new(config: &Config) -> Result<Self> {
         let mut wt_config = wasmtime::Config::new();
@@ -256,6 +270,42 @@ impl Runtime {
 
         if config.fuel.is_some() {
             wt_config.consume_fuel(true);
+        }
+
+        // Epoch interruption is what lets the host regain control *inside*
+        // running guest code (K-032).
+        //
+        // The window's close button is delivered by AppKit, AppKit only runs
+        // on the main thread, and the guest runs on that same thread. The
+        // native event loop is pumped from `ui::events::poll` and
+        // `ui::events::wait` and nowhere else -- so an app that computes for a
+        // long stretch without calling either starves AppKit completely. The
+        // click never reaches `windowShouldClose` at all, the window stays
+        // open, and macOS shows its own spinning "not responding" cursor.
+        //
+        // A CFRunLoop observer cannot fix this: this runtime drives its own
+        // manual pump (`nextEventMatchingMask` in a loop) rather than
+        // `[NSApp run]`, so there is no run loop turning that an observer
+        // could hang off. And a pure computation makes no host calls, so
+        // there is no UAPI boundary to hook either. Epoch interruption is the
+        // one mechanism that does not need the guest to cooperate.
+        //
+        // **Only when a window is actually possible.** It is not free: the
+        // check goes on every loop back-edge, so it costs compile time on
+        // every app that carries it. Measured on this machine with one binary
+        // built both ways and nothing else changed, six alternating runs of
+        // krate-savings:
+        //
+        //     gated (off)   0.226s
+        //     forced on     0.480s
+        //
+        // Roughly double. A headless run has no window and no close button,
+        // so that cost would buy nothing there, and CLI apps -- which can
+        // never open a window at all -- would pay it for a mechanism they
+        // cannot use. Gating on the UI mode keeps every CLI run and every
+        // check-app stage at the speed they were.
+        if config.phase3_ui_mode.can_open_a_window() {
+            wt_config.epoch_interruption(true);
         }
 
         let engine =
@@ -423,7 +473,60 @@ impl Runtime {
                 .map_err(|err| RuntimeError::EngineInit(err.to_string()))?;
         }
 
+        // Keep the window answering while the guest is busy (K-032).
+        //
+        // The engine's epoch is ticked by a background thread; this callback
+        // runs when the guest crosses a safepoint after a tick, pumps the
+        // native event loop, and lets the guest carry straight on. So a close
+        // click is seen even while the app is deep in a computation that
+        // makes no host calls at all.
+        //
+        // `Continue` rather than `Interrupt`: this exists to keep the window
+        // responsive, not to cut apps off. The wall-clock budget and fuel are
+        // the mechanisms that end a run, and both are unchanged.
+        // Only when the engine was built with epoch interruption on -- a
+        // deadline set on a store whose engine has it disabled is dead
+        // weight, and starting the ticker would burn a thread for nothing.
+        if config.phase3_ui_mode.can_open_a_window() {
+            store.set_epoch_deadline(EPOCH_TICKS_PER_PUMP);
+            store.epoch_deadline_callback(|mut ctx| {
+                EPOCH_PUMPS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if let Some(gui) = ctx.data_mut().phase3_gui.as_ref() {
+                    gui.pump_native_windows_for_epoch();
+                }
+                Ok(wasmtime::UpdateDeadline::Continue(EPOCH_TICKS_PER_PUMP))
+            });
+            self.start_epoch_ticker();
+        }
+
         Ok(store)
+    }
+
+    /// Tick the engine's epoch on a background thread, forever.
+    ///
+    /// One thread for the process, started on first use: the epoch is a
+    /// property of the engine, and a thread per store would multiply ticks
+    /// without making anything more responsive.
+    ///
+    /// The thread outlives the run deliberately. It holds only a weak
+    /// reference to the engine, so it cannot keep one alive, and it costs one
+    /// atomic increment per interval.
+    fn start_epoch_ticker(&self) {
+        static STARTED: std::sync::Once = std::sync::Once::new();
+        let weak = self.engine.weak();
+        STARTED.call_once(move || {
+            std::thread::Builder::new()
+                .name("krate-epoch".to_string())
+                .spawn(move || loop {
+                    std::thread::sleep(EPOCH_TICK_INTERVAL);
+                    let Some(engine) = weak.upgrade() else {
+                        // The engine is gone; nothing left to interrupt.
+                        return;
+                    };
+                    engine.increment_epoch();
+                })
+                .ok();
+        });
     }
 
     fn run_phase1_component(
@@ -598,6 +701,12 @@ impl Runtime {
         // that trapped or ran out of fuel still reports what it saw. An app
         // that dies halfway is exactly the kind this stage exists to describe,
         // and a missing report would read as "could not measure".
+        if std::env::var_os("KRATE_EPOCH_STATS").is_some() {
+            eprintln!(
+                "epoch: pumped the native loop {} times during guest execution",
+                EPOCH_PUMPS.load(std::sync::atomic::Ordering::Relaxed)
+            );
+        }
         if let Some(gui) = store.data().phase3_gui.as_ref() {
             if let (Some(report), Some(path)) =
                 (gui.usability_report(), gui.usability_report_path())
