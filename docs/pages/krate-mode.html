@@ -18,6 +18,8 @@
        same-origin path so the page stays small and the prompt stays generated;
        if that fetch fails the button falls back to the download link, which is
        always correct. -->
+  <link rel="stylesheet" href="/krate.css" />
+  <link rel="stylesheet" href="/site.css" />
   <style>
     /* Geist, the site's face since the 2026 shell. Served from the site root. */
     @font-face { font-family: "Geist"; src: url("/fonts/geist-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
@@ -65,7 +67,6 @@
        is actually code keeps the mono it always had. */
     pre, code, kbd, samp { font-family: var(--mono); }
 
-
     a { color: inherit; }
     button { font: inherit; }
     img { display: block; max-width: 100%; }
@@ -92,83 +93,6 @@
       width: min(var(--max), calc(100% - 40px));
       margin: 0 auto;
     }
-
-    .site-nav {
-      position: sticky;
-      z-index: 80;
-      top: 0;
-      background: rgba(10, 10, 10, .8);
-      border-bottom: 1px solid var(--line);
-      backdrop-filter: blur(18px);
-    }
-
-    .nav-inner {
-      min-height: 68px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 28px;
-    }
-
-    .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: 10px;
-      color: var(--text);
-      text-decoration: none;
-      font-weight: 800;
-      letter-spacing: -.02em;
-    }
-
-    .brand-mark {
-      display: block;
-      width: 30px;
-      height: 30px;
-      border-radius: 7px;
-      font-size: 15px;
-      font-weight: 900;
-    }
-
-    .nav-links {
-      display: flex;
-      align-items: center;
-      gap: 3px;
-      margin-left: auto;
-    }
-
-    .nav-link {
-      padding: 8px 10px;
-      color: var(--muted);
-      text-decoration: none;
-      font-size: 13px;
-      border-radius: 6px;
-    }
-
-    .nav-link:hover,
-    .nav-link:focus-visible {
-      color: var(--text);
-      background: var(--panel-raised);
-      outline: none;
-    }
-
-    .nav-cta {
-      margin-left: 12px;
-      padding: 8px 13px;
-      color: var(--text);
-      text-decoration: none;
-      font-size: 13px;
-      border: 1px solid var(--line-strong);
-      border-radius: 6px;
-    }
-
-    .nav-cta:hover,
-    .nav-cta:focus-visible {
-      color: var(--bg);
-      background: var(--cyan);
-      border-color: var(--cyan);
-      outline: none;
-    }
-
     h1, h2, h3, p { margin-top: 0; }
 
     .hero {
@@ -633,7 +557,6 @@
 
     @media (max-width: 600px) {
       .wrap { width: min(100% - 28px, var(--max)); }
-      .nav-links .nav-link { display: none; }
       .footer-inner {
         align-items: flex-start;
         flex-direction: column;
@@ -665,21 +588,75 @@
 <body>
   <a class="skip" href="#main">Skip to content</a>
 
-  <nav class="site-nav" aria-label="Primary navigation">
-    <div class="wrap nav-inner">
-      <a class="brand" href="/" aria-label="Krate home">
-        <img class="brand-mark" src="/krate-glyph-blue.png" alt="" />
-        <span>Krate</span>
-      </a>
-      <div class="nav-links">
-        <a class="nav-link" href="/#start">Start</a>
-        <a class="nav-link" href="/cloud/">Cloud</a>
-        <a class="nav-link" href="/docs/">Docs</a>
-        <a class="nav-link" href="https://github.com/incyashraj/krate">GitHub</a>
-        <a class="nav-cta" href="/#start">Get Krate</a>
+<header class="site-head" id="siteHead">
+  <div class="wrap head-inner">
+    <a class="brand" href="/">
+      <img src="/krate-glyph-white.png" alt="" width="22" height="22" />
+      KRATE
+    </a>
+
+    <nav class="head-nav" aria-label="Primary">
+      <div class="nav-item">
+        <button class="nav-link" type="button" aria-expanded="false">Product <span class="chev">▾</span></button>
+        <div class="nav-panel">
+          <div class="panel-links">
+            <a href="/#install">Start<span class="d">install once, open anything</span></a>
+            <a href="/cloud/">Gallery<span class="d">real published apps, run by URL</span></a>
+            <a href="/progress/">Platforms<span class="d">six builds, both chips, three systems</span></a>
+            <a href="/faq.html">FAQ<span class="d">the honest answers</span></a>
+          </div>
+          <div class="panel-mini" aria-hidden="true">
+            <div class="p">&gt; a habit tracker</div>
+            <div><span class="g">+</span> writing the code</div>
+            <div><span class="g">+</span> compiling it</div>
+            <div><span class="g">+</span> checking it runs</div>
+            <div class="p">done · 41 KB<span class="cursor"></span></div>
+          </div>
+        </div>
       </div>
+
+      <div class="nav-item">
+        <button class="nav-link" type="button" aria-expanded="false">Develop <span class="chev">▾</span></button>
+        <div class="nav-panel">
+          <div class="panel-links">
+            <a href="/docs/">Docs<span class="d">the book: build, check, pack</span></a>
+            <a href="/reports/">Reports<span class="d">what runs today, with proof</span></a>
+            <a href="/progress/">Progress<span class="d">release by release</span></a>
+            <a href="https://github.com/incyashraj/krate">GitHub<span class="d">all of it, open source</span></a>
+          </div>
+          <div class="panel-mini" aria-hidden="true">
+            <div class="p">$ krate check-app .</div>
+            <div><span class="g">✓</span> build passed</div>
+            <div><span class="g">✓</span> imports passed</div>
+            <div><span class="g">✓</span> run passed</div>
+            <div><span class="g">OK</span><span class="cursor"></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="nav-item">
+        <button class="nav-link" type="button" aria-expanded="false">Cloud <span class="chev">▾</span></button>
+        <div class="nav-panel">
+          <div class="panel-links">
+            <a href="/cloud/">Gallery<span class="d">browse what people published</span></a>
+            <a href="/publish/">Publish<span class="d">one command, a link anyone can run</span></a>
+            <a href="/contact/">Contact<span class="d">talk to the person building it</span></a>
+          </div>
+          <div class="panel-mini" aria-hidden="true">
+            <div class="p">$ krate publish app.krate</div>
+            <div><span class="g">✓</span> uploaded</div>
+            <div class="b">krate.tech/cloud</div>
+            <div class="p">send the link<span class="cursor"></span></div>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="head-cta">
+      <a class="pill pill-primary" href="/#install">Install</a>
     </div>
-  </nav>
+  </div>
+</header>
 
   <main id="main">
     <!-- 1. Hero -->
