@@ -153,6 +153,45 @@ Note:     check-app cannot catch this today. The usability stage measures
           were drawn in the same place. Detecting it needs the region
           measure that K-099 also wants.
 
+### K-108 -- dead space cannot tell an editor from an app that stopped short
+Status:   open
+Owner:    unclaimed
+Severity: minor
+Class:    runtime-hole
+Found:    2026-08-13, while fixing K-099. Named rather than papered over.
+Evidence: krate-notes reports 38.9% of its window empty, the highest of the
+          21 apps measured, and it is not a defect: the empty part is the
+          editor below a short note, which is where you type.
+
+              $ krate run krate-notes.wasm --shoot n.png --check-layout
+              layout: nothing is drawn in 39% of the window ...
+
+Why not fixed with K-099: an editor with room left in it and an app that
+          stopped drawing halfway down emit the same draw calls -- content
+          at the top, nothing below. Two rules were tried against all 21
+          measured apps and neither separated them:
+
+            "content above the region"      also suppressed the real defect
+                                            in `the_bottom_half_left_empty`
+            "inside a drawn container"      finds no container: krate-notes
+                                            draws its editor as bare
+                                            background with text on it, and
+                                            its only large rect is the
+                                            sidebar, which does not contain
+                                            the empty region
+
+          A canvas app has no widget kind to ask, so the information is not
+          in the draw list at all.
+Mitigation: the finding is worded as what was measured rather than as a
+          verdict, surfaces as a note and never a failure, and the false
+          positive is a test that asserts the wrong answer on purpose
+          (`an_editor_with_room_to_type_is_reported_and_should_not_be`).
+          If that test starts failing, the limit was fixed and this closes.
+Fix:      Probably needs the guest to say so -- a way to mark a region as
+          "somewhere a person fills", which the host then excludes. That is
+          a WIT change and wants a real second use case before it is worth
+          one.
+
 ### K-107 -- text drawn over shapes is not detected, only text over text
 Status:   open
 Owner:    unclaimed
@@ -687,8 +726,8 @@ Note:     This is the highest-value signal we have that is not a guess --
           rate helps every future user, and G5 needs opens that work.
 
 ### K-099 -- nothing measures wasted space inside a generated app's window
-Status:   open
-Owner:    unclaimed
+Status:   fixed 2026-08-13 (fc9bce2), with a known limit -- see K-108
+Owner:    lead
 Severity: moderate
 Class:    runtime-hole
 Found:    2026-08-12, after K-098's teaching fix. Generated apps now use the
@@ -721,6 +760,33 @@ Note:     The teaching half is done (see the density rules in
           `authoring_context.rs`) and measurably helps, but the AI trades
           density off against overlap between runs, which is exactly the
           kind of regression only a machine check holds.
+
+Fix:      2026-08-13, commit fc9bce2. Measured from the recorded draw calls
+          rather than the pixels, which is what made it tractable: the
+          background is one op covering the whole canvas, so it is
+          recognised by size and excluded, and everything else is content.
+          Coverage onto a 24x24 grid, largest empty rectangle by histogram
+          sweep.
+
+          Two tries to find the frame boundary. `clear` looked like the
+          start of a frame and is not -- ten of fourteen generated apps
+          never call it, painting a full-canvas gradient instead, so they
+          recorded no canvas size and went unmeasured. That is the same
+          "detects nothing while claiming to" failure this bug was reverted
+          for the first time, caught only because the calibration run
+          printed a measurement for 4 of 14 apps. The boundary is
+          `publish_canvas`.
+
+          Calibrated across 21 apps (14 generated, 7 hand-written). All but
+          two sit at or under 14.6%, so 16% is above the ordinary band
+          rather than a round number picked in advance:
+
+            req-34        17%   a generated table with a 157px unused strip
+                                down its right side, full height. Confirmed
+                                in the screenshot; its last row is clipped
+                                for the same reason.
+            krate-notes   39%   a text editor with a short note in it.
+                                A false positive -- see K-108.
 
 ### K-098 -- the pack taught a rounded-corner hack for a primitive that shipped
 Status:   fixed 2026-08-11 (commit e6df2bf)
