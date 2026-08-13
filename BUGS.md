@@ -153,6 +153,46 @@ Note:     check-app cannot catch this today. The usability stage measures
           were drawn in the same place. Detecting it needs the region
           measure that K-099 also wants.
 
+### K-110 -- every app after the first opens with no window at all (macOS)
+Status:   fixed 2026-08-13 (9901c16), NOT yet released
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-13, Yashraj: "double click open is not working here in my pc,
+          and not in windows as well ... this breaks so often".
+Evidence: Open one .krate and it opens. Leave it running, double-click a
+          second, and nothing appears -- no window, no error. Reproduced on
+          the RELEASED v0.1.12 with an app made through the full user path:
+
+              installed build   windows: Cubes,              <- second missing
+              with the fix      windows: Cubes, Tea Timer
+
+          The process is running and the runtime prints
+          `opened window "Tea Timer"`, so from the inside everything worked.
+
+Cause:    The first document arrives through AppKit's open-documents event and
+          runs in the process macOS launched -- a registered GUI application.
+          Every later document went through `spawn_open_run`, a bare
+          `Command::spawn`. That produces a process macOS does not consider a
+          GUI app: no LaunchServices registration, no activation, so AppKit
+          will not put its window on screen however correctly the runtime
+          creates it.
+
+          That is why it read as random. It is not: one app always works, the
+          second never does. Which one somebody hits depends only on whether
+          they already had an app open.
+Fix:      Relaunch through the .app bundle -- `open -n -a Krate.app <file>` --
+          so LaunchServices registers the new instance. Direct spawn stays as
+          the fallback for a plain CLI install with no bundle.
+Windows:  Not affected. Explorer runs `krate-open.exe "%1"`, so each app is
+          its own process with the path as an argument and there is no event
+          to miss. CI checked only that krate-open.exe was PRESENT in the
+          archive, never that it opens anything -- that gap is now closed by a
+          cold-install step that registers the association, reads back the
+          ProgID command, and runs it on a real file.
+Still to do: cut a release. The fix is in main and the binary people download
+          is still v0.1.12, so every user hits this until a new version ships.
+
 ### K-109 -- an app that resets itself last prints a state that looks like it never ran
 Status:   fixed 2026-08-13 (b1104d0), untested until benchmark run 5
 Owner:    lead
