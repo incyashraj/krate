@@ -96,7 +96,8 @@
     h1, h2, h3, p { margin-top: 0; }
 
     .hero {
-      padding: 92px 0 54px;
+      padding: 96px 0 58px;
+      text-align: center;
     }
 
     .eyebrow {
@@ -108,15 +109,21 @@
       text-transform: uppercase;
     }
 
-    h1 {
-      max-width: 20ch;
-      margin-bottom: 22px;
+    /* The hero h1 carries .display, which site.css owns -- the type
+       scale, weight and tracking come from there so this page cannot
+       drift from the home page again. Only the hero's own spacing
+       lives here. */
+    /* krate.css sets `font-family: var(--mono)` on body -- correct for the
+       docs shell it was written for, wrong for a hero. site.css's .display
+       only sets size and tracking and inherits the face, so name it here or
+       the headline renders in monospace. */
+    .hero h1.display {
+      margin: 0 auto 22px;
+      max-width: 18ch;
       font-family: var(--sans);
-      font-weight: 500;
-      font-size: clamp(36px, 6vw, 58px);
-      line-height: 1.04;
-      letter-spacing: -.025em;
     }
+    .hero .home-hero-badge { margin-bottom: 26px; }
+    .hero .hero-lead { margin-left: auto; margin-right: auto; }
 
     .hero-lead {
       max-width: 56ch;
@@ -662,8 +669,12 @@
     <!-- 1. Hero -->
     <header class="hero">
       <div class="wrap">
-        <p class="eyebrow">Krate Mode</p>
-        <h1>Teach any AI to write Krate apps.</h1>
+        <a class="home-hero-badge" href="#prompt">
+          <span class="new">FREE</span> <b>one prompt</b>&nbsp;· nothing to install to start
+        </a>
+        <h1 class="display">Teach any AI to write apps that
+          <span class="rot"><span class="word" id="rotWord">run</span><span class="bar"></span></span>
+        </h1>
         <p class="hero-lead">One prompt. Paste it into ChatGPT, Claude, Cursor, or whatever you already use, and it writes <strong>correct Krate app code</strong>. Nothing to install to get started.</p>
       </div>
     </header>
@@ -997,6 +1008,54 @@
       mode: "cors",
     }).catch(function () {});
   } catch (e) {}
+})();
+</script>
+<script>
+// The rotating word, the same one the home page uses: letters leave upward
+// and arrive from below with a blur, staggered 40ms apart. Skipped entirely
+// under reduced motion, where it would be motion for its own sake.
+(function () {
+  var words = ["run", "ship", "last", "fit"];
+  var rotEl = document.getElementById("rotWord");
+  if (!rotEl) return;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var wi = 0;
+  var setWord = function (word, entering) {
+    rotEl.innerHTML = "";
+    word.split("").forEach(function (ch, i) {
+      var s = document.createElement("span");
+      s.textContent = ch;
+      s.style.display = "inline-block";
+      s.style.transition = "opacity .3s ease, transform .3s ease, filter .3s ease";
+      s.style.transitionDelay = (i * 40) + "ms";
+      if (entering) {
+        s.style.opacity = "0";
+        s.style.transform = "translateY(14px)";
+        s.style.filter = "blur(4px)";
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            s.style.opacity = "1";
+            s.style.transform = "none";
+            s.style.filter = "none";
+          });
+        });
+      }
+      rotEl.appendChild(s);
+    });
+  };
+  setWord(words[0], false);
+  setInterval(function () {
+    [].forEach.call(rotEl.children, function (s, i) {
+      s.style.transitionDelay = (i * 40) + "ms";
+      s.style.opacity = "0";
+      s.style.transform = "translateY(-14px)";
+      s.style.filter = "blur(4px)";
+    });
+    setTimeout(function () {
+      wi = (wi + 1) % words.length;
+      setWord(words[wi], true);
+    }, 380);
+  }, 3200);
 })();
 </script>
 </body>
