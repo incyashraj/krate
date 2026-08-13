@@ -3351,10 +3351,10 @@ Fix:      The copy is now required: generated icons first, the committed
           if neither exists. Verified byte-identical to the source logos.
 
 ### K-032 — A window sometimes will not close from its own close button
-Status:   open
+Status:   open -- diagnosed 2026-08-13, not yet fixed
 Owner:    unclaimed
 Severity: serious
-Class:    unknown -- needs diagnosis
+Class:    runtime-hole
 Found:    2026-08-05, Yashraj, using a generated app
 Evidence: Clicking the native close button sometimes leaves the window open
           with the pointer in the spinning-wait state. The app can be closed
@@ -3363,9 +3363,46 @@ Evidence: Clicking the native close button sometimes leaves the window open
           the host's wait loop pumps native windows -- so the wiring is
           present and the fault is elsewhere. Not yet reproduced under a
           debugger.
-Fix:      Reproduce first with a minimal app. Suspect the app is inside a
-          long-running call when the callback arrives, or a redraw loop that
-          never yields, rather than a missing event path.
+Diagnosis: 2026-08-13, from the code. The original suspicion was right, and
+          the mechanism is one step earlier than "the callback arrives":
+
+          The guest runs on the MAIN thread, which is the same thread AppKit
+          needs in order to deliver `windowShouldClose` at all
+          (`MainThreadMarker`, adapter-macos/src/appkit.rs:1271). AppKit is
+          pumped from exactly two places, `ui::events::poll` and
+          `ui::events::wait` (phase3_gui_host.rs:2086 and :2194) -- both
+          inside the guest's own event handling.
+
+          So an app doing heavy work BETWEEN waits starves AppKit completely.
+          The click does not sit in a queue undelivered; the delegate never
+          runs, so the close is never even observed. That is exactly the
+          reported symptom: the window stays open and the pointer shows the
+          spinning wait cursor, which is macOS's own "this app is not
+          responding" indicator, not a Krate cursor.
+
+          This also explains "sometimes": an ordinary event loop or frame loop
+          calls poll or wait every round and pumps constantly, so it never
+          shows. It needs an app that computes for a long stretch without
+          calling either.
+
+          Ruled out on the way: the event path itself is intact
+          (windowShouldClose -> queue -> handle_callback -> CloseRequested),
+          every shipped app handles CloseRequested, and the wait loop's blind
+          sleep is 10ms rather than the 250ms park, so a close arriving while
+          the app IS in `wait` is delivered promptly.
+Not reproduced under a debugger: the starvation needs a windowed session, and
+          a `quick` run exits before the busy stretch. A probe was built and
+          discarded rather than left claiming a measurement it never made.
+Fix:      Pump AppKit from somewhere that does not depend on the guest calling
+          in. The options, in rough order of how much they change:
+          1. A CFRunLoop observer or timer on the main thread that drains the
+             delegate queue independently of the guest.
+          2. Pump at more guest boundaries (every UAPI call, not just the two
+             event calls) -- cheap, but only narrows the window rather than
+             closing it, since a pure computation makes no host calls at all.
+          3. Run the guest off the main thread and keep AppKit on it. The
+             correct shape, and much the largest change.
+          Option 1 is the one to try first.
 
 ### K-033 — The usage notice printed into a pipe and broke the site build
 Status:   fixed
