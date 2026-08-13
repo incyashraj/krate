@@ -2822,8 +2822,8 @@ Fix:      Not a product defect. `cargo clean` the shared checkout and the
           not a one-off.
 
 ### K-013 — apps/krate-bigscroll has no manifest, so it is not a runnable app
-Status:   open
-Owner:    unclaimed
+Status:   fixed 2026-08-13 (ed42658) -- and it was seven apps, not one
+Owner:    lead
 Severity: annoyance
 Class:    our-code
 Found:    2026-08-05, W12, running check-app across apps while verifying K-001
@@ -2833,10 +2833,33 @@ Evidence: `krate check-app apps/krate-bigscroll` prints
           and src/ and has never had a manifest (`git log -- apps/krate-bigscroll`
           shows only 1d799c1, a workspace-root change). Pre-existing, unrelated
           to the scroll work.
-Fix:      Add a manifest.toml so it is a real app, or delete the directory. As
-          it stands it is a half-app that fails any sweep over `apps/`, and its
-          name makes it look like the scrolling reference when it is not --
-          `apps/krate-checklist` is.
+Fix:      2026-08-13, commit ed42658. Kept rather than deleted: it is a real
+          limitation probe, five hundred rows in one Scroll container, and it
+          prints `rows:500` so a script can assert the whole tree was built.
+          Verified end to end -- all six stages pass and the run prints
+          `rows:500`.
+
+          A sweep found the same defect in six more: krate-calc,
+          krate-convert, krate-dashboard, krate-filetree, krate-settings and
+          krate-timer, 229 to 531 lines each. All seven now have manifests
+          written from what each app actually imports.
+
+          Adding them immediately earned their keep. krate-dashboard failed
+          the usability stage the first time it could be checked at all:
+
+              the window grew to 652x396 but the app kept drawing at its
+              old size, so the host had to stretch that picture to fit
+
+          Its `draw_chart` already laid out from `canvas2d::canvas_size` and
+          was right about the new size the moment it ran -- it just never ran
+          again, because the event loop matched only `CloseRequested`. Fixed
+          in the same commit by redrawing on `Resized`, the shape
+          `krate-chart` already had.
+
+          `apps/` now has no manifest-less directories.
+Note:     krate-bigscroll renders on a light background while every other app
+          in apps/ is dark. Cosmetic, out of scope here, not filed -- it is a
+          probe rather than a shipped example.
 
 ### K-002 — No text measurement, so every app guesses text width
 Status:   fixed
