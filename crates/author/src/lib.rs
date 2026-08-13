@@ -1038,23 +1038,19 @@ repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
 
 [dependencies]
-# The Krate SDK, linked for its no_std runtime lang items (global allocator,
-# panic handler, memory intrinsics). Every shipped GUI app depends on it, and a
-# GUI app that goes `#![no_std]` -- which is what section 3 of KRATE_AUTHORING.md
-# tells an author to do the moment there is a real dependency -- cannot link
-# without it. It was missing here, so every windowed app the agent wrote had to
-# discover the missing dep through a failed build and add it back by hand.
+# The Krate SDK. Your app is `#![no_std]`, so this supplies the pieces Rust
+# would normally take from the standard library: the allocator, the panic
+# handler, and the memory intrinsics. Keep it even if you never call
+# `krate::` yourself, because without it the app will not link.
 krate = {{ path = "{sdk_prefix}/crates/bindings-rust" }}
 wit-bindgen-rt = {{ version = "0.44.0", features = ["bitflags"] }}
 
 [lib]
 crate-type = ["cdylib"]
 
-# Gate the generated `impl std::error::Error` behind a `std` feature nobody
-# turns on. Without this a windowed app cannot be `#![no_std]`, because the
-# bindings themselves need std -- and linking std brings a dependency's panic
-# path with it. An image viewer failed on exactly that: the decoder was clean
-# under no_std and pulled four wasi imports the moment std was linked.
+# Keeps the generated bindings free of the standard library, so your app can
+# stay `#![no_std]`. Turning this off links std, which pulls in operating
+# system calls that Krate refuses, and the build fails at the import check.
 [package.metadata.component.bindings]
 std_feature = true
 

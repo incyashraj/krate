@@ -2767,8 +2767,8 @@ Fix:      Not ours. Yashraj re-authenticates Claude and updates Codex. Recorded
           not be mistaken for a product failure again.
 
 ### K-029 — Our development history leaks into every app a user makes
-Status:   open
-Owner:    unclaimed
+Status:   fixed 2026-08-13
+Owner:    lead
 Severity: annoyance
 Class:    our-code
 Found:    2026-08-05, W17, outsider testing -- it read the Cargo.toml of an app
@@ -2781,8 +2781,26 @@ Evidence: `crates/author/src/lib.rs:1045` writes this into every generated
           strangers inside their own app.
           W17 reasonably concluded from them that it had been handed a
           pre-built template rather than a fresh authoring run, and stopped.
-Fix:      Comments in generated files should explain the code to the person who
-          now owns it. The history belongs in our repo, not in their app.
+Fix:      2026-08-13. Both comments in the generated Cargo.toml rewritten to
+          explain the line to the person who now owns the app, with no
+          reference to how we found the problem:
+
+            before: "It was missing here, so every windowed app the agent
+                     wrote had to discover the missing dep through a failed
+                     build and add it back by hand."
+            after:  "Your app is `#![no_std]`, so this supplies the pieces
+                     Rust would normally take from the standard library...
+                     Keep it even if you never call `krate::` yourself,
+                     because without it the app will not link."
+
+          Swept the rest of the generator for the same shape. The two other
+          past-tense notes are inside tests, where explaining why a check
+          exists is correct, and they are not shipped.
+Why it mattered more than "annoyance" suggests: a tester read these notes in
+          an app they had just made and concluded they had been handed a
+          pre-built template, then stopped. A comment addressed to us inside
+          a stranger's file does not just read oddly, it makes the product
+          look like a fake.
 
 ### K-030 — A debug build shadows the real release on PATH
 Status:   open
