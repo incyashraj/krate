@@ -641,3 +641,41 @@ stood still at line 1. It fails only `firstline?`, another name nobody could
 guess.
 
 Standing at 32 recorded: 26 pass, and 21 of 32 against run 2's own corpus.
+
+## req 33 and 34: better apps, still failing on labels
+
+  req 33 log viewer (FAIL 2/3)
+
+    run 2:  lines:29 scrolls:0 following:yes
+            -- seeded 29 lines, fewer than fit on screen, so nothing to
+               scroll. Scored 0 of 3, the worst of run 2.
+
+    run 3:  lines:505 entries:505 seeded:420 added:85 visible:20
+            scrolls:61 scrolled:2640 unseen:25 newest:505 errors:21
+            warnings:69 following:yes paused_on_scroll_up:yes
+            held_while_paused:yes newest_in_view:yes
+
+    The seeding rule worked: 29 lines became 505. It scrolled 2,640 pixels
+    across 61 scrolls. It implements tail-following and proves it three
+    separate ways -- following, newest_in_view, paused_on_scroll_up.
+
+    It fails `tail!=no` because no key is called `tail`.
+
+  req 34 table (FAIL 1/3)
+
+    run 3:  columns:5 rows:26 width_Name:157 width_Project:295
+            width_Role:122 width_Hours:69 width_Rate:77 table_width:726
+            sorted:2 selected:1 widened:1 narrowed:1 refit:132 fitted:yes
+
+    **This one is an argument against my own fix.** Run 2 printed
+    `widest_column:1`, and I added `widest|widest_column` to catch it. Run 3
+    is BETTER -- it measures each column by its actual name, width_Name,
+    width_Project and so on -- and that improvement is exactly what breaks
+    it. The generic key I wrote an alternative for no longer exists.
+
+    So a more informative app scores worse. The alternatives operator cannot
+    fix that, because the better output is less predictable, not more.
+
+This is the strongest case yet for publishing the expected key names to the
+app (K-105 option 1). Enumerating synonyms fails not only because apps
+invent new words, but because apps that improve invent MORE specific ones.
