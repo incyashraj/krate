@@ -435,6 +435,32 @@ async function usage(request, env) {
 }
 
 
+
+/// Why opens failed, actually queried rather than described.
+///
+/// The rate is meaningless without this split. `refused` is the permission
+/// wall turning an app away, which is the product working exactly as
+/// designed -- counting it as a failure is how the rate ended up looking
+/// alarming and unactionable at the same time (K-100). Anything else is a
+/// real defect worth chasing.
+async function failureReasons(env, days) {
+  if (!env.CF_ANALYTICS_TOKEN) return null;
+  const sql =
+    "SELECT blob7 AS why, sum(_sample_interval) AS n FROM krate_usage " +
+    "WHERE blob1 = 'open' AND blob4 = 'failed' " +
+    `AND timestamp > now() - INTERVAL '${days}' DAY ` +
+    "GROUP BY why ORDER BY n DESC";
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/analytics_engine/sql`,
+    { method: "POST", headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` }, body: sql },
+  );
+  if (!res.ok) return { error: `reason query failed: ${res.status}` };
+  const body = await res.json();
+  const out = {};
+  for (const row of body.data || []) out[row.why || "-"] = Number(row.n);
+  return out;
+}
+
 /// Read the live numbers out of Analytics Engine.
 ///
 /// Counting moved to Analytics Engine on 2026-08-10 (a busy day of telemetry
@@ -449,7 +475,11 @@ async function liveStats(env, days) {
   if (!env.CF_ANALYTICS_TOKEN) return null;
   const sql =
     "SELECT toDate(timestamp) AS day, blob1 AS action, blob4 AS outcome, " +
-    "sum(_sample_interval) AS n, count(DISTINCT blob3) AS installs " +
+    // The install id is the INDEX (index1), not a blob. blob3 is the
+    // operating system, so counting that distinct answered "how many
+    // platforms" -- it returned 7 against 74 installs in a single day, the
+    // kind of number that looks plausible until you check it.
+    "sum(_sample_interval) AS n, count(DISTINCT index1) AS installs " +
     "FROM krate_usage " +
     `WHERE timestamp > now() - INTERVAL '${days}' DAY ` +
     "GROUP BY day, action, outcome ORDER BY day";
@@ -497,6 +527,7 @@ async function stats(env) {
   // Everything since 2026-08-10 lives in Analytics Engine, so read it and
   // put it beside the KV history rather than leaving the endpoint frozen.
   const live = await liveStats(env, 30);
+  const why = await failureReasons(env, 30);
 
   return json({
     live: live || {
@@ -518,6 +549,9 @@ async function stats(env) {
     // this endpoint only ever reads the retired KV keys. Until a reader for
     // that dataset exists, say where the answer is rather than leave the
     // impression that `open-failed` above has no explanation (K-100).
+    // Actually queried now, not just described. `refused` is the wall
+    // working; exclude it before quoting a failure rate anywhere.
+    open_failure_reasons_30d: why || { note: "needs CF_ANALYTICS_TOKEN" },
     open_failure_reasons: {
       note: "blob7 of the krate_usage dataset, from v0.1.12 onward",
       query:
