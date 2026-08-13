@@ -51,6 +51,7 @@ pub mod secret_host;
 mod speech_transcription;
 pub mod sql_host;
 pub mod store_host;
+pub mod dead_space;
 pub mod text_overlap;
 pub mod usability;
 

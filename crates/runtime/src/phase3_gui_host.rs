@@ -150,6 +150,11 @@ pub struct Phase3GuiHost {
     inspect_layout: std::cell::Cell<bool>,
     /// Draw calls recorded for the current frame, newest frame only.
     inspected_ops: std::cell::RefCell<Vec<crate::canvas_list::CanvasOp>>,
+    /// Logical size of the canvas the recorded ops were drawn into.
+    inspected_canvas_size: std::cell::Cell<Option<(f32, f32)>>,
+    /// Set when a frame was presented, so the next draw op starts a fresh
+    /// recording rather than appending to the frame just measured.
+    frame_ended: std::cell::Cell<bool>,
     /// The usability script, when this run is a driven one. `None` on every
     /// ordinary run, which is what keeps this whole mechanism off the path a
     /// person's app takes.
@@ -285,6 +290,8 @@ impl Phase3GuiHost {
             screenshot_taken: std::cell::Cell::new(false),
             inspect_layout: std::cell::Cell::new(false),
             inspected_ops: std::cell::RefCell::new(Vec::new()),
+            inspected_canvas_size: std::cell::Cell::new(None),
+            frame_ended: std::cell::Cell::new(false),
             usability: None,
         })
     }
@@ -1463,6 +1470,13 @@ impl Phase3GuiHost {
         // is never filled at all on the CPU raster -- so a check that read
         // it would find nothing on desktop and quietly pass everything.
         if self.inspect_layout.get() {
+            // First draw after a present starts a new frame. `clear` is not
+            // the boundary: most apps never call it, painting a full-canvas
+            // gradient instead, and without this their ops from every frame
+            // pile up into one list.
+            if self.frame_ended.replace(false) {
+                self.inspected_ops.borrow_mut().clear();
+            }
             self.inspected_ops.borrow_mut().push(op.clone());
         }
         if !self.lists_enabled() {
@@ -1522,6 +1536,24 @@ impl Phase3GuiHost {
                 ));
             }
         }
+        // Dead space: a large part of the window the app drew nothing into.
+        if let Some((w, h)) = self.inspected_canvas_size.get() {
+            if let Some(dead) = crate::dead_space::find(&ops, w, h) {
+                // Worded as what was measured, not as a verdict: this cannot
+                // tell an editor with room left to type in from an app that
+                // stopped drawing halfway down. See dead_space and K-108.
+                lines.push(format!(
+                    "layout: nothing is drawn in {:.0}% of the window -- {:.0}x{:.0} at x {:.0} y {:.0}. \
+                     If that region is meant to be filled, fill it; if it is somewhere a person types \
+                     or drops things, this is fine.",
+                    dead.fraction * 100.0,
+                    dead.width,
+                    dead.height,
+                    dead.x,
+                    dead.y,
+                ));
+            }
+        }
         for line in &lines {
             eprintln!("{line}");
         }
@@ -1529,6 +1561,15 @@ impl Phase3GuiHost {
         // so findings also go to a file when it names one.
         if let Some(path) = std::env::var_os("KRATE_LAYOUT_REPORT") {
             let _ = std::fs::write(path, lines.join("\n") + "\n");
+        }
+        // Raw draw list, for working out what a new layout measure can see.
+        if let Some(path) = std::env::var_os("KRATE_DRAW_DUMP") {
+            let mut out = String::new();
+            for op in ops.iter() {
+                out.push_str(&crate::text_overlap::describe_op(op));
+                out.push('\n');
+            }
+            let _ = std::fs::write(path, out);
         }
     }
 
@@ -1542,6 +1583,28 @@ impl Phase3GuiHost {
     }
 
     fn publish_canvas(&self, canvas: u64) -> Result<(), gfx::types::GfxError> {
+        // Record the space the recorded ops are in. This is the frame
+        // boundary every app crosses: most never call `clear` at all, and
+        // paint a full-canvas gradient instead, so capturing the size there
+        // left ten of fourteen generated apps unmeasured.
+        //
+        // An app that fixed a design size draws in THAT system and the host
+        // maps it to the window, so the measure has to use the same one or
+        // it compares two different coordinate systems.
+        if self.inspect_layout.get() {
+            let size = {
+                let canvases = self.canvases.borrow();
+                canvases.get(&canvas).map(|(_, _, surface)| {
+                    surface.design_size().unwrap_or_else(|| {
+                        let (w, h) = surface.dimensions();
+                        (w as f32, h as f32)
+                    })
+                })
+            };
+            if size.is_some() {
+                self.inspected_canvas_size.set(size);
+            }
+        }
         if self.lists_enabled() {
             let taken = {
                 let canvases = self.canvases.borrow();
@@ -2644,12 +2707,6 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         canvas: u64,
         fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
-        // A clear starts a new frame. Layout inspection only ever holds the
-        // frame being drawn now, so ops from previous frames cannot stack up
-        // and make every repainting app look like it collides with itself.
-        if self.inspect_layout.get() {
-            self.inspected_ops.borrow_mut().clear();
-        }
         self.record_op(
             canvas,
             crate::canvas_list::CanvasOp::Clear(pack_color(fill.r, fill.g, fill.b, fill.a)),
@@ -3447,6 +3504,8 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         if result.is_ok() {
             self.maybe_take_screenshot();
         }
+        // The measured frame is done with; the next draw op begins another.
+        self.frame_ended.set(true);
         Ok(result)
     }
 }
@@ -3653,6 +3712,8 @@ impl gfx::scene3d::Host for Phase3GuiHost {
         if result.is_ok() {
             self.maybe_take_screenshot();
         }
+        // The measured frame is done with; the next draw op begins another.
+        self.frame_ended.set(true);
         Ok(result)
     }
 }
