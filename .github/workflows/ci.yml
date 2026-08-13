@@ -1268,8 +1268,53 @@ jobs:
           if ($out -notmatch 'note') { throw "COLD PATH BROKEN: app ran but produced nothing: $out" }
           Write-Host "   ran: $($out.Trim())"
 
+          Write-Host '5. opening it the way Explorer does'
+          # The double-click path, which nothing tested before: CI only
+          # checked that krate-open.exe was present in the archive, never that
+          # it opens anything (K-110's sibling). Explorer runs the ProgID's
+          # open command, which is `krate-open.exe "%1"` -- so run exactly
+          # that, with a real file, and require an app to actually run.
+          $opener = Join-Path $env:KRATE_INSTALL_DIR 'krate-open.exe'
+          if (-not (Test-Path $opener)) {
+            throw "COLD PATH BROKEN: no krate-open.exe at $opener -- double-click would flash a console"
+          }
+
+          Write-Host '5a. registering the association, as the installer does'
+          $assoc = Join-Path $work 'install-krate-desktop.ps1'
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/incyashraj/krate/main/scripts/install-krate-desktop.ps1' -OutFile $assoc -UseBasicParsing
+          & $assoc -KrateBinary $krate
+          $cmd = (Get-ItemProperty 'HKCU:\Software\Classes\dev.krate.bundle\shell\open\command' -ErrorAction SilentlyContinue).'(default)'
+          if (-not $cmd) { throw 'COLD PATH BROKEN: .krate has no open command in the registry' }
+          if ($cmd -notmatch 'krate-open\.exe') {
+            throw "COLD PATH BROKEN: double-click would use a console binary: $cmd"
+          }
+          Write-Host "   Explorer will run: $cmd"
+
+          Write-Host '5b. running that exact command on a real file'
+          # A GUI app would wait for its window to be closed, so use the app
+          # the steps above already proved runs headlessly, and give the
+          # grants it needs. What is under test is that the double-click
+          # binary starts the app at all -- the failure this catches is
+          # krate-open exiting without running anything.
+          $bundle = Join-Path $work 'notes.krate'
+          Invoke-WebRequest -Uri 'https://krate.tech/notes.krate' -OutFile $bundle -UseBasicParsing
+          $log = Join-Path $work 'open.log'
+          $proc = Start-Process -FilePath $opener -ArgumentList "`"$bundle`"" -PassThru -RedirectStandardOutput $log -RedirectStandardError "$log.err"
+          if (-not $proc.WaitForExit(120000)) {
+            $proc.Kill()
+            throw 'COLD PATH BROKEN: double-click never finished'
+          }
+          # Exit 5 is the wall refusing without grants, which still proves the
+          # opener found krate.exe and started the app. Anything else -- and
+          # especially a failure to start -- is the bug this step exists for.
+          if ($proc.ExitCode -ne 5 -and $proc.ExitCode -ne 0) {
+            $why = (Get-Content $log, "$log.err" -ErrorAction SilentlyContinue) -join ' '
+            throw "COLD PATH BROKEN: double-click exited $($proc.ExitCode): $why"
+          }
+          Write-Host "   double-click started the app (exit $($proc.ExitCode))"
+
           Write-Host ''
-          Write-Host 'the cold path works on Windows: install, refuse, grant, run'
+          Write-Host 'the cold path works on Windows: install, refuse, grant, run, double-click'
 
   language-variant-evidence-compare:
     name: Language variant evidence compare
