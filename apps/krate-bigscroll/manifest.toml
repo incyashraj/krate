@@ -1,0 +1,21 @@
+[app]
+id = "dev.krate.bigscroll"
+name = "Krate Bigscroll"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_bigscroll.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the window holding the five hundred rows"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Print the row count so a script can check the whole tree was built"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated tests"
+required = true

@@ -1,0 +1,22 @@
+[app]
+id = "dev.krate.settings"
+name = "Krate Settings"
+version = "0.1.0-dev"
+entry = "target/wasm32-wasip1/release/krate_settings.wasm"
+world = "krate:app/gui@0.2.0"
+
+[[capabilities]]
+cap = "ui.window:create"
+rationale = "Open the settings window"
+required = true
+
+[[capabilities]]
+cap = "io.stdout"
+rationale = "Report state on exit for automated runs"
+required = true
+
+[[capabilities]]
+cap = "io.args"
+rationale = "Read the quick-run flag used by automated checks"
+required = true
+

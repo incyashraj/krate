@@ -95,6 +95,17 @@ impl bindings::Guest for Component {
         for _ in 0..rounds {
             match events::wait(Some(ROUND_MILLIS)) {
                 Some(types::Event::CloseRequested(id)) if id == win => break,
+                // Redraw on resize. `draw_chart` already lays out from
+                // `canvas2d::canvas_size`, so it was right about the new
+                // size the moment it ran -- it just never ran again. The
+                // host refits the canvas and the old picture is gone, so
+                // without this the window shows a stretched, blurry chart
+                // (K-096, and the same shape as K-024).
+                Some(types::Event::Resized(_)) => {
+                    if draw_chart(canvas).is_err() {
+                        break;
+                    }
+                }
                 _ => {}
             }
         }
