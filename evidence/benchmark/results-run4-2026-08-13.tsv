@@ -1,0 +1,25 @@
+id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	missing	note
+1	easy	a tip calculator	pass	-	354	28430	4	4	-	-
+2	easy	a to-do list I can check things off in	pass	-	229	29451	2	2	-	-
+3	easy	a countdown timer for a 25 minute work session	fail	does	225	25701	2	3	remaining!=1500	2/3 observable properties held
+4	easy	a temperature converter between celsius and fahrenheit	pass	-	384	28286	3	3	-	-
+5	easy	a click counter that goes up when I press the button	pass	-	411	19248	1	1	-	-
+6	easy	a dice roller that rolls two dice	pass	-	461	26446	5	5	-	-
+7	easy	a random password generator	pass	-	409	34085	2	2	-	-
+8	easy	a BMI calculator	pass	-	664	31553	3	3	-	-
+9	easy	a stopwatch with lap times	pass	-	720	29946	2	2	-	-
+10	easy	a text case converter: upper, lower, title case	pass	-	406	44471	3	3	-	-
+11	easy	a word and character counter for text I paste in	pass	-	428	31410	2	2	-	-
+12	easy	a colour picker that shows me the hex code	pass	-	242	28559	2	2	-	-
+13	medium	a habit tracker with a row of days for each habit	pass	-	367	28148	3	3	-	-
+14	medium	a note taking app that saves my notes	pass	-	735	33410	2	2	-	-
+15	medium	an expense tracker with a running total	pass	-	559	35212	2	2	-	-
+16	medium	a shopping list I can add and remove items from	pass	-	521	28823	3	3	-	-
+17	medium	a simple kanban board with three columns	pass	-	600	31520	3	3	-	-
+18	medium	a calculator with buttons for the four operations	pass	-	166	18882	3	3	-	-
+19	medium	a settings panel with switches and a dropdown	pass	-	496	26942	3	3	-	-
+20	medium	a contact book I can search	pass	-	516	41790	3	3	-	-
+21	medium	a CSV viewer that shows a table	pass	-	312	40849	2	2	-	-
+22	medium	a JSON pretty printer	fail	does	715	45712	2	3	output|out|formatted~{	2/3 observable properties held
+23	medium	a markdown preview that shows my headings and lists	pass	-	522	43196	2	2	-	-
+24	medium	a bar chart of some numbers I type in	skipped	account	21	0	0	0	-	rate limited: the AI account was out of quota, no code was written
