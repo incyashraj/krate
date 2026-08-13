@@ -71,6 +71,45 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-106 -- generated apps put text on top of other content
+Status:   open
+Owner:    unclaimed
+Severity: moderate
+Class:    teaching-hole
+Found:    2026-08-13, screenshotting run-3 apps for marketing material. Two
+          of the first two games shot had overlapping text, which is a bad
+          rate for something a person sees immediately.
+Evidence: Both apps pass check-app, and both look wrong at a glance.
+
+            req 25 tic tac toe (27,539 B)
+              the "New round" pill is drawn on top of the "Draws" label in
+              the score bar. The word Draws is legible through the button.
+
+            req 26 memory game (30,169 B)
+              "Turn over two cards to find a pair" is drawn across the
+              bottom row of cards, so the hint and the cards share pixels.
+
+          Screenshots: scratchpad/shots-marketing/{tictactoe,memory}.png
+Not covered by the existing rule. K-098's follow-up teaches "measure from the
+          outermost edge, not the shape's own size", which is about
+          decorations sticking out past a shape (chairs around a table).
+          This is different: a label or button placed in space that another
+          element already occupies. The app has the room -- both windows
+          have empty space -- it simply did not reserve any.
+Fix:      A layout rule in the pack, roughly: every element gets a rectangle,
+          and no two rectangles overlap. Lay the fixed chrome out first
+          (title, score bar, buttons), subtract it, and give what is left to
+          the content. Say plainly that text drawn over other content is a
+          defect even when both are legible.
+Why it matters: this is the first thing a person sees, and it is the exact
+          complaint that started the visual work -- "not that amazing
+          considering what the world has seen". An app can pass every gate
+          and still look broken in the screenshot someone posts.
+Note:     check-app cannot catch this today. The usability stage measures
+          whether the canvas followed the window, not whether two things
+          were drawn in the same place. Detecting it needs the region
+          measure that K-099 also wants.
+
 ### K-105 -- an assert cannot accept a synonym, so eight correct apps failed
 Status:   partly fixed 2026-08-12 (commit 7f06969). The operator ships and
           works; **enumerating synonyms by hand does not converge** -- see
