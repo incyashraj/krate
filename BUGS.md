@@ -72,14 +72,57 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-106 -- generated apps put text on top of other content
-Status:   open
-Owner:    unclaimed
+Status:   fixed 2026-08-13 (4e60477), text-over-text half; see K-107
+Owner:    lead
 Severity: moderate
 Class:    teaching-hole
 Found:    2026-08-13, screenshotting run-3 apps for marketing material. Two
           of the first two games shot had overlapping text, which is a bad
           rate for something a person sees immediately.
 Evidence: Both apps pass check-app, and both look wrong at a glance.
+
+          The two failed by different mechanisms, which is the useful part.
+          Tic tac toe reserved nothing -- board to y 512, score card 536-612,
+          and a button at the constant `y: 556` that was correct in isolation
+          and never checked against what came before it. The memory game DID
+          reserve a footer correctly, then drew its hint at
+          `size.height - FOOTER_H - 6.0` ("just above the footer"), which is
+          outside the footer and inside the band already given to the cards.
+
+          That second one matters: the pack's three layout rules are all
+          about deciding regions, and the memory game followed them and still
+          drew outside its own region.
+
+Fix:      2026-08-13, commit 4e60477, in two parts.
+
+          Teaching: pack rule 4, "draw inside the region you were given, and
+          derive every position from it", with both failures as its worked
+          examples and a typed-in coordinate named as the smell.
+
+          Detection: `krate run --shoot X.png --check-layout` reads the
+          recorded draw calls, not the pixels, so the geometry is the app's
+          own numbers. Text against text only -- text over a panel is
+          ordinary design and flagging it would bury the real defect.
+
+              $ krate run req-25/app.krate --shoot ttt.png --check-layout
+              layout: 2 places where text is drawn over other text
+              layout:   "Draws" and "New round" share 30% of the smaller
+                        one, around x 211 y 589
+              layout:   "0" and "New round" share 19%, around x 223 y 577
+
+          Calibrated against seven real apps that do not have the bug
+          (bounce, chart, cubes, eo2, mdview, savings, fa32e9bc): zero false
+          positives, several of them text-heavy.
+
+          Two implementation notes worth keeping. The existing display list
+          is filled only on adapters that consume it (iOS), so a check
+          reading it would find an empty list on desktop and pass everything
+          -- worse than no check, because it looks like it worked. And the
+          buffer resets on clear, or a repainting app stacks frames and
+          appears to collide with itself.
+
+Left open: the memory game reports clean, correctly, because its hint lands
+          on cards rather than on text. That is K-107.
 
             req 25 tic tac toe (27,539 B)
               the "New round" pill is drawn on top of the "Draws" label in
@@ -109,6 +152,34 @@ Note:     check-app cannot catch this today. The usability stage measures
           whether the canvas followed the window, not whether two things
           were drawn in the same place. Detecting it needs the region
           measure that K-099 also wants.
+
+### K-107 -- text drawn over shapes is not detected, only text over text
+Status:   open
+Owner:    unclaimed
+Severity: moderate
+Class:    our-code
+Found:    2026-08-13, while fixing K-106. Named rather than quietly widened.
+Evidence: The memory game from K-106 draws its hint across the bottom row of
+          cards, and `--check-layout` says:
+
+              $ krate run req-26/app.krate --shoot mem.png --check-layout
+              layout: no text drawn over other text
+
+          Correct for what the check measures, and useless to the person
+          looking at the overlap in the screenshot.
+Why not fixed with K-106: text over a shape needs a way to tell a background
+          apart from content. Text on a card, a panel, a gradient or a
+          button is the single most common thing an app draws and is always
+          right; text on a card that is content -- a playing card, a photo,
+          a chart bar -- is wrong. The draw list alone does not distinguish
+          them, so the naive version would fire on nearly every app and the
+          check would be turned off.
+Fix:      Probably: treat a shape as content when text is drawn over it that
+          belongs to something else, i.e. use z-order and containment rather
+          than shape kind. A label positioned inside its own panel is fine;
+          a string that crosses several sibling shapes of the same size is
+          the memory game. Needs calibrating against the same seven clean
+          apps used for K-106, where the false-positive rate must stay zero.
 
 ### K-105 -- an assert cannot accept a synonym, so eight correct apps failed
 Status:   partly fixed 2026-08-12 (commit 7f06969). The operator ships and
