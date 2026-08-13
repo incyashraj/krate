@@ -679,3 +679,27 @@ Standing at 32 recorded: 26 pass, and 21 of 32 against run 2's own corpus.
 This is the strongest case yet for publishing the expected key names to the
 app (K-105 option 1). Enumerating synonyms fails not only because apps
 invent new words, but because apps that improve invent MORE specific ones.
+
+## req 35 -- one rule lands, and the same improvement trap
+
+    run 2:  paragraphs:4 words:230 lines:18 measure:590 wrapped:yes
+    run 3:  words:482 paragraphs:6 lines:36 wrapped:36 size:16
+            lines_wide:39 lines_narrow:76 lines_larger:40
+            scrolled:240 reflows:yes
+
+  wrapped: `yes` became `36`. That is the count-not-a-boolean rule working
+  exactly as written, on the request that produced it.
+
+  width: run 2 printed `measure:590`, which my `width|measure` alternative
+  caught. Run 3 dropped it, because the app now reports wrapping at three
+  different window widths -- lines_wide, lines_narrow, lines_larger -- which
+  is a more useful thing to report than a single measurement.
+
+Second time in three requests that an app improving broke an alternative I
+had added. The pattern is now unambiguous: **my synonym list is fitted to how
+apps behaved when they were worse.** Every time the teaching makes an app
+report something richer, the specific key I anchored to disappears.
+
+That is not an argument for adding more synonyms. It is an argument that the
+approach cannot work, and it is the third independent piece of evidence for
+publishing the expected keys instead (K-105 option 1).
