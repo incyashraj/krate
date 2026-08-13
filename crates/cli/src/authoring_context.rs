@@ -440,6 +440,18 @@ the item's radius or height. A table drawn at a hardcoded 90px radius in a \
 region should be elastic -- usually the list, the canvas, or the feed -- and \
 absorb whatever is left after the fixed chrome (header, footer, toolbar) is \
 placed. If nothing is elastic, the window grows and the app does not.\n\n\
+\u{20}\u{20}This applies inside a row of things as much as to the whole \
+window. A generated table measured each column to its widest cell -- \
+correctly, with `measure_text` -- summed them, found the total narrower than \
+the window, and centred the table. That left a 157px strip down the right \
+side with nothing in it for the full height of the window, and the bottom \
+row clipped, in an app whose whole subject was fitting to content. Measuring \
+to content is the right first step and the wrong last one: once every column \
+has its minimum, hand the surplus to whichever column benefits, usually the \
+one holding the longest free text.\n\n\
+\u{20}\u{20}\u{20}\u{20}let natural: f32 = widths.iter().sum();\n\
+\u{20}\u{20}\u{20}\u{20}let surplus = (avail - natural).max(0.0);\n\
+\u{20}\u{20}\u{20}\u{20}widths[longest_text_column] += surplus;\n\n\
 \u{20}\u{20}4. **Draw inside the region you were given, and derive every \
 position from it.** Reserving a band is only half of it -- the drawing has to \
 stay in the band. Two generated games got this wrong in two different ways, \
