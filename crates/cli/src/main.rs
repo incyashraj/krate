@@ -6299,6 +6299,36 @@ fn spawn_open_run(path: &Path) {
     let Ok(exe) = std::env::current_exe() else {
         return;
     };
+
+    // On macOS, go back through the .app bundle rather than spawning the
+    // binary directly (K-110).
+    //
+    // A bare `spawn` produces a process macOS does not consider a GUI
+    // application: it has no LaunchServices registration and no activation, so
+    // AppKit will not put its window on screen. The runtime creates the window
+    // and even prints `opened window "Mdview"`, and the person sees nothing at
+    // all. That is every app after the first -- open one app, leave it
+    // running, double-click a second, and the second silently never appears.
+    //
+    // `open -n -a Krate.app <file>` launches a new instance through
+    // LaunchServices, which registers it properly and shows its window.
+    // Verified both ways on this machine: direct spawn gives a running process
+    // with no window; through the bundle the window appears.
+    #[cfg(target_os = "macos")]
+    if let Some(bundle) = enclosing_app_bundle(&exe) {
+        let spawned = ProcessCommand::new("/usr/bin/open")
+            .arg("-n")
+            .arg("-a")
+            .arg(&bundle)
+            .arg(path)
+            .spawn();
+        if spawned.is_ok() {
+            return;
+        }
+        // Fall through to the direct spawn below. Better a window that may
+        // not show than no attempt at all.
+    }
+
     let sandbox_root = path
         .parent()
         .map(Path::to_path_buf)
@@ -6311,6 +6341,29 @@ fn spawn_open_run(path: &Path) {
         .arg("--sandbox-root")
         .arg(sandbox_root)
         .spawn();
+}
+
+/// The `.app` bundle this executable lives inside, if any.
+///
+/// A bundled binary sits at `Krate.app/Contents/MacOS/krate-cli`, so the
+/// bundle is three levels up. Returns `None` for a plain CLI install, where
+/// there is no bundle to launch through.
+#[cfg(target_os = "macos")]
+fn enclosing_app_bundle(exe: &Path) -> Option<PathBuf> {
+    let macos_dir = exe.parent()?;
+    if macos_dir.file_name()? != "MacOS" {
+        return None;
+    }
+    let contents = macos_dir.parent()?;
+    if contents.file_name()? != "Contents" {
+        return None;
+    }
+    let bundle = contents.parent()?;
+    if bundle.extension()? == "app" {
+        Some(bundle.to_path_buf())
+    } else {
+        None
+    }
 }
 
 /// Render a capability as a short plain phrase for a person, e.g.

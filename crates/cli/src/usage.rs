@@ -590,6 +590,41 @@ mod tests {
         );
     }
 
+    /// K-110: every app after the first opened as a process macOS did not
+    /// treat as a GUI app, so its window never appeared. The fix relaunches
+    /// through the .app bundle, which means correctly recognising when we are
+    /// inside one.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn an_app_bundle_is_recognised_only_by_its_real_shape() {
+        use std::path::{Path, PathBuf};
+        let found = crate::enclosing_app_bundle(Path::new(
+            "/Applications/Krate.app/Contents/MacOS/krate-cli",
+        ));
+        assert_eq!(found, Some(PathBuf::from("/Applications/Krate.app")));
+
+        // A plain CLI install has no bundle to launch through, and guessing
+        // one would send `open` at a path that does not exist.
+        assert_eq!(
+            crate::enclosing_app_bundle(Path::new("/usr/local/bin/krate")),
+            None
+        );
+        assert_eq!(
+            crate::enclosing_app_bundle(Path::new("/home/me/.local/bin/krate")),
+            None
+        );
+        // Right depth, wrong shape: the directories must actually be
+        // Contents/MacOS inside something.app.
+        assert_eq!(
+            crate::enclosing_app_bundle(Path::new("/tmp/Krate.zip/Contents/MacOS/krate-cli")),
+            None
+        );
+        assert_eq!(
+            crate::enclosing_app_bundle(Path::new("/tmp/Krate.app/Other/MacOS/krate-cli")),
+            None
+        );
+    }
+
     #[test]
     fn telemetry_reports_a_bare_version_never_the_debug_suffix() {
         // The version goes into a JSON field. If a debug build's suffix
