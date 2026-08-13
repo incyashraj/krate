@@ -19,6 +19,11 @@ id = "184313bf18694dff800e580de42b2cda"
 
 [vars]
 PUBLIC_BASE = "https://hub.krate.tech"
+# The account whose Analytics Engine dataset /stats reads. Not a secret --
+# it is already in `account_id` above -- but the worker cannot see that field
+# at runtime, so without this the SQL URL becomes /accounts/undefined/... and
+# every query 404s.
+CF_ACCOUNT_ID = "1ded170dc582113e578faac5034be4ce"
 
 # Usage counting lives here, not in KV. Analytics Engine is unmetered at this
 # scale and exists for exactly this shape of data; the day telemetry shared a

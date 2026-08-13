@@ -1,0 +1,48 @@
+# Write the adoption numbers into the repository once a week.
+#
+# Cloudflare's Analytics Engine keeps 90 days and a dashboard only ever shows
+# what is true now. Outreach needs the shape of the line over months -- what
+# the numbers were when the first conversations started, and what they are
+# now -- and that record only exists if something writes it down on a
+# schedule. This is that something.
+#
+# Runs on Mondays so a week's row lands at the same point each week, and can
+# be triggered by hand before a conversation where the current number
+# matters.
+
+name: Record adoption numbers
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    name: Snapshot the numbers into evidence/adoption
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read the hub and append a row
+        run: bash scripts/record-adoption.sh
+
+      - name: Commit it, if anything moved
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- evidence/adoption/history.tsv; then
+            echo "no change since the last run"
+            exit 0
+          fi
+          git config user.name  "Yashraj Pardeshi"
+          git config user.email "incyashraj@gmail.com"
+          git add evidence/adoption/history.tsv
+          # The row itself in the message, so `git log` alone tells the story
+          # without opening the file.
+          row="$(tail -1 evidence/adoption/history.tsv)"
+          git commit -m "Adoption numbers: $(echo "$row" | cut -f1)" -m "$row"
+          git push
