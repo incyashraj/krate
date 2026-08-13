@@ -55,15 +55,44 @@ const AGENT_AUTHOR_TIMEOUT_SECS: u64 = 900;
 /// Version shown by `krate --version`. The release workflow sets
 /// `KRATE_RELEASE_VERSION` to the git tag so a released binary reports its real
 /// version; local and CI builds fall back to the crate version from Cargo.toml.
-const KRATE_VERSION: &str = match option_env!("KRATE_RELEASE_VERSION") {
+///
+/// A debug build says so (K-030). On this project's machine a
+/// `target/debug/krate` sits ahead of the installed release on PATH, and both
+/// reported the identical string -- so `krate --version` could not tell you
+/// which binary you had just run, and a fixed bug appeared to come back twice
+/// because it was measured through the dev build. Anything measured through a
+/// debug binary is contaminated: it is not the code a user runs, and it is
+/// slower by an order of magnitude.
+const KRATE_VERSION_NUMBER: &str = match option_env!("KRATE_RELEASE_VERSION") {
     Some(version) => version,
     None => env!("CARGO_PKG_VERSION"),
 };
 
+/// What a debug build appends to its version. Empty in release, so a released
+/// binary reports the bare number exactly as it always did.
+#[cfg(debug_assertions)]
+const KRATE_BUILD_SUFFIX: &str = " (debug build -- not what a user runs)";
+#[cfg(not(debug_assertions))]
+const KRATE_BUILD_SUFFIX: &str = "";
+
+/// What `krate --version` prints: the number, plus a warning when this is a
+/// debug build. In release the suffix is empty, so this is the bare number and
+/// a released binary reports exactly what it always did.
+///
+/// Leaked once at startup because clap wants a `&'static str` and the two
+/// halves are only known separately. One small allocation for the life of the
+/// process.
+fn krate_version() -> &'static str {
+    static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    VERSION
+        .get_or_init(|| format!("{KRATE_VERSION_NUMBER}{KRATE_BUILD_SUFFIX}"))
+        .as_str()
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "krate",
-    version = KRATE_VERSION,
+    version = krate_version(),
     about = "Krate: write once, run on everything."
 )]
 struct Cli {
@@ -6825,7 +6854,7 @@ fn print_version() {
     // KRATE_VERSION, not CARGO_PKG_VERSION: a released binary is stamped with
     // its tag, and reporting the crate's in-repo `-dev` version here made
     // `krate version` contradict `krate --version` on the very same binary.
-    println!("krate   {KRATE_VERSION}");
+    println!("krate   {}", krate_version());
     println!("wasmtime  43.0.2");
     println!("rustc     {}", env!("KRATE_RUSTC_VERSION"));
     println!("commit    {}", env!("KRATE_GIT_SHA"));

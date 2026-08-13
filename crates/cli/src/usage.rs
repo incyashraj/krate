@@ -330,7 +330,9 @@ pub fn record_with(action: Action, facts: Facts) {
 
     let mut body = format!(
         r#"{{"id":"{id}","version":"{version}","os":"{os}","action":"{action}""#,
-        version = crate::KRATE_VERSION,
+        // The bare number, never the debug suffix: this goes into a JSON
+        // field, and a suffix would make every dev build its own version.
+        version = crate::KRATE_VERSION_NUMBER,
         os = std::env::consts::OS,
         action = action.as_str()
     );
@@ -586,6 +588,44 @@ mod tests {
             OpenFailure::classify(&Err(err)),
             Some(OpenFailure::NoWindow)
         );
+    }
+
+    #[test]
+    fn telemetry_reports_a_bare_version_never_the_debug_suffix() {
+        // The version goes into a JSON field. If a debug build's suffix
+        // reached it, every dev run would count as its own "version" and the
+        // adoption numbers would be noise. The suffix belongs in
+        // `--version`, where a person reads it, and nowhere else (K-030).
+        assert!(
+            !crate::KRATE_VERSION_NUMBER.contains("debug"),
+            "telemetry version must be the bare number, got {}",
+            crate::KRATE_VERSION_NUMBER
+        );
+        assert!(
+            !crate::KRATE_VERSION_NUMBER.contains(' '),
+            "a version with a space in it would break the JSON field: {}",
+            crate::KRATE_VERSION_NUMBER
+        );
+    }
+
+    #[test]
+    fn a_debug_build_says_so_and_a_release_build_does_not() {
+        // The whole point: `krate --version` must distinguish the two, because
+        // on this project's machine a target/debug/krate sits ahead of the
+        // installed release on PATH and both reported the same string.
+        let shown = crate::krate_version();
+        if cfg!(debug_assertions) {
+            assert!(
+                shown.contains("debug build"),
+                "a debug build must announce itself: {shown}"
+            );
+        } else {
+            assert_eq!(
+                shown,
+                crate::KRATE_VERSION_NUMBER,
+                "a released binary must report the bare number"
+            );
+        }
     }
 
     #[test]
