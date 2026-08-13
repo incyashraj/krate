@@ -612,6 +612,21 @@ So drive the verbs in the request and report their result:\n\n\
 This is also the only evidence that clicking works at all: there is no \
 scripted-input path, so an app that cannot exercise its own controls cannot \
 show that they respond.\n\n\
+**Do not let the last thing you drive undo the rest.** You print once, at the \
+end, so the final state has to still show the work. A generated countdown \
+timer exercised itself thoroughly -- started, ticked, paused, lengthened, \
+shortened, reset -- and reset last, so it printed:\n\n\
+\u{20}\u{20}\u{20}\u{20}duration:1500\n\
+\u{20}\u{20}\u{20}\u{20}remaining:1500   // the full duration: it looks like it never ran\n\
+\u{20}\u{20}\u{20}\u{20}elapsed:1\n\
+\u{20}\u{20}\u{20}\u{20}ticks:1\n\
+\u{20}\u{20}\u{20}\u{20}reset:yes\n\n\
+Every line is true and the app is correct, but `remaining` equals the \
+starting value, so the one number a person would check to see a timer \
+counting says it did not. Put the undoing operations -- reset, clear, \
+cancel, close -- in the middle and end on a state that shows the app \
+working, or print the telling value where it is true (`remaining_at_pause`) \
+as well as at the end.\n\n\
 **Print one `key:value` per line, and make the keys mean something.** This is \
 the only way anything outside the app can tell whether it did what was asked. \
 `check-app` reads it, CI reads it, and a benchmark reads it. \"print something\" \
