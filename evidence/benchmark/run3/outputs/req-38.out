@@ -1,0 +1,9 @@
+balls:7
+frames:900
+bounces:31
+resizes:0
+width:640
+height:440
+fps-centi:4831
+bouncing:yes
+fills-window:yes

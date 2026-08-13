@@ -703,3 +703,39 @@ report something richer, the specific key I anchored to disappears.
 That is not an argument for adding more synonyms. It is an argument that the
 approach cannot work, and it is the third independent piece of evidence for
 publishing the expected keys instead (K-105 option 1).
+
+## req 36, and the full shape of my mistake
+
+    run 2:  score:7 length:10 best:7 ticks:85 over:yes
+            -- failed `alive?` only
+    run 3:  score:220 apples:21 length:24 deaths:2 restarts:2
+            frames:900 over:no
+            -- passes `alive|over`, fails `ticks>=1`
+
+A far better game: 220 points against 7, 21 apples, length 24, two deaths
+and two restarts. My `alive|over` alternative did its job. Then `ticks`,
+which PASSED in run 2, broke because the app now says `frames`.
+
+That completes the pattern, and it is worth stating exactly:
+
+    req  key that passed in run 2   what run 3 says        outcome
+    20   matches                    matched, results       broke
+    34   widest_column              width_Name, width_Role broke
+    35   measure                    lines_wide, lines_narrow broke
+    36   ticks                      frames                 broke
+
+**I added alternatives only where run 2 FAILED. Where run 2 PASSED I left
+the key untouched -- and those are precisely the ones that broke.**
+
+So my method had exactly the wrong shape. I patched the observed failures and
+left the observed successes unprotected, on the assumption that a passing key
+would keep passing. But the teaching changed how every app reports, so the
+keys that were safe under the old behaviour are the ones most exposed under
+the new.
+
+Four failures in run 3 come from this. Not from apps getting worse: in every
+one of the four, the run-3 app is measurably better than run 2's.
+
+The lesson generalises past this benchmark. **When you fix a system, the
+parts of your test suite that were passing are the ones most likely to break,
+because they were calibrated to the broken behaviour.**
