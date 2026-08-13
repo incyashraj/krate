@@ -579,3 +579,35 @@ vocabulary. The residue after the teaching fixes is almost purely naming.
 
 Which is the argument for publishing the corpus's expected key names to the
 app (K-105 option 1). Everything the teaching can reach has been reached.
+
+## req 25 -- the one failure that is NOT vocabulary
+
+  req 25 tic tac toe (FAIL 1/3)
+
+    run 2:  players:2 mode:hot-seat moves:5 wins-x:1 winner:x over:yes
+    run 3:  moves:14 rounds:2 winner:X x:1 o:0 draws:1 rejected:2
+            frames:24 won:yes drawn:yes reset:yes players:2
+
+    Both runs failed the SAME two asserts: board? and turn?
+
+Checked every key the app printed for something that could stand for either:
+
+    moves rounds winner x o draws rejected frames won drawn reset players
+
+Nothing resembles a board or a position, and `winner:X` is the outcome rather
+than whose turn it is. **This is not a synonym miss.** The app genuinely does
+not publish either fact.
+
+And it is not for want of doing the work: 14 moves across 2 rounds, a draw,
+and two illegal moves rejected. It plays properly and reports only outcomes.
+
+**Why the teaching missed it.** The pack's rules skew toward verbs -- "drive
+the verbs in the request and report their result" -- and the app obeyed that
+precisely: moves, rounds, reset, rejected. The state rule is much vaguer:
+"Print the state a person would look at to judge the app." That is too
+abstract to make an app publish a board layout, and a game's board is exactly
+the case where the state IS the app.
+
+The honest count for run 3 so far: four failures on vocabulary, one on a real
+teaching gap. This is the fifth, and the only one where a better pack would
+plausibly have changed the outcome.
