@@ -3417,8 +3417,8 @@ Fix:      The copy is now required: generated icons first, the committed
           if neither exists. Verified byte-identical to the source logos.
 
 ### K-032 — A window sometimes will not close from its own close button
-Status:   open -- diagnosed 2026-08-13, not yet fixed
-Owner:    unclaimed
+Status:   fixed 2026-08-13 (627c66d)
+Owner:    lead
 Severity: serious
 Class:    runtime-hole
 Found:    2026-08-05, Yashraj, using a generated app
@@ -3459,16 +3459,49 @@ Diagnosis: 2026-08-13, from the code. The original suspicion was right, and
 Not reproduced under a debugger: the starvation needs a windowed session, and
           a `quick` run exits before the busy stretch. A probe was built and
           discarded rather than left claiming a measurement it never made.
-Fix:      Pump AppKit from somewhere that does not depend on the guest calling
-          in. The options, in rough order of how much they change:
-          1. A CFRunLoop observer or timer on the main thread that drains the
-             delegate queue independently of the guest.
-          2. Pump at more guest boundaries (every UAPI call, not just the two
-             event calls) -- cheap, but only narrows the window rather than
-             closing it, since a pure computation makes no host calls at all.
-          3. Run the guest off the main thread and keep AppKit on it. The
-             correct shape, and much the largest change.
-          Option 1 is the one to try first.
+Fix:      2026-08-13, commit 627c66d, by epoch interruption -- NOT option 1.
+
+          Option 1 was wrong and reading the pump proved it: this runtime
+          drives its own manual pump (`nextEventMatchingMask` in a loop)
+          instead of `[NSApp run]`, so no CFRunLoop is turning and an observer
+          would never fire. Option 2 cannot work either, because a pure
+          computation makes no host calls, so there is no boundary to hook.
+
+          Epoch interruption is the only mechanism that does not need the
+          guest to cooperate. A background thread ticks the engine epoch every
+          8ms; wasmtime runs the callback when the guest next crosses a
+          safepoint, it pumps the native loop and returns `Continue` so the
+          guest carries straight on. `Continue` and not `Interrupt`: this
+          keeps the window answering, it does not end runs. The wall-clock
+          budget and fuel are unchanged.
+
+Cost:     Real, and gated because of it. Epoch checks go on every loop
+          back-edge, so they cost compile time on every app that carries
+          them. One binary built both ways, nothing else changed, six
+          alternating runs of krate-savings:
+
+              gated off   0.226s
+              forced on   0.480s
+
+          Roughly double. So it is enabled only when the run can actually
+          open a window (`Phase3HostUiMode::can_open_a_window`). A headless
+          run has no close button; a CLI app can never open a window at all.
+          Neither should pay for a mechanism it cannot use.
+
+Evidence: pump counts, via `KRATE_EPOCH_STATS=1`, against a probe whose guest
+          runs 400 million iterations making zero host calls:
+
+              busy guest, windowed   60 pumps   <- structurally 0 before
+              ordinary GUI app        3 pumps
+              CLI app                 gate off entirely
+              headless                0 pumps
+
+          The 60 is the fix: sixty chances for AppKit to deliver the close
+          during work that previously froze the window solid.
+Not verified by hand: reproducing the original symptom needs a person to click
+          a close button during a long computation on a real window. The pump
+          count shows the mechanism now runs where before nothing could, which
+          is the part that was missing.
 
 ### K-033 — The usage notice printed into a pipe and broke the site build
 Status:   fixed
