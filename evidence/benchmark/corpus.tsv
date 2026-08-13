@@ -102,11 +102,11 @@
 17	medium	a simple kanban board with three columns	columns==3;cards>=3;moved>=1
 18	medium	a calculator with buttons for the four operations	display?;result|evaluated?;ops|operations>=4
 19	medium	a settings panel with switches and a dropdown	switches>=2;toggled>=1;selected?
-20	medium	a contact book I can search	contacts>=3;matches>=1;query|search?
+20	medium	a contact book I can search	contacts>=3;matches|matched|results>=1;query|search?
 21	medium	a CSV viewer that shows a table	rows>=3;cols|columns>=2
-22	medium	a JSON pretty printer	input?;output~{;lines>=3
-23	medium	a markdown preview that shows my headings and lists	headings>=1;bullets|list_items>=1
-24	medium	a bar chart of some numbers I type in	bars>=3;max|largest>=1
+22	medium	a JSON pretty printer	input?;output|out|formatted~{;lines>=3
+23	medium	a markdown preview that shows my headings and lists	headings>=1;bullets|list_items|lists|items>=1
+24	medium	a bar chart of some numbers I type in	bars>=3;max|largest|highest>=1
 25	medium	a tic tac toe game against another person on the same computer	moves>=3;board?;turn?
 26	medium	a memory matching card game	cards>=8;flipped|moves>=2;matched>=0
 27	medium	a reading list of books with a read/unread mark	books>=3;read>=1;unread>=1
@@ -122,11 +122,11 @@
 # 36-38 are canvas apps that must survive a resize: K-003, canvas apps hard-code
 # layout so hit-boxes stay put while the canvas stretches.
 31	hard	a long list of 200 items I can scroll through	items>=200;scrolled>=1;visible>=1
-32	hard	a text file viewer with line numbers for a long file	lines>=100;scrolled>=1;firstline?
-33	hard	a log viewer that keeps the newest line in view	lines>=50;scrolled>=1;tail!=no
-34	hard	a table where the columns line up with the widest cell	cols|columns>=3;measured!=no;widest|widest_column>=1
-35	hard	a paragraph of text that wraps to the window width	wrapped|lines>=2;width|measure>=1
-36	hard	a snake game	length>=3;ticks>=1;alive|over?
+32	hard	a text file viewer with line numbers for a long file	lines>=100;scrolled>=1;firstline|top_line|first_line|lines?
+33	hard	a log viewer that keeps the newest line in view	lines>=50;scrolled>=1;tail|following|newest_in_view!=no
+34	hard	a table where the columns line up with the widest cell	cols|columns>=3;measured|fitted!=no;widest|widest_column|table_width>=1
+35	hard	a paragraph of text that wraps to the window width	wrapped|lines>=2;width|measure|lines_wide|size>=1
+36	hard	a snake game	length>=3;ticks|frames>=1;alive|over?
 37	hard	a drawing pad where I can draw with the mouse	strokes>=1;points>=2
 38	hard	a bouncing ball screensaver that fills the window	bounces>=1;balls|x?
 

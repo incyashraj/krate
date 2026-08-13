@@ -574,7 +574,8 @@ is not enough: an app that prints `ok` builds, runs, paints a frame, and proves 
 nothing about whether it works.\n\n\
 Print the state a person would look at to judge the app. A to-do list prints \
 how many items it holds and how many are done; a tip calculator prints the tip \
-and the total; a game prints the score and whether it is over:\n\n\
+and the total; a game prints the score, whether it is over, **and the \
+position it is in** -- a board, a level, whose turn it is:\n\n\
 \u{20}\u{20}\u{20}\u{20}items:5\n\
 \u{20}\u{20}\u{20}\u{20}done:2\n\
 \u{20}\u{20}\u{20}\u{20}saved:yes\n\n\
@@ -613,6 +614,20 @@ bare numbers; `elapsed:2:20.18` cannot be compared to anything, so print \
 person, and never put a currency symbol in a number -- `total:289.93`, not \
 `total:$289.93`. If the app generates something -- a password, a colour, an \
 id -- print the thing itself, not only facts about it.\n\n\
+**Print the position, not only the result.** An outcome says what happened; \
+the position says where things stand, and it is the thing a person looks at \
+to judge whether the app works. Measured: a tic tac toe app played fourteen \
+moves across two rounds and rejected two illegal ones, then printed only \
+`winner`, `draws` and `rounds` -- never the board or whose turn it is. \
+Everything it reported was true, and you still could not tell from the \
+output whether the game had a board.\n\n\
+So a game prints its board and whose turn it is; an editor prints the \
+current text or its first line; a viewer prints which line is at the top. \
+A grid can go on one line with a separator, and that is enough:\n\n\
+\u{20}\u{20}\u{20}\u{20}board:X.O|.X.|O..\n\
+\u{20}\u{20}\u{20}\u{20}turn:O\n\
+\u{20}\u{20}\u{20}\u{20}moves:14\n\
+\u{20}\u{20}\u{20}\u{20}winner:X\n\n\
 **If you have a count, print the count, not `yes`.** A word like `yes` \
 tells a reader the thing happened; a number tells them how much, and \
 anything comparing the value can only work with the number. Measured: an \

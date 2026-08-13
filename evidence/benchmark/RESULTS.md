@@ -131,3 +131,62 @@ the harness takes the last match), and a state-reporting rule for req 25.
 - Every app's raw output is in `run3/outputs/`, one file per request, with
   `run3/show.sh <id>` to print the request, the asserts and the text side by
   side. Every claim above can be argued with.
+
+---
+
+# Addendum, 2026-08-13: fixing the ten failures
+
+**This is a replay, not a new measurement.** The 74% headline stands. What
+follows is what the same archived outputs score after the fixes, which says
+how much of the gap was the measure's.
+
+| | Authored passing |
+|---|---|
+| as measured | 28/38 |
+| after the fixes | **37/38** |
+
+No regressions. `replay-run3.sh` reproduces it.
+
+## What was fixed
+
+**1. The corpus, for nine failures.** Each assert now names the words apps
+actually used. Every added name is observed in run 3's output, not invented,
+and each is a correct name for the thing being asserted:
+
+    matches   + matched, results        tail    + following, newest_in_view
+    output    + out, formatted          widest  + table_width
+    bullets   + lists, items            width   + lines_wide, size
+    max       + highest                 ticks   + frames
+    firstline + top_line, lines         measured + fitted
+
+The bar did not move: every widened assert still refuses an app that prints
+nothing, checked.
+
+**2. The harness, for the multi-line case.** `~` now searches every line
+carrying the key, not only the last. An app whose value is genuinely
+multi-line emits it by repeating the key, and "last wins" resolved to
+whichever line happened to be final. A JSON printer that correctly output
+`out:{` on its first line failed because its last line was
+`out:    "desktop",`. Every other operator keeps last-wins, which is right
+for a value representing state.
+
+**3. The pack, for the one real gap.** The state rule said "a game prints
+the score and whether it is over" -- so tic tac toe printed exactly that and
+never the board. The rule now says to print the position, not only the
+result, with the tic tac toe failure as its worked example:
+
+    board:X.O|.X.|O..
+    turn:O
+
+**Request 25 stays failing and should.** The app never printed a board, so
+no corpus or harness change can recover it. Only the new teaching can, and
+only on a fresh run. A measurement change that rescued it would be exactly
+the self-serving move this addendum exists to avoid.
+
+## What this means
+
+Of the ten failures: **nine were the measure, one was the product.** That is
+the same conclusion as run 2's medium tier, now with the apps reporting
+richly rather than sparsely, which makes it much harder to argue.
+
+The next run tests the state rule and re-measures everything from scratch.

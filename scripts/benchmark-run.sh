@@ -230,7 +230,15 @@ check_one_key() {
 
   case "$op" in
     '?')  grep -qE "^${key}:" "$out" 2>/dev/null ;;
-    '~')  printf '%s' "$value" | grep -qF -- "$want" ;;
+    # `~` asks "does this key contain this text", so it searches EVERY line
+    # for the key rather than only the last one. An app whose value is
+    # genuinely multi-line -- a pretty printer, a text formatter -- emits it
+    # by repeating the key, and "last wins" then resolves to whichever line
+    # happens to be final. A JSON printer that correctly output `out:{` on
+    # its first line failed `output~{` because its last line was
+    # `out:    "desktop",`. Every other operator keeps last-wins, which is
+    # right for a value that represents state.
+    '~')  grep -E "^${key}:" "$out" 2>/dev/null | cut -d: -f2- | grep -qF -- "$want" ;;
     '==') [ "$value" = "$want" ] ;;
     '!=') [ "$value" != "$want" ] ;;
     '>='|'<=')
