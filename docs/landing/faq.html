@@ -102,5 +102,25 @@
   </div>
 </footer>
 
+<script>
+// Count the visit, and nothing about the visitor.
+//
+// No cookie, no stored id, no query string, no referrer -- the page path and
+// the day, sent to our own hub. Before this there was no way to answer "how
+// many people came to krate.tech", which is the first question anyone asks
+// about a launch. Deliberately not Google Analytics or Plausible: this sends
+// strictly less, to a server we run.
+(function () {
+  try {
+    fetch("https://hub.krate.tech/view", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page: location.pathname }),
+      keepalive: true,
+      mode: "cors",
+    }).catch(function () {});
+  } catch (e) {}
+})();
+</script>
 </body>
 </html>

@@ -50,6 +50,24 @@ export default {
       if (request.method === "POST" && pathname === "/usage") {
         return cors(await usage(request, env));
       }
+      // One pixel-free page view. No cookie, no id, no query string, no
+      // referrer: the page name and the day, and nothing else. That is
+      // enough to answer "how many people visited krate.tech", which is the
+      // number that matters before a launch, and it cannot identify anyone.
+      if (request.method === "POST" && pathname === "/view") {
+        try {
+          const body = await request.json();
+          const page = String(body.page || "/").slice(0, 64);
+          env.USAGE.writeDataPoint({
+            blobs: ["view", page],
+            doubles: [1],
+            indexes: ["view"],
+          });
+        } catch {
+          // A malformed beacon is not worth an error to the visitor.
+        }
+        return cors(new Response(null, { status: 204 }));
+      }
       if (request.method === "GET" && pathname === "/stats") {
         return cors(await stats(env));
       }
@@ -416,6 +434,46 @@ async function usage(request, env) {
   return text("ok");
 }
 
+
+/// Read the live numbers out of Analytics Engine.
+///
+/// Counting moved to Analytics Engine on 2026-08-10 (a busy day of telemetry
+/// in KV returned 429s to every publish and sign-in), and `/stats` kept
+/// reading the retired KV keys -- so from that day on it reported nothing
+/// newer, while the events themselves were arriving fine. That is the worst
+/// shape a metric can have: it looks alive and is four days stale.
+///
+/// Needs a read token. Without one this returns null and `/stats` says so,
+/// rather than reporting a zero that reads as "nobody used it".
+async function liveStats(env, days) {
+  if (!env.CF_ANALYTICS_TOKEN) return null;
+  const sql =
+    "SELECT toDate(timestamp) AS day, blob1 AS action, blob4 AS outcome, " +
+    "sum(_sample_interval) AS n, count(DISTINCT blob3) AS installs " +
+    "FROM krate_usage " +
+    `WHERE timestamp > now() - INTERVAL '${days}' DAY ` +
+    "GROUP BY day, action, outcome ORDER BY day";
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/analytics_engine/sql`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` },
+      body: sql,
+    },
+  );
+  if (!res.ok) return { error: `analytics query failed: ${res.status}` };
+  const body = await res.json();
+  const byDay = {};
+  let installs = 0;
+  for (const row of body.data || []) {
+    const day = (byDay[row.day] ||= {});
+    const key = row.outcome === "failed" ? `${row.action}-failed` : row.action;
+    day[key] = (day[key] || 0) + Number(row.n);
+    if (row.action === "install") installs += Number(row.installs);
+  }
+  return { actions_by_day: byDay, distinct_installs: installs };
+}
+
 /// The numbers, for us. Distinct installs and action counts by day.
 async function stats(env) {
   const seen = await env.APPS.list({ prefix: "seen:", limit: 1000 });
@@ -436,7 +494,17 @@ async function stats(env) {
     actions[day][action] = value;
   }
 
+  // Everything since 2026-08-10 lives in Analytics Engine, so read it and
+  // put it beside the KV history rather than leaving the endpoint frozen.
+  const live = await liveStats(env, 30);
+
   return json({
+    live: live || {
+      note:
+        "no CF_ANALYTICS_TOKEN set on the worker, so the numbers since " +
+        "2026-08-10 cannot be read here. Add it with: wrangler secret put " +
+        "CF_ANALYTICS_TOKEN (needs Account Analytics:Read).",
+    },
     // KV history stops on 2026-08-10; its TTLs retire it over 90 days.
     // Everything after that date is in the USAGE Analytics Engine dataset
     // (krate_usage), queryable from the dashboard or the SQL API -- moved
