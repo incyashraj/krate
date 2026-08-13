@@ -5753,16 +5753,29 @@ fn run_component(request: RunRequest) -> Result<u8> {
 
 /// Fail early, and in plain words, when the X11 keyboard library is absent.
 ///
-/// winit loads `libxkbcommon-x11.so` with dlopen when it opens a window, and
-/// **panics** if it is not there. On a stock Ubuntu desktop it is not: the
-/// runtime package ships `libxkbcommon-x11.so.0`, and the unversioned name
-/// winit asks for only comes with the `-dev` package. So a person who was
-/// promised they would never see a compiler error gets a Rust backtrace with a
-/// crate path and a line number, for an app that built and packed perfectly.
+/// winit loads the X11 keyboard bridge with dlopen when it opens a window,
+/// and the crate that loads it ends in `.expect(...)` -- so a missing library
+/// is a Rust backtrace with a crate path and a line number, for an app that
+/// built and packed perfectly. That is the thing Krate promises a
+/// non-developer never sees.
 ///
-/// The check is deliberately the same dlopen winit will do, rather than a
-/// filesystem guess: the loader searches paths we do not want to reimplement,
-/// and being wrong in the optimistic direction just restores the panic.
+/// The check is deliberately the same dlopen the loader will do, rather than a
+/// filesystem guess: it searches paths we do not want to reimplement, and
+/// being wrong in the optimistic direction just restores the panic.
+///
+/// **Both sonames, in the loader's order.** An earlier version probed only the
+/// unversioned `libxkbcommon-x11.so` and then told people to install the `-dev`
+/// package. `xkbcommon-dl` actually tries `libxkbcommon-x11.so.0` first
+/// (xkbcommon-dl-0.4.2/src/x11.rs:50), so the runtime package alone is enough
+/// and always was. The old check refused machines where apps ran fine, and
+/// sent a person who only wanted to open an app to install a developer
+/// package. Asking exactly what the loader asks is the only way this stays
+/// correct.
+/// The sonames `xkbcommon-dl` tries, in its order. Kept identical to that
+/// crate's list so this asks the same question the loader will.
+#[cfg(all(unix, not(target_os = "macos")))]
+const XKB_X11_SONAMES: [&[u8]; 2] = [b"libxkbcommon-x11.so.0\0", b"libxkbcommon-x11.so\0"];
+
 #[cfg(all(unix, not(target_os = "macos")))]
 fn check_window_libraries() -> Result<()> {
     // No display at all means no window, so nothing to check.
@@ -5777,22 +5790,22 @@ fn check_window_libraries() -> Result<()> {
         return Ok(());
     }
 
-    const LIBRARY: &[u8] = b"libxkbcommon-x11.so\0";
-    // SAFETY: a null-terminated literal, and the handle is closed on success.
-    let handle = unsafe { libc::dlopen(LIBRARY.as_ptr().cast(), libc::RTLD_LAZY) };
-    if !handle.is_null() {
-        unsafe { libc::dlclose(handle) };
-        return Ok(());
+    for library in XKB_X11_SONAMES {
+        // SAFETY: null-terminated literals, and the handle is closed on
+        // success. This only asks whether the loader can find the name.
+        let handle = unsafe { libc::dlopen(library.as_ptr().cast(), libc::RTLD_LAZY) };
+        if !handle.is_null() {
+            unsafe { libc::dlclose(handle) };
+            return Ok(());
+        }
     }
 
     anyhow::bail!(
         "this computer is missing a library apps need to read the keyboard.\n\n\
          Install it with:\n\n    \
-         sudo apt install libxkbcommon-x11-dev\n\n\
-         (on Fedora: sudo dnf install libxkbcommon-x11-devel)\n\n\
-         The plain `libxkbcommon-x11-0` package is not enough -- it provides \
-         libxkbcommon-x11.so.0, and the name that has to exist is \
-         libxkbcommon-x11.so, which only the dev package creates."
+         sudo apt install libxkbcommon-x11-0\n\n\
+         (on Fedora: sudo dnf install libxkbcommon-x11; on Arch it is part of \
+         libxkbcommon.)"
     )
 }
 

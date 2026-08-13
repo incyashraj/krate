@@ -589,6 +589,23 @@ mod tests {
     }
 
     #[test]
+    fn the_real_missing_library_message_classifies_as_no_window() {
+        // The wording a person actually gets (K-036). It deliberately avoids
+        // the word "libxkbcommon" in the first sentence, so classification
+        // must not depend on the library name appearing at all.
+        let err = anyhow::anyhow!(
+            "this computer is missing a library apps need to read the keyboard.\n\n\
+             Install it with:\n\n    sudo apt install libxkbcommon-x11-0\n"
+        );
+        assert_eq!(
+            OpenFailure::classify(&Err(err)),
+            Some(OpenFailure::NoWindow),
+            "a machine without the X11 keyboard bridge is a window problem, \
+             not an app that failed"
+        );
+    }
+
+    #[test]
     fn a_trap_is_the_app_failing() {
         let err = anyhow::anyhow!("wasm trap: wasm `unreachable` instruction executed");
         assert_eq!(

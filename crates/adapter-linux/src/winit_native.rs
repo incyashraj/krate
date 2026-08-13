@@ -397,6 +397,53 @@ mod real {
         })
     }
 
+    /// The sonames `xkbcommon-dl` tries, in its order.
+    ///
+    /// Kept identical to that crate's list so this check answers the same
+    /// question it will ask. If it ever loads a different name, this probe
+    /// would pass and the panic would come back.
+    const XKB_X11_SONAMES: [&str; 2] = ["libxkbcommon-x11.so.0", "libxkbcommon-x11.so"];
+
+    /// `Some(message)` when this is an X11 session and the X11 keyboard
+    /// bridge cannot be loaded.
+    ///
+    /// Ubuntu splits the two libraries: `libxkbcommon0` carries
+    /// libxkbcommon.so.0 and is installed by Ubuntu Desktop, while
+    /// `libxkbcommon-x11-0` carries the X11 bridge and is not. So a stock
+    /// desktop has the first and not the second, and every GUI app panicked.
+    ///
+    /// Wayland sessions never load it, so the check is skipped there rather
+    /// than refusing a machine that would have worked.
+    fn missing_x11_keyboard_library() -> Option<String> {
+        // Wayland-only session: winit takes the Wayland path and this
+        // library is never opened.
+        if std::env::var_os("DISPLAY").is_none() && std::env::var_os("WAYLAND_DISPLAY").is_some() {
+            return None;
+        }
+        for soname in XKB_X11_SONAMES {
+            let c_name = match std::ffi::CString::new(soname) {
+                Ok(name) => name,
+                Err(_) => continue,
+            };
+            // SAFETY: a NUL-terminated name and RTLD_LAZY|RTLD_LOCAL, the
+            // same call dlib makes. The handle is closed straight away; this
+            // only asks whether the loader can find it.
+            let handle = unsafe { libc::dlopen(c_name.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL) };
+            if !handle.is_null() {
+                unsafe { libc::dlclose(handle) };
+                return None;
+            }
+        }
+        Some(
+            "this system is missing the X11 keyboard library that windows need. \
+             On Ubuntu or Debian install it with:\n\
+             \n    sudo apt install libxkbcommon-x11-0\n\n\
+             On Fedora the package is libxkbcommon-x11, and on Arch it is part of \
+             libxkbcommon."
+                .to_string(),
+        )
+    }
+
     fn with_host<T>(
         f: impl FnOnce(&mut Host) -> Result<T, UiAdapterError>,
     ) -> Result<T, UiAdapterError> {
@@ -411,6 +458,14 @@ mod real {
                     return Err(UiAdapterError::Unsupported(
                         "no display server: DISPLAY and WAYLAND_DISPLAY are unset".to_string(),
                     ));
+                }
+                // Same class of problem, one layer down. On X11 winit reaches
+                // for libxkbcommon-x11, and the crate that loads it ends in
+                // `.expect(...)` -- so a missing library is a Rust panic with
+                // a crate path and a line number, which is precisely what a
+                // person opening an app must never see (K-036).
+                if let Some(missing) = missing_x11_keyboard_library() {
+                    return Err(UiAdapterError::Unsupported(missing));
                 }
                 let mut builder = EventLoop::builder();
                 // Tests run on worker threads, where winit refuses to build
@@ -591,7 +646,70 @@ mod real {
     #[cfg(test)]
     mod tests {
         use super::key_name;
+        use super::{missing_x11_keyboard_library, XKB_X11_SONAMES};
         use winit::keyboard::{Key, NamedKey, SmolStr};
+
+        #[test]
+        fn the_probe_asks_for_the_same_libraries_the_loader_will() {
+            // The whole check rests on asking the question xkbcommon-dl asks.
+            // If it ever loads a different name, this probe would succeed,
+            // winit would still panic, and K-036 would be back with the
+            // check apparently passing.
+            assert_eq!(
+                XKB_X11_SONAMES,
+                ["libxkbcommon-x11.so.0", "libxkbcommon-x11.so"],
+                "these must stay identical to xkbcommon-dl's own soname list"
+            );
+        }
+
+        #[test]
+        fn the_message_names_the_package_to_install() {
+            // A person who sees this has to be able to act on it without
+            // knowing what xkbcommon is. If the library happens to be
+            // present on the test machine there is nothing to assert, and
+            // that is the correct outcome there.
+            if let Some(message) = missing_x11_keyboard_library() {
+                assert!(
+                    message.contains("libxkbcommon-x11-0"),
+                    "must name the apt package: {message}"
+                );
+                assert!(
+                    message.contains("sudo apt install"),
+                    "must give the command to run: {message}"
+                );
+                assert!(
+                    !message.contains("panicked") && !message.contains(".rs:"),
+                    "must not read like a crash: {message}"
+                );
+            }
+        }
+
+        #[test]
+        fn a_wayland_only_session_is_not_asked_about_x11() {
+            // Wayland never loads the X11 bridge, so refusing a Wayland
+            // machine for a library it does not need would be a new bug.
+            let display = std::env::var_os("DISPLAY");
+            let wayland = std::env::var_os("WAYLAND_DISPLAY");
+            // SAFETY: single-threaded test, restored before returning.
+            unsafe {
+                std::env::remove_var("DISPLAY");
+                std::env::set_var("WAYLAND_DISPLAY", "wayland-0");
+            }
+            let verdict = missing_x11_keyboard_library();
+            unsafe {
+                std::env::remove_var("WAYLAND_DISPLAY");
+                if let Some(value) = display {
+                    std::env::set_var("DISPLAY", value);
+                }
+                if let Some(value) = wayland {
+                    std::env::set_var("WAYLAND_DISPLAY", value);
+                }
+            }
+            assert!(
+                verdict.is_none(),
+                "a Wayland session must not be refused over an X11 library"
+            );
+        }
 
         #[test]
         fn the_spacebar_is_named_space_not_a_blank() {

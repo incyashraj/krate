@@ -352,12 +352,27 @@ What each is for, and what it looks like when it is missing:
 - **libwayland-dev** — windowing. The worst failure of the five: a *panic
   inside `wayland-sys`'s build script*, which reads as a broken crate rather
   than a missing package.
-- **libxkbcommon-dev** — the keyboard. Also needed at runtime: the versioned
-  `libxkbcommon-x11.so.0` from the runtime package is not enough, because what
-  gets loaded is the unversioned name that only `-dev` provides.
+- **libxkbcommon-dev** — the keyboard.
 - **libudev-dev** — gamepads.
 - **cmake** — builds whisper.cpp for speech-to-text. Skip the whole thing with
   `--no-default-features` if you do not need it.
+
+#### Running an app on Linux, without building anything
+
+The list above is for building Krate. Someone who only opens a `.krate` needs
+one package, and only on an X11 desktop:
+
+```bash
+sudo apt install libxkbcommon-x11-0
+```
+
+Ubuntu splits the keyboard library in two. `libxkbcommon0` ships with Ubuntu
+Desktop; the X11 bridge in `libxkbcommon-x11-0` does not, and X11 windows need
+it. Fedora calls it `libxkbcommon-x11`, and on Arch it is part of
+`libxkbcommon`. A Wayland-only session never loads it.
+
+Without it, Krate says so in a sentence and names the package. It used to be a
+Rust panic quoting a crate path (K-036).
 
 ### Windows
 
