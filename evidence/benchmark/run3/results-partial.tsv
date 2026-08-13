@@ -24,3 +24,11 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 23	medium	a markdown preview that shows my headings and lists	fail	does	522	39694	1	2	bullets|list_items>=1	1/2 observable properties held
 24	medium	a bar chart of some numbers I type in	fail	does	339	25688	1	2	max|largest>=1	1/2 observable properties held
 25	medium	a tic tac toe game against another person on the same computer	fail	does	204	27539	1	3	board?,turn?	1/3 observable properties held
+26	medium	a memory matching card game	pass	-	453	30169	3	3	-	-
+27	medium	a reading list of books with a read/unread mark	pass	-	420	30888	3	3	-	-
+28	medium	a mood tracker with a face for each day	pass	-	344	29384	2	2	-	-
+29	medium	a dashboard with three panels showing different numbers	pass	-	583	27710	2	2	-	-
+30	medium	a base64 encoder and decoder	pass	-	341	28933	3	3	-	-
+31	hard	a long list of 200 items I can scroll through	pass	-	365	26440	3	3	-	-
+32	hard	a text file viewer with line numbers for a long file	fail	does	627	37922	2	3	firstline?	2/3 observable properties held
+33	hard	a log viewer that keeps the newest line in view	fail	does	251	27428	2	3	tail!=no	2/3 observable properties held

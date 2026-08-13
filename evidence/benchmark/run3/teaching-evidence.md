@@ -611,3 +611,33 @@ the case where the state IS the app.
 The honest count for run 3 so far: four failures on vocabulary, one on a real
 teaching gap. This is the fifth, and the only one where a better pack would
 plausibly have changed the outcome.
+
+## The medium tier is complete: 13/18, against 2/18 in run 2
+
+That is the prediction from run 2 tested and confirmed. I claimed those
+failures were reporting rather than broken apps. Eleven of them now pass.
+
+The five that still fail:
+
+  req 20 contact book   matches (app said matched, results)
+  req 22 JSON printer   output (app said out, and repeated the key per line)
+  req 23 markdown       bullets (app said lists, items)
+  req 24 bar chart      max (app said highest)
+  req 25 tic tac toe    board, turn -- the only real teaching gap
+
+Four of five are vocabulary. One is a genuine gap where the app reports
+outcomes and never state.
+
+## req 32 -- self-exercise reaches the hard tier
+
+    run 2:  lines:104 scrollable:yes top_line:1
+            -- said scrolling was possible, never scrolled
+
+    run 3:  lines:264 bytes:10479 visible:29 scrolled:4712
+            scrollable:4712 paged:9 scrolls:49 widest:85 numbered:264
+
+It scrolled 4,712 pixels across 49 scrolls and paged nine times, where run 2
+stood still at line 1. It fails only `firstline?`, another name nobody could
+guess.
+
+Standing at 32 recorded: 26 pass, and 21 of 32 against run 2's own corpus.

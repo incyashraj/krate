@@ -1,0 +1,7 @@
+input:Base64 encoding, decoded again.
+encoded:QmFzZTY0IGVuY29kaW5nLCBkZWNvZGVkIGFnYWluLg==
+decoded:Base64 encoding, decoded again.
+output:Base64 encoding, decoded again.
+length:44
+roundtrip:yes
+rejected:yes
