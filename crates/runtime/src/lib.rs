@@ -51,6 +51,7 @@ pub mod secret_host;
 mod speech_transcription;
 pub mod sql_host;
 pub mod store_host;
+pub mod text_overlap;
 pub mod usability;
 
 #[cfg(feature = "phase2-bindings")]
@@ -144,6 +145,8 @@ pub struct Config {
     /// When set, a headless GUI run paints the window to this PNG once the app
     /// has drawn a frame. This is how `krate shoot` and automated app tests see
     /// what an app actually renders rather than trusting its exit code.
+    /// Report text drawn over other text in the captured frame.
+    pub check_layout: bool,
     pub screenshot_path: Option<PathBuf>,
     /// Display scale applied to a screenshot; 2.0 mimics a HiDPI window.
     pub screenshot_scale: f32,
@@ -171,6 +174,7 @@ impl Default for Config {
             app_database_path: None,
             app_secrets: None,
             phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
+            check_layout: false,
             screenshot_path: None,
             screenshot_scale: 2.0,
             usability_plan: None,
@@ -517,6 +521,7 @@ impl Runtime {
                 .map(|path| (path, config.screenshot_scale)),
         )
         .with_usability(config.usability_plan.clone())
+        .with_layout_check(config.check_layout)
         .with_chosen_files(store.data().chosen.clone());
         store.data_mut().phase3_gui = Some(gui_host);
 

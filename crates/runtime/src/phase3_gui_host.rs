@@ -146,6 +146,10 @@ pub struct Phase3GuiHost {
     /// the first drawn frame is the one captured.
     screenshot: Option<(std::path::PathBuf, f32)>,
     screenshot_taken: std::cell::Cell<bool>,
+    /// Whether to keep a copy of every draw call for a layout check.
+    inspect_layout: std::cell::Cell<bool>,
+    /// Draw calls recorded for the current frame, newest frame only.
+    inspected_ops: std::cell::RefCell<Vec<crate::canvas_list::CanvasOp>>,
     /// The usability script, when this run is a driven one. `None` on every
     /// ordinary run, which is what keeps this whole mechanism off the path a
     /// person's app takes.
@@ -279,6 +283,8 @@ impl Phase3GuiHost {
             speech: LocalSpeechRuntime::default(),
             screenshot: None,
             screenshot_taken: std::cell::Cell::new(false),
+            inspect_layout: std::cell::Cell::new(false),
+            inspected_ops: std::cell::RefCell::new(Vec::new()),
             usability: None,
         })
     }
@@ -323,6 +329,13 @@ impl Phase3GuiHost {
     /// Ask the host to paint the window to `path` at `scale` once the app has
     /// drawn a frame. Only meaningful on a headless run, where there is no real
     /// window to grab from the window server.
+    /// Record every draw call so the captured frame can be checked for text
+    /// drawn over text.
+    pub fn with_layout_check(self, enabled: bool) -> Self {
+        self.inspect_layout.set(enabled);
+        self
+    }
+
     pub fn with_screenshot(mut self, request: Option<(std::path::PathBuf, f32)>) -> Self {
         self.screenshot = request;
         self
@@ -351,7 +364,10 @@ impl Phase3GuiHost {
             return;
         };
         match self.render_window_png(window, *scale, path) {
-            Ok(()) => self.screenshot_taken.set(true),
+            Ok(()) => {
+                self.screenshot_taken.set(true);
+                self.report_text_overlaps();
+            }
             // Nothing to render yet is not an error: the very first wait can
             // arrive before the tree exists. A later wait will succeed.
             Err(error) => tracing::debug!(?error, "screenshot not ready yet"),
@@ -1442,6 +1458,13 @@ impl Phase3GuiHost {
     /// adapter renders lists (a GPU backend). The CPU raster still runs
     /// beside the recording; publish decides which consumer presents.
     fn record_op(&self, canvas: u64, op: crate::canvas_list::CanvasOp) {
+        // Layout inspection keeps its own copy. The render list below is
+        // drained by `publish_canvas` on the adapters that consume it, and
+        // is never filled at all on the CPU raster -- so a check that read
+        // it would find nothing on desktop and quietly pass everything.
+        if self.inspect_layout.get() {
+            self.inspected_ops.borrow_mut().push(op.clone());
+        }
         if !self.lists_enabled() {
             return;
         }
@@ -1451,6 +1474,53 @@ impl Phase3GuiHost {
             .or_default()
             .ops
             .push(op);
+    }
+
+    /// Start recording draw calls for a layout check, and forget any
+    /// previous frame.
+    ///
+    /// Called at the top of each frame: a canvas app repaints continuously,
+    /// so ops from earlier frames would pile up and every app would look
+    /// like it was drawing on top of itself.
+    pub fn begin_layout_inspection(&self) {
+        self.inspect_layout.set(true);
+        self.inspected_ops.borrow_mut().clear();
+    }
+
+    /// The draw calls recorded since the last `begin_layout_inspection`.
+    pub fn inspected_ops(&self) -> Vec<crate::canvas_list::CanvasOp> {
+        self.inspected_ops.borrow().clone()
+    }
+
+    /// Print any text drawn on top of other text in the captured frame.
+    ///
+    /// Written to stderr in the same shape as the app's own diagnostics, so
+    /// a caller that scrapes output sees it without a new channel.
+    fn report_text_overlaps(&self) {
+        if !self.inspect_layout.get() {
+            return;
+        }
+        let ops = self.inspected_ops.borrow();
+        let hits = crate::text_overlap::find(&ops);
+        if hits.is_empty() {
+            eprintln!("layout: no text drawn over other text");
+            return;
+        }
+        eprintln!(
+            "layout: {} place{} where text is drawn over other text",
+            hits.len(),
+            if hits.len() == 1 { "" } else { "s" }
+        );
+        for hit in hits.iter().take(8) {
+            eprintln!(
+                "layout:   \"{}\" and \"{}\" share {:.0}% of the smaller one, around x {:.0} y {:.0}",
+                hit.first,
+                hit.second,
+                hit.overlap_fraction * 100.0,
+                hit.region.left,
+                hit.region.top,
+            );
+        }
     }
 
     fn lists_enabled(&self) -> bool {
@@ -2565,6 +2635,12 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
         canvas: u64,
         fill: gfx::types::Color,
     ) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        // A clear starts a new frame. Layout inspection only ever holds the
+        // frame being drawn now, so ops from previous frames cannot stack up
+        // and make every repainting app look like it collides with itself.
+        if self.inspect_layout.get() {
+            self.inspected_ops.borrow_mut().clear();
+        }
         self.record_op(
             canvas,
             crate::canvas_list::CanvasOp::Clear(pack_color(fill.r, fill.g, fill.b, fill.a)),

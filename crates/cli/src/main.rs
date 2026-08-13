@@ -208,6 +208,12 @@ enum Command {
         #[arg(long, default_value_t = 2.0)]
         shoot_scale: f32,
 
+        /// Report any text the app drew on top of other text, using the draw
+        /// calls themselves rather than the pixels. Use it with --shoot: the
+        /// frame that is captured is the frame that gets checked.
+        #[arg(long)]
+        check_layout: bool,
+
         /// Drive the app the way a person would -- resize it, press it, and
         /// watch that it stays open -- and write what was observed to this
         /// path as JSON. Implies --headless. Used by `check-app`'s usability
@@ -775,6 +781,7 @@ fn run() -> Result<u8> {
             test_timezone,
             shoot,
             shoot_scale,
+            check_layout,
             usability_report,
             app_args,
         } => run_component(RunRequest {
@@ -819,6 +826,7 @@ fn run() -> Result<u8> {
             test_time_millis: test_time,
             test_locale,
             test_timezone,
+            check_layout,
             screenshot_path: shoot,
             screenshot_scale: shoot_scale,
             usability_report,
@@ -2319,6 +2327,8 @@ struct RunRequest {
     test_time_millis: Option<u64>,
     test_locale: Option<String>,
     test_timezone: Option<String>,
+    /// Report text drawn over other text in the captured frame.
+    check_layout: bool,
     /// When set, a headless GUI run paints the window to this PNG.
     screenshot_path: Option<PathBuf>,
     /// Display scale for the screenshot.
@@ -2895,6 +2905,7 @@ pub(crate) fn run_bundle_inline(bundle: &Path) -> Result<()> {
     run_component(RunRequest {
         target: bundle.display().to_string(),
         file: PathBuf::new(),
+        check_layout: false,
         // A packed bundle carries its own assets; nothing to override.
         assets_root: None,
         insecure_http: false,
@@ -5938,6 +5949,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         test_time_millis: request.test_time_millis,
         test_locale: request.test_locale,
         test_timezone: request.test_timezone,
+        check_layout: request.check_layout,
         app_args: request.app_args,
         max_http_response_bytes: request.max_http_response_bytes,
         default_http_timeout_millis: match request.http_timeout_millis {
@@ -6208,6 +6220,7 @@ fn open_app() -> Result<u8> {
     run_component(RunRequest {
         target: target.display().to_string(),
         file: PathBuf::new(),
+        check_layout: false,
         assets_root: None,
         insecure_http: false,
         fuel: None,

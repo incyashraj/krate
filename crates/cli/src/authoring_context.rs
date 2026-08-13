@@ -440,6 +440,39 @@ the item's radius or height. A table drawn at a hardcoded 90px radius in a \
 region should be elastic -- usually the list, the canvas, or the feed -- and \
 absorb whatever is left after the fixed chrome (header, footer, toolbar) is \
 placed. If nothing is elastic, the window grows and the app does not.\n\n\
+\u{20}\u{20}4. **Draw inside the region you were given, and derive every \
+position from it.** Reserving a band is only half of it -- the drawing has to \
+stay in the band. Two generated games got this wrong in two different ways, \
+and both looked broken at a glance.\n\n\
+\u{20}\u{20}A tic tac toe put its board at y 132 with height 380, so its \
+score card started at 536 and ran to 612. Its \"New round\" button was a \
+constant, `y: 556` -- computed sensibly on its own, never checked against \
+what came before it, and it landed on top of the word \"Draws\". A memory \
+game did reserve a footer and gave the rest to the cards correctly, then drew \
+its hint text at `size.height - FOOTER_H - 6.0`, meaning \"just above the \
+footer\" -- which is *outside* the footer, in the band already given to the \
+cards, so the hint printed across the bottom row.\n\n\
+\u{20}\u{20}The fix for both is the same. Compute the regions once, in one \
+function, and let every draw take its coordinates from the region it belongs \
+to:\n\n\
+\u{20}\u{20}\u{20}\u{20}// `gfx::Rect` is a plain record -- x, y, width, \
+height, no methods --\n\
+\u{20}\u{20}\u{20}\u{20}// so name the edge you need as you go.\n\
+\u{20}\u{20}\u{20}\u{20}let header_h = 96.0;\n\
+\u{20}\u{20}\u{20}\u{20}let footer_h = 84.0;\n\
+\u{20}\u{20}\u{20}\u{20}let header = rect(0.0, 0.0, w, header_h);\n\
+\u{20}\u{20}\u{20}\u{20}let footer = rect(0.0, h - footer_h, w, footer_h);\n\
+\u{20}\u{20}\u{20}\u{20}let board  = rect(0.0, header_h, w, footer.y - \
+header_h);\n\n\
+\u{20}\u{20}Then the button is `footer.y + 16.0`, never a literal, and the \
+hint is *inside* the footer too, not six pixels above it. If a value that \
+positions one element is a number you typed rather than a field of a region, \
+it is the tic tac toe bug waiting to happen. Two elements may share a region \
+only when you stack them within it and their heights add up to less than the \
+region's.\n\n\
+\u{20}\u{20}Check it the way a person would: text is the thing that shows a \
+collision first, so for every string you draw, name the region it sits in. If \
+you cannot, it has no home and will land on something.\n\n\
 **Measure from the outermost edge, not the shape's own size.** When \
 decorations stick out past a shape -- chairs around a table, a badge on a \
 card corner, a glow, a selection ring -- the next element must clear the \
