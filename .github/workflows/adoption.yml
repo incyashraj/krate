@@ -19,6 +19,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   record:
@@ -31,18 +32,36 @@ jobs:
       - name: Read the hub and append a row
         run: bash scripts/record-adoption.sh
 
-      - name: Commit it, if anything moved
+      - name: Open a pull request with the new row
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           if git diff --quiet -- evidence/adoption/history.tsv; then
             echo "no change since the last run"
             exit 0
           fi
+          # main requires a pull request, so this cannot push directly --
+          # a direct push is rejected with "Changes must be made through a
+          # pull request", which is how the first run of this workflow
+          # failed. One branch per date keeps re-runs idempotent.
+          row="$(tail -1 evidence/adoption/history.tsv)"
+          day="$(echo "$row" | cut -f1)"
+          branch="adoption/$day"
+
           git config user.name  "Yashraj Pardeshi"
           git config user.email "incyashraj@gmail.com"
+          git checkout -b "$branch"
           git add evidence/adoption/history.tsv
-          # The row itself in the message, so `git log` alone tells the story
-          # without opening the file.
-          row="$(tail -1 evidence/adoption/history.tsv)"
-          git commit -m "Adoption numbers: $(echo "$row" | cut -f1)" -m "$row"
-          git push
+          # The row itself in the message, so `git log` alone tells the
+          # story without opening the file.
+          git commit -m "Adoption numbers: $day" -m "$row"
+          git push -f origin "$branch"
+
+          if gh pr list --head "$branch" --state open --json number -q '.[0].number' | grep -q .; then
+            echo "pull request already open for $branch"
+          else
+            gh pr create --head "$branch" --base main \
+              --title "Adoption numbers: $day" \
+              --body "$(printf 'Weekly snapshot of the adoption record.\n\n```\n%s\n%s\n```\n\nSee evidence/adoption/README.md for what each column counts, and which two mislead if quoted raw.' "$(head -1 evidence/adoption/history.tsv)" "$row")"
+          fi
