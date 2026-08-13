@@ -3191,8 +3191,8 @@ Fix:      Either put a per-app sandbox data dir outside the source tree, or
           add the app-relative pattern to .gitignore. Not urgent.
 
 ### K-024 — krate-pulse pins its canvas to constants, so it ignores a resize
-Status:   open
-Owner:    unclaimed
+Status:   fixed (ee6cfef); board entry was stale, verified 2026-08-13
+Owner:    lead
 Severity: serious
 Class:    example-bug
 Found:    2026-08-05, W14, first run of the new usability stage across apps/
@@ -3211,8 +3211,20 @@ Evidence: Found by the usability stage, not by a person -- which is what the
           both `canvas_size` and `Resized`, so nothing re-lays it out.
           It is the only shipped app that pins its canvas this way
           (`grep -ln "width: Some(WIDTH)" apps/*/src/lib.rs`).
-Fix:      Same shape as K-003: drop the fixed style on the canvas node, lay out
-          from `canvas2d::canvas_size`, and handle `Event::Resized`. Left
+Fix:      Done in commit ee6cfef ("Let krate-pulse follow its window: it was
+          pinned to 1080x700"). Verified 2026-08-13: the canvas nodes now
+          carry `width: None, height: None, grow: 1.0` so they grow with the
+          window, and the event loop redraws on resize.
+
+              $ krate check-app apps/krate-pulse
+              OK ... usability passed
+
+          The entry sat open because nobody closed it, which is its own
+          lesson: a fixed bug left open costs the next person the time to
+          re-derive that it is fixed.
+
+Original plan: Same shape as K-003: drop the fixed style on the canvas node,
+          lay out from `canvas2d::canvas_size`, and handle `Event::Resized`. Left
           unclaimed rather than fixed here, because K-003 is W13's and this is
           the same repair on a second app -- it should go with that work.
 
