@@ -3234,8 +3234,41 @@ Evidence: `krate run apps/krate-notes/target/.../krate_notes.wasm --manifest
           repo root, so it does not match this path. Harmless but it means
           anyone verifying a GUI app dirties their working tree and may commit
           an app's test data by accident.
-Fix:      Either put a per-app sandbox data dir outside the source tree, or
-          add the app-relative pattern to .gitignore. Not urgent.
+Recheck:  2026-08-13. Still reproduces, and the entry above is wrong about
+          what is happening -- which matters, because the fix it proposes
+          cannot work.
+
+          The three files are **tracked in the repository**:
+
+              $ git ls-files apps/krate-notes/notes/
+              apps/krate-notes/notes/first.txt
+              apps/krate-notes/notes/second.txt
+              apps/krate-notes/notes/third.txt
+
+          They are the app's seed notes, committed on purpose in 63e8596 so
+          krate-notes has content to show. So a run from the app's own
+          directory does not create untracked files -- it **overwrites
+          checked-in ones**. `git status` looked clean afterwards only
+          because the app wrote back byte-identical content; appending one
+          character and re-running shows ` M first.txt` immediately.
+
+          That rules out the .gitignore half of the proposed fix outright:
+          gitignore has no effect on tracked files. A rule was written,
+          tested, found to change nothing, and removed rather than committed.
+
+          The trap is real but milder and differently shaped than filed:
+          editing a note in the app while verifying it dirties the working
+          tree, and the diff looks like someone edited the seed data by hand.
+Fix:      The sandbox-root half still stands and is the only one that works:
+          default the sandbox root somewhere outside the source tree, or make
+          `check-app` and the verify path run each app in a scratch cwd. The
+          second is smaller and covers the case that actually bites, since
+          nobody runs an app from its source directory except while verifying
+          it. Still not urgent.
+Left as is deliberately: changing the default sandbox root moves where every
+          app's data lives, which is a bigger change than an annoyance-level
+          bug justifies, and doing it carelessly would break anyone relying on
+          the current cwd behaviour.
 
 ### K-024 — krate-pulse pins its canvas to constants, so it ignores a resize
 Status:   fixed (ee6cfef); board entry was stale, verified 2026-08-13
