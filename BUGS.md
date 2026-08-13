@@ -2806,12 +2806,19 @@ Fix:      The child now reports over stdout behind KRATE_PROGRESS_CHANNEL,
 
 
 ### K-014 — This machine is out of disk, and cargo cannot finish a test run
-Status:   open
-Owner:    unclaimed
+Status:   resolved -- rechecked 2026-08-13, the disk is no longer full
+Owner:    lead
 Severity: serious
 Class:    environment
 Found:    2026-08-05, W12, running cargo test at the end of the K-001 work
-Evidence: `df -h /` reports 159Mi available of 460Gi (99% full). Tool calls
+Recheck:  2026-08-13. `df -h /` now reports 34Gi available of 460Gi (26%%
+          used). Full workspace test runs complete. Environment class, so
+          nothing to fix in the product -- recorded closed so it is not
+          rediscovered:
+
+              /dev/disk3s1s1   460Gi    12Gi    33Gi    26%    481k  350M    0%   /
+
+Evidence: `df -h /` reports 159Mi available of 460Gi (99%% full). Tool calls
           start failing with "ENOSPC: no space left on device". The bulk is
           build output: `/Users/yashrajpardeshi/Projects/layer6x6/target` is
           87G, and each agent worktree adds its own (mine is 7.8G).
@@ -2997,8 +3004,9 @@ Why it mattered more than "annoyance" suggests: a tester read these notes in
           look like a fake.
 
 ### K-030 — A debug build shadows the real release on PATH
-Status:   open
-Owner:    unclaimed
+Status:   mitigated 2026-08-13 (7a2defa) -- the shadowing is the machine's
+          PATH and stays; the binary now says which one you ran
+Owner:    lead
 Severity: serious
 Class:    environment
 Found:    2026-08-05, W17, checking what `krate` actually resolves to
@@ -3007,10 +3015,26 @@ Evidence: `which krate` gives
           (`krate 0.1.0-dev`). The installed release at `~/.local/bin/krate`
           (rc20) is shadowed. Anything measured through the dev binary is
           contaminated: it is not the code a user runs.
-Fix:      Not a product defect, but it silently invalidates measurements and has
-          already made a fixed bug appear to come back twice. Every command in
-          this repo must use an absolute path, and outsider testing must use
-          ~/.local/bin/krate explicitly.
+Fix:      2026-08-13, commit 7a2defa. Rechecked and still live, and worse than
+          recorded: the debug build reports the SAME version as release, so
+          the version string could not tell them apart at all.
+
+            target/debug/krate      krate 0.1.12
+            target/release/krate    krate 0.1.12
+            ~/.local/bin/krate      krate v0.1.8
+
+          A debug build now appends a warning:
+
+            krate 0.1.12 (debug build -- not what a user runs)
+
+          Release output is unchanged, verified both ways. The suffix
+          deliberately does not reach telemetry -- that version goes into a
+          JSON field and a suffix would make every dev run its own "version".
+
+          The rule still stands: every command in this repo uses an absolute
+          path, and outsider testing uses ~/.local/bin/krate explicitly. This
+          makes breaking that rule visible in one command rather than after an
+          afternoon of confusing results.
 
 ### K-015 — The `quick` run says "print something", so nothing can read what an app printed
 Status:   fixed (5478426)
