@@ -2645,8 +2645,8 @@ Fix:      The choice is remembered for the session and shown as a reminder
 
 
 ### K-036 -- A GUI app panics on stock Ubuntu: libxkbcommon-x11.so is missing
-Status:   open
-Owner:    unclaimed
+Status:   fixed 2026-08-13 (836d23b)
+Owner:    lead
 Severity: blocker
 Class:    our-code
 Found:    2026-08-06, Azure Ubuntu 24.04 + XFCE, x86_64, by running a
@@ -2666,9 +2666,43 @@ Evidence: The app built, packed, and was written to the Desktop. Opening it:
 Impact:   Two failures, not one. The app cannot open at all, and the person is
           shown a Rust panic with a crate path and a line number -- exactly the
           thing Krate promises a non-developer never sees.
-Fix:      Not started. Needs both halves: name the dependency so it is
-          installed, and catch the load failure so a missing library reads as
-          one plain sentence naming the package to install, never a panic.
+Fix:      2026-08-13, commit 836d23b. Both halves, plus a third nobody had
+          spotted.
+
+          A check for this already existed in the CLI and was wrong in the
+          direction that does damage. It probed only the unversioned
+          `libxkbcommon-x11.so` and then told people to install
+          `libxkbcommon-x11-dev`. But xkbcommon-dl tries
+          `libxkbcommon-x11.so.0` FIRST (xkbcommon-dl-0.4.2/src/x11.rs:50),
+          so the runtime package alone is enough and always was:
+
+              50:  &["libxkbcommon-x11.so.0", "libxkbcommon-x11.so"],
+              59:  .expect("Library libxkbcommon-x11.so could not be loaded.")
+
+          So on a machine with libxkbcommon-x11-0 installed -- where apps run
+          perfectly -- the check refused to start and sent someone who only
+          wanted to open an app off to install a developer package. The
+          README repeated the same false claim. The panic message names the
+          unversioned soname, which is probably what misled it.
+
+          Now: both probes ask exactly what the loader asks, both sonames in
+          its order, and name the runtime package `libxkbcommon-x11-0`. A
+          second guard sits in the Linux adapter's event-loop setup beside
+          the existing no-display guard, so the path that creates a window
+          cannot reach the panic even if the CLI check is bypassed. Wayland
+          sessions skip it there; the CLI check deliberately does not skip on
+          WAYLAND_DISPLAY because XWayland sets both and winit may still take
+          the X11 path.
+
+          Verified by type-checking krate-adapter-linux for
+          x86_64-unknown-linux-gnu, so the cfg block really compiled rather
+          than merely parsed, and by compiling and running the probe
+          standalone. Not yet exercised on a real Ubuntu machine without the
+          package -- that is the one step this Mac cannot do.
+Environment note: `rustc` on this Mac resolves to Homebrew's, which shadows
+          rustup, so `rustup target add` reports success while cargo still
+          cannot find the target's std. Prefix PATH with
+          ~/.rustup/toolchains/<toolchain>/bin to check Linux code here.
 
 ### K-037 -- `krate` exits silently on Windows: no menu, no error
 Status:   fixed
