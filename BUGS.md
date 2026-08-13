@@ -154,7 +154,7 @@ Note:     check-app cannot catch this today. The usability stage measures
           measure that K-099 also wants.
 
 ### K-110 -- every app after the first opens with no window at all (macOS)
-Status:   fixed 2026-08-13 (9901c16), NOT yet released
+Status:   fixed 2026-08-13 (9901c16), SHIPPED in v0.1.13 2026-08-14
 Owner:    lead
 Severity: blocker
 Class:    our-code
@@ -190,8 +190,17 @@ Windows:  Not affected. Explorer runs `krate-open.exe "%1"`, so each app is
           archive, never that it opens anything -- that gap is now closed by a
           cold-install step that registers the association, reads back the
           ProgID command, and runs it on a real file.
-Still to do: cut a release. The fix is in main and the binary people download
-          is still v0.1.12, so every user hits this until a new version ships.
+Shipped:  v0.1.13, 2026-08-14. Verified the way a person meets it -- a cold
+          install from krate.tech, then Finder's own double-click, three
+          rounds:
+
+              install exit=0, krate v0.1.13
+              round 1: [Cubes, Tea Timer]
+              round 2: [Cubes, Tea Timer]
+              round 3: [Cubes, Tea Timer]
+
+          Against the same two apps on v0.1.12 the second window never
+          appeared at all.
 
 ### K-109 -- an app that resets itself last prints a state that looks like it never ran
 Status:   fixed 2026-08-13 (b1104d0), untested until benchmark run 5
