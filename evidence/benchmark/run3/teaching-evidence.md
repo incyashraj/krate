@@ -539,3 +539,43 @@ reading of the rule it was given.
 worth a considered answer -- probably "emit a multi-line value once, joined,
 or as a single key with escaped newlines" -- and changing the pack now would
 invalidate the comparison. Recorded for the next run.
+
+## req 24, and all four failures share one cause
+
+  req 24 bar chart (FAIL 1/2)
+
+    run 2 said `largest`. I added `max|largest`. Run 3 says `highest`.
+    Third instance of the same mistake -- see K-105's 2026-08-13 finding.
+
+Every failure in run 3 so far, with what the app actually reported:
+
+  req 20 contact book   wanted matches
+                        did: contacts:24 query:ma search:ma matched:3
+                             results:3 selected:Hedy Lamarr
+                        -- searched 24 contacts, found 3
+
+  req 22 JSON printer   wanted output~{
+                        did: input:1 bytes:492 lines:40 formatted:701
+                             valid:yes + the formatted JSON under `out:`
+                        -- formatted 40 lines, printed them
+
+  req 23 markdown       wanted bullets|list_items
+                        did: headings:53 lists:178 items:178 blocks:264
+                             scrolled:1200
+                        -- parsed 53 headings and 178 items
+
+  req 24 bar chart      wanted max|largest
+                        did: bars:8 numbers:8 added:9 removed:1
+                             highest:91 total:347 drawn:yes
+                        -- drew 8 bars, tracked the highest
+
+**All four did the thing. All four failed on a word.** Not one is an app
+that failed to work, crashed, or reported something false.
+
+That is the same conclusion as run 2's medium tier, and it now has a
+different weight: in run 2 the apps also under-reported, so the reading was
+contestable. Here they report richly and in detail, and still lose on
+vocabulary. The residue after the teaching fixes is almost purely naming.
+
+Which is the argument for publishing the corpus's expected key names to the
+app (K-105 option 1). Everything the teaching can reach has been reached.

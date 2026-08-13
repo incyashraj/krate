@@ -22,3 +22,4 @@ id	tier	request	result	gate	seconds	krate_bytes	asserts_passed	asserts_total	mis
 21	medium	a CSV viewer that shows a table	pass	-	254	36869	2	2	-	-
 22	medium	a JSON pretty printer	fail	does	554	42269	2	3	output~{	2/3 observable properties held
 23	medium	a markdown preview that shows my headings and lists	fail	does	522	39694	1	2	bullets|list_items>=1	1/2 observable properties held
+24	medium	a bar chart of some numbers I type in	fail	does	339	25688	1	2	max|largest>=1	1/2 observable properties held
