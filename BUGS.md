@@ -153,6 +153,39 @@ Note:     check-app cannot catch this today. The usability stage measures
           were drawn in the same place. Detecting it needs the region
           measure that K-099 also wants.
 
+### K-109 -- an app that resets itself last prints a state that looks like it never ran
+Status:   fixed 2026-08-13 (b1104d0), untested until benchmark run 5
+Owner:    lead
+Severity: moderate
+Class:    teaching-hole
+Found:    2026-08-13, benchmark run 4, request 3 (a countdown timer), failing
+          `remaining!=1500` at 2 of 3 asserts.
+Evidence: The app is correct. It drove its whole interface on `quick` and
+          reset last:
+
+              duration:1500
+              remaining:1500
+              elapsed:1
+              ticks:1
+              reset:yes
+
+          `elapsed:1` and `ticks:1` prove it really counted down. But
+          `remaining` is back to the starting value, so the one number a
+          person would check to see a timer counting says it never ran. Its
+          own source comment describes the sequence: "let it count, pause it,
+          adjust the length, reset it -- and print what the".
+Fix:      2026-08-13, commit b1104d0. The pack already said "operate your own
+          controls, do not just print a snapshot", and this app did exactly
+          that. What it never said is that an app prints ONCE, at the end, so
+          an operation that undoes the others must not be last. Added with
+          this failure as the worked example: put reset, clear, cancel and
+          close in the middle, or print the telling value where it is true
+          (`remaining_at_pause`) as well as at the end.
+Not a corpus change, deliberately: `remaining!=1500` is the right assert --
+          an app ending on the full duration has not shown a countdown -- and
+          widening it to accept 1500 would leave it unable to fail. The rule
+          landed after run 4 started, so run 4 cannot test it; run 5 will.
+
 ### K-108 -- dead space cannot tell an editor from an app that stopped short
 Status:   open
 Owner:    unclaimed
