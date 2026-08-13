@@ -3078,8 +3078,8 @@ Fix:      Diagnose first. Could be K-003 (layout and hit-testing disagree), a
           hit-testing wrongly. Do not guess -- instrument one app and find out.
 
 ### K-018 — Layout collapses past four controls in a row
-Status:   open
-Owner:    unclaimed
+Status:   fixed -- retested 2026-08-13 as the entry asked; no longer reproduces
+Owner:    lead
 Severity: serious
 Class:    example-bug
 Found:    2026-08-05, W17, outsider testing, via `--shoot`
@@ -3089,9 +3089,32 @@ Evidence: The 5th button in a row wraps and draws on top of the next row's
           The chess board renders 7 columns instead of 8, sheared. The three
           apps that look right all use rows of 2-3 buttons; the maze escapes by
           drawing to a canvas.
-Fix:      Likely downstream of K-002 (no text measurement, now fixed) since
-          button widths were guessed. Re-test after K-002 merges before
-          treating it as separate.
+Fix:      Nothing to do. K-002 (text measurement) fixed this, exactly as this
+          entry predicted, and the retest it asked for was finally run.
+
+Retest:   2026-08-13. A copy of apps/krate-calc widened from rows of four to
+          rows of five, so every row has a fifth button -- the precise
+          claimed failure.
+
+            window 420 wide   all four rows of five lay out correctly.
+                              No wrap, no overlap, no shear.
+            window 300 wide   five 60px buttons need 300px plus gaps, so the
+                              fifth wraps to its own line. It wraps cleanly:
+                              `--check-layout` reports "no text drawn over
+                              other text".
+
+          So the original symptom -- "the 5th button wraps and draws on top of
+          the next row's text", "the chess board renders 7 columns instead of
+          8, sheared" -- does not happen. What is left is a container too
+          narrow for its fixed-width children wrapping them, which is
+          ordinary layout, not a collapse.
+
+          Screenshots: scratchpad k018/fivewide.png (300 wide, wraps) and
+          k018/wide420.png (420 wide, correct).
+
+Lesson:   This sat open for eight days with "re-test after K-002 merges"
+          written on it, and K-002 was already fixed. Same shape as K-024:
+          the cost of an unclosed entry is the next person re-deriving it.
 
 ### K-019 — `krate ai` reports broken providers as ready
 Status:   fixed
