@@ -1502,24 +1502,33 @@ impl Phase3GuiHost {
         }
         let ops = self.inspected_ops.borrow();
         let hits = crate::text_overlap::find(&ops);
+        let mut lines: Vec<String> = Vec::new();
         if hits.is_empty() {
-            eprintln!("layout: no text drawn over other text");
-            return;
+            lines.push("layout: no text drawn over other text".to_string());
+        } else {
+            lines.push(format!(
+                "layout: {} place{} where text is drawn over other text",
+                hits.len(),
+                if hits.len() == 1 { "" } else { "s" }
+            ));
+            for hit in hits.iter().take(8) {
+                lines.push(format!(
+                    "layout:   \"{}\" and \"{}\" share {:.0}% of the smaller one, around x {:.0} y {:.0}",
+                    hit.first,
+                    hit.second,
+                    hit.overlap_fraction * 100.0,
+                    hit.region.left,
+                    hit.region.top,
+                ));
+            }
         }
-        eprintln!(
-            "layout: {} place{} where text is drawn over other text",
-            hits.len(),
-            if hits.len() == 1 { "" } else { "s" }
-        );
-        for hit in hits.iter().take(8) {
-            eprintln!(
-                "layout:   \"{}\" and \"{}\" share {:.0}% of the smaller one, around x {:.0} y {:.0}",
-                hit.first,
-                hit.second,
-                hit.overlap_fraction * 100.0,
-                hit.region.left,
-                hit.region.top,
-            );
+        for line in &lines {
+            eprintln!("{line}");
+        }
+        // `check-app` runs this in a child process whose stderr is discarded,
+        // so findings also go to a file when it names one.
+        if let Some(path) = std::env::var_os("KRATE_LAYOUT_REPORT") {
+            let _ = std::fs::write(path, lines.join("\n") + "\n");
         }
     }
 

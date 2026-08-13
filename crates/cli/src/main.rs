@@ -7603,11 +7603,26 @@ fn run_check_app(
             "--auto-grant".into(),
             "--shoot".into(),
             png_str,
+            // Same frame, checked for text drawn over text. Free: the app is
+            // already being run and painted here.
+            "--check-layout".into(),
         ];
         if is_gui {
             shoot_args.push("--".into());
             shoot_args.push("quick".into());
         }
+        // The child's stderr is discarded by run_self, so ask it to write any
+        // layout finding where this process can read it back.
+        let layout_report = std::env::temp_dir().join(format!(
+            "krate-layout-{}-{}.txt",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        // SAFETY: single-threaded at this point in check-app.
+        unsafe { std::env::set_var("KRATE_LAYOUT_REPORT", &layout_report) };
         let shoot_refs: Vec<&str> = shoot_args.iter().map(String::as_str).collect();
         let shoot_exit = run_self(dir, &shoot_refs).map_err(|error| CheckFailure {
             stage: CheckStage::Shoot,
@@ -7622,6 +7637,23 @@ fn run_check_app(
                       be shot; drop --shoot for it."
                     .to_string(),
             });
+        }
+        unsafe { std::env::remove_var("KRATE_LAYOUT_REPORT") };
+        // A collision is a note, not a failure. It is a real defect and worth
+        // saying out loud, but the app builds, runs and paints -- refusing it
+        // here would block work on a judgement call the person can see for
+        // themselves in the PNG beside it.
+        if let Ok(found) = fs::read_to_string(&layout_report) {
+            for line in found.lines() {
+                if let Some(rest) = line.strip_prefix("layout: ") {
+                    if !rest.starts_with("no text drawn over") {
+                        usability_notes.push(rest.to_string());
+                    }
+                } else if let Some(rest) = line.strip_prefix("layout:   ") {
+                    usability_notes.push(format!("  {rest}"));
+                }
+            }
+            let _ = fs::remove_file(&layout_report);
         }
         Some(png.to_path_buf())
     } else {
@@ -7639,7 +7671,9 @@ fn run_check_app(
     if is_gui {
         let notes = run_usability_stage(dir, &wasm_str, &manifest_str)?;
         passed.push("usability");
-        usability_notes = notes;
+        // Extend, never assign: the shoot stage above may already have added
+        // layout findings, and this stage runs after it.
+        usability_notes.extend(notes);
     }
 
     Ok(CheckSummary {
