@@ -24,6 +24,23 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "targets": [
+      "dmg",
+      "msi",
+      "nsis",
+      "deb",
+      "appimage"
+    ],
+    "icon": [
+      "icons/icon.png"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Describe an app. Watch it become real.",
+    "longDescription": "Krate Studio: describe the app you want in plain words, an AI writes it, and you get one small file that runs on Mac, Windows and Linux and can be sent to anyone.",
+    "resources": [
+      "bin/krate"
+    ],
+    "externalBin": []
   }
 }

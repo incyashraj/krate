@@ -136,12 +136,16 @@ function renderSessions(sessions) {
     card.className = "app-card";
     const size = s.result && s.result.size ? ` · ${s.result.size}` : "";
     const hasShot = s.result && s.result.shot;
-    card.innerHTML = `<div class="thumb${hasShot ? "" : " blank"}"></div>
+    card.innerHTML = `<div class="thumb-well${hasShot ? "" : " blank"}"></div>
       <div class="card-body"><p class="name"></p><p class="meta">${timeAgo(s.updated)}${size}</p></div>`;
+    const well = card.querySelector(".thumb-well");
     if (hasShot) {
-      card.querySelector(".thumb").style.backgroundImage = `url(${s.result.shot})`;
+      const img = document.createElement("img");
+      img.src = s.result.shot;
+      img.alt = "";
+      well.appendChild(img);
     } else {
-      card.querySelector(".thumb").textContent = "open to pick up where you left off";
+      well.textContent = "open to pick up where you left off";
     }
     card.querySelector(".name").textContent = s.title;
     card.addEventListener("click", () => openSession(s));
@@ -316,7 +320,11 @@ function fillDone(result, opts) {
   $("asks").innerHTML = (result.asks || []).map((a) => `<li>${friendlyAsk(a)}</li>`).join("");
   $("shot").src = result.shot || "";
   $("shareResult").classList.toggle("hidden", !result.share_url);
-  if (result.share_url) $("shareResult").textContent = result.share_url;
+  $("shareResult").classList.remove("error");
+  if (result.share_url) {
+    $("shareLink").textContent = result.share_url;
+    $("shareCopied").classList.add("hidden");
+  }
   $("doneCard").classList.toggle("reveal", Boolean(opts && opts.reveal));
 }
 
@@ -537,14 +545,17 @@ async function share() {
   try {
     const url = await invoke("publish", { path: state.session.result.path });
     state.session.result.share_url = url;
-    const el = $("shareResult");
-    el.textContent = url + "  (copied)";
-    el.classList.remove("hidden");
-    try { await navigator.clipboard.writeText(url); } catch (e) {}
+    $("shareLink").textContent = url;
+    $("shareResult").classList.remove("hidden", "error");
+    let copied = false;
+    try { await navigator.clipboard.writeText(url); copied = true; } catch (e) {}
+    $("shareCopied").classList.toggle("hidden", !copied);
     persist();
   } catch (err) {
-    $("shareResult").textContent = plainWords(err);
+    $("shareLink").textContent = plainWords(err);
+    $("shareCopied").classList.add("hidden");
     $("shareResult").classList.remove("hidden");
+    $("shareResult").classList.add("error");
   } finally {
     $("shareBtn").disabled = false;
     $("shareBtn").textContent = "Share";
@@ -587,6 +598,18 @@ $("homePrompt").addEventListener("keydown", (e) => {
 $("homeIdeas").addEventListener("click", (e) => {
   if (e.target.classList.contains("idea")) { $("homePrompt").value = e.target.textContent; startFromHome(); }
 });
+/* Both composers grow to fit what is typed, up to a cap. A one-line box
+ * that scrolls internally is the single most common way a text field feels
+ * cheap. */
+function autoGrow(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 132) + "px";
+}
+["prompt", "homePrompt"].forEach((id) => {
+  const el = $(id);
+  if (el) el.addEventListener("input", () => autoGrow(el));
+});
+
 $("send").addEventListener("click", submitInSession);
 $("prompt").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitInSession(); }
