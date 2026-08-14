@@ -47,16 +47,30 @@ fn engine() -> Result<PathBuf, String> {
             path.display()
         ));
     }
+
+    let name = if cfg!(windows) { "krate.exe" } else { "krate" };
     if let Ok(me) = std::env::current_exe() {
         if let Some(dir) = me.parent() {
-            let name = if cfg!(windows) { "krate.exe" } else { "krate" };
+            // Beside the executable: a dev build, or a Windows/Linux install
+            // where the bundler puts resources alongside the binary.
             let sibling = dir.join(name);
             if sibling.exists() {
                 return Ok(sibling);
             }
+            // Inside a macOS .app the bundler puts resources in
+            // Contents/Resources/, NOT Contents/MacOS/ beside the binary.
+            // Checking only for a sibling meant a bundled Krate.app shipped
+            // its engine and then failed to find it -- the app would install
+            // cleanly and be unable to make anything.
+            for rel in ["../Resources/bin", "../Resources"] {
+                let candidate = dir.join(rel).join(name);
+                if candidate.exists() {
+                    return Ok(candidate);
+                }
+            }
         }
     }
-    Ok(PathBuf::from("krate"))
+    Ok(PathBuf::from(name))
 }
 
 fn studio_dir() -> PathBuf {

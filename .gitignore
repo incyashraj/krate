@@ -82,3 +82,8 @@ ehthumbs.db
 
 # Personal reading material, not part of the product.
 /Essays/
+
+# The studio's staged engine copy: a 22 MB binary that the bundler copies
+# into the .app at build time. Built by `cp target/release/krate
+# studio/bin/krate`, never edited, and version-controlled nowhere.
+/studio/bin/
