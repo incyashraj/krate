@@ -3,7 +3,7 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, ExitCode};
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use krate_manifest::{
     supported_capability_specs, App, AppWorld, Capability, CapabilityRequest, Manifest,
@@ -587,6 +587,23 @@ enum Command {
     /// machine, never on a server.
     Mcp,
 
+    /// Install an app so it looks and behaves like any other app on the
+    /// machine: its own name in the dock, its own icon, its own entry in
+    /// Launchpad and the app switcher. The .krate keeps working as a file you
+    /// can send; this gives the copy on your machine a real home.
+    Install {
+        /// The .krate to install.
+        bundle: PathBuf,
+
+        /// Install here instead of /Applications.
+        #[arg(long)]
+        prefix: Option<PathBuf>,
+
+        /// Print where it would go and stop.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Change an app that already exists. The .krate carries its own source,
     /// so the AI edits the app you have rather than rebuilding it from a
     /// description -- "make the button blue" touches one function, not the
@@ -819,6 +836,16 @@ fn friendly_error(err: &anyhow::Error) -> String {
     format!("{err:#}")
 }
 
+/// The `.krate` this process was installed to run, when it is the executable
+/// inside an installed `<App>.app` -- `Contents/MacOS/<name>` beside a
+/// `Contents/Resources/app.krate`. `None` for an ordinary CLI invocation, so a
+/// plain `krate` in a terminal is unaffected.
+fn installed_app_payload() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let payload = exe.parent()?.parent()?.join("Resources/app.krate");
+    payload.is_file().then_some(payload)
+}
+
 fn run() -> Result<u8> {
     // `krate <file>.krate` means open it.
     //
@@ -834,6 +861,21 @@ fn run() -> Result<u8> {
         let candidate = std::path::PathBuf::from(&args[1]);
         if candidate.extension().and_then(|e| e.to_str()) == Some("krate") && candidate.is_file() {
             args.insert(1, std::ffi::OsString::from("run"));
+        }
+    }
+
+    // An installed app: this same binary, living in `<App>.app/Contents/MacOS`
+    // under the app's own name, launched by Launch Services with no arguments.
+    // Run the payload sitting beside it.
+    //
+    // The engine has to be the bundle's actual executable rather than a script
+    // that runs it, because macOS takes the dock name from the executable that
+    // is really running -- a shim that `exec`s krate shows "krate" in the dock,
+    // which is the whole thing `krate install` exists to fix.
+    if args.len() == 1 {
+        if let Some(payload) = installed_app_payload() {
+            args.push(std::ffi::OsString::from("run"));
+            args.push(payload.into_os_string());
         }
     }
     let cli = Cli::parse_from(args);
@@ -1021,6 +1063,11 @@ fn run() -> Result<u8> {
             no_install,
         }),
         Command::Mcp => mcp::serve().map(|()| 0),
+        Command::Install {
+            bundle,
+            prefix,
+            dry_run,
+        } => install_app(&bundle, prefix.as_deref(), dry_run),
         Command::Revise {
             bundle,
             change,
@@ -6231,6 +6278,32 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         )?;
     }
 
+    // Wear the app's own name and icon before any window appears.
+    //
+    // Without this every app someone makes shows up as "Krate" in the dock,
+    // because that is the process running it -- a calculator they built should
+    // present as their calculator, the way a native app does. One process per
+    // opened document already, so the identity is safe to set per process.
+    //
+    // The icon is the bundle's own `assets/icon.png` when it ships one;
+    // otherwise the app keeps the Krate mark, which is the honest fallback.
+    #[cfg(target_os = "macos")]
+    {
+        // Only GUI apps have a dock tile to name; a CLI app has no window and
+        // renaming that process would show up as a phantom in the switcher.
+        if let Some(manifest) = manifest.filter(|manifest| {
+            matches!(manifest.app_world(), Ok(krate_manifest::AppWorld::Phase3Gui))
+        }) {
+            let icon = bundle
+                .as_ref()
+                .and_then(|bundle| bundle.assets_path().map(Path::to_path_buf))
+                .map(|assets| assets.join("icon.png"))
+                .filter(|path| path.is_file())
+                .and_then(|path| std::fs::read(path).ok());
+            krate_adapter_macos::set_process_identity(&manifest.app.name, icon.as_deref());
+        }
+    }
+
     let config = Config {
         fuel: request.fuel,
         memory_bytes: request
@@ -6248,7 +6321,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
             0 => None,
             millis => Some(millis),
         },
-        sandbox_root: request.sandbox_root,
+        sandbox_root: request.sandbox_root.clone(),
         // An explicit --assets wins; otherwise a packed bundle's own assets
         // are used. Without the flag, an app run from loose source could
         // never see its images at all (K-093).
@@ -6461,6 +6534,224 @@ fn validate_app_args(app_args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// Give an app a real identity on this machine: its own `.app`, its own name
+/// in the dock, its own icon.
+///
+/// Why a wrapper and not a run-time rename: macOS takes the dock name of an
+/// unbundled process from the executable's **file name**, not from anything
+/// settable while running. Writing `CFBundleName` into the live info
+/// dictionary was tried and measured -- the write succeeds and reads back, and
+/// the dock still said "krate". A per-app bundle with its own
+/// `CFBundleExecutable` is the mechanism that actually works, so that is what
+/// this builds. The icon is separate: that one *is* settable at run time, and
+/// the runtime already does it from the bundle's `assets/icon.png`.
+///
+/// The `.krate` is copied inside the wrapper, so the installed app keeps
+/// working after the original file is moved, renamed, or thrown away.
+#[cfg(target_os = "macos")]
+fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Result<u8> {
+    let opened = krate_bundle::open(bundle_path)
+        .with_context(|| format!("reading {}", bundle_path.display()))?;
+    let manifest = opened.manifest();
+    let name = manifest.app.name.trim();
+    if name.is_empty() {
+        bail!("this app has no name in its manifest, so it cannot be installed");
+    }
+
+    let prefix = prefix.map(Path::to_path_buf).unwrap_or_else(|| {
+        // ~/Applications needs no password and still shows in Launchpad, so
+        // installing never turns into an admin prompt for an app someone just
+        // made themselves.
+        home_dir()
+            .map(|home| home.join("Applications"))
+            .unwrap_or_else(|| PathBuf::from("/Applications"))
+    });
+    let app_dir = prefix.join(format!("{name}.app"));
+
+    if dry_run {
+        println!("{}", app_dir.display());
+        return Ok(0);
+    }
+
+    let macos_dir = app_dir.join("Contents/MacOS");
+    let resources = app_dir.join("Contents/Resources");
+    // A fresh wrapper each time: leftovers from an older version of the same
+    // app would otherwise sit beside the new one inside the bundle.
+    if app_dir.exists() {
+        fs::remove_dir_all(&app_dir)
+            .with_context(|| format!("replacing {}", app_dir.display()))?;
+    }
+    fs::create_dir_all(&macos_dir).with_context(|| format!("creating {}", macos_dir.display()))?;
+    fs::create_dir_all(&resources)?;
+
+    // The app carries its own copy, so it survives the original being moved.
+    let payload = resources.join("app.krate");
+    fs::copy(bundle_path, &payload)
+        .with_context(|| format!("copying the app into {}", payload.display()))?;
+
+    // The engine itself, under the app's name -- not a shell script that runs
+    // it. This is the part that makes the identity real, and it was measured
+    // both ways: a `#!/bin/sh ... exec krate run ...` shim leaves the DOCK
+    // NAME as "krate", because `exec` replaces the shim and macOS reads the
+    // name from the executable that is actually running. Copying the engine to
+    // `Contents/MacOS/<App Name>` makes the running executable's own name the
+    // app's name, and the dock says "Cup Cook".
+    //
+    // A hard link keeps this from costing 20 MB per installed app; it falls
+    // back to a copy across filesystems, where linking cannot work.
+    let launcher = macos_dir.join(name);
+    let engine = current_engine_path()?;
+    if fs::hard_link(&engine, &launcher).is_err() {
+        fs::copy(&engine, &launcher)
+            .with_context(|| format!("putting the Krate engine in {}", launcher.display()))?;
+    }
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(&launcher)?.permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(&launcher, perms)?;
+
+    // The app's own artwork when it ships one, so Finder and the dock show the
+    // app rather than the Krate mark.
+    let icon_name = if let Some(icon) = opened
+        .assets_path()
+        .map(|assets| assets.join("icon.png"))
+        .filter(|path| path.is_file())
+    {
+        match write_icns(&icon, &resources.join("AppIcon.icns")) {
+            Ok(()) => Some("AppIcon"),
+            // A bad icon is not a reason to refuse to install the app.
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+
+    let icon_entry = icon_name
+        .map(|icon| format!("    <key>CFBundleIconFile</key>\n    <string>{icon}</string>\n"))
+        .unwrap_or_default();
+    // Identifier derived from the app's own id, so two different apps are two
+    // different apps to Launch Services rather than one overwriting the other.
+    let ident = format!("dev.krate.app.{}", manifest.app.id.replace('/', "."));
+    fs::write(
+        app_dir.join("Contents/Info.plist"),
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>{name}</string>
+    <key>CFBundleDisplayName</key>
+    <string>{name}</string>
+    <key>CFBundleExecutable</key>
+    <string>{name}</string>
+    <key>CFBundleIdentifier</key>
+    <string>{ident}</string>
+    <key>CFBundleVersion</key>
+    <string>{version}</string>
+    <key>CFBundleShortVersionString</key>
+    <string>{version}</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+{icon_entry}</dict>
+</plist>
+"#,
+            name = xml_escape(name),
+            ident = xml_escape(&ident),
+            version = xml_escape(&manifest.app.version),
+        ),
+    )?;
+
+    // Tell Launch Services, so it appears in Launchpad and Spotlight now
+    // rather than whenever the system next rescans.
+    let lsregister = "/System/Library/Frameworks/CoreServices.framework/\
+                      Frameworks/LaunchServices.framework/Support/lsregister";
+    let _ = std::process::Command::new(lsregister)
+        .args(["-f".as_ref(), app_dir.as_os_str()])
+        .status();
+
+    println!("Installed {name} to {}", app_dir.display());
+    println!("It has its own name and icon now -- open it from Launchpad like any other app.");
+    Ok(0)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn install_app(_bundle_path: &Path, _prefix: Option<&Path>, _dry_run: bool) -> Result<u8> {
+    bail!("`krate install` is macOS-only today; on other systems run the .krate directly")
+}
+
+/// Convert a PNG into an `.icns`, using the system tool that already ships.
+#[cfg(target_os = "macos")]
+fn write_icns(png: &Path, out: &Path) -> Result<()> {
+    let staging = out.with_extension("iconset");
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    fs::create_dir_all(&staging)?;
+    for size in [16_u32, 32, 128, 256, 512] {
+        for (suffix, pixels) in [(String::new(), size), ("@2x".to_string(), size * 2)] {
+            let target = staging.join(format!("icon_{size}x{size}{suffix}.png"));
+            let status = std::process::Command::new("/usr/bin/sips")
+                .args(["-z", &pixels.to_string(), &pixels.to_string()])
+                .arg(png)
+                .arg("--out")
+                .arg(&target)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()?;
+            if !status.success() {
+                bail!("could not resize the app icon");
+            }
+        }
+    }
+    let status = std::process::Command::new("/usr/bin/iconutil")
+        .args(["-c", "icns"])
+        .arg(&staging)
+        .arg("-o")
+        .arg(out)
+        .status()?;
+    let _ = fs::remove_dir_all(&staging);
+    if !status.success() {
+        bail!("could not build the app icon");
+    }
+    Ok(())
+}
+
+/// The engine binary to run installed apps with.
+///
+/// The running executable, resolved through symlinks: an app installed by a
+/// given Krate keeps running against that same Krate rather than whatever
+/// later lands on PATH.
+#[cfg(target_os = "macos")]
+fn current_engine_path() -> Result<PathBuf> {
+    let exe = std::env::current_exe().context("finding the Krate engine")?;
+    Ok(fs::canonicalize(&exe).unwrap_or(exe))
+}
+
+/// Escape text for the generated Info.plist.
+#[cfg(target_os = "macos")]
+fn xml_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Open Krate Studio, the app-making front end. Returns whether it launched.
+///
+/// Looked up by bundle identifier rather than by path, so a studio installed
+/// anywhere is found; `-b` fails cleanly when it is not installed at all,
+/// which is the signal the caller falls back on.
+#[cfg(target_os = "macos")]
+fn open_studio() -> bool {
+    std::process::Command::new("/usr/bin/open")
+        .args(["-b", "dev.krate.studio"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 /// The Krate.app entry point (P3-OPEN-03): receive the document Finder asked
 /// us to open, then run it through the ordinary consent + native-window flow.
 /// The sandbox root is the folder the `.krate` sits in, so an app that writes
@@ -6480,12 +6771,19 @@ fn open_app() -> Result<u8> {
     // our own subcommand name can arrive as a "document". Only paths that
     // actually exist on disk are documents.
     let opened: Vec<PathBuf> = opened.into_iter().filter(|path| path.exists()).collect();
-    // Launched with no document (Krate.app opened directly): offer the native
-    // picker instead of dying silently — there is no terminal to print to.
+    // Launched with no document (Krate.app opened directly): that gesture means
+    // "I want Krate", not "I want to browse for a file". Hand off to Krate
+    // Studio, where a person can make an app rather than only run one. The
+    // picker stays as the fallback for machines without the studio installed,
+    // because dying silently is not an option -- there is no terminal to print
+    // to.
     let picked;
     let target = match opened.first() {
         Some(target) => target,
         None => {
+            if open_studio() {
+                return Ok(0);
+            }
             match krate_adapter_macos::choose_document()
                 .map_err(|error| anyhow::anyhow!("the document picker failed: {error}"))?
             {

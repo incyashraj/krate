@@ -1116,6 +1116,17 @@ impl AppKitWindowBackend {
     }
 }
 
+/// Wear the opened app's name and icon (see `platform::set_process_identity`).
+///
+/// A no-op off macOS, so callers need no `cfg` of their own.
+#[cfg(target_os = "macos")]
+pub(crate) fn set_process_identity(name: &str, icon_png: Option<&[u8]>) {
+    platform::set_process_identity(name, icon_png);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn set_process_identity(_name: &str, _icon_png: Option<&[u8]>) {}
+
 #[cfg(target_os = "macos")]
 mod platform {
 
@@ -2415,6 +2426,40 @@ mod platform {
                 "AppKit windows must be created on the macOS main thread".to_string(),
             )
         })
+    }
+
+    /// Wear the opened app's own icon in the dock.
+    ///
+    /// The **icon** is settable at run time: `setApplicationIconImage:` changes
+    /// what the dock shows for this process, immediately.
+    ///
+    /// The **name** is not. It was tried here first and measured not to work:
+    /// writing `CFBundleName` (and `CFBundleDisplayName`) into the running
+    /// process's info dictionary succeeds -- the dictionary really is mutable
+    /// and reads back the new value -- but macOS never consults it for an
+    /// unbundled executable. It takes the dock name from the executable's file
+    /// name, so the tile still said "krate". The name therefore has to come
+    /// from a real `.app` wrapper around a per-app executable, which is what
+    /// `krate install` builds; see `install_app` in the CLI.
+    pub(crate) fn set_process_identity(_name: &str, icon_png: Option<&[u8]>) {
+        let Ok(mtm) = main_thread_marker() else {
+            return;
+        };
+        let app = NSApplication::sharedApplication(mtm);
+        if let Some(bytes) = icon_png {
+            if let Some(image) = image_from_png(bytes, mtm) {
+                unsafe { app.setApplicationIconImage(Some(&image)) };
+            }
+        }
+    }
+
+    /// Decode PNG bytes into an NSImage, or `None` if they are not an image.
+    fn image_from_png(bytes: &[u8], _mtm: MainThreadMarker) -> Option<Retained<NSImage>> {
+        use objc2_foundation::NSData;
+        let data = NSData::with_bytes(bytes);
+        // SAFETY: initWithData: is the documented NSImage decoder and returns
+        // nil for data it cannot read, which is checked by the Option.
+        unsafe { NSImage::initWithData(NSImage::alloc(), &data) }
     }
 
     /// Give the app an Edit menu so the standard clipboard shortcuts work.

@@ -616,6 +616,25 @@ impl UiAdapter for MacosAppKitPrototypeUiAdapter {
     }
 }
 
+/// Give the running process the opened app's own name and icon.
+///
+/// Without this, every `.krate` presents as "Krate" in the dock and the menu
+/// bar, because that is the name of the process that ran it. A calculator
+/// someone made should look like their calculator, the way a native app does
+/// -- one process per opened document already, so the identity can be per
+/// process too.
+///
+/// `icon_png` is the app's own artwork when the bundle carries one. Nothing
+/// here fails the run: an app with a bad icon still opens, just wearing the
+/// Krate mark.
+#[cfg(target_os = "macos")]
+pub fn set_process_identity(name: &str, icon_png: Option<&[u8]>) {
+    appkit::set_process_identity(name, icon_png);
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn set_process_identity(_name: &str, _icon_png: Option<&[u8]>) {}
+
 /// Build the current macOS UI adapter.
 pub fn discover_ui_adapter() -> MacosUiAdapter {
     MacosUiAdapter::new()
