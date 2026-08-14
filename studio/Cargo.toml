@@ -1,0 +1,29 @@
+# Krate Studio: the desktop shell around the krate engine.
+#
+# Deliberately NOT a member of the repo workspace. The studio pulls in Tauri
+# and a webview stack that the runtime, the CLI, and CI have no reason to
+# compile or lock against; keeping it standalone means `cargo test
+# --workspace` at the root is exactly as heavy after the studio as before it.
+#
+# It is also deliberately thin. Every real operation -- detecting AIs,
+# authoring, packing, verifying, publishing -- happens by spawning the same
+# `krate` binary the terminal uses. One engine, two faces; the same reason
+# krate-open.exe hands to krate.exe instead of reimplementing it.
+
+[package]
+name = "krate-studio"
+version = "0.1.0"
+edition = "2021"
+description = "Describe an app, watch it become real, open it, share it."
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+# Detached from the repository workspace on purpose; see the header comment.
+[workspace]
