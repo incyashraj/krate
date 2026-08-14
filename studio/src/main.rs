@@ -346,7 +346,8 @@ async fn revise_app(
 ) -> Result<CreateResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
-        let out_path = PathBuf::from(&path);
+        // Fail before spending anyone's AI quota on a file that is gone.
+        let out_path = existing(&path)?;
         let mut cmd = Command::new(&engine);
         cmd.arg("revise")
             .arg(&out_path)
@@ -366,9 +367,18 @@ async fn revise_app(
 #[tauri::command]
 fn stop_build(state: tauri::State<Running>) -> Result<(), String> {
     let pid = state.0.lock().map_err(|_| "poisoned")?.take();
-    let Some(pid) = pid else {
-        return Ok(());
-    };
+    if let Some(pid) = pid {
+        kill_tree(pid);
+    }
+    Ok(())
+}
+
+/// End a build and everything under it.
+///
+/// The agent CLI and cargo are children of the engine, so signalling only
+/// the engine leaves them running -- an invisible process still spending the
+/// person's AI quota after they thought they had stopped.
+fn kill_tree(pid: u32) {
     #[cfg(unix)]
     unsafe {
         // Negative pid: the whole process group started for this build.
@@ -380,7 +390,6 @@ fn stop_build(state: tauri::State<Running>) -> Result<(), String> {
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .status();
     }
-    Ok(())
 }
 
 /// Spawn an authoring child, stream its lines to the UI, read the result.
@@ -406,6 +415,17 @@ fn run_author(
     // without a capabilities grant, invokes kept working, and the build
     // screen froze on stage one while the engine worked perfectly.
     let _ = app.emit("engine-line", "==> starting the Krate engine");
+    // One build at a time. Two at once would overwrite each other's pid in
+    // `Running`, so Stop could only ever reach the second and the first
+    // would keep burning AI quota with nothing able to end it.
+    {
+        let running = app.state::<Running>();
+        let guard = running.0.lock().map_err(|_| "poisoned")?;
+        if guard.is_some() {
+            return Err("one app is already being made -- wait for it, or press Stop".to_string());
+        }
+    }
+
     let mut child = cmd
         .spawn()
         .map_err(|err| format!("could not start the Krate engine: {err}"))?;
@@ -520,9 +540,30 @@ fn shoot(engine: &PathBuf, krate_path: &Path) -> Option<String> {
     ))
 }
 
+/// The app file, if it is still there.
+///
+/// A .krate can be moved, renamed or deleted between making it and pressing
+/// a button -- especially a session reopened days later. Every action that
+/// touches the file checks first, so the answer is a sentence rather than a
+/// silent no-op or an OS error dialog.
+fn existing(path: &str) -> Result<PathBuf, String> {
+    let p = PathBuf::from(path);
+    if p.exists() {
+        return Ok(p);
+    }
+    Err(format!(
+        "{} is not there any more -- it may have been moved or deleted.",
+        p.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| path.to_string())
+    ))
+}
+
 /// Open the finished app the way a double-click would.
 #[tauri::command]
 fn open_app(path: String) -> Result<(), String> {
+    let path = existing(&path)?;
+    let path = path.display().to_string();
     #[cfg(target_os = "macos")]
     let ok = Command::new("open").arg(&path).status();
     #[cfg(target_os = "windows")]
@@ -542,6 +583,7 @@ fn open_app(path: String) -> Result<(), String> {
 #[tauri::command]
 async fn publish(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let path = existing(&path)?;
         let engine = engine()?;
         let out = Command::new(&engine)
             .arg("publish")
@@ -568,6 +610,8 @@ async fn publish(path: String) -> Result<String, String> {
 /// Show the file itself, for people who want to drag it into a chat.
 #[tauri::command]
 fn reveal(path: String) -> Result<(), String> {
+    let path = existing(&path)?;
+    let path = path.display().to_string();
     #[cfg(target_os = "macos")]
     let ok = Command::new("open").args(["-R", &path]).status();
     #[cfg(target_os = "windows")]
@@ -641,6 +685,18 @@ fn human_size(bytes: u64) -> String {
 fn main() {
     tauri::Builder::default()
         .manage(Running(Mutex::new(None)))
+        // Quitting mid-build must not leave the AI running. Without this the
+        // agent and cargo outlive the window, invisible, still spending the
+        // person's quota, with nothing left that can stop them.
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                let state = window.state::<Running>();
+                let pid = state.0.lock().ok().and_then(|mut g| g.take());
+                if let Some(pid) = pid {
+                    kill_tree(pid);
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             agents,
             create_app,

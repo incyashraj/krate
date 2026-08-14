@@ -82,9 +82,12 @@ async function boot() {
       return;
     }
   } catch (err) {
-    // A missing engine shows on the gate too -- there is nowhere better.
+    // A missing engine shows on the gate too -- there is nowhere better,
+    // and a person facing a broken install needs the real reason rather
+    // than a sign-in button that can never work.
     $("gateError").textContent = plainWords(err);
     $("gateError").classList.remove("hidden");
+    $("loginBtn").disabled = true;
   }
   showView("gate");
 }
@@ -343,7 +346,20 @@ function fillDone(result, opts) {
   $("doneName").textContent = result.name;
   $("doneSize").textContent = result.size;
   $("asks").innerHTML = (result.asks || []).map((a) => `<li>${friendlyAsk(a)}</li>`).join("");
-  $("shot").src = result.shot || "";
+  const shot = $("shot");
+  const stage = $("shot").parentElement;
+  if (result.shot) {
+    shot.src = result.shot;
+    shot.classList.remove("hidden");
+    stage.classList.remove("no-shot");
+    // A data URL that fails to decode would otherwise leave the broken
+    // image glyph exactly where the app should be.
+    shot.onerror = () => { shot.classList.add("hidden"); stage.classList.add("no-shot"); };
+  } else {
+    shot.removeAttribute("src");
+    shot.classList.add("hidden");
+    stage.classList.add("no-shot");
+  }
   $("shareResult").classList.toggle("hidden", !result.share_url);
   $("shareResult").classList.remove("error");
   if (result.share_url) {
@@ -415,6 +431,10 @@ function friendlyAsk(cap) {
 /* ---- driving the engine ----------------------------------------------- */
 
 async function make(request) {
+  // Two builds at once would leave the first unstoppable; the backend
+  // refuses it too, but stopping here keeps the UI honest.
+  if (state.phase === "building") return;
+  if (!state.session) newSession(request);
   const files = state.attachments.slice();
   state.attachments = [];
   renderAttachments();
@@ -423,7 +443,7 @@ async function make(request) {
   $("prompt").value = "";
   $("send").disabled = true;
 
-  const revising = Boolean(state.session.result && state.session.result.path);
+  const revising = Boolean(currentApp());
   beginBuild(
     revising ? "Making your change" : "Making your app",
     revising ? "the AI reads your app before it edits" : "usually a few minutes",
@@ -432,7 +452,7 @@ async function make(request) {
   try {
     const result = revising
       ? await invoke("revise_app", {
-          path: state.session.result.path,
+          path: currentApp().path,
           change: request,
           agent: state.agent,
           attachments: files,
@@ -454,6 +474,16 @@ async function make(request) {
 function plainWords(err) {
   const text = String(err && err.message ? err.message : err);
   if (text === "stopped") return "stopped";
+  // A broken install must say so. Falling through to the generic build
+  // message told people to "try again" when nothing could ever work.
+  if (/could not run the Krate engine|could not start the Krate engine|KRATE_STUDIO_ENGINE/i.test(text))
+    return "Krate's engine is missing from this install. Reinstall Krate from krate.tech.";
+  if (/no such file|not found|No such file or directory/i.test(text) && /krate/i.test(text))
+    return "Krate's engine is missing from this install. Reinstall Krate from krate.tech.";
+  if (/is not there any more/i.test(text)) return text;
+  if (/already being made/i.test(text)) return text;
+  if (/no AI|not installed|unknown AI provider/i.test(text))
+    return "No AI is connected yet. Open the AI menu at the top to set one up.";
   if (/sign ?in|auth|logged/i.test(text)) return "Your AI needs signing in. Click its name at the top for the fix.";
   if (/quota|rate.?limit/i.test(text)) return "Your AI is out of quota right now. It usually comes back within the hour.";
   if (/network|offline|dns|connect/i.test(text)) return "The internet connection dropped mid-build.";
@@ -567,14 +597,43 @@ function renderAttachments() {
 
 /* ---- done-card actions ------------------------------------------------ */
 
+/// The finished app of the open session, or null.
+///
+/// Guards every action that needs one. A session can be open with no result
+/// (a build that failed or was stopped), and reaching into `.path` there
+/// throws -- which reads to a person as a button that silently does nothing.
+function currentApp() {
+  const r = state.session && state.session.result;
+  return r && r.path ? r : null;
+}
+
 async function openApp() {
-  await invoke("open_app", { path: state.session.result.path });
+  const app = currentApp();
+  if (!app) return;
+  try {
+    await invoke("open_app", { path: app.path });
+  } catch (err) {
+    showActionError(err);
+  }
+}
+
+/// Say why an action on the finished app failed, where the person is
+/// already looking -- the share row, which is the only line on this card
+/// that can carry a sentence.
+function showActionError(err) {
+  const text = String(err && err.message ? err.message : err);
+  $("shareLink").textContent = text;
+  $("shareCopied").classList.add("hidden");
+  $("shareResult").classList.remove("hidden");
+  $("shareResult").classList.add("error");
 }
 async function share() {
   $("shareBtn").disabled = true;
   $("shareBtn").textContent = "Publishing…";
   try {
-    const url = await invoke("publish", { path: state.session.result.path });
+    const app = currentApp();
+    if (!app) throw new Error("there is no finished app to share yet");
+    const url = await invoke("publish", { path: app.path });
     state.session.result.share_url = url;
     $("shareLink").textContent = url;
     $("shareResult").classList.remove("hidden", "error");
@@ -653,7 +712,15 @@ $("attachBtn").addEventListener("click", attach);
 $("stopBtn").addEventListener("click", () => invoke("stop_build"));
 $("openBtn").addEventListener("click", openApp);
 $("shareBtn").addEventListener("click", share);
-$("revealBtn").addEventListener("click", () => invoke("reveal", { path: state.session.result.path }));
+$("revealBtn").addEventListener("click", async () => {
+  const app = currentApp();
+  if (!app) return;
+  try {
+    await invoke("reveal", { path: app.path });
+  } catch (err) {
+    showActionError(err);
+  }
+});
 $("retryBtn").addEventListener("click", () => {
   const again = state.lastFailed;
   show("idle");

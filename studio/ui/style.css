@@ -452,6 +452,14 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
   border-radius: 8px 8px 0 0;
   object-fit: cover; object-position: top center;
 }
+/* No picture: a quiet placeholder rather than a broken-image glyph. An old
+   session or a failed --shoot both land here. */
+.shot-stage.no-shot { padding: 0; min-height: 96px; align-items: center; }
+.shot-stage.no-shot::after {
+  content: "no preview for this one";
+  color: var(--ghost); font-size: 12px;
+}
+
 .sheen {
   position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(105deg, transparent 42%, rgba(255,255,255,0.09) 50%, transparent 58%);
