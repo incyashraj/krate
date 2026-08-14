@@ -726,3 +726,42 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
   margin: 22px 0 0;
 }
 .build-log-wrap .stages { margin: 12px 0; }
+
+/* ---- the rotating word: the site's own hero ---------------------------- */
+
+/* krate.tech says "Make an app you can send / run / trust / keep" with the
+   word swapping and a gradient bar travelling underneath. Asking "What do
+   you want to make?" is what every other tool asks; this says what Krate
+   is for. Measured off the site and rebuilt to the same numbers. */
+.rot { position: relative; display: inline-block; white-space: nowrap; }
+.rot .word { display: inline-block; }
+.rot .word span { display: inline-block; will-change: transform, opacity, filter; }
+.rot .bar {
+  position: absolute; left: 0; right: 0; bottom: -8px;
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background-image: linear-gradient(90deg,
+    rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.25) 35%,
+    #6366f1 40%, #a855f7 45%, #ec4899 50%, #f97316 55%, #eab308 60%,
+    rgba(255,255,255,0.25) 65%, rgba(255,255,255,0.25) 100%);
+  background-size: 300% 100%;
+  animation: sweep 3.2s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .rot .bar { animation: none; } }
+
+/* ---- the draggable divider -------------------------------------------- */
+
+/* The rail/stage split is a preference, not a constant: someone reading a
+   long conversation wants a wide rail, someone watching a build wants a
+   wide stage. A 5px grab strip, invisible until approached. */
+.divider {
+  width: 5px; flex: none;
+  margin-left: -3px; margin-right: -2px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  z-index: 5;
+}
+.divider:hover, .divider.dragging { background: var(--line-strong); }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing .divider { background: var(--blue); }

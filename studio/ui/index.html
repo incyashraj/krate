@@ -58,18 +58,15 @@
     <main class="home">
 
       <div class="home-hero">
-        <h1 class="display home-title reveal">What do you want to make?</h1>
+        <h1 class="display home-title reveal">Make an app you can
+          <span class="rot"><span class="word" id="rotWord">keep</span><span class="bar"></span></span>
+        </h1>
         <p class="home-sub reveal">Describe it in plain words. A few minutes later it's a real app.</p>
         <div class="composer-shell reveal">
           <div class="composer-box">
             <textarea id="homePrompt" rows="1" placeholder="A habit tracker that saves my streaks…" autocomplete="off" spellcheck="false"></textarea>
             <button id="homeSend" class="send" title="Make it (⌘↩)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5L3.8 7.7M8 3.5l4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           </div>
-        </div>
-        <div class="ideas reveal" id="homeIdeas">
-          <button class="idea">a habit tracker</button>
-          <button class="idea">a pomodoro timer</button>
-          <button class="idea">a tip splitter for dinners</button>
         </div>
       </div>
 
@@ -109,6 +106,8 @@
           <p class="composer-hint" id="composerHint">⌘↩ to make it</p>
         </footer>
       </aside>
+
+      <div class="divider" id="divider" title="Drag to resize"></div>
 
       <section class="stage" id="stage">
   

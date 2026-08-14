@@ -447,7 +447,19 @@ fn run_author(
     engine: &PathBuf,
     out_path: &Path,
 ) -> Result<CreateResult, String> {
-    cmd.stdout(Stdio::piped())
+    // Run the agent from a scratch directory of ours, never from whatever
+    // the studio happened to inherit.
+    //
+    // A Finder-launched .app has `/` as its working directory, so the agent
+    // started at the filesystem root and explored outward -- which is why
+    // macOS asked to "access files in your Downloads folder" during a build.
+    // An AI writing a tip splitter has no business anywhere near a person's
+    // Downloads, and the prompt is alarming precisely because it is
+    // unjustifiable.
+    let work = studio_dir().join("work");
+    let _ = std::fs::create_dir_all(&work);
+    cmd.current_dir(&work)
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
     #[cfg(unix)]
@@ -566,7 +578,10 @@ fn run_author(
 /// the same runtime that will draw the window.
 fn shoot(engine: &PathBuf, krate_path: &Path) -> Option<String> {
     let png = std::env::temp_dir().join(format!("krate-studio-shot-{}.png", std::process::id()));
+    let work = studio_dir().join("work");
+    let _ = std::fs::create_dir_all(&work);
     let ok = Command::new(engine)
+        .current_dir(&work)
         .arg("run")
         .arg(krate_path)
         .args(["--shoot"])

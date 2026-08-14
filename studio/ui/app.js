@@ -494,7 +494,9 @@ async function make(request) {
   say("YOU", request, files);
   persist();
   $("prompt").value = "";
-  $("send").disabled = true;
+  // The composer stays live during a build so a thought can be queued
+  // rather than lost.
+  $("prompt").placeholder = "Add a change — it runs when this finishes…";
 
   state.buildingSession = state.session;
   const revising = Boolean(currentApp());
@@ -530,6 +532,12 @@ async function make(request) {
   } finally {
     state.buildingSession = null;
     $("send").disabled = false;
+    const queued = state.queued;
+    state.queued = null;
+    if (queued) {
+      setRevisePlaceholders();
+      setTimeout(() => make(queued), 400);
+    }
   }
 }
 
@@ -739,6 +747,91 @@ function openAccount() {
   $("accountSheet").classList.remove("hidden");
 }
 
+
+/* ---- the rotating word ------------------------------------------------ */
+
+/* krate.tech's own hero: the word swaps, letters leaving upward and
+ * arriving from below with a blur, 40ms apart. Copied to the same numbers
+ * so the app and the site read as one product. */
+const ROT_WORDS = ["keep", "send", "run", "trust"];
+
+function startRotator() {
+  const el = $("rotWord");
+  if (!el) return;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  let wi = 0;
+  const setWord = (word, entering) => {
+    el.innerHTML = "";
+    word.split("").forEach((ch, i) => {
+      const sp = document.createElement("span");
+      sp.textContent = ch;
+      sp.style.transition = "opacity .3s ease, transform .3s ease, filter .3s ease";
+      sp.style.transitionDelay = i * 40 + "ms";
+      if (entering) {
+        sp.style.opacity = "0";
+        sp.style.transform = "translateY(14px)";
+        sp.style.filter = "blur(4px)";
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            sp.style.opacity = "1";
+            sp.style.transform = "none";
+            sp.style.filter = "none";
+          }),
+        );
+      }
+      el.appendChild(sp);
+    });
+  };
+  setWord(ROT_WORDS[0], false);
+  setInterval(() => {
+    [...el.children].forEach((sp, i) => {
+      sp.style.transitionDelay = i * 40 + "ms";
+      sp.style.opacity = "0";
+      sp.style.transform = "translateY(-14px)";
+      sp.style.filter = "blur(4px)";
+    });
+    setTimeout(() => {
+      wi = (wi + 1) % ROT_WORDS.length;
+      setWord(ROT_WORDS[wi], true);
+    }, 380);
+  }, 3200);
+}
+
+/* ---- drag to resize the rail ------------------------------------------ */
+
+/* How much room the conversation deserves against the app is a preference,
+ * not a constant. Someone reading a long thread wants a wide rail; someone
+ * watching a build wants a wide stage. The width persists. */
+function setupDivider() {
+  const divider = $("divider");
+  const rail = document.querySelector(".rail");
+  if (!divider || !rail) return;
+
+  const saved = Number(localStorage.getItem("krate.railWidth") || 0);
+  if (saved >= 240 && saved <= 720) {
+    rail.style.width = rail.style.minWidth = saved + "px";
+  }
+
+  divider.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    document.body.classList.add("resizing");
+    const move = (ev) => {
+      // Bounded: a rail narrower than 240 cannot hold a sentence, and one
+      // wider than 720 leaves no room for the app.
+      const w = Math.max(240, Math.min(720, ev.clientX));
+      rail.style.width = rail.style.minWidth = w + "px";
+    };
+    const up = () => {
+      document.body.classList.remove("resizing");
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      localStorage.setItem("krate.railWidth", parseInt(rail.style.width, 10) || 320);
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+}
+
 /* ---- wiring ----------------------------------------------------------- */
 
 function startFromHome() {
@@ -755,7 +848,18 @@ function startFromHome() {
 
 function submitInSession() {
   const text = $("prompt").value.trim();
-  if (!text || state.phase === "building") return;
+  if (!text) return;
+  if (state.phase === "building") {
+    // Do not drop it. A thought that arrives mid-build is exactly the
+    // thought worth keeping -- queue it, say so, and run it when this
+    // build finishes.
+    state.queued = text;
+    $("prompt").value = "";
+    say("YOU", text);
+    say("KRATE", "Noted — I'll do that as soon as this one is finished.");
+    $("composerHint").textContent = "queued · runs when this build finishes";
+    return;
+  }
   make(text);
 }
 
@@ -764,9 +868,7 @@ $("homeSend").addEventListener("click", startFromHome);
 $("homePrompt").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); startFromHome(); }
 });
-$("homeIdeas").addEventListener("click", (e) => {
-  if (e.target.classList.contains("idea")) { $("homePrompt").value = e.target.textContent; startFromHome(); }
-});
+
 /* Both composers grow to fit what is typed, up to a cap. A one-line box
  * that scrolls internally is the single most common way a text field feels
  * cheap. */
@@ -925,6 +1027,9 @@ function mockShot() {
   });
   return c.toDataURL();
 }
+
+startRotator();
+setupDivider();
 
 boot().then(async () => {
   // Automation hook: KRATE_STUDIO_AUTORUN makes the studio drive one real
