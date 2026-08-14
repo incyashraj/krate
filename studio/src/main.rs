@@ -685,11 +685,21 @@ fn human_size(bytes: u64) -> String {
 fn main() {
     tauri::Builder::default()
         .manage(Running(Mutex::new(None)))
-        // Quitting mid-build must not leave the AI running. Without this the
-        // agent and cargo outlive the window, invisible, still spending the
-        // person's quota, with nothing left that can stop them.
+        // Closing the window mid-build must not leave the AI running.
+        //
+        // CloseRequested, not just Destroyed: on macOS closing a window does
+        // not quit the app or destroy the window, so a Destroyed-only handler
+        // never fired -- measured, with 17 agent processes still alive after
+        // the close button. The build kept spending the person's quota with
+        // no window left to stop it from.
+        //
+        // ExitRequested covers Cmd-Q and the Dock's Quit, which close no
+        // window at all.
         .on_window_event(|window, event| {
-            if matches!(event, tauri::WindowEvent::Destroyed) {
+            if matches!(
+                event,
+                tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
+            ) {
                 let state = window.state::<Running>();
                 let pid = state.0.lock().ok().and_then(|mut g| g.take());
                 if let Some(pid) = pid {
@@ -717,6 +727,17 @@ fn main() {
             pick_folder,
             autorun
         ])
-        .run(tauri::generate_context!())
-        .expect("the studio window could not start");
+        .build(tauri::generate_context!())
+        .expect("the studio window could not start")
+        .run(|app, event| {
+            // Cmd-Q and Dock > Quit close no window, so the window handler
+            // above never sees them.
+            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+                let state = app.state::<Running>();
+                let pid = state.0.lock().ok().and_then(|mut g| g.take());
+                if let Some(pid) = pid {
+                    kill_tree(pid);
+                }
+            }
+        });
 }
