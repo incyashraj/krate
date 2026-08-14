@@ -46,7 +46,29 @@ function showView(name) {
   for (const id of ["viewGate", "viewHome", "viewSession"]) {
     $(id).classList.add("hidden");
   }
-  $({ gate: "viewGate", home: "viewHome", session: "viewSession" }[name]).classList.remove("hidden");
+  const view = $({ gate: "viewGate", home: "viewHome", session: "viewSession" }[name]);
+  view.classList.remove("hidden");
+  revealIn(view);
+}
+
+/* The site's one motion idiom: translateY(14px) + opacity over 0.5s, on a
+ * stagger. The site drives it from scroll position; a desktop app swaps
+ * views instead, so each view replays its own stagger when it appears.
+ * 60ms apart is enough to read as a sequence without anyone waiting. */
+function revealIn(root) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    root.querySelectorAll(".reveal").forEach((el) => el.classList.add("in"));
+    return;
+  }
+  const items = [...root.querySelectorAll(".reveal")];
+  items.forEach((el) => el.classList.remove("in"));
+  // Two frames: the first paints the from-state, the second starts the
+  // transition. One frame is not enough and the element simply appears.
+  requestAnimationFrame(() =>
+    requestAnimationFrame(() => {
+      items.forEach((el, i) => setTimeout(() => el.classList.add("in"), i * 60));
+    }),
+  );
 }
 
 /* ---- the gate --------------------------------------------------------- */
@@ -127,6 +149,8 @@ function renderAccount() {
 function renderSessions(sessions) {
   const grid = $("appsGrid");
   grid.innerHTML = "";
+  // Cards are added below with .reveal; stagger them once the grid is built.
+  setTimeout(() => revealIn(grid), 0);
   if (!sessions.length) {
     grid.innerHTML = `<p class="apps-empty">Nothing yet. Your first app is one sentence away.</p>`;
     return;
@@ -161,6 +185,7 @@ function renderSessions(sessions) {
       renderSessions(await invoke("sessions_list"));
     });
     card.appendChild(x);
+    card.classList.add("reveal");
     grid.appendChild(card);
   }
 }
@@ -325,7 +350,13 @@ function fillDone(result, opts) {
     $("shareLink").textContent = result.share_url;
     $("shareCopied").classList.add("hidden");
   }
-  $("doneCard").classList.toggle("reveal", Boolean(opts && opts.reveal));
+  const card = $("doneCard");
+  card.classList.remove("reveal", "in");
+  if (opts && opts.reveal) {
+    // Arriving now: play the reveal and the one sheen pass.
+    card.classList.add("reveal");
+    requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add("in")));
+  }
 }
 
 function finishBuild(result) {

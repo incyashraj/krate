@@ -19,14 +19,13 @@
       <div class="spacer"></div>
     </header>
     <div class="gate-body">
-      <div class="ambient" aria-hidden="true"><i></i><i></i></div>
       <div class="gate-card">
-        <div class="gate-mark"><img src="krate-glyph-white.png" alt="" /></div>
-        <h1>Make an app by describing it</h1>
-        <p class="gate-sub">An AI writes it. You get one small file that runs on
+        <img class="gate-mark reveal" src="krate-glyph-white.png" alt="" />
+        <h1 class="reveal">Make an app by describing it</h1>
+        <p class="gate-sub reveal">An AI writes it. You get one small file that runs on
         Mac, Windows and Linux — and that you can send to anyone.</p>
 
-        <div id="gateStart">
+        <div id="gateStart" class="reveal">
           <button class="btn btn-primary btn-big" id="loginBtn">Continue with GitHub</button>
           <p class="gate-hint">Your account credits the apps you publish.
           Krate never sees your password — GitHub asks you directly.</p>
@@ -35,6 +34,7 @@
         <div id="gateCode" class="hidden">
           <p class="gate-step">Enter this code on the page that just opened</p>
           <p class="gate-code" id="gateCodeValue">····-····</p>
+          <div class="sweep gate-sweep"></div>
           <p class="gate-hint"><span id="gateUrl"></span><br />This screen continues
           by itself the moment you approve.</p>
         </div>
@@ -56,26 +56,25 @@
     </header>
 
     <main class="home">
-      <div class="ambient" aria-hidden="true"><i></i><i></i></div>
 
       <div class="home-hero">
-        <h1 class="t-display home-title">What do you want to make?</h1>
-        <p class="home-sub">Describe it in plain words. A few minutes later it's a real app.</p>
-        <div class="composer-shell">
+        <h1 class="display home-title reveal">What do you want to make?</h1>
+        <p class="home-sub reveal">Describe it in plain words. A few minutes later it's a real app.</p>
+        <div class="composer-shell reveal">
           <div class="composer-box">
             <textarea id="homePrompt" rows="1" placeholder="A habit tracker that saves my streaks…" autocomplete="off" spellcheck="false"></textarea>
             <button id="homeSend" class="send" title="Make it (⌘↩)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5L3.8 7.7M8 3.5l4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
           </div>
         </div>
-        <div class="ideas" id="homeIdeas">
+        <div class="ideas reveal" id="homeIdeas">
           <button class="idea">a habit tracker</button>
           <button class="idea">a pomodoro timer</button>
           <button class="idea">a tip splitter for dinners</button>
         </div>
       </div>
 
-      <section class="apps" id="appsSection">
-        <div class="apps-head"><h2 class="t-label">Your apps</h2></div>
+      <section class="apps reveal" id="appsSection">
+        <div class="apps-head"><h2 class="label">Your apps</h2></div>
         <div class="apps-grid" id="appsGrid"></div>
       </section>
     </main>
@@ -106,11 +105,10 @@
       </aside>
 
       <section class="stage" id="stage">
-        <div class="ambient" aria-hidden="true"><i></i><i></i></div>
-
+  
         <div class="stage-state" id="stateIdle">
           <div class="stage-empty">
-            <div class="empty-mark"><img src="krate-glyph-white.png" alt="" /></div>
+            <img src="krate-glyph-white.png" alt="" />
             <p>Your app will appear here.</p>
           </div>
         </div>
@@ -119,6 +117,7 @@
           <div class="build-card">
             <p class="build-title" id="buildTitle">Making your app</p>
             <p class="build-elapsed"><span id="elapsed">0:00</span> · <span id="buildExpect">usually a few minutes</span></p>
+            <div class="sweep build-sweep"></div>
             <ol class="stages" id="stages"></ol>
             <p class="now-line"><span id="nowLine">warming up…</span><span class="caret"></span></p>
             <details class="build-log-wrap">
