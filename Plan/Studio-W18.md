@@ -9,7 +9,7 @@ bug list; this is the studio's build sheet.
 | # | Requirement | Status |
 |---|---|---|
 | 1 | **Dev history**: return to any past session, resume, change the app after feedback | **built** — sessions stored as JSON per conversation (id, title, messages, bundle path); home screen lists them; opening one restores the thread and the done card, and the next message revises that bundle |
-| 2 | **Attachments**: any file format, used by the AI to shape the app | **built** — engine grows `--attach` on create and revise (the revise machinery already copied files in and told the agent to read them; create gets the same); studio gets a paperclip |
+| 2 | **Attachments**: any file format, used by the AI to shape the app | **built, then made findable** — engine grows `--attach` on create and revise; the studio's paperclip only existed inside a session, so the home composer (where the first description is typed) now carries a labelled "Add a picture or file" and both rows paint from the same state |
 | 3 | **No full rebuild for small changes** | **done, measured** — `krate revise`: bundles carry their own source, the AI edits in place. One-line change: 1.6 min vs ~6 from scratch, before/after frames byte-identical |
 | 4 | **Own AI after funding — possible?** | **yes, by design** — the engine's `AgentProvider` trait + `--author-cmd` seam means "Krate AI" is one more provider: a hosted endpoint (server runs the model, streams edits) or a bundled local model. Zero studio changes; the chip gains one entry. Cost sits server-side, which is exactly what funding buys. Recorded here as the answer of record |
 | 5 | **Account required + browser login that returns to the app** | **built** — GitHub device flow already in the engine (opens browser, polls, stores identity). Studio gates on it at launch: sign-in screen shows the code, browser opens, the poll completing flips the app in — no manual step back |
@@ -20,7 +20,7 @@ bug list; this is the studio's build sheet.
 | 10 | Choose the working directory | **built** — settings; default stays ~/Documents/Krate Apps |
 | 11 | Easy AI switching | **built** — the agent chip opens the connect panel; pick = switch |
 | 12 | Ask to open the app when done | **done** — the done card leads with Open it; consider a gentle auto-focus, never an auto-open |
-| 13 | Krate Cloud inside the studio | **partial** — v1 shows your local session history as "your apps"; a true per-account published list needs the hub to record identity per upload (it records a name today, not a queryable account id) — hub work, filed below |
+| 13 | Krate Cloud inside the studio | **built** — a Cloud view lists everything published (name, author, size, age) from `hub.krate.tech/apps`, and opening one runs it by URL through the engine's own permission wall. Read in Rust so the webview keeps its CSP. A per-account "mine" filter is still the hub work filed below |
 | 14 | **Short share links, old links stay valid** | **done, deployed** (`/a/f2deb8a76496` verified serving; old 64-hex links verified) — hub mints an alias at publish (`/a/<12-hex>`); the full-hash URL keeps working forever because it is the content address itself. Investor links unaffected |
 
 ## Standing rules for the studio
@@ -46,6 +46,17 @@ home with history, resume-with-done-card, connect-AI sheet, attach chips,
 stop, settings. Verified separately in the engine: create, revise (1.6 min,
 one-line diff), account --json, login NDJSON, --attach staging, short links.
 
-Still to drive end to end: one real app authored THROUGH the studio window
-itself; installers (.dmg/.msi/AppImage); Krate.app's no-document launch
-becoming the studio; the hub's per-account app listing.
+**Identity (2026-08-14).** Apps made with Krate now present as themselves.
+`krate install` wraps a .krate in its own `.app`: own name in the dock, own
+icon, own Launchpad entry. The mechanism was found by measurement -- setting
+`CFBundleName` on the running process succeeds and macOS ignores it, and a
+shell shim fails because `exec` replaces it; what works is the engine hard
+linked to `Contents/MacOS/<App Name>`. Double-clicking an installed .krate
+hands off to that wrapper, so it opens as itself rather than as "krate-cli".
+
+**Launch routing (2026-08-14).** Opening Krate.app with no document opens
+Krate Studio; opening a .krate runs that app. Verified each route in
+isolation.
+
+Still to drive end to end: installers (.msi/AppImage) via CI; the hub's
+per-account app listing.
