@@ -687,6 +687,60 @@ async fn publish(path: String) -> Result<String, String> {
     .map_err(|err| err.to_string())?
 }
 
+/// The hub the studio reads and publishes to. `KRATE_HUB_URL` overrides it,
+/// the same variable the engine honours, so a local hub serves both.
+fn hub_url() -> String {
+    std::env::var("KRATE_HUB_URL").unwrap_or_else(|_| "https://hub.krate.tech".to_string())
+}
+
+/// Everything published to Krate Cloud, newest first.
+///
+/// Fetched here rather than from the webview so the page keeps its locked-down
+/// CSP: the UI never talks to the network itself.
+#[tauri::command]
+async fn cloud_apps() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let url = format!("{}/apps", hub_url());
+        let response = ureq::get(&url)
+            .timeout(std::time::Duration::from_secs(20))
+            .call()
+            .map_err(|err| match err {
+                // The only failure worth distinguishing: no connection at all
+                // is a different situation from a hub that answered badly.
+                ureq::Error::Transport(_) => {
+                    "Krate Cloud could not be reached. Check your connection.".to_string()
+                }
+                other => other.to_string(),
+            })?;
+        response.into_string().map_err(|err| err.to_string())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+/// Run a published app straight from the cloud, by its URL.
+///
+/// The engine already runs by URL, and it applies the same permission wall it
+/// applies to a local file -- nothing is trusted more for having come from the
+/// hub.
+#[tauri::command]
+async fn cloud_run(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") {
+        return Err("that is not a Krate Cloud link".to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = engine()?;
+        Command::new(&engine)
+            .arg("run")
+            .arg(&url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|err| err.to_string())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 /// Show the file itself, for people who want to drag it into a chat.
 #[tauri::command]
 fn reveal(path: String) -> Result<(), String> {
@@ -825,6 +879,8 @@ fn main() {
             account_status,
             account_login,
             account_logout,
+            cloud_apps,
+            cloud_run,
             pick_files,
             pick_folder,
             autorun

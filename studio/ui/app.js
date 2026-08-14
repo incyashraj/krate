@@ -43,10 +43,12 @@ const state = {
 /* ---- views ------------------------------------------------------------ */
 
 function showView(name) {
-  for (const id of ["viewGate", "viewHome", "viewSession"]) {
+  for (const id of ["viewGate", "viewHome", "viewSession", "viewCloud"]) {
     $(id).classList.add("hidden");
   }
-  const view = $({ gate: "viewGate", home: "viewHome", session: "viewSession" }[name]);
+  const view = $({
+    gate: "viewGate", home: "viewHome", session: "viewSession", cloud: "viewCloud",
+  }[name]);
   view.classList.remove("hidden");
   revealIn(view);
 }
@@ -671,8 +673,103 @@ async function attach() {
   renderAttachments();
 }
 
+/* ---- Krate Cloud ------------------------------------------------------- */
+
+function timeAgo(seconds) {
+  const mins = Math.max(1, Math.round((Date.now() / 1000 - seconds) / 60));
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+
+async function openCloud() {
+  showView("cloud");
+  $("cloudError").classList.add("hidden");
+  $("cloudLoading").classList.remove("hidden");
+  $("cloudGrid").innerHTML = "";
+  try {
+    const payload = JSON.parse(await invoke("cloud_apps"));
+    renderCloud(payload.apps || []);
+  } catch (err) {
+    $("cloudError").textContent = String(err);
+    $("cloudError").classList.remove("hidden");
+  } finally {
+    $("cloudLoading").classList.add("hidden");
+  }
+}
+
+function renderCloud(apps) {
+  const grid = $("cloudGrid");
+  grid.innerHTML = "";
+  if (!apps.length) {
+    $("cloudError").textContent = "Nothing published yet. Yours could be first.";
+    $("cloudError").classList.remove("hidden");
+    return;
+  }
+  for (const app of apps) {
+    const meta = app.meta || {};
+    const card = document.createElement("button");
+    card.className = "cloud-card";
+
+    const name = document.createElement("p");
+    name.className = "cloud-name";
+    name.textContent = meta.name || "Untitled app";
+    card.appendChild(name);
+
+    if (meta.author) {
+      const by = document.createElement("p");
+      by.className = "cloud-by";
+      // The avatar is remote, and the page is otherwise offline-only. A
+      // broken image would look like a bug, so it simply removes itself.
+      if (meta.avatar_url) {
+        const img = document.createElement("img");
+        img.src = meta.avatar_url;
+        img.alt = "";
+        img.onerror = () => img.remove();
+        by.appendChild(img);
+      }
+      by.appendChild(document.createTextNode(meta.author));
+      card.appendChild(by);
+    }
+
+    const bits = [];
+    if (meta.size) bits.push(`${Math.round(meta.size / 1024)} KB`);
+    if (meta.published) bits.push(timeAgo(meta.published));
+    if (bits.length) {
+      const line = document.createElement("p");
+      line.className = "cloud-meta";
+      line.textContent = bits.join(" \u00b7 ");
+      card.appendChild(line);
+    }
+
+    const go = document.createElement("p");
+    go.className = "cloud-open";
+    go.textContent = "Open it \u2192";
+    card.appendChild(go);
+
+    card.addEventListener("click", async () => {
+      go.textContent = "Opening\u2026";
+      try {
+        await invoke("cloud_run", { url: app.url });
+        go.textContent = "Open it \u2192";
+      } catch (err) {
+        go.textContent = String(err);
+      }
+    });
+    grid.appendChild(card);
+  }
+}
+
 function renderAttachments() {
-  const row = $("attachRow");
+  for (const id of ["attachRow", "homeAttachRow"]) {
+    paintAttachRow($(id));
+  }
+}
+
+function paintAttachRow(row) {
+  if (!row) return;
   row.classList.toggle("hidden", state.attachments.length === 0);
   row.innerHTML = "";
   state.attachments.forEach((p, i) => {
@@ -942,6 +1039,10 @@ $("backBtn").addEventListener("click", async () => {
   enterHome();
 });
 $("attachBtn").addEventListener("click", attach);
+$("homeAttachBtn").addEventListener("click", attach);
+$("cloudBtn").addEventListener("click", openCloud);
+$("cloudBackBtn").addEventListener("click", enterHome);
+$("cloudRefresh").addEventListener("click", openCloud);
 $("stopBtn").addEventListener("click", () => invoke("stop_build"));
 $("openBtn").addEventListener("click", openApp);
 $("shareBtn").addEventListener("click", share);
