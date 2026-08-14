@@ -315,7 +315,7 @@ async fn create_app(
             PathBuf::from(out_dir)
         };
         std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
-        let out_path = dir.join(format!("{}.krate", slugify(&request)));
+        let out_path = free_path(&dir, &slugify(&request));
 
         let mut cmd = Command::new(&engine);
         cmd.arg("create")
@@ -649,6 +649,28 @@ fn dirs_home() -> PathBuf {
     #[cfg(not(windows))]
     let var = "HOME";
     std::env::var(var).map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."))
+}
+
+/// A path that is not already taken, by adding ` 2`, ` 3` and so on.
+///
+/// Two sessions from the same words -- "a habit tracker" twice, or one
+/// request retried after a failure -- produced the same slug and so the same
+/// path, and the second silently overwrote the first. The person's earlier
+/// app simply vanished, with its session still pointing at the file and
+/// showing the newer app's contents. Observed with two "a coin flip app
+/// with..." sessions both holding coin-flip-app-with.krate.
+fn free_path(dir: &Path, slug: &str) -> PathBuf {
+    let first = dir.join(format!("{slug}.krate"));
+    if !first.exists() {
+        return first;
+    }
+    for n in 2..1000 {
+        let candidate = dir.join(format!("{slug} {n}.krate"));
+        if !candidate.exists() {
+            return candidate;
+        }
+    }
+    first
 }
 
 /// A file name from the person's own words: first few, kebab-case.
