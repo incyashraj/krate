@@ -200,6 +200,34 @@ jobs:
           version="${KRATE_VERSION#v}"
           (cd dist && zip -qry "krate-app-${version}-${{ matrix.target }}.zip" Krate.app)
 
+      # Krate Studio: the window around the engine, shipped as a .dmg so
+      # someone who has never opened a terminal can drag it to Applications
+      # and be finished. The engine is staged inside the bundle, so the .dmg
+      # carries everything -- there is no second thing to install.
+      #
+      # `continue-on-error`: the studio is pre-beta and the runtime release
+      # must not fail because a pre-beta GUI did. A missing .dmg makes the
+      # site's studio links say "coming", which is the honest outcome.
+      - name: Build Krate Studio (.dmg)
+        if: contains(matrix.target, 'apple-darwin')
+        continue-on-error: true
+        shell: bash
+        env:
+          KRATE_VERSION: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -eu
+          version="${KRATE_VERSION#v}"
+          npm install -g @tauri-apps/cli@^2
+          mkdir -p studio/bin
+          cp "target/${{ matrix.target }}/release/krate" studio/bin/krate
+          (cd studio && tauri build --bundles dmg --target ${{ matrix.target }})
+          # One predictable name, matching what the site's links build.
+          mkdir -p dist
+          src=$(find studio/target -name '*.dmg' -print -quit)
+          if [ -n "$src" ]; then
+            cp "$src" "dist/krate-studio-${version}-${{ matrix.target }}.dmg"
+          fi
+
       # Sign and notarize, so Gatekeeper lets a downloaded build open without
       # a right-click workaround. Ad-hoc signing plus curl setting no
       # quarantine flag meant Gatekeeper never looked at all -- an install path
@@ -404,6 +432,7 @@ jobs:
           files: |
             dist/**/*.tar.gz
             dist/**/*.zip
+            dist/**/*.dmg
             SHA256SUMS
           generate_release_notes: true
 
