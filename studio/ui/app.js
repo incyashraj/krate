@@ -287,6 +287,8 @@ function beginBuild(title, expect) {
     (s) => `<li data-key="${s.key}"><span class="tick"></span>${s.label}</li>`,
   ).join("");
   $("buildLog").textContent = "";
+  const fill0 = $("buildFill");
+  if (fill0) fill0.style.width = "4%";
   state.stageIndex = -1;
   advanceStage("think");
   state.startedAt = Date.now();
@@ -313,6 +315,17 @@ function advanceStage(key) {
     li.className = i < idx ? "done" : i === idx ? "now" : "";
     li.querySelector(".tick").textContent = i < idx ? "✓" : "";
   });
+  setProgress((idx + 0.5) / STAGES.length);
+}
+
+/* The bar tracks real stages, never a timer pretending to know how long an
+ * AI will think. It stops at 92% until the app actually exists, because a
+ * bar that sits at 100% while nothing has finished is a lie the person can
+ * see through -- and this build genuinely takes minutes. */
+function setProgress(fraction) {
+  const pct = Math.max(4, Math.min(92, Math.round(fraction * 100)));
+  const fill = $("buildFill");
+  if (fill) fill.style.width = pct + "%";
 }
 
 /* Map the engine's own lines onto the stage story. These are our lines,
@@ -381,6 +394,9 @@ function finishBuild(result) {
     li.className = "done";
     li.querySelector(".tick").textContent = "✓";
   });
+  setProgress(1);
+  const fill = $("buildFill");
+  if (fill) fill.style.width = "100%";
   state.session.result = result;
   fillDone(result, { reveal: true });
   const mins = Math.round((Date.now() - state.startedAt) / 60000);
@@ -582,7 +598,13 @@ function renderAttachments() {
   state.attachments.forEach((p, i) => {
     const chip = document.createElement("span");
     chip.className = "attach-chip";
-    chip.textContent = baseName(p);
+    const name = baseName(p);
+    const ext = (name.match(/\.([a-z0-9]+)$/i) || [, "file"])[1];
+    const kind = document.createElement("span");
+    kind.className = "kind";
+    kind.textContent = ext.slice(0, 4);
+    chip.appendChild(kind);
+    chip.appendChild(document.createTextNode(name));
     const x = document.createElement("button");
     x.textContent = "×";
     x.title = "Remove";

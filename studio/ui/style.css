@@ -548,3 +548,109 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 ::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background: #3a3f47; background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ---- bloom: light from the object, not shadow under it ---------------- */
+
+/* Every reference shares this: a card floats on a soft coloured glow rather
+   than a hard drop shadow. It reads as the thing being lit from within,
+   which is the difference between "a rectangle" and "an object".
+   One element, positioned behind, blurred hard, low opacity. */
+.bloom { position: relative; }
+.bloom::before {
+  content: "";
+  position: absolute;
+  left: 12%; right: 12%; bottom: -14px; height: 60%;
+  background: radial-gradient(ellipse at 50% 100%, var(--bloom-color, rgba(98,145,255,0.45)), transparent 70%);
+  filter: blur(34px);
+  opacity: 0.55;
+  z-index: -1;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+.bloom > * { position: relative; }
+
+/* ---- progress: a gradient that FILLS, not just travels ---------------- */
+
+/* The mint bar and the course bar in the references both fill with a live
+   gradient. Our sweep travels; this fills. Together they say two different
+   true things: "something is happening" and "this much of it is done". */
+.progress {
+  height: 3px;
+  border-radius: var(--radius-pill);
+  background: rgba(255,255,255,0.07);
+  overflow: hidden;
+}
+.progress .fill {
+  height: 100%;
+  width: 0%;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, #6366f1, #a855f7, #ec4899, #f97316, #eab308);
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+  transition: width 0.7s cubic-bezier(0.3, 0.9, 0.3, 1);
+}
+@keyframes shimmer { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .progress .fill { animation: none; }
+}
+
+/* The step being worked on now, named, with its neighbours receding --
+   the "Generating outline..." pattern. Ours is a list; this makes the
+   current line unmistakable without adding a second widget. */
+.stages li.now .tick { position: relative; }
+.stages li.now .tick::after {
+  content: "";
+  position: absolute; inset: -5px;
+  border-radius: 50%;
+  border: 1px solid rgba(98,145,255,0.35);
+  animation: ripple 2s ease-out infinite;
+}
+@keyframes ripple {
+  0% { transform: scale(0.8); opacity: 0.9; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .stages li.now .tick::after { animation: none; } }
+
+/* ---- live pill: gradient border for a state that is happening --------- */
+
+.live-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 11px;
+  font-size: 11px; font-weight: 500;
+  border-radius: var(--radius-pill);
+  color: var(--text);
+  background:
+    linear-gradient(var(--panel), var(--panel)) padding-box,
+    linear-gradient(90deg, #6366f1, #a855f7, #ec4899, #f97316) border-box;
+  border: 1px solid transparent;
+}
+.live-pill .pulse {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--cyan);
+  animation: livepulse 1.6s ease-in-out infinite;
+}
+@keyframes livepulse { 50% { opacity: 0.3; } }
+@media (prefers-reduced-motion: reduce) { .live-pill .pulse { animation: none; } }
+
+/* ---- attachments as objects ------------------------------------------- */
+
+/* The upload reference gives the file a real icon and a type badge rather
+   than a bare filename. A dropped file should look like a thing you handed
+   over. */
+.attach-chip .kind {
+  font-size: 9px; font-weight: 500; letter-spacing: 0.06em;
+  color: var(--faint);
+  background: rgba(255,255,255,0.06);
+  border-radius: 4px;
+  padding: 1px 5px;
+  text-transform: uppercase;
+}
+
+/* ---- building card, laid out for the live pill ------------------------ */
+
+.build-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.build-progress { margin: 4px 0 26px; }
+/* The build blooms blue; the finished app blooms warmer, because arriving
+   and working are different feelings. */
+.build-card { --bloom-color: rgba(98,145,255,0.4); }
+.done-card { --bloom-color: rgba(108,244,215,0.28); }

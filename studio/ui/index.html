@@ -114,10 +114,13 @@
         </div>
 
         <div class="stage-state hidden" id="stateBuilding">
-          <div class="build-card">
-            <p class="build-title" id="buildTitle">Making your app</p>
+          <div class="build-card bloom">
+            <div class="build-head">
+              <p class="build-title" id="buildTitle">Making your app</p>
+              <span class="live-pill"><span class="pulse"></span>Live</span>
+            </div>
             <p class="build-elapsed"><span id="elapsed">0:00</span> · <span id="buildExpect">usually a few minutes</span></p>
-            <div class="sweep build-sweep"></div>
+            <div class="progress build-progress"><div class="fill" id="buildFill"></div></div>
             <ol class="stages" id="stages"></ol>
             <p class="now-line"><span id="nowLine">warming up…</span><span class="caret"></span></p>
             <details class="build-log-wrap">
@@ -129,7 +132,7 @@
         </div>
 
         <div class="stage-state hidden" id="stateDone">
-          <div class="done-card" id="doneCard">
+          <div class="done-card bloom" id="doneCard">
             <div class="shot-stage">
               <img id="shot" alt="Your app, as it renders" />
               <span class="sheen" aria-hidden="true"></span>
