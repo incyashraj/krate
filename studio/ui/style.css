@@ -76,14 +76,14 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 
 /* ---- reveal: the site's one motion idiom ------------------------------ */
 
-.reveal {
-  opacity: 0;
-  transform: translateY(14px);
-  transition: opacity 0.5s ease, transform 0.5s ease;
-}
-.reveal.in { opacity: 1; transform: none; }
+/* Reveal is driven by inline styles from JS, not by a class pair.
+   `.reveal.in { opacity: 1 }` failed to win the cascade here and left the
+   headline permanently invisible -- and a blank hero is a far worse
+   outcome than a missing animation, so the state is set where nothing can
+   override it. The class only marks WHICH elements take part. */
+.reveal { transition: opacity 0.5s ease, transform 0.5s ease; }
 @media (prefers-reduced-motion: reduce) {
-  .reveal { opacity: 1; transform: none; transition: none; }
+  .reveal { transition: none; }
 }
 
 /* ---- type ------------------------------------------------------------- */
@@ -743,18 +743,7 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
    The gradient is painted on the .word (one continuous run across the whole
    word) and clipped to the glyphs; the per-letter spans inherit it, so the
    colour does not restart at every character. */
-.rot .word {
-  display: inline-block;
-  background-image: linear-gradient(90deg,
-    #a9c2ff 0%, #6366f1 18%, #a855f7 34%, #ec4899 50%,
-    #f97316 66%, #eab308 82%, #a9c2ff 100%);
-  background-size: 220% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  animation: wordflow 5.5s linear infinite;
-}
+.rot .word { display: inline-block; }
 /* The rotator replaces .word's contents with one span per letter, and a
    background clipped to text does NOT reach through to child elements --
    the letters rendered fully transparent and the word vanished. Each letter
@@ -763,24 +752,41 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 .rot .word span {
   display: inline-block;
   will-change: transform, opacity, filter;
-  /* Named, not inherited: `background-image: inherit` resolved to none
-     here, so the letters had no gradient to clip and stayed invisible. */
+}
+
+/* The colour is ONE gradient layer over the whole word, masked by the
+   word's own glyphs.
+ *
+ * Per-letter `background-clip: text` was tried and failed repeatedly: the
+ * letters painted transparent with no gradient behind them. This has a
+ * single painted element, so the ramp is continuous across the word by
+ * construction -- there is nothing per-character to restart or go wrong --
+ * and the letters underneath keep their own transform for the swap. */
+.rot .word {
+  position: relative;
+  color: transparent;
+}
+.rot .word::after {
+  content: attr(data-word);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
   background-image: linear-gradient(90deg,
-    #a9c2ff 0%, #6366f1 18%, #a855f7 34%, #ec4899 50%,
-    #f97316 66%, #eab308 82%, #a9c2ff 100%);
-  background-size: 220% 100%;
+    #6291ff 0%, #a855f7 22%, #ec4899 42%, #f97316 62%, #eab308 78%, #6291ff 100%);
+  background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: wordflow 5.5s linear infinite;
-}
-@media (prefers-reduced-motion: reduce) {
-  .rot .word span { animation: none; background-position: 40% 0; }
+  animation: wordflow 4.5s linear infinite;
 }
 @keyframes wordflow {
-  0% { background-position: 0% 0; }
-  100% { background-position: -220% 0; }
+  from { background-position: 0% 0; }
+  to   { background-position: -200% 0; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .rot .word::after { animation: none; background-position: 30% 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rot .word { animation: none; background-position: 40% 0; }
 }

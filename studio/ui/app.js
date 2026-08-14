@@ -61,12 +61,29 @@ function revealIn(root) {
     return;
   }
   const items = [...root.querySelectorAll(".reveal")];
-  items.forEach((el) => el.classList.remove("in"));
+  // Inline, so nothing in the cascade can strand an element invisible.
+  items.forEach((el) => {
+    el.style.opacity = "0";
+    el.style.transform = "translateY(14px)";
+  });
+  const showAll = () =>
+    items.forEach((el) => {
+      el.style.opacity = "1";
+      el.style.transform = "none";
+    });
+  // A safety net, because the failure mode here is a blank screen.
+  clearTimeout(root._revealGuard);
+  root._revealGuard = setTimeout(showAll, items.length * 60 + 900);
   // Two frames: the first paints the from-state, the second starts the
   // transition. One frame is not enough and the element simply appears.
   requestAnimationFrame(() =>
     requestAnimationFrame(() => {
-      items.forEach((el, i) => setTimeout(() => el.classList.add("in"), i * 60));
+      items.forEach((el, i) =>
+        setTimeout(() => {
+          el.style.opacity = "1";
+          el.style.transform = "none";
+        }, i * 60),
+      );
     }),
   );
 }
@@ -417,11 +434,20 @@ function fillDone(result, opts) {
     $("shareCopied").classList.add("hidden");
   }
   const card = $("doneCard");
-  card.classList.remove("reveal", "in");
+  card.classList.remove("in");
+  card.style.opacity = "";
+  card.style.transform = "";
   if (opts && opts.reveal) {
     // Arriving now: play the reveal and the one sheen pass.
-    card.classList.add("reveal");
-    requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add("in")));
+    card.style.opacity = "0";
+    card.style.transform = "translateY(14px)";
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        card.classList.add("in");
+        card.style.opacity = "1";
+        card.style.transform = "none";
+      }),
+    );
   }
 }
 
@@ -789,6 +815,7 @@ function startRotator() {
   // page reveals, and a first paint at opacity 0 is just an invisible
   // headline.
   setWord(ROT_WORDS[0], false);
+  paintFlow(el);
   setInterval(() => {
     [...el.children].forEach((sp, i) => {
       sp.style.transitionDelay = i * 40 + "ms";
@@ -799,8 +826,27 @@ function startRotator() {
     setTimeout(() => {
       wi = (wi + 1) % ROT_WORDS.length;
       setWord(ROT_WORDS[wi], true);
+      paintFlow(el);
     }, 380);
   }, 3200);
+}
+
+/* Give every letter the same gradient, offset by where it sits in the word.
+ *
+ * A background clipped to text does not reach child elements, so each letter
+ * must paint its own -- but if each paints a full colour ramp the word shows
+ * one gradient PER CHARACTER, which is what "trust" looked like: five
+ * separate runs instead of one flowing through it.
+ *
+ * Sizing the gradient to the whole word and shifting each letter's origin by
+ * its own left offset makes the letters sample one continuous ramp. The tile
+ * is two word-widths so the animation can travel exactly one tile and loop
+ * with no seam.
+ */
+function paintFlow(word) {
+  // The gradient is a single ::after layer that repeats the word and masks
+  // itself to the glyphs; it only needs to know what the word says.
+  word.dataset.word = [...word.children].map((c) => c.textContent).join("");
 }
 
 /* ---- drag to resize the rail ------------------------------------------ */
