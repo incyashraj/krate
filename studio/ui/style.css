@@ -373,17 +373,28 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 .stage-empty img { width: 26px; height: 26px; opacity: 0.22; margin-bottom: 16px; }
 
 /* building */
-.build-card { width: min(440px, 92%); }
-.build-title { font-size: 20px; font-weight: 500; letter-spacing: -0.022em; }
-.build-elapsed { color: var(--faint); font-size: 12px; margin: 6px 0 4px; font-variant-numeric: tabular-nums; }
+.build-card {
+  width: min(420px, 92%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 24px 26px 22px;
+}
+.build-title { font-size: 18px; font-weight: 500; letter-spacing: -0.022em; }
+.build-elapsed { color: var(--faint); font-size: 12px; margin: 5px 0 3px; font-variant-numeric: tabular-nums; }
 .build-sweep { width: 100%; margin-bottom: 26px; }
 
-.stages { list-style: none; display: flex; flex-direction: column; gap: 14px; }
+/* 10px apart, not 14: five stages read as one list rather than five
+   separate lines drifting down the screen. */
+.stages { list-style: none; display: flex; flex-direction: column; gap: 10px; }
 .stages li {
-  display: flex; align-items: center; gap: 12px;
-  color: var(--ghost); font-size: 13.5px;
+  display: flex; align-items: center; gap: 11px;
+  color: var(--ghost); font-size: 13px;
   transition: color 0.3s ease;
 }
+/* The dot alone carries the state -- waiting, now, done -- by colour. It
+   used to also receive a checkmark from the JS, which a 6px box cannot
+   hold: the glyph spilled out below and left of the dot. */
 .stages li .tick {
   width: 6px; height: 6px; flex: none;
   border-radius: 50%;
@@ -397,7 +408,9 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 
 .now-line {
   display: flex; align-items: center; gap: 9px;
-  margin-top: 24px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
   font: 11.5px/1.5 var(--mono);
   color: var(--faint);
   white-space: nowrap; overflow: hidden;
@@ -427,7 +440,7 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
   color: var(--muted);
   white-space: pre-wrap; user-select: text;
 }
-.stop { margin-top: 22px; }
+.stop { margin-top: 16px; margin-left: -12px; }
 .stop:hover { color: var(--danger); }
 
 /* done */
@@ -652,5 +665,6 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 .build-progress { margin: 4px 0 26px; }
 /* The build blooms blue; the finished app blooms warmer, because arriving
    and working are different feelings. */
-.build-card { --bloom-color: rgba(98,145,255,0.4); }
+.build-card { --bloom-color: rgba(98,145,255,0.34); }
+.build-card.bloom::before { left: 6%; right: 6%; bottom: -8px; height: 46%; }
 .done-card { --bloom-color: rgba(108,244,215,0.28); }

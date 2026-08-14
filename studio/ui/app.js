@@ -327,7 +327,6 @@ function advanceStage(key) {
   state.stageIndex = idx;
   document.querySelectorAll("#stages li").forEach((li, i) => {
     li.className = i < idx ? "done" : i === idx ? "now" : "";
-    li.querySelector(".tick").textContent = i < idx ? "✓" : "";
   });
   setProgress((idx + 0.5) / STAGES.length);
 }
@@ -406,7 +405,6 @@ function finishBuild(result) {
   clearInterval(state.timer);
   document.querySelectorAll("#stages li").forEach((li) => {
     li.className = "done";
-    li.querySelector(".tick").textContent = "✓";
   });
   setProgress(1);
   const fill = $("buildFill");
