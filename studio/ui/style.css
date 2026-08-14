@@ -740,51 +740,41 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
    a slow travelling gradient says the same thing and looks like language
    rather than chrome.
 
-   The gradient is painted on the .word (one continuous run across the whole
-   word) and clipped to the glyphs; the per-letter spans inherit it, so the
-   colour does not restart at every character. */
+   How the one continuous run is achieved is below, on the letters. */
 .rot .word { display: inline-block; }
-/* The rotator replaces .word's contents with one span per letter, and a
-   background clipped to text does NOT reach through to child elements --
-   the letters rendered fully transparent and the word vanished. Each letter
-   carries the gradient itself, positioned so the run still reads as one
-   continuous sweep across the word rather than restarting per character. */
+/* The colour is ONE gradient, and the LETTERS carry it.
+ *
+ * This was a single ::after layer painting the word over the top, which made
+ * the word the right colour and killed the bounce: the letters underneath
+ * still animated, but a static copy sat on top of them, so nothing appeared
+ * to move.
+ *
+ * Now each letter is a window onto one shared gradient. `background-attachment:
+ * fixed` resolves the background against the VIEWPORT rather than each
+ * element, so every letter samples the same ramp at its own position -- one
+ * continuous gradient across the word, by construction, with no per-letter
+ * offsets to compute. The letters keep their own transform, so they leave
+ * upward and arrive from below exactly as the site's do. */
 .rot .word span {
   display: inline-block;
   will-change: transform, opacity, filter;
-}
-
-/* The colour is ONE gradient layer over the whole word, masked by the
-   word's own glyphs.
- *
- * Per-letter `background-clip: text` was tried and failed repeatedly: the
- * letters painted transparent with no gradient behind them. This has a
- * single painted element, so the ramp is continuous across the word by
- * construction -- there is nothing per-character to restart or go wrong --
- * and the letters underneath keep their own transform for the swap. */
-.rot .word {
-  position: relative;
-  color: transparent;
-}
-.rot .word::after {
-  content: attr(data-word);
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
   background-image: linear-gradient(90deg,
     #6291ff 0%, #a855f7 22%, #ec4899 42%, #f97316 62%, #eab308 78%, #6291ff 100%);
-  background-size: 200% 100%;
+  background-size: 220px 100%;
+  background-attachment: fixed;
+  background-repeat: repeat;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: wordflow 4.5s linear infinite;
 }
 @keyframes wordflow {
-  from { background-position: 0% 0; }
-  to   { background-position: -200% 0; }
+  from { background-position: 0 0; }
+  to   { background-position: 220px 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rot .word::after { animation: none; background-position: 30% 0; }
+  .rot .word span { animation: none; }
+}
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -862,3 +852,43 @@ body.resizing .divider { background: var(--blue); }
 .cloud-by img { width: 16px; height: 16px; border-radius: 50%; }
 .cloud-meta { color: var(--ghost); font-size: 12px; }
 .cloud-open { margin-top: 6px; color: var(--blue); font-size: 12.5px; }
+
+/* ---- cloud search and categories --------------------------------------- */
+
+.cloud-controls {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  max-width: 1000px; margin: 0 auto 14px;
+}
+.cloud-search {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 200px;
+  padding: 8px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--panel);
+  color: var(--faint);
+}
+.cloud-search:focus-within { border-color: var(--line-strong); }
+.cloud-search input {
+  flex: 1; border: none; background: none; outline: none;
+  color: var(--text); font: inherit; font-size: 13.5px;
+}
+.cloud-search input::placeholder { color: var(--ghost); }
+.cloud-search input::-webkit-search-cancel-button { filter: invert(0.5); }
+
+.cloud-cats { display: flex; gap: 6px; flex-wrap: wrap; }
+.cat {
+  padding: 6px 12px; border-radius: var(--radius-pill);
+  border: 1px solid var(--line); background: none;
+  color: var(--faint); font-size: 12.5px; cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.cat:hover { color: var(--text); border-color: var(--line-strong); }
+.cat.on { color: #0a0a0a; background: var(--text); border-color: var(--text); }
+
+.cloud-count {
+  max-width: 1000px; margin: 0 auto 12px;
+  color: var(--ghost); font-size: 12px;
+}
+.cloud-desc {
+  color: var(--muted); font-size: 12.5px; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}

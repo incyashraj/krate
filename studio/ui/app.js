@@ -30,6 +30,8 @@ const state = {
   phase: "idle",
   session: null,        // { id, title, created, updated, messages, result }
   attachments: [],      // absolute paths staged for the next message
+  cloud: [],            // apps read from Krate Cloud
+  cloudCat: "all",      // which category chip is selected
   agents: [],
   agent: "claude",
   outDir: "",
@@ -684,14 +686,38 @@ function timeAgo(seconds) {
   return days === 1 ? "yesterday" : `${days} days ago`;
 }
 
+/* Categories are derived from what the app says about itself, because the hub
+   stores no category field and inventing one would mean every existing app
+   showing up as "Other". Each rule is a set of words that actually appear in
+   these apps' names and descriptions. An app matching nothing lands in
+   Everything only, which is honest -- better than a wrong label. */
+const CLOUD_CATS = [
+  { id: "all", label: "Everything", match: () => true },
+  { id: "games", label: "Games", words: ["game", "shooter", "play", "arcade", "nova", "screensaver", "flip", "dice"] },
+  { id: "time", label: "Time", words: ["timer", "clock", "countdown", "focus", "pomodoro", "calendar", "schedule"] },
+  { id: "money", label: "Money", words: ["money", "budget", "invoice", "expense", "spending", "balance", "tip", "split", "price"] },
+  { id: "writing", label: "Notes", words: ["note", "journal", "write", "text", "markdown", "checklist", "list", "todo"] },
+  { id: "tools", label: "Tools", words: ["convert", "rename", "calculator", "unit", "tool", "news", "weather", "dashboard"] },
+];
+
+function catOf(app) {
+  const meta = app.meta || {};
+  const hay = `${meta.name || ""} ${meta.description || ""}`.toLowerCase();
+  return CLOUD_CATS.filter((c) => c.words && c.words.some((w) => hay.includes(w)))
+    .map((c) => c.id);
+}
+
 async function openCloud() {
   showView("cloud");
   $("cloudError").classList.add("hidden");
   $("cloudLoading").classList.remove("hidden");
   $("cloudGrid").innerHTML = "";
+  $("cloudCount").textContent = "";
   try {
     const payload = JSON.parse(await invoke("cloud_apps"));
-    renderCloud(payload.apps || []);
+    state.cloud = (payload.apps || []).map((app) => ({ ...app, cats: catOf(app) }));
+    renderCloudCats();
+    filterCloud();
   } catch (err) {
     $("cloudError").textContent = String(err);
     $("cloudError").classList.remove("hidden");
@@ -700,11 +726,49 @@ async function openCloud() {
   }
 }
 
-function renderCloud(apps) {
+function renderCloudCats() {
+  const box = $("cloudCats");
+  box.innerHTML = "";
+  for (const cat of CLOUD_CATS) {
+    // A category nobody has published to is noise, so it is not drawn.
+    const count = cat.id === "all"
+      ? state.cloud.length
+      : state.cloud.filter((a) => a.cats.includes(cat.id)).length;
+    if (!count) continue;
+    const chip = document.createElement("button");
+    chip.className = "cat" + (state.cloudCat === cat.id ? " on" : "");
+    chip.textContent = cat.label;
+    chip.addEventListener("click", () => {
+      state.cloudCat = cat.id;
+      renderCloudCats();
+      filterCloud();
+    });
+    box.appendChild(chip);
+  }
+}
+
+function filterCloud() {
+  const q = ($("cloudSearch").value || "").trim().toLowerCase();
+  const shown = state.cloud.filter((app) => {
+    const meta = app.meta || {};
+    const inCat = state.cloudCat === "all" || app.cats.includes(state.cloudCat);
+    const hay = `${meta.name || ""} ${meta.description || ""} ${meta.author || ""}`.toLowerCase();
+    return inCat && (!q || hay.includes(q));
+  });
+  $("cloudCount").textContent = shown.length
+    ? `${shown.length} app${shown.length === 1 ? "" : "s"}`
+    : "";
+  renderCloud(shown, Boolean(q) || state.cloudCat !== "all");
+}
+
+function renderCloud(apps, filtered) {
   const grid = $("cloudGrid");
   grid.innerHTML = "";
+  $("cloudError").classList.add("hidden");
   if (!apps.length) {
-    $("cloudError").textContent = "Nothing published yet. Yours could be first.";
+    $("cloudError").textContent = filtered
+      ? "Nothing here matches that."
+      : "Nothing published yet. Yours could be first.";
     $("cloudError").classList.remove("hidden");
     return;
   }
@@ -732,6 +796,13 @@ function renderCloud(apps) {
       }
       by.appendChild(document.createTextNode(meta.author));
       card.appendChild(by);
+    }
+
+    if (meta.description) {
+      const desc = document.createElement("p");
+      desc.className = "cloud-desc";
+      desc.textContent = meta.description;
+      card.appendChild(desc);
     }
 
     const bits = [];
@@ -941,9 +1012,11 @@ function startRotator() {
  * with no seam.
  */
 function paintFlow(word) {
-  // The gradient is a single ::after layer that repeats the word and masks
-  // itself to the glyphs; it only needs to know what the word says.
-  word.dataset.word = [...word.children].map((c) => c.textContent).join("");
+  // Nothing to do: each letter carries the shared gradient itself, resolved
+  // against the viewport so the ramp is continuous across the word. Kept as a
+  // named no-op because the rotator calls it at every word change, and this
+  // is where per-word painting would go if the effect ever needs measuring
+  // again.
 }
 
 /* ---- drag to resize the rail ------------------------------------------ */
@@ -1043,6 +1116,7 @@ $("homeAttachBtn").addEventListener("click", attach);
 $("cloudBtn").addEventListener("click", openCloud);
 $("cloudBackBtn").addEventListener("click", enterHome);
 $("cloudRefresh").addEventListener("click", openCloud);
+$("cloudSearch").addEventListener("input", filterCloud);
 $("stopBtn").addEventListener("click", () => invoke("stop_build"));
 $("openBtn").addEventListener("click", openApp);
 $("shareBtn").addEventListener("click", share);

@@ -92,11 +92,18 @@ struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            out_dir: dirs_home()
-                .join("Documents")
-                .join("Krate Apps")
-                .display()
-                .to_string(),
+            // ~/Krate Apps, not ~/Documents/Krate Apps.
+            //
+            // macOS guards Documents, Desktop and Downloads with TCC, so
+            // writing the first app there made the system demand access to the
+            // person's Documents folder -- an alarming prompt from an app that
+            // only wanted to save a file it just made. The home folder itself
+            // is not guarded, so the default now writes somewhere the person
+            // can see without anyone being asked for anything.
+            //
+            // Still a setting: someone who wants it in Documents picks that,
+            // and macOS asks them once, in response to their own choice.
+            out_dir: dirs_home().join("Krate Apps").display().to_string(),
             agent: "claude".to_string(),
         }
     }
@@ -104,10 +111,24 @@ impl Default for Settings {
 
 #[tauri::command]
 fn settings_get() -> Settings {
-    std::fs::read_to_string(studio_dir().join("settings.json"))
+    let mut settings: Settings = std::fs::read_to_string(studio_dir().join("settings.json"))
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+
+    // Move anyone still pointing at the old default out of ~/Documents.
+    //
+    // Changing the default only helps new installs; a person who ran an
+    // earlier build has the Documents path saved and would keep meeting the
+    // TCC prompt forever. Only the exact old default is migrated -- a folder
+    // someone chose themselves is their choice and is left alone, even if it
+    // is inside Documents.
+    let old_default = dirs_home().join("Documents").join("Krate Apps");
+    if PathBuf::from(&settings.out_dir) == old_default {
+        settings.out_dir = Settings::default().out_dir;
+        let _ = settings_set(settings.clone());
+    }
+    settings
 }
 
 #[tauri::command]
@@ -279,7 +300,7 @@ async fn pick_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
         // alarming prompt from an app that only wanted a file they pick.
         let picked = rfd::FileDialog::new()
             .set_title("Attach files for the AI to read")
-            .set_directory(dirs_home().join("Documents"))
+            .set_directory(dirs_home())
             .pick_files()
             .unwrap_or_default();
         let _ = tx.send(picked);
@@ -297,7 +318,7 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
     app.run_on_main_thread(move || {
         let picked = rfd::FileDialog::new()
             .set_title("Where finished apps are saved")
-            .set_directory(dirs_home().join("Documents"))
+            .set_directory(dirs_home())
             .pick_folder();
         let _ = tx.send(picked);
     })
