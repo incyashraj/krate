@@ -220,43 +220,14 @@ jobs:
           npm install -g @tauri-apps/cli@^2
           mkdir -p studio/bin
           cp "target/${{ matrix.target }}/release/krate" studio/bin/krate
-          # Let Tauri sign the bundle while it builds it.
+          # Build the .app only. The .dmg is made later, AFTER the real
+          # Developer ID signing below, because packaging it here would seal
+          # an unsigned bundle inside the thing people download.
           #
-          # Signing the .app afterwards and then asking Tauri for the .dmg
-          # does NOT work: the dmg build re-runs the app bundling and
-          # overwrites the signature. Measured -- the resulting dmg still
-          # contained a "linker-signed" app with zero resource hashes.
-          #
-          # Without a coherent signature the bundle carries only the
-          # linker's automatic one, which claims no resources. As soon as the
-          # bundle has resources (the engine in Contents/Resources/bin, the
-          # icon) Gatekeeper reports "code has no resources but signature
-          # indicates they must be present", and a quarantined download is
-          # refused with "Krate is damaged and can't be opened." A real
-          # person hit exactly that, and it reads as a corrupt file rather
-          # than as an unsigned app.
-          #
-          # `-` is ad-hoc. It does not clear Gatekeeper on its own -- that
-          # needs a Developer ID certificate, which is tracked separately --
-          # but it produces a VALID signature, so the app is refused honestly
-          # ("Apple could not verify") rather than called damaged.
-          export APPLE_SIGNING_IDENTITY="-"
-          (cd studio && tauri build --bundles app,dmg --target ${{ matrix.target }})
-
-          app=$(find studio/target -name 'Krate Studio.app' -type d -print -quit)
-          if [ -n "$app" ]; then
-            # Fail the step if the signature is not coherent: shipping a
-            # bundle that macOS calls damaged is worse than shipping no
-            # studio at all.
-            codesign --verify --strict --verbose=2 "$app"
-          fi
-
-          # One predictable name, matching what the site's links build.
-          mkdir -p dist
-          src=$(find studio/target -name '*.dmg' -print -quit)
-          if [ -n "$src" ]; then
-            cp "$src" "dist/krate-studio-${version}-${{ matrix.target }}.dmg"
-          fi
+          # --no-sign: Tauri's own ad-hoc signing would have to be replaced
+          # anyway, and an ad-hoc signature left in the bundle is precisely
+          # what the notary service rejects.
+          (cd studio && tauri build --bundles app --no-sign --target ${{ matrix.target }})
           fi
 
       # Sign and notarize, so Gatekeeper lets a downloaded build open without
@@ -280,6 +251,23 @@ jobs:
             echo "Gatekeeper will warn on download. Set APPLE_CERT_P12,"
             echo "APPLE_CERT_PASSWORD, APPLE_ID, APPLE_TEAM_ID and"
             echo "APPLE_APP_PASSWORD to sign properly."
+            # A fork with no secrets still gets a usable studio .dmg. Ad-hoc,
+            # so macOS will say it cannot verify it -- but a COHERENT ad-hoc
+            # signature, which is the difference between "Apple could not
+            # verify" and the "damaged, move it to the Bin" that a
+            # linker-signed bundle produces.
+            version="${KRATE_VERSION#v}"
+            app="studio/target/${{ matrix.target }}/release/bundle/macos/Krate Studio.app"
+            if [ -d "$app" ]; then
+              codesign --force --sign - "$app/Contents/Resources/bin/krate" || true
+              codesign --force --sign - --entitlements studio/Entitlements.plist "$app" || true
+              (cd studio && tauri build --bundles dmg --no-sign --target ${{ matrix.target }}) || true
+              src=$(find studio/target -name '*.dmg' -print -quit)
+              if [ -n "$src" ]; then
+                mkdir -p dist
+                cp "$src" "dist/krate-studio-${version}-${{ matrix.target }}.dmg"
+              fi
+            fi
             exit 0
           fi
 
@@ -343,6 +331,28 @@ jobs:
               exit 1
             fi
           done
+
+          # Krate Studio, signed with the same Developer ID.
+          #
+          # It was shipping ad-hoc signed, which is why a downloaded copy was
+          # called "damaged" and then, once that was fixed, still refused with
+          # "Apple could not verify". There was never a missing certificate --
+          # this project has had a Developer ID all along and the runtime is
+          # notarized with it. The studio simply was not being given it.
+          #
+          # Same entitlements as the runtime: the studio spawns the engine,
+          # which JIT-compiles every component, and hardened runtime without
+          # the JIT entitlements is what killed double-clicked apps in K-063.
+          STUDIO_APP="studio/target/${{ matrix.target }}/release/bundle/macos/Krate Studio.app"
+          if [ -d "$STUDIO_APP" ]; then
+            codesign --force --options runtime --timestamp \
+              --entitlements "$ENTITLEMENTS" \
+              --sign "$IDENTITY" "$STUDIO_APP/Contents/Resources/bin/krate"
+            codesign --force --options runtime --timestamp \
+              --entitlements studio/Entitlements.plist \
+              --sign "$IDENTITY" "$STUDIO_APP"
+            codesign --verify --deep --strict --verbose=2 "$STUDIO_APP"
+          fi
 
           # The bare CLI is downloaded and run directly, so it needs signing too
           # -- and it JITs exactly like the one in the bundle, so it needs the
@@ -415,6 +425,37 @@ jobs:
           xcrun stapler staple dist/Krate.app || true
           (cd dist && rm -f "$zip_name" && zip -qry "$zip_name" Krate.app)
           echo "notarized and stapled"
+
+          # Krate Studio: notarize the signed bundle, then package the .dmg
+          # around it. This order matters -- a .dmg built before notarization
+          # carries an un-stapled app, and the person who downloads it is
+          # stopped by Gatekeeper exactly as if it were never notarized.
+          if [ -d "$STUDIO_APP" ]; then
+            studio_zip="krate-studio-${version}-${{ matrix.target }}.zip"
+            (cd "$(dirname "$STUDIO_APP")" && zip -qry "/tmp/$studio_zip" "Krate Studio.app")
+            if xcrun notarytool submit "/tmp/$studio_zip" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --wait; then
+              xcrun stapler staple "$STUDIO_APP" || true
+              echo "studio notarized and stapled"
+            else
+              echo "::warning::Studio notarization failed; it is signed but"
+              echo "Gatekeeper will still warn. The runtime is unaffected."
+            fi
+            # The .dmg, built from the signed and stapled bundle.
+            (cd studio && tauri build --bundles dmg --no-sign --target ${{ matrix.target }})
+            src=$(find studio/target -name '*.dmg' -print -quit)
+            if [ -n "$src" ]; then
+              mkdir -p dist
+              cp "$src" "dist/krate-studio-${version}-${{ matrix.target }}.dmg"
+              # Sign the disk image itself, so the download is verifiable
+              # before it is even opened.
+              codesign --force --timestamp --sign "$IDENTITY" \
+                "dist/krate-studio-${version}-${{ matrix.target }}.dmg" || true
+            fi
+          fi
 
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v7
@@ -652,6 +693,68 @@ jobs:
             | grep -q allow-jit \
             || { echo "::error::Krate.app has no allow-jit -- double-click will die"; exit 1; }
           spctl --assess --type execute -v Krate.app
+
+      # Krate Studio, checked on the published .dmg -- the file a person
+      # actually downloads, not the bundle the build produced.
+      #
+      # This gate exists because all three faults that made the studio
+      # unusable were invisible to every check we had: they were in the
+      # handover from build to download. A real person got "Krate is damaged
+      # and can't be opened", and nothing in CI noticed.
+      - name: The studio .dmg installs and opens (the download, not the build)
+        if: contains(matrix.target, 'apple')
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd verify
+          dmg="krate-studio-${TAG#v}-${{ matrix.target }}.dmg"
+          if ! gh release download "$TAG" -R "${{ github.repository }}" -p "$dmg"; then
+            echo "::warning::no studio .dmg in this release; skipping"
+            exit 0
+          fi
+
+          # Quarantine, as every browser sets on a download. Without this the
+          # test is easier than reality and proves nothing -- the "damaged"
+          # failure only appears on a quarantined copy.
+          xattr -w com.apple.quarantine "0083;00000000;Safari;" "$dmg"
+
+          mp="$(hdiutil attach "$dmg" -nobrowse | tail -1 | sed 's/^.*\(\/Volumes\/.*\)$/\1/')"
+          app="$mp/Krate Studio.app"
+          test -d "$app" || { echo "::error::no 'Krate Studio.app' in the dmg"; hdiutil detach "$mp"; exit 1; }
+
+          # 1. The signature must be COHERENT. A linker-signed bundle claims
+          #    no resources, and once the engine and icon are inside, macOS
+          #    calls the whole thing damaged.
+          if ! codesign --verify --strict --verbose=2 "$app" 2>&1; then
+            echo "::error::the studio signature is not coherent -- macOS will call it damaged"
+            hdiutil detach "$mp"; exit 1
+          fi
+
+          # 2. The engine must be inside. Without it the studio installs
+          #    cleanly and cannot build anything.
+          test -f "$app/Contents/Resources/bin/krate" \
+            || { echo "::error::the studio ships no engine"; hdiutil detach "$mp"; exit 1; }
+
+          # 3. It must NOT claim .krate. Two apps competing for one file type
+          #    is why a double-clicked app opened the wrong thing.
+          if plutil -p "$app/Contents/Info.plist" | grep -q CFBundleDocumentTypes; then
+            echo "::error::the studio claims .krate; the runtime owns that type"
+            hdiutil detach "$mp"; exit 1
+          fi
+
+          # 4. It must not be named Krate.app, or it replaces the runtime in
+          #    /Applications.
+          if [ -d "$mp/Krate.app" ]; then
+            echo "::error::the studio bundle is named Krate.app and collides with the runtime"
+            hdiutil detach "$mp"; exit 1
+          fi
+
+          echo "studio dmg: signature coherent, engine present, no type collision"
+          codesign -dv --verbose=2 "$app" 2>&1 | grep -E "Signature|flags" || true
+          hdiutil detach "$mp" >/dev/null
 
       - name: Build an app with the published binary, and run it headless
         shell: bash
