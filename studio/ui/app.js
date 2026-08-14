@@ -141,10 +141,22 @@ function renderSessions(sessions) {
     if (hasShot) {
       card.querySelector(".thumb").style.backgroundImage = `url(${s.result.shot})`;
     } else {
-      card.querySelector(".thumb").textContent = "not finished yet";
+      card.querySelector(".thumb").textContent = "open to pick up where you left off";
     }
     card.querySelector(".name").textContent = s.title;
     card.addEventListener("click", () => openSession(s));
+
+    const x = document.createElement("button");
+    x.className = "card-x";
+    x.textContent = "×";
+    x.title = "Remove from your apps";
+    x.addEventListener("click", async (e) => {
+      // The card underneath opens a session; this must not do both.
+      e.stopPropagation();
+      await invoke("session_delete", { id: s.id });
+      renderSessions(await invoke("sessions_list"));
+    });
+    card.appendChild(x);
     grid.appendChild(card);
   }
 }

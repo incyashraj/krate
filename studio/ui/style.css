@@ -173,14 +173,36 @@ button { font-family: var(--sans); }
 .app-card:hover { border-color: var(--line-strong); transform: translateY(-2px); }
 /* The app's own first frame on its card. A named row is a bookmark; the
    picture is the memory of the thing you made. */
+.app-card { position: relative; }
 .app-card .thumb {
-  height: 116px;
+  height: 128px;
   background-color: var(--panel-raised);
-  background-size: cover;
-  background-position: top center;
+  /* `contain`, not `cover`: a generated app can be any shape, and cropping
+     a tall app mid-coin shows a slice nobody recognises. The whole first
+     frame, letterboxed, is the memory of the thing you made. */
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
   border-bottom: 1px solid var(--line);
 }
 .app-card .thumb.blank { display: grid; place-items: center; color: var(--faint); font-size: 11px; }
+/* Removing a session is a real need -- an abandoned build should not sit in
+   your shelf forever -- but it must never compete with opening one, so it
+   appears only on hover. */
+.card-x {
+  position: absolute; top: 8px; right: 8px;
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  border: none; border-radius: 7px;
+  background: rgba(10, 10, 10, 0.72);
+  color: var(--muted);
+  font-size: 15px; line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.app-card:hover .card-x { opacity: 1; }
+.card-x:hover { color: var(--danger); }
 .app-card .card-body { padding: 12px 14px 13px; }
 .app-card .name { font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-card .meta { color: var(--faint); font-size: 12px; margin-top: 3px; }
