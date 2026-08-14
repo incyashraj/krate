@@ -74,7 +74,7 @@ defect.
 | **W15** | Text measurement, delete the guess from seven apps | G2, K-002 | **landed** -- 11 apps converted, measurement matches drawn pixels |
 | **W16** | The benchmark: corpus, harness, honest score | G1 | **landed** -- 42 requests, harness self-checks against 17 bundles, first score 0/5 authored |
 | **W17** | Outsider testing with Grok, from a clean machine's point of view | G4 | **landed** -- 8 built, 0 usable; five defects filed |
-| **W18** | Krate Studio: the desktop shell -- describe an app, watch it become real, open it, share it | the make funnel (139 installs, 1 make) | **in progress** -- UI + Tauri shell scaffolded, `ai --json` landed; next: end-to-end create, then Krate.app becomes the studio |
+| **W18** | Krate Studio: the desktop shell -- describe an app, watch it become real, open it, share it | the make funnel (139 installs, 1 make) | **in progress** -- shell builds and opens with the site's design; `ai --json` and `krate revise` landed (a one-line change measured 1.6 min against ~6 from scratch); next: end-to-end create through the window, installers, Krate.app hands its no-document launch to the studio |
 
 ### What each is actually trying to prove
 
