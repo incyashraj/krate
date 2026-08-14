@@ -32,6 +32,7 @@ const state = {
   attachments: [],      // absolute paths staged for the next message
   cloud: [],            // apps read from Krate Cloud
   cloudCat: "all",      // which category chip is selected
+  cloudApp: null,       // the published app being looked at
   agents: [],
   agent: "claude",
   outDir: "",
@@ -45,11 +46,12 @@ const state = {
 /* ---- views ------------------------------------------------------------ */
 
 function showView(name) {
-  for (const id of ["viewGate", "viewHome", "viewSession", "viewCloud"]) {
+  for (const id of ["viewGate", "viewHome", "viewSession", "viewCloud", "viewApp"]) {
     $(id).classList.add("hidden");
   }
   const view = $({
-    gate: "viewGate", home: "viewHome", session: "viewSession", cloud: "viewCloud",
+    gate: "viewGate", home: "viewHome", session: "viewSession",
+    cloud: "viewCloud", appDetail: "viewApp",
   }[name]);
   view.classList.remove("hidden");
   revealIn(view);
@@ -852,6 +854,81 @@ function renderCloudCats() {
   }
 }
 
+/* One published app, in full: its screenshot, who made it, what it is allowed
+   to do -- and only then a button that runs it. Browsing a gallery should not
+   be one click away from executing something. */
+function showCloudApp(app) {
+  const meta = app.meta || {};
+  state.cloudApp = app;
+  showView("appDetail");
+  $("appCrumb").textContent = meta.name || "App";
+  $("detailName").textContent = meta.name || "Untitled app";
+  $("detailDesc").textContent = meta.description || "";
+  $("detailDesc").classList.toggle("hidden", !meta.description);
+  $("detailBy").textContent = meta.author ? `Made by ${meta.author}` : "";
+  $("detailNote").textContent = "";
+
+  const shot = $("detailShot");
+  shot.innerHTML = "";
+  if (app.shot) {
+    const img = document.createElement("img");
+    img.src = app.shot;
+    img.alt = `${meta.name || "The app"}, as it renders`;
+    // The hub has no screenshot for every app; a broken image frame looks
+    // like a fault, so it removes itself and the placeholder shows instead.
+    img.onerror = () => { shot.innerHTML = ""; shot.appendChild(shotPlaceholder()); };
+    shot.appendChild(img);
+  } else {
+    shot.appendChild(shotPlaceholder());
+  }
+
+  const rows = [
+    ["Size", `${Math.round((meta.size || 0) / 1024)} KB`],
+    ["Published", meta.published ? timeAgo(meta.published) : "unknown"],
+    ["Runs on", "Mac, Windows and Linux"],
+  ];
+  $("detailRows").innerHTML = "";
+  for (const [k, v] of rows) {
+    const dt = document.createElement("dt");
+    dt.textContent = k;
+    const dd = document.createElement("dd");
+    dd.textContent = v;
+    $("detailRows").append(dt, dd);
+  }
+
+  // Permissions come from the engine reading the published bundle, without
+  // running it -- the same wall that will apply if it is opened.
+  const caps = $("detailCaps");
+  caps.innerHTML = '<li class="dim">Checking what it can do…</li>';
+  invoke("app_info", { path: app.url })
+    .then((info) => {
+      caps.innerHTML = "";
+      const list = info.capabilities || [];
+      if (!list.length) {
+        const li = document.createElement("li");
+        li.textContent = "Nothing beyond drawing its own window.";
+        caps.appendChild(li);
+        return;
+      }
+      for (const cap of list) {
+        const li = document.createElement("li");
+        li.textContent = CAP_WORDS[cap] || cap;
+        li.title = cap;
+        caps.appendChild(li);
+      }
+    })
+    .catch(() => {
+      caps.innerHTML = '<li class="dim">Could not read this app right now.</li>';
+    });
+}
+
+function shotPlaceholder() {
+  const box = document.createElement("div");
+  box.className = "shot-none";
+  box.textContent = "No screenshot yet";
+  return box;
+}
+
 function filterCloud() {
   const q = ($("cloudSearch").value || "").trim().toLowerCase();
   const shown = state.cloud.filter((app) => {
@@ -922,18 +999,10 @@ function renderCloud(apps, filtered) {
 
     const go = document.createElement("p");
     go.className = "cloud-open";
-    go.textContent = "Open it \u2192";
+    go.textContent = "Details \u2192";
     card.appendChild(go);
 
-    card.addEventListener("click", async () => {
-      go.textContent = "Opening\u2026";
-      try {
-        await invoke("cloud_run", { url: app.url });
-        go.textContent = "Open it \u2192";
-      } catch (err) {
-        go.textContent = String(err);
-      }
-    });
+    card.addEventListener("click", () => showCloudApp(app));
     grid.appendChild(card);
   }
 }
@@ -1222,6 +1291,32 @@ $("cloudBtn").addEventListener("click", openCloud);
 $("cloudBackBtn").addEventListener("click", enterHome);
 $("cloudRefresh").addEventListener("click", openCloud);
 $("cloudSearch").addEventListener("input", filterCloud);
+$("appBackBtn").addEventListener("click", () => showView("cloud"));
+$("detailRun").addEventListener("click", async () => {
+  const app = state.cloudApp;
+  if (!app) return;
+  const btn = $("detailRun");
+  btn.disabled = true;
+  btn.textContent = "Opening…";
+  try {
+    await invoke("cloud_run", { url: app.url });
+    $("detailNote").textContent = "Opening -- it asks your permission before it can do anything.";
+  } catch (err) {
+    $("detailNote").textContent = String(err);
+  }
+  btn.disabled = false;
+  btn.textContent = "Open it";
+});
+$("detailCopy").addEventListener("click", async () => {
+  const app = state.cloudApp;
+  if (!app) return;
+  try {
+    await navigator.clipboard.writeText(app.url);
+    $("detailNote").textContent = "Link copied. Anyone with it can open this app.";
+  } catch {
+    $("detailNote").textContent = app.url;
+  }
+});
 $("stopBtn").addEventListener("click", () => invoke("stop_build"));
 $("openBtn").addEventListener("click", openApp);
 $("shareBtn").addEventListener("click", share);
@@ -1271,6 +1366,45 @@ document.querySelectorAll(".sheet-close").forEach((b) =>
 document.querySelectorAll(".sheet-wrap").forEach((w) =>
   w.addEventListener("click", (e) => { if (e.target === w) w.classList.add("hidden"); }),
 );
+
+/* Dragging the window by its title bar.
+ *
+ * `-webkit-app-region: drag` did not move the window through several
+ * attempts. Tauri's `startDragging` hands the drag to the window manager,
+ * which is what a native title bar does internally.
+ *
+ * Delegated from `document` rather than bound per `.titlebar`: the bars live
+ * inside views that are hidden at load, and a per-element binding also has to
+ * be redone whenever markup is re-rendered. One capturing listener cannot miss
+ * one. `capture: true` so it runs before anything inside the bar can stop the
+ * event.
+ *
+ * Failures are logged rather than swallowed. A silent no-op is exactly how
+ * this bug survived three rounds of "fixed". */
+document.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;
+  const bar = e.target.closest && e.target.closest(".titlebar");
+  if (!bar) return;
+  if (e.target.closest("button, input, a, .agent-chip")) return;
+  const win = tauri && tauri.window &&
+    (tauri.window.getCurrentWindow ? tauri.window.getCurrentWindow() : tauri.window.appWindow);
+  if (!win || !win.startDragging) {
+    console.warn("[drag] no window handle; the title bar cannot move the window");
+    return;
+  }
+  e.preventDefault();
+  Promise.resolve(win.startDragging()).catch((err) => {
+    console.warn("[drag] startDragging refused:", err);
+  });
+}, true);
+
+document.addEventListener("dblclick", (e) => {
+  const bar = e.target.closest && e.target.closest(".titlebar");
+  if (!bar || e.target.closest("button, input, a, .agent-chip")) return;
+  const win = tauri && tauri.window &&
+    (tauri.window.getCurrentWindow ? tauri.window.getCurrentWindow() : tauri.window.appWindow);
+  if (win && win.toggleMaximize) Promise.resolve(win.toggleMaximize()).catch(() => {});
+}, true);
 
 if (tauri) {
   // A rejected listen was invisible once: the capabilities grant was

@@ -51,7 +51,7 @@
      and a reserved run mean the top of the window is aligned by
      construction, not by a per-screen padding guess. */
   --titlebar: 60px;
-  --lights: 78px;
+  --lights: 76px;
   --rail: 320px;
 }
 
@@ -162,11 +162,19 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 
 .brand {
   display: flex; align-items: center; gap: 9px;
+  /* Optical, not mathematical: the wordmark's letter-spacing adds a trailing
+     gap of its own, so matching the lights' spacing exactly reads as too far
+     right. */
+  margin-left: -2px;
   font-size: 12px; font-weight: 500; letter-spacing: 0.16em;
   color: var(--text);
   -webkit-app-region: drag;
 }
-.brand img { width: 17px; height: 17px; opacity: 0.9; }
+/* The wordmark is uppercase, so its optical centre is its cap-height -- above
+   the line box's true middle. `align-items: center` therefore leaves the glyph
+   looking low next to it. The nudge is optical, which is why it is not a round
+   number. */
+.brand img { width: 17px; height: 17px; opacity: 0.9; margin-top: -1.5px; }
 .crumb {
   font-size: 13px; color: var(--muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 42ch;
@@ -920,3 +928,28 @@ body.resizing .divider { background: var(--blue); }
 .info-note {
   margin-top: 14px; color: var(--faint); font-size: 12px; line-height: 1.55;
 }
+
+/* ---- one published app ------------------------------------------------- */
+
+.detail {
+  flex: 1; overflow-y: auto;
+  display: grid; gap: 32px; align-content: start;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+  padding: 36px 32px 64px; max-width: 1000px; margin: 0 auto; width: 100%;
+}
+@media (max-width: 860px) { .detail { grid-template-columns: 1fr; } }
+.detail-shot {
+  border: 1px solid var(--line); border-radius: var(--radius-card);
+  background: var(--panel); overflow: hidden;
+  display: grid; place-items: center; min-height: 260px;
+}
+.detail-shot img { width: 100%; height: auto; display: block; }
+.shot-none { color: var(--ghost); font-size: 13px; padding: 60px 0; }
+.detail-side h1 { font-size: 26px; letter-spacing: -0.02em; }
+.detail-desc { margin-top: 8px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.detail-by { margin-top: 10px; color: var(--faint); font-size: 13px; }
+.detail-actions { display: flex; gap: 8px; margin: 20px 0 0; }
+.detail-note { margin-top: 10px; color: var(--faint); font-size: 12.5px; min-height: 1em; }
+.detail .info-rows { margin-top: 20px; }
+#detailCaps .dim { color: var(--ghost); }
+#detailCaps .dim::before { display: none; }

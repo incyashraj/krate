@@ -211,6 +211,34 @@
     </main>
   </div>
 
+  <div class="view hidden" id="viewApp">
+    <header class="titlebar">
+      <button class="icon-btn" id="appBackBtn" title="Back to the cloud"><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M9.8 3.2L5 8l4.8 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <span class="crumb" id="appCrumb">App</span>
+      <div class="spacer"></div>
+    </header>
+    <main class="detail">
+      <div class="detail-shot" id="detailShot"></div>
+      <div class="detail-side">
+        <h1 id="detailName"></h1>
+        <p class="detail-desc" id="detailDesc"></p>
+        <p class="detail-by" id="detailBy"></p>
+        <div class="detail-actions">
+          <button class="btn btn-primary" id="detailRun">Open it</button>
+          <button class="btn" id="detailCopy">Copy link</button>
+        </div>
+        <p class="detail-note" id="detailNote"></p>
+        <dl class="info-rows" id="detailRows"></dl>
+        <div class="info-caps">
+          <p class="label">What it is allowed to do</p>
+          <ul id="detailCaps"><li class="dim">Checking…</li></ul>
+          <p class="info-note">Krate enforces this list. An app cannot do
+          anything that is not on it, whatever its code says.</p>
+        </div>
+      </div>
+    </main>
+  </div>
+
   <div class="sheet-wrap hidden" id="infoSheet">
     <div class="sheet sheet-info">
       <h2 id="infoName">App</h2>

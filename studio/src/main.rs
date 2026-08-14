@@ -500,6 +500,26 @@ fn run_author(
     let agent_home = studio_dir().join("agent");
     let _ = std::fs::create_dir_all(&agent_home);
     cmd.env("CLAUDE_CONFIG_DIR", &agent_home);
+
+    // HOME too, not only CLAUDE_CONFIG_DIR.
+    //
+    // This is the fix that actually stops the prompt, and the previous two
+    // attempts did not: CLAUDE_CONFIG_DIR moves ~/.claude.json, but the agent
+    // still reads ~/.claude/ beside it -- and on this machine
+    // ~/.claude/history.jsonl held 27 paths under Downloads and Documents
+    // from months of unrelated work. The agent stats those at startup, inside
+    // a process we spawned, so macOS names KRATE STUDIO in the dialog and the
+    // person is asked why their app maker wants their documents. There is no
+    // good answer, because it never wanted them.
+    //
+    // Pointing HOME at our own directory means every tool we spawn resolves
+    // "~" to a folder that contains nothing but this app's work. The person's
+    // own ~/.claude is untouched and their terminal sessions are unaffected.
+    cmd.env("HOME", &agent_home);
+    // XDG equivalents, for tools that follow that convention instead of HOME.
+    cmd.env("XDG_CONFIG_HOME", agent_home.join(".config"));
+    cmd.env("XDG_CACHE_HOME", agent_home.join(".cache"));
+    cmd.env("XDG_DATA_HOME", agent_home.join(".local/share"));
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -715,12 +735,19 @@ async fn publish(path: String) -> Result<String, String> {
 #[tauri::command]
 async fn app_info(path: String) -> Result<serde_json::Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let path = existing(&path)?;
+        // A cloud URL is as valid a target as a local file: the engine reads
+        // both, and inspecting a published app before running it is exactly
+        // what the cloud detail page is for.
+        let target = if path.starts_with("https://") {
+            path.clone()
+        } else {
+            existing(&path)?.display().to_string()
+        };
         let engine = engine()?;
         let out = Command::new(&engine)
             .arg("run")
             .arg("--dump-caps")
-            .arg(&path)
+            .arg(&target)
             .output()
             .map_err(|err| format!("could not run the Krate engine: {err}"))?;
         let text = String::from_utf8_lossy(&out.stdout).to_string();
@@ -746,9 +773,10 @@ async fn app_info(path: String) -> Result<serde_json::Value, String> {
             }
         }
 
-        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        // A remote app has no local size; the hub already reported it.
+        let size = std::fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
         Ok(serde_json::json!({
-            "path": path.display().to_string(),
+            "path": target,
             "identity": identity,
             "capabilities": caps,
             "size": size,
