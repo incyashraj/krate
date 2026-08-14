@@ -37,92 +37,127 @@
 <!-- ==================================================================== hero -->
 <section class="st-hero">
   <div class="wrap st-hero-inner">
-    <p class="st-eyebrow reveal"><span class="st-dot"></span>PRE-BETA</p>
-    <h1 class="st-h1 reveal">Describe an app.<br />Watch it become real.</h1>
-    <p class="st-lede reveal">Krate Studio is a window around the Krate engine. Say
-    what you want in plain words, an AI writes it, and a few minutes later you have
-    one small file that opens on Mac, Windows and Linux -- and that you can send to
-    anyone.</p>
-    <div class="st-cta reveal">
-      <a class="pill pill-primary" href="#get">Download for macOS</a>
-      <a class="pill" href="#how">See how it works</a>
+    <div class="st-hero-copy">
+      <p class="st-eyebrow reveal"><span class="st-dot"></span>PRE-BETA</p>
+      <h1 class="st-h1 reveal">Describe an app.<br />Watch it become real.</h1>
+      <p class="st-lede reveal">Say what you want in plain words. Krate Studio asks
+      your AI to make it, then gives you one small app file that opens on Mac,
+      Windows and Linux.</p>
+      <div class="st-cta reveal">
+        <a class="pill pill-primary" href="#get">Download for macOS</a>
+        <a class="pill" href="#how">See how it works</a>
+      </div>
+      <p class="st-under reveal">Free. Works with the AI you already use.</p>
     </div>
-    <p class="st-under reveal">Free. Works with the AI you already pay for.</p>
+
+    <div class="st-product reveal" id="studioDemo" data-step="prompt">
+      <div class="st-product-bar">
+        <span class="st-traffic" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="st-product-brand"><img src="/krate-glyph-white.png" alt="" /> KRATE STUDIO</span>
+        <span class="st-product-title">Pulse</span>
+        <span class="st-agent"><i></i>Claude ready</span>
+      </div>
+
+      <div class="st-product-body" aria-label="Krate Studio makes and shares a personal finance app">
+        <aside class="st-product-rail">
+          <div class="st-product-thread">
+            <div class="st-message st-message-user">
+              Make a personal finance dashboard that tracks spending and saves locally.
+            </div>
+            <div class="st-message st-message-krate">
+              <span class="st-build-copy">I am making that now.</span>
+              <span class="st-done-copy">Pulse is ready. You can open it or send it.</span>
+            </div>
+            <div class="st-mini-progress"><i></i></div>
+          </div>
+          <div class="st-composer">
+            <span class="st-type-target"></span><span class="st-demo-caret"></span>
+            <button type="button" aria-label="Make app">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5L3.8 7.7M8 3.5l4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+        </aside>
+
+        <section class="st-product-stage">
+          <div class="st-stage-view st-stage-idle">
+            <img src="/krate-glyph-white.png" alt="" />
+            <p>Your app will appear here.</p>
+          </div>
+
+          <div class="st-stage-view st-stage-building">
+            <div class="st-build-card">
+              <div class="st-build-head">
+                <strong>Making Pulse</strong>
+                <span><i></i>Live</span>
+              </div>
+              <p class="st-build-time">0:18 · usually a few minutes</p>
+              <div class="st-build-progress"><i></i></div>
+              <p class="st-build-stage">Building your app</p>
+              <p class="st-build-line"><span>checking the permission wall</span><b></b></p>
+              <ul>
+                <li class="done">Understanding what you asked for</li>
+                <li class="done">Writing the app</li>
+                <li class="active">Building one portable file</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="st-stage-view st-stage-done">
+            <div class="st-app-preview">
+              <div class="st-app-shot"><img src="/cloud/shots/pulse.png" alt="Pulse personal finance dashboard made with Krate Studio" /></div>
+              <div class="st-app-meta">
+                <div>
+                  <strong>Pulse</strong>
+                  <p>14 KB · Mac, Windows and Linux</p>
+                </div>
+                <span class="st-ready"><i></i>Ready</span>
+              </div>
+              <div class="st-access"><span>Can open a window</span><span>Can save its own data</span></div>
+              <div class="st-app-actions">
+                <button class="st-open">Open it</button>
+                <button class="st-share">Share</button>
+              </div>
+              <div class="st-share-link"><span>krate.tech/cloud/app/?id=09bc11…</span><b>copied</b></div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="st-demo-timeline" aria-hidden="true">
+        <span class="active">Describe</span><span>Build</span><span>Open</span><span>Share</span>
+        <i></i>
+      </div>
+      <button class="st-demo-replay" type="button" aria-label="Replay product demonstration">Replay</button>
+    </div>
   </div>
 </section>
 
 <!-- ================================================================= what it is -->
 <section class="st-band" id="how">
   <div class="wrap">
-    <div class="st-rows">
-
-      <div class="st-row reveal">
-        <div class="st-row-text">
-          <p class="st-num">01</p>
-          <h2>You type a sentence</h2>
-          <p>"A habit tracker that saves my streaks." "A tip splitter for dinners."
-          No templates, no starter projects, no framework to pick. The thing you
-          describe is the thing you get.</p>
-        </div>
-        <div class="st-row-art">
-          <div class="st-mock st-mock-prompt">
-            <span class="st-caret-line">A habit tracker that saves my streaks<span class="st-caret"></span></span>
-          </div>
-        </div>
-      </div>
-
-      <div class="st-row reveal">
-        <div class="st-row-text">
-          <p class="st-num">02</p>
-          <h2>You watch it being made</h2>
-          <p>Every step in plain words, with the raw engine output one click away if
-          you want it. Stop whenever you like -- it stops the AI too, so nothing
-          keeps running against your account.</p>
-        </div>
-        <div class="st-row-art">
-          <div class="st-mock st-mock-steps">
-            <p><span class="st-tick"></span>Understanding what you asked for</p>
-            <p><span class="st-tick"></span>Writing the app</p>
-            <p><span class="st-tick"></span>Checking it only uses Krate APIs</p>
-            <p><span class="st-live"></span>Building</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="st-row reveal">
-        <div class="st-row-text">
-          <p class="st-num">03</p>
-          <h2>You change it by asking</h2>
-          <p>"Make the button blue." The file carries its own source, so the AI edits
-          the app you have instead of rebuilding it from scratch. Come back next week
-          after someone gives you feedback and pick up where you left off.</p>
-        </div>
-        <div class="st-row-art">
-          <div class="st-mock st-mock-chat">
-            <p class="st-you">make the total bigger and bold</p>
-            <p class="st-krate">Reading your app, then making that change.</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="st-row reveal">
-        <div class="st-row-text">
-          <p class="st-num">04</p>
-          <h2>You send it to someone</h2>
-          <p>One file. They double-click it. It shows them exactly what it is allowed
-          to do before it does anything -- and the runtime enforces that list, not the
-          app's promises.</p>
-        </div>
-        <div class="st-row-art">
-          <div class="st-mock st-mock-caps">
-            <p class="st-cap-h">This app can</p>
-            <p><span class="st-bullet"></span>Open a window</p>
-            <p><span class="st-bullet"></span>Save its own settings</p>
-            <p class="st-cap-note">Nothing else. Not your files, not the network.</p>
-          </div>
-        </div>
-      </div>
-
+    <div class="st-proof-head reveal">
+      <p class="st-num">FROM IDEA TO A REAL APP</p>
+      <h2>One place to make it, change it and send it.</h2>
+    </div>
+    <div class="st-proof-grid">
+      <article class="st-proof reveal">
+        <p class="st-num">01</p>
+        <h3>Ask for the app</h3>
+        <p>No starter project and no framework choice. Describe the useful thing you
+        need. Your AI writes the app while Studio shows what is happening.</p>
+      </article>
+      <article class="st-proof reveal">
+        <p class="st-num">02</p>
+        <h3>Change it by asking</h3>
+        <p>The file carries its source. Ask for a change tomorrow and the AI edits
+        the app you already have instead of starting again.</p>
+      </article>
+      <article class="st-proof reveal">
+        <p class="st-num">03</p>
+        <h3>Send one file</h3>
+        <p>The receiver sees what the app wants before it runs. Krate gives it only
+        that access, then opens the same file on all three desktop systems.</p>
+      </article>
     </div>
   </div>
 </section>
@@ -136,8 +171,8 @@
         <span class="tag-beta">pre-beta</span>
       </div>
       <p class="st-get-sub">Early build. It works, and it changes often. If something
-      breaks or feels wrong, that is worth telling us -- this is the stage where it
-      is easiest to fix.</p>
+      breaks or feels wrong, tell us. This is the stage where it is easiest to
+      fix.</p>
 
       <div class="st-dl-grid">
         <a class="dl" data-dl="krate-studio|aarch64-apple-darwin|dmg" href="https://github.com/incyashraj/krate/releases/latest">
@@ -155,7 +190,7 @@
       <div class="st-honest">
         <p class="st-honest-h">What to expect</p>
         <ul>
-          <li>The studio installs the Krate runtime with it -- there is nothing else
+          <li>The studio installs the Krate runtime with it. There is nothing else
           to set up.</li>
           <li>You need an AI it can drive. Claude, Codex, Gemini and Copilot all work,
           and the studio can install one for you.</li>
@@ -210,6 +245,55 @@
     setTimeout(function () {
       items.forEach(function (el) { el.classList.add("in"); });
     }, 1200);
+  }
+
+  /* A real Studio journey, shown inside the product itself. This is not a
+     video, so it stays sharp at every size and the user can replay it. */
+  var demo = document.getElementById("studioDemo");
+  if (demo) {
+    var prompt = "Make a personal finance dashboard that tracks spending and saves locally.";
+    var target = demo.querySelector(".st-type-target");
+    var timeline = demo.querySelectorAll(".st-demo-timeline span");
+    var timers = [];
+    var typingTimer;
+
+    function setDemoStep(step, index) {
+      demo.dataset.step = step;
+      timeline.forEach(function (item, i) { item.classList.toggle("active", i <= index); });
+    }
+
+    function later(fn, delay) {
+      var id = setTimeout(fn, delay);
+      timers.push(id);
+    }
+
+    function playDemo() {
+      timers.forEach(clearTimeout);
+      timers = [];
+      clearInterval(typingTimer);
+      target.textContent = "";
+      setDemoStep("prompt", 0);
+
+      if (reduced) {
+        target.textContent = prompt;
+        setDemoStep("share", 3);
+        return;
+      }
+
+      var letter = 0;
+      typingTimer = setInterval(function () {
+        target.textContent = prompt.slice(0, letter++);
+        if (letter > prompt.length) clearInterval(typingTimer);
+      }, 25);
+
+      later(function () { setDemoStep("build", 1); }, 2600);
+      later(function () { setDemoStep("done", 2); }, 7000);
+      later(function () { setDemoStep("share", 3); }, 10400);
+      later(playDemo, 15000);
+    }
+
+    demo.querySelector(".st-demo-replay").addEventListener("click", playDemo);
+    playDemo();
   }
 
   /* Download links resolved to the current release.
