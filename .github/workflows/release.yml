@@ -220,12 +220,43 @@ jobs:
           npm install -g @tauri-apps/cli@^2
           mkdir -p studio/bin
           cp "target/${{ matrix.target }}/release/krate" studio/bin/krate
-          (cd studio && tauri build --bundles dmg --target ${{ matrix.target }})
+          # Let Tauri sign the bundle while it builds it.
+          #
+          # Signing the .app afterwards and then asking Tauri for the .dmg
+          # does NOT work: the dmg build re-runs the app bundling and
+          # overwrites the signature. Measured -- the resulting dmg still
+          # contained a "linker-signed" app with zero resource hashes.
+          #
+          # Without a coherent signature the bundle carries only the
+          # linker's automatic one, which claims no resources. As soon as the
+          # bundle has resources (the engine in Contents/Resources/bin, the
+          # icon) Gatekeeper reports "code has no resources but signature
+          # indicates they must be present", and a quarantined download is
+          # refused with "Krate is damaged and can't be opened." A real
+          # person hit exactly that, and it reads as a corrupt file rather
+          # than as an unsigned app.
+          #
+          # `-` is ad-hoc. It does not clear Gatekeeper on its own -- that
+          # needs a Developer ID certificate, which is tracked separately --
+          # but it produces a VALID signature, so the app is refused honestly
+          # ("Apple could not verify") rather than called damaged.
+          export APPLE_SIGNING_IDENTITY="-"
+          (cd studio && tauri build --bundles app,dmg --target ${{ matrix.target }})
+
+          app=$(find studio/target -name 'Krate Studio.app' -type d -print -quit)
+          if [ -n "$app" ]; then
+            # Fail the step if the signature is not coherent: shipping a
+            # bundle that macOS calls damaged is worse than shipping no
+            # studio at all.
+            codesign --verify --strict --verbose=2 "$app"
+          fi
+
           # One predictable name, matching what the site's links build.
           mkdir -p dist
           src=$(find studio/target -name '*.dmg' -print -quit)
           if [ -n "$src" ]; then
             cp "$src" "dist/krate-studio-${version}-${{ matrix.target }}.dmg"
+          fi
           fi
 
       # Sign and notarize, so Gatekeeper lets a downloaded build open without
