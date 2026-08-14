@@ -154,7 +154,28 @@ async function publish(request, env) {
   }
 
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
-  const result = { url: `${base}/a/${hash}`, id: hash };
+
+  // A short link people can actually read out loud. The 64-hex URL is the
+  // content address and works forever -- every link already sent stays
+  // valid -- but nobody pastes 64 characters into a chat happily. The alias
+  // is the hash's own prefix, so it is stable across republishes of the
+  // same bytes; on the astronomically unlikely prefix collision, widen once,
+  // then fall back to the full hash rather than ever serving the wrong app.
+  let short = hash;
+  try {
+    for (const len of [12, 16]) {
+      const candidate = hash.slice(0, len);
+      const taken = await env.APPS.get(`alias:${candidate}`);
+      if (!taken || taken === hash) {
+        await env.APPS.put(`alias:${candidate}`, hash);
+        short = candidate;
+        break;
+      }
+    }
+  } catch (e) {
+    // Alias minting is a nicety; quota trouble must not fail a publish.
+  }
+  const result = { url: `${base}/a/${short}`, full_url: `${base}/a/${hash}`, id: hash };
   if (!listed) {
     result.note =
       "published and runnable at the URL, but the gallery listing is " +
@@ -218,8 +239,16 @@ function classifyClient(request) {
 }
 
 async function fetchBundle(request, url, hash, env) {
-  // The hash is the object key, so it must be a bare hex string. Rejecting
-  // anything else closes off every path-traversal shape at once.
+  // A short link is the hash's own prefix; resolve it to the full content
+  // address first. The strict hex checks stay -- they are the guard that
+  // closes off every path-traversal shape at once.
+  if (/^[0-9a-f]{8,32}$/.test(hash)) {
+    const full = await env.APPS.get(`alias:${hash}`);
+    if (!full) {
+      return text("not found", 404);
+    }
+    hash = full;
+  }
   if (!/^[0-9a-f]{64}$/.test(hash)) {
     return text("not found", 404);
   }

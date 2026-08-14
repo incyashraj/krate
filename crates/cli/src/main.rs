@@ -258,6 +258,20 @@ enum Command {
     Version,
     /// Check the local development environment.
     Doctor,
+    /// Your Krate account: who is signed in, sign in, sign out. Sign-in is
+    /// GitHub's device flow -- a code, a browser page, and the wait ends the
+    /// moment you approve it there.
+    Account {
+        #[command(subcommand)]
+        action: Option<AccountAction>,
+
+        /// Machine-readable output. For `account`, one JSON object of who is
+        /// signed in; for `account login`, one JSON line per step so a
+        /// frontend can show the code and flip the instant approval lands.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Show which AI coding tools are installed, so you know what you can
     /// author apps with. Reads nothing but your PATH.
     Ai {
@@ -448,6 +462,12 @@ enum Command {
         #[arg(long)]
         work_dir: Option<PathBuf>,
 
+        /// Give the AI a file along with the request -- a sketch, a CSV, a
+        /// logo, anything that says more than the sentence can. Repeatable.
+        /// Needs --agent: the built-in templates cannot read them.
+        #[arg(long = "attach", value_name = "FILE")]
+        attachments: Vec<PathBuf>,
+
         /// Answer yes to the toolchain-install prompt: if the Rust build tools
         /// `create` needs are missing, install them without asking.
         #[arg(long)]
@@ -583,6 +603,11 @@ enum Command {
         #[arg(long, default_value = "claude")]
         agent: String,
 
+        /// Give the AI a file along with the change -- a screenshot of the
+        /// problem, the review you received, a mockup. Repeatable.
+        #[arg(long = "attach", value_name = "FILE")]
+        attachments: Vec<PathBuf>,
+
         /// Write the changed app here instead of updating the file in place.
         #[arg(long)]
         output: Option<PathBuf>,
@@ -648,6 +673,14 @@ fn resolve_agent(name: &str) -> Result<&'static dyn agent_provider::AgentProvide
         anyhow::bail!(agent_provider::missing_cli_error(provider));
     }
     Ok(provider)
+}
+
+#[derive(Debug, Subcommand)]
+enum AccountAction {
+    /// Sign in with GitHub.
+    Login,
+    /// Forget the stored sign-in on this machine.
+    Logout,
 }
 
 #[derive(Debug, Subcommand)]
@@ -914,11 +947,31 @@ fn run() -> Result<u8> {
             name,
             transcript,
             work_dir,
+            attachments,
             yes,
             no_install,
             json,
             force,
-        } => create_krate(CreateRequest {
+        } => {
+            if !attachments.is_empty() {
+                // Attachments ride the same path the interactive menu uses:
+                // staged beside the code, named in the prompt, and the stable
+                // builds workspace so a retry resumes rather than restarts.
+                let Some(agent) = agent else {
+                    anyhow::bail!(
+                        "--attach needs --agent: the built-in templates cannot read files.                          Try again with --agent claude."
+                    );
+                };
+                for file in &attachments {
+                    if !file.exists() {
+                        anyhow::bail!("attached file {} does not exist", file.display());
+                    }
+                }
+                let provider = resolve_agent(&agent)?;
+                author_app_for_tui(&request, provider, &output, &attachments)?;
+                return Ok(0);
+            }
+            create_krate(CreateRequest {
             request,
             output,
             // --agent is the clean front door; it resolves to the command that
@@ -938,7 +991,8 @@ fn run() -> Result<u8> {
             no_install,
             json,
             force,
-        }),
+            })
+        }
         Command::Report { report, show } => run_report_command(&report, show),
         Command::Port {
             source,
@@ -971,14 +1025,16 @@ fn run() -> Result<u8> {
             bundle,
             change,
             agent,
+            attachments,
             output,
-        } => revise_cli(&bundle, &change, &agent, output.as_deref()),
+        } => revise_cli(&bundle, &change, &agent, &attachments, output.as_deref()),
         Command::AuthorAgent { agent } => run_author_agent(&agent),
         Command::Version => {
             print_version();
             Ok(0)
         }
         Command::Doctor => doctor(),
+        Command::Account { action, json } => account_command(action, json),
         Command::Ai { json } => ai_status(json),
         Command::Connect { app, yes, dry_run } => connect(app.as_deref(), yes, dry_run),
         Command::CheckApp {
@@ -2756,7 +2812,18 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
 /// history's original request plus the change; failing that, build fresh
 /// from the change alone. The studio's every-message-after-the-first goes
 /// through here, which is the point -- one revision path, three faces.
-fn revise_cli(bundle: &Path, change: &str, agent: &str, output: Option<&Path>) -> Result<u8> {
+fn revise_cli(
+    bundle: &Path,
+    change: &str,
+    agent: &str,
+    attachments: &[PathBuf],
+    output: Option<&Path>,
+) -> Result<u8> {
+    for file in attachments {
+        if !file.exists() {
+            anyhow::bail!("attached file {} does not exist", file.display());
+        }
+    }
     if !bundle.exists() {
         anyhow::bail!("{} does not exist", bundle.display());
     }
@@ -2766,7 +2833,7 @@ fn revise_cli(bundle: &Path, change: &str, agent: &str, output: Option<&Path>) -
     match bundle_source_dir(bundle)? {
         Some(source) => {
             println!("==> changing the app in its own source");
-            revise_app_for_tui(&source, change, provider, out, &[])?;
+            revise_app_for_tui(&source, change, provider, out, attachments)?;
         }
         None => {
             // An older bundle with no source inside: restate the whole app.
@@ -2883,6 +2950,52 @@ pub(crate) fn revise_app_for_tui(
         Ok(())
     } else {
         Err(anyhow::anyhow!("the change could not be applied"))
+    }
+}
+
+/// `krate account`: who is signed in; `login` and `logout` change it.
+fn account_command(action: Option<AccountAction>, json: bool) -> Result<u8> {
+    match action {
+        None => {
+            let identity = github_auth::current();
+            if json {
+                let value = match &identity {
+                    Some(id) => serde_json::json!({
+                        "signed_in": true,
+                        "login": id.login,
+                        "name": id.name,
+                        "avatar_url": id.avatar_url,
+                    }),
+                    None => serde_json::json!({ "signed_in": false }),
+                };
+                println!("{value}");
+            } else {
+                match identity {
+                    Some(id) => println!("signed in as {}", id.display_name()),
+                    None => println!("not signed in -- `krate account login` to sign in"),
+                }
+            }
+            Ok(0)
+        }
+        Some(AccountAction::Login) => {
+            if json {
+                github_auth::sign_in_json()?;
+            } else {
+                github_auth::sign_in()?;
+            }
+            Ok(0)
+        }
+        Some(AccountAction::Logout) => {
+            let was = github_auth::sign_out()?;
+            if json {
+                println!("{}", serde_json::json!({ "signed_out": was }));
+            } else if was {
+                println!("signed out");
+            } else {
+                println!("nobody was signed in");
+            }
+            Ok(0)
+        }
     }
 }
 
