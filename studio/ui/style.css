@@ -50,7 +50,7 @@
   /* macOS overlays its traffic lights on our content; a fixed strip height
      and a reserved run mean the top of the window is aligned by
      construction, not by a per-screen padding guess. */
-  --titlebar: 52px;
+  --titlebar: 60px;
   --lights: 78px;
   --rail: 320px;
 }
@@ -137,13 +137,27 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 /* ---- titlebar --------------------------------------------------------- */
 
 .titlebar {
+  position: relative;
   height: var(--titlebar); flex: none;
   display: flex; align-items: center; gap: 12px;
   padding: 0 16px 0 var(--lights);
   border-bottom: 1px solid var(--line);
   -webkit-app-region: drag;
 }
-.titlebar > * { -webkit-app-region: no-drag; }
+/* A drag layer covering the whole strip, behind the controls. Relying on
+   the bar's own background left only the gaps between elements grabbable,
+   so the window was effectively immovable by mouse. */
+.titlebar::before {
+  content: "";
+  position: absolute; inset: 0;
+  -webkit-app-region: drag;
+  z-index: 0;
+}
+.titlebar > * { position: relative; z-index: 1; }
+/* Only the CONTROLS opt out of dragging. The blanket `.titlebar > *` rule
+   also un-dragged the brand and the title text, which left barely any
+   grabbable strip -- the window could not be moved with the mouse. */
+.titlebar > button, .titlebar > .agent-chip { -webkit-app-region: no-drag; }
 .titlebar .spacer { flex: 1; height: 100%; -webkit-app-region: drag; }
 
 .brand {
@@ -216,7 +230,7 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
   font-family: var(--mono); font-size: 38px; font-weight: 500;
   letter-spacing: 0.18em; margin: 16px 0 6px;
 }
-.gate-sweep { width: 180px; margin: 0 auto; }
+.gate-sweep { width: 160px; margin: 14px auto 0; opacity: 0.9; }
 .gate-error { color: var(--danger); font-size: 13px; margin-top: 16px; }
 
 /* ---- home ------------------------------------------------------------- */
@@ -668,3 +682,47 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
 .build-card { --bloom-color: rgba(98,145,255,0.34); }
 .build-card.bloom::before { left: 6%; right: 6%; bottom: -8px; height: 46%; }
 .done-card { --bloom-color: rgba(108,244,215,0.28); }
+
+/* ---- the build that is still running --------------------------------- */
+
+/* A build keeps going while you browse, and without this the home screen
+   looked idle -- then the next request was refused with "one app is already
+   being made" and there was no way to reach it. */
+.building-now {
+  width: min(940px, 100%);
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 6vh;
+  padding: 13px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.building-now:hover { border-color: rgba(255,255,255,0.34); color: var(--text); }
+.building-now .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.building-now b { color: var(--text); font-weight: 500; }
+.building-now .go { color: var(--faint); font-size: 12px; flex: none; }
+.building-now .pulse {
+  width: 7px; height: 7px; flex: none; border-radius: 50%;
+  background: var(--blue);
+  animation: livepulse 1.6s ease-in-out infinite;
+}
+
+/* ---- the account sheet ------------------------------------------------ */
+
+.sheet-account { text-align: center; align-items: center; }
+.account-avatar { width: 56px; height: 56px; border-radius: 50%; }
+.sheet-actions { display: flex; gap: 9px; justify-content: center; margin-top: 6px; }
+
+/* The one step happening now, at eye level. The full list moved behind the
+   details disclosure: the chat narrates the story, so the stage does not
+   need to repeat all five lines. */
+.now-stage {
+  font-size: 14px; color: var(--text);
+  margin: 22px 0 0;
+}
+.build-log-wrap .stages { margin: 12px 0; }

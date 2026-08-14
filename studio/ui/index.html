@@ -73,6 +73,12 @@
         </div>
       </div>
 
+      <button class="building-now reveal hidden" id="buildingNow">
+        <span class="pulse"></span>
+        <span class="grow">Making <b id="buildingNowTitle"></b></span>
+        <span class="go">Open →</span>
+      </button>
+
       <section class="apps reveal" id="appsSection">
         <div class="apps-head"><h2 class="label">Your apps</h2></div>
         <div class="apps-grid" id="appsGrid"></div>
@@ -121,10 +127,11 @@
             </div>
             <p class="build-elapsed"><span id="elapsed">0:00</span> · <span id="buildExpect">usually a few minutes</span></p>
             <div class="progress build-progress"><div class="fill" id="buildFill"></div></div>
-            <ol class="stages" id="stages"></ol>
+            <p class="now-stage" id="nowStage">Understanding what you asked for</p>
             <p class="now-line"><span id="nowLine">warming up…</span><span class="caret"></span></p>
             <details class="build-log-wrap">
               <summary>every step, in detail</summary>
+              <ol class="stages" id="stages"></ol>
               <pre class="build-log" id="buildLog"></pre>
             </details>
             <button class="btn btn-ghost stop" id="stopBtn">Stop</button>
@@ -178,6 +185,20 @@
     </div>
   </div>
 
+  <div class="sheet-wrap hidden" id="accountSheet">
+    <div class="sheet sheet-account">
+      <img class="account-avatar hidden" id="accountAvatar" alt="" />
+      <h2 id="accountName">Signed in</h2>
+      <p class="sheet-sub" id="accountLogin"></p>
+      <p class="sheet-foot">Your account credits the apps you publish. Krate
+      never sees your password — GitHub asks you directly.</p>
+      <div class="sheet-actions">
+        <button class="btn btn-ghost sheet-close" data-close="accountSheet">Close</button>
+        <button class="btn" id="logoutBtn">Sign out</button>
+      </div>
+    </div>
+  </div>
+
   <div class="sheet-wrap hidden" id="settingsSheet">
     <div class="sheet">
       <h2>Settings</h2>
@@ -187,13 +208,6 @@
           <p class="setting-value" id="outDirValue"></p>
         </div>
         <button class="btn" id="changeDirBtn">Change</button>
-      </div>
-      <div class="setting-row">
-        <div>
-          <p class="setting-name">Account</p>
-          <p class="setting-value" id="accountValue"></p>
-        </div>
-        <button class="btn" id="logoutBtn">Sign out</button>
       </div>
       <button class="btn btn-ghost sheet-close" data-close="settingsSheet">Close</button>
     </div>

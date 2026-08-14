@@ -273,8 +273,13 @@ async fn agents() -> Result<Vec<AgentInfo>, String> {
 async fn pick_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     let (tx, rx) = std::sync::mpsc::channel();
     app.run_on_main_thread(move || {
+        // Start in the person's Documents, never wherever macOS last was.
+        // Without a directory the picker can open in Photos or Downloads,
+        // and macOS then demands access to that library on the spot -- an
+        // alarming prompt from an app that only wanted a file they pick.
         let picked = rfd::FileDialog::new()
             .set_title("Attach files for the AI to read")
+            .set_directory(dirs_home().join("Documents"))
             .pick_files()
             .unwrap_or_default();
         let _ = tx.send(picked);
@@ -292,6 +297,7 @@ async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
     app.run_on_main_thread(move || {
         let picked = rfd::FileDialog::new()
             .set_title("Where finished apps are saved")
+            .set_directory(dirs_home().join("Documents"))
             .pick_folder();
         let _ = tx.send(picked);
     })

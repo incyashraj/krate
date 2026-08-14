@@ -135,6 +135,18 @@ async function enterHome() {
   state.outDir = settings.out_dir;
   state.agent = settings.agent || "claude";
   renderSessions(await invoke("sessions_list"));
+  renderBuilding();
+}
+
+/* A build keeps running while you browse. Without this the home screen looked
+ * idle, the next request was refused with "one app is already being made",
+ * and there was no way to reach the build to stop it. */
+function renderBuilding() {
+  const bar = $("buildingNow");
+  if (!bar) return;
+  const live = state.phase === "building" && state.buildingSession;
+  bar.classList.toggle("hidden", !live);
+  if (live) $("buildingNowTitle").textContent = state.buildingSession.title;
 }
 
 function renderAccount() {
@@ -321,13 +333,25 @@ function beginBuild(title, expect) {
   show("building");
 }
 
+const STAGE_SAID = {
+  build: "The code is written. Building it now.",
+  wall: "Built. Checking it only touches what it declared.",
+};
+
 function advanceStage(key) {
   const idx = STAGES.findIndex((s) => s.key === key);
   if (idx <= state.stageIndex) return;
   state.stageIndex = idx;
+  // Two milestones worth saying out loud. Not five -- a chat that narrates
+  // every step is noise, and the stage list already shows all of them.
+  if (STAGE_SAID[key] && state.session) say("KRATE", STAGE_SAID[key]);
   document.querySelectorAll("#stages li").forEach((li, i) => {
     li.className = i < idx ? "done" : i === idx ? "now" : "";
   });
+  // One line at eye level says where we are; the full list stays one click
+  // away for anyone who wants it.
+  const nowStage = $("nowStage");
+  if (nowStage) nowStage.textContent = STAGES[idx].label;
   setProgress((idx + 0.5) / STAGES.length);
 }
 
@@ -412,7 +436,8 @@ function finishBuild(result) {
   state.session.result = result;
   fillDone(result, { reveal: true });
   const mins = Math.round((Date.now() - state.startedAt) / 60000);
-  say("KRATE", `done · ${result.name} · ${result.size}${mins ? ` · ${mins} min` : ""}`);
+  say("KRATE", `Done — ${result.name}, ${result.size}${mins ? `, ${mins} min` : ""}. ` +
+    `Open it on the right, or tell me what to change.`);
   show("done");
   setRevisePlaceholders();
   persist();
@@ -471,7 +496,14 @@ async function make(request) {
   $("prompt").value = "";
   $("send").disabled = true;
 
+  state.buildingSession = state.session;
   const revising = Boolean(currentApp());
+  // The rail is a conversation: it should answer. Without this the left
+  // side showed one line and then nothing for six minutes while the right
+  // side did all the talking.
+  say("KRATE", revising
+    ? "Reading your app, then making that change."
+    : "On it. I'll show you each step as it happens.");
   beginBuild(
     revising ? "Making your change" : "Making your app",
     revising ? "the AI reads your app before it edits" : "usually a few minutes",
@@ -496,6 +528,7 @@ async function make(request) {
   } catch (err) {
     failBuild(plainWords(err), request);
   } finally {
+    state.buildingSession = null;
     $("send").disabled = false;
   }
 }
@@ -691,8 +724,19 @@ async function share() {
 
 async function openSettings() {
   $("outDirValue").textContent = state.outDir;
-  $("accountValue").textContent = state.account ? (state.account.name || state.account.login) : "";
   $("settingsSheet").classList.remove("hidden");
+}
+
+/* Two buttons that opened one sheet is two buttons too many. The account is
+ * about who you are; settings is about where things go. */
+function openAccount() {
+  const a = state.account || {};
+  $("accountName").textContent = a.name || a.login || "Signed in";
+  $("accountLogin").textContent = a.login ? "@" + a.login : "";
+  const img = $("accountAvatar");
+  if (a.avatar_url) { img.src = a.avatar_url; img.classList.remove("hidden"); }
+  else { img.classList.add("hidden"); }
+  $("accountSheet").classList.remove("hidden");
 }
 
 /* ---- wiring ----------------------------------------------------------- */
@@ -765,8 +809,11 @@ $("retryBtn").addEventListener("click", () => {
   const chip = $(id);
   if (chip) chip.addEventListener("click", openAiSheet);
 });
+$("buildingNow")?.addEventListener("click", () => {
+  if (state.buildingSession) openSession(state.buildingSession);
+});
 $("settingsBtn").addEventListener("click", openSettings);
-$("accountBtn").addEventListener("click", openSettings);
+$("accountBtn").addEventListener("click", openAccount);
 $("changeDirBtn").addEventListener("click", async () => {
   const dir = await invoke("pick_folder");
   if (dir) {

@@ -38,6 +38,9 @@
     "resources": [
       "bin/krate"
     ],
-    "externalBin": []
+    "externalBin": [],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    }
   }
 }
