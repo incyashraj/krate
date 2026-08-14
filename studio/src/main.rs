@@ -462,6 +462,23 @@ fn run_author(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
+
+    // Give the agent its own config directory, with no history in it.
+    //
+    // This is what actually caused "Krate Studio would like to access files
+    // in your Downloads folder". Claude Code reads ~/.claude.json at
+    // startup, which holds every project the person has ever opened -- two
+    // of them under Downloads on this machine -- and stats those paths. It
+    // happens inside our process, so macOS names US in the prompt.
+    //
+    // Neither setting the file picker's directory nor setting the child's
+    // cwd fixed it, because the dialog and the cwd were never the cause. A
+    // private CLAUDE_CONFIG_DIR means the agent starts with no project
+    // history and therefore no reason to touch anything outside its
+    // workspace. The person's own terminal history is untouched.
+    let agent_home = studio_dir().join("agent");
+    let _ = std::fs::create_dir_all(&agent_home);
+    cmd.env("CLAUDE_CONFIG_DIR", &agent_home);
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

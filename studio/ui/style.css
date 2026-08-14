@@ -734,20 +734,56 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
    you want to make?" is what every other tool asks; this says what Krate
    is for. Measured off the site and rebuilt to the same numbers. */
 .rot { position: relative; display: inline-block; white-space: nowrap; }
-.rot .word { display: inline-block; }
-.rot .word span { display: inline-block; will-change: transform, opacity, filter; }
-.rot .bar {
-  position: absolute; left: 0; right: 0; bottom: -8px;
-  height: 3px;
-  border-radius: var(--radius-pill);
+
+/* The colour lives IN the word, not on a rule beneath it. An underline
+   reads as a progress bar that never finishes -- the word itself carrying
+   a slow travelling gradient says the same thing and looks like language
+   rather than chrome.
+
+   The gradient is painted on the .word (one continuous run across the whole
+   word) and clipped to the glyphs; the per-letter spans inherit it, so the
+   colour does not restart at every character. */
+.rot .word {
+  display: inline-block;
   background-image: linear-gradient(90deg,
-    rgba(255,255,255,0.25) 0%, rgba(255,255,255,0.25) 35%,
-    #6366f1 40%, #a855f7 45%, #ec4899 50%, #f97316 55%, #eab308 60%,
-    rgba(255,255,255,0.25) 65%, rgba(255,255,255,0.25) 100%);
-  background-size: 300% 100%;
-  animation: sweep 3.2s linear infinite;
+    #a9c2ff 0%, #6366f1 18%, #a855f7 34%, #ec4899 50%,
+    #f97316 66%, #eab308 82%, #a9c2ff 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: wordflow 5.5s linear infinite;
 }
-@media (prefers-reduced-motion: reduce) { .rot .bar { animation: none; } }
+/* The rotator replaces .word's contents with one span per letter, and a
+   background clipped to text does NOT reach through to child elements --
+   the letters rendered fully transparent and the word vanished. Each letter
+   carries the gradient itself, positioned so the run still reads as one
+   continuous sweep across the word rather than restarting per character. */
+.rot .word span {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+  /* Named, not inherited: `background-image: inherit` resolved to none
+     here, so the letters had no gradient to clip and stayed invisible. */
+  background-image: linear-gradient(90deg,
+    #a9c2ff 0%, #6366f1 18%, #a855f7 34%, #ec4899 50%,
+    #f97316 66%, #eab308 82%, #a9c2ff 100%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: wordflow 5.5s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rot .word span { animation: none; background-position: 40% 0; }
+}
+@keyframes wordflow {
+  0% { background-position: 0% 0; }
+  100% { background-position: -220% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rot .word { animation: none; background-position: 40% 0; }
+}
 
 /* ---- the draggable divider -------------------------------------------- */
 

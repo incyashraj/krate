@@ -771,17 +771,23 @@ function startRotator() {
         sp.style.opacity = "0";
         sp.style.transform = "translateY(14px)";
         sp.style.filter = "blur(4px)";
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            sp.style.opacity = "1";
-            sp.style.transform = "none";
-            sp.style.filter = "none";
-          }),
-        );
+        // A timeout, not a double rAF. The word sits inside a .reveal block
+        // that starts hidden, and rAF callbacks for an offscreen/hidden
+        // subtree do not reliably fire -- the letters stayed at opacity 0
+        // with the entering styles applied and the word was invisible.
+        // A timer always runs.
+        setTimeout(() => {
+          sp.style.opacity = "1";
+          sp.style.transform = "none";
+          sp.style.filter = "none";
+        }, 20);
       }
       el.appendChild(sp);
     });
   };
+  // The first word never animates in: it is already on screen when the
+  // page reveals, and a first paint at opacity 0 is just an invisible
+  // headline.
   setWord(ROT_WORDS[0], false);
   setInterval(() => {
     [...el.children].forEach((sp, i) => {
