@@ -124,7 +124,7 @@ async function login() {
   } catch (err) {
     $("gateStart").classList.remove("hidden");
     $("gateCode").classList.add("hidden");
-    $("gateError").textContent = plainWords(err);
+    $("gateError").textContent = signInWords(err);
     $("gateError").classList.remove("hidden");
   } finally {
     $("loginBtn").disabled = false;
@@ -573,6 +573,29 @@ async function make(request) {
   }
 }
 
+/* Sign-in failures, in sign-in words.
+ *
+ * These used to run through plainWords(), the BUILD error translator, so a
+ * failed login said "Something in the build went wrong" on a screen with no
+ * build on it. A person reading that has no idea what to do, and clicking
+ * again does nothing -- which is exactly what happened to the first people
+ * who tried it. */
+function signInWords(err) {
+  const text = String(err && err.message ? err.message : err || "");
+  if (/unexpected argument|unrecognized|usage:/i.test(text))
+    return "This copy of Krate Studio and the Krate engine disagree. Update both from krate.tech.";
+  if (/could not run|could not start|No such file/i.test(text))
+    return "The Krate engine is missing from this install. Reinstall Krate Studio from krate.tech.";
+  if (/network|offline|dns|connect|timed out|resolve/i.test(text))
+    return "GitHub could not be reached. Check your connection and try again.";
+  if (/denied|expired|declined/i.test(text))
+    return "The sign-in was not approved in time. Press the button to get a new code.";
+  // Anything else: show what actually happened rather than inventing a
+  // reason. An unfamiliar error a person can read out is worth more than a
+  // reassuring sentence that is wrong.
+  return text.trim() ? `Sign-in failed: ${text.trim()}` : "Sign-in failed. Try again.";
+}
+
 function plainWords(err) {
   const text = String(err && err.message ? err.message : err);
   if (text === "stopped") return "stopped";
@@ -692,6 +715,24 @@ function openAiSheet() {
   }
   $("aiSheet").classList.remove("hidden");
 }
+
+/* Re-check the AIs when the window comes back.
+ *
+ * Someone who signs in to their AI, or installs one, in another window should
+ * not have to restart the studio to be noticed -- "not installed" while it is
+ * plainly installed is the single most confusing thing this app can say.
+ * Re-checking on focus makes the fix take effect the moment they come back,
+ * with no button to find.
+ *
+ * Throttled: the probe actually runs each tool, so doing it on every focus
+ * event would spawn processes every time the window is touched. */
+let lastAgentCheck = 0;
+window.addEventListener("focus", () => {
+  const now = Date.now();
+  if (now - lastAgentCheck < 5000) return;
+  lastAgentCheck = now;
+  refreshAgents();
+});
 
 /* ---- attachments ------------------------------------------------------ */
 

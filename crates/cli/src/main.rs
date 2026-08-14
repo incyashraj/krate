@@ -695,7 +695,13 @@ fn resolve_agent(name: &str) -> Result<&'static dyn agent_provider::AgentProvide
 #[derive(Debug, Subcommand)]
 enum AccountAction {
     /// Sign in with GitHub.
-    Login,
+    Login {
+        /// Emit each step as JSON. Accepted here as well as on `account`,
+        /// because `krate account login --json` is what a shipped Krate
+        /// Studio sends, and rejecting it made signing in impossible.
+        #[arg(long)]
+        json: bool,
+    },
     /// Forget the stored sign-in on this machine.
     Logout,
 }
@@ -3024,8 +3030,8 @@ fn account_command(action: Option<AccountAction>, json: bool) -> Result<u8> {
             }
             Ok(0)
         }
-        Some(AccountAction::Login) => {
-            if json {
+        Some(AccountAction::Login { json: login_json }) => {
+            if json || login_json {
                 github_auth::sign_in_json()?;
             } else {
                 github_auth::sign_in()?;
@@ -5230,6 +5236,13 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
 
     let shell = author_shell();
     let mut command = std::process::Command::new(shell);
+    // The same environment repair the readiness probe uses.
+    //
+    // Detecting the tool and running it have to agree: an app launched from
+    // Finder has neither the PATH these CLIs install into nor, reliably, USER
+    // -- and Claude Code needs USER to reach its keychain. Without this the
+    // studio could report an AI as working and then fail to author with it.
+    agent_provider::with_tool_path(&mut command);
     command
         .arg("-c")
         .arg(ctx.cmd)

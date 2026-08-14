@@ -228,7 +228,6 @@ jobs:
           # anyway, and an ad-hoc signature left in the bundle is precisely
           # what the notary service rejects.
           (cd studio && tauri build --bundles app --no-sign --target ${{ matrix.target }})
-          fi
 
       # Sign and notarize, so Gatekeeper lets a downloaded build open without
       # a right-click workaround. Ad-hoc signing plus curl setting no
@@ -462,10 +461,27 @@ jobs:
             rm -f "$out"
             hdiutil create -volname "Krate Studio" -srcfolder /tmp/dmgroot \
               -ov -format UDZO "$out"
-            # Sign the disk image itself, so the download is verifiable
-            # before it is even opened, and staple the ticket to it.
+            # Sign the disk image, then notarize the IMAGE and staple the
+            # ticket to it.
+            #
+            # Stapling a .dmg that was never itself submitted fails with
+            # "Record not found ... The staple and validate action failed!
+            # Error 65" -- the app inside was notarized, but a ticket belongs
+            # to the thing that was submitted, and the disk image is a
+            # separate artifact. The app is already stapled, so this is
+            # belt-and-braces: it lets Gatekeeper clear the image before it is
+            # even mounted.
             codesign --force --timestamp --sign "$IDENTITY" "$out" || true
-            xcrun stapler staple "$out" || true
+            if xcrun notarytool submit "$out" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --wait; then
+              xcrun stapler staple "$out" || true
+            else
+              echo "::warning::the .dmg itself was not notarized; the app"
+              echo "inside it is, so it still opens."
+            fi
           fi
 
       - name: Upload packaged artifact

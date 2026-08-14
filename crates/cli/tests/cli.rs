@@ -4194,6 +4194,38 @@ fn an_unknown_agent_name_lists_the_supported_providers() {
     );
 }
 
+/// `account login --json` must be accepted, in both flag positions.
+///
+/// Krate Studio sends `account login --json`. The flag was defined only on the
+/// parent `account` command, so the engine answered "unexpected argument
+/// '--json' found" and exited -- signing in was impossible in every shipped
+/// build, and the studio reported it as a BUILD failure because the gate
+/// reused that wording. Nobody could get past the first screen.
+///
+/// Checked with --help rather than by signing in, so the test needs no network
+/// and no GitHub.
+#[test]
+fn account_login_accepts_json_in_either_position() {
+    for args in [
+        ["account", "login", "--json", "--help"],
+        ["account", "--json", "login", "--help"],
+    ] {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_krate"))
+            .args(args)
+            .output()
+            .expect("run account login");
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            output.status.success() && !text.contains("unexpected argument"),
+            "krate {args:?} must be accepted, got: {text}"
+        );
+    }
+}
+
 /// A supported provider whose CLI is not installed must say so, and say how to
 /// install it -- never fail with a raw spawn error naming a program the person
 /// never typed.

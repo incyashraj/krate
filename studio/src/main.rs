@@ -217,7 +217,13 @@ async fn account_login(app: tauri::AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
         let mut child = Command::new(&engine)
-            .args(["account", "login", "--json"])
+            // `--json` belongs to `account`, not to `login`. As
+            // `account login --json` the engine answers "unexpected argument
+            // '--json' found" and exits, so signing in failed instantly in
+            // every shipped build -- the studio then showed a BUILD error
+            // ("Something in the build went wrong") because the sign-in path
+            // reused the build-error wording. Nobody could get past the gate.
+            .args(["account", "--json", "login"])
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .stdin(Stdio::null())
@@ -484,42 +490,64 @@ fn run_author(
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
 
-    // Give the agent its own config directory, with no history in it.
+    // The agent runs with the person's own configuration, deliberately.
     //
-    // This is what actually caused "Krate Studio would like to access files
-    // in your Downloads folder". Claude Code reads ~/.claude.json at
-    // startup, which holds every project the person has ever opened -- two
-    // of them under Downloads on this machine -- and stats those paths. It
-    // happens inside our process, so macOS names US in the prompt.
+    // Two isolation attempts were tried and both broke sign-in, which is worse
+    // than the problem they solved:
     //
-    // Neither setting the file picker's directory nor setting the child's
-    // cwd fixed it, because the dialog and the cwd were never the cause. A
-    // private CLAUDE_CONFIG_DIR means the agent starts with no project
-    // history and therefore no reason to touch anything outside its
-    // workspace. The person's own terminal history is untouched.
-    let agent_home = studio_dir().join("agent");
-    let _ = std::fs::create_dir_all(&agent_home);
-    cmd.env("CLAUDE_CONFIG_DIR", &agent_home);
+    // * `HOME` redirected: Claude Code could not resolve its credentials and
+    //   answered "Not logged in - Please run /login" on a signed-in machine.
+    // * `CLAUDE_CONFIG_DIR` redirected: the same, because the credentials live
+    //   in ~/.claude.json itself (`oauthAccount`), not only in the keychain.
+    //   Moving the config moves the sign-in with it.
+    //
+    // The Downloads prompt that started this is handled where it belongs: the
+    // child runs in our own scratch directory (above), so nothing it does
+    // reaches a guarded folder on its own. The agent reading its own history
+    // is the person's own tool reading the person's own file.
+    //
+    // USER is still set when the launcher did not: a Finder-launched app does
+    // not reliably have it, and Claude Code needs it to find its credentials.
+    if std::env::var_os("USER").is_none() {
+        if let Some(name) = dirs_home().file_name() {
+            cmd.env("USER", name);
+            cmd.env("LOGNAME", name);
+        }
+    }
 
-    // HOME too, not only CLAUDE_CONFIG_DIR.
-    //
-    // This is the fix that actually stops the prompt, and the previous two
-    // attempts did not: CLAUDE_CONFIG_DIR moves ~/.claude.json, but the agent
-    // still reads ~/.claude/ beside it -- and on this machine
-    // ~/.claude/history.jsonl held 27 paths under Downloads and Documents
-    // from months of unrelated work. The agent stats those at startup, inside
-    // a process we spawned, so macOS names KRATE STUDIO in the dialog and the
-    // person is asked why their app maker wants their documents. There is no
-    // good answer, because it never wanted them.
-    //
-    // Pointing HOME at our own directory means every tool we spawn resolves
-    // "~" to a folder that contains nothing but this app's work. The person's
-    // own ~/.claude is untouched and their terminal sessions are unaffected.
-    cmd.env("HOME", &agent_home);
-    // XDG equivalents, for tools that follow that convention instead of HOME.
-    cmd.env("XDG_CONFIG_HOME", agent_home.join(".config"));
-    cmd.env("XDG_CACHE_HOME", agent_home.join(".cache"));
-    cmd.env("XDG_DATA_HOME", agent_home.join(".local/share"));
+    // And the PATH these tools install into, which a GUI app does not inherit.
+    {
+        let existing = std::env::var_os("PATH").unwrap_or_default();
+        let mut dirs: Vec<PathBuf> = std::env::split_paths(&existing).collect();
+        let home = dirs_home();
+        dirs.push(home.join(".local/bin"));
+        dirs.push(home.join("bin"));
+        dirs.push(home.join(".bun/bin"));
+        dirs.push(PathBuf::from("/opt/homebrew/bin"));
+        dirs.push(PathBuf::from("/usr/local/bin"));
+        if let Ok(versions) = std::fs::read_dir(home.join(".nvm/versions/node")) {
+            let mut found: Vec<PathBuf> = versions
+                .filter_map(|e| e.ok())
+                .map(|e| e.path().join("bin"))
+                .filter(|p| p.is_dir())
+                .collect();
+            found.sort();
+            found.reverse();
+            dirs.extend(found);
+        }
+        if let Ok(joined) = std::env::join_paths(dirs) {
+            cmd.env("PATH", joined);
+        }
+    }
+
+    // USER, for the same reason the engine sets it: a Finder-launched app does
+    // not reliably have it, and Claude Code needs it to find its credentials.
+    if std::env::var_os("USER").is_none() {
+        if let Some(name) = dirs_home().file_name() {
+            cmd.env("USER", name);
+            cmd.env("LOGNAME", name);
+        }
+    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;

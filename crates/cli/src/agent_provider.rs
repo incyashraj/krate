@@ -182,6 +182,7 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
     };
 
     let mut command = ProcessCommand::new(&path);
+    with_tool_path(&mut command);
     for arg in provider.probe_args() {
         command.arg(arg);
     }
@@ -306,9 +307,100 @@ pub fn missing_cli_error(provider: &dyn AgentProvider) -> String {
     )
 }
 
+/// The places AI CLIs install, beyond whatever PATH happens to say.
+///
+/// An app launched from Finder does NOT inherit a shell PATH -- it gets the
+/// bare system one. Every AI tool installs somewhere else: npm globals under a
+/// version manager, Homebrew, or `~/.local/bin`. So Krate Studio reported
+/// "Claude - not installed" on a machine with Claude installed and signed in,
+/// while `krate ai` in a terminal said it was working. Same code, different
+/// PATH, and the GUI is the one a person actually sees.
+///
+/// Searched after PATH, so an explicit PATH entry still wins.
+fn extra_tool_dirs() -> Vec<std::path::PathBuf> {
+    // An explicitly empty PATH means "find nothing", and it must keep meaning
+    // that. Tests set `PATH=""` to prove the missing-tool message, and a
+    // person who empties PATH is asking for exactly this. Searching our
+    // fallback list anyway would make PATH unfalsifiable.
+    if matches!(std::env::var("PATH").as_deref(), Ok("")) {
+        return Vec::new();
+    }
+
+    let mut dirs = Vec::new();
+    if let Some(home) = crate::home_dir() {
+        // Where Claude Code and many single-binary installers land.
+        dirs.push(home.join(".local/bin"));
+        dirs.push(home.join("bin"));
+        dirs.push(home.join(".bun/bin"));
+        dirs.push(home.join(".volta/bin"));
+        dirs.push(home.join(".deno/bin"));
+        // npm globals under a Node version manager, newest version first.
+        for (root, tail) in [
+            (home.join(".nvm/versions/node"), "bin"),
+            (home.join(".fnm/node-versions"), "installation/bin"),
+        ] {
+            if let Ok(entries) = std::fs::read_dir(&root) {
+                let mut found: Vec<std::path::PathBuf> =
+                    entries.filter_map(|e| e.ok()).map(|e| e.path().join(tail)).collect();
+                found.sort();
+                found.reverse();
+                dirs.extend(found);
+            }
+        }
+        dirs.push(home.join(".npm-global/bin"));
+    }
+    // Homebrew, both architectures, and the usual system prefixes.
+    dirs.push(std::path::PathBuf::from("/opt/homebrew/bin"));
+    dirs.push(std::path::PathBuf::from("/usr/local/bin"));
+    dirs
+}
+
+/// Give a spawned tool a PATH that includes where tools actually live.
+///
+/// Finding the binary is only half of it. These CLIs shell out to `node`, to
+/// `git`, and to each other, and they read credentials through helpers that
+/// have to be findable. Launched from Finder the child inherits a bare system
+/// PATH, so a tool that IS signed in reports "not signed in" -- which is what
+/// the studio showed for Claude on a machine where it worked fine in a
+/// terminal.
+///
+/// Existing PATH entries keep their priority; the extra directories are
+/// appended.
+pub fn with_tool_path(command: &mut ProcessCommand) {
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let dirs = std::env::split_paths(&existing)
+        .chain(extra_tool_dirs())
+        .collect::<Vec<_>>();
+    if let Ok(joined) = std::env::join_paths(dirs) {
+        command.env("PATH", joined);
+    }
+
+    // USER, if the launcher did not set it.
+    //
+    // Claude Code reads its credentials from the login keychain and needs
+    // USER to find the entry; without it, a tool that is signed in answers
+    // "Not logged in - Please run /login". Measured one variable at a time:
+    // USER alone fixes it, and LOGNAME, SHELL and TMPDIR do not. A GUI app
+    // launched from Finder does not reliably have USER set, which is why the
+    // studio reported "Claude - not installed" on a machine where the same
+    // check passed in a terminal.
+    if std::env::var_os("USER").is_none() {
+        if let Some(home) = crate::home_dir() {
+            if let Some(name) = home.file_name() {
+                command.env("USER", name);
+                command.env("LOGNAME", name);
+            }
+        }
+    }
+}
+
 /// Find an executable on PATH, honoring PATHEXT on Windows.
+///
+/// Also searches [`extra_tool_dirs`], because a GUI app's PATH does not
+/// include where these tools live. Without that, the studio tells people
+/// their AI is not installed when it is.
 pub fn which_on_path(program: &str) -> Option<std::path::PathBuf> {
-    let path = std::env::var_os("PATH")?;
+    let path = std::env::var_os("PATH").unwrap_or_default();
     // On Windows a bare name resolves against a list of extensions; on Unix the
     // file itself must be executable.
     let extensions: Vec<String> = if cfg!(windows) {
@@ -322,7 +414,10 @@ pub fn which_on_path(program: &str) -> Option<std::path::PathBuf> {
         Vec::new()
     };
 
-    for dir in std::env::split_paths(&path) {
+    let searched = std::env::split_paths(&path)
+        .chain(extra_tool_dirs())
+        .collect::<Vec<_>>();
+    for dir in searched {
         if dir.as_os_str().is_empty() {
             continue;
         }
