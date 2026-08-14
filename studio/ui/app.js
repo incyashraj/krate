@@ -216,6 +216,20 @@ function newSession(firstRequest) {
 }
 
 function openSession(s) {
+  // A build can finish on disk after the window is gone. The shell records
+  // the target path before it starts, so a session with no result but a
+  // pending path may have a finished app waiting -- adopt it rather than
+  // calling it unfinished and orphaning the app.
+  if (!s.result && s.pending_path) {
+    s.result = {
+      path: s.pending_path,
+      name: s.pending_path.split(/[\\/]/).pop(),
+      size: "",
+      asks: [],
+      shot: "",
+      recovered: true,
+    };
+  }
   state.session = s;
   state.attachments = [];
   $("railTitle").textContent = s.title;
@@ -478,6 +492,7 @@ async function make(request) {
           agent: state.agent,
           attachments: files,
           outDir: state.outDir,
+          session: state.session.id,
         });
     finishBuild(result);
   } catch (err) {

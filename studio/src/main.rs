@@ -320,6 +320,7 @@ async fn create_app(
     agent: String,
     attachments: Vec<String>,
     out_dir: String,
+    session: String,
 ) -> Result<CreateResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
@@ -330,6 +331,7 @@ async fn create_app(
         };
         std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
         let out_path = free_path(&dir, &slugify(&request));
+        remember_target(&session, &out_path);
 
         let mut cmd = Command::new(&engine);
         cmd.arg("create")
@@ -403,6 +405,32 @@ fn kill_tree(pid: u32) {
         let _ = Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .status();
+    }
+}
+
+/// Remember which app a session is producing, before the build starts.
+///
+/// The UI writes the result when `finishBuild` runs -- but a build can
+/// finish on disk after the window is gone (quit, or a crash), and then the
+/// app exists with no session pointing at it. Observed: a unit converter
+/// landed at 31,735 bytes while its session still read "unfinished".
+///
+/// The shell knows the path before it spawns anything, so it records it up
+/// front. Whatever happens to the window, the session can find its app.
+fn remember_target(session: &str, path: &Path) {
+    if session.is_empty() || !session.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return;
+    }
+    let file = studio_dir().join("sessions").join(format!("{session}.json"));
+    let Ok(text) = std::fs::read_to_string(&file) else {
+        return;
+    };
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return;
+    };
+    value["pending_path"] = serde_json::json!(path.display().to_string());
+    if let Ok(out) = serde_json::to_string_pretty(&value) {
+        let _ = std::fs::write(file, out);
     }
 }
 
