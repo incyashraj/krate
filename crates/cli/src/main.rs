@@ -6534,6 +6534,41 @@ fn validate_app_args(app_args: &[String]) -> Result<()> {
     Ok(())
 }
 
+/// The installed `<App>.app` for this bundle, if `krate install` made one.
+///
+/// Matched on the app's declared id rather than its name, so an unrelated app
+/// that happens to share a name can never be launched in its place. The
+/// installed copy's own payload is read to confirm the id, which also means a
+/// stale wrapper left behind by a deleted app is simply not matched.
+#[cfg(target_os = "macos")]
+fn installed_app_for(bundle_path: &Path) -> Option<PathBuf> {
+    let manifest = krate_bundle::open(bundle_path).ok()?;
+    let name = manifest.manifest().app.name.trim().to_string();
+    let id = manifest.manifest().app.id.clone();
+    if name.is_empty() {
+        return None;
+    }
+
+    let roots = [
+        home_dir().map(|home| home.join("Applications")),
+        Some(PathBuf::from("/Applications")),
+    ];
+    for root in roots.into_iter().flatten() {
+        let candidate = root.join(format!("{name}.app"));
+        let payload = candidate.join("Contents/Resources/app.krate");
+        if !payload.is_file() {
+            continue;
+        }
+        let matches = krate_bundle::open(&payload)
+            .map(|installed| installed.manifest().app.id == id)
+            .unwrap_or(false);
+        if matches {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// Give an app a real identity on this machine: its own `.app`, its own name
 /// in the dock, its own icon.
 ///
@@ -6796,6 +6831,31 @@ fn open_app() -> Result<u8> {
             }
         }
     };
+    // If this app has been installed, run it as itself.
+    //
+    // Krate.app's executable is named "krate-cli", so a document opened
+    // through it shows "krate-cli" in the dock -- macOS names a process after
+    // the executable that is running, which is the same reason `krate install`
+    // exists. Handing off to the installed copy means a double-clicked
+    // calculator presents as the calculator, exactly as launching it from
+    // Launchpad does. Not installed: run it here, under the Krate name, which
+    // is still better than not opening at all.
+    #[cfg(target_os = "macos")]
+    if let Some(app) = installed_app_for(target) {
+        let handed_off = ProcessCommand::new("/usr/bin/open")
+            .arg("-n")
+            .arg(&app)
+            .status()
+            .map(|status| status.success())
+            .unwrap_or(false);
+        if handed_off {
+            for extra in opened.iter().skip(1) {
+                spawn_open_run(extra);
+            }
+            return Ok(0);
+        }
+    }
+
     let sandbox_root = target
         .parent()
         .map(Path::to_path_buf)
