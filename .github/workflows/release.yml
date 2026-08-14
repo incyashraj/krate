@@ -261,12 +261,14 @@ jobs:
             if [ -d "$app" ]; then
               codesign --force --sign - "$app/Contents/Resources/bin/krate" || true
               codesign --force --sign - --entitlements studio/Entitlements.plist "$app" || true
-              (cd studio && tauri build --bundles dmg --no-sign --target ${{ matrix.target }}) || true
-              src=$(find studio/target -name '*.dmg' -print -quit)
-              if [ -n "$src" ]; then
-                mkdir -p dist
-                cp "$src" "dist/krate-studio-${version}-${{ matrix.target }}.dmg"
-              fi
+              # hdiutil, not tauri: a dmg build re-bundles the app and would
+              # discard the signature applied a moment ago.
+              mkdir -p dist /tmp/dmgroot
+              rm -rf /tmp/dmgroot/*
+              cp -R "$app" /tmp/dmgroot/
+              ln -s /Applications /tmp/dmgroot/Applications
+              hdiutil create -volname "Krate Studio" -srcfolder /tmp/dmgroot \
+                -ov -format UDZO "dist/krate-studio-${version}-${{ matrix.target }}.dmg" || true
             fi
             exit 0
           fi
@@ -444,17 +446,26 @@ jobs:
               echo "::warning::Studio notarization failed; it is signed but"
               echo "Gatekeeper will still warn. The runtime is unaffected."
             fi
-            # The .dmg, built from the signed and stapled bundle.
-            (cd studio && tauri build --bundles dmg --no-sign --target ${{ matrix.target }})
-            src=$(find studio/target -name '*.dmg' -print -quit)
-            if [ -n "$src" ]; then
-              mkdir -p dist
-              cp "$src" "dist/krate-studio-${version}-${{ matrix.target }}.dmg"
-              # Sign the disk image itself, so the download is verifiable
-              # before it is even opened.
-              codesign --force --timestamp --sign "$IDENTITY" \
-                "dist/krate-studio-${version}-${{ matrix.target }}.dmg" || true
-            fi
+            # The .dmg, built by hand from the signed and stapled bundle.
+            #
+            # NOT `tauri build --bundles dmg`: that re-runs the app bundling
+            # and overwrites the bundle, throwing away the Developer ID
+            # signature and the notarization ticket that were just applied.
+            # Measured -- the notary service returned Accepted, the staple
+            # succeeded, and the .dmg still contained an unsigned rebuild that
+            # macOS called damaged. hdiutil packages what is actually there.
+            mkdir -p dist /tmp/dmgroot
+            rm -rf /tmp/dmgroot/*
+            cp -R "$STUDIO_APP" /tmp/dmgroot/
+            ln -s /Applications /tmp/dmgroot/Applications
+            out="dist/krate-studio-${version}-${{ matrix.target }}.dmg"
+            rm -f "$out"
+            hdiutil create -volname "Krate Studio" -srcfolder /tmp/dmgroot \
+              -ov -format UDZO "$out"
+            # Sign the disk image itself, so the download is verifiable
+            # before it is even opened, and staple the ticket to it.
+            codesign --force --timestamp --sign "$IDENTITY" "$out" || true
+            xcrun stapler staple "$out" || true
           fi
 
       - name: Upload packaged artifact
