@@ -892,3 +892,31 @@ body.resizing .divider { background: var(--blue); }
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ---- app details ------------------------------------------------------- */
+
+.sheet-info { max-width: 460px; text-align: left; }
+.sheet-info h2 { text-align: left; }
+.sheet-info .sheet-sub {
+  font-family: var(--mono); font-size: 11.5px; color: var(--ghost);
+  word-break: break-all; text-align: left;
+}
+.info-rows {
+  display: grid; grid-template-columns: auto 1fr; gap: 8px 18px;
+  margin: 18px 0; font-size: 13px;
+}
+.info-rows dt { color: var(--faint); }
+.info-rows dd { color: var(--text); }
+.info-caps { border-top: 1px solid var(--line); padding-top: 16px; }
+.info-caps ul { list-style: none; margin: 10px 0 0; padding: 0; }
+.info-caps li {
+  position: relative; padding: 4px 0 4px 18px;
+  font-size: 13px; color: var(--text);
+}
+.info-caps li::before {
+  content: ""; position: absolute; left: 2px; top: 11px;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--blue);
+}
+.info-note {
+  margin-top: 14px; color: var(--faint); font-size: 12px; line-height: 1.55;
+}

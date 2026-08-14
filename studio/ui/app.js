@@ -701,6 +701,85 @@ async function attach() {
   renderAttachments();
 }
 
+/* ---- app details ------------------------------------------------------- */
+
+/* A capability string is precise and unreadable. These are the same facts in
+   words, so a person can decide whether an app should be doing that. Anything
+   without a phrasing shows its raw name rather than being hidden -- an
+   unexplained permission is exactly the one worth seeing. */
+const CAP_WORDS = {
+  "ui.window:create": "Open a window",
+  "ui.dialog:confirm": "Ask you yes-or-no questions",
+  "ui.dialog:message": "Show you messages",
+  "ui.dialog:file-open": "Ask you to pick a file to open",
+  "ui.dialog:file-save": "Ask you where to save a file",
+  "ui.dialog:open-folder": "Ask you to pick a folder",
+  "gfx.gpu:basic": "Draw with the graphics card",
+  "io.stdout": "Print text",
+  "io.stderr": "Print errors",
+  "io.stdin": "Read typed input",
+  "io.args": "Read the options it was started with",
+  "io.log": "Write to its own log",
+  "time.clock": "Read the current time",
+  "time.monotonic": "Measure how long things take",
+  "time.sleep": "Wait",
+  "locale.info": "Know your language and region",
+  "locale.format": "Format numbers and dates the way you write them",
+  "random.bytes": "Use random numbers",
+  "net.http": "Reach the internet",
+  "store.kv": "Save its own settings",
+  "store.sql": "Keep its own database",
+  "clipboard.read": "Read the clipboard",
+  "clipboard.write": "Put things on the clipboard",
+  "audio.playback": "Play sound",
+  "audio.capture": "Record from the microphone",
+};
+
+async function showInfo() {
+  const app = currentApp();
+  if (!app) return;
+  const sheet = $("infoSheet");
+  $("infoName").textContent = app.name || "Your app";
+  $("infoWhere").textContent = "Reading the app…";
+  $("infoRows").innerHTML = "";
+  $("infoCaps").innerHTML = "";
+  sheet.classList.remove("hidden");
+
+  try {
+    const info = await invoke("app_info", { path: app.path });
+    $("infoWhere").textContent = info.path;
+
+    const rows = [
+      ["Size", `${Math.round((info.size || 0) / 1024)} KB`],
+      ["Runs on", "Mac, Windows and Linux"],
+      // The content hash IS the app's identity: the same bytes anywhere are
+      // the same app, which is what makes a share link trustworthy.
+      ["Fingerprint", (info.identity || "").slice(0, 16) || "unknown"],
+    ];
+    for (const [k, v] of rows) {
+      const dt = document.createElement("dt");
+      dt.textContent = k;
+      const dd = document.createElement("dd");
+      dd.textContent = v;
+      $("infoRows").append(dt, dd);
+    }
+
+    for (const cap of info.capabilities || []) {
+      const li = document.createElement("li");
+      li.textContent = CAP_WORDS[cap] || cap;
+      li.title = cap;
+      $("infoCaps").appendChild(li);
+    }
+    if (!(info.capabilities || []).length) {
+      const li = document.createElement("li");
+      li.textContent = "Nothing beyond drawing its own window.";
+      $("infoCaps").appendChild(li);
+    }
+  } catch (err) {
+    $("infoWhere").textContent = String(err);
+  }
+}
+
 /* ---- Krate Cloud ------------------------------------------------------- */
 
 function timeAgo(seconds) {
@@ -1146,6 +1225,7 @@ $("cloudSearch").addEventListener("input", filterCloud);
 $("stopBtn").addEventListener("click", () => invoke("stop_build"));
 $("openBtn").addEventListener("click", openApp);
 $("shareBtn").addEventListener("click", share);
+$("infoBtn").addEventListener("click", showInfo);
 $("revealBtn").addEventListener("click", async () => {
   const app = currentApp();
   if (!app) return;

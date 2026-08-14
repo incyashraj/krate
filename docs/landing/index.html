@@ -404,6 +404,45 @@
         <button class="copy" type="button" aria-label="Copy install command">⧉</button>
       </span>
     </div>
+
+    <!-- Direct downloads. The one-line installer above is still the fastest
+         path for anyone comfortable in a terminal, but telling someone who
+         has never opened one to paste a curl command is how you lose them. -->
+    <div class="dl-card reveal" id="download">
+      <div class="dl-head">
+        <h2 class="section-h">Or download it</h2>
+        <span class="tag-beta">pre-beta</span>
+      </div>
+      <p class="dl-sub">Early builds. They work, and they change often -- expect
+      rough edges and tell us about them.</p>
+
+      <div class="dl-grid">
+        <a class="dl" data-dl="krate-app|aarch64-apple-darwin|zip" href="https://github.com/incyashraj/krate/releases/latest">
+          <b>macOS</b><span>Apple silicon</span>
+        </a>
+        <a class="dl" data-dl="krate-app|x86_64-apple-darwin|zip" href="https://github.com/incyashraj/krate/releases/latest">
+          <b>macOS</b><span>Intel</span>
+        </a>
+        <a class="dl" data-dl="krate|x86_64-pc-windows-msvc|zip" href="https://github.com/incyashraj/krate/releases/latest">
+          <b>Windows</b><span>Intel / AMD</span>
+        </a>
+        <a class="dl" data-dl="krate|aarch64-pc-windows-msvc|zip" href="https://github.com/incyashraj/krate/releases/latest">
+          <b>Windows</b><span>ARM</span>
+        </a>
+        <a class="dl" data-dl="krate|x86_64-unknown-linux-gnu|tar.gz" href="https://github.com/incyashraj/krate/releases/latest">
+          <b>Linux</b><span>Intel / AMD</span>
+        </a>
+        <a class="dl" data-dl="krate|aarch64-unknown-linux-gnu|tar.gz" href="https://github.com/incyashraj/krate/releases/latest">
+          <b>Linux</b><span>ARM</span>
+        </a>
+      </div>
+
+      <p class="dl-foot" id="dlFoot">
+        <a href="https://github.com/incyashraj/krate/releases/latest">All releases and checksums</a>
+        &middot; macOS downloads are unsigned while we wait on an Apple
+        certificate, so the first open needs right-click then Open.
+      </p>
+    </div>
   </div>
 </section>
 
@@ -642,6 +681,31 @@
       i.classList.remove("open");
     });
   });
+
+  /* Download links, resolved to whatever the current release is.
+     
+     The filenames carry a version, so hard-coding them means every link
+     silently 404s the day after a release. Each link starts pointing at the
+     releases page -- correct, if less direct -- and is upgraded to the exact
+     file once the tag is known. A failed lookup leaves the safe link alone. */
+  var dls = document.querySelectorAll("[data-dl]");
+  if (dls.length) {
+    fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (rel) {
+        if (!rel || !rel.tag_name) return;
+        var version = rel.tag_name.replace(/^v/, "");
+        dls.forEach(function (a) {
+          var parts = a.dataset.dl.split("|");
+          a.href = "https://github.com/incyashraj/krate/releases/download/" +
+            rel.tag_name + "/" + parts[0] + "-" + version + "-" + parts[1] +
+            "." + parts[2];
+        });
+        var foot = document.getElementById("dlFoot");
+        if (foot) foot.dataset.version = version;
+      })
+      .catch(function () { /* the releases-page links still work */ });
+  }
 })();
 </script>
 

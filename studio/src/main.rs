@@ -708,6 +708,56 @@ async fn publish(path: String) -> Result<String, String> {
     .map_err(|err| err.to_string())?
 }
 
+/// Everything knowable about one app, for the details screen.
+///
+/// Read through the engine, so the studio never parses a .krate itself and
+/// cannot drift from what the runtime believes about the same file.
+#[tauri::command]
+async fn app_info(path: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = existing(&path)?;
+        let engine = engine()?;
+        let out = Command::new(&engine)
+            .arg("run")
+            .arg("--dump-caps")
+            .arg(&path)
+            .output()
+            .map_err(|err| format!("could not run the Krate engine: {err}"))?;
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+
+        // `--dump-caps` prints two sections: an identity hash, then one
+        // capability per line. Parsed here rather than adding a JSON mode to
+        // the engine, because the shape is small and stable.
+        let mut identity = String::new();
+        let mut caps: Vec<String> = Vec::new();
+        let mut in_caps = false;
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("Effective capabilities") {
+                in_caps = true;
+                continue;
+            }
+            if let Some(value) = trimmed.strip_prefix("- ") {
+                if in_caps {
+                    caps.push(value.to_string());
+                } else if identity.is_empty() {
+                    identity = value.to_string();
+                }
+            }
+        }
+
+        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        Ok(serde_json::json!({
+            "path": path.display().to_string(),
+            "identity": identity,
+            "capabilities": caps,
+            "size": size,
+        }))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 /// Install an AI CLI from inside the studio, streaming progress to the UI.
 ///
 /// The alternative was printing "npm install -g @google/gemini-cli" and
@@ -1043,6 +1093,7 @@ fn main() {
             account_status,
             account_login,
             account_logout,
+            app_info,
             install_agent,
             cloud_apps,
             cloud_run,

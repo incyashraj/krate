@@ -159,6 +159,7 @@
               <div class="done-actions">
                 <button class="btn btn-primary" id="openBtn">Open it</button>
                 <button class="btn" id="shareBtn">Share</button>
+                <button class="btn btn-ghost" id="infoBtn">More info</button>
                 <button class="btn btn-ghost" id="revealBtn">Show the file</button>
               </div>
               <div class="share-result hidden" id="shareResult">
@@ -208,6 +209,21 @@
       <p class="cloud-error hidden" id="cloudError"></p>
       <div class="cloud-grid" id="cloudGrid"></div>
     </main>
+  </div>
+
+  <div class="sheet-wrap hidden" id="infoSheet">
+    <div class="sheet sheet-info">
+      <h2 id="infoName">App</h2>
+      <p class="sheet-sub" id="infoWhere"></p>
+      <dl class="info-rows" id="infoRows"></dl>
+      <div class="info-caps">
+        <p class="label">What it is allowed to do</p>
+        <ul id="infoCaps"></ul>
+        <p class="info-note">Krate enforces this list. An app cannot do
+        anything that is not on it, whatever its code says.</p>
+      </div>
+      <button class="btn btn-ghost sheet-close" data-close="infoSheet">Close</button>
+    </div>
   </div>
 
   <div class="sheet-wrap hidden" id="aiSheet">

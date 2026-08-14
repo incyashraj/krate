@@ -862,3 +862,45 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   font-style: normal;
   color: var(--quiet);
 }
+
+/* ---- direct downloads -------------------------------------------------- */
+
+.dl-card {
+  margin-top: 18px;
+  padding: 26px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+}
+.dl-head { display: flex; align-items: center; gap: 12px; }
+.tag-beta {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(244, 220, 116, 0.32);
+  background: rgba(244, 220, 116, 0.08);
+  color: var(--warn);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dl-sub { margin-top: 8px; color: var(--quiet); }
+.dl-grid {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0 16px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+.dl {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.dl:hover { border-color: var(--line-strong); transform: translateY(-1px); }
+.dl b { color: var(--text); font-weight: 560; }
+.dl span { color: var(--quiet); font-size: 12.5px; }
+.dl-foot { color: var(--quiet); font-size: 12.5px; line-height: 1.6; }
