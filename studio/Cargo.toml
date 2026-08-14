@@ -24,6 +24,9 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 base64 = "0.22"
+# The same dialog crate the runtime's own host pickers use.
+rfd = "0.15"
+libc = "0.2"
 
 # Detached from the repository workspace on purpose; see the header comment.
 [workspace]

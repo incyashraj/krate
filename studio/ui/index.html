@@ -8,110 +8,180 @@
 </head>
 <body>
 
-  <!-- The whole product is two panes. Left: you and your AI. Right: the app
-       becoming real. Nothing else earns a place on this screen: no file
-       tree, no code tab, no build flags. A person types what they want and
-       watches it become an app they can open and send. -->
-  <main class="studio">
+  <!-- Three views, one visible at a time.
 
-    <aside class="rail">
-      <header class="rail-head">
-        <div class="brand">
-          <img src="krate-glyph-white.png" alt="" width="18" height="18" />
-          <span>KRATE</span>
-        </div>
-        <button class="agent-chip" id="agentChip" title="Which AI writes your apps">
-          <span class="dot" id="agentDot"></span>
-          <span id="agentName">checking…</span>
+       gate: sign in. One card, one action; once the browser opens, the code
+       is the largest thing on screen because it is the only thing to read.
+
+       home: the question, front and centre -- the product's one action gets
+       the prime position -- with your apps below it, one click to resume.
+
+       session: you and your AI on the left, the app becoming real on the
+       right. No file tree, no code tab, no build flags, ever. -->
+
+  <div class="view" id="viewGate">
+    <div class="gate-card">
+      <img src="krate-glyph-white.png" alt="" width="28" height="28" />
+      <h1>Krate</h1>
+      <p class="gate-sub">Describe an app. Watch it become real. Send it to anyone.</p>
+
+      <div id="gateStart">
+        <button class="btn btn-primary btn-big" id="loginBtn">Sign in with GitHub</button>
+        <p class="gate-hint">Your account is how your apps are credited and shared.
+        Krate never sees your password -- GitHub asks you directly.</p>
+      </div>
+
+      <div id="gateCode" class="hidden">
+        <p class="gate-step">Enter this code in the browser page that just opened</p>
+        <p class="gate-code" id="gateCodeValue">····-····</p>
+        <p class="gate-hint"><span id="gateUrl"></span> · this screen continues by itself
+        the moment you approve</p>
+      </div>
+
+      <p class="gate-error hidden" id="gateError"></p>
+    </div>
+  </div>
+
+  <div class="view hidden" id="viewHome">
+    <header class="home-head">
+      <div class="brand"><img src="krate-glyph-white.png" alt="" width="18" height="18" /><span>KRATE</span></div>
+      <div class="home-head-right">
+        <button class="agent-chip" id="agentChip"><span class="dot" id="agentDot"></span><span id="agentName">checking…</span></button>
+        <button class="icon-btn" id="settingsBtn" title="Settings">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.4" stroke="currentColor" stroke-width="1.4"/><path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
         </button>
-      </header>
+        <button class="icon-btn" id="accountBtn" title="Account"><img id="avatar" class="avatar hidden" alt="" /><span id="accountInitial">·</span></button>
+      </div>
+    </header>
 
-      <div class="thread" id="thread">
-        <div class="thread-empty" id="threadEmpty">
-          <p class="hello">What do you want to make?</p>
-          <p class="hello-sub">Describe it in plain words. Your AI writes it,
-          Krate builds it and checks it runs, and you get one file that works
-          on Mac, Windows, and Linux.</p>
-          <div class="ideas" id="ideas">
-            <button class="idea">a habit tracker</button>
-            <button class="idea">a pomodoro timer</button>
-            <button class="idea">a tip splitter for dinners</button>
+    <main class="home">
+      <h1 class="home-title">What do you want to make?</h1>
+      <div class="composer-box home-composer">
+        <textarea id="homePrompt" rows="2" placeholder="Describe the app you want…" autocomplete="off" spellcheck="false"></textarea>
+        <button id="homeSend" class="send" title="Make it (⌘↩)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+      <div class="ideas" id="homeIdeas">
+        <button class="idea">a habit tracker</button>
+        <button class="idea">a pomodoro timer</button>
+        <button class="idea">a tip splitter for dinners</button>
+      </div>
+
+      <section class="apps" id="appsSection">
+        <h2 class="apps-title">Your apps</h2>
+        <div class="apps-grid" id="appsGrid"></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="view hidden" id="viewSession">
+    <main class="studio">
+      <aside class="rail">
+        <header class="rail-head">
+          <button class="icon-btn" id="backBtn" title="All your apps"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 3L5 8l5 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <span class="rail-title" id="railTitle">New app</span>
+          <button class="agent-chip" id="agentChip2"><span class="dot" id="agentDot2"></span><span id="agentName2">…</span></button>
+        </header>
+
+        <div class="thread" id="thread"></div>
+
+        <footer class="composer">
+          <div class="attach-row hidden" id="attachRow"></div>
+          <div class="composer-box">
+            <button class="clip" id="attachBtn" title="Attach a file for the AI to read">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M13 7.5l-4.9 4.9a3.2 3.2 0 01-4.5-4.5l5.3-5.3a2.1 2.1 0 013 3l-5.3 5.3a1 1 0 01-1.5-1.5L9.8 4.7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+            </button>
+            <textarea id="prompt" rows="2" placeholder="Describe the app you want…" autocomplete="off" spellcheck="false"></textarea>
+            <button id="send" class="send" title="Make it (⌘↩)"><svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          </div>
+          <p class="composer-hint" id="composerHint">⌘↩ to make it</p>
+        </footer>
+      </aside>
+
+      <section class="stage" id="stage">
+        <div class="stage-state" id="stateIdle">
+          <div class="stage-empty">
+            <div class="stage-glyph" aria-hidden="true"></div>
+            <p>Your app will appear here.</p>
           </div>
         </div>
-      </div>
 
-      <footer class="composer">
-        <div class="composer-box">
-          <textarea id="prompt" rows="2" placeholder="Describe the app you want…"
-                    autocomplete="off" spellcheck="false"></textarea>
-          <button id="send" class="send" title="Make it (⌘↩)">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
-              <path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="currentColor"
-                    stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-          </button>
+        <div class="stage-state hidden" id="stateBuilding">
+          <div class="build-card">
+            <p class="build-title" id="buildTitle">Making your app</p>
+            <p class="build-elapsed"><span id="elapsed">0:00</span> · <span id="buildExpect">usually a few minutes</span></p>
+            <ol class="stages" id="stages"></ol>
+            <details class="build-log-wrap">
+              <summary>every step, in detail</summary>
+              <pre class="build-log" id="buildLog"></pre>
+            </details>
+            <button class="btn btn-quiet stop" id="stopBtn">Stop</button>
+          </div>
         </div>
-        <p class="composer-hint" id="composerHint">⌘↩ to make it</p>
-      </footer>
-    </aside>
 
-    <section class="stage" id="stage">
-
-      <!-- Idle: quiet. The left side is where you start. -->
-      <div class="stage-state" id="stateIdle">
-        <div class="stage-empty">
-          <div class="stage-glyph" aria-hidden="true"></div>
-          <p>Your app will appear here.</p>
-        </div>
-      </div>
-
-      <!-- Building: honest progress. Real stages, elapsed time, never a
-           bare spinner. A build takes minutes and hiding that breeds the
-           exact frustration this app exists to remove. -->
-      <div class="stage-state hidden" id="stateBuilding">
-        <div class="build-card">
-          <p class="build-title" id="buildTitle">Making your app</p>
-          <p class="build-elapsed"><span id="elapsed">0:00</span> · usually a few minutes</p>
-          <ol class="stages" id="stages"></ol>
-          <details class="build-log-wrap">
-            <summary>details</summary>
-            <pre class="build-log" id="buildLog"></pre>
-          </details>
-        </div>
-      </div>
-
-      <!-- Done: the moment that decides whether they close satisfied.
-           The real screenshot, the file, what it asked to touch, and the
-           three things to do next. -->
-      <div class="stage-state hidden" id="stateDone">
-        <div class="done-card">
-          <div class="shot-frame"><img id="shot" alt="Your app, as it renders" /></div>
-          <div class="done-meta">
-            <p class="done-name" id="doneName"></p>
-            <p class="done-sub"><span id="doneSize"></span> · runs on Mac, Windows, and Linux</p>
-            <ul class="asks" id="asks"></ul>
-            <div class="done-actions">
-              <button class="btn btn-primary" id="openBtn">Open it</button>
-              <button class="btn" id="shareBtn">Share</button>
-              <button class="btn btn-quiet" id="revealBtn">Show the file</button>
+        <div class="stage-state hidden" id="stateDone">
+          <div class="done-card" id="doneCard">
+            <div class="shot-frame"><img id="shot" alt="Your app, as it renders" /><span class="sheen" aria-hidden="true"></span></div>
+            <div class="done-meta">
+              <p class="done-name" id="doneName"></p>
+              <p class="done-sub"><span id="doneSize"></span> · runs on Mac, Windows, and Linux</p>
+              <ul class="asks" id="asks"></ul>
+              <div class="done-actions">
+                <button class="btn btn-primary" id="openBtn">Open it</button>
+                <button class="btn" id="shareBtn">Share</button>
+                <button class="btn btn-quiet" id="revealBtn">Show the file</button>
+              </div>
+              <p class="share-result hidden" id="shareResult"></p>
             </div>
-            <p class="share-result hidden" id="shareResult"></p>
           </div>
         </div>
-      </div>
 
-      <!-- Failure: plain words, one way forward. Never a compiler error,
-           never a stack trace. -->
-      <div class="stage-state hidden" id="stateFailed">
-        <div class="fail-card">
-          <p class="fail-title">That one didn't come together.</p>
-          <p class="fail-why" id="failWhy"></p>
-          <button class="btn btn-primary" id="retryBtn">Try again</button>
+        <div class="stage-state hidden" id="stateFailed">
+          <div class="fail-card">
+            <p class="fail-title" id="failTitle">That one didn't come together.</p>
+            <p class="fail-why" id="failWhy"></p>
+            <button class="btn btn-primary" id="retryBtn">Try again</button>
+          </div>
         </div>
-      </div>
+      </section>
+    </main>
+  </div>
 
-    </section>
-  </main>
+  <!-- Connect your AI: every provider, its live state, and the one fix. -->
+  <div class="sheet-wrap hidden" id="aiSheet">
+    <div class="sheet">
+      <h2>Your AI</h2>
+      <p class="sheet-sub">Krate works with the AI you already have. Pick one that's ready,
+      or follow its one-line fix. Your AI's sign-in stays with that tool --
+      Krate never holds its keys.</p>
+      <div id="aiList"></div>
+      <p class="sheet-foot">Using something else? Any tool that can edit files can author
+      Krate apps -- run <code>krate create --help</code> in a terminal and see
+      <code>--author-cmd</code>.</p>
+      <button class="btn btn-quiet sheet-close" data-close="aiSheet">Close</button>
+    </div>
+  </div>
+
+  <!-- Settings: the folder where finished apps land. -->
+  <div class="sheet-wrap hidden" id="settingsSheet">
+    <div class="sheet">
+      <h2>Settings</h2>
+      <div class="setting-row">
+        <div>
+          <p class="setting-name">Where your apps are saved</p>
+          <p class="setting-value" id="outDirValue"></p>
+        </div>
+        <button class="btn" id="changeDirBtn">Change</button>
+      </div>
+      <div class="setting-row">
+        <div>
+          <p class="setting-name">Account</p>
+          <p class="setting-value" id="accountValue"></p>
+        </div>
+        <button class="btn" id="logoutBtn">Sign out</button>
+      </div>
+      <button class="btn btn-quiet sheet-close" data-close="settingsSheet">Close</button>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
