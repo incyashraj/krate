@@ -567,6 +567,27 @@ enum Command {
     /// machine, never on a server.
     Mcp,
 
+    /// Change an app that already exists. The .krate carries its own source,
+    /// so the AI edits the app you have rather than rebuilding it from a
+    /// description -- "make the button blue" touches one function, not the
+    /// whole app. The file is updated in place unless --output names a copy.
+    Revise {
+        /// The .krate to change.
+        bundle: PathBuf,
+
+        /// What to change, in plain words.
+        #[arg(value_name = "CHANGE")]
+        change: String,
+
+        /// Which AI makes the change.
+        #[arg(long, default_value = "claude")]
+        agent: String,
+
+        /// Write the changed app here instead of updating the file in place.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+
     /// Internal: drive a supported AI agent to author the app. `krate create
     /// --agent claude` runs this; it reads KRATE_REQUEST / KRATE_APP_DIR from
     /// the environment create sets. Hidden because it is not a user entry point.
@@ -946,6 +967,12 @@ fn run() -> Result<u8> {
             no_install,
         }),
         Command::Mcp => mcp::serve().map(|()| 0),
+        Command::Revise {
+            bundle,
+            change,
+            agent,
+            output,
+        } => revise_cli(&bundle, &change, &agent, output.as_deref()),
         Command::AuthorAgent { agent } => run_author_agent(&agent),
         Command::Version => {
             print_version();
@@ -2720,6 +2747,60 @@ fn copy_tree(from: &Path, to: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// `krate revise`: the TUI's change-an-app path, scriptable.
+///
+/// The same three-step fallback the interactive menu uses, in the same
+/// order: edit the source the bundle carries; failing that, rebuild from the
+/// history's original request plus the change; failing that, build fresh
+/// from the change alone. The studio's every-message-after-the-first goes
+/// through here, which is the point -- one revision path, three faces.
+fn revise_cli(bundle: &Path, change: &str, agent: &str, output: Option<&Path>) -> Result<u8> {
+    if !bundle.exists() {
+        anyhow::bail!("{} does not exist", bundle.display());
+    }
+    let provider = resolve_agent(agent)?;
+    let out = output.unwrap_or(bundle);
+
+    match bundle_source_dir(bundle)? {
+        Some(source) => {
+            println!("==> changing the app in its own source");
+            revise_app_for_tui(&source, change, provider, out, &[])?;
+        }
+        None => {
+            // An older bundle with no source inside: restate the whole app.
+            let original = tui::history()
+                .into_iter()
+                .find(|entry| entry.bundle.as_deref() == Some(bundle))
+                .map(|entry| entry.request)
+                .unwrap_or_default();
+            let request = if original.is_empty() {
+                change.to_string()
+            } else {
+                println!("==> no source inside this app; rebuilding from the original request plus the change");
+                format!("{original}. Then: {change}")
+            };
+            let code = create_krate(CreateRequest {
+                request,
+                output: out.to_path_buf(),
+                author_cmd: Some(agent_author_command(provider)),
+                kind: None,
+                name: None,
+                transcript: None,
+                work_dir: None,
+                yes: true,
+                no_install: false,
+                json: false,
+                force: true,
+            })?;
+            if code != 0 {
+                anyhow::bail!("the change could not be applied");
+            }
+        }
+    }
+    println!("Changed {}", out.display());
+    Ok(0)
 }
 
 /// Change an app that already exists, in place.
