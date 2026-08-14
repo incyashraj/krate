@@ -4920,6 +4920,10 @@ fn ai_status_json() -> Result<u8> {
                         "state": state,
                         "detail": detail,
                         "remedy": remedy,
+                        // The npm package, so a GUI can offer to install it
+                        // rather than printing a command and sending someone
+                        // to a terminal.
+                        "install_package": provider.install_package(),
                     })
                 })
             })

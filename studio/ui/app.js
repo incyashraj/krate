@@ -659,6 +659,32 @@ function openAiSheet() {
         $("aiSheet").classList.add("hidden");
       });
       row.appendChild(use);
+    } else if (a.state === "missing" && a.install_package) {
+      // Installing here, rather than printing a command. Someone making their
+      // first app should never have to find a terminal, leave this window,
+      // and come back.
+      const add = document.createElement("button");
+      add.className = "btn btn-primary";
+      add.textContent = "Install";
+      add.addEventListener("click", async () => {
+        add.disabled = true;
+        add.textContent = "Installing…";
+        const note = row.querySelector(".ai-detail");
+        note.classList.add("installing");
+        try {
+          await invoke("install_agent", { name: a.name });
+          note.classList.remove("installing");
+          note.textContent = "installed -- sign in to it once to finish";
+          add.textContent = "Done";
+          refreshAgents();
+        } catch (err) {
+          note.classList.remove("installing");
+          note.textContent = String(err);
+          add.disabled = false;
+          add.textContent = "Install";
+        }
+      });
+      row.appendChild(add);
     }
     list.appendChild(row);
   }
@@ -1174,6 +1200,13 @@ if (tauri) {
     .catch((err) => onEngineLine(`(!) event channel failed: ${err}`));
   tauri.event.listen("login-step", (e) => onLoginStep(e.payload))
     .catch(() => {});
+  // Install progress, so a two-minute npm run is not a frozen button. The
+  // last line is enough: nobody wants npm's full output, they want to see
+  // that something is happening.
+  tauri.event.listen("agent-install", (e) => {
+    const row = document.querySelector(".ai-row .ai-detail.installing");
+    if (row) row.textContent = String(e.payload).slice(0, 90);
+  }).catch(() => {});
 }
 
 /* ---- mock backend: design-review mode only ---------------------------- */

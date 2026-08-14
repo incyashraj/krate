@@ -32,6 +32,17 @@ pub trait AgentProvider: Send + Sync {
     /// What to tell someone whose machine does not have this CLI installed.
     fn install_hint(&self) -> &'static str;
 
+    /// The npm package that installs this CLI, when there is one.
+    ///
+    /// `install_hint` is prose for a person reading a terminal. This is the
+    /// same fact in a form a program can act on, so Krate Studio can run the
+    /// install itself instead of printing a command and expecting someone to
+    /// find a terminal, leave the app, and come back. `None` means the tool
+    /// cannot be installed unattended and the hint is the only answer.
+    fn install_package(&self) -> Option<&'static str> {
+        None
+    }
+
     /// The arguments for one headless authoring run of `prompt`.
     fn author_args(&self, prompt: &str) -> Vec<String>;
 
@@ -368,6 +379,10 @@ impl AgentProvider for ClaudeProvider {
          sign in."
     }
 
+    fn install_package(&self) -> Option<&'static str> {
+        Some("@anthropic-ai/claude-code")
+    }
+
     fn author_args(&self, prompt: &str) -> Vec<String> {
         [
             "-p",
@@ -620,6 +635,10 @@ impl AgentProvider for CodexProvider {
         "npm install -g @openai/codex, then run `codex` once to sign in"
     }
 
+    fn install_package(&self) -> Option<&'static str> {
+        Some("@openai/codex")
+    }
+
     fn author_args(&self, prompt: &str) -> Vec<String> {
         [
             "exec",
@@ -700,6 +719,10 @@ impl AgentProvider for GeminiProvider {
         "npm install -g @google/gemini-cli, then run `gemini` once to sign in"
     }
 
+    fn install_package(&self) -> Option<&'static str> {
+        Some("@google/gemini-cli")
+    }
+
     fn author_args(&self, prompt: &str) -> Vec<String> {
         [
             "--prompt",
@@ -759,6 +782,10 @@ impl AgentProvider for CopilotProvider {
 
     fn install_hint(&self) -> &'static str {
         "npm install -g @github/copilot, then run `copilot` once to sign in"
+    }
+
+    fn install_package(&self) -> Option<&'static str> {
+        Some("@github/copilot")
     }
 
     fn author_args(&self, prompt: &str) -> Vec<String> {

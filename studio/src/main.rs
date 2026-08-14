@@ -708,6 +708,149 @@ async fn publish(path: String) -> Result<String, String> {
     .map_err(|err| err.to_string())?
 }
 
+/// Install an AI CLI from inside the studio, streaming progress to the UI.
+///
+/// The alternative was printing "npm install -g @google/gemini-cli" and
+/// expecting someone to find a terminal, leave the app, run it, and come
+/// back. Most people making their first app do not have a terminal open and
+/// should not need one.
+///
+/// The package name comes from the engine (`krate ai --json`), never from the
+/// UI, and is checked against that list before anything runs -- so this cannot
+/// be talked into installing an arbitrary package.
+#[tauri::command]
+async fn install_agent(app: tauri::AppHandle, name: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = engine()?;
+        let listed = Command::new(&engine)
+            .args(["ai", "--json"])
+            .output()
+            .map_err(|err| format!("could not run the Krate engine: {err}"))?;
+        let rows: serde_json::Value =
+            serde_json::from_slice(&listed.stdout).map_err(|err| err.to_string())?;
+        let package = rows
+            .as_array()
+            .and_then(|rows| {
+                rows.iter().find(|row| row["name"] == serde_json::json!(name))
+            })
+            .and_then(|row| row["install_package"].as_str())
+            .ok_or_else(|| "that tool cannot be installed automatically".to_string())?
+            .to_string();
+
+        let npm = which_npm().ok_or_else(|| {
+            "Installing an AI needs Node.js, which is not on this machine.              Install Node from nodejs.org, then try again."
+                .to_string()
+        })?;
+
+        emit_line(&app, &format!("Installing {package}"));
+        let mut child = Command::new(&npm);
+        // npm is a Node script, so it needs `node` on PATH -- and node lives
+        // beside npm. Without this the install dies with "env: node: No such
+        // file or directory" whenever npm is anywhere but /usr/bin, which is
+        // every version-manager install. Found by running the exact command
+        // the studio runs, with the environment a GUI app actually has.
+        if let Some(bin) = npm.parent() {
+            let existing = std::env::var_os("PATH").unwrap_or_default();
+            let mut dirs = vec![bin.to_path_buf()];
+            dirs.extend(std::env::split_paths(&existing));
+            if let Ok(joined) = std::env::join_paths(dirs) {
+                child.env("PATH", joined);
+            }
+        }
+        let mut child = child
+            .args(["install", "-g", &package])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .stdin(Stdio::null())
+            .spawn()
+            .map_err(|err| format!("could not start npm: {err}"))?;
+
+        // npm writes progress to stderr, so both streams matter.
+        if let Some(out) = child.stdout.take() {
+            let app = app.clone();
+            std::thread::spawn(move || {
+                for line in std::io::BufReader::new(out).lines().map_while(Result::ok) {
+                    emit_line(&app, &line);
+                }
+            });
+        }
+        if let Some(err) = child.stderr.take() {
+            let app = app.clone();
+            std::thread::spawn(move || {
+                for line in std::io::BufReader::new(err).lines().map_while(Result::ok) {
+                    emit_line(&app, &line);
+                }
+            });
+        }
+
+        let status = child.wait().map_err(|err| err.to_string())?;
+        if !status.success() {
+            return Err(
+                "The install did not finish. Node may need permission to write                  its global folder."
+                    .to_string(),
+            );
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+/// npm, found without a shell so a login-shell PATH is not required.
+///
+/// A GUI app on macOS does not inherit the PATH from a terminal profile, so a
+/// bare `npm` often fails inside the app while working fine in a shell. These
+/// are where Node actually installs.
+fn which_npm() -> Option<PathBuf> {
+    let mut roots = vec![
+        PathBuf::from("/opt/homebrew/bin/npm"),
+        PathBuf::from("/usr/local/bin/npm"),
+        PathBuf::from("/usr/bin/npm"),
+    ];
+    // Node version managers put it under the home directory, and nvm -- the
+    // most common of them -- nests it one directory per installed version.
+    // Missing this was not hypothetical: npm was under nvm on the machine
+    // this was written on, and the standard three paths all missed it.
+    if let Ok(home) = std::env::var("HOME") {
+        let home = PathBuf::from(&home);
+        roots.push(home.join(".volta/bin/npm"));
+        roots.push(home.join(".local/bin/npm"));
+        roots.push(home.join(".bun/bin/npm"));
+        if let Ok(versions) = std::fs::read_dir(home.join(".nvm/versions/node")) {
+            // Newest version first, so a stale old install is not preferred.
+            let mut found: Vec<PathBuf> = versions
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path().join("bin/npm"))
+                .filter(|path| path.is_file())
+                .collect();
+            found.sort();
+            found.reverse();
+            roots.extend(found);
+        }
+        if let Ok(versions) = std::fs::read_dir(home.join(".fnm/node-versions")) {
+            let mut found: Vec<PathBuf> = versions
+                .filter_map(|entry| entry.ok())
+                .map(|entry| entry.path().join("installation/bin/npm"))
+                .filter(|path| path.is_file())
+                .collect();
+            found.sort();
+            found.reverse();
+            roots.extend(found);
+        }
+    }
+    if let Ok(path) = std::env::var("PATH") {
+        for dir in std::env::split_paths(&path) {
+            roots.push(dir.join("npm"));
+        }
+    }
+    roots.into_iter().find(|candidate| candidate.is_file())
+}
+
+/// One line of progress to the UI, on the same channel the build log uses.
+fn emit_line(app: &tauri::AppHandle, line: &str) {
+    let _ = app.emit("agent-install", line.to_string());
+}
+
 /// The hub the studio reads and publishes to. `KRATE_HUB_URL` overrides it,
 /// the same variable the engine honours, so a local hub serves both.
 fn hub_url() -> String {
@@ -900,6 +1043,7 @@ fn main() {
             account_status,
             account_login,
             account_logout,
+            install_agent,
             cloud_apps,
             cloud_run,
             pick_files,
