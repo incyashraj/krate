@@ -260,7 +260,13 @@ enum Command {
     Doctor,
     /// Show which AI coding tools are installed, so you know what you can
     /// author apps with. Reads nothing but your PATH.
-    Ai,
+    Ai {
+        /// Machine-readable output: one JSON array, a probe result per
+        /// provider. The studio's agent chip reads this; anything else is
+        /// welcome to.
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Set up Claude Desktop or Cursor to build Krate apps for you.
     ///
@@ -946,7 +952,7 @@ fn run() -> Result<u8> {
             Ok(0)
         }
         Command::Doctor => doctor(),
-        Command::Ai => ai_status(),
+        Command::Ai { json } => ai_status(json),
         Command::Connect { app, yes, dry_run } => connect(app.as_deref(), yes, dry_run),
         Command::CheckApp {
             dir,
@@ -4639,6 +4645,53 @@ fn connect_app_present(target: &ClientTarget) -> bool {
     }
 }
 
+/// The same answer as `ai_status`, as one JSON array.
+///
+/// Every provider appears, including missing ones -- a frontend deciding
+/// what to offer needs the full set, not only the happy rows. States:
+/// `working`, `not-ready` (installed but refused, with the reason and the
+/// likely fix), `missing`.
+fn ai_status_json() -> Result<u8> {
+    let rows: Vec<serde_json::Value> = std::thread::scope(|scope| {
+        let handles: Vec<_> = agent_provider::PROVIDERS
+            .iter()
+            .map(|provider| {
+                scope.spawn(move || {
+                    let readiness =
+                        agent_provider::probe(*provider, std::time::Duration::from_secs(20));
+                    let (state, detail, remedy) = match &readiness {
+                        agent_provider::Readiness::Working => ("working", String::new(), None),
+                        agent_provider::Readiness::NotReady { summary, remedy } => {
+                            ("not-ready", summary.clone(), remedy.clone())
+                        }
+                        agent_provider::Readiness::Missing => {
+                            ("missing", provider.install_hint().to_string(), None)
+                        }
+                    };
+                    let name = provider.name();
+                    let mut label = name.to_string();
+                    if let Some(first) = label.get_mut(0..1) {
+                        first.make_ascii_uppercase();
+                    }
+                    serde_json::json!({
+                        "name": name,
+                        "label": label,
+                        "state": state,
+                        "detail": detail,
+                        "remedy": remedy,
+                    })
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .filter_map(|handle| handle.join().ok())
+            .collect()
+    });
+    println!("{}", serde_json::to_string_pretty(&rows)?);
+    Ok(0)
+}
+
 /// Show which AI coding tools are on this machine.
 ///
 /// This is the "connect your AI" step, and it is deliberately a lookup rather
@@ -4646,7 +4699,10 @@ fn connect_app_present(target: &ClientTarget) -> bool {
 /// Krate holding a copy of someone's credentials would be strictly worse than
 /// the tool holding its own. Nothing here reads a key, opens a browser, or
 /// talks to a server -- it looks at PATH and tells you what you can use.
-fn ai_status() -> Result<u8> {
+fn ai_status(json: bool) -> Result<u8> {
+    if json {
+        return ai_status_json();
+    }
     let installed: Vec<_> = agent_provider::PROVIDERS
         .iter()
         .filter(|provider| agent_provider::is_installed(**provider))

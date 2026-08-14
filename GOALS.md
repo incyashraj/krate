@@ -74,6 +74,7 @@ defect.
 | **W15** | Text measurement, delete the guess from seven apps | G2, K-002 | **landed** -- 11 apps converted, measurement matches drawn pixels |
 | **W16** | The benchmark: corpus, harness, honest score | G1 | **landed** -- 42 requests, harness self-checks against 17 bundles, first score 0/5 authored |
 | **W17** | Outsider testing with Grok, from a clean machine's point of view | G4 | **landed** -- 8 built, 0 usable; five defects filed |
+| **W18** | Krate Studio: the desktop shell -- describe an app, watch it become real, open it, share it | the make funnel (139 installs, 1 make) | **in progress** -- UI + Tauri shell scaffolded, `ai --json` landed; next: end-to-end create, then Krate.app becomes the studio |
 
 ### What each is actually trying to prove
 
@@ -85,6 +86,13 @@ defect.
   instead of guessing `chars * size * 0.52`.
 - **W16** — the number. Everything else is opinion until this exists.
 - **W17** — that it works for someone who is not us, with only what we published.
+- **W18** — that a person who is not a developer can go from a sentence to an
+  app they open and send, without a terminal, and close the window satisfied.
+  The adoption record says making is the broken step; this is aimed at exactly
+  that number. Decisions of record: one bundle (Krate.app IS the studio;
+  double-clicking a .krate still opens that app directly), the shell is thin
+  (every operation spawns the same `krate` engine the terminal uses), and v1
+  revision is honest re-creation from the accumulated conversation.
 
 ---
 
