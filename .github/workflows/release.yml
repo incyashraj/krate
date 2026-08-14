@@ -392,6 +392,7 @@ jobs:
           path: |
             dist/krate-*.${{ matrix.ext }}
             dist/krate-app-*.zip
+            dist/krate-studio-*.dmg
           if-no-files-found: error
 
   publish:
