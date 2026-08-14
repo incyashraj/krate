@@ -399,6 +399,13 @@ fn run_author(
         // Its own process group, so Stop can end the whole tree at once.
         cmd.process_group(0);
     }
+    // The first line arrives before the engine says anything, so a working
+    // event pipeline is visible within milliseconds -- and a broken one is
+    // visible too, as this exact line missing from the details log. The
+    // silent version of this bug shipped once: Tauri denies event.listen
+    // without a capabilities grant, invokes kept working, and the build
+    // screen froze on stage one while the engine worked perfectly.
+    let _ = app.emit("engine-line", "==> starting the Krate engine");
     let mut child = cmd
         .spawn()
         .map_err(|err| format!("could not start the Krate engine: {err}"))?;
@@ -412,11 +419,16 @@ fn run_author(
     let mut tail: Vec<String> = Vec::new();
     let stdout = child.stdout.take().ok_or("no stdout")?;
     let stderr = child.stderr.take().ok_or("no stderr")?;
+    let debug_log = std::env::var("KRATE_STUDIO_DEBUG").ok().map(PathBuf::from);
     let app2 = app.clone();
+    let debug2 = debug_log.clone();
     let err_thread = std::thread::spawn(move || {
         let mut lines = Vec::new();
         for line in std::io::BufReader::new(stderr).lines().map_while(Result::ok) {
             let _ = app2.emit("engine-line", &line);
+            if let Some(path) = &debug2 {
+                append_line(path, &line);
+            }
             lines.push(line);
         }
         lines
@@ -425,6 +437,9 @@ fn run_author(
     let mut in_asks = false;
     for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
         let _ = app.emit("engine-line", &line);
+        if let Some(path) = &debug_log {
+            append_line(path, &line);
+        }
         if line.trim_start().starts_with("requested access") {
             in_asks = true;
         } else if in_asks {
@@ -569,6 +584,21 @@ fn reveal(path: String) -> Result<(), String> {
     ok.map_err(|err| err.to_string()).map(|_| ())
 }
 
+/// A request to run the moment the studio opens, for driving a real
+/// end-to-end build in automation without faking anyone's keyboard.
+/// Development and testing only; unset for people.
+#[tauri::command]
+fn autorun() -> Option<String> {
+    std::env::var("KRATE_STUDIO_AUTORUN").ok().filter(|s| !s.is_empty())
+}
+
+fn append_line(path: &Path, line: &str) {
+    use std::io::Write as _;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(f, "{line}");
+    }
+}
+
 fn dirs_home() -> PathBuf {
     #[cfg(windows)]
     let var = "USERPROFILE";
@@ -628,7 +658,8 @@ fn main() {
             account_login,
             account_logout,
             pick_files,
-            pick_folder
+            pick_folder,
+            autorun
         ])
         .run(tauri::generate_context!())
         .expect("the studio window could not start");

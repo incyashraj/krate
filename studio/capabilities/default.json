@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The studio window listens for engine-line and login-step events; core:default is what grants the event API. Without this file Tauri v2 silently denies event.listen -- invokes work, every event is dropped, and the build screen freezes on stage one with an empty details log while the engine works perfectly underneath.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

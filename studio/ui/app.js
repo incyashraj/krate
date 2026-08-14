@@ -135,7 +135,14 @@ function renderSessions(sessions) {
     const card = document.createElement("button");
     card.className = "app-card";
     const size = s.result && s.result.size ? ` · ${s.result.size}` : "";
-    card.innerHTML = `<p class="name"></p><p class="meta">${timeAgo(s.updated)}${size}</p>`;
+    const hasShot = s.result && s.result.shot;
+    card.innerHTML = `<div class="thumb${hasShot ? "" : " blank"}"></div>
+      <div class="card-body"><p class="name"></p><p class="meta">${timeAgo(s.updated)}${size}</p></div>`;
+    if (hasShot) {
+      card.querySelector(".thumb").style.backgroundImage = `url(${s.result.shot})`;
+    } else {
+      card.querySelector(".thumb").textContent = "not finished yet";
+    }
     card.querySelector(".name").textContent = s.title;
     card.addEventListener("click", () => openSession(s));
     grid.appendChild(card);
@@ -240,10 +247,17 @@ function beginBuild(title, expect) {
   advanceStage("think");
   state.startedAt = Date.now();
   clearInterval(state.timer);
+  state.lastLineAt = Date.now();
+  let thinkIdx = 0;
   state.timer = setInterval(() => {
     const s = Math.floor((Date.now() - state.startedAt) / 1000);
     $("elapsed").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    if (Date.now() - state.lastLineAt > 18000) {
+      $("nowLine").textContent = THINKING[thinkIdx++ % THINKING.length];
+      state.lastLineAt = Date.now() - 8000; // rotate every ~10s while quiet
+    }
   }, 1000);
+  $("nowLine").textContent = "warming up…";
   show("building");
 }
 
@@ -264,11 +278,25 @@ function onEngineLine(line) {
   const log = $("buildLog");
   log.textContent += line + "\n";
   log.scrollTop = log.scrollHeight;
-  if (/writing the app|starter|agent|changing the app/i.test(line)) advanceStage("write");
-  if (/==> building/.test(line)) advanceStage("build");
+  const clean = line.replace(/^=+>\s*/, "").trim();
+  if (clean) {
+    $("nowLine").textContent = clean;
+    state.lastLineAt = Date.now();
+  }
+  if (/authoring|writing (the|your) app|starter|asking|agent|changing the app/i.test(line)) advanceStage("write");
+  if (/==> building|Compiling|Generating bindings/i.test(line)) advanceStage("build");
   if (/==> packing/.test(line)) advanceStage("pack");
   if (/==> verifying/.test(line)) advanceStage("wall");
 }
+
+/* When the engine goes quiet -- an AI thinking is real silence -- the
+ * heartbeat keeps beating with honest words, so quiet never looks dead. */
+const THINKING = [
+  "the AI is reading and thinking — this part is quiet",
+  "still working — the writing shows up here when it starts",
+  "big thoughts take a minute or two",
+  "still at it — nothing is stuck",
+];
 
 function fillDone(result, opts) {
   $("doneName").textContent = result.name;
@@ -595,8 +623,13 @@ document.querySelectorAll(".sheet-wrap").forEach((w) =>
 );
 
 if (tauri) {
-  tauri.event.listen("engine-line", (e) => onEngineLine(e.payload));
-  tauri.event.listen("login-step", (e) => onLoginStep(e.payload));
+  // A rejected listen was invisible once: the capabilities grant was
+  // missing, invokes worked, and the build screen froze on stage one with
+  // an empty log. Surfacing the rejection into the log is the tripwire.
+  tauri.event.listen("engine-line", (e) => onEngineLine(e.payload))
+    .catch((err) => onEngineLine(`(!) event channel failed: ${err}`));
+  tauri.event.listen("login-step", (e) => onLoginStep(e.payload))
+    .catch(() => {});
 }
 
 /* ---- mock backend: design-review mode only ---------------------------- */
@@ -678,4 +711,15 @@ function mockShot() {
   return c.toDataURL();
 }
 
-boot();
+boot().then(async () => {
+  // Automation hook: KRATE_STUDIO_AUTORUN makes the studio drive one real
+  // request the moment it opens -- an end-to-end test without faking a
+  // keyboard. Unset for people.
+  try {
+    const auto = await invoke("autorun");
+    if (auto && state.account) {
+      $("homePrompt").value = auto;
+      startFromHome();
+    }
+  } catch (e) {}
+});

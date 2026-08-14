@@ -55,6 +55,7 @@
     </header>
 
     <main class="home">
+      <div class="ambient" aria-hidden="true"><i></i><i></i></div>
       <h1 class="home-title">What do you want to make?</h1>
       <div class="composer-box home-composer">
         <textarea id="homePrompt" rows="2" placeholder="Describe the app you want…" autocomplete="off" spellcheck="false"></textarea>
@@ -98,9 +99,10 @@
       </aside>
 
       <section class="stage" id="stage">
+        <div class="ambient" aria-hidden="true"><i></i><i></i></div>
         <div class="stage-state" id="stateIdle">
           <div class="stage-empty">
-            <div class="stage-glyph" aria-hidden="true"></div>
+            <img class="empty-mark" src="krate-glyph-white.png" alt="" />
             <p>Your app will appear here.</p>
           </div>
         </div>
@@ -110,6 +112,7 @@
             <p class="build-title" id="buildTitle">Making your app</p>
             <p class="build-elapsed"><span id="elapsed">0:00</span> · <span id="buildExpect">usually a few minutes</span></p>
             <ol class="stages" id="stages"></ol>
+            <p class="now-line"><span id="nowLine">warming up…</span><span class="caret"></span></p>
             <details class="build-log-wrap">
               <summary>every step, in detail</summary>
               <pre class="build-log" id="buildLog"></pre>
