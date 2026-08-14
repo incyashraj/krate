@@ -6647,19 +6647,22 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
 
     // The app's own artwork when it ships one, so Finder and the dock show the
     // app rather than the Krate mark.
-    let icon_name = if let Some(icon) = opened
+    //
+    // When it ships none, fall back to Krate's own icon rather than leaving
+    // CFBundleIconFile unset: an app with no icon gets the blank sheet of
+    // paper, which reads as broken. The Krate mark says "this is a Krate app",
+    // which is true and looks deliberate.
+    let icon_name = opened
         .assets_path()
         .map(|assets| assets.join("icon.png"))
         .filter(|path| path.is_file())
-    {
-        match write_icns(&icon, &resources.join("AppIcon.icns")) {
-            Ok(()) => Some("AppIcon"),
-            // A bad icon is not a reason to refuse to install the app.
-            Err(_) => None,
-        }
-    } else {
-        None
-    };
+        .and_then(|icon| write_icns(&icon, &resources.join("AppIcon.icns")).ok())
+        .map(|()| "AppIcon")
+        .or_else(|| {
+            krate_icon_source()
+                .and_then(|source| fs::copy(source, resources.join("AppIcon.icns")).ok())
+                .map(|_| "AppIcon")
+        });
 
     let icon_entry = icon_name
         .map(|icon| format!("    <key>CFBundleIconFile</key>\n    <string>{icon}</string>\n"))
@@ -6715,6 +6718,26 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
 #[cfg(not(target_os = "macos"))]
 fn install_app(_bundle_path: &Path, _prefix: Option<&Path>, _dry_run: bool) -> Result<u8> {
     bail!("`krate install` is macOS-only today; on other systems run the .krate directly")
+}
+
+/// Krate's own `.icns`, for apps that ship no icon of their own.
+///
+/// Found relative to the running engine, so it works from an installed
+/// Krate.app and from a repo build. `None` when neither is present, and the
+/// installed app then simply has no icon rather than failing to install.
+#[cfg(target_os = "macos")]
+fn krate_icon_source() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    [
+        // Inside Krate.app: Contents/MacOS/krate-cli -> Contents/Resources.
+        dir.join("../Resources/Krate.icns"),
+        // A repo build, where make-macos-app.sh leaves the generated icons.
+        dir.join("../../dist/icon/Krate.icns"),
+        dir.join("dist/icon/Krate.icns"),
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
 }
 
 /// Convert a PNG into an `.icns`, using the system tool that already ships.

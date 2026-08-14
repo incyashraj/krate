@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 """Generate Krate.icns — the macOS app icon.
 
-A macOS-style rounded square in Krate accent blue carrying a white isometric
-crate. Deterministic output so the icon can be regenerated from source rather
-than checked in as an opaque binary.
+A macOS-style rounded square in neutral grey carrying a white isometric crate.
+Deterministic output so the icon can be regenerated from source rather than
+checked in as an opaque binary.
+
+Two things this file gets right on purpose, because it got them wrong before:
+
+* **The crate is centred.** It used to run y=310..828 on a 1024 canvas, so its
+  centre sat at 569 -- 57px low, with 310px of air above it and 196px below.
+  In the dock that reads as a mark sagging in its tile. The geometry below is
+  derived from the canvas centre, and `assert_centred` checks the rendered
+  pixels rather than trusting the arithmetic.
+
+* **The tile is grey, not blue.** The blue tile competed with the app icons
+  people make; a neutral plate lets Krate sit behind their work rather than
+  in front of it.
 
 Usage: python3 scripts/make-app-icon.py [output-dir]   (default: dist/icon)
 Requires PIL and /usr/bin/iconutil (macOS).
@@ -20,9 +32,9 @@ SIZE = 1024
 TILE_INSET = 100
 CORNER_RADIUS = 185
 
-# Krate accent, light at the top to a deeper blue at the bottom.
-TOP_COLOR = (30, 140, 255)
-BOTTOM_COLOR = (0, 96, 214)
+# Neutral plate, lighter at the top so the tile reads as a surface.
+TOP_COLOR = (124, 124, 124)
+BOTTOM_COLOR = (82, 82, 82)
 
 
 def rounded_tile_mask() -> Image.Image:
@@ -52,10 +64,12 @@ def gradient_background() -> Image.Image:
 def draw_crate(draw: ImageDraw.ImageDraw) -> None:
     """A white isometric crate: top, left and right faces, with slat gaps."""
     cx = SIZE // 2
-    top_y = 310
     half_w = 268
     half_h = 134
     depth = 250
+    # The drawn mark spans 2*half_h + depth vertically. Start it so that span
+    # is centred on the canvas, rather than at a hand-picked constant.
+    top_y = (SIZE - (2 * half_h + depth)) // 2
 
     north = (cx, top_y)
     east = (cx + half_w, top_y + half_h)
@@ -183,11 +197,39 @@ def build_master() -> Image.Image:
     return tile
 
 
+def assert_centred(image: Image.Image, name: str, tolerance: int = 4) -> None:
+    """Fail loudly if the mark is not centred on its tile.
+
+    The shipped icon once sat 57px low and nobody caught it until it looked
+    wrong in the dock. Centring is arithmetic, so it can be checked: this reads
+    the rendered pixels back and refuses to write an icon that sags.
+    """
+    pixels = image.load()
+    xs, ys = [], []
+    for y in range(image.height):
+        for x in range(image.width):
+            r, g, b, a = pixels[x, y]
+            if a > 128 and r > 200 and g > 200 and b > 200:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        raise SystemExit(f"{name}: no mark was drawn")
+    cx = (min(xs) + max(xs)) / 2
+    cy = (min(ys) + max(ys)) / 2
+    want = image.width / 2
+    if abs(cx - want) > tolerance or abs(cy - want) > tolerance:
+        raise SystemExit(
+            f"{name}: the mark is off centre at {cx:.1f},{cy:.1f} "
+            f"(want {want:.1f},{want:.1f}); fix the geometry, not the icon"
+        )
+
+
 def main() -> int:
     out_dir = Path(sys.argv[1] if len(sys.argv) > 1 else "dist/icon")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for stem, master in (("Krate", build_master()), ("KrateDoc", build_document_master())):
+        assert_centred(master, stem)
         master.save(out_dir / f"{stem.lower()}-1024.png")
         iconset = out_dir / f"{stem}.iconset"
         iconset.mkdir(parents=True, exist_ok=True)
