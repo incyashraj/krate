@@ -1012,6 +1012,68 @@ fn autorun() -> Option<String> {
     std::env::var("KRATE_STUDIO_AUTORUN").ok().filter(|s| !s.is_empty())
 }
 
+/// Finish the install, the first time the studio runs after being dragged in.
+///
+/// A .dmg gives someone one gesture: drag Krate to Applications. Everything
+/// else that makes Krate work has to happen without asking them to open a
+/// terminal, which is the whole promise of this app.
+///
+/// Three things, all idempotent, all safe to fail:
+///
+/// 1. **Register the runtime with Launch Services**, so double-clicking a
+///    `.krate` opens it. The studio ships the engine inside itself; without
+///    this the file type belongs to nobody and a shared app is a dead icon.
+/// 2. **Put `krate` on PATH**, via a symlink in /usr/local/bin when that is
+///    writable. The terminal tool is what the docs describe, and someone who
+///    installed the studio should have it too. Skipped silently when the
+///    directory needs an administrator -- asking for a password on first
+///    launch is worse than not having the shortcut.
+/// 3. **Record that this ran**, so it happens once rather than every launch.
+#[cfg(target_os = "macos")]
+fn first_run_setup() {
+    let marker = studio_dir().join("setup-done");
+    if marker.exists() {
+        return;
+    }
+
+    if let Ok(engine) = engine() {
+        // The engine registers its own document types; running it once with
+        // a no-op subcommand is enough for Launch Services to see the bundle
+        // it lives in.
+        let bundle = engine
+            .parent()
+            .and_then(|p| p.parent())
+            .and_then(|p| p.parent());
+        if let Some(bundle) = bundle {
+            let lsregister = "/System/Library/Frameworks/CoreServices.framework/\
+                              Frameworks/LaunchServices.framework/Support/lsregister";
+            let _ = Command::new(lsregister)
+                .arg("-f")
+                .arg(bundle)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status();
+        }
+
+        // `krate` on PATH, for the terminal. Only where it does not need a
+        // password: /usr/local/bin is writable by the admin user on most
+        // machines, and when it is not, this is simply skipped.
+        let link = PathBuf::from("/usr/local/bin/krate");
+        if !link.exists() {
+            if let Some(dir) = link.parent() {
+                if dir.is_dir() {
+                    let _ = std::os::unix::fs::symlink(&engine, &link);
+                }
+            }
+        }
+    }
+
+    let _ = std::fs::write(&marker, "1");
+}
+
+#[cfg(not(target_os = "macos"))]
+fn first_run_setup() {}
+
 fn append_line(path: &Path, line: &str) {
     use std::io::Write as _;
     if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
@@ -1081,6 +1143,11 @@ fn human_size(bytes: u64) -> String {
 }
 
 fn main() {
+    // Finish the install before the window appears. On a background thread:
+    // it touches Launch Services and the filesystem, and none of it should
+    // ever delay the first paint.
+    std::thread::spawn(first_run_setup);
+
     tauri::Builder::default()
         .manage(Running(Mutex::new(None)))
         // Closing the window mid-build must not leave the AI running.
@@ -1132,6 +1199,25 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("the studio window could not start")
         .run(|app, event| {
+            // A .krate opened through the studio.
+            //
+            // The bundle declares the type, so Finder can route a file here --
+            // and without this it would arrive and nothing would happen. Run
+            // it through the engine, which applies the same permission wall it
+            // applies everywhere else.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &event {
+                for url in urls {
+                    if let Ok(path) = url.to_file_path() {
+                        if path.extension().and_then(|e| e.to_str()) == Some("krate") {
+                            if let Ok(engine) = engine() {
+                                let _ = Command::new(&engine).arg("run").arg(&path).spawn();
+                            }
+                        }
+                    }
+                }
+            }
+
             // Cmd-Q and Dock > Quit close no window, so the window handler
             // above never sees them.
             if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {

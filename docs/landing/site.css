@@ -904,3 +904,152 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
 .dl b { color: var(--text); font-weight: 560; }
 .dl span { color: var(--quiet); font-size: 12.5px; }
 .dl-foot { color: var(--quiet); font-size: 12.5px; line-height: 1.6; }
+
+/* ---- studio page ------------------------------------------------------- */
+
+.st-hero { padding: 96px 0 72px; text-align: center; }
+.st-hero-inner { max-width: 780px; margin: 0 auto; }
+.st-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 12px; border-radius: var(--radius-pill);
+  border: 1px solid rgba(244, 220, 116, 0.3);
+  background: rgba(244, 220, 116, 0.07);
+  color: var(--warn); font-size: 11px; letter-spacing: 0.12em;
+}
+.st-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: var(--warn);
+  animation: st-pulse 2.4s ease-in-out infinite;
+}
+@keyframes st-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .st-dot { animation: none; } }
+
+.st-h1 {
+  margin-top: 24px;
+  font-size: clamp(34px, 6vw, 60px);
+  font-weight: 500; line-height: 1.06; letter-spacing: -0.025em;
+}
+.st-lede {
+  margin: 20px auto 0; max-width: 620px;
+  color: var(--muted); font-size: 16px; line-height: 1.65;
+}
+.st-cta {
+  display: flex; justify-content: center; flex-wrap: wrap; gap: 10px;
+  margin-top: 32px;
+}
+.st-under { margin-top: 16px; color: var(--quiet); font-size: 12.5px; }
+
+.st-band { padding: 40px 0 88px; }
+.st-rows { display: grid; gap: 18px; max-width: 980px; margin: 0 auto; }
+.st-row {
+  display: grid; gap: 28px; align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  padding: 30px; border: 1px solid var(--line);
+  border-radius: 16px; background: var(--panel);
+}
+@media (max-width: 780px) { .st-row { grid-template-columns: 1fr; } }
+.st-num {
+  color: var(--quiet); font-family: var(--mono);
+  font-size: 11px; letter-spacing: 0.1em;
+}
+.st-row-text h2 {
+  margin: 10px 0 10px; font-size: 21px;
+  font-weight: 560; letter-spacing: -0.015em;
+}
+.st-row-text p { color: var(--muted); font-size: 14.5px; line-height: 1.65; }
+
+/* The mocks are drawn, not screenshots: a real capture goes stale every time
+   the app changes, and these say the same thing in a tenth of the bytes. */
+.st-mock {
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--bg); padding: 18px; font-size: 13px;
+  min-height: 132px; display: flex; flex-direction: column; justify-content: center;
+}
+.st-mock-prompt .st-caret-line { color: var(--muted); }
+.st-caret {
+  display: inline-block; width: 2px; height: 14px;
+  margin-left: 3px; vertical-align: -2px; background: var(--accent);
+  animation: st-blink 1.1s steps(1) infinite;
+}
+@keyframes st-blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .st-caret { animation: none; } }
+
+.st-mock-steps p, .st-mock-caps p {
+  display: flex; align-items: center; gap: 9px;
+  padding: 4px 0; color: var(--muted);
+}
+.st-tick, .st-bullet {
+  width: 5px; height: 5px; border-radius: 50%; flex: none;
+  background: var(--good);
+}
+.st-bullet { background: var(--accent); }
+.st-live {
+  width: 5px; height: 5px; border-radius: 50%; flex: none;
+  background: var(--warn);
+  animation: st-pulse 1.4s ease-in-out infinite;
+}
+.st-mock-chat p { padding: 8px 12px; border-radius: 10px; margin-bottom: 8px; }
+.st-you { background: var(--panel-raised, #16171b); color: var(--text); }
+.st-krate { color: var(--muted); }
+.st-cap-h, .st-cap-note { color: var(--quiet) !important; font-size: 12px; }
+.st-cap-note { margin-top: 6px; }
+
+.st-get { padding: 0 0 96px; }
+.st-get-card {
+  max-width: 720px; margin: 0 auto; padding: 30px;
+  border: 1px solid var(--line); border-radius: 16px; background: var(--panel);
+}
+.st-get-head { display: flex; align-items: center; gap: 12px; }
+.st-get-head h2 { font-size: 22px; font-weight: 560; letter-spacing: -0.015em; }
+.st-get-sub { margin-top: 10px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.st-dl-grid {
+  display: grid; gap: 10px; margin: 22px 0 16px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.dl-soon { opacity: 0.55; }
+.st-get-note { color: var(--quiet); font-size: 12.5px; line-height: 1.7; }
+.st-get-note code {
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+}
+.st-honest {
+  margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--line);
+}
+.st-honest-h {
+  color: var(--quiet); font-size: 11px;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.st-honest ul { list-style: none; margin: 12px 0 0; padding: 0; }
+.st-honest li {
+  position: relative; padding: 5px 0 5px 16px;
+  color: var(--muted); font-size: 13.5px; line-height: 1.6;
+}
+.st-honest li::before {
+  content: ""; position: absolute; left: 0; top: 13px;
+  width: 4px; height: 4px; border-radius: 50%; background: var(--line-strong, #2e323a);
+}
+
+/* ---- studio card on the home page -------------------------------------- */
+
+.studio-card {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 24px; flex-wrap: wrap;
+  margin-top: 18px; padding: 26px;
+  border: 1px solid var(--line); border-radius: 16px;
+  background: var(--panel); text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.studio-card:hover { border-color: var(--line-strong, #2e323a); transform: translateY(-1px); }
+.studio-card-text { max-width: 560px; }
+.studio-card-text p:last-child {
+  margin-top: 8px; color: var(--muted); font-size: 14px; line-height: 1.6;
+}
+.studio-eyebrow {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-bottom: 10px;
+  color: var(--warn); font-size: 10.5px; letter-spacing: 0.12em;
+}
+.studio-dot {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--warn);
+  animation: st-pulse 2.4s ease-in-out infinite;
+}
+.studio-go { color: var(--accent); font-size: 14px; white-space: nowrap; }
