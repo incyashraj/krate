@@ -54,7 +54,10 @@ export default {
         return googleCallback(url, env);
       }
       if (request.method === "POST" && pathname === "/login/email") {
-        return emailStart(request, env);
+        // Fetched from page scripts on krate.tech, unlike the login
+        // redirects around it, so the answer must carry CORS headers or
+        // the browser discards it and reports a phantom network failure.
+        return cors(await emailStart(request, env));
       }
       if (request.method === "GET" && pathname === "/login/email/verify") {
         return emailVerify(url, env);
