@@ -80,6 +80,15 @@ pub fn sign_out() -> Result<bool> {
     Ok(true)
 }
 
+/// Store an identity that arrived from the browser sign-in.
+///
+/// The hub verified it against GitHub before handing it over, and `publish`
+/// re-verifies the token on every upload, so a fabricated identity buys
+/// nothing beyond a wrong name shown locally.
+pub fn adopt(identity: &Identity) -> Result<()> {
+    store(identity)
+}
+
 fn store(identity: &Identity) -> Result<()> {
     let Some(path) = credentials_path() else {
         anyhow::bail!("no home directory, so there is nowhere to keep the sign-in");

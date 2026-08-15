@@ -711,6 +711,12 @@ enum AccountAction {
         #[arg(long)]
         json: bool,
     },
+    /// Store an identity delivered by the browser sign-in.
+    ///
+    /// Reads one JSON object from stdin: {login, name, avatar_url, token}.
+    /// Stdin and not an argument, because a token on argv is visible to
+    /// every process on the machine through `ps`.
+    Adopt,
     /// Forget the stored sign-in on this machine.
     Logout,
 }
@@ -3049,6 +3055,22 @@ fn account_command(action: Option<AccountAction>, json: bool) -> Result<u8> {
                 github_auth::sign_in_json()?;
             } else {
                 github_auth::sign_in()?;
+            }
+            Ok(0)
+        }
+        Some(AccountAction::Adopt) => {
+            let mut input = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)?;
+            let identity: github_auth::Identity = serde_json::from_str(input.trim())
+                .context("the identity on stdin was not valid JSON")?;
+            github_auth::adopt(&identity)?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({ "signed_in": true, "login": identity.login })
+                );
+            } else {
+                println!("signed in as {}", identity.display_name());
             }
             Ok(0)
         }

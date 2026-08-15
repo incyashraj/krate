@@ -27,6 +27,8 @@ base64 = "0.22"
 # The same dialog crate the runtime's own host pickers use.
 rfd = "0.15"
 libc = "0.2"
+# Parsing the sign-in handoff fragment; tauri already depends on it.
+url = "2"
 # Reading Krate Cloud. Same version and features as the workspace's own hub
 # client, so the studio and the engine speak to the hub identically.
 ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }

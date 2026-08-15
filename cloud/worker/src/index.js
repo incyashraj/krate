@@ -41,6 +41,12 @@ export default {
       if (request.method === "POST" && pathname === "/publish") {
         return cors(await publish(request, env));
       }
+      if (request.method === "GET" && pathname === "/login/start") {
+        return loginStart(url, env);
+      }
+      if (request.method === "GET" && pathname === "/login/callback") {
+        return loginCallback(url, env);
+      }
       if (request.method === "POST" && pathname === "/auth/start") {
         return cors(await authStart(env));
       }
@@ -608,6 +614,83 @@ async function stats(env) {
 // secret (the device flow has none), and simply pass a call through.
 
 const GITHUB_CLIENT_ID = "Ov23liV2n8Dxi0okyv0F";
+
+// --------------------------------------------------------------- web sign-in
+//
+// The browser flow behind krate.tech/login. The device flow above stays for
+// terminals; this one is for the page a person actually sees. Same GitHub
+// OAuth app, but the authorization-code exchange requires the client secret,
+// which lives as a Worker secret (`wrangler secret put GITHUB_CLIENT_SECRET`)
+// and never anywhere else.
+
+async function loginStart(url, env) {
+  if (!env.GITHUB_CLIENT_SECRET) {
+    return text(
+      "Sign-in is not configured on this hub yet: the GITHUB_CLIENT_SECRET " +
+        "worker secret is missing.",
+      503,
+    );
+  }
+  // Where to deliver the person afterwards. "app" means hand the identity to
+  // the desktop app through its URL scheme; anything else means the site.
+  const from = url.searchParams.get("from") === "app" ? "app" : "web";
+  // The state ties the callback to this start. Ten minutes is enough to type
+  // a password and approve; an unused state simply expires.
+  const state = crypto.randomUUID();
+  await env.APPS.put(`login:${state}`, from, { expirationTtl: 600 });
+
+  const auth = new URL("https://github.com/login/oauth/authorize");
+  auth.searchParams.set("client_id", GITHUB_CLIENT_ID);
+  auth.searchParams.set("redirect_uri", `${env.PUBLIC_BASE}/login/callback`);
+  auth.searchParams.set("scope", "read:user");
+  auth.searchParams.set("state", state);
+  return Response.redirect(auth.toString(), 302);
+}
+
+async function loginCallback(url, env) {
+  const state = url.searchParams.get("state") || "";
+  const code = url.searchParams.get("code") || "";
+  const from = await env.APPS.get(`login:${state}`);
+  if (!from) return text("This sign-in link expired. Start again from krate.tech/login.", 400);
+  // One shot: a replayed callback with the same state gets the line above.
+  await env.APPS.delete(`login:${state}`);
+
+  const exchange = await fetch("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: GITHUB_CLIENT_ID,
+      client_secret: env.GITHUB_CLIENT_SECRET,
+      code,
+      redirect_uri: `${env.PUBLIC_BASE}/login/callback`,
+    }),
+  });
+  const result = await exchange.json();
+  if (!result.access_token) return text("GitHub did not complete the sign-in. Try again.", 502);
+
+  const user = await fetch("https://api.github.com/user", {
+    headers: {
+      authorization: `Bearer ${result.access_token}`,
+      accept: "application/vnd.github+json",
+      "user-agent": "krate-hub",
+    },
+  });
+  if (!user.ok) return text("Signed in, but the profile could not be read.", 502);
+  const profile = await user.json();
+
+  if (from === "app") {
+    // The identity rides in the URL FRAGMENT, which browsers do not send in
+    // requests, so it cannot land in anyone's access logs.
+    const hand = new URLSearchParams({
+      token: result.access_token,
+      login: profile.login,
+      name: profile.name || "",
+      avatar_url: profile.avatar_url || "",
+    });
+    return Response.redirect(`krate://signed-in#${hand.toString()}`, 302);
+  }
+  return Response.redirect("https://krate.tech/login/done/", 302);
+}
 
 async function authStart(env) {
   const response = await fetch("https://github.com/login/device/code", {

@@ -957,6 +957,20 @@ fn emit_line(app: &tauri::AppHandle, line: &str) {
     let _ = app.emit("agent-install", line.to_string());
 }
 
+/// Open the krate.tech sign-in page in the person's browser.
+///
+/// The page hands back to this app through the krate:// URL scheme, so the
+/// whole round trip is: button, browser, approve, and the window is signed
+/// in when they return -- no code to type.
+#[tauri::command]
+fn login_browser() -> Result<(), String> {
+    Command::new("/usr/bin/open")
+        .arg("https://krate.tech/login?from=app")
+        .status()
+        .map_err(|err| err.to_string())
+        .and_then(|s| if s.success() { Ok(()) } else { Err("could not open the browser".into()) })
+}
+
 /// The hub the studio reads and publishes to. `KRATE_HUB_URL` overrides it,
 /// the same variable the engine honours, so a local hub serves both.
 fn hub_url() -> String {
@@ -1217,6 +1231,7 @@ fn main() {
             account_login,
             account_logout,
             app_info,
+            login_browser,
             install_agent,
             cloud_apps,
             cloud_run,
@@ -1236,6 +1251,60 @@ fn main() {
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Opened { urls } = &event {
                 for url in urls {
+                    // The browser sign-in lands here: krate://signed-in with
+                    // the identity in the fragment (fragments never appear in
+                    // request logs). Hand it to the engine over STDIN -- a
+                    // token on argv would be readable by every process via ps
+                    // -- then tell the gate, on the same channel the device
+                    // flow uses, so the window flips without a restart.
+                    if url.scheme() == "krate" {
+                        let fragment = url.fragment().unwrap_or("");
+                        let fields: std::collections::HashMap<_, _> =
+                            url::form_urlencoded::parse(fragment.as_bytes()).collect();
+                        let (token, login) = (
+                            fields.get("token").cloned().unwrap_or_default(),
+                            fields.get("login").cloned().unwrap_or_default(),
+                        );
+                        if !token.is_empty() && !login.is_empty() {
+                            let identity = serde_json::json!({
+                                "login": login,
+                                "name": fields.get("name").cloned().unwrap_or_default(),
+                                "avatar_url": fields.get("avatar_url").cloned().unwrap_or_default(),
+                                "token": token,
+                            });
+                            if let Ok(engine) = engine() {
+                                let adopted = Command::new(&engine)
+                                    .args(["account", "adopt"])
+                                    .stdin(Stdio::piped())
+                                    .stdout(Stdio::null())
+                                    .stderr(Stdio::null())
+                                    .spawn()
+                                    .and_then(|mut child| {
+                                        use std::io::Write as _;
+                                        child
+                                            .stdin
+                                            .take()
+                                            .map(|mut sin| sin.write_all(identity.to_string().as_bytes()))
+                                            .transpose()?;
+                                        child.wait()
+                                    })
+                                    .map(|status| status.success())
+                                    .unwrap_or(false);
+                                if adopted {
+                                    let _ = app.emit(
+                                        "login-step",
+                                        serde_json::json!({
+                                            "step": "done",
+                                            "login": identity["login"],
+                                            "name": identity["name"],
+                                            "avatar_url": identity["avatar_url"],
+                                        }),
+                                    );
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     if let Ok(path) = url.to_file_path() {
                         if path.extension().and_then(|e| e.to_str()) == Some("krate") {
                             if let Ok(engine) = engine() {

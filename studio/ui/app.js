@@ -1340,6 +1340,17 @@ $("backBtn").addEventListener("click", async () => {
   await persist();
   enterHome();
 });
+$("loginBrowserBtn").addEventListener("click", async () => {
+  $("gateError").classList.add("hidden");
+  try {
+    await invoke("login_browser");
+    // The krate:// handoff emits the same login-step "done" the device flow
+    // uses; nothing to poll here.
+  } catch (err) {
+    $("gateError").textContent = signInWords(err);
+    $("gateError").classList.remove("hidden");
+  }
+});
 $("attachBtn").addEventListener("click", attach);
 $("homeAttachBtn").addEventListener("click", attach);
 $("cloudBtn").addEventListener("click", openCloud);

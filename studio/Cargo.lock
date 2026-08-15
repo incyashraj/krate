@@ -1974,6 +1974,7 @@ dependencies = [
  "tauri",
  "tauri-build",
  "ureq",
+ "url",
 ]
 
 [[package]]
