@@ -55,6 +55,12 @@ tracing-subscriber.workspace = true
 [target.'cfg(target_os = "macos")'.dependencies]
 krate-adapter-macos = { path = "../adapter-macos", version = "0.1.0-dev" }
 
+# Doctor's graphics probe: name the GPU adapter apps will draw on, or say
+# plainly that they will draw on the CPU. Same crate the window presenters
+# use, so doctor's answer and the real path cannot disagree.
+[target.'cfg(any(target_os = "windows", target_os = "linux"))'.dependencies]
+krate-presenter-gpu = { path = "../presenter-gpu", version = "0.1.0-dev" }
+
 [dev-dependencies]
 tempfile = "3.27.0"
 
@@ -63,6 +69,11 @@ tempfile = "3.27.0"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# The exe icon. Evaluated against the HOST, which is fine: Windows binaries
+# are built on Windows runners for both x64 and arm64.
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
+
 [target.'cfg(windows)'.dependencies]
 # Detaching the console a double-click hands us; see detach_owned_console.
-windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }
+windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }

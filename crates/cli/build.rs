@@ -13,7 +13,24 @@ fn main() {
     println!("cargo:rustc-env=KRATE_RUSTC_VERSION={rustc}");
     println!("cargo:rustc-env=KRATE_GIT_SHA={git_sha}");
 
+    embed_icon();
     embed_sdk();
+}
+
+/// Give krate.exe the Krate icon. Without a resource section the binary
+/// shows Windows' blank-executable glyph everywhere it appears.
+fn embed_icon() {
+    #[cfg(windows)]
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        let icon = "../../studio/icons/icon.ico";
+        println!("cargo:rerun-if-changed={icon}");
+        let mut res = winresource::WindowsResource::new();
+        res.set_icon(icon);
+        if let Err(err) = res.compile() {
+            // An icon must never fail a build; say why and move on.
+            println!("cargo:warning=exe icon not embedded: {err}");
+        }
+    }
 }
 
 /// Embed the guest SDK — the WIT interface definitions and the Rust bindings

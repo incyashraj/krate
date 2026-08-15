@@ -53,6 +53,12 @@
       "minimumSystemVersion": "10.15",
       "entitlements": "Entitlements.plist"
     },
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser"
+      }
+    },
     "fileAssociations": [
       {
         "ext": [

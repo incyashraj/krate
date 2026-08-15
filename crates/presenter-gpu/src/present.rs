@@ -113,6 +113,14 @@ impl WindowPresenter {
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
                 .map_err(|e| format!("device: {e}"))?;
+        // One line of truth per window: which silicon and driver stack is
+        // actually drawing. "The game lags" debugging starts by knowing
+        // whether this ran on the GPU at all, and on which one.
+        let info = adapter.get_info();
+        eprintln!(
+            "krate: GPU presenter on {} ({:?}, {:?})",
+            info.name, info.backend, info.device_type
+        );
         let caps = surface.get_capabilities(&adapter);
         let surface_format = caps
             .formats

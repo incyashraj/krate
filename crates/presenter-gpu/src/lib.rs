@@ -22,7 +22,7 @@ use krate_adapter_common::painter::{
     COLOR_FIELD_BORDER, COLOR_FIELD_FILL, COLOR_FIELD_TEXT, COLOR_IMAGE_BACKDROP, COLOR_KNOB,
     COLOR_TEXT, COLOR_TRACK,
 };
-use krate_adapter_common::ui::{ImagePixels, WidgetKind, WidgetPlacement};
+use krate_adapter_common::ui::{ImagePixels, WidgetId, WidgetKind, WidgetPlacement};
 use parley::{
     Alignment, AlignmentOptions, FontContext, Layout, LayoutContext, PositionedLayoutItem,
 };
@@ -62,15 +62,20 @@ fn rect(r: (f32, f32, f32, f32)) -> Rect {
 }
 
 /// Per-presenter state that outlives a frame: shaped-text contexts and
-/// uploaded images. Images are keyed by their pixel buffer's address, so a
-/// canvas that pushes a new frame re-uploads and a static logo uploads once
-/// -- re-uploading per frame is the classic port mistake and is the K-062
-/// family.
+/// uploaded images.
+///
+/// Images are keyed by WIDGET, holding (pixel address, brush): a static logo
+/// uploads once and is reused by address match; an animating canvas replaces
+/// its one entry each frame, so the previous frame's image is dropped and
+/// vello can release it. The first cut keyed by pixel address alone and
+/// never evicted -- every animation frame's full RGBA clone stayed in the
+/// map and in the image atlas forever, which on Windows read as "the game
+/// lags very badly" and was the K-109 leak's GPU-path cousin.
 #[derive(Default)]
 pub struct SceneCache {
     font_cx: Option<FontContext>,
     layout_cx: LayoutContext<()>,
-    images: HashMap<usize, ImageBrush>,
+    images: HashMap<WidgetId, (usize, ImageBrush)>,
 }
 
 impl SceneCache {
@@ -89,20 +94,22 @@ impl SceneCache {
         layout
     }
 
-    fn image(&mut self, pixels: &ImagePixels) -> ImageBrush {
-        let key = pixels.rgba.as_ptr() as usize;
-        self.images
-            .entry(key)
-            .or_insert_with(|| {
-                ImageBrush::new(ImageData {
-                    data: Blob::from(pixels.rgba.clone()),
-                    format: ImageFormat::Rgba8,
-                    alpha_type: ImageAlphaType::Alpha,
-                    width: pixels.width,
-                    height: pixels.height,
-                })
-            })
-            .clone()
+    fn image(&mut self, widget: WidgetId, pixels: &ImagePixels) -> ImageBrush {
+        let addr = pixels.rgba.as_ptr() as usize;
+        if let Some((held, brush)) = self.images.get(&widget) {
+            if *held == addr {
+                return brush.clone();
+            }
+        }
+        let brush = ImageBrush::new(ImageData {
+            data: Blob::from(pixels.rgba.clone()),
+            format: ImageFormat::Rgba8,
+            alpha_type: ImageAlphaType::Alpha,
+            width: pixels.width,
+            height: pixels.height,
+        });
+        self.images.insert(widget, (addr, brush.clone()));
+        brush
     }
 }
 
@@ -329,7 +336,7 @@ pub fn build_scene(
                     fill_clipped(&mut scene, COLOR_IMAGE_BACKDROP, (px, py, pw, ph), clip);
                 }
                 if let Some(pixels) = placement.pixels.as_deref() {
-                    let image = cache.image(pixels);
+                    let image = cache.image(placement.widget, pixels);
                     draw_image_fit(&mut scene, &image, (px, py, pw, ph));
                 }
             }
@@ -464,3 +471,19 @@ impl OffscreenPresenter {
 pub mod present;
 pub use present::WindowPresenter;
 pub use vello;
+
+/// The GPU a window presenter would draw on, or None when apps will fall
+/// back to the CPU painter. Doctor prints this; keeping the probe here means
+/// doctor's answer and the real presenter path cannot disagree.
+pub fn adapter_summary() -> Option<String> {
+    use vello::wgpu;
+    let instance = wgpu::Instance::default();
+    let adapter =
+        pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
+            .ok()?;
+    let info = adapter.get_info();
+    Some(format!(
+        "{} ({:?}, {:?})",
+        info.name, info.backend, info.device_type
+    ))
+}

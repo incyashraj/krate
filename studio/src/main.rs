@@ -898,16 +898,36 @@ fn open_app(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let ok = Command::new("open").arg(&path).status();
     #[cfg(target_os = "windows")]
-    let ok = {
+    return {
         let engine = engine().map_err(|e| e)?;
-        silent_cmd(&engine)
+        // Capture the engine's own words instead of a bare "could not open
+        // the app" -- the person debugging from a screenshot needs the
+        // reason on the screen.
+        let out = silent_cmd(&engine)
             .current_dir(studio_dir())
             .arg("launch")
             .arg(&path)
-            .status()
+            .output()
+            .map_err(|err| err.to_string())?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            let why = String::from_utf8_lossy(&out.stderr);
+            let why = why.trim();
+            let tail: String = why
+                .chars()
+                .skip(why.chars().count().saturating_sub(300))
+                .collect();
+            Err(if tail.is_empty() {
+                "could not open the app".to_string()
+            } else {
+                format!("could not open the app: {tail}")
+            })
+        }
     };
     #[cfg(all(unix, not(target_os = "macos")))]
     let ok = Command::new("xdg-open").arg(&path).status();
+    #[cfg(not(target_os = "windows"))]
     ok.map_err(|err| err.to_string()).and_then(|s| {
         if s.success() {
             Ok(())
@@ -1255,9 +1275,16 @@ fn reveal(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let ok = Command::new("open").args(["-R", &path]).status();
     #[cfg(target_os = "windows")]
-    let ok = Command::new("explorer")
-        .arg(format!("/select,{path}"))
-        .status();
+    let ok = {
+        // raw_arg, not arg: std quotes an argument containing spaces as one
+        // token, and explorer cannot parse `"/select,C:\...\Krate Apps\x"`
+        // -- it silently opens Documents instead of revealing the file. The
+        // path alone is quoted; the /select, prefix stays bare.
+        use std::os::windows::process::CommandExt;
+        Command::new("explorer")
+            .raw_arg(format!("/select,\"{path}\""))
+            .status()
+    };
     #[cfg(all(unix, not(target_os = "macos")))]
     let ok = Command::new("xdg-open")
         .arg(

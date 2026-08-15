@@ -825,7 +825,7 @@ enum GrantLogFormat {
     Jsonl,
 }
 
-/// Drop the console when we are its only owner.
+/// Drop the console when we are its only owner AND it is actually on screen.
 ///
 /// A double-clicked .krate routed to this console-subsystem binary makes
 /// Windows allocate a fresh terminal that sits behind the app for its whole
@@ -833,13 +833,27 @@ enum GrantLogFormat {
 /// process list is just us, nobody is reading it: it exists only because of
 /// our subsystem, so free it. Launched from a real shell the list has the
 /// shell in it too, and the console stays, prints and pipes intact.
+///
+/// The visibility check is the load-bearing half. The studio spawns this
+/// engine with CREATE_NO_WINDOW, which gives it a console with NO window --
+/// and every child (the agent, cargo, each build step) inherits that
+/// invisible console for free. Unconditionally freeing it left the engine
+/// bare, so each console-subsystem child minted a VISIBLE terminal: the
+/// "grok window popping up on every step" report was this function's doing.
+/// An invisible console is an asset; only a visible one is the bug.
 #[cfg(windows)]
 fn detach_owned_console() {
     unsafe {
-        use windows_sys::Win32::System::Console::{FreeConsole, GetConsoleProcessList};
+        use windows_sys::Win32::System::Console::{
+            FreeConsole, GetConsoleProcessList, GetConsoleWindow,
+        };
+        use windows_sys::Win32::UI::WindowsAndMessaging::IsWindowVisible;
         let mut ids = [0u32; 2];
         if GetConsoleProcessList(ids.as_mut_ptr(), 2) == 1 {
-            FreeConsole();
+            let window = GetConsoleWindow();
+            if !window.is_null() && IsWindowVisible(window) != 0 {
+                FreeConsole();
+            }
         }
     }
 }
@@ -8025,6 +8039,15 @@ fn doctor() -> Result<u8> {
         "not created yet (made on first use)"
     };
     println!("state dir       {} ({home_state})", home.display());
+    // Which silicon draws app windows. "The game lags" starts here: a
+    // missing or software adapter means every frame was rastered on the CPU.
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    match krate_presenter_gpu::adapter_summary() {
+        Some(gpu) => println!("graphics        {gpu}"),
+        None => println!("graphics        no GPU adapter -- app windows draw on the CPU"),
+    }
+    #[cfg(target_os = "macos")]
+    println!("graphics        native macOS pipeline");
     Ok(0)
 }
 
