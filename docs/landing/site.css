@@ -1582,3 +1582,9 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   font-size: 13px; padding: 4px 0;
 }
 .st2-foot-grid a:hover { color: var(--text); }
+.st2-tb-right { margin-left: auto; display: flex; gap: 10px; align-items: center; font-style: normal; }
+.st2-tb-right u { text-decoration: none; color: var(--quiet); font-size: 11.5px; }
+.st2-tb-right u.chip { border: 1px solid var(--line-strong,#2e323a); border-radius: 999px; padding: 3px 10px; color: var(--muted); }
+.st2-side { display: flex; flex-direction: column; }
+.st2-panes { grid-template-columns: 300px 1fr; }
+@media (max-width: 640px) { .st2-side { display: flex; } .st2-panes { grid-template-columns: 1fr; } }

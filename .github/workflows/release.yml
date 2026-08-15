@@ -486,14 +486,9 @@ jobs:
             # Measured -- the notary service returned Accepted, the staple
             # succeeded, and the .dmg still contained an unsigned rebuild that
             # macOS called damaged. hdiutil packages what is actually there.
-            mkdir -p dist /tmp/dmgroot
-            rm -rf /tmp/dmgroot/*
-            cp -R "$STUDIO_APP" /tmp/dmgroot/
-            ln -s /Applications /tmp/dmgroot/Applications
+            mkdir -p dist
             out="dist/krate-studio-${version}-universal.dmg"
-            rm -f "$out"
-            hdiutil create -volname "Krate" -srcfolder /tmp/dmgroot \
-              -ov -format UDZO "$out"
+            bash scripts/make-styled-dmg.sh "$STUDIO_APP" "Krate" "$out"
             # Sign the disk image, then notarize the IMAGE and staple the
             # ticket to it.
             #
