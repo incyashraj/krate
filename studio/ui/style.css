@@ -51,7 +51,10 @@
      and a reserved run mean the top of the window is aligned by
      construction, not by a per-screen padding guess. */
   --titlebar: 60px;
-  --lights: 76px;
+  /* The traffic lights are placed at x:20 vertically centred in the bar
+     (tauri.conf trafficLightPosition), so the brand clears them by
+     construction and sits on the SAME row -- not diagonally under them. */
+  --lights: 90px;
   --rail: 320px;
 }
 
@@ -159,6 +162,31 @@ button { font: inherit; color: inherit; letter-spacing: inherit; }
    grabbable strip -- the window could not be moved with the mouse. */
 .titlebar > button, .titlebar > .agent-chip { -webkit-app-region: no-drag; }
 .titlebar .spacer { flex: 1; height: 100%; -webkit-app-region: drag; }
+
+/* Our own minimize / maximize / close, shown only where the native frame is
+   removed (Windows). Fixed to the window's top-right corner, above every
+   view, sized to the Windows caption-button convention. */
+.win-controls {
+  position: fixed; top: 0; right: 0; z-index: 60;
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+.win-controls button {
+  width: 46px; height: 34px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--muted);
+  cursor: default;
+}
+.win-controls button:hover { background: var(--panel-raised); color: var(--text); }
+#winClose:hover { background: #e81123; color: #fff; }
+.win-controls.hidden { display: none; }
+
+/* No traffic lights on Windows or Linux: the reserved run would just be a
+   hole, and it is what made the bar's content look shoved diagonally away
+   from the corner. The brand starts at normal padding instead, and on
+   Windows the right side clears our own window buttons. */
+body.windows .titlebar, body.linux .titlebar { padding-left: 18px; }
+body.windows .titlebar { padding-right: 150px; }
 
 .brand {
   display: flex; align-items: center; gap: 9px;
@@ -814,19 +842,29 @@ body.resizing .divider { background: var(--blue); }
    make something they already want to show?". It says what it does now, and
    it sits under the box where the description is typed. */
 .composer-tools {
-  display: flex; align-items: center; gap: 10px;
-  padding: 8px 4px 0;
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 6px 0;
 }
+/* Quiet text actions, not a second row of boxed buttons fighting the
+   composer for attention. One line each, never wrapped -- the boxed pills
+   used to break "Add a picture or / file" across lines and the row read as
+   debris. The note explains the attach action and yields first when narrow;
+   "Open a .krate" keeps to the far right as the quiet second door. */
 .tool {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 10px; border-radius: 8px;
-  border: 1px solid var(--line); background: none;
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 9px; border-radius: 8px;
+  border: none; background: none;
   color: var(--faint); font-size: 12.5px; cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  white-space: nowrap; flex: none;
+  transition: color 0.15s, background 0.15s;
 }
-.tool:hover { color: var(--text); border-color: var(--line-strong); background: var(--panel-raised); }
-.tool-note { color: var(--ghost); font-size: 12px; }
-@media (max-width: 720px) { .tool-note { display: none; } }
+.tool:hover { color: var(--text); background: var(--panel-raised); }
+.tool svg { flex: none; }
+#openKrateBtn { margin-left: auto; }
+.tool-note {
+  color: var(--ghost); font-size: 12px;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .link-btn {
   padding: 5px 10px; border-radius: 8px;

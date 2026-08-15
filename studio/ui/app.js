@@ -18,6 +18,22 @@ const tauri = window.__TAURI__ || null;
 const $ = (id) => document.getElementById(id);
 const invoke = (cmd, args) => (tauri ? tauri.core.invoke(cmd, args) : mockInvoke(cmd, args));
 
+/* The OS shapes the chrome: macOS keeps its traffic lights (the bar reserves
+ * their run), Windows loses the native frame and gets our three buttons,
+ * Linux keeps its native frame but has no lights to clear. */
+(function () {
+  const ua = navigator.userAgent;
+  if (ua.includes("Windows")) {
+    document.body.classList.add("windows");
+    $("winControls").classList.remove("hidden");
+    $("winMin").addEventListener("click", () => invoke("win_minimize").catch(() => {}));
+    $("winMax").addEventListener("click", () => invoke("win_toggle_max").catch(() => {}));
+    $("winClose").addEventListener("click", () => invoke("win_close").catch(() => {}));
+  } else if (ua.includes("Linux")) {
+    document.body.classList.add("linux");
+  }
+})();
+
 const STAGES = [
   { key: "think", label: "Understanding what you asked for" },
   { key: "write", label: "Writing the code" },
@@ -181,7 +197,10 @@ async function enterHome() {
 function renderBuilding() {
   const bar = $("buildingNow");
   if (!bar) return;
-  const live = state.phase === "building" && state.buildingSession;
+  // Keyed on the building session alone, never on which view is showing:
+  // opening another session used to smash the shared phase flag and make a
+  // live build vanish from "making now" while it was still running.
+  const live = Boolean(state.buildingSession);
   bar.classList.toggle("hidden", !live);
   if (live) $("buildingNowTitle").textContent = state.buildingSession.title;
 }
@@ -279,15 +298,22 @@ function openSession(s) {
       recovered: true,
     };
   }
-  state.session = s;
+  // Reopening the session that is building right now must land back on the
+  // live progress, not on "your app will appear here". The stage list, log
+  // and timer are all still wired to it; use the building session's own
+  // object so its transcript keeps growing in one place.
+  const building = state.buildingSession && state.buildingSession.id === s.id;
+  state.session = building ? state.buildingSession : s;
   state.attachments = [];
-  $("railTitle").textContent = s.title;
+  $("railTitle").textContent = state.session.title;
   $("thread").innerHTML = "";
-  for (const m of s.messages) {
+  for (const m of state.session.messages) {
     appendMessage(m.who, m.body, m.files);
   }
-  if (s.result) {
-    fillDone(s.result, { reveal: false });
+  if (building) {
+    show("building");
+  } else if (state.session.result) {
+    fillDone(state.session.result, { reveal: false });
     show("done");
     setRevisePlaceholders();
   } else {
@@ -298,7 +324,10 @@ function openSession(s) {
 }
 
 async function persist() {
-  const s = state.session;
+  return persistSession(state.session);
+}
+
+async function persistSession(s) {
   if (!s) return;
   s.updated = Math.floor(Date.now() / 1000);
   try {
@@ -326,8 +355,16 @@ function appendMessage(who, body, files) {
 }
 
 function say(who, body, files) {
-  appendMessage(who, body, files);
-  state.session.messages.push({ who, body, files: files || [], when: Math.floor(Date.now() / 1000) });
+  sayTo(state.session, who, body, files);
+}
+
+/* Record a line in a specific session, drawing it only when that session is
+ * the one on screen. A build keeps talking after the person walks away; its
+ * words must land in ITS transcript, not whichever thread they now look at. */
+function sayTo(session, who, body, files) {
+  if (!session) return;
+  if (state.session && state.session.id === session.id) appendMessage(who, body, files);
+  session.messages.push({ who, body, files: files || [], when: Math.floor(Date.now() / 1000) });
 }
 
 const baseName = (p) => p.split(/[\\/]/).pop();
@@ -381,7 +418,7 @@ function advanceStage(key) {
   state.stageIndex = idx;
   // Two milestones worth saying out loud. Not five -- a chat that narrates
   // every step is noise, and the stage list already shows all of them.
-  if (STAGE_SAID[key] && state.session) say("KRATE", STAGE_SAID[key]);
+  if (STAGE_SAID[key]) sayTo(state.buildingSession || state.session, "KRATE", STAGE_SAID[key]);
   document.querySelectorAll("#stages li").forEach((li, i) => {
     li.className = i < idx ? "done" : i === idx ? "now" : "";
   });
@@ -473,20 +510,32 @@ function fillDone(result, opts) {
 
 function finishBuild(result) {
   clearInterval(state.timer);
-  document.querySelectorAll("#stages li").forEach((li) => {
-    li.className = "done";
-  });
-  setProgress(1);
-  const fill = $("buildFill");
-  if (fill) fill.style.width = "100%";
-  state.session.result = result;
-  fillDone(result, { reveal: true });
+  // The result belongs to the session that was building, which is not
+  // always the one on screen -- a person can browse other sessions while
+  // the AI works. Attaching to state.session put finished apps on the
+  // wrong session's card.
+  const built = state.buildingSession || state.session;
+  built.result = result;
   const mins = Math.round((Date.now() - state.startedAt) / 60000);
-  say("KRATE", `Done - ${result.name}, ${result.size}${mins ? `, ${mins} min` : ""}. ` +
+  sayTo(built, "KRATE", `Done - ${result.name}, ${result.size}${mins ? `, ${mins} min` : ""}. ` +
     `Open it on the right, or tell me what to change.`);
-  show("done");
-  setRevisePlaceholders();
-  persist();
+  persistSession(built);
+  const watching = state.session && state.session.id === built.id;
+  if (watching) {
+    document.querySelectorAll("#stages li").forEach((li) => {
+      li.className = "done";
+    });
+    setProgress(1);
+    const fill = $("buildFill");
+    if (fill) fill.style.width = "100%";
+    fillDone(result, { reveal: true });
+    show("done");
+    setRevisePlaceholders();
+  } else if (!$("viewHome").classList.contains("hidden")) {
+    // On the home screen: the finished app should appear among the cards
+    // without anyone pressing refresh.
+    invoke("sessions_list").then(renderSessions).catch(() => {});
+  }
 }
 
 function setRevisePlaceholders() {
@@ -497,12 +546,15 @@ function setRevisePlaceholders() {
 function failBuild(why, request) {
   clearInterval(state.timer);
   state.lastFailed = request;
+  const built = state.buildingSession || state.session;
+  sayTo(built, "KRATE", why === "stopped" ? "stopped" : "that build didn't come together");
+  persistSession(built);
+  if (!(state.session && built && state.session.id === built.id)) return;
   /* The one hard rule of this card: plain words. A person here must never
    * meet a compiler error, an exit code, or a crate name. */
   if (why === "stopped") {
     $("failTitle").textContent = "Stopped.";
     $("failWhy").textContent = "Nothing was lost -- your words are kept, ready to send again.";
-    say("KRATE", "stopped");
   } else {
     $("failTitle").textContent = "That one didn't come together.";
     $("failWhy").textContent = why;
@@ -511,10 +563,8 @@ function failBuild(why, request) {
     // problem; a failure screen that hides its evidence costs a debugging
     // round trip per bug.
     $("failRaw").textContent = String(state.lastError || "").slice(-400);
-    say("KRATE", "that build didn't come together");
   }
   show("failed");
-  persist();
 }
 
 function friendlyAsk(cap) {
@@ -536,8 +586,10 @@ function friendlyAsk(cap) {
 
 async function make(request) {
   // Two builds at once would leave the first unstoppable; the backend
-  // refuses it too, but stopping here keeps the UI honest.
-  if (state.phase === "building") return;
+  // refuses it too, but stopping here keeps the UI honest. Keyed on the
+  // building session, not the visible phase -- browsing away changes the
+  // phase while the build very much continues.
+  if (state.buildingSession) return;
   if (!state.session) newSession(request);
   const files = state.attachments.slice();
   state.attachments = [];
@@ -550,6 +602,7 @@ async function make(request) {
   $("prompt").placeholder = "Add a change - it runs when this finishes…";
 
   state.buildingSession = state.session;
+  renderBuilding();
   const revising = Boolean(currentApp());
   // The rail is a conversation: it should answer. Without this the left
   // side showed one line and then nothing for six minutes while the right
@@ -583,6 +636,7 @@ async function make(request) {
     failBuild(plainWords(err), request);
   } finally {
     state.buildingSession = null;
+    renderBuilding();
     $("send").disabled = false;
     const queued = state.queued;
     state.queued = null;
@@ -1359,15 +1413,20 @@ function startFromHome() {
 function submitInSession() {
   const text = $("prompt").value.trim();
   if (!text) return;
-  if (state.phase === "building") {
-    // Do not drop it. A thought that arrives mid-build is exactly the
-    // thought worth keeping -- queue it, say so, and run it when this
-    // build finishes.
-    state.queued = text;
-    $("prompt").value = "";
-    say("YOU", text);
-    say("KRATE", "Noted - I'll do that as soon as this one is finished.");
-    $("composerHint").textContent = "queued · runs when this build finishes";
+  if (state.buildingSession) {
+    if (state.session && state.buildingSession.id === state.session.id) {
+      // Do not drop it. A thought that arrives mid-build is exactly the
+      // thought worth keeping -- queue it, say so, and run it when this
+      // build finishes.
+      state.queued = text;
+      $("prompt").value = "";
+      say("YOU", text);
+      say("KRATE", "Noted - I'll do that as soon as this one is finished.");
+      $("composerHint").textContent = "queued · runs when this build finishes";
+    } else {
+      // A different session is building. Silence here would eat the words.
+      say("KRATE", `"${state.buildingSession.title}" is still being made -- one app at a time. This will be ready to send once it finishes.`);
+    }
     return;
   }
   make(text);
@@ -1375,8 +1434,10 @@ function submitInSession() {
 
 $("loginBtn").addEventListener("click", login);
 $("homeSend").addEventListener("click", startFromHome);
+// Enter sends -- the way every chat on earth works. Shift+Enter keeps the
+// newline for anyone writing a longer brief.
 $("homePrompt").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); startFromHome(); }
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); startFromHome(); }
 });
 
 /* Both composers grow to fit what is typed, up to a cap. A one-line box
@@ -1393,7 +1454,7 @@ function autoGrow(el) {
 
 $("send").addEventListener("click", submitInSession);
 $("prompt").addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitInSession(); }
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submitInSession(); }
 });
 $("backBtn").addEventListener("click", async () => {
   await persist();
@@ -1598,7 +1659,10 @@ async function mockInvoke(cmd, args) {
         "==> packing the app",
         "==> verifying the permission wall",
       ];
-      for (const l of lines) { onEngineLine(l); await sleep(600); }
+      // Slow enough to walk away from and come back to -- the browsable
+      // mock exists to judge exactly that journey, and a three-second
+      // "build" cannot show it.
+      for (const l of lines) { onEngineLine(l); await sleep(2500); }
       return { path: "/tmp/h.krate", name: "habit-tracker.krate", size: "24 KB",
                asks: ["ui.window:create", "store.kv", "io.args"], shot: mockShot() };
     }

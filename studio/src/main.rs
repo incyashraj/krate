@@ -1540,25 +1540,67 @@ fn free_path(dir: &Path, slug: &str) -> PathBuf {
     first
 }
 
-/// A file name from the person's own words: first few, kebab-case.
+/// A file name from the person's own words: the thing they asked for,
+/// kebab-case, with the asking itself stripped out.
+///
+/// "try making a 2d runner game, like olympic in NES" must become
+/// 2d-runner-game.krate, not try-making-2d-runner.krate. The first clause
+/// is the app; what follows a comma or "like" is reference material, and
+/// the verbs of asking are not part of any app's name.
 fn slugify(request: &str) -> String {
-    let words: Vec<String> = request
-        .split_whitespace()
-        .filter(|w| {
-            !matches!(
-                w.to_lowercase().as_str(),
-                "a" | "an" | "the" | "make" | "me"
-            )
-        })
-        .take(4)
-        .map(|w| {
-            w.chars()
-                .filter(|c| c.is_ascii_alphanumeric())
-                .collect::<String>()
-                .to_lowercase()
-        })
-        .filter(|w| !w.is_empty())
-        .collect();
+    let head = request
+        .split([',', '.', ';', ':', '('])
+        .next()
+        .unwrap_or(request)
+        .to_lowercase();
+    let head = head.split(" like ").next().unwrap_or("").to_string();
+    let mut words: Vec<String> = Vec::new();
+    for w in head.split_whitespace() {
+        // "...tracker THAT saves my streaks": what follows describes the
+        // behavior, not the name. Stop, keep what we have.
+        if !words.is_empty() && matches!(w, "that" | "which" | "with" | "where" | "so" | "for") {
+            break;
+        }
+        if matches!(
+            w,
+            "a" | "an"
+                | "the"
+                | "make"
+                | "making"
+                | "makes"
+                | "me"
+                | "my"
+                | "please"
+                | "try"
+                | "trying"
+                | "create"
+                | "creating"
+                | "build"
+                | "building"
+                | "can"
+                | "you"
+                | "i"
+                | "want"
+                | "need"
+                | "app"
+                | "application"
+                | "simple"
+                | "little"
+                | "small"
+                | "new"
+                | "some"
+                | "this"
+        ) {
+            continue;
+        }
+        let cleaned: String = w.chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+        if !cleaned.is_empty() {
+            words.push(cleaned);
+        }
+        if words.len() == 4 {
+            break;
+        }
+    }
     if words.is_empty() {
         "my-app".to_string()
     } else {
@@ -1574,6 +1616,30 @@ fn human_size(bytes: u64) -> String {
     } else {
         format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
     }
+}
+
+/// The three window buttons, ours to draw on Windows.
+///
+/// With the native frame gone (see setup) the studio owns the whole top of
+/// the window on every OS, so the bar cannot end up stacked under a second
+/// title bar or misaligned against controls it does not control.
+#[tauri::command]
+fn win_minimize(window: tauri::Window) {
+    let _ = window.minimize();
+}
+
+#[tauri::command]
+fn win_toggle_max(window: tauri::Window) {
+    if window.is_maximized().unwrap_or(false) {
+        let _ = window.unmaximize();
+    } else {
+        let _ = window.maximize();
+    }
+}
+
+#[tauri::command]
+fn win_close(window: tauri::Window) {
+    let _ = window.close();
 }
 
 fn main() {
@@ -1614,6 +1680,17 @@ fn main() {
 
     tauri::Builder::default()
         .manage(Running(Mutex::new(None)))
+        .setup(|_app| {
+            // One title bar, ours. On Windows the native frame stacked a
+            // second bar with its own name and buttons above the studio's;
+            // remove it and let the in-app bar carry minimize, maximize and
+            // close. macOS keeps its overlay traffic lights instead.
+            #[cfg(windows)]
+            if let Some(win) = _app.get_webview_window("main") {
+                let _ = win.set_decorations(false);
+            }
+            Ok(())
+        })
         // Closing the window mid-build must not leave the AI running.
         //
         // CloseRequested, not just Destroyed: on macOS closing a window does
@@ -1660,7 +1737,10 @@ fn main() {
             cloud_run,
             pick_files,
             pick_folder,
-            autorun
+            autorun,
+            win_minimize,
+            win_toggle_max,
+            win_close
         ])
         .build(tauri::generate_context!())
         .expect("the studio window could not start")
@@ -1762,4 +1842,27 @@ fn main() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::slugify;
+
+    /// The file carries the app's name, not the sentence that asked for it.
+    #[test]
+    fn slugs_name_the_app_not_the_asking() {
+        assert_eq!(
+            slugify("try making a 2d runner game, like olympic in NES"),
+            "2d-runner-game"
+        );
+        assert_eq!(
+            slugify("A habit tracker app that saves my streaks"),
+            "habit-tracker"
+        );
+        assert_eq!(
+            slugify("please build me a pomodoro timer"),
+            "pomodoro-timer"
+        );
+        assert_eq!(slugify("make"), "my-app");
+    }
 }

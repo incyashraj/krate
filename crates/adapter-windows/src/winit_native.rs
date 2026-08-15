@@ -43,7 +43,6 @@ mod real {
     use std::num::NonZeroU32;
     use std::sync::Arc;
 
-    use krate_presenter_gpu::vello;
     use winit::application::ApplicationHandler;
     use winit::event::WindowEvent;
     use winit::event_loop::{ActiveEventLoop, EventLoop};

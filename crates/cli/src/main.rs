@@ -4373,6 +4373,13 @@ How to work:\n\
    Either way, on failure it names the stage and the exact fix, including how\n\
    to remove a leaked wasi:* import. Do what it says, then check again.\n\
 \n\
+If you want to SEE what the app draws, use\n\
+`{krate_bin} check-app . --shoot frame.png` -- it renders the app's window\n\
+to a PNG headlessly. NEVER use `screencapture`, screen-recording tools, or\n\
+anything that reads the real screen: on macOS that pops a scary permissions\n\
+dialog on the person's screen in the middle of their build, and it hangs\n\
+your run until they answer it.\n\
+\n\
 Use `{krate_bin} check-app .` to build -- do NOT run `cargo build` or\n\
 `cargo component build` yourself. check-app builds with the correct rustup\n\
 toolchain and the wasm target; a bare `cargo` on this machine is often the wrong\n\
