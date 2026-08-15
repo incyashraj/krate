@@ -58,7 +58,7 @@ exclude = [
 
 [workspace.package]
 edition = "2021"
-version = "0.1.25"
+version = "0.1.26"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/incyashraj/krate"
 rust-version = "1.91"
