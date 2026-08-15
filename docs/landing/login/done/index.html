@@ -26,21 +26,30 @@
 (function () {
   var fromApp = new URLSearchParams(location.search).get("app") === "1";
   var hash = location.hash.replace(/^#/, "");
-  if (fromApp && hash) {
+  if (hash) {
     // Query, not fragment: fragments never leave a BROWSER, but this URL
     // leaves the browser on purpose -- and Windows' scheme plumbing drops
     // fragments on the way to the handler. A local URI has no logs to
     // protect the token from.
     var target = "krate://signed-in?" + hash;
-    document.getElementById("doneSub").textContent =
-      "All set. Krate on your desktop is signed in too; you can close this tab.";
     var a = document.getElementById("openApp");
     a.href = target;
     a.classList.remove("hidden");
-    location.href = target;
+    if (fromApp) {
+      // Started from the desktop app: hop back automatically; the button
+      // stays as the manual path if the hop is blocked.
+      document.getElementById("doneSub").textContent =
+        "All set. Krate on your desktop is signed in too; you can close this tab.";
+      location.href = target;
+    } else {
+      // Started on the web. The identity is right here, so offer the hop
+      // rather than pretending the desktop app learned about it by itself.
+      document.getElementById("doneSub").textContent =
+        "All set. If Krate is installed on this computer, Open Krate signs the app in too.";
+    }
   } else {
     document.getElementById("doneSub").textContent =
-      "All set. Open the Krate app on your desktop; it will show you signed in.";
+      "All set. To sign in the desktop app, use Sign in from inside Krate.";
   }
   // The token never belongs in history.
   history.replaceState(null, "", location.pathname + location.search);
