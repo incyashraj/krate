@@ -579,6 +579,17 @@ one scroll offset, add the delta, clamp it, and redraw:\n\n\
 Then subtract `scroll` from every row's y when you draw it, and **subtract it \
 again when you hit-test** -- the two must use the same number or clicks land on \
 the wrong row the moment somebody scrolls.\n\n\
+**Text views scroll by pixels too -- never round the offset to whole lines.** \
+The natural way to draw a document is by line index, and the natural mistake \
+is `first_line = scroll / line_height` with the remainder thrown away: every \
+wheel tick then REPLACES a row of text instead of gliding it, which reads as \
+a 90s terminal next to any real editor. Keep the offset in pixels and split \
+it only at draw time:\n\n\
+\u{20}\u{20}\u{20}\u{20}let first = (scroll / line_height) as usize; // which line starts on screen\n\
+\u{20}\u{20}\u{20}\u{20}let within = scroll % line_height;\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}// how far INTO it we are\n\
+\u{20}\u{20}\u{20}\u{20}let mut y = list_y - within;\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}// first line starts above the top\n\n\
+Draw from `first` until y passes the bottom. A partly-visible line at the top \
+and bottom is the smoothness; the clip region above trims them.\n\n\
 **Clip the list region before you draw the rows.** Without it a row scrolled \
 past the top paints over your header. Set the clip to the list's rectangle, \
 draw every row including the partly-visible ones, then clear it:\n\n\

@@ -3667,8 +3667,8 @@ Fix:      S5 shipped for canvases: each drawn canvas now presents on a
           the same surface. K-115 (teaching) covers the app-side half.
 
 ### K-115 — Generated apps scroll by whole lines because the pack never taught pixels
-Status:   open
-Owner:    unclaimed
+Status:   fixed
+Owner:    lead
 Severity: major
 Class:    teaching-hole
 Found:    2026-08-16, same session as K-114, reading the generated notes
@@ -3678,10 +3678,13 @@ Evidence: The app moves its viewport one line per wheel notch. The runtime
           authoring pack's examples and prose never show pixel-offset
           scrolling, so agents quantize to lines -- every scrolling app
           generated to date has the same 90s feel on every platform.
-Fix:      Teach it once: a pack section + example showing a pixel-offset
-          viewport driven by wheel deltas (and the same offset used during
-          drag), with the first visible line derived from the offset rather
-          than the offset from the line.
+Fix:      The pack already taught pixel offsets for lists, and the agent
+          still quantized -- for TEXT views the natural mental model is a
+          line index, and the offset gets rounded on the way in. The pack
+          now names that exact anti-pattern ("never round the offset to
+          whole lines") and shows the split: first = scroll/line_height,
+          within = scroll%line_height, draw from list_y - within. A partly
+          visible line at top and bottom IS the smoothness.
 
 ### K-117 -- Apps cannot paint the title bar area, so full-bleed designs are impossible
 Status:   open
