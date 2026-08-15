@@ -244,11 +244,22 @@ jobs:
           # which makes a remote failure report almost useless.
           python3 -c 'import json,sys,pathlib; p=pathlib.Path("studio/tauri.conf.json"); d=json.loads(p.read_text()); d["version"]=sys.argv[1]; p.write_text(json.dumps(d,indent=2)+"\n")' "$version"
 
+          # The engine inside the bundle must be universal too, or an Intel
+          # Mac installs a studio that cannot build anything.
+          #
+          # Each runner builds only its own target, so the x86_64 slice does
+          # not exist here and has to be cross-built -- macOS compiles its own
+          # other architecture natively, this is just a second cargo build.
+          # `lipo -create` then fails LOUDLY if either slice is missing. The
+          # earlier version fell back silently to the arm64-only copy and
+          # shipped it; the release gate caught exactly that (engine archs
+          # came back "arm64" on a dmg named universal).
           rustup target add x86_64-apple-darwin aarch64-apple-darwin
+          cargo build --release -p krate-cli --target x86_64-apple-darwin
           lipo -create -output studio/bin/krate \
             "target/aarch64-apple-darwin/release/krate" \
-            "target/x86_64-apple-darwin/release/krate" 2>/dev/null \
-            || cp "target/${{ matrix.target }}/release/krate" studio/bin/krate
+            "target/x86_64-apple-darwin/release/krate"
+          echo "engine slices: $(lipo -archs studio/bin/krate)"
           (cd studio && tauri build --bundles app --no-sign --target universal-apple-darwin)
 
       # Sign and notarize, so Gatekeeper lets a downloaded build open without
@@ -805,7 +816,12 @@ jobs:
           # published under this name would silently fail to launch for
           # everyone on the other architecture -- which is exactly the failure
           # that is impossible to debug remotely.
-          for bin in "$app/Contents/MacOS/Krate Studio" "$app/Contents/Resources/bin/krate"; do
+          # The executable's file name comes from the crate (krate-studio),
+          # not the product name -- read it from the plist rather than
+          # guessing, which is what made this check fail with "archs: " on a
+          # bundle that was actually universal.
+          exe="$app/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")"
+          for bin in "$exe" "$app/Contents/Resources/bin/krate"; do
             archs="$(lipo -archs "$bin" 2>/dev/null || echo '')"
             case "$archs" in
               *arm64*x86_64*|*x86_64*arm64*) ;;
