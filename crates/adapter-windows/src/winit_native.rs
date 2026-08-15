@@ -38,7 +38,6 @@ mod real {
     use std::rc::Rc;
 
     use winit::application::ApplicationHandler;
-    use winit::dpi::PhysicalSize;
     use winit::event::WindowEvent;
     use winit::event_loop::{ActiveEventLoop, EventLoop};
     use winit::platform::pump_events::EventLoopExtPumpEvents;
@@ -135,17 +134,28 @@ mod real {
             for pending in self.pending_creates.drain(..) {
                 let attributes = WindowAttributes::default()
                     .with_title(pending.title)
-                    // Physical, not logical. Every other place we touch a size
-                    // -- the snapshot the app is given, the softbuffer resize,
-                    // the paint -- uses `inner_size()`, which is physical.
-                    // Asking for a *logical* size meant a 150% display created
-                    // a window 1.5x wider than the app requested, while the app
-                    // still painted the size it asked for: the rest of the
-                    // window stayed blank and the picture looked squashed into
-                    // one corner. It reads as "bad graphics" but it is purely a
-                    // unit mismatch, and it is invisible at 100% and close to
-                    // invisible on a 2x Retina Mac, which is why it survived.
-                    .with_inner_size(PhysicalSize::new(pending.size.width, pending.size.height))
+                    // LOGICAL, and this is the load-bearing unit decision.
+                    //
+                    // The app speaks logical units everywhere: it asks for a
+                    // 420x652 window, lays out in those units, and the shared
+                    // painter multiplies every coordinate by the scale factor
+                    // when it rasterizes. Creating the window with that size
+                    // as PHYSICAL pixels (the previous fix) made the buffer
+                    // 420x652 while the painter drew 630x978 on a 150%
+                    // display: the bottom third of every app was painted
+                    // outside the buffer. That is the game whose rocket was
+                    // simply not on screen until the person dragged the
+                    // window bigger. Invisible at 100% scaling and on the
+                    // Mac's native adapter, which is why it shipped twice --
+                    // once in each direction.
+                    //
+                    // Logical creation means winit sizes the physical buffer
+                    // to scale x request, which is exactly the area the
+                    // painter fills: complete, and sharp at native density.
+                    .with_inner_size(winit::dpi::LogicalSize::new(
+                        f64::from(pending.size.width),
+                        f64::from(pending.size.height),
+                    ))
                     // Visible on creation, matching macOS. Hidden-until-shown
                     // assumed every app calls `window.show`, and none of them
                     // do: the samples create a window and start drawing. On
@@ -199,7 +209,22 @@ mod real {
             let mapped = match event {
                 WindowEvent::CloseRequested => Some(WinitWindowNativeEvent::CloseRequested),
                 WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => {
-                    WindowSize::new(size.width, size.height)
+                    // Logical to the app, like every other size and every
+                    // pointer coordinate. Reporting physical here sent a
+                    // resize-aware app into a spiral on scaled displays: it
+                    // laid out to the physical number, the painter multiplied
+                    // by scale again, and the content outgrew the window by
+                    // the scale factor at every step.
+                    let scale = self
+                        .windows
+                        .get(&native)
+                        .map(|tracked| tracked.window.scale_factor())
+                        .unwrap_or(1.0);
+                    let (w, h) = (
+                        (f64::from(size.width) / scale).round() as u32,
+                        (f64::from(size.height) / scale).round() as u32,
+                    );
+                    WindowSize::new(w.max(1), h.max(1))
                         .ok()
                         .map(WinitWindowNativeEvent::Resized)
                 }
@@ -471,9 +496,16 @@ mod real {
 
             let raw_handle = u64::from(tracked.window.id());
             let inner = tracked.window.inner_size();
+            // Logical, matching creation and resize; the scale rides beside
+            // it for anything that needs the physical density.
+            let scale = tracked.window.scale_factor();
+            let (lw, lh) = (
+                (f64::from(inner.width) / scale).round() as u32,
+                (f64::from(inner.height) / scale).round() as u32,
+            );
             let snapshot = WinitWindowSnapshot::new(
                 krate,
-                WindowSize::new(inner.width.max(1), inner.height.max(1))?,
+                WindowSize::new(lw.max(1), lh.max(1))?,
                 false,
                 tracked.window.has_focus(),
                 tracked.window.scale_factor() as f32,

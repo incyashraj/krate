@@ -71,6 +71,22 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
+
+Class: our-code
+Owner: unclaimed
+
+The Windows adapter rasterizes with the shared CPU painter and presents
+through softbuffer; macOS runs the native adapter. The same game (krate-nova)
+run on both machines at once is visibly smoother on the Mac, and with the
+DPI fix the Windows buffer grew scale^2 larger, which raises the CPU cost
+further on scaled displays. Reported by real users, 2026-08-15.
+
+Fix shape: the wgpu/vello presenter behind the same placement contract
+(plan 7.5 names it). The placement contract is already in place, so this is
+a presenter swap, not a redesign. Until then Windows is correct but not
+proud.
+
 ### K-111 -- Painted app UI renders at 1x on Retina displays: everything looks soft
 
 Class: our-code
