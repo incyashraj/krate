@@ -283,7 +283,9 @@ pub fn sign_in_json() -> Result<Identity> {
             Some("authorization_pending") | None => {}
             Some("slow_down") => interval += Duration::from_secs(5),
             Some("expired_token") => {
-                emit(serde_json::json!({"step": "error", "why": "that code expired -- start again and it will issue a new one"}));
+                emit(
+                    serde_json::json!({"step": "error", "why": "that code expired -- start again and it will issue a new one"}),
+                );
                 anyhow::bail!("code expired");
             }
             Some("access_denied") => {
@@ -291,7 +293,9 @@ pub fn sign_in_json() -> Result<Identity> {
                 anyhow::bail!("declined");
             }
             Some(other) => {
-                emit(serde_json::json!({"step": "error", "why": format!("GitHub refused the sign-in: {other}")}));
+                emit(
+                    serde_json::json!({"step": "error", "why": format!("GitHub refused the sign-in: {other}")}),
+                );
                 anyhow::bail!("refused");
             }
         }

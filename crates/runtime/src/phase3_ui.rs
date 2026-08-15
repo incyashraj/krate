@@ -106,8 +106,9 @@ impl Phase3HostUiMode {
     pub fn can_open_a_window(self) -> bool {
         match self {
             Phase3HostUiMode::HeadlessDraft => false,
-            Phase3HostUiMode::NativePrototype
-            | Phase3HostUiMode::NativeWithHeadlessFallback => true,
+            Phase3HostUiMode::NativePrototype | Phase3HostUiMode::NativeWithHeadlessFallback => {
+                true
+            }
         }
     }
 }

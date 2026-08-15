@@ -1040,25 +1040,25 @@ fn run() -> Result<u8> {
                 return Ok(0);
             }
             create_krate(CreateRequest {
-            request,
-            output,
-            // --agent is the clean front door; it resolves to the command that
-            // drives that provider. An explicit --author-cmd still wins for any
-            // other tool. Resolving here means an unknown name or a missing CLI
-            // is reported before any authoring work begins.
-            author_cmd: match (author_cmd, agent) {
-                (Some(command), _) => Some(command),
-                (None, Some(name)) => Some(agent_author_command(resolve_agent(&name)?)),
-                (None, None) => None,
-            },
-            kind,
-            name,
-            transcript,
-            work_dir,
-            yes,
-            no_install,
-            json,
-            force,
+                request,
+                output,
+                // --agent is the clean front door; it resolves to the command that
+                // drives that provider. An explicit --author-cmd still wins for any
+                // other tool. Resolving here means an unknown name or a missing CLI
+                // is reported before any authoring work begins.
+                author_cmd: match (author_cmd, agent) {
+                    (Some(command), _) => Some(command),
+                    (None, Some(name)) => Some(agent_author_command(resolve_agent(&name)?)),
+                    (None, None) => None,
+                },
+                kind,
+                name,
+                transcript,
+                work_dir,
+                yes,
+                no_install,
+                json,
+                force,
             })
         }
         Command::Report { report, show } => run_report_command(&report, show),
@@ -6345,7 +6345,10 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         // Only GUI apps have a dock tile to name; a CLI app has no window and
         // renaming that process would show up as a phantom in the switcher.
         if let Some(manifest) = manifest.filter(|manifest| {
-            matches!(manifest.app_world(), Ok(krate_manifest::AppWorld::Phase3Gui))
+            matches!(
+                manifest.app_world(),
+                Ok(krate_manifest::AppWorld::Phase3Gui)
+            )
         }) {
             let icon = bundle
                 .as_ref()
@@ -6669,8 +6672,7 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     // A fresh wrapper each time: leftovers from an older version of the same
     // app would otherwise sit beside the new one inside the bundle.
     if app_dir.exists() {
-        fs::remove_dir_all(&app_dir)
-            .with_context(|| format!("replacing {}", app_dir.display()))?;
+        fs::remove_dir_all(&app_dir).with_context(|| format!("replacing {}", app_dir.display()))?;
     }
     fs::create_dir_all(&macos_dir).with_context(|| format!("creating {}", macos_dir.display()))?;
     fs::create_dir_all(&resources)?;
@@ -6894,9 +6896,15 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
                 let name = bundle.manifest().app.name.trim().to_string();
                 let exe = std::env::current_exe().ok();
                 if !name.is_empty()
-                    && exe.as_ref().and_then(|e| e.file_name()).map(|f| f.to_string_lossy() != *name).unwrap_or(false)
+                    && exe
+                        .as_ref()
+                        .and_then(|e| e.file_name())
+                        .map(|f| f.to_string_lossy() != *name)
+                        .unwrap_or(false)
                 {
-                    let dir = home_dir().map(|h| h.join(".krate/launchers")).unwrap_or_default();
+                    let dir = home_dir()
+                        .map(|h| h.join(".krate/launchers"))
+                        .unwrap_or_default();
                     let _ = fs::create_dir_all(&dir);
                     let link = dir.join(&name);
                     let _ = fs::remove_file(&link);

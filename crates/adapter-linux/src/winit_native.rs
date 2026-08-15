@@ -428,7 +428,8 @@ mod real {
             // SAFETY: a NUL-terminated name and RTLD_LAZY|RTLD_LOCAL, the
             // same call dlib makes. The handle is closed straight away; this
             // only asks whether the loader can find it.
-            let handle = unsafe { libc::dlopen(c_name.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL) };
+            let handle =
+                unsafe { libc::dlopen(c_name.as_ptr(), libc::RTLD_LAZY | libc::RTLD_LOCAL) };
             if !handle.is_null() {
                 unsafe { libc::dlclose(handle) };
                 return None;

@@ -340,8 +340,10 @@ fn extra_tool_dirs() -> Vec<std::path::PathBuf> {
             (home.join(".fnm/node-versions"), "installation/bin"),
         ] {
             if let Ok(entries) = std::fs::read_dir(&root) {
-                let mut found: Vec<std::path::PathBuf> =
-                    entries.filter_map(|e| e.ok()).map(|e| e.path().join(tail)).collect();
+                let mut found: Vec<std::path::PathBuf> = entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.path().join(tail))
+                    .collect();
                 found.sort();
                 found.reverse();
                 dirs.extend(found);

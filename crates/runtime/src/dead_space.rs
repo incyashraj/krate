@@ -91,12 +91,7 @@ fn op_bounds(op: &CanvasOp) -> Option<(f32, f32, f32, f32)> {
                 return None;
             }
             let w = chars as f32 * (font_size * 0.52 + letter_spacing);
-            (
-                origin.0,
-                origin.1 - font_size * 0.72,
-                w,
-                font_size * 0.92,
-            )
+            (origin.0, origin.1 - font_size * 0.72, w, font_size * 0.92)
         }
         CanvasOp::Sprite { center, dst, .. } => {
             (center.0 - dst.0 / 2.0, center.1 - dst.1 / 2.0, dst.0, dst.1)
@@ -183,7 +178,9 @@ pub fn find(ops: &[CanvasOp], width: f32, height: f32) -> Option<DeadRegion> {
 /// Largest all-empty axis-aligned rectangle, as (area in cells, (c0,r0,c1,r1)).
 ///
 /// The standard largest-rectangle-in-a-histogram sweep, run once per row.
-fn largest_empty_rect(covered: &[[bool; GRID]; GRID]) -> Option<(usize, (usize, usize, usize, usize))> {
+fn largest_empty_rect(
+    covered: &[[bool; GRID]; GRID],
+) -> Option<(usize, (usize, usize, usize, usize))> {
     let mut heights = [0usize; GRID];
     let mut best: Option<(usize, (usize, usize, usize, usize))> = None;
 
@@ -265,7 +262,11 @@ mod tests {
             ops.push(rect(c as f32 * 100.0, 10.0, 96.0, 300.0));
         }
         let found = find(&ops, 1000.0, 700.0).expect("half a window is dead space");
-        assert!(found.y > 250.0, "region should be low down, got y {}", found.y);
+        assert!(
+            found.y > 250.0,
+            "region should be low down, got y {}",
+            found.y
+        );
         assert!(found.fraction > 0.3);
     }
 

@@ -156,31 +156,59 @@ pub fn describe_op(op: &CanvasOp) -> String {
         CanvasOp::Clear(c) => format!("clear                                        #{c:08x}"),
         CanvasOp::SetClip(r) => format!("clip      {r:?}"),
         CanvasOp::FillRect { rect, color } => {
-            format!("fillrect  {:8.1} {:8.1} {:8.1} {:8.1}  #{color:08x}", rect.0, rect.1, rect.2, rect.3)
+            format!(
+                "fillrect  {:8.1} {:8.1} {:8.1} {:8.1}  #{color:08x}",
+                rect.0, rect.1, rect.2, rect.3
+            )
         }
         CanvasOp::StrokeRect { rect, color, .. } => {
-            format!("strokerect{:8.1} {:8.1} {:8.1} {:8.1}  #{color:08x}", rect.0, rect.1, rect.2, rect.3)
+            format!(
+                "strokerect{:8.1} {:8.1} {:8.1} {:8.1}  #{color:08x}",
+                rect.0, rect.1, rect.2, rect.3
+            )
         }
         CanvasOp::FillRoundRect { rect, color, .. } => {
-            format!("fillround {:8.1} {:8.1} {:8.1} {:8.1}  #{color:08x}", rect.0, rect.1, rect.2, rect.3)
+            format!(
+                "fillround {:8.1} {:8.1} {:8.1} {:8.1}  #{color:08x}",
+                rect.0, rect.1, rect.2, rect.3
+            )
         }
         CanvasOp::StrokeRoundRect { rect, color, .. } => {
-            format!("strkround {:8.1} {:8.1} {:8.1} {:8.1}  #{color:08x}", rect.0, rect.1, rect.2, rect.3)
+            format!(
+                "strkround {:8.1} {:8.1} {:8.1} {:8.1}  #{color:08x}",
+                rect.0, rect.1, rect.2, rect.3
+            )
         }
         CanvasOp::DropShadowRoundRect { rect, .. } => {
-            format!("shadow    {:8.1} {:8.1} {:8.1} {:8.1}", rect.0, rect.1, rect.2, rect.3)
+            format!(
+                "shadow    {:8.1} {:8.1} {:8.1} {:8.1}",
+                rect.0, rect.1, rect.2, rect.3
+            )
         }
         CanvasOp::LinearGradient { rect, .. } => {
-            format!("lgrad     {:8.1} {:8.1} {:8.1} {:8.1}", rect.0, rect.1, rect.2, rect.3)
+            format!(
+                "lgrad     {:8.1} {:8.1} {:8.1} {:8.1}",
+                rect.0, rect.1, rect.2, rect.3
+            )
         }
         CanvasOp::LinearGradientStops { rect, .. } => {
-            format!("lgradstop {:8.1} {:8.1} {:8.1} {:8.1}", rect.0, rect.1, rect.2, rect.3)
+            format!(
+                "lgradstop {:8.1} {:8.1} {:8.1} {:8.1}",
+                rect.0, rect.1, rect.2, rect.3
+            )
         }
         CanvasOp::RadialGradient { center, radius, .. } => {
             format!("rgrad     c{:7.1},{:7.1} r{radius:.1}", center.0, center.1)
         }
-        CanvasOp::FillCircle { center, radius, color } => {
-            format!("circle    c{:7.1},{:7.1} r{radius:7.1}          #{color:08x}", center.0, center.1)
+        CanvasOp::FillCircle {
+            center,
+            radius,
+            color,
+        } => {
+            format!(
+                "circle    c{:7.1},{:7.1} r{radius:7.1}          #{color:08x}",
+                center.0, center.1
+            )
         }
         CanvasOp::StrokeCircle { center, radius, .. } => {
             format!("strkcirc  c{:7.1},{:7.1} r{radius:7.1}", center.0, center.1)
@@ -188,17 +216,34 @@ pub fn describe_op(op: &CanvasOp) -> String {
         CanvasOp::StrokeArc { center, radius, .. } => {
             format!("arc       c{:7.1},{:7.1} r{radius:7.1}", center.0, center.1)
         }
-        CanvasOp::Text { origin, font_size, text, .. } => {
-            format!("text      {:8.1} {:8.1} size{font_size:6.1}          {text:?}", origin.0, origin.1)
+        CanvasOp::Text {
+            origin,
+            font_size,
+            text,
+            ..
+        } => {
+            format!(
+                "text      {:8.1} {:8.1} size{font_size:6.1}          {text:?}",
+                origin.0, origin.1
+            )
         }
         CanvasOp::Pixels { rect, .. } => {
-            format!("pixels    {:8.1} {:8.1} {:8.1} {:8.1}", rect.0, rect.1, rect.2, rect.3)
+            format!(
+                "pixels    {:8.1} {:8.1} {:8.1} {:8.1}",
+                rect.0, rect.1, rect.2, rect.3
+            )
         }
         CanvasOp::PixelsRound { rect, .. } => {
-            format!("pixelsrnd {:8.1} {:8.1} {:8.1} {:8.1}", rect.0, rect.1, rect.2, rect.3)
+            format!(
+                "pixelsrnd {:8.1} {:8.1} {:8.1} {:8.1}",
+                rect.0, rect.1, rect.2, rect.3
+            )
         }
         CanvasOp::Sprite { center, dst, .. } => {
-            format!("sprite    c{:7.1},{:7.1} d{:7.1},{:7.1}", center.0, center.1, dst.0, dst.1)
+            format!(
+                "sprite    c{:7.1},{:7.1} d{:7.1},{:7.1}",
+                center.0, center.1, dst.0, dst.1
+            )
         }
     }
 }

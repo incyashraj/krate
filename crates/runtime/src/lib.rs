@@ -32,6 +32,7 @@ mod audio_playback;
 mod canvas_raster;
 pub use krate_adapter_common::canvas_list;
 pub mod chosen_files;
+pub mod dead_space;
 pub mod desktop_host;
 pub mod embed;
 mod gamepad;
@@ -51,7 +52,6 @@ pub mod secret_host;
 mod speech_transcription;
 pub mod sql_host;
 pub mod store_host;
-pub mod dead_space;
 pub mod text_overlap;
 pub mod usability;
 
