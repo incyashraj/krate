@@ -175,11 +175,8 @@
       fix.</p>
 
       <div class="st-dl-grid">
-        <a class="dl" data-dl="krate-studio|aarch64-apple-darwin|dmg" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>Krate Studio</b><span>macOS &middot; Apple silicon</span>
-        </a>
-        <a class="dl" data-dl="krate-studio|x86_64-apple-darwin|dmg" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>Krate Studio</b><span>macOS &middot; Intel</span>
+        <a class="dl dl-wide" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
+          <b>Download for macOS</b><span>One file. Apple silicon and Intel.</span>
         </a>
       </div>
 
@@ -316,6 +313,8 @@
         dls.forEach(function (a) {
           var p = a.dataset.dl.split("|");
           var file = p[0] + "-" + version + "-" + p[1] + "." + p[2];
+          // The universal build is named without an architecture triple.
+          if (p[1] === "universal") file = p[0] + "-" + version + "-universal." + p[2];
           if (names.indexOf(file) === -1) {
             a.classList.add("dl-soon");
             a.querySelector("span").textContent += " · coming";

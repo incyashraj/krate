@@ -208,8 +208,14 @@ jobs:
       # `continue-on-error`: the studio is pre-beta and the runtime release
       # must not fail because a pre-beta GUI did. A missing .dmg makes the
       # site's studio links say "coming", which is the honest outcome.
+      # Built once, universal, on the arm64 runner only.
+      #
+      # Two architecture-specific downloads made the visitor guess their own
+      # chip, and picking wrong is silent: an Apple-silicon build simply does
+      # not launch on an Intel Mac. One universal .dmg removes the decision --
+      # and the wrong-download failure mode with it.
       - name: Build Krate Studio (.dmg)
-        if: contains(matrix.target, 'apple-darwin')
+        if: matrix.target == 'aarch64-apple-darwin'
         continue-on-error: true
         shell: bash
         env:
@@ -227,7 +233,23 @@ jobs:
           # --no-sign: Tauri's own ad-hoc signing would have to be replaced
           # anyway, and an ad-hoc signature left in the bundle is precisely
           # what the notary service rejects.
-          (cd studio && tauri build --bundles app --no-sign --target ${{ matrix.target }})
+          # Both slices are needed for a universal binary, and the engine
+          # inside the bundle has to be universal too or the app is fat while
+          # the thing it runs is not.
+          # Stamp the release version into the bundle.
+          #
+          # tauri.conf.json carries 0.1.0 and never changed, so every studio
+          # ever shipped reported "0.1.0" in Finder and in its own Info.plist.
+          # Nobody -- including us -- could tell which build a person had,
+          # which makes a remote failure report almost useless.
+          python3 -c 'import json,sys,pathlib; p=pathlib.Path("studio/tauri.conf.json"); d=json.loads(p.read_text()); d["version"]=sys.argv[1]; p.write_text(json.dumps(d,indent=2)+"\n")' "$version"
+
+          rustup target add x86_64-apple-darwin aarch64-apple-darwin
+          lipo -create -output studio/bin/krate \
+            "target/aarch64-apple-darwin/release/krate" \
+            "target/x86_64-apple-darwin/release/krate" 2>/dev/null \
+            || cp "target/${{ matrix.target }}/release/krate" studio/bin/krate
+          (cd studio && tauri build --bundles app --no-sign --target universal-apple-darwin)
 
       # Sign and notarize, so Gatekeeper lets a downloaded build open without
       # a right-click workaround. Ad-hoc signing plus curl setting no
@@ -344,7 +366,7 @@ jobs:
           # Same entitlements as the runtime: the studio spawns the engine,
           # which JIT-compiles every component, and hardened runtime without
           # the JIT entitlements is what killed double-clicked apps in K-063.
-          STUDIO_APP="studio/target/${{ matrix.target }}/release/bundle/macos/Krate Studio.app"
+          STUDIO_APP="studio/target/universal-apple-darwin/release/bundle/macos/Krate Studio.app"
           if [ -d "$STUDIO_APP" ]; then
             codesign --force --options runtime --timestamp \
               --entitlements "$ENTITLEMENTS" \
@@ -432,7 +454,7 @@ jobs:
           # carries an un-stapled app, and the person who downloads it is
           # stopped by Gatekeeper exactly as if it were never notarized.
           if [ -d "$STUDIO_APP" ]; then
-            studio_zip="krate-studio-${version}-${{ matrix.target }}.zip"
+            studio_zip="krate-studio-${version}-universal.zip"
             (cd "$(dirname "$STUDIO_APP")" && zip -qry "/tmp/$studio_zip" "Krate Studio.app")
             if xcrun notarytool submit "/tmp/$studio_zip" \
               --apple-id "$APPLE_ID" \
@@ -457,7 +479,7 @@ jobs:
             rm -rf /tmp/dmgroot/*
             cp -R "$STUDIO_APP" /tmp/dmgroot/
             ln -s /Applications /tmp/dmgroot/Applications
-            out="dist/krate-studio-${version}-${{ matrix.target }}.dmg"
+            out="dist/krate-studio-${version}-universal.dmg"
             rm -f "$out"
             hdiutil create -volname "Krate Studio" -srcfolder /tmp/dmgroot \
               -ov -format UDZO "$out"
@@ -737,7 +759,7 @@ jobs:
         run: |
           set -euo pipefail
           cd verify
-          dmg="krate-studio-${TAG#v}-${{ matrix.target }}.dmg"
+          dmg="krate-studio-${TAG#v}-universal.dmg"
           if ! gh release download "$TAG" -R "${{ github.repository }}" -p "$dmg"; then
             echo "::warning::no studio .dmg in this release; skipping"
             exit 0
@@ -779,7 +801,19 @@ jobs:
             hdiutil detach "$mp"; exit 1
           fi
 
-          echo "studio dmg: signature coherent, engine present, no type collision"
+          # Universal in fact, not only in the filename. A single-slice build
+          # published under this name would silently fail to launch for
+          # everyone on the other architecture -- which is exactly the failure
+          # that is impossible to debug remotely.
+          for bin in "$app/Contents/MacOS/Krate Studio" "$app/Contents/Resources/bin/krate"; do
+            archs="$(lipo -archs "$bin" 2>/dev/null || echo '')"
+            case "$archs" in
+              *arm64*x86_64*|*x86_64*arm64*) ;;
+              *) echo "::error::$bin is not universal (archs: $archs)"; hdiutil detach "$mp"; exit 1 ;;
+            esac
+          done
+
+          echo "studio dmg: signature coherent, engine present, no type collision, universal"
           codesign -dv --verbose=2 "$app" 2>&1 | grep -E "Signature|flags" || true
           hdiutil detach "$mp" >/dev/null
 

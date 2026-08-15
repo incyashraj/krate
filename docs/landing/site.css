@@ -1285,3 +1285,4 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   animation: st-pulse 2.4s ease-in-out infinite;
 }
 .studio-go { color: var(--accent); font-size: 14px; white-space: nowrap; }
+.dl-wide { grid-column: 1 / -1; }
