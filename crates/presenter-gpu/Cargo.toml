@@ -1,0 +1,20 @@
+[package]
+name = "krate-presenter-gpu"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# The GPU presenter (Plan/GPU-Presenter.md): the shared placement contract
+# rendered by vello on wgpu, so a Krate app on Windows feels like the same
+# app on the Mac beside it. Same vello line as adapter-ios, which is the
+# in-repo proof this path works; the two must move versions together.
+
+[dependencies]
+krate-adapter-common = { path = "../adapter-common" }
+vello = "0.9"
+parley = "0.7"
+peniko = "0.6"
+pollster = "0.4"
+
+[dev-dependencies]
+png = "0.17"
