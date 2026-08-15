@@ -13,7 +13,9 @@ krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev", feat
 ] }
 libc.workspace = true
 
-[target.'cfg(target_os = "linux")'.dependencies]
+# Unconditional, deliberately: the runtime only pulls this crate on Linux
+# targets, so production binaries elsewhere are untouched -- but the dev
+# machine now COMPILES the real windowing and GPU path (see dev-anyos).
 # X11-only for the first native window slice: the x11 backend is pure
 # Rust/dlopen and compiles without system packages, while the wayland
 # feature's wayland-sys needs libwayland-dev at build time. Wayland desktops
@@ -27,3 +29,11 @@ softbuffer = { version = "0.4", default-features = false, features = ["x11", "x1
 # OS clipboard for the drawn path's Cut/Copy/Paste. Text-only (no image-data),
 # so the X11 backend stays dependency-light and matches the Xvfb CI proof.
 arboard.workspace = true
+
+# The GPU presenter (Plan/GPU-Presenter.md S2): shared with Windows.
+krate-presenter-gpu = { path = "../presenter-gpu", version = "0.1.0-dev" }
+pollster = "0.4"
+
+[features]
+# Compile the real winit+GPU path on any OS, for local dev proof.
+dev-anyos = []

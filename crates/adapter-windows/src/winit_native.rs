@@ -98,179 +98,45 @@ mod real {
         /// life of the window rather than retrying into the same wall every
         /// frame. The fallback is the contract; flapping is not.
         gpu_dead: bool,
+        /// When the most recent user input arrived, for S3's
+        /// input-to-present latency measurement.
+        last_input: Option<std::time::Instant>,
         placements: Vec<WidgetPlacement>,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
     }
 
-    /// Everything one window needs to present vello frames on its surface.
-    ///
-    /// The render path is vello's documented one: render the scene to a
-    /// storage texture, then blit that texture onto the acquired surface
-    /// frame -- surfaces rarely offer STORAGE_BINDING, so drawing to them
-    /// directly is not portable. Present mode is AutoVsync: pacing is half
-    /// of what "feels native" means (Plan/GPU-Presenter.md S3 measures it).
+    /// The shared windowed presenter, wrapped with what only the adapter
+    /// knows: the winit window's size, scale, and the moment of the last
+    /// input (for S3's input-to-present latency).
     pub struct GpuPresent {
-        surface: vello::wgpu::Surface<'static>,
-        device: vello::wgpu::Device,
-        queue: vello::wgpu::Queue,
-        renderer: vello::Renderer,
-        blitter: vello::wgpu::util::TextureBlitter,
-        surface_format: vello::wgpu::TextureFormat,
-        configured: (u32, u32),
-        target: Option<(vello::wgpu::TextureView, u32, u32)>,
-        cache: krate_presenter_gpu::SceneCache,
+        inner: krate_presenter_gpu::WindowPresenter,
     }
 
     impl GpuPresent {
         pub fn new(window: Arc<Window>) -> Result<Self, String> {
-            use vello::wgpu;
-            let instance = wgpu::Instance::default();
-            let surface = instance
-                .create_surface(window)
-                .map_err(|e| format!("surface: {e}"))?;
-            let adapter =
-                pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                    compatible_surface: Some(&surface),
-                    ..Default::default()
-                }))
-                .map_err(|e| format!("adapter: {e}"))?;
-            let (device, queue) =
-                pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
-                    .map_err(|e| format!("device: {e}"))?;
-            let caps = surface.get_capabilities(&adapter);
-            let surface_format = caps
-                .formats
-                .iter()
-                .copied()
-                .find(|f| {
-                    matches!(
-                        f,
-                        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm
-                    )
-                })
-                .or_else(|| caps.formats.first().copied())
-                .ok_or_else(|| "surface offers no formats".to_string())?;
-            let renderer = vello::Renderer::new(&device, vello::RendererOptions::default())
-                .map_err(|e| format!("renderer: {e}"))?;
-            let blitter = wgpu::util::TextureBlitter::new(&device, surface_format);
             Ok(Self {
-                surface,
-                device,
-                queue,
-                renderer,
-                blitter,
-                surface_format,
-                configured: (0, 0),
-                target: None,
-                cache: krate_presenter_gpu::SceneCache::new(),
+                inner: krate_presenter_gpu::WindowPresenter::new(window)?,
             })
         }
 
-        /// Render and present one frame. `Err` means the GPU path is done for
-        /// this window and the caller falls back to the CPU painter.
         pub fn render(
             &mut self,
             window: &Window,
             placements: &[WidgetPlacement],
             interaction: krate_adapter_common::painter::PaintInteraction,
+            input_at: Option<std::time::Instant>,
         ) -> Result<(), String> {
-            use vello::wgpu;
             let size = window.inner_size();
-            let (width, height) = (size.width, size.height);
-            if width == 0 || height == 0 {
-                return Ok(());
-            }
-            if self.configured != (width, height) {
-                self.surface.configure(
-                    &self.device,
-                    &wgpu::SurfaceConfiguration {
-                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                        format: self.surface_format,
-                        width,
-                        height,
-                        present_mode: wgpu::PresentMode::AutoVsync,
-                        desired_maximum_frame_latency: 2,
-                        alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                        view_formats: vec![],
-                    },
-                );
-                self.configured = (width, height);
-                self.target = None;
-            }
-            if self.target.as_ref().map(|t| (t.1, t.2)) != Some((width, height)) {
-                let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-                    label: Some("krate-frame"),
-                    size: wgpu::Extent3d {
-                        width,
-                        height,
-                        depth_or_array_layers: 1,
-                    },
-                    mip_level_count: 1,
-                    sample_count: 1,
-                    dimension: wgpu::TextureDimension::D2,
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    usage: wgpu::TextureUsages::STORAGE_BINDING
-                        | wgpu::TextureUsages::TEXTURE_BINDING,
-                    view_formats: &[],
-                });
-                self.target = Some((
-                    texture.create_view(&wgpu::TextureViewDescriptor::default()),
-                    width,
-                    height,
-                ));
-            }
-            let scale = window.scale_factor() as f32;
-            let scene =
-                krate_presenter_gpu::build_scene(&mut self.cache, placements, scale, interaction);
-            let (target_view, _, _) = self.target.as_ref().expect("target just ensured");
-            self.renderer
-                .render_to_texture(
-                    &self.device,
-                    &self.queue,
-                    &scene,
-                    target_view,
-                    &vello::RenderParams {
-                        base_color: krate_presenter_gpu::background(),
-                        width,
-                        height,
-                        antialiasing_method: vello::AaConfig::Area,
-                    },
-                )
-                .map_err(|e| format!("render: {e}"))?;
-            use vello::wgpu::CurrentSurfaceTexture;
-            let frame = match self.surface.get_current_texture() {
-                CurrentSurfaceTexture::Success(frame)
-                | CurrentSurfaceTexture::Suboptimal(frame) => frame,
-                // Skippable states: nothing to show this frame, nothing wrong
-                // with the path. Minimized windows sit in Occluded for their
-                // whole quiet life; retiring the GPU for that would punish
-                // every un-minimize.
-                CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => {
-                    return Ok(());
-                }
-                // Outdated/lost: force a reconfigure next frame; if the
-                // surface is truly gone the configure path will error and THAT
-                // retires the GPU.
-                _ => {
-                    self.configured = (0, 0);
-                    return Ok(());
-                }
-            };
-            let frame_view = frame
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
-            let mut encoder = self
-                .device
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                    label: Some("krate-blit"),
-                });
-            self.blitter
-                .copy(&self.device, &mut encoder, target_view, &frame_view);
-            self.queue.submit([encoder.finish()]);
             window.pre_present_notify();
-            frame.present();
-            Ok(())
+            self.inner.render(
+                size.width,
+                size.height,
+                window.scale_factor() as f32,
+                placements,
+                interaction,
+                input_at,
+            )
         }
     }
 
@@ -360,6 +226,7 @@ mod real {
                             surface: None,
                             gpu: None,
                             gpu_dead: false,
+                            last_input: None,
                             placements: Vec::new(),
                             hovered: None,
                             pressed_widget: None,
@@ -389,6 +256,20 @@ mod real {
             native: NativeWindowId,
             event: WindowEvent,
         ) {
+            // Stamp real user input on arrival; the presenter reports
+            // input-to-present from this. Redraws and focus shuffles are not
+            // input.
+            if matches!(
+                event,
+                WindowEvent::CursorMoved { .. }
+                    | WindowEvent::MouseInput { .. }
+                    | WindowEvent::MouseWheel { .. }
+                    | WindowEvent::KeyboardInput { .. }
+            ) {
+                if let Some(tracked) = self.windows.get_mut(&native) {
+                    tracked.last_input = Some(std::time::Instant::now());
+                }
+            }
             let Some(krate) = self.krate_id(native) else {
                 return;
             };
@@ -562,7 +443,8 @@ mod real {
                     hovered: tracked.hovered,
                     pressed: tracked.pressed_widget,
                 };
-                match gpu.render(&tracked.window, &tracked.placements, interaction) {
+                let input_at = tracked.last_input.take();
+                match gpu.render(&tracked.window, &tracked.placements, interaction, input_at) {
                     Ok(()) => return,
                     Err(why) => {
                         tracked.gpu_dead = true;

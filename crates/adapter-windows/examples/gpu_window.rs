@@ -84,7 +84,7 @@ impl ApplicationHandler for App {
                     return;
                 };
                 let mut slid = self.corpus.clone();
-                slid[2].value = Some((self.frames % 90) as f32 / 90.0);
+                slid[2].value = Some((self.frames % 240) as f32 / 240.0);
                 gpu.render(
                     window,
                     &slid,
@@ -92,10 +92,11 @@ impl ApplicationHandler for App {
                         hovered: None,
                         pressed: None,
                     },
+                    Some(std::time::Instant::now()),
                 )
                 .expect("every frame must present on the GPU");
                 self.frames += 1;
-                if self.frames >= 90 {
+                if self.frames >= 240 {
                     println!("gpu-proof: {} frames presented", self.frames);
                     event_loop.exit();
                 } else {
@@ -112,5 +113,5 @@ fn main() {
     let event_loop = EventLoop::new().expect("event loop");
     let mut app = App::default();
     event_loop.run_app(&mut app).expect("run");
-    assert!(app.frames >= 90, "exited after only {} frames", app.frames);
+    assert!(app.frames >= 240, "exited after only {} frames", app.frames);
 }

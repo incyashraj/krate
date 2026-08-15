@@ -11,13 +11,13 @@
 //! Headless hosts — CI without `xvfb-run` — get a clean `Unsupported` error
 //! at first use; everything stays compiled and unit-testable everywhere.
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", feature = "dev-anyos"))]
 pub use real::*;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", feature = "dev-anyos")))]
 pub use stub::*;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", feature = "dev-anyos"))]
 use krate_adapter_common::ui::Modifiers;
 use krate_adapter_common::ui::{
     RawKeySample, RawPointerSample, RawWheelSample, UiAdapterError, WidgetPlacement, WindowId,
@@ -27,7 +27,10 @@ use krate_adapter_common::ui::{
 /// Native events paired with the Krate window they belong to.
 pub type CollectedNativeEvents = Vec<(WindowId, WinitWindowNativeEvent)>;
 
-#[cfg(target_os = "linux")]
+// dev-anyos: the real path compiles on the dev Mac too, so this module is
+// judged before CI rather than by users. Same reasoning, same shape as the
+// Windows twin.
+#[cfg(any(target_os = "linux", feature = "dev-anyos"))]
 mod real {
     use super::*;
     use std::cell::RefCell;
@@ -35,7 +38,7 @@ mod real {
     use std::time::Duration;
 
     use std::num::NonZeroU32;
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     use winit::application::ApplicationHandler;
     use winit::dpi::PhysicalSize;
@@ -44,7 +47,7 @@ mod real {
     use winit::platform::pump_events::EventLoopExtPumpEvents;
     use winit::window::{Window, WindowAttributes, WindowId as NativeWindowId};
 
-    type DrawSurface = softbuffer::Surface<Rc<Window>, Rc<Window>>;
+    type DrawSurface = softbuffer::Surface<Arc<Window>, Arc<Window>>;
 
     thread_local! {
         static WINIT_HOST: RefCell<Option<Host>> = const { RefCell::new(None) };
@@ -84,11 +87,53 @@ mod real {
 
     struct TrackedWindow {
         krate: WindowId,
-        window: Rc<Window>,
+        window: Arc<Window>,
         surface: Option<DrawSurface>,
+        /// The GPU presenter for this window, once it initialized.
+        gpu: Option<GpuPresent>,
+        /// GPU init or a present failed once: CPU for the life of the
+        /// window. The fallback is the contract; flapping is not.
+        gpu_dead: bool,
+        /// When the most recent user input arrived (S3 latency).
+        last_input: Option<std::time::Instant>,
         placements: Vec<WidgetPlacement>,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
+    }
+
+    /// The shared windowed presenter, wrapped with what only the adapter
+    /// knows: the winit window's size, scale, and last-input moment. One
+    /// implementation lives in presenter-gpu; this and the Windows twin are
+    /// wrappers that cannot drift from it.
+    pub struct GpuPresent {
+        inner: krate_presenter_gpu::WindowPresenter,
+    }
+
+    impl GpuPresent {
+        pub fn new(window: Arc<Window>) -> Result<Self, String> {
+            Ok(Self {
+                inner: krate_presenter_gpu::WindowPresenter::new(window)?,
+            })
+        }
+
+        pub fn render(
+            &mut self,
+            window: &Window,
+            placements: &[WidgetPlacement],
+            interaction: krate_adapter_common::painter::PaintInteraction,
+            input_at: Option<std::time::Instant>,
+        ) -> Result<(), String> {
+            let size = window.inner_size();
+            window.pre_present_notify();
+            self.inner.render(
+                size.width,
+                size.height,
+                window.scale_factor() as f32,
+                placements,
+                interaction,
+                input_at,
+            )
+        }
     }
 
     /// Normalize a winit logical key into the portable key-name shape.
@@ -148,8 +193,11 @@ mod real {
                         window.id(),
                         TrackedWindow {
                             krate: pending.krate,
-                            window: Rc::new(window),
+                            window: Arc::new(window),
                             surface: None,
+                            gpu: None,
+                            gpu_dead: false,
+                            last_input: None,
                             placements: Vec::new(),
                             hovered: None,
                             pressed_widget: None,
@@ -179,6 +227,19 @@ mod real {
             native: NativeWindowId,
             event: WindowEvent,
         ) {
+            // Stamp real user input on arrival; the presenter reports
+            // input-to-present from this.
+            if matches!(
+                event,
+                WindowEvent::CursorMoved { .. }
+                    | WindowEvent::MouseInput { .. }
+                    | WindowEvent::MouseWheel { .. }
+                    | WindowEvent::KeyboardInput { .. }
+            ) {
+                if let Some(tracked) = self.windows.get_mut(&native) {
+                    tracked.last_input = Some(std::time::Instant::now());
+                }
+            }
             let Some(krate) = self.krate_id(native) else {
                 return;
             };
@@ -317,6 +378,35 @@ mod real {
     }
 
     fn draw_placements(tracked: &mut TrackedWindow) {
+        // GPU first, vsync-paced; KRATE_CPU_PRESENT=1 forces the CPU painter;
+        // any GPU failure retires the path for this window.
+        if !tracked.gpu_dead && std::env::var_os("KRATE_CPU_PRESENT").is_none() {
+            if tracked.gpu.is_none() {
+                match GpuPresent::new(tracked.window.clone()) {
+                    Ok(gpu) => tracked.gpu = Some(gpu),
+                    Err(why) => {
+                        tracked.gpu_dead = true;
+                        eprintln!("krate: GPU presenter unavailable ({why}); drawing on the CPU");
+                    }
+                }
+            }
+            if let Some(gpu) = tracked.gpu.as_mut() {
+                let interaction = krate_adapter_common::painter::PaintInteraction {
+                    hovered: tracked.hovered,
+                    pressed: tracked.pressed_widget,
+                };
+                let input_at = tracked.last_input.take();
+                match gpu.render(&tracked.window, &tracked.placements, interaction, input_at) {
+                    Ok(()) => return,
+                    Err(why) => {
+                        tracked.gpu_dead = true;
+                        tracked.gpu = None;
+                        eprintln!("krate: GPU present failed ({why}); drawing on the CPU");
+                    }
+                }
+            }
+        }
+
         let size = tracked.window.inner_size();
         let (Some(width), Some(height)) =
             (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
@@ -473,8 +563,11 @@ mod real {
                 // an event loop by default. The opt-in keeps production on
                 // the safe main-thread default.
                 if std::env::var("KRATE_WINIT_ANY_THREAD").as_deref() == Ok("1") {
-                    use winit::platform::x11::EventLoopBuilderExtX11;
-                    builder.with_any_thread(true);
+                    #[cfg(target_os = "linux")]
+                    {
+                        use winit::platform::x11::EventLoopBuilderExtX11;
+                        builder.with_any_thread(true);
+                    }
                 }
                 let event_loop = builder.build().map_err(|err| {
                     UiAdapterError::Unsupported(format!(
@@ -738,7 +831,7 @@ mod real {
     }
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", feature = "dev-anyos")))]
 mod stub {
     use super::*;
 
