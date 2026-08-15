@@ -11,13 +11,13 @@
 //! any-thread opt-in exists because cargo runs tests on worker threads and
 //! winit refuses off-main-thread event loops by default.
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", feature = "dev-anyos"))]
 pub use real::*;
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", feature = "dev-anyos")))]
 pub use stub::*;
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", feature = "dev-anyos"))]
 use krate_adapter_common::ui::Modifiers;
 use krate_adapter_common::ui::{
     RawKeySample, RawPointerSample, RawWheelSample, UiAdapterError, WidgetPlacement, WindowId,
@@ -27,7 +27,13 @@ use krate_adapter_common::ui::{
 /// Native events paired with the Krate window they belong to.
 pub type CollectedNativeEvents = Vec<(WindowId, WinitWindowNativeEvent)>;
 
-#[cfg(target_os = "windows")]
+// `dev-anyos` exists because this module was invisible to every build and
+// test on the machine that develops it: cfg(windows) meant macOS compiled
+// the stub, "cargo build succeeded" proved nothing, and Windows-only compile
+// errors shipped twice. With the feature on, the REAL windowing and GPU code
+// compiles and runs on the dev Mac (winit and wgpu are portable), so it is
+// judged before CI rather than by users.
+#[cfg(any(target_os = "windows", feature = "dev-anyos"))]
 mod real {
     use super::*;
     use std::cell::RefCell;
@@ -35,15 +41,16 @@ mod real {
     use std::time::Duration;
 
     use std::num::NonZeroU32;
-    use std::rc::Rc;
+    use std::sync::Arc;
 
+    use krate_presenter_gpu::vello;
     use winit::application::ApplicationHandler;
     use winit::event::WindowEvent;
     use winit::event_loop::{ActiveEventLoop, EventLoop};
     use winit::platform::pump_events::EventLoopExtPumpEvents;
     use winit::window::{Window, WindowAttributes, WindowId as NativeWindowId};
 
-    type DrawSurface = softbuffer::Surface<Rc<Window>, Rc<Window>>;
+    type DrawSurface = softbuffer::Surface<Arc<Window>, Arc<Window>>;
 
     thread_local! {
         static WINIT_HOST: RefCell<Option<Host>> = const { RefCell::new(None) };
@@ -83,11 +90,188 @@ mod real {
 
     struct TrackedWindow {
         krate: WindowId,
-        window: Rc<Window>,
+        window: Arc<Window>,
         surface: Option<DrawSurface>,
+        /// The GPU presenter for this window, once it initialized.
+        gpu: Option<GpuPresent>,
+        /// GPU init or a present failed once: stay on the CPU path for the
+        /// life of the window rather than retrying into the same wall every
+        /// frame. The fallback is the contract; flapping is not.
+        gpu_dead: bool,
         placements: Vec<WidgetPlacement>,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
+    }
+
+    /// Everything one window needs to present vello frames on its surface.
+    ///
+    /// The render path is vello's documented one: render the scene to a
+    /// storage texture, then blit that texture onto the acquired surface
+    /// frame -- surfaces rarely offer STORAGE_BINDING, so drawing to them
+    /// directly is not portable. Present mode is AutoVsync: pacing is half
+    /// of what "feels native" means (Plan/GPU-Presenter.md S3 measures it).
+    pub struct GpuPresent {
+        surface: vello::wgpu::Surface<'static>,
+        device: vello::wgpu::Device,
+        queue: vello::wgpu::Queue,
+        renderer: vello::Renderer,
+        blitter: vello::wgpu::util::TextureBlitter,
+        surface_format: vello::wgpu::TextureFormat,
+        configured: (u32, u32),
+        target: Option<(vello::wgpu::TextureView, u32, u32)>,
+        cache: krate_presenter_gpu::SceneCache,
+    }
+
+    impl GpuPresent {
+        pub fn new(window: Arc<Window>) -> Result<Self, String> {
+            use vello::wgpu;
+            let instance = wgpu::Instance::default();
+            let surface = instance
+                .create_surface(window)
+                .map_err(|e| format!("surface: {e}"))?;
+            let adapter =
+                pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                    compatible_surface: Some(&surface),
+                    ..Default::default()
+                }))
+                .map_err(|e| format!("adapter: {e}"))?;
+            let (device, queue) =
+                pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+                    .map_err(|e| format!("device: {e}"))?;
+            let caps = surface.get_capabilities(&adapter);
+            let surface_format = caps
+                .formats
+                .iter()
+                .copied()
+                .find(|f| {
+                    matches!(
+                        f,
+                        wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm
+                    )
+                })
+                .or_else(|| caps.formats.first().copied())
+                .ok_or_else(|| "surface offers no formats".to_string())?;
+            let renderer = vello::Renderer::new(&device, vello::RendererOptions::default())
+                .map_err(|e| format!("renderer: {e}"))?;
+            let blitter = wgpu::util::TextureBlitter::new(&device, surface_format);
+            Ok(Self {
+                surface,
+                device,
+                queue,
+                renderer,
+                blitter,
+                surface_format,
+                configured: (0, 0),
+                target: None,
+                cache: krate_presenter_gpu::SceneCache::new(),
+            })
+        }
+
+        /// Render and present one frame. `Err` means the GPU path is done for
+        /// this window and the caller falls back to the CPU painter.
+        pub fn render(
+            &mut self,
+            window: &Window,
+            placements: &[WidgetPlacement],
+            interaction: krate_adapter_common::painter::PaintInteraction,
+        ) -> Result<(), String> {
+            use vello::wgpu;
+            let size = window.inner_size();
+            let (width, height) = (size.width, size.height);
+            if width == 0 || height == 0 {
+                return Ok(());
+            }
+            if self.configured != (width, height) {
+                self.surface.configure(
+                    &self.device,
+                    &wgpu::SurfaceConfiguration {
+                        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                        format: self.surface_format,
+                        width,
+                        height,
+                        present_mode: wgpu::PresentMode::AutoVsync,
+                        desired_maximum_frame_latency: 2,
+                        alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                        view_formats: vec![],
+                    },
+                );
+                self.configured = (width, height);
+                self.target = None;
+            }
+            if self.target.as_ref().map(|t| (t.1, t.2)) != Some((width, height)) {
+                let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("krate-frame"),
+                    size: wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    usage: wgpu::TextureUsages::STORAGE_BINDING
+                        | wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+                self.target = Some((
+                    texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                    width,
+                    height,
+                ));
+            }
+            let scale = window.scale_factor() as f32;
+            let scene =
+                krate_presenter_gpu::build_scene(&mut self.cache, placements, scale, interaction);
+            let (target_view, _, _) = self.target.as_ref().expect("target just ensured");
+            self.renderer
+                .render_to_texture(
+                    &self.device,
+                    &self.queue,
+                    &scene,
+                    target_view,
+                    &vello::RenderParams {
+                        base_color: krate_presenter_gpu::background(),
+                        width,
+                        height,
+                        antialiasing_method: vello::AaConfig::Area,
+                    },
+                )
+                .map_err(|e| format!("render: {e}"))?;
+            use vello::wgpu::CurrentSurfaceTexture;
+            let frame = match self.surface.get_current_texture() {
+                CurrentSurfaceTexture::Success(frame)
+                | CurrentSurfaceTexture::Suboptimal(frame) => frame,
+                // Skippable states: nothing to show this frame, nothing wrong
+                // with the path. Minimized windows sit in Occluded for their
+                // whole quiet life; retiring the GPU for that would punish
+                // every un-minimize.
+                CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => {
+                    return Ok(());
+                }
+                // Outdated/lost: force a reconfigure next frame; if the
+                // surface is truly gone the configure path will error and THAT
+                // retires the GPU.
+                _ => {
+                    self.configured = (0, 0);
+                    return Ok(());
+                }
+            };
+            let frame_view = frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("krate-blit"),
+                });
+            self.blitter
+                .copy(&self.device, &mut encoder, target_view, &frame_view);
+            self.queue.submit([encoder.finish()]);
+            window.pre_present_notify();
+            frame.present();
+            Ok(())
+        }
     }
 
     /// Normalize a winit logical key into the portable key-name shape.
@@ -172,8 +356,10 @@ mod real {
                         window.id(),
                         TrackedWindow {
                             krate: pending.krate,
-                            window: Rc::new(window),
+                            window: Arc::new(window),
                             surface: None,
+                            gpu: None,
+                            gpu_dead: false,
                             placements: Vec::new(),
                             hovered: None,
                             pressed_widget: None,
@@ -356,6 +542,37 @@ mod real {
     }
 
     fn draw_placements(tracked: &mut TrackedWindow) {
+        // The GPU path first: vello on the window's own surface, vsync-paced.
+        // KRATE_CPU_PRESENT=1 forces the CPU painter for A/B runs and
+        // support; any GPU failure retires the path for this window and the
+        // CPU painter takes over -- the fallback is the contract, flapping
+        // between the two is not.
+        if !tracked.gpu_dead && std::env::var_os("KRATE_CPU_PRESENT").is_none() {
+            if tracked.gpu.is_none() {
+                match GpuPresent::new(tracked.window.clone()) {
+                    Ok(gpu) => tracked.gpu = Some(gpu),
+                    Err(why) => {
+                        tracked.gpu_dead = true;
+                        eprintln!("krate: GPU presenter unavailable ({why}); drawing on the CPU");
+                    }
+                }
+            }
+            if let Some(gpu) = tracked.gpu.as_mut() {
+                let interaction = krate_adapter_common::painter::PaintInteraction {
+                    hovered: tracked.hovered,
+                    pressed: tracked.pressed_widget,
+                };
+                match gpu.render(&tracked.window, &tracked.placements, interaction) {
+                    Ok(()) => return,
+                    Err(why) => {
+                        tracked.gpu_dead = true;
+                        tracked.gpu = None;
+                        eprintln!("krate: GPU present failed ({why}); drawing on the CPU");
+                    }
+                }
+            }
+        }
+
         let size = tracked.window.inner_size();
         let (Some(width), Some(height)) =
             (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
@@ -446,6 +663,7 @@ mod real {
                 // Tests run on worker threads, where winit refuses to build
                 // an event loop by default. The opt-in keeps production on
                 // the safe main-thread default.
+                #[cfg(target_os = "windows")]
                 if std::env::var("KRATE_WINIT_ANY_THREAD").as_deref() == Ok("1") {
                     use winit::platform::windows::EventLoopBuilderExtWindows;
                     builder.with_any_thread(true);
@@ -657,7 +875,7 @@ mod real {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", feature = "dev-anyos")))]
 mod stub {
     use super::*;
 

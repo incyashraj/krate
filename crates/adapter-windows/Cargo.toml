@@ -12,11 +12,27 @@ krate-adapter-common = { path = "../adapter-common", version = "0.1.0-dev", feat
     "vector-text",
 ] }
 
-[target.'cfg(target_os = "windows")'.dependencies]
+# Unconditional, deliberately: the runtime only pulls this crate on Windows
+# targets, so production binaries elsewhere are untouched -- but the dev
+# machine now COMPILES the real windowing and GPU path instead of a stub
+# that proved nothing (see dev-anyos below).
 winit = { version = "0.30", default-features = false, features = ["rwh_06"] }
 # CPU framebuffer for the first drawn-widget pass; the Windows backend needs
 # no feature flags. Vello/wgpu replaces the presenter later (plan 7.5).
 softbuffer = { version = "0.4", default-features = false }
+# The GPU presenter (Plan/GPU-Presenter.md S2): vello scenes on a wgpu
+# surface when a usable adapter initializes; softbuffer stays as the
+# fallback that never blocks an app.
+krate-presenter-gpu = { path = "../presenter-gpu", version = "0.1.0-dev" }
+pollster = "0.4"
 # OS clipboard for the drawn path's Cut/Copy/Paste. Text-only (no image-data),
 # so it pulls only the Win32 clipboard backend.
 arboard.workspace = true
+
+[features]
+# Compile the real winit+GPU path on any OS, for local dev proof.
+dev-anyos = []
+
+[[example]]
+name = "gpu_window"
+required-features = ["dev-anyos"]

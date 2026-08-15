@@ -461,3 +461,4 @@ impl OffscreenPresenter {
         Ok(out)
     }
 }
+pub use vello;

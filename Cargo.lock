@@ -2118,6 +2118,8 @@ version = "0.1.25"
 dependencies = [
  "arboard",
  "krate-adapter-common",
+ "krate-presenter-gpu",
+ "pollster",
  "softbuffer",
  "winit",
 ]
