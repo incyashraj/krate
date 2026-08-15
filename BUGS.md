@@ -3639,6 +3639,34 @@ Fix:      Six rebuilt from source in apps/; five have no source and were
 
 ## Fixed
 
+### K-113 — "Change my app" replaced it with a stranger
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-16, founder, revising a finished NES-style track game in
+          the studio: "change the controls" produced an unrelated generic
+          runner app that overwrote the game he loved.
+Evidence: The revised bundle fell from 37 KB to 16 KB and drew a plain blue
+          "Hold an arrow key to run" screen with none of the game in it.
+          Mechanism: revise unpacks the bundle's own source and passes it as
+          create's work dir, but create joined `work_dir.join(name)` where
+          `name` is inferred from the REQUEST -- for a change, that is the
+          change sentence -- so the agent landed in an empty directory
+          beside the source, the never-produced-source wipe gave it a fresh
+          skeleton, and it built "a runner with arrow keys" from one line.
+          The fallback for source-less bundles was worse: with no history
+          entry it rebuilt from the change text alone by design.
+Fix:      26e3a98. A change adopts the unpacked source directory itself
+          (`is_existing_app_workspace`), and a source-less bundle with no
+          history refuses in plain words instead of rebuilding from the
+          change sentence.
+Proof:    `krate revise` on the same track game with a start-card wording
+          change edited 8 bytes of 43,665: TRACK DASH / HURDLE / SPRINT all
+          still in the source, the new wording present, and a `--shoot` of
+          the revised bundle renders the same stadium, crowd and runner.
+Status:   fixed
+
 ### K-001 — Canvas apps cannot scroll: there is no scroll event
 Status:   fixed
 Owner:    W12
