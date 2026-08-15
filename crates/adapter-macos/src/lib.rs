@@ -476,6 +476,14 @@ impl UiAdapter for MacosUiAdapter {
 }
 
 impl UiAdapter for MacosAppKitPrototypeUiAdapter {
+    /// The window's true pixel density. The trait default answers 1.0, and
+    /// that default WAS K-111: canvas apps rastered at half resolution on
+    /// every Retina display and were stretched to fit. The rasterizer was
+    /// scale-aware all along; nothing on this platform ever told it.
+    fn window_scale(&self, id: krate_adapter_common::ui::WindowId) -> f32 {
+        appkit::lookup_window_scale(id).unwrap_or(1.0)
+    }
+
     /// Keyboard input captured by the AppKit pump.
     ///
     /// Without this override the trait default returns nothing, and that was

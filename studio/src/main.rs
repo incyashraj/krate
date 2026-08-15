@@ -37,6 +37,53 @@ static DOC_CLAIMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 /// document opened into a studio someone is already using.
 static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 
+/// Parse a krate://signed-in handoff (query or fragment) and store the
+/// identity through the engine. Used by the macOS open event and by the
+/// argv path Windows and Linux deliver scheme URLs through.
+fn adopt_from_uri(uri: &str) -> bool {
+    let Ok(url) = url::Url::parse(uri) else {
+        return false;
+    };
+    let payload = url
+        .query()
+        .map(str::to_string)
+        .or_else(|| url.fragment().map(str::to_string))
+        .unwrap_or_default();
+    let fields: std::collections::HashMap<_, _> =
+        url::form_urlencoded::parse(payload.as_bytes()).collect();
+    let (token, login) = (
+        fields.get("token").cloned().unwrap_or_default(),
+        fields.get("login").cloned().unwrap_or_default(),
+    );
+    if token.is_empty() || login.is_empty() {
+        return false;
+    }
+    let identity = serde_json::json!({
+        "login": login,
+        "name": fields.get("name").cloned().unwrap_or_default(),
+        "avatar_url": fields.get("avatar_url").cloned().unwrap_or_default(),
+        "token": token,
+    });
+    let Ok(engine) = engine() else { return false };
+    silent_cmd(&engine)
+        .args(["account", "adopt"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .and_then(|mut child| {
+            use std::io::Write as _;
+            child
+                .stdin
+                .take()
+                .map(|mut sin| sin.write_all(identity.to_string().as_bytes()))
+                .transpose()?;
+            child.wait()
+        })
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 fn show_main_window(app: &tauri::AppHandle) {
     WINDOW_SHOWN.store(true, std::sync::atomic::Ordering::SeqCst);
     if let Some(win) = app.get_webview_window("main") {
@@ -1375,6 +1422,13 @@ fn first_run_setup() {
         let run = |args: &[&str]| {
             let _ = silent_cmd("reg").args(args).status();
         };
+        // .krate belongs to the studio. The NSIS installer registers the
+        // type, but a machine that ran the old CLI installer keeps its
+        // earlier default -- an ancient console binary that drags a terminal
+        // behind every app and predates the GPU presenter. HKCU needs no
+        // elevation; an explicit per-user choice (UserChoice) still wins.
+        let open_cmd = format!(r#""{exe}" "%1""#);
+        let icon = format!(r#""{exe}",0"#);
         run(&[
             "add",
             r"HKCU\Software\Classes\.krate",
@@ -1396,7 +1450,7 @@ fn first_run_setup() {
             r"HKCU\Software\Classes\Krate.App\shell\open\command",
             "/ve",
             "/d",
-            &format!(""{exe}" "%1""),
+            &open_cmd,
             "/f",
         ]);
         run(&[
@@ -1404,7 +1458,36 @@ fn first_run_setup() {
             r"HKCU\Software\Classes\Krate.App\DefaultIcon",
             "/ve",
             "/d",
-            &format!(""{exe}",0"),
+            &icon,
+            "/f",
+        ]);
+        // The krate:// scheme, so the browser sign-in can hand the identity
+        // back. This was macOS-only (Info.plist), which is why Windows saw
+        // "you're signed in" in the browser while the gate never noticed:
+        // the hop back had no registered handler at all.
+        run(&[
+            "add",
+            r"HKCU\Software\Classes\krate",
+            "/ve",
+            "/d",
+            "URL:Krate",
+            "/f",
+        ]);
+        run(&[
+            "add",
+            r"HKCU\Software\Classes\krate",
+            "/v",
+            "URL Protocol",
+            "/d",
+            "",
+            "/f",
+        ]);
+        run(&[
+            "add",
+            r"HKCU\Software\Classes\krate\shell\open\command",
+            "/ve",
+            "/d",
+            &open_cmd,
             "/f",
         ]);
     }
@@ -1499,6 +1582,18 @@ fn main() {
     // On Windows and Linux a double-clicked .krate arrives as argv, not as a
     // macOS open event. The person asked for their app, not for Krate: hand
     // off to the engine (silently -- no console) and never build a window.
+    // The sign-in hop, delivered as an argument: Windows and Linux route
+    // custom-scheme URLs through argv. Adopt the identity and leave; the
+    // studio the person left open notices through the gate's own re-check.
+    #[cfg(not(target_os = "macos"))]
+    if let Some(uri) = std::env::args()
+        .nth(1)
+        .filter(|a| a.starts_with("krate://"))
+    {
+        adopt_from_uri(&uri);
+        return;
+    }
+
     #[cfg(not(target_os = "macos"))]
     if let Some(path) = std::env::args().nth(1).map(PathBuf::from) {
         if path.extension().and_then(|e| e.to_str()) == Some("krate") && path.is_file() {
@@ -1605,52 +1700,9 @@ fn main() {
                     if url.scheme() == "krate" {
                         DOC_CLAIMED.store(true, std::sync::atomic::Ordering::SeqCst);
                         show_main_window(app);
-                        let fragment = url.fragment().unwrap_or("");
-                        let fields: std::collections::HashMap<_, _> =
-                            url::form_urlencoded::parse(fragment.as_bytes()).collect();
-                        let (token, login) = (
-                            fields.get("token").cloned().unwrap_or_default(),
-                            fields.get("login").cloned().unwrap_or_default(),
-                        );
-                        if !token.is_empty() && !login.is_empty() {
-                            let identity = serde_json::json!({
-                                "login": login,
-                                "name": fields.get("name").cloned().unwrap_or_default(),
-                                "avatar_url": fields.get("avatar_url").cloned().unwrap_or_default(),
-                                "token": token,
-                            });
-                            if let Ok(engine) = engine() {
-                                let adopted = silent_cmd(&engine)
-                                    .args(["account", "adopt"])
-                                    .stdin(Stdio::piped())
-                                    .stdout(Stdio::null())
-                                    .stderr(Stdio::null())
-                                    .spawn()
-                                    .and_then(|mut child| {
-                                        use std::io::Write as _;
-                                        child
-                                            .stdin
-                                            .take()
-                                            .map(|mut sin| {
-                                                sin.write_all(identity.to_string().as_bytes())
-                                            })
-                                            .transpose()?;
-                                        child.wait()
-                                    })
-                                    .map(|status| status.success())
-                                    .unwrap_or(false);
-                                if adopted {
-                                    let _ = app.emit(
-                                        "login-step",
-                                        serde_json::json!({
-                                            "step": "done",
-                                            "login": identity["login"],
-                                            "name": identity["name"],
-                                            "avatar_url": identity["avatar_url"],
-                                        }),
-                                    );
-                                }
-                            }
+                        if adopt_from_uri(url.as_str()) {
+                            let _ =
+                                app.emit("login-step", serde_json::json!({ "step": "adopted" }));
                         }
                         continue;
                     }

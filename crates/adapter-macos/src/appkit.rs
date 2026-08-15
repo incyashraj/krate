@@ -935,6 +935,11 @@ impl AppKitWindowSession {
     }
 }
 
+/// Route for callers above the platform module's position in this file.
+fn platform_record_scale(id: WindowId, scale: f32) {
+    record_window_scale(id, scale);
+}
+
 impl AppKitWindowBackend {
     /// Return the native backend kind created by this prototype.
     pub fn backend_kind(&self) -> WindowBackendKind {
@@ -998,6 +1003,7 @@ impl AppKitWindowBackend {
         id: WindowId,
         scale: f32,
     ) -> Result<(), UiAdapterError> {
+        platform_record_scale(id, scale);
         WindowAdapter::queue_scale_changed(adapter, id, scale)
     }
 
@@ -2050,11 +2056,23 @@ mod platform {
             window.window.makeKeyAndOrderFront(None);
             #[allow(deprecated)]
             app.activateIgnoringOtherApps(true);
+            // The moment a window is really on a screen is the moment its
+            // true pixel density is known; record it so the runtime rasters
+            // at that density instead of the 1.0 the trait default answers.
+            // This 1.0 was K-111: every canvas app drew at half resolution
+            // on Retina displays and was stretched -- the whole "not even
+            // HD" feel of Krate apps on a Mac.
+            record_window_scale(window.id, window.window.backingScaleFactor() as f32);
             WindowAdapter::show_window(adapter, window.id)
         }
     }
 
     thread_local! {
+        /// Last-known backing scale per window, recorded when a window shows
+        /// and when AppKit reports a scale change (moving between displays).
+        static WINDOW_SCALES: std::cell::RefCell<std::collections::BTreeMap<u64, f32>> =
+            const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+
         /// Key samples captured by the pump, waiting for the runtime to drain
         /// them. Main-thread only, like every other AppKit surface here.
         static PENDING_KEY_SAMPLES: std::cell::RefCell<Vec<krate_adapter_common::ui::RawKeySample>> =
@@ -2092,6 +2110,20 @@ mod platform {
     /// responder chain instead, and a drawn canvas is not a responder -- so
     /// before this existed, every keypress into a game window was dispatched
     /// to nobody and dropped. A person could see the game and not play it.
+    /// Record a window's backing scale for `window_scale` queries.
+    pub fn record_window_scale(id: WindowId, scale: f32) {
+        if scale > 0.0 {
+            WINDOW_SCALES.with(|scales| {
+                scales.borrow_mut().insert(id.get(), scale);
+            });
+        }
+    }
+
+    /// The last-known backing scale for a window, if it ever showed.
+    pub fn lookup_window_scale(id: WindowId) -> Option<f32> {
+        WINDOW_SCALES.with(|scales| scales.borrow().get(&id.get()).copied())
+    }
+
     pub fn take_raw_key_samples() -> Vec<krate_adapter_common::ui::RawKeySample> {
         PENDING_KEY_SAMPLES.with(|slot| slot.borrow_mut().drain(..).collect())
     }
@@ -2692,6 +2724,12 @@ mod platform {
 
 #[cfg(not(target_os = "macos"))]
 mod platform {
+
+    /// Non-macOS builds have no windows and therefore no scales.
+    pub fn record_window_scale(_id: WindowId, _scale: f32) {}
+    pub fn lookup_window_scale(_id: WindowId) -> Option<f32> {
+        None
+    }
     use super::*;
 
     /// Key capture is a macOS-AppKit concern; off this platform the adapter is
@@ -2915,6 +2953,7 @@ pub use platform::AppKitDrawViewSurface;
 pub use platform::AppKitWidgetSurface;
 pub use platform::AppKitWindowNativeDelegate;
 pub use platform::AppKitWindowPrototype;
+pub use platform::{lookup_window_scale, record_window_scale};
 
 fn validate_color_channel(name: &str, value: f32) -> Result<(), UiAdapterError> {
     if !value.is_finite() || !(0.0..=1.0).contains(&value) {

@@ -27,7 +27,11 @@
   var fromApp = new URLSearchParams(location.search).get("app") === "1";
   var hash = location.hash.replace(/^#/, "");
   if (fromApp && hash) {
-    var target = "krate://signed-in#" + hash;
+    // Query, not fragment: fragments never leave a BROWSER, but this URL
+    // leaves the browser on purpose -- and Windows' scheme plumbing drops
+    // fragments on the way to the handler. A local URI has no logs to
+    // protect the token from.
+    var target = "krate://signed-in?" + hash;
     document.getElementById("doneSub").textContent =
       "All set. Krate on your desktop is signed in too; you can close this tab.";
     var a = document.getElementById("openApp");

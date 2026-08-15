@@ -147,6 +147,10 @@ function onLoginStep(step) {
       } catch {}
     };
     $("gateUrl").textContent = step.url;
+  } else if (step.step === "adopted") {
+    // The identity was stored by the engine (browser hand-off); read it
+    // back rather than trusting the URL's own fields.
+    refreshAccountAndEnter();
   } else if (step.step === "done") {
     state.account = { signed_in: true, login: step.login, name: step.name, avatar_url: step.avatar_url };
     enterHome();
@@ -745,6 +749,31 @@ function openAiSheet() {
   }
   $("aiSheet").classList.remove("hidden");
 }
+
+/* The gate watches for a sign-in completed elsewhere.
+ *
+ * On Windows and Linux the browser hand-off lands in a SECOND studio
+ * process that stores the identity and exits; the window the person left
+ * open has no event to hear. So while the gate is showing, ask the engine
+ * every few seconds -- and immediately on focus, which is the moment they
+ * switch back from the browser. */
+async function refreshAccountAndEnter() {
+  try {
+    const account = await invoke("account_status");
+    if (account && account.signed_in) {
+      state.account = account;
+      enterHome();
+      return true;
+    }
+  } catch {}
+  return false;
+}
+setInterval(() => {
+  if (!$("viewGate").classList.contains("hidden")) refreshAccountAndEnter();
+}, 3000);
+window.addEventListener("focus", () => {
+  if (!$("viewGate").classList.contains("hidden")) refreshAccountAndEnter();
+});
 
 /* Re-check the AIs when the window comes back.
  *
