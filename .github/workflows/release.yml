@@ -798,10 +798,13 @@ jobs:
           test -f "$app/Contents/Resources/bin/krate" \
             || { echo "::error::the studio ships no engine"; hdiutil detach "$mp"; exit 1; }
 
-          # 3. It must NOT claim .krate. Two apps competing for one file type
-          #    is why a double-clicked app opened the wrong thing.
-          if plutil -p "$app/Contents/Info.plist" | grep -q CFBundleDocumentTypes; then
-            echo "::error::the studio claims .krate; the runtime owns that type"
+          # 3. It MUST claim .krate. Krate is the one app now -- it makes
+          #    apps and it opens them -- so a bundle that does not declare the
+          #    type ships a machine where double-clicking a .krate does
+          #    nothing. (This check used to assert the opposite, when the
+          #    opener was a separate app; the gate has to follow the design.)
+          if ! plutil -p "$app/Contents/Info.plist" | grep -q CFBundleDocumentTypes; then
+            echo "::error::Krate.app does not claim .krate; double-click would be dead"
             hdiutil detach "$mp"; exit 1
           fi
 
