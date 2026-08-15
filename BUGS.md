@@ -3638,8 +3638,8 @@ Fix:      Six rebuilt from source in apps/; five have no source and were
 ---
 
 ### K-114 — macOS canvas apps scroll like the 90s: line jumps and swap flicker
-Status:   open
-Owner:    unclaimed
+Status:   fixed (runtime half; feel verdict awaits the founder's hand)
+Owner:    lead
 Severity: blocker
 Class:    our-code
 Found:    2026-08-16, founder, scrolling an AI-written notes app side by side
@@ -3656,8 +3656,15 @@ Evidence: Two mechanisms compound. The macOS canvas path is still the
           across Electron's five processes), size (210KB vs 107MB) -- and
           loses the scroll feel decisively, which is the row adoption
           actually reads.
-Fix:      S5: route macOS painted surfaces through the shared GPU presenter,
-          vsync-paced, same as Windows and Linux.
+Fix:      S5 shipped for canvases: each drawn canvas now presents on a
+          vsynced Metal surface (PixelPresenter -- one persistent
+          GPU-backed view per canvas, one write_texture + blit per frame,
+          atomic swap), with the NSImageView composite kept as the
+          no-Metal fallback. Measured on the M4: "canvas presents on
+          Apple M4 (Metal, IntegratedGpu)", present interval p50 17.3ms /
+          p99 17.7ms -- a 0.4ms spread where the old path had no pacing at
+          all. The replica editor renders mid-pixel scroll offsets through
+          the same surface. K-115 (teaching) covers the app-side half.
 
 ### K-115 — Generated apps scroll by whole lines because the pack never taught pixels
 Status:   open

@@ -1196,6 +1196,30 @@ mod platform {
     /// whole update. Reusing it keeps AppKit from caching a fresh CGImage per
     /// frame. Taking it out of `controls` means it will not be torn down when
     /// the leftovers are; it stays parented in the content view throughout.
+    /// Whether canvas GPU presenting is off for this process: forced off by
+    /// KRATE_CPU_PRESENT=1, or retired after a failure. Thread-local rather
+    /// than atomic because all lowering happens on the main thread.
+    fn canvas_gpu_dead() -> bool {
+        CANVAS_GPU_DEAD.with(|dead| dead.get()) || std::env::var_os("KRATE_CPU_PRESENT").is_some()
+    }
+    thread_local! {
+        static CANVAS_GPU_DEAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    /// Pull a canvas's GPU view and presenter out of the previous frame's
+    /// surface, if that widget presented on the GPU last frame. Same
+    /// contract as `reuse_image_view`: taken out so teardown spares it.
+    fn reuse_canvas_gpu(
+        previous: &mut Option<AppKitWidgetSurface>,
+        widget: WidgetId,
+    ) -> Option<(Retained<NSView>, krate_presenter_gpu::PixelPresenter)> {
+        let surface = previous.as_mut()?;
+        let presenter = surface.canvas_gpu.remove(&widget)?;
+        let view = surface.controls.remove(&widget)?;
+        surface.kinds.remove(&widget);
+        Some((view, presenter))
+    }
+
     fn reuse_image_view(
         previous: &mut Option<AppKitWidgetSurface>,
         widget: WidgetId,
@@ -1308,6 +1332,11 @@ mod platform {
         controls: BTreeMap<WidgetId, Retained<NSView>>,
         kinds: BTreeMap<WidgetId, WidgetKind>,
         lowered: Vec<WidgetId>,
+        /// GPU surfaces for canvases (S5): one vsynced Metal-backed view per
+        /// canvas widget, persisted across lowers exactly like the views in
+        /// `controls`, so a game's surface survives its sixty re-lowers a
+        /// second. Dropped with the surface.
+        canvas_gpu: BTreeMap<WidgetId, krate_presenter_gpu::PixelPresenter>,
     }
 
     impl AppKitWidgetSurface {
@@ -1616,6 +1645,7 @@ mod platform {
             let mut controls = BTreeMap::new();
             let mut kinds = BTreeMap::new();
             let mut lowered = Vec::with_capacity(placements.len());
+            let mut canvas_gpu = BTreeMap::new();
 
             // The previous frame's native views, still parented in the content
             // view. Any that a placement reuses are moved out of here; whatever
@@ -1870,24 +1900,81 @@ mod platform {
                         control_view(view)
                     }
                     WidgetKind::Canvas if placement.pixels().is_some() => {
-                        // A canvas someone has drawn on shows its raster the
-                        // same way an image widget does. An untouched canvas
-                        // falls through to the container arm below. Reused
-                        // across frames: a canvas game re-lowers 60 times a
-                        // second, and minting a new view (and cached CGImage)
-                        // each time is what drove RSS into the gigabytes.
-                        let view = reuse_image_view(&mut reusable, placement.widget())
-                            .unwrap_or_else(|| {
-                                let view = NSImageView::new(mtm);
-                                view.setImageScaling(NSImageScaling::ScaleProportionallyUpOrDown);
-                                view
+                        // A drawn canvas presents on a vsynced Metal surface
+                        // (S5). The old path built a fresh NSImage per frame
+                        // and swapped it into an NSImageView -- an unsynced
+                        // CPU composite that could put a half-swapped state
+                        // on the glass (K-114's vanish/reappear) and copied
+                        // the full raster every frame. One persistent
+                        // GPU-backed view per canvas now, reused across the
+                        // sixty re-lowers a second; the NSImageView path
+                        // stays as the fallback for machines without Metal.
+                        let pixels = placement.pixels().expect("pixels guarded by match arm");
+                        let mut gpu_view: Option<Retained<NSView>> = None;
+                        let gpu_pair = reuse_canvas_gpu(&mut reusable, placement.widget())
+                            .or_else(|| {
+                                if canvas_gpu_dead() {
+                                    return None;
+                                }
+                                let view = NSView::new(mtm);
+                                view.setWantsLayer(true);
+                                view.setFrame(frame);
+                                let ptr = Retained::as_ptr(&view) as *mut AnyObject
+                                    as *mut std::ffi::c_void;
+                                // SAFETY: the view is owned by this surface
+                                // for at least as long as the presenter, and
+                                // lowering runs on the main thread.
+                                match unsafe {
+                                    krate_presenter_gpu::PixelPresenter::new_from_ns_view(ptr)
+                                } {
+                                    Ok(presenter) => Some((view, presenter)),
+                                    Err(why) => {
+                                        eprintln!(
+                                            "krate: canvas GPU surface unavailable ({why}); compositing on the CPU"
+                                        );
+                                        CANVAS_GPU_DEAD.with(|dead| dead.set(true));
+                                        None
+                                    }
+                                }
                             });
-                        view.setFrame(frame);
-                        match placement.pixels().and_then(ns_image_from_rgba) {
-                            Some(image) => view.setImage(Some(&image)),
-                            None => view.setImage(None),
+                        if let Some((view, mut presenter)) = gpu_pair {
+                            view.setFrame(frame);
+                            match presenter.present_pixels(
+                                &pixels.rgba,
+                                pixels.width,
+                                pixels.height,
+                            ) {
+                                Ok(()) => {
+                                    canvas_gpu.insert(placement.widget(), presenter);
+                                    gpu_view = Some(view);
+                                }
+                                Err(why) => {
+                                    eprintln!(
+                                        "krate: canvas GPU present failed ({why}); compositing on the CPU"
+                                    );
+                                    CANVAS_GPU_DEAD.with(|dead| dead.set(true));
+                                }
+                            }
                         }
-                        control_view(view)
+                        match gpu_view {
+                            Some(view) => view,
+                            None => {
+                                let view = reuse_image_view(&mut reusable, placement.widget())
+                                    .unwrap_or_else(|| {
+                                        let view = NSImageView::new(mtm);
+                                        view.setImageScaling(
+                                            NSImageScaling::ScaleProportionallyUpOrDown,
+                                        );
+                                        view
+                                    });
+                                view.setFrame(frame);
+                                match placement.pixels().and_then(ns_image_from_rgba) {
+                                    Some(image) => view.setImage(Some(&image)),
+                                    None => view.setImage(None),
+                                }
+                                control_view(view)
+                            }
+                        }
                     }
                     WidgetKind::TreeView | WidgetKind::Canvas => {
                         // Containers whose children are separate placements, or
@@ -1950,6 +2037,7 @@ mod platform {
                 controls,
                 kinds,
                 lowered,
+                canvas_gpu,
             })
         }
     }

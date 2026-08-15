@@ -198,10 +198,7 @@ impl WindowPresenter {
         // A device error recorded asynchronously since the last frame --
         // swapchain refused, validation failure, device lost -- means this
         // window's GPU path is over. Err retires it to the CPU painter.
-        if self
-            .device_failed
-            .load(std::sync::atomic::Ordering::SeqCst)
-        {
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
             return Err("GPU device reported an error".to_string());
         }
         if self.configured != (width, height) {
@@ -291,6 +288,211 @@ impl WindowPresenter {
         self.queue.submit([encoder.finish()]);
         frame.present();
         self.stats.record(started, input_at);
+        Ok(())
+    }
+}
+
+/// Present raw RGBA frames -- a canvas app's raster -- on a vsynced GPU
+/// surface attached to a native view.
+///
+/// This is S5's macOS piece: the AppKit adapter fed each canvas frame
+/// through a fresh NSImage into an NSImageView, an unsynchronized CPU
+/// composite that could put a half-swapped state on the glass (K-114's
+/// vanish/reappear) and burned a full-buffer copy per frame. Here the frame
+/// is one write_texture and a blit, presented by the compositor on vsync.
+/// No scene building: a canvas raster is already pixels.
+pub struct PixelPresenter {
+    surface: wgpu::Surface<'static>,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    blitter: wgpu::util::TextureBlitter,
+    surface_format: wgpu::TextureFormat,
+    configured: (u32, u32),
+    upload: Option<(wgpu::Texture, u32, u32)>,
+    stats: FrameStats,
+    device_failed: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl PixelPresenter {
+    /// Attach to a native AppKit view.
+    ///
+    /// # Safety
+    /// `ns_view` must point to a valid NSView that outlives this presenter,
+    /// and this must be called on the main thread.
+    #[cfg(target_os = "macos")]
+    pub unsafe fn new_from_ns_view(ns_view: *mut std::ffi::c_void) -> Result<Self, String> {
+        use wgpu::rwh;
+        let view = std::ptr::NonNull::new(ns_view).ok_or("null NSView")?;
+        let instance = wgpu::Instance::default();
+        let surface = unsafe {
+            instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::RawHandle {
+                raw_display_handle: Some(rwh::RawDisplayHandle::AppKit(
+                    rwh::AppKitDisplayHandle::new(),
+                )),
+                raw_window_handle: rwh::RawWindowHandle::AppKit(rwh::AppKitWindowHandle::new(view)),
+            })
+        }
+        .map_err(|e| format!("surface: {e}"))?;
+        Self::with_surface(instance, surface)
+    }
+
+    fn with_surface(
+        instance: wgpu::Instance,
+        surface: wgpu::Surface<'static>,
+    ) -> Result<Self, String> {
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            compatible_surface: Some(&surface),
+            ..Default::default()
+        }))
+        .map_err(|e| format!("adapter: {e}"))?;
+        let info = adapter.get_info();
+        if info.device_type == wgpu::DeviceType::Cpu {
+            return Err(format!("{} is a software adapter", info.name));
+        }
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
+                .map_err(|e| format!("device: {e}"))?;
+        eprintln!(
+            "krate: canvas presents on {} ({:?}, {:?})",
+            info.name, info.backend, info.device_type
+        );
+        let device_failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        {
+            let flag = std::sync::Arc::clone(&device_failed);
+            device.on_uncaptured_error(std::sync::Arc::new(move |err| {
+                eprintln!("krate: GPU device error, retiring to CPU composite: {err}");
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            }));
+        }
+        let caps = surface.get_capabilities(&adapter);
+        let surface_format = caps
+            .formats
+            .iter()
+            .copied()
+            .find(|f| {
+                matches!(
+                    f,
+                    wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Bgra8Unorm
+                )
+            })
+            .or_else(|| caps.formats.first().copied())
+            .ok_or_else(|| "surface offers no formats".to_string())?;
+        let blitter = wgpu::util::TextureBlitter::new(&device, surface_format);
+        Ok(Self {
+            surface,
+            device,
+            queue,
+            blitter,
+            surface_format,
+            configured: (0, 0),
+            upload: None,
+            stats: FrameStats::new(),
+            device_failed,
+        })
+    }
+
+    /// Upload one RGBA frame and present it, vsync-paced by the compositor.
+    /// `Err` retires this surface; the caller falls back to the CPU path.
+    pub fn present_pixels(&mut self, rgba: &[u8], width: u32, height: u32) -> Result<(), String> {
+        let started = Instant::now();
+        if width == 0 || height == 0 || rgba.len() < (width as usize * height as usize * 4) {
+            return Ok(());
+        }
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
+        if self.configured != (width, height) {
+            self.surface.configure(
+                &self.device,
+                &wgpu::SurfaceConfiguration {
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    format: self.surface_format,
+                    width,
+                    height,
+                    present_mode: wgpu::PresentMode::AutoVsync,
+                    desired_maximum_frame_latency: 2,
+                    alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                    view_formats: vec![],
+                },
+            );
+            self.configured = (width, height);
+            self.upload = None;
+        }
+        // One persistent upload texture, rewritten in place each frame --
+        // never a new texture per frame (the K-116 board neighbor, and the
+        // classic port mistake the plan warns about).
+        if self
+            .upload
+            .as_ref()
+            .map(|(_, w, h)| (*w, *h) != (width, height))
+            .unwrap_or(true)
+        {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("krate canvas frame"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            self.upload = Some((texture, width, height));
+        }
+        let (texture, ..) = self.upload.as_ref().expect("upload texture just ensured");
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rgba[..(width as usize * height as usize * 4)],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        use wgpu::CurrentSurfaceTexture;
+        let frame = match self.surface.get_current_texture() {
+            CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
+                frame
+            }
+            // Occluded/minimized: skip quietly, the path is fine.
+            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
+            // Outdated/lost: force a reconfigure next frame; a truly dead
+            // surface errors there and THAT retires the path.
+            _ => {
+                self.configured = (0, 0);
+                return Ok(());
+            }
+        };
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("krate canvas blit"),
+            });
+        let src = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let dst = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.blitter.copy(&self.device, &mut encoder, &src, &dst);
+        self.queue.submit([encoder.finish()]);
+        frame.present();
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
+        self.stats.record(started, None);
         Ok(())
     }
 }
