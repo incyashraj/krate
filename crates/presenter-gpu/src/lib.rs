@@ -2,57 +2,148 @@
 //!
 //! Stage S1 of Plan/GPU-Presenter.md. This crate owns exactly two things:
 //!
-//! 1. [`build_scene`]: the one placements-to-vello-Scene translation, ported
-//!    from the proven iOS path (`adapter-ios/src/vello_canvas.rs`) so every
-//!    platform that gains the GPU presenter draws identically.
-//! 2. [`OffscreenPresenter`]: a headless wgpu render-to-texture with PNG
-//!    readback. It exists so every visual claim this presenter ever makes is
-//!    checkable by image diff against the CPU painter on a Mac, before any
-//!    Windows hardware is involved.
+//! 1. [`build_scene`]: the placements-to-vello-Scene translation. Geometry
+//!    and per-kind styling are ported branch-for-branch from the CPU bitmap
+//!    painter and share its color constants, so the two backends cannot
+//!    drift in palette. Text and images are the next slice: the GPU vello
+//!    line pairs parley 0.7 while the CPU line is on 0.11, so glyph runs
+//!    need their own shaping here, the way adapter-ios does it.
+//! 2. [`OffscreenPresenter`]: headless wgpu render-to-texture with readback,
+//!    so every visual claim is checkable by image diff against the CPU
+//!    painter on this Mac before any Windows hardware is involved.
 //!
-//! The windowed surface (S2) builds on the same `build_scene`; nothing in
-//! this crate may know about winit, so the seam stays a seam.
+//! Nothing in this crate may know about winit; the windowed surface (S2)
+//! builds on the same `build_scene` behind that seam.
 
-use krate_adapter_common::painter::PaintInteraction;
-use krate_adapter_common::ui::WidgetPlacement;
+use krate_adapter_common::painter::{
+    button_fill_color, PaintInteraction, COLOR_BACKGROUND, COLOR_BUTTON, COLOR_FIELD_BORDER,
+    COLOR_FIELD_FILL, COLOR_KNOB, COLOR_TRACK,
+};
+use krate_adapter_common::ui::{WidgetKind, WidgetPlacement};
 use vello::kurbo::{Affine, Rect};
 use vello::peniko::{Color, Fill};
 
-/// Background matches the CPU painter's clear color, so image diffs compare
-/// content rather than conventions.
-const BACKGROUND: Color = Color::from_rgb8(0x0a, 0x0a, 0x0a);
+/// Convert the painter's 0xAARRGGBB into a vello color, so there is exactly
+/// one palette in the codebase.
+fn argb(color: u32) -> Color {
+    Color::from_rgba8(
+        (color >> 16) as u8,
+        (color >> 8) as u8,
+        color as u8,
+        (color >> 24) as u8,
+    )
+}
+
+fn intersect(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> Option<(f32, f32, f32, f32)> {
+    let x = a.0.max(b.0);
+    let y = a.1.max(b.1);
+    let r = (a.0 + a.2).min(b.0 + b.2);
+    let btm = (a.1 + a.3).min(b.1 + b.3);
+    (r > x && btm > y).then_some((x, y, r - x, btm - y))
+}
+
+fn rect(r: (f32, f32, f32, f32)) -> Rect {
+    Rect::new(
+        f64::from(r.0),
+        f64::from(r.1),
+        f64::from(r.0 + r.2),
+        f64::from(r.1 + r.3),
+    )
+}
 
 /// Translate placements into a vello scene at the given scale.
 ///
 /// Logical-to-physical happens here and only here, mirroring the CPU
 /// painter's contract: placements arrive logical, the scene is physical.
+/// The branch structure follows `paint_placements_bitmap` deliberately --
+/// when that painter changes, this file changes in the same review.
 pub fn build_scene(
     placements: &[WidgetPlacement],
     scale: f32,
-    _interaction: PaintInteraction,
+    interaction: PaintInteraction,
 ) -> vello::Scene {
     let mut scene = vello::Scene::new();
-    let s = f64::from(scale);
+    let mut fill = |color: u32, r: (f32, f32, f32, f32), clip: Option<(f32, f32, f32, f32)>| {
+        let clipped = match clip {
+            Some(c) => intersect(r, c),
+            None => Some(r),
+        };
+        if let Some(r) = clipped {
+            scene.fill(Fill::NonZero, Affine::IDENTITY, argb(color), None, &rect(r));
+        }
+    };
+
     for placement in placements {
-        let rect = Rect::new(
-            f64::from(placement.x) * s,
-            f64::from(placement.y) * s,
-            f64::from(placement.x + placement.width) * s,
-            f64::from(placement.y + placement.height) * s,
-        );
-        // S1 draws structure: fills for every placement kind, so the diff
-        // harness has real geometry to judge. Text, images, canvas pixels
-        // and per-kind styling port from vello_canvas.rs next, behind this
-        // same signature.
-        scene.fill(
-            Fill::NonZero,
-            Affine::IDENTITY,
-            Color::from_rgb8(0x2a, 0x2d, 0x33),
-            None,
-            &rect,
-        );
+        let (px, py) = (placement.x * scale, placement.y * scale);
+        let (pw, ph) = (placement.width * scale, placement.height * scale);
+        let clip = placement
+            .clip
+            .map(|(cx, cy, cw, ch)| (cx * scale, cy * scale, cw * scale, ch * scale));
+        if let Some(c) = clip {
+            if intersect((px, py, pw, ph), c).is_none() {
+                continue;
+            }
+        }
+        match placement.kind {
+            WidgetKind::Button => {
+                fill(
+                    button_fill_color(placement.widget, interaction),
+                    (px, py, pw, ph),
+                    clip,
+                );
+            }
+            WidgetKind::TextField | WidgetKind::TextArea => {
+                fill(COLOR_FIELD_BORDER, (px, py, pw, ph), clip);
+                fill(
+                    COLOR_FIELD_FILL,
+                    (
+                        px + scale,
+                        py + scale,
+                        (pw - 2.0 * scale).max(0.0),
+                        (ph - 2.0 * scale).max(0.0),
+                    ),
+                    clip,
+                );
+            }
+            WidgetKind::Slider | WidgetKind::Progress => {
+                let fraction = placement.value.unwrap_or(0.0).clamp(0.0, 1.0);
+                let groove_h = if placement.kind == WidgetKind::Slider {
+                    4.0 * scale
+                } else {
+                    6.0 * scale
+                };
+                let gy = py + (ph - groove_h) / 2.0;
+                fill(COLOR_TRACK, (px, gy, pw, groove_h), clip);
+                fill(COLOR_BUTTON, (px, gy, pw * fraction, groove_h), clip);
+                if placement.kind == WidgetKind::Slider {
+                    let thumb = (16.0 * scale).min(ph);
+                    let tx = px + (pw - thumb) * fraction;
+                    let ty = py + (ph - thumb) / 2.0;
+                    fill(COLOR_FIELD_BORDER, (tx, ty, thumb, thumb), clip);
+                    fill(
+                        COLOR_KNOB,
+                        (
+                            tx + scale,
+                            ty + scale,
+                            (thumb - 2.0 * scale).max(0.0),
+                            (thumb - 2.0 * scale).max(0.0),
+                        ),
+                        clip,
+                    );
+                }
+            }
+            // Text, images, canvas pixels: the next slice (glyph runs via
+            // parley 0.7, image resources uploaded once). Until then these
+            // kinds draw nothing here, and the golden corpus excludes them.
+            _ => {}
+        }
     }
     scene
+}
+
+/// The painter's clear color, as vello sees it.
+pub fn background() -> Color {
+    argb(COLOR_BACKGROUND)
 }
 
 /// Render a scene headless and hand back RGBA bytes, for the golden-image
@@ -112,7 +203,7 @@ impl OffscreenPresenter {
                 scene,
                 &view,
                 &vello::RenderParams {
-                    base_color: BACKGROUND,
+                    base_color: background(),
                     width,
                     height,
                     antialiasing_method: vello::AaConfig::Area,

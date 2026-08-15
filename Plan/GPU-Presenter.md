@@ -11,7 +11,7 @@ the whole game, and adoption is lost in the first ten seconds of jank.
 | Platform | Today | Quality |
 |---|---|---|
 | macOS | native AppKit adapter (widgets) + CPU-composited canvas | good, but painted surfaces are 1x (K-111) |
-| iOS | **vello 0.9 on wgpu/Metal** (`adapter-ios/src/vello_canvas.rs`, 826 lines) | the proof the GPU path works |
+| iOS | **vello 0.9 on wgpu/Metal** (`adapter-ios/src/vello_canvas.rs`, 826 lines) | the proof the GPU path works; iOS itself is ON HOLD as a target until desktop numbers justify mobile (founder decision 2026-08-15) -- this code is reference material |
 | Windows | winit + shared CPU painter (`vello_cpu` for text) + softbuffer blit | correct since v0.1.25, visibly slower than the Mac |
 | Linux | same CPU path as Windows | same gap |
 | Android | vello_cpu + softbuffer | same gap |
