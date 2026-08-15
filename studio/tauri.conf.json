@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Krate Studio",
+  "productName": "Krate",
   "version": "0.1.0",
   "identifier": "dev.krate.studio",
   "build": {
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Krate Studio",
+        "title": "Krate",
         "width": 1240,
         "height": 800,
         "minWidth": 980,
@@ -47,6 +47,17 @@
     "macOS": {
       "minimumSystemVersion": "10.15",
       "entitlements": "Entitlements.plist"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "krate"
+        ],
+        "name": "Krate App Bundle",
+        "description": "An app made with Krate",
+        "role": "Viewer",
+        "mimeType": "application/vnd.krate.bundle"
+      }
+    ]
   }
 }

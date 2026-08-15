@@ -1286,3 +1286,104 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
 }
 .studio-go { color: var(--accent); font-size: 14px; white-space: nowrap; }
 .dl-wide { grid-column: 1 / -1; }
+
+/* ---- studio page: the looping demo ------------------------------------- */
+
+.demo {
+  margin: 56px auto 0; max-width: 820px; text-align: left;
+  border: 1px solid var(--line); border-radius: 16px;
+  background: var(--panel); overflow: hidden;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+}
+.demo-bar {
+  display: flex; align-items: center; gap: 7px;
+  padding: 12px 14px; border-bottom: 1px solid var(--line);
+}
+.demo-bar span { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong, #2e323a); }
+.demo-title { margin-left: 10px; font-size: 11px; letter-spacing: 0.14em; color: var(--quiet); font-weight: 500; }
+.demo-body {
+  display: grid; grid-template-columns: 1fr 1fr; min-height: 250px;
+}
+@media (max-width: 700px) { .demo-body { grid-template-columns: 1fr; } }
+.demo-left { padding: 20px; border-right: 1px solid var(--line); }
+@media (max-width: 700px) { .demo-left { border-right: 0; border-bottom: 1px solid var(--line); } }
+.demo-right { padding: 20px; }
+
+.demo-you, .demo-krate {
+  font-size: 13px; line-height: 1.5; margin-bottom: 10px;
+  padding: 8px 12px; border-radius: 10px; width: fit-content; max-width: 100%;
+}
+.demo-you { background: var(--panel-raised, #16171b); color: var(--text); }
+.demo-krate { color: var(--muted); padding-left: 0; }
+
+/* The request types itself: a width animation over a monospace-ish line with
+   a blinking caret, restarted each loop. */
+.demo-typed {
+  display: inline-block; white-space: nowrap; overflow: hidden;
+  vertical-align: bottom; max-width: 0;
+  animation: demo-type 18s steps(38) infinite;
+}
+.demo-caret {
+  display: inline-block; width: 2px; height: 13px; margin-left: 2px;
+  vertical-align: -2px; background: var(--accent);
+  animation: demo-blink 1s steps(1) infinite;
+}
+@keyframes demo-type {
+  0% { max-width: 0; }
+  12% { max-width: 100%; }
+  96% { max-width: 100%; }
+  100% { max-width: 100%; }
+}
+@keyframes demo-blink { 50% { opacity: 0; } }
+
+/* Everything else fades in at its moment of the shared 18s loop, then the
+   whole panel resets. d1..d6 are beats, not element types. */
+.demo .d1, .demo .d2, .demo .d3, .demo .d4, .demo .d5, .demo .d6 {
+  opacity: 0; transform: translateY(6px);
+  animation: demo-beat 18s ease infinite;
+}
+.demo .d1 { animation-delay: 0s; --in: 14%; }
+@keyframes demo-beat {
+  0%, 13% { opacity: 0; transform: translateY(6px); }
+  16%, 96% { opacity: 1; transform: none; }
+  100% { opacity: 0; }
+}
+/* Later beats reuse the same curve, shifted by delay. Negative margins of
+   keyframe percentages are not a thing, so each beat gets its own frames. */
+.demo .d2 { animation-name: demo-beat2; }
+.demo .d3 { animation-name: demo-beat3; }
+.demo .d4 { animation-name: demo-beat4; }
+.demo .d5 { animation-name: demo-beat5; }
+.demo .d6 { animation-name: demo-beat6; }
+@keyframes demo-beat2 { 0%, 24% { opacity: 0; transform: translateY(6px); } 27%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes demo-beat3 { 0%, 36% { opacity: 0; transform: translateY(6px); } 39%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes demo-beat4 { 0%, 48% { opacity: 0; transform: translateY(6px); } 51%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes demo-beat5 { 0%, 58% { opacity: 0; transform: translateY(6px); } 62%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+@keyframes demo-beat6 { 0%, 76% { opacity: 0; transform: translateY(6px); } 80%, 96% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+
+.demo-step {
+  display: flex; align-items: center; gap: 9px;
+  font-size: 13px; color: var(--muted); padding: 5px 0;
+}
+.demo-step i {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--good); flex: none;
+}
+.demo-done {
+  margin-top: 14px; padding: 14px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--bg);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.demo-done b { font-size: 14px; }
+.demo-done span { color: var(--quiet); font-size: 12px; }
+.demo-done em {
+  font-style: normal; margin-top: 8px; width: fit-content;
+  padding: 6px 14px; border-radius: 999px;
+  background: var(--text); color: #0a0a0a; font-size: 12.5px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .demo-typed, .demo-caret,
+  .demo .d1, .demo .d2, .demo .d3, .demo .d4, .demo .d5, .demo .d6 {
+    animation: none; opacity: 1; transform: none; max-width: 100%;
+  }
+}

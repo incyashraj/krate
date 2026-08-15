@@ -377,7 +377,16 @@ enum Command {
     /// direct use; double-click a .krate instead.
     #[cfg(target_os = "macos")]
     #[command(hide = true)]
-    OpenApp,
+    OpenApp {
+        /// Open this app directly, instead of waiting for a document from
+        /// Launch Services. This is how Krate (the studio) opens a
+        /// double-clicked .krate: it hands the file here and this path shows
+        /// the same native consent a Finder-routed document gets. Without it
+        /// the studio could only call `krate run`, which refuses ask-level
+        /// permissions with TERMINAL text -- a consent question printed where
+        /// no person is looking, so the app simply never opened.
+        file: Option<PathBuf>,
+    },
 
     /// Pack a component and its manifest into one shareable .krate bundle.
     Pack {
@@ -880,7 +889,12 @@ fn run() -> Result<u8> {
     // which is the whole thing `krate install` exists to fix.
     if args.len() == 1 {
         if let Some(payload) = installed_app_payload() {
-            args.push(std::ffi::OsString::from("run"));
+            // open-app, NOT run. Plain `run` refuses ask-level permissions
+            // with terminal text, and an installed app has no terminal --
+            // the person double-clicks, nothing appears, and there is
+            // nothing to read. open-app shows the native consent window,
+            // exactly as a Finder-routed document gets.
+            args.push(std::ffi::OsString::from("open-app"));
             args.push(payload.into_os_string());
         }
     }
@@ -970,7 +984,7 @@ fn run() -> Result<u8> {
             app_args,
         }),
         #[cfg(target_os = "macos")]
-        Command::OpenApp => open_app(),
+        Command::OpenApp { file } => open_app(file),
         Command::Pack {
             file,
             manifest,
@@ -6833,15 +6847,22 @@ fn open_studio() -> bool {
 /// `./notes/**` keeps its data in a folder next to the document — visible,
 /// understandable, and identical to running it from a terminal in that folder.
 #[cfg(target_os = "macos")]
-fn open_app() -> Result<u8> {
+fn open_app(direct: Option<PathBuf>) -> Result<u8> {
     // A document that arrives while this instance is already running an app
     // (double-click in Finder mid-session) gets its own process, so every
     // opened .krate behaves like its own application.
     let late_open = Box::new(|path: PathBuf| {
         spawn_open_run(&path);
     });
-    let opened = krate_adapter_macos::wait_for_opened_documents(late_open)
-        .map_err(|error| anyhow::anyhow!("waiting for the opened document failed: {error}"))?;
+    // A file named on the command line skips the Launch Services wait: the
+    // caller already knows what to open. Everything after this point -- the
+    // native consent window, the sandbox root, the window itself -- is
+    // identical to the Finder path, which is the point.
+    let opened = match direct {
+        Some(file) => vec![file],
+        None => krate_adapter_macos::wait_for_opened_documents(late_open)
+            .map_err(|error| anyhow::anyhow!("waiting for the opened document failed: {error}"))?,
+    };
     // AppKit also feeds process arguments through application:openFiles:, so
     // our own subcommand name can arrive as a "document". Only paths that
     // actually exist on disk are documents.

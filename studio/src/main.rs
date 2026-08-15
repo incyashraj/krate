@@ -1239,7 +1239,15 @@ fn main() {
                     if let Ok(path) = url.to_file_path() {
                         if path.extension().and_then(|e| e.to_str()) == Some("krate") {
                             if let Ok(engine) = engine() {
-                                let _ = Command::new(&engine).arg("run").arg(&path).spawn();
+                                // open-app, NOT run: run refuses ask-level
+                                // permissions with terminal text nobody can
+                                // see, so a double-clicked app that needed
+                                // any grant simply never opened. open-app
+                                // shows the native consent window.
+                                let _ = Command::new(&engine)
+                                    .arg("open-app")
+                                    .arg(&path)
+                                    .spawn();
                             }
                         }
                     }

@@ -430,11 +430,8 @@
       rough edges and tell us about them.</p>
 
       <div class="dl-grid">
-        <a class="dl" data-dl="krate-app|aarch64-apple-darwin|zip" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>macOS</b><span>Apple silicon</span>
-        </a>
-        <a class="dl" data-dl="krate-app|x86_64-apple-darwin|zip" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>macOS</b><span>Intel</span>
+        <a class="dl" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
+          <b>macOS</b><span>One file, every Mac</span>
         </a>
         <a class="dl" data-dl="krate|x86_64-pc-windows-msvc|zip" href="https://github.com/incyashraj/krate/releases/latest">
           <b>Windows</b><span>Intel / AMD</span>
@@ -710,9 +707,11 @@
         var version = rel.tag_name.replace(/^v/, "");
         dls.forEach(function (a) {
           var parts = a.dataset.dl.split("|");
+          var file = parts[1] === "universal"
+            ? parts[0] + "-" + version + "-universal." + parts[2]
+            : parts[0] + "-" + version + "-" + parts[1] + "." + parts[2];
           a.href = "https://github.com/incyashraj/krate/releases/download/" +
-            rel.tag_name + "/" + parts[0] + "-" + version + "-" + parts[1] +
-            "." + parts[2];
+            rel.tag_name + "/" + file;
         });
         var foot = document.getElementById("dlFoot");
         if (foot) foot.dataset.version = version;

@@ -198,7 +198,7 @@ jobs:
           python3 -m pip install --quiet pillow || true
           KRATE_BINARY="target/${{ matrix.target }}/release/krate"             scripts/make-macos-app.sh dist
           version="${KRATE_VERSION#v}"
-          (cd dist && zip -qry "krate-app-${version}-${{ matrix.target }}.zip" Krate.app)
+          (cd dist && zip -qry "krate-app-${version}-${{ matrix.target }}.zip" "Krate Player.app")
 
       # Krate Studio: the window around the engine, shipped as a .dmg so
       # someone who has never opened a terminal can drag it to Applications
@@ -289,7 +289,7 @@ jobs:
             # verify" and the "damaged, move it to the Bin" that a
             # linker-signed bundle produces.
             version="${KRATE_VERSION#v}"
-            app="studio/target/${{ matrix.target }}/release/bundle/macos/Krate Studio.app"
+            app="studio/target/universal-apple-darwin/release/bundle/macos/Krate.app"
             if [ -d "$app" ]; then
               codesign --force --sign - "$app/Contents/Resources/bin/krate" || true
               codesign --force --sign - --entitlements studio/Entitlements.plist "$app" || true
@@ -299,7 +299,7 @@ jobs:
               rm -rf /tmp/dmgroot/*
               cp -R "$app" /tmp/dmgroot/
               ln -s /Applications /tmp/dmgroot/Applications
-              hdiutil create -volname "Krate Studio" -srcfolder /tmp/dmgroot \
+              hdiutil create -volname "Krate" -srcfolder /tmp/dmgroot \
                 -ov -format UDZO "dist/krate-studio-${version}-${{ matrix.target }}.dmg" || true
             fi
             exit 0
@@ -348,18 +348,18 @@ jobs:
           ENTITLEMENTS=scripts/krate.entitlements
           codesign --force --options runtime --timestamp \
             --entitlements "$ENTITLEMENTS" \
-            --sign "$IDENTITY" dist/Krate.app/Contents/MacOS/krate-cli
+            --sign "$IDENTITY" "dist/Krate Player.app/Contents/MacOS/krate-cli"
           codesign --force --options runtime --timestamp \
-            --sign "$IDENTITY" dist/Krate.app/Contents/MacOS/Krate
+            --sign "$IDENTITY" "dist/Krate Player.app/Contents/MacOS/Krate"
           codesign --force --options runtime --timestamp \
             --entitlements "$ENTITLEMENTS" \
-            --sign "$IDENTITY" dist/Krate.app
-          codesign --verify --deep --strict --verbose=2 dist/Krate.app
+            --sign "$IDENTITY" "dist/Krate Player.app"
+          codesign --verify --deep --strict --verbose=2 "dist/Krate Player.app"
 
           # Fail here rather than after a notarization round trip. An ad-hoc
           # signature left anywhere inside the bundle is exactly what the
           # notary service rejects, and it costs minutes to find out that way.
-          for exe in dist/Krate.app/Contents/MacOS/*; do
+          for exe in "dist/Krate Player.app/Contents/MacOS/"*; do
             if codesign -dvvv "$exe" 2>&1 | grep -q "adhoc"; then
               echo "::error::$exe is still ad-hoc signed; notarization would fail."
               exit 1
@@ -377,7 +377,7 @@ jobs:
           # Same entitlements as the runtime: the studio spawns the engine,
           # which JIT-compiles every component, and hardened runtime without
           # the JIT entitlements is what killed double-clicked apps in K-063.
-          STUDIO_APP="studio/target/universal-apple-darwin/release/bundle/macos/Krate Studio.app"
+          STUDIO_APP="studio/target/universal-apple-darwin/release/bundle/macos/Krate.app"
           if [ -d "$STUDIO_APP" ]; then
             codesign --force --options runtime --timestamp \
               --entitlements "$ENTITLEMENTS" \
@@ -407,7 +407,7 @@ jobs:
 
           version="${KRATE_VERSION#v}"
           zip_name="krate-app-${version}-${{ matrix.target }}.zip"
-          (cd dist && rm -f "$zip_name" && zip -qry "$zip_name" Krate.app)
+          (cd dist && rm -f "$zip_name" && zip -qry "$zip_name" "Krate Player.app")
 
           # Notarization is the step most likely to fail on credentials, and
           # its 401 says nothing about which of the three is wrong. Signing has
@@ -456,8 +456,8 @@ jobs:
             exit 0
           fi
           # Staple the ticket so the app opens offline as well.
-          xcrun stapler staple dist/Krate.app || true
-          (cd dist && rm -f "$zip_name" && zip -qry "$zip_name" Krate.app)
+          xcrun stapler staple "dist/Krate Player.app" || true
+          (cd dist && rm -f "$zip_name" && zip -qry "$zip_name" "Krate Player.app")
           echo "notarized and stapled"
 
           # Krate Studio: notarize the signed bundle, then package the .dmg
@@ -466,7 +466,7 @@ jobs:
           # stopped by Gatekeeper exactly as if it were never notarized.
           if [ -d "$STUDIO_APP" ]; then
             studio_zip="krate-studio-${version}-universal.zip"
-            (cd "$(dirname "$STUDIO_APP")" && zip -qry "/tmp/$studio_zip" "Krate Studio.app")
+            (cd "$(dirname "$STUDIO_APP")" && zip -qry "/tmp/$studio_zip" "Krate.app")
             if xcrun notarytool submit "/tmp/$studio_zip" \
               --apple-id "$APPLE_ID" \
               --team-id "$APPLE_TEAM_ID" \
@@ -492,7 +492,7 @@ jobs:
             ln -s /Applications /tmp/dmgroot/Applications
             out="dist/krate-studio-${version}-universal.dmg"
             rm -f "$out"
-            hdiutil create -volname "Krate Studio" -srcfolder /tmp/dmgroot \
+            hdiutil create -volname "Krate" -srcfolder /tmp/dmgroot \
               -ov -format UDZO "$out"
             # Sign the disk image, then notarize the IMAGE and staple the
             # ticket to it.
@@ -749,10 +749,10 @@ jobs:
           gh release download "$TAG" -R "${{ github.repository }}" \
             -p "krate-app-${TAG#v}-${{ matrix.target }}.zip"
           unzip -q "krate-app-${TAG#v}-${{ matrix.target }}.zip"
-          codesign -d --entitlements - Krate.app/Contents/MacOS/krate-cli 2>&1 \
+          codesign -d --entitlements - "Krate Player.app/Contents/MacOS/krate-cli" 2>&1 \
             | grep -q allow-jit \
-            || { echo "::error::Krate.app has no allow-jit -- double-click will die"; exit 1; }
-          spctl --assess --type execute -v Krate.app
+            || { echo "::error::the player has no allow-jit -- double-click will die"; exit 1; }
+          spctl --assess --type execute -v "Krate Player.app"
 
       # Krate Studio, checked on the published .dmg -- the file a person
       # actually downloads, not the bundle the build produced.
@@ -782,8 +782,8 @@ jobs:
           xattr -w com.apple.quarantine "0083;00000000;Safari;" "$dmg"
 
           mp="$(hdiutil attach "$dmg" -nobrowse | tail -1 | sed 's/^.*\(\/Volumes\/.*\)$/\1/')"
-          app="$mp/Krate Studio.app"
-          test -d "$app" || { echo "::error::no 'Krate Studio.app' in the dmg"; hdiutil detach "$mp"; exit 1; }
+          app="$mp/Krate.app"
+          test -d "$app" || { echo "::error::no 'Krate.app' in the dmg"; hdiutil detach "$mp"; exit 1; }
 
           # 1. The signature must be COHERENT. A linker-signed bundle claims
           #    no resources, and once the engine and icon are inside, macOS
@@ -807,8 +807,8 @@ jobs:
 
           # 4. It must not be named Krate.app, or it replaces the runtime in
           #    /Applications.
-          if [ -d "$mp/Krate.app" ]; then
-            echo "::error::the studio bundle is named Krate.app and collides with the runtime"
+          if [ -d "$mp/Krate Studio.app" ]; then
+            echo "::error::an old-name bundle is in the dmg"
             hdiutil detach "$mp"; exit 1
           fi
 

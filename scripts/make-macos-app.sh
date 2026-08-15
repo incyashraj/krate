@@ -33,7 +33,7 @@ if [ ! -x "$BINARY" ]; then
   exit 1
 fi
 
-APP="$OUT_DIR/Krate.app"
+APP="$OUT_DIR/Krate Player.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
@@ -104,9 +104,9 @@ cat > "$APP/Contents/Info.plist" << PLIST
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>Krate</string>
+    <string>Krate Player</string>
     <key>CFBundleDisplayName</key>
-    <string>Krate</string>
+    <string>Krate Player</string>
     <key>CFBundleIdentifier</key>
     <string>dev.krate.app</string>
     <key>CFBundleVersion</key>

@@ -37,90 +37,47 @@
 <!-- ==================================================================== hero -->
 <section class="st-hero">
   <div class="wrap st-hero-inner">
-    <div class="st-hero-copy">
-      <p class="st-eyebrow reveal"><span class="st-dot"></span>PRE-BETA</p>
-      <h1 class="st-h1 reveal">Describe an app.<br />Watch it become real.</h1>
-      <p class="st-lede reveal">Say what you want in plain words. Krate Studio asks
-      your AI to make it, then gives you one small app file that opens on Mac,
-      Windows and Linux.</p>
-      <div class="st-cta reveal">
-        <a class="pill pill-primary" href="#get">Download for macOS</a>
-        <a class="pill" href="#how">See how it works</a>
-      </div>
-      <p class="st-under reveal">Free. Works with the AI you already use.</p>
+    <p class="st-eyebrow reveal"><span class="st-dot"></span>PRE-BETA</p>
+    <h1 class="st-h1 reveal">Describe an app.<br />Watch it become real.</h1>
+    <p class="st-lede reveal">Krate is a window where you say what you want in
+    plain words. An AI writes it, and a few minutes later you have one small
+    file that opens on Mac, Windows and Linux -- and that you can send to
+    anyone.</p>
+    <div class="st-cta reveal">
+      <a class="pill pill-primary" href="#get">Download for macOS</a>
+      <a class="pill" href="#how">See how it works</a>
     </div>
+    <p class="st-under reveal">Free. Works with the AI you already pay for.</p>
 
-    <div class="st-product reveal" id="studioDemo" data-step="prompt">
-      <div class="st-product-bar">
-        <span class="st-traffic" aria-hidden="true"><i></i><i></i><i></i></span>
-        <span class="st-product-brand"><img src="/krate-glyph-white.png" alt="" /> KRATE STUDIO</span>
-        <span class="st-product-title">Pulse</span>
-        <span class="st-agent"><i></i>Claude ready</span>
+    <!-- The looping demo: typed request, steps completing, the app arriving.
+         Driven by one CSS animation timeline per element, all sharing an
+         18s loop, so it stays in sync without any JS. -->
+    <div class="demo reveal" aria-hidden="true">
+      <div class="demo-bar"><span></span><span></span><span></span>
+        <b class="demo-title">Krate</b>
       </div>
-
-      <div class="st-product-body" aria-label="Krate Studio makes and shares a personal finance app">
-        <aside class="st-product-rail">
-          <div class="st-product-thread">
-            <div class="st-message st-message-user">
-              Make a personal finance dashboard that tracks spending and saves locally.
-            </div>
-            <div class="st-message st-message-krate">
-              <span class="st-build-copy">I am making that now.</span>
-              <span class="st-done-copy">Pulse is ready. You can open it or send it.</span>
-            </div>
-            <div class="st-mini-progress"><i></i></div>
+      <div class="demo-body">
+        <div class="demo-left">
+          <p class="demo-you"><span class="demo-typed">a tip splitter for dinners with friends</span><span class="demo-caret"></span></p>
+          <p class="demo-krate d1">On it. I'll show you each step as it happens.</p>
+          <p class="demo-you d5">make the total bigger and bold</p>
+          <p class="demo-krate d6">Reading your app, then making that change.</p>
+        </div>
+        <div class="demo-right">
+          <p class="demo-step d1"><i></i>Understanding what you asked for</p>
+          <p class="demo-step d2"><i></i>Writing the app</p>
+          <p class="demo-step d3"><i></i>Checking it only uses Krate APIs</p>
+          <p class="demo-step d4"><i></i>Packing one small file</p>
+          <div class="demo-done d5">
+            <b>Tip Splitter</b>
+            <span>31 KB &middot; runs on Mac, Windows and Linux</span>
+            <em>Open it</em>
           </div>
-          <div class="st-composer">
-            <span class="st-type-target"></span><span class="st-demo-caret"></span>
-            <button type="button" aria-label="Make app">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 13V3.5M8 3.5L3.8 7.7M8 3.5l4.2 4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-          </div>
-        </aside>
-
-        <section class="st-product-stage">
-          <div class="st-stage-view st-stage-idle">
-            <img src="/krate-glyph-white.png" alt="" />
-            <p>Your app will appear here.</p>
-          </div>
-
-          <div class="st-stage-view st-stage-building">
-            <div class="st-build-card">
-              <div class="st-build-head">
-                <strong>Making Pulse</strong>
-                <span><i></i>Live</span>
-              </div>
-              <p class="st-build-time">0:18 · usually a few minutes</p>
-              <div class="st-build-progress"><i></i></div>
-              <p class="st-build-stage">Building your app</p>
-              <p class="st-build-line"><span>checking the permission wall</span><b></b></p>
-              <ul>
-                <li class="done">Understanding what you asked for</li>
-                <li class="done">Writing the app</li>
-                <li class="active">Building one portable file</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="st-stage-view st-stage-done">
-            <div class="st-app-preview">
-              <div class="st-app-shot"><img src="/cloud/shots/pulse.png" alt="Pulse personal finance dashboard made with Krate Studio" /></div>
-              <div class="st-app-meta">
-                <div>
-                  <strong>Pulse</strong>
-                  <p>14 KB · Mac, Windows and Linux</p>
-                </div>
-                <span class="st-ready"><i></i>Ready</span>
-              </div>
-              <div class="st-access"><span>Can open a window</span><span>Can save its own data</span></div>
-              <div class="st-app-actions">
-                <button class="st-open">Open it</button>
-                <button class="st-share">Share</button>
-              </div>
-              <div class="st-share-link"><span>krate.tech/cloud/app/?id=09bc11…</span><b>copied</b></div>
-            </div>
-          </div>
-        </section>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
       </div>
 
       <div class="st-demo-timeline" aria-hidden="true">

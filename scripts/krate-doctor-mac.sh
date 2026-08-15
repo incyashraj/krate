@@ -18,7 +18,7 @@ echo "  macOS   : $(sw_vers -productVersion 2>/dev/null)"
 echo "  Chip    : $(uname -m)   (arm64 = Apple silicon, x86_64 = Intel)"
 echo
 
-for app in "/Applications/Krate Studio.app" "/Applications/Krate.app"; do
+for app in "/Applications/Krate.app" "/Applications/Krate Studio.app" "/Applications/Krate Player.app"; do
   name=$(basename "$app")
   if [ ! -d "$app" ]; then
     echo "$name: NOT INSTALLED"

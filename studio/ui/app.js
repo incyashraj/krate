@@ -1000,6 +1000,20 @@ function renderCloud(apps, filtered) {
     const card = document.createElement("button");
     card.className = "cloud-card";
 
+    // The app's own first frame, when the hub has one. A store where you
+    // can SEE the apps reads as a store; a list of names reads as a mess.
+    if (app.shot) {
+      const shot = document.createElement("div");
+      shot.className = "cloud-shot";
+      const img = document.createElement("img");
+      img.src = app.shot;
+      img.loading = "lazy";
+      img.alt = "";
+      img.onerror = () => shot.remove();
+      shot.appendChild(img);
+      card.appendChild(shot);
+    }
+
     const name = document.createElement("p");
     name.className = "cloud-name";
     name.textContent = meta.name || "Untitled app";
