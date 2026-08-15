@@ -805,7 +805,29 @@ enum GrantLogFormat {
     Jsonl,
 }
 
+/// Drop the console when we are its only owner.
+///
+/// A double-clicked .krate routed to this console-subsystem binary makes
+/// Windows allocate a fresh terminal that sits behind the app for its whole
+/// life -- the black window users kept photographing. When the console's
+/// process list is just us, nobody is reading it: it exists only because of
+/// our subsystem, so free it. Launched from a real shell the list has the
+/// shell in it too, and the console stays, prints and pipes intact.
+#[cfg(windows)]
+fn detach_owned_console() {
+    unsafe {
+        use windows_sys::Win32::System::Console::{FreeConsole, GetConsoleProcessList};
+        let mut ids = [0u32; 2];
+        if GetConsoleProcessList(ids.as_mut_ptr(), 2) == 1 {
+            FreeConsole();
+        }
+    }
+}
+
 fn main() -> ExitCode {
+    #[cfg(windows)]
+    detach_owned_console();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_env("KRATE_LOG")

@@ -62,3 +62,7 @@ tempfile = "3.27.0"
 # than the menu that launched it. Unix only: Windows has no SIGINT to ignore.
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+# Detaching the console a double-click hands us; see detach_owned_console.
+windows-sys = { version = "0.59", features = ["Win32_System_Console", "Win32_Foundation"] }

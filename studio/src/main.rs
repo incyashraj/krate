@@ -1358,7 +1358,60 @@ fn first_run_setup() {
     let _ = std::fs::write(&marker, "1");
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+/// Windows: claim .krate for the studio in the user's registry. The NSIS
+/// installer registers the type, but a machine that ran the old CLI
+/// installer keeps its earlier default -- an ancient console binary that
+/// drags a terminal behind every app and predates the GPU presenter. HKCU
+/// writes need no elevation; a per-user explicit choice (UserChoice) still
+/// wins, which is the user's right.
+#[cfg(target_os = "windows")]
+fn first_run_setup() {
+    let marker = studio_dir().join("setup-done");
+    if marker.exists() {
+        return;
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let exe = exe.display().to_string();
+        let run = |args: &[&str]| {
+            let _ = silent_cmd("reg").args(args).status();
+        };
+        run(&[
+            "add",
+            r"HKCU\Software\Classes\.krate",
+            "/ve",
+            "/d",
+            "Krate.App",
+            "/f",
+        ]);
+        run(&[
+            "add",
+            r"HKCU\Software\Classes\Krate.App",
+            "/ve",
+            "/d",
+            "Krate App Bundle",
+            "/f",
+        ]);
+        run(&[
+            "add",
+            r"HKCU\Software\Classes\Krate.App\shell\open\command",
+            "/ve",
+            "/d",
+            &format!(""{exe}" "%1""),
+            "/f",
+        ]);
+        run(&[
+            "add",
+            r"HKCU\Software\Classes\Krate.App\DefaultIcon",
+            "/ve",
+            "/d",
+            &format!(""{exe}",0"),
+            "/f",
+        ]);
+    }
+    let _ = std::fs::write(&marker, "1");
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
 fn first_run_setup() {}
 
 fn append_line(path: &Path, line: &str) {
