@@ -596,6 +596,20 @@ enum Command {
     /// machine, never on a server.
     Mcp,
 
+    /// Open a .krate the way a person expects an app to open: with its own
+    /// name and icon, activated on screen.
+    ///
+    /// A bare `krate run` child spawned from a GUI gets no LaunchServices
+    /// activation: the window is created, the runtime even says so, and
+    /// nothing appears (K-110). This wraps the app under ~/.krate/launchers
+    /// exactly as `install` does -- which also moves every later file access
+    /// off guarded folders like Downloads -- and opens the wrapper through
+    /// LaunchServices, which is what makes a window actually show.
+    Launch {
+        /// The .krate to open.
+        bundle: PathBuf,
+    },
+
     /// Install an app so it looks and behaves like any other app on the
     /// machine: its own name in the dock, its own icon, its own entry in
     /// Launchpad and the app switcher. The .krate keeps working as a file you
@@ -1089,6 +1103,7 @@ fn run() -> Result<u8> {
             no_install,
         }),
         Command::Mcp => mcp::serve().map(|()| 0),
+        Command::Launch { bundle } => launch_app(&bundle),
         Command::Install {
             bundle,
             prefix,
@@ -6628,6 +6643,69 @@ fn installed_app_for(bundle_path: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Wrap and open: the launch path behind double-click and the studio.
+#[cfg(target_os = "macos")]
+fn launch_app(bundle_path: &Path) -> Result<u8> {
+    let launchers = home_dir()
+        .map(|home| home.join(".krate/launchers"))
+        .context("no home directory")?;
+
+    // Reuse the wrapper when the app has not changed, and never rebuild it
+    // in place. The first version deleted and recreated the wrapper on every
+    // launch; when two opens raced (Finder can deliver a document twice),
+    // the second tore the bundle out from under the first while it was still
+    // booting, and it died with SIGABRT and nothing on screen -- read
+    // straight out of the crash log. Now: identical payload, reuse; changed
+    // payload, build beside and swap.
+    let name = krate_bundle::open(bundle_path)?
+        .manifest()
+        .app
+        .name
+        .trim()
+        .to_string();
+    let app_dir = launchers.join(format!("{name}.app"));
+    let payload = app_dir.join("Contents/Resources/app.krate");
+    let same = fs::read(&payload)
+        .ok()
+        .zip(fs::read(bundle_path).ok())
+        .map(|(a, b)| a == b)
+        .unwrap_or(false);
+    if !same {
+        let stage = launchers.join(format!(".stage-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&stage);
+        fs::create_dir_all(&stage)?;
+        let built = install_bundle(bundle_path, &stage)?;
+        let old_dir = launchers.join(format!(".old-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&old_dir);
+        if app_dir.exists() {
+            let _ = fs::rename(&app_dir, &old_dir);
+        }
+        fs::rename(&built, &app_dir)?;
+        let _ = fs::remove_dir_all(&old_dir);
+        let _ = fs::remove_dir_all(&stage);
+    }
+    let status = std::process::Command::new("/usr/bin/open")
+        .arg("-n")
+        .arg(&app_dir)
+        .status()
+        .context("opening the app")?;
+    if !status.success() {
+        bail!("macOS refused to open {}", app_dir.display());
+    }
+    Ok(0)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn launch_app(bundle_path: &Path) -> Result<u8> {
+    // Elsewhere a plain windowed run activates fine; the wrapper is a macOS
+    // need. Same binary, ordinary run.
+    let status = std::process::Command::new(std::env::current_exe()?)
+        .arg("run")
+        .arg(bundle_path)
+        .status()?;
+    Ok(if status.success() { 0 } else { 1 })
+}
+
 /// Give an app a real identity on this machine: its own `.app`, its own name
 /// in the dock, its own icon.
 ///
@@ -6644,6 +6722,31 @@ fn installed_app_for(bundle_path: &Path) -> Option<PathBuf> {
 /// working after the original file is moved, renamed, or thrown away.
 #[cfg(target_os = "macos")]
 fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Result<u8> {
+    let prefix = prefix.map(Path::to_path_buf).unwrap_or_else(|| {
+        home_dir()
+            .map(|home| home.join("Applications"))
+            .unwrap_or_else(|| PathBuf::from("/Applications"))
+    });
+    if dry_run {
+        let opened = krate_bundle::open(bundle_path)?;
+        println!(
+            "{}",
+            prefix
+                .join(format!("{}.app", opened.manifest().app.name.trim()))
+                .display()
+        );
+        return Ok(0);
+    }
+    let app_dir = install_bundle(bundle_path, &prefix)?;
+    println!("Installed to {}", app_dir.display());
+    println!("It has its own name and icon now; open it from Launchpad like any other app.");
+    Ok(0)
+}
+
+/// The wrapper builder `install` and `launch` share: returns the .app it
+/// made, prints nothing.
+#[cfg(target_os = "macos")]
+fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     let opened = krate_bundle::open(bundle_path)
         .with_context(|| format!("reading {}", bundle_path.display()))?;
     let manifest = opened.manifest();
@@ -6652,20 +6755,7 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
         bail!("this app has no name in its manifest, so it cannot be installed");
     }
 
-    let prefix = prefix.map(Path::to_path_buf).unwrap_or_else(|| {
-        // ~/Applications needs no password and still shows in Launchpad, so
-        // installing never turns into an admin prompt for an app someone just
-        // made themselves.
-        home_dir()
-            .map(|home| home.join("Applications"))
-            .unwrap_or_else(|| PathBuf::from("/Applications"))
-    });
     let app_dir = prefix.join(format!("{name}.app"));
-
-    if dry_run {
-        println!("{}", app_dir.display());
-        return Ok(0);
-    }
 
     let macos_dir = app_dir.join("Contents/MacOS");
     let resources = app_dir.join("Contents/Resources");
@@ -6768,9 +6858,7 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
         .args(["-f".as_ref(), app_dir.as_os_str()])
         .status();
 
-    println!("Installed {name} to {}", app_dir.display());
-    println!("It has its own name and icon now -- open it from Launchpad like any other app.");
-    Ok(0)
+    Ok(app_dir)
 }
 
 #[cfg(not(target_os = "macos"))]

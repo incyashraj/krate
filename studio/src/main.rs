@@ -91,15 +91,20 @@ fn seed_agent_config(agent_home: &Path) {
     #[cfg(target_os = "macos")]
     {
         if let Ok(out) = Command::new("/usr/bin/security")
-            .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+            .args([
+                "find-generic-password",
+                "-s",
+                "Claude Code-credentials",
+                "-w",
+            ])
             .output()
         {
             if out.status.success() && !out.stdout.is_empty() {
                 let _ = std::fs::write(&dest, out.stdout.trim_ascii());
-                let _ = std::fs::set_permissions(
-                    &dest,
-                    { use std::os::unix::fs::PermissionsExt; std::fs::Permissions::from_mode(0o600) },
-                );
+                let _ = std::fs::set_permissions(&dest, {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::Permissions::from_mode(0o600)
+                });
             }
         }
     }
@@ -845,6 +850,7 @@ async fn app_info(path: String) -> Result<serde_json::Value, String> {
         };
         let engine = engine()?;
         let out = Command::new(&engine)
+            .current_dir(studio_dir())
             .arg("run")
             .arg("--dump-caps")
             .arg(&target)
@@ -1051,8 +1057,13 @@ async fn open_krate(app: tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     };
     let engine = engine()?;
+    // `launch`, not a bare `run`: a GUI-spawned child gets no LaunchServices
+    // activation, so its window is created and never shown (K-110). launch
+    // wraps the app under ~/.krate and opens it properly -- which also means
+    // nothing keeps touching Downloads or the volume afterwards.
     Command::new(&engine)
-        .arg("run")
+        .current_dir(studio_dir())
+        .arg("launch")
         .arg(&path)
         .spawn()
         .map(|_| ())
@@ -1123,6 +1134,7 @@ async fn cloud_run(url: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
         Command::new(&engine)
+            .current_dir(studio_dir())
             .arg("run")
             .arg(&url)
             .spawn()
@@ -1434,12 +1446,17 @@ fn main() {
                     if let Ok(path) = url.to_file_path() {
                         if path.extension().and_then(|e| e.to_str()) == Some("krate") {
                             if let Ok(engine) = engine() {
-                                // open-app, NOT run: run refuses ask-level
-                                // permissions with terminal text nobody can
-                                // see, so a double-clicked app that needed
-                                // any grant simply never opened. open-app
-                                // shows the native consent window.
-                                let _ = Command::new(&engine).arg("open-app").arg(&path).spawn();
+                                // `launch`: wraps the app under ~/.krate and
+                                // opens it through LaunchServices. A bare
+                                // spawn -- run OR open-app -- has no
+                                // activation, so the consent window and the
+                                // app window were created and never shown
+                                // (K-110): double-click "did nothing".
+                                let _ = Command::new(&engine)
+                                    .current_dir(studio_dir())
+                                    .arg("launch")
+                                    .arg(&path)
+                                    .spawn();
                             }
                         }
                     }
