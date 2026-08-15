@@ -7635,7 +7635,7 @@ fn linux_graphical_consent(
         }
         body.push_str("\nKrate enforces exactly this list.");
         let answer = rfd::MessageDialog::new()
-            .set_title(&format!("Open {}?", manifest.app.name))
+            .set_title(format!("Open {}?", manifest.app.name))
             .set_description(&body)
             .set_buttons(rfd::MessageButtons::OkCancelCustom(
                 "Allow and open".to_string(),
