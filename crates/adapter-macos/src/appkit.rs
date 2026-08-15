@@ -1130,7 +1130,9 @@ pub(crate) fn set_process_identity(name: &str, icon_png: Option<&[u8]>) {
     platform::set_process_identity(name, icon_png);
 }
 
+// Kept so callers need no cfg of their own; nothing calls it off macOS today.
 #[cfg(not(target_os = "macos"))]
+#[allow(dead_code)]
 pub(crate) fn set_process_identity(_name: &str, _icon_png: Option<&[u8]>) {}
 
 #[cfg(target_os = "macos")]
