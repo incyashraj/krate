@@ -39,7 +39,7 @@
       "icons/icon.ico"
     ],
     "category": "DeveloperTool",
-    "shortDescription": "Describe an app. Watch it become real.",
+    "shortDescription": "Make an app. Send the file. It opens anywhere.",
     "longDescription": "Krate Studio: describe the app you want in plain words, an AI writes it, and you get one small file that runs on Mac, Windows and Linux and can be sent to anyone.",
     "resources": [
       "bin/*"

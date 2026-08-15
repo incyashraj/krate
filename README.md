@@ -5,7 +5,7 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Describe an app. Watch it become real.</strong>
+  <strong>Make an app. Send the file. It opens anywhere.</strong>
 </p>
 
 <p align="center">
