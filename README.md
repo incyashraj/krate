@@ -5,12 +5,12 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Make apps with AI. Share them like documents.</strong>
+  <strong>Describe an app. Watch it become real.</strong>
 </p>
 
 <p align="center">
-  One app file that opens on Mac, Windows, and Linux.<br>
-  It shows what it wants to access before it runs.
+  An AI writes it. You get one small file that opens on Mac, Windows, and
+  Linux,<br> shows what it wants before it runs, and can be sent to anyone.
 </p>
 
 <p align="center">
@@ -28,6 +28,8 @@
 <p align="center">
   <a href="https://krate.tech/">Website</a>
   ·
+  <a href="https://krate.tech/studio/">Krate Studio</a>
+  ·
   <a href="https://krate.tech/docs/pages/krate-mode.html">Krate Mode</a>
   ·
   <a href="docs/mcp-setup.md">Connect to Claude or Cursor</a>
@@ -39,7 +41,7 @@
 
 <p align="center">
   <a href="https://krate.tech/">
-    <img src="docs/landing/og.png" width="900" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
+    <img src="docs/landing/og-v2.png" width="900" alt="Krate turns an app into one file that opens on Mac, Windows, and Linux">
   </a>
 </p>
 
@@ -64,6 +66,33 @@ kilobytes.
 
 Krate is open source, and the whole path works end to end: install it, describe an app, an AI writes it, and the file
 it hands you opens on macOS, Windows and Linux.
+
+## Krate Studio
+
+<p align="center">
+  <img src="docs/landing/app-shots/studio-home.png" width="900" alt="Krate Studio: describe an app in plain words and watch it being made">
+</p>
+
+Krate Studio is the desktop app around the engine: describe what you want in
+plain words, watch every step as the AI writes and builds it, then open the
+finished app or share it as one file. Change an app by asking -- the file
+carries its own source, so "make the button blue" edits the app you have
+instead of rebuilding it. Your apps, your sessions, and Krate Cloud all live
+in the same window, and you sign in from the browser with GitHub.
+
+Download from [krate.tech/studio](https://krate.tech/studio/) -- the page
+detects your system and hands you the right file:
+
+- **macOS**: one universal `.dmg`, signed and notarised by Apple. Drag to
+  Applications; opening a `.krate` and making apps both just work.
+- **Windows**: an installer `.exe` (unsigned for now, so SmartScreen asks
+  once). Apps render through the GPU with vsync pacing.
+- **Linux**: an AppImage. First run registers the `.krate` file type and the
+  launcher entry; apps get native permission dialogs and their own window
+  identity.
+
+The Studio is pre-beta: it works, and it changes often. The terminal tool
+below is unchanged and remains the stable path.
 
 ## Make an app
 
@@ -178,18 +207,19 @@ in the MCP server, so it protects the chat path too.
 
 ### Double-click it
 
-The simplest way, and no terminal involved.
+The simplest way, and no terminal involved: install
+[Krate Studio](https://krate.tech/studio/) and double-click any `.krate`
+file. The app opens under its own name and icon, with a native permission
+window first -- on all three systems. The Studio registers the file type
+itself: the macOS installer, the Windows installer, and the Linux
+AppImage's first run all set it up.
 
-On macOS, download the `krate-app` zip for your Mac from the
-[latest release](https://github.com/incyashraj/krate/releases/latest) and unzip
-`Krate.app` into Applications. It is signed and notarized, so it opens
-normally -- double-click any `.krate` file and a permission window appears
-before the app runs.
-
-On Windows and Linux, install the runtime below, then register `.krate` files
-with [`scripts/install-krate-desktop.ps1`](scripts/install-krate-desktop.ps1) or
-[`scripts/install-krate-desktop.sh`](scripts/install-krate-desktop.sh). After
-that your file manager opens `.krate` files directly.
+Prefer the runtime alone? The `krate-app` zip on the
+[latest release](https://github.com/incyashraj/krate/releases/latest) is the
+signed, notarised macOS opener, and
+[`scripts/install-krate-desktop.ps1`](scripts/install-krate-desktop.ps1) /
+[`scripts/install-krate-desktop.sh`](scripts/install-krate-desktop.sh)
+register the type for the bare CLI on Windows and Linux.
 
 ### Or from a terminal
 
@@ -283,23 +313,26 @@ on it without a human in the middle. That loop is why the paths above work.
 ## Where things stand
 
 Working today: one `.krate` file that runs on Mac, Windows, and Linux; desktop
-windows on all three; files, network, storage, and clipboard behind the
-permission wall; running an app straight from an HTTPS URL; authoring through
-MCP, Krate Mode, or the command line with five AI providers; `check-app`; and
-JSON output for agents and scripts.
+windows on all three, GPU-rendered with vsync pacing on Windows and Linux
+(with an automatic CPU fallback); files, network, storage, and clipboard
+behind the permission wall; running an app straight from an HTTPS URL;
+Krate Studio with browser sign-in; authoring through MCP, Krate Mode, or the
+command line with five AI providers; `check-app`; and JSON output for agents
+and scripts.
 
 Krate Cloud is live at [krate.tech/cloud](https://krate.tech/cloud). Publish
 with `krate publish yourapp.krate` or from
 [krate.tech/publish](https://krate.tech/publish); either way it signs you in
 with GitHub so the app carries your name, and anyone with the link can run it.
 
-Not here yet: signing, updates, and discovery beyond a single listing.
+Not here yet: auto-updates, and discovery beyond a single listing.
 Automatic conversion of an existing app or an opaque native binary is not
 something Krate claims to do.
 
 Known limits, stated plainly:
 
-- The macOS app is not code-signed yet, so first open needs right-click Open.
+- Windows and Linux studio builds are unsigned for now; macOS is signed and
+  notarised by Apple.
 - An AI has to write against the current Krate APIs, which are still changing.
 - Permission review and desktop polish differ between operating systems.
 - File formats and interfaces will change before 1.0.
