@@ -27,6 +27,24 @@ use tauri::{Emitter, Manager};
 /// they pressed Stop.
 struct Running(Mutex<Option<u32>>);
 
+/// Whether the main window has been shown. The window starts hidden so that
+/// a double-clicked .krate can pass through the studio without the studio
+/// appearing: the person asked for their app, not for Krate.
+static WINDOW_SHOWN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// Whether a document claimed this launch during the startup grace.
+static DOC_CLAIMED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// When this process started, for telling a cold document-open apart from a
+/// document opened into a studio someone is already using.
+static STARTED: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+
+fn show_main_window(app: &tauri::AppHandle) {
+    WINDOW_SHOWN.store(true, std::sync::atomic::Ordering::SeqCst);
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
 /// Where the engine lives, most-deliberate first.
 ///
 /// 1. `KRATE_STUDIO_ENGINE` -- development, and the only way to be certain
@@ -1320,6 +1338,7 @@ fn human_size(bytes: u64) -> String {
 }
 
 fn main() {
+    let _ = STARTED.set(std::time::Instant::now());
     // Finish the install before the window appears. On a background thread:
     // it touches Launch Services and the filesystem, and none of it should
     // ever delay the first paint.
@@ -1378,6 +1397,23 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("the studio window could not start")
         .run(|app, event| {
+            // The window starts hidden and shows only if no document claims
+            // the launch within the first moment. Finder delivers an opened
+            // file as an event right after startup, so a double-clicked
+            // .krate cold-starting the studio hands off to the app and exits
+            // without a studio window ever appearing -- the person asked for
+            // their app, not for Krate. Opening Krate itself: nothing claims
+            // the grace, and the window shows.
+            if matches!(event, tauri::RunEvent::Ready) {
+                let handle = app.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(700));
+                    if !DOC_CLAIMED.load(std::sync::atomic::Ordering::SeqCst) {
+                        show_main_window(&handle);
+                    }
+                });
+            }
+
             // A .krate opened through the studio.
             //
             // The bundle declares the type, so Finder can route a file here --
@@ -1394,6 +1430,8 @@ fn main() {
                     // -- then tell the gate, on the same channel the device
                     // flow uses, so the window flips without a restart.
                     if url.scheme() == "krate" {
+                        DOC_CLAIMED.store(true, std::sync::atomic::Ordering::SeqCst);
+                        show_main_window(app);
                         let fragment = url.fragment().unwrap_or("");
                         let fields: std::collections::HashMap<_, _> =
                             url::form_urlencoded::parse(fragment.as_bytes()).collect();
@@ -1452,11 +1490,34 @@ fn main() {
                                 // activation, so the consent window and the
                                 // app window were created and never shown
                                 // (K-110): double-click "did nothing".
-                                let _ = Command::new(&engine)
+                                let handed = Command::new(&engine)
                                     .current_dir(studio_dir())
                                     .arg("launch")
                                     .arg(&path)
-                                    .spawn();
+                                    .spawn()
+                                    .is_ok();
+                                DOC_CLAIMED.store(true, std::sync::atomic::Ordering::SeqCst);
+                                // Cold-started by the double-click: the app is
+                                // on its way and the studio was never wanted.
+                                //
+                                // Time-based, not order-based: on a slow first
+                                // launch Finder's event can arrive AFTER the
+                                // show-window grace fired, so "was the window
+                                // shown" answers wrong. Within the first
+                                // moments of the process's life a document
+                                // open IS the reason we exist; hand off and
+                                // leave. A studio that has been open longer is
+                                // someone working -- it stays.
+                                let cold = STARTED
+                                    .get()
+                                    .map(|t| t.elapsed() < std::time::Duration::from_secs(3))
+                                    .unwrap_or(false);
+                                if handed && cold {
+                                    if let Some(win) = app.get_webview_window("main") {
+                                        let _ = win.hide();
+                                    }
+                                    std::process::exit(0);
+                                }
                             }
                         }
                     }
