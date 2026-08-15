@@ -71,6 +71,29 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-111 -- Painted app UI renders at 1x on Retina displays: everything looks soft
+
+Class: our-code
+Owner: unclaimed
+
+Every painted surface (the vello/painter path GUI apps draw with) renders its
+bitmap at logical point size, and the macOS adapter displays it scaled up on a
+2x display. The result is that a generated app's whole UI -- text, lines,
+icons -- looks low-resolution next to any native app. Native-lowered widgets
+(NSButton, NSTextField) are sharp; the painted regions around them are not.
+
+Evidence: side-by-side screenshot of the Cup Cook app on a Retina display,
+2026-08-15 -- list text and numerals visibly fuzzy at normal viewing size
+while the window chrome is crisp. `grep backingScaleFactor
+crates/adapter-macos/src/appkit.rs` shows the scale is read (lines ~1467,
+1524) but the painted frame is sized in points, not pixels.
+
+Fix shape: render the frame at points x backingScaleFactor and mark the
+image rep's logical size in points, so AppKit scales down (sharp) rather than
+up (soft). Layout stays in points; only the raster density changes. Needs the
+painter, the frame plumbing, and the adapter to agree on the factor, and a
+--shoot comparison at 1x and 2x as proof.
+
 ### K-106 -- generated apps put text on top of other content
 Status:   fixed 2026-08-13 (4e60477), text-over-text half; see K-107
 Owner:    lead

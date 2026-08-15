@@ -4,15 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Krate Studio: describe an app in plain words, watch an AI build it, and get one file that runs on Mac, Windows and Linux. Pre-beta, free to try." />
+  <meta name="description" content="Krate: describe an app in plain words, watch an AI build it, and get one small file that runs on Mac, Windows and Linux. Pre-beta, free." />
   <link rel="canonical" href="https://krate.tech/studio/" />
-  <meta property="og:title" content="Krate Studio | Describe an app. Watch it become real." />
-  <meta property="og:description" content="A window around the Krate engine. Describe what you want, an AI writes it, and you get one small file you can send to anyone. Pre-beta." />
+  <meta property="og:title" content="Krate | Describe an app. Watch it become real." />
+  <meta property="og:description" content="Say what you want in plain words. An AI writes it, and you get one small file you can send to anyone. Pre-beta." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/studio/" />
   <meta property="og:image" content="https://krate.tech/og-v2.png" />
   <meta name="twitter:card" content="summary_large_image" />
-  <title>Krate Studio | Describe an app. Watch it become real.</title>
+  <title>Krate | Describe an app. Watch it become real.</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="stylesheet" href="/site.css" />
@@ -23,161 +23,180 @@
   <div class="wrap subnav-inner">
     <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
     <nav>
-      <a href="/#install">Start</a>
-      <a href="/docs/">Docs</a>
+      <a href="#how">How it works</a>
       <a href="/cloud/">Cloud</a>
+      <a href="/docs/">Docs</a>
       <a href="https://github.com/incyashraj/krate">GitHub</a>
     </nav>
-    <a class="pill pill-primary" href="#get">Get the pre-beta</a>
+    <a class="pill pill-primary" href="#get">Download</a>
   </div>
 </header>
 
 <main>
 
-<!-- ==================================================================== hero -->
-<section class="st-hero">
-  <div class="wrap st-hero-inner">
-    <p class="st-eyebrow reveal"><span class="st-dot"></span>PRE-BETA</p>
-    <h1 class="st-h1 reveal">Describe an app.<br />Watch it become real.</h1>
-    <p class="st-lede reveal">Krate is a window where you say what you want in
-    plain words. An AI writes it, and a few minutes later you have one small
-    file that opens on Mac, Windows and Linux -- and that you can send to
-    anyone.</p>
-    <div class="st-cta reveal">
+<section class="st2-hero">
+  <div class="wrap">
+    <a class="st2-pill reveal" href="#get"><b>PRE-BETA</b> Krate for macOS is here <span>&darr;</span></a>
+    <h1 class="st2-h1 reveal">Describe an app.<br />Watch it become real.</h1>
+    <p class="st2-lede reveal">Say what you want in plain words. An AI writes it,
+    and a few minutes later you have one small file that opens on Mac, Windows
+    and Linux &mdash; and that you can send to anyone.</p>
+    <div class="st2-cta reveal">
       <a class="pill pill-primary" href="#get">Download for macOS</a>
-      <a class="pill" href="#how">See how it works</a>
+      <a class="pill" href="/cloud/">See what people made</a>
     </div>
-    <p class="st-under reveal">Free. Works with the AI you already pay for.</p>
+    <p class="st2-under reveal">Free &middot; works with the AI you already have</p>
+  </div>
 
-    <!-- The looping demo: typed request, steps completing, the app arriving.
-         Driven by one CSS animation timeline per element, all sharing an
-         18s loop, so it stays in sync without any JS. -->
-    <div class="demo reveal" aria-hidden="true">
-      <div class="demo-bar"><span></span><span></span><span></span>
-        <b class="demo-title">Krate</b>
+  <!-- The product, working. One shared 20s CSS timeline; every element joins
+       at its beat and the whole loop restarts together. Stilled under
+       reduced motion. -->
+  <div class="wrap">
+    <div class="st2-app reveal" aria-hidden="true">
+      <div class="st2-titlebar">
+        <span class="tl"></span><span class="tl"></span><span class="tl"></span>
+        <b>KRATE</b>
       </div>
-      <div class="demo-body">
-        <div class="demo-left">
-          <p class="demo-you"><span class="demo-typed">a tip splitter for dinners with friends</span><span class="demo-caret"></span></p>
-          <p class="demo-krate d1">On it. I'll show you each step as it happens.</p>
-          <p class="demo-you d5">make the total bigger and bold</p>
-          <p class="demo-krate d6">Reading your app, then making that change.</p>
-        </div>
-        <div class="demo-right">
-          <p class="demo-step d1"><i></i>Understanding what you asked for</p>
-          <p class="demo-step d2"><i></i>Writing the app</p>
-          <p class="demo-step d3"><i></i>Checking it only uses Krate APIs</p>
-          <p class="demo-step d4"><i></i>Packing one small file</p>
-          <div class="demo-done d5">
+      <div class="st2-panes">
+        <aside class="st2-side">
+          <p class="st2-side-h">Your apps</p>
+          <div class="st2-item"><b>Tip Splitter</b><span class="st2-status making b2">making&hellip;</span><span class="st2-status done b4">done &middot; 31 KB</span></div>
+          <div class="st2-item dim"><b>Habit Tracker</b><span>2 days ago</span></div>
+          <div class="st2-item dim"><b>World Clock</b><span>last week</span></div>
+        </aside>
+        <div class="st2-main">
+          <p class="st2-msg you"><span class="st2-typed">a tip splitter for dinners with friends</span><span class="st2-caret"></span></p>
+          <p class="st2-msg krate b1">On it. I&rsquo;ll show you each step as it happens.</p>
+          <div class="st2-steps">
+            <p class="b1"><i></i>Understanding what you asked for</p>
+            <p class="b2"><i></i>Writing the app</p>
+            <p class="b3"><i></i>Checking it only uses Krate APIs</p>
+            <p class="b3x"><i></i>Packing one small file</p>
+          </div>
+          <div class="st2-card b4">
             <b>Tip Splitter</b>
-            <span>31 KB &middot; runs on Mac, Windows and Linux</span>
+            <span>31 KB &middot; Mac, Windows and Linux</span>
             <em>Open it</em>
           </div>
+          <p class="st2-msg you b5">make the total bigger and bold</p>
+          <p class="st2-msg krate b6">Reading your app, then making that change &mdash; not rebuilding it.</p>
         </div>
       </div>
     </div>
   </div>
 </section>
-      </div>
 
-      <div class="st-demo-timeline" aria-hidden="true">
-        <span class="active">Describe</span><span>Build</span><span>Open</span><span>Share</span>
-        <i></i>
-      </div>
-      <button class="st-demo-replay" type="button" aria-label="Replay product demonstration">Replay</button>
+<section class="st2-band" id="how">
+  <div class="wrap st2-grid">
+    <div class="st2-feature reveal">
+      <h2>No templates, no setup</h2>
+      <p>The thing you describe is the thing you get. No framework to pick, no
+      project to configure, no code on your screen unless you ask for it.</p>
+    </div>
+    <div class="st2-feature reveal">
+      <h2>Change it by asking</h2>
+      <p>The file carries its own source, so &ldquo;make the button blue&rdquo;
+      edits the app you have. Come back after feedback and pick up where you
+      left off.</p>
+    </div>
+    <div class="st2-feature reveal">
+      <h2>Send it to anyone</h2>
+      <p>One small file. They double-click it, see exactly what it is allowed
+      to do, and the runtime enforces that list &mdash; not the app&rsquo;s
+      promises.</p>
+    </div>
+    <div class="st2-feature reveal">
+      <h2>Your AI, your account</h2>
+      <p>Krate drives the coding AI you already pay for &mdash; Claude, Codex,
+      Gemini, Copilot &mdash; and can set one up for you. Your keys stay with
+      your tool.</p>
     </div>
   </div>
 </section>
 
-<!-- ================================================================= what it is -->
-<section class="st-band" id="how">
-  <div class="wrap">
-    <div class="st-proof-head reveal">
-      <p class="st-num">FROM IDEA TO A REAL APP</p>
-      <h2>One place to make it, change it and send it.</h2>
+<section class="st2-get" id="get">
+  <div class="wrap st2-get-grid">
+    <div class="st2-get-copy reveal">
+      <h2>Download Krate</h2>
+      <p>One app that makes apps and opens them. Signed and notarised by
+      Apple &mdash; drag it to Applications and double-click.</p>
     </div>
-    <div class="st-proof-grid">
-      <article class="st-proof reveal">
-        <p class="st-num">01</p>
-        <h3>Ask for the app</h3>
-        <p>No starter project and no framework choice. Describe the useful thing you
-        need. Your AI writes the app while Studio shows what is happening.</p>
-      </article>
-      <article class="st-proof reveal">
-        <p class="st-num">02</p>
-        <h3>Change it by asking</h3>
-        <p>The file carries its source. Ask for a change tomorrow and the AI edits
-        the app you already have instead of starting again.</p>
-      </article>
-      <article class="st-proof reveal">
-        <p class="st-num">03</p>
-        <h3>Send one file</h3>
-        <p>The receiver sees what the app wants before it runs. Krate gives it only
-        that access, then opens the same file on all three desktop systems.</p>
-      </article>
+    <div class="st2-get-cards reveal">
+      <a class="st2-dl" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
+        <span class="st2-dl-icon">&#63743;</span>
+        <span class="st2-dl-text"><b>macOS</b><span>Apple silicon and Intel &middot; one file</span></span>
+        <span class="st2-dl-go">&darr;</span>
+      </a>
+      <a class="st2-dl" href="https://github.com/incyashraj/krate/releases/latest">
+        <span class="st2-dl-icon">&#8862;</span>
+        <span class="st2-dl-text"><b>More downloads</b><span>Windows and Linux &middot; terminal builds</span></span>
+        <span class="st2-dl-go">&rarr;</span>
+      </a>
     </div>
   </div>
 </section>
 
-<!-- ==================================================================== get it -->
-<section class="st-get" id="get">
-  <div class="wrap">
-    <div class="st-get-card reveal">
-      <div class="st-get-head">
-        <h2>Try the pre-beta</h2>
-        <span class="tag-beta">pre-beta</span>
-      </div>
-      <p class="st-get-sub">Early build. It works, and it changes often. If something
-      breaks or feels wrong, tell us. This is the stage where it is easiest to
-      fix.</p>
-
-      <div class="st-dl-grid">
-        <a class="dl dl-wide" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>Download for macOS</b><span>One file. Apple silicon and Intel.</span>
-        </a>
-      </div>
-
-      <p class="st-get-note">Windows and Linux builds are next. Until then, the
-      terminal path works everywhere:
-      <code>curl -fsSL https://krate.tech/install.sh | sh</code></p>
-
-      <div class="st-honest">
-        <p class="st-honest-h">What to expect</p>
-        <ul>
-          <li>The studio installs the Krate runtime with it. There is nothing else
-          to set up.</li>
-          <li>You need an AI it can drive. Claude, Codex, Gemini and Copilot all work,
-          and the studio can install one for you.</li>
-          <li>Signed and notarised by Apple, so it opens like any other app --
-          drag it to Applications and double-click. No warnings to click
-          through.</li>
-          <li>The terminal tool stays exactly as it is. The studio is an addition, not
-          a replacement.</li>
-        </ul>
-      </div>
+<section class="st2-faq">
+  <div class="wrap st2-faq-grid">
+    <h2 class="reveal">Questions</h2>
+    <div class="st2-faq-list reveal">
+      <details class="faq-item">
+        <summary><span>Do I need to know how to code?</span></summary>
+        <div class="faq-answer"><p>No. You describe the app in plain words and
+        read plain words back. The raw engine output is one click away if you
+        ever want it, but nothing requires it.</p></div>
+      </details>
+      <details class="faq-item">
+        <summary><span>Which AI does it use?</span></summary>
+        <div class="faq-answer"><p>Whichever you already have. Claude, Codex,
+        Gemini and Copilot are detected automatically, and Krate can install
+        one for you. Your sign-in stays with that tool &mdash; Krate never
+        holds its keys.</p></div>
+      </details>
+      <details class="faq-item">
+        <summary><span>Is an app I receive safe to open?</span></summary>
+        <div class="faq-answer"><p>Before it runs, you see exactly what it is
+        allowed to do &mdash; and the runtime enforces that list at the system
+        boundary. An app cannot touch anything you did not allow, whatever its
+        code says.</p></div>
+      </details>
+      <details class="faq-item">
+        <summary><span>How much does it cost?</span></summary>
+        <div class="faq-answer"><p>Krate is free and open source. Making apps
+        uses your own AI subscription, the one you already pay for.</p></div>
+      </details>
+      <details class="faq-item">
+        <summary><span>What does pre-beta mean?</span></summary>
+        <div class="faq-answer"><p>It works, and it changes often. If something
+        breaks or feels wrong, telling us now is when it is easiest to fix.
+        The terminal tool is unchanged and stays the stable path.</p></div>
+      </details>
     </div>
   </div>
 </section>
 
 </main>
 
-<footer class="foot">
-  <div class="wrap foot-inner">
-    <span>Krate</span>
-    <nav>
-      <a href="/">Home</a>
-      <a href="/docs/">Docs</a>
-      <a href="/cloud/">Cloud</a>
-      <a href="/faq.html">Questions</a>
-      <a href="https://github.com/incyashraj/krate">GitHub</a>
-    </nav>
+<footer class="st2-foot">
+  <div class="wrap st2-foot-grid">
+    <div class="st2-foot-brand">
+      <img src="/krate-glyph-white.png" alt="" width="24" height="24" />
+      <span>Free and open source.</span>
+    </div>
+    <div><p>Product</p>
+      <a href="/">Home</a><a href="/studio/">Krate for macOS</a><a href="/cloud/">Cloud</a>
+    </div>
+    <div><p>Learn</p>
+      <a href="/docs/">Docs</a><a href="/faq.html">Questions</a><a href="/reports.html">Reports</a>
+    </div>
+    <div><p>Project</p>
+      <a href="https://github.com/incyashraj/krate">GitHub</a><a href="/progress.html">Progress</a><a href="/contact/">Contact</a>
+    </div>
   </div>
 </footer>
 
 <script>
 (function () {
-  /* Reveals, matching the rest of the site: translateY + opacity on a
-     stagger, skipped entirely under reduced motion. */
   var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
   var items = document.querySelectorAll(".reveal");
   if (reduced || !("IntersectionObserver" in window)) {
@@ -186,79 +205,16 @@
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (e, i) {
         if (!e.isIntersecting) return;
-        setTimeout(function () { e.target.classList.add("in"); }, i * 60);
+        setTimeout(function () { e.target.classList.add("in"); }, i * 70);
         io.unobserve(e.target);
       });
-    }, { rootMargin: "0px 0px -10% 0px" });
+    }, { rootMargin: "0px 0px -8% 0px" });
     items.forEach(function (el) { io.observe(el); });
-
-    // The hero is already on screen at load, and a bottom rootMargin of -10%
-    // means an element sitting at the very top can fail to register as
-    // intersecting -- which left the headline permanently at opacity 0. A
-    // blank hero is far worse than a missing animation, so anything still
-    // hidden shortly after load is simply shown.
     setTimeout(function () {
       items.forEach(function (el) { el.classList.add("in"); });
-    }, 1200);
+    }, 1400);
   }
 
-  /* A real Studio journey, shown inside the product itself. This is not a
-     video, so it stays sharp at every size and the user can replay it. */
-  var demo = document.getElementById("studioDemo");
-  if (demo) {
-    var prompt = "Make a personal finance dashboard that tracks spending and saves locally.";
-    var target = demo.querySelector(".st-type-target");
-    var timeline = demo.querySelectorAll(".st-demo-timeline span");
-    var timers = [];
-    var typingTimer;
-
-    function setDemoStep(step, index) {
-      demo.dataset.step = step;
-      timeline.forEach(function (item, i) { item.classList.toggle("active", i <= index); });
-    }
-
-    function later(fn, delay) {
-      var id = setTimeout(fn, delay);
-      timers.push(id);
-    }
-
-    function playDemo() {
-      timers.forEach(clearTimeout);
-      timers = [];
-      clearInterval(typingTimer);
-      target.textContent = "";
-      setDemoStep("prompt", 0);
-
-      if (reduced) {
-        target.textContent = prompt;
-        setDemoStep("share", 3);
-        return;
-      }
-
-      var letter = 0;
-      typingTimer = setInterval(function () {
-        target.textContent = prompt.slice(0, letter++);
-        if (letter > prompt.length) clearInterval(typingTimer);
-      }, 25);
-
-      later(function () { setDemoStep("build", 1); }, 2600);
-      later(function () { setDemoStep("done", 2); }, 7000);
-      later(function () { setDemoStep("share", 3); }, 10400);
-      later(playDemo, 15000);
-    }
-
-    demo.querySelector(".st-demo-replay").addEventListener("click", playDemo);
-    playDemo();
-  }
-
-  /* Download links resolved to the current release.
-
-     The filenames carry a version, so hard-coding them 404s the day after a
-     release. Each link starts at the releases page -- correct, if less
-     direct -- and upgrades to the exact file once the tag is known. If the
-     asset for this platform is not in the release yet, the link is left
-     pointing at the releases page rather than at a file that does not
-     exist. */
   var dls = document.querySelectorAll("[data-dl]");
   if (dls.length) {
     fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
@@ -269,19 +225,16 @@
         var version = rel.tag_name.replace(/^v/, "");
         dls.forEach(function (a) {
           var p = a.dataset.dl.split("|");
-          var file = p[0] + "-" + version + "-" + p[1] + "." + p[2];
-          // The universal build is named without an architecture triple.
-          if (p[1] === "universal") file = p[0] + "-" + version + "-universal." + p[2];
-          if (names.indexOf(file) === -1) {
-            a.classList.add("dl-soon");
-            a.querySelector("span").textContent += " · coming";
-            return;
+          var file = p[1] === "universal"
+            ? p[0] + "-" + version + "-universal." + p[2]
+            : p[0] + "-" + version + "-" + p[1] + "." + p[2];
+          if (names.indexOf(file) !== -1) {
+            a.href = "https://github.com/incyashraj/krate/releases/download/" +
+              rel.tag_name + "/" + file;
           }
-          a.href = "https://github.com/incyashraj/krate/releases/download/" +
-            rel.tag_name + "/" + file;
         });
       })
-      .catch(function () { /* the releases-page links still work */ });
+      .catch(function () {});
   }
 })();
 </script>
