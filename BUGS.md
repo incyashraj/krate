@@ -3637,6 +3637,45 @@ Fix:      Six rebuilt from source in apps/; five have no source and were
 
 ---
 
+### K-114 — macOS canvas apps scroll like the 90s: line jumps and swap flicker
+Status:   open
+Owner:    unclaimed
+Severity: blocker
+Class:    our-code
+Found:    2026-08-16, founder, scrolling an AI-written notes app side by side
+          with MarkText during the first head-to-head benchmark: "it's like
+          text on the screen is getting replaced by new text, with some
+          vanish and reappear effect" while MarkText was supersmooth.
+Evidence: Two mechanisms compound. The macOS canvas path is still the
+          CPU-composited NSImageView pipeline with no vsync pairing, so a
+          redraw can reach the glass mid-swap -- the vanish/reappear.
+          Windows and Linux left this path in v0.1.26 (GPU presenter,
+          AutoVsync); macOS is the deferred S5 stage of
+          Plan/GPU-Presenter.md. Numbers from the same session: the Krate
+          app wins start (156ms vs 1800ms warm), footprint (117MB vs 635MB
+          across Electron's five processes), size (210KB vs 107MB) -- and
+          loses the scroll feel decisively, which is the row adoption
+          actually reads.
+Fix:      S5: route macOS painted surfaces through the shared GPU presenter,
+          vsync-paced, same as Windows and Linux.
+
+### K-115 — Generated apps scroll by whole lines because the pack never taught pixels
+Status:   open
+Owner:    unclaimed
+Severity: major
+Class:    teaching-hole
+Found:    2026-08-16, same session as K-114, reading the generated notes
+          app's source after the founder called out the feel.
+Evidence: The app moves its viewport one line per wheel notch. The runtime
+          has delivered pixel-precise wheel deltas since K-001, but the
+          authoring pack's examples and prose never show pixel-offset
+          scrolling, so agents quantize to lines -- every scrolling app
+          generated to date has the same 90s feel on every platform.
+Fix:      Teach it once: a pack section + example showing a pixel-offset
+          viewport driven by wheel deltas (and the same offset used during
+          drag), with the first visible line derived from the offset rather
+          than the offset from the line.
+
 ## Fixed
 
 ### K-113 — "Change my app" replaced it with a stranger
