@@ -6330,7 +6330,10 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 .and_then(|bundle| bundle.assets_path().map(Path::to_path_buf))
                 .map(|assets| assets.join("icon.png"))
                 .filter(|path| path.is_file())
-                .and_then(|path| std::fs::read(path).ok());
+                .and_then(|path| std::fs::read(path).ok())
+                // No icon of its own: the Krate mark, never the generic
+                // exec page. NSImage decodes .icns bytes as readily as PNG.
+                .or_else(|| krate_icon_source().and_then(|p| std::fs::read(p).ok()));
             krate_adapter_macos::set_process_identity(&manifest.app.name, icon.as_deref());
         }
     }
@@ -6858,6 +6861,38 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
     // caller already knows what to open. Everything after this point -- the
     // native consent window, the sandbox root, the window itself -- is
     // identical to the Finder path, which is the point.
+    // Wear the app's own name in the dock. macOS names an unbundled process
+    // after its executable file -- measured; no runtime call changes it -- so
+    // the engine re-execs itself through a hard link named after the app.
+    // One hop only, guarded by KRATE_AS, and any failure falls through to
+    // running under the engine's name rather than not running.
+    if let Some(file) = &direct {
+        if std::env::var_os("KRATE_AS").is_none() {
+            if let Ok(bundle) = krate_bundle::open(file) {
+                let name = bundle.manifest().app.name.trim().to_string();
+                let exe = std::env::current_exe().ok();
+                if !name.is_empty()
+                    && exe.as_ref().and_then(|e| e.file_name()).map(|f| f.to_string_lossy() != *name).unwrap_or(false)
+                {
+                    let dir = home_dir().map(|h| h.join(".krate/launchers")).unwrap_or_default();
+                    let _ = fs::create_dir_all(&dir);
+                    let link = dir.join(&name);
+                    let _ = fs::remove_file(&link);
+                    let engine = exe.unwrap();
+                    if fs::hard_link(&engine, &link).is_ok() || fs::copy(&engine, &link).is_ok() {
+                        use std::os::unix::process::CommandExt;
+                        let err = std::process::Command::new(&link)
+                            .arg("open-app")
+                            .arg(file)
+                            .env("KRATE_AS", "1")
+                            .exec();
+                        eprintln!("re-exec under the app's name failed: {err}");
+                    }
+                }
+            }
+        }
+    }
+
     let opened = match direct {
         Some(file) => vec![file],
         None => krate_adapter_macos::wait_for_opened_documents(late_open)

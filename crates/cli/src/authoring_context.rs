@@ -379,6 +379,12 @@ An app with no image files can still generate a texture in code: fill an RGBA \
 buffer with a checker, a noise pattern, or stripes, and upload that. A tiled \
 procedural texture on the ground and the walls is the single biggest \
 improvement available to a 3D scene, and it costs no assets.\n\n\
+## The app's icon\n\n\
+Write `assets/icon.png` (square PNG, 512px or larger) and the app wears it \
+everywhere: the dock while it runs, Finder when installed, the installer. \
+If the person supplied a logo as an attachment, copy it there. If not, a \
+simple drawn mark beats none -- and shipping no icon.png is also fine: the \
+app then wears the Krate mark rather than a generic page.\n\n\
 Turn `cull_back_faces` on for closed shapes (a cube, a crate, a character) and \
 roughly half the triangles stop being drawn. Leave it off for a flat floor or a \
 billboard, which have one visible side and vanish when seen from behind.\n\n\
