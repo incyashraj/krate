@@ -2457,9 +2457,9 @@ mod platform {
     fn image_from_png(bytes: &[u8], _mtm: MainThreadMarker) -> Option<Retained<NSImage>> {
         use objc2_foundation::NSData;
         let data = NSData::with_bytes(bytes);
-        // SAFETY: initWithData: is the documented NSImage decoder and returns
-        // nil for data it cannot read, which is checked by the Option.
-        unsafe { NSImage::initWithData(NSImage::alloc(), &data) }
+        // initWithData: is the documented NSImage decoder; it returns nil for
+        // data it cannot read, which the Option checks.
+        NSImage::initWithData(NSImage::alloc(), &data)
     }
 
     /// Give the app an Edit menu so the standard clipboard shortcuts work.

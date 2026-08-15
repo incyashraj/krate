@@ -252,7 +252,14 @@ jobs:
           # absent from the link line, and no cache key can add it.
           key: ${{ runner.os }}-${{ runner.arch }}-${{ matrix.os }}-cargo-libtest-${{ hashFiles('**/Cargo.lock') }}
       - name: Run the library tests
-        run: cargo test --workspace --lib
+        # Windows runs the release profile. The workspace mandates a static
+        # CRT (K-037: without it, krate.exe silently fails to start on clean
+        # Windows 11), and whisper's cmake objects only agree with that CRT
+        # in release -- the debug test link has been failing on unresolved
+        # __imp_ stdio symbols for as long as this job has existed, while
+        # every release Windows build links the same code fine. Same tests,
+        # the profile that actually links.
+        run: cargo test --workspace --lib ${{ matrix.os == 'windows-2022' && '--release' || '' }}
 
   # ──────────────────────────────────────────────
   # 5. Rust SDK package dry-run

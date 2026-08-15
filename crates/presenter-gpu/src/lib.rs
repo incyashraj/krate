@@ -123,7 +123,7 @@ fn draw_layout(scene: &mut vello::Scene, layout: &Layout<()>, color: u32, x: f32
                     let gy = y + run_y - g.y;
                     run_x += g.advance;
                     vello::Glyph {
-                        id: u32::from(g.id),
+                        id: g.id,
                         x: gx,
                         y: gy,
                     }
