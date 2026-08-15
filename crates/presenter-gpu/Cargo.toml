@@ -12,9 +12,11 @@ license.workspace = true
 [dependencies]
 krate-adapter-common = { path = "../adapter-common" }
 vello = "0.9"
-parley = "0.7"
-peniko = "0.6"
+parley = "0.11"
 pollster = "0.4"
 
 [dev-dependencies]
 png = "0.17"
+# The CPU vector path is the visual reference for text: same parley, so
+# shaping is shared and only the rasterizer differs.
+krate-adapter-common = { path = "../adapter-common", features = ["vector-text"] }

@@ -15,13 +15,23 @@
 //! Nothing in this crate may know about winit; the windowed surface (S2)
 //! builds on the same `build_scene` behind that seam.
 
+use std::collections::HashMap;
+
 use krate_adapter_common::painter::{
-    button_fill_color, PaintInteraction, COLOR_BACKGROUND, COLOR_BUTTON, COLOR_FIELD_BORDER,
-    COLOR_FIELD_FILL, COLOR_KNOB, COLOR_TRACK,
+    button_fill_color, PaintInteraction, COLOR_BACKGROUND, COLOR_BUTTON, COLOR_BUTTON_LABEL,
+    COLOR_FIELD_BORDER, COLOR_FIELD_FILL, COLOR_FIELD_TEXT, COLOR_IMAGE_BACKDROP, COLOR_KNOB,
+    COLOR_TEXT, COLOR_TRACK,
 };
-use krate_adapter_common::ui::{WidgetKind, WidgetPlacement};
+use krate_adapter_common::ui::{ImagePixels, WidgetKind, WidgetPlacement};
+use parley::{
+    Alignment, AlignmentOptions, FontContext, Layout, LayoutContext, PositionedLayoutItem,
+};
 use vello::kurbo::{Affine, Rect};
-use vello::peniko::{Color, Fill};
+use vello::peniko::{Blob, Color, Fill, ImageAlphaType, ImageBrush, ImageData, ImageFormat};
+
+/// Matches the CPU vector path's LABEL_FONT_SIZE: the two paths share parley,
+/// so equal size means equal layout. Change them together.
+const LABEL_FONT_SIZE: f32 = 13.0;
 
 /// Convert the painter's 0xAARRGGBB into a vello color, so there is exactly
 /// one palette in the codebase.
@@ -51,6 +61,140 @@ fn rect(r: (f32, f32, f32, f32)) -> Rect {
     )
 }
 
+/// Per-presenter state that outlives a frame: shaped-text contexts and
+/// uploaded images. Images are keyed by their pixel buffer's address, so a
+/// canvas that pushes a new frame re-uploads and a static logo uploads once
+/// -- re-uploading per frame is the classic port mistake and is the K-062
+/// family.
+#[derive(Default)]
+pub struct SceneCache {
+    font_cx: Option<FontContext>,
+    layout_cx: LayoutContext<()>,
+    images: HashMap<usize, ImageBrush>,
+}
+
+impl SceneCache {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn layout(&mut self, text: &str, scale: f32, max_width: Option<f32>) -> Layout<()> {
+        let font_cx = self.font_cx.get_or_insert_with(FontContext::new);
+        let mut builder = self.layout_cx.ranged_builder(font_cx, text, scale, true);
+        builder.push_default(parley::GenericFamily::SansSerif);
+        builder.push_default(parley::StyleProperty::FontSize(LABEL_FONT_SIZE));
+        let mut layout = builder.build(text);
+        layout.break_all_lines(max_width);
+        layout.align(Alignment::Start, AlignmentOptions::default());
+        layout
+    }
+
+    fn image(&mut self, pixels: &ImagePixels) -> ImageBrush {
+        let key = pixels.rgba.as_ptr() as usize;
+        self.images
+            .entry(key)
+            .or_insert_with(|| {
+                ImageBrush::new(ImageData {
+                    data: Blob::from(pixels.rgba.clone()),
+                    format: ImageFormat::Rgba8,
+                    alpha_type: ImageAlphaType::Alpha,
+                    width: pixels.width,
+                    height: pixels.height,
+                })
+            })
+            .clone()
+    }
+}
+
+/// Draw a shaped layout into the scene at (x, y) physical, one glyph run at
+/// a time -- the same iteration the CPU vector path uses, aimed at the GPU.
+fn draw_layout(scene: &mut vello::Scene, layout: &Layout<()>, color: u32, x: f32, y: f32) {
+    for line in layout.lines() {
+        for item in line.items() {
+            let PositionedLayoutItem::GlyphRun(glyph_run) = item else {
+                continue;
+            };
+            let mut run_x = glyph_run.offset();
+            let run_y = glyph_run.baseline();
+            let glyphs: Vec<vello::Glyph> = glyph_run
+                .glyphs()
+                .map(|g| {
+                    let gx = x + run_x + g.x;
+                    let gy = y + run_y - g.y;
+                    run_x += g.advance;
+                    vello::Glyph {
+                        id: u32::from(g.id),
+                        x: gx,
+                        y: gy,
+                    }
+                })
+                .collect();
+            let run = glyph_run.run();
+            scene
+                .draw_glyphs(run.font())
+                .font_size(run.font_size())
+                .normalized_coords(run.normalized_coords())
+                .brush(argb(color))
+                .transform(Affine::IDENTITY)
+                .draw(Fill::NonZero, glyphs.into_iter());
+        }
+    }
+}
+
+/// Draw a picture fit-scaled and centred in a rect: the same math as the CPU
+/// painter's draw_image, so the two paths frame a photo identically.
+fn draw_image_fit(
+    scene: &mut vello::Scene,
+    image: &ImageBrush,
+    (rx, ry, rw, rh): (f32, f32, f32, f32),
+) {
+    if image.image.width == 0 || image.image.height == 0 || rw <= 0.0 || rh <= 0.0 {
+        return;
+    }
+    let scale = (rw / image.image.width as f32).min(rh / image.image.height as f32);
+    let (dw, dh) = (
+        image.image.width as f32 * scale,
+        image.image.height as f32 * scale,
+    );
+    let (ox, oy) = (rx + (rw - dw) / 2.0, ry + (rh - dh) / 2.0);
+    let transform =
+        Affine::translate((f64::from(ox), f64::from(oy))) * Affine::scale(f64::from(scale));
+    scene.draw_image(image, transform);
+}
+
+fn fill_clipped(
+    scene: &mut vello::Scene,
+    color: u32,
+    r: (f32, f32, f32, f32),
+    clip: Option<(f32, f32, f32, f32)>,
+) {
+    fill_rounded_clipped(scene, color, r, clip, 0.0);
+}
+
+/// Rounded fill with the same clip discipline. Radii mirror the CPU vector
+/// path (buttons 6, field chrome 4 over 3, all x scale), because that path
+/// is what Windows and Linux users have been looking at -- the GPU must land
+/// on the same picture, not the bitmap fallback's squares.
+fn fill_rounded_clipped(
+    scene: &mut vello::Scene,
+    color: u32,
+    r: (f32, f32, f32, f32),
+    clip: Option<(f32, f32, f32, f32)>,
+    radius: f32,
+) {
+    let clipped = match clip {
+        Some(c) => intersect(r, c),
+        None => Some(r),
+    };
+    let Some(r) = clipped else { return };
+    if radius <= 0.0 {
+        scene.fill(Fill::NonZero, Affine::IDENTITY, argb(color), None, &rect(r));
+    } else {
+        let shape = vello::kurbo::RoundedRect::from_rect(rect(r), f64::from(radius));
+        scene.fill(Fill::NonZero, Affine::IDENTITY, argb(color), None, &shape);
+    }
+}
+
 /// Translate placements into a vello scene at the given scale.
 ///
 /// Logical-to-physical happens here and only here, mirroring the CPU
@@ -58,20 +202,12 @@ fn rect(r: (f32, f32, f32, f32)) -> Rect {
 /// The branch structure follows `paint_placements_bitmap` deliberately --
 /// when that painter changes, this file changes in the same review.
 pub fn build_scene(
+    cache: &mut SceneCache,
     placements: &[WidgetPlacement],
     scale: f32,
     interaction: PaintInteraction,
 ) -> vello::Scene {
     let mut scene = vello::Scene::new();
-    let mut fill = |color: u32, r: (f32, f32, f32, f32), clip: Option<(f32, f32, f32, f32)>| {
-        let clipped = match clip {
-            Some(c) => intersect(r, c),
-            None => Some(r),
-        };
-        if let Some(r) = clipped {
-            scene.fill(Fill::NonZero, Affine::IDENTITY, argb(color), None, &rect(r));
-        }
-    };
 
     for placement in placements {
         let (px, py) = (placement.x * scale, placement.y * scale);
@@ -86,15 +222,35 @@ pub fn build_scene(
         }
         match placement.kind {
             WidgetKind::Button => {
-                fill(
+                fill_rounded_clipped(
+                    &mut scene,
                     button_fill_color(placement.widget, interaction),
                     (px, py, pw, ph),
                     clip,
+                    6.0 * scale,
                 );
+                if let Some(label) = placement.label.as_deref().filter(|l| !l.is_empty()) {
+                    let layout = cache.layout(label, scale, None);
+                    let (lw, lh) = (layout.width(), layout.height());
+                    draw_layout(
+                        &mut scene,
+                        &layout,
+                        COLOR_BUTTON_LABEL,
+                        px + (pw - lw) / 2.0,
+                        py + (ph - lh) / 2.0,
+                    );
+                }
             }
             WidgetKind::TextField | WidgetKind::TextArea => {
-                fill(COLOR_FIELD_BORDER, (px, py, pw, ph), clip);
-                fill(
+                fill_rounded_clipped(
+                    &mut scene,
+                    COLOR_FIELD_BORDER,
+                    (px, py, pw, ph),
+                    clip,
+                    4.0 * scale,
+                );
+                fill_rounded_clipped(
+                    &mut scene,
                     COLOR_FIELD_FILL,
                     (
                         px + scale,
@@ -103,7 +259,20 @@ pub fn build_scene(
                         (ph - 2.0 * scale).max(0.0),
                     ),
                     clip,
+                    3.0 * scale,
                 );
+                if let Some(label) = placement.label.as_deref().filter(|l| !l.is_empty()) {
+                    let inset = 4.0 * scale;
+                    let wrap = (placement.kind == WidgetKind::TextArea)
+                        .then_some((pw - inset * 2.0).max(1.0));
+                    let layout = cache.layout(label, scale, wrap);
+                    let ly = if placement.kind == WidgetKind::TextArea {
+                        py + inset
+                    } else {
+                        py + (ph - layout.height()) / 2.0
+                    };
+                    draw_layout(&mut scene, &layout, COLOR_FIELD_TEXT, px + inset, ly);
+                }
             }
             WidgetKind::Slider | WidgetKind::Progress => {
                 let fraction = placement.value.unwrap_or(0.0).clamp(0.0, 1.0);
@@ -113,14 +282,20 @@ pub fn build_scene(
                     6.0 * scale
                 };
                 let gy = py + (ph - groove_h) / 2.0;
-                fill(COLOR_TRACK, (px, gy, pw, groove_h), clip);
-                fill(COLOR_BUTTON, (px, gy, pw * fraction, groove_h), clip);
+                fill_clipped(&mut scene, COLOR_TRACK, (px, gy, pw, groove_h), clip);
+                fill_clipped(
+                    &mut scene,
+                    COLOR_BUTTON,
+                    (px, gy, pw * fraction, groove_h),
+                    clip,
+                );
                 if placement.kind == WidgetKind::Slider {
                     let thumb = (16.0 * scale).min(ph);
                     let tx = px + (pw - thumb) * fraction;
                     let ty = py + (ph - thumb) / 2.0;
-                    fill(COLOR_FIELD_BORDER, (tx, ty, thumb, thumb), clip);
-                    fill(
+                    fill_clipped(&mut scene, COLOR_FIELD_BORDER, (tx, ty, thumb, thumb), clip);
+                    fill_clipped(
+                        &mut scene,
                         COLOR_KNOB,
                         (
                             tx + scale,
@@ -132,10 +307,32 @@ pub fn build_scene(
                     );
                 }
             }
-            // Text, images, canvas pixels: the next slice (glyph runs via
-            // parley 0.7, image resources uploaded once). Until then these
-            // kinds draw nothing here, and the golden corpus excludes them.
-            _ => {}
+            WidgetKind::Text => {
+                if let Some(label) = placement.label.as_deref().filter(|l| !l.is_empty()) {
+                    let layout = cache.layout(label, scale, None);
+                    draw_layout(
+                        &mut scene,
+                        &layout,
+                        COLOR_TEXT,
+                        px,
+                        py + (ph - layout.height()) / 2.0,
+                    );
+                }
+            }
+            // Anything carrying pixels -- Image, Canvas, a 3D scene's frame --
+            // draws a backdrop and the picture, fit-scaled and centred like
+            // the CPU painter. This is the branch whose absence was the K-062
+            // white screen; it exists here from day one.
+            _ => {
+                let backdrop = placement.kind == WidgetKind::Image || placement.pixels.is_some();
+                if backdrop {
+                    fill_clipped(&mut scene, COLOR_IMAGE_BACKDROP, (px, py, pw, ph), clip);
+                }
+                if let Some(pixels) = placement.pixels.as_deref() {
+                    let image = cache.image(pixels);
+                    draw_image_fit(&mut scene, &image, (px, py, pw, ph));
+                }
+            }
         }
     }
     scene
