@@ -216,7 +216,6 @@ jobs:
       # and the wrong-download failure mode with it.
       - name: Build Krate Studio (.dmg)
         if: matrix.target == 'aarch64-apple-darwin'
-        continue-on-error: true
         shell: bash
         env:
           KRATE_VERSION: ${{ inputs.tag || github.ref_name }}
@@ -269,7 +268,6 @@ jobs:
       # release; a missing installer makes the site say "coming".
       - name: Build Krate Studio (Windows installer)
         if: matrix.target == 'x86_64-pc-windows-msvc'
-        continue-on-error: true
         shell: bash
         env:
           KRATE_VERSION: ${{ inputs.tag || github.ref_name }}
@@ -291,7 +289,6 @@ jobs:
       # downloadable file with no package manager in the way.
       - name: Build Krate Studio (Linux AppImage)
         if: matrix.target == 'x86_64-unknown-linux-gnu'
-        continue-on-error: true
         shell: bash
         env:
           KRATE_VERSION: ${{ inputs.tag || github.ref_name }}

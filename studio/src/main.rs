@@ -1342,16 +1342,7 @@ fn first_run_setup() {
     let _ = std::fs::write(
         &desktop,
         format!(
-            "[Desktop Entry]
-Type=Application
-Name=Krate
-Comment=Describe an app. Watch it become real.
-Exec="{}" %f
-Terminal=false
-Categories=Development;Utility;
-Icon={}
-MimeType=application/vnd.krate.bundle;
-",
+            "[Desktop Entry]\nType=Application\nName=Krate\nComment=Describe an app. Watch it become real.\nExec=\"{}\" %f\nTerminal=false\nCategories=Development;Utility;\nIcon={}\nMimeType=application/vnd.krate.bundle;\n",
             exe.display(),
             icon_path.display(),
         ),
