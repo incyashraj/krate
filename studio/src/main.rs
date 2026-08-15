@@ -62,7 +62,7 @@ fn engine() -> Result<PathBuf, String> {
             // Checking only for a sibling meant a bundled Krate.app shipped
             // its engine and then failed to find it -- the app would install
             // cleanly and be unable to make anything.
-            for rel in ["../Resources/bin", "../Resources"] {
+            for rel in ["bin", "../Resources/bin", "../Resources"] {
                 let candidate = dir.join(rel).join(name);
                 if candidate.exists() {
                     return Ok(candidate);
@@ -176,10 +176,16 @@ fn sessions_list() -> Vec<Session> {
 fn session_save(session: Session) -> Result<(), String> {
     // The id is ours (a timestamp), but never trust a path component you did
     // not mint this second.
-    if !session.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    if !session
+        .id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
         return Err("bad session id".to_string());
     }
-    let path = studio_dir().join("sessions").join(format!("{}.json", session.id));
+    let path = studio_dir()
+        .join("sessions")
+        .join(format!("{}.json", session.id));
     std::fs::write(
         path,
         serde_json::to_string_pretty(&session).map_err(|e| e.to_string())?,
@@ -230,7 +236,10 @@ async fn account_login(app: tauri::AppHandle) -> Result<(), String> {
             .spawn()
             .map_err(|err| format!("could not start the Krate engine: {err}"))?;
         let stdout = child.stdout.take().ok_or("no stdout")?;
-        for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+        for line in std::io::BufReader::new(stdout)
+            .lines()
+            .map_while(Result::ok)
+        {
             if let Ok(step) = serde_json::from_str::<serde_json::Value>(&line) {
                 let _ = app.emit("login-step", &step);
             }
@@ -274,7 +283,12 @@ async fn agents() -> Result<Vec<AgentInfo>, String> {
     let out = Command::new(&engine)
         .args(["ai", "--json"])
         .output()
-        .map_err(|err| format!("could not run the Krate engine at {}: {err}", engine.display()))?;
+        .map_err(|err| {
+            format!(
+                "could not run the Krate engine at {}: {err}",
+                engine.display()
+            )
+        })?;
     if !out.status.success() {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_string());
     }
@@ -451,10 +465,16 @@ fn kill_tree(pid: u32) {
 /// The shell knows the path before it spawns anything, so it records it up
 /// front. Whatever happens to the window, the session can find its app.
 fn remember_target(session: &str, path: &Path) {
-    if session.is_empty() || !session.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+    if session.is_empty()
+        || !session
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-')
+    {
         return;
     }
-    let file = studio_dir().join("sessions").join(format!("{session}.json"));
+    let file = studio_dir()
+        .join("sessions")
+        .join(format!("{session}.json"));
     let Ok(text) = std::fs::read_to_string(&file) else {
         return;
     };
@@ -590,7 +610,10 @@ fn run_author(
     let debug2 = debug_log.clone();
     let err_thread = std::thread::spawn(move || {
         let mut lines = Vec::new();
-        for line in std::io::BufReader::new(stderr).lines().map_while(Result::ok) {
+        for line in std::io::BufReader::new(stderr)
+            .lines()
+            .map_while(Result::ok)
+        {
             let _ = app2.emit("engine-line", &line);
             if let Some(path) = &debug2 {
                 append_line(path, &line);
@@ -601,7 +624,10 @@ fn run_author(
     });
     let mut asks: Vec<String> = Vec::new();
     let mut in_asks = false;
-    for line in std::io::BufReader::new(stdout).lines().map_while(Result::ok) {
+    for line in std::io::BufReader::new(stdout)
+        .lines()
+        .map_while(Result::ok)
+    {
         let _ = app.emit("engine-line", &line);
         if let Some(path) = &debug_log {
             append_line(path, &line);
@@ -716,7 +742,9 @@ fn open_app(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let ok = Command::new("open").arg(&path).status();
     #[cfg(target_os = "windows")]
-    let ok = Command::new("cmd").args(["/C", "start", "", &path]).status();
+    let ok = Command::new("cmd")
+        .args(["/C", "start", "", &path])
+        .status();
     #[cfg(all(unix, not(target_os = "macos")))]
     let ok = Command::new("xdg-open").arg(&path).status();
     ok.map_err(|err| err.to_string()).and_then(|s| {
@@ -957,6 +985,36 @@ fn emit_line(app: &tauri::AppHandle, line: &str) {
     let _ = app.emit("agent-install", line.to_string());
 }
 
+/// Pick a .krate from disk and open it -- the studio is the one Krate app,
+/// so "open an app I already have" lives here, not in a separate opener.
+/// The engine applies the same permission wall it applies everywhere.
+#[tauri::command]
+async fn open_krate(app: tauri::AppHandle) -> Result<(), String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let picked = rfd::FileDialog::new()
+            .set_title("Open a Krate app")
+            .add_filter("Krate app", &["krate"])
+            .set_directory(dirs_home())
+            .pick_file();
+        let _ = tx.send(picked);
+    })
+    .map_err(|err| err.to_string())?;
+    let Some(path) = rx
+        .recv_timeout(std::time::Duration::from_secs(300))
+        .map_err(|_| "the picker did not answer".to_string())?
+    else {
+        return Ok(());
+    };
+    let engine = engine()?;
+    Command::new(&engine)
+        .arg("run")
+        .arg(&path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|err| err.to_string())
+}
+
 /// Open the krate.tech sign-in page in the person's browser.
 ///
 /// The page hands back to this app through the krate:// URL scheme, so the
@@ -968,7 +1026,13 @@ fn login_browser() -> Result<(), String> {
         .arg("https://krate.tech/login?from=app")
         .status()
         .map_err(|err| err.to_string())
-        .and_then(|s| if s.success() { Ok(()) } else { Err("could not open the browser".into()) })
+        .and_then(|s| {
+            if s.success() {
+                Ok(())
+            } else {
+                Err("could not open the browser".into())
+            }
+        })
 }
 
 /// The hub the studio reads and publishes to. `KRATE_HUB_URL` overrides it,
@@ -1033,7 +1097,9 @@ fn reveal(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let ok = Command::new("open").args(["-R", &path]).status();
     #[cfg(target_os = "windows")]
-    let ok = Command::new("explorer").arg(format!("/select,{path}")).status();
+    let ok = Command::new("explorer")
+        .arg(format!("/select,{path}"))
+        .status();
     #[cfg(all(unix, not(target_os = "macos")))]
     let ok = Command::new("xdg-open")
         .arg(
@@ -1051,7 +1117,9 @@ fn reveal(path: String) -> Result<(), String> {
 /// Development and testing only; unset for people.
 #[tauri::command]
 fn autorun() -> Option<String> {
-    std::env::var("KRATE_STUDIO_AUTORUN").ok().filter(|s| !s.is_empty())
+    std::env::var("KRATE_STUDIO_AUTORUN")
+        .ok()
+        .filter(|s| !s.is_empty())
 }
 
 /// Finish the install, the first time the studio runs after being dragged in.
@@ -1118,7 +1186,11 @@ fn first_run_setup() {}
 
 fn append_line(path: &Path, line: &str) {
     use std::io::Write as _;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
         let _ = writeln!(f, "{line}");
     }
 }
@@ -1128,7 +1200,9 @@ fn dirs_home() -> PathBuf {
     let var = "USERPROFILE";
     #[cfg(not(windows))]
     let var = "HOME";
-    std::env::var(var).map(PathBuf::from).unwrap_or_else(|_| PathBuf::from("."))
+    std::env::var(var)
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."))
 }
 
 /// A path that is not already taken, by adding ` 2`, ` 3` and so on.
@@ -1157,7 +1231,12 @@ fn free_path(dir: &Path, slug: &str) -> PathBuf {
 fn slugify(request: &str) -> String {
     let words: Vec<String> = request
         .split_whitespace()
-        .filter(|w| !matches!(w.to_lowercase().as_str(), "a" | "an" | "the" | "make" | "me"))
+        .filter(|w| {
+            !matches!(
+                w.to_lowercase().as_str(),
+                "a" | "an" | "the" | "make" | "me"
+            )
+        })
         .take(4)
         .map(|w| {
             w.chars()
@@ -1232,6 +1311,7 @@ fn main() {
             account_logout,
             app_info,
             login_browser,
+            open_krate,
             install_agent,
             cloud_apps,
             cloud_run,
@@ -1284,7 +1364,9 @@ fn main() {
                                         child
                                             .stdin
                                             .take()
-                                            .map(|mut sin| sin.write_all(identity.to_string().as_bytes()))
+                                            .map(|mut sin| {
+                                                sin.write_all(identity.to_string().as_bytes())
+                                            })
                                             .transpose()?;
                                         child.wait()
                                     })
@@ -1313,10 +1395,7 @@ fn main() {
                                 // see, so a double-clicked app that needed
                                 // any grant simply never opened. open-app
                                 // shows the native consent window.
-                                let _ = Command::new(&engine)
-                                    .arg("open-app")
-                                    .arg(&path)
-                                    .spawn();
+                                let _ = Command::new(&engine).arg("open-app").arg(&path).spawn();
                             }
                         }
                     }
@@ -1325,7 +1404,10 @@ fn main() {
 
             // Cmd-Q and Dock > Quit close no window, so the window handler
             // above never sees them.
-            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
                 let state = app.state::<Running>();
                 let pid = state.0.lock().ok().and_then(|mut g| g.take());
                 if let Some(pid) = pid {

@@ -1353,6 +1353,7 @@ $("loginBrowserBtn").addEventListener("click", async () => {
 });
 $("attachBtn").addEventListener("click", attach);
 $("homeAttachBtn").addEventListener("click", attach);
+$("openKrateBtn").addEventListener("click", () => invoke("open_krate").catch(() => {}));
 $("cloudBtn").addEventListener("click", openCloud);
 $("cloudBackBtn").addEventListener("click", enterHome);
 $("cloudRefresh").addEventListener("click", openCloud);

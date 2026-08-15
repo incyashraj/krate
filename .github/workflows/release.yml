@@ -262,6 +262,55 @@ jobs:
           echo "engine slices: $(lipo -archs studio/bin/krate)"
           (cd studio && tauri build --bundles app --no-sign --target universal-apple-darwin)
 
+      # Krate for Windows: the same studio, as an NSIS installer. Unsigned
+      # until there is a Windows certificate, so SmartScreen warns on first
+      # run -- stated on the site rather than hidden. continue-on-error for
+      # the same reason as the macOS studio: pre-beta must not sink a runtime
+      # release; a missing installer makes the site say "coming".
+      - name: Build Krate Studio (Windows installer)
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        continue-on-error: true
+        shell: bash
+        env:
+          KRATE_VERSION: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -eu
+          version="${KRATE_VERSION#v}"
+          npm install -g @tauri-apps/cli@^2
+          python3 -c 'import json,sys,pathlib; p=pathlib.Path("studio/tauri.conf.json"); d=json.loads(p.read_text()); d["version"]=sys.argv[1]; p.write_text(json.dumps(d,indent=2)+"\n")' "$version"
+          mkdir -p studio/bin
+          cp "target/${{ matrix.target }}/release/krate.exe" studio/bin/krate.exe
+          (cd studio && tauri build --bundles nsis --target ${{ matrix.target }})
+          mkdir -p dist
+          src=$(find studio/target -name '*-setup.exe' -print -quit)
+          if [ -n "$src" ]; then
+            cp "$src" "dist/krate-studio-${version}-windows-x64-setup.exe"
+          fi
+
+      # Krate for Linux: an AppImage, the one Linux format that is a single
+      # downloadable file with no package manager in the way.
+      - name: Build Krate Studio (Linux AppImage)
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        continue-on-error: true
+        shell: bash
+        env:
+          KRATE_VERSION: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -eu
+          version="${KRATE_VERSION#v}"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libgtk-3-dev             libayatana-appindicator3-dev librsvg2-dev patchelf
+          npm install -g @tauri-apps/cli@^2
+          python3 -c 'import json,sys,pathlib; p=pathlib.Path("studio/tauri.conf.json"); d=json.loads(p.read_text()); d["version"]=sys.argv[1]; p.write_text(json.dumps(d,indent=2)+"\n")' "$version"
+          mkdir -p studio/bin
+          cp "target/${{ matrix.target }}/release/krate" studio/bin/krate
+          (cd studio && tauri build --bundles appimage --target ${{ matrix.target }})
+          mkdir -p dist
+          src=$(find studio/target -name '*.AppImage' -print -quit)
+          if [ -n "$src" ]; then
+            cp "$src" "dist/krate-studio-${version}-linux-x86_64.AppImage"
+          fi
+
       # Sign and notarize, so Gatekeeper lets a downloaded build open without
       # a right-click workaround. Ad-hoc signing plus curl setting no
       # quarantine flag meant Gatekeeper never looked at all -- an install path
@@ -520,6 +569,8 @@ jobs:
             dist/krate-*.${{ matrix.ext }}
             dist/krate-app-*.zip
             dist/krate-studio-*.dmg
+            dist/krate-studio-*.exe
+            dist/krate-studio-*.AppImage
           if-no-files-found: error
 
   publish:
@@ -561,6 +612,8 @@ jobs:
             dist/**/*.tar.gz
             dist/**/*.zip
             dist/**/*.dmg
+            dist/**/*.exe
+            dist/**/*.AppImage
             SHA256SUMS
           generate_release_notes: true
 

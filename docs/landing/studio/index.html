@@ -42,7 +42,7 @@
     and a few minutes later you have one small file that opens on Mac, Windows
     and Linux &mdash; and that you can send to anyone.</p>
     <div class="st2-cta reveal">
-      <a class="pill pill-primary" href="#get">Download for macOS</a>
+      <a class="pill pill-primary" href="#get" id="heroDl">Download</a>
       <a class="pill" href="/cloud/">See what people made</a>
     </div>
     <p class="st2-under reveal">Free &middot; works with the AI you already have</p>
@@ -114,19 +114,25 @@
   <div class="wrap st2-get-grid">
     <div class="st2-get-copy reveal">
       <h2>Download Krate</h2>
-      <p>One app that makes apps and opens them. Signed and notarised by
-      Apple &mdash; drag it to Applications and double-click.</p>
+      <p>One app that makes apps and opens them. The macOS build is signed
+      and notarised by Apple. Windows and Linux builds are newer and unsigned
+      for now, so expect a one-time SmartScreen prompt on Windows.</p>
     </div>
-    <div class="st2-get-cards reveal">
-      <a class="st2-dl" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
+    <div class="st2-get-cards reveal" id="dlCards">
+      <a class="st2-dl" data-os="mac" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
         <span class="st2-dl-icon">&#63743;</span>
         <span class="st2-dl-text"><b>macOS</b><span>Apple silicon and Intel &middot; one file</span></span>
         <span class="st2-dl-go">&darr;</span>
       </a>
-      <a class="st2-dl" href="https://github.com/incyashraj/krate/releases/latest">
+      <a class="st2-dl" data-os="win" data-dl="krate-studio|windows-x64-setup|exe" href="https://github.com/incyashraj/krate/releases/latest">
         <span class="st2-dl-icon">&#8862;</span>
-        <span class="st2-dl-text"><b>More downloads</b><span>Windows and Linux &middot; terminal builds</span></span>
-        <span class="st2-dl-go">&rarr;</span>
+        <span class="st2-dl-text"><b>Windows</b><span>Installer &middot; 64-bit</span></span>
+        <span class="st2-dl-go">&darr;</span>
+      </a>
+      <a class="st2-dl" data-os="linux" data-dl="krate-studio|linux-x86_64|AppImage" href="https://github.com/incyashraj/krate/releases/latest">
+        <span class="st2-dl-icon">&#128039;</span>
+        <span class="st2-dl-text"><b>Linux</b><span>AppImage &middot; x86_64</span></span>
+        <span class="st2-dl-go">&darr;</span>
       </a>
     </div>
   </div>
@@ -210,6 +216,23 @@
       items.forEach(function (el) { el.classList.add("in"); });
     }, 1400);
   }
+
+  /* Put the visitor's own system first and say so. Detection is a hint,
+     not a wall: every platform stays one click below. */
+  (function () {
+    var ua = navigator.userAgent;
+    var os = /Mac/i.test(ua) ? "mac" : /Win/i.test(ua) ? "win" : /Linux|X11/i.test(ua) ? "linux" : null;
+    var box = document.getElementById("dlCards");
+    if (!os || !box) return;
+    var mine = box.querySelector('[data-os="' + os + '"]');
+    if (!mine) return;
+    var hero = document.getElementById("heroDl");
+    if (hero) hero.textContent = "Download for " + mine.querySelector("b").textContent;
+    box.prepend(mine);
+    mine.classList.add("st2-dl-primary");
+    var label = mine.querySelector("b");
+    label.textContent = "Download for " + label.textContent;
+  })();
 
   var dls = document.querySelectorAll("[data-dl]");
   if (dls.length) {
