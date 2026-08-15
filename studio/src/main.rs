@@ -73,6 +73,43 @@ fn engine() -> Result<PathBuf, String> {
     Ok(PathBuf::from(name))
 }
 
+/// Seed the agent's isolated config dir from the person's real one.
+fn seed_agent_config(agent_home: &Path) {
+    let home = dirs_home();
+    // Settings minus project history.
+    if let Ok(text) = std::fs::read_to_string(home.join(".claude.json")) {
+        if let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&text) {
+            value["projects"] = serde_json::json!({});
+            let _ = std::fs::write(
+                agent_home.join(".claude.json"),
+                serde_json::to_string(&value).unwrap_or_default(),
+            );
+        }
+    }
+    // The credential: keychain first (macOS), else the file form.
+    let dest = agent_home.join(".credentials.json");
+    #[cfg(target_os = "macos")]
+    {
+        if let Ok(out) = Command::new("/usr/bin/security")
+            .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
+            .output()
+        {
+            if out.status.success() && !out.stdout.is_empty() {
+                let _ = std::fs::write(&dest, out.stdout.trim_ascii());
+                let _ = std::fs::set_permissions(
+                    &dest,
+                    { use std::os::unix::fs::PermissionsExt; std::fs::Permissions::from_mode(0o600) },
+                );
+            }
+        }
+    }
+    if !dest.exists() {
+        let _ = std::fs::copy(home.join(".claude/.credentials.json"), &dest);
+    }
+    // Empty history beats absent history: nothing to stat, nothing to miss.
+    let _ = std::fs::write(agent_home.join("history.jsonl"), "");
+}
+
 fn studio_dir() -> PathBuf {
     let dir = dirs_home().join(".krate").join("studio");
     let _ = std::fs::create_dir_all(dir.join("sessions"));
@@ -510,24 +547,31 @@ fn run_author(
         .stderr(Stdio::piped())
         .stdin(Stdio::null());
 
-    // The agent runs with the person's own configuration, deliberately.
+    // The agent gets an isolated config dir that CARRIES the person's
+    // credentials but NOT their history.
     //
-    // Two isolation attempts were tried and both broke sign-in, which is worse
-    // than the problem they solved:
+    // This is the fix for the Downloads/Documents prompts that kept coming
+    // back. The agent stats every project path in its config at startup, and
+    // the person's own config lists projects under guarded folders -- inside
+    // our process, so macOS names Krate in the prompt. Isolating the config
+    // dir stops that, but the first two attempts broke sign-in, and now the
+    // reason is measured: with CLAUDE_CONFIG_DIR set, the agent reads its
+    // credential from `.credentials.json` INSIDE that dir and ignores the
+    // keychain. So the seed has three parts, refreshed every spawn:
     //
-    // * `HOME` redirected: Claude Code could not resolve its credentials and
-    //   answered "Not logged in - Please run /login" on a signed-in machine.
-    // * `CLAUDE_CONFIG_DIR` redirected: the same, because the credentials live
-    //   in ~/.claude.json itself (`oauthAccount`), not only in the keychain.
-    //   Moving the config moves the sign-in with it.
-    //
-    // The Downloads prompt that started this is handled where it belongs: the
-    // child runs in our own scratch directory (above), so nothing it does
-    // reaches a guarded folder on its own. The agent reading its own history
-    // is the person's own tool reading the person's own file.
-    //
-    // USER is still set when the launcher did not: a Finder-launched app does
-    // not reliably have it, and Claude Code needs it to find its credentials.
+    //   1. `.claude.json`: the person's own, minus `projects` -- settings and
+    //      onboarding flags ride along, guarded paths do not.
+    //   2. `.credentials.json`: exported from the keychain straight to a
+    //      0600 file (or copied, where it already is a file). It never
+    //      transits anything but this machine's own disk.
+    //   3. an empty history, so there is nothing old to stat.
+    let agent_home = studio_dir().join("agent");
+    let _ = std::fs::create_dir_all(&agent_home);
+    seed_agent_config(&agent_home);
+    cmd.env("CLAUDE_CONFIG_DIR", &agent_home);
+
+    // USER, when the launcher did not set it: a Finder-launched app does not
+    // reliably have it, and the agent needs it to resolve its account.
     if std::env::var_os("USER").is_none() {
         if let Some(name) = dirs_home().file_name() {
             cmd.env("USER", name);

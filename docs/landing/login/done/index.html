@@ -13,10 +13,34 @@
 <main class="login-wrap">
   <div class="login-card">
     <img src="/krate-glyph-white.png" alt="" width="34" height="34" />
-    <h1>You're signed in</h1>
-    <p class="login-sub">You can close this tab. If you came from the Krate
-    app, it is already signed in.</p>
+    <h1 id="doneH">You're signed in</h1>
+    <p class="login-sub" id="doneSub">Your Krate account is ready.</p>
+    <a class="btn-login hidden" id="openApp" href="#">Open Krate</a>
   </div>
 </main>
+<script>
+// The sign-in lands here with the identity in the URL fragment, which never
+// leaves this browser. Coming from the desktop app (?app=1), hand it straight
+// to Krate through its URL scheme and say so; the button stays as the manual
+// path if the automatic hop is blocked.
+(function () {
+  var fromApp = new URLSearchParams(location.search).get("app") === "1";
+  var hash = location.hash.replace(/^#/, "");
+  if (fromApp && hash) {
+    var target = "krate://signed-in#" + hash;
+    document.getElementById("doneSub").textContent =
+      "All set. Krate on your desktop is signed in too; you can close this tab.";
+    var a = document.getElementById("openApp");
+    a.href = target;
+    a.classList.remove("hidden");
+    location.href = target;
+  } else {
+    document.getElementById("doneSub").textContent =
+      "All set. Open the Krate app on your desktop; it will show you signed in.";
+  }
+  // The token never belongs in history.
+  history.replaceState(null, "", location.pathname + location.search);
+})();
+</script>
 </body>
 </html>

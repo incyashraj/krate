@@ -409,10 +409,10 @@ function onEngineLine(line) {
 /* When the engine goes quiet -- an AI thinking is real silence -- the
  * heartbeat keeps beating with honest words, so quiet never looks dead. */
 const THINKING = [
-  "the AI is reading and thinking — this part is quiet",
-  "still working — the writing shows up here when it starts",
+  "the AI is reading and thinking - this part is quiet",
+  "still working - the writing shows up here when it starts",
   "big thoughts take a minute or two",
-  "still at it — nothing is stuck",
+  "still at it - nothing is stuck",
 ];
 
 function fillDone(result, opts) {
@@ -468,7 +468,7 @@ function finishBuild(result) {
   state.session.result = result;
   fillDone(result, { reveal: true });
   const mins = Math.round((Date.now() - state.startedAt) / 60000);
-  say("KRATE", `Done — ${result.name}, ${result.size}${mins ? `, ${mins} min` : ""}. ` +
+  say("KRATE", `Done - ${result.name}, ${result.size}${mins ? `, ${mins} min` : ""}. ` +
     `Open it on the right, or tell me what to change.`);
   show("done");
   setRevisePlaceholders();
@@ -528,7 +528,7 @@ async function make(request) {
   $("prompt").value = "";
   // The composer stays live during a build so a thought can be queued
   // rather than lost.
-  $("prompt").placeholder = "Add a change — it runs when this finishes…";
+  $("prompt").placeholder = "Add a change - it runs when this finishes…";
 
   state.buildingSession = state.session;
   const revising = Boolean(currentApp());
@@ -1307,7 +1307,7 @@ function submitInSession() {
     state.queued = text;
     $("prompt").value = "";
     say("YOU", text);
-    say("KRATE", "Noted — I'll do that as soon as this one is finished.");
+    say("KRATE", "Noted - I'll do that as soon as this one is finished.");
     $("composerHint").textContent = "queued · runs when this build finishes";
     return;
   }
@@ -1422,6 +1422,9 @@ $("changeDirBtn").addEventListener("click", async () => {
 $("logoutBtn").addEventListener("click", async () => {
   await invoke("account_logout");
   state.account = null;
+  // The button lives on the ACCOUNT sheet; hiding only the settings sheet
+  // left the popup floating over the sign-in gate after sign-out.
+  $("accountSheet").classList.add("hidden");
   $("settingsSheet").classList.add("hidden");
   $("gateStart").classList.remove("hidden");
   $("gateCode").classList.add("hidden");

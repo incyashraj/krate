@@ -47,6 +47,18 @@ export default {
       if (request.method === "GET" && pathname === "/login/callback") {
         return loginCallback(url, env);
       }
+      if (request.method === "GET" && pathname === "/login/google/start") {
+        return googleStart(url, env);
+      }
+      if (request.method === "GET" && pathname === "/login/google/callback") {
+        return googleCallback(url, env);
+      }
+      if (request.method === "POST" && pathname === "/login/email") {
+        return emailStart(request, env);
+      }
+      if (request.method === "GET" && pathname === "/login/email/verify") {
+        return emailVerify(url, env);
+      }
       if (request.method === "POST" && pathname === "/auth/start") {
         return cors(await authStart(env));
       }
@@ -615,6 +627,164 @@ async function stats(env) {
 
 const GITHUB_CLIENT_ID = "Ov23liV2n8Dxi0okyv0F";
 
+// ------------------------------------------------------------------ accounts
+//
+// A user is one KV record; each way of proving who you are (GitHub, Google,
+// an email you can read) maps to it through an `ident:` key, so signing in
+// with a second provider later lands on the same account when the email
+// matches. A session is a `krs_` token with a 90-day TTL; the engine sends it
+// as a bearer exactly like a GitHub token, and verifyIdentity below accepts
+// either, so nothing published under the old flow breaks.
+
+async function ensureUser(env, provider, stableId, profile) {
+  const identKey = `ident:${provider}:${stableId}`;
+  let userId = await env.APPS.get(identKey);
+  if (!userId && profile.email) {
+    // Same inbox, same person: unify across providers by verified email.
+    userId = await env.APPS.get(`ident:email:${profile.email.toLowerCase()}`);
+  }
+  if (!userId) {
+    userId = crypto.randomUUID();
+    await env.APPS.put(`user:${userId}`, JSON.stringify({
+      id: userId,
+      created: Date.now(),
+      name: profile.name || "",
+      login: profile.login || (profile.email ? profile.email.split("@")[0] : ""),
+      email: profile.email || "",
+      avatar_url: profile.avatar_url || "",
+      providers: [provider],
+    }));
+  } else {
+    const record = JSON.parse((await env.APPS.get(`user:${userId}`)) || "{}");
+    if (!(record.providers || []).includes(provider)) {
+      record.providers = [...(record.providers || []), provider];
+    }
+    record.name = record.name || profile.name || "";
+    record.avatar_url = record.avatar_url || profile.avatar_url || "";
+    record.email = record.email || profile.email || "";
+    await env.APPS.put(`user:${userId}`, JSON.stringify(record));
+  }
+  await env.APPS.put(identKey, userId);
+  if (profile.email) {
+    await env.APPS.put(`ident:email:${profile.email.toLowerCase()}`, userId);
+  }
+  return JSON.parse(await env.APPS.get(`user:${userId}`));
+}
+
+async function newSession(env, userId) {
+  const token = `krs_${crypto.randomUUID().replaceAll("-", "")}`;
+  await env.APPS.put(`session:${token}`, userId, { expirationTtl: 90 * 24 * 3600 });
+  return token;
+}
+
+/// Deliver a finished sign-in to wherever it started. Everything rides in
+/// the fragment, which never leaves the browser.
+function deliver(from, user, token) {
+  const hand = new URLSearchParams({
+    token,
+    login: user.login || "",
+    name: user.name || "",
+    avatar_url: user.avatar_url || "",
+  });
+  const suffix = from === "app" ? "?app=1" : "";
+  return Response.redirect(`https://krate.tech/login/done/${suffix}#${hand.toString()}`, 302);
+}
+
+// ------------------------------------------------------------------- google
+
+async function googleStart(url, env) {
+  if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
+    return text("Google sign-in is not configured on this hub yet.", 503);
+  }
+  const from = url.searchParams.get("from") === "app" ? "app" : "web";
+  const state = crypto.randomUUID();
+  await env.APPS.put(`login:${state}`, from, { expirationTtl: 600 });
+  const auth = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  auth.searchParams.set("client_id", env.GOOGLE_CLIENT_ID);
+  auth.searchParams.set("redirect_uri", `${env.PUBLIC_BASE}/login/google/callback`);
+  auth.searchParams.set("response_type", "code");
+  auth.searchParams.set("scope", "openid email profile");
+  auth.searchParams.set("state", state);
+  return Response.redirect(auth.toString(), 302);
+}
+
+async function googleCallback(url, env) {
+  const state = url.searchParams.get("state") || "";
+  const from = await env.APPS.get(`login:${state}`);
+  if (!from) return text("This sign-in link expired. Start again from krate.tech/login.", 400);
+  await env.APPS.delete(`login:${state}`);
+  const exchange = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: env.GOOGLE_CLIENT_ID,
+      client_secret: env.GOOGLE_CLIENT_SECRET,
+      code: url.searchParams.get("code") || "",
+      grant_type: "authorization_code",
+      redirect_uri: `${env.PUBLIC_BASE}/login/google/callback`,
+    }),
+  });
+  const result = await exchange.json();
+  if (!result.id_token) return text("Google did not complete the sign-in. Try again.", 502);
+  // tokeninfo validates the signature and audience for us.
+  const info = await fetch(
+    `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(result.id_token)}`,
+  );
+  if (!info.ok) return text("Google's answer could not be verified.", 502);
+  const claims = await info.json();
+  if (claims.aud !== env.GOOGLE_CLIENT_ID) return text("Wrong audience.", 400);
+  const user = await ensureUser(env, "google", claims.sub, {
+    email: claims.email,
+    name: claims.name,
+    avatar_url: claims.picture,
+  });
+  return deliver(from, user, await newSession(env, user.id));
+}
+
+// -------------------------------------------------------------------- email
+
+async function emailStart(request, env) {
+  if (!env.RESEND_API_KEY) {
+    return text("Email sign-in is not configured on this hub yet.", 503);
+  }
+  const { email, from } = await request.json().catch(() => ({}));
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return text("That does not look like an email address.", 400);
+  }
+  const token = crypto.randomUUID().replaceAll("-", "");
+  await env.APPS.put(
+    `email:${token}`,
+    JSON.stringify({ email: email.toLowerCase(), from: from === "app" ? "app" : "web" }),
+    { expirationTtl: 900 },
+  );
+  const link = `${env.PUBLIC_BASE}/login/email/verify?t=${token}`;
+  const sent = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "Krate <login@krate.tech>",
+      to: [email],
+      subject: "Sign in to Krate",
+      text: `Click to sign in to Krate:\n\n${link}\n\nThe link works once and expires in 15 minutes. If you did not ask for this, ignore it.`,
+    }),
+  });
+  if (!sent.ok) return text("The sign-in email could not be sent. Try again.", 502);
+  return json({ sent: true });
+}
+
+async function emailVerify(url, env) {
+  const token = url.searchParams.get("t") || "";
+  const stored = await env.APPS.get(`email:${token}`);
+  if (!stored) return text("This sign-in link expired or was already used.", 400);
+  await env.APPS.delete(`email:${token}`);
+  const { email, from } = JSON.parse(stored);
+  const user = await ensureUser(env, "email", email, { email });
+  return deliver(from, user, await newSession(env, user.id));
+}
+
 // --------------------------------------------------------------- web sign-in
 //
 // The browser flow behind krate.tech/login. The device flow above stays for
@@ -678,18 +848,17 @@ async function loginCallback(url, env) {
   if (!user.ok) return text("Signed in, but the profile could not be read.", 502);
   const profile = await user.json();
 
-  if (from === "app") {
-    // The identity rides in the URL FRAGMENT, which browsers do not send in
-    // requests, so it cannot land in anyone's access logs.
-    const hand = new URLSearchParams({
-      token: result.access_token,
-      login: profile.login,
-      name: profile.name || "",
-      avatar_url: profile.avatar_url || "",
-    });
-    return Response.redirect(`krate://signed-in#${hand.toString()}`, 302);
-  }
-  return Response.redirect("https://krate.tech/login/done/", 302);
+  const account = await ensureUser(env, "github", String(profile.id), {
+    login: profile.login,
+    name: profile.name || "",
+    avatar_url: profile.avatar_url || "",
+    email: (profile.email || "").toLowerCase() || undefined,
+  });
+  // The GitHub token itself is handed over (not a krs_ session): the engine
+  // already publishes with it and the hub already verifies it. The account
+  // record exists either way, so a later Google or email sign-in with the
+  // same address lands on this same user.
+  return deliver(from, { ...account, login: profile.login }, result.access_token);
 }
 
 async function authStart(env) {
@@ -754,6 +923,15 @@ async function verifyGitHub(request, env) {
   const auth = request.headers.get("authorization") || "";
   const token = auth.replace(/^Bearer\s+/i, "").trim();
   if (!token) return null;
+
+  // A Krate session (Google or email sign-in) is as good as a GitHub token.
+  if (token.startsWith("krs_")) {
+    const userId = await env.APPS.get(`session:${token}`);
+    if (!userId) return null;
+    const record = JSON.parse((await env.APPS.get(`user:${userId}`)) || "null");
+    if (!record) return null;
+    return { login: record.login, name: record.name, avatar_url: record.avatar_url };
+  }
 
   const cacheKey = `token:${await sha256Hex(new TextEncoder().encode(token))}`;
   const cached = await env.APPS.get(cacheKey);

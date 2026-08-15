@@ -93,7 +93,7 @@
     </nav>
 
     <div class="head-cta">
-      <a class="pill pill-primary" href="#install">Install</a>
+      <a class="pill pill-primary" href="#get-krate">Install</a>
     </div>
   </div>
 </header>
@@ -390,7 +390,7 @@
 </section>
 
 <!-- ================================================================== band -->
-<section class="band">
+<section class="band" id="get-krate">
   <div class="wrap">
     <div class="band-card reveal">
       <div>
@@ -430,20 +430,14 @@
       rough edges and tell us about them.</p>
 
       <div class="dl-grid">
-        <a class="dl" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
+        <a class="dl" data-os="mac" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
           <b>macOS</b><span>One file, every Mac</span>
         </a>
-        <a class="dl" data-dl="krate|x86_64-pc-windows-msvc|zip" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>Windows</b><span>Intel / AMD</span>
+        <a class="dl" data-os="win" data-dl="krate-studio|windows-x64-setup|exe" href="https://github.com/incyashraj/krate/releases/latest">
+          <b>Windows</b><span>Installer, 64-bit</span>
         </a>
-        <a class="dl" data-dl="krate|aarch64-pc-windows-msvc|zip" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>Windows</b><span>ARM</span>
-        </a>
-        <a class="dl" data-dl="krate|x86_64-unknown-linux-gnu|tar.gz" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>Linux</b><span>Intel / AMD</span>
-        </a>
-        <a class="dl" data-dl="krate|aarch64-unknown-linux-gnu|tar.gz" href="https://github.com/incyashraj/krate/releases/latest">
-          <b>Linux</b><span>ARM</span>
+        <a class="dl" data-os="linux" data-dl="krate-studio|linux-x86_64|AppImage" href="https://github.com/incyashraj/krate/releases/latest">
+          <b>Linux</b><span>AppImage, x86_64</span>
         </a>
       </div>
 
@@ -698,25 +692,43 @@
      silently 404s the day after a release. Each link starts pointing at the
      releases page -- correct, if less direct -- and is upgraded to the exact
      file once the tag is known. A failed lookup leaves the safe link alone. */
+  /* The visitor's own system first, said plainly. */
+  (function () {
+    var ua = navigator.userAgent;
+    var os = /Mac/i.test(ua) ? "mac" : /Win/i.test(ua) ? "win" : /Linux|X11/i.test(ua) ? "linux" : null;
+    var mine = os && document.querySelector('.dl-grid [data-os="' + os + '"]');
+    if (mine) {
+      mine.parentNode.prepend(mine);
+      var b = mine.querySelector("b");
+      b.textContent = "Download for " + b.textContent;
+    }
+  })();
+
   var dls = document.querySelectorAll("[data-dl]");
   if (dls.length) {
     fetch("https://api.github.com/repos/incyashraj/krate/releases/latest")
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (rel) {
-        if (!rel || !rel.tag_name) return;
+        if (!rel || !rel.assets) return;
+        var names = rel.assets.map(function (a) { return a.name; });
         var version = rel.tag_name.replace(/^v/, "");
         dls.forEach(function (a) {
-          var parts = a.dataset.dl.split("|");
-          var file = parts[1] === "universal"
-            ? parts[0] + "-" + version + "-universal." + parts[2]
-            : parts[0] + "-" + version + "-" + parts[1] + "." + parts[2];
-          a.href = "https://github.com/incyashraj/krate/releases/download/" +
-            rel.tag_name + "/" + file;
+          var p = a.dataset.dl.split("|");
+          var file = p[1] === "universal"
+            ? p[0] + "-" + version + "-universal." + p[2]
+            : p[0] + "-" + version + "-" + p[1] + "." + p[2];
+          if (names.indexOf(file) !== -1) {
+            a.href = "https://github.com/incyashraj/krate/releases/download/" +
+              rel.tag_name + "/" + file;
+          } else {
+            a.classList.add("dl-soon");
+            a.querySelector("span").textContent += " (coming)";
+          }
         });
         var foot = document.getElementById("dlFoot");
         if (foot) foot.dataset.version = version;
       })
-      .catch(function () { /* the releases-page links still work */ });
+      .catch(function () {});
   }
 })();
 </script>
