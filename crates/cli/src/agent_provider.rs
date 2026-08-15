@@ -336,6 +336,8 @@ fn extra_tool_dirs() -> Vec<std::path::PathBuf> {
         dirs.push(home.join(".cargo/bin"));
         // Where Claude Code and many single-binary installers land.
         dirs.push(home.join(".local/bin"));
+        // Grok's installer puts its agent here on every OS.
+        dirs.push(home.join(".grok/bin"));
         dirs.push(home.join("bin"));
         dirs.push(home.join(".bun/bin"));
         dirs.push(home.join(".volta/bin"));
@@ -363,6 +365,31 @@ fn extra_tool_dirs() -> Vec<std::path::PathBuf> {
     dirs
 }
 
+/// Keep a spawned child's console window off the screen when this process
+/// has no console of its own.
+///
+/// A GUI-launched engine has none: the studio spawns it hidden, and a
+/// double-clicked engine detaches the console it solely owns. From that
+/// state, spawning a console-subsystem child makes Windows mint a brand-new
+/// terminal window right on screen -- seen as agent windows popping up over
+/// the studio after every probe, each one stealing focus and so triggering
+/// the studio's on-focus re-probe into the next popup. With a real terminal
+/// attached this does nothing, so CLI runs keep ordinary console behavior.
+pub fn hide_child_console(command: &mut ProcessCommand) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let attached = unsafe { windows_sys::Win32::System::Console::GetConsoleWindow() };
+        if attached.is_null() {
+            command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = command;
+    }
+}
+
 /// Give a spawned tool a PATH that includes where tools actually live.
 ///
 /// Finding the binary is only half of it. These CLIs shell out to `node`, to
@@ -375,6 +402,7 @@ fn extra_tool_dirs() -> Vec<std::path::PathBuf> {
 /// Existing PATH entries keep their priority; the extra directories are
 /// appended.
 pub fn with_tool_path(command: &mut ProcessCommand) {
+    hide_child_console(command);
     let existing = std::env::var_os("PATH").unwrap_or_default();
     let dirs = std::env::split_paths(&existing)
         .chain(extra_tool_dirs())

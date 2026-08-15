@@ -702,6 +702,19 @@ fn agent_author_command(provider: &dyn agent_provider::AgentProvider) -> String 
     format!("{} author-agent {}", shell_quote(&exe), provider.name())
 }
 
+/// The provider name if `cmd` is exactly the self-invocation
+/// `agent_author_command` builds, and nothing else.
+fn self_author_agent(cmd: &str) -> Option<&str> {
+    let exe = std::env::current_exe().ok()?;
+    let prefix = format!("{} author-agent ", shell_quote(exe.to_str()?));
+    let name = cmd.strip_prefix(&prefix)?;
+    (!name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+    .then_some(name)
+}
+
 /// Resolve `--agent <name>` to a provider, and check its CLI is actually here.
 ///
 /// Both failures are answered with the fix rather than the symptom: an unknown
@@ -4450,7 +4463,13 @@ fn run_provider_author(
     let starter_lib = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
     let file = fs::File::create(&transcript).ok();
 
-    let mut command = ProcessCommand::new(provider.program());
+    // Resolve to a full path the same way the readiness probe does, so an
+    // agent that lives off PATH (Grok in ~/.grok/bin, launched from a GUI)
+    // is found here exactly when the probe said it would be.
+    let program = agent_provider::which_on_path(provider.program())
+        .unwrap_or_else(|| PathBuf::from(provider.program()));
+    let mut command = ProcessCommand::new(program);
+    agent_provider::with_tool_path(&mut command);
     command.args(provider.author_args(&prompt));
     // Provider-specific spawn setup: closing stdin so a headless run never
     // blocks on input, plus anything else that provider needs.
@@ -5307,8 +5326,23 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
         authoring_context::generate(ctx.app_dir),
     )?;
 
-    let shell = author_shell();
-    let mut command = std::process::Command::new(shell);
+    // The command Krate builds for a known provider is this binary calling
+    // itself -- `'<exe>' author-agent <name>` -- and needs no shell at all.
+    // Spawning it directly matters on Windows, where the shell run needs a
+    // POSIX bash that plain machines do not have: the probe found the agent,
+    // the studio's chip showed green, and create then died with "program not
+    // found" trying to start bash. Only a hand-written --author-cmd, which
+    // may be an arbitrary pipeline, still goes through a shell.
+    let mut command = if let Some(agent) = self_author_agent(ctx.cmd) {
+        let exe = std::env::current_exe().context("find this binary to drive the agent")?;
+        let mut direct = std::process::Command::new(exe);
+        direct.arg("author-agent").arg(agent);
+        direct
+    } else {
+        let mut through_shell = std::process::Command::new(author_shell());
+        through_shell.arg("-c").arg(ctx.cmd);
+        through_shell
+    };
     // The same environment repair the readiness probe uses.
     //
     // Detecting the tool and running it have to agree: an app launched from
@@ -5317,8 +5351,6 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
     // studio could report an AI as working and then fail to author with it.
     agent_provider::with_tool_path(&mut command);
     command
-        .arg("-c")
-        .arg(ctx.cmd)
         .env("KRATE_APP_DIR", ctx.app_dir)
         .env("KRATE_APP_NAME", ctx.name)
         .env("KRATE_REQUEST", ctx.request)
@@ -9845,9 +9877,12 @@ fn freshly_visible_path_entries() -> Vec<String> {
             "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment",
         ),
     ] {
-        let output = ProcessCommand::new("reg")
-            .args(["query", &format!("{root}\\{key}"), "/v", "Path"])
-            .output();
+        let mut reg = ProcessCommand::new("reg");
+        reg.args(["query", &format!("{root}\\{key}"), "/v", "Path"]);
+        // reg.exe is a console program; without this, a GUI-launched engine
+        // flashes a terminal window for every registry read.
+        agent_provider::hide_child_console(&mut reg);
+        let output = reg.output();
         if let Ok(output) = output {
             if let Some(value) = parse_reg_path_value(&String::from_utf8_lossy(&output.stdout)) {
                 for entry in value.split(';').filter(|e| !e.trim().is_empty()) {
@@ -11035,6 +11070,18 @@ mod create_tests {
         assert_eq!(err.to_string(), "run --author-cmd");
         let shown = format!("{err:#}");
         assert!(shown.contains("program not found"), "{shown}");
+    }
+
+    /// The command built for a provider must be recognized as our own
+    /// self-invocation, so authoring can skip the shell -- on Windows the
+    /// shell means bash, and plain machines have none.
+    #[test]
+    fn provider_author_commands_are_recognized_as_self() {
+        let provider = crate::agent_provider::resolve("grok").expect("grok is a known provider");
+        let cmd = crate::agent_author_command(provider);
+        assert_eq!(crate::self_author_agent(&cmd), Some("grok"));
+        // A hand-written command must keep going through the shell.
+        assert_eq!(crate::self_author_agent("mytool --write-app"), None);
     }
 
     #[test]
