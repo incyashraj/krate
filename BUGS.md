@@ -3676,6 +3676,27 @@ Fix:      Teach it once: a pack section + example showing a pixel-offset
           drag), with the first visible line derived from the offset rather
           than the offset from the line.
 
+### K-117 -- Apps cannot paint the title bar area, so full-bleed designs are impossible
+Status:   open
+Owner:    unclaimed
+Severity: major
+Class:    runtime-hole
+Found:    2026-08-16, replicating MarkText pixel-for-pixel as a Krate app
+          for the first head-to-head benchmark.
+Evidence: MarkText's window is one flat #282828 surface to the very top
+          edge, traffic lights overlaid (titleBarStyle overlay). The Krate
+          replica gets a standard macOS title bar band above its content --
+          the one visible difference no app code can remove, because the
+          window API offers no full-bleed or hidden-title style. Every
+          modern editor, terminal and browser uses this style; apps that
+          cannot will always look one generation older.
+Fix:      A window style option in the ui.window interface (full-bleed /
+          hidden title with overlay controls), honored by the macOS
+          adapter (titlebarAppearsTransparent + fullSizeContentView), the
+          Windows adapter (extend client area into the frame), and Linux
+          (CSD). Until then the studio's own chrome does on the shell what
+          apps cannot do for themselves.
+
 ### K-116 -- A machine with no real GPU crashed apps instead of falling back
 Status:   fixed
 Owner:    lead
