@@ -702,6 +702,13 @@ fn agent_author_command(provider: &dyn agent_provider::AgentProvider) -> String 
     format!("{} author-agent {}", shell_quote(&exe), provider.name())
 }
 
+/// Whether the given work dir is an existing app's source that a change
+/// should be authored directly inside -- as opposed to a plain workspace
+/// that gets a fresh named subdirectory.
+pub(crate) fn is_existing_app_workspace(dir: &Path, is_change: bool) -> bool {
+    is_change && dir.join("src").join("lib.rs").is_file()
+}
+
 /// The provider name if `cmd` is exactly the self-invocation
 /// `agent_author_command` builds, and nothing else.
 fn self_author_agent(cmd: &str) -> Option<&str> {
@@ -2966,7 +2973,15 @@ fn revise_cli(
                 .map(|entry| entry.request)
                 .unwrap_or_default();
             let request = if original.is_empty() {
-                change.to_string()
+                // Never rebuild from the change sentence alone: "change the
+                // controls" as the whole request produces a stranger app
+                // that silently replaces the person's own. Refusing with the
+                // way forward is the only honest answer left.
+                anyhow::bail!(
+                    "this app has no source inside it (it was made by an older Krate), \
+                     so it cannot be changed faithfully. Describe the whole app again \
+                     -- with the change included -- to make a fresh one."
+                );
             } else {
                 println!("==> no source inside this app; rebuilding from the original request plus the change");
                 format!("{original}. Then: {change}")
@@ -3908,11 +3923,20 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
 
     // The app is built inside a work dir. A temp dir is cleaned up on
     // success; --work-dir keeps it for inspection either way.
+    //
+    // For a CHANGE, the work dir is the app's own unpacked source and the
+    // agent must be put directly in it (see is_existing_app_workspace).
+    // Joining a name inferred from the change text used to put the agent in
+    // an empty directory BESIDE the app; the never-produced-source wipe then
+    // handed it a fresh skeleton, and "change the controls" of a finished
+    // game rebuilt a generic app from that one sentence. The person watched
+    // their app get replaced by a stranger.
     let mut keeper = WorkspaceKeeper {
         temp: None,
         armed: true,
     };
     let app_dir = match &req.work_dir {
+        Some(dir) if is_existing_app_workspace(dir, is_change) => dir.clone(),
         Some(dir) => {
             fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
             dir.join(&name)
@@ -11077,6 +11101,24 @@ mod create_tests {
         assert_eq!(err.to_string(), "run --author-cmd");
         let shown = format!("{err:#}");
         assert!(shown.contains("program not found"), "{shown}");
+    }
+
+    /// A change must be authored inside the app's own unpacked source, never
+    /// in a fresh subdirectory named after the change text -- that is how
+    /// "change the controls" once replaced a finished game with a generic
+    /// app built from the change sentence alone.
+    #[test]
+    fn changes_land_in_the_apps_own_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // A plain workspace: never adopted, change or not.
+        assert!(!crate::is_existing_app_workspace(root, true));
+        assert!(!crate::is_existing_app_workspace(root, false));
+        // An unpacked app: adopted exactly when the request is a change.
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("src/lib.rs"), "// the app").unwrap();
+        assert!(crate::is_existing_app_workspace(root, true));
+        assert!(!crate::is_existing_app_workspace(root, false));
     }
 
     /// The command built for a provider must be recognized as our own
