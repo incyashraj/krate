@@ -3676,6 +3676,30 @@ Fix:      Teach it once: a pack section + example showing a pixel-offset
           drag), with the first visible line derived from the offset rather
           than the offset from the line.
 
+### K-116 -- A machine with no real GPU crashed apps instead of falling back
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-16, automated v0.1.30 test on the Azure Windows VM
+          (Hyper-V Video, no GPU), first windowed run of a canvas game.
+Evidence: wgpu offered WARP -- "Microsoft Basic Render Driver (Dx12, Cpu)"
+          -- as an adapter, the presenter took the GPU path, swapchain
+          creation failed with DXGI 0x887A0022, and wgpu's DEFAULT
+          uncaptured-error handler panicked the process:
+          "thread 'main' panicked ... wgpu error: Validation Error".
+          The plan's acceptance line "the fallback stays green on machines
+          with no usable GPU" is exactly what failed: wgpu reports most
+          failures asynchronously, so the render path's Result was never
+          the whole story.
+Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
+          is declined up front -- WARP rasterizes on the CPU behind a DX12
+          mask, slower than our own CPU painter -- and every device gets an
+          on_uncaptured_error handler that records the failure instead of
+          aborting, retiring that window to the CPU painter on the next
+          frame.
+Status:   fixed
+
 ## Fixed
 
 ### K-113 — "Change my app" replaced it with a stranger

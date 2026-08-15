@@ -97,6 +97,12 @@ pub struct WindowPresenter {
     target: Option<(wgpu::TextureView, u32, u32)>,
     cache: SceneCache,
     stats: FrameStats,
+    /// Set by the device's uncaptured-error handler. wgpu delivers most
+    /// failures (swapchain creation included) asynchronously, and its
+    /// DEFAULT handler panics the process -- which is how "no usable GPU"
+    /// crashed an app on a GPU-less VM instead of falling back to the CPU
+    /// painter. Checked after every render; sets the path to retire.
+    device_failed: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl WindowPresenter {
@@ -110,17 +116,35 @@ impl WindowPresenter {
             ..Default::default()
         }))
         .map_err(|e| format!("adapter: {e}"))?;
+        // A software adapter is not a GPU. WARP and friends rasterize on the
+        // CPU behind a DX12 mask -- slower than our own CPU painter, and on a
+        // session with no display their swapchain creation fails anyway.
+        // Declining here is what routes GPU-less machines to the fallback.
+        let info = adapter.get_info();
+        if info.device_type == wgpu::DeviceType::Cpu {
+            return Err(format!("{} is a software adapter", info.name));
+        }
         let (device, queue) =
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
                 .map_err(|e| format!("device: {e}"))?;
         // One line of truth per window: which silicon and driver stack is
         // actually drawing. "The game lags" debugging starts by knowing
         // whether this ran on the GPU at all, and on which one.
-        let info = adapter.get_info();
         eprintln!(
             "krate: GPU presenter on {} ({:?}, {:?})",
             info.name, info.backend, info.device_type
         );
+        // Route async errors into a flag instead of wgpu's default handler,
+        // which aborts the process. Any recorded failure retires this window
+        // to the CPU painter on the next frame.
+        let device_failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        {
+            let flag = std::sync::Arc::clone(&device_failed);
+            device.on_uncaptured_error(std::sync::Arc::new(move |err| {
+                eprintln!("krate: GPU device error, retiring to CPU painter: {err}");
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            }));
+        }
         let caps = surface.get_capabilities(&adapter);
         let surface_format = caps
             .formats
@@ -148,6 +172,7 @@ impl WindowPresenter {
             target: None,
             cache: SceneCache::new(),
             stats: FrameStats::new(),
+            device_failed,
         })
     }
 
@@ -169,6 +194,15 @@ impl WindowPresenter {
         let started = Instant::now();
         if width == 0 || height == 0 {
             return Ok(());
+        }
+        // A device error recorded asynchronously since the last frame --
+        // swapchain refused, validation failure, device lost -- means this
+        // window's GPU path is over. Err retires it to the CPU painter.
+        if self
+            .device_failed
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return Err("GPU device reported an error".to_string());
         }
         if self.configured != (width, height) {
             self.surface.configure(
