@@ -619,10 +619,13 @@ function plainWords(err) {
   if (/already being made/i.test(text)) return text;
   if (/no AI|not installed|unknown AI provider/i.test(text))
     return "No AI is connected yet. Open the AI menu at the top to set one up.";
-  if (/sign ?in|auth|logged/i.test(text)) return "Your AI needs signing in. Click its name at the top for the fix.";
-  if (/quota|rate.?limit/i.test(text)) return "Your AI is out of quota right now. It usually comes back within the hour.";
-  if (/network|offline|dns|connect/i.test(text)) return "The internet connection dropped mid-build.";
+  // Specific before general: a rustup install log mentions authentication
+  // incidentally, and matching the sign-in guess first told a person with a
+  // PATH problem to go sign in -- a wrong door with a confident sign on it.
   if (/toolchain|rustup|cargo/i.test(text)) return "The build tools aren't set up yet. Trying again lets Krate install them.";
+  if (/quota|rate.?limit/i.test(text)) return "Your AI is out of quota right now. It usually comes back within the hour.";
+  if (/sign ?in|auth|logged/i.test(text)) return "Your AI needs signing in. Click its name at the top for the fix.";
+  if (/network|offline|dns|connect/i.test(text)) return "The internet connection dropped mid-build.";
   return "Something in the build went wrong. Trying again usually works; your words are kept.";
 }
 

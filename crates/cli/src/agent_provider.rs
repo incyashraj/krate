@@ -328,6 +328,12 @@ fn extra_tool_dirs() -> Vec<std::path::PathBuf> {
 
     let mut dirs = Vec::new();
     if let Some(home) = crate::home_dir() {
+        // The Rust toolchain: authoring BUILDS the app, and a GUI-launched
+        // engine saw no cargo, decided the machine had no compiler, and set
+        // off installing one -- with an error tail the studio misread as a
+        // sign-in problem. Terminals never hit this because shells carry
+        // ~/.cargo/bin.
+        dirs.push(home.join(".cargo/bin"));
         // Where Claude Code and many single-binary installers land.
         dirs.push(home.join(".local/bin"));
         dirs.push(home.join("bin"));

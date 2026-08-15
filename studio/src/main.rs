@@ -648,6 +648,7 @@ fn run_author(
         let existing = std::env::var_os("PATH").unwrap_or_default();
         let mut dirs: Vec<PathBuf> = std::env::split_paths(&existing).collect();
         let home = dirs_home();
+        dirs.push(home.join(".cargo/bin"));
         dirs.push(home.join(".local/bin"));
         dirs.push(home.join("bin"));
         dirs.push(home.join(".bun/bin"));
