@@ -9537,7 +9537,37 @@ fn preflight_toolchain(assume_yes: bool, no_install: bool) -> Result<()> {
     for tool in &missing {
         eprintln!("==> installing {}", tool.what);
         eprintln!("    {}", install_command_line(&tool.install_cmd));
-        run_install_command(&tool.install_cmd).with_context(|| format!("install {}", tool.what))?;
+        let installed = run_install_command(&tool.install_cmd)
+            .with_context(|| format!("install {}", tool.what));
+        #[cfg(windows)]
+        let installed = installed.or_else(|winget_err| {
+            // winget is Windows 11's package manager, but store policies,
+            // enterprise images, and first-run agreement prompts all make it
+            // fail on machines that are otherwise fine. rustup publishes a
+            // plain installer exe; download it ourselves and run it silently.
+            if tool.what != "Rust (cargo)" {
+                return Err(winget_err);
+            }
+            eprintln!("    winget could not install it; fetching rustup directly");
+            let dest = std::env::temp_dir().join("krate-rustup-init.exe");
+            let response = ureq::get("https://win.rustup.rs/x86_64")
+                .timeout(std::time::Duration::from_secs(120))
+                .call()
+                .context("downloading rustup-init.exe")?;
+            let mut bytes = Vec::new();
+            std::io::Read::read_to_end(&mut response.into_reader(), &mut bytes)?;
+            fs::write(&dest, &bytes)?;
+            let status = std::process::Command::new(&dest)
+                .args(["-y", "--no-modify-path", "--default-toolchain", "stable"])
+                .status()
+                .context("running rustup-init.exe")?;
+            if status.success() {
+                Ok(())
+            } else {
+                bail!("rustup-init.exe exited with {status}")
+            }
+        });
+        installed?;
     }
 
     // Re-check: installing rustup does not put cargo on the current PATH, and a

@@ -502,6 +502,11 @@ function failBuild(why, request) {
   } else {
     $("failTitle").textContent = "That one didn't come together.";
     $("failWhy").textContent = why;
+    // The raw engine tail rides under the plain-words line. Two screenshots
+    // in a row said "needs signing in" for a PATH problem and a toolchain
+    // problem; a failure screen that hides its evidence costs a debugging
+    // round trip per bug.
+    $("failRaw").textContent = String(state.lastError || "").slice(-400);
     say("KRATE", "that build didn't come together");
   }
   show("failed");
@@ -570,6 +575,7 @@ async function make(request) {
         });
     finishBuild(result);
   } catch (err) {
+    state.lastError = String(err);
     failBuild(plainWords(err), request);
   } finally {
     state.buildingSession = null;
