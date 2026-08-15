@@ -136,6 +136,16 @@ function onLoginStep(step) {
     $("gateStart").classList.add("hidden");
     $("gateCode").classList.remove("hidden");
     $("gateCodeValue").textContent = step.code;
+    // One click puts the code on the clipboard: on Windows the code was
+    // half-buried and not selectable, and eight characters you cannot copy
+    // is eight chances to mistype.
+    $("gateCodeValue").onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(step.code);
+        $("gateCodeValue").classList.add("copied");
+        setTimeout(() => $("gateCodeValue").classList.remove("copied"), 1200);
+      } catch {}
+    };
     $("gateUrl").textContent = step.url;
   } else if (step.step === "done") {
     state.account = { signed_in: true, login: step.login, name: step.name, avatar_url: step.avatar_url };
@@ -621,8 +631,13 @@ function plainWords(err) {
 async function refreshAgents() {
   try {
     state.agents = await invoke("agents");
+    state.agentsError = null;
   } catch (err) {
-    setChips("bad", "engine not found", String(err));
+    // The full error rides on the chip's tooltip AND into the AI sheet, so
+    // "engine not found" on someone else's machine is diagnosable from a
+    // screenshot instead of a guessing round.
+    state.agentsError = String(err);
+    setChips("bad", "engine trouble", String(err));
     return;
   }
   const chosen =
@@ -656,6 +671,12 @@ function setChips(dot, text, title) {
 function openAiSheet() {
   const list = $("aiList");
   list.innerHTML = "";
+  if (state.agentsError && !state.agents.length) {
+    const p = document.createElement("p");
+    p.className = "ai-error";
+    p.textContent = state.agentsError;
+    list.appendChild(p);
+  }
   for (const a of state.agents) {
     const row = document.createElement("div");
     row.className = "ai-row";

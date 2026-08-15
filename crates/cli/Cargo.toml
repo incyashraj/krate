@@ -28,6 +28,8 @@ default = ["speech"]
 speech = ["krate-runtime/speech"]
 
 [dependencies]
+# Native consent fallback where no terminal exists (Windows dialog).
+rfd.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 krate-manifest = { path = "../manifest", version = "0.1.0-dev" }

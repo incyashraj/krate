@@ -133,6 +133,47 @@ fn seed_agent_config(agent_home: &Path) {
     let _ = std::fs::write(agent_home.join("history.jsonl"), "");
 }
 
+/// Build a Command that never flashes a console. The engine is a
+/// console-subsystem binary on Windows; spawned plainly from a GUI it brings
+/// a black terminal with it -- over the sign-in code, behind every opened
+/// app, on every probe.
+fn silent_cmd(program: impl AsRef<std::ffi::OsStr>) -> Command {
+    #[allow(unused_mut)]
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
+
+/// Open a URL in the person's browser on whatever OS this is. `/usr/bin/open`
+/// is macOS-only; calling it on Windows was "The system cannot find the path
+/// specified" on the sign-in button.
+fn open_url(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut cmd = Command::new("/usr/bin/open");
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = silent_cmd("cmd");
+        c.args(["/C", "start", ""]);
+        c
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut cmd = Command::new("xdg-open");
+    cmd.arg(url)
+        .status()
+        .map_err(|err| err.to_string())
+        .and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                Err("could not open the browser".to_string())
+            }
+        })
+}
+
 fn studio_dir() -> PathBuf {
     let dir = dirs_home().join(".krate").join("studio");
     let _ = std::fs::create_dir_all(dir.join("sessions"));
@@ -267,7 +308,7 @@ fn session_delete(id: String) -> Result<(), String> {
 #[tauri::command]
 async fn account_status() -> Result<serde_json::Value, String> {
     let engine = engine()?;
-    let out = Command::new(&engine)
+    let out = silent_cmd(&engine)
         .args(["account", "--json"])
         .output()
         .map_err(|err| format!("could not run the Krate engine: {err}"))?;
@@ -282,7 +323,7 @@ async fn account_status() -> Result<serde_json::Value, String> {
 async fn account_login(app: tauri::AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
-        let mut child = Command::new(&engine)
+        let mut child = silent_cmd(&engine)
             // `--json` belongs to `account`, not to `login`. As
             // `account login --json` the engine answers "unexpected argument
             // '--json' found" and exits, so signing in failed instantly in
@@ -318,7 +359,7 @@ async fn account_login(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn account_logout() -> Result<(), String> {
     let engine = engine()?;
-    Command::new(&engine)
+    silent_cmd(&engine)
         .args(["account", "logout"])
         .output()
         .map_err(|err| err.to_string())?;
@@ -340,7 +381,7 @@ struct AgentInfo {
 #[tauri::command]
 async fn agents() -> Result<Vec<AgentInfo>, String> {
     let engine = engine()?;
-    let out = Command::new(&engine)
+    let out = silent_cmd(&engine)
         .args(["ai", "--json"])
         .output()
         .map_err(|err| {
@@ -440,7 +481,7 @@ async fn create_app(
         let out_path = free_path(&dir, &slugify(&request));
         remember_target(&session, &out_path);
 
-        let mut cmd = Command::new(&engine);
+        let mut cmd = silent_cmd(&engine);
         cmd.arg("create")
             .arg(&request)
             .args(["--agent", &agent, "--yes", "--output"])
@@ -471,7 +512,7 @@ async fn revise_app(
         let engine = engine()?;
         // Fail before spending anyone's AI quota on a file that is gone.
         let out_path = existing(&path)?;
-        let mut cmd = Command::new(&engine);
+        let mut cmd = silent_cmd(&engine);
         cmd.arg("revise")
             .arg(&out_path)
             .arg(&change)
@@ -809,9 +850,14 @@ fn open_app(path: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     let ok = Command::new("open").arg(&path).status();
     #[cfg(target_os = "windows")]
-    let ok = Command::new("cmd")
-        .args(["/C", "start", "", &path])
-        .status();
+    let ok = {
+        let engine = engine().map_err(|e| e)?;
+        silent_cmd(&engine)
+            .current_dir(studio_dir())
+            .arg("launch")
+            .arg(&path)
+            .status()
+    };
     #[cfg(all(unix, not(target_os = "macos")))]
     let ok = Command::new("xdg-open").arg(&path).status();
     ok.map_err(|err| err.to_string()).and_then(|s| {
@@ -829,7 +875,7 @@ async fn publish(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = existing(&path)?;
         let engine = engine()?;
-        let out = Command::new(&engine)
+        let out = silent_cmd(&engine)
             .arg("publish")
             .arg(&path)
             .output()
@@ -867,7 +913,7 @@ async fn app_info(path: String) -> Result<serde_json::Value, String> {
             existing(&path)?.display().to_string()
         };
         let engine = engine()?;
-        let out = Command::new(&engine)
+        let out = silent_cmd(&engine)
             .current_dir(studio_dir())
             .arg("run")
             .arg("--dump-caps")
@@ -924,7 +970,7 @@ async fn app_info(path: String) -> Result<serde_json::Value, String> {
 async fn install_agent(app: tauri::AppHandle, name: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
-        let listed = Command::new(&engine)
+        let listed = silent_cmd(&engine)
             .args(["ai", "--json"])
             .output()
             .map_err(|err| format!("could not run the Krate engine: {err}"))?;
@@ -945,7 +991,7 @@ async fn install_agent(app: tauri::AppHandle, name: String) -> Result<(), String
         })?;
 
         emit_line(&app, &format!("Installing {package}"));
-        let mut child = Command::new(&npm);
+        let mut child = silent_cmd(&npm);
         // npm is a Node script, so it needs `node` on PATH -- and node lives
         // beside npm. Without this the install dies with "env: node: No such
         // file or directory" whenever npm is anywhere but /usr/bin, which is
@@ -1079,7 +1125,7 @@ async fn open_krate(app: tauri::AppHandle) -> Result<(), String> {
     // activation, so its window is created and never shown (K-110). launch
     // wraps the app under ~/.krate and opens it properly -- which also means
     // nothing keeps touching Downloads or the volume afterwards.
-    Command::new(&engine)
+    silent_cmd(&engine)
         .current_dir(studio_dir())
         .arg("launch")
         .arg(&path)
@@ -1095,17 +1141,7 @@ async fn open_krate(app: tauri::AppHandle) -> Result<(), String> {
 /// in when they return -- no code to type.
 #[tauri::command]
 fn login_browser() -> Result<(), String> {
-    Command::new("/usr/bin/open")
-        .arg("https://krate.tech/login?from=app")
-        .status()
-        .map_err(|err| err.to_string())
-        .and_then(|s| {
-            if s.success() {
-                Ok(())
-            } else {
-                Err("could not open the browser".into())
-            }
-        })
+    open_url("https://krate.tech/login?from=app")
 }
 
 /// The hub the studio reads and publishes to. `KRATE_HUB_URL` overrides it,
@@ -1151,7 +1187,7 @@ async fn cloud_run(url: String) -> Result<(), String> {
     }
     tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
-        Command::new(&engine)
+        silent_cmd(&engine)
             .current_dir(studio_dir())
             .arg("run")
             .arg(&url)
@@ -1339,6 +1375,23 @@ fn human_size(bytes: u64) -> String {
 
 fn main() {
     let _ = STARTED.set(std::time::Instant::now());
+
+    // On Windows and Linux a double-clicked .krate arrives as argv, not as a
+    // macOS open event. The person asked for their app, not for Krate: hand
+    // off to the engine (silently -- no console) and never build a window.
+    #[cfg(not(target_os = "macos"))]
+    if let Some(path) = std::env::args().nth(1).map(PathBuf::from) {
+        if path.extension().and_then(|e| e.to_str()) == Some("krate") && path.is_file() {
+            if let Ok(engine) = engine() {
+                let _ = silent_cmd(&engine)
+                    .current_dir(studio_dir())
+                    .arg("launch")
+                    .arg(&path)
+                    .spawn();
+            }
+            return;
+        }
+    }
     // Finish the install before the window appears. On a background thread:
     // it touches Launch Services and the filesystem, and none of it should
     // ever delay the first paint.
@@ -1447,7 +1500,7 @@ fn main() {
                                 "token": token,
                             });
                             if let Ok(engine) = engine() {
-                                let adopted = Command::new(&engine)
+                                let adopted = silent_cmd(&engine)
                                     .args(["account", "adopt"])
                                     .stdin(Stdio::piped())
                                     .stdout(Stdio::null())
@@ -1490,7 +1543,7 @@ fn main() {
                                 // activation, so the consent window and the
                                 // app window were created and never shown
                                 // (K-110): double-click "did nothing".
-                                let handed = Command::new(&engine)
+                                let handed = silent_cmd(&engine)
                                     .current_dir(studio_dir())
                                     .arg("launch")
                                     .arg(&path)

@@ -6698,12 +6698,19 @@ fn launch_app(bundle_path: &Path) -> Result<u8> {
 #[cfg(not(target_os = "macos"))]
 fn launch_app(bundle_path: &Path) -> Result<u8> {
     // Elsewhere a plain windowed run activates fine; the wrapper is a macOS
-    // need. Same binary, ordinary run.
-    let status = std::process::Command::new(std::env::current_exe()?)
-        .arg("run")
-        .arg(bundle_path)
-        .status()?;
-    Ok(if status.success() { 0 } else { 1 })
+    // need. Same binary, ordinary run -- but detached, with no console:
+    // the engine is a console-subsystem binary on Windows, and spawning it
+    // plainly hangs a black terminal behind every app someone opens.
+    let mut cmd = std::process::Command::new(std::env::current_exe()?);
+    cmd.arg("run").arg(bundle_path);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // CREATE_NO_WINDOW | DETACHED_PROCESS
+        cmd.creation_flags(0x0800_0000 | 0x0000_0008);
+    }
+    cmd.spawn()?;
+    Ok(0)
 }
 
 /// Give an app a real identity on this machine: its own `.app`, its own name
@@ -7304,6 +7311,33 @@ fn prompt_for_session_grants(manifest: &Manifest, policy: &SessionPolicy) -> Res
             }
             // A dialog ran and was declined, or none was available (a message
             // was printed): grant nothing, and the run is refused downstream.
+            return Ok(policy.clone());
+        }
+        #[cfg(target_os = "windows")]
+        {
+            // No terminal to answer -- the double-clicked case. Windows was
+            // printing this prompt into a console nobody could see (or, with
+            // the console hidden, hanging on a read that could never finish).
+            // A native dialog is the honest equivalent of [A]ll / [N]one; the
+            // per-capability numbers stay a terminal feature.
+            let mut body = format!("{} wants to:\n\n", manifest.app.name);
+            for cap in &prompt_caps {
+                body.push_str(&format!("  \u{2022} {} ({cap})\n", human_label(cap)));
+            }
+            body.push_str("\nAllow this? Krate enforces exactly this list.");
+            let allow = rfd::MessageDialog::new()
+                .set_title(&format!("Open {}?", manifest.app.name))
+                .set_description(&body)
+                .set_buttons(rfd::MessageButtons::OkCancelCustom(
+                    "Allow and open".to_string(),
+                    "Cancel".to_string(),
+                ))
+                .show();
+            if matches!(allow, rfd::MessageDialogResult::Custom(label) if label == "Allow and open")
+            {
+                let grants = policy.grants().iter().cloned().chain(prompt_caps);
+                return Ok(SessionPolicy::from_grants(grants));
+            }
             return Ok(policy.clone());
         }
     }
