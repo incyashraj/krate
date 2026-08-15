@@ -33,6 +33,8 @@ arboard.workspace = true
 # The GPU presenter (Plan/GPU-Presenter.md S2): shared with Windows.
 krate-presenter-gpu = { path = "../presenter-gpu", version = "0.1.0-dev" }
 pollster = "0.4"
+# Decoding the exported window icon.
+png = "0.17"
 
 [features]
 # Compile the real winit+GPU path on any OS, for local dev proof.

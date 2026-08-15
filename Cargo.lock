@@ -2097,6 +2097,7 @@ dependencies = [
  "krate-adapter-common",
  "krate-presenter-gpu",
  "libc",
+ "png 0.17.16",
  "pollster",
  "softbuffer",
  "winit",

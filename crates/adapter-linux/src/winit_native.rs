@@ -41,7 +41,6 @@ mod real {
     use std::sync::Arc;
 
     use winit::application::ApplicationHandler;
-    use winit::dpi::PhysicalSize;
     use winit::event::WindowEvent;
     use winit::event_loop::{ActiveEventLoop, EventLoop};
     use winit::platform::pump_events::EventLoopExtPumpEvents;
@@ -175,19 +174,36 @@ mod real {
     impl PumpApp {
         fn drain_pending_creates(&mut self, event_loop: &ActiveEventLoop) {
             for pending in self.pending_creates.drain(..) {
-                let attributes = WindowAttributes::default()
-                    .with_title(pending.title)
-                    // Physical, not logical -- see the same note in the Windows
-                    // adapter. Every other size here comes from `inner_size()`,
-                    // which is physical, so a fractional-scaling desktop got a
-                    // window bigger than the app painted.
-                    .with_inner_size(PhysicalSize::new(pending.size.width, pending.size.height))
+                #[allow(unused_mut)]
+                let mut attributes = WindowAttributes::default()
+                    .with_title(pending.title.clone())
+                    // LOGICAL -- the same load-bearing unit decision the
+                    // Windows adapter got in v0.1.25, which this twin missed:
+                    // the app speaks logical units and the painter multiplies
+                    // by scale, so a physical-sized window on a fractional
+                    // desktop clipped the bottom of every app.
+                    .with_inner_size(winit::dpi::LogicalSize::new(
+                        f64::from(pending.size.width),
+                        f64::from(pending.size.height),
+                    ))
                     // Visible on creation, matching macOS. See the same note in
                     // the Windows adapter: hidden-until-shown assumed every app
                     // calls `window.show`, and none of the samples do. A user
                     // ran a 3D app on Windows and saw a frame count print with
                     // no window; Linux had the identical bug.
                     .with_visible(true);
+                // The app's own identity on the desktop: WM_CLASS carries the
+                // app name (task switchers and docks group and label by it),
+                // and the window icon comes from the bundle's icon.png when
+                // the engine exported one.
+                #[cfg(target_os = "linux")]
+                {
+                    use winit::platform::x11::WindowAttributesExtX11;
+                    attributes = attributes.with_name(&pending.title, &pending.title);
+                }
+                if let Some(icon) = window_icon_from_env() {
+                    attributes = attributes.with_window_icon(Some(icon));
+                }
                 if let Ok(window) = event_loop.create_window(attributes) {
                     self.windows.insert(
                         window.id(),
@@ -246,7 +262,18 @@ mod real {
             let mapped = match event {
                 WindowEvent::CloseRequested => Some(WinitWindowNativeEvent::CloseRequested),
                 WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => {
-                    WindowSize::new(size.width, size.height)
+                    // Logical to the app, like every pointer coordinate; the
+                    // painter is the single place logical becomes physical.
+                    let scale = self
+                        .windows
+                        .get(&native)
+                        .map(|tracked| tracked.window.scale_factor())
+                        .unwrap_or(1.0);
+                    let (w, h) = (
+                        (f64::from(size.width) / scale).round() as u32,
+                        (f64::from(size.height) / scale).round() as u32,
+                    );
+                    WindowSize::new(w.max(1), h.max(1))
                         .ok()
                         .map(WinitWindowNativeEvent::Resized)
                 }
@@ -375,6 +402,25 @@ mod real {
                 self.events.push((krate, event));
             }
         }
+    }
+
+    /// The window icon the engine exported for this run, if any.
+    ///
+    /// The engine writes the bundle's icon.png to a temp file and points
+    /// KRATE_WINDOW_ICON at it; a missing or undecodable file simply means
+    /// the default icon, never a failure.
+    fn window_icon_from_env() -> Option<winit::window::Icon> {
+        let path = std::env::var_os("KRATE_WINDOW_ICON")?;
+        let file = std::fs::File::open(path).ok()?;
+        let decoder = png::Decoder::new(std::io::BufReader::new(file));
+        let mut reader = decoder.read_info().ok()?;
+        let mut buf = vec![0u8; reader.output_buffer_size()];
+        let info = reader.next_frame(&mut buf).ok()?;
+        if info.color_type != png::ColorType::Rgba {
+            return None;
+        }
+        buf.truncate((info.width * info.height * 4) as usize);
+        winit::window::Icon::from_rgba(buf, info.width, info.height).ok()
     }
 
     fn draw_placements(tracked: &mut TrackedWindow) {
@@ -617,9 +663,14 @@ mod real {
 
             let raw_handle = u64::from(tracked.window.id());
             let inner = tracked.window.inner_size();
+            let scale = tracked.window.scale_factor();
+            let (lw, lh) = (
+                (f64::from(inner.width) / scale).round() as u32,
+                (f64::from(inner.height) / scale).round() as u32,
+            );
             let snapshot = WinitWindowSnapshot::new(
                 krate,
-                WindowSize::new(inner.width.max(1), inner.height.max(1))?,
+                WindowSize::new(lw.max(1), lh.max(1))?,
                 false,
                 tracked.window.has_focus(),
                 tracked.window.scale_factor() as f32,

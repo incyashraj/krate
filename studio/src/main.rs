@@ -1291,7 +1291,82 @@ fn first_run_setup() {
     let _ = std::fs::write(&marker, "1");
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Linux: register the .krate type and the studio's launcher entry, so
+/// double-click opens apps and the menu shows Krate with its own icon --
+/// the same "drag it in and everything works" the .dmg promises on macOS.
+/// Every step is idempotent and best-effort: a sandboxed desktop that
+/// refuses one of them leaves a working studio, just with fewer
+/// conveniences.
+#[cfg(target_os = "linux")]
+fn first_run_setup() {
+    let marker = studio_dir().join("setup-done");
+    if marker.exists() {
+        return;
+    }
+    let home = dirs_home();
+    let data = home.join(".local/share");
+
+    // The MIME type, so files managers know what a .krate is.
+    let mime_dir = data.join("mime/packages");
+    let _ = std::fs::create_dir_all(&mime_dir);
+    let _ = std::fs::write(
+        mime_dir.join("krate.xml"),
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/vnd.krate.bundle">
+    <comment>Krate app</comment>
+    <glob pattern="*.krate"/>
+  </mime-type>
+</mime-info>
+"#,
+    );
+    let _ = silent_cmd("update-mime-database")
+        .arg(data.join("mime"))
+        .status();
+
+    // The studio's own icon, written from the build so no theme install is
+    // needed.
+    let icon_path = data.join("krate/krate.png");
+    let _ = std::fs::create_dir_all(icon_path.parent().expect("krate data dir"));
+    let _ = std::fs::write(&icon_path, include_bytes!("../icons/128x128.png"));
+
+    // The launcher entry. For an AppImage, APPIMAGE is the real on-disk
+    // path; current_exe would name the transient mount point.
+    let exe = std::env::var("APPIMAGE")
+        .map(PathBuf::from)
+        .or_else(|_| std::env::current_exe())
+        .unwrap_or_default();
+    let apps_dir = data.join("applications");
+    let _ = std::fs::create_dir_all(&apps_dir);
+    let desktop = apps_dir.join("krate.desktop");
+    let _ = std::fs::write(
+        &desktop,
+        format!(
+            "[Desktop Entry]
+Type=Application
+Name=Krate
+Comment=Describe an app. Watch it become real.
+Exec="{}" %f
+Terminal=false
+Categories=Development;Utility;
+Icon={}
+MimeType=application/vnd.krate.bundle;
+",
+            exe.display(),
+            icon_path.display(),
+        ),
+    );
+    let _ = silent_cmd("update-desktop-database")
+        .arg(&apps_dir)
+        .status();
+    let _ = silent_cmd("xdg-mime")
+        .args(["default", "krate.desktop", "application/vnd.krate.bundle"])
+        .status();
+
+    let _ = std::fs::write(&marker, "1");
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn first_run_setup() {}
 
 fn append_line(path: &Path, line: &str) {

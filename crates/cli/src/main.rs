@@ -6378,6 +6378,29 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
         }
     }
 
+    // Linux: export the app's icon for the window that is about to open.
+    // WM_CLASS carries the name (the adapter sets it from the title); the
+    // icon travels as a temp PNG named in KRATE_WINDOW_ICON, decoded by the
+    // adapter into the window's own icon -- task switcher, dock, and titlebar
+    // all show the app, not a generic square.
+    #[cfg(target_os = "linux")]
+    if let Some(manifest) = manifest {
+        if let Some(icon) = bundle
+            .as_ref()
+            .and_then(|bundle| bundle.assets_path().map(Path::to_path_buf))
+            .map(|assets| assets.join("icon.png"))
+            .filter(|path| path.is_file())
+        {
+            let dest = std::env::temp_dir().join(format!(
+                "krate-icon-{}.png",
+                manifest.app.id.replace(['/', ':'], "-")
+            ));
+            if fs::copy(&icon, &dest).is_ok() {
+                std::env::set_var("KRATE_WINDOW_ICON", &dest);
+            }
+        }
+    }
+
     let config = Config {
         fuel: request.fuel,
         memory_bytes: request
@@ -6868,9 +6891,97 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     Ok(app_dir)
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Linux install: a payload under ~/.local/share/krate, a freedesktop
+/// launcher entry, and the app's own icon -- so an installed app shows up in
+/// the menu with its own name and picture, exactly like the macOS wrapper.
+#[cfg(target_os = "linux")]
+fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Result<u8> {
+    let opened = krate_bundle::open(bundle_path)
+        .with_context(|| format!("reading {}", bundle_path.display()))?;
+    let manifest = opened.manifest();
+    let name = manifest.app.name.trim().to_string();
+    if name.is_empty() {
+        bail!("this app has no name in its manifest, so it cannot be installed");
+    }
+    let slug: String = name
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+
+    let data = prefix.map(Path::to_path_buf).unwrap_or_else(|| {
+        home_dir()
+            .map(|h| h.join(".local/share"))
+            .unwrap_or_else(|| PathBuf::from("."))
+    });
+    let app_dir = data.join("krate/apps").join(&slug);
+    let desktop_path = data
+        .join("applications")
+        .join(format!("krate-{slug}.desktop"));
+    if dry_run {
+        println!("{}", desktop_path.display());
+        return Ok(0);
+    }
+    fs::create_dir_all(&app_dir)?;
+    let payload = app_dir.join("app.krate");
+    fs::copy(bundle_path, &payload)?;
+
+    // The app's own icon when it ships one, the Krate mark otherwise; the
+    // desktop entry takes an absolute path, so no theme install is needed.
+    let icon_path = app_dir.join("icon.png");
+    let mut have_icon = false;
+    if let Some(icon) = opened
+        .assets_path()
+        .map(|assets| assets.join("icon.png"))
+        .filter(|path| path.is_file())
+    {
+        have_icon = fs::copy(&icon, &icon_path).is_ok();
+    }
+    if !have_icon {
+        if let Some(mark) = krate_icon_png_source() {
+            have_icon = fs::copy(mark, &icon_path).is_ok();
+        }
+    }
+
+    let engine = current_engine_path()?;
+    fs::create_dir_all(desktop_path.parent().expect("applications dir"))?;
+    fs::write(
+        &desktop_path,
+        format!(
+            "[Desktop Entry]\nType=Application\nName={name}\nComment=Made with Krate\nExec=\"{engine}\" launch \"{payload}\"\nTerminal=false\nCategories=Utility;\n{icon}",
+            engine = engine.display(),
+            payload = payload.display(),
+            icon = if have_icon {
+                format!("Icon={}\n", icon_path.display())
+            } else {
+                String::new()
+            },
+        ),
+    )?;
+    // Refresh the menu database where the tool exists; missing it only means
+    // the entry appears after the next session.
+    let _ = std::process::Command::new("update-desktop-database")
+        .arg(data.join("applications"))
+        .status();
+
+    println!("Installed {name}: it is in your app menu with its own name and icon.");
+    Ok(0)
+}
+
+/// The Krate mark as a PNG, for Linux launcher entries.
+#[cfg(target_os = "linux")]
+fn krate_icon_png_source() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    ["../share/krate/krate-app-icon.png", "krate-app-icon.png"]
+        .into_iter()
+        .map(|rel| dir.join(rel))
+        .find(|p| p.is_file())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn install_app(_bundle_path: &Path, _prefix: Option<&Path>, _dry_run: bool) -> Result<u8> {
-    bail!("`krate install` is macOS-only today; on other systems run the .krate directly")
+    bail!("on Windows the installer sets up file associations; run the .krate directly")
 }
 
 /// Krate's own `.icns`, for apps that ship no icon of their own.
@@ -6935,7 +7046,6 @@ fn write_icns(png: &Path, out: &Path) -> Result<()> {
 /// The running executable, resolved through symlinks: an app installed by a
 /// given Krate keeps running against that same Krate rather than whatever
 /// later lands on PATH.
-#[cfg(target_os = "macos")]
 fn current_engine_path() -> Result<PathBuf> {
     let exe = std::env::current_exe().context("finding the Krate engine")?;
     Ok(fs::canonicalize(&exe).unwrap_or(exe))
@@ -7450,6 +7560,38 @@ fn linux_graphical_consent(
             .status();
         if let Ok(status) = status {
             return Ok(status.success().then(|| consent_caps.to_vec()));
+        }
+    }
+
+    // rfd next: a native dialog with no external tool. On desktops where its
+    // backend cannot connect this returns Cancel-ish immediately, which the
+    // affirmative-only check below treats as "not answered", falling through
+    // to the message -- never a silent grant.
+    {
+        let mut body = format!("{} wants permission to:\n\n", manifest.app.name);
+        for cap in consent_caps {
+            body.push_str(&format!("  \u{2022} {}\n", human_label(cap)));
+        }
+        body.push_str("\nKrate enforces exactly this list.");
+        let answer = rfd::MessageDialog::new()
+            .set_title(&format!("Open {}?", manifest.app.name))
+            .set_description(&body)
+            .set_buttons(rfd::MessageButtons::OkCancelCustom(
+                "Allow and open".to_string(),
+                "Cancel".to_string(),
+            ))
+            .show();
+        match answer {
+            rfd::MessageDialogResult::Custom(ref label) if label == "Allow and open" => {
+                return Ok(Some(consent_caps.to_vec()));
+            }
+            // The person saw the dialog and pressed Cancel: a real refusal,
+            // not a missing dialog -- do not fall through to the "no dialog"
+            // message.
+            rfd::MessageDialogResult::Custom(_) => return Ok(None),
+            // Anything else is a backend that could not really ask; keep
+            // falling so the honest message prints.
+            _ => {}
         }
     }
 
