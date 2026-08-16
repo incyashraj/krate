@@ -3686,6 +3686,22 @@ Fix:      The pack already taught pixel offsets for lists, and the agent
           within = scroll%line_height, draw from list_y - within. A partly
           visible line at top and bottom IS the smoothness.
 
+### K-119 -- No camera capability: apps that need one cannot be built yet
+Status:   open
+Owner:    unclaimed
+Severity: minor
+Class:    runtime-hole
+Found:    2026-08-16, founder asking "is krate ready for sound, camera,
+          mic, etc" -- a capability audit, not a failure.
+Evidence: The WIT tree ships audio (playback), audio.capture (microphone),
+          and speech (on-device transcription); there is no camera
+          interface and no camera capability string. Sound and mic are
+          real today; camera is the one media door that does not exist.
+Fix:      A `camera` WIT interface (frames as the image type the canvas
+          already draws) behind a `camera.capture` capability with the
+          same plain-words consent as the microphone. Do it when the first
+          real app needs it rather than speculatively.
+
 ### K-118 -- wasmtime 43 is out of security support; the upgrade needs rustc 1.94
 Status:   open
 Owner:    unclaimed
