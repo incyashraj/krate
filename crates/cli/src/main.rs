@@ -841,6 +841,21 @@ enum GrantLogFormat {
 /// bare, so each console-subsystem child minted a VISIBLE terminal: the
 /// "grok window popping up on every step" report was this function's doing.
 /// An invisible console is an asset; only a visible one is the bug.
+/// Ask Windows for 1ms timer resolution for this process's lifetime.
+///
+/// Every pacing sleep in the frame loop -- the event wait and the present
+/// budget -- rounds UP to the system timer tick, which defaults to ~15.6ms.
+/// Two sleeps a frame turned 6ms of real work into ~65ms of wall clock: a
+/// game producing 14fps with the CPU almost idle, reported as "the
+/// character is barely moving". Games, browsers and media apps all raise
+/// the resolution exactly like this; the OS restores it when we exit.
+#[cfg(windows)]
+fn raise_timer_resolution() {
+    unsafe {
+        let _ = windows_sys::Win32::Media::timeBeginPeriod(1);
+    }
+}
+
 #[cfg(windows)]
 fn detach_owned_console() {
     unsafe {
@@ -861,6 +876,8 @@ fn detach_owned_console() {
 fn main() -> ExitCode {
     #[cfg(windows)]
     detach_owned_console();
+    #[cfg(windows)]
+    raise_timer_resolution();
 
     tracing_subscriber::fmt()
         .with_env_filter(
