@@ -156,6 +156,49 @@ fn lerp_color(a: u32, b: u32, t: f32) -> u32 {
     (mix(24) << 24) | (mix(16) << 16) | (mix(8) << 8) | mix(0)
 }
 
+/// Interpolate two colors in float and quantize with a per-pixel ordered
+/// dither. Plain 8-bit quantization turns any slow gradient into visible
+/// bands ("looks pixely, not HD" -- caught by eye on a purple-to-amber
+/// band and confirmed by 3-row color steps in the capture); a half-LSB
+/// Bayer offset trades the bands for noise the eye cannot see.
+fn lerp_color_dithered(a: u32, b: u32, t: f32, px: u32, py: u32) -> u32 {
+    const BAYER: [[f32; 4]; 4] = [
+        [0.0, 8.0, 2.0, 10.0],
+        [12.0, 4.0, 14.0, 6.0],
+        [3.0, 11.0, 1.0, 9.0],
+        [15.0, 7.0, 13.0, 5.0],
+    ];
+    let d = BAYER[(py & 3) as usize][(px & 3) as usize] / 16.0 - 0.5;
+    let t = t.clamp(0.0, 1.0);
+    let mix = |shift: u32| -> u32 {
+        let ca = ((a >> shift) & 0xFF) as f32;
+        let cb = ((b >> shift) & 0xFF) as f32;
+        ((ca + (cb - ca) * t + 0.5 + d).clamp(0.0, 255.0)) as u32
+    };
+    (mix(24) << 24) | (mix(16) << 16) | (mix(8) << 8) | mix(0)
+}
+
+/// `sample_stops` with the dither applied at the final quantization.
+fn sample_stops_dithered(stops: &[(f32, u32)], t: f32, px: u32, py: u32) -> u32 {
+    let first = stops[0];
+    let last = stops[stops.len() - 1];
+    if t <= first.0 {
+        return first.1;
+    }
+    if t >= last.0 {
+        return last.1;
+    }
+    for pair in stops.windows(2) {
+        let (o0, c0) = pair[0];
+        let (o1, c1) = pair[1];
+        if t <= o1 {
+            let f = if o1 > o0 { (t - o0) / (o1 - o0) } else { 1.0 };
+            return lerp_color_dithered(c0, c1, f, px, py);
+        }
+    }
+    last.1
+}
+
 /// Integer scale for the 5x7 bitmap face at a requested font size. One place,
 /// so drawing and measuring cannot pick different scales.
 fn bitmap_scale(font_size: f32) -> u32 {
@@ -698,7 +741,7 @@ impl CanvasSurface {
         for py in y0..y1 {
             for px in x0..x1 {
                 let t = ((px as f32 + 0.5) * dir_x + (py as f32 + 0.5) * dir_y - lo) / span;
-                self.blend_coverage(px, py, sample_stops(stops, t), 1.0);
+                self.blend_coverage(px, py, sample_stops_dithered(stops, t, px, py), 1.0);
             }
         }
     }
@@ -795,7 +838,7 @@ impl CanvasSurface {
                 // not a linear ramp.
                 let t = dist / radius;
                 let t = t * t * (3.0 - 2.0 * t);
-                let c = lerp_color(inner, outer, t);
+                let c = lerp_color_dithered(inner, outer, t, px, py);
                 if (c >> 24) == 0 {
                     continue;
                 }

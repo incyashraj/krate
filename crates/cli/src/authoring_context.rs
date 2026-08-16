@@ -169,7 +169,15 @@ redraw. Slow (5-8s periods), low-contrast color pairs, and it reads as \
 alive rather than busy.\n\
 - **Press feedback**: on pointer-down over a control, draw it 3-4% \
 smaller (inset its rect) for as long as it is held; release springs it \
-back. 60ms of feel that separates an app from a screenshot.\n\n\
+back. 60ms of feel that separates an app from a screenshot.\n\
+- **Soft-blob backdrops** (the look of every friendly modern hero screen): \
+layer 3-5 big `radial-gradient` discs over a light base, each with a \
+saturated `inner` and an `outer` whose ALPHA IS ZERO -- the falloff to \
+transparent is what makes them read as soft light instead of circles. \
+Overlap them generously, keep radii huge (half the window and up), and \
+drift their centers slowly with `pulse` for a living background. \
+Gradients are dithered by the runtime, so slow color ramps stay smooth, \
+never banded.\n\n\
 Rules that keep it tasteful: ease-out for anything arriving, springs for \
 anything following input, bounce only where attention belongs (one bounce \
 per screen, not one per widget), 150-300ms for interface moves, and \
