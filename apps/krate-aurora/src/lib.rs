@@ -675,11 +675,20 @@ impl bindings::Guest for Component {
         let started = clock::monotonic_nanos();
         let mut frames: u32 = 0;
 
+        // When the next frame is due. Pacing against the clock rather than
+        // drawing on every wake is what keeps this at a steady frame rate
+        // instead of pinning a core: `request_redraw` puts an event in the
+        // queue, so a bare `wait` returns immediately and the loop spins as
+        // fast as the machine allows.
+        const FRAME_NANOS: u64 = 1_000_000_000 / 60;
+        let mut next_frame = clock::monotonic_nanos();
+
         loop {
+            let now = clock::monotonic_nanos();
             let t = if quick {
                 frames as f32 / 30.0
             } else {
-                (clock::monotonic_nanos().saturating_sub(started)) as f32 / 1_000_000_000.0
+                now.saturating_sub(started) as f32 / 1_000_000_000.0
             };
 
             if draw(canvas, &mut sky, t).is_err() {
@@ -695,27 +704,37 @@ impl bindings::Guest for Component {
                 continue;
             }
 
-            // Drain everything queued before drawing again, so a burst of
-            // resize or pointer events can never build a backlog.
+            let _ = window::request_redraw(win);
+
+            // Schedule the next frame, and skip ahead if we fell behind so a
+            // slow patch cannot build a backlog of owed frames.
+            next_frame = next_frame.saturating_add(FRAME_NANOS);
+            let after_draw = clock::monotonic_nanos();
+            if next_frame < after_draw {
+                next_frame = after_draw;
+            }
+
+            // Spend the rest of the frame waiting on events rather than
+            // burning it. Drain whatever arrives, then block again until the
+            // frame is actually due.
             let mut closing = false;
             loop {
-                match events::poll() {
+                let now = clock::monotonic_nanos();
+                let remaining = next_frame.saturating_sub(now);
+                if remaining == 0 {
+                    break;
+                }
+                let millis = (remaining / 1_000_000) as u32;
+                match events::wait(Some(millis.max(1))) {
                     Some(types::Event::CloseRequested(_)) => {
                         closing = true;
                         break;
                     }
-                    Some(_) => {}
-                    None => break,
+                    Some(_) | None => {}
                 }
             }
             if closing {
                 break;
-            }
-
-            let _ = window::request_redraw(win);
-            match events::wait(Some(16)) {
-                Some(types::Event::CloseRequested(_)) => break,
-                Some(_) | None => {}
             }
         }
 
