@@ -3262,7 +3262,12 @@ pub(crate) fn run_bundle_for_tui(bundle: &Path) -> Result<()> {
     // from it. The menu installs a handler that records the interrupt rather
     // than exiting, so the app takes it and quits while the menu carries on.
     #[cfg(unix)]
-    let previous = unsafe { libc::signal(libc::SIGINT, handle_interrupt as *const std::ffi::c_void as libc::sighandler_t) };
+    let previous = unsafe {
+        libc::signal(
+            libc::SIGINT,
+            handle_interrupt as *const std::ffi::c_void as libc::sighandler_t,
+        )
+    };
 
     // Take the app's stdout rather than letting it into the menu.
     //
@@ -3401,18 +3406,18 @@ fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
     // manifest made everyone packing by hand hit the refusal first. Assets,
     // source and the SDK still resolve against the REAL manifest's directory;
     // only the copy that goes into the bundle is touched.
-    let manifest_text = fs::read_to_string(manifest)
-        .with_context(|| format!("read {}", manifest.display()))?;
+    let manifest_text =
+        fs::read_to_string(manifest).with_context(|| format!("read {}", manifest.display()))?;
     let needs_entry_rewrite = manifest_text
         .lines()
         .any(|line| line.trim_start().starts_with("entry =") && !line.contains("code.wasm"));
-    let rewritten = std::env::temp_dir().join(format!(
-        "krate-pack-manifest-{}.toml",
-        std::process::id()
-    ));
+    let rewritten =
+        std::env::temp_dir().join(format!("krate-pack-manifest-{}.toml", std::process::id()));
     let pack_manifest: &Path = if needs_entry_rewrite {
         write_manifest_with_entry(manifest, &rewritten, "code.wasm")?;
-        println!("entry points at a build path; the bundle's copy says code.wasm (yours is untouched)");
+        println!(
+            "entry points at a build path; the bundle's copy says code.wasm (yours is untouched)"
+        );
         &rewritten
     } else {
         manifest
@@ -3597,18 +3602,20 @@ fn publish_bundle(
     // url may be the short alias and would 404 the upload.
     let shot_id = extract_json_string(&body, "id");
     if let (Some(id), Some(identity)) = (shot_id.as_deref(), &identity) {
-        let shot = std::env::temp_dir().join(format!("krate-publish-shot-{}.png", std::process::id()));
-        let ok = std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| "krate".into()))
-            .arg("run")
-            .arg(bundle)
-            .args(["--shoot"])
-            .arg(&shot)
-            .args(["--auto-grant", "--", "quick"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
+        let shot =
+            std::env::temp_dir().join(format!("krate-publish-shot-{}.png", std::process::id()));
+        let ok =
+            std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| "krate".into()))
+                .arg("run")
+                .arg(bundle)
+                .args(["--shoot"])
+                .arg(&shot)
+                .args(["--auto-grant", "--", "quick"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
         if ok {
             if let Ok(png) = fs::read(&shot) {
                 if png.len() <= 2 * 1024 * 1024 {
@@ -3639,13 +3646,23 @@ fn publish_bundle(
 fn classify_app(name: &str, description: &str) -> &'static str {
     let text = format!("{name} {description}").to_lowercase();
     let has = |words: &[&str]| words.iter().any(|w| text.contains(w));
-    if has(&["game", "dash", "runner", "puzzle", "arcade", "flip", "dice", "snake", "invader", "nova", "shooter", "space"]) {
+    if has(&[
+        "game", "dash", "runner", "puzzle", "arcade", "flip", "dice", "snake", "invader", "nova",
+        "shooter", "space",
+    ]) {
         "games"
-    } else if has(&["track", "habit", "journal", "todo", "note", "timer", "clock", "pomodoro", "focus", "streak", "list"]) {
+    } else if has(&[
+        "track", "habit", "journal", "todo", "note", "timer", "clock", "pomodoro", "focus",
+        "streak", "list",
+    ]) {
         "productivity"
-    } else if has(&["calc", "convert", "split", "counter", "invoice", "unit", "measure"]) {
+    } else if has(&[
+        "calc", "convert", "split", "counter", "invoice", "unit", "measure",
+    ]) {
         "tools"
-    } else if has(&["draw", "paint", "photo", "image", "music", "player", "sound", "color"]) {
+    } else if has(&[
+        "draw", "paint", "photo", "image", "music", "player", "sound", "color",
+    ]) {
         "media"
     } else if has(&["learn", "flash", "quiz", "study", "practice"]) {
         "learning"
@@ -5927,9 +5944,8 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
         let rustc = if cfg!(windows) { "rustc.exe" } else { "rustc" };
         if shims.join(rustc).exists() {
             let current = std::env::var_os("PATH").unwrap_or_default();
-            let joined = std::env::join_paths(
-                std::iter::once(shims).chain(std::env::split_paths(&current)),
-            );
+            let joined =
+                std::env::join_paths(std::iter::once(shims).chain(std::env::split_paths(&current)));
             if let Ok(path) = joined {
                 command.env("PATH", path);
             }

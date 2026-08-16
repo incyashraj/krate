@@ -55,8 +55,12 @@ impl Screen {
         print!("{ENTER_SCREEN}");
         let _ = io::stdout().flush();
         #[cfg(unix)]
-        let previous =
-            unsafe { libc::signal(libc::SIGINT, crate::handle_interrupt as *const std::ffi::c_void as libc::sighandler_t) };
+        let previous = unsafe {
+            libc::signal(
+                libc::SIGINT,
+                crate::handle_interrupt as *const std::ffi::c_void as libc::sighandler_t,
+            )
+        };
         Screen {
             #[cfg(unix)]
             previous,
