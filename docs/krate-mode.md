@@ -558,6 +558,7 @@ takes the arguments is the function.
 - `window::set-size: func(window: u64, size: window-size) -> result<_, ui-error>`
 - `window::set-state: func(window: u64, state: window-state) -> result<_, ui-error>`
 - `window::request-redraw: func(window: u64) -> result<_, ui-error>`
+- `window::set-full-bleed: func(window: u64, enabled: bool) -> result<_, ui-error>`
 - `tree::set-root: func(window: u64, root: widget-node) -> result<_, ui-error>`
 - `tree::upsert-node: func(window: u64, node: widget-node) -> result<_, ui-error>`
 - `tree::remove-node: func(window: u64, widget: u64) -> result<_, ui-error>`

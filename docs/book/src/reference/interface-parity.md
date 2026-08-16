@@ -21,7 +21,7 @@ not be drawn into. That pair reads `works` on both tables now.
 | `audio.playback` | 7 | **works** |
 | `gfx.canvas2d` | 25 | **works** |
 | `gfx.scene3d` | 10 | **works** |
-| `speech.transcription` | 27 | **works** |
+| `speech.transcription` | 28 | **works** |
 | `ui.clipboard` | 2 | **works** |
 | `ui.dialog` | 4 | **works** |
 | `ui.events` | 6 | **works** |
@@ -30,5 +30,5 @@ not be drawn into. That pair reads `works` on both tables now.
 | `ui.menu` | 1 | **not implemented** |
 | `ui.notify` | 1 | **works** |
 | `ui.tree` | 5 | partly — 1 of 5 refuse |
-| `ui.window` | 7 | partly — 1 of 7 refuse |
+| `ui.window` | 8 | partly — 1 of 8 refuse |
 
