@@ -94,6 +94,25 @@ detects your system and hands you the right file:
 The Studio is pre-beta: it works, and it changes often. The terminal tool
 below is unchanged and remains the stable path.
 
+## Measured, not promised
+
+The same notes app, built twice: once with Krate, once the way desktop
+apps usually ship (Electron). Same 50,000-line document, same Apple
+silicon Mac, head to head -- August 2026, against MarkText 0.17.1.
+
+| | Electron build | Krate build |
+|---|---|---|
+| Opens in | 1.8 s (17 s on its first run) | **0.2 s** |
+| Memory, 50,000 lines | 2.3 GB across five processes | **95 MB, one process** |
+| Idle CPU, document open | 21% of a core | **0.8%** |
+| Scrolling | -- | **58 fps, frame jitter under 0.3 ms** |
+| The file itself | 271 MB installed | **37 KB** |
+
+Every number, the exact method, and the losses we found and fixed on the
+way (frame-time instrumentation caught our own renderer at 4.8 fps before
+it caught anyone else's): [the full benchmark
+log](evidence/benchmarks/2026-08-16-notes-battery-macos.md).
+
 ## Make an app
 
 Three ways, easiest first. All three run the build on your own machine, and all
