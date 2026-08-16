@@ -87,6 +87,11 @@ pub struct Phase3GuiHost {
     /// KRATE_FRAME_STATS=1 and reported every 60 frames. The scroll-feel
     /// debugging rule: never guess which half of the frame is slow.
     publish_times: std::cell::RefCell<Vec<(f32, f32)>>,
+    /// Per-present loop timings (gap since last present entry, time slept
+    /// for pacing), same gate and cadence. When frames are slow and the
+    /// work is fast, the loop itself is the suspect.
+    present_times: std::cell::RefCell<Vec<(f32, f32)>>,
+    last_present_entry: std::cell::Cell<Option<std::time::Instant>>,
     /// How many times an interrupt has been turned into a close request.
     interrupts: std::cell::Cell<u32>,
     /// How many times the person has asked to close the window.
@@ -276,6 +281,8 @@ impl Phase3GuiHost {
             idle_waits: std::cell::Cell::new(0),
             last_present: std::cell::Cell::new(None),
             publish_times: std::cell::RefCell::new(Vec::new()),
+            present_times: std::cell::RefCell::new(Vec::new()),
+            last_present_entry: std::cell::Cell::new(None),
             interrupts: std::cell::Cell::new(0),
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
@@ -1705,6 +1712,24 @@ impl Phase3GuiHost {
     }
 }
 
+/// One word per event kind, for KRATE_EVENT_TRACE diagnostics.
+fn event_name(event: &ui::types::Event) -> &'static str {
+    use ui::types::Event as E;
+    match event {
+        E::CloseRequested(_) => "close",
+        E::Resized(_) => "resized",
+        E::RedrawRequested(_) => "redraw",
+        E::Pointer(_) => "pointer",
+        E::Key(_) => "key",
+        E::TextInput(_) => "text",
+        E::TextChanged(_) => "text-changed",
+        E::Action(_) => "action",
+        E::FocusChanged(_) => "focus",
+        E::ThemeChanged(_) => "theme",
+        E::Wheel(_) => "wheel",
+    }
+}
+
 /// Nearest Scroll ancestor of a widget, if any.
 fn nearest_scroll_ancestor(
     tree: &krate_adapter_common::ui::WidgetTree,
@@ -2246,6 +2271,9 @@ impl ui::events::Host for Phase3GuiHost {
                 .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
             if event.is_some() {
                 self.idle_waits.set(0);
+                if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
+                    eprintln!("krate-event: {:?}", event.as_ref().map(event_name));
+                }
                 return Ok(event);
             }
             if let Some(deadline) = deadline {
@@ -3520,6 +3548,14 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
             self.last_present.set(Some(std::time::Instant::now()));
             return Ok(self.publish_canvas(canvas));
         }
+        let entry = std::time::Instant::now();
+        let gap_ms = self
+            .last_present_entry
+            .get()
+            .map(|t| t.elapsed().as_secs_f32() * 1000.0)
+            .unwrap_or(0.0);
+        self.last_present_entry.set(Some(entry));
+        let mut slept_ms = 0.0f32;
         if let Some(previous) = self.last_present.get() {
             let elapsed = previous.elapsed();
             if elapsed < FRAME_BUDGET {
@@ -3541,8 +3577,31 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
                 // is the second wait that put input a frame behind
                 // (measured: 12 ms of a 15.3 ms frame in acquire).
                 if !self.dispatcher().supports_canvas_lists() {
+                    let sleep_started = std::time::Instant::now();
                     std::thread::sleep(remainder);
+                    slept_ms = sleep_started.elapsed().as_secs_f32() * 1000.0;
                 }
+            }
+        }
+        if std::env::var("KRATE_FRAME_STATS").as_deref() == Ok("1") {
+            let mut times = self.present_times.borrow_mut();
+            times.push((gap_ms, slept_ms));
+            if times.len() >= 60 {
+                let p = |values: &mut Vec<f32>, q: f32| -> f32 {
+                    values.sort_by(|a, b| a.total_cmp(b));
+                    values[((values.len() - 1) as f32 * q) as usize]
+                };
+                let mut gaps: Vec<f32> = times.iter().map(|(g, _)| *g).collect();
+                let mut sleeps: Vec<f32> = times.iter().map(|(_, sl)| *sl).collect();
+                eprintln!(
+                    "krate-present: gap p50 {:.2}ms p99 {:.2}ms | slept p50 {:.2}ms p99 {:.2}ms (n={})",
+                    p(&mut gaps, 0.5),
+                    p(&mut gaps, 0.99),
+                    p(&mut sleeps, 0.5),
+                    p(&mut sleeps, 0.99),
+                    times.len(),
+                );
+                times.clear();
             }
         }
         self.last_present.set(Some(std::time::Instant::now()));
