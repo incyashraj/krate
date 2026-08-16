@@ -6787,12 +6787,22 @@ fn launch_app(bundle_path: &Path) -> Result<u8> {
         .to_string();
     let app_dir = launchers.join(format!("{name}.app"));
     let payload = app_dir.join("Contents/Resources/app.krate");
-    let same = fs::read(&payload)
+    let same_app = fs::read(&payload)
         .ok()
         .zip(fs::read(bundle_path).ok())
         .map(|(a, b)| a == b)
         .unwrap_or(false);
-    if !same {
+    // The wrapper embeds a COPY of the engine, so "the app has not changed"
+    // is only half the reuse question -- the other half is "has Krate?". A
+    // wrapper built before an engine upgrade kept serving the old runtime
+    // forever: a scroll-performance fix shipped, `krate run` flew, and the
+    // same .krate double-clicked from Finder still lagged (the rc18 trap,
+    // one layer deeper). The marker written at wrap time answers it.
+    let marker = app_dir.join("Contents/Resources/engine.fingerprint");
+    let same_engine = fs::read_to_string(&marker)
+        .map(|held| held == engine_fingerprint())
+        .unwrap_or(false);
+    if !same_app || !same_engine {
         let stage = launchers.join(format!(".stage-{}", std::process::id()));
         let _ = fs::remove_dir_all(&stage);
         fs::create_dir_all(&stage)?;
@@ -6872,6 +6882,32 @@ fn install_app(bundle_path: &Path, prefix: Option<&Path>, dry_run: bool) -> Resu
     Ok(0)
 }
 
+#[cfg(target_os = "macos")]
+/// This engine build's identity, for deciding whether a wrapper's embedded
+/// engine copy is current. Version and git sha alone miss dirty rebuilds of
+/// the same commit, so the binary's length and mtime join them -- cheap to
+/// read, and any rebuild changes at least one of the four.
+fn engine_fingerprint() -> String {
+    let (len, mtime) = std::env::current_exe()
+        .and_then(fs::metadata)
+        .map(|m| {
+            (
+                m.len(),
+                m.modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+            )
+        })
+        .unwrap_or((0, 0));
+    format!(
+        "{}-{}-{len}-{mtime}",
+        env!("CARGO_PKG_VERSION"),
+        env!("KRATE_GIT_SHA"),
+    )
+}
+
 /// The wrapper builder `install` and `launch` share: returns the .app it
 /// made, prints nothing.
 #[cfg(target_os = "macos")]
@@ -6917,6 +6953,9 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
         fs::copy(&engine, &launcher)
             .with_context(|| format!("putting the Krate engine in {}", launcher.display()))?;
     }
+    // Which engine build this wrapper carries; launch_app compares it
+    // against the running engine and rebuilds the wrapper on mismatch.
+    fs::write(resources.join("engine.fingerprint"), engine_fingerprint())?;
     use std::os::unix::fs::PermissionsExt;
     let mut perms = fs::metadata(&launcher)?.permissions();
     perms.set_mode(0o755);
