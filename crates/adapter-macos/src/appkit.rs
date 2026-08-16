@@ -2974,6 +2974,12 @@ mod platform {
     }
 
     impl AppKitWindowPrototype {
+        /// Full-bleed windows are only available in macOS builds; the stub
+        /// reports no size change so callers queue nothing (K-117).
+        pub fn set_full_bleed(&self, _enabled: bool) -> Option<WindowSize> {
+            None
+        }
+
         /// AppKit widget lowering is only available in macOS builds.
         pub fn lower_widget_placements(
             &self,
