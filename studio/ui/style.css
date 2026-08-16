@@ -887,17 +887,32 @@ body.resizing .divider { background: var(--blue); }
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
 .cloud-card {
-  display: flex; flex-direction: column; gap: 6px; text-align: left;
+  display: flex; flex-direction: column; gap: 10px; text-align: left;
   padding: 16px; border-radius: 12px;
   border: 1px solid var(--line); background: var(--panel-raised);
   cursor: pointer; transition: border-color 0.15s, transform 0.15s;
 }
 .cloud-card:hover { border-color: var(--line-strong); transform: translateY(-1px); }
-.cloud-name { font-size: 14.5px; font-weight: 560; }
-.cloud-by { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 12.5px; }
+.cloud-id { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cloud-icon {
+  flex: none; width: 34px; height: 34px; border-radius: 9px;
+  display: grid; place-items: center;
+  color: rgba(255, 255, 255, 0.92); font-size: 13px; font-weight: 620;
+  letter-spacing: 0.01em; border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.cloud-titles { min-width: 0; }
+.cloud-name {
+  font-size: 14.5px; font-weight: 560;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cloud-tag { color: var(--ghost); font-size: 11.5px; }
+.cloud-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-top: auto;
+}
+.cloud-by { display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 12.5px; min-width: 0; }
 .cloud-by img { width: 16px; height: 16px; border-radius: 50%; }
-.cloud-meta { color: var(--ghost); font-size: 12px; }
-.cloud-open { margin-top: 6px; color: var(--blue); font-size: 12.5px; }
+.cloud-meta { color: var(--ghost); font-size: 12px; white-space: nowrap; }
 
 /* ---- cloud search and categories --------------------------------------- */
 
@@ -995,7 +1010,7 @@ body.resizing .divider { background: var(--blue); }
 /* ---- cloud cards as a store -------------------------------------------- */
 
 .cloud-shot {
-  margin: -16px -16px 12px;
+  margin: -16px -16px 2px;
   border-bottom: 1px solid var(--line);
   border-radius: 12px 12px 0 0;
   overflow: hidden; aspect-ratio: 16 / 10; background: var(--bg);
@@ -1016,3 +1031,8 @@ body.resizing .divider { background: var(--blue); }
   border-radius: 50%; background: var(--accent); margin-right: 6px;
   vertical-align: 1px;
 }
+
+/* The detail page's identity row: icon tile beside the name. */
+.detail-head { display: flex; align-items: center; gap: 14px; }
+.detail-head .cloud-icon { width: 52px; height: 52px; border-radius: 13px; font-size: 19px; }
+.detail-tag { margin-top: 8px; color: var(--ghost); font-size: 12.5px; }

@@ -52,7 +52,18 @@
     .shot .none { color: var(--quiet); font-size: .76rem; }
 
     .card-body { padding: .85rem .95rem 1rem; display: flex; flex-direction: column; flex: 1; }
-    .card-name { color: var(--text); font-weight: 600; font-size: 1rem; margin-bottom: .25rem; }
+    .card-id { display: flex; align-items: center; gap: .6rem; margin-bottom: .55rem; min-width: 0; }
+    .card-icon {
+      flex: none; width: 34px; height: 34px; border-radius: 9px;
+      display: grid; place-items: center;
+      color: rgba(255, 255, 255, .92); font-size: .8rem; font-weight: 600;
+      border: 1px solid rgba(255, 255, 255, .08);
+    }
+    .card-name {
+      color: var(--text); font-weight: 600; font-size: .98rem;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .card-cat { color: var(--quiet); font-size: .76rem; }
     .card-desc {
       color: var(--muted); font-size: .87rem; line-height: 1.5; margin: 0 0 .8rem;
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -63,6 +74,17 @@
     }
     .card-foot img { width: 18px; height: 18px; border-radius: 50%; }
     .card-foot .size { margin-left: auto; }
+
+    .cats { display: flex; gap: .45rem; flex-wrap: wrap; margin-bottom: 1.3rem; }
+    .cats button {
+      font: inherit; font-size: .82rem; cursor: pointer;
+      color: var(--muted); background: none;
+      border: 1px solid var(--line); border-radius: 999px;
+      padding: .32rem .85rem;
+      transition: color .15s, border-color .15s, background .15s;
+    }
+    .cats button:hover { color: var(--text); border-color: var(--line-strong); }
+    .cats button.on { color: #0a0a0a; background: var(--text); border-color: var(--text); }
 
     .empty { color: var(--quiet); text-align: center; padding: 3.5rem 1rem; line-height: 1.8; }
     .empty a { color: var(--blue-soft); }
@@ -115,6 +137,7 @@
       <input type="search" id="q" placeholder="Search apps" autocomplete="off" />
       <span class="count" id="count"></span>
     </div>
+    <div class="cats" id="cats"></div>
 
     <div id="list"></div>
 
@@ -148,6 +171,28 @@
   <script>
     const HUB = "https://hub.krate.tech";
     let ALL = [];
+    let CAT = "all";
+
+    /* The shelf comes from the hub; the fallback covers apps published
+       before the hub stored one. */
+    const CATS = [
+      ["all", "Everything"], ["games", "Games"], ["productivity", "Productivity"],
+      ["tools", "Tools"], ["media", "Media"], ["learning", "Learning"], ["apps", "More"],
+    ];
+    const catOf = (a) => (a.meta && a.meta.category) || "apps";
+    const catLabel = (id) => (CATS.find(([c]) => c === id) || [id, id])[1];
+
+    /* No uploaded logos, so each app gets a monogram tile coloured from its
+       own name -- stable across visits, distinct across apps. */
+    function tile(name) {
+      let h = 0;
+      for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
+      const words = name.trim().split(/\s+/);
+      const mono = words.length > 1
+        ? (words[0][0] + words[1][0]).toUpperCase()
+        : name.slice(0, 2).replace(/^./, (c) => c.toUpperCase());
+      return `<span class="card-icon" style="background:linear-gradient(135deg,hsl(${h} 42% 30%),hsl(${(h + 40) % 360} 46% 18%))">${esc(mono)}</span>`;
+    }
 
     const esc = (v) => String(v).replace(/[&<>"]/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -174,7 +219,13 @@
               : '<span class="none">no screenshot yet</span>'}
           </div>
           <div class="card-body">
-            <div class="card-name">${esc(m.name || "Untitled app")}</div>
+            <div class="card-id">
+              ${tile(m.name || "App")}
+              <div style="min-width:0">
+                <div class="card-name">${esc(m.name || "Untitled app")}</div>
+                <div class="card-cat">${esc(catLabel(catOf(app)))}</div>
+              </div>
+            </div>
             ${m.description ? `<p class="card-desc">${esc(m.description)}</p>` : ""}
             <div class="card-foot">
               ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="" />` : ""}
@@ -187,14 +238,14 @@
 
     function render(apps) {
       const term = document.getElementById("q").value.trim().toLowerCase();
-      const shown = term
-        ? apps.filter((a) => {
-            const m = a.meta || {};
-            return (m.name || "").toLowerCase().includes(term)
-              || (m.description || "").toLowerCase().includes(term)
-              || (m.author || "").toLowerCase().includes(term);
-          })
-        : apps;
+      const shown = apps.filter((a) => {
+        const m = a.meta || {};
+        if (CAT !== "all" && catOf(a) !== CAT) return false;
+        return !term
+          || (m.name || "").toLowerCase().includes(term)
+          || (m.description || "").toLowerCase().includes(term)
+          || (m.author || "").toLowerCase().includes(term);
+      });
 
       document.getElementById("count").textContent =
         shown.length === apps.length
@@ -216,6 +267,19 @@
             '<p class="empty">Nothing published yet.<br /><a href="/publish/">Be the first</a>.</p>';
           return;
         }
+        // A shelf nobody has published to is noise, so it is not drawn.
+        const box = document.getElementById("cats");
+        box.innerHTML = CATS
+          .filter(([id]) => id === "all" || apps.some((a) => catOf(a) === id))
+          .map(([id, label]) => `<button data-cat="${id}"${id === CAT ? ' class="on"' : ""}>${label}</button>`)
+          .join("");
+        box.addEventListener("click", (e) => {
+          const b = e.target.closest("button[data-cat]");
+          if (!b) return;
+          CAT = b.dataset.cat;
+          for (const el of box.children) el.classList.toggle("on", el === b);
+          render(ALL);
+        });
         render(ALL);
         document.getElementById("q").addEventListener("input", () => render(ALL));
       } catch (err) {

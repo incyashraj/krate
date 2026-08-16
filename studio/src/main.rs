@@ -978,14 +978,18 @@ fn open_app(path: String) -> Result<(), String> {
 
 /// Publish to the hub and hand back the short run-by-URL link.
 #[tauri::command]
-async fn publish(path: String) -> Result<String, String> {
+async fn publish(path: String, description: Option<String>) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = existing(&path)?;
         let engine = engine()?;
-        let out = silent_cmd(&engine)
-            .arg("publish")
-            .arg(&path)
-            .output()
+        let mut cmd = silent_cmd(&engine);
+        cmd.arg("publish").arg(&path);
+        // What the person asked for IS the app's description; the store
+        // card stays blank without it.
+        if let Some(desc) = description.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+            cmd.arg("--description").arg(desc);
+        }
+        let out = cmd.output()
             .map_err(|err| err.to_string())?;
         let text = format!(
             "{}\n{}",

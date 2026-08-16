@@ -977,25 +977,48 @@ function timeAgo(seconds) {
   return days === 1 ? "yesterday" : `${days} days ago`;
 }
 
-/* Categories are derived from what the app says about itself, because the hub
-   stores no category field and inventing one would mean every existing app
-   showing up as "Other". Each rule is a set of words that actually appear in
-   these apps' names and descriptions. An app matching nothing lands in
-   Everything only, which is honest -- better than a wrong label. */
+/* The shelf an app sits on comes from the hub -- the publisher classified it
+   at publish time. The keyword fallback only covers apps published before the
+   hub stored a category. */
 const CLOUD_CATS = [
-  { id: "all", label: "Everything", match: () => true },
-  { id: "games", label: "Games", words: ["game", "shooter", "play", "arcade", "nova", "screensaver", "flip", "dice"] },
-  { id: "time", label: "Time", words: ["timer", "clock", "countdown", "focus", "pomodoro", "calendar", "schedule"] },
-  { id: "money", label: "Money", words: ["money", "budget", "invoice", "expense", "spending", "balance", "tip", "split", "price"] },
-  { id: "writing", label: "Notes", words: ["note", "journal", "write", "text", "markdown", "checklist", "list", "todo"] },
-  { id: "tools", label: "Tools", words: ["convert", "rename", "calculator", "unit", "tool", "news", "weather", "dashboard"] },
+  { id: "all", label: "Everything" },
+  { id: "games", label: "Games" },
+  { id: "productivity", label: "Productivity" },
+  { id: "tools", label: "Tools" },
+  { id: "media", label: "Media" },
+  { id: "learning", label: "Learning" },
+  { id: "apps", label: "More" },
 ];
 
 function catOf(app) {
   const meta = app.meta || {};
+  if (meta.category) return [meta.category];
   const hay = `${meta.name || ""} ${meta.description || ""}`.toLowerCase();
-  return CLOUD_CATS.filter((c) => c.words && c.words.some((w) => hay.includes(w)))
-    .map((c) => c.id);
+  if (["game", "dash", "nova", "flip", "dice", "arcade"].some((w) => hay.includes(w))) return ["games"];
+  if (["note", "journal", "timer", "clock", "focus", "list", "track"].some((w) => hay.includes(w))) return ["productivity"];
+  if (["calc", "split", "convert", "rename", "budget", "tip"].some((w) => hay.includes(w))) return ["tools"];
+  return ["apps"];
+}
+
+function catLabel(id) {
+  const cat = CLOUD_CATS.find((c) => c.id === id);
+  return cat ? cat.label : id;
+}
+
+/* Apps have no uploaded logos, so each gets a monogram tile whose colour is
+   derived from its own name -- stable across sessions, distinct across apps. */
+function appTile(name) {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
+  const tile = document.createElement("span");
+  tile.className = "cloud-icon";
+  tile.style.background =
+    `linear-gradient(135deg, hsl(${h} 42% 30%), hsl(${(h + 40) % 360} 46% 18%))`;
+  const words = name.trim().split(/\s+/);
+  tile.textContent = words.length > 1
+    ? (words[0][0] + words[1][0]).toUpperCase()
+    : name.slice(0, 2).replace(/^./, (c) => c.toUpperCase());
+  return tile;
 }
 
 async function openCloud() {
@@ -1046,7 +1069,11 @@ function showCloudApp(app) {
   state.cloudApp = app;
   showView("appDetail");
   $("appCrumb").textContent = meta.name || "App";
+  const head = $("detailHead");
+  head.querySelector(".cloud-icon")?.remove();
+  head.prepend(appTile(meta.name || "App"));
   $("detailName").textContent = meta.name || "Untitled app";
+  $("detailTag").textContent = catLabel((app.cats && app.cats[0]) || "apps");
   $("detailDesc").textContent = meta.description || "";
   $("detailDesc").classList.toggle("hidden", !meta.description);
   $("detailBy").textContent = meta.author ? `Made by ${meta.author}` : "";
@@ -1143,40 +1170,36 @@ function renderCloud(apps, filtered) {
     const card = document.createElement("button");
     card.className = "cloud-card";
 
-    // The app's own first frame, when the hub has one. A store where you
-    // can SEE the apps reads as a store; a list of names reads as a mess.
+    // The app's own first frame on top -- a store where you can SEE the
+    // apps reads as a store; a list of names reads as a mess.
+    const shot = document.createElement("div");
+    shot.className = "cloud-shot";
     if (app.shot) {
-      const shot = document.createElement("div");
-      shot.className = "cloud-shot";
       const img = document.createElement("img");
       img.src = app.shot;
       img.loading = "lazy";
       img.alt = "";
-      img.onerror = () => shot.remove();
+      img.onerror = () => { img.remove(); };
       shot.appendChild(img);
-      card.appendChild(shot);
     }
+    card.appendChild(shot);
 
+    // Icon tile, name and shelf on one line, like any app store row.
+    const head = document.createElement("div");
+    head.className = "cloud-id";
+    head.appendChild(appTile(meta.name || "App"));
+    const titles = document.createElement("div");
+    titles.className = "cloud-titles";
     const name = document.createElement("p");
     name.className = "cloud-name";
     name.textContent = meta.name || "Untitled app";
-    card.appendChild(name);
-
-    if (meta.author) {
-      const by = document.createElement("p");
-      by.className = "cloud-by";
-      // The avatar is remote, and the page is otherwise offline-only. A
-      // broken image would look like a bug, so it simply removes itself.
-      if (meta.avatar_url) {
-        const img = document.createElement("img");
-        img.src = meta.avatar_url;
-        img.alt = "";
-        img.onerror = () => img.remove();
-        by.appendChild(img);
-      }
-      by.appendChild(document.createTextNode(meta.author));
-      card.appendChild(by);
-    }
+    titles.appendChild(name);
+    const tag = document.createElement("p");
+    tag.className = "cloud-tag";
+    tag.textContent = catLabel((app.cats && app.cats[0]) || "apps");
+    titles.appendChild(tag);
+    head.appendChild(titles);
+    card.appendChild(head);
 
     if (meta.description) {
       const desc = document.createElement("p");
@@ -1185,6 +1208,23 @@ function renderCloud(apps, filtered) {
       card.appendChild(desc);
     }
 
+    const foot = document.createElement("div");
+    foot.className = "cloud-foot";
+    if (meta.author) {
+      const by = document.createElement("p");
+      by.className = "cloud-by";
+      // The avatar is remote; a broken image would look like a bug, so it
+      // simply removes itself.
+      if (meta.avatar_url) {
+        const img = document.createElement("img");
+        img.src = meta.avatar_url;
+        img.alt = "";
+        img.onerror = () => img.remove();
+        by.appendChild(img);
+      }
+      by.appendChild(document.createTextNode(meta.author));
+      foot.appendChild(by);
+    }
     const bits = [];
     if (meta.size) bits.push(`${Math.round(meta.size / 1024)} KB`);
     if (meta.published) bits.push(timeAgo(meta.published));
@@ -1192,13 +1232,9 @@ function renderCloud(apps, filtered) {
       const line = document.createElement("p");
       line.className = "cloud-meta";
       line.textContent = bits.join(" \u00b7 ");
-      card.appendChild(line);
+      foot.appendChild(line);
     }
-
-    const go = document.createElement("p");
-    go.className = "cloud-open";
-    go.textContent = "Details \u2192";
-    card.appendChild(go);
+    card.appendChild(foot);
 
     card.addEventListener("click", () => showCloudApp(app));
     grid.appendChild(card);
@@ -1275,7 +1311,13 @@ async function share() {
   try {
     const app = currentApp();
     if (!app) throw new Error("there is no finished app to share yet");
-    const url = await invoke("publish", { path: app.path });
+    // The first thing the person asked for doubles as the store
+    // description -- one line, not the whole conversation.
+    const firstAsk = (state.session.messages.find((m) => m.who === "YOU") || {}).body || "";
+    const url = await invoke("publish", {
+      path: app.path,
+      description: firstAsk.replace(/\s+/g, " ").trim().slice(0, 140),
+    });
     state.session.result.share_url = url;
     $("shareLink").textContent = url;
     $("shareResult").classList.remove("hidden", "error");

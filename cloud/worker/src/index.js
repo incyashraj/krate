@@ -154,6 +154,13 @@ async function publish(request, env) {
   const meta = {
     name: header(request, "x-krate-name") || "Untitled app",
     description: header(request, "x-krate-description") || "",
+    // A small fixed shelf list: free-text categories fragment a gallery.
+    category: (() => {
+      const c = (header(request, "x-krate-category") || "").toLowerCase();
+      return ["games", "productivity", "tools", "media", "learning"].includes(c)
+        ? c
+        : "apps";
+    })(),
     author: identity.name || identity.login,
     author_login: identity.login,
     author_url: `https://github.com/${identity.login}`,
@@ -1019,7 +1026,7 @@ function cors(response) {
   headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
   headers.set(
     "access-control-allow-headers",
-    "authorization, content-type, x-krate-name, x-krate-description",
+    "authorization, content-type, x-krate-name, x-krate-description, x-krate-category",
   );
   return new Response(response.body, { status: response.status, headers });
 }

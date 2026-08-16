@@ -3525,6 +3525,10 @@ fn publish_bundle(
     if let Some(description) = description {
         request = request.set("X-Krate-Description", description);
     }
+    request = request.set(
+        "X-Krate-Category",
+        classify_app(&app_name, description.unwrap_or("")),
+    );
     if let Some(identity) = &identity {
         // The hub verifies this against GitHub rather than trusting a name in
         // a header, so the author shown on an app's page is a real account.
@@ -3561,6 +3565,37 @@ fn publish_bundle(
         .ok_or_else(|| anyhow::anyhow!("the hub returned an unexpected response: {body}"))?;
 
     usage::record(usage::Action::Publish);
+    // The store lives on previews. Render the app's own first frame headless
+    // and attach it; every failure here is swallowed on purpose -- the app
+    // is published and the listing works either way.
+    // The response's `id` is the content hash the shot route keys on; the
+    // url may be the short alias and would 404 the upload.
+    let shot_id = extract_json_string(&body, "id");
+    if let (Some(id), Some(identity)) = (shot_id.as_deref(), &identity) {
+        let shot = std::env::temp_dir().join(format!("krate-publish-shot-{}.png", std::process::id()));
+        let ok = std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| "krate".into()))
+            .arg("run")
+            .arg(bundle)
+            .args(["--shoot"])
+            .arg(&shot)
+            .args(["--auto-grant", "--", "quick"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            if let Ok(png) = fs::read(&shot) {
+                if png.len() <= 2 * 1024 * 1024 {
+                    let _ = ureq::post(&format!("{}/shot/{id}", hub.trim_end_matches('/')))
+                        .set("Authorization", &format!("Bearer {}", identity.token))
+                        .set("Content-Type", "image/png")
+                        .send_bytes(&png);
+                }
+            }
+            let _ = fs::remove_file(&shot);
+        }
+    }
     // The hub degrades rather than dies when a metadata write cannot land
     // (a KV quota day): the app is live at its URL but the gallery row is
     // deferred, and it says so in a `note`. Swallowing that note showed a
@@ -3571,6 +3606,27 @@ fn publish_bundle(
     println!("Published. Anyone can run it with:");
     println!("  krate run {url}");
     Ok(0)
+}
+
+/// Which shelf an app belongs on, from its own words. A fixed list on
+/// purpose: free-text categories fragment a store into thirty shelves of
+/// one app each.
+fn classify_app(name: &str, description: &str) -> &'static str {
+    let text = format!("{name} {description}").to_lowercase();
+    let has = |words: &[&str]| words.iter().any(|w| text.contains(w));
+    if has(&["game", "dash", "runner", "puzzle", "arcade", "flip", "dice", "snake", "invader", "nova", "shooter", "space"]) {
+        "games"
+    } else if has(&["track", "habit", "journal", "todo", "note", "timer", "clock", "pomodoro", "focus", "streak", "list"]) {
+        "productivity"
+    } else if has(&["calc", "convert", "split", "counter", "invoice", "unit", "measure"]) {
+        "tools"
+    } else if has(&["draw", "paint", "photo", "image", "music", "player", "sound", "color"]) {
+        "media"
+    } else if has(&["learn", "flash", "quiz", "study", "practice"]) {
+        "learning"
+    } else {
+        "apps"
+    }
 }
 
 /// Pull one string field out of a flat JSON object like `{"url":"...","id":"..."}`.

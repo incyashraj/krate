@@ -9,6 +9,14 @@
   <link rel="stylesheet" href="/site.css" />
   <link rel="icon" href="/krate-favicon.png" />
   <style>
+    .name-row { display: flex; align-items: center; gap: .8rem; }
+    .app-icon {
+      flex: none; width: 52px; height: 52px; border-radius: 13px;
+      display: grid; place-items: center;
+      color: rgba(255, 255, 255, .92); font-size: 1.2rem; font-weight: 600;
+      border: 1px solid rgba(255, 255, 255, .08);
+    }
+    .cat { color: var(--quiet); font-size: .84rem; margin: .35rem 0 0; }
     /* This page's own components; the shell comes from site.css. */
 
     .back { color: var(--quiet); text-decoration: none; font-size: .88rem; display: inline-block; margin-bottom: 1.4rem; }
@@ -109,6 +117,20 @@
     const when = (s) => s ? new Date(s * 1000).toLocaleDateString(undefined,
       { year: "numeric", month: "long", day: "numeric" }) : "";
 
+    const CAT_LABELS = { games: "Games", productivity: "Productivity", tools: "Tools",
+      media: "Media", learning: "Learning", apps: "More" };
+
+    /* Same monogram tile the gallery draws, coloured from the app's name. */
+    function tile(name) {
+      let h = 0;
+      for (const ch of name) h = (h * 31 + ch.codePointAt(0)) % 360;
+      const words = name.trim().split(/\s+/);
+      const mono = words.length > 1
+        ? (words[0][0] + words[1][0]).toUpperCase()
+        : name.slice(0, 2).replace(/^./, (c) => c.toUpperCase());
+      return `<span class="app-icon" style="background:linear-gradient(135deg,hsl(${h} 42% 30%),hsl(${(h + 40) % 360} 46% 18%))">${esc(mono)}</span>`;
+    }
+
     // Read the permission wall out of the bundle itself rather than trusting a
     // description. Each capability carries the app's own reason for wanting it.
     async function permissions(url) {
@@ -188,7 +210,11 @@
               : '<span class="none">no screenshot yet</span>'}
           </div>
           <div class="meta">
-            <h1>${esc(m.name || "Untitled app")}</h1>
+            <div class="name-row">
+              ${tile(m.name || "App")}
+              <h1>${esc(m.name || "Untitled app")}</h1>
+            </div>
+            ${m.category ? `<p class="cat">${esc(CAT_LABELS[m.category] || m.category)}</p>` : ""}
             ${m.description ? `<p class="desc">${esc(m.description)}</p>` : ""}
             <div class="by">
               ${m.avatar_url ? `<img src="${esc(m.avatar_url)}" alt="" />` : ""}
