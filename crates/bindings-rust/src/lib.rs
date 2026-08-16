@@ -171,14 +171,22 @@ pub mod motion {
         /// Advance toward `target` by `dt` seconds. Critically damped, so it
         /// settles without bouncing; call every frame and read `.value`.
         pub fn tick(&mut self, target: f32, dt: f32) {
-            let dt = dt.clamp(0.0, 0.1);
+            let dt = dt.clamp(0.0, 0.25);
             let omega = self.stiffness;
-            // Semi-implicit integration of x'' = -w^2 (x - target) - 2w x',
-            // stable at any frame rate an app will actually see.
-            let to_target = target - self.value;
-            let accel = omega * omega * to_target - 2.0 * omega * self.velocity;
-            self.velocity += accel * dt;
-            self.value += self.velocity * dt;
+            // Semi-implicit Euler diverges once omega*dt passes ~2 -- one
+            // stalled frame (app hidden, machine busy) fed a big dt and the
+            // spring ran away instead of settling (found by the idle-CPU
+            // battery). Substep so each step stays deep inside the stable
+            // region whatever dt arrives.
+            let mut remaining = dt;
+            while remaining > 0.0 {
+                let h = remaining.min(0.5 / omega.max(1.0));
+                let to_target = target - self.value;
+                let accel = omega * omega * to_target - 2.0 * omega * self.velocity;
+                self.velocity += accel * h;
+                self.value += self.velocity * h;
+                remaining -= h;
+            }
         }
 
         /// Whether the spring has effectively arrived, for stopping redraws.
@@ -213,17 +221,23 @@ pub mod motion {
         /// Advance toward `target` by `dt` seconds. Underdamped by `bounce`,
         /// so it overshoots and rings down; call every frame, read `.value`.
         pub fn tick(&mut self, target: f32, dt: f32) {
-            let dt = dt.clamp(0.0, 0.1);
+            let dt = dt.clamp(0.0, 0.25);
             let omega = self.stiffness;
             // Damping ratio tuned so each step of `bounce` reads on
             // screen at interface stiffness and 60Hz: 0.3 lands with a
             // subtle wink (~4% overshoot), 0.5 clearly bounces (~18%),
             // 0.7 is playful (~40%). Floored so 1.0 still settles.
             let zeta = ((1.0 - self.bounce) * 0.85).max(0.12);
-            let to_target = target - self.value;
-            let accel = omega * omega * to_target - 2.0 * zeta * omega * self.velocity;
-            self.velocity += accel * dt;
-            self.value += self.velocity * dt;
+            // Substepped for unconditional stability, same as Spring.
+            let mut remaining = dt;
+            while remaining > 0.0 {
+                let h = remaining.min(0.5 / omega.max(1.0));
+                let to_target = target - self.value;
+                let accel = omega * omega * to_target - 2.0 * zeta * omega * self.velocity;
+                self.velocity += accel * h;
+                self.value += self.velocity * h;
+                remaining -= h;
+            }
         }
 
         /// Whether the bounce has rung down, for stopping redraws.
@@ -1093,5 +1107,27 @@ mod motion_tests {
         let mut s = Spring::rest_at(0.0, 30.0);
         s.tick(50.0, 5.0); // clamped internally
         assert!(s.value.is_finite() && s.value.abs() < 1000.0);
+    }
+
+    /// Divergence regression: repeated BIG dts (a background window ticking
+    /// once a second) must converge, never run away -- the idle-CPU battery
+    /// caught a spring whose velocity grew 30x under exactly this.
+    #[test]
+    fn one_second_frames_still_settle() {
+        let mut s = Spring::rest_at(0.0, 25.0);
+        for _ in 0..40 {
+            s.tick(468.0, 1.0);
+        }
+        assert!(
+            s.settled(468.0),
+            "value {} velocity {}",
+            s.value,
+            s.velocity
+        );
+        let mut b = crate::motion::BouncySpring::rest_at(0.0, 25.0, 0.5);
+        for _ in 0..80 {
+            b.tick(468.0, 1.0);
+        }
+        assert!(b.settled(468.0), "bouncy {} v {}", b.value, b.velocity);
     }
 }
