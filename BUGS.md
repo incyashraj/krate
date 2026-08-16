@@ -3818,6 +3818,34 @@ Status:   fixed
 
 ## Fixed
 
+### K-121 -- The close button cannot end an app that ignores CloseRequested; the machine paid for it
+Status:   fixed
+Owner:    lead
+Severity: critical
+Class:    our-code
+Found:    2026-08-16, founder ran an AI-authored Aurora.krate windowed,
+          clicked close repeatedly, nothing happened; with the app also
+          spinning a core (K-120, since paced) the machine locked up and
+          had to be power-cycled.
+Evidence: adapter-macos/appkit.rs windowShouldClose always returns false
+          and forwards a CloseRequested to the guest -- by design, so an
+          app can save on the way out. phase3_gui_host.rs then counts the
+          requests and close_ignored_by_guest() fires on the second click,
+          but the only consumer (events::poll) just `return Ok(None)`:
+          the "close the window ourselves" the doc comment promises was
+          never implemented. Worse, only `poll` counts the clicks --
+          `wait` and `key-held` deliver CloseRequested without noting it,
+          so a game loop reading keys never trips the threshold at all.
+          The window has no path to death except Ctrl-C in the launching
+          terminal, which a double-click launch does not have.
+Fix:      f7486da9. Every real event is counted once, where the dispatcher
+          yields it in poll_one_event (so the pending-queue round trip
+          cannot double-count a single click), and the second unanswered
+          request ends the process from poll, wait, and both presents --
+          a game loop lives in present and may never call the others.
+          Same two-press contract as Ctrl-C. Threshold pinned by test
+          the_second_unanswered_close_request_is_the_runtime_s_to_honour.
+
 ### K-113 — "Change my app" replaced it with a stranger
 Status:   fixed
 Owner:    lead
