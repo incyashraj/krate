@@ -3686,6 +3686,25 @@ Fix:      The pack already taught pixel offsets for lists, and the agent
           within = scroll%line_height, draw from list_y - within. A partly
           visible line at top and bottom IS the smoothness.
 
+### K-118 -- wasmtime 43 is out of security support; the upgrade needs rustc 1.94
+Status:   open
+Owner:    unclaimed
+Severity: major
+Class:    our-code
+Found:    2026-08-16, cargo-deny in CI, new advisory RUSTSEC-2026-0222
+          (type-index confusion between engines) against wasmtime 43.0.2.
+Evidence: Patched trains are >=46.0.2 / >=47.0.3; both pull cranelift
+          crates requiring rustc 1.94.0, and the workspace pins 1.91.1, so
+          `cargo build` refuses before any API question is reached. The
+          runtime creates exactly one Engine per process, so the advisory's
+          cross-engine mixing has no practical surface today -- which is
+          why a dated deny.toml ignore is honest in the meantime, and why
+          this entry exists so the ignore does not quietly become policy.
+Fix:      One workstation task: bump the toolchain pin to 1.94, bump
+          wasmtime to the 46 LTS train (46.0.2+), fix whatever component
+          API moved between 43 and 46, re-run the full replay/evidence
+          suites, and delete all four deny ignores dated 2026-08-16.
+
 ### K-117 -- Apps cannot paint the title bar area, so full-bleed designs are impossible
 Status:   open
 Owner:    unclaimed
