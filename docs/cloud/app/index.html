@@ -211,7 +211,9 @@
           </div>
           <div class="meta">
             <div class="name-row">
-              ${tile(m.name || "App")}
+              ${app.icon
+                ? `<img class="app-icon" src="${esc(app.icon)}" alt="" onerror="this.remove()" style="object-fit:cover" />`
+                : tile(m.name || "App")}
               <h1>${esc(m.name || "Untitled app")}</h1>
             </div>
             ${m.category ? `<p class="cat">${esc(CAT_LABELS[m.category] || m.category)}</p>` : ""}

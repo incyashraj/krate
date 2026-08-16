@@ -1036,3 +1036,36 @@ body.resizing .divider { background: var(--blue); }
 .detail-head { display: flex; align-items: center; gap: 14px; }
 .detail-head .cloud-icon { width: 52px; height: 52px; border-radius: 13px; font-size: 19px; }
 .detail-tag { margin-top: 8px; color: var(--ghost); font-size: 12.5px; }
+
+/* A real uploaded logo shares the monogram tile's geometry. */
+img.cloud-icon { object-fit: cover; }
+
+/* ---- the publish sheet ------------------------------------------------- */
+
+.sheet-publish { max-width: 520px; text-align: left; }
+.sheet-publish h2 { text-align: left; }
+.pub-sub { color: var(--faint); font-size: 12.5px; margin: 6px 0 16px; line-height: 1.55; }
+.pub-label {
+  display: block; margin-bottom: 12px;
+  color: var(--faint); font-size: 12px;
+}
+.pub-label input {
+  display: block; width: 100%; margin-top: 5px;
+  padding: 8px 11px; border-radius: 9px;
+  border: 1px solid var(--line); background: var(--panel);
+  color: var(--text); font: inherit; font-size: 13.5px; outline: none;
+}
+.pub-label input:focus { border-color: var(--line-strong); }
+.pub-media { display: flex; gap: 14px; margin: 4px 0 16px; }
+.pub-slot { flex: 1; min-width: 0; }
+.pub-slot-icon { flex: 0 0 158px; }
+.pub-opt { color: var(--ghost); text-transform: none; letter-spacing: 0; }
+.pub-preview {
+  margin: 6px 0 8px; border: 1px solid var(--line); border-radius: 10px;
+  background: var(--panel); overflow: hidden;
+  aspect-ratio: 16 / 10; display: grid; place-items: center;
+  color: var(--ghost); font-size: 11.5px; text-align: center; padding: 0 10px;
+}
+.pub-preview img { width: 100%; height: 100%; object-fit: cover; padding: 0; }
+.pub-preview-icon { aspect-ratio: 1; width: 96px; border-radius: 22px; }
+.pub-preview-icon img { object-fit: cover; }

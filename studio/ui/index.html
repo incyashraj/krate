@@ -258,6 +258,44 @@
     </main>
   </div>
 
+  <div class="sheet-wrap hidden" id="publishSheet">
+    <div class="sheet sheet-publish">
+      <h2>Publish to Krate Cloud</h2>
+      <p class="pub-sub">This is how your app will look in the store.
+      Publishing again later replaces this listing.</p>
+      <label class="pub-label">Name
+        <input id="pubName" type="text" maxlength="60" autocomplete="off" spellcheck="false" />
+      </label>
+      <label class="pub-label">One line about it
+        <input id="pubDesc" type="text" maxlength="140" autocomplete="off" spellcheck="false"
+               placeholder="What it does, in plain words" />
+      </label>
+      <div class="pub-media">
+        <div class="pub-slot">
+          <p class="label">Screenshot</p>
+          <div class="pub-preview" id="pubShotBox">
+            <img id="pubShotImg" alt="" class="hidden" />
+            <span id="pubShotNone">Taken automatically when you publish</span>
+          </div>
+          <button class="btn btn-ghost" id="pubShotPick">Choose image…</button>
+        </div>
+        <div class="pub-slot pub-slot-icon">
+          <p class="label">Logo <span class="pub-opt">optional</span></p>
+          <div class="pub-preview pub-preview-icon" id="pubIconBox">
+            <img id="pubIconImg" alt="" class="hidden" />
+            <span id="pubIconNone">A colored monogram is used without one</span>
+          </div>
+          <button class="btn btn-ghost" id="pubIconPick">Choose logo…</button>
+        </div>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="pubGo">Publish</button>
+        <button class="btn btn-ghost sheet-close" data-close="publishSheet">Cancel</button>
+      </div>
+      <p class="detail-note" id="pubNote"></p>
+    </div>
+  </div>
+
   <div class="sheet-wrap hidden" id="infoSheet">
     <div class="sheet sheet-info">
       <h2 id="infoName">App</h2>

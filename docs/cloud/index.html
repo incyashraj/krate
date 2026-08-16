@@ -55,7 +55,7 @@
     .card-id { display: flex; align-items: center; gap: .6rem; margin-bottom: .55rem; min-width: 0; }
     .card-icon {
       flex: none; width: 34px; height: 34px; border-radius: 9px;
-      display: grid; place-items: center;
+      display: grid; place-items: center; object-fit: cover;
       color: rgba(255, 255, 255, .92); font-size: .8rem; font-weight: 600;
       border: 1px solid rgba(255, 255, 255, .08);
     }
@@ -85,6 +85,18 @@
     }
     .cats button:hover { color: var(--text); border-color: var(--line-strong); }
     .cats button.on { color: #0a0a0a; background: var(--text); border-color: var(--text); }
+
+    /* While the hub answers, ghost cards hold the layout so the page never
+       reads as empty-then-popped. */
+    .skel { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    .skel .shot { border-bottom: 1px solid var(--line); }
+    .skel-line { height: .8rem; border-radius: 5px; margin: .9rem .95rem; background: var(--line); }
+    .skel-line.short { width: 45%; }
+    .skel .shot, .skel-line {
+      animation: skel-breathe 1.2s ease-in-out infinite alternate;
+    }
+    @keyframes skel-breathe { from { opacity: .55; } to { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .skel .shot, .skel-line { animation: none; } }
 
     .empty { color: var(--quiet); text-align: center; padding: 3.5rem 1rem; line-height: 1.8; }
     .empty a { color: var(--blue-soft); }
@@ -220,7 +232,9 @@
           </div>
           <div class="card-body">
             <div class="card-id">
-              ${tile(m.name || "App")}
+              ${app.icon
+                ? `<img class="card-icon" src="${esc(app.icon)}" alt="" onerror="this.remove()" />`
+                : tile(m.name || "App")}
               <div style="min-width:0">
                 <div class="card-name">${esc(m.name || "Untitled app")}</div>
                 <div class="card-cat">${esc(catLabel(catOf(app)))}</div>
@@ -259,6 +273,12 @@
 
     (async () => {
       const list = document.getElementById("list");
+      // Ghost cards up immediately: the page must say "loading" by shape,
+      // not sit still and then pop.
+      list.innerHTML = '<div class="grid">' + Array.from({ length: 8 }).map(() =>
+        '<div class="skel"><div class="shot"></div><div class="skel-line"></div><div class="skel-line short"></div></div>'
+      ).join("") + "</div>";
+      document.getElementById("count").textContent = "loading\u2026";
       try {
         const { apps } = await fetch(HUB + "/apps").then((r) => r.json());
         ALL = apps;

@@ -480,6 +480,42 @@ async fn pick_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     Ok(picked.iter().map(|p| p.display().to_string()).collect())
 }
 
+/// A picked image as a data URL, so the publish sheet can preview it. Size
+/// is capped at the hub's own screenshot limit; anything bigger would be
+/// refused at upload anyway.
+#[tauri::command]
+async fn read_image(path: String) -> Result<String, String> {
+    let path = existing(&path)?;
+    let bytes = std::fs::read(&path).map_err(|err| err.to_string())?;
+    if bytes.len() > 2 * 1024 * 1024 {
+        return Err("that image is over 2 MB; pick a smaller PNG".to_string());
+    }
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
+/// A native picker for exactly one PNG, for the publish sheet's screenshot
+/// and logo slots.
+#[tauri::command]
+async fn pick_image(app: tauri::AppHandle, title: String) -> Result<Option<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let picked = rfd::FileDialog::new()
+            .set_title(&title)
+            .set_directory(dirs_home())
+            .add_filter("PNG image", &["png"])
+            .pick_file();
+        let _ = tx.send(picked);
+    })
+    .map_err(|err| err.to_string())?;
+    let picked = rx
+        .recv_timeout(std::time::Duration::from_secs(300))
+        .map_err(|_| "the file picker did not answer".to_string())?;
+    Ok(picked.map(|p| p.display().to_string()))
+}
+
 #[tauri::command]
 async fn pick_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let (tx, rx) = std::sync::mpsc::channel();
@@ -978,7 +1014,13 @@ fn open_app(path: String) -> Result<(), String> {
 
 /// Publish to the hub and hand back the short run-by-URL link.
 #[tauri::command]
-async fn publish(path: String, description: Option<String>) -> Result<String, String> {
+async fn publish(
+    path: String,
+    description: Option<String>,
+    name: Option<String>,
+    shot: Option<String>,
+    icon: Option<String>,
+) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let path = existing(&path)?;
         let engine = engine()?;
@@ -986,9 +1028,15 @@ async fn publish(path: String, description: Option<String>) -> Result<String, St
         cmd.arg("publish").arg(&path);
         // What the person asked for IS the app's description; the store
         // card stays blank without it.
-        if let Some(desc) = description.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
-            cmd.arg("--description").arg(desc);
-        }
+        let flag = |cmd: &mut std::process::Command, name: &str, value: &Option<String>| {
+            if let Some(value) = value.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+                cmd.arg(name).arg(value);
+            }
+        };
+        flag(&mut cmd, "--description", &description);
+        flag(&mut cmd, "--name", &name);
+        flag(&mut cmd, "--shot", &shot);
+        flag(&mut cmd, "--icon", &icon);
         let out = cmd.output()
             .map_err(|err| err.to_string())?;
         let text = format!(
@@ -1840,6 +1888,8 @@ fn main() {
             cloud_apps,
             cloud_run,
             pick_files,
+            pick_image,
+            read_image,
             pick_folder,
             autorun,
             studio_version,

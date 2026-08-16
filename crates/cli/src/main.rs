@@ -419,6 +419,19 @@ enum Command {
         /// what you asked for when the app was made.
         #[arg(long)]
         description: Option<String>,
+
+        /// Name shown on the cloud page. Defaults to the app's own name.
+        #[arg(long)]
+        name: Option<String>,
+
+        /// PNG to use as the listing screenshot. Without it the app's first
+        /// frame is rendered headless and used automatically.
+        #[arg(long)]
+        shot: Option<PathBuf>,
+
+        /// Small square PNG logo for the listing (under 512 KiB).
+        #[arg(long)]
+        icon: Option<PathBuf>,
     },
 
     /// Author a small app from a request and package it as one shareable
@@ -1092,7 +1105,17 @@ fn run() -> Result<u8> {
             bundle,
             hub,
             description,
-        } => publish_bundle(&bundle, hub.as_deref(), description.as_deref()),
+            name,
+            shot,
+            icon,
+        } => publish_bundle(
+            &bundle,
+            hub.as_deref(),
+            description.as_deref(),
+            name.as_deref(),
+            shot.as_deref(),
+            icon.as_deref(),
+        ),
         Command::Create {
             request,
             output,
@@ -3491,7 +3514,7 @@ const DEFAULT_HUB_URL: &str = "https://hub.krate.tech";
 /// which is the one thing a `.krate` exists for. This is the same code path as
 /// `krate publish`, so there is one publisher rather than two that can drift.
 pub(crate) fn publish_bundle_for_tui(bundle: &Path, description: Option<&str>) -> Result<()> {
-    let code = publish_bundle(bundle, None, description)?;
+    let code = publish_bundle(bundle, None, description, None, None, None)?;
     if code == 0 {
         Ok(())
     } else {
@@ -3503,6 +3526,9 @@ fn publish_bundle(
     bundle: &Path,
     hub_override: Option<&str>,
     description: Option<&str>,
+    name_override: Option<&str>,
+    shot_override: Option<&Path>,
+    icon: Option<&Path>,
 ) -> Result<u8> {
     // Only upload something that is actually a bundle. Catching it here means a
     // wrong path fails locally with a clear message instead of round-tripping
@@ -3529,9 +3555,14 @@ fn publish_bundle(
     // typed when they asked for it, and the author comes from the GitHub
     // sign-in. All three are optional -- publishing still works signed out,
     // it just lands as "anonymous".
-    let app_name = krate_bundle::open(bundle)
-        .ok()
-        .map(|opened| opened.manifest().app.name.clone())
+    let app_name = name_override
+        .map(str::to_string)
+        .filter(|name| !name.trim().is_empty())
+        .or_else(|| {
+            krate_bundle::open(bundle)
+                .ok()
+                .map(|opened| opened.manifest().app.name.clone())
+        })
         .unwrap_or_default();
     // The error message told people to run `krate publish` and be asked, so
     // it had better ask. Signing in here rather than failing with advice is
@@ -3602,30 +3633,48 @@ fn publish_bundle(
     // url may be the short alias and would 404 the upload.
     let shot_id = extract_json_string(&body, "id");
     if let (Some(id), Some(identity)) = (shot_id.as_deref(), &identity) {
-        let shot =
-            std::env::temp_dir().join(format!("krate-publish-shot-{}.png", std::process::id()));
-        let ok =
-            std::process::Command::new(std::env::current_exe().unwrap_or_else(|_| "krate".into()))
-                .arg("run")
-                .arg(bundle)
-                .args(["--shoot"])
-                .arg(&shot)
-                .args(["--auto-grant", "--", "quick"])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false);
-        if ok {
-            if let Ok(png) = fs::read(&shot) {
-                if png.len() <= 2 * 1024 * 1024 {
-                    let _ = ureq::post(&format!("{}/shot/{id}", hub.trim_end_matches('/')))
-                        .set("Authorization", &format!("Bearer {}", identity.token))
-                        .set("Content-Type", "image/png")
-                        .send_bytes(&png);
-                }
+        let upload_png = |route: &str, png: &[u8], limit: usize| {
+            if png.is_empty() || png.len() > limit {
+                return;
             }
-            let _ = fs::remove_file(&shot);
+            let _ = ureq::post(&format!("{}/{route}/{id}", hub.trim_end_matches('/')))
+                .set("Authorization", &format!("Bearer {}", identity.token))
+                .set("Content-Type", "image/png")
+                .send_bytes(png);
+        };
+        // A hand-picked screenshot wins; otherwise render the app's own
+        // first frame headless.
+        if let Some(path) = shot_override {
+            if let Ok(png) = fs::read(path) {
+                upload_png("shot", &png, 2 * 1024 * 1024);
+            }
+        } else {
+            let shot =
+                std::env::temp_dir().join(format!("krate-publish-shot-{}.png", std::process::id()));
+            let ok = std::process::Command::new(
+                std::env::current_exe().unwrap_or_else(|_| "krate".into()),
+            )
+            .arg("run")
+            .arg(bundle)
+            .args(["--shoot"])
+            .arg(&shot)
+            .args(["--auto-grant", "--", "quick"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+            if ok {
+                if let Ok(png) = fs::read(&shot) {
+                    upload_png("shot", &png, 2 * 1024 * 1024);
+                }
+                let _ = fs::remove_file(&shot);
+            }
+        }
+        if let Some(path) = icon {
+            if let Ok(png) = fs::read(path) {
+                upload_png("icon", &png, 512 * 1024);
+            }
         }
     }
     // The hub degrades rather than dies when a metadata write cannot land
@@ -3646,6 +3695,11 @@ fn publish_bundle(
 fn classify_app(name: &str, description: &str) -> &'static str {
     let text = format!("{name} {description}").to_lowercase();
     let has = |words: &[&str]| words.iter().any(|w| text.contains(w));
+    // Checked before the shelves: "dashboard" contains "dash" and landed a
+    // workout dashboard on the games shelf.
+    if has(&["dashboard"]) {
+        return "productivity";
+    }
     if has(&[
         "game", "dash", "runner", "puzzle", "arcade", "flip", "dice", "snake", "invader", "nova",
         "shooter", "space",

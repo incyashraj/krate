@@ -1071,7 +1071,16 @@ function showCloudApp(app) {
   $("appCrumb").textContent = meta.name || "App";
   const head = $("detailHead");
   head.querySelector(".cloud-icon")?.remove();
-  head.prepend(appTile(meta.name || "App"));
+  if (app.icon) {
+    const icon = document.createElement("img");
+    icon.className = "cloud-icon";
+    icon.src = app.icon;
+    icon.alt = "";
+    icon.onerror = () => icon.replaceWith(appTile(meta.name || "App"));
+    head.prepend(icon);
+  } else {
+    head.prepend(appTile(meta.name || "App"));
+  }
   $("detailName").textContent = meta.name || "Untitled app";
   $("detailTag").textContent = catLabel((app.cats && app.cats[0]) || "apps");
   $("detailDesc").textContent = meta.description || "";
@@ -1187,7 +1196,16 @@ function renderCloud(apps, filtered) {
     // Icon tile, name and shelf on one line, like any app store row.
     const head = document.createElement("div");
     head.className = "cloud-id";
-    head.appendChild(appTile(meta.name || "App"));
+    if (app.icon) {
+      const icon = document.createElement("img");
+      icon.className = "cloud-icon";
+      icon.src = app.icon;
+      icon.alt = "";
+      icon.onerror = () => icon.replaceWith(appTile(meta.name || "App"));
+      head.appendChild(icon);
+    } else {
+      head.appendChild(appTile(meta.name || "App"));
+    }
     const titles = document.createElement("div");
     titles.className = "cloud-titles";
     const name = document.createElement("p");
@@ -1305,20 +1323,83 @@ function showActionError(err) {
   $("shareResult").classList.remove("hidden");
   $("shareResult").classList.add("error");
 }
-async function share() {
-  $("shareBtn").disabled = true;
-  $("shareBtn").textContent = "Publishing…";
+/* The publish sheet: what the person is about to put in the store, shown
+   before it goes -- name, one line, screenshot, optional logo. Publishing
+   again later replaces the listing server-side, so this is also the edit
+   path. */
+const pubState = { shotPath: null, iconPath: null };
+
+function openPublishSheet() {
+  const app = currentApp();
+  if (!app) return;
+  pubState.shotPath = null;
+  pubState.iconPath = null;
+  $("pubName").value = (app.name || "").replace(/\.krate$/, "").replace(/-/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+  const firstAsk = (state.session.messages.find((m) => m.who === "YOU") || {}).body || "";
+  $("pubDesc").value = firstAsk.replace(/\s+/g, " ").trim().slice(0, 140);
+  const shotImg = $("pubShotImg");
+  if (app.shot) {
+    shotImg.src = app.shot;
+    shotImg.classList.remove("hidden");
+    $("pubShotNone").classList.add("hidden");
+  } else {
+    shotImg.classList.add("hidden");
+    $("pubShotNone").classList.remove("hidden");
+  }
+  $("pubIconImg").classList.add("hidden");
+  $("pubIconNone").classList.remove("hidden");
+  $("pubNote").textContent = "";
+  $("pubGo").disabled = false;
+  $("pubGo").textContent = "Publish";
+  $("publishSheet").classList.remove("hidden");
+}
+
+async function pickPublishImage(kind) {
+  const title = kind === "shot" ? "Choose a screenshot (PNG)" : "Choose a logo (PNG)";
+  let path;
   try {
-    const app = currentApp();
-    if (!app) throw new Error("there is no finished app to share yet");
-    // The first thing the person asked for doubles as the store
-    // description -- one line, not the whole conversation.
-    const firstAsk = (state.session.messages.find((m) => m.who === "YOU") || {}).body || "";
+    path = await invoke("pick_image", { title });
+  } catch (err) {
+    $("pubNote").textContent = plainWords(err);
+    return;
+  }
+  if (!path) return;
+  try {
+    const data = await invoke("read_image", { path });
+    if (kind === "shot") {
+      pubState.shotPath = path;
+      $("pubShotImg").src = data;
+      $("pubShotImg").classList.remove("hidden");
+      $("pubShotNone").classList.add("hidden");
+    } else {
+      pubState.iconPath = path;
+      $("pubIconImg").src = data;
+      $("pubIconImg").classList.remove("hidden");
+      $("pubIconNone").classList.add("hidden");
+    }
+    $("pubNote").textContent = "";
+  } catch (err) {
+    $("pubNote").textContent = plainWords(err);
+  }
+}
+
+async function publishFromSheet() {
+  const app = currentApp();
+  if (!app) return;
+  $("pubGo").disabled = true;
+  $("pubGo").textContent = "Publishing…";
+  $("pubNote").textContent = "";
+  try {
     const url = await invoke("publish", {
       path: app.path,
-      description: firstAsk.replace(/\s+/g, " ").trim().slice(0, 140),
+      description: $("pubDesc").value.trim(),
+      name: $("pubName").value.trim(),
+      shot: pubState.shotPath,
+      icon: pubState.iconPath,
     });
     state.session.result.share_url = url;
+    $("publishSheet").classList.add("hidden");
     $("shareLink").textContent = url;
     $("shareResult").classList.remove("hidden", "error");
     let copied = false;
@@ -1326,13 +1407,9 @@ async function share() {
     $("shareCopied").classList.toggle("hidden", !copied);
     persist();
   } catch (err) {
-    $("shareLink").textContent = plainWords(err);
-    $("shareCopied").classList.add("hidden");
-    $("shareResult").classList.remove("hidden");
-    $("shareResult").classList.add("error");
-  } finally {
-    $("shareBtn").disabled = false;
-    $("shareBtn").textContent = "Share";
+    $("pubNote").textContent = plainWords(err);
+    $("pubGo").disabled = false;
+    $("pubGo").textContent = "Publish";
   }
 }
 
@@ -1578,7 +1655,10 @@ $("detailCopy").addEventListener("click", async () => {
 });
 $("stopBtn").addEventListener("click", () => invoke("stop_build"));
 $("openBtn").addEventListener("click", openApp);
-$("shareBtn").addEventListener("click", share);
+$("shareBtn").addEventListener("click", openPublishSheet);
+$("pubGo").addEventListener("click", publishFromSheet);
+$("pubShotPick").addEventListener("click", () => pickPublishImage("shot"));
+$("pubIconPick").addEventListener("click", () => pickPublishImage("icon"));
 $("infoBtn").addEventListener("click", showInfo);
 $("revealBtn").addEventListener("click", async () => {
   const app = currentApp();

@@ -101,6 +101,15 @@ export default {
       if (request.method === "GET" && pathname.startsWith("/shot/")) {
         return cors(await getShot(pathname.slice(6), env));
       }
+      if (request.method === "POST" && pathname.startsWith("/icon/")) {
+        return cors(await putIcon(request, pathname.slice(6), env));
+      }
+      if (request.method === "GET" && pathname.startsWith("/icon/")) {
+        return cors(await getIcon(pathname.slice(6), env));
+      }
+      if (request.method === "DELETE" && pathname.startsWith("/app/")) {
+        return cors(await unpublish(request, pathname.slice(5), env));
+      }
       if (request.method === "GET" && pathname.startsWith("/a/")) {
         return cors(await fetchBundle(request, url, pathname.slice(3), env));
       }
@@ -181,6 +190,26 @@ async function publish(request, env) {
     listed = false;
   }
 
+  // The same person republishing the same app is a new version, not a new
+  // app: retire every older listing that shares this author and name, so
+  // the gallery shows one row per app. The old bundles and aliases stay --
+  // every link already sent keeps working -- only the gallery rows go.
+  try {
+    const listing = await env.APPS.list({ prefix: "app:", limit: 200 });
+    for (const key of listing.keys) {
+      const otherHash = key.name.slice("app:".length);
+      if (otherHash === hash) continue;
+      const raw = await env.APPS.get(key.name);
+      if (!raw) continue;
+      const other = JSON.parse(raw);
+      if (other.author_login === meta.author_login && other.name === meta.name) {
+        await env.APPS.delete(key.name);
+      }
+    }
+  } catch (e) {
+    // Retiring old rows is a nicety; quota trouble must not fail a publish.
+  }
+
   const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
 
   // A short link people can actually read out loud. The 64-hex URL is the
@@ -235,6 +264,55 @@ async function putShot(request, hash, env) {
     httpMetadata: { contentType: "image/png" },
   });
   return json({ ok: true });
+}
+
+/// Take an app off the gallery. Only its author can; the bundle and every
+/// link already shared keep working -- unpublishing removes the listing,
+/// not the content people were sent.
+async function unpublish(request, hash, env) {
+  const identity = await verifyGitHub(request, env);
+  if (!identity) return text("sign in first", 401);
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const raw = await env.APPS.get(`app:${hash}`);
+  if (!raw) return text("not listed", 404);
+  const meta = JSON.parse(raw);
+  if (meta.author_login !== identity.login) {
+    return text("only the app's author can remove it", 403);
+  }
+  await env.APPS.delete(`app:${hash}`);
+  return json({ ok: true });
+}
+
+/// Store a small square logo for a published app. Same contract as the
+/// screenshot: separate from the bundle, replaceable, author-gated by the
+/// same sign-in the publish used.
+async function putIcon(request, hash, env) {
+  const identity = await verifyGitHub(request, env);
+  if (!identity) return text("sign in first", 401);
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const body = new Uint8Array(await request.arrayBuffer());
+  if (body.length === 0 || body.length > 512 * 1024) {
+    return text("an icon must be a PNG under 512 KiB", 413);
+  }
+  if (!(body[0] === 0x89 && body[1] === 0x50 && body[2] === 0x4e && body[3] === 0x47)) {
+    return text("that is not a PNG", 422);
+  }
+  await env.BUNDLES.put(`icon:${hash}`, body, {
+    httpMetadata: { contentType: "image/png" },
+  });
+  return json({ ok: true });
+}
+
+async function getIcon(hash, env) {
+  if (!/^[0-9a-f]{64}$/.test(hash)) return text("not found", 404);
+  const object = await env.BUNDLES.get(`icon:${hash}`);
+  if (!object) return text("not found", 404);
+  return new Response(object.body, {
+    headers: {
+      "content-type": "image/png",
+      "cache-control": "public, max-age=86400",
+    },
+  });
 }
 
 async function getShot(hash, env) {
@@ -409,10 +487,12 @@ async function list(env) {
     const hash = key.name.slice("app:".length);
     const base = (env.PUBLIC_BASE || "").replace(/\/$/, "");
     const shot = await env.BUNDLES.head(`shot:${hash}`);
+    const icon = await env.BUNDLES.head(`icon:${hash}`);
     apps.push({
       id: hash,
       url: `${base}/a/${hash}`,
       shot: shot ? `${base}/shot/${hash}` : null,
+      icon: icon ? `${base}/icon/${hash}` : null,
       meta: JSON.parse(raw),
     });
   }
@@ -1023,7 +1103,7 @@ function json(value, status = 200) {
 function cors(response) {
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", "*");
-  headers.set("access-control-allow-methods", "GET, POST, OPTIONS");
+  headers.set("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
   headers.set(
     "access-control-allow-headers",
     "authorization, content-type, x-krate-name, x-krate-description, x-krate-category",
