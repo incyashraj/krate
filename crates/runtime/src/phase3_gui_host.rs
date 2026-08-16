@@ -253,7 +253,10 @@ pub fn install_interrupt_handler() {
         extern "C" fn on_interrupt(_signal: i32) {
             INTERRUPTED.store(true, std::sync::atomic::Ordering::SeqCst);
         }
-        libc::signal(libc::SIGINT, on_interrupt as *const std::ffi::c_void as libc::sighandler_t);
+        libc::signal(
+            libc::SIGINT,
+            on_interrupt as *const std::ffi::c_void as libc::sighandler_t,
+        );
     }
 }
 
@@ -2048,6 +2051,21 @@ impl ui::window::Host for Phase3GuiHost {
             .map_err(dispatch_error_to_ui_error);
         self.windows.retain(|tracked| *tracked != id);
         Ok(result)
+    }
+
+    fn set_full_bleed(
+        &mut self,
+        window: u64,
+        enabled: bool,
+    ) -> wasmtime::Result<Result<(), ui::types::UiError>> {
+        let id = match self.window_id(window) {
+            Ok(id) => id,
+            Err(err) => return Ok(Err(err)),
+        };
+        Ok(self
+            .dispatcher()
+            .set_full_bleed(id, enabled)
+            .map_err(dispatch_error_to_ui_error))
     }
 
     fn set_title(

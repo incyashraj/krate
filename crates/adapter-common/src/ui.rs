@@ -1075,6 +1075,17 @@ pub trait WindowAdapter: Send + Sync {
     /// Ask the host to redraw a window.
     fn request_redraw(&self, id: WindowId) -> Result<(), UiAdapterError>;
 
+    /// Extend the window's content into the title-bar area, keeping the
+    /// host's own window controls overlaid. Default is honest refusal: an
+    /// adapter that has not wired the native call reports unsupported and
+    /// the window keeps its standard chrome (K-117).
+    fn set_full_bleed(&self, id: WindowId, enabled: bool) -> Result<(), UiAdapterError> {
+        let _ = (id, enabled);
+        Err(UiAdapterError::Unsupported(
+            "full-bleed windows are not available on this host yet".to_string(),
+        ))
+    }
+
     /// Return a snapshot of a tracked window.
     fn window(&self, id: WindowId) -> Result<Option<WindowRecord>, UiAdapterError>;
 
@@ -1433,6 +1444,15 @@ impl DraftUiAdapter {
 }
 
 impl WindowAdapter for DraftUiAdapter {
+    /// The draft host has no real chrome to remove; accepting keeps a
+    /// headless verification from failing an app that asks (K-117).
+    fn set_full_bleed(&self, id: WindowId, _enabled: bool) -> Result<(), UiAdapterError> {
+        if self.registry()?.window(id).is_none() {
+            return Err(UiAdapterError::InvalidWindow { id: id.get() });
+        }
+        Ok(())
+    }
+
     fn info(&self) -> UiAdapterInfo {
         UiAdapterInfo::headless_draft(
             "generic",

@@ -267,6 +267,12 @@ impl<'a> Phase3UiDispatcher<'a> {
         Ok(())
     }
 
+    pub fn set_full_bleed(&self, id: WindowId, enabled: bool) -> UiDispatchResult<()> {
+        self.check_window_access()?;
+        self.adapter.set_full_bleed(id, enabled)?;
+        Ok(())
+    }
+
     pub fn set_size(&self, id: WindowId, size: WindowSize) -> UiDispatchResult<()> {
         self.check_window_access()?;
         self.adapter.set_size(id, size)?;

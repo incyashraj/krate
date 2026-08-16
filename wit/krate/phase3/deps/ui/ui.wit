@@ -334,6 +334,13 @@ interface window {
   set-state: func(window: u64, state: window-state) -> result<_, ui-error>;
   /// Ask the host to schedule a redraw event.
   request-redraw: func(window: u64) -> result<_, ui-error>;
+  /// Extend the app's content into the title-bar area (a full-bleed window).
+  ///
+  /// The host keeps its own window controls overlaid on top, so the window
+  /// can always be closed. On hosts whose windowing cannot do this, the call
+  /// returns unsupported and the window keeps its standard chrome -- call it
+  /// with `let _ =` and design for both.
+  set-full-bleed: func(window: u64, enabled: bool) -> result<_, ui-error>;
 }
 
 /// Portable widget tree calls.

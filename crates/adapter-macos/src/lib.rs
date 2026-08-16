@@ -310,6 +310,30 @@ impl WindowAdapter for MacosUiAdapter {
 }
 
 impl WindowAdapter for MacosAppKitPrototypeUiAdapter {
+    /// Full-bleed applies to the real NSWindow when one exists; the headless
+    /// leg accepts like the draft so verification cannot fail an app for
+    /// asking (K-117).
+    fn set_full_bleed(&self, id: WindowId, enabled: bool) -> Result<(), UiAdapterError> {
+        let applied = APPKIT_PROTOTYPE_SESSIONS.with(|sessions| {
+            let sessions = sessions.borrow();
+            sessions
+                .get(&id)
+                .map(|session| session.window().set_full_bleed(enabled))
+        });
+        match applied {
+            Some(new_size) => {
+                // The band the app just gained (or lost) changes its content
+                // size; report it as a resize so the canvas refits on the
+                // very next frame.
+                if let Some(size) = new_size {
+                    let _ = WindowAdapter::queue_host_resize(&self.headless, id, size);
+                }
+                Ok(())
+            }
+            None => WindowAdapter::set_full_bleed(&self.headless, id, enabled),
+        }
+    }
+
     fn info(&self) -> UiAdapterInfo {
         let native = self.native_windows_enabled();
         UiAdapterInfo::new(

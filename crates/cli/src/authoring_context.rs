@@ -400,6 +400,13 @@ The difference between an app that looks like a prototype and one that looks \
 finished is a handful of habits, and none of them are hard. Apply them to \
 whatever the app is -- these are not decoration for showcase apps, they are \
 what an ordinary tool needs to look like it was built on purpose:\n\n\
+**Go full-bleed when the design owns its whole surface.** \
+`window::set-full-bleed(win, true)` right after create extends your content \
+into the title-bar band with the host's window controls overlaid -- the \
+shape every modern editor and terminal has. Always `let _ =` it: a host \
+that cannot do it says unsupported and keeps the standard title bar. Leave \
+the top ~40 pixels of your layout free of controls so nothing sits under \
+the overlaid window buttons. `apps/krate-glow` shows it.\n\n\
 **Measure text before you place it.** `canvas2d::measure_text` is the \
 difference between a centred label and a nearly-centred one. Never estimate a \
 width from the character count -- the face is proportional, so `i` and `W` \

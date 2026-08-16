@@ -422,6 +422,11 @@ impl bindings::Guest for Component {
                 return 1;
             }
         };
+        // Full-bleed: the scene runs to the very top edge with the host's
+        // window controls overlaid, the way every modern editor and terminal
+        // window looks. `let _ =` because a host that cannot do it says
+        // unsupported and the window simply keeps its standard title bar.
+        let _ = window::set_full_bleed(win, true);
         if tree::set_root(win, &node(ROOT_ID, None, types::WidgetKind::Stack)).is_err() {
             out("tree:no");
             return 1;

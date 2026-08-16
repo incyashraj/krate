@@ -1259,7 +1259,7 @@ mod platform {
         NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSBitmapImageRep,
         NSButton, NSColor, NSControl, NSEvent, NSEventMask, NSEventModifierFlags, NSEventType,
         NSFont, NSImage, NSImageScaling, NSImageView, NSMenu, NSMenuItem, NSText, NSTextField,
-        NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask,
+        NSView, NSWindow, NSWindowDelegate, NSWindowStyleMask, NSWindowTitleVisibility,
     };
     use objc2_foundation::{
         NSDefaultRunLoopMode, NSNotification, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize,
@@ -1481,7 +1481,7 @@ mod platform {
             #[unsafe(method(windowDidResize:))]
             fn window_did_resize(&self, notification: &NSNotification) {
                 if let Some(window) = notification_window(notification) {
-                    if let Ok(size) = size_from_rect(window.contentLayoutRect()) {
+                    if let Ok(size) = size_from_rect(effective_content_rect(&window)) {
                         self.push_callback(AppKitWindowDelegateCallback::WindowDidResize(size));
                     }
                 }
@@ -1553,7 +1553,7 @@ mod platform {
         /// Read current AppKit window state without draining the Krate queue.
         pub fn snapshot(&self) -> Result<AppKitWindowSnapshot, UiAdapterError> {
             let _mtm = main_thread_marker()?;
-            let content_rect = self.window.contentLayoutRect();
+            let content_rect = effective_content_rect(&self.window);
             Ok(AppKitWindowSnapshot {
                 visible: self.window.isVisible(),
                 focused: self.window.isKeyWindow(),
@@ -1568,7 +1568,7 @@ mod platform {
             state: &mut AppKitDrawSurfaceState,
         ) -> Result<AppKitDrawViewSurface, UiAdapterError> {
             let mtm = main_thread_marker()?;
-            let content_rect = self.window.contentLayoutRect();
+            let content_rect = effective_content_rect(&self.window);
             let size = size_from_rect(content_rect)?;
             state.resize(size);
             state.scale_changed(self.window.backingScaleFactor() as f32)?;
@@ -1639,7 +1639,7 @@ mod platform {
                     "AppKit widget lowering needs a window content view".to_string(),
                 )
             })?;
-            let content_height = self.window.contentLayoutRect().size.height as f32;
+            let content_height = effective_content_rect(&self.window).size.height as f32;
 
             let target = KrateWidgetTarget::new(mtm, Rc::clone(&delegate.callbacks));
             let mut controls = BTreeMap::new();
@@ -2102,6 +2102,29 @@ mod platform {
                 needs_display: true,
             };
             self.snapshot
+        }
+    }
+
+    impl AppKitWindowPrototype {
+        /// Extend the app's content into the title-bar band, traffic lights
+        /// overlaid -- the "full-bleed" style every modern editor, terminal
+        /// and browser window uses (K-117). Reversible, because the WIT call
+        /// takes a bool and an app may want its standard chrome back.
+        pub fn set_full_bleed(&self, enabled: bool) -> Option<WindowSize> {
+            let window = &self.window;
+            window.setTitlebarAppearsTransparent(enabled);
+            let mask = window.styleMask();
+            if enabled {
+                window.setStyleMask(mask | NSWindowStyleMask::FullSizeContentView);
+                window.setTitleVisibility(NSWindowTitleVisibility::Hidden);
+            } else {
+                window.setStyleMask(mask & !NSWindowStyleMask::FullSizeContentView);
+                window.setTitleVisibility(NSWindowTitleVisibility::Visible);
+            }
+            // The content the app owns just changed shape (it gained or lost
+            // the title-bar band); hand the new size back so the adapter can
+            // report a resize and the app refits its canvas.
+            size_from_rect(effective_content_rect(window)).ok()
         }
     }
 
@@ -2699,6 +2722,22 @@ mod platform {
             color.blue as f64,
             color.alpha as f64,
         )
+    }
+
+    /// The rectangle the app's content should fill. A standard window works
+    /// in `contentLayoutRect` (below the title bar); a full-bleed window owns
+    /// the title-bar band as well, so its content is the whole content view
+    /// (K-117). Detected from the style mask so no separate flag can drift.
+    fn effective_content_rect(window: &NSWindow) -> NSRect {
+        if window
+            .styleMask()
+            .contains(NSWindowStyleMask::FullSizeContentView)
+        {
+            if let Some(view) = window.contentView() {
+                return view.bounds();
+            }
+        }
+        window.contentLayoutRect()
     }
 
     fn notification_window(notification: &NSNotification) -> Option<Retained<NSWindow>> {
