@@ -87,6 +87,14 @@ Fix shape: the wgpu/vello presenter behind the same placement contract
 a presenter swap, not a redesign. Until then Windows is correct but not
 proud.
 
+Update:   2026-08-17, f2e3aad4: the CPU fallback halved. to_image went
+          from per-byte pushes to vectorizable chunked writes (4.3ms ->
+          0.34ms/frame), draw_image scales opaque sources by packed-row
+          memcpy, and wait's park slices clamp to the deadline. Windows
+          VM (2 cores, no GPU): 73% of a core on v0.1.30 -> 38% on main,
+          50fps sustained. evidence/perf/2026-08-17-canvas-cpu-path.md.
+          The GPU presenter remains the real fix for parity with the Mac.
+
 ### K-111 -- Painted app UI renders at 1x on Retina displays: everything looks soft
 
 Class: our-code
