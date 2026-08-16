@@ -44,11 +44,6 @@ pub struct CanvasSurface {
     buffer: Vec<u32>,
 }
 
-/// A color in linear floats, packed to the painter's `0xAARRGGBB`.
-///
-/// Straight alpha, clamped: a guest can send any float, including NaN, and a
-/// color must come out the other side rather than undefined behavior.
-
 // ---------------------------------------------------------------- op timing
 //
 // Frame-production time was going somewhere no report could see: publish
@@ -84,6 +79,10 @@ pub fn take_op_millis() -> (f32, f32, f32) {
     OP_MS.with(|cell| cell.replace((0.0, 0.0, 0.0)))
 }
 
+/// A color in linear floats, packed to the painter's `0xAARRGGBB`.
+///
+/// Straight alpha, clamped: a guest can send any float, including NaN, and a
+/// color must come out the other side rather than undefined behavior.
 pub fn pack_color(r: f32, g: f32, b: f32, a: f32) -> u32 {
     let channel = |value: f32| -> u32 {
         if value.is_nan() {
