@@ -107,7 +107,7 @@
   </a>
 
   <h1 class="display">Make an app you can
-    <span class="rot"><span class="word" id="rotWord">send</span></span>
+    <span class="rot"><span class="word" id="rotWord">send</span><span class="bar"></span></span>
   </h1>
 
   <p class="home-hero-sub">An AI writes it. Krate makes it real: one small file that
@@ -693,14 +693,6 @@
           });
         }
         rotEl.appendChild(s);
-      });
-      /* Each letter shows its own slice of one continuous gradient:
-         pixel-exact offsets measured from layout, no background-attachment
-         tricks (those render as plain white in some engines). */
-      requestAnimationFrame(function () {
-        Array.prototype.forEach.call(rotEl.children, function (s) {
-          s.style.setProperty("--off", (-s.offsetLeft) + "px");
-        });
       });
     };
     setWord(words[0], false);
