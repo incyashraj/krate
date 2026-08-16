@@ -153,23 +153,59 @@
     <a href="https://github.com/incyashraj/krate">Open source <span class="arr">›</span></a>
   </div>
 
-  <!-- The first thing krate actually shows. Text, not a screenshot. -->
-  <div class="term home-hero-term reveal">
-    <div class="term-head">
+  <!-- The first thing Krate Studio actually shows: the making of an app,
+       played back small. Same markup idiom as the app itself, so what the
+       page promises is what the download does. -->
+  <div class="sframe home-hero-term reveal" id="heroMock">
+    <div class="sf-head">
       <div class="term-dots"><i></i><i></i><i></i></div>
-      <div class="term-title">krate</div>
-      <div class="term-meta">v0.1.7</div>
+      <div class="sf-brand"><img src="./krate-glyph-white.png" alt="" width="13" height="13" />KRATE</div>
+      <div class="sf-chip"><span class="sf-dot"></span>Claude</div>
     </div>
-    <div class="term-body">
-      <div><span class="w">KRATE</span> <span class="p">v0.1.7 · make an app you can send to anyone</span></div>
-      <div class="p">1 choose your AI &nbsp;2 open an app &nbsp;3 my apps &nbsp;4 history</div>
-      <br />
-      <div class="w">What do you want to make?</div>
-      <div class="p">Describe it. To copy a design you have, add the file's path.</div>
-      <br />
-      <div><span class="p">&gt;</span> <span id="heroTyped"></span><span class="cursor"></span></div>
+    <div class="sf-body">
+
+      <div class="sf-home" id="sfHome">
+        <div class="sf-title">Make an app you can <em>keep</em></div>
+        <div class="sf-sub">Describe it in plain words. A few minutes later it's a real app.</div>
+        <div class="sf-composer">
+          <span class="sf-typed" id="sfTyped"></span><span class="cursor"></span>
+          <span class="sf-send" id="sfSend">&uarr;</span>
+        </div>
+      </div>
+
+      <div class="sf-session" id="sfSession" hidden>
+        <div class="sf-rail">
+          <div class="sf-msg"><span>YOU</span>a recipe box for family dinners</div>
+          <div class="sf-msg k"><span>KRATE</span>On it. I'll show you each step as it happens.</div>
+          <div class="sf-msg k" id="sfDoneMsg" hidden><span>KRATE</span>Done &mdash; recipe-box.krate, 24 KB. Open it, or tell me what to change.</div>
+        </div>
+        <div class="sf-stage">
+          <div class="sf-make" id="sfMake">
+            <div class="sf-make-head">Making your app <span class="sf-live"><i></i>Live</span></div>
+            <div class="sf-bar"><i id="sfFill"></i></div>
+            <ul class="sf-steps" id="sfSteps">
+              <li>Understanding what you asked for</li>
+              <li>Writing the code</li>
+              <li>Building it</li>
+              <li>Packing it into one file</li>
+              <li>Checking it only touches what it declared</li>
+            </ul>
+          </div>
+          <div class="sf-done" id="sfDone" hidden>
+            <div class="sf-shot">
+              <div class="sf-shot-title">Recipe Box</div>
+              <div class="sf-shot-row"><i></i>Sunday ragu <b>45 min</b></div>
+              <div class="sf-shot-row"><i></i>Dal for a crowd <b>30 min</b></div>
+              <div class="sf-shot-row"><i></i>Lemon roast chicken <b>1 h</b></div>
+            </div>
+            <div class="sf-file"><b>recipe-box.krate</b><span>24 KB &middot; runs on Mac, Windows and Linux</span></div>
+            <div class="sf-asks"><em>asks</em> open a window &middot; save your data</div>
+            <div class="sf-btns"><span class="sf-b1">Open it</span><span class="sf-b2">Share</span></div>
+          </div>
+        </div>
+      </div>
+
     </div>
-    <div class="term-status"><span>AI: claude connected</span><span>enter to build</span></div>
   </div>
 </section>
 
@@ -260,75 +296,69 @@
       <div class="stick" id="stick">
 
         <div class="demo active">
-          <div class="term">
-            <div class="term-head">
+          <div class="sframe">
+            <div class="sf-head">
               <div class="term-dots"><i></i><i></i><i></i></div>
-              <div class="term-title">krate</div>
-              <div class="term-meta">cooking</div>
+              <div class="sf-brand"><img src="./krate-glyph-white.png" alt="" width="13" height="13" />KRATE</div>
+              <div class="sf-chip"><span class="sf-dot"></span>Claude</div>
             </div>
-            <div class="term-body">
-              <div><span class="p">&gt;</span> a habit tracker with a weekly chart</div>
-              <br />
-              <div><span class="p">cooking with</span> <span class="w">claude</span></div>
-              <div class="p">an AI writes real code and a compiler builds it</div>
-              <br />
-              <div><span class="g">+</span> working out what to build <span class="p">4s</span></div>
-              <div><span class="g">+</span> writing the app's code <span class="p">2m 31s</span></div>
-              <div><span class="g">+</span> compiling it <span class="p">48s</span></div>
-              <div><span class="g">+</span> checking it runs and paints a frame <span class="p">17s</span></div>
-              <div><span class="g">+</span> packaging it <span class="p">1s</span></div>
-              <br />
-              <div><span class="g">✓</span> <span class="w">habit-tracker.krate</span> <span class="p">41 KB in 3m 41s</span></div>
+            <div class="sf-body">
+              <div class="sf-session">
+                <div class="sf-rail">
+                  <div class="sf-msg"><span>YOU</span>a habit tracker with a weekly chart</div>
+                  <div class="sf-msg k"><span>KRATE</span>On it. I'll show you each step as it happens.</div>
+                  <div class="sf-msg k"><span>KRATE</span>The code is written. Building it now.</div>
+                </div>
+                <div class="sf-stage">
+                  <div class="sf-make">
+                    <div class="sf-make-head">Making your app <span class="sf-live"><i></i>Live</span></div>
+                    <div class="sf-bar"><i style="width:56%"></i></div>
+                    <ul class="sf-steps">
+                      <li class="done">Understanding what you asked for</li>
+                      <li class="done">Writing the code</li>
+                      <li class="now">Building it</li>
+                      <li>Packing it into one file</li>
+                      <li>Checking it only touches what it declared</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="term-status"><span>claude · reporting as it goes</span><span>1 open &nbsp;2 change &nbsp;3 share</span></div>
           </div>
         </div>
 
         <div class="demo">
-          <div class="term">
-            <div class="term-head">
-              <div class="term-dots"><i></i><i></i><i></i></div>
-              <div class="term-title">krate</div>
-              <div class="term-meta">permission wall</div>
+          <div class="sf-consent">
+            <div class="sf-consent-card">
+              <img src="./krate-glyph-white.png" alt="" width="28" height="28" />
+              <b>Open &ldquo;Habit Tracker&rdquo;?</b>
+              <p>Habit Tracker wants permission to:</p>
+              <ul>
+                <li>open a window</li>
+                <li>save your data on this computer</li>
+              </ul>
+              <p class="sf-consent-note">It gets nothing else: no files, no network, no camera.
+              Krate enforces exactly this list.</p>
+              <div class="sf-consent-btns"><span>Cancel</span><b>Allow and open</b></div>
             </div>
-            <div class="term-body">
-              <div><span class="p">$</span> krate run habit-tracker.krate</div>
-              <br />
-              <div class="w">Before it opens, this app asks to:</div>
-              <br />
-              <div>&nbsp;&nbsp;<span class="y">·</span> save its own data <span class="p">(a private store, nothing of yours)</span></div>
-              <br />
-              <div class="p">It gets nothing else: no files, no network, no camera.</div>
-              <br />
-              <div>To allow it this run:</div>
-              <div>&nbsp;&nbsp;<span class="b">krate run --grant store.kv habit-tracker.krate</span></div>
-              <div class="p">Or review one at a time with --prompt.</div>
-            </div>
-            <div class="term-status"><span>sandboxed by default</span><span>your call</span></div>
+            <p class="sf-caption">The wall is a native dialog, in plain words. Deny it and the
+            app still opens &mdash; just without that power.</p>
           </div>
         </div>
 
         <div class="demo">
-          <div class="term">
-            <div class="term-head">
-              <div class="term-dots"><i></i><i></i><i></i></div>
-              <div class="term-title">one file, three systems</div>
-              <div class="term-meta">41 KB</div>
+          <div class="sf-filecard">
+            <div class="sf-fileicon"><img src="./krate-document-icon.png" alt="" width="52" height="52" /></div>
+            <b>habit-tracker.krate</b>
+            <span>41 KB &middot; one file, the whole app</span>
+            <div class="sf-oses">
+              <em><i>&#10003;</i> macOS</em>
+              <em><i>&#10003;</i> Windows</em>
+              <em><i>&#10003;</i> Linux</em>
             </div>
-            <div class="term-body">
-              <div class="p"># macOS</div>
-              <div><span class="p">$</span> open habit-tracker.krate</div>
-              <br />
-              <div class="p"># Windows</div>
-              <div><span class="p">&gt;</span> start habit-tracker.krate</div>
-              <br />
-              <div class="p"># Linux</div>
-              <div><span class="p">$</span> krate habit-tracker.krate</div>
-              <br />
-              <div><span class="g">✓</span> same file, same app, every desktop</div>
-              <div class="p">no installer · no runtime to set up · nothing else to download</div>
-            </div>
-            <div class="term-status"><span>Intel and ARM</span><span>double-click works</span></div>
+            <p class="sf-caption">Mail it, drop it in a chat, put it on a USB stick.
+            Double-click opens it on every desktop &mdash; Intel and ARM, no installer,
+            no runtime to set up.</p>
           </div>
         </div>
 
@@ -357,25 +387,18 @@
         </div>
 
         <div class="demo">
-          <div class="term">
-            <div class="term-head">
-              <div class="term-dots"><i></i><i></i><i></i></div>
-              <div class="term-title">krate publish</div>
-              <div class="term-meta">cloud</div>
+          <div class="sf-publish">
+            <div class="sf-pubrow"><i class="ok">&#10003;</i> Uploaded to Krate Cloud <span>41 KB</span></div>
+            <div class="sf-publink"><span>krate.tech/cloud/habit-tracker</span><em>Copy</em></div>
+            <div class="sf-pubnote">Anyone with the link can run it. Anyone without Krate
+            gets a one-line install first.</div>
+            <div class="sf-pubgallery">
+              <div class="sf-pubapp"><i></i>Habit Tracker</div>
+              <div class="sf-pubapp"><i></i>Track Dash</div>
+              <div class="sf-pubapp"><i></i>Recipe Box</div>
             </div>
-            <div class="term-body">
-              <div><span class="p">$</span> krate publish habit-tracker.krate</div>
-              <br />
-              <div><span class="g">✓</span> signed in with GitHub</div>
-              <div><span class="g">✓</span> uploaded <span class="p">41 KB</span></div>
-              <br />
-              <div class="w">Your app is live:</div>
-              <div class="b">&nbsp;&nbsp;https://krate.tech/cloud</div>
-              <br />
-              <div class="p">Anyone with Krate runs it straight from the link:</div>
-              <div>&nbsp;&nbsp;<span class="p">$</span> krate run &lt;your link&gt;</div>
-            </div>
-            <div class="term-status"><span>one command</span><span>a link anyone can run</span></div>
+            <p class="sf-caption">One click in the Studio, or one command in a terminal.
+            The gallery shows real screenshots of real apps.</p>
           </div>
         </div>
 
@@ -642,27 +665,81 @@
   }
 
   /* Hero terminal: a request being typed, looping. */
-  var typed = document.getElementById("heroTyped");
-  if (typed && !reduced) {
-    var lines = [
-      "a habit tracker with a weekly chart",
-      "a pomodoro timer that logs my day",
-      "an invoice maker for my shop",
-      "a screensaver of drifting stars"
-    ];
-    var li = 0, ci = 0, deleting = false;
-    (function tick() {
-      var line = lines[li];
-      if (!deleting) {
-        ci++;
-        if (ci > line.length) { deleting = true; return setTimeout(tick, 1700); }
-      } else {
-        ci--;
-        if (ci === 0) { deleting = false; li = (li + 1) % lines.length; }
+  /* The hero Studio window: type, build, done -- the whole product in
+     eighteen quiet seconds, looping. Reduced motion gets the finished
+     state, standing still. */
+  var sfHome = document.getElementById("sfHome");
+  if (sfHome) {
+    var sfSession = document.getElementById("sfSession");
+    var sfTyped = document.getElementById("sfTyped");
+    var sfSend = document.getElementById("sfSend");
+    var sfMake = document.getElementById("sfMake");
+    var sfDone = document.getElementById("sfDone");
+    var sfDoneMsg = document.getElementById("sfDoneMsg");
+    var sfFill = document.getElementById("sfFill");
+    var sfSteps = document.getElementById("sfSteps").children;
+    var PROMPT = "a recipe box for family dinners";
+
+    function sfShowDone() {
+      sfHome.hidden = true;
+      sfSession.hidden = false;
+      sfMake.hidden = true;
+      sfDone.hidden = false;
+      sfDoneMsg.hidden = false;
+      for (var i = 0; i < sfSteps.length; i++) sfSteps[i].className = "done";
+    }
+
+    if (reduced) {
+      sfShowDone();
+    } else {
+      var timers = [];
+      function at(ms, fn) { timers.push(setTimeout(fn, ms)); }
+      function cycle() {
+        timers.forEach(clearTimeout);
+        timers = [];
+        // Reset to the home screen.
+        sfHome.hidden = false;
+        sfSession.hidden = true;
+        sfMake.hidden = false;
+        sfDone.hidden = true;
+        sfDoneMsg.hidden = true;
+        sfTyped.textContent = "";
+        sfSend.classList.remove("go");
+        sfFill.style.width = "6%";
+        for (var i = 0; i < sfSteps.length; i++) sfSteps[i].className = "";
+        // Type the request.
+        for (var c = 1; c <= PROMPT.length; c++) {
+          (function (n) { at(700 + n * 46, function () { sfTyped.textContent = PROMPT.slice(0, n); }); })(c);
+        }
+        var sent = 700 + PROMPT.length * 46 + 500;
+        at(sent - 320, function () { sfSend.classList.add("go"); });
+        at(sent, function () { sfHome.hidden = true; sfSession.hidden = false; });
+        // Stages tick, the bar breathes forward.
+        var stepAt = [400, 1500, 4300, 5400, 6200];
+        for (var k = 0; k < stepAt.length; k++) {
+          (function (idx) {
+            at(sent + stepAt[idx], function () {
+              for (var j = 0; j < sfSteps.length; j++) {
+                sfSteps[j].className = j < idx ? "done" : j === idx ? "now" : "";
+              }
+              sfFill.style.width = (8 + idx * 20) + "%";
+            });
+          })(k);
+        }
+        // Done: the card arrives the way the real one does.
+        at(sent + 7400, function () {
+          for (var j = 0; j < sfSteps.length; j++) sfSteps[j].className = "done";
+          sfFill.style.width = "100%";
+        });
+        at(sent + 7900, function () {
+          sfMake.hidden = true;
+          sfDone.hidden = false;
+          sfDoneMsg.hidden = false;
+        });
+        at(sent + 19000, cycle);
       }
-      typed.textContent = line.slice(0, ci);
-      setTimeout(tick, deleting ? 18 : 45 + Math.random() * 40);
-    })();
+      cycle();
+    }
   }
 
   /* The pinned scroller: whichever feature section crosses the middle of

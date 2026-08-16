@@ -1661,7 +1661,152 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
 /* Hero: the Studio is the front door, in the site's own pill idiom. */
 .hero-cta {
   margin: 26px 0 6px;
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
 }
 .hero-cta .free-note { width: 100%; margin-top: 10px; }
 #install { margin-top: 22px; }
+
+/* ------------------------------------------------- the Studio, played small
+   One visual idiom for every Studio depiction on the page: the same window
+   chrome, rail, stages and cards the real app draws, at postcard size. */
+.sframe {
+  border: 1px solid var(--line); border-radius: 14px;
+  background: #0b0b0e; overflow: hidden;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+  font-size: 12.5px;
+}
+.sf-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid var(--line);
+}
+.sf-brand {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.14em; color: var(--text);
+}
+.sf-brand img { opacity: 0.9; }
+.sf-chip {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 3px 10px; font-size: 11px; color: var(--muted);
+}
+.sf-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+.sf-body { min-height: 300px; }
+
+/* Home: headline + composer. */
+.sf-home { padding: 40px 28px 28px; text-align: center; }
+.sf-title { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; }
+.sf-title em { font-style: normal; color: var(--accent); }
+.sf-sub { color: var(--muted); margin: 8px 0 22px; }
+.sf-composer {
+  display: flex; align-items: center; gap: 10px;
+  text-align: left;
+  border: 1px solid var(--line-strong, var(--line)); border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 12px 12px 12px 16px; min-height: 44px;
+}
+.sf-typed { flex: 1; white-space: nowrap; overflow: hidden; }
+.sf-send {
+  flex: none; width: 26px; height: 26px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--accent); color: #0b0d12; font-weight: 700;
+  opacity: 0.55; transition: opacity 0.2s, transform 0.2s;
+}
+.sf-send.go { opacity: 1; transform: scale(1.08); }
+
+/* Session: rail + stage. */
+.sf-session { display: grid; grid-template-columns: 46% 54%; min-height: 300px; }
+.sf-rail { border-right: 1px solid var(--line); padding: 14px; }
+.sf-msg { margin-bottom: 12px; line-height: 1.45; }
+.sf-msg span { display: block; font-size: 9.5px; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 3px; }
+.sf-msg.k { color: var(--muted); }
+.sf-stage { padding: 16px; display: flex; align-items: center; justify-content: center; }
+.sf-make { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 14px; background: rgba(255,255,255,0.02); }
+.sf-make-head { display: flex; align-items: center; justify-content: space-between; font-weight: 600; margin-bottom: 10px; }
+.sf-live { display: flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; }
+.sf-live i { width: 5px; height: 5px; border-radius: 50%; background: var(--good); }
+.sf-bar { height: 3px; border-radius: 2px; background: rgba(255,255,255,0.08); overflow: hidden; margin-bottom: 12px; }
+.sf-bar i { display: block; height: 100%; width: 6%; border-radius: 2px; background: var(--accent); transition: width 0.9s ease; }
+.sf-steps { list-style: none; margin: 0; padding: 0; }
+.sf-steps li { padding: 4px 0 4px 20px; position: relative; color: var(--muted); }
+.sf-steps li::before {
+  content: ""; position: absolute; left: 2px; top: 9px;
+  width: 8px; height: 8px; border-radius: 50%; border: 1px solid var(--line);
+}
+.sf-steps li.now { color: var(--text); }
+.sf-steps li.now::before { border-color: var(--accent); background: var(--accent); }
+.sf-steps li.done { color: var(--muted); }
+.sf-steps li.done::before { border-color: var(--good); background: var(--good); }
+
+/* The done card. */
+.sf-done { width: 100%; animation: sfRise 0.5s ease both; }
+@keyframes sfRise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.sf-shot { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 10px; background: #101014; }
+.sf-shot-title { font-weight: 650; margin-bottom: 8px; }
+.sf-shot-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; color: var(--muted); border-top: 1px solid rgba(255,255,255,0.05); }
+.sf-shot-row i { width: 7px; height: 7px; border-radius: 2px; background: var(--accent); opacity: 0.7; }
+.sf-shot-row b { margin-left: auto; font-weight: 500; font-size: 11px; }
+.sf-file b { display: block; }
+.sf-file span { color: var(--muted); font-size: 11.5px; }
+.sf-asks { margin: 8px 0 10px; font-size: 11.5px; color: var(--muted); }
+.sf-asks em { font-style: normal; border: 1px solid var(--line); border-radius: 999px; padding: 1px 7px; margin-right: 6px; font-size: 10px; }
+.sf-btns { display: flex; gap: 8px; }
+.sf-btns span { border-radius: 999px; padding: 6px 14px; font-size: 12px; }
+.sf-b1 { background: #fff; color: #0a0a0a; font-weight: 600; }
+.sf-b2 { border: 1px solid var(--line); color: var(--text); }
+
+/* The consent dialog pane. */
+.sf-consent { text-align: center; }
+.sf-consent-card {
+  display: inline-block; text-align: center;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: #0e0e12; padding: 26px 30px 22px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+}
+.sf-consent-card img { opacity: 0.9; margin-bottom: 10px; }
+.sf-consent-card b { display: block; font-size: 15px; margin-bottom: 12px; }
+.sf-consent-card p { color: var(--muted); font-size: 12.5px; margin: 0 0 6px; }
+.sf-consent-card ul { list-style: none; padding: 0; margin: 0 0 10px; }
+.sf-consent-card li { padding: 3px 0; font-size: 13px; }
+.sf-consent-note { max-width: 260px; margin: 0 auto 14px !important; }
+.sf-consent-btns { display: flex; gap: 8px; justify-content: center; }
+.sf-consent-btns span { border: 1px solid var(--line); border-radius: 999px; padding: 6px 16px; font-size: 12.5px; color: var(--muted); }
+.sf-consent-btns b { background: #fff; color: #0a0a0a; border-radius: 999px; padding: 6px 16px; font-size: 12.5px; }
+.sf-caption { margin-top: 16px; color: var(--muted); font-size: 12.5px; max-width: 380px; margin-left: auto; margin-right: auto; text-align: center; }
+
+/* The file card pane. */
+.sf-filecard {
+  text-align: center; border: 1px solid var(--line); border-radius: 14px;
+  background: #0e0e12; padding: 30px 26px 24px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+}
+.sf-fileicon { margin-bottom: 8px; }
+.sf-filecard > b { display: block; font-size: 15px; }
+.sf-filecard > span { color: var(--muted); font-size: 12px; }
+.sf-oses { display: flex; gap: 8px; justify-content: center; margin: 14px 0 4px; }
+.sf-oses em { font-style: normal; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 12px; }
+.sf-oses i { color: var(--good); font-style: normal; margin-right: 4px; }
+
+/* The publish pane. */
+.sf-publish {
+  border: 1px solid var(--line); border-radius: 14px;
+  background: #0e0e12; padding: 22px;
+  box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+}
+.sf-pubrow { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.sf-pubrow .ok { color: var(--good); font-style: normal; }
+.sf-pubrow span { margin-left: auto; color: var(--muted); font-weight: 400; font-size: 12px; }
+.sf-publink {
+  display: flex; align-items: center; margin: 12px 0;
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+}
+.sf-publink span { flex: 1; padding: 9px 12px; font-family: var(--mono, monospace); font-size: 12px; color: var(--accent); }
+.sf-publink em { font-style: normal; padding: 9px 14px; border-left: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.sf-pubnote { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+.sf-pubgallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.sf-pubapp { border: 1px solid var(--line); border-radius: 10px; padding: 10px; font-size: 11px; color: var(--muted); }
+.sf-pubapp i { display: block; height: 34px; border-radius: 6px; margin-bottom: 6px;
+  background: linear-gradient(135deg, rgba(98,145,255,0.25), rgba(255,255,255,0.05)); }
+@media (max-width: 900px) { .sf-session { grid-template-columns: 1fr; } .sf-rail { border-right: none; border-bottom: 1px solid var(--line); } }
+/* The hidden attribute must always win over component display values. */
+.sframe [hidden] { display: none !important; }
