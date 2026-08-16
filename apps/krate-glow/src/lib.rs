@@ -26,7 +26,11 @@ const WIDTH: f32 = 360.0;
 const HEIGHT: f32 = 640.0;
 
 /// Simulated frames the `quick` run draws before reporting.
-const QUICK_FRAMES: u32 = 90;
+// Keep this small. In quick mode `t` is frames/60, synthetic time: 12 frames
+// and 90 animate identically, but every extra frame spends fuel from the
+// headless budget -- an expensive per-pixel app copying a large count here
+// exhausts it and fails check-app with no loop bug anywhere.
+const QUICK_FRAMES: u32 = 12;
 
 fn color(r: f32, g: f32, b: f32, a: f32) -> gfx::Color {
     gfx::Color { r, g, b, a }
@@ -445,6 +449,11 @@ impl bindings::Guest for Component {
         let started = clock::monotonic_nanos();
         let mut frames: u32 = 0;
 
+        // When the next frame is due; see the note where a redraw is NOT
+        // requested below.
+        const FRAME_NANOS: u64 = 1_000_000_000 / 60;
+        let mut next_frame = clock::monotonic_nanos();
+
         loop {
             let t = if quick {
                 frames as f32 / 60.0
@@ -465,10 +474,36 @@ impl bindings::Guest for Component {
                 continue;
             }
 
-            let _ = window::request_redraw(win);
-            match events::wait(Some(16)) {
-                Some(types::Event::CloseRequested(_)) => break,
-                Some(_) | None => {}
+            // Deliberately no `request-redraw` here. This loop draws and
+            // presents on its own schedule, and asking for a redraw posts an
+            // event that comes straight back -- the queue is never empty,
+            // every `wait` returns instantly, and the app pins a core while
+            // looking idle. request-redraw is for waking a loop that would
+            // otherwise sit idle in `wait`; a continuously animating loop is
+            // never idle. Pace against the clock instead.
+            next_frame = next_frame.saturating_add(FRAME_NANOS);
+            let after_draw = clock::monotonic_nanos();
+            if next_frame < after_draw {
+                next_frame = after_draw;
+            }
+            let mut closing = false;
+            loop {
+                let now = clock::monotonic_nanos();
+                let remaining = next_frame.saturating_sub(now);
+                if remaining == 0 {
+                    break;
+                }
+                let millis = (remaining / 1_000_000) as u32;
+                match events::wait(Some(millis.max(1))) {
+                    Some(types::Event::CloseRequested(_)) => {
+                        closing = true;
+                        break;
+                    }
+                    Some(_) | None => {}
+                }
+            }
+            if closing {
+                break;
             }
         }
 

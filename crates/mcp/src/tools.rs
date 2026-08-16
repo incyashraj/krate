@@ -75,7 +75,7 @@ impl ToolSet for KrateTools {
 
     fn call(&self, name: &str, arguments: &Value) -> Result<Value, String> {
         match name {
-            "krate_schema" => self.schema(),
+            "krate_schema" => self.schema(arguments),
             "krate_examples" => self.examples(arguments),
             "krate_start_build" => self.start_build(arguments),
             "krate_build_status" => self.build_status(arguments),
@@ -118,14 +118,22 @@ fn tool_definitions() -> Vec<Value> {
         json!({
             "name": "krate_schema",
             "title": "Krate authoring reference",
-            "description": "The complete Krate authoring pack: every `krate::*` function an app \
-                can call, every capability a manifest may declare, the `#![no_std]` discipline \
-                and why it exists, and the GUI world's ui/gfx/audio/speech interfaces. Generated \
-                from the same WIT and SDK sources the runtime is built against, so it is exact \
-                for this version. Call this first and read it before writing any Krate code -- \
-                the API is small and specific, and code written from a guess about it will fail \
-                the import check.",
-            "inputSchema": { "type": "object", "additionalProperties": false },
+            "description": "The Krate authoring pack: every `krate::*` function an app can call, \
+                every capability a manifest may declare, the `#![no_std]` discipline and why it \
+                exists, and the GUI world's ui/gfx/audio/speech interfaces. Generated from the \
+                same WIT and SDK sources the runtime is built against, so it is exact for this \
+                version. Call this first and read it before writing any Krate code -- the API is \
+                small and specific, and code written from a guess about it will fail the import \
+                check. The whole pack is large; pass `section` with a heading fragment (e.g. \
+                \"gfx\", \"no_std\", \"capabilities\") to fetch just the matching sections, \
+                and the response's `sections` list names what can be asked for.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "section": { "type": "string", "description": "Return only sections whose heading contains this text, case-insensitive. Omit for the full pack." },
+                },
+                "additionalProperties": false,
+            },
         }),
         json!({
             "name": "krate_examples",
@@ -250,15 +258,16 @@ fn tool_definitions() -> Vec<Value> {
         json!({
             "name": "krate_run",
             "title": "Look at what was built",
-            "description": "Render the app's first frame to a PNG, headless, and return it as an \
-                image. Use this to LOOK at what was built and judge it: whether the layout is \
-                right, the text fits, the colors work. A command-line app that opens no window \
-                cannot be shot -- for those, the build's run stage is the evidence it works.",
+            "description": "Render the app's first frame to a PNG, headless, and return the file's \
+                path. Open that path as an image and LOOK at it: whether the layout is right, the \
+                text fits, the colors work. A command-line app that opens no window cannot be \
+                shot -- for those, the build's run stage is the evidence it works.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "job_id": { "type": "string", "description": "The id of a build that succeeded." },
                     "dir": { "type": "string", "description": "An app directory to render instead of a job's." },
+                    "include_base64": { "type": "boolean", "description": "Also inline the PNG bytes as base64. Defaults to false; only for callers that cannot reach the local filesystem." },
                 },
                 "additionalProperties": false,
             },
@@ -267,12 +276,52 @@ fn tool_definitions() -> Vec<Value> {
 }
 
 impl KrateTools {
-    fn schema(&self) -> Result<Value, String> {
+    fn schema(&self, arguments: &Value) -> Result<Value, String> {
         let pack = (self.schema)(&self.root);
+        // The pack is a sequence of `# `-headed sections. Splitting on the
+        // headings lets a caller fetch one section instead of the whole wall
+        // -- the full dump overflowed clients' tool-result limits.
+        let mut sections: Vec<(String, String)> = Vec::new();
+        let mut current = ("(preamble)".to_string(), String::new());
+        for line in pack.lines() {
+            if let Some(heading) = line.strip_prefix("# ") {
+                sections.push(current);
+                current = (heading.trim().to_string(), String::new());
+            }
+            current.1.push_str(line);
+            current.1.push('\n');
+        }
+        sections.push(current);
+        let headings: Vec<&str> = sections
+            .iter()
+            .map(|(h, _)| h.as_str())
+            .filter(|h| *h != "(preamble)")
+            .collect();
+        let note = "Generated from the WIT and SDK this Krate was built against. If a function \
+                    or capability is not in here, it does not exist -- do not invent it.";
+        if let Some(wanted) = arguments.get("section").and_then(Value::as_str) {
+            let needle = wanted.to_lowercase();
+            let matched: String = sections
+                .iter()
+                .filter(|(h, _)| h.to_lowercase().contains(&needle))
+                .map(|(_, body)| body.as_str())
+                .collect();
+            if matched.is_empty() {
+                return Err(format!(
+                    "no section heading contains `{wanted}`. The sections are: {}",
+                    headings.join(" | ")
+                ));
+            }
+            return Ok(json!({
+                "authoring_pack": matched,
+                "sections": headings,
+                "note": note,
+            }));
+        }
         Ok(json!({
             "authoring_pack": pack,
-            "note": "This is generated from the WIT and SDK this Krate was built against. If a \
-                     function or capability is not in here, it does not exist -- do not invent it.",
+            "sections": headings,
+            "note": note,
         }))
     }
 
@@ -704,20 +753,30 @@ impl KrateTools {
             ));
         }
 
-        let bytes = std::fs::read(&png)
-            .map_err(|err| format!("could not read the rendered frame {}: {err}", png.display()))?;
+        let size = std::fs::metadata(&png).map(|m| m.len()).unwrap_or(0);
 
-        // An image content block, so the model can actually see it rather than
-        // being told a file exists. This is the whole point of the tool.
-        Ok(json!({
+        // The frame is on disk and the caller can read it as an image from
+        // there. Inlining it as base64 on every call blew clients' tool-result
+        // token limits for bytes most of them never used, so bytes are opt-in.
+        let mut result = json!({
             "path": png.display().to_string(),
-            "bytes": bytes.len(),
-            "image_base64": base64_encode(&bytes),
+            "bytes": size,
             "mime_type": "image/png",
-            "next": "This is the app's first frame. Look at it and judge it: is the layout right, \
-                     does the text fit, do the colors work? If something is wrong, fix the source \
-                     and call krate_check, then render again.",
-        }))
+            "next": "The app's first frame is at `path` -- open it as an image and judge it: is \
+                     the layout right, does the text fit, do the colors work? If something is \
+                     wrong, fix the source and call krate_check, then render again.",
+        });
+        if arguments
+            .get("include_base64")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            let bytes = std::fs::read(&png).map_err(|err| {
+                format!("could not read the rendered frame {}: {err}", png.display())
+            })?;
+            result["image_base64"] = json!(base64_encode(&bytes));
+        }
+        Ok(result)
     }
 
     /// Write a `files` map into a fresh scratch directory.

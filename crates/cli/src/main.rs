@@ -3262,7 +3262,7 @@ pub(crate) fn run_bundle_for_tui(bundle: &Path) -> Result<()> {
     // from it. The menu installs a handler that records the interrupt rather
     // than exiting, so the app takes it and quits while the menu carries on.
     #[cfg(unix)]
-    let previous = unsafe { libc::signal(libc::SIGINT, handle_interrupt as libc::sighandler_t) };
+    let previous = unsafe { libc::signal(libc::SIGINT, handle_interrupt as *const std::ffi::c_void as libc::sighandler_t) };
 
     // Take the app's stdout rather than letting it into the menu.
     //
@@ -3395,6 +3395,28 @@ pub(crate) fn recent_apps() -> Vec<PathBuf> {
 
 /// Write a `.krate` bundle from a component and its manifest.
 fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
+    // A development manifest points `entry` at the build output; inside a
+    // bundle the component is always stored as `code.wasm`. The difference is
+    // knowable here, so it is rewritten here -- demanding a second, hand-kept
+    // manifest made everyone packing by hand hit the refusal first. Assets,
+    // source and the SDK still resolve against the REAL manifest's directory;
+    // only the copy that goes into the bundle is touched.
+    let manifest_text = fs::read_to_string(manifest)
+        .with_context(|| format!("read {}", manifest.display()))?;
+    let needs_entry_rewrite = manifest_text
+        .lines()
+        .any(|line| line.trim_start().starts_with("entry =") && !line.contains("code.wasm"));
+    let rewritten = std::env::temp_dir().join(format!(
+        "krate-pack-manifest-{}.toml",
+        std::process::id()
+    ));
+    let pack_manifest: &Path = if needs_entry_rewrite {
+        write_manifest_with_entry(manifest, &rewritten, "code.wasm")?;
+        println!("entry points at a build path; the bundle's copy says code.wasm (yours is untouched)");
+        &rewritten
+    } else {
+        manifest
+    };
     let assets = manifest
         .parent()
         .map(|parent| parent.join("assets"))
@@ -3424,7 +3446,7 @@ fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
         .and_then(|_| sdk::ensure_materialized().ok())
         .filter(|path| path.is_dir());
     let size = krate_bundle::pack_with_sdk(
-        manifest,
+        pack_manifest,
         file,
         assets.as_deref(),
         source.as_deref(),
@@ -3432,6 +3454,9 @@ fn pack_bundle(file: &Path, manifest: &Path, output: &Path) -> Result<u8> {
         output,
     )
     .with_context(|| format!("could not pack {}", output.display()))?;
+    if needs_entry_rewrite {
+        let _ = fs::remove_file(&rewritten);
+    }
     println!("wrote {} ({size} bytes)", output.display());
     if source.is_some() {
         println!("included the app's source, so it can be changed later");
@@ -4206,7 +4231,9 @@ fn create_krate(req: CreateRequest) -> Result<u8> {
     if allow_exit != 0 {
         anyhow::bail!(
             "the packed app failed to run with all grants (exit {allow_exit}); \
-             exit 4 means it exhausted its fuel budget (a runaway or infinite loop)"
+             exit 4 means it exhausted its fuel budget -- either a runaway loop, \
+             or honest work that is too expensive per frame (hoist per-pixel \
+             math out of inner loops, and draw fewer `quick` frames)"
         );
     }
 
@@ -5887,6 +5914,27 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
     };
     let mut command = ProcessCommand::new(&program);
     command.arg("build").arg("--release").current_dir(app_dir);
+    // Make rustup's toolchain win over a Homebrew rust for the child build.
+    // cargo-component resolves `cargo` and `rustc` from PATH, and on a
+    // machine with both installs Homebrew's can come first -- a rustc with
+    // no wasm32-wasip1 target and whatever version brew last shipped, so a
+    // perfectly good app fails to build depending on shell setup. rustup's
+    // shims (~/.cargo/bin) know the installed targets and honor the
+    // person's chosen default, so they go first when they exist. This bit
+    // both the CLI and the MCP server on the same machine.
+    if let Some(home) = home_dir() {
+        let shims = home.join(".cargo").join("bin");
+        let rustc = if cfg!(windows) { "rustc.exe" } else { "rustc" };
+        if shims.join(rustc).exists() {
+            let current = std::env::var_os("PATH").unwrap_or_default();
+            let joined = std::env::join_paths(
+                std::iter::once(shims).chain(std::env::split_paths(&current)),
+            );
+            if let Ok(path) = joined {
+                command.env("PATH", path);
+            }
+        }
+    }
     // One shared build cache for every generated app, keyed by SDK version.
     //
     // Each app's Cargo.toml depends on the same SDK crate graph, and cargo
@@ -8996,7 +9044,7 @@ fn run_check_app(
     })?;
     if exit != 0 {
         let hint = match exit {
-            4 => " (exit 4 means it exhausted its fuel budget -- a runaway or infinite loop)",
+            4 => " (exit 4 means it exhausted its fuel budget -- either a runaway loop, or honest work that is too expensive per frame: hoist per-pixel math out of inner loops, and draw fewer `quick` frames)",
             5 => " (exit 5 means a capability it needs is not declared in manifest.toml)",
             _ => "",
         };
@@ -9583,8 +9631,7 @@ pub(crate) fn install_build_tools() -> Result<()> {
             let text = String::from_utf8_lossy(&out.stderr);
             let detail = text
                 .lines()
-                .filter(|line| !line.trim().is_empty())
-                .next_back()
+                .rfind(|line| !line.trim().is_empty())
                 .unwrap_or("no reason given");
             anyhow::bail!("{}: {detail}", tool.what);
         }

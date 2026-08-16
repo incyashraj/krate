@@ -64,6 +64,15 @@ The loop: write code, then run `krate check-app .` in this directory. It builds
 the app, checks it imports only Krate APIs, and runs it once. On failure it
 names the stage and the fix. Do not stop until it prints `OK`.
 
+For anything visual, `OK` is the floor, not the finish. check-app is a
+correctness oracle, not a taste oracle: it will pass a frame with a seam
+through the sky and a reflection floating loose. The loop that actually
+improves a visual app is: render a frame headless with
+`krate run <entry.wasm> --shoot frame.png -- quick`, LOOK at the picture,
+name the one specific defect you can see, fix that, render again. Add
+`--check-layout` to catch text drawn over text. Every pass through that
+loop is worth more than another green check.
+
 The one hard rule: a Krate component may import ONLY `krate:*` interfaces.
 Reaching the operating system through `std` instead of through Krate pulls
 `wasi:*` imports in, and the app is rejected at the import check. Everything
@@ -108,6 +117,15 @@ Two honest choices, and check-app enforces one of them:\n\n\
    coordinates. Best for games and anything whose layout IS its design.\n\n\
 Doing neither is the single commonest way a generated app fails the \
 person using it.\n\n\
+## Pixel buffers composited over a scene need faded edges\n\n\
+`draw-pixels` puts your buffer on screen as an exact rectangle. If the \
+buffer's border pixels are not fully transparent, that rectangle's edge is \
+visible as a hard seam over whatever is behind it -- light, glow, smoke \
+and sky have no straight edges, so the box gives the trick away instantly. \
+Fade alpha to zero across the last few rows and columns of the buffer \
+(multiply by x/fade, (w-x)/fade, same for y) so the content dissolves \
+before the rectangle ends. Any buffer that fills the whole canvas is \
+exempt -- its edges are the window's.\n\n\
 ## Draining input: the difference between smooth and laggy\n\n\
 A touch panel reports a drag up to 120 times a second, and every report \
 becomes an event. An app that handles ONE event per frame and then draws \
@@ -133,7 +151,8 @@ when the app is idle and everything when a finger is moving.\n\n\
 ## Motion that reads as polish\n\n\
 The SDK ships `krate::motion` (no_std, no capability): `ease_out`, \
 `ease_in_out`, `smoothstep`, and a critically-damped `Spring`. Measure dt \
-from `time.clock` each frame, tick, draw, request the next frame:\n\n\
+from `time.clock` each frame, tick, draw, and schedule the next frame \
+(see the redraw rule below):\n\n\
 ```rust\n\
 use krate::motion::Spring;\n\
 let mut x = Spring::rest_at(0.0, 20.0);   // stiffness 10 calm, 30 snappy\n\
@@ -178,6 +197,20 @@ Overlap them generously, keep radii huge (half the window and up), and \
 drift their centers slowly with `pulse` for a living background. \
 Gradients are dithered by the runtime, so slow color ramps stay smooth, \
 never banded.\n\n\
+## The redraw rule: never `request-redraw` from a loop that already draws\n\n\
+`window::request-redraw` posts an event that comes straight back to you. \
+In a loop that draws every frame on its own schedule, that means the queue \
+is never empty, every `events::wait` returns instantly, and the app pins a \
+whole CPU core while looking idle -- fans up, battery down, and nothing on \
+screen moves any faster. Measured: two shipped animation apps at ~100% of \
+a core from exactly this.\n\n\
+`request-redraw` exists to WAKE a loop that would otherwise sit blocked in \
+`wait(None)` -- an event-driven app that just changed something and needs \
+one more frame. A continuously animating loop is never idle, so it must \
+never call it. Pace with the clock instead: keep a `next_frame` deadline, \
+add 1_000_000_000/60 after each draw, and spend the remainder blocked in \
+`events::wait(Some(remaining_ms))` draining input. `apps/krate-glow` and \
+`apps/krate-aurora` both show the exact loop.\n\n\
 Rules that keep it tasteful: ease-out for anything arriving, springs for \
 anything following input, bounce only where attention belongs (one bounce \
 per screen, not one per widget), 150-300ms for interface moves, and \
@@ -342,7 +375,12 @@ required\":\n\
 then `extern crate krate as _krate_runtime;`\n\
 \u{20}\u{20}2. KEEP the `krate` dependency in `Cargo.toml` -- do NOT remove it. It is \
 what provides the allocator, `#[panic_handler]`, and the `mem*` intrinsics a \
-`no_std` guest needs. This is the step that is most often missed.\n\
+`no_std` guest needs. This is the step that is most often missed, and the \
+usual way to miss it is scaffolding: if you copied `Cargo.toml` from a plain \
+std example (krate-glow, krate-hello-gui), it has no `krate` line at all, \
+because a std guest does not need one. Adding `#![no_std]` to code whose \
+manifest came from a std example fails until you add the dependency:\n\
+\u{20}\u{20}\u{20}\u{20}\u{20}krate = {{ path = \"<sdk>/krate\" }}  # copy the exact line from krate-contacts\n\
 \u{20}\u{20}3. keep `std_feature = true` under \
 `[package.metadata.component.bindings]`, which puts the generated \
 `impl std::error::Error` behind a feature nobody turns on.\n\
@@ -636,12 +674,11 @@ draw every row including the partly-visible ones, then clear it:\n\n\
 \u{20}\u{20}\u{20}\u{20}canvas2d::clear_clip(canvas);\n\n\
 Do not try to skip out-of-view rows by hand instead. It works until rows have \
 different heights, and then it cannot be done correctly at all.\n\n\
-## Packing: the entry name changes\n\n\
-Your `manifest.toml` points `entry` at the build output, which is right for \
-building and for `check-app`. Inside a packed `.krate` the component is stored \
-under one fixed name, so the manifest that goes into the bundle must say \
-`entry = \"code.wasm\"` instead. `krate create` handles this for you; `krate \
-pack` expects the bundle form and will refuse the development one.\n\n\
+## Packing\n\n\
+`krate pack <built.wasm> --manifest manifest.toml --output app.krate` takes \
+your development manifest as-is: inside a bundle the component is stored as \
+`code.wasm`, and pack rewrites the bundle's copy of `entry` itself, leaving \
+your file untouched. No second manifest is needed.\n\n\
 ## The verification run\n\n\
 `check-app` (and `create`) run the app once with every capability granted and \
 one argument, requiring exit 0. The argument is the bare word `quick` (not \
@@ -651,6 +688,17 @@ sample file path instead. Handle `quick` before any other argument parsing: on \
 stdin), print what the app is holding, and exit 0. Never wait for input or open \
 a window nobody will close. An app that parses arguments strictly and rejects \
 the unknown `quick` fails here after building and packing correctly.\n\n\
+**The headless run has a compute budget, and per-pixel work is what hits \
+it.** Verification executes on a fuel meter, not a wall clock, so an \
+expensive-but-correct render can exhaust it with no loop bug anywhere -- \
+the failure says \"fuel budget\" and exit 4. If you are computing pixels \
+(noise fields, gradients through `draw-pixels`), three habits keep you \
+far from the ceiling, and they are the same habits that make the app fast \
+for real: hoist per-column and per-row work out of the per-pixel loop, \
+skip pixels that cannot contribute (fully transparent, off-screen), and \
+keep the `quick` frame count SMALL. In quick mode `t` advances per frame, \
+synthetic time -- 10 frames and 90 animate identically, but every frame \
+spends fuel. Draw about 10 and break.\n\n\
 **On `quick`, operate your own controls -- do not just print a snapshot.** \
 The request names the things a person will do, and `quick` is where the app \
 proves it can do them. A shopping list asked for \"add and remove items\" \
