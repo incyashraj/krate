@@ -3686,9 +3686,59 @@ Fix:      The pack already taught pixel offsets for lists, and the agent
           within = scroll%line_height, draw from list_y - within. A partly
           visible line at top and bottom IS the smoothness.
 
-### K-119 -- No camera capability: apps that need one cannot be built yet
+### K-120 -- Any continuously animating GUI app burns ~100% of a core
 Status:   open
 Owner:    unclaimed
+Severity: serious
+Class:    runtime-hole
+Found:    2026-08-16, building apps/krate-aurora, measured on macOS (M4).
+Evidence: Two animating apps, measured with `ps -o %cpu=` six seconds after
+          launch, both windowed and idle with no input:
+
+              $ krate run Glow.krate --auto-grant     # shipped reference app
+              Glow: 94.3% CPU
+              $ krate run Aurora.krate --auto-grant   # 45,000 px/frame
+              Aurora: 101.8% CPU
+
+          The gap between them is the point. krate-glow draws a handful of
+          vector cards and does almost no per-pixel work; krate-aurora
+          computes 45,000 pixels a frame through three noise fields. Seven
+          points separate them, so the cost is not the guest's drawing --
+          it is a floor that any app paying to animate at all runs into.
+
+          Ruled out inside the guest, in this order, each re-measured:
+          1. `request-redraw` feeding its own event back, so every
+             `events::wait(Some(ms))` returns instantly and the loop spins.
+             The host already documents this at phase3_gui_host.rs:2290
+             ("an animation loop calls request-redraw every frame and
+             immediately receives that redraw back"). Removing the call
+             entirely: still ~101%.
+          2. No frame pacing. Added a monotonic-clock deadline that only
+             draws when a frame is due and blocks in `wait` for the
+             remainder: still ~101%.
+          3. A per-frame `Vec` allocation for the reflection buffer.
+             Hoisted to a reused buffer -- real fix, kept, and it took RSS
+             from 215 MB to ~140 MB -- but CPU unchanged at ~101%.
+
+          So a guest that paces itself correctly, allocates nothing per
+          frame, and never asks for a redraw still cannot idle below a full
+          core. That is the runtime's floor, not the app's.
+Impact:   This is the demo case, not a corner: an animated app is exactly
+          what gets shown to someone. A fan audibly spinning up during a
+          demo, and a laptop draining, reads as "this runtime is heavy"
+          regardless of how good the app looks.
+Fix:      Unknown -- needs a profile of the host's wait/pump path rather
+          than another guest-side change; the three obvious guest causes
+          above are eliminated. Suspect the manual `nextEventMatchingMask`
+          pump (see K-032's diagnosis, which established this runtime turns
+          no CFRunLoop and pumps by hand from poll/wait) never actually
+          parks: a pump that returns immediately whether or not an event is
+          waiting would produce exactly this floor. Worth measuring against
+          the Windows and Linux adapters before assuming it is macOS-only.
+
+### K-119 -- No camera capability: apps that need one cannot be built yet
+Status:   open
+Owner:    lead
 Severity: minor
 Class:    runtime-hole
 Found:    2026-08-16, founder asking "is krate ready for sound, camera,
@@ -3704,7 +3754,7 @@ Fix:      A `camera` WIT interface (frames as the image type the canvas
 
 ### K-118 -- wasmtime 43 is out of security support; the upgrade needs rustc 1.94
 Status:   open
-Owner:    unclaimed
+Owner:    lead
 Severity: major
 Class:    our-code
 Found:    2026-08-16, cargo-deny in CI, new advisory RUSTSEC-2026-0222
@@ -3723,7 +3773,7 @@ Fix:      One workstation task: bump the toolchain pin to 1.94, bump
 
 ### K-117 -- Apps cannot paint the title bar area, so full-bleed designs are impossible
 Status:   open
-Owner:    unclaimed
+Owner:    lead
 Severity: major
 Class:    runtime-hole
 Found:    2026-08-16, replicating MarkText pixel-for-pixel as a Krate app

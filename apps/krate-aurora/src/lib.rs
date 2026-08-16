@@ -372,7 +372,12 @@ fn draw_ridge(
 
 /// The lake: the aurora buffer drawn again upside down and dimmed, then
 /// banded with horizontal ripples so it reads as water rather than a mirror.
-fn draw_water(canvas: u64, sky: &[u8], t: f32) -> Result<(), gfx::GfxError> {
+fn draw_water(
+    canvas: u64,
+    sky: &[u8],
+    mirrored: &mut [u8],
+    t: f32,
+) -> Result<(), gfx::GfxError> {
     let water = rect(0.0, HORIZON, WIDTH, HEIGHT - HORIZON);
 
     // The water body itself, darker than the sky it reflects.
@@ -390,7 +395,8 @@ fn draw_water(canvas: u64, sky: &[u8], t: f32) -> Result<(), gfx::GfxError> {
     // mirroring the whole thing yields a faint smudge floating in the middle
     // of the lake. Take that band alone and flip it, so the brightest light
     // lands hard against the waterline where a real reflection starts.
-    let mut mirrored = vec![0u8; (SKY_W * BAND * 4) as usize];
+    // The caller owns this buffer and reuses it. Allocating it here, once a
+    // frame, is a needless megabyte of churn per second.
     for row in 0..BAND {
         let source_row = BAND - 1 - row;
         // Fade out with depth, and lose the colour faster than the light --
@@ -550,8 +556,14 @@ fn draw_title(canvas: u64, t: f32) -> Result<(), gfx::GfxError> {
     Ok(())
 }
 
-/// One whole frame. `t` is seconds since launch.
-fn draw(canvas: u64, sky: &mut [u8], t: f32) -> Result<(), gfx::GfxError> {
+/// One whole frame. `t` is seconds since launch. Both buffers are owned by
+/// the caller and reused, so a frame allocates nothing.
+fn draw(
+    canvas: u64,
+    sky: &mut [u8],
+    mirrored: &mut [u8],
+    t: f32,
+) -> Result<(), gfx::GfxError> {
     draw_sky(canvas)?;
     draw_stars(canvas, t)?;
 
@@ -579,7 +591,7 @@ fn draw(canvas: u64, sky: &mut [u8], t: f32) -> Result<(), gfx::GfxError> {
         color(0.26, 0.58, 0.62, 0.22),
     )?;
 
-    draw_water(canvas, sky, t)?;
+    draw_water(canvas, sky, mirrored, t)?;
 
     // A vignette along the bottom edge: it settles the foreground and keeps
     // the caption legible over whatever the water is doing behind it.
@@ -671,6 +683,7 @@ impl bindings::Guest for Component {
         // One buffer, reused every frame. Allocating this per frame is how an
         // otherwise fine animation turns into a stutter.
         let mut sky: Vec<u8> = vec![0u8; (SKY_W * SKY_H * 4) as usize];
+        let mut mirrored: Vec<u8> = vec![0u8; (SKY_W * BAND * 4) as usize];
 
         let started = clock::monotonic_nanos();
         let mut frames: u32 = 0;
@@ -691,7 +704,7 @@ impl bindings::Guest for Component {
                 now.saturating_sub(started) as f32 / 1_000_000_000.0
             };
 
-            if draw(canvas, &mut sky, t).is_err() {
+            if draw(canvas, &mut sky, &mut mirrored, t).is_err() {
                 out("draw:no");
                 return 1;
             }
@@ -704,7 +717,12 @@ impl bindings::Guest for Component {
                 continue;
             }
 
-            let _ = window::request_redraw(win);
+            // Deliberately no `request-redraw` here. This loop already draws
+            // and presents every frame on its own schedule, and asking for a
+            // redraw posts an event that comes straight back -- so the queue
+            // is never empty, every `wait` returns instantly, and the app
+            // pins a core while looking idle. Pacing below is what drives the
+            // animation instead.
 
             // Schedule the next frame, and skip ahead if we fell behind so a
             // slow patch cannot build a backlog of owed frames.
