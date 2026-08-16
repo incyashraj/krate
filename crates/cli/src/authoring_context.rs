@@ -142,12 +142,42 @@ x.tick(target, dt);\n\
 draw_at(x.value);\n\
 if !x.settled(target) { /* request another frame */ }\n\
 ```\n\n\
+The full modern vocabulary, all in `krate::motion`, all free of host calls:\n\n\
+- **Bounce**: `BouncySpring::rest_at(v, 30.0, 0.4)` overshoots and rings \
+down -- the signature modern arrival. Use it for panels sliding in, a \
+selected card popping to size, a value snapping to a detent. `bounce` 0.3 \
+is a subtle wink, 0.5 clearly bounces, 0.7 is playful. Springs for input, \
+bouncy springs for arrivals people should FEEL.\n\
+- **Overshoot ease**: `ease_out_back(t)` for fixed-duration arrivals -- a \
+menu that lands with a wink in 220ms. It peaks ~10% past the target, so \
+give it room.\n\
+- **Staggered reveals**: when a list first appears, each row fades and \
+rises a beat after the one before:\n\n\
+\u{20}\u{20}\u{20}\u{20}let t = motion::stagger(elapsed_ms, i, 40, 220);\n\
+\u{20}\u{20}\u{20}\u{20}let a = motion::ease_out(t);\n\
+\u{20}\u{20}\u{20}\u{20}// draw the row at (y + (1.0-a) * 14.0) with ink mixed toward\n\
+\u{20}\u{20}\u{20}\u{20}// the background by (1.0-a): motion::mix(bg, ink, a)\n\n\
+- **Ambient glow / breathing**: `pulse(now_ms, 2400)` is a 0..1 sine; feed \
+it through `mix` for a badge that breathes or an accent that glows. This \
+is the ONE motion allowed to loop forever.\n\
+- **Flowing gradients**: the canvas has real gradient primitives -- \
+`linear-gradient-stops` (any number of stops, any angle) and \
+`radial-gradient`. A modern flowing backdrop is those stops with their \
+colors moving: each frame, shift every stop's color with \
+`motion::mix(c1, c2, motion::pulse(now_ms + phase_per_stop, 6000))` and \
+redraw. Slow (5-8s periods), low-contrast color pairs, and it reads as \
+alive rather than busy.\n\
+- **Press feedback**: on pointer-down over a control, draw it 3-4% \
+smaller (inset its rect) for as long as it is held; release springs it \
+back. 60ms of feel that separates an app from a screenshot.\n\n\
 Rules that keep it tasteful: ease-out for anything arriving, springs for \
-anything following input, 150-300ms for interface moves, and nothing loops \
-forever except ambient glow. Cards get `fill-round-rect` + \
-`drop-shadow-round-rect` (shadow first, offset a few pixels down); progress \
-is `stroke-arc` from -90 degrees; big numbers read best at weight 600-700 \
-with slightly negative letter-spacing via `draw-text-styled`.\n";
+anything following input, bounce only where attention belongs (one bounce \
+per screen, not one per widget), 150-300ms for interface moves, and \
+nothing loops forever except ambient glow and flowing backdrops. Cards get \
+`fill-round-rect` + `drop-shadow-round-rect` (shadow first, offset a few \
+pixels down); progress is `stroke-arc` from -90 degrees; big numbers read \
+best at weight 600-700 with slightly negative letter-spacing via \
+`draw-text-styled`.\n";
 
 /// Section 1: the SDK API surface, reusing the same generated reference the
 /// authoring contract has always used.

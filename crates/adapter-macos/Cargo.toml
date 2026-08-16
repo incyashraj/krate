@@ -19,5 +19,5 @@ workspace = true
 # unsynchronized per-frame NSImage composite (K-114).
 krate-presenter-gpu = { path = "../presenter-gpu", version = "0.1.0-dev" }
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAlert", "NSApplication", "NSButton", "NSButtonCell", "NSCell", "NSColor", "NSControl", "NSEvent", "NSFont", "NSGraphics", "NSGraphicsContext", "NSBitmapImageRep", "NSImage", "NSImageRep", "NSImageView", "NSImageCell", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSPanel", "NSSavePanel", "NSText", "NSResponder", "NSRunningApplication", "NSTextField", "NSView", "NSWindow", "objc2-core-foundation"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSAlert", "NSAnimationContext", "NSApplication", "NSButton", "NSButtonCell", "NSCell", "NSColor", "NSControl", "NSEvent", "NSFont", "NSGraphics", "NSGraphicsContext", "NSBitmapImageRep", "NSImage", "NSImageRep", "NSImageView", "NSImageCell", "NSMenu", "NSMenuItem", "NSOpenPanel", "NSPanel", "NSSavePanel", "NSText", "NSResponder", "NSRunningApplication", "NSTextField", "NSView", "NSWindow", "objc2-core-foundation"] }
 objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSBundle", "NSData", "NSDictionary", "NSGeometry", "NSURL", "NSNotification", "NSObject", "NSRunLoop", "NSString", "objc2-core-foundation"] }

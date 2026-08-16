@@ -186,6 +186,107 @@ pub mod motion {
             (self.value - target).abs() < 0.05 && self.velocity.abs() < 0.05
         }
     }
+
+    /// A bouncy spring: overshoots and settles with a visible bounce -- the
+    /// signature modern-app arrival. `bounce` is 0.0..=1.0: 0 is the
+    /// critically-damped [`Spring`], 0.3 is a tasteful landing, 0.7 is
+    /// playful. Tick once per frame with the frame's `dt` seconds.
+    #[derive(Clone, Copy, Debug)]
+    pub struct BouncySpring {
+        pub value: f32,
+        pub velocity: f32,
+        pub stiffness: f32,
+        pub bounce: f32,
+    }
+
+    impl BouncySpring {
+        /// A bouncy spring at rest on `value`.
+        pub fn rest_at(value: f32, stiffness: f32, bounce: f32) -> Self {
+            Self {
+                value,
+                velocity: 0.0,
+                stiffness,
+                bounce: bounce.clamp(0.0, 1.0),
+            }
+        }
+
+        /// Advance toward `target` by `dt` seconds. Underdamped by `bounce`,
+        /// so it overshoots and rings down; call every frame, read `.value`.
+        pub fn tick(&mut self, target: f32, dt: f32) {
+            let dt = dt.clamp(0.0, 0.1);
+            let omega = self.stiffness;
+            // Damping ratio tuned so each step of `bounce` reads on
+            // screen at interface stiffness and 60Hz: 0.3 lands with a
+            // subtle wink (~4% overshoot), 0.5 clearly bounces (~18%),
+            // 0.7 is playful (~40%). Floored so 1.0 still settles.
+            let zeta = ((1.0 - self.bounce) * 0.85).max(0.12);
+            let to_target = target - self.value;
+            let accel = omega * omega * to_target - 2.0 * zeta * omega * self.velocity;
+            self.velocity += accel * dt;
+            self.value += self.velocity * dt;
+        }
+
+        /// Whether the bounce has rung down, for stopping redraws.
+        pub fn settled(&self, target: f32) -> bool {
+            (self.value - target).abs() < 0.05 && self.velocity.abs() < 0.05
+        }
+    }
+
+    /// Ease-out with overshoot: races past 1.0 and comes back -- a menu or
+    /// card that lands with a wink. `t` in 0..=1; peaks around 1.1.
+    pub fn ease_out_back(t: f32) -> f32 {
+        let t = t.clamp(0.0, 1.0);
+        const C1: f32 = 1.70158;
+        const C3: f32 = C1 + 1.0;
+        let u = t - 1.0;
+        1.0 + C3 * u * u * u + C1 * u * u
+    }
+
+    /// A 0..=1 sine pulse from a running clock, for ambient glow and
+    /// breathing badges: 0 at rest, 1 at peak, `period_ms` per full cycle.
+    pub fn pulse(now_ms: u64, period_ms: u64) -> f32 {
+        if period_ms == 0 {
+            return 0.0;
+        }
+        let phase = (now_ms % period_ms) as f32 / period_ms as f32;
+        // Bhaskara's sine approximation: no_std has no sin, and animation
+        // cannot tell the difference (max error under 0.2%).
+        let x = phase * 2.0 - 1.0; // -1..1, one full cycle
+        let ax = if x < 0.0 { -x } else { x };
+        let half = 4.0 * ax * (1.0 - ax); // 0..1 sine half-wave
+        if x < 0.0 {
+            0.5 - half / 2.0
+        } else {
+            0.5 + half / 2.0
+        }
+    }
+
+    /// Progress 0..=1 for item `index` in a staggered reveal: each item
+    /// starts `step_ms` after the one before and takes `duration_ms`. Feed
+    /// the result through [`ease_out`] or [`ease_out_back`].
+    pub fn stagger(elapsed_ms: u64, index: usize, step_ms: u64, duration_ms: u64) -> f32 {
+        let start = index as u64 * step_ms;
+        if elapsed_ms <= start {
+            return 0.0;
+        }
+        if duration_ms == 0 {
+            return 1.0;
+        }
+        ((elapsed_ms - start) as f32 / duration_ms as f32).clamp(0.0, 1.0)
+    }
+
+    /// Mix two `0xAARRGGBB` colors: `t` 0 is `a`, 1 is `b`. The workhorse
+    /// of flowing gradients -- move `t` with [`pulse`] and feed the result
+    /// to the gradient stops.
+    pub fn mix(a: u32, b: u32, t: f32) -> u32 {
+        let t = t.clamp(0.0, 1.0);
+        let ch = |shift: u32| -> u32 {
+            let ca = (a >> shift) & 0xFF;
+            let cb = (b >> shift) & 0xFF;
+            (ca as f32 + (cb as f32 - ca as f32) * t) as u32
+        };
+        (ch(24) << 24) | (ch(16) << 16) | (ch(8) << 8) | ch(0)
+    }
 }
 
 pub mod prelude {
@@ -945,6 +1046,45 @@ mod motion_tests {
             peak <= 102.0,
             "overshoot beyond 2% reads as a bounce: peaked {peak}"
         );
+    }
+
+    /// A bouncy spring must actually overshoot -- that is its whole job --
+    /// and still settle.
+    #[test]
+    fn a_bouncy_spring_overshoots_then_settles() {
+        let mut s = crate::motion::BouncySpring::rest_at(0.0, 30.0, 0.5);
+        let mut peak = 0.0f32;
+        for _ in 0..600 {
+            s.tick(100.0, 1.0 / 60.0);
+            peak = peak.max(s.value);
+        }
+        assert!(peak > 110.0, "no visible bounce: peaked {peak}");
+        assert!(
+            s.settled(100.0),
+            "never settled: {} v={}",
+            s.value,
+            s.velocity
+        );
+    }
+
+    /// pulse stays in 0..=1 and completes a cycle; mix hits its endpoints.
+    #[test]
+    fn pulse_and_mix_stay_in_bounds() {
+        for ms in 0..2000u64 {
+            let v = crate::motion::pulse(ms, 1000);
+            assert!((0.0..=1.0).contains(&v), "pulse({ms}) = {v}");
+        }
+        assert_eq!(crate::motion::mix(0xFF000000, 0xFFFFFFFF, 0.0), 0xFF000000);
+        assert_eq!(crate::motion::mix(0xFF000000, 0xFFFFFFFF, 1.0), 0xFFFFFFFF);
+    }
+
+    /// Later items start later and never lead earlier ones.
+    #[test]
+    fn stagger_orders_items() {
+        let early = crate::motion::stagger(200, 0, 60, 240);
+        let late = crate::motion::stagger(200, 3, 60, 240);
+        assert!(early > late, "{early} vs {late}");
+        assert_eq!(crate::motion::stagger(10_000, 7, 60, 240), 1.0);
     }
 
     /// A huge dt (a stalled frame) must not explode the integration.

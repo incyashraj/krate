@@ -2143,7 +2143,31 @@ mod platform {
             let app = NSApplication::sharedApplication(mtm);
             app.setActivationPolicy(NSApplicationActivationPolicy::Regular);
             install_edit_menu(&app, mtm);
+            // Arrive, don't pop: every modern app opens with a short fade
+            // and settle, and a window that blinks into existence reads as
+            // a generation older. Start transparent and slightly low, then
+            // animate alpha and frame together through AppKit's own
+            // animation clock -- one group, ~180ms, ease-out by default.
+            // Host-level on purpose: every app gets it with zero app code.
+            let final_frame = window.window.frame();
+            let mut start = final_frame;
+            start.origin.y -= 12.0;
+            window.window.setAlphaValue(0.0);
+            window.window.setFrame_display(start, false);
             window.window.makeKeyAndOrderFront(None);
+            unsafe {
+                use objc2::runtime::AnyObject;
+                objc2_app_kit::NSAnimationContext::beginGrouping();
+                objc2_app_kit::NSAnimationContext::currentContext().setDuration(0.18);
+                let win: &AnyObject = &window.window;
+                let proxy: *mut AnyObject = msg_send![win, animator];
+                let _: () = msg_send![proxy, setAlphaValue: 1.0f64];
+                let _: () = msg_send![proxy, setFrame: final_frame, display: true];
+                objc2_app_kit::NSAnimationContext::endGrouping();
+            }
+            // Belt and braces: whatever the animation did, the resting state
+            // is fully opaque at the intended frame.
+            window.window.setAlphaValue(1.0);
             #[allow(deprecated)]
             app.activateIgnoringOtherApps(true);
             // The moment a window is really on a screen is the moment its

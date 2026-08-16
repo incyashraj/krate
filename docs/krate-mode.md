@@ -350,7 +350,11 @@ macOS, Windows, and Linux -- there is no kind that works on one system only.
 
 - `motion::ease_in_out(t: f32) -> f32`
 - `motion::ease_out(t: f32) -> f32`
+- `motion::ease_out_back(t: f32) -> f32`
+- `motion::mix(a: u32, b: u32, t: f32) -> u32`
+- `motion::pulse(now_ms: u64, period_ms: u64) -> f32`
 - `motion::smoothstep(t: f32) -> f32`
+- `motion::stagger(elapsed_ms: u64, index: usize, step_ms: u64, duration_ms: u64) -> f32`
 
 ### `net`
 
