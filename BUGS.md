@@ -3781,6 +3781,13 @@ Fix:      A window style option in the ui.window interface (full-bleed /
           Windows adapter (extend client area into the frame), and Linux
           (CSD). Until then the studio's own chrome does on the shell what
           apps cannot do for themselves.
+Update:   2026-08-16, e63ef189: shipped on macOS (set-full-bleed in
+          ui.window, additive; transparent titlebar + full-size content +
+          overlaid lights; sizes follow effective_content_rect so the
+          canvas owns the band). Draft accepts so check-app cannot fail an
+          app for asking. Still open for the Windows adapter
+          (extend-client-area into the frame) and Linux (CSD); both
+          currently return honest unsupported and keep standard chrome.
 
 ### K-116 -- A machine with no real GPU crashed apps instead of falling back
 Status:   fixed
