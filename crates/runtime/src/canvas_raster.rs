@@ -1246,8 +1246,6 @@ impl CanvasSurface {
     }
 }
 
-/// Interpolate a color along sorted gradient stops, clamped at both ends.
-
 #[cfg(test)]
 mod tests {
     use super::*;

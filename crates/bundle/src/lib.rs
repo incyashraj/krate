@@ -622,6 +622,14 @@ fn collect_source(root: &Path) -> Result<Vec<(String, PathBuf)>> {
                 | ".git"
                 | ".agent-transcript.txt"
                 | "KRATE_AUTHORING.md"
+                // The attachment inbox: files the person handed the AI to
+                // read. Packing them shipped a founder's benchmark
+                // screenshots inside the app -- 1.4MB of a "210KB" bundle
+                // -- and would silently publish anyone's attached sketch
+                // or spreadsheet inside every copy of the app they share.
+                | "attached"
+                // The verification frame the pack tells agents to shoot.
+                | "frame.png"
         )
     })
 }
