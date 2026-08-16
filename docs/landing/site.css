@@ -297,9 +297,30 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   white-space: nowrap;
 }
 .rot .word { display: inline-block; }
-.rot .word span { display: inline-block; will-change: transform, opacity, filter; }
+/* The Studio's own word treatment, verbatim: every letter is a window onto
+   one viewport-fixed gradient, so the ramp is continuous across the word
+   and flows -- the same living color the app itself shows. */
+.rot .word span {
+  display: inline-block; will-change: transform, opacity, filter;
+  background-image: linear-gradient(90deg,
+    #6291ff 0%, #a855f7 22%, #ec4899 42%, #f97316 62%, #eab308 78%, #6291ff 100%);
+  background-size: 220px 100%;
+  background-attachment: fixed;
+  background-repeat: repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: wordflow 4.5s linear infinite;
+}
+@keyframes wordflow {
+  from { background-position: 0 0; }
+  to   { background-position: 220px 0; }
+}
 
 .rot .bar {
+  display: none;
+}
+.rot .bar-unused {
   position: absolute;
   left: 0;
   right: 0;
@@ -1810,3 +1831,18 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
 @media (max-width: 900px) { .sf-session { grid-template-columns: 1fr; } .sf-rail { border-right: none; border-bottom: 1px solid var(--line); } }
 /* The hidden attribute must always win over component display values. */
 .sframe [hidden] { display: none !important; }
+
+/* Sticky panes: one Studio window, full stage, every feature. */
+.stick .sframe { height: 100%; display: flex; flex-direction: column; }
+.stick .sf-body { flex: 1; display: flex; min-height: 0; }
+.stick .sf-session { flex: 1; min-height: 0; }
+.sf-center { align-items: center; justify-content: center; padding: 22px; }
+.sf-dim { background: radial-gradient(120% 100% at 50% 0%, rgba(255,255,255,0.02), transparent); }
+.sf-consent-card { max-width: 320px; }
+.sf-filecard, .sf-publish { box-shadow: none; border: none; background: transparent; }
+.sf-filecard { padding: 0; }
+.sf-publish { padding: 0; width: 100%; max-width: 420px; }
+.sf-btns-center { justify-content: center; margin-top: 14px; }
+@media (prefers-reduced-motion: reduce) {
+  .rot .word span { animation: none; }
+}
