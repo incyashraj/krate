@@ -1008,3 +1008,11 @@ body.resizing .divider { background: var(--blue); }
 .gate-code.copied::after { content: " copied"; color: var(--good, #4ade80); font-size: 12px; }
 .ai-error { color: var(--danger); font-size: 12.5px; line-height: 1.5; word-break: break-word; }
 .fail-raw { margin-top: 10px; font-family: var(--mono); font-size: 11px; color: var(--quiet, rgba(255,255,255,0.35)); word-break: break-word; max-width: 520px; }
+
+/* The update chip: present, never shouting. */
+.update-chip { color: var(--accent); }
+.update-chip::before {
+  content: ""; display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; background: var(--accent); margin-right: 6px;
+  vertical-align: 1px;
+}

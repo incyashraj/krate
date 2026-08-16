@@ -5388,6 +5388,20 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
         authoring_context::generate(ctx.app_dir),
     )?;
 
+    // Warm the dependency cache while the model thinks. The skeleton
+    // compiles the whole shared dep graph in the background, so the agent's
+    // FIRST check-app -- usually issued a minute into authoring -- meets hot
+    // artifacts instead of paying the cold build inside the person's wait.
+    {
+        let warm_dir = ctx.app_dir.to_path_buf();
+        std::thread::spawn(move || {
+            // Silent on purpose: build_component prints the compiler's words,
+            // and a background warm-up interleaving rustc noise through the
+            // authoring progress display would read as chaos.
+            let _ = component_build_command(&warm_dir).output();
+        });
+    }
+
     // The command Krate builds for a known provider is this binary calling
     // itself -- `'<exe>' author-agent <name>` -- and needs no shell at all.
     // Spawning it directly matters on Windows, where the shell run needs a
@@ -5817,6 +5831,20 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
     };
     let mut command = ProcessCommand::new(&program);
     command.arg("build").arg("--release").current_dir(app_dir);
+    // One shared build cache for every generated app, keyed by SDK version.
+    //
+    // Each app's Cargo.toml depends on the same SDK crate graph, and cargo
+    // recompiled the whole graph from zero into every app's own target/ --
+    // minutes of a "several minute" create that repeat identically per app.
+    // A shared CARGO_TARGET_DIR compiles the dependencies once per machine
+    // per SDK version; after the first app, later builds compile only the
+    // app's own crate. Cargo takes a lock on the dir, so concurrent builds
+    // serialize instead of corrupting. An explicit CARGO_TARGET_DIR from the
+    // environment still wins.
+    if let Some(shared) = shared_build_dir() {
+        let _ = fs::create_dir_all(&shared);
+        command.env("CARGO_TARGET_DIR", &shared);
+    }
 
     // Build the child PATH: rustup's toolchain bin first (so a rustup cargo/rustc
     // with the wasm target wins over a Homebrew one), then the cargo bin dir that
@@ -5838,8 +5866,55 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
     command
 }
 
+/// The shared dependency cache all generated apps build into, keyed by SDK
+/// version so a WIT change can never serve stale artifacts. None when the
+/// person set CARGO_TARGET_DIR themselves -- their setting wins.
+fn shared_build_dir() -> Option<PathBuf> {
+    if std::env::var_os("CARGO_TARGET_DIR").is_some() {
+        return None;
+    }
+    home_dir().map(|home| {
+        home.join(".cache/krate/build")
+            .join(env!("KRATE_SDK_FINGERPRINT"))
+    })
+}
+
 fn find_built_component(app_dir: &Path) -> Result<PathBuf> {
-    let release = app_dir.join("target/wasm32-wasip1/release");
+    let target_root = shared_build_dir().unwrap_or_else(|| app_dir.join("target"));
+    let release = target_root.join("wasm32-wasip1/release");
+    // The shared cache holds every app's artifact side by side, so the match
+    // must be by THIS crate's name, not "any wasm in the directory".
+    let wanted = fs::read_to_string(app_dir.join("Cargo.toml"))
+        .ok()
+        .and_then(|text| {
+            text.lines().find_map(|line| {
+                let line = line.trim();
+                line.strip_prefix("name")
+                    .and_then(|rest| rest.split('"').nth(1))
+                    .map(|name| format!("{}.wasm", name.replace('-', "_")))
+            })
+        });
+    if let Some(name) = &wanted {
+        let exact = release.join(name);
+        if exact.exists() {
+            // The manifest's entry names target/wasm32-wasip1/release/<name>
+            // relative to the app, and the permission wall verifies the file
+            // RUN is the file DECLARED. The deps stay in the shared cache;
+            // the artifact itself always comes home to the declared path.
+            if shared_build_dir().is_some() {
+                let local = app_dir.join("target/wasm32-wasip1/release");
+                fs::create_dir_all(&local)?;
+                let home = local.join(name);
+                fs::copy(&exact, &home).with_context(|| format!("copying {}", exact.display()))?;
+                return Ok(home);
+            }
+            return Ok(exact);
+        }
+        // Never fall back to "any wasm" when the name is known: the shared
+        // cache holds every app's artifact, and grabbing a neighbour's led
+        // check-app to verify the wrong program entirely.
+        anyhow::bail!("the build produced no {} in {}", name, release.display());
+    }
     for entry in fs::read_dir(&release).with_context(|| format!("read {}", release.display()))? {
         let path = entry?.path();
         if path.extension().and_then(|e| e.to_str()) == Some("wasm") {
@@ -6783,8 +6858,42 @@ fn installed_app_for(bundle_path: &Path) -> Option<PathBuf> {
 }
 
 /// Wrap and open: the launch path behind double-click and the studio.
+/// Resolve a launch target that may be a Krate Cloud URL: download the
+/// bundle to a cache file and launch that. Downloading grants nothing --
+/// the fetched app meets the same permission wall as any local file.
+fn launch_target(bundle: &Path) -> Result<PathBuf> {
+    let raw = bundle.to_string_lossy();
+    if !krate_bundle::is_url(&raw) {
+        return Ok(bundle.to_path_buf());
+    }
+    let dir = home_dir()
+        .map(|home| home.join(".krate/cloud"))
+        .context("no home directory")?;
+    fs::create_dir_all(&dir)?;
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    std::hash::Hash::hash(&raw.as_ref(), &mut hasher);
+    let dest = dir.join(format!("{:016x}.krate", std::hash::Hasher::finish(&hasher)));
+    let response = ureq::get(&raw)
+        .timeout(std::time::Duration::from_secs(60))
+        .call()
+        .with_context(|| format!("could not download {raw}"))?;
+    let mut bytes = Vec::new();
+    {
+        use std::io::Read;
+        // Bounded: a .krate is kilobytes; refuse anything clearly not one.
+        response
+            .into_reader()
+            .take(64 * 1024 * 1024)
+            .read_to_end(&mut bytes)
+            .context("reading the download")?;
+    }
+    fs::write(&dest, &bytes).with_context(|| format!("writing {}", dest.display()))?;
+    Ok(dest)
+}
+
 #[cfg(target_os = "macos")]
 fn launch_app(bundle_path: &Path) -> Result<u8> {
+    let bundle_path = &launch_target(bundle_path)?;
     let launchers = home_dir()
         .map(|home| home.join(".krate/launchers"))
         .context("no home directory")?;
@@ -6846,6 +6955,7 @@ fn launch_app(bundle_path: &Path) -> Result<u8> {
 
 #[cfg(not(target_os = "macos"))]
 fn launch_app(bundle_path: &Path) -> Result<u8> {
+    let bundle_path = &launch_target(bundle_path)?;
     // Elsewhere a plain windowed run activates fine; the wrapper is a macOS
     // need. Same binary, ordinary run -- but detached, with no console:
     // the engine is a console-subsystem binary on Windows, and spawning it

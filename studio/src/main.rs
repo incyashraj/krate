@@ -827,6 +827,15 @@ fn run_author(
     }
 
     let bytes = std::fs::metadata(out_path).map(|m| m.len()).unwrap_or(0);
+    // The build took minutes and the person almost certainly tabbed away;
+    // a system notification is how "it's ready" reaches them. Every OS has
+    // a stock one-liner, so no plugin and no new permissions.
+    notify_ready(
+        &out_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "your app".to_string()),
+    );
     Ok(CreateResult {
         path: out_path.display().to_string(),
         name: out_path
@@ -837,6 +846,36 @@ fn run_author(
         asks,
         shot: shoot(engine, out_path).unwrap_or_default(),
     })
+}
+
+/// Tell the person their app is ready, through the OS itself.
+fn notify_ready(name: &str) {
+    let body = format!("{name} is ready. Open it, or tell Krate what to change.");
+    #[cfg(target_os = "macos")]
+    {
+        let script = format!(
+            "display notification \"{}\" with title \"Krate\" sound name \"Glass\"",
+            body.replace('\"', "")
+        );
+        let _ = silent_cmd("/usr/bin/osascript")
+            .args(["-e", &script])
+            .spawn();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        // A toast via the stock WinRT classes; PowerShell ships everywhere.
+        let script = format!(
+            "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null;              $t = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent('ToastText02');              $t.GetElementsByTagName('text').Item(0).InnerText = 'Krate';              $t.GetElementsByTagName('text').Item(1).InnerText = '{}';              [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Krate').Show([Windows.UI.Notifications.ToastNotification]::new($t))",
+            body.replace('\'', "")
+        );
+        let _ = silent_cmd("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = silent_cmd("notify-send").args(["Krate", &body]).spawn();
+    }
 }
 
 /// Render the finished app's real first frame, as a data URL.
@@ -1255,13 +1294,32 @@ async fn cloud_run(url: String) -> Result<(), String> {
     }
     tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
-        silent_cmd(&engine)
+        // `launch`, never a bare `run`: a bare spawn has no macOS activation,
+        // so the consent dialog and the app window were created and never
+        // shown -- "Open it" looked dead (the K-110 class, cloud edition).
+        // launch downloads the URL, wraps it, and opens through the OS with
+        // real activation; its stderr is the reason when it fails.
+        let out = silent_cmd(&engine)
             .current_dir(studio_dir())
-            .arg("run")
+            .arg("launch")
             .arg(&url)
-            .spawn()
-            .map(|_| ())
-            .map_err(|err| err.to_string())
+            .output()
+            .map_err(|err| err.to_string())?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            let why = String::from_utf8_lossy(&out.stderr);
+            let why = why.trim();
+            let tail: String = why
+                .chars()
+                .skip(why.chars().count().saturating_sub(300))
+                .collect();
+            Err(if tail.is_empty() {
+                "the app could not be opened".to_string()
+            } else {
+                tail
+            })
+        }
     })
     .await
     .map_err(|err| err.to_string())?
@@ -1650,6 +1708,21 @@ fn human_size(bytes: u64) -> String {
 /// With the native frame gone (see setup) the studio owns the whole top of
 /// the window on every OS, so the bar cannot end up stacked under a second
 /// title bar or misaligned against controls it does not control.
+/// This studio build's own version, for the update check.
+#[tauri::command]
+fn studio_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+/// Open an https link in the person's browser -- the update banner's door.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !url.starts_with("https://") {
+        return Err("only https links open from here".to_string());
+    }
+    open_url(&url)
+}
+
 #[tauri::command]
 fn win_minimize(window: tauri::Window) {
     let _ = window.minimize();
@@ -1765,6 +1838,8 @@ fn main() {
             pick_files,
             pick_folder,
             autorun,
+            studio_version,
+            open_external,
             win_minimize,
             win_toggle_max,
             win_close

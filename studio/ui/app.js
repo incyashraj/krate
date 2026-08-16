@@ -18,6 +18,36 @@ const tauri = window.__TAURI__ || null;
 const $ = (id) => document.getElementById(id);
 const invoke = (cmd, args) => (tauri ? tauri.core.invoke(cmd, args) : mockInvoke(cmd, args));
 
+/* One update check per session: newer release -> a quiet chip that opens
+ * this machine's installer. No auto-download, no nagging; the person
+ * clicks when they want it. */
+(async function () {
+  try {
+    const mine = await invoke("studio_version");
+    const r = await fetch("https://api.github.com/repos/incyashraj/krate/releases/latest");
+    if (!r.ok) return;
+    const rel = await r.json();
+    const latest = String(rel.tag_name || "").replace(/^v/, "");
+    if (!latest || latest === mine) return;
+    const newer = latest.localeCompare(mine, undefined, { numeric: true }) > 0;
+    if (!newer) return;
+    const ua = navigator.userAgent;
+    const file = ua.includes("Windows")
+      ? `krate-studio-${latest}-windows-x64-setup.exe`
+      : ua.includes("Linux") && !ua.includes("Android")
+        ? `krate-studio-${latest}-linux-x86_64.AppImage`
+        : `krate-studio-${latest}-universal.dmg`;
+    const chip = $("updateChip");
+    chip.textContent = `Update to v${latest}`;
+    chip.classList.remove("hidden");
+    chip.addEventListener("click", () => {
+      invoke("open_external", {
+        url: `https://github.com/incyashraj/krate/releases/download/v${latest}/${file}`,
+      }).catch(() => {});
+    });
+  } catch (e) { /* the check is a courtesy, never a failure */ }
+})();
+
 /* The OS shapes the chrome: macOS keeps its traffic lights (the bar reserves
  * their run), Windows loses the native frame and gets our three buttons,
  * Linux keeps its native frame but has no lights to clear. */
