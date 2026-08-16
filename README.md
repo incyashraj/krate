@@ -91,8 +91,9 @@ detects your system and hands you the right file:
   launcher entry; apps get native permission dialogs and their own window
   identity.
 
-The Studio is pre-beta: it works, and it changes often. The terminal tool
-below is unchanged and remains the stable path.
+Krate Studio is the recommended way to use Krate: download it, describe an
+app, and everything below -- the engine, the checks, the sandbox -- ships
+inside it. The terminal tool remains for anyone who prefers a shell.
 
 ## Measured, not promised
 

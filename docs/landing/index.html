@@ -103,7 +103,7 @@
 <!-- ================================================================== hero -->
 <section class="home-hero wrap">
   <a class="home-hero-badge" href="https://github.com/incyashraj/krate/releases/latest">
-    <span class="new">NEW</span> <b>v0.1.28</b>&nbsp;· Krate Studio: describe an app in a window, not a terminal
+    <span class="new">NEW</span> <b id="heroVer">v0.1.32</b>&nbsp;· Krate Studio is the recommended way to use Krate
   </a>
 
   <h1 class="display">Make an app you can
@@ -114,7 +114,23 @@
   opens on Mac, Windows, and Linux, and cannot touch anything you did not
   allow.</p>
 
+  <div class="hero-cta reveal">
+    <a class="btn-studio" id="heroStudio" data-dl="krate-studio|universal|dmg" href="/studio/">Download Krate Studio</a>
+    <p class="free-note">Free · Mac, Windows and Linux · describe an app, watch it become real</p>
+  </div>
+  <script>
+    // The hero button downloads the build for THIS machine; the resolver
+    // below swaps in the exact asset once the latest release is known.
+    (function () {
+      var ua = navigator.userAgent;
+      var btn = document.getElementById("heroStudio");
+      if (ua.indexOf("Windows") !== -1) btn.dataset.dl = "krate-studio|windows-x64-setup|exe";
+      else if (ua.indexOf("Linux") !== -1 && ua.indexOf("Android") === -1) btn.dataset.dl = "krate-studio|linux-x86_64|AppImage";
+    })();
+  </script>
+
   <div id="install">
+    <p class="free-note">Prefer the terminal? The CLI installs in one line:</p>
     <div class="os-toggle" role="tablist" aria-label="Operating system">
       <button aria-pressed="true" data-os="unix" type="button">macOS / Linux</button>
       <button aria-pressed="false" data-os="win" type="button">Windows (PowerShell)</button>
@@ -423,17 +439,16 @@
       </span>
     </div>
 
-    <!-- Krate Studio, the app that makes apps. Linked rather than inlined:
-         it is pre-beta and has its own story to tell, and the terminal tool
-         stays the stable path until the studio earns that place. -->
+    <!-- Krate Studio, the app that makes apps -- and the way we recommend
+         people use Krate. The terminal tool ships inside it. -->
     <a class="studio-card reveal" href="/studio/">
       <div class="studio-card-text">
-        <p class="studio-eyebrow"><span class="studio-dot"></span>PRE-BETA</p>
+        <p class="studio-eyebrow"><span class="studio-dot"></span>RECOMMENDED</p>
         <h2 class="section-h">Krate Studio</h2>
         <p>Describe an app in a window instead of a terminal. Watch it being
         made, change it by asking, and send the file to anyone.</p>
       </div>
-      <span class="studio-go">Try it early &rarr;</span>
+      <span class="studio-go">Get Krate Studio &rarr;</span>
     </a>
 
     <!-- Direct downloads. The one-line installer above is still the fastest
@@ -442,10 +457,9 @@
     <div class="dl-card reveal" id="download">
       <div class="dl-head">
         <h2 class="section-h">Or download it</h2>
-        <span class="tag-beta">pre-beta</span>
       </div>
-      <p class="dl-sub">Early builds. They work, and they change often -- expect
-      rough edges and tell us about them.</p>
+      <p class="dl-sub">Krate Studio for your computer, with the terminal tool
+      inside. New releases ship often; the updater keeps you current.</p>
 
       <div class="dl-grid">
         <a class="dl" data-os="mac" data-dl="krate-studio|universal|dmg" href="https://github.com/incyashraj/krate/releases/latest">
@@ -745,6 +759,8 @@
         });
         var foot = document.getElementById("dlFoot");
         if (foot) foot.dataset.version = version;
+        var hv = document.getElementById("heroVer");
+        if (hv) hv.textContent = rel.tag_name;
       })
       .catch(function () {});
   }
