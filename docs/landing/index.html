@@ -427,20 +427,48 @@
 </section>
 
 <!-- ============================================================== receipts -->
-<section class="benchsec">
+<section class="bento">
   <div class="wrap">
-    <h2 class="section-h reveal">Measured, not promised.</h2>
-    <p class="lead reveal">The same notes app, built twice: once with Krate, once the way desktop apps
-    usually ship (Electron). Same 50,000-line document, same machine, head to head.</p>
-    <div class="bench-grid">
-      <div class="bench reveal"><div class="bench-n">8&times;</div><b>faster to open</b><span>0.2&nbsp;s to a working window. The Electron build takes 1.8&nbsp;s on a good day &mdash; 17&nbsp;s on its first.</span></div>
-      <div class="bench reveal"><div class="bench-n">24&times;</div><b>lighter in memory</b><span>95&nbsp;MB holding fifty thousand lines. The Electron build needs 2.3&nbsp;GB for the same document.</span></div>
-      <div class="bench reveal"><div class="bench-n">26&times;</div><b>less idle CPU</b><span>0.8% sitting open. The Electron build burns 21% of a core doing nothing at all.</span></div>
-      <div class="bench reveal"><div class="bench-n">58&nbsp;fps</div><b>scrolling, no jitter</b><span>Frame pacing within 0.3&nbsp;ms of the display's clock &mdash; at 5,000 lines and at 50,000 alike.</span></div>
+    <h2 class="section-h bento-h reveal">But why Krate?</h2>
+    <div class="bento-grid">
+
+      <div class="bento-card bento-tall reveal">
+        <b>24&times; lighter</b>
+        <p>95&nbsp;MB holding a 50,000-line document. The same app built on
+        Electron needs 2.3&nbsp;GB.</p>
+        <div class="bento-bars">
+          <div class="bb"><i style="height:100%"></i><span>2.3&nbsp;GB</span><em>Electron</em></div>
+          <div class="bb"><i style="height:6%"></i><span>95&nbsp;MB</span><em>Krate</em></div>
+        </div>
+      </div>
+
+      <div class="bento-card reveal">
+        <div class="bento-n">8&times;</div>
+        <b>faster to open</b>
+        <p>0.2&nbsp;s to a working window. Electron takes 1.8&nbsp;s on a good
+        day &mdash; 17&nbsp;s on its first.</p>
+      </div>
+
+      <div class="bento-card reveal">
+        <div class="bento-n">58&nbsp;fps</div>
+        <b>scrolling, no jitter</b>
+        <div class="bento-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <p>Frame pacing within 0.3&nbsp;ms of the display's clock, at 5,000
+        lines and at 50,000 alike.</p>
+      </div>
+
+      <div class="bento-card bento-wide reveal">
+        <div class="bento-n">26&times;</div>
+        <div>
+          <b>less idle CPU</b>
+          <p>0.8% with the document open; the Electron build burns 21% of a core
+          doing nothing. Measured against MarkText 0.17.1 on Apple silicon,
+          August 2026 &mdash; every number, the method, and the losses we fixed on
+          the way: <a href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/2026-08-16-notes-battery-macos.md">the full benchmark log</a>.</p>
+        </div>
+      </div>
+
     </div>
-    <p class="bench-note reveal">Krate notes app vs MarkText 0.17.1 (Electron), macOS on Apple silicon, August 2026.
-    Every number, the method, and the losses we fixed along the way:
-    <a href="https://github.com/incyashraj/krate/blob/main/evidence/benchmarks/2026-08-16-notes-battery-macos.md">the full benchmark log</a>.</p>
   </div>
 </section>
 
@@ -665,6 +693,14 @@
           });
         }
         rotEl.appendChild(s);
+      });
+      /* Each letter shows its own slice of one continuous gradient:
+         pixel-exact offsets measured from layout, no background-attachment
+         tricks (those render as plain white in some engines). */
+      requestAnimationFrame(function () {
+        Array.prototype.forEach.call(rotEl.children, function (s) {
+          s.style.setProperty("--off", (-s.offsetLeft) + "px");
+        });
       });
     };
     setWord(words[0], false);

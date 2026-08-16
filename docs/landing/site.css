@@ -297,24 +297,25 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   white-space: nowrap;
 }
 .rot .word { display: inline-block; }
-/* The Studio's own word treatment, verbatim: every letter is a window onto
-   one viewport-fixed gradient, so the ramp is continuous across the word
-   and flows -- the same living color the app itself shows. */
+/* The Studio's word treatment: one continuous gradient across the letters,
+   flowing. Each letter carries the ramp at its own measured offset (--off,
+   set from layout by the rotator) -- background-attachment:fixed with text
+   clipping renders plain white in some engines, so nothing here uses it. */
 .rot .word span {
   display: inline-block; will-change: transform, opacity, filter;
   background-image: linear-gradient(90deg,
     #6291ff 0%, #a855f7 22%, #ec4899 42%, #f97316 62%, #eab308 78%, #6291ff 100%);
   background-size: 220px 100%;
-  background-attachment: fixed;
   background-repeat: repeat;
   -webkit-background-clip: text;
   background-clip: text;
+  color: transparent;
   -webkit-text-fill-color: transparent;
   animation: wordflow 4.5s linear infinite;
 }
 @keyframes wordflow {
-  from { background-position: 0 0; }
-  to   { background-position: 220px 0; }
+  from { background-position: var(--off, 0px) 0; }
+  to   { background-position: calc(var(--off, 0px) + 220px) 0; }
 }
 
 .rot .bar {
@@ -1712,7 +1713,7 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   padding: 3px 10px; font-size: 11px; color: var(--muted);
 }
 .sf-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
-.sf-body { min-height: 300px; }
+#heroMock .sf-body { min-height: 300px; }
 
 /* Home: headline + composer. */
 .sf-home { padding: 40px 28px 28px; text-align: center; }
@@ -1836,13 +1837,62 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
 .stick .sframe { height: 100%; display: flex; flex-direction: column; }
 .stick .sf-body { flex: 1; display: flex; min-height: 0; }
 .stick .sf-session { flex: 1; min-height: 0; }
-.sf-center { align-items: center; justify-content: center; padding: 22px; }
+.sf-body.sf-center { display: grid; place-items: center; padding: 24px; }
 .sf-dim { background: radial-gradient(120% 100% at 50% 0%, rgba(255,255,255,0.02), transparent); }
 .sf-consent-card { max-width: 320px; }
 .sf-filecard, .sf-publish { box-shadow: none; border: none; background: transparent; }
 .sf-filecard { padding: 0; }
-.sf-publish { padding: 0; width: 100%; max-width: 420px; }
+.sf-publish { padding: 0; width: min(420px, 92%); }
 .sf-btns-center { justify-content: center; margin-top: 14px; }
 @media (prefers-reduced-motion: reduce) {
   .rot .word span { animation: none; }
+}
+
+/* ------------------------------------------------------------------ bento */
+.bento { padding: 96px 0; border-top: 1px solid var(--line); }
+.bento-h { text-align: center; margin-bottom: 42px; font-size: 34px; }
+.bento-grid {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-areas: "tall a b" "tall wide wide";
+}
+.bento-card {
+  border: 1px solid var(--line); border-radius: 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.008));
+  padding: 26px;
+}
+.bento-tall { grid-area: tall; display: flex; flex-direction: column; }
+.bento-wide { grid-area: wide; display: flex; gap: 22px; align-items: flex-start; }
+.bento-card b { display: block; font-size: 16.5px; margin-bottom: 8px; }
+.bento-card p { color: var(--muted); font-size: 13.5px; line-height: 1.6; margin: 0; }
+.bento-card p a { color: inherit; text-decoration: underline; }
+.bento-n {
+  font-size: 52px; font-weight: 700; letter-spacing: -0.03em;
+  color: var(--text); margin-bottom: 6px; line-height: 1;
+}
+.bento-wide .bento-n { flex: none; margin-bottom: 0; }
+/* The memory story, as two bars. */
+.bento-bars {
+  flex: 1; display: flex; gap: 26px; align-items: flex-end;
+  justify-content: center; margin-top: 28px; min-height: 220px;
+}
+.bb { display: flex; flex-direction: column; align-items: center; height: 100%; justify-content: flex-end; }
+.bb i {
+  display: block; width: 58px; border-radius: 10px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.05));
+  min-height: 12px;
+}
+.bb:last-child i { background: linear-gradient(180deg, var(--accent), rgba(98,145,255,0.4)); }
+.bb span { margin-top: 10px; font-weight: 650; font-size: 14px; }
+.bb em { font-style: normal; color: var(--muted); font-size: 12px; }
+/* Even frame ticks: what no-jitter looks like. */
+.bento-wave { display: flex; gap: 7px; align-items: center; margin: 14px 0; }
+.bento-wave i { width: 3px; height: 22px; border-radius: 2px; background: var(--accent); opacity: 0.85; }
+.bento-wave i:nth-child(odd) { height: 22px; }
+@media (max-width: 900px) {
+  .bento-grid { grid-template-columns: 1fr 1fr; grid-template-areas: "tall a" "tall b" "wide wide"; }
+}
+@media (max-width: 600px) {
+  .bento-grid { grid-template-columns: 1fr; grid-template-areas: "tall" "a" "b" "wide"; }
+  .bento-wide { flex-direction: column; }
 }
