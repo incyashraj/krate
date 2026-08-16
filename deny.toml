@@ -1,19 +1,7 @@
 [advisories]
 # Path to the advisory database; fetched on first run.
 version = 2
-ignore = [
-    # RUSTSEC-2026-0222: wasmtime type-index confusion BETWEEN engines. The
-    # runtime builds exactly one Engine per process (runtime/src/lib.rs), so
-    # the cross-engine mixing the advisory describes has no surface here.
-    # Temporary regardless: the patched trains (46.0.2/47.0.3) require rustc
-    # 1.94 and we pin 1.91.1 -- the paired upgrade is K-118 on the board.
-    "RUSTSEC-2026-0222",
-    # Unmaintained notices on transitive tooling deps (bitmaps, im-rc,
-    # sized-chunks); nothing runtime-side links them. Reviewed 2026-08-16.
-    "RUSTSEC-2026-0247",
-    "RUSTSEC-2026-0250",
-    "RUSTSEC-2026-0251",
-]
+ignore = []
 
 [licenses]
 version = 2

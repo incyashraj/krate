@@ -61,7 +61,7 @@ edition = "2021"
 version = "0.1.28"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/incyashraj/krate"
-rust-version = "1.91"
+rust-version = "1.94"
 
 [workspace.dependencies]
 anyhow = "1.0.102"
@@ -93,7 +93,7 @@ tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 # pulley: the portable interpreter backend, selected at engine init on
 # iOS where executable pages are forbidden. Compiled in everywhere, used
 # only where JIT cannot be.
-wasmtime = { version = "43.0.2", features = ["component-model", "pulley"] }
+wasmtime = { version = "46.0.2", features = ["component-model", "pulley"] }
 wasmparser = "0.244.0"
 wit-parser = "0.244.0"
 

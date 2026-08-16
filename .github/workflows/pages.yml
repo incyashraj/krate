@@ -53,7 +53,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.91.1
+        uses: dtolnay/rust-toolchain@1.94.1
       - name: Install Linux audio development files
         run: sudo apt-get update -q && sudo apt-get install -y -q libasound2-dev libwayland-dev libxkbcommon-dev libudev-dev
       - name: Install mdBook
