@@ -16,9 +16,12 @@ idle figure and a fake divergence repro earlier in the day.
 | First-ever open | 17.1 s | ~0.2 s | win |
 | Warm start -> window | 1.80 s (3 runs +-17 ms) | 0.19-0.25 s (see note) | win ~8x |
 | Footprint, 5k doc open, idle | 635 MB across 5 processes | 129 MB, 1 process | win 4.9x |
-| Footprint, 50k doc | pending quiet leg | 95 MB | win (lazy layout: LESS memory than 5k run's session) |
-| Idle CPU (validated quiet) | pending quiet leg | 0.5-0.8% | honest once measured; springs settle, waits block |
-| Scroll pacing, 50k doc, synthetic 125Hz wheel | pending quiet leg | p50 17.63 ms / p99 17.88 ms (57 fps, near-zero jitter) | win on jitter vs any CPU compositor; MarkText number needs PresentMon (Windows leg) |
+| Footprint, 50k doc | 2,331 MB (and 21.2% CPU just holding it; scroll phase consistent with a renderer collapse) | 95 MB | win 24x |
+| Idle CPU, 5k (validated) | 2.7% | 0.6% | win 4.5x |
+| Idle CPU, 50k | 21.2% | 0.8% | win 26x |
+| Warm start, 50k doc | 1.97 s | 0.25 s | win 8x |
+| Scroll CPU, 5k, aimed 125Hz wheel | 81.0% (tree) | 65.3% | win, with a feedback note: both burn real CPU; ours is full-frame redraw+copy -- damage tracking is the known next step |
+| Scroll pacing, 5k + 50k | no per-frame instrument on macOS (PresentMon is the Windows leg) | p50 17.3 ms / p99 17.5 ms at 5k; p50 17.6 / p99 17.9 at 50k | measured: 58 fps, jitter under 0.3 ms, both sizes |
 | Frame produce cost vs doc size (headless, driven) | n/a | 5k: 0.77 ms/frame text -- 50k: 0.76 ms/frame | win: cost independent of document size |
 | Scroll feel | supersmooth | confirmed good by the founder's hand after the fixes | parity reached on the row that started everything |
 
@@ -38,8 +41,8 @@ at 156-249 ms consistently.
 
 ## Still open
 
-- MarkText quiet legs (idle CPU, scroll CPU, 50k footprint): armed, run
-  automatically at the next 60 s input-idle window.
 - Windows leg with PresentMon measuring BOTH apps by the same external
   instrument: staged for the Azure VM (CPU path) and the founder's PC
   (GPU path).
+- Replica scroll-CPU reduction (damage tracking / partial redraw): the one
+  feedback figure left on the macOS board.
