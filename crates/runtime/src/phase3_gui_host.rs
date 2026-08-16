@@ -1734,9 +1734,9 @@ impl Phase3GuiHost {
     }
 }
 
-/// Accumulated milliseconds inside the native event pump, reported with the
-/// present stats. Between-frame time has to be attributable, or "it lags"
-/// stays a guess.
+// Accumulated milliseconds inside the native event pump, reported with the
+// present stats. Between-frame time has to be attributable, or "it lags"
+// stays a guess.
 thread_local! {
     static PUMP_MS: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
 }
