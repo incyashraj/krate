@@ -3735,6 +3735,15 @@ Fix:      Unknown -- needs a profile of the host's wait/pump path rather
           parks: a pump that returns immediately whether or not an event is
           waiting would produce exactly this floor. Worth measuring against
           the Windows and Linux adapters before assuming it is macOS-only.
+Update:   2026-08-16, symbolized profile (debug build, macOS M4): with the
+          guest spin removed (K-122) glow still holds ~67% of a core, and
+          the top of stack is the CPU rasterizer redrawing the full scene
+          every frame -- linear_gradient_stops (207 samples),
+          drop_shadow_round_rect (172), fill_round_rect (93),
+          publish_canvas (83), stroke_round_rect (45). The floor is
+          full-scene CPU raster at 60fps. The real fix is the GPU
+          presenter workstation (K-112); interim wins would be caching
+          shadow masks and gradient ramps keyed by their parameters.
 
 ### K-119 -- No camera capability: apps that need one cannot be built yet
 Status:   open
@@ -3751,25 +3760,6 @@ Fix:      A `camera` WIT interface (frames as the image type the canvas
           already draws) behind a `camera.capture` capability with the
           same plain-words consent as the microphone. Do it when the first
           real app needs it rather than speculatively.
-
-### K-118 -- wasmtime 43 is out of security support; the upgrade needs rustc 1.94
-Status:   open
-Owner:    lead
-Severity: major
-Class:    our-code
-Found:    2026-08-16, cargo-deny in CI, new advisory RUSTSEC-2026-0222
-          (type-index confusion between engines) against wasmtime 43.0.2.
-Evidence: Patched trains are >=46.0.2 / >=47.0.3; both pull cranelift
-          crates requiring rustc 1.94.0, and the workspace pins 1.91.1, so
-          `cargo build` refuses before any API question is reached. The
-          runtime creates exactly one Engine per process, so the advisory's
-          cross-engine mixing has no practical surface today -- which is
-          why a dated deny.toml ignore is honest in the meantime, and why
-          this entry exists so the ignore does not quietly become policy.
-Fix:      One workstation task: bump the toolchain pin to 1.94, bump
-          wasmtime to the 46 LTS train (46.0.2+), fix whatever component
-          API moved between 43 and 46, re-run the full replay/evidence
-          suites, and delete all four deny ignores dated 2026-08-16.
 
 ### K-117 -- Apps cannot paint the title bar area, so full-bleed designs are impossible
 Status:   open
@@ -3817,6 +3807,50 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
 Status:   fixed
 
 ## Fixed
+
+### K-122 -- krate-glow taught request-redraw-per-frame, so generated animations spin a core
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    example-bug
+Found:    2026-08-16, an outside AI authoring an app from the pack named
+          it: the host documents the self-feeding redraw loop at
+          phase3_gui_host.rs ("the queue is never empty and the app looks
+          busy forever") while the pack's own reference app commits it.
+Evidence: apps/krate-glow called window::request_redraw every frame inside
+          a loop that already draws on its own schedule, then
+          events::wait(Some(16)) -- the redraw event comes straight back,
+          the wait returns instantly, and the loop spins. Measured 94.3%
+          of a core windowed and idle. As the pack's modern-UI reference,
+          every generated animated app inherited the pattern (aurora did,
+          at 101.8%).
+Fix:      6af5b29d. Glow paces against a monotonic next-frame deadline and
+          never calls request-redraw (94% -> ~67%, the remainder is K-120's
+          raster floor); its quick path draws 12 synthetic frames, not 90.
+          The pack states the rule where motion is taught: request-redraw
+          exists to wake an idle loop, and a continuously animating loop is
+          never idle.
+
+### K-118 -- wasmtime 43 is out of security support; the upgrade needs rustc 1.94
+Status:   fixed
+Owner:    lead
+Severity: major
+Class:    our-code
+Found:    2026-08-16, cargo-deny in CI, new advisory RUSTSEC-2026-0222
+          (type-index confusion between engines) against wasmtime 43.0.2.
+Evidence: Patched trains are >=46.0.2 / >=47.0.3; both pull cranelift
+          crates requiring rustc 1.94.0, and the workspace pins 1.91.1, so
+          `cargo build` refuses before any API question is reached. The
+          runtime creates exactly one Engine per process, so the advisory's
+          cross-engine mixing has no practical surface today -- which is
+          why a dated deny.toml ignore is honest in the meantime, and why
+          this entry exists so the ignore does not quietly become policy.
+Fix:      473dbe47. Toolchain pin, workflows and workspace rust-version to
+          1.94.1; wasmtime to 46.0.2. No component API drifted between 43
+          and 46 -- workspace builds and the full test suite passes
+          unchanged. deny.toml's ignore list is empty again. The embedded
+          guest SDK still declares rust-version 1.91 so app authors are
+          not forced up by a host-side dependency.
 
 ### K-121 -- The close button cannot end an app that ignores CloseRequested; the machine paid for it
 Status:   fixed
