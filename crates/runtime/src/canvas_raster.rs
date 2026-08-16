@@ -1247,25 +1247,6 @@ impl CanvasSurface {
 }
 
 /// Interpolate a color along sorted gradient stops, clamped at both ends.
-fn sample_stops(stops: &[(f32, u32)], t: f32) -> u32 {
-    let first = stops[0];
-    let last = stops[stops.len() - 1];
-    if t <= first.0 {
-        return first.1;
-    }
-    if t >= last.0 {
-        return last.1;
-    }
-    for pair in stops.windows(2) {
-        let (o0, c0) = pair[0];
-        let (o1, c1) = pair[1];
-        if t <= o1 {
-            let f = if o1 > o0 { (t - o0) / (o1 - o0) } else { 1.0 };
-            return lerp_color(c0, c1, f);
-        }
-    }
-    last.1
-}
 
 #[cfg(test)]
 mod tests {
