@@ -48,6 +48,42 @@ pub struct CanvasSurface {
 ///
 /// Straight alpha, clamped: a guest can send any float, including NaN, and a
 /// color must come out the other side rather than undefined behavior.
+
+// ---------------------------------------------------------------- op timing
+//
+// Frame-production time was going somewhere no report could see: publish
+// timing said 8ms while the guest produced 5 frames a second. These count
+// milliseconds spent inside the hot canvas ops between two presents, taken
+// and printed with the publish stats when KRATE_FRAME_STATS=1.
+thread_local! {
+    static OP_MS: std::cell::Cell<(f32, f32, f32)> = const { std::cell::Cell::new((0.0, 0.0, 0.0)) };
+}
+
+fn add_op_ms(slot: u8, started: std::time::Instant) {
+    let ms = started.elapsed().as_secs_f32() * 1000.0;
+    OP_MS.with(|cell| {
+        let (mut fills, mut text, mut measure) = cell.get();
+        match slot {
+            0 => fills += ms,
+            1 => text += ms,
+            _ => measure += ms,
+        }
+        cell.set((fills, text, measure));
+    });
+}
+
+struct OpTimer(u8, std::time::Instant);
+impl Drop for OpTimer {
+    fn drop(&mut self) {
+        add_op_ms(self.0, self.1);
+    }
+}
+
+/// Take and reset the accumulated (fills, text, measure) milliseconds.
+pub fn take_op_millis() -> (f32, f32, f32) {
+    OP_MS.with(|cell| cell.replace((0.0, 0.0, 0.0)))
+}
+
 pub fn pack_color(r: f32, g: f32, b: f32, a: f32) -> u32 {
     let channel = |value: f32| -> u32 {
         if value.is_nan() {
@@ -305,6 +341,8 @@ impl CanvasSurface {
     }
 
     pub fn clear(&mut self, color: u32) {
+        let __op_timer = OpTimer(0, std::time::Instant::now());
+        let _ = &__op_timer;
         // Clear respects the clip too, so "clear this region" works -- which
         // is what a scrolling list needs before redrawing its rows.
         match self.clipped(0.0, 0.0, self.width as f32, self.height as f32) {
@@ -327,6 +365,8 @@ impl CanvasSurface {
     }
 
     pub fn fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: u32) {
+        let __op_timer = OpTimer(0, std::time::Instant::now());
+        let _ = &__op_timer;
         let (x, y) = self.map_point(x, y);
         let (w, h) = (self.map_len(w), self.map_len(h));
         let k = self.scale;
@@ -817,6 +857,8 @@ impl CanvasSurface {
     /// `font-family` is accepted and ignored: one good face everywhere beats
     /// honoring a font name on one system.
     pub fn text(&mut self, text: &str, x: f32, y: f32, font_size: f32, color: u32) {
+        let __op_timer = OpTimer(1, std::time::Instant::now());
+        let _ = &__op_timer;
         self.text_styled(
             text,
             x,
@@ -838,17 +880,37 @@ impl CanvasSurface {
         color: u32,
         style: krate_adapter_common::vector_text::CanvasTextStyle,
     ) {
+        let __op_timer = OpTimer(1, std::time::Instant::now());
+        let _ = &__op_timer;
         let (x, y) = self.map_point(x, y);
         let font_size = self.map_len(font_size);
         let k = self.scale;
         let (x, y, font_size) = (x * k, y * k, font_size * k);
-        // Text is rendered by a shared painter that writes into the buffer
-        // directly, so it cannot be gated per pixel the way the primitives
-        // are. Snapshot what lies outside the clip, let the painter run, then
-        // put it back -- correct for any glyph shape, and only as expensive as
-        // the region actually clipped.
+        // The vector path takes the clip as blend bounds. The old guard here
+        // cloned the WHOLE canvas before every clipped text run and walked
+        // every canvas pixel after it -- ~1.5ms per run, ~200ms for an
+        // editor page, 5 fps under a scroll wheel (K-114's second half).
+        let clip = self.clip;
+        if krate_adapter_common::vector_text::draw_canvas_text_clipped(
+            krate_adapter_common::vector_text::CanvasTarget {
+                buffer: &mut self.buffer,
+                width: self.width,
+                height: self.height,
+            },
+            text,
+            x,
+            y,
+            font_size,
+            color,
+            style,
+            clip,
+        ) {
+            return;
+        }
+        // The 5x7 bitmap fallback (no usable system fonts) is not clip-aware;
+        // the snapshot guard stays for exactly this rare path.
         let saved = self.clip.map(|_| self.buffer.clone());
-        self.draw_text_unclipped(text, x, y, font_size, color, style);
+        self.draw_bitmap_text_unclipped(text, x, y, font_size, color);
         if let Some(before) = saved {
             for y in 0..self.height {
                 for x in 0..self.width {
@@ -864,30 +926,14 @@ impl CanvasSurface {
         }
     }
 
-    fn draw_text_unclipped(
+    fn draw_bitmap_text_unclipped(
         &mut self,
         text: &str,
         x: f32,
         y: f32,
         font_size: f32,
         color: u32,
-        style: krate_adapter_common::vector_text::CanvasTextStyle,
     ) {
-        if krate_adapter_common::vector_text::draw_canvas_text_styled(
-            krate_adapter_common::vector_text::CanvasTarget {
-                buffer: &mut self.buffer,
-                width: self.width,
-                height: self.height,
-            },
-            text,
-            x,
-            y,
-            font_size,
-            color,
-            style,
-        ) {
-            return;
-        }
         let scale = bitmap_scale(font_size);
         // The WIT origin is the baseline; drawtext takes the top-left corner.
         let top = y - drawtext::text_height(scale) as f32;
@@ -910,6 +956,8 @@ impl CanvasSurface {
     /// instead. A measurement that disagreed with the pixels would be worse
     /// than none, because an app cannot tell it is wrong.
     pub fn measure_text(&self, text: &str, font_size: f32) -> TextMetrics {
+        let __op_timer = OpTimer(2, std::time::Instant::now());
+        let _ = &__op_timer;
         self.measure_text_styled(
             text,
             font_size,
@@ -926,6 +974,8 @@ impl CanvasSurface {
         font_size: f32,
         style: krate_adapter_common::vector_text::CanvasTextStyle,
     ) -> TextMetrics {
+        let __op_timer = OpTimer(2, std::time::Instant::now());
+        let _ = &__op_timer;
         if let Some(m) =
             krate_adapter_common::vector_text::measure_canvas_text_styled(text, font_size, style)
         {

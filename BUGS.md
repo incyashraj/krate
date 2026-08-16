@@ -3638,7 +3638,7 @@ Fix:      Six rebuilt from source in apps/; five have no source and were
 ---
 
 ### K-114 — macOS canvas apps scroll like the 90s: line jumps and swap flicker
-Status:   fixed (runtime half; feel verdict awaits the founder's hand)
+Status:   fixed
 Owner:    lead
 Severity: blocker
 Class:    our-code

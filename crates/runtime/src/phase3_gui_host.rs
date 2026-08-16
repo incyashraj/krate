@@ -83,6 +83,10 @@ pub struct Phase3GuiHost {
     idle_waits: std::cell::Cell<u32>,
     /// When the last frame was published, for pacing the next one.
     last_present: std::cell::Cell<Option<std::time::Instant>>,
+    /// Per-frame publish timings (copy ms, sync ms), kept only when
+    /// KRATE_FRAME_STATS=1 and reported every 60 frames. The scroll-feel
+    /// debugging rule: never guess which half of the frame is slow.
+    publish_times: std::cell::RefCell<Vec<(f32, f32)>>,
     /// How many times an interrupt has been turned into a close request.
     interrupts: std::cell::Cell<u32>,
     /// How many times the person has asked to close the window.
@@ -271,6 +275,7 @@ impl Phase3GuiHost {
             headless: headless_backend,
             idle_waits: std::cell::Cell::new(0),
             last_present: std::cell::Cell::new(None),
+            publish_times: std::cell::RefCell::new(Vec::new()),
             interrupts: std::cell::Cell::new(0),
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
@@ -1638,6 +1643,8 @@ impl Phase3GuiHost {
             }
             // The adapter declined this frame; fall through to pixels.
         }
+        let stats = std::env::var("KRATE_FRAME_STATS").as_deref() == Ok("1");
+        let copy_started = std::time::Instant::now();
         let (window, widget, image) = {
             let canvases = self.canvases.borrow();
             let Some((window, widget, surface)) = canvases.get(&canvas) else {
@@ -1651,8 +1658,42 @@ impl Phase3GuiHost {
         self.images
             .borrow_mut()
             .insert((window, widget), Arc::new(image));
-        self.sync_native_widgets(window)
-            .map_err(|error| gfx::types::GfxError::Platform(error.to_string()))
+        let copy_ms = copy_started.elapsed().as_secs_f32() * 1000.0;
+        let sync_started = std::time::Instant::now();
+        let result = self
+            .sync_native_widgets(window)
+            .map_err(|error| gfx::types::GfxError::Platform(error.to_string()));
+        if stats {
+            let sync_ms = sync_started.elapsed().as_secs_f32() * 1000.0;
+            let mut times = self.publish_times.borrow_mut();
+            times.push((copy_ms, sync_ms));
+            if times.len() >= 60 {
+                let p = |values: &mut Vec<f32>, q: f32| -> f32 {
+                    values.sort_by(|a, b| a.total_cmp(b));
+                    values[((values.len() - 1) as f32 * q) as usize]
+                };
+                let mut copies: Vec<f32> = times.iter().map(|(c, _)| *c).collect();
+                let mut syncs: Vec<f32> = times.iter().map(|(_, s)| *s).collect();
+                let (fills, text, measure) = crate::canvas_raster::take_op_millis();
+                eprintln!(
+                    "krate-ops: fills {:.1}ms text {:.1}ms measure {:.1}ms over the last {} frames",
+                    fills,
+                    text,
+                    measure,
+                    times.len(),
+                );
+                eprintln!(
+                    "krate-publish: copy p50 {:.2}ms p99 {:.2}ms | sync p50 {:.2}ms p99 {:.2}ms (n={})",
+                    p(&mut copies, 0.5),
+                    p(&mut copies, 0.99),
+                    p(&mut syncs, 0.5),
+                    p(&mut syncs, 0.99),
+                    times.len(),
+                );
+                times.clear();
+            }
+        }
+        result
     }
 
     fn window_id(&self, raw: u64) -> Result<WindowId, ui::types::UiError> {

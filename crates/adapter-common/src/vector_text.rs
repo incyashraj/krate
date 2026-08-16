@@ -45,6 +45,39 @@ struct TextEngine {
     layout_cx: LayoutContext<()>,
     /// Finished canvas layouts, keyed by everything that shapes them.
     canvas_layouts: std::collections::HashMap<CanvasLayoutKey, std::rc::Rc<Layout<()>>>,
+    /// Finished canvas RASTERS -- the rendered pixmap of a whole run --
+    /// keyed by everything that shapes it plus the color it was inked in.
+    ///
+    /// Shaping was cached (K-090) and rasterization was not, so every frame
+    /// re-rendered every visible line's bezier outlines from scratch: an
+    /// editor page cost ~208ms a frame, 4.8 fps under a scroll wheel, on an
+    /// M4. Scrolling redraws the same runs merely shifted, which is exactly
+    /// what a raster cache turns into a blend-only frame.
+    canvas_rasters: std::collections::HashMap<CanvasRasterKey, std::rc::Rc<CanvasRasterRun>>,
+}
+
+/// A rendered text run's COVERAGE -- alpha only, one byte per pixel --
+/// ready to be inked in any color at blend time.
+///
+/// Storing colored premultiplied pixels made a full editor page ~57 MB of
+/// cache, which slammed into the byte bound and wholesale-cleared nearly
+/// every frame: the cache existed and never hit (measured: 194ms/frame in
+/// text ops, unchanged). Coverage is a quarter the bytes and one entry
+/// serves every ink color.
+struct CanvasRasterRun {
+    coverage: Vec<u8>,
+    width: u32,
+    height: u32,
+    /// Baseline of the first line, from the pixmap's padded top edge.
+    first_baseline: f32,
+    /// Whether the run produced any glyphs at all (a false means the caller
+    /// must fall back to the bitmap face, cached so the answer is instant).
+    drew: bool,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct CanvasRasterKey {
+    layout: CanvasLayoutKey,
 }
 
 impl TextEngine {
@@ -53,6 +86,7 @@ impl TextEngine {
             font_cx: FontContext::new(),
             layout_cx: LayoutContext::new(),
             canvas_layouts: std::collections::HashMap::new(),
+            canvas_rasters: std::collections::HashMap::new(),
         }
     }
 
@@ -274,6 +308,27 @@ pub fn draw_canvas_text_styled(
     color: u32,
     style: CanvasTextStyle,
 ) -> bool {
+    draw_canvas_text_clipped(target, text, x, baseline_y, font_size, color, style, None)
+}
+
+/// `draw_canvas_text_styled` bounded to a clip rectangle in canvas pixels.
+///
+/// The clip belongs INSIDE the blend: the caller used to guard clipping by
+/// cloning the whole canvas before every text run and walking every canvas
+/// pixel after it to restore the outside -- ~1.5ms per run, ~200ms for an
+/// editor page, 5 fps under a scroll wheel. Here it is a pair of loop
+/// bounds.
+#[allow(clippy::too_many_arguments)]
+pub fn draw_canvas_text_clipped(
+    target: CanvasTarget<'_>,
+    text: &str,
+    x: f32,
+    baseline_y: f32,
+    font_size: f32,
+    color: u32,
+    style: CanvasTextStyle,
+    clip: Option<(f32, f32, f32, f32)>,
+) -> bool {
     let CanvasTarget {
         buffer,
         width,
@@ -282,63 +337,142 @@ pub fn draw_canvas_text_styled(
     if text.is_empty() || width == 0 || height == 0 {
         return true;
     }
+    // Degenerate clip: nothing can land, and drawing nothing is a success.
+    if let Some((_, _, cw, ch)) = clip {
+        if cw <= 0.0 || ch <= 0.0 {
+            return true;
+        }
+    }
     let font_size = font_size.clamp(4.0, 256.0);
+    // The pixmap's padding, so antialiased edges are not clipped.
+    const PAD: f32 = 2.0;
     TEXT_ENGINE.with(|engine| {
         let engine = &mut *engine.borrow_mut();
-        let layout = engine.layout_canvas_styled(text, font_size, style);
-        let Some(first_line) = layout.lines().next() else {
-            // Whitespace-only text: nothing to draw, nothing to fall back for.
-            return true;
+        let raster_key = CanvasRasterKey {
+            layout: CanvasLayoutKey {
+                text: text.to_string(),
+                font_size_bits: font_size.to_bits(),
+                weight: style.weight,
+                italic: style.italic,
+                letter_spacing_bits: style.letter_spacing.to_bits(),
+                family: style.family,
+            },
         };
-        let first_baseline = first_line.metrics().baseline;
-
-        // Rasterize into a pixmap just large enough for the run, padded so
-        // antialiased edges are not clipped.
-        let pad = 2.0f32;
-        let pm_w = (layout.width() + pad * 2.0).ceil() as u32;
-        let pm_h = (layout.height() + pad * 2.0).ceil() as u32;
-        let (Ok(w16), Ok(h16)) = (u16::try_from(pm_w), u16::try_from(pm_h)) else {
-            return false;
+        let run = match engine.canvas_rasters.get(&raster_key) {
+            Some(run) => run.clone(),
+            None => {
+                let layout = engine.layout_canvas_styled(text, font_size, style);
+                let Some(first_line) = layout.lines().next() else {
+                    // Whitespace-only: nothing to draw, nothing to fall
+                    // back for.
+                    return true;
+                };
+                let first_baseline = first_line.metrics().baseline;
+                let pm_w = (layout.width() + PAD * 2.0).ceil() as u32;
+                let pm_h = (layout.height() + PAD * 2.0).ceil() as u32;
+                let (Ok(w16), Ok(h16)) = (u16::try_from(pm_w), u16::try_from(pm_h)) else {
+                    return false;
+                };
+                if w16 == 0 || h16 == 0 {
+                    return true;
+                }
+                let mut ctx = RenderContext::new(w16, h16);
+                let mut resources = Resources::new();
+                // Rendered fully opaque white: what gets kept is coverage
+                // alone, and the requested ink is applied at blend time.
+                let drew =
+                    draw_layout(&mut ctx, &mut resources, &layout, 0xFFFF_FFFF, PAD, PAD) != 0;
+                let run = if drew {
+                    ctx.flush();
+                    let mut pixmap = Pixmap::new(w16, h16);
+                    ctx.render_to_pixmap(&mut resources, &mut pixmap);
+                    CanvasRasterRun {
+                        coverage: pixmap.data().iter().map(|px| px.a).collect(),
+                        width: pm_w,
+                        height: pm_h,
+                        first_baseline,
+                        drew: true,
+                    }
+                } else {
+                    // Cache the failure too: the caller falls back to the
+                    // bitmap face every frame, and re-proving "no glyphs"
+                    // by rasterizing nothing is pure waste.
+                    CanvasRasterRun {
+                        coverage: Vec::new(),
+                        width: 0,
+                        height: 0,
+                        first_baseline,
+                        drew: false,
+                    }
+                };
+                // Bounded by bytes, not entries. An editor page of coverage
+                // at full backing scale is ~14 MB, so 64 MB holds several
+                // screenfuls; clearing wholesale costs one frame of raster.
+                let bytes: usize = engine
+                    .canvas_rasters
+                    .values()
+                    .map(|r| r.coverage.len())
+                    .sum();
+                if bytes > 64 * 1024 * 1024 {
+                    engine.canvas_rasters.clear();
+                }
+                let run = std::rc::Rc::new(run);
+                engine.canvas_rasters.insert(raster_key, run.clone());
+                run
+            }
         };
-        if w16 == 0 || h16 == 0 {
-            return true;
-        }
-        let mut ctx = RenderContext::new(w16, h16);
-        let mut resources = Resources::new();
-        if draw_layout(&mut ctx, &mut resources, &layout, color, pad, pad) == 0 {
+        if !run.drew {
             return false;
         }
-        ctx.flush();
-        let mut pixmap = Pixmap::new(w16, h16);
-        ctx.render_to_pixmap(&mut resources, &mut pixmap);
 
-        // Blend the run over the canvas. The layout's top-left lands at
+        // Blend the run over the canvas, inking the cached coverage in the
+        // requested color. The layout's top-left lands at
         // (x, baseline_y - first_baseline); the pad shifts both back.
-        let dst_x0 = (x - pad).floor() as i64;
-        let dst_y0 = (baseline_y - first_baseline - pad).floor() as i64;
-        let data = pixmap.data();
-        let pm_w = w16 as usize;
-        for row in 0..h16 as i64 {
+        let dst_x0 = (x - PAD).floor() as i64;
+        let dst_y0 = (baseline_y - run.first_baseline - PAD).floor() as i64;
+        let coverage = &run.coverage;
+        let pm_w = run.width as usize;
+        let ink_a = (color >> 24) & 0xFF;
+        let ink_r = (color >> 16) & 0xFF;
+        let ink_g = (color >> 8) & 0xFF;
+        let ink_b = color & 0xFF;
+        // The writable window: the canvas intersected with the clip, as loop
+        // bounds rather than per-pixel tests.
+        let (win_x0, win_y0, win_x1, win_y1) = match clip {
+            Some((cx, cy, cw, ch)) => (
+                cx.floor().max(0.0) as i64,
+                cy.floor().max(0.0) as i64,
+                ((cx + cw).ceil() as i64).min(width as i64),
+                ((cy + ch).ceil() as i64).min(height as i64),
+            ),
+            None => (0, 0, width as i64, height as i64),
+        };
+        for row in 0..run.height as i64 {
             let by = dst_y0 + row;
-            if by < 0 || by >= height as i64 {
+            if by < win_y0 || by >= win_y1 {
                 continue;
             }
             for col in 0..pm_w as i64 {
                 let bx = dst_x0 + col;
-                if bx < 0 || bx >= width as i64 {
+                if bx < win_x0 || bx >= win_x1 {
                     continue;
                 }
-                let src = data[row as usize * pm_w + col as usize];
-                if src.a == 0 {
+                let cov = coverage[row as usize * pm_w + col as usize] as u32;
+                if cov == 0 {
+                    continue;
+                }
+                // Effective alpha: glyph coverage scaled by the ink's own.
+                let a = cov * ink_a / 255;
+                if a == 0 {
                     continue;
                 }
                 let di = by as usize * width as usize + bx as usize;
                 let dst = buffer[di];
-                // Source-over: src is premultiplied, dst is opaque 0xAARRGGBB.
-                let inv = 255 - src.a as u32;
-                let r = (((dst >> 16) & 0xFF) * inv / 255 + src.r as u32).min(255);
-                let g = (((dst >> 8) & 0xFF) * inv / 255 + src.g as u32).min(255);
-                let b = ((dst & 0xFF) * inv / 255 + src.b as u32).min(255);
+                // Source-over with premultiplied source; dst is opaque.
+                let inv = 255 - a;
+                let r = (((dst >> 16) & 0xFF) * inv / 255 + ink_r * a / 255).min(255);
+                let g = (((dst >> 8) & 0xFF) * inv / 255 + ink_g * a / 255).min(255);
+                let b = ((dst & 0xFF) * inv / 255 + ink_b * a / 255).min(255);
                 buffer[di] = 0xFF00_0000 | (r << 16) | (g << 8) | b;
             }
         }
