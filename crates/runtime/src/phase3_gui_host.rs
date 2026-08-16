@@ -92,6 +92,9 @@ pub struct Phase3GuiHost {
     /// work is fast, the loop itself is the suspect.
     present_times: std::cell::RefCell<Vec<(f32, f32)>>,
     last_present_entry: std::cell::Cell<Option<std::time::Instant>>,
+    /// When the native event queue was last drained, for coalescing the
+    /// several pumps a frame loop asks for into one.
+    last_pump: std::cell::Cell<Option<std::time::Instant>>,
     /// How many times an interrupt has been turned into a close request.
     interrupts: std::cell::Cell<u32>,
     /// How many times the person has asked to close the window.
@@ -283,6 +286,7 @@ impl Phase3GuiHost {
             publish_times: std::cell::RefCell::new(Vec::new()),
             present_times: std::cell::RefCell::new(Vec::new()),
             last_present_entry: std::cell::Cell::new(None),
+            last_pump: std::cell::Cell::new(None),
             interrupts: std::cell::Cell::new(0),
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
@@ -438,6 +442,22 @@ impl Phase3GuiHost {
         if self.headless {
             return;
         }
+        // Coalesce: an app that polls in a loop asked the OS for events four
+        // times a frame, and each ask costs a round trip through the window
+        // server -- 1.5ms apiece, 6ms of a 16ms frame, the largest single
+        // cost on the CPU present path. Events arriving 0.4ms apart cannot
+        // matter to a 60Hz frame, so one pump per 4ms is indistinguishable
+        // to a person and four times cheaper. `present` clears the mark, so
+        // every frame still begins with a fresh look at the queue.
+        const COALESCE: std::time::Duration = std::time::Duration::from_millis(8);
+        if let Some(last) = self.last_pump.get() {
+            if last.elapsed() < COALESCE {
+                return;
+            }
+        }
+        self.last_pump.set(Some(std::time::Instant::now()));
+        let __pump_guard = PumpTimer(std::time::Instant::now());
+        let _ = &__pump_guard;
         for id in &self.windows {
             if let Err(error) = self.dispatcher().pump_event_loop_once(*id) {
                 tracing::debug!(?error, window = id.get(), "native event pump failed");
@@ -1236,12 +1256,14 @@ impl Phase3GuiHost {
         if let Some(event) = self.pending_events.borrow_mut().pop_front() {
             return Ok(Some(self.to_design_space(event)));
         }
+        // Through the coalescing pump, not around it: this ran a full native
+        // drain per POLL, and a frame loop polls several times a frame. Each
+        // drain is a round trip through the window server (~1.5ms), so an
+        // idle game paid ~6ms a frame to ask four times whether anything had
+        // happened. pump_native_windows collapses those into one per frame.
+        self.pump_native_windows();
         let dispatcher = self.dispatcher();
         for window in &self.windows {
-            // Native pumps refresh window state and drain delegate callbacks;
-            // headless adapters return no tick. Ignore per-window pump errors
-            // so one closed window cannot wedge event delivery.
-            let _ = dispatcher.pump_event_loop_once(*window);
             self.sync_native_text(*window, &dispatcher);
         }
 
@@ -1710,6 +1732,26 @@ impl Phase3GuiHost {
             .find(|window| window.get() == raw)
             .ok_or(ui::types::UiError::InvalidWindow)
     }
+}
+
+/// Accumulated milliseconds inside the native event pump, reported with the
+/// present stats. Between-frame time has to be attributable, or "it lags"
+/// stays a guess.
+thread_local! {
+    static PUMP_MS: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+}
+
+struct PumpTimer(std::time::Instant);
+impl Drop for PumpTimer {
+    fn drop(&mut self) {
+        let ms = self.0.elapsed().as_secs_f32() * 1000.0;
+        PUMP_MS.with(|c| c.set(c.get() + ms));
+        PUMP_CALLS.with(|c| c.set(c.get() + 1));
+    }
+}
+
+thread_local! {
+    static PUMP_CALLS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
 }
 
 /// One word per event kind, for KRATE_EVENT_TRACE diagnostics.
@@ -3548,6 +3590,8 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
             self.last_present.set(Some(std::time::Instant::now()));
             return Ok(self.publish_canvas(canvas));
         }
+        // A new frame begins: the next poll must see the queue for real.
+        self.last_pump.set(None);
         let entry = std::time::Instant::now();
         let gap_ms = self
             .last_present_entry
@@ -3578,7 +3622,21 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
                 // (measured: 12 ms of a 15.3 ms frame in acquire).
                 if !self.dispatcher().supports_canvas_lists() {
                     let sleep_started = std::time::Instant::now();
-                    std::thread::sleep(remainder);
+                    // Sleep short, then close the gap by yielding. Every OS
+                    // rounds a sleep UP to its timer granularity, and on
+                    // Windows that default is ~15.6ms -- a 2ms request
+                    // costing a full tick, twice a frame, is how 6ms of
+                    // work became 14fps. Asking for 1ms resolution fixes
+                    // the scale of the error; landing the last slice by
+                    // yielding fixes the error itself, on every platform.
+                    const SPIN_MARGIN: std::time::Duration =
+                        std::time::Duration::from_micros(1_200);
+                    if remainder > SPIN_MARGIN {
+                        std::thread::sleep(remainder - SPIN_MARGIN);
+                    }
+                    while previous.elapsed() < FRAME_BUDGET {
+                        std::thread::yield_now();
+                    }
                     slept_ms = sleep_started.elapsed().as_secs_f32() * 1000.0;
                 }
             }
@@ -3593,6 +3651,9 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
                 };
                 let mut gaps: Vec<f32> = times.iter().map(|(g, _)| *g).collect();
                 let mut sleeps: Vec<f32> = times.iter().map(|(_, sl)| *sl).collect();
+                let pump = PUMP_MS.with(|c| c.replace(0.0));
+                let calls = PUMP_CALLS.with(|c| c.replace(0));
+                eprintln!("krate-pump: {pump:.1}ms across {calls} pump calls over these frames");
                 eprintln!(
                     "krate-present: gap p50 {:.2}ms p99 {:.2}ms | slept p50 {:.2}ms p99 {:.2}ms (n={})",
                     p(&mut gaps, 0.5),
