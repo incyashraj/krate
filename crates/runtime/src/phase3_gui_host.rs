@@ -253,7 +253,7 @@ pub fn install_interrupt_handler() {
         extern "C" fn on_interrupt(_signal: i32) {
             INTERRUPTED.store(true, std::sync::atomic::Ordering::SeqCst);
         }
-        libc::signal(libc::SIGINT, on_interrupt as libc::sighandler_t);
+        libc::signal(libc::SIGINT, on_interrupt as *const std::ffi::c_void as libc::sighandler_t);
     }
 }
 
@@ -1412,6 +1412,11 @@ impl Phase3GuiHost {
                 self.on_window_focus_changed(focused);
             }
             if let Some(event) = event_to_wit(event) {
+                // Count a close request at the one point every real event
+                // passes exactly once -- not in poll/wait/key-held, where an
+                // event that cycles through the pending queue would be
+                // counted twice and a single click would read as two (K-121).
+                self.note_close_request(&event);
                 return Ok(Some(self.to_design_space(event)));
             }
         }
@@ -2227,11 +2232,14 @@ impl ui::events::Host for Phase3GuiHost {
         let event = self
             .poll_one_event()
             .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
-        if let Some(event) = &event {
-            self.note_close_request(event);
-        }
         if self.close_ignored_by_guest() {
-            return Ok(None);
+            // The person clicked close twice and the app kept looping. The
+            // doc on close_ignored_by_guest promises the runtime honours the
+            // request on their behalf; swallowing the event (the old
+            // behaviour) left a window nothing could shut, and a machine was
+            // power-cycled over it (K-121). Same two-press contract as
+            // Ctrl-C, ended the same way.
+            std::process::exit(0);
         }
         Ok(event)
     }
@@ -2312,6 +2320,10 @@ impl ui::events::Host for Phase3GuiHost {
                 .poll_one_event()
                 .map_err(|err| wasmtime::Error::msg(err.to_string()))?;
             if event.is_some() {
+                if self.close_ignored_by_guest() {
+                    // Second unanswered close click; see poll (K-121).
+                    std::process::exit(0);
+                }
                 self.idle_waits.set(0);
                 if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
                     eprintln!("krate-event: {:?}", event.as_ref().map(event_name));
@@ -3573,6 +3585,12 @@ impl gfx::canvas2d::Host for Phase3GuiHost {
                 std::process::exit(130);
             }
         }
+        // Same for the close button: a game loop may never call poll or wait,
+        // so the second unanswered close click has to be honoured here or the
+        // window cannot be shut at all (K-121).
+        if self.close_ignored_by_guest() {
+            std::process::exit(0);
+        }
         const FRAME_BUDGET: std::time::Duration = std::time::Duration::from_micros(16_667);
         // A GPU adapter's present blocks for the panel inside
         // get_current_texture, and that IS the pacing. Adding our own timer
@@ -3855,6 +3873,11 @@ impl gfx::scene3d::Host for Phase3GuiHost {
     }
 
     fn present(&mut self, scene: u64) -> wasmtime::Result<Result<(), gfx::types::GfxError>> {
+        // A scene game loop lives in present exactly like a canvas one; the
+        // second unanswered close click ends the app here too (K-121).
+        if self.close_ignored_by_guest() {
+            std::process::exit(0);
+        }
         let (window, widget, image) = {
             // Mutable because presenting is what fills the frame: triangles
             // are queued as they are drawn and rasterized here, once, across
@@ -4494,6 +4517,31 @@ mod tests {
         assert!(
             matches!(event, Some(ui::types::Event::CloseRequested(id)) if id == window),
             "the close request must survive a key-held call, got {event:?}"
+        );
+    }
+
+    #[test]
+    fn the_second_unanswered_close_request_is_the_runtime_s_to_honour() {
+        // K-121: a machine was power-cycled because an app that ignored
+        // CloseRequested could not be shut at all. The contract is two
+        // presses: the first is the app's chance to save on the way out, the
+        // second means the person's patience has run out and the runtime
+        // ends the process. This pins the threshold; the exits themselves
+        // sit in poll, wait and both presents and cannot run under a test.
+        let (host, window, _widget) = host_with_canvas_widget();
+        assert!(
+            !host.close_ignored_by_guest(),
+            "an app that was never asked to close is not ignoring anything"
+        );
+        host.note_close_request(&ui::types::Event::CloseRequested(window));
+        assert!(
+            !host.close_ignored_by_guest(),
+            "the first request belongs to the app -- saving on the way out"
+        );
+        host.note_close_request(&ui::types::Event::CloseRequested(window));
+        assert!(
+            host.close_ignored_by_guest(),
+            "two unanswered requests mean the runtime closes on the app's behalf"
         );
     }
 
