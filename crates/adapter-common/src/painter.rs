@@ -169,6 +169,43 @@ pub fn draw_image(
     }
 
     let (x0, y0, x1, y1) = (x0 as u32, y0 as u32, x1 as u32, y1 as u32);
+
+    // The opaque fast path: a game canvas or a photo has no translucent
+    // pixels, so no blending is ever needed -- and nearest-neighbour
+    // scaling means many destination rows sample the SAME source row.
+    // Scale each unique source row once into a packed row, then memcpy it
+    // to every destination row that maps to it. On the profile that
+    // motivated this, the per-pixel loop below was ~a third of the whole
+    // frame; this path replaces it with row copies.
+    if image.rgba.chunks_exact(4).all(|px| px[3] == 255) {
+        let row_len = (x1 - x0) as usize;
+        let sx_offsets: Vec<usize> = (x0..x1)
+            .map(|px| {
+                let sx = (((px as f32 - ox) / scale) as u32).min(image.width - 1);
+                sx as usize * 4
+            })
+            .collect();
+        let mut packed: Vec<u32> = vec![0; row_len];
+        let mut packed_sy = u32::MAX;
+        for py in y0..y1 {
+            let sy = (((py as f32 - oy) / scale) as u32).min(image.height - 1);
+            if sy != packed_sy {
+                let src_row = sy as usize * image.width as usize * 4;
+                for (slot, offset) in packed.iter_mut().zip(&sx_offsets) {
+                    let i = src_row + offset;
+                    *slot = 0xFF00_0000
+                        | (u32::from(image.rgba[i]) << 16)
+                        | (u32::from(image.rgba[i + 1]) << 8)
+                        | u32::from(image.rgba[i + 2]);
+                }
+                packed_sy = sy;
+            }
+            let dst = py as usize * width as usize + x0 as usize;
+            buffer[dst..dst + row_len].copy_from_slice(&packed);
+        }
+        return;
+    }
+
     for py in y0..y1 {
         // Which source row this destination row samples.
         let sy = (((py as f32 - oy) / scale) as u32).min(image.height - 1);

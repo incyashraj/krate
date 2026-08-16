@@ -2390,12 +2390,26 @@ impl ui::events::Host for Phase3GuiHost {
             // is event-driven, and short slices just burn battery (a phone
             // reached thermal-serious from exactly that churn). The blind
             // sleep stays short because nothing can interrupt it.
-            let park = std::time::Duration::from_millis(match deadline {
+            //
+            // Clamped to the wait's own deadline: a 10ms slice against a
+            // 16ms timeout used to overshoot to ~20ms, and a game pacing
+            // itself with wait(16) ran at 41fps on an idle machine -- the
+            // slice must never be the thing that misses the frame.
+            let slice = std::time::Duration::from_millis(match deadline {
                 Some(_) => WAIT_POLL_INTERVAL_MILLIS,
                 None => 250,
             });
+            let park = match deadline {
+                Some(deadline) => {
+                    slice.min(deadline.saturating_duration_since(std::time::Instant::now()))
+                }
+                None => slice,
+            };
+            if park.is_zero() {
+                continue;
+            }
             if !self.dispatcher().park_for_events(park) {
-                std::thread::sleep(std::time::Duration::from_millis(WAIT_POLL_INTERVAL_MILLIS));
+                std::thread::sleep(park);
             }
         }
     }

@@ -1235,12 +1235,16 @@ impl CanvasSurface {
     }
 
     pub fn to_image(&self) -> Result<ImagePixels, UiAdapterError> {
-        let mut rgba = Vec::with_capacity(self.buffer.len() * 4);
-        for word in &self.buffer {
-            rgba.push(((word >> 16) & 0xFF) as u8);
-            rgba.push(((word >> 8) & 0xFF) as u8);
-            rgba.push((word & 0xFF) as u8);
-            rgba.push(((word >> 24) & 0xFF) as u8);
+        // Chunked writes instead of four pushes per pixel: every push
+        // carries a capacity check, and this conversion runs once per
+        // frame over the whole canvas -- it was the single hottest line
+        // in a full-window game's profile. The chunked form vectorizes.
+        let mut rgba = vec![0u8; self.buffer.len() * 4];
+        for (chunk, word) in rgba.chunks_exact_mut(4).zip(self.buffer.iter()) {
+            chunk[0] = (word >> 16) as u8;
+            chunk[1] = (word >> 8) as u8;
+            chunk[2] = *word as u8;
+            chunk[3] = (word >> 24) as u8;
         }
         ImagePixels::new(self.width, self.height, rgba)
     }
