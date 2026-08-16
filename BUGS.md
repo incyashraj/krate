@@ -3688,7 +3688,7 @@ Fix:      The pack already taught pixel offsets for lists, and the agent
 
 ### K-120 -- Any continuously animating GUI app burns ~100% of a core
 Status:   open
-Owner:    unclaimed
+Owner:    lead (via K-112: the GPU presenter is the fix's home)
 Severity: serious
 Class:    runtime-hole
 Found:    2026-08-16, building apps/krate-aurora, measured on macOS (M4).
