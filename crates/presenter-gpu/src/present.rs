@@ -336,6 +336,10 @@ impl PixelPresenter {
         Self::with_surface(instance, surface)
     }
 
+    // Platform-neutral by design -- its only constructor today is the macOS
+    // raw-handle one, so off-mac builds see it as dead until another
+    // platform grows a raw-surface path.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     fn with_surface(
         instance: wgpu::Instance,
         surface: wgpu::Surface<'static>,
