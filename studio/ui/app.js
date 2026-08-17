@@ -578,6 +578,11 @@ const STAGE_SAID = {
   wall: "Built. Checking it only touches what it declared.",
 };
 
+/* Lines that mean "a window is about to appear on your screen". When one of
+   these is the live step, the build card says so plainly, because the flash
+   and the sound arrive with it. */
+const FLASH_WORDS = /opening your app|running your app|looking at how your app/i;
+
 function advanceStage(key) {
   const idx = STAGES.findIndex((s) => s.key === key);
   if (idx <= state.stageIndex) return;
@@ -635,6 +640,10 @@ function onEngineLineInner(line) {
   if (clean) {
     $("nowLine").textContent = clean;
     state.lastLineAt = Date.now();
+    // A window is about to appear (or just did). Mark the card so the flash
+    // and the sound have a visible explanation at the moment they happen.
+    const card = document.querySelector("#stateBuilding .build-card");
+    if (card) card.classList.toggle("flashing", FLASH_WORDS.test(clean));
   }
   if (/authoring|writing (the|your) app|starter|asking|agent|changing the app/i.test(line)) advanceStage("write");
   if (/==> building|Compiling|Generating bindings/i.test(line)) advanceStage("build");
@@ -1034,6 +1043,11 @@ async function buildNow(request, files, revising) {
   say("KRATE", revising
     ? "Reading your app, then making that change."
     : "On it. I'll show you each step as it happens.");
+  // Warn BEFORE the first flash, not after. While it works, the AI opens
+  // the app to look at it and fix what it sees -- windows appear for a
+  // second and sounds play. Unexplained, that reads as the machine
+  // misbehaving; the founder watched exactly that (K-132).
+  say("KRATE", "While I work, I'll open your app a few times to look at it -- so a window may flash and you might hear its sounds. That's me testing it, not something breaking.");
   // The build itself is one chip on the timeline, born live and settled
   // into a receipt when it ends -- narration never piles up in the rail.
   state.buildChip = appendLiveChip(version);

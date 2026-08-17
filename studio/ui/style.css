@@ -1372,3 +1372,19 @@ img.cloud-icon { object-fit: cover; }
   margin: 12px 0 16px;
   border-left: 2px solid var(--line-strong); padding-left: 12px;
 }
+
+/* While the AI opens the app to look at it, a window really does flash on
+   the person's screen and its sounds play. The card says so at that exact
+   moment -- unexplained, it reads as the machine misbehaving. */
+.build-card.flashing .bpeek {
+  border-color: rgba(98, 145, 255, 0.35);
+  color: var(--muted);
+}
+.build-card.flashing .bpeek::after {
+  content: "a window may appear for a moment -- that's Krate testing your app";
+  display: block;
+  margin-top: 6px;
+  font-family: var(--sans);
+  font-size: 11.5px;
+  color: var(--blue);
+}

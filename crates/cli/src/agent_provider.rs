@@ -624,8 +624,16 @@ impl AgentProvider for ClaudeProvider {
                 "Read" | "Glob" | "Grep" => describe_read(name, input),
                 "Bash" => {
                     let cmd = arg("command").unwrap_or_default();
-                    if cmd.contains("check-app") {
+                    if cmd.contains("check-app") && cmd.contains("--shoot") {
+                        // This is the step that opens the app for real: a
+                        // window flashes and its sound plays. Unexplained
+                        // that reads as the machine misbehaving, so name it
+                        // before it happens (K-132).
+                        "opening your app to see it -- a window may flash".to_string()
+                    } else if cmd.contains("check-app") {
                         "checking it builds, runs, and only uses what it declared".to_string()
+                    } else if cmd.contains("krate run") {
+                        "running your app to test it -- a window may flash".to_string()
                     } else if cmd.contains("cargo build") || cmd.contains("cargo component") {
                         "building the app".to_string()
                     } else if cmd.contains("cargo") {
@@ -649,6 +657,15 @@ impl AgentProvider for ClaudeProvider {
 /// literally stops the display.
 fn describe_read(tool: &str, input: Option<&serde_json::Value>) -> String {
     let field = |key: &str| -> Option<String> { Some(input?.get(key)?.as_str()?.to_string()) };
+
+    // Reading the rendered frame is the AI looking at the picture the app
+    // just drew -- the human half of "does this actually work". "reading
+    // frame.png" told nobody that.
+    if let Some(path) = field("file_path") {
+        if path.ends_with(".png") {
+            return "looking at how your app turned out".to_string();
+        }
+    }
 
     if let Some(pattern) = field("pattern") {
         let pattern = pattern.trim();

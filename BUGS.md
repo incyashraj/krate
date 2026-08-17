@@ -3858,6 +3858,28 @@ Status:   fixed
 
 ## Fixed
 
+### K-132 -- The app flashes on screen mid-build and nothing says it is us
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-18, founder watching a game build: the app appeared and
+          vanished three or four times and played its sounds, while the
+          build card said "16. reading frame.png".
+Evidence: The authoring loop runs `check-app --shoot`, which really does
+          open the app and render a frame -- that IS the AI looking at its
+          work. From outside it is a window flashing and audio playing with
+          no explanation, and the one clue on screen was a filename. A
+          first-time person reads that as their machine misbehaving.
+Fix:      (this commit) Three places now say it plainly. The engine's
+          progress words: "opening your app to see it -- a window may
+          flash", "running your app to test it", and reading the rendered
+          frame becomes "looking at how your app turned out". The rail
+          warns BEFORE the first flash, as part of starting a build. And
+          the build card marks itself while such a step is live, adding
+          "a window may appear for a moment -- that's Krate testing your
+          app" exactly when the flash happens.
+
 ### K-131 -- A spinner outlived its build, so waiting looked exactly like working
 Status:   fixed
 Owner:    lead
