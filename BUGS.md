@@ -71,32 +71,6 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
-### K-129 -- Three attempts at one game each started from nothing, and the pack made the AI hunt
-Status:   fixed
-Owner:    lead
-Severity: serious
-Class:    teaching-hole
-Found:    2026-08-17, founder ran the same Contra-style request three
-          times; all three died at the 15-minute ceiling.
-Evidence: Every session record shows the same shape: request, plan in
-          ~6 seconds, build starts, "that build didn't come together"
-          exactly 15 minutes later. The kept transcript of the last
-          attempt ends with the agent's own words -- "Now I'll write the
-          game." -- after 14 Bash calls spent grepping the WIT and SDK
-          for key names, audio, and draw-sprite. Zero lines of game had
-          been written when the clock fired, and the studio handed create
-          a fresh temp dir every attempt, so the stall message's promise
-          ("it resumes from the code already written") was false: each
-          retry restarted the research from nothing.
-Fix:      (this commit) The pack gains one game section carrying every
-          fact a game asks for -- the loop, held vs one-shot input, both
-          sprite paths, the complete generated-chiptune recipe (open a
-          stream, load_sound, play_sound, with a working square-wave
-          blip), pattern-based pixel art with no asset files, and the
-          scope rule. Plus K-127's key-name table. And the studio now
-          builds each session in its own stable workspace, so a retry
-          genuinely resumes.
-
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 
 Class: our-code
@@ -129,29 +103,6 @@ Update:   2026-08-17, live debugging on the founder's Iris Xe PC over
           play parity with the M4 Mac. Publish sync still p50 12-14ms on
           that machine; that remainder is this workstation's real GPU
           presenter work.
-
-### K-111 -- Painted app UI renders at 1x on Retina displays: everything looks soft
-
-Class: our-code
-Owner: unclaimed
-
-Every painted surface (the vello/painter path GUI apps draw with) renders its
-bitmap at logical point size, and the macOS adapter displays it scaled up on a
-2x display. The result is that a generated app's whole UI -- text, lines,
-icons -- looks low-resolution next to any native app. Native-lowered widgets
-(NSButton, NSTextField) are sharp; the painted regions around them are not.
-
-Evidence: side-by-side screenshot of the Cup Cook app on a Retina display,
-2026-08-15 -- list text and numerals visibly fuzzy at normal viewing size
-while the window chrome is crisp. `grep backingScaleFactor
-crates/adapter-macos/src/appkit.rs` shows the scale is read (lines ~1467,
-1524) but the painted frame is sized in points, not pixels.
-
-Fix shape: render the frame at points x backingScaleFactor and mark the
-image rep's logical size in points, so AppKit scales down (sharp) rather than
-up (soft). Layout stays in points; only the raster density changes. Needs the
-painter, the frame plumbing, and the adapter to agree on the factor, and a
---shoot comparison at 1x and 2x as proof.
 
 ### K-106 -- generated apps put text on top of other content
 Status:   fixed 2026-08-13 (4e60477), text-over-text half; see K-107
@@ -3857,6 +3808,103 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
 Status:   fixed
 
 ## Fixed
+
+### K-133 -- The headless run budget skipped every game, so a finished game never exited
+
+Class: our-code
+Owner: (fixed)
+
+A headless run is bounded by a five-second wall-clock budget so an app that
+waits forever still gives the terminal back. `headless_budget_close_request`
+had exactly one caller: `ui::events::wait`. A game does not wait. It drives
+itself with `poll` and `key-held` at frame rate, so the budget that was
+supposed to bound it was never once consulted, and the bound silently did not
+apply to the entire class of app most likely to loop forever.
+
+The failure reads as a broken app. The NES-style game the authoring agent
+built is correct and paints a good frame: it wrote its screenshot in about
+twenty seconds and then ran until an outer watchdog killed it. Nothing in that
+output says the runtime forgot to ask a question on one code path.
+
+Evidence:
+
+    $ krate run "nes-game.krate" --shoot nes.png     # before
+    PNG appeared after ~20s
+    ... still running at 180s, killed by the harness
+
+    $ krate run "pulse.krate" --shoot pulse.png      # a non-game, for contrast
+    pulse: exit=0 elapsed=5s png=yes
+
+Fixed by: asking the budget on the poll path too, and giving it teeth. `poll`
+now checks `headless_budget_close_request` before returning an event, and the
+budget follows the same two-strike contract as the close button and Ctrl-C
+(K-121): the guest is told its window closed, gets a two-second grace period to
+save and leave, and if it is still asking for events after that the runtime
+exits the process. A budget an app can decline forever is not a budget.
+
+    $ krate run "nes-game.krate" --shoot nes2.png    # after
+    game: exit=0 elapsed=6s png=yes
+
+Regression test: `a_spent_budget_ends_a_game_loop_that_only_polls` drives a
+window with `poll` alone and asserts a spent budget closes it. The existing
+wait-path test still passes; 324 runtime tests green. Windowed runs are
+unaffected -- the budget returns early unless the host is headless.
+
+### K-111 -- Painted app UI renders at 1x on Retina displays: everything looks soft
+
+Class: our-code
+Owner: unclaimed
+
+Every painted surface (the vello/painter path GUI apps draw with) renders its
+bitmap at logical point size, and the macOS adapter displays it scaled up on a
+2x display. The result is that a generated app's whole UI -- text, lines,
+icons -- looks low-resolution next to any native app. Native-lowered widgets
+(NSButton, NSTextField) are sharp; the painted regions around them are not.
+
+Evidence: side-by-side screenshot of the Cup Cook app on a Retina display,
+2026-08-15 -- list text and numerals visibly fuzzy at normal viewing size
+while the window chrome is crisp. `grep backingScaleFactor
+crates/adapter-macos/src/appkit.rs` shows the scale is read (lines ~1467,
+1524) but the painted frame is sized in points, not pixels.
+
+Fix shape: render the frame at points x backingScaleFactor and mark the
+image rep's logical size in points, so AppKit scales down (sharp) rather than
+up (soft). Layout stays in points; only the raster density changes. Needs the
+painter, the frame plumbing, and the adapter to agree on the factor, and a
+--shoot comparison at 1x and 2x as proof.
+
+Fixed by: K-088's scaled canvas work, verified 2026-08-18 and closed with
+evidence: a live window measured 1200x832 points capturing at 2400x1664
+pixels -- a true 2.0x, no upscale -- and the markdown replica's text is
+sharp at native density in that capture. The headline was stale; the
+painted path has rastered at display density since the canvas surface
+started taking window_scale.
+
+### K-129 -- Three attempts at one game each started from nothing, and the pack made the AI hunt
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    teaching-hole
+Found:    2026-08-17, founder ran the same Contra-style request three
+          times; all three died at the 15-minute ceiling.
+Evidence: Every session record shows the same shape: request, plan in
+          ~6 seconds, build starts, "that build didn't come together"
+          exactly 15 minutes later. The kept transcript of the last
+          attempt ends with the agent's own words -- "Now I'll write the
+          game." -- after 14 Bash calls spent grepping the WIT and SDK
+          for key names, audio, and draw-sprite. Zero lines of game had
+          been written when the clock fired, and the studio handed create
+          a fresh temp dir every attempt, so the stall message's promise
+          ("it resumes from the code already written") was false: each
+          retry restarted the research from nothing.
+Fix:      (this commit) The pack gains one game section carrying every
+          fact a game asks for -- the loop, held vs one-shot input, both
+          sprite paths, the complete generated-chiptune recipe (open a
+          stream, load_sound, play_sound, with a working square-wave
+          blip), pattern-based pixel art with no asset files, and the
+          scope rule. Plus K-127's key-name table. And the studio now
+          builds each session in its own stable workspace, so a retry
+          genuinely resumes.
 
 ### K-132 -- The app flashes on screen mid-build and nothing says it is us
 Status:   fixed

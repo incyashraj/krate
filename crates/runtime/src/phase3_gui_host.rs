@@ -53,6 +53,14 @@ const HEADLESS_IDLE_WAIT_LIMIT: u32 = 8;
 /// enough that a person who runs an app by mistake gets their prompt back.
 const HEADLESS_RUN_BUDGET: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// How long a headless app has to leave after being told the window closed,
+/// before the runtime ends the process for it.
+///
+/// Generous on purpose: the point is to bound the run, not to race a shutdown
+/// that is genuinely in progress. An app that saves on the way out has two
+/// full seconds of frames to do it in.
+const HEADLESS_CLOSE_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// Host state for the Phase 3 `gui` world imports.
 pub struct Phase3GuiHost {
     runtime: Phase3UiRuntime,
@@ -116,6 +124,9 @@ pub struct Phase3GuiHost {
     /// Set on the first wait rather than at construction, so time spent
     /// building the window tree is not charged against the budget.
     headless_started: std::cell::Cell<Option<std::time::Instant>>,
+    /// When the headless budget told the guest its window closed, for
+    /// [`HEADLESS_CLOSE_GRACE`].
+    headless_close_told: std::cell::Cell<Option<std::time::Instant>>,
     /// Pictures for image widgets, keyed by the widget they belong to.
     ///
     /// Held here rather than on the widget node because a picture arrives
@@ -294,6 +305,7 @@ impl Phase3GuiHost {
             close_requests: std::cell::Cell::new(0),
             pending_events: std::cell::RefCell::new(std::collections::VecDeque::new()),
             headless_started: std::cell::Cell::new(None),
+            headless_close_told: std::cell::Cell::new(None),
             images: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             canvases: std::cell::RefCell::new(std::collections::BTreeMap::new()),
             gamepads: std::cell::RefCell::new(crate::gamepad::Gamepads::new()),
@@ -879,6 +891,19 @@ impl Phase3GuiHost {
         if now.duration_since(started) < HEADLESS_RUN_BUDGET {
             return None;
         }
+        // Same two-strike contract as the close button and Ctrl-C: the app is
+        // told once and given a grace period to save and leave on its own, and
+        // if it is still asking for events after that, the runtime ends the
+        // process on its behalf. Without this the budget is only a suggestion,
+        // and a game loop that does not match on CloseRequested declines it
+        // forever -- which is exactly the hang the budget exists to prevent.
+        if let Some(told) = self.headless_close_told.get() {
+            if now.duration_since(told) >= HEADLESS_CLOSE_GRACE {
+                std::process::exit(0);
+            }
+            return None;
+        }
+        self.headless_close_told.set(Some(now));
         let window = self.windows.first().map(|id| id.get()).unwrap_or(0);
         Some(ui::types::Event::CloseRequested(window))
     }
@@ -2246,6 +2271,17 @@ impl ui::events::Host for Phase3GuiHost {
             if let Some(window) = self.windows.first().copied() {
                 return Ok(Some(ui::types::Event::CloseRequested(window.get())));
             }
+        }
+        // A headless run ends on the wall-clock budget here as well as in
+        // `wait`. `wait` was the only place that asked, which quietly exempted
+        // every game: a frame loop drives itself with `poll` and `key-held` and
+        // never waits, so the budget it was supposed to be held to was never
+        // consulted and the run went on forever. A finished, correct game shot
+        // its PNG in twenty seconds and then hung until an outer watchdog
+        // killed it, which reads as a broken app rather than a runtime that
+        // forgot to ask the question on this path.
+        if let Some(close) = self.headless_budget_close_request() {
+            return Ok(Some(close));
         }
         let event = self
             .poll_one_event()
@@ -4646,6 +4682,43 @@ mod tests {
         assert!(
             matches!(event, Some(ui::types::Event::CloseRequested(_))),
             "a spent budget must end the run even with events queued: {event:?}"
+        );
+    }
+
+    #[test]
+    fn a_spent_budget_ends_a_game_loop_that_only_polls() {
+        // The budget has to reach a frame loop, not just an event loop. A game
+        // drives itself with `poll` and `key-held` and never calls `wait`, and
+        // `wait` used to be the only place that asked whether the budget was
+        // spent -- so every game was silently exempt from it. A finished game
+        // wrote its screenshot and then ran forever.
+        let mut host = headless_host();
+        use ui::window::Host as _;
+        let _window = host
+            .create(
+                "game".to_string(),
+                ui::types::WindowSize {
+                    width: 100,
+                    height: 100,
+                },
+            )
+            .expect("create call")
+            .expect("a window");
+
+        let first = ui::events::Host::poll(&mut host).expect("poll call");
+        assert!(
+            !matches!(first, Some(ui::types::Event::CloseRequested(_))),
+            "the budget must not fire on the very first poll"
+        );
+
+        host.headless_started.set(Some(
+            std::time::Instant::now() - HEADLESS_RUN_BUDGET - std::time::Duration::from_millis(1),
+        ));
+
+        let event = ui::events::Host::poll(&mut host).expect("poll call");
+        assert!(
+            matches!(event, Some(ui::types::Event::CloseRequested(_))),
+            "a spent budget must close a loop that only ever polls: {event:?}"
         );
     }
 

@@ -70,7 +70,9 @@ through the sky and a reflection floating loose. The loop that actually
 improves a visual app is: render a frame headless with
 `krate run <entry.wasm> --shoot frame.png -- quick`, LOOK at the picture,
 name the one specific defect you can see, fix that, render again. Add
-`--check-layout` to catch text drawn over text. Every pass through that
+`krate run <entry.wasm> --check-layout -- quick` to catch text drawn over
+text (it is a `run` flag, not a `check-app` one -- a real build wasted
+attempts discovering that). Every pass through that
 loop is worth more than another green check.
 
 The one hard rule: a Krate component may import ONLY `krate:*` interfaces.
