@@ -36,3 +36,10 @@ dev-anyos = []
 [[example]]
 name = "gpu_window"
 required-features = ["dev-anyos"]
+
+# The canvas-churn harness drives GpuPresent directly, which only exists on
+# Windows targets or under dev-anyos; everywhere else the example must not
+# even be compiled.
+[[example]]
+name = "canvas_churn"
+required-features = ["dev-anyos"]

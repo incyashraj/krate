@@ -97,7 +97,7 @@ impl ApplicationHandler for App {
                     width: W as f32,
                     height: H as f32,
                 };
-                canvas.pixels = Some(frame_pixels(self.frames));
+                canvas.pixels = Some(Arc::new(frame_pixels(self.frames)));
                 let started = Instant::now();
                 gpu.render(
                     window,
