@@ -34,8 +34,9 @@ The example builds a checklist app that saves its items to a local file.
   not need the checkout anymore. `krate create` writes the SDK it needs to a
   cache directory the first time it runs.
 
-> Krate is pre-alpha. This flow is for building and sharing your own apps, not
-> for running untrusted third-party code yet.
+> Krate is in beta, with versioned releases shipping continuously and a live
+> public store at krate.tech/cloud. The permission wall is enforced in code,
+> but treat very new software with the care very new software deserves.
 
 ## Create the app
 

@@ -37,7 +37,7 @@ flowchart LR
     class F pending;
 ```
 
-What exists today is a pre-alpha runtime that already delivers the founding
+What exists today is a beta runtime that already delivers the founding
 claim on desktop. Krate runs WebAssembly components through the CLI on Linux,
 macOS, and Windows from byte-identical artifacts, routes app calls through
 UAPI modules, and enforces manifest-declared capabilities before any host

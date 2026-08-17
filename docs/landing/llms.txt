@@ -1,0 +1,42 @@
+# Krate
+
+> Krate is where AI-made software lives: describe an app in plain words, an
+> AI writes it, and you get one small file (a .krate, 15-40 KB) that opens on
+> macOS, Windows, and Linux. Before it runs, the app shows in plain words
+> exactly what it wants to access, and it cannot do anything you did not
+> allow -- the sandbox is enforced at the WebAssembly component boundary, not
+> by policy.
+
+Krate is open source (github.com/incyashraj/krate) and in beta, with
+versioned releases shipping continuously for six desktop targets (macOS,
+Windows, Linux, each on Intel and ARM). A public store is live with real
+apps anyone can run in one click.
+
+Key facts, all measured and published rather than estimated:
+- A .krate app is a WebAssembly component compiled from Rust: no bundled
+  browser, no per-app runtime. Real published apps are 15-40 KB, against
+  80-200 MB for a typical Electron app.
+- A markdown editor rebuilt in Krate and benchmarked against MarkText
+  (Electron) on the same machine: 37 KB vs 271 MB installed, opens in a
+  fifth of a second vs 1.8 s, holds a 50,000-word document in 95 MB of
+  memory vs 2.3 GB. Methodology at krate.tech/reports.html.
+- Permissions are capability-based and enforced in code: an app declares
+  what it needs, the person sees it in plain words before first run, and a
+  denied capability is structurally unreachable. An app that organizes
+  folders cannot even name a folder -- it asks the person to pick one, and
+  the pick is the grant.
+- AI authoring works with the tools people already have: Claude Code, Codex
+  CLI, Gemini CLI, GitHub Copilot CLI, Grok CLI, or any tool via MCP.
+  Krate Studio is the desktop app around the whole flow: describe, build,
+  run, publish.
+- Publishing is one click; every published app is content-addressed and can
+  be run directly from its URL: `krate run https://hub.krate.tech/a/<id>`.
+
+## Main pages
+- [Krate](https://krate.tech/): what it is, install, and the numbers
+- [Krate Store](https://krate.tech/cloud/): live gallery of published apps
+- [Krate Studio](https://krate.tech/studio/): the desktop app
+- [Docs](https://krate.tech/docs/): the book
+- [Measurements](https://krate.tech/reports.html): every claim with its method
+- [FAQ](https://krate.tech/faq.html)
+- [GitHub](https://github.com/incyashraj/krate): source, tests, public bug board

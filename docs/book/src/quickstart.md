@@ -10,8 +10,9 @@ At the end your terminal should print:
 hello from Krate
 ```
 
-Krate is still pre-alpha. This quickstart is for local developer proof, not
-for running untrusted third-party components.
+Krate is in beta: versioned releases ship continuously for six desktop
+targets, and a public store is live at krate.tech/cloud. The permission wall
+is enforced in code; the project is young, so review what an app asks for.
 
 ## Prerequisites
 

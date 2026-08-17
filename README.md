@@ -60,9 +60,10 @@ Krate is a simpler app format:
 4. The app gets only what you allow, and nothing else.
 
 A Krate app is a WebAssembly component compiled from ordinary Rust. It carries
-no browser and no runtime of its own, so the apps in this repo have a median
-size of **13.5 KB**. You install the runtime once; every app after that is
-kilobytes.
+no browser and no runtime of its own, so real published apps are **15-40 KB**
+-- a playable game on the store is 30 KB, and a markdown editor that matches a
+271 MB Electron app feature-for-feature is 37 KB. You install the runtime
+once; every app after that is kilobytes.
 
 Krate is open source, and the whole path works end to end: install it, describe an app, an AI writes it, and the file
 it hands you opens on macOS, Windows and Linux.
