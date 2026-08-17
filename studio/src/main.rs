@@ -636,6 +636,32 @@ fn stop_build(state: tauri::State<Running>) -> Result<(), String> {
     Ok(())
 }
 
+/// Is this process still running?
+///
+/// Signal 0 asks the kernel without delivering anything; on Windows,
+/// tasklist is the equivalent question. Used to tell a live build from a
+/// stale pid left behind by one that died unseen.
+fn pid_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        // ESRCH means no such process; EPERM means it exists but is not
+        // ours, which still counts as alive. io::Error reads errno
+        // portably -- libc's accessor is named differently per platform.
+        if unsafe { libc::kill(pid as i32, 0) } == 0 {
+            return true;
+        }
+        std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+    #[cfg(windows)]
+    {
+        Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .map(|out| String::from_utf8_lossy(&out.stdout).contains(&pid.to_string()))
+            .unwrap_or(true)
+    }
+}
+
 /// End a build and everything under it.
 ///
 /// The agent CLI and cargo are children of the engine, so signalling only
@@ -794,9 +820,20 @@ fn run_author(
     // would keep burning AI quota with nothing able to end it.
     {
         let running = app.state::<Running>();
-        let guard = running.0.lock().map_err(|_| "poisoned")?;
-        if guard.is_some() {
-            return Err("one app is already being made -- wait for it, or press Stop".to_string());
+        let mut guard = running.0.lock().map_err(|_| "poisoned")?;
+        if let Some(pid) = *guard {
+            // A recorded pid is only a live build if the process still
+            // exists. A build that died without our code seeing it -- the
+            // engine crashing, the machine sleeping, a kill from outside --
+            // left this slot set forever, and every later request was
+            // refused while the UI showed a spinner nothing could end
+            // (K-128). Verify, then either refuse honestly or clear it.
+            if pid_alive(pid) {
+                return Err(
+                    "one app is already being made -- wait for it, or press Stop".to_string()
+                );
+            }
+            *guard = None;
         }
     }
 

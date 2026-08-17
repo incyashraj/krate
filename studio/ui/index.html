@@ -97,11 +97,11 @@
         </div>
       </div>
 
-      <button class="building-now reveal hidden" id="buildingNow">
+      <div class="building-now reveal hidden" id="buildingNow">
         <span class="pulse"></span>
-        <span class="grow">Making <b id="buildingNowTitle"></b></span>
-        <span class="go">Open →</span>
-      </button>
+        <button class="grow bn-open" id="buildingNowOpen">Making <b id="buildingNowTitle"></b><span class="go">Open →</span></button>
+        <button class="bn-stop" id="buildingNowStop" title="Stop this build">Stop</button>
+      </div>
 
       <section class="apps reveal" id="appsSection">
         <div class="apps-head"><h2 class="label">Your apps</h2></div>

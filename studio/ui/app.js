@@ -410,6 +410,12 @@ function appendLiveChip(version) {
   const el = document.createElement("div");
   el.className = "msg krate vlive";
   el.innerHTML = `<span class="who">KRATE</span><span class="vchip vlivec"><b>v${version}</b> building <span class="vbar"><i style="transform:scaleX(0.08)"></i></span> <span class="vm" data-phase>starting…</span></span>`;
+  // Stop lives on the build itself, not only on the far side of the window.
+  const stop = document.createElement("button");
+  stop.className = "vact vg";
+  stop.textContent = "Stop";
+  stop.addEventListener("click", stopBuild);
+  el.querySelector(".vchip").appendChild(stop);
   $("thread").appendChild(el);
   $("thread").scrollTop = $("thread").scrollHeight;
   return el;
@@ -2012,7 +2018,24 @@ $("detailCopy").addEventListener("click", async () => {
     $("detailNote").textContent = app.url;
   }
 });
-$("stopBtn").addEventListener("click", () => invoke("stop_build"));
+/* Stopping is a person's decision and must always be one click away: from
+   the build stage, from the home bar, and from the live chip in the rail.
+   All three call this. */
+async function stopBuild() {
+  try {
+    await invoke("stop_build");
+    // The engine's exit lands in the normal failure path, which says
+    // "stopped" -- this only covers the gap before that arrives.
+    if (state.buildChip) {
+      const phase = state.buildChip.querySelector("[data-phase]");
+      if (phase) phase.textContent = "stopping…";
+    }
+  } catch (err) {
+    say("KRATE", plainWords(err));
+  }
+}
+
+$("stopBtn").addEventListener("click", stopBuild);
 $("openBtn").addEventListener("click", openApp);
 $("shareBtn").addEventListener("click", openPublishSheet);
 $("pubGo").addEventListener("click", publishFromSheet);
@@ -2042,9 +2065,10 @@ $("retryBtn").addEventListener("click", () => {
   const chip = $(id);
   if (chip) chip.addEventListener("click", openAiSheet);
 });
-$("buildingNow")?.addEventListener("click", () => {
+$("buildingNowOpen")?.addEventListener("click", () => {
   if (state.buildingSession) openSession(state.buildingSession);
 });
+$("buildingNowStop")?.addEventListener("click", stopBuild);
 $("settingsBtn").addEventListener("click", openSettings);
 $("accountBtn").addEventListener("click", openAccount);
 $("changeDirBtn").addEventListener("click", async () => {

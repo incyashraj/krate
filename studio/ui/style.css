@@ -724,6 +724,8 @@ body.windows .titlebar { padding-right: 150px; }
 /* A build keeps going while you browse, and without this the home screen
    looked idle -- then the next request was refused with "one app is already
    being made" and there was no way to reach it. */
+/* The bar is no longer one button: opening the session and stopping the
+   build are different decisions and each needs its own target. */
 .building-now {
   width: min(940px, 100%);
   display: flex; align-items: center; gap: 12px;
@@ -735,11 +737,22 @@ body.windows .titlebar { padding-right: 150px; }
   color: var(--muted);
   font-size: 13px;
   text-align: left;
-  cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
 }
 .building-now:hover { border-color: rgba(255,255,255,0.34); color: var(--text); }
-.building-now .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.building-now .grow {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; display: flex; gap: 10px; align-items: center;
+  background: none; border: none; color: inherit; font: inherit;
+  cursor: pointer; padding: 0; text-align: left;
+}
+.building-now .bn-stop {
+  flex: none; background: none; cursor: pointer;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-pill);
+  color: var(--faint); font: inherit; font-size: 12px; padding: 5px 14px;
+  transition: color 0.15s, border-color 0.15s;
+}
+.building-now .bn-stop:hover { color: var(--danger); border-color: rgba(255,127,149,0.4); }
 .building-now b { color: var(--text); font-weight: 500; }
 .building-now .go { color: var(--faint); font-size: 12px; flex: none; }
 .building-now .pulse {
