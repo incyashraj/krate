@@ -71,28 +71,6 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
-### K-126 -- Bundled source pins the SDK by absolute local path, so source does not travel
-Status:   fixed
-Owner:    lead
-Severity: serious
-Class:    our-code
-Found:    2026-08-17, testing a Windows-built app's bundled source on the
-          Mac to verify its interactivity.
-Evidence: The .krate's source/Cargo.toml says
-          krate = { path = "C:/Users/user/AppData/Local/Krate/sdk/..." }
-          and the component.target WIT paths likewise. On any other
-          machine (or after that user moves their SDK) check-app and
-          revise fail at build with "No such file or directory". The
-          bundle SHIPS the SDK precisely so source is editable later;
-          the absolute paths defeat it.
-Fix:      (this commit) The {KRATE_SDK} placeholder machinery existed on
-          both sides all along; the pack-side rewrite matched the Unix
-          cache shape /krate/sdk/ lowercase, and Windows materialises
-          under AppData/Local/Krate/sdk/ with a capital K, so on Windows
-          the rewrite never fired and the author's absolute path shipped.
-          sdk_root_in is now case-insensitive and separator-tolerant,
-          pinned by tests carrying the exact line from the live bundle.
-
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 
 Class: our-code
@@ -3853,6 +3831,55 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
 Status:   fixed
 
 ## Fixed
+
+### K-127 -- A big request burned its whole budget hunting for key names we never documented
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    teaching-hole
+Found:    2026-08-17, founder asked for a Contra-style NES game in the
+          studio; two builds in a row died at the 15-minute ceiling with
+          nothing to show, the second after he watched a spinner for 45
+          minutes.
+Evidence: The kept workspace told the whole story. Eight minutes in, the
+          agent had written 124 lines -- the untouched skeleton -- and 11
+          of its 16 tool calls were a hunt for ONE fact: the strings
+          key-held takes. It grepped the WIT (which says only "the same
+          names key-event reports"), then the SDK, then ran `strings` on
+          /Applications/Krate.app's binary. The 67 KB authoring pack
+          contained the key names zero times.
+Fix:      772d77f4. The pack states them in full -- ArrowLeft/Right/Up/
+          Down, lowercase characters for letters and digits, Space,
+          Enter, Tab, Backspace, Escape, Home, End, PageUp, PageDown,
+          Delete -- with the note that getting them wrong is SILENT (the
+          app builds, runs, never moves) and the two shipped games named
+          as examples. The ceiling also moves 15 -> 40 minutes, because a
+          full game stage is a legitimate request rather than a stuck
+          agent, and a new stall watchdog ends a genuinely silent agent
+          after 10 quiet minutes instead of letting it ride to the
+          ceiling.
+
+### K-126 -- Bundled source pins the SDK by absolute local path, so source does not travel
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-17, testing a Windows-built app's bundled source on the
+          Mac to verify its interactivity.
+Evidence: The .krate's source/Cargo.toml says
+          krate = { path = "C:/Users/user/AppData/Local/Krate/sdk/..." }
+          and the component.target WIT paths likewise. On any other
+          machine (or after that user moves their SDK) check-app and
+          revise fail at build with "No such file or directory". The
+          bundle SHIPS the SDK precisely so source is editable later;
+          the absolute paths defeat it.
+Fix:      (this commit) The {KRATE_SDK} placeholder machinery existed on
+          both sides all along; the pack-side rewrite matched the Unix
+          cache shape /krate/sdk/ lowercase, and Windows materialises
+          under AppData/Local/Krate/sdk/ with a capital K, so on Windows
+          the rewrite never fired and the author's absolute path shipped.
+          sdk_root_in is now case-insensitive and separator-tolerant,
+          pinned by tests carrying the exact line from the live bundle.
 
 ### K-125 -- A GPU failure during surface configure killed the app instead of falling back
 Status:   fixed
