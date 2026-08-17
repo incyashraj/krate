@@ -370,9 +370,10 @@ async function persistSession(s) {
 
 /* ---- thread ----------------------------------------------------------- */
 
-function appendMessage(who, body, files) {
+function appendMessage(who, body, files, extra) {
   const el = document.createElement("div");
-  el.className = `msg ${who === "KRATE" ? "krate" : ""}`;
+  const variant = extra && extra.variant ? ` ${extra.variant}` : "";
+  el.className = `msg ${who === "KRATE" ? "krate" : ""}${variant}`;
   el.innerHTML = `<span class="who">${who}</span><span class="body"></span>`;
   el.querySelector(".body").textContent = body;
   if (files && files.length) {
@@ -381,12 +382,38 @@ function appendMessage(who, body, files) {
     f.textContent = `📎 ${files.map(baseName).join(", ")}`;
     el.appendChild(f);
   }
+  // Action buttons IN the thread: the escape from a question is a click,
+  // never a magic phrase the person has to know.
+  if (extra && extra.actions && extra.actions.length) {
+    const row = document.createElement("span");
+    row.className = "msg-actions";
+    for (const action of extra.actions) {
+      const btn = document.createElement("button");
+      btn.className = action.primary ? "btn btn-primary msg-btn" : "btn msg-btn";
+      btn.textContent = action.label;
+      btn.addEventListener("click", () => {
+        row.remove();
+        action.run();
+      });
+      row.appendChild(btn);
+    }
+    el.appendChild(row);
+  }
   $("thread").appendChild(el);
   $("thread").scrollTop = $("thread").scrollHeight;
 }
 
-function say(who, body, files) {
-  sayTo(state.session, who, body, files);
+function say(who, body, files, extra) {
+  // Always the visible session by definition; drawn live with its buttons,
+  // recorded without them -- a reopened transcript shows only the words.
+  if (!state.session) return;
+  appendMessage(who, body, files, extra);
+  state.session.messages.push({
+    who,
+    body,
+    files: files || [],
+    when: Math.floor(Date.now() / 1000),
+  });
 }
 
 /* Record a line in a specific session, drawing it only when that session is
@@ -658,13 +685,23 @@ async function startPlanning(request, files) {
 async function continuePlanning(text, files) {
   state.planning.files.push(...files);
   // The escape hatch, always available: the person is the boss.
-  if (/^\s*(just\s+)?(build|make|go|start|yes|do)\s*(it|now)?\s*[.!]*\s*$/i.test(text)) {
+  if (/^\s*(just\s+)?(build|make|go|start|yes|ok|okay|do|sure|yep|yeah)\s*(it|now|that|this)?\s*[.!]*\s*$/i.test(text)) {
     return finishPlanningAndBuild();
   }
   state.planning.qa.push({
-    q: state.planning.lastQuestions.join(" / ") || "anything to add?",
+    q: state.planning.planShown
+      ? "anything to change about the plan?"
+      : state.planning.lastQuestions.join(" / ") || "anything to add?",
     a: text,
   });
+  // A plan was already shown: whatever they just said is the final word --
+  // agreement, a tweak, anything -- and it builds WITH those words folded
+  // in. The first live session answered a plan with "thousands of
+  // particles yes" and got a second, longer plan; a plan is a preview,
+  // never a negotiation loop.
+  if (state.planning.planShown) {
+    return finishPlanningAndBuild();
+  }
   await runPlan();
 }
 
@@ -678,22 +715,31 @@ async function runPlan() {
       agent: state.agent,
     });
     const answer = JSON.parse(raw);
-    if (answer.ask && answer.ask.length && state.planning.rounds < 2) {
+    if (answer.ask && answer.ask.length && state.planning.rounds < 1) {
+      // ONE round of questions, ever. The first live session got two
+      // rounds and called it what it is: frustrating.
       state.planning.rounds += 1;
       state.planning.lastQuestions = answer.ask;
       const questions = answer.ask.map((q, i) => `${i + 1}. ${q}`).join("\n");
-      say("KRATE", `Before I build this, help me get it right:\n${questions}\n\nOr say "build it" and I'll start with what I have.`);
+      say("KRATE", questions, null, {
+        variant: "ask",
+        actions: [{ label: "Skip and build", run: finishPlanningAndBuild }],
+      });
       $("prompt").placeholder = "Answer here…";
     } else if (answer.plan) {
       state.planning.plan = answer.plan;
+      state.planning.planShown = true;
       const needs = (answer.needs || []).filter(Boolean);
       const needsLine = needs.length
         ? `\n\nFrom you it needs: ${needs.join("; ")}.`
         : "";
-      say("KRATE", `Here's what I'll build: ${answer.plan}${needsLine}\n\nSay "build it" to start, or tell me what to change.`);
-      $("prompt").placeholder = "\"build it\" starts - or tell me what to change";
+      say("KRATE", `Here's what I'll build: ${answer.plan}${needsLine}`, null, {
+        actions: [
+          { label: "Build it", primary: true, run: finishPlanningAndBuild },
+        ],
+      });
+      $("prompt").placeholder = "Anything to change? Your next message starts the build";
     } else {
-      // Two rounds of questions is enough patience to ask of anyone.
       return finishPlanningAndBuild();
     }
   } catch (err) {

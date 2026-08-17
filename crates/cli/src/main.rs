@@ -3954,8 +3954,9 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
          {{\"ask\": [\"question\", ...]}} -- at most three short questions, each one \
          something only this person can answer.\n\n\
          Otherwise reply:\n\
-         {{\"plan\": \"one paragraph in plain words: what will be built, what screens or \
-         controls it has, and what data it works on\", \"needs\": [\"things the person must \
+         {{\"plan\": \"AT MOST three sentences, plain words: what will be built, what \
+         it shows, and what data it works on. Never restate their answers back at \
+         them.\", \"needs\": [\"things the person must \
          supply or approve: a file to attach, a choice to make, a permission the app will \
          request\"]}} -- needs may be empty.\n\n\
          Never ask about colors, fonts, or anything with a sensible default. A Krate app \
