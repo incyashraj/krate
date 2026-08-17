@@ -541,10 +541,21 @@ impl UiAdapter for LinuxWinitPrototypeUiAdapter {
         window: WindowId,
     ) -> Result<Option<UiEventLoopTick>, UiAdapterError> {
         if winit_native::has_native_window(window).unwrap_or(false) {
+            // Only windows the OS asked to redraw get painted; painting on
+            // every pump made event checks cost repaints (see the Windows
+            // adapter's twin of this block and the K-112 board).
+            let mut needs_draw: Vec<WindowId> = Vec::new();
             for (target, event) in winit_native::pump_native_events()? {
+                if matches!(
+                    event,
+                    WinitWindowNativeEvent::RedrawRequested | WinitWindowNativeEvent::Resized(_)
+                ) && !needs_draw.contains(&target)
+                {
+                    needs_draw.push(target);
+                }
                 self.record_winit_native_event(target, event)?;
             }
-            winit_native::redraw_all()?;
+            winit_native::redraw_windows(&needs_draw)?;
         }
         Ok(self
             .pump_collected_winit_events(window)?

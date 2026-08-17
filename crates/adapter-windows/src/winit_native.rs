@@ -534,6 +534,29 @@ mod real {
         })
     }
 
+    /// Repaint only the named windows.
+    ///
+    /// The pump calls this with the windows the OS actually asked to redraw
+    /// this drain. It used to call `redraw_all` on EVERY pump, and a frame
+    /// loop pumps dozens of times per frame -- on the GPU path each repaint
+    /// blocks a full vsync, so one guest frame cost ~62 vsyncs and a game
+    /// ran at under 2 fps while pinning three cores (measured on an Iris
+    /// Xe desktop). Painting belongs to publishes and to real OS redraw
+    /// requests, never to the act of checking for events.
+    pub fn redraw_windows(targets: &[WindowId]) -> Result<(), UiAdapterError> {
+        if targets.is_empty() || !host_initialized() {
+            return Ok(());
+        }
+        with_host(|host| {
+            for tracked in host.app.windows.values_mut() {
+                if targets.contains(&tracked.krate) {
+                    draw_placements(tracked);
+                }
+            }
+            Ok(())
+        })
+    }
+
     fn with_host<T>(
         f: impl FnOnce(&mut Host) -> Result<T, UiAdapterError>,
     ) -> Result<T, UiAdapterError> {
@@ -815,6 +838,11 @@ mod stub {
 
     /// Winit windows are only available in Windows builds.
     pub fn redraw_all() -> Result<(), UiAdapterError> {
+        unsupported()
+    }
+
+    /// Winit windows are only available in Windows builds.
+    pub fn redraw_windows(_targets: &[WindowId]) -> Result<(), UiAdapterError> {
         unsupported()
     }
 

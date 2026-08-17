@@ -538,10 +538,22 @@ impl UiAdapter for WindowsWinitPrototypeUiAdapter {
         window: WindowId,
     ) -> Result<Option<UiEventLoopTick>, UiAdapterError> {
         if winit_native::has_native_window(window).unwrap_or(false) {
+            // Only windows the OS asked to redraw this drain get painted.
+            // Painting on every pump made checking for events cost a full
+            // repaint -- vsync-blocked on the GPU path -- dozens of times a
+            // frame (K-112 board, measured at under 2 fps on a desktop).
+            let mut needs_draw: Vec<WindowId> = Vec::new();
             for (target, event) in winit_native::pump_native_events()? {
+                if matches!(
+                    event,
+                    WinitWindowNativeEvent::RedrawRequested | WinitWindowNativeEvent::Resized(_)
+                ) && !needs_draw.contains(&target)
+                {
+                    needs_draw.push(target);
+                }
                 self.record_winit_native_event(target, event)?;
             }
-            winit_native::redraw_all()?;
+            winit_native::redraw_windows(&needs_draw)?;
         }
         Ok(self
             .pump_collected_winit_events(window)?

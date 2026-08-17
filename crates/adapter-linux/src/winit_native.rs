@@ -533,6 +533,23 @@ mod real {
         })
     }
 
+    /// Repaint only the named windows; see the Windows adapter's twin for
+    /// the full story (painting on every pump cost a repaint per event
+    /// check, K-112 board).
+    pub fn redraw_windows(targets: &[WindowId]) -> Result<(), UiAdapterError> {
+        if targets.is_empty() || !host_initialized() {
+            return Ok(());
+        }
+        with_host(|host| {
+            for tracked in host.app.windows.values_mut() {
+                if targets.contains(&tracked.krate) {
+                    draw_placements(tracked);
+                }
+            }
+            Ok(())
+        })
+    }
+
     /// The sonames `xkbcommon-dl` tries, in its order.
     ///
     /// Kept identical to that crate's list so this check answers the same
@@ -941,6 +958,11 @@ mod stub {
 
     /// Winit windows are only available in Linux builds.
     pub fn redraw_all() -> Result<(), UiAdapterError> {
+        unsupported()
+    }
+
+    /// Winit windows are only available in Linux builds.
+    pub fn redraw_windows(_targets: &[WindowId]) -> Result<(), UiAdapterError> {
         unsupported()
     }
 
