@@ -522,6 +522,10 @@ function advanceStage(key) {
   document.querySelectorAll("#stages li").forEach((li, i) => {
     li.className = i < idx ? "done" : i === idx ? "now" : "";
   });
+  // The live detail belongs visually to the step doing the work.
+  const peek = $("peekBox");
+  const current = document.querySelector("#stages li.now");
+  if (peek && current) current.insertAdjacentElement("afterend", peek);
   // One line at eye level says where we are; the full list stays one click
   // away for anyone who wants it.
   const nowStage = $("nowStage");

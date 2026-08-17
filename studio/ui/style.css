@@ -1302,8 +1302,18 @@ img.cloud-icon { object-fit: cover; }
 @media (prefers-reduced-motion: reduce) { .stages li.now .tick { animation: none; border-top-color: var(--blue); } }
 
 
-/* The rail-stage card: wide and flat, steps as the content. */
-.build-card.brail { width: min(560px, 88%); }
-.build-card.brail .stages { margin: 14px 0 0; }
-.build-card.brail .bpeek { margin-left: 28px; }
-.live-pill { border-color: var(--line-strong) !important; color: var(--faint) !important; }
+/* The rail-stage panel, exactly the agreed frame: full height, flat,
+   steps as the content, footer pinned to the bottom. */
+.build-card.brail {
+  width: min(640px, 90%);
+  height: calc(100% - 56px);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.build-card.brail .stages { margin: 16px 0 0; }
+/* The peek rides INSIDE the list, tucked under whichever row is current
+   (the JS moves it there on every stage change). */
+.stages .bpeek { margin: 2px 0 8px 28px; }
+.build-card.brail .build-log-wrap { margin-top: 10px; }
+.build-card.brail .build-log-wrap summary { color: var(--ghost); font-size: 11.5px; }
+.build-card.brail .bfoot { margin-top: auto; padding-top: 14px; }
