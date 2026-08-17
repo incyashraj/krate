@@ -1776,11 +1776,18 @@ function startRotator() {
  * with no seam.
  */
 function paintFlow(word) {
-  // Nothing to do: each letter carries the shared gradient itself, resolved
-  // against the viewport so the ramp is continuous across the word. Kept as a
-  // named no-op because the rotator calls it at every word change, and this
-  // is where per-word painting would go if the effect ever needs measuring
-  // again.
+  // Each letter is a window onto one word-wide gradient: measure where the
+  // letter sits and how wide the word is, and hand both to the CSS as
+  // custom properties. Measured from rects, so the enter/leave transforms
+  // (translateY only) never skew the numbers. If the view is hidden the
+  // rects are zero -- harmless, because every word change measures again.
+  const base = word.getBoundingClientRect();
+  if (!base.width) return;
+  for (const sp of word.children) {
+    const r = sp.getBoundingClientRect();
+    sp.style.setProperty("--off", r.left - base.left + "px");
+    sp.style.setProperty("--ww", Math.max(base.width, 60) + "px");
+  }
 }
 
 /* ---- drag to resize the rail ------------------------------------------ */

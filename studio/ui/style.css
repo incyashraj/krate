@@ -791,30 +791,44 @@ body.windows .titlebar { padding-right: 150px; }
  * continuous gradient across the word, by construction, with no per-letter
  * offsets to compute. The letters keep their own transform, so they leave
  * upward and arrive from below exactly as the site's do. */
+/* The chosen treatment: the gradient STANDS STILL (blue, violet, pink --
+ * the warm tail is gone, which is what made the old flow feel like it was
+ * rotating hues), and a soft light sweeps across it every few seconds.
+ *
+ * Two background layers per letter, both resolved against the viewport
+ * (background-attachment: fixed), so every letter samples the same ramp at
+ * its own position -- one continuous gradient and one continuous sweep
+ * across the word, no per-letter offsets to compute. The sweep animates
+ * background-position of the FIRST layer only, travelling the viewport so
+ * it crosses the word wherever the window puts it. The letters keep their
+ * own transforms, so the bounce between words is untouched. */
 .rot .word span {
   display: inline-block;
   will-change: transform, opacity, filter;
-  background-image: linear-gradient(90deg,
-    #6291ff 0%, #a855f7 22%, #ec4899 42%, #f97316 62%, #eab308 78%, #6291ff 100%);
-  background-size: 220px 100%;
-  background-attachment: fixed;
-  background-repeat: repeat;
+  /* Set per letter by paintFlow(): where this letter sits in the word, and
+     how wide the word is. The ramp spans exactly the word; the sweep is a
+     wide soft band that crosses it. Both are sliced per letter by these
+     offsets, so the bounce transforms never disturb the colour. */
+  --off: 0px;
+  --ww: 220px;
+  background-image:
+    linear-gradient(100deg, transparent 40%, rgba(255, 255, 255, 0.9) 50%, transparent 60%),
+    linear-gradient(100deg, #6291ff 0%, #a855f7 50%, #ec4899 100%);
+  background-size: 340px 100%, var(--ww) 100%;
+  background-repeat: no-repeat, no-repeat;
+  background-position: calc(-1 * var(--off) - 340px) 0, calc(-1 * var(--off)) 0;
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: wordflow 4.5s linear infinite;
+  animation: wordshine 4.2s ease-in-out infinite;
 }
-@keyframes wordflow {
-  from { background-position: 0 0; }
-  to   { background-position: 220px 0; }
+@keyframes wordshine {
+  0%, 45% { background-position: calc(-1 * var(--off) - 340px) 0, calc(-1 * var(--off)) 0; }
+  100%    { background-position: calc(-1 * var(--off) + var(--ww)) 0, calc(-1 * var(--off)) 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .rot .word span { animation: none; }
 }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .rot .word { animation: none; background-position: 40% 0; }
 }
 
 /* ---- the draggable divider -------------------------------------------- */
