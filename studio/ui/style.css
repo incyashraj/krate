@@ -1115,8 +1115,18 @@ img.cloud-icon { object-fit: cover; }
 /* A faint aurora behind the hero: two blurred discs drifting on transform
    only, so the compositor pays and the main thread never does. Under 6%
    opacity -- felt, not seen. Reduced motion holds them still. */
-.home { position: relative; overflow: hidden; }
-.home-glow { position: absolute; inset: 0; pointer-events: none; }
+/* Scrolls vertically, clips horizontally. `overflow: hidden` on both axes was
+   here to keep the blurred aurora discs from widening the page, and it also
+   sealed off everything below the fold: with more than a few sessions the app
+   grid simply could not be reached. The glow is `position: absolute` inside
+   this box, so clipping x alone still contains it. */
+.home { position: relative; overflow-y: auto; overflow-x: hidden; }
+/* Pinned to the viewport, not to the scrolled content. As an `absolute` child
+   of the scroll box it was only as tall as the first screenful, so scrolling
+   down ran out of aurora and the page went flat black halfway. `fixed` keeps
+   the wash behind the whole room however far it scrolls. */
+.home-glow { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+.home > :not(.home-glow) { position: relative; z-index: 1; }
 .home-glow i {
   position: absolute; width: 560px; height: 560px; border-radius: 50%;
   filter: blur(90px); opacity: 0.055; will-change: transform;
