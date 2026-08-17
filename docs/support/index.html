@@ -56,9 +56,11 @@
     <h1>Support reports</h1>
 
     <div id="gate" class="gate">
-      <p>Reports people sent from Krate Studio. Admin only: paste a GitHub
-      token (or a Krate session token) with your account on it. It stays in
-      this browser and is sent only to the hub.</p>
+      <p>Reports people sent from Krate Studio. Admin only. Paste the token
+      Krate already holds for you: it is the <code>token</code> field in
+      <code>~/.krate/github.json</code> (it starts <code>krs_</code>), or any
+      GitHub token for an admin account. It stays in this browser and is sent
+      only to the hub.</p>
       <input id="token" type="password" placeholder="ghp_… or krs_…" autocomplete="off" />
       <button class="pill pill-primary" id="signin">Open reports</button>
       <p class="err" id="gateErr"></p>
@@ -93,16 +95,33 @@
     async function load() {
       const token = localStorage.getItem(KEY);
       if (!token) return;
-      const r = await fetch(HUB + "/admin/reports", {
-        headers: { authorization: "Bearer " + token },
-      });
+      let r;
+      try {
+        r = await fetch(HUB + "/admin/reports", {
+          headers: { authorization: "Bearer " + token },
+        });
+      } catch (err) {
+        // An unreachable hub used to throw into nothing, leaving the page
+        // looking like it had simply decided not to work.
+        document.getElementById("gateErr").textContent =
+          "Could not reach the hub (" + err + "). Check the connection and try again.";
+        document.getElementById("gate").hidden = false;
+        return;
+      }
       if (!r.ok) {
-        // 404 for a non-admin, deliberately: the door does not announce itself.
+        // 404 for a non-admin, deliberately: the door does not announce
+        // itself. But a wrong or expired token looks identical from here,
+        // and the first real attempt to use this page failed with no idea
+        // which it was -- so name both possibilities and where the working
+        // token lives.
         localStorage.removeItem(KEY);
         document.getElementById("gate").hidden = false;
         document.getElementById("board").hidden = true;
-        document.getElementById("gateErr").textContent =
-          "That account cannot read reports.";
+        document.getElementById("gateErr").innerHTML =
+          "That token was refused (" + r.status + "). Either it is expired, or " +
+          "the account is not an admin.<br />The token Krate already holds for " +
+          "you is in <code>~/.krate/github.json</code> — the <code>token</code> " +
+          "field, starting <code>krs_</code>.";
         return;
       }
       const { reports } = await r.json();

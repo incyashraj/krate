@@ -3999,7 +3999,7 @@ fn report_command(session: &str, output: Option<&Path>) -> Result<u8> {
 
     // What this machine is, in the words that explain most failures.
     let mut about = String::new();
-    about.push_str(&format!("krate: {}\n", env!("CARGO_PKG_VERSION")));
+    about.push_str(&format!("krate: {}\n", krate_version()));
     about.push_str(&format!(
         "os: {} {}\n",
         std::env::consts::OS,
@@ -4065,7 +4065,7 @@ fn report_send_command(
         .set("Authorization", &format!("Bearer {}", identity.token))
         .set("Content-Type", "application/zip")
         .set("X-Krate-Session", session)
-        .set("X-Krate-Version", env!("CARGO_PKG_VERSION"))
+        .set("X-Krate-Version", krate_version())
         .set("X-Krate-Os", std::env::consts::OS)
         .set("X-Krate-Note", &note.replace('\n', " "))
         .send_bytes(&bytes);
@@ -10330,11 +10330,48 @@ fn gnullvm_toolchain_name() -> &'static str {
 #[cfg(windows)]
 fn gnullvm_toolchain_present() -> bool {
     let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
-    ProcessCommand::new(rustup)
+    let listed = ProcessCommand::new(rustup)
         .args(["toolchain", "list"])
         .output()
         .map(|out| String::from_utf8_lossy(&out.stdout).contains("gnullvm"))
-        .unwrap_or(false)
+        .unwrap_or(false);
+    // Listed is not the same as usable. A real machine had the gnullvm
+    // toolchain in `rustup toolchain list` with its self-contained linker
+    // directory absent -- a half-finished install -- so every build died at
+    // "program not found" linking wit-bindgen-rt's build script, and Krate
+    // kept choosing that toolchain because the name was there (K-130).
+    listed && gnullvm_can_link()
+}
+
+/// Does the gnullvm toolchain actually carry the linker it exists for?
+///
+/// The whole point of gnullvm on Windows is that it ships LLVM's linker so
+/// nobody needs Visual Studio Build Tools. When that directory is missing,
+/// the toolchain is worse than absent: it is chosen and then fails.
+#[cfg(windows)]
+fn gnullvm_can_link() -> bool {
+    let home = match home_dir() {
+        Some(home) => home,
+        None => return false,
+    };
+    let target = if cfg!(target_arch = "aarch64") {
+        "aarch64-pc-windows-gnullvm"
+    } else {
+        "x86_64-pc-windows-gnullvm"
+    };
+    let self_contained = home
+        .join(".rustup")
+        .join("toolchains")
+        .join(gnullvm_toolchain_name())
+        .join("lib")
+        .join("rustlib")
+        .join(target)
+        .join("bin")
+        .join("self-contained");
+    // Either the toolchain's own linker, or a system one it can use.
+    self_contained.is_dir()
+        || agent_provider::which_on_path("clang").is_some()
+        || agent_provider::which_on_path("gcc").is_some()
 }
 
 /// Whether the MSVC linker is reachable.
