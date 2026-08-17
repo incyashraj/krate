@@ -403,6 +403,48 @@ function appendMessage(who, body, files, extra) {
   $("thread").scrollTop = $("thread").scrollHeight;
 }
 
+/* A live build chip on the timeline: v3 building · <phase>. Returns the
+   element so finish/fail can settle it into a receipt. Not recorded in the
+   transcript while live; the settled receipt is. */
+function appendLiveChip(version) {
+  const el = document.createElement("div");
+  el.className = "msg krate vlive";
+  el.innerHTML = `<span class="who">KRATE</span><span class="vchip vlivec"><b>v${version}</b> building <span class="vbar"><i style="transform:scaleX(0.08)"></i></span> <span class="vm" data-phase>starting…</span></span>`;
+  $("thread").appendChild(el);
+  $("thread").scrollTop = $("thread").scrollHeight;
+  return el;
+}
+
+function settleChipOk(el, version, sizeLabel, minsLabel, app) {
+  if (!el) return;
+  el.className = "msg krate vok";
+  el.innerHTML = `<span class="who">KRATE</span><span class="vchip"><b>v${version}</b> built <span class="vm">${sizeLabel}${minsLabel}</span></span>`;
+  const chip = el.querySelector(".vchip");
+  const open = document.createElement("button");
+  open.className = "vact";
+  open.textContent = "Open";
+  open.addEventListener("click", openApp);
+  chip.appendChild(open);
+  const share = document.createElement("button");
+  share.className = "vact vg";
+  share.textContent = "Share";
+  share.addEventListener("click", openPublishSheet);
+  chip.appendChild(share);
+}
+
+function settleChipBad(el, version, retry) {
+  if (!el) return;
+  el.className = "msg krate vbad";
+  el.innerHTML = `<span class="who">KRATE</span><span class="vchip vbadc"><b>v${version}</b> failed <span class="vm">app untouched</span></span>`;
+  if (retry) {
+    const fix = document.createElement("button");
+    fix.className = "vact";
+    fix.textContent = "Try again";
+    fix.addEventListener("click", retry);
+    el.querySelector(".vchip").appendChild(fix);
+  }
+}
+
 function say(who, body, files, extra) {
   // Always the visible session by definition; drawn live with its buttons,
   // recorded without them -- a reopened transcript shows only the words.
@@ -484,6 +526,14 @@ function advanceStage(key) {
   // away for anyone who wants it.
   const nowStage = $("nowStage");
   if (nowStage) nowStage.textContent = STAGES[idx].label;
+  const stepCount = $("stepCount");
+  if (stepCount) stepCount.textContent = `step ${idx + 1} of ${STAGES.length}`;
+  if (state.buildChip) {
+    const phase = state.buildChip.querySelector("[data-phase]");
+    if (phase) phase.textContent = STAGES[idx].label.toLowerCase();
+    const bar = state.buildChip.querySelector(".vbar i");
+    if (bar) bar.style.transform = `scaleX(${(idx + 0.5) / STAGES.length})`;
+  }
   setProgress((idx + 0.5) / STAGES.length);
 }
 
@@ -575,8 +625,17 @@ function finishBuild(result) {
   const built = state.buildingSession || state.session;
   built.result = result;
   const mins = Math.round((Date.now() - state.startedAt) / 60000);
-  sayTo(built, "KRATE", `Done - ${result.name}, ${result.size}${mins ? `, ${mins} min` : ""}. ` +
-    `Open it on the right, or tell me what to change.`);
+  const version = state.buildVersion || (built.builds || 0) + 1;
+  built.builds = version;
+  settleChipOk(state.buildChip, version, result.size, mins ? ` · ${mins} min` : "", built);
+  state.buildChip = null;
+  // The transcript keeps the receipt, not the live chip.
+  built.messages.push({
+    who: "KRATE",
+    body: `v${version} built · ${result.size}${mins ? ` · ${mins} min` : ""}. Tell me what to change and it becomes v${version + 1}.`,
+    files: [],
+    when: Math.floor(Date.now() / 1000),
+  });
   persistSession(built);
   const watching = state.session && state.session.id === built.id;
   if (watching) {
@@ -602,6 +661,8 @@ function setRevisePlaceholders() {
 }
 
 function failBuild(why, request) {
+  settleChipBad(state.buildChip, state.buildVersion || 1, () => make(request));
+  state.buildChip = null;
   clearInterval(state.timer);
   state.lastFailed = request;
   const built = state.buildingSession || state.session;
@@ -812,9 +873,14 @@ async function buildNow(request, files, revising) {
   // The rail is a conversation: it should answer. Without this the left
   // side showed one line and then nothing for six minutes while the right
   // side did all the talking.
+  const version = (state.session.builds || 0) + 1;
   say("KRATE", revising
     ? "Reading your app, then making that change."
     : "On it. I'll show you each step as it happens.");
+  // The build itself is one chip on the timeline, born live and settled
+  // into a receipt when it ends -- narration never piles up in the rail.
+  state.buildChip = appendLiveChip(version);
+  state.buildVersion = version;
   beginBuild(
     revising ? "Making your change" : "Making your app",
     revising ? "the AI reads your app before it edits" : "usually a few minutes",
@@ -958,6 +1024,14 @@ function setChips(dot, text, title) {
     const chip = $(`agentChip${suffix}`);
     if (chip) chip.title = title || "";
   }
+  // The home bar's "Built by" chip carries the same truth.
+  const bbn = $("builtByName");
+  const bbd = $("builtByDot");
+  if (bbn) {
+    const chosen = state.agents.find((a) => a.name === state.agent);
+    bbn.textContent = chosen ? chosen.label : state.agent;
+  }
+  if (bbd) bbd.className = `dot ${dot}`;
 }
 
 function openAiSheet() {
@@ -1869,7 +1943,7 @@ $("retryBtn").addEventListener("click", () => {
   show("idle");
   if (again) make(again);
 });
-["agentChip", "agentChip2"].forEach((id) => {
+["agentChip", "agentChip2", "builtByChip"].forEach((id) => {
   const chip = $(id);
   if (chip) chip.addEventListener("click", openAiSheet);
 });

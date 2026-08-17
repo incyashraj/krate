@@ -1080,5 +1080,230 @@ img.cloud-icon { object-fit: cover; }
   border-left: 2px solid var(--blue);
   padding-left: 12px;
 }
-.msg-actions { display: flex; gap: 8px; margin-top: 10px; }
+.msg-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
 .msg-btn { padding: 6px 16px; font-size: 12.5px; }
+
+/* ================= Home 3: the bar is the room ========================= */
+
+/* A faint aurora behind the hero: two blurred discs drifting on transform
+   only, so the compositor pays and the main thread never does. Under 6%
+   opacity -- felt, not seen. Reduced motion holds them still. */
+.home { position: relative; overflow: hidden; }
+.home-glow { position: absolute; inset: 0; pointer-events: none; }
+.home-glow i {
+  position: absolute; width: 560px; height: 560px; border-radius: 50%;
+  filter: blur(90px); opacity: 0.055; will-change: transform;
+}
+.home-glow i:first-child {
+  background: radial-gradient(circle, var(--blue), transparent 65%);
+  top: -10%; left: 12%;
+  animation: drift-a 26s ease-in-out infinite alternate;
+}
+.home-glow i:last-child {
+  background: radial-gradient(circle, var(--cyan), transparent 65%);
+  top: 16%; right: 8%;
+  animation: drift-b 32s ease-in-out infinite alternate;
+}
+@keyframes drift-a { to { transform: translate(90px, 60px) scale(1.12); } }
+@keyframes drift-b { to { transform: translate(-110px, -40px) scale(0.94); } }
+@media (prefers-reduced-motion: reduce) { .home-glow i { animation: none; } }
+
+/* The two-story bar. Everything a first message needs lives inside it. */
+.bigbar {
+  width: min(620px, 86vw);
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  padding: 16px 16px 12px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.bigbar:focus-within {
+  border-color: rgba(98, 145, 255, 0.55);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4), 0 0 0 3px rgba(98, 145, 255, 0.12);
+}
+.bigbar textarea {
+  width: 100%; border: none; background: none; outline: none; resize: none;
+  color: var(--text); font: inherit; font-size: 16.5px; line-height: 1.5;
+  padding: 2px 4px 14px; caret-color: var(--blue);
+}
+.bigbar textarea::placeholder { color: var(--ghost); }
+.bigbar-row {
+  display: flex; align-items: center; gap: 16px;
+  border-top: 1px solid var(--line); padding-top: 11px;
+}
+.bigbar-row .tool {
+  display: flex; gap: 7px; align-items: center;
+  background: none; border: none; cursor: pointer;
+  color: var(--faint); font-size: 13px;
+  transition: color 0.15s;
+}
+.bigbar-row .tool:hover { color: var(--text); }
+.bigbar-row .send {
+  margin-left: auto;
+  width: 34px; height: 34px; border-radius: 11px;
+  background: var(--blue); border: none; color: #fff; cursor: pointer;
+  display: grid; place-items: center;
+  transition: transform 0.12s, background 0.15s;
+}
+.bigbar-row .send:hover { background: var(--blue-soft); color: #0a0a0a; }
+.bigbar-row .send:active { transform: scale(0.92); }
+
+/* One quiet sentence under the bar: who builds, and the door to change it. */
+.airow { margin-top: 16px; display: flex; justify-content: center; }
+.aichip {
+  display: inline-flex; gap: 8px; align-items: center;
+  border: 1px solid var(--line); background: none; cursor: pointer;
+  border-radius: var(--radius-pill); padding: 7px 15px;
+  color: var(--muted); font-size: 12.5px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.aichip:hover { border-color: var(--line-strong); color: var(--text); }
+.aichip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--good, #4ade80); }
+.aichip b { font-weight: 560; color: var(--text); }
+.aichip .chev { color: var(--ghost); }
+
+/* Your apps become a shelf: present, never competing with the bar. */
+.apps { width: 100%; max-width: 860px; margin: auto auto 0; padding-bottom: 28px; }
+
+/* ================= The session timeline ================================ */
+
+/* The thread grows a spine; every message becomes a node on it. People and
+   versions are the only citizens -- machine chatter compresses to chips. */
+.thread { position: relative; padding-left: 30px; }
+.thread::before {
+  content: ""; position: absolute; left: 21px; top: 26px; bottom: 12px;
+  width: 1px; background: var(--line);
+}
+.msg { position: relative; }
+.msg::before {
+  content: ""; position: absolute; left: -13px; top: 5px;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--blue);
+}
+.msg.krate::before { background: var(--line-strong); }
+.msg.ask { border-left: none; padding-left: 0; }
+.msg.ask .askbar {
+  border-left: 2px solid var(--blue); padding: 1px 0 2px 12px;
+}
+.msg.ask::before {
+  background: var(--blue);
+  box-shadow: 0 0 0 4px rgba(98, 145, 255, 0.18);
+  animation: node-pulse 1.4s ease-in-out infinite;
+}
+@keyframes node-pulse { 50% { box-shadow: 0 0 0 2px rgba(98, 145, 255, 0.05); } }
+@media (prefers-reduced-motion: reduce) { .msg.ask::before { animation: none; } }
+.msg.ask .body { color: var(--text); }
+
+/* Build receipts: one chip is the whole build. */
+.vchip {
+  display: inline-flex; gap: 9px; align-items: center;
+  border: 1px solid var(--line); border-radius: 10px;
+  padding: 8px 12px; font-size: 12.5px; color: var(--muted);
+  max-width: 100%;
+}
+.vchip b { color: var(--text); font-weight: 560; }
+.vchip .vm { font-family: var(--mono); font-size: 10.5px; color: var(--ghost); }
+.vchip .vact {
+  background: var(--text); color: #0a0a0a; border: none; cursor: pointer;
+  border-radius: 99px; padding: 4px 12px; font-size: 11.5px; font-weight: 500;
+}
+.vchip .vact.vg { background: none; color: var(--faint); font-weight: 400; }
+.msg.vok::before { background: var(--good, #4ade80); }
+.msg.vbad::before { background: var(--danger); }
+.msg.vlive::before {
+  background: var(--blue);
+  box-shadow: 0 0 0 4px rgba(98, 145, 255, 0.18);
+  animation: node-pulse 1.4s ease-in-out infinite;
+}
+.vchip.vlivec { border-color: rgba(98, 145, 255, 0.35); }
+.vchip.vbadc { border-color: rgba(255, 127, 149, 0.3); }
+.vchip .vbar {
+  width: 66px; height: 3px; border-radius: 3px; background: var(--line);
+  overflow: hidden; position: relative;
+}
+.vchip .vbar i {
+  position: absolute; inset: 0; border-radius: 3px; background: var(--blue);
+  transform-origin: left; transition: transform 0.4s ease;
+}
+
+/* The plan card: unmistakably a plan, never chat. */
+.plancard {
+  border: 1px solid var(--line); border-left: 2px solid var(--cyan);
+  border-radius: 4px 12px 12px 4px; background: var(--panel);
+  padding: 12px 14px; margin-top: 2px;
+}
+.plancard .ph {
+  font-size: 10.5px; letter-spacing: 0.11em; color: var(--cyan);
+  margin-bottom: 6px;
+}
+.plancard .pt { font-size: 13.5px; color: var(--muted); line-height: 1.55; }
+.plancard .pn { margin-top: 8px; font-size: 12.5px; color: var(--faint); }
+
+/* ================= The stage: deploy rail ============================== */
+
+.brail { width: min(560px, 86%); }
+.brail h2 { font-size: 16px; font-weight: 560; margin-bottom: 3px; }
+.brail .bsub { font-size: 12px; color: var(--faint); margin-bottom: 18px; }
+.brow { display: flex; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 13.5px; align-items: flex-start; }
+.brow:first-of-type { border-top: 0; }
+.brow .bic {
+  width: 16px; height: 16px; border-radius: 50%; flex: none; margin-top: 2px;
+  display: grid; place-items: center; font-size: 9px;
+}
+.brow.bdone { color: var(--muted); }
+.brow.bdone .bic { background: rgba(74, 222, 128, 0.14); color: var(--good, #4ade80); }
+.brow.bcur .bic {
+  border: 2px solid var(--blue); border-top-color: transparent;
+  animation: bspin 0.9s linear infinite;
+}
+@keyframes bspin { to { transform: rotate(360deg); } }
+.brow.bpend { color: var(--ghost); }
+.brow.bpend .bic { border: 1.5px solid var(--line-strong); }
+.bpeek {
+  margin: 7px 0 2px 28px; padding: 9px 12px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  font-family: var(--mono); font-size: 11px; color: var(--faint); line-height: 1.75;
+  max-height: 64px; overflow: hidden;
+}
+.bpeek .new { color: var(--muted); }
+.bfoot { margin-top: 16px; display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ghost); }
+.bfoot button { background: none; border: none; color: var(--faint); cursor: pointer; font: inherit; }
+.bfoot button:hover { color: var(--text); }
+
+/* ---- the stage list becomes the deploy rail (chosen design B) ---------- */
+
+.stages li {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 10px 0; border-top: 1px solid var(--line);
+  font-size: 13.5px; color: var(--ghost);
+}
+.stages li:first-child { border-top: 0; }
+.stages li .tick {
+  width: 16px; height: 16px; border-radius: 50%; flex: none; margin-top: 1px;
+  background: none; border: 1.5px solid var(--line-strong);
+  box-shadow: none; display: grid; place-items: center;
+}
+.stages li.done { color: var(--muted); }
+.stages li.done .tick {
+  background: rgba(74, 222, 128, 0.14); border-color: transparent;
+}
+.stages li.done .tick::before {
+  content: "✓"; font-size: 9px; color: #4ade80;
+}
+.stages li.now { color: var(--text); }
+.stages li.now .tick {
+  background: none;
+  border: 2px solid var(--blue); border-top-color: transparent;
+  box-shadow: none;
+  animation: bspin 0.9s linear infinite;
+}
+.stages li.now .tick::after { content: none; }
+@media (prefers-reduced-motion: reduce) { .stages li.now .tick { animation: none; border-top-color: var(--blue); } }
+
+
+/* The rail-stage card: wide and flat, steps as the content. */
+.build-card.brail { width: min(560px, 88%); }
+.build-card.brail .stages { margin: 14px 0 0; }
+.build-card.brail .bpeek { margin-left: 28px; }
+.live-pill { border-color: var(--line-strong) !important; color: var(--faint) !important; }
