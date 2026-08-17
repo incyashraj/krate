@@ -706,6 +706,9 @@ function planContext() {
 
 async function startPlanning(request, files) {
   state.planning = { request, files, qa: [], rounds: 0, lastQuestions: [] };
+  // Speak IMMEDIATELY. The plan call can take ten seconds, and ten silent
+  // seconds after a person's very first message reads as broken.
+  say("KRATE", "Looking at your request…");
   await runPlan();
 }
 
@@ -770,8 +773,12 @@ async function runPlan() {
       return finishPlanningAndBuild();
     }
   } catch (err) {
-    // The conversation must never become a wall in front of building.
-    say("KRATE", `I couldn't think it through first (${plainWords(err)}) -- building from your words as they are.`);
+    // The conversation must never become a wall in front of building --
+    // and its failure must never read like one. One plain line, no nested
+    // error prose (the first live run printed a build error inside a
+    // parenthesis inside an apology).
+    console.warn("plan step failed:", err);
+    say("KRATE", "I'll skip the questions this time and build right away.");
     return finishPlanningAndBuild();
   } finally {
     $("composerHint").textContent = "";
@@ -831,7 +838,19 @@ async function buildNow(request, files, revising) {
     finishBuild(result);
   } catch (err) {
     state.lastError = String(err);
-    failBuild(plainWords(err), request);
+    const text = String(err);
+    // A feasibility refusal is an ANSWER, not an error: the AI read the
+    // request and Krate's API and concluded the app cannot truthfully work
+    // (a fake on-screen keyboard was the live case: apps cannot send
+    // keystrokes to other programs, by design). "Try again" would be a
+    // lie; say what is true and invite a different idea.
+    const refusal = text.match(/Krate cannot build that: ([^]*?)(?:\n\n|$)/);
+    if (refusal) {
+      say("KRATE", `This one can't work as a real app: ${refusal[1].trim()}\n\nTell me a different version of the idea and I'll build that.`, null, { variant: "ask" });
+      show("idle");
+    } else {
+      failBuild(plainWords(err), request);
+    }
   } finally {
     state.buildingSession = null;
     renderBuilding();

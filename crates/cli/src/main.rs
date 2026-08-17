@@ -3961,7 +3961,11 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
          request\"]}} -- needs may be empty.\n\n\
          Never ask about colors, fonts, or anything with a sensible default. A Krate app \
          runs on Mac, Windows and Linux automatically, so never ask about platforms. Ask \
-         only when the answer changes the app."
+         only when the answer changes the app.\n\n\
+         One boundary matters: a Krate app is sandboxed. It cannot send keystrokes or \
+         clicks to other programs, read other apps' windows, or control the OS. If the \
+         request needs that, do not ask questions about it -- reply with a plan for the \
+         CLOSEST thing that can truly work, saying plainly what changed and why."
     );
 
     let program = agent_provider::which_on_path(provider.program())
