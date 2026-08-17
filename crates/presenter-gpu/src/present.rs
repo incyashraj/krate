@@ -209,7 +209,18 @@ impl WindowPresenter {
                     format: self.surface_format,
                     width,
                     height,
-                    present_mode: wgpu::PresentMode::AutoVsync,
+                    // NoVsync (mailbox where the platform has it), on
+                    // purpose: the render runs INSIDE the guest's publish
+                    // call, and a vsync-blocking present there stacked a
+                    // 16ms wait on top of the guest's own frame pacing --
+                    // measured on an Iris Xe desktop as 30fps with sync
+                    // p50 at 20ms while the Mac ran the same game at 54.
+                    // Pacing belongs to the host's frame budget (present()
+                    // sleeps the remainder); the swapchain must not add a
+                    // second clock. Mailbox still swaps on vblank, so this
+                    // does not tear; pure Immediate is only wgpu's last
+                    // resort.
+                    present_mode: wgpu::PresentMode::AutoNoVsync,
                     desired_maximum_frame_latency: 2,
                     alpha_mode: wgpu::CompositeAlphaMode::Auto,
                     view_formats: vec![],
@@ -413,7 +424,18 @@ impl PixelPresenter {
                     format: self.surface_format,
                     width,
                     height,
-                    present_mode: wgpu::PresentMode::AutoVsync,
+                    // NoVsync (mailbox where the platform has it), on
+                    // purpose: the render runs INSIDE the guest's publish
+                    // call, and a vsync-blocking present there stacked a
+                    // 16ms wait on top of the guest's own frame pacing --
+                    // measured on an Iris Xe desktop as 30fps with sync
+                    // p50 at 20ms while the Mac ran the same game at 54.
+                    // Pacing belongs to the host's frame budget (present()
+                    // sleeps the remainder); the swapchain must not add a
+                    // second clock. Mailbox still swaps on vblank, so this
+                    // does not tear; pure Immediate is only wgpu's last
+                    // resort.
+                    present_mode: wgpu::PresentMode::AutoNoVsync,
                     desired_maximum_frame_latency: 2,
                     alpha_mode: wgpu::CompositeAlphaMode::Auto,
                     view_formats: vec![],
