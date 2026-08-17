@@ -2889,6 +2889,14 @@ pub(crate) fn author_app_for_tui(
             let destination = inbox.join(name);
             if fs::copy(source, &destination).is_ok() {
                 named.push(format!("attached/{}", name.to_string_lossy()));
+                // A spreadsheet is a binary blob to a text-reading agent.
+                // Convert each sheet to CSV beside the original so the data
+                // is actually readable -- and embeddable in the app
+                // (K-123 S3: the friend's Excel was the whole request, and
+                // the agent could not open it).
+                for sheet_csv in spreadsheet_to_csvs(&destination) {
+                    named.push(format!("attached/{sheet_csv}"));
+                }
             }
         }
         if !named.is_empty() {
@@ -2904,7 +2912,10 @@ pub(crate) fn author_app_for_tui(
                 "\nIf one is a screenshot or a design, build something that looks like \
                  it. If one is the source of an app they already have, build the same \
                  thing as a Krate app -- keeping what it does, not how it was written, \
-                 since it was written against a different system.",
+                 since it was written against a different system. Spreadsheets have \
+                 each sheet converted to a .csv beside the original: read the CSVs, \
+                 never the binary. If the app is ABOUT that data, embed the data (or \
+                 the relevant parts) in the app so it opens already useful.",
             );
         }
     }
@@ -3818,6 +3829,70 @@ fn validate_app_name(name: &str) -> std::result::Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Each sheet of a spreadsheet attachment written as CSV beside it.
+///
+/// Returns the file names written (not paths). Failures return empty: an
+/// unreadable spreadsheet is the agent's problem to report, not a reason to
+/// refuse the whole request.
+fn spreadsheet_to_csvs(path: &Path) -> Vec<String> {
+    let is_sheet = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| {
+            matches!(
+                e.to_ascii_lowercase().as_str(),
+                "xlsx" | "xls" | "xlsm" | "ods"
+            )
+        })
+        .unwrap_or(false);
+    if !is_sheet {
+        return Vec::new();
+    }
+    let Ok(mut workbook) = calamine::open_workbook_auto(path) else {
+        return Vec::new();
+    };
+    use calamine::Reader;
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "sheet".to_string());
+    let parent = path.parent().unwrap_or(Path::new("."));
+    let mut written = Vec::new();
+    for sheet_name in workbook.sheet_names().to_vec() {
+        let Ok(range) = workbook.worksheet_range(&sheet_name) else {
+            continue;
+        };
+        if range.is_empty() {
+            continue;
+        }
+        let safe: String = sheet_name
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect();
+        let file_name = format!("{stem}.{safe}.csv");
+        let mut csv = String::new();
+        for row in range.rows() {
+            let cells: Vec<String> = row
+                .iter()
+                .map(|cell| {
+                    let text = cell.to_string();
+                    if text.contains(',') || text.contains('"') || text.contains('\n') {
+                        format!("\"{}\"", text.replace('"', "\"\""))
+                    } else {
+                        text
+                    }
+                })
+                .collect();
+            csv.push_str(&cells.join(","));
+            csv.push('\n');
+        }
+        if fs::write(parent.join(&file_name), csv).is_ok() {
+            written.push(file_name);
+        }
+    }
+    written
 }
 
 /// The conversation gate: what `krate plan` prints for a request, without
@@ -11343,6 +11418,32 @@ mod create_tests {
                 "`{bad}` must be refused"
             );
         }
+    }
+
+    #[test]
+    fn a_spreadsheet_attachment_becomes_readable_csvs() {
+        // The friend's Excel was the whole request, and the agent could not
+        // open it: sheets must land beside the original as CSV.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("finances.xlsx");
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/finances.xlsx"),
+            &path,
+        )
+        .expect("stage the fixture");
+        let mut written = super::spreadsheet_to_csvs(&path);
+        written.sort();
+        assert_eq!(
+            written,
+            vec!["finances.Holdings.csv", "finances.Monthly-Budget.csv"]
+        );
+        let holdings =
+            std::fs::read_to_string(dir.path().join("finances.Holdings.csv")).expect("csv");
+        assert!(holdings.starts_with("Asset,Amount,Currency\n"));
+        assert!(
+            holdings.contains("\"Gold, 24k\",50,grams"),
+            "comma cell must be quoted: {holdings}"
+        );
     }
 
     #[test]

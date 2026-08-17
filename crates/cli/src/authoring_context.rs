@@ -126,6 +126,19 @@ Fade alpha to zero across the last few rows and columns of the buffer \
 (multiply by x/fade, (w-x)/fade, same for y) so the content dissolves \
 before the rectangle ends. Any buffer that fills the whole canvas is \
 exempt -- its edges are the window's.\n\n\
+## An app about someone's data ships with the data, and says so\n\n\
+When the request comes with a spreadsheet or a document, that file IS the \
+request. Each sheet arrives converted to CSV beside the original: read the \
+CSVs, never the binary. Embed the data (or the meaningful parts of it) as \
+constants or seeded storage, so the app opens already showing THEIR numbers \
+-- an empty first screen after they handed you their data reads as a bug. \
+For data that keeps changing on disk, use the folder picker \
+(pick-is-the-grant) instead of baking a path.\n\n\
+And name the data plainly in every capability rationale: \"keep your \
+budget entries on this computer\" beats \"local storage\". The consent \
+wall is the one moment the person decides whether to trust the app; an \
+app built around personal finances that asks vaguely loses exactly the \
+person it was built for.\n\n\
 ## Draining input: the difference between smooth and laggy\n\n\
 A touch panel reports a drag up to 120 times a second, and every report \
 becomes an event. An app that handles ONE event per frame and then draws \

@@ -48,6 +48,7 @@ serde_json.workspace = true
 sha2 = "0.10.9"
 ureq.workspace = true
 tracing-subscriber.workspace = true
+calamine = "0.26"
 
 # The native consent window is macOS-only today (P3-OPEN-01). Gated by target
 # so the AppKit crate never enters Linux or Windows CLI builds; those platforms

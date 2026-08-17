@@ -97,33 +97,7 @@ Fix:      3c55e91f. \bauth(?!or) so authentication still matches and
           agent's own last words instead of guessing -- rides with K-123's
           conversation work.
 
-### K-123 -- The Studio builds whatever is typed: no questions, no plan, no context intake
-Status:   open
-Owner:    lead
-Severity: serious
-Class:    our-code
-Found:    2026-08-17, founder's friend pasted a ChatGPT prompt that
-          depended on Excel files in a folder; the Studio built without
-          them and without asking. Founder separately typed "Sadas" and
-          got an app named Sadas (live on the store).
-Evidence: The authoring flow has no step between "user typed" and "agent
-          builds": studio run_author -> krate create, one shot. Every
-          chat AI users know asks a question when the request is thin and
-          states its plan before acting; we compare to compilers, users
-          compare to ChatGPT.
-Fix:      Plan/Authoring-Conversation-2026-08.md is the plan of record:
-          a `krate plan` engine door (ask-or-plan JSON, no build), the
-          Studio conversing before building, attachment nudges when a
-          request implies files, and xlsx->csv conversion at authoring
-          time. "Sadas" must become a question, never an app.
-Update:   2026-08-17, S1+S2 shipped (2682a48a, 6f669989): `krate plan`
-          answers ask-or-plan in one JSON object (thin requests get their
-          question deterministically, no AI needed; the friend's real
-          budget prompt got "attach the Excel" as its first question in
-          6.5s), and the Studio holds the conversation in the thread with
-          "build it" as the permanent escape hatch. Remaining: S3
-          (xlsx->csv conversion at authoring time) and S4 (pack guidance
-          for personal-data apps).
+
 
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 
@@ -3885,6 +3859,38 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
 Status:   fixed
 
 ## Fixed
+
+### K-123 -- The Studio builds whatever is typed: no questions, no plan, no context intake
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-17, founder's friend pasted a ChatGPT prompt that
+          depended on Excel files in a folder; the Studio built without
+          them and without asking. Founder separately typed "Sadas" and
+          got an app named Sadas (live on the store).
+Evidence: The authoring flow has no step between "user typed" and "agent
+          builds": studio run_author -> krate create, one shot. Every
+          chat AI users know asks a question when the request is thin and
+          states its plan before acting; we compare to compilers, users
+          compare to ChatGPT.
+Fix:      Plan/Authoring-Conversation-2026-08.md is the plan of record:
+          a `krate plan` engine door (ask-or-plan JSON, no build), the
+          Studio conversing before building, attachment nudges when a
+          request implies files, and xlsx->csv conversion at authoring
+          time. "Sadas" must become a question, never an app.
+Update:   2026-08-17, all four stages shipped. S1+S2 (2682a48a,
+          6f669989): `krate plan`
+          answers ask-or-plan in one JSON object (thin requests get their
+          question deterministically, no AI needed; the friend's real
+          budget prompt got "attach the Excel" as its first question in
+          6.5s), and the Studio holds the conversation in the thread with
+          "build it" as the permanent escape hatch. S3: spreadsheet
+          attachments land with each sheet converted to CSV beside the
+          original (calamine; pinned by test against a two-sheet fixture
+          with comma cells). S4: the pack teaches embed-their-data and
+          plain-words consent for personal-data apps. Validation left:
+          one real first-time session through the shipped Studio.
 
 ### K-122 -- krate-glow taught request-redraw-per-frame, so generated animations spin a core
 Status:   fixed
