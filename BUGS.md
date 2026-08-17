@@ -71,6 +71,26 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-126 -- Bundled source pins the SDK by absolute local path, so source does not travel
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-17, testing a Windows-built app's bundled source on the
+          Mac to verify its interactivity.
+Evidence: The .krate's source/Cargo.toml says
+          krate = { path = "C:/Users/user/AppData/Local/Krate/sdk/..." }
+          and the component.target WIT paths likewise. On any other
+          machine (or after that user moves their SDK) check-app and
+          revise fail at build with "No such file or directory". The
+          bundle SHIPS the SDK precisely so source is editable later;
+          the absolute paths defeat it.
+Fix:      Write relative paths into the bundled copy (the SDK travels in
+          the bundle at a known relative location), or have revise/
+          check-app rewrite sdk paths to the local materialized SDK on
+          unpack -- the fingerprint in the path names the exact SDK
+          version to materialize.
+
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 
 Class: our-code
