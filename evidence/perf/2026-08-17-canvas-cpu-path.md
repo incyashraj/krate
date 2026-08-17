@@ -32,3 +32,27 @@ old binary so both take the CPU path:
 The two pixel loops cut here are exactly what a weak Windows machine
 chokes on; machines with a working GPU take the vello path and skip them
 for widget scenes, but every canvas app's publish still crossed them.
+
+## The founder's Iris Xe desktop, live over ssh (2026-08-17)
+
+The same game on real hardware surfaced three more thieves, fixed in
+6f73ece5, f426cff7 and ae3e4316:
+
+1. The winit pump repainted every window on every event check; on the GPU
+   path each repaint blocked a vsync. Measured: 61,431ms of pump per 60
+   frames (3,708 calls), under 2.4fps, three cores pinned. After: pump
+   4-100ms per 60 frames.
+2. The swapchain presented AutoVsync inside the guest's publish, stacking
+   a second 16ms clock on the game's own pacing. Moved to AutoNoVsync
+   (mailbox); pacing stays with the host frame budget.
+3. Full-window canvas frames went through the whole vello scene pipeline
+   with a fresh image upload per frame (~18-20ms on Iris Xe). Now a
+   persistent texture, one write, one scaling blit, same as the macOS
+   Metal path.
+
+Verdict runs on the desktop: frame gap 1,132ms -> 38ms -> 32ms across the
+three fixes; the founder's side-by-side against the M4 Mac (same game,
+both machines at once, judged by the game's own on-screen clock): play
+feel indistinguishable, 1-2s of game-clock drift over 30s. Remaining
+headroom (publish sync p50 12-14ms) belongs to K-112's GPU presenter
+work proper.

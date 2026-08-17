@@ -95,6 +95,15 @@ Update:   2026-08-17, f2e3aad4: the CPU fallback halved. to_image went
           50fps sustained. evidence/perf/2026-08-17-canvas-cpu-path.md.
           The GPU presenter remains the real fix for parity with the Mac.
 
+Update:   2026-08-17, live debugging on the founder's Iris Xe PC over
+          ssh: three fixes (pump repainted per event check 6f73ece5;
+          swapchain double-clocked the publish f426cff7; canvas frames
+          re-uploaded through the scene pipeline ae3e4316) took the same
+          game from under 2.4fps with three cores pinned to side-by-side
+          play parity with the M4 Mac. Publish sync still p50 12-14ms on
+          that machine; that remainder is this workstation's real GPU
+          presenter work.
+
 ### K-111 -- Painted app UI renders at 1x on Retina displays: everything looks soft
 
 Class: our-code
