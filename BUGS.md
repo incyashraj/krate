@@ -3858,6 +3858,32 @@ Status:   fixed
 
 ## Fixed
 
+### K-130 -- A half-installed gnullvm toolchain is chosen and then cannot link
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-18, first real support report (69dcfc7c0450e541) from the
+          founder's Windows PC: every app build failed within minutes of
+          installing v0.1.41.
+Evidence: The report's about.txt named the machine, and `krate doctor`
+          there showed rustup carrying TWO toolchains, gnullvm and msvc,
+          with the build dying at "program not found" compiling
+          wit-bindgen-rt's build script -- a missing C linker. gnullvm was
+          listed by rustup but its lib/rustlib/<target>/bin/self-contained
+          directory did not exist and no clang or gcc was on PATH: a
+          half-finished install. Krate chose gnullvm because the NAME
+          appeared in `rustup toolchain list`, routing every build into a
+          toolchain that cannot link. MSVC was the active default but has
+          no Build Tools either.
+Fix:      5df2457b. gnullvm_toolchain_present() verifies the toolchain can
+          link (its self-contained linker directory exists, or a system
+          clang/gcc is reachable) before claiming it, so a broken install
+          is treated as absent and the normal install/repair path runs.
+          Same commit fixes the report's version stamp (it printed the
+          crate version, not the running binary's) and makes the support
+          console explain a refused token instead of showing nothing.
+
 ### K-127 -- A big request burned its whole budget hunting for key names we never documented
 Status:   fixed
 Owner:    lead
