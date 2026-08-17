@@ -76,6 +76,7 @@ const state = {
   phase: "idle",
   session: null,        // { id, title, created, updated, messages, result }
   attachments: [],      // absolute paths staged for the next message
+  planning: null,       // the pre-build conversation (K-123): request, qa, files
   cloud: [],            // apps read from Krate Cloud
   cloudCat: "all",      // which category chip is selected
   cloudApp: null,       // the published app being looked at
@@ -627,13 +628,107 @@ async function make(request) {
   say("YOU", request, files);
   persist();
   $("prompt").value = "";
+
+  // A change to an app that already works goes straight to the build: the
+  // conversation already happened.
+  if (currentApp()) return buildNow(request, files, true);
+  // The conversation gate (K-123): before anything builds, the request is
+  // looked at -- questions when answering them would change what gets
+  // built, a plan otherwise. "Sadas" becomes a question, never an app.
+  if (state.planning) return continuePlanning(request, files);
+  return startPlanning(request, files);
+}
+
+/* ---- the conversation before the build (K-123) ------------------------- */
+
+function planContext() {
+  const p = state.planning;
+  let text = p.request;
+  for (const qa of p.qa) {
+    text += `\n\n(When asked "${qa.q}" the person answered: "${qa.a}")`;
+  }
+  return text;
+}
+
+async function startPlanning(request, files) {
+  state.planning = { request, files, qa: [], rounds: 0, lastQuestions: [] };
+  await runPlan();
+}
+
+async function continuePlanning(text, files) {
+  state.planning.files.push(...files);
+  // The escape hatch, always available: the person is the boss.
+  if (/^\s*(just\s+)?(build|make|go|start|yes|do)\s*(it|now)?\s*[.!]*\s*$/i.test(text)) {
+    return finishPlanningAndBuild();
+  }
+  state.planning.qa.push({
+    q: state.planning.lastQuestions.join(" / ") || "anything to add?",
+    a: text,
+  });
+  await runPlan();
+}
+
+async function runPlan() {
+  $("composerHint").textContent = "thinking it through…";
+  $("send").disabled = true;
+  try {
+    const raw = await invoke("plan_request", {
+      request: planContext(),
+      attachments: state.planning.files,
+      agent: state.agent,
+    });
+    const answer = JSON.parse(raw);
+    if (answer.ask && answer.ask.length && state.planning.rounds < 2) {
+      state.planning.rounds += 1;
+      state.planning.lastQuestions = answer.ask;
+      const questions = answer.ask.map((q, i) => `${i + 1}. ${q}`).join("\n");
+      say("KRATE", `Before I build this, help me get it right:\n${questions}\n\nOr say "build it" and I'll start with what I have.`);
+      $("prompt").placeholder = "Answer here…";
+    } else if (answer.plan) {
+      state.planning.plan = answer.plan;
+      const needs = (answer.needs || []).filter(Boolean);
+      const needsLine = needs.length
+        ? `\n\nFrom you it needs: ${needs.join("; ")}.`
+        : "";
+      say("KRATE", `Here's what I'll build: ${answer.plan}${needsLine}\n\nSay "build it" to start, or tell me what to change.`);
+      $("prompt").placeholder = "\"build it\" starts - or tell me what to change";
+    } else {
+      // Two rounds of questions is enough patience to ask of anyone.
+      return finishPlanningAndBuild();
+    }
+  } catch (err) {
+    // The conversation must never become a wall in front of building.
+    say("KRATE", `I couldn't think it through first (${plainWords(err)}) -- building from your words as they are.`);
+    return finishPlanningAndBuild();
+  } finally {
+    $("composerHint").textContent = "";
+    $("send").disabled = false;
+  }
+  persist();
+}
+
+function finishPlanningAndBuild() {
+  const p = state.planning;
+  state.planning = null;
+  $("prompt").placeholder = "Describe the app you want…";
+  let enriched = p.request;
+  for (const qa of p.qa) {
+    enriched += `\n\n(When asked "${qa.q}" the person answered: "${qa.a}")`;
+  }
+  if (p.plan) {
+    enriched += `\n\n(The agreed plan: ${p.plan})`;
+  }
+  return buildNow(enriched, p.files, false);
+}
+
+async function buildNow(request, files, revising) {
+  if (state.buildingSession) return;
   // The composer stays live during a build so a thought can be queued
   // rather than lost.
   $("prompt").placeholder = "Add a change - it runs when this finishes…";
 
   state.buildingSession = state.session;
   renderBuilding();
-  const revising = Boolean(currentApp());
   // The rail is a conversation: it should answer. Without this the left
   // side showed one line and then nothing for six minutes while the right
   // side did all the talking.

@@ -1012,6 +1012,41 @@ fn open_app(path: String) -> Result<(), String> {
     })
 }
 
+/// The conversation gate (K-123): ask the engine to look at a request
+/// before anything builds. Returns the engine's one JSON object -- ask or
+/// plan -- exactly as printed.
+#[tauri::command]
+async fn plan_request(
+    request: String,
+    attachments: Vec<String>,
+    agent: Option<String>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = engine()?;
+        let mut cmd = silent_cmd(&engine);
+        cmd.arg("plan").arg(&request);
+        for file in &attachments {
+            cmd.args(["--attach", file]);
+        }
+        if let Some(agent) = agent.as_deref().filter(|a| !a.is_empty()) {
+            cmd.args(["--agent", agent]);
+        }
+        let out = cmd.output().map_err(|err| err.to_string())?;
+        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        if !out.status.success() || stdout.is_empty() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            return Err(if stderr.trim().is_empty() {
+                "the plan step failed".to_string()
+            } else {
+                stderr.trim().to_string()
+            });
+        }
+        Ok(stdout)
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 /// Publish to the hub and hand back the short run-by-URL link.
 #[tauri::command]
 async fn publish(
@@ -1871,6 +1906,7 @@ fn main() {
             revise_app,
             stop_build,
             open_app,
+            plan_request,
             publish,
             reveal,
             settings_get,
