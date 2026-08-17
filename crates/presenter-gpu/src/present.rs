@@ -95,6 +95,8 @@ pub struct WindowPresenter {
     surface_format: wgpu::TextureFormat,
     configured: (u32, u32),
     target: Option<(wgpu::TextureView, u32, u32)>,
+    /// Persistent upload texture for the full-window-canvas fast path.
+    pixel_upload: Option<(wgpu::Texture, u32, u32)>,
     cache: SceneCache,
     stats: FrameStats,
     /// Set by the device's uncaptured-error handler. wgpu delivers most
@@ -170,10 +172,126 @@ impl WindowPresenter {
             surface_format,
             configured: (0, 0),
             target: None,
+            pixel_upload: None,
             cache: SceneCache::new(),
             stats: FrameStats::new(),
             device_failed,
         })
+    }
+
+    /// Upload one RGBA frame into a persistent texture and blit it to the
+    /// window, scaled. The fast path for a full-window canvas app: the
+    /// scene pipeline re-uploaded the canvas as a fresh vello image
+    /// resource every frame, which cost ~18ms a frame on an Iris Xe and
+    /// held a 60fps-capable game at 30. `Err` retires the GPU path.
+    pub fn present_pixels_into(
+        &mut self,
+        rgba: &[u8],
+        width: u32,
+        height: u32,
+        surface_width: u32,
+        surface_height: u32,
+    ) -> Result<(), String> {
+        let started = Instant::now();
+        if width == 0
+            || height == 0
+            || surface_width == 0
+            || surface_height == 0
+            || rgba.len() < (width as usize * height as usize * 4)
+        {
+            return Ok(());
+        }
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
+        if self.configured != (surface_width, surface_height) {
+            self.surface.configure(
+                &self.device,
+                &wgpu::SurfaceConfiguration {
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    format: self.surface_format,
+                    width: surface_width,
+                    height: surface_height,
+                    // See render(): the swapchain must not be a second clock.
+                    present_mode: wgpu::PresentMode::AutoNoVsync,
+                    desired_maximum_frame_latency: 2,
+                    alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                    view_formats: vec![],
+                },
+            );
+            self.configured = (surface_width, surface_height);
+            self.target = None;
+        }
+        if self
+            .pixel_upload
+            .as_ref()
+            .map(|(_, w, h)| (*w, *h) != (width, height))
+            .unwrap_or(true)
+        {
+            let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("krate canvas frame"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+            self.pixel_upload = Some((texture, width, height));
+        }
+        let (texture, ..) = self.pixel_upload.as_ref().expect("upload texture ensured");
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &rgba[..(width as usize * height as usize * 4)],
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        use wgpu::CurrentSurfaceTexture;
+        let frame = match self.surface.get_current_texture() {
+            CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
+                frame
+            }
+            CurrentSurfaceTexture::Timeout | CurrentSurfaceTexture::Occluded => return Ok(()),
+            _ => {
+                self.configured = (0, 0);
+                return Ok(());
+            }
+        };
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("krate canvas blit"),
+            });
+        let src = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let dst = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        self.blitter.copy(&self.device, &mut encoder, &src, &dst);
+        self.queue.submit([encoder.finish()]);
+        frame.present();
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
+        self.stats.record(started, None);
+        Ok(())
     }
 
     /// Render and present one frame. `Err` means the GPU path is done for
@@ -410,20 +528,21 @@ impl PixelPresenter {
     /// `Err` retires this surface; the caller falls back to the CPU path.
     pub fn present_pixels(&mut self, rgba: &[u8], width: u32, height: u32) -> Result<(), String> {
         let started = Instant::now();
+        let (surface_width, surface_height) = (width, height);
         if width == 0 || height == 0 || rgba.len() < (width as usize * height as usize * 4) {
             return Ok(());
         }
         if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
             return Err("GPU device reported an error".to_string());
         }
-        if self.configured != (width, height) {
+        if self.configured != (surface_width, surface_height) {
             self.surface.configure(
                 &self.device,
                 &wgpu::SurfaceConfiguration {
                     usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                     format: self.surface_format,
-                    width,
-                    height,
+                    width: surface_width,
+                    height: surface_height,
                     // NoVsync (mailbox where the platform has it), on
                     // purpose: the render runs INSIDE the guest's publish
                     // call, and a vsync-blocking present there stacked a
@@ -441,7 +560,7 @@ impl PixelPresenter {
                     view_formats: vec![],
                 },
             );
-            self.configured = (width, height);
+            self.configured = (surface_width, surface_height);
             self.upload = None;
         }
         // One persistent upload texture, rewritten in place each frame --

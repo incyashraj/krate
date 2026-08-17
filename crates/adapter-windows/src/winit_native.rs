@@ -20,8 +20,8 @@ pub use stub::*;
 #[cfg(any(target_os = "windows", feature = "dev-anyos"))]
 use krate_adapter_common::ui::Modifiers;
 use krate_adapter_common::ui::{
-    RawKeySample, RawPointerSample, RawWheelSample, UiAdapterError, WidgetPlacement, WindowId,
-    WindowSize, WinitWindowNativeEvent, WinitWindowSnapshot,
+    RawKeySample, RawPointerSample, RawWheelSample, UiAdapterError, WidgetKind, WidgetPlacement,
+    WindowId, WindowSize, WinitWindowNativeEvent, WinitWindowSnapshot,
 };
 
 /// Native events paired with the Krate window they belong to.
@@ -128,6 +128,36 @@ mod real {
         ) -> Result<(), String> {
             let size = window.inner_size();
             window.pre_present_notify();
+            // The game case first: one canvas covering the window. The full
+            // scene pipeline re-uploaded that canvas as a fresh vello image
+            // resource every frame, which cost ~18ms a frame on an Iris Xe
+            // and held a 60fps-capable game at 30. A persistent texture,
+            // one write and one scaling blit is the whole job -- the same
+            // path the macOS Metal canvas takes.
+            if let [only] = placements {
+                if only.kind == WidgetKind::Canvas {
+                    if let Some(pixels) = &only.pixels {
+                        let scale = window.scale_factor() as f32;
+                        let covers = only.x.abs() <= 1.0
+                            && only.y.abs() <= 1.0
+                            && (only.width * scale - size.width as f32).abs() <= 2.0 * scale
+                            && (only.height * scale - size.height as f32).abs() <= 2.0 * scale;
+                        let canvas_aspect = pixels.width as f32 / pixels.height as f32;
+                        let window_aspect = size.width as f32 / size.height as f32;
+                        let aspect_ok =
+                            (canvas_aspect - window_aspect).abs() / window_aspect < 0.02;
+                        if covers && aspect_ok {
+                            return self.inner.present_pixels_into(
+                                &pixels.rgba,
+                                pixels.width,
+                                pixels.height,
+                                size.width,
+                                size.height,
+                            );
+                        }
+                    }
+                }
+            }
             self.inner.render(
                 size.width,
                 size.height,
