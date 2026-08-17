@@ -472,6 +472,9 @@ const baseName = (p) => p.split(/[\\/]/).pop();
 /* ---- build state machine ---------------------------------------------- */
 
 function show(phase) {
+  // Leaving idle for anything else means the note has done its job; the
+  // next visit to idle starts neutral again unless a caller sets it.
+  if (phase !== "idle") setIdleNote("Your app will appear here.");
   state.phase = phase;
   for (const id of ["stateIdle", "stateBuilding", "stateDone", "stateFailed"]) {
     $(id).classList.add("hidden");
@@ -714,6 +717,11 @@ async function make(request) {
   // phase while the build very much continues.
   if (state.buildingSession) return;
   if (!state.session) newSession(request);
+  // The stage belongs to what is happening NOW. Without this a retry from
+  // a rail chip left the previous failure card on screen while the plan
+  // step ran and the next build started -- the founder watched exactly
+  // that after a timeout.
+  if (state.phase === "failed" || state.phase === "done") show("idle");
   const files = state.attachments.slice();
   state.attachments = [];
   renderAttachments();
@@ -774,6 +782,7 @@ async function startPlanning(request, files) {
   // Speak IMMEDIATELY. The plan call can take ten seconds, and ten silent
   // seconds after a person's very first message reads as broken.
   say("KRATE", "Looking at your request…");
+  setIdleNote("Reading your request…");
   await runPlan();
 }
 
@@ -820,6 +829,7 @@ async function runPlan() {
         variant: "ask",
         actions: [{ label: "Skip and build", run: finishPlanningAndBuild }],
       });
+      setIdleNote("Answer on the left and I'll start building.");
       $("prompt").placeholder = "Answer here…";
     } else if (answer.plan) {
       state.planning.plan = answer.plan;
@@ -834,6 +844,7 @@ async function runPlan() {
         ],
       });
       $("prompt").placeholder = "Anything to change? Your next message starts the build";
+      setIdleNote("The plan is on the left. Say build it and I'll start.");
     } else {
       return finishPlanningAndBuild();
     }
@@ -850,6 +861,14 @@ async function runPlan() {
     $("send").disabled = false;
   }
   persist();
+}
+
+/* The idle stage's one line. It is the only thing on the right while the
+   conversation happens, so it should say what is going on rather than
+   showing the last build's ghost. */
+function setIdleNote(text) {
+  const note = $("idleNote");
+  if (note) note.textContent = text;
 }
 
 function finishPlanningAndBuild() {
