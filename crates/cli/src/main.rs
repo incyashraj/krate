@@ -3828,6 +3828,24 @@ fn name_from_request(request: &str) -> Option<String> {
         "new",
         "i",
         "want",
+        // Conversational openers. A pasted chat prompt starts "So i have
+        // made..." and the inferred name was "so" (K-124's neighbor).
+        "so",
+        "hi",
+        "hey",
+        "hello",
+        "ok",
+        "okay",
+        "now",
+        "also",
+        "just",
+        "can",
+        "you",
+        "we",
+        "have",
+        "made",
+        "need",
+        "like",
     ];
 
     let mut words: Vec<String> = Vec::new();
@@ -5644,6 +5662,20 @@ fn run_author_command(ctx: AuthorContext<'_>) -> Result<()> {
                 // we have -- and "the AI tool is not installed" is a different
                 // problem from "the AI tried and failed", with a different fix.
                 anyhow::bail!("{}", silent_author_failure(status.code()));
+            }
+            // A known environment signature beats any guess: seen live when
+            // Codex's own Windows sandbox helper was missing and every
+            // command the agent ran failed with orchestrator_helper_launch_failed.
+            let transcript_text =
+                fs::read_to_string(ctx.app_dir.join(".agent-transcript.txt")).unwrap_or_default();
+            if transcript_text.contains("orchestrator_helper_launch_failed")
+                || tail.contains("orchestrator_helper_launch_failed")
+            {
+                anyhow::bail!(
+                    "the AI's own sandbox is broken on this machine: its helper program is \
+                     missing, so every command it ran failed. Reinstalling that AI fixes it; \
+                     picking a different AI works right now.\n\nauthor command failed"
+                );
             }
             anyhow::bail!("author command failed:\n\n{tail}");
         }
@@ -11151,6 +11183,14 @@ mod create_tests {
         assert_eq!(
             name_from_request("Make a checklist app that saves locally").as_deref(),
             Some("checklist")
+        );
+        // A pasted chat prompt opens conversationally; the filler must not
+        // become the name. The live case: "So i have made..." produced an
+        // app (and its permission-wall folder) named "so".
+        assert_eq!(
+            name_from_request("So i have made a basic excel sheet advanced monthly budget tracker")
+                .as_deref(),
+            Some("excel-sheet-advanced")
         );
     }
 

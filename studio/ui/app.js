@@ -718,7 +718,15 @@ function plainWords(err) {
   // PATH problem to go sign in -- a wrong door with a confident sign on it.
   if (/toolchain|rustup|cargo/i.test(text)) return "The build tools aren't set up yet. Trying again lets Krate install them.";
   if (/quota|rate.?limit/i.test(text)) return "Your AI is out of quota right now. It usually comes back within the hour.";
-  if (/sign ?in|auth|logged/i.test(text)) return "Your AI needs signing in. Click its name at the top for the fix.";
+  // The AI's own sandbox broke: its words, not a guess. Seen live with
+  // Codex on Windows (its sandbox helper missing), where every command the
+  // agent ran failed and the card blamed sign-in instead (K-124).
+  if (/sandbox.*(helper|launch_failed)|orchestrator_helper/i.test(text))
+    return "Your AI's own sandbox is broken on this machine. Reinstall that AI, or pick another one from its menu at the top.";
+  // \bauth catches authentication/unauthorized; the (?!or) guard keeps
+  // "author command failed" -- our own generic failure line -- from telling
+  // every user to go sign in (K-124: it did exactly that).
+  if (/sign ?in|\bauth(?!or)|logged/i.test(text)) return "Your AI needs signing in. Click its name at the top for the fix.";
   if (/network|offline|dns|connect/i.test(text)) return "The internet connection dropped mid-build.";
   return "Something in the build went wrong. Trying again usually works; your words are kept.";
 }
