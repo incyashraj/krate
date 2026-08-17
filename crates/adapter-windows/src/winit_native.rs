@@ -20,8 +20,8 @@ pub use stub::*;
 #[cfg(any(target_os = "windows", feature = "dev-anyos"))]
 use krate_adapter_common::ui::Modifiers;
 use krate_adapter_common::ui::{
-    RawKeySample, RawPointerSample, RawWheelSample, UiAdapterError, WidgetKind, WidgetPlacement,
-    WindowId, WindowSize, WinitWindowNativeEvent, WinitWindowSnapshot,
+    RawKeySample, RawPointerSample, RawWheelSample, UiAdapterError, WidgetPlacement, WindowId,
+    WindowSize, WinitWindowNativeEvent, WinitWindowSnapshot,
 };
 
 /// Native events paired with the Krate window they belong to.
@@ -135,7 +135,7 @@ mod real {
             // one write and one scaling blit is the whole job -- the same
             // path the macOS Metal canvas takes.
             if let [only] = placements {
-                if only.kind == WidgetKind::Canvas {
+                if only.kind == krate_adapter_common::ui::WidgetKind::Canvas {
                     if let Some(pixels) = &only.pixels {
                         let scale = window.scale_factor() as f32;
                         let covers = only.x.abs() <= 1.0

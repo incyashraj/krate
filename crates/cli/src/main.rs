@@ -4092,7 +4092,7 @@ fn report_send_command(
 fn report_workspace_from(session_json: &str) -> Option<PathBuf> {
     let at = session_json.find("the workspace is kept at ")?;
     let rest = &session_json[at + "the workspace is kept at ".len()..];
-    let end = rest.find(|c: char| c == '"' || c == '\n' || c == ' ')?;
+    let end = rest.find(['"', '\n', ' '])?;
     let path = PathBuf::from(rest[..end].trim());
     path.is_dir().then_some(path)
 }
@@ -5891,6 +5891,22 @@ fn ai_status(json: bool) -> Result<u8> {
 /// the person sees how close it got and what remained, not just "it stalled".
 fn author_stalled_error(app_dir: &str, transcript: &Path, timeout_secs: u64) -> anyhow::Error {
     let minutes = timeout_secs / 60;
+    // How far it got, in the only unit that matters to the person: did the
+    // AI write a real app, or was it still reading? Three attempts at one
+    // game each stopped mid-research, and "did not finish" told the person
+    // nothing about whether trying again was worth it (K-129).
+    let written = fs::read_to_string(Path::new(app_dir).join("src/lib.rs"))
+        .map(|text| text.lines().count())
+        .unwrap_or(0);
+    let progress = if written > 400 {
+        format!("It had written {written} lines of your app, and a retry continues from them.")
+    } else if written > 200 {
+        format!("It had written {written} lines -- a start, and a retry continues from there.")
+    } else {
+        "It was still reading Krate's API when the time ran out, so there is \
+         little code yet; a retry starts it writing sooner."
+            .to_string()
+    };
     let verdict = match check_app_verdict(app_dir) {
         Ok(()) => "The last check-app run actually passed -- re-running the command should \
                    finish the packaging."
@@ -5898,7 +5914,8 @@ fn author_stalled_error(app_dir: &str, transcript: &Path, timeout_secs: u64) -> 
         Err(failure) => format!("The last check-app run reported:\n\n{failure}"),
     };
     anyhow::anyhow!(
-        "the AI agent did not finish within {minutes} minutes and was stopped.\n\n{verdict}\n\n\
+        "the AI agent did not finish within {minutes} minutes and was stopped.\n\n\
+         {progress}\n\n{verdict}\n\n\
          Two things to try:\n  \
          1. Run the command again -- authoring often finishes on a second try, and it \
          resumes from the code already written.\n  \
