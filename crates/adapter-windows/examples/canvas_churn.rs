@@ -26,7 +26,7 @@ fn frame_pixels(tick: u32) -> ImagePixels {
     // about the part that matters -- the buffer is a fresh allocation, so
     // any pointer-keyed cache misses just like the real publish path.
     let mut rgba = vec![0u8; (W * H * 4) as usize];
-    let shift = (tick * 3) as u32;
+    let shift = tick * 3;
     for y in 0..H {
         let row = (y * W * 4) as usize;
         let g = ((y + shift) % 256) as u8;
