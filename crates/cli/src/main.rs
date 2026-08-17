@@ -415,6 +415,41 @@ enum Command {
     /// The bundle is stored by the hash of its bytes, so republishing the same
     /// app returns the same URL. The hub to use comes from KRATE_HUB_URL,
     /// defaulting to a local dev server at http://127.0.0.1:8787.
+    /// Gather everything about one authoring session into a single report
+    /// file: the conversation, the AI's own transcript, the code it wrote,
+    /// the engine's log, and this machine's toolchain facts. Writes a
+    /// .krate-report (a zip) and prints its path. Uploads nothing -- the
+    /// studio asks the person first, then sends it.
+    /// Send a report file to Krate support. Requires a sign-in, so a report
+    /// arrives with a name attached.
+    #[command(name = "support-send")]
+    SupportSend {
+        /// The .krate-report file to send.
+        report: PathBuf,
+
+        /// The session it came from, recorded alongside it.
+        #[arg(long, default_value = "")]
+        session: String,
+
+        /// What the person says went wrong.
+        #[arg(long, default_value = "")]
+        note: String,
+
+        /// Hub to send to. Overrides KRATE_HUB_URL.
+        #[arg(long)]
+        hub: Option<String>,
+    },
+
+    #[command(name = "support-report")]
+    SupportReport {
+        /// The studio session id, e.g. s-1786964129525.
+        session: String,
+
+        /// Where to write the report. Defaults to a temp file.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+
     /// Look at a request BEFORE building: answer with either up to three
     /// short questions (when answering them would change what gets built)
     /// or a one-paragraph plan of what will be made and what it needs.
@@ -1133,6 +1168,13 @@ fn run() -> Result<u8> {
             attach,
             agent,
         } => plan_command(&request, &attach, agent.as_deref()),
+        Command::SupportReport { session, output } => report_command(&session, output.as_deref()),
+        Command::SupportSend {
+            report,
+            session,
+            note,
+            hub,
+        } => report_send_command(&report, &session, &note, hub.as_deref()),
         Command::Publish {
             bundle,
             hub,
@@ -3901,6 +3943,158 @@ fn spreadsheet_to_csvs(path: &Path) -> Vec<String> {
         }
     }
     written
+}
+
+/// Everything about one session, in one file the person can inspect before
+/// it goes anywhere (K-128).
+///
+/// Deliberately a plain zip of plain text: a support report nobody can read
+/// is a support report nobody trusts sending. What goes in is exactly what
+/// the consent dialog names -- no more, and nothing gathered from outside
+/// the session's own workspace.
+fn report_command(session: &str, output: Option<&Path>) -> Result<u8> {
+    if !session
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        anyhow::bail!("that is not a session id");
+    }
+    let studio = krate_home().join("studio");
+    let session_file = studio.join("sessions").join(format!("{session}.json"));
+    if !session_file.exists() {
+        anyhow::bail!("no session by that name on this machine");
+    }
+    let out = output.map(|p| p.to_path_buf()).unwrap_or_else(|| {
+        std::env::temp_dir().join(format!("krate-report-{session}.krate-report"))
+    });
+
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    if let Ok(bytes) = fs::read(&session_file) {
+        files.push(("session.json".to_string(), bytes));
+    }
+
+    // The workspace the session's last build used, when it kept one: the
+    // agent transcript and the code it had written are the evidence that
+    // actually explains a stuck build.
+    let session_text = String::from_utf8_lossy(&files[0].1).to_string();
+    if let Some(dir) = report_workspace_from(&session_text) {
+        for name in [
+            ".agent-transcript.txt",
+            "src/lib.rs",
+            "Cargo.toml",
+            "manifest.toml",
+        ] {
+            if let Ok(bytes) = fs::read(dir.join(name)) {
+                // The transcript can be megabytes; the tail is where a
+                // stall shows itself.
+                let bytes = if bytes.len() > 2 * 1024 * 1024 {
+                    bytes[bytes.len() - 2 * 1024 * 1024..].to_vec()
+                } else {
+                    bytes
+                };
+                files.push((format!("workspace/{name}"), bytes));
+            }
+        }
+    }
+
+    // What this machine is, in the words that explain most failures.
+    let mut about = String::new();
+    about.push_str(&format!("krate: {}\n", env!("CARGO_PKG_VERSION")));
+    about.push_str(&format!(
+        "os: {} {}\n",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    ));
+    for tool in ["rustc", "cargo", "cargo-component"] {
+        let found = agent_provider::which_on_path(tool)
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "not on PATH".to_string());
+        about.push_str(&format!("{tool}: {found}\n"));
+    }
+    for provider in agent_provider::PROVIDERS {
+        about.push_str(&format!(
+            "agent {}: {}\n",
+            provider.name(),
+            if agent_provider::is_installed(*provider) {
+                "installed"
+            } else {
+                "missing"
+            }
+        ));
+    }
+    files.push(("about.txt".to_string(), about.into_bytes()));
+
+    let file = fs::File::create(&out).with_context(|| format!("write {}", out.display()))?;
+    let mut zip = zip::ZipWriter::new(file);
+    let options: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    for (name, bytes) in &files {
+        use std::io::Write;
+        zip.start_file(name, options)?;
+        zip.write_all(bytes)?;
+    }
+    zip.finish()?;
+    println!("{}", out.display());
+    Ok(0)
+}
+
+/// Send one report file to the hub's support door.
+fn report_send_command(
+    report: &Path,
+    session: &str,
+    note: &str,
+    hub_override: Option<&str>,
+) -> Result<u8> {
+    let bytes = fs::read(report)
+        .with_context(|| format!("could not read the report {}", report.display()))?;
+    if bytes.len() > 12 * 1024 * 1024 {
+        anyhow::bail!("that report is over 12 MB; send the session's own log instead");
+    }
+    let identity = match github_auth::current() {
+        Some(identity) => identity,
+        None => {
+            println!("Sending a report puts your name on it, so it needs a sign-in.");
+            github_auth::sign_in().map_err(|err| anyhow::anyhow!("could not sign in: {err}"))?
+        }
+    };
+    let hub = hub_override
+        .map(str::to_string)
+        .or_else(|| std::env::var("KRATE_HUB_URL").ok())
+        .unwrap_or_else(|| DEFAULT_HUB_URL.to_string());
+    let response = ureq::post(&format!("{}/report", hub.trim_end_matches('/')))
+        .set("Authorization", &format!("Bearer {}", identity.token))
+        .set("Content-Type", "application/zip")
+        .set("X-Krate-Session", session)
+        .set("X-Krate-Version", env!("CARGO_PKG_VERSION"))
+        .set("X-Krate-Os", std::env::consts::OS)
+        .set("X-Krate-Note", &note.replace('\n', " "))
+        .send_bytes(&bytes);
+    match response {
+        Ok(response) => {
+            let body = response.into_string().unwrap_or_default();
+            let id = extract_json_string(&body, "id").unwrap_or_default();
+            println!("sent -- reference {id}");
+            Ok(0)
+        }
+        Err(ureq::Error::Status(code, response)) => {
+            let body = response.into_string().unwrap_or_default();
+            anyhow::bail!(
+                "support did not accept the report ({code}): {}",
+                body.trim()
+            )
+        }
+        Err(err) => anyhow::bail!("could not reach Krate support: {err}"),
+    }
+}
+
+/// The build workspace a session's transcript points at, when its failure
+/// message kept one.
+fn report_workspace_from(session_json: &str) -> Option<PathBuf> {
+    let at = session_json.find("the workspace is kept at ")?;
+    let rest = &session_json[at + "the workspace is kept at ".len()..];
+    let end = rest.find(|c: char| c == '"' || c == '\n' || c == ' ')?;
+    let path = PathBuf::from(rest[..end].trim());
+    path.is_dir().then_some(path)
 }
 
 /// The conversation gate: what `krate plan` prints for a request, without

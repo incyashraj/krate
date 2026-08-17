@@ -192,6 +192,7 @@
             <p class="fail-why" id="failWhy"></p>
             <p class="fail-raw" id="failRaw"></p>
             <button class="btn btn-primary" id="retryBtn">Try again</button>
+            <button class="btn" id="reportBtn">Report an issue</button>
           </div>
         </div>
       </section>
@@ -257,6 +258,29 @@
         </div>
       </div>
     </main>
+  </div>
+
+  <div class="sheet-wrap hidden" id="reportSheet">
+    <div class="sheet sheet-report">
+      <h2>Send this to Krate support?</h2>
+      <p class="pub-sub">Something went wrong and we want the real evidence,
+      not a screenshot. Here is exactly what would leave this computer:</p>
+      <ul class="rep-list" id="repList"></ul>
+      <p class="rep-note" id="repSize"></p>
+      <label class="pub-label">Anything you want to add
+        <input id="repNote" type="text" maxlength="200" autocomplete="off"
+               placeholder="What you were trying to make, what you saw" />
+      </label>
+      <p class="rep-fine">Your GitHub name goes with it so we can reply. Nothing
+      else on this computer is read -- no other projects, no files you did not
+      attach, no keys. You can open the file yourself first.</p>
+      <div class="detail-actions">
+        <button class="btn btn-primary" id="repSend">Send to support</button>
+        <button class="btn" id="repReveal">Show me the file</button>
+        <button class="btn btn-ghost sheet-close" data-close="reportSheet">Cancel</button>
+      </div>
+      <p class="detail-note" id="repResult"></p>
+    </div>
   </div>
 
   <div class="sheet-wrap hidden" id="publishSheet">

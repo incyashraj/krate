@@ -1015,6 +1015,79 @@ fn open_app(path: String) -> Result<(), String> {
     })
 }
 
+/// Collect a session's evidence into one file and hand back its path plus
+/// what is inside, so the consent dialog can name real contents rather than
+/// a promise (K-128).
+#[tauri::command]
+async fn report_collect(session: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = engine()?;
+        let out = silent_cmd(&engine)
+            .arg("support-report")
+            .arg(&session)
+            .output()
+            .map_err(|err| err.to_string())?;
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            return Err(if stderr.trim().is_empty() {
+                "could not gather this session".to_string()
+            } else {
+                stderr.trim().to_string()
+            });
+        }
+        let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+        // What is actually in the zip, listed for the dialog.
+        let mut names: Vec<String> = Vec::new();
+        if let Ok(file) = std::fs::File::open(&path) {
+            if let Ok(mut zip) = zip::ZipArchive::new(file) {
+                for i in 0..zip.len() {
+                    if let Ok(entry) = zip.by_index(i) {
+                        names.push(entry.name().to_string());
+                    }
+                }
+            }
+        }
+        Ok(serde_json::json!({ "path": path, "size": size, "files": names }))
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
+/// Send a collected report to support. Only ever called after the person
+/// has read what is in it and pressed send.
+#[tauri::command]
+async fn report_send(
+    path: String,
+    session: String,
+    note: String,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let engine = engine()?;
+        // The engine owns the upload: it already holds the sign-in and the
+        // hub URL, and the studio should not learn either.
+        let out = silent_cmd(&engine)
+            .arg("support-send")
+            .arg(&path)
+            .args(["--session", &session])
+            .args(["--note", &note])
+            .output()
+            .map_err(|err| err.to_string())?;
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        if out.status.success() {
+            Ok(text.trim().to_string())
+        } else {
+            Err(text.trim().to_string())
+        }
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 /// Run an app headless and hand back what the runtime actually said.
 /// The studio's answer to "it won't open" -- check, don't guess.
 #[tauri::command]
@@ -1957,6 +2030,8 @@ fn main() {
             open_app,
             plan_request,
             diagnose_app,
+            report_collect,
+            report_send,
             publish,
             reveal,
             settings_get,

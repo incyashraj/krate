@@ -24,6 +24,10 @@ PUBLIC_BASE = "https://hub.krate.tech"
 # at runtime, so without this the SQL URL becomes /accounts/undefined/... and
 # every query 404s.
 CF_ACCOUNT_ID = "1ded170dc582113e578faac5034be4ce"
+# Who may read support reports. Verified GitHub logins, never a header the
+# caller sets. Everyone else gets 404 from /admin/* -- not 403, because a
+# 403 tells a stranger the door exists.
+KRATE_ADMINS = "incyashraj"
 
 # Usage counting lives here, not in KV. Analytics Engine is unmetered at this
 # scale and exists for exactly this shape of data; the day telemetry shared a

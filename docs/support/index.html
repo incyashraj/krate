@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Krate Support</title>
+  <link rel="stylesheet" href="/site.css" />
+  <link rel="icon" href="/krate-favicon.png" />
+  <style>
+    /* Admin surface: dense, plain, no decoration. Its job is to let one
+       person read twenty reports quickly. */
+    .bar { display: flex; gap: .8rem; align-items: center; margin: 1.6rem 0 1.2rem; flex-wrap: wrap; }
+    .bar input {
+      flex: 1; min-width: 240px;
+      background: var(--panel); color: var(--text);
+      border: 1px solid var(--line); border-radius: 9px;
+      padding: .6rem .8rem; font: inherit;
+    }
+    .bar input:focus { outline: none; border-color: var(--blue); }
+    .count { color: var(--quiet); font-size: .88rem; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th {
+      text-align: left; font-size: .72rem; letter-spacing: .09em;
+      text-transform: uppercase; color: var(--quiet);
+      padding: 0 .8rem .6rem; font-weight: 600;
+    }
+    td { padding: .8rem; border-top: 1px solid var(--line); vertical-align: top; }
+    tr:hover td { background: rgba(255,255,255,.02); }
+    .who { color: var(--text); font-weight: 600; }
+    .when, .env { color: var(--quiet); font-size: .82rem; font-family: var(--mono); }
+    .note { color: var(--muted); max-width: 34rem; line-height: 1.5; }
+    .dl { color: var(--blue-soft); font-family: var(--mono); font-size: .82rem; white-space: nowrap; }
+    .gate { max-width: 34rem; margin: 3rem auto; text-align: center; }
+    .gate p { color: var(--muted); line-height: 1.7; margin-bottom: 1.2rem; }
+    .gate input {
+      width: 100%; background: var(--panel); color: var(--text);
+      border: 1px solid var(--line); border-radius: 9px;
+      padding: .7rem .9rem; font: inherit; font-family: var(--mono); font-size: .85rem;
+      margin-bottom: .8rem;
+    }
+    .err { color: var(--danger, #ff7f95); font-size: .88rem; margin-top: .8rem; }
+    .empty { color: var(--quiet); text-align: center; padding: 3rem 1rem; }
+  </style>
+</head>
+<body>
+  <header class="subnav">
+    <div class="wrap subnav-inner">
+      <a class="brand" href="/"><img src="/krate-glyph-white.png" alt="" width="22" height="22" /> KRATE</a>
+      <nav><a href="/cloud/">Gallery</a><a href="/docs/">Docs</a></nav>
+      <span class="pill" id="whoami"></span>
+    </div>
+  </header>
+
+  <main class="page-wide">
+    <h1>Support reports</h1>
+
+    <div id="gate" class="gate">
+      <p>Reports people sent from Krate Studio. Admin only: paste a GitHub
+      token (or a Krate session token) with your account on it. It stays in
+      this browser and is sent only to the hub.</p>
+      <input id="token" type="password" placeholder="ghp_… or krs_…" autocomplete="off" />
+      <button class="pill pill-primary" id="signin">Open reports</button>
+      <p class="err" id="gateErr"></p>
+    </div>
+
+    <div id="board" hidden>
+      <div class="bar">
+        <input type="search" id="q" placeholder="Search by person, note, version, session" autocomplete="off" />
+        <span class="count" id="count"></span>
+        <button class="pill" id="refresh">Refresh</button>
+        <button class="pill" id="forget">Sign out</button>
+      </div>
+      <div id="list"></div>
+    </div>
+  </main>
+
+  <script>
+    const HUB = "https://hub.krate.tech";
+    const KEY = "krate.support.token";
+    let ALL = [];
+
+    const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    const kb = (b) => b < 1024 ? b + " B" : b < 1048576 ? Math.round(b / 1024) + " KB" : (b / 1048576).toFixed(1) + " MB";
+    const ago = (s) => {
+      const d = Math.max(0, Math.floor(Date.now() / 1000) - s);
+      if (d < 3600) return Math.max(1, Math.floor(d / 60)) + "m ago";
+      if (d < 86400) return Math.floor(d / 3600) + "h ago";
+      return new Date(s * 1000).toLocaleString();
+    };
+
+    async function load() {
+      const token = localStorage.getItem(KEY);
+      if (!token) return;
+      const r = await fetch(HUB + "/admin/reports", {
+        headers: { authorization: "Bearer " + token },
+      });
+      if (!r.ok) {
+        // 404 for a non-admin, deliberately: the door does not announce itself.
+        localStorage.removeItem(KEY);
+        document.getElementById("gate").hidden = false;
+        document.getElementById("board").hidden = true;
+        document.getElementById("gateErr").textContent =
+          "That account cannot read reports.";
+        return;
+      }
+      const { reports } = await r.json();
+      ALL = reports || [];
+      document.getElementById("gate").hidden = true;
+      document.getElementById("board").hidden = false;
+      render();
+    }
+
+    function render() {
+      const term = document.getElementById("q").value.trim().toLowerCase();
+      const shown = ALL.filter((x) => !term ||
+        JSON.stringify(x).toLowerCase().includes(term));
+      document.getElementById("count").textContent =
+        shown.length === ALL.length ? `${ALL.length} reports` : `${shown.length} of ${ALL.length}`;
+      const token = localStorage.getItem(KEY);
+      document.getElementById("list").innerHTML = shown.length ? `
+        <table>
+          <thead><tr><th>From</th><th>When</th><th>Where</th><th>What they said</th><th></th></tr></thead>
+          <tbody>${shown.map((x) => `
+            <tr>
+              <td class="who">${esc(x.name || x.from)}<br /><span class="when">@${esc(x.from)}</span></td>
+              <td class="when">${esc(ago(x.received))}</td>
+              <td class="env">${esc(x.krate)} · ${esc(x.os)}<br />${esc(x.session)}</td>
+              <td class="note">${esc(x.note) || "<span class=\\"when\\">no note</span>"}</td>
+              <td><a class="dl" href="#" data-id="${esc(x.id)}">download ${kb(x.size)}</a></td>
+            </tr>`).join("")}</tbody>
+        </table>` : '<p class="empty">Nothing reported yet.</p>';
+
+      // The download needs the auth header, so fetch it and hand over a blob
+      // rather than linking straight at the endpoint.
+      for (const a of document.querySelectorAll(".dl")) {
+        a.addEventListener("click", async (e) => {
+          e.preventDefault();
+          a.textContent = "downloading…";
+          const r = await fetch(HUB + "/admin/report/" + a.dataset.id, {
+            headers: { authorization: "Bearer " + token },
+          });
+          if (!r.ok) { a.textContent = "failed"; return; }
+          const url = URL.createObjectURL(await r.blob());
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = `krate-report-${a.dataset.id}.zip`;
+          link.click();
+          URL.revokeObjectURL(url);
+          a.textContent = "downloaded";
+        });
+      }
+    }
+
+    document.getElementById("signin").addEventListener("click", () => {
+      const t = document.getElementById("token").value.trim();
+      if (!t) return;
+      localStorage.setItem(KEY, t);
+      document.getElementById("gateErr").textContent = "";
+      load();
+    });
+    document.getElementById("token").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") document.getElementById("signin").click();
+    });
+    document.getElementById("refresh").addEventListener("click", load);
+    document.getElementById("forget").addEventListener("click", () => {
+      localStorage.removeItem(KEY);
+      location.reload();
+    });
+    document.getElementById("q").addEventListener("input", render);
+    load();
+  </script>
+</body>
+</html>

@@ -12,6 +12,7 @@ on:
       - "docs/landing/**"
       - "docs/open/**"
       - "docs/cloud/**"
+      - "docs/support/**"
       - "docs/pages/**"
       - "docs/answers/**"
       # The Krate Mode prompt, served at the site root. Without this a
@@ -174,6 +175,11 @@ jobs:
           # The page a non-technical person lands on after "I received one".
           mkdir -p _site/open
           cp docs/open/index.html _site/open/index.html
+          # The admin console. noindex in its own head, and useless without
+          # an admin token -- the hub answers /admin/* with 404 to everyone
+          # else -- but it lives at a subdomain so the URL is memorable.
+          mkdir -p _site/support
+          cp docs/support/index.html _site/support/index.html
           mkdir -p _site/cloud _site/cloud/app
           cp docs/cloud/index.html _site/cloud/index.html
           # One page per app, filled in from the hub by its id.

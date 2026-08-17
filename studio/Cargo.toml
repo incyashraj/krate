@@ -33,6 +33,7 @@ url = "2"
 # client, so the studio and the engine speak to the hub identically.
 ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
 tauri-plugin-notification = "2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Detached from the repository workspace on purpose; see the header comment.
 [workspace]

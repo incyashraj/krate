@@ -107,6 +107,15 @@ export default {
       if (request.method === "GET" && pathname.startsWith("/icon/")) {
         return cors(await getIcon(pathname.slice(6), env));
       }
+      if (request.method === "POST" && pathname === "/report") {
+        return cors(await putReport(request, env));
+      }
+      if (request.method === "GET" && pathname === "/admin/reports") {
+        return cors(await listReports(request, env));
+      }
+      if (request.method === "GET" && pathname.startsWith("/admin/report/")) {
+        return cors(await getReport(request, pathname.slice("/admin/report/".length), env));
+      }
       if (request.method === "DELETE" && pathname.startsWith("/app/")) {
         return cors(await unpublish(request, pathname.slice(5), env));
       }
@@ -264,6 +273,82 @@ async function putShot(request, hash, env) {
     httpMetadata: { contentType: "image/png" },
   });
   return json({ ok: true });
+}
+
+/// Receive one support report: a zip the studio built after the person
+/// agreed to send it. Signed in, so a report has a name attached and the
+/// endpoint cannot be used as anonymous storage.
+///
+/// The bytes go to R2 and a small row to KV, so the admin list is one read
+/// rather than a bucket scan.
+async function putReport(request, env) {
+  const identity = await verifyGitHub(request, env);
+  if (!identity) return text("sign in first", 401);
+  const body = new Uint8Array(await request.arrayBuffer());
+  if (body.length === 0 || body.length > 12 * 1024 * 1024) {
+    return text("a report must be a zip under 12 MiB", 413);
+  }
+  // PK\x03\x04: a zip and nothing else. The studio builds these; anything
+  // else is a client we do not recognise.
+  if (!(body[0] === 0x50 && body[1] === 0x4b)) {
+    return text("that is not a report file", 422);
+  }
+  const id = (await sha256Hex(body)).slice(0, 16);
+  await env.BUNDLES.put(`report:${id}`, body, {
+    httpMetadata: { contentType: "application/zip" },
+  });
+  const meta = {
+    id,
+    from: identity.login,
+    name: identity.name || identity.login,
+    session: header(request, "x-krate-session") || "",
+    krate: header(request, "x-krate-version") || "",
+    os: header(request, "x-krate-os") || "",
+    note: (header(request, "x-krate-note") || "").slice(0, 400),
+    size: body.length,
+    received: Math.floor(Date.now() / 1000),
+    state: "new",
+  };
+  await env.APPS.put(`report:${id}`, JSON.stringify(meta));
+  return json({ ok: true, id });
+}
+
+/// Is this caller one of us? A comma-separated list of GitHub logins in the
+/// KRATE_ADMINS var, checked against a verified identity -- never a header
+/// the caller controls.
+async function isAdmin(request, env) {
+  const identity = await verifyGitHub(request, env);
+  if (!identity) return null;
+  const admins = (env.KRATE_ADMINS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  return admins.includes((identity.login || "").toLowerCase()) ? identity : null;
+}
+
+async function listReports(request, env) {
+  if (!(await isAdmin(request, env))) return text("not found", 404);
+  const listing = await env.APPS.list({ prefix: "report:", limit: 300 });
+  const reports = [];
+  for (const key of listing.keys) {
+    const raw = await env.APPS.get(key.name);
+    if (raw) reports.push(JSON.parse(raw));
+  }
+  reports.sort((a, b) => (b.received || 0) - (a.received || 0));
+  return json({ reports });
+}
+
+async function getReport(request, id, env) {
+  if (!(await isAdmin(request, env))) return text("not found", 404);
+  if (!/^[0-9a-f]{16}$/.test(id)) return text("not found", 404);
+  const object = await env.BUNDLES.get(`report:${id}`);
+  if (!object) return text("not found", 404);
+  return new Response(object.body, {
+    headers: {
+      "content-type": "application/zip",
+      "content-disposition": `attachment; filename="krate-report-${id}.zip"`,
+    },
+  });
 }
 
 /// Take an app off the gallery. Only its author can; the bundle and every
@@ -1106,7 +1191,7 @@ function cors(response) {
   headers.set("access-control-allow-methods", "GET, POST, DELETE, OPTIONS");
   headers.set(
     "access-control-allow-headers",
-    "authorization, content-type, x-krate-name, x-krate-description, x-krate-category",
+    "authorization, content-type, x-krate-name, x-krate-description, x-krate-category, x-krate-session, x-krate-version, x-krate-os, x-krate-note",
   );
   return new Response(response.body, { status: response.status, headers });
 }

@@ -746,6 +746,66 @@ async function make(request) {
   return startPlanning(request, files);
 }
 
+/* ---- reporting an issue (K-128) --------------------------------------- */
+
+/* The consent dialog names the real contents of the real file, gathered
+   before it is shown -- a promise about what will be sent is not the same
+   as a list of what IS in it, and only the second one earns a click. */
+async function openReportSheet() {
+  const session = state.session;
+  if (!session) return;
+  const sheet = $("reportSheet");
+  $("repList").innerHTML = "<li class=\"dim\">Gathering this session…</li>";
+  $("repSize").textContent = "";
+  $("repResult").textContent = "";
+  $("repNote").value = "";
+  $("repSend").disabled = true;
+  sheet.classList.remove("hidden");
+  try {
+    const info = await invoke("report_collect", { session: session.id });
+    state.report = info;
+    const WORDS = {
+      "session.json": "this conversation, and what Krate said back",
+      "about.txt": "your Krate version, operating system, and which AI tools are installed",
+      "workspace/.agent-transcript.txt": "the AI's own log of what it did",
+      "workspace/src/lib.rs": "the app code the AI had written",
+      "workspace/Cargo.toml": "the app's build setup",
+      "workspace/manifest.toml": "the permissions the app declared",
+    };
+    $("repList").innerHTML = "";
+    for (const f of info.files) {
+      const li = document.createElement("li");
+      li.textContent = WORDS[f] || f;
+      $("repList").appendChild(li);
+    }
+    $("repSize").textContent = `${Math.max(1, Math.round(info.size / 1024))} KB in total.`;
+    $("repSend").disabled = false;
+  } catch (err) {
+    $("repList").innerHTML = "";
+    $("repResult").textContent = plainWords(err);
+  }
+}
+
+async function sendReport() {
+  if (!state.report) return;
+  $("repSend").disabled = true;
+  $("repSend").textContent = "Sending…";
+  try {
+    const said = await invoke("report_send", {
+      path: state.report.path,
+      session: state.session ? state.session.id : "",
+      note: $("repNote").value.trim(),
+    });
+    $("reportSheet").classList.add("hidden");
+    say("KRATE", `Sent to Krate support (${said}). Thank you -- this is how the next person avoids it.`, null, { variant: "ask" });
+  } catch (err) {
+    $("repResult").textContent = plainWords(err);
+    $("repSend").disabled = false;
+  } finally {
+    $("repSend").textContent = "Send to support";
+  }
+}
+
 /* When someone says the app will not open, run it and read the answer. */
 async function diagnoseCurrent() {
   const app = currentApp();
@@ -1967,6 +2027,11 @@ $("revealBtn").addEventListener("click", async () => {
   } catch (err) {
     showActionError(err);
   }
+});
+$("reportBtn")?.addEventListener("click", openReportSheet);
+$("repSend")?.addEventListener("click", sendReport);
+$("repReveal")?.addEventListener("click", () => {
+  if (state.report) invoke("reveal", { path: state.report.path });
 });
 $("retryBtn").addEventListener("click", () => {
   const again = state.lastFailed;
