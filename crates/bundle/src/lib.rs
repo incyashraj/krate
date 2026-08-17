@@ -579,16 +579,29 @@ pub fn rewrite_sdk_paths(text: &str) -> String {
 }
 
 /// The SDK root inside a line, if it holds one.
+///
+/// Case-insensitive and separator-tolerant, because the miss was real: on
+/// Windows the SDK materialises under `AppData/Local/Krate/sdk/` -- capital
+/// K -- and the lowercase `/krate/sdk/` marker never matched, so every
+/// Windows-built bundle shipped its author's absolute path and the source
+/// stopped travelling (K-126).
 fn sdk_root_in(line: &str) -> Option<String> {
+    let lower = line.to_ascii_lowercase().replace('\\', "/");
+    let normalized = line.replace('\\', "/");
     let marker = "/krate/sdk/";
-    let at = line.find(marker)?;
-    let start = line[..at].rfind(['"', '\'', ' ', '=']).map_or(0, |i| i + 1);
+    let at = lower.find(marker)?;
+    let start = normalized[..at]
+        .rfind(['"', '\'', ' ', '='])
+        .map_or(0, |i| i + 1);
     // The hash segment ends at the next separator after the marker.
     let after = at + marker.len();
-    let end = line[after..]
+    let end = normalized[after..]
         .find('/')
         .map(|offset| after + offset)
-        .unwrap_or(line.len());
+        .unwrap_or(normalized.len());
+    // Indices computed on the normalized copy are only valid on the ORIGINAL
+    // line if the two are byte-aligned, which replacing single characters
+    // with single characters guarantees.
     Some(line[start..end].to_string())
 }
 
@@ -1078,6 +1091,27 @@ required = true
 
         let err = open_reader(buffer).expect_err("asset traversal must fail");
         assert!(matches!(err, BundleError::UnsafeAssetPath { .. }));
+    }
+
+    #[test]
+    fn a_windows_sdk_path_is_rewritten_to_the_placeholder() {
+        // The exact line from a real Windows-built bundle whose source could
+        // not build anywhere else (K-126): AppData/Local/Krate has a capital
+        // K, and the lowercase marker missed it.
+        let line = r#"krate = { path = "C:/Users/user/AppData/Local/Krate/sdk/93ca1541984629cb/crates/bindings-rust" }"#;
+        let out = rewrite_sdk_paths(line);
+        assert!(
+            out.contains(r#"path = "{KRATE_SDK}/crates/bindings-rust""#),
+            "got: {out}"
+        );
+        // Backslash separators rewrite too.
+        let bs =
+            r#"path = "C:\Users\user\AppData\Local\Krate\sdk\93ca1541984629cb\wit\krate\phase3""#;
+        let out = rewrite_sdk_paths(bs);
+        assert!(out.contains("{KRATE_SDK}"), "got: {out}");
+        // The Unix cache shape keeps working.
+        let unix = r#"krate = { path = "/home/u/.cache/krate/sdk/aabbccdd11223344/crates/bindings-rust" }"#;
+        assert!(rewrite_sdk_paths(unix).contains("{KRATE_SDK}/crates/bindings-rust"));
     }
 
     #[test]

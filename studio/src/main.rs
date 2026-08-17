@@ -553,7 +553,8 @@ async fn create_app(
     out_dir: String,
     session: String,
 ) -> Result<CreateResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let notify_app = app.clone();
+    let out = tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
         let dir = if out_dir.is_empty() {
             PathBuf::from(Settings::default().out_dir)
@@ -575,7 +576,13 @@ async fn create_app(
         run_author(&app, cmd, &engine, &out_path)
     })
     .await
-    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+    if out.is_err() {
+        // A failure after minutes of waiting deserves the same reach as a
+        // success: the person tabbed away either way.
+        notify(&notify_app, "That build didn't come together. Come see why.");
+    }
+    out
 }
 
 /// Change an app that already exists: every studio message after the first.
@@ -864,9 +871,9 @@ fn run_author(
 
     let bytes = std::fs::metadata(out_path).map(|m| m.len()).unwrap_or(0);
     // The build took minutes and the person almost certainly tabbed away;
-    // a system notification is how "it's ready" reaches them. Every OS has
-    // a stock one-liner, so no plugin and no new permissions.
+    // a system notification is how "it's ready" reaches them.
     notify_ready(
+        app,
         &out_path
             .file_name()
             .map(|n| n.to_string_lossy().to_string())
@@ -885,33 +892,29 @@ fn run_author(
 }
 
 /// Tell the person their app is ready, through the OS itself.
-fn notify_ready(name: &str) {
-    let body = format!("{name} is ready. Open it, or tell Krate what to change.");
-    #[cfg(target_os = "macos")]
-    {
-        let script = format!(
-            "display notification \"{}\" with title \"Krate\" sound name \"Glass\"",
-            body.replace('\"', "")
-        );
-        let _ = silent_cmd("/usr/bin/osascript")
-            .args(["-e", &script])
-            .spawn();
+/// One OS notification, through Tauri's plugin so every platform's
+/// registration quirks (Windows AUMID above all) are its problem, not a
+/// hand-rolled PowerShell line's. Fired only when the window is not
+/// focused: a person watching the build does not need the OS to repeat it.
+fn notify(app: &tauri::AppHandle, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    let focused = app
+        .get_webview_window("main")
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false);
+    if focused {
+        return;
     }
-    #[cfg(target_os = "windows")]
-    {
-        // A toast via the stock WinRT classes; PowerShell ships everywhere.
-        let script = format!(
-            "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] | Out-Null;              $t = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent('ToastText02');              $t.GetElementsByTagName('text').Item(0).InnerText = 'Krate';              $t.GetElementsByTagName('text').Item(1).InnerText = '{}';              [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Krate').Show([Windows.UI.Notifications.ToastNotification]::new($t))",
-            body.replace('\'', "")
-        );
-        let _ = silent_cmd("powershell")
-            .args(["-NoProfile", "-Command", &script])
-            .spawn();
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        let _ = silent_cmd("notify-send").args(["Krate", &body]).spawn();
-    }
+    let _ = app
+        .notification()
+        .builder()
+        .title("Krate")
+        .body(body)
+        .show();
+}
+
+fn notify_ready(app: &tauri::AppHandle, name: &str) {
+    notify(app, &format!("{name} is ready. Open it, or tell Krate what to change."));
 }
 
 /// Render the finished app's real first frame, as a data URL.
@@ -1053,11 +1056,12 @@ async fn diagnose_app(path: String) -> Result<String, String> {
 /// plan -- exactly as printed.
 #[tauri::command]
 async fn plan_request(
+    app: tauri::AppHandle,
     request: String,
     attachments: Vec<String>,
     agent: Option<String>,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let out = tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
         let mut cmd = silent_cmd(&engine);
         cmd.arg("plan").arg(&request);
@@ -1080,7 +1084,15 @@ async fn plan_request(
         Ok(stdout)
     })
     .await
-    .map_err(|err| err.to_string())?
+    .map_err(|err| err.to_string())?;
+    if let Ok(answer) = &out {
+        // The plan step can take half a minute and people tab away; a
+        // question that nobody sees is a build that never starts.
+        if answer.contains("\"ask\"") {
+            notify(&app, "Krate has a question about your app.");
+        }
+    }
+    out
 }
 
 /// Publish to the hub and hand back the short run-by-URL link.
@@ -1902,6 +1914,7 @@ fn main() {
     std::thread::spawn(first_run_setup);
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .manage(Running(Mutex::new(None)))
         .setup(|_app| {
             // One title bar, ours. On Windows the native frame stacked a

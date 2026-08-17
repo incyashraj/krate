@@ -72,8 +72,8 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 ### K-126 -- Bundled source pins the SDK by absolute local path, so source does not travel
-Status:   open
-Owner:    unclaimed
+Status:   fixed
+Owner:    lead
 Severity: serious
 Class:    our-code
 Found:    2026-08-17, testing a Windows-built app's bundled source on the
@@ -85,11 +85,13 @@ Evidence: The .krate's source/Cargo.toml says
           revise fail at build with "No such file or directory". The
           bundle SHIPS the SDK precisely so source is editable later;
           the absolute paths defeat it.
-Fix:      Write relative paths into the bundled copy (the SDK travels in
-          the bundle at a known relative location), or have revise/
-          check-app rewrite sdk paths to the local materialized SDK on
-          unpack -- the fingerprint in the path names the exact SDK
-          version to materialize.
+Fix:      (this commit) The {KRATE_SDK} placeholder machinery existed on
+          both sides all along; the pack-side rewrite matched the Unix
+          cache shape /krate/sdk/ lowercase, and Windows materialises
+          under AppData/Local/Krate/sdk/ with a capital K, so on Windows
+          the rewrite never fired and the author's absolute path shipped.
+          sdk_root_in is now case-insensitive and separator-tolerant,
+          pinned by tests carrying the exact line from the live bundle.
 
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 

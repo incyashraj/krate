@@ -32,6 +32,7 @@ url = "2"
 # Reading Krate Cloud. Same version and features as the workspace's own hub
 # client, so the studio and the engine speak to the hub identically.
 ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
+tauri-plugin-notification = "2"
 
 # Detached from the repository workspace on purpose; see the header comment.
 [workspace]
