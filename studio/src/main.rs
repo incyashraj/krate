@@ -570,6 +570,15 @@ async fn create_app(
             .arg(&request)
             .args(["--agent", &agent, "--yes", "--output"])
             .arg(&out_path);
+        // One stable workspace per session, so a retry RESUMES from the code
+        // the last attempt wrote instead of starting from an empty directory.
+        // The stall message has always promised this ("it resumes from the
+        // code already written") and the studio quietly broke the promise by
+        // handing create a fresh temp dir every time -- three attempts at a
+        // big game each began from nothing (K-129).
+        let session_work = studio_dir().join("builds").join(&session);
+        let _ = std::fs::create_dir_all(&session_work);
+        cmd.args(["--work-dir"]).arg(&session_work);
         for file in &attachments {
             cmd.args(["--attach", file]);
         }

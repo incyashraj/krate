@@ -71,6 +71,32 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-129 -- Three attempts at one game each started from nothing, and the pack made the AI hunt
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    teaching-hole
+Found:    2026-08-17, founder ran the same Contra-style request three
+          times; all three died at the 15-minute ceiling.
+Evidence: Every session record shows the same shape: request, plan in
+          ~6 seconds, build starts, "that build didn't come together"
+          exactly 15 minutes later. The kept transcript of the last
+          attempt ends with the agent's own words -- "Now I'll write the
+          game." -- after 14 Bash calls spent grepping the WIT and SDK
+          for key names, audio, and draw-sprite. Zero lines of game had
+          been written when the clock fired, and the studio handed create
+          a fresh temp dir every attempt, so the stall message's promise
+          ("it resumes from the code already written") was false: each
+          retry restarted the research from nothing.
+Fix:      (this commit) The pack gains one game section carrying every
+          fact a game asks for -- the loop, held vs one-shot input, both
+          sprite paths, the complete generated-chiptune recipe (open a
+          stream, load_sound, play_sound, with a working square-wave
+          blip), pattern-based pixel art with no asset files, and the
+          scope rule. Plus K-127's key-name table. And the studio now
+          builds each session in its own stable workspace, so a retry
+          genuinely resumes.
+
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 
 Class: our-code

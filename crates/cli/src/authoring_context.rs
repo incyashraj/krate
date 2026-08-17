@@ -161,6 +161,65 @@ match events::wait(if settled { None } else { Some(16) }) { /* ... */ }\n\
 ```\n\n\
 `poll` returns immediately when nothing is queued, so this costs nothing \
 when the app is idle and everything when a finger is moving.\n\n\
+## Making a game: everything, in one place\n\n\
+A game asks for the same six facts every time, and hunting them costs more \
+than writing the game. Measured: three attempts at a side-scrolling shooter \
+spent their entire budget grepping the WIT for key names, audio, and \
+sprites, and one ended with the words \"Now I'll write the game\" as the \
+clock ran out. So: all of it, here, copy-ready.\n\n\
+**1. The loop.** Poll input at the top, move, draw, present, pace with the \
+clock. Never `request-redraw` (see the redraw rule); never bound the loop.\n\n\
+**2. Input.** `events::key_held(\"ArrowLeft\")` for held keys -- exact \
+names below. `events::poll()` for one-shot events (fire on the press, not \
+every frame it is held). Gamepad: `gamepad_held(\"south\")`, \
+`gamepad_axis(\"left-x\")`, and `gamepad_connected()` before showing a \
+controller prompt.\n\n\
+**3. Sprites.** Two ways, both real: `draw_pixels` blits a straight RGBA \
+buffer at a rect (fastest for tiles and unrotated sprites), and \
+`draw_sprite(canvas, center, dst, angle, w, h, rgba)` rotates one. For a \
+tile-based level, build ONE atlas buffer at startup and blit windows out of \
+it -- never rebuild pixel data per frame.\n\n\
+**4. Sound, the whole recipe.** No file, no asset, no decoder needed: \
+generate the samples. Open one stream at startup, load each effect once, \
+play handles as things happen.\n\n\
+\u{20}\u{20}\u{20}\u{20}// once, at startup\n\
+\u{20}\u{20}\u{20}\u{20}let stream = audio::playback::open(audio::types::StreamConfig {\n\
+\u{20}\u{20}\u{20}\u{20}    sample_rate: 22050, channels: 1,\n\
+\u{20}\u{20}\u{20}\u{20}    format: audio::types::SampleFormat::PcmS16,\n\
+\u{20}\u{20}\u{20}\u{20}    buffer_frames: 1024,\n\
+\u{20}\u{20}\u{20}\u{20}})?;\n\
+\u{20}\u{20}\u{20}\u{20}audio::playback::start(stream)?;\n\
+\u{20}\u{20}\u{20}\u{20}// a square-wave blip: NES sound in twelve lines\n\
+\u{20}\u{20}\u{20}\u{20}fn blip(hz: f32, ms: u32, duty: f32) -> Vec<u8> {\n\
+\u{20}\u{20}\u{20}\u{20}    let n = (22050 * ms / 1000) as usize;\n\
+\u{20}\u{20}\u{20}\u{20}    let mut out = Vec::with_capacity(n * 2);\n\
+\u{20}\u{20}\u{20}\u{20}    for i in 0..n {\n\
+\u{20}\u{20}\u{20}\u{20}        let phase = (i as f32 * hz / 22050.0) % 1.0;\n\
+\u{20}\u{20}\u{20}\u{20}        // fade out so it clicks like a chip, not a pop\n\
+\u{20}\u{20}\u{20}\u{20}        let env = 1.0 - (i as f32 / n as f32);\n\
+\u{20}\u{20}\u{20}\u{20}        let v = if phase < duty { 0.35 } else { -0.35 } * env;\n\
+\u{20}\u{20}\u{20}\u{20}        let s = (v * 32767.0) as i16;\n\
+\u{20}\u{20}\u{20}\u{20}        out.extend_from_slice(&s.to_le_bytes());\n\
+\u{20}\u{20}\u{20}\u{20}    }\n\
+\u{20}\u{20}\u{20}\u{20}    out\n\
+\u{20}\u{20}\u{20}\u{20}}\n\
+\u{20}\u{20}\u{20}\u{20}let shot = audio::playback::load_sound(stream, &blip(880.0, 60, 0.5))?;\n\
+\u{20}\u{20}\u{20}\u{20}// in the frame the shot happens:\n\
+\u{20}\u{20}\u{20}\u{20}let _ = audio::playback::play_sound(stream, shot, 0.8);\n\n\
+Music is the same trick with a note table: keep an index, advance it on a \
+clock, play the next note's blip. Declare `audio.playback` in the manifest \
+with a rationale in plain words (\"make the game's sounds\"). One stream \
+for the whole app -- opening one costs ~2ms, which a game cannot spend \
+mid-frame.\n\n\
+**5. Pixel art, generated.** Do not ask for image files. Write small \
+functions that fill RGBA buffers from a palette and a compact pattern (a \
+`&[&str]` of rows, one character per pixel, is enough) -- that is how a \
+16x16 soldier, a tile, and an explosion all get made with no assets. Scale \
+by blitting at a bigger rect.\n\n\
+**6. Scope.** Ship the vertical slice that actually plays: one level end to \
+end, the movement, the shooting, one boss, lives and a game-over screen. A \
+half-finished five-level game is worth less than one complete stage, and \
+the person can always ask for more.\n\n\
 ## The key names, exactly\n\n\
 `events::key-held(name)` and `key-event` use these strings, and nothing \
 else. Getting this wrong is silent -- the app builds, runs, and simply \
