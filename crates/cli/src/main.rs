@@ -10343,34 +10343,43 @@ fn gnullvm_toolchain_present() -> bool {
     listed && gnullvm_can_link()
 }
 
-/// Does the gnullvm toolchain actually carry the linker it exists for?
+/// Can the gnullvm toolchain link a HOST build script?
 ///
-/// The whole point of gnullvm on Windows is that it ships LLVM's linker so
-/// nobody needs Visual Studio Build Tools. When that directory is missing,
-/// the toolchain is worse than absent: it is chosen and then fails.
+/// The subtle part, learned from a real machine: gnullvm ships the wasm
+/// linkers (rust-lld, wasm-component-ld) but a wasm component build also
+/// compiles build scripts FOR THE HOST -- wit-bindgen-rt has one -- and for
+/// that gnullvm calls `x86_64-w64-mingw32-clang`, which its installer does
+/// NOT provide. On the founder's PC that clang was absent, so every build
+/// died at "linker `x86_64-w64-mingw32-clang` not found" while the MSVC
+/// toolchain sitting right next to it built the same crate in one second
+/// (K-130).
+///
+/// So the test is the real one: does the mingw clang gnullvm actually
+/// invokes exist? Cheap (a PATH lookup and two file checks) and honest --
+/// nothing else predicts this failure.
 #[cfg(windows)]
 fn gnullvm_can_link() -> bool {
-    let home = match home_dir() {
-        Some(home) => home,
-        None => return false,
-    };
-    let target = if cfg!(target_arch = "aarch64") {
-        "aarch64-pc-windows-gnullvm"
+    let prefix = if cfg!(target_arch = "aarch64") {
+        "aarch64-w64-mingw32-clang"
     } else {
-        "x86_64-pc-windows-gnullvm"
+        "x86_64-w64-mingw32-clang"
     };
-    let self_contained = home
-        .join(".rustup")
-        .join("toolchains")
-        .join(gnullvm_toolchain_name())
-        .join("lib")
-        .join("rustlib")
-        .join(target)
-        .join("bin")
-        .join("self-contained");
-    // Either the toolchain's own linker, or a system one it can use.
-    self_contained.is_dir()
-        || agent_provider::which_on_path("clang").is_some()
+    if agent_provider::which_on_path(prefix).is_some() {
+        return true;
+    }
+    // rustup can also carry it inside the toolchain; look where it would be.
+    if let Some(home) = home_dir() {
+        let bin = home
+            .join(".rustup")
+            .join("toolchains")
+            .join(gnullvm_toolchain_name())
+            .join("bin");
+        if bin.join(format!("{prefix}.exe")).exists() {
+            return true;
+        }
+    }
+    // A plain clang or gcc that can target mingw also satisfies rustc.
+    agent_provider::which_on_path("clang").is_some()
         || agent_provider::which_on_path("gcc").is_some()
 }
 
@@ -10460,12 +10469,18 @@ fn missing_create_tools() -> Vec<MissingTool> {
     // for Build Tools when it is not available.
     #[cfg(windows)]
     if !gnullvm_toolchain_present() && !msvc_linker_present() {
+        // Reinstall rather than install: on a machine where a PREVIOUS
+        // gnullvm install left the toolchain without its mingw clang,
+        // `rustup toolchain install` sees the name already present and does
+        // nothing, so the repair repaired nothing. --force-non-host is not
+        // needed; the plain force reinstall replaces the incomplete tree.
         missing.push(MissingTool {
             what: "a linker for Windows",
             install_cmd: vec![
                 "rustup".into(),
                 "toolchain".into(),
                 "install".into(),
+                "--force".into(),
                 gnullvm_toolchain_name().into(),
             ],
             note: "rustup's gnullvm toolchain brings its own linker, so Visual \
