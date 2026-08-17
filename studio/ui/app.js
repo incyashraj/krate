@@ -656,6 +656,13 @@ async function make(request) {
   persist();
   $("prompt").value = "";
 
+  // "It won't open" is a problem report, not a change request. The first
+  // real user said exactly that and watched the studio announce it was
+  // "making that change" -- editing an app nobody can open. Check the app
+  // ourselves and report what the runtime says instead.
+  if (currentApp() && /\b(can'?t|cannot|unable|won'?t|doesn'?t|not)\s+(open|start|launch|run|work)|crash|nothing happens|not working|no window/i.test(request)) {
+    return diagnoseCurrent();
+  }
   // A change to an app that already works goes straight to the build: the
   // conversation already happened.
   if (currentApp()) return buildNow(request, files, true);
@@ -664,6 +671,26 @@ async function make(request) {
   // built, a plan otherwise. "Sadas" becomes a question, never an app.
   if (state.planning) return continuePlanning(request, files);
   return startPlanning(request, files);
+}
+
+/* When someone says the app will not open, run it and read the answer. */
+async function diagnoseCurrent() {
+  const app = currentApp();
+  say("KRATE", "Let me try opening it myself and see what happens…");
+  try {
+    const verdict = await invoke("diagnose_app", { path: app.path });
+    if (verdict === "ok") {
+      say("KRATE", "It starts and draws its first screen when I run it here, so the app itself is healthy. Try updating Krate (the Update chip at the top if one is showing), then open it again. If it still won't open on a double-click, tell me what you see and I'll dig further.", null, { variant: "ask" });
+    } else {
+      say("KRATE", `Found it -- when I run the app, this happens:\n\n${verdict}\n\nTell me to fix it and I'll make that change.`, null, {
+        variant: "ask",
+        actions: [{ label: "Fix it", primary: true, run: () => make(`The app fails to start. When run, it reports:\n${verdict}\nFix that.`) }],
+      });
+    }
+  } catch (err) {
+    say("KRATE", `I couldn't check it (${plainWords(err)}).`);
+  }
+  persist();
 }
 
 /* ---- the conversation before the build (K-123) ------------------------- */

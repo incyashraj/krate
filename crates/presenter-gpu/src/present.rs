@@ -265,6 +265,14 @@ impl WindowPresenter {
             },
         );
         use wgpu::CurrentSurfaceTexture;
+        // A failure recorded DURING configure (an invalid surface, a lost
+        // device) must stop us HERE: with panic=abort, one more surface call
+        // panics inside wgpu and kills the whole app -- seen live as a
+        // finance dashboard that flashed a terminal and died while the log
+        // said "retiring to CPU painter" (K-125). Err retires cleanly.
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
         let frame = match self.surface.get_current_texture() {
             CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
                 frame
@@ -385,6 +393,14 @@ impl WindowPresenter {
             )
             .map_err(|e| format!("render: {e}"))?;
         use wgpu::CurrentSurfaceTexture;
+        // A failure recorded DURING configure (an invalid surface, a lost
+        // device) must stop us HERE: with panic=abort, one more surface call
+        // panics inside wgpu and kills the whole app -- seen live as a
+        // finance dashboard that flashed a terminal and died while the log
+        // said "retiring to CPU painter" (K-125). Err retires cleanly.
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
         let frame = match self.surface.get_current_texture() {
             CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
                 frame
@@ -609,6 +625,14 @@ impl PixelPresenter {
             },
         );
         use wgpu::CurrentSurfaceTexture;
+        // A failure recorded DURING configure (an invalid surface, a lost
+        // device) must stop us HERE: with panic=abort, one more surface call
+        // panics inside wgpu and kills the whole app -- seen live as a
+        // finance dashboard that flashed a terminal and died while the log
+        // said "retiring to CPU painter" (K-125). Err retires cleanly.
+        if self.device_failed.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("GPU device reported an error".to_string());
+        }
         let frame = match self.surface.get_current_texture() {
             CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => {
                 frame

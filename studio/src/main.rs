@@ -1012,6 +1012,42 @@ fn open_app(path: String) -> Result<(), String> {
     })
 }
 
+/// Run an app headless and hand back what the runtime actually said.
+/// The studio's answer to "it won't open" -- check, don't guess.
+#[tauri::command]
+async fn diagnose_app(path: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = existing(&path)?;
+        let engine = engine()?;
+        let shot = std::env::temp_dir().join(format!("krate-diagnose-{}.png", std::process::id()));
+        let out = silent_cmd(&engine)
+            .arg("run")
+            .arg(&path)
+            .arg("--shoot")
+            .arg(&shot)
+            .args(["--auto-grant", "--", "quick"])
+            .output()
+            .map_err(|err| err.to_string())?;
+        let _ = std::fs::remove_file(&shot);
+        let text = format!(
+            "{}
+{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        if out.status.success() {
+            Ok("ok".to_string())
+        } else {
+            // The tail is where runtimes put the reason.
+            let tail: Vec<&str> = text.lines().rev().filter(|l| !l.trim().is_empty()).take(6).collect();
+            Ok(tail.into_iter().rev().collect::<Vec<_>>().join("
+"))
+        }
+    })
+    .await
+    .map_err(|err| err.to_string())?
+}
+
 /// The conversation gate (K-123): ask the engine to look at a request
 /// before anything builds. Returns the engine's one JSON object -- ask or
 /// plan -- exactly as printed.
@@ -1907,6 +1943,7 @@ fn main() {
             stop_build,
             open_app,
             plan_request,
+            diagnose_app,
             publish,
             reveal,
             settings_get,
