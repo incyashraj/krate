@@ -6465,16 +6465,14 @@ fn rustup_toolchain_bin() -> Option<PathBuf> {
     // Studio Build Tools. Falling through to the default toolchain keeps
     // machines that already have MSVC working exactly as before.
     #[cfg(windows)]
-    if gnullvm_toolchain_present() {
+    if let Some(toolchain) = working_windows_toolchain() {
+        // Whichever toolchain can genuinely build here, proven by building.
+        // Preferring gnullvm by NAME routed every build on a real machine
+        // into the one toolchain that could not link, while the MSVC
+        // toolchain beside it worked (K-130).
         let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
         let out = ProcessCommand::new(rustup)
-            .args([
-                "run",
-                gnullvm_toolchain_name(),
-                "rustc",
-                "--print",
-                "sysroot",
-            ])
+            .args(["run", &toolchain, "rustc", "--print", "sysroot"])
             .output()
             .ok();
         if let Some(out) = out {
@@ -10421,6 +10419,97 @@ fn msvc_linker_present() -> bool {
         .unwrap_or(false)
 }
 
+/// Can this rustup toolchain actually build a wasm crate on this machine?
+///
+/// The only test that does not lie. Every proxy we tried -- is the toolchain
+/// listed, does link.exe exist, does vswhere report VC tools, does a
+/// self-contained directory exist -- said yes or no while the machine
+/// disagreed. So compile a two-line crate for wasm32-wasip1 with that
+/// toolchain and see. Takes about a second, cached afterwards, and it is
+/// what the real build will do (K-130).
+#[cfg(windows)]
+fn toolchain_builds_wasm(toolchain: &str) -> bool {
+    use std::sync::Mutex;
+    static SEEN: Mutex<Option<Vec<(String, bool)>>> = Mutex::new(None);
+    if let Ok(mut guard) = SEEN.lock() {
+        let seen = guard.get_or_insert_with(Vec::new);
+        if let Some((_, ok)) = seen.iter().find(|(name, _)| name == toolchain) {
+            return *ok;
+        }
+    }
+    let ok = probe_wasm_build(toolchain);
+    if let Ok(mut guard) = SEEN.lock() {
+        if let Some(seen) = guard.as_mut() {
+            seen.push((toolchain.to_string(), ok));
+        }
+    }
+    ok
+}
+
+#[cfg(windows)]
+fn probe_wasm_build(toolchain: &str) -> bool {
+    let dir = std::env::temp_dir().join(format!("krate-linkprobe-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    if fs::create_dir_all(dir.join("src")).is_err() {
+        return false;
+    }
+    // A crate with a build script, because that is the part that needs a HOST
+    // linker -- the exact thing wit-bindgen-rt fails on.
+    let wrote = fs::write(
+        dir.join("Cargo.toml"),
+        "[package]\nname = \"krate-linkprobe\"\nversion = \"0.0.0\"\nedition = \"2021\"\n\n[lib]\npath = \"src/lib.rs\"\n",
+    )
+    .and_then(|_| fs::write(dir.join("build.rs"), "fn main() {}\n"))
+    .and_then(|_| fs::write(dir.join("src/lib.rs"), "pub fn probe() -> u32 { 1 }\n"))
+    .is_ok();
+    if !wrote {
+        return false;
+    }
+    let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
+    let ok = ProcessCommand::new(rustup)
+        .args([
+            "run",
+            toolchain,
+            "cargo",
+            "build",
+            "--quiet",
+            "--target",
+            CREATE_WASM_TARGET,
+        ])
+        .current_dir(&dir)
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false);
+    let _ = fs::remove_dir_all(&dir);
+    ok
+}
+
+/// The rustup toolchain that can actually build here, if any.
+#[cfg(windows)]
+fn working_windows_toolchain() -> Option<String> {
+    let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
+    let listed = ProcessCommand::new(rustup)
+        .args(["toolchain", "list"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&listed.stdout).to_string();
+    let names: Vec<String> = text
+        .lines()
+        .map(|line| line.split_whitespace().next().unwrap_or("").to_string())
+        .filter(|name| !name.is_empty())
+        .collect();
+    // gnullvm first when it works (no Build Tools needed), then anything
+    // else installed -- msvc included, which is what a machine with Visual
+    // Studio already has.
+    let mut order: Vec<String> = names
+        .iter()
+        .filter(|n| n.contains("gnullvm"))
+        .cloned()
+        .collect();
+    order.extend(names.iter().filter(|n| !n.contains("gnullvm")).cloned());
+    order.into_iter().find(|name| toolchain_builds_wasm(name))
+}
+
 fn missing_create_tools() -> Vec<MissingTool> {
     let mut missing = Vec::new();
 
@@ -10468,7 +10557,7 @@ fn missing_create_tools() -> Vec<MissingTool> {
     // linker and needs no Microsoft tooling at all. Prefer that, and only ask
     // for Build Tools when it is not available.
     #[cfg(windows)]
-    if !gnullvm_toolchain_present() && !msvc_linker_present() {
+    if working_windows_toolchain().is_none() && !msvc_linker_present() {
         // Reinstall rather than install: on a machine where a PREVIOUS
         // gnullvm install left the toolchain without its mingw clang,
         // `rustup toolchain install` sees the name already present and does
