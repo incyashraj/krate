@@ -46,6 +46,15 @@ pub trait AgentProvider: Send + Sync {
     /// The arguments for one headless authoring run of `prompt`.
     fn author_args(&self, prompt: &str) -> Vec<String>;
 
+    /// Arguments for a short text-only call: a prompt in, prose out, no
+    /// tools, no file edits. Used by `krate plan`, which must answer in
+    /// seconds. The default reuses the authoring arguments -- every
+    /// provider can serve a text answer through them, just slower --
+    /// and providers with a lighter one-shot mode override it.
+    fn plan_args(&self, prompt: &str) -> Vec<String> {
+        self.author_args(prompt)
+    }
+
     /// A cheap round trip that proves the tool works, not merely that it is on
     /// PATH. Defaults to asking it to echo one word: short enough to be quick,
     /// real enough that an expired sign-in fails it the way it would fail a
@@ -136,6 +145,13 @@ pub fn resolve(name: &str) -> Result<&'static dyn AgentProvider, String> {
 /// One shared implementation on purpose: "is this program on PATH" has exactly
 /// one right answer, and a provider allowed to define its own could only get it
 /// wrong.
+/// The first provider whose CLI is on this machine, in PROVIDERS order --
+/// the same preference `krate ai` displays. For callers that need "whichever
+/// AI the person has" without asking.
+pub fn first_installed() -> Option<&'static dyn AgentProvider> {
+    PROVIDERS.iter().copied().find(|p| is_installed(*p))
+}
+
 pub fn is_installed(provider: &dyn AgentProvider) -> bool {
     which_on_path(provider.program()).is_some()
 }
@@ -543,6 +559,13 @@ impl AgentProvider for ClaudeProvider {
         .iter()
         .map(|s| s.to_string())
         .collect()
+    }
+
+    fn plan_args(&self, prompt: &str) -> Vec<String> {
+        // -p alone: pure text one-shot, no tools, no permission machinery.
+        // The plan call reads nothing and writes nothing; speed is the
+        // feature.
+        vec!["-p".to_string(), prompt.to_string()]
     }
 
     fn configure(&self, command: &mut ProcessCommand) {

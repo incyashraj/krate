@@ -407,6 +407,25 @@ enum Command {
     /// The bundle is stored by the hash of its bytes, so republishing the same
     /// app returns the same URL. The hub to use comes from KRATE_HUB_URL,
     /// defaulting to a local dev server at http://127.0.0.1:8787.
+    /// Look at a request BEFORE building: answer with either up to three
+    /// short questions (when answering them would change what gets built)
+    /// or a one-paragraph plan of what will be made and what it needs.
+    /// Prints one JSON object -- {"ask":[...]} or {"plan":"...","needs":[...]}
+    /// -- and never builds anything. This is the Studio's conversation door.
+    Plan {
+        /// What the person asked for, in their own words.
+        request: String,
+
+        /// Files the person attached; the plan takes them into account and
+        /// asks for ones the request implies but does not include.
+        #[arg(long)]
+        attach: Vec<PathBuf>,
+
+        /// Which installed AI answers. Same names as `krate create --agent`.
+        #[arg(long)]
+        agent: Option<String>,
+    },
+
     Publish {
         /// Path to the .krate bundle to upload.
         bundle: PathBuf,
@@ -1101,6 +1120,11 @@ fn run() -> Result<u8> {
             Ok(0)
         }
         Command::Telemetry { state } => usage::telemetry_command(&state),
+        Command::Plan {
+            request,
+            attach,
+            agent,
+        } => plan_command(&request, &attach, agent.as_deref()),
         Command::Publish {
             bundle,
             hub,
@@ -3794,6 +3818,163 @@ fn validate_app_name(name: &str) -> std::result::Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// The conversation gate: what `krate plan` prints for a request, without
+/// building anything (K-123, Plan/Authoring-Conversation-2026-08.md).
+///
+/// Two layers. A request too thin to mean anything gets a question
+/// deterministically -- no AI needed, instant, and it is the acceptance
+/// case: "Sadas" must become a question, never an app. Everything else goes
+/// to the person's own AI for one short text call that returns either
+/// questions or a plan.
+fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> Result<u8> {
+    // Deterministic thin gate. name_from_request already knows which words
+    // carry meaning; a request it cannot name and that has no sentence
+    // structure to speak of is not buildable as typed.
+    let meaningful = request
+        .split_whitespace()
+        .filter(|w| w.chars().any(|c| c.is_ascii_alphanumeric()))
+        .count();
+    if name_from_request(request).is_none() && meaningful < 4 {
+        println!(
+            "{}",
+            serde_json::json!({
+                "ask": [
+                    "What should this app do? Describe it in a sentence or two -- \
+                     what you would use it for, and what it should show."
+                ]
+            })
+        );
+        return Ok(0);
+    }
+
+    let provider = match agent {
+        Some(name) => resolve_agent(name)?,
+        None => agent_provider::first_installed().ok_or_else(|| {
+            anyhow::anyhow!("no AI is installed to plan with; run `krate ai` to see the options")
+        })?,
+    };
+
+    let attached: Vec<String> = attachments
+        .iter()
+        .map(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| p.display().to_string())
+        })
+        .collect();
+    let attached_line = if attached.is_empty() {
+        "Nothing is attached.".to_string()
+    } else {
+        format!("Attached files: {}.", attached.join(", "))
+    };
+
+    let prompt = format!(
+        "A person asked for a desktop app in these words:\n\n{request}\n\n{attached_line}\n\n\
+         You are deciding whether this is ready to build. Reply with EXACTLY ONE json object \
+         and nothing else -- no prose, no code fences.\n\n\
+         If answering a question would change what gets built (the request is ambiguous, \
+         thin, or mentions data or files that are not attached), reply:\n\
+         {{\"ask\": [\"question\", ...]}} -- at most three short questions, each one \
+         something only this person can answer.\n\n\
+         Otherwise reply:\n\
+         {{\"plan\": \"one paragraph in plain words: what will be built, what screens or \
+         controls it has, and what data it works on\", \"needs\": [\"things the person must \
+         supply or approve: a file to attach, a choice to make, a permission the app will \
+         request\"]}} -- needs may be empty.\n\n\
+         Never ask about colors, fonts, or anything with a sensible default. A Krate app \
+         runs on Mac, Windows and Linux automatically, so never ask about platforms. Ask \
+         only when the answer changes the app."
+    );
+
+    let program = agent_provider::which_on_path(provider.program())
+        .unwrap_or_else(|| PathBuf::from(provider.program()));
+    let mut command = ProcessCommand::new(program);
+    agent_provider::with_tool_path(&mut command);
+    command.args(provider.plan_args(&prompt));
+    provider.configure(&mut command);
+    let scratch = std::env::temp_dir().join(format!("krate-plan-{}", std::process::id()));
+    let _ = fs::create_dir_all(&scratch);
+    command.current_dir(&scratch);
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+
+    let started = std::time::Instant::now();
+    let mut child = command.spawn().context("start the AI for planning")?;
+    // Two minutes is the hard stop; the target is under thirty seconds. A
+    // plan that takes longer than a coffee is a build in disguise.
+    let output = loop {
+        if let Some(_status) = child.try_wait().context("wait for the planning AI")? {
+            break child.wait_with_output().context("read the plan")?;
+        }
+        if started.elapsed() > std::time::Duration::from_secs(120) {
+            let _ = child.kill();
+            anyhow::bail!("the AI took over two minutes to plan; try again or pick another AI");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    };
+    let text = format!(
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let Some(json) = extract_plan_json(&text) else {
+        anyhow::bail!(
+            "the AI did not answer in the expected shape. It said:\n{}",
+            text.trim().chars().take(600).collect::<String>()
+        );
+    };
+    println!("{json}");
+    Ok(0)
+}
+
+/// The first balanced JSON object in the text that carries an "ask" or
+/// "plan" key. Agents wrap answers in prose and code fences no matter what
+/// the prompt says; the contract survives by extraction, not by trust.
+fn extract_plan_json(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut start = None;
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (i, &b) in bytes.iter().enumerate() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_string = true,
+            b'{' => {
+                if start.is_none() {
+                    start = Some(i);
+                }
+                depth += 1;
+            }
+            b'}' => {
+                if depth > 0 {
+                    depth -= 1;
+                    if depth == 0 {
+                        let candidate = &text[start.unwrap()..=i];
+                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(candidate) {
+                            if value.get("ask").is_some() || value.get("plan").is_some() {
+                                return Some(candidate.to_string());
+                            }
+                        }
+                        start = None;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn name_from_request(request: &str) -> Option<String> {
@@ -10792,7 +10973,7 @@ mod home_tests {
 
 #[cfg(test)]
 mod create_tests {
-    use super::{change_prompt, CHANGE_MARKER};
+    use super::{change_prompt, extract_plan_json, CHANGE_MARKER};
 
     /// A change and a new app are different jobs and must get different
     /// instructions. They used to share one prompt, so an AI asked to move a
@@ -11162,6 +11343,24 @@ mod create_tests {
                 "`{bad}` must be refused"
             );
         }
+    }
+
+    #[test]
+    fn a_plan_answer_survives_prose_and_fences() {
+        // Agents wrap answers no matter what the prompt says; the contract
+        // lives in extraction.
+        let wrapped =
+            "Sure! Here is my answer:\n```json\n{\"ask\": [\"what data?\"]}\n```\nHope that helps.";
+        assert_eq!(
+            extract_plan_json(wrapped).as_deref(),
+            Some("{\"ask\": [\"what data?\"]}")
+        );
+        // A stray brace inside a string must not break the balance scan.
+        let tricky = "{\"plan\": \"draws a { curly } chart\", \"needs\": []}";
+        assert_eq!(extract_plan_json(tricky).as_deref(), Some(tricky));
+        // JSON without the contract keys is not an answer.
+        assert_eq!(extract_plan_json("{\"other\": 1}"), None);
+        assert_eq!(extract_plan_json("no json at all"), None);
     }
 
     #[test]
