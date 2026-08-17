@@ -7,7 +7,6 @@
   <url><loc>https://krate.tech/open/</loc></url>
   <url><loc>https://krate.tech/faq.html</loc></url>
   <url><loc>https://krate.tech/cloud/</loc></url>
-  <url><loc>https://krate.tech/docs/404.html</loc></url>
   <url><loc>https://krate.tech/docs/architecture.html</loc></url>
   <url><loc>https://krate.tech/docs/blog/0001-announcing-krate.html</loc></url>
   <url><loc>https://krate.tech/docs/blog/0002-every-sandbox-is-cloud.html</loc></url>
@@ -88,4 +87,8 @@
   <url><loc>https://krate.tech/docs/uapi/typescript-sdk.html</loc></url>
   <url><loc>https://krate.tech/docs/vision.html</loc></url>
   <url><loc>https://krate.tech/docs/wit-style.html</loc></url>
+  <url><loc>https://krate.tech/studio/</loc></url>
+  <url><loc>https://krate.tech/publish/</loc></url>
+  <url><loc>https://krate.tech/reports.html</loc></url>
+  <url><loc>https://krate.tech/progress.html</loc></url>
 </urlset>
