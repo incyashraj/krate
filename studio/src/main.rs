@@ -627,6 +627,27 @@ async fn revise_app(
 
 /// Stop the running build: kill the engine child's whole process group so
 /// the agent and cargo underneath stop too, not just the parent.
+/// Is a build genuinely running -- process and all?
+///
+/// The UI must never take its own word for it. A spinner with no process
+/// behind it is the worst failure we ship: it looks exactly like work, and
+/// a first-time person waits half an hour believing their app is being
+/// made (K-131). This is the ground truth the build screen polls.
+#[tauri::command]
+fn build_alive(state: tauri::State<Running>) -> Result<bool, String> {
+    let mut guard = state.0.lock().map_err(|_| "poisoned")?;
+    match *guard {
+        Some(pid) if pid_alive(pid) => Ok(true),
+        Some(_) => {
+            // Dead process, stale slot: clear it here too, so the next
+            // request is not refused by a ghost.
+            *guard = None;
+            Ok(false)
+        }
+        None => Ok(false),
+    }
+}
+
 #[tauri::command]
 fn stop_build(state: tauri::State<Running>) -> Result<(), String> {
     let pid = state.0.lock().map_err(|_| "poisoned")?.take();
@@ -2073,6 +2094,7 @@ fn main() {
             create_app,
             revise_app,
             stop_build,
+            build_alive,
             open_app,
             plan_request,
             diagnose_app,

@@ -3858,6 +3858,31 @@ Status:   fixed
 
 ## Fixed
 
+### K-131 -- A spinner outlived its build, so waiting looked exactly like working
+Status:   fixed
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-18, founder watching his friend's PC: "Understanding what
+          you asked for" for ten minutes with, as ssh confirmed, only the
+          studio process alive -- no engine, no agent, nothing building.
+          Second occurrence of the same shape in two days.
+Evidence: The build screen animated from a local flag set when the request
+          was sent. Nothing ever verified that a process existed, so any
+          build that died unseen (K-128's stale slot refusing the request,
+          an engine crash, the machine sleeping) left the screen spinning
+          indefinitely. The founder's words: a new user "might think that's
+          building their app".
+Fix:      (this commit) The studio proves liveness instead of assuming it.
+          A new build_alive command answers from the process table, and the
+          build screen polls it every four seconds: a dead process ends the
+          build through the normal failure path with plain words and a
+          retry. A second rule covers the other shape -- if the engine has
+          said nothing at all within ninety seconds, the plumbing is broken
+          rather than the app, and it says so. Both clear the stale slot on
+          the way out. Five rule cases tested (dead, healthy, silent,
+          young-and-quiet, too-young-to-judge).
+
 ### K-130 -- A half-installed gnullvm toolchain is chosen and then cannot link
 Status:   fixed
 Owner:    lead

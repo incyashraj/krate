@@ -77,6 +77,9 @@ const state = {
   session: null,        // { id, title, created, updated, messages, result }
   attachments: [],      // absolute paths staged for the next message
   planning: null,       // the pre-build conversation (K-123): request, qa, files
+  watchdog: null,       // proves a build is alive, never just spinning (K-131)
+  sawEngineLine: false, // has the engine said anything at all this build?
+  lastRequest: null,    // what to retry if the watchdog ends a dead build
   cloud: [],            // apps read from Krate Cloud
   cloudCat: "all",      // which category chip is selected
   cloudApp: null,       // the published app being looked at
@@ -489,6 +492,60 @@ function show(phase) {
     .classList.remove("hidden");
 }
 
+/* Never let a spinner outlive its build.
+ *
+ * Two independent guarantees, because they catch different failures:
+ *
+ *   1. LIVENESS -- every few seconds, ask the backend whether a process is
+ *      actually running. A build whose engine died unseen (crash, sleep, a
+ *      kill from outside) used to leave this screen spinning forever while
+ *      a first-time person believed their app was being made.
+ *   2. PROGRESS -- if nothing at all has been heard from the engine within
+ *      the first ninety seconds, something is wrong with the plumbing
+ *      rather than with the app; say so instead of animating.
+ *
+ * Both end the build the honest way, through the normal failure path, so
+ * the words are the same ones the person would get from any other failure.
+ */
+function startBuildWatchdog() {
+  clearInterval(state.watchdog);
+  const started = Date.now();
+  state.sawEngineLine = false;
+  state.watchdog = setInterval(async () => {
+    if (!state.buildingSession) {
+      clearInterval(state.watchdog);
+      return;
+    }
+    const age = Date.now() - started;
+    // Give the engine a moment to spawn before asking about it.
+    if (age < 6000) return;
+    let alive = true;
+    try {
+      alive = await invoke("build_alive");
+    } catch (err) {
+      return; // a failed question is not an answer; try again next tick
+    }
+    if (!alive) {
+      clearInterval(state.watchdog);
+      failBuild(
+        "The build stopped unexpectedly -- nothing is running any more. " +
+          "Trying again usually works; your words are kept.",
+        state.lastRequest || "",
+      );
+      return;
+    }
+    if (!state.sawEngineLine && age > 90000) {
+      clearInterval(state.watchdog);
+      invoke("stop_build").catch(() => {});
+      failBuild(
+        "The build never got started -- Krate's engine went quiet before it " +
+          "said anything. Trying again usually works.",
+        state.lastRequest || "",
+      );
+    }
+  }, 4000);
+}
+
 function beginBuild(title, expect) {
   $("buildTitle").textContent = title;
   $("buildExpect").textContent = expect;
@@ -564,6 +621,13 @@ function setProgress(fraction) {
  * printed by our CLI -- if one changes, the worst case is a stage advancing
  * late, never a wrong claim. */
 function onEngineLine(line) {
+  // Any word from the engine is proof the plumbing works; the watchdog
+  // only fires when we have heard nothing at all.
+  state.sawEngineLine = true;
+  return onEngineLineInner(line);
+}
+
+function onEngineLineInner(line) {
   const log = $("buildLog");
   log.textContent += line + "\n";
   log.scrollTop = log.scrollHeight;
@@ -631,6 +695,7 @@ function fillDone(result, opts) {
 
 function finishBuild(result) {
   clearInterval(state.timer);
+  clearInterval(state.watchdog);
   // The result belongs to the session that was building, which is not
   // always the one on screen -- a person can browse other sessions while
   // the AI works. Attaching to state.session put finished apps on the
@@ -674,6 +739,7 @@ function setRevisePlaceholders() {
 }
 
 function failBuild(why, request) {
+  clearInterval(state.watchdog);
   settleChipBad(state.buildChip, state.buildVersion || 1, () => make(request));
   state.buildChip = null;
   clearInterval(state.timer);
@@ -958,7 +1024,9 @@ async function buildNow(request, files, revising) {
   $("prompt").placeholder = "Add a change - it runs when this finishes…";
 
   state.buildingSession = state.session;
+  state.lastRequest = request;
   renderBuilding();
+  startBuildWatchdog();
   // The rail is a conversation: it should answer. Without this the left
   // side showed one line and then nothing for six minutes while the right
   // side did all the talking.
