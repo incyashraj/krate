@@ -71,10 +71,38 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
-### K-134 -- The linker probe tests wasm, so a missing target is reported as a missing linker
+### K-134 -- No linker is reachable on Windows, and the one that ships is never named
 
 Class: our-code
-Owner: claude (fixing now)
+Owner: claude (fixed, pending release)
+
+Diagnosed over SSH on the machine itself rather than from a support report.
+It has rustup, cargo, cargo-component, and wasm32-wasip1 installed for BOTH
+toolchains. It has no linker either toolchain will look for:
+
+    gnullvm -> error: linker `x86_64-w64-mingw32-clang` not found
+    msvc    -> error: linker `link.exe` not found
+
+No clang, gcc, or Visual Studio anywhere. rustup installs neither linker. So
+the probe was right to reject both toolchains and the message was true -- but
+the remedy, "reinstall the gnullvm toolchain", could never work, because the
+missing piece is not in that toolchain. Five releases of reinstalling changed
+nothing, exactly as expected.
+
+gnullvm does ship a working linker, `rust-lld.exe`, in its own directory.
+Nothing pointed rustc at it. Naming it is the whole fix. Measured on that
+machine, same crate, same toolchain:
+
+    BEFORE (no linker var): error: linker `x86_64-w64-mingw32-clang` not found
+                            BEFORE_EXIT=101
+    AFTER  (linker named):  AFTER_EXIT=0
+
+`rust-lld.exe`, not the `gcc-ld\ld.lld.exe` shim beside it: rustc invokes a
+gnu-flavored linker with `-flavor gnu`, which the shim rejects
+("lld: error: unknown argument: -flavor") and rust-lld accepts.
+
+The earlier entry under this number blamed a missing wasm target. That was
+wrong -- the target is installed for both toolchains. Corrected above.
 
 K-130's probe compiles a throwaway crate to decide whether a toolchain can
 link. It compiled that crate with `--target wasm32-wasip1`. On a machine where
