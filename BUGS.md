@@ -71,6 +71,32 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-124 -- Every authoring failure said "sign in": /auth/ matched "author command failed"
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-17, founder ran a first-time user's real request (with
+          an xlsx attached) on the Windows PC; Codex could not run any
+          command because its own sandbox helper was missing, said so in
+          its final message, and the failure card said "Your AI needs
+          signing in".
+Evidence: The card's own small print contradicted its headline. Studio
+          plainWords() matched /sign ?in|auth|logged/ against the engine's
+          generic "author command failed" -- "author" contains "auth", so
+          the sign-in diagnosis fired on every authoring failure that
+          reached the generic line. The agent transcript (fetched over
+          ssh) showed codex-windows-sandbox-setup.exe missing and every
+          exec failing with orchestrator_helper_launch_failed.
+Fix:      3c55e91f. \bauth(?!or) so authentication still matches and
+          "author" never does; a dedicated plain-words case for the
+          broken-agent-sandbox signature in the studio AND the engine
+          (which scans the transcript for it); conversational stopwords
+          so "So i have made..." cannot name an app "so" (pinned by test
+          against the live request). The deeper cure -- surfacing the
+          agent's own last words instead of guessing -- rides with K-123's
+          conversation work.
+
 ### K-123 -- The Studio builds whatever is typed: no questions, no plan, no context intake
 Status:   open
 Owner:    lead
