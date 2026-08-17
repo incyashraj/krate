@@ -71,6 +71,53 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-134 -- The linker probe tests wasm, so a missing target is reported as a missing linker
+
+Class: our-code
+Owner: claude (fixing now)
+
+K-130's probe compiles a throwaway crate to decide whether a toolchain can
+link. It compiled that crate with `--target wasm32-wasip1`. On a machine where
+the wasm target is not installed yet, the probe fails with "can't find crate
+for `std`" -- not because the linker is missing, but because the target is.
+Every toolchain is then judged broken, `missing_create_tools` reports **"a
+linker for Windows"**, and the run stops. The step that would install the wasm
+target sits further down the same function and never runs. The machine is told
+to reinstall a toolchain that was never at fault, and the real gap is never
+named. Reinstalling changes nothing, which is why it survived several versions.
+
+What a fresh Windows install reports (support report `3a41d8442fe8f9cb`,
+krate v0.1.43, windows x86_64) -- every tool present, and it still fails:
+
+    rustc:           C:\Users\user\.cargo\bin\rustc.exe
+    cargo:           C:\Users\user\.cargo\bin\cargo.exe
+    cargo-component: C:\Users\user\AppData\Local\Krate\bin\cargo-component.exe
+    error: finish the toolchain setup, then re-run
+
+Evidence -- the probe crate, built exactly as K-130 built it, fails on a
+machine that builds Krate apps perfectly well:
+
+    $ cargo build --quiet --target wasm32-wasip1
+    error[E0463]: can't find crate for `std`
+      = note: the `wasm32-wasip1` target may not be installed
+
+Built for the host instead, the same crate succeeds and links its build
+script, which is the only thing the probe was ever meant to test:
+
+    $ cargo build --quiet
+    exit=0
+    $ ls target/debug/build
+    krate-linkprobe-221dcb396dd15151
+
+And it still fails when a linker really is absent, so the check keeps its
+teeth:
+
+    $ CARGO_TARGET_..._LINKER=/nonexistent-linker cargo build --quiet
+    error: could not compile `np` (build script)
+
+Fix: probe the host. A build script is a host artifact; compiling for wasm to
+learn whether the host can link was the error.
+
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 
 Class: our-code

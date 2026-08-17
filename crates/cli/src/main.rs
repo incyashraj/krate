@@ -10191,10 +10191,17 @@ fn has_rust_target(target: &str) -> Option<bool> {
     // Same reason as gnullvm_toolchain_present: a just-installed rustup is in
     // ~/.cargo/bin before it is on this process's PATH.
     let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
-    let output = ProcessCommand::new(rustup)
-        .args(["target", "list", "--installed"])
-        .output()
-        .ok()?;
+    // Ask the toolchain the build will actually use. Bare `rustup target list`
+    // answers for the DEFAULT toolchain, which on Windows is often not the one
+    // `working_windows_toolchain` picks: the target can be installed for one
+    // and missing for the other, and then this check reports a target the
+    // build cannot reach (or demands one that is already there).
+    let mut cmd = ProcessCommand::new(rustup);
+    #[cfg(windows)]
+    if let Some(toolchain) = working_windows_toolchain() {
+        cmd.arg(format!("+{toolchain}"));
+    }
+    let output = cmd.args(["target", "list", "--installed"]).output().ok()?;
     if !output.status.success() {
         return None;
     }
@@ -10465,17 +10472,22 @@ fn probe_wasm_build(toolchain: &str) -> bool {
     if !wrote {
         return false;
     }
+    // Build for the HOST, not for wasm. What is being probed is whether this
+    // toolchain can link a build script -- a host artifact -- so the host is
+    // the thing to compile.
+    //
+    // Probing with `--target wasm32-wasip1` looked more faithful and was a
+    // circular test: on a machine where the wasm target is not installed yet
+    // the probe fails with "can't find crate for `std`", every toolchain is
+    // judged broken, and `missing_create_tools` reports a missing LINKER. The
+    // step that installs the wasm target sits further down the same function
+    // and never runs, so the machine is told to reinstall a toolchain that was
+    // never at fault and the real gap is never named. That is exactly the
+    // "the build tools aren't set up yet" loop a fresh Windows install hit
+    // with cargo, rustc and cargo-component all present and correct.
     let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
     let ok = ProcessCommand::new(rustup)
-        .args([
-            "run",
-            toolchain,
-            "cargo",
-            "build",
-            "--quiet",
-            "--target",
-            CREATE_WASM_TARGET,
-        ])
+        .args(["run", toolchain, "cargo", "build", "--quiet"])
         .current_dir(&dir)
         .output()
         .map(|out| out.status.success())
@@ -10605,12 +10617,20 @@ Studio Build Tools are not needed",
             Some(true) => {}
             Some(false) => missing.push(MissingTool {
                 what: CREATE_WASM_TARGET,
-                install_cmd: vec![
-                    "rustup".into(),
-                    "target".into(),
-                    "add".into(),
-                    CREATE_WASM_TARGET.into(),
-                ],
+                // Install into the toolchain the build uses, matching the
+                // check above. `rustup target add` with no toolchain adds to
+                // the default one, which is how a machine ends up installing
+                // the target, being told again that the target is missing,
+                // and having no way to tell those two toolchains apart.
+                install_cmd: {
+                    let mut cmd: Vec<String> = vec!["rustup".into()];
+                    #[cfg(windows)]
+                    if let Some(toolchain) = working_windows_toolchain() {
+                        cmd.push(format!("+{toolchain}"));
+                    }
+                    cmd.extend(["target".into(), "add".into(), CREATE_WASM_TARGET.into()]);
+                    cmd
+                },
                 note: "the WebAssembly target Krate apps compile to",
             }),
             // `has_rust_target` returns None when rustup could not be run. If a
