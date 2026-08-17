@@ -6589,6 +6589,9 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
         command.env("CARGO_TARGET_DIR", &shared);
     }
 
+    #[cfg(windows)]
+    point_gnullvm_at_its_own_linker(&mut command);
+
     // Build the child PATH: rustup's toolchain bin first (so a rustup cargo/rustc
     // with the wasm target wins over a Homebrew one), then the cargo bin dir that
     // holds cargo-component, then the inherited PATH.
@@ -10310,6 +10313,59 @@ and the tool is nowhere this process can see",
     );
 }
 
+/// Point the gnullvm toolchain at the linker it already ships.
+///
+/// gnullvm exists so nobody needs Visual Studio, and it carries `rust-lld.exe`
+/// to do the linking. But rustc's gnullvm target looks for a linker named
+/// `x86_64-w64-mingw32-clang`, which rustup does not install. So a machine with
+/// rustup, cargo, cargo-component and the wasm target -- everything -- still
+/// fails every build at:
+///
+///     error: linker `x86_64-w64-mingw32-clang` not found
+///
+/// and the msvc toolchain beside it fails the same way on `link.exe`. No linker
+/// is reachable at all, though a working one is sitting inside the toolchain
+/// directory. Naming it is the whole fix: no download, no Build Tools, no
+/// mingw. Measured on a real Windows machine that had failed every build for
+/// five releases -- with this variable set, both the host build and the
+/// wasm32-wasip1 build return 0.
+///
+/// `rust-lld.exe` specifically, not the `gcc-ld\ld.lld.exe` shim beside it:
+/// rustc invokes a gnu-flavored linker as `-flavor gnu`, and the shim rejects
+/// that argument ("lld: error: unknown argument: -flavor") while `rust-lld`
+/// accepts it. An explicit setting from the environment always wins, so anyone
+/// with a real mingw or MSVC setup keeps it.
+#[cfg(windows)]
+fn point_gnullvm_at_its_own_linker(command: &mut ProcessCommand) {
+    const VAR: &str = "CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER";
+    if std::env::var_os(VAR).is_some() {
+        return;
+    }
+    let Some(home) = home_dir() else { return };
+    let target = if cfg!(target_arch = "aarch64") {
+        "aarch64-pc-windows-gnullvm"
+    } else {
+        "x86_64-pc-windows-gnullvm"
+    };
+    let lld = home
+        .join(".rustup")
+        .join("toolchains")
+        .join(gnullvm_toolchain_name())
+        .join("lib")
+        .join("rustlib")
+        .join(target)
+        .join("bin")
+        .join("rust-lld.exe");
+    if lld.is_file() {
+        let var = if cfg!(target_arch = "aarch64") {
+            "CARGO_TARGET_AARCH64_PC_WINDOWS_GNULLVM_LINKER"
+        } else {
+            VAR
+        };
+        command.env(var, &lld);
+    }
+}
+
 /// The rustup toolchain name that carries its own linker on this machine.
 ///
 /// `gnullvm` is Rust's Windows toolchain built around LLVM's linker rather
@@ -10486,9 +10542,13 @@ fn probe_wasm_build(toolchain: &str) -> bool {
     // "the build tools aren't set up yet" loop a fresh Windows install hit
     // with cargo, rustc and cargo-component all present and correct.
     let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
-    let ok = ProcessCommand::new(rustup)
-        .args(["run", toolchain, "cargo", "build", "--quiet"])
-        .current_dir(&dir)
+    let mut cmd = ProcessCommand::new(rustup);
+    cmd.args(["run", toolchain, "cargo", "build", "--quiet"])
+        .current_dir(&dir);
+    // Probe under the same linker the real build gets, or the probe rejects
+    // gnullvm for a linker that is present and about to be used.
+    point_gnullvm_at_its_own_linker(&mut cmd);
+    let ok = cmd
         .output()
         .map(|out| out.status.success())
         .unwrap_or(false);
