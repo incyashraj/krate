@@ -116,6 +116,14 @@ Fix:      Plan/Authoring-Conversation-2026-08.md is the plan of record:
           Studio conversing before building, attachment nudges when a
           request implies files, and xlsx->csv conversion at authoring
           time. "Sadas" must become a question, never an app.
+Update:   2026-08-17, S1+S2 shipped (2682a48a, 6f669989): `krate plan`
+          answers ask-or-plan in one JSON object (thin requests get their
+          question deterministically, no AI needed; the friend's real
+          budget prompt got "attach the Excel" as its first question in
+          6.5s), and the Studio holds the conversation in the thread with
+          "build it" as the permanent escape hatch. Remaining: S3
+          (xlsx->csv conversion at authoring time) and S4 (pack guidance
+          for personal-data apps).
 
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 
