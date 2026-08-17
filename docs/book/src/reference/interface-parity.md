@@ -21,7 +21,7 @@ not be drawn into. That pair reads `works` on both tables now.
 | `audio.playback` | 7 | **works** |
 | `gfx.canvas2d` | 25 | **works** |
 | `gfx.scene3d` | 10 | **works** |
-| `speech.transcription` | 28 | **works** |
+| `speech.transcription` | 29 | **works** |
 | `ui.clipboard` | 2 | **works** |
 | `ui.dialog` | 4 | **works** |
 | `ui.events` | 6 | **works** |
