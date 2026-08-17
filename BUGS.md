@@ -71,6 +71,26 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-123 -- The Studio builds whatever is typed: no questions, no plan, no context intake
+Status:   open
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-17, founder's friend pasted a ChatGPT prompt that
+          depended on Excel files in a folder; the Studio built without
+          them and without asking. Founder separately typed "Sadas" and
+          got an app named Sadas (live on the store).
+Evidence: The authoring flow has no step between "user typed" and "agent
+          builds": studio run_author -> krate create, one shot. Every
+          chat AI users know asks a question when the request is thin and
+          states its plan before acting; we compare to compilers, users
+          compare to ChatGPT.
+Fix:      Plan/Authoring-Conversation-2026-08.md is the plan of record:
+          a `krate plan` engine door (ask-or-plan JSON, no build), the
+          Studio conversing before building, attachment nudges when a
+          request implies files, and xlsx->csv conversion at authoring
+          time. "Sadas" must become a question, never an app.
+
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 
 Class: our-code
