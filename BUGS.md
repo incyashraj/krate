@@ -71,34 +71,6 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
-### K-124 -- Every authoring failure said "sign in": /auth/ matched "author command failed"
-Status:   fixed
-Owner:    lead
-Severity: serious
-Class:    our-code
-Found:    2026-08-17, founder ran a first-time user's real request (with
-          an xlsx attached) on the Windows PC; Codex could not run any
-          command because its own sandbox helper was missing, said so in
-          its final message, and the failure card said "Your AI needs
-          signing in".
-Evidence: The card's own small print contradicted its headline. Studio
-          plainWords() matched /sign ?in|auth|logged/ against the engine's
-          generic "author command failed" -- "author" contains "auth", so
-          the sign-in diagnosis fired on every authoring failure that
-          reached the generic line. The agent transcript (fetched over
-          ssh) showed codex-windows-sandbox-setup.exe missing and every
-          exec failing with orchestrator_helper_launch_failed.
-Fix:      3c55e91f. \bauth(?!or) so authentication still matches and
-          "author" never does; a dedicated plain-words case for the
-          broken-agent-sandbox signature in the studio AND the engine
-          (which scans the transcript for it); conversational stopwords
-          so "So i have made..." cannot name an app "so" (pinned by test
-          against the live request). The deeper cure -- surfacing the
-          agent's own last words instead of guessing -- rides with K-123's
-          conversation work.
-
-
-
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 
 Class: our-code
@@ -3859,6 +3831,55 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
 Status:   fixed
 
 ## Fixed
+
+### K-125 -- A GPU failure during surface configure killed the app instead of falling back
+Status:   fixed
+Owner:    lead
+Severity: critical
+Class:    our-code
+Found:    2026-08-17, founder's friend's finance dashboard on the Iris Xe
+          Windows PC: double-click flashed a terminal and nothing opened,
+          while other apps ran fine.
+Evidence: Reproduced over ssh: Surface::configure failed (0x887A0022),
+          the log printed "GPU device error, retiring to CPU painter" --
+          and the process then panicked inside wgpu's
+          get_current_texture_view before the retirement could act. With
+          panic=abort there is no catching it: one more surface call
+          after a failed configure is fatal.
+Fix:      283d6b3d. The device-failed flag is re-checked immediately
+          before every get_current_texture (scene path, blit path, pixel
+          presenter): a failure recorded during configure returns Err and
+          the CPU painter takes over. The studio also stops treating "I
+          can't open it" as a change request -- it runs the app headless
+          itself and reports what the runtime said, with a Fix-it button.
+
+### K-124 -- Every authoring failure said "sign in": /auth/ matched "author command failed"
+Status:   fixed
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-17, founder ran a first-time user's real request (with
+          an xlsx attached) on the Windows PC; Codex could not run any
+          command because its own sandbox helper was missing, said so in
+          its final message, and the failure card said "Your AI needs
+          signing in".
+Evidence: The card's own small print contradicted its headline. Studio
+          plainWords() matched /sign ?in|auth|logged/ against the engine's
+          generic "author command failed" -- "author" contains "auth", so
+          the sign-in diagnosis fired on every authoring failure that
+          reached the generic line. The agent transcript (fetched over
+          ssh) showed codex-windows-sandbox-setup.exe missing and every
+          exec failing with orchestrator_helper_launch_failed.
+Fix:      3c55e91f. \bauth(?!or) so authentication still matches and
+          "author" never does; a dedicated plain-words case for the
+          broken-agent-sandbox signature in the studio AND the engine
+          (which scans the transcript for it); conversational stopwords
+          so "So i have made..." cannot name an app "so" (pinned by test
+          against the live request). The deeper cure -- surfacing the
+          agent's own last words instead of guessing -- rides with K-123's
+          conversation work.
+
+
 
 ### K-123 -- The Studio builds whatever is typed: no questions, no plan, no context intake
 Status:   fixed
