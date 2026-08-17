@@ -161,6 +161,20 @@ match events::wait(if settled { None } else { Some(16) }) { /* ... */ }\n\
 ```\n\n\
 `poll` returns immediately when nothing is queued, so this costs nothing \
 when the app is idle and everything when a finger is moving.\n\n\
+## The key names, exactly\n\n\
+`events::key-held(name)` and `key-event` use these strings, and nothing \
+else. Getting this wrong is silent -- the app builds, runs, and simply \
+never moves -- so they are listed here in full rather than guessed at:\n\n\
+- **Arrows**: `ArrowLeft`, `ArrowRight`, `ArrowUp`, `ArrowDown`\n\
+- **Letters and digits**: the character itself, lowercase: `\"a\"`, \
+`\"w\"`, `\"z\"`, `\"1\"`. Not `KeyA`, not `\"A\"`.\n\
+- **Named keys**: `Space`, `Enter`, `Tab`, `Backspace`, `Escape`, \
+`Home`, `End`, `PageUp`, `PageDown`, `Delete`\n\
+- Modifiers arrive on the event (`modifiers`), not as key names.\n\n\
+A run-and-gun game therefore reads: \
+`key_held(\"ArrowLeft\")`, `key_held(\"Space\")` to jump, \
+`key_held(\"z\")` to shoot. `apps/krate-nova` and `apps/krate-bounce` \
+are shipped examples doing exactly this.\n\n\
 ## Motion that reads as polish\n\n\
 The SDK ships `krate::motion` (no_std, no capability): `ease_out`, \
 `ease_in_out`, `smoothstep`, and a critically-damped `Spring`. Measure dt \

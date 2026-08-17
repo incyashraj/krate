@@ -50,7 +50,15 @@ const UNTRUSTED_FUEL_BUDGET: u64 = 5_000_000_000;
 /// needed. Override with KRATE_AUTHOR_TIMEOUT_SECS for a slow machine or a hard
 /// request. Short enough that a genuinely stuck agent still fails with a clear
 /// message rather than hanging forever.
-const AGENT_AUTHOR_TIMEOUT_SECS: u64 = 900;
+///
+/// Forty minutes, not fifteen: a person asked for a full Contra-style stage
+/// (sprites, tiles, physics, weapons, a boss) and the agent was still
+/// writing real code when the old budget cut it off twice in a row. A
+/// request that big is a legitimate use, not a stuck agent -- and a build
+/// that dies at fifteen minutes wastes the person's whole wait. The stall
+/// watchdog below is what actually catches a hung agent; this ceiling only
+/// exists so nothing runs forever.
+const AGENT_AUTHOR_TIMEOUT_SECS: u64 = 2400;
 
 /// Version shown by `krate --version`. The release workflow sets
 /// `KRATE_RELEASE_VERSION` to the git tag so a released binary reports its real
@@ -4753,6 +4761,43 @@ fn run_author_agent(agent: &str) -> Result<u8> {
     run_provider_author(resolve_agent(agent)?, &app_dir, &request)
 }
 
+/// When the authoring agent last said anything.
+///
+/// Written by the reporter thread as lines arrive, read by the wait loop.
+/// A process-global instant is enough: exactly one authoring run happens at
+/// a time, and the alternative (threading a shared clock through the
+/// reporter closure) buys nothing.
+mod agent_progress {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::OnceLock;
+    use std::time::{Duration, Instant};
+
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    static LAST_MS: AtomicU64 = AtomicU64::new(0);
+
+    fn epoch() -> Instant {
+        *EPOCH.get_or_init(Instant::now)
+    }
+
+    /// Start (or restart) the clock: called when a run begins.
+    pub fn begin() {
+        let now = epoch().elapsed().as_millis() as u64;
+        LAST_MS.store(now, Ordering::Relaxed);
+    }
+
+    /// The agent said something.
+    pub fn beat() {
+        let now = epoch().elapsed().as_millis() as u64;
+        LAST_MS.store(now, Ordering::Relaxed);
+    }
+
+    /// How long the agent has been silent.
+    pub fn since_last_line() -> Duration {
+        let now = epoch().elapsed().as_millis() as u64;
+        Duration::from_millis(now.saturating_sub(LAST_MS.load(Ordering::Relaxed)))
+    }
+}
+
 /// The prompt handed to Claude Code: the loop instruction.
 ///
 /// The agent is no longer asked to adapt a behavioral template. It is given a
@@ -5022,6 +5067,8 @@ fn run_provider_author(
                 if let Some(log) = log.as_mut() {
                     let _ = writeln!(log, "{line}");
                 }
+                // Any line at all is proof of life, tool call or chatter.
+                agent_progress::beat();
                 if let Some(step) = provider.progress_line(&line) {
                     // Collapse repeats: an agent editing one file five times
                     // should not print the same sentence five times.
@@ -5065,14 +5112,34 @@ fn run_provider_author(
         })
     });
 
+    agent_progress::begin();
     let start = std::time::Instant::now();
     let deadline = start + std::time::Duration::from_secs(timeout_secs);
+    // Silence is the real signal of a hung agent, and the total ceiling is a
+    // bad proxy for it: a big request legitimately runs for half an hour,
+    // while a wedged one produces nothing at all. The reporter stamps this
+    // clock on every line it sees; ten quiet minutes ends the run in one,
+    // instead of the person watching a spinner to the ceiling (K-127).
+    const STALL_SECS: u64 = 600;
     // None means the agent was stopped at the deadline but the app it had
     // already written passes every check -- salvaged, not stalled.
     let status: Option<std::process::ExitStatus> = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
             Ok(None) => {
+                let quiet = agent_progress::since_last_line();
+                if quiet > std::time::Duration::from_secs(STALL_SECS) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    if check_app_verdict(app_dir).is_ok() {
+                        eprintln!(
+                            "note: the AI went quiet for {} minutes, but the app it wrote already passes every check -- packaging it.",
+                            quiet.as_secs() / 60
+                        );
+                        break None;
+                    }
+                    return Err(author_stalled_error(app_dir, &transcript, quiet.as_secs()));
+                }
                 if std::time::Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
