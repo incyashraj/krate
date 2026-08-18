@@ -6,14 +6,28 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: "1.94.1"
-          targets: wasm32-wasip1
-      - name: Build the CLI with the two-part probe and run the verifier's check
+      - name: Which toolchain does the runner default to, and does it have wasm?
+        shell: bash
+        run: |
+          echo "--- toolchains ---"; rustup toolchain list
+          for TC in $(rustup toolchain list | awk '{print $1}'); do
+            echo "=== $TC ==="
+            rustup "+$TC" target list --installed | grep -q wasm32-wasip1 \
+              && echo "WASM=yes" || echo "WASM=no"
+          done
+      - name: Download v0.1.45 and run the verifier check with cargo-component present
         shell: bash
         run: |
           set -euo pipefail
-          cargo build --release -p krate-cli
-          echo "=== the exact command the release verifier runs ==="
-          ./target/release/krate.exe check-app apps/krate-bounce --no-run
+          gh release download v0.1.45 -R incyashraj/krate \
+            -p "krate-0.1.45-x86_64-pc-windows-msvc.zip" -D dl
+          7z x dl/krate-0.1.45-x86_64-pc-windows-msvc.zip -ounpacked >/dev/null
+          bin=$(find unpacked -name krate.exe | head -1)
+          dir=$(dirname "$bin")
+          export PATH="$(cd "$dir" && pwd):$PATH"
+          echo "--- what krate sees ---"
+          "$bin" doctor || true
+          echo "--- the verifier's exact check ---"
+          "$bin" check-app apps/krate-bounce --no-run
+        env:
+          GH_TOKEN: ${{ github.token }}
