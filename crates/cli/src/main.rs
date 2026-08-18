@@ -4201,12 +4201,24 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    let Some(json) = extract_plan_json(&text) else {
-        anyhow::bail!(
-            "the AI did not answer in the expected shape. It said:\n{}",
-            text.trim().chars().take(600).collect::<String>()
-        );
-    };
+    // The plan is optional intelligence, never a gate. If the AI's answer
+    // cannot be read as a plan -- an output shape we have not seen, a timeout, a
+    // provider that frames things a new way tomorrow -- the request must NOT
+    // die. It falls through to a build, which is what the user asked for in the
+    // first place. A first-request failure in the Studio is a reputation
+    // killer; "we could not pre-plan, so we are just building it" is not a
+    // failure at all. Only a genuinely empty output is worth a soft note, and
+    // even that still proceeds to build.
+    let json = extract_plan_json(&text).unwrap_or_else(|| {
+        if text.trim().is_empty() {
+            eprintln!("note: the planning AI returned nothing; building directly.");
+        } else {
+            eprintln!("note: could not read a plan from the AI; building directly.");
+        }
+        // An empty plan with no questions: the Studio reads this as "proceed to
+        // build", the same as an AI that decided the request was ready.
+        serde_json::json!({ "plan": "", "needs": [] }).to_string()
+    });
     println!("{json}");
     Ok(0)
 }
@@ -12104,6 +12116,29 @@ mod create_tests {
         let value: serde_json::Value =
             serde_json::from_str(&extract_plan_json(asked).unwrap()).unwrap();
         assert!(value.get("ask").is_some());
+    }
+
+    #[test]
+    fn garbage_output_extracts_nothing_rather_than_a_wrong_plan() {
+        // The other half of never-failing: extraction must not FALSE-POSITIVE.
+        // plan_command falls back to a build when this returns None, so a wrong
+        // match here would build the wrong thing while a clean None just builds
+        // what was asked. None is the safe answer for anything that is not a
+        // real plan.
+        assert_eq!(extract_plan_json(""), None);
+        assert_eq!(extract_plan_json("connection reset by peer"), None);
+        assert_eq!(extract_plan_json("{\"error\":\"rate limited\"}"), None);
+        assert_eq!(extract_plan_json("{{{ broken"), None);
+        // A model that answers in prose with no JSON at all.
+        assert_eq!(
+            extract_plan_json("I think you should build a to-do app with reminders."),
+            None
+        );
+        // An envelope whose inner text is prose, not JSON, must not match.
+        assert_eq!(
+            extract_plan_json("{\"text\":\"sounds good, building now\"}"),
+            None
+        );
     }
 
     #[test]
