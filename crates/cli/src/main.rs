@@ -4215,29 +4215,81 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
 /// "plan" key. Agents wrap answers in prose and code fences no matter what
 /// the prompt says; the contract survives by extraction, not by trust.
 fn extract_plan_json(text: &str) -> Option<String> {
-    // Try each balanced JSON object, and if that object is a provider ENVELOPE
-    // rather than the plan itself, look inside it.
+    // The plan can arrive in any of three shapes, because every provider frames
+    // its output differently and the plan gate has to read all of them:
     //
-    // Grok (and any provider run with a JSON output format) does not print the
-    // bare plan. It prints `{"text": "<the real answer>", "stopReason": ...,
-    // "thought": ...}` -- the plan sits inside the `text` string, escaped. The
-    // scanner below finds the outer object first, sees no `ask`/`plan` key at
-    // its top level, and moves on past the whole thing, so a perfectly correct
-    // answer was rejected as "not the expected shape". On the Studio that made
-    // grok fail the plan step on the very first request, every time, on every
-    // machine -- the failure a Windows user hit after selecting Grok.
+    //   bare     {"ask": [...]}                          (claude -p)
+    //   envelope {"text": "{\"ask\": [...]}", ...}        (grok --output-format json)
+    //   stream   {"type":"item.completed","item":{"text":"{\"plan\":...}"}}
+    //            ...one such JSON object PER LINE          (codex exec --json)
     //
-    // So: pull the string value out of the common envelope fields and recurse
-    // once. serde already unescapes it. This runs before the raw scan so a
-    // provider that DOES print bare JSON is unaffected.
-    for field in ["text", "output", "content", "response", "result"] {
-        if let Some(inner) = envelope_field(text, field) {
-            if let Some(found) = extract_plan_json(&inner) {
+    // The original scanner understood only the bare shape: it found the first
+    // balanced object, and if that object did not itself carry an ask/plan key
+    // it moved on. So grok and codex -- correct answers, wrong wrapping -- both
+    // failed with "the AI did not answer in the expected shape", on every
+    // request, on every machine. That is what a Windows user hit selecting
+    // Grok, and then Codex.
+    //
+    // The robust rule: find every balanced JSON object anywhere in the text
+    // (there may be one per line), parse each, and search it recursively --
+    // any object with an ask/plan key is the answer, and any STRING that itself
+    // parses as JSON is descended into (that is the escaped plan inside an
+    // envelope's `text`/`item.text`). First hit in document order wins.
+    for candidate in balanced_json_objects(text) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&candidate) {
+            // A bare plan is returned VERBATIM -- callers and existing behavior
+            // expect the original bytes, not a serde reformat. Only when the
+            // plan is buried in an envelope do we hand back the re-serialized
+            // inner object, since its original bytes were an escaped string.
+            if let serde_json::Value::Object(map) = &value {
+                if map.contains_key("ask") || map.contains_key("plan") {
+                    return Some(candidate);
+                }
+            }
+            if let Some(found) = plan_within(&value) {
                 return Some(found);
             }
         }
     }
+    None
+}
 
+/// Search a parsed JSON value for the plan contract, descending into nested
+/// objects/arrays AND into strings that are themselves JSON (the escaped plan a
+/// provider buries in a `text` field). Returns the matching object re-serialized.
+fn plan_within(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Object(map) => {
+            if map.contains_key("ask") || map.contains_key("plan") {
+                return serde_json::to_string(value).ok();
+            }
+            for v in map.values() {
+                if let Some(found) = plan_within(v) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        serde_json::Value::Array(items) => {
+            for v in items {
+                if let Some(found) = plan_within(v) {
+                    return Some(found);
+                }
+            }
+            None
+        }
+        serde_json::Value::String(s) => {
+            let inner: serde_json::Value = serde_json::from_str(s.trim()).ok()?;
+            plan_within(&inner)
+        }
+        _ => None,
+    }
+}
+
+/// Every balanced top-level `{...}` object in the text, in order. Handles many
+/// objects (one per line, as codex streams) and braces inside strings.
+fn balanced_json_objects(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
     let bytes = text.as_bytes();
     let mut start = None;
     let mut depth = 0usize;
@@ -4266,12 +4318,7 @@ fn extract_plan_json(text: &str) -> Option<String> {
                 if depth > 0 {
                     depth -= 1;
                     if depth == 0 {
-                        let candidate = &text[start.unwrap()..=i];
-                        if let Ok(value) = serde_json::from_str::<serde_json::Value>(candidate) {
-                            if value.get("ask").is_some() || value.get("plan").is_some() {
-                                return Some(candidate.to_string());
-                            }
-                        }
+                        out.push(text[start.unwrap()..=i].to_string());
                         start = None;
                     }
                 }
@@ -4279,20 +4326,7 @@ fn extract_plan_json(text: &str) -> Option<String> {
             _ => {}
         }
     }
-    None
-}
-
-/// If `text` parses as a JSON object with a string field named `field`, return
-/// that string's (unescaped) value. Used to peel a provider envelope such as
-/// grok's `{"text": "...", "stopReason": ...}` before scanning for the plan.
-///
-/// Returns None when the field is absent or not a string, so a provider that
-/// prints the bare plan falls through to the raw scan and recursion cannot
-/// loop: the envelope must actually contain the field to descend, and the
-/// inner value no longer does.
-fn envelope_field(text: &str, field: &str) -> Option<String> {
-    let value: serde_json::Value = serde_json::from_str(text.trim()).ok()?;
-    value.get(field)?.as_str().map(|s| s.to_string())
+    out
 }
 
 fn name_from_request(request: &str) -> Option<String> {
@@ -12039,6 +12073,37 @@ mod create_tests {
         // An envelope whose text is NOT a plan is still not an answer.
         let empty = r#"{"text":"I think this needs more detail.","stopReason":"end_turn"}"#;
         assert_eq!(extract_plan_json(empty), None);
+    }
+
+    #[test]
+    fn a_codex_stream_is_unwrapped() {
+        // Codex streams one JSON object per line, and the plan is nested inside
+        // an item.completed event's item.text -- captured verbatim from a real
+        // Windows session that failed. The scanner must read every line and
+        // descend into the nested escaped string.
+        let codex = concat!(
+            "{\"type\":\"thread.started\",\"thread_id\":\"01a0\"}\n",
+            "{\"type\":\"turn.started\"}\n",
+            "{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",",
+            "\"text\":\"{\\\"plan\\\":\\\"a stopwatch\\\",\\\"needs\\\":[]}\"}}\n",
+            "{\"type\":\"turn.completed\"}\n",
+        );
+        let value: serde_json::Value =
+            serde_json::from_str(&extract_plan_json(codex).expect("codex stream unwrapped"))
+                .unwrap();
+        assert_eq!(
+            value.get("plan").and_then(|p| p.as_str()),
+            Some("a stopwatch")
+        );
+
+        // A stream that only asks questions, nested the same way.
+        let asked = concat!(
+            "{\"type\":\"turn.started\"}\n",
+            "{\"type\":\"item.completed\",\"item\":{\"text\":\"{\\\"ask\\\":[\\\"which screens?\\\"]}\"}}\n",
+        );
+        let value: serde_json::Value =
+            serde_json::from_str(&extract_plan_json(asked).unwrap()).unwrap();
+        assert!(value.get("ask").is_some());
     }
 
     #[test]
