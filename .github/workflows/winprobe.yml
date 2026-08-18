@@ -6,23 +6,24 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v5
-      - name: Build the fixed CLI, borrow cargo-component from the release
+      - name: What does the fixed binary actually pick, and why
         shell: bash
         run: |
           set -euo pipefail
-          # The published archive ships cargo-component; reuse it so this tests
-          # the toolchain probe and not my ability to install a helper.
           gh release download v0.1.45 -R incyashraj/krate \
             -p "krate-0.1.45-x86_64-pc-windows-msvc.zip" -D dl
           7z x dl/krate-0.1.45-x86_64-pc-windows-msvc.zip -ounpacked >/dev/null
           cc=$(find unpacked -name 'cargo-component.exe' | head -1)
           export PATH="$(cd "$(dirname "$cc")" && pwd):$PATH"
           cargo build --release -p krate-cli
-          echo "=== BEFORE-fix binary (v0.1.45, published) ==="
-          "$(find unpacked -name krate.exe | head -1)" check-app apps/krate-bounce --no-run \
-            && echo "PUBLISHED=PASS" || echo "PUBLISHED=FAIL"
-          echo "=== AFTER-fix binary (this commit) ==="
-          ./target/release/krate.exe check-app apps/krate-bounce --no-run \
-            && echo "FIXED=PASS" || echo "FIXED=FAIL"
+          echo "=== doctor from the FIXED binary: which cargo does it choose? ==="
+          ./target/release/krate.exe doctor 2>&1 | grep -iE "rustup cargo|toolchain|wasm32|warning" || true
+          echo "=== manual: does stable pass a wasm build of a probe crate? ==="
+          mkdir -p /tmp/kp/src && cd /tmp/kp
+          printf '[package]\nname="kp"\nversion="0.0.0"\nedition="2021"\n[lib]\npath="src/lib.rs"\n' > Cargo.toml
+          echo 'fn main(){}' > build.rs
+          echo 'pub fn p()->u32{1}' > src/lib.rs
+          rustup run stable-x86_64-pc-windows-msvc cargo build --quiet --target wasm32-wasip1 \
+            && echo "STABLE_WASM=PASS" || echo "STABLE_WASM=FAIL"
         env:
           GH_TOKEN: ${{ github.token }}
