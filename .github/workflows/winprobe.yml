@@ -1,0 +1,23 @@
+name: Win probe
+on: workflow_dispatch
+
+jobs:
+  probe:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build this commit and run the release verifier's exact check
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release download v0.1.45 -R incyashraj/krate \
+            -p "krate-0.1.45-x86_64-pc-windows-msvc.zip" -D dl
+          7z x dl/krate-0.1.45-x86_64-pc-windows-msvc.zip -ounpacked >/dev/null
+          cc=$(find unpacked -name 'cargo-component.exe' | head -1)
+          export PATH="$(cd "$(dirname "$cc")" && pwd):$PATH"
+          cargo build --release -p krate-cli
+          echo "=== the verifier's exact check, on this commit ==="
+          ./target/release/krate.exe check-app apps/krate-bounce --no-run \
+            && echo "RESULT=PASS" || echo "RESULT=FAIL"
+        env:
+          GH_TOKEN: ${{ github.token }}
