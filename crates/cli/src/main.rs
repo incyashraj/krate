@@ -6459,30 +6459,6 @@ at `$KRATE_SDK_DIR`.\n\
 /// `wasm32-wasip1` target and rustup is not available" even though a rustup
 /// toolchain with the target is installed. Prepending rustup's own toolchain
 /// bin to the child PATH makes the right cargo/rustc win.
-/// The directory holding rustup's own shims (`~/.cargo/bin`).
-///
-/// `rustup_toolchain_bin` returns a toolchain sysroot, which has cargo and
-/// rustc but not rustup. Anything that shells out to rustup -- cargo-component
-/// resolving the wasm target, most of all -- needs this on PATH too.
-fn rustup_shim_dir() -> Option<PathBuf> {
-    let exe = if cfg!(windows) {
-        "rustup.exe"
-    } else {
-        "rustup"
-    };
-    if let Some(found) = agent_provider::which_on_path("rustup") {
-        if let Some(parent) = found.parent() {
-            return Some(parent.to_path_buf());
-        }
-    }
-    std::env::var_os("CARGO_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cargo")))
-        .or_else(|| std::env::var_os("USERPROFILE").map(|h| PathBuf::from(h).join(".cargo")))
-        .map(|home| home.join("bin"))
-        .filter(|dir| dir.join(exe).exists())
-}
-
 fn rustup_toolchain_bin() -> Option<PathBuf> {
     // On Windows, prefer the gnullvm toolchain when it is installed: it links
     // host build scripts with LLVM's linker, so a build works without Visual
@@ -6622,19 +6598,7 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
     let existing = std::env::var_os("PATH").unwrap_or_default();
     let mut prefix: Vec<PathBuf> = Vec::new();
     if let Some(bin) = rustup_toolchain_bin() {
-        // Keep rustup itself reachable beside the toolchain it points at.
-        //
-        // This returns a toolchain's SYSROOT bin -- it holds cargo.exe and
-        // rustc.exe but no rustup.exe. Putting it first and nothing else
-        // shadows rustup's shim directory, and cargo-component resolves the
-        // wasm target by asking rustup: with rustup gone from the child PATH
-        // it fails with "failed to find the `wasm32-wasip1` target and
-        // `rustup` is not available" even though the target is installed.
-        // Caught by the release verifier on windows-2022 in v0.1.44.
         prefix.push(bin);
-        if let Some(shim) = rustup_shim_dir() {
-            prefix.push(shim);
-        }
     }
     if let Some(dir) = resolved.as_deref().and_then(Path::parent) {
         prefix.push(dir.to_path_buf());
@@ -10229,18 +10193,18 @@ fn has_tool(program: &str, args: &[&str]) -> bool {
 fn has_rust_target(target: &str) -> Option<bool> {
     // Same reason as gnullvm_toolchain_present: a just-installed rustup is in
     // ~/.cargo/bin before it is on this process's PATH.
+    // Deliberately the DEFAULT toolchain, not `working_windows_toolchain`.
+    //
+    // Naming the probed toolchain here looks more precise and made things
+    // worse: the probe runs a compile, so this cheap check became expensive
+    // and started disagreeing with the fallback in `rustup_toolchain_bin`,
+    // which still answers for the default. Two Windows releases shipped
+    // broken that way. Ask the same toolchain the fallback will use.
     let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
-    // Ask the toolchain the build will actually use. Bare `rustup target list`
-    // answers for the DEFAULT toolchain, which on Windows is often not the one
-    // `working_windows_toolchain` picks: the target can be installed for one
-    // and missing for the other, and then this check reports a target the
-    // build cannot reach (or demands one that is already there).
-    let mut cmd = ProcessCommand::new(rustup);
-    #[cfg(windows)]
-    if let Some(toolchain) = working_windows_toolchain() {
-        cmd.arg(format!("+{toolchain}"));
-    }
-    let output = cmd.args(["target", "list", "--installed"]).output().ok()?;
+    let output = ProcessCommand::new(rustup)
+        .args(["target", "list", "--installed"])
+        .output()
+        .ok()?;
     if !output.status.success() {
         return None;
     }
@@ -10564,25 +10528,35 @@ fn probe_wasm_build(toolchain: &str) -> bool {
     if !wrote {
         return false;
     }
-    // Build for the HOST, not for wasm. What is being probed is whether this
-    // toolchain can link a build script -- a host artifact -- so the host is
-    // the thing to compile.
+    // Build for wasm, exactly as the real app build does.
     //
-    // Probing with `--target wasm32-wasip1` looked more faithful and was a
-    // circular test: on a machine where the wasm target is not installed yet
-    // the probe fails with "can't find crate for `std`", every toolchain is
-    // judged broken, and `missing_create_tools` reports a missing LINKER. The
-    // step that installs the wasm target sits further down the same function
-    // and never runs, so the machine is told to reinstall a toolchain that was
-    // never at fault and the real gap is never named. That is exactly the
-    // "the build tools aren't set up yet" loop a fresh Windows install hit
-    // with cargo, rustc and cargo-component all present and correct.
+    // Two rewrites of this line shipped broken Windows binaries, so it is worth
+    // saying what it must NOT become. Probing the host only (v0.1.44) accepts a
+    // toolchain that links but has no wasm target; on a clean windows-2022 that
+    // is the only toolchain there is, and every build then dies at "failed to
+    // find the `wasm32-wasip1` target". Probing host-then-wasm (v0.1.45) rejects
+    // that toolchain correctly and is no better, because the fallback below
+    // selects it anyway and nothing downstream consults the verdict.
+    //
+    // Building for wasm is the honest test: it exercises the host linker (the
+    // build script still links) AND the target in one command, and when the
+    // target is merely missing, cargo-component -- which runs under rustup --
+    // has rustup install it on demand. That is why this shape worked for three
+    // releases while both "improvements" did not.
     let rustup = resolve_tool("rustup").unwrap_or_else(|| PathBuf::from("rustup"));
     let mut cmd = ProcessCommand::new(rustup);
-    cmd.args(["run", toolchain, "cargo", "build", "--quiet"])
-        .current_dir(&dir);
-    // Probe under the same linker the real build gets, or the probe rejects
-    // gnullvm for a linker that is present and about to be used.
+    cmd.args([
+        "run",
+        toolchain,
+        "cargo",
+        "build",
+        "--quiet",
+        "--target",
+        CREATE_WASM_TARGET,
+    ])
+    .current_dir(&dir);
+    // Probe under the same linker the real build gets, so gnullvm is not
+    // rejected for a linker that is present and about to be used (K-134).
     point_gnullvm_at_its_own_linker(&mut cmd);
     let ok = cmd
         .output()
@@ -10713,20 +10687,17 @@ Studio Build Tools are not needed",
             Some(true) => {}
             Some(false) => missing.push(MissingTool {
                 what: CREATE_WASM_TARGET,
-                // Install into the toolchain the build uses, matching the
-                // check above. `rustup target add` with no toolchain adds to
-                // the default one, which is how a machine ends up installing
-                // the target, being told again that the target is missing,
-                // and having no way to tell those two toolchains apart.
-                install_cmd: {
-                    let mut cmd: Vec<String> = vec!["rustup".into()];
-                    #[cfg(windows)]
-                    if let Some(toolchain) = working_windows_toolchain() {
-                        cmd.push(format!("+{toolchain}"));
-                    }
-                    cmd.extend(["target".into(), "add".into(), CREATE_WASM_TARGET.into()]);
-                    cmd
-                },
+                // The default toolchain, matching has_rust_target and the
+                // fallback in rustup_toolchain_bin. Naming a probed toolchain
+                // here split the install from the check that reads it, so a
+                // machine could install the target and still be told it was
+                // missing.
+                install_cmd: vec![
+                    "rustup".into(),
+                    "target".into(),
+                    "add".into(),
+                    CREATE_WASM_TARGET.into(),
+                ],
                 note: "the WebAssembly target Krate apps compile to",
             }),
             // `has_rust_target` returns None when rustup could not be run. If a
