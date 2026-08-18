@@ -71,80 +71,6 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
-### K-134 -- No linker is reachable on Windows, and the one that ships is never named
-
-Class: our-code
-Owner: claude (fixed, pending release)
-
-Diagnosed over SSH on the machine itself rather than from a support report.
-It has rustup, cargo, cargo-component, and wasm32-wasip1 installed for BOTH
-toolchains. It has no linker either toolchain will look for:
-
-    gnullvm -> error: linker `x86_64-w64-mingw32-clang` not found
-    msvc    -> error: linker `link.exe` not found
-
-No clang, gcc, or Visual Studio anywhere. rustup installs neither linker. So
-the probe was right to reject both toolchains and the message was true -- but
-the remedy, "reinstall the gnullvm toolchain", could never work, because the
-missing piece is not in that toolchain. Five releases of reinstalling changed
-nothing, exactly as expected.
-
-gnullvm does ship a working linker, `rust-lld.exe`, in its own directory.
-Nothing pointed rustc at it. Naming it is the whole fix. Measured on that
-machine, same crate, same toolchain:
-
-    BEFORE (no linker var): error: linker `x86_64-w64-mingw32-clang` not found
-                            BEFORE_EXIT=101
-    AFTER  (linker named):  AFTER_EXIT=0
-
-`rust-lld.exe`, not the `gcc-ld\ld.lld.exe` shim beside it: rustc invokes a
-gnu-flavored linker with `-flavor gnu`, which the shim rejects
-("lld: error: unknown argument: -flavor") and rust-lld accepts.
-
-The earlier entry under this number blamed a missing wasm target. That was
-wrong -- the target is installed for both toolchains. Corrected above.
-
-K-130's probe compiles a throwaway crate to decide whether a toolchain can
-link. It compiled that crate with `--target wasm32-wasip1`. On a machine where
-the wasm target is not installed yet, the probe fails with "can't find crate
-for `std`" -- not because the linker is missing, but because the target is.
-Every toolchain is then judged broken, `missing_create_tools` reports **"a
-linker for Windows"**, and the run stops. The step that would install the wasm
-target sits further down the same function and never runs. The machine is told
-to reinstall a toolchain that was never at fault, and the real gap is never
-named. Reinstalling changes nothing, which is why it survived several versions.
-
-What a fresh Windows install reports (support report `3a41d8442fe8f9cb`,
-krate v0.1.43, windows x86_64) -- every tool present, and it still fails:
-
-    rustc:           C:\Users\user\.cargo\bin\rustc.exe
-    cargo:           C:\Users\user\.cargo\bin\cargo.exe
-    cargo-component: C:\Users\user\AppData\Local\Krate\bin\cargo-component.exe
-    error: finish the toolchain setup, then re-run
-
-Evidence -- the probe crate, built exactly as K-130 built it, fails on a
-machine that builds Krate apps perfectly well:
-
-    $ cargo build --quiet --target wasm32-wasip1
-    error[E0463]: can't find crate for `std`
-      = note: the `wasm32-wasip1` target may not be installed
-
-Built for the host instead, the same crate succeeds and links its build
-script, which is the only thing the probe was ever meant to test:
-
-    $ cargo build --quiet
-    exit=0
-    $ ls target/debug/build
-    krate-linkprobe-221dcb396dd15151
-
-And it still fails when a linker really is absent, so the check keeps its
-teeth:
-
-    $ CARGO_TARGET_..._LINKER=/nonexistent-linker cargo build --quiet
-    error: could not compile `np` (build script)
-
-Fix: probe the host. A build script is a host artifact; compiling for wasm to
-learn whether the host can link was the error.
 
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 
@@ -3883,6 +3809,111 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
 Status:   fixed
 
 ## Fixed
+
+### K-134 -- No linker is reachable on Windows, and the one that ships is never named
+
+Class: our-code
+Owner: claude (fixed in v0.1.46)
+
+Diagnosed over SSH on the machine itself rather than from a support report.
+It has rustup, cargo, cargo-component, and wasm32-wasip1 installed for BOTH
+toolchains. It has no linker either toolchain will look for:
+
+    gnullvm -> error: linker `x86_64-w64-mingw32-clang` not found
+    msvc    -> error: linker `link.exe` not found
+
+No clang, gcc, or Visual Studio anywhere. rustup installs neither linker. So
+the probe was right to reject both toolchains and the message was true -- but
+the remedy, "reinstall the gnullvm toolchain", could never work, because the
+missing piece is not in that toolchain. Five releases of reinstalling changed
+nothing, exactly as expected.
+
+gnullvm does ship a working linker, `rust-lld.exe`, in its own directory.
+Nothing pointed rustc at it. Naming it is the whole fix. Measured on that
+machine, same crate, same toolchain:
+
+    BEFORE (no linker var): error: linker `x86_64-w64-mingw32-clang` not found
+                            BEFORE_EXIT=101
+    AFTER  (linker named):  AFTER_EXIT=0
+
+`rust-lld.exe`, not the `gcc-ld\ld.lld.exe` shim beside it: rustc invokes a
+gnu-flavored linker with `-flavor gnu`, which the shim rejects
+("lld: error: unknown argument: -flavor") and rust-lld accepts.
+
+The earlier entry under this number blamed a missing wasm target. That was
+wrong -- the target is installed for both toolchains. Corrected above.
+
+K-130's probe compiles a throwaway crate to decide whether a toolchain can
+link. It compiled that crate with `--target wasm32-wasip1`. On a machine where
+the wasm target is not installed yet, the probe fails with "can't find crate
+for `std`" -- not because the linker is missing, but because the target is.
+Every toolchain is then judged broken, `missing_create_tools` reports **"a
+linker for Windows"**, and the run stops. The step that would install the wasm
+target sits further down the same function and never runs. The machine is told
+to reinstall a toolchain that was never at fault, and the real gap is never
+named. Reinstalling changes nothing, which is why it survived several versions.
+
+What a fresh Windows install reports (support report `3a41d8442fe8f9cb`,
+krate v0.1.43, windows x86_64) -- every tool present, and it still fails:
+
+    rustc:           C:\Users\user\.cargo\bin\rustc.exe
+    cargo:           C:\Users\user\.cargo\bin\cargo.exe
+    cargo-component: C:\Users\user\AppData\Local\Krate\bin\cargo-component.exe
+    error: finish the toolchain setup, then re-run
+
+Evidence -- the probe crate, built exactly as K-130 built it, fails on a
+machine that builds Krate apps perfectly well:
+
+    $ cargo build --quiet --target wasm32-wasip1
+    error[E0463]: can't find crate for `std`
+      = note: the `wasm32-wasip1` target may not be installed
+
+Built for the host instead, the same crate succeeds and links its build
+script, which is the only thing the probe was ever meant to test:
+
+    $ cargo build --quiet
+    exit=0
+    $ ls target/debug/build
+    krate-linkprobe-221dcb396dd15151
+
+And it still fails when a linker really is absent, so the check keeps its
+teeth:
+
+    $ CARGO_TARGET_..._LINKER=/nonexistent-linker cargo build --quiet
+    error: could not compile `np` (build script)
+
+Fix: probe the host. A build script is a host artifact; compiling for wasm to
+learn whether the host can link was the error.
+
+Fixed by: 2b860920 (in v0.1.46). Two attempts shipped broken before this one,
+both from rewriting the toolchain probe rather than leaving it alone:
+
+  v0.1.44 probed the HOST only, so a toolchain that links but has no wasm
+  target passes. On a clean windows-2022 that is the only toolchain there is,
+  and every build died at "failed to find the `wasm32-wasip1` target".
+
+  v0.1.45 probed host THEN wasm. It rejects that toolchain correctly and is no
+  better, because the fallback in `rustup_toolchain_bin` selects it anyway and
+  nothing downstream reads the verdict. Measured on the runner: FIXED=FAIL.
+
+Measured on a clean windows-2022 -- exactly one toolchain, and it fails wasm:
+
+    stable-x86_64-pc-windows-msvc   HOST=pass  WASM=fail  has_cargo=yes
+    rustup which cargo -> ...\stable\bin\cargo.exe
+
+Building for wasm is the honest probe: the build script still links, so the
+host linker is exercised AND the target is, in one command -- and a merely
+missing target gets installed on demand by rustup underneath cargo-component.
+So the probe went back to what worked for three releases, and the only thing
+kept is naming gnullvm's own `rust-lld.exe` as the linker.
+
+Verified on windows-2022 BEFORE tagging this time, with the release verifier's
+own command: `check-app apps/krate-bounce --no-run` -> RESULT=PASS, all four
+stages (layout, manifest, build, imports).
+
+Lesson worth keeping: the release verifier caught both bad releases and I
+treated it as a formality twice. It is the only Windows signal that runs on
+every tag.
 
 ### K-133 -- The headless run budget skipped every game, so a finished game never exited
 
