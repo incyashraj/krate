@@ -4215,6 +4215,29 @@ fn plan_command(request: &str, attachments: &[PathBuf], agent: Option<&str>) -> 
 /// "plan" key. Agents wrap answers in prose and code fences no matter what
 /// the prompt says; the contract survives by extraction, not by trust.
 fn extract_plan_json(text: &str) -> Option<String> {
+    // Try each balanced JSON object, and if that object is a provider ENVELOPE
+    // rather than the plan itself, look inside it.
+    //
+    // Grok (and any provider run with a JSON output format) does not print the
+    // bare plan. It prints `{"text": "<the real answer>", "stopReason": ...,
+    // "thought": ...}` -- the plan sits inside the `text` string, escaped. The
+    // scanner below finds the outer object first, sees no `ask`/`plan` key at
+    // its top level, and moves on past the whole thing, so a perfectly correct
+    // answer was rejected as "not the expected shape". On the Studio that made
+    // grok fail the plan step on the very first request, every time, on every
+    // machine -- the failure a Windows user hit after selecting Grok.
+    //
+    // So: pull the string value out of the common envelope fields and recurse
+    // once. serde already unescapes it. This runs before the raw scan so a
+    // provider that DOES print bare JSON is unaffected.
+    for field in ["text", "output", "content", "response", "result"] {
+        if let Some(inner) = envelope_field(text, field) {
+            if let Some(found) = extract_plan_json(&inner) {
+                return Some(found);
+            }
+        }
+    }
+
     let bytes = text.as_bytes();
     let mut start = None;
     let mut depth = 0usize;
@@ -4257,6 +4280,19 @@ fn extract_plan_json(text: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// If `text` parses as a JSON object with a string field named `field`, return
+/// that string's (unescaped) value. Used to peel a provider envelope such as
+/// grok's `{"text": "...", "stopReason": ...}` before scanning for the plan.
+///
+/// Returns None when the field is absent or not a string, so a provider that
+/// prints the bare plan falls through to the raw scan and recursion cannot
+/// loop: the envelope must actually contain the field to descend, and the
+/// inner value no longer does.
+fn envelope_field(text: &str, field: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(text.trim()).ok()?;
+    value.get(field)?.as_str().map(|s| s.to_string())
 }
 
 fn name_from_request(request: &str) -> Option<String> {
@@ -11973,6 +12009,36 @@ mod create_tests {
         // JSON without the contract keys is not an answer.
         assert_eq!(extract_plan_json("{\"other\": 1}"), None);
         assert_eq!(extract_plan_json("no json at all"), None);
+    }
+
+    #[test]
+    fn a_grok_envelope_is_unwrapped() {
+        // The exact shape grok's CLI prints for a plan, captured from a real
+        // Windows session that failed with "the AI did not answer in the
+        // expected shape". The plan is a correct `{"ask": [...]}` buried in the
+        // envelope's `text` string; the contract must reach it.
+        let grok = r#"{
+  "text": "{\"ask\": [\"Should this play your own music files, or just look like Apple Music?\", \"Which screens matter?\"]}",
+  "stopReason": "end_turn",
+  "sessionId": "01a015c0-deb7-7a13-a3f5-97f46fd8a20b",
+  "thought": "The user wants me to decide whether the request is ready."
+}"#;
+        let extracted = extract_plan_json(grok).expect("grok envelope must be unwrapped");
+        let value: serde_json::Value = serde_json::from_str(&extracted).unwrap();
+        assert!(value.get("ask").is_some(), "got: {extracted}");
+
+        // A plan-shaped answer inside the envelope works too.
+        let planned = r#"{"text":"{\"plan\":\"a music player\",\"needs\":[\"ui.window\"]}","stopReason":"end_turn"}"#;
+        let value: serde_json::Value =
+            serde_json::from_str(&extract_plan_json(planned).unwrap()).unwrap();
+        assert_eq!(
+            value.get("plan").and_then(|p| p.as_str()),
+            Some("a music player")
+        );
+
+        // An envelope whose text is NOT a plan is still not an answer.
+        let empty = r#"{"text":"I think this needs more detail.","stopReason":"end_turn"}"#;
+        assert_eq!(extract_plan_json(empty), None);
     }
 
     #[test]
