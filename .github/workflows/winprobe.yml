@@ -6,29 +6,14 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v5
-      - name: What toolchains and targets exist here
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94.1"
+          targets: wasm32-wasip1
+      - name: Build the CLI with the two-part probe and run the verifier's check
         shell: bash
         run: |
-          echo "--- rustup toolchain list ---"
-          rustup toolchain list
-          echo "--- default target list ---"
-          rustup target list --installed
-          echo "--- which rustup / cargo ---"
-          which rustup cargo rustc || true
-          echo "--- sysroot bin contents (does it hold rustup.exe?) ---"
-          SR=$(rustc --print sysroot)
-          ls "$SR/bin" || true
-      - name: Does a host-only probe succeed, and does that toolchain have wasm?
-        shell: bash
-        run: |
-          set -x
-          mkdir -p /tmp/kp/src
-          cd /tmp/kp
-          printf '[package]\nname="kp"\nversion="0.0.0"\nedition="2021"\n[lib]\npath="src/lib.rs"\n' > Cargo.toml
-          echo 'fn main(){}' > build.rs
-          echo 'pub fn p()->u32{1}' > src/lib.rs
-          for TC in $(rustup toolchain list | awk '{print $1}'); do
-            echo "=== $TC ==="
-            rustup run "$TC" cargo build --quiet && echo "HOST_OK=$TC" || echo "HOST_FAIL=$TC"
-            rustup "+$TC" target list --installed | grep -c wasm32-wasip1 || echo "no wasm for $TC"
-          done
+          set -euo pipefail
+          cargo build --release -p krate-cli
+          echo "=== the exact command the release verifier runs ==="
+          ./target/release/krate.exe check-app apps/krate-bounce --no-run
