@@ -6459,6 +6459,30 @@ at `$KRATE_SDK_DIR`.\n\
 /// `wasm32-wasip1` target and rustup is not available" even though a rustup
 /// toolchain with the target is installed. Prepending rustup's own toolchain
 /// bin to the child PATH makes the right cargo/rustc win.
+/// The directory holding rustup's own shims (`~/.cargo/bin`).
+///
+/// `rustup_toolchain_bin` returns a toolchain sysroot, which has cargo and
+/// rustc but not rustup. Anything that shells out to rustup -- cargo-component
+/// resolving the wasm target, most of all -- needs this on PATH too.
+fn rustup_shim_dir() -> Option<PathBuf> {
+    let exe = if cfg!(windows) {
+        "rustup.exe"
+    } else {
+        "rustup"
+    };
+    if let Some(found) = agent_provider::which_on_path("rustup") {
+        if let Some(parent) = found.parent() {
+            return Some(parent.to_path_buf());
+        }
+    }
+    std::env::var_os("CARGO_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cargo")))
+        .or_else(|| std::env::var_os("USERPROFILE").map(|h| PathBuf::from(h).join(".cargo")))
+        .map(|home| home.join("bin"))
+        .filter(|dir| dir.join(exe).exists())
+}
+
 fn rustup_toolchain_bin() -> Option<PathBuf> {
     // On Windows, prefer the gnullvm toolchain when it is installed: it links
     // host build scripts with LLVM's linker, so a build works without Visual
@@ -6598,7 +6622,19 @@ fn component_build_command(app_dir: &Path) -> ProcessCommand {
     let existing = std::env::var_os("PATH").unwrap_or_default();
     let mut prefix: Vec<PathBuf> = Vec::new();
     if let Some(bin) = rustup_toolchain_bin() {
+        // Keep rustup itself reachable beside the toolchain it points at.
+        //
+        // This returns a toolchain's SYSROOT bin -- it holds cargo.exe and
+        // rustc.exe but no rustup.exe. Putting it first and nothing else
+        // shadows rustup's shim directory, and cargo-component resolves the
+        // wasm target by asking rustup: with rustup gone from the child PATH
+        // it fails with "failed to find the `wasm32-wasip1` target and
+        // `rustup` is not available" even though the target is installed.
+        // Caught by the release verifier on windows-2022 in v0.1.44.
         prefix.push(bin);
+        if let Some(shim) = rustup_shim_dir() {
+            prefix.push(shim);
+        }
     }
     if let Some(dir) = resolved.as_deref().and_then(Path::parent) {
         prefix.push(dir.to_path_buf());
