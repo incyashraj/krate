@@ -72,6 +72,41 @@ Fix:      what needs to happen, or the commit that did it.
 ## Open
 
 
+### K-135 -- The plan gate only read claude's shape, so grok and codex could never plan
+
+Class: our-code
+Owner: claude (fixed in 5f9fac32, pending release)
+
+The Studio's first step on any request is `krate plan`, which asks the agent
+whether to build or ask questions and expects one JSON object back. The parser
+(`extract_plan_json`, born in c9b648e0) understood only bare JSON on stdout --
+which is what `claude -p` emits. Every other provider frames its answer:
+
+    bare     {"ask":[...]}                                  claude -p
+    envelope {"text":"{\"ask\":[...]}", ...}                grok --output-format json
+    stream   {"type":"item.completed","item":{"text":...}}  codex exec --json, one per line
+
+grok and codex both answered CORRECTLY and both failed with "the AI did not
+answer in the expected shape", instantly, on every request. Reproduced live on
+the Windows PC (v0.1.46) after selecting each:
+
+    krate plan "a simple stopwatch" --agent grok
+      -> {"text":"{\"plan\":\"A desktop stopwatch...\",\"needs\":[]}", ...}  rejected
+    krate plan "a simple stopwatch" --agent codex
+      -> {"type":"item.completed","item":{"text":"{\"plan\":...}"}}          rejected
+
+Only claude overrides plan_args (bare `-p`); grok, codex, gemini, copilot all
+fall through to author_args, which uses a JSON output format. So the gate worked
+for exactly one of five agents.
+
+Fixed by parsing every balanced object in the output and searching recursively,
+descending into strings that are themselves JSON. Tests carry the verbatim grok
+envelope and codex stream from the failing sessions.
+
+This is the clearest case of the "built on assumptions" pattern: one provider's
+behavior (claude emits bare JSON) was taken as every provider's, and shipped
+without testing the others. See the note in DEVELOPMENT once written.
+
 ### K-112 -- Windows presents frames on the CPU: visibly slower than the Mac side by side
 
 Class: our-code
