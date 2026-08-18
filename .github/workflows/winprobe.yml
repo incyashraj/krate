@@ -1,0 +1,26 @@
+name: Win probe
+on: workflow_dispatch
+
+jobs:
+  probe:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.94.1"
+          targets: wasm32-wasip1
+      - name: Install cargo-component
+        shell: bash
+        run: cargo install cargo-component --locked --version 0.21.1 || cargo install cargo-component --locked
+      - name: Build the fixed CLI and run check-app on an animated app
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release -p krate-cli
+          echo "=== check-app on krate-glow (animated, stays open) on WINDOWS ==="
+          ./target/release/krate.exe check-app apps/krate-glow \
+            && echo "GLOW=PASS" || echo "GLOW=FAIL"
+          echo "=== and an idling windowed app ==="
+          ./target/release/krate.exe check-app apps/zz-example-check \
+            && echo "IDLE=PASS" || echo "IDLE=FAIL"
