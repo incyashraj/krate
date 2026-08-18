@@ -217,10 +217,19 @@ function onLoginStep(step) {
 async function enterHome() {
   showView("home");
   renderAccount();
-  refreshAgents();
+  // Settings FIRST, then agents -- and await both.
+  //
+  // These two lines were the other way round and refreshAgents() was not
+  // awaited, so two things went wrong at once: a request submitted before the
+  // async agent probe returned used the default "claude", and when the probe
+  // did return, the settings load overwrote its choice. The chip painted
+  // "Codex" from the probe while state.agent still said "claude", and the
+  // build failed in the next second with "the `claude` command is not
+  // installed" on a machine where Codex was installed and working.
   const settings = await invoke("settings_get");
   state.outDir = settings.out_dir;
   state.agent = settings.agent || "claude";
+  await refreshAgents();
   renderSessions(await invoke("sessions_list"));
   renderBuilding();
 }
@@ -950,9 +959,26 @@ async function continuePlanning(text, files) {
   await runPlan();
 }
 
+/* Is the agent we are about to run actually usable?
+ *
+ * Cheap insurance against sending work to an agent that cannot take it. The
+ * failure this prevents took one second and named `claude` on a machine whose
+ * chip said Codex -- the worst kind of error, because the thing it blames is
+ * not the thing the user chose. If the roster says our agent is not working,
+ * re-probe once (it may have been installed since) and switch to one that is
+ * before starting, rather than after failing. */
+async function ensureUsableAgent() {
+  const usable = (name) =>
+    (state.agents || []).some((a) => a.name === name && a.state === "working");
+  if (usable(state.agent)) return true;
+  await refreshAgents();
+  return usable(state.agent);
+}
+
 async function runPlan() {
   $("composerHint").textContent = "thinking it through…";
   $("send").disabled = true;
+  await ensureUsableAgent();
   try {
     const raw = await invoke("plan_request", {
       request: planContext(),
@@ -1177,7 +1203,12 @@ async function refreshAgents() {
     setChips("bad", "no AI found", "");
     return;
   }
-  if (chosen.state === "working") state.agent = chosen.name;
+  // The chip shows `chosen`, so the build must USE `chosen`. Updating
+  // state.agent only in the "working" case let the two disagree: the chip
+  // named the agent that was found while the build still ran the one that was
+  // configured, and the mismatch surfaced as an instant failure naming an
+  // agent the user never picked. If it is worth painting, it is what runs.
+  state.agent = chosen.name;
   const dot = chosen.state === "working" ? "ok" : chosen.state === "not-ready" ? "warn" : "bad";
   const text =
     chosen.state === "working" ? chosen.label
