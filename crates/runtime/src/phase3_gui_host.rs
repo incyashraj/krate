@@ -888,7 +888,27 @@ impl Phase3GuiHost {
                 return None;
             }
         };
-        if now.duration_since(started) < HEADLESS_RUN_BUDGET {
+        // A usability run has its own, longer deadline. Its stay-open watch runs
+        // the app for STAY_OPEN_WATCH (15s) to prove the window does NOT close
+        // by itself, and the driver sends its own CloseRequested when the watch
+        // ends. The generic headless budget is 5s -- so without widening it here
+        // the budget fired first, sent CloseRequested at 5s, the app correctly
+        // obeyed, and the watch then reported "the app closed itself after
+        // 5.1s". The app did exactly the right thing: it honored a close the
+        // RUNTIME sent. A real Apple Music UI written by grok failed its
+        // usability stage on precisely this, every time.
+        //
+        // The budget still fires -- an app must never hang the run forever --
+        // but only after the watch has had its full window plus slack, so the
+        // watch records the window as held first. After that, this two-strike
+        // close is the backstop for an app whose loop ignores the driver's own
+        // CloseRequested.
+        let budget = if self.usability.is_some() {
+            crate::usability::STAY_OPEN_WATCH + std::time::Duration::from_secs(5)
+        } else {
+            HEADLESS_RUN_BUDGET
+        };
+        if now.duration_since(started) < budget {
             return None;
         }
         // Same two-strike contract as the close button and Ctrl-C: the app is

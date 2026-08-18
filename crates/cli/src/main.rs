@@ -6965,7 +6965,14 @@ fn prepare_verify_dir(dir: &Path, manifest: &krate_manifest::Manifest) -> Result
 /// so `create` can never hang a user's terminal indefinitely — e.g. if a
 /// generated GUI app fails to honor `quick` and waits on a window that never
 /// closes.
-const VERIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+///
+/// Has to clear the usability run's own deadline: the stay-open watch (15s) plus
+/// the headless budget's slack (5s) plus build, settle, and per-frame wasm
+/// overhead. A flat 60s cleared it on a fast release build and cut a healthy app
+/// off on slower execution, reporting "did not finish" for a run about to pass.
+/// 90s clears the 20s deadline with wide margin while still bounding a genuinely
+/// hung run.
+const VERIFY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(90);
 
 /// Resolve a possibly-relative output path to an absolute one without depending
 /// on a healthy current directory. `fs::canonicalize` on a relative path reads
