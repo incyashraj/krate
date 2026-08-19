@@ -243,6 +243,20 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
             }
             Ok(None) => {
                 if started.elapsed() >= timeout {
+                    // Kill the whole tree, not just the direct child. A hung
+                    // codex has spawned a sandbox helper subprocess; killing
+                    // only the parent leaves that child holding the stdout pipe
+                    // open, and a later reader would block on it. On Windows
+                    // taskkill /T reaches the tree; elsewhere killing the child
+                    // is enough because these tools do not detach.
+                    #[cfg(windows)]
+                    {
+                        let _ = ProcessCommand::new("taskkill")
+                            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status();
+                    }
                     let _ = child.kill();
                     return Readiness::NotReady {
                         summary: format!("did not answer within {}s", timeout.as_secs()),
@@ -856,12 +870,11 @@ impl AgentProvider for CodexProvider {
     /// of a clean pass. `--skip-git-repo-check` because the probe runs in a
     /// scratch dir, matching author_args.
     fn probe_args(&self) -> Vec<String> {
-        vec![
-            "exec".to_string(),
-            "--json".to_string(),
-            "--skip-git-repo-check".to_string(),
-            "Reply with the single word: ok".to_string(),
-        ]
+        // Match author_args exactly, including `--sandbox workspace-write`:
+        // that is the mode whose helper is missing on the broken machine, so
+        // the probe has to engage the SAME path authoring does or it proves
+        // nothing. Only the prompt is trivial.
+        self.author_args("Reply with the single word: ok")
     }
 
     fn login_hint(&self) -> String {
