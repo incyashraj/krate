@@ -840,11 +840,28 @@ impl AgentProvider for CodexProvider {
         command.stdin(Stdio::null());
     }
 
-    /// Codex prints a stdin notice on every `exec`, which a generic probe reads
-    /// as a failure. `login status` answers the question the menu actually
-    /// needs -- is this usable right now -- and returns immediately.
+    /// Probe with a real `exec`, not `login status`.
+    ///
+    /// `login status` only answers "is the sign-in valid" and returns
+    /// instantly -- and on a Windows machine whose codex sandbox helper
+    /// (`codex-windows-sandbox-setup.exe`) is missing it says "Logged in using
+    /// ChatGPT" while every actual build fails or hangs the moment codex tries
+    /// to run a tool. The probe passed, codex was offered, and the user picked
+    /// it and hit a confusing "that build didn't come together". The founder
+    /// hit exactly this, twice.
+    ///
+    /// So the probe runs the same kind of thing authoring does: an `exec` that
+    /// asks for one word. That engages the sandbox, so a broken helper surfaces
+    /// as a non-zero exit (or a hang the probe's own timeout catches) instead
+    /// of a clean pass. `--skip-git-repo-check` because the probe runs in a
+    /// scratch dir, matching author_args.
     fn probe_args(&self) -> Vec<String> {
-        vec!["login".to_string(), "status".to_string()]
+        vec![
+            "exec".to_string(),
+            "--json".to_string(),
+            "--skip-git-repo-check".to_string(),
+            "Reply with the single word: ok".to_string(),
+        ]
     }
 
     fn login_hint(&self) -> String {
