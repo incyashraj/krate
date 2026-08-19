@@ -602,7 +602,9 @@ impl AgentProvider for ClaudeProvider {
             return Some(match name {
                 "Write" | "Edit" => {
                     let path = arg("file_path").unwrap_or_default();
-                    let file = path.rsplit('/').next().unwrap_or(&path).to_string();
+                    // Both separators: a Windows path is backslash-delimited,
+                    // and '/' alone left the whole path as the file name.
+                    let file = path.rsplit(['/', '\\']).next().unwrap_or(&path).to_string();
                     match file.as_str() {
                         "lib.rs" => "writing the app's code".to_string(),
                         "Cargo.toml" => "setting up the build".to_string(),
@@ -733,7 +735,11 @@ fn describe_tool_use(tool: &str, path: Option<&str>, command: Option<&str>) -> O
     let tool = tool.to_ascii_lowercase();
     if tool.contains("write") || tool.contains("edit") || tool.contains("apply") {
         let path = path.unwrap_or("");
-        let file = path.rsplit('/').next().unwrap_or(path);
+        // Split on both separators: grok on Windows reports backslash paths
+        // (C:\app\src\lib.rs), and splitting on '/' alone left the whole path
+        // as the "file", so the step read "writing C:\app\src\lib.rs" instead
+        // of "writing the app's code".
+        let file = path.rsplit(['/', '\\']).next().unwrap_or(path);
         return Some(match file {
             "lib.rs" => "writing the app's code".to_string(),
             "Cargo.toml" => "setting up the build".to_string(),
@@ -988,10 +994,14 @@ struct GrokProvider;
 
 impl AgentProvider for GrokProvider {
     fn reports_progress(&self) -> bool {
-        // Verified from a real transcript: the whole session arrives as one
-        // JSON object written when the run ends, so nothing can be reported
-        // while it works.
-        false
+        // Authoring streams now (see author_args): grok emits one NDJSON event
+        // per line -- thought and text deltas, then tool_call events -- so a
+        // progress display CAN follow along, the transcript survives a kill,
+        // and the silence-based stall detector has real lines to time from. The
+        // old `--output-format json` wrote a single blob at the very end, which
+        // meant a live run looked identical to a hung one and a killed run left
+        // an empty transcript with no way to see what happened.
+        true
     }
 
     fn name(&self) -> &'static str {
@@ -1025,12 +1035,38 @@ impl AgentProvider for GrokProvider {
             "--single",
             prompt,
             "--always-approve",
+            // Stream the run as NDJSON (one event per line) rather than a single
+            // blob at the end. This is what lets progress be reported, keeps the
+            // transcript alive if the run is killed, and gives the stall
+            // detector real lines to measure silence between. The final app is
+            // judged by files-changed + check-app, not by parsing this stream,
+            // so the format is free to be the streaming one.
             "--output-format",
-            "json",
+            "streaming-json",
         ]
         .iter()
         .map(|s| s.to_string())
         .collect()
+    }
+
+    /// The plan and probe steps keep the single-blob `json` format.
+    ///
+    /// Both read grok's answer out of stdout -- the plan wants one JSON object,
+    /// the probe wants the word "ok" -- so the streaming NDNJSON authoring
+    /// format would only add noise to parse around. Only authoring needs the
+    /// live stream.
+    fn plan_args(&self, prompt: &str) -> Vec<String> {
+        vec![
+            "--single".to_string(),
+            prompt.to_string(),
+            "--always-approve".to_string(),
+            "--output-format".to_string(),
+            "json".to_string(),
+        ]
+    }
+
+    fn probe_args(&self) -> Vec<String> {
+        self.plan_args("Reply with the single word: ok")
     }
 
     fn configure(&self, command: &mut ProcessCommand) {
@@ -1038,16 +1074,26 @@ impl AgentProvider for GrokProvider {
     }
 
     fn progress_line(&self, line: &str) -> Option<String> {
+        // The streaming-json events, verified live against grok 0.2.14:
+        //   {"type":"tool_call","toolName":"write",
+        //    "rawInput":{"file_path":"...","content":"..."}}
+        //   {"type":"tool_call","toolName":"run_terminal_command",
+        //    "rawInput":{"command":"krate check-app ."}}
+        // Only a tool_call is a step worth showing; thought/text deltas and
+        // tool_call_update are proof-of-life for the heartbeat but not a line.
         let event: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+        if event.get("type").and_then(|t| t.as_str()) != Some("tool_call") {
+            return None;
+        }
         let name = event
-            .get("tool")
-            .or_else(|| event.get("name"))
+            .get("toolName")
+            .or_else(|| event.get("kind"))
             .and_then(|v| v.as_str())?;
         let path = event
-            .pointer("/input/path")
-            .or_else(|| event.pointer("/input/file_path"))
+            .pointer("/rawInput/file_path")
+            .or_else(|| event.pointer("/rawInput/path"))
             .and_then(|v| v.as_str());
-        let command = event.pointer("/input/command").and_then(|v| v.as_str());
+        let command = event.pointer("/rawInput/command").and_then(|v| v.as_str());
         describe_tool_use(name, path, command)
     }
 }
@@ -1103,6 +1149,38 @@ mod tests {
         let input = serde_json::json!({ "pattern": "Event::Pointer" });
         let line = describe_read("Grep", Some(&input));
         assert!(line.contains("Event::Pointer"), "got {line:?}");
+    }
+
+    #[test]
+    fn grok_streaming_events_become_progress_lines() {
+        // The real streaming-json events captured live from grok 0.2.14. A
+        // tool_call turns into a step; a thought/text delta and a
+        // tool_call_update do not (they are heartbeat, not a line).
+        let grok = super::GrokProvider;
+        let write = r#"{"type":"tool_call","toolName":"write","rawInput":{"file_path":"C:\\app\\src\\lib.rs","content":"..."}}"#;
+        assert_eq!(
+            grok.progress_line(write).as_deref(),
+            Some("writing the app's code")
+        );
+
+        let check = r#"{"type":"tool_call","toolName":"run_terminal_command","rawInput":{"command":"krate check-app ."}}"#;
+        assert_eq!(
+            grok.progress_line(check).as_deref(),
+            Some("checking it builds, runs, and only uses what it declared")
+        );
+
+        // Deltas and updates are not steps.
+        assert_eq!(
+            grok.progress_line(r#"{"type":"thought","data":"The"}"#),
+            None
+        );
+        assert_eq!(grok.progress_line(r#"{"type":"text","data":"I'll"}"#), None);
+        assert_eq!(
+            grok.progress_line(r#"{"type":"tool_call_update","toolCallId":"x","status":null}"#),
+            None
+        );
+        // And a non-JSON line never panics.
+        assert_eq!(grok.progress_line("not json"), None);
     }
 
     #[test]
