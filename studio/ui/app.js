@@ -535,12 +535,20 @@ function startBuildWatchdog() {
       return; // a failed question is not an answer; try again next tick
     }
     if (!alive) {
+      // The engine process is gone -- but "gone" is how BOTH a crash and a
+      // normal finish look: create exits either way. The create promise is
+      // the one that knows which, because it has the exit code and the result;
+      // it settles the build a beat later. So the watchdog must NOT call this a
+      // failure. It stops watching and yields. If the finish was real,
+      // finishBuild fills the done card. If the process truly died without a
+      // result, the create promise rejects and failBuild runs from the catch.
+      //
+      // The old behavior raced that promise: a watchdog tick landing in the
+      // gap between the process exiting and the promise resolving settled the
+      // chip to "failed" while the right panel then showed the completed app --
+      // the exact left-says-failed / right-shows-done contradiction the founder
+      // hit. Leaving the verdict to the promise removes the race entirely.
       clearInterval(state.watchdog);
-      failBuild(
-        "The build stopped unexpectedly -- nothing is running any more. " +
-          "Trying again usually works; your words are kept.",
-        state.lastRequest || "",
-      );
       return;
     }
     if (!state.sawEngineLine && age > 90000) {
@@ -712,6 +720,10 @@ function fillDone(result, opts) {
 }
 
 function finishBuild(result) {
+  // Settle once. If the watchdog already failed this build, ignore the late
+  // success rather than drawing a done card behind a failed chip.
+  if (state.buildSettled) return;
+  state.buildSettled = true;
   clearInterval(state.timer);
   clearInterval(state.watchdog);
   // The result belongs to the session that was building, which is not
@@ -757,6 +769,10 @@ function setRevisePlaceholders() {
 }
 
 function failBuild(why, request) {
+  // Settle once. If the build already succeeded, ignore this later failure --
+  // most importantly a watchdog tick that fires just after create resolved.
+  if (state.buildSettled) return;
+  state.buildSettled = true;
   clearInterval(state.watchdog);
   settleChipBad(state.buildChip, state.buildVersion || 1, () => make(request));
   state.buildChip = null;
@@ -1078,6 +1094,13 @@ async function buildNow(request, files, revising) {
   // into a receipt when it ends -- narration never piles up in the rail.
   state.buildChip = appendLiveChip(version);
   state.buildVersion = version;
+  // A build settles exactly once. The watchdog fires on its own interval and
+  // the create promise resolves on its own; both call in to settle the build,
+  // and without a guard a watchdog that fires a moment before create resolves
+  // settles the chip to "failed" AND then finishBuild fills the done card --
+  // the left panel says failed while the right shows a completed app. The
+  // founder watched exactly this. First outcome wins; the later one is ignored.
+  state.buildSettled = false;
   beginBuild(
     revising ? "Making your change" : "Making your app",
     revising ? "the AI reads your app before it edits" : "usually a few minutes",
