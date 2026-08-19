@@ -101,6 +101,16 @@ pub trait AgentProvider: Send + Sync {
     fn failed(&self, status: &ExitStatus) -> bool {
         !status.success()
     }
+
+    /// A broken-environment signature in the tool's own output, for a tool that
+    /// exits 0 while having actually failed. Returns (reason, remedy) if found.
+    ///
+    /// Codex logs its Windows sandbox helper failure to stderr and then exits
+    /// 0, so status and empty-output checks both pass while every real build
+    /// fails. The default finds nothing; codex overrides.
+    fn output_failure(&self, _stdout: &str, _stderr: &str) -> Option<(String, Option<String>)> {
+        None
+    }
 }
 
 /// Every provider Krate can drive, in the order they are listed to a person.
@@ -253,6 +263,16 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
                 let stderr = err_handle.join().unwrap_or_default();
                 let stdout = stdout.trim().to_string();
                 let stderr = stderr.trim().to_string();
+                // A tool can exit 0 while its environment is actually broken --
+                // codex logs its Windows sandbox helper failure and exits 0
+                // anyway. Catch that from the output before trusting the exit
+                // code, or the probe passes a tool that fails every real build.
+                if let Some((reason, remedy)) = provider.output_failure(&stdout, &stderr) {
+                    return Readiness::NotReady {
+                        summary: reason,
+                        remedy,
+                    };
+                }
                 // Exit 0 with output on *either* stream. Codex reports a
                 // healthy login on stderr, so demanding stdout marked a working
                 // tool as broken. The empty-and-failed case is still caught
@@ -875,27 +895,54 @@ impl AgentProvider for CodexProvider {
         command.stdin(Stdio::null());
     }
 
-    /// Probe with a real `exec`, not `login status`.
+    /// Probe with a real `exec` that RUNS A COMMAND, not `login status` and not
+    /// a text-only reply.
     ///
-    /// `login status` only answers "is the sign-in valid" and returns
-    /// instantly -- and on a Windows machine whose codex sandbox helper
-    /// (`codex-windows-sandbox-setup.exe`) is missing it says "Logged in using
-    /// ChatGPT" while every actual build fails or hangs the moment codex tries
-    /// to run a tool. The probe passed, codex was offered, and the user picked
-    /// it and hit a confusing "that build didn't come together". The founder
-    /// hit exactly this, twice.
+    /// `login status` only answers "is the sign-in valid" and returns instantly
+    /// -- and on a Windows machine whose codex sandbox helper
+    /// (`codex-windows-sandbox-setup.exe`) is broken it says "Logged in using
+    /// ChatGPT" while every actual build fails the moment codex runs a tool. So
+    /// codex passed the probe, was offered, and the user picked it and hit a
+    /// confusing "that build didn't come together" -- twice, on the founder's
+    /// PC.
     ///
-    /// So the probe runs the same kind of thing authoring does: an `exec` that
-    /// asks for one word. That engages the sandbox, so a broken helper surfaces
-    /// as a non-zero exit (or a hang the probe's own timeout catches) instead
-    /// of a clean pass. `--skip-git-repo-check` because the probe runs in a
-    /// scratch dir, matching author_args.
+    /// But a text-only `exec` ("reply with ok") does NOT catch it either:
+    /// verified on the broken machine, codex replies "ok" cleanly because a pure
+    /// text answer never touches the sandbox. The sandbox only engages when
+    /// codex runs a shell command or writes a file -- which is exactly what
+    /// authoring does and what fails there. So the probe asks codex to run one
+    /// command. On a healthy machine it runs `echo` and exits 0; on the broken
+    /// one the sandbox helper fails and the exec errors, which marks codex
+    /// not-ready with the reason instead of offering it as working.
+    ///
+    /// `--sandbox workspace-write` matches author_args so the probe exercises
+    /// the same sandbox mode the build uses.
     fn probe_args(&self) -> Vec<String> {
-        // Match author_args exactly, including `--sandbox workspace-write`:
-        // that is the mode whose helper is missing on the broken machine, so
-        // the probe has to engage the SAME path authoring does or it proves
-        // nothing. Only the prompt is trivial.
-        self.author_args("Reply with the single word: ok")
+        self.author_args(
+            "Run this shell command and nothing else: echo krate-probe-ok. \
+             Do not write any files.",
+        )
+    }
+
+    fn output_failure(&self, stdout: &str, stderr: &str) -> Option<(String, Option<String>)> {
+        // Codex exits 0 even when its Windows sandbox helper fails to launch --
+        // it logs the error and moves on -- so the sandbox break is only
+        // visible in the output. This is the exact signature from the founder's
+        // machine, where the helper was present but codex reported it "not
+        // found". When it appears, no build can run a command or write a file.
+        let blob = format!("{stdout}\n{stderr}");
+        if blob.contains("orchestrator_helper_launch_failed")
+            || blob.contains("codex-windows-sandbox-setup.exe")
+            || (blob.contains("windows sandbox") && blob.contains("helper"))
+        {
+            return Some((
+                "is installed but its Windows sandbox helper will not launch, so it \
+                 cannot run builds"
+                    .to_string(),
+                Some("reinstall the Codex CLI to restore its sandbox helper".to_string()),
+            ));
+        }
+        None
     }
 
     fn login_hint(&self) -> String {
@@ -1200,6 +1247,26 @@ mod tests {
         let input = serde_json::json!({ "pattern": "Event::Pointer" });
         let line = describe_read("Grep", Some(&input));
         assert!(line.contains("Event::Pointer"), "got {line:?}");
+    }
+
+    #[test]
+    fn codex_sandbox_break_is_caught_from_output() {
+        let codex = super::CodexProvider;
+        // The exact stderr line from the founder's Windows PC. codex exits 0
+        // and logs this; the probe must still mark it not-ready.
+        let broken = "2026-08-19T08:51:39Z ERROR codex_core::exec: exec error: windows sandbox: \
+             orchestrator_helper_launch_failed: setup refresh failed to launch helper: \
+             helper=codex-windows-sandbox-setup.exe, error=program not found";
+        let found = codex.output_failure("", broken);
+        assert!(found.is_some(), "sandbox break must be detected");
+        let (reason, remedy) = found.unwrap();
+        assert!(reason.contains("sandbox helper"), "reason: {reason}");
+        assert!(remedy.is_some(), "a remedy should be offered");
+
+        // A clean codex run (the healthy machine) is not flagged.
+        let ok = "{\"type\":\"item.completed\",\"item\":{\"text\":\"krate-probe-ok\"}}\n\
+                  {\"type\":\"turn.completed\"}";
+        assert_eq!(codex.output_failure(ok, ""), None);
     }
 
     #[test]
