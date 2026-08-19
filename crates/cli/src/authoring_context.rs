@@ -372,7 +372,15 @@ pub(crate) fn capability_catalog_section() -> String {
          app, so it is not the withheld gate; a GUI app whose only non-default \
          capability is its window has nothing to withhold, which is fine. Do not mark \
          required a capability the `quick` verification path never reaches, or the app \
-         fails its own wall test after building cleanly.\n",
+         fails its own wall test after building cleanly.\n\n\
+         \"Cannot begin without\" means the app it CLAIMS to be, not just a window that \
+         opens. A music player without `audio.playback` is not a music player -- it is \
+         a silent picture of one -- so mark that capability required. Ask: if this one \
+         capability were withheld, would the app still be the thing the request asked \
+         for? If no, it is required. A drawing app's canvas, a music player's audio, a \
+         recorder's microphone: required. A capability the app only uses for a \
+         nice-to-have corner is genuinely optional; the app's whole reason for \
+         existing is not.\n",
     );
     out
 }

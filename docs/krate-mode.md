@@ -484,10 +484,12 @@ to exactly what the app needs, e.g. `fs.read:notes/**`.
 | `ui.dialog:open-folder` | no | system file dialogs (choose a file) |
 | `gfx.gpu:basic` | yes | GPU drawing (canvas2d present today) |
 | `gfx.gpu:compute` | no | GPU drawing (canvas2d present today) |
-| `audio.playback` | no | play sound |
+| `audio.playback` | yes | play sound |
 | `audio.capture` | no | record from the microphone |
 
 Mark `required = true` on a capability the app cannot begin without -- the verification run withholds it and the app must refuse to start (exit 5). A saving app marks `fs.write` required. `ui.window:create` is declared `required = true` by convention, but withholding a window just closes the app, so it is not the withheld gate; a GUI app whose only non-default capability is its window has nothing to withhold, which is fine. Do not mark required a capability the `quick` verification path never reaches, or the app fails its own wall test after building cleanly.
+
+"Cannot begin without" means the app it CLAIMS to be, not just a window that opens. A music player without `audio.playback` is not a music player -- it is a silent picture of one -- so mark that capability required. Ask: if this one capability were withheld, would the app still be the thing the request asked for? If no, it is required. A drawing app's canvas, a music player's audio, a recorder's microphone: required. A capability the app only uses for a nice-to-have corner is genuinely optional; the app's whole reason for existing is not.
 
 ---
 

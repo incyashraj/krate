@@ -124,7 +124,14 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // GPU compute, which is a general-purpose processor an app can keep busy,
     // so it is asked for rather than granted. Also not implemented yet.
     CapabilitySpec::resource_scoped(CapabilityPhase::Phase3, "gfx", "gpu", "compute", false),
-    CapabilitySpec::resource_free(CapabilityPhase::Phase3, "audio", "playback", false),
+    // Playing sound OUT through the speakers is default-granted, like opening a
+    // window: it is the app doing its obvious job, not reaching for the
+    // person's data. It was classified as sensitive as the microphone, which
+    // meant a music player opened silent -- the audio was never granted and,
+    // being optional, was never even asked about. Output is not input.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase3, "audio", "playback", true),
+    // Capturing sound FROM the microphone stays opt-in: that is the person's
+    // room, and recording it is exactly the kind of thing consent exists for.
     CapabilitySpec::resource_free(CapabilityPhase::Phase3, "audio", "capture", false),
 ];
 
@@ -991,7 +998,11 @@ mod tests {
         assert_eq!(gfx.to_string(), "gfx.gpu:basic");
         assert!(gfx.is_default_granted());
         assert_eq!(playback.to_string(), "audio.playback");
-        assert!(!playback.is_default_granted());
+        // Speaker output is default-granted -- the app's obvious job, like a
+        // window. The microphone is not: capturing the person's room is opt-in.
+        assert!(playback.is_default_granted());
+        let capture: Capability = "audio.capture".parse().expect("mic cap");
+        assert!(!capture.is_default_granted());
     }
 
     #[test]
