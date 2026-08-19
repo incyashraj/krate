@@ -1108,6 +1108,7 @@ async function buildNow(request, files, revising) {
     revising ? "the AI reads your app before it edits" : "usually a few minutes",
   );
 
+  invoke("dbg_log", { line: `buildNow about to invoke ${revising?"revise_app":"create_app"} for session=${state.session?.id}` }).catch(()=>{});
   try {
     const result = revising
       ? await invoke("revise_app", {
@@ -1146,6 +1147,7 @@ async function buildNow(request, files, revising) {
     const queued = state.queued;
     state.queued = null;
     if (queued) {
+      invoke("dbg_log", { line: `finally: firing QUEUED build, session-now=${state.session?.id} hasResult=${!!currentApp()}` }).catch(()=>{});
       setRevisePlaceholders();
       setTimeout(() => make(queued), 400);
     }
