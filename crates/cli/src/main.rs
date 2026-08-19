@@ -5454,12 +5454,29 @@ fn run_provider_author(
     // over ten minutes was stopped mid-flight and reported as hung, on a
     // machine where nothing was wrong. For those providers the total deadline
     // is the only honest ceiling; there is no in-run line to time silence from.
+    // Keep the kill at 10 minutes: caught LIVE, a real "freeze" was claude's
+    // API connection hanging ESTABLISHED at 0% CPU for ~5-6 minutes and then
+    // RESUMING on its own -- the build recovered and finished. So a silence is
+    // often a transient API stall that self-heals, and killing at 7 min would
+    // have thrown away a build that was about to succeed. The kill is the
+    // last-resort ceiling for a truly dead agent, not the answer to a slow one.
+    //
+    // The real bug was never the timeout -- it was that the UI showed no sign
+    // of the stall, so the founder saw a silent screen, assumed it was frozen,
+    // and retried, again and again. The warning below is the actual fix: it
+    // makes the stall VISIBLE so a person knows to wait, not give up.
     let stall = if provider.reports_progress() {
         std::time::Duration::from_secs(600)
     } else {
         // Effectively off: the deadline below is the real bound.
         std::time::Duration::from_secs(u64::MAX / 2)
     };
+    // Warn the watching person once the silence passes ~2 minutes -- past the
+    // longest healthy mid-build pause (~3 min is the ceiling, but 2 catches a
+    // stall early while rarely firing on a working build) -- so a stall is
+    // visible long before the kill instead of a silent screen.
+    let warn_at = std::time::Duration::from_secs(120);
+    let mut warned = false;
     // None means the agent was stopped at the deadline but the app it had
     // already written passes every check -- salvaged, not stalled.
     let status: Option<std::process::ExitStatus> = loop {
@@ -5467,6 +5484,17 @@ fn run_provider_author(
             Ok(Some(status)) => break Some(status),
             Ok(None) => {
                 let quiet = agent_progress::since_last_line();
+                // Reset the warning once the agent speaks again, so a second,
+                // later stall warns too rather than only the first.
+                if warned && quiet < warn_at {
+                    warned = false;
+                }
+                if !warned && quiet > warn_at {
+                    warned = true;
+                    report_progress_alive(
+                        "the AI has gone quiet -- this can be a slow model reply; still waiting",
+                    );
+                }
                 if quiet > stall {
                     let _ = child.kill();
                     let _ = child.wait();
