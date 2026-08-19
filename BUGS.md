@@ -71,6 +71,34 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-136 -- A Studio build can freeze on "While I work" with nothing running
+
+Class: our-code
+Owner: unclaimed
+
+Observed during the pipeline study: a to-do build (session s-1787155319467, dev
+Studio) sat on "While I work, I'll open your app..." for 13+ minutes with NO
+engine process, NO workspace dir, and NO trace file. The create engine never
+spawned, or spawned and died before creating anything, and the UI stayed in the
+building state forever with no failure and no way out but Stop.
+
+The identical request built fine from the CLI (`krate create "a to-do list I
+can check off, that remembers my items" --agent claude`), so the request is not
+at fault -- it is the Studio's own create_app path wedging between the "While I
+work" message (app.js buildNow, after the buildingSession guard) and the engine
+actually writing anything. The build ran RIGHT AFTER a finished tip-calc build
+(50s gap, no overlap), so a stale watchdog or uncleared buildingSession from the
+prior build is the prime suspect -- the settle-once/watchdog changes touched
+exactly this area.
+
+Evidence: `~/.krate/studio/builds/` has the tip-calc dir but no
+s-1787155319467 dir at all; ps shows the dev Studio alive but no
+`target/release/krate create` child.
+
+Repro path: run two builds back-to-back in the Studio; the second can freeze.
+Needs the Studio's build lifecycle (buildingSession set/clear, watchdog
+teardown) audited so a build cannot appear alive while nothing runs.
+
 
 ### K-135 -- The plan gate only read claude's shape, so grok and codex could never plan
 
