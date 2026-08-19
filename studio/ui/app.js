@@ -817,11 +817,12 @@ function friendlyAsk(cap) {
 /* ---- driving the engine ----------------------------------------------- */
 
 async function make(request) {
+  invoke("dbg_log", { line: `make() request=${JSON.stringify(request).slice(0,40)} buildingSession=${state.buildingSession?.id||"null"} session=${state.session?.id||"null"} hasResult=${!!currentApp()}` }).catch(()=>{});
   // Two builds at once would leave the first unstoppable; the backend
   // refuses it too, but stopping here keeps the UI honest. Keyed on the
   // building session, not the visible phase -- browsing away changes the
   // phase while the build very much continues.
-  if (state.buildingSession) return;
+  if (state.buildingSession) { invoke("dbg_log", { line: "make() BAILED: buildingSession set" }).catch(()=>{}); return; }
   if (!state.session) newSession(request);
   // The stage belongs to what is happening NOW. Without this a retry from
   // a rail chip left the previous failure card on screen while the plan
@@ -1069,7 +1070,8 @@ function finishPlanningAndBuild() {
 }
 
 async function buildNow(request, files, revising) {
-  if (state.buildingSession) return;
+  invoke("dbg_log", { line: `buildNow() revising=${revising} buildingSession=${state.buildingSession?.id||"null"} session=${state.session?.id||"null"}` }).catch(()=>{});
+  if (state.buildingSession) { invoke("dbg_log", { line: "buildNow() BAILED: buildingSession set" }).catch(()=>{}); return; }
   // The composer stays live during a build so a thought can be queued
   // rather than lost.
   $("prompt").placeholder = "Add a change - it runs when this finishes…";

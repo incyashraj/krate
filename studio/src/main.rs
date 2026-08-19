@@ -257,6 +257,14 @@ impl Default for Settings {
     }
 }
 
+/// Diagnostic: let the frontend write a line into the same stderr log the
+/// backend uses, so the freeze can be traced across the JS/Rust boundary.
+/// Temporary, for K-136.
+#[tauri::command]
+fn dbg_log(line: String) {
+    eprintln!("[ui] {line}");
+}
+
 #[tauri::command]
 fn settings_get() -> Settings {
     let mut settings: Settings = std::fs::read_to_string(studio_dir().join("settings.json"))
@@ -624,6 +632,7 @@ async fn revise_app(
     agent: String,
     attachments: Vec<String>,
 ) -> Result<CreateResult, String> {
+    eprintln!("[revise_app] enter: path={path} agent={agent}");
     tauri::async_runtime::spawn_blocking(move || {
         let engine = engine()?;
         // Fail before spending anyone's AI quota on a file that is gone.
@@ -2122,6 +2131,7 @@ fn main() {
             publish,
             reveal,
             settings_get,
+            dbg_log,
             settings_set,
             sessions_list,
             session_save,
