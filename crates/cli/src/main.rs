@@ -29,6 +29,7 @@ mod sdk;
 mod sdk_reference;
 mod speech_model;
 mod style;
+mod trace;
 mod tui;
 mod usage;
 
@@ -372,6 +373,16 @@ enum Command {
         /// Write to this file instead of stdout.
         #[arg(short, long, value_name = "FILE")]
         output: Option<PathBuf>,
+    },
+
+    /// Read a `KRATE_TRACE` file and print the one-build review row: the phases
+    /// with their durations, what the agent did, every check-app verdict, any
+    /// repair rounds, and the outcome. The study spine for "AI makes a Krate
+    /// app" -- set `KRATE_TRACE=path` on a `create`, then read that path here.
+    #[command(hide = true)]
+    StudyReport {
+        /// The JSONL trace file written by a `KRATE_TRACE`-enabled build.
+        trace: PathBuf,
     },
 
     /// Inspect and validate Phase 2 app manifests.
@@ -1324,6 +1335,7 @@ fn run() -> Result<u8> {
             }
             Ok(0)
         }
+        Command::StudyReport { trace } => study_report_command(&trace),
         Command::Manifest { command } => match command {
             ManifestCommand::Check { file, format } => check_manifest(&file, format),
             ManifestCommand::Explain { file, format } => explain_manifest(&file, format),
@@ -5264,6 +5276,17 @@ fn run_provider_author(
     app_dir: &str,
     request: &str,
 ) -> Result<u8> {
+    // A repair re-enters this function with a CHANGE_MARKER request; only the
+    // first, real authoring run opens the build in the trace, so the study row
+    // is one build, not one per repair round.
+    if !request.starts_with(CHANGE_MARKER) {
+        trace::build_start(request, provider.name(), app_dir);
+    }
+    trace::phase(if request.starts_with(CHANGE_MARKER) {
+        "repair-author"
+    } else {
+        "author"
+    });
     // The agent runs `krate check-app .` itself, so it needs this binary on a
     // known path. current_exe is the running krate; hand its absolute path to
     // the prompt so the agent's Bash calls resolve it regardless of PATH.
@@ -5346,6 +5369,14 @@ fn run_provider_author(
                 // Any line at all is proof of life, tool call or chatter.
                 agent_progress::beat();
                 if let Some(step) = provider.progress_line(&line) {
+                    // Trace EVERY tool call, including repeats, with its
+                    // timestamp: the study needs the real sequence and the gaps
+                    // between calls (think/act time), which repeat-collapsing
+                    // below would hide. The display still collapses; the trace
+                    // does not.
+                    if trace::enabled() {
+                        trace::tool_call(&step, "", None);
+                    }
                     // Collapse repeats: an agent editing one file five times
                     // should not print the same sentence five times.
                     //
@@ -5542,6 +5573,171 @@ fn run_provider_author(
         }
         return auto_repair(provider, app_dir, request, &failure, &transcript);
     }
+    // A fresh authoring run that passed its final check is a finished build.
+    // A CHANGE_MARKER run is a repair/edit step inside a larger flow, so it is
+    // not the build's end -- auto_repair (or the caller) owns that.
+    if !request.starts_with(CHANGE_MARKER) {
+        trace::build_end("ok", None);
+    }
+    Ok(0)
+}
+
+/// The first non-empty line of a message, for a one-line trace field.
+fn first_line(s: &str) -> &str {
+    s.lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("")
+}
+
+/// Turn a `KRATE_TRACE` JSONL file into the study's one-build review row.
+///
+/// Reads what the pipeline recorded -- phases with durations, the agent's tool
+/// calls with the gap before each (its think/act time), every check-app verdict
+/// and where it stopped, repair rounds, and the outcome -- and prints it as a
+/// review sheet a person (or the analysis) can read at a glance. Parsing is
+/// deliberately forgiving: a malformed line is skipped, never fatal.
+fn study_report_command(trace: &Path) -> Result<u8> {
+    let text = fs::read_to_string(trace)
+        .with_context(|| format!("read the trace file {}", trace.display()))?;
+    let events: Vec<serde_json::Value> = text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+    if events.is_empty() {
+        anyhow::bail!(
+            "no events in {} -- was KRATE_TRACE set on the build?",
+            trace.display()
+        );
+    }
+
+    let ms = |e: &serde_json::Value| e.get("t").and_then(|v| v.as_u64()).unwrap_or(0);
+    let kind = |e: &serde_json::Value| {
+        e.get("kind")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let field = |e: &serde_json::Value, k: &str| {
+        e.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string()
+    };
+    let secs = |a: u64, b: u64| format!("{:.1}s", (b.saturating_sub(a)) as f64 / 1000.0);
+
+    let start = events.first().map(ms).unwrap_or(0);
+    let end = events.last().map(ms).unwrap_or(start);
+
+    // Header: the build's identity and total time.
+    let start_ev = events.iter().find(|e| kind(e) == "build.start");
+    let end_ev = events.iter().rev().find(|e| kind(e) == "build.end");
+    println!("========================================================");
+    if let Some(e) = start_ev {
+        println!("REQUEST   {}", field(e, "request"));
+        println!("PROVIDER  {}", field(e, "provider"));
+    }
+    println!("TOTAL     {}", secs(start, end));
+    if let Some(e) = end_ev {
+        let outcome = field(e, "outcome");
+        let detail = field(e, "detail");
+        println!(
+            "OUTCOME   {}{}",
+            outcome.to_uppercase(),
+            if detail.is_empty() {
+                String::new()
+            } else {
+                format!("  ({detail})")
+            }
+        );
+    } else {
+        println!("OUTCOME   (no build.end -- run killed or crashed)");
+    }
+
+    // Phases and their spans.
+    println!("\nPHASES");
+    let phase_events: Vec<&serde_json::Value> =
+        events.iter().filter(|e| kind(e) == "phase").collect();
+    for (i, e) in phase_events.iter().enumerate() {
+        let from = ms(e);
+        let to = phase_events.get(i + 1).map(|n| ms(n)).unwrap_or(end);
+        println!("  {:<16} {}", field(e, "name"), secs(from, to));
+    }
+
+    // The agent's tool calls, with the gap before each -- long gaps are where
+    // it thought (or waited on the model). Flag any gap over 20s.
+    let tools: Vec<&serde_json::Value> = events.iter().filter(|e| kind(e) == "tool").collect();
+    println!("\nAGENT STEPS  ({} tool calls)", tools.len());
+    let mut prev = start;
+    let mut first_write: Option<u64> = None;
+    for e in &tools {
+        let at = ms(e);
+        let gap = at.saturating_sub(prev);
+        let step = field(e, "step");
+        if first_write.is_none() && step.contains("writing the app") {
+            first_write = Some(at);
+        }
+        let mark = if gap > 20_000 { "  <-- long pause" } else { "" };
+        println!(
+            "  {:>7}  +{:<6} {}{}",
+            secs(start, at),
+            secs(prev, at),
+            step,
+            mark
+        );
+        prev = at;
+    }
+    if let Some(fw) = first_write {
+        println!("  first code written at {}", secs(start, fw));
+    }
+
+    // Every check-app verdict: the iteration count and where rounds were spent.
+    let checks: Vec<&serde_json::Value> =
+        events.iter().filter(|e| kind(e) == "check_app").collect();
+    println!("\nCHECK-APP  ({} Krate-side verdicts)", checks.len());
+    for e in &checks {
+        let ok = e.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+        if ok {
+            println!("  {:>7}  OK", secs(start, ms(e)));
+        } else {
+            println!(
+                "  {:>7}  FAIL at {}: {}",
+                secs(start, ms(e)),
+                field(e, "stage"),
+                field(e, "detail")
+            );
+        }
+    }
+
+    // Repair rounds.
+    let repairs: Vec<&serde_json::Value> = events.iter().filter(|e| kind(e) == "repair").collect();
+    if !repairs.is_empty() {
+        println!("\nAUTO-REPAIR  ({} rounds fired)", repairs.len());
+        for e in &repairs {
+            println!(
+                "  round {} of {}: {}",
+                e.get("round").and_then(|v| v.as_u64()).unwrap_or(0),
+                e.get("of").and_then(|v| v.as_u64()).unwrap_or(0),
+                field(e, "because")
+            );
+        }
+    }
+
+    // Stalls: any gap over 60s anywhere in the event stream.
+    let mut stalls = Vec::new();
+    let mut prev = start;
+    for e in &events {
+        let at = ms(e);
+        if at.saturating_sub(prev) > 60_000 {
+            stalls.push((secs(start, prev), secs(prev, at)));
+        }
+        prev = at;
+    }
+    if !stalls.is_empty() {
+        println!("\nSTALLS  (dead air over 60s)");
+        for (at, dur) in stalls {
+            println!("  at {} -- {} of silence", at, dur);
+        }
+    }
+    println!("========================================================");
     Ok(0)
 }
 
@@ -5565,6 +5761,7 @@ fn auto_repair(
     const MAX_REPAIR_ROUNDS: u32 = 2;
     let mut failure = first_failure.to_string();
     for round in 1..=MAX_REPAIR_ROUNDS {
+        trace::repair(round, MAX_REPAIR_ROUNDS, first_line(&failure));
         eprintln!(
             "    the app did not pass yet -- asking the AI to fix it ({round} of {MAX_REPAIR_ROUNDS})"
         );
@@ -5584,11 +5781,13 @@ fn auto_repair(
         match check_app_verdict(app_dir) {
             Ok(()) => {
                 eprintln!("    fixed.");
+                trace::build_end("ok", Some("fixed by auto-repair"));
                 return Ok(0);
             }
             Err(next) => failure = next,
         }
     }
+    trace::build_end("failed", Some(first_line(&failure)));
     anyhow::bail!(
         "the agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
          The agent's transcript is at {}. Running the command again often gets it \
@@ -6214,8 +6413,12 @@ fn loop_bound_seconds(lib: &str, bound_name: &str) -> Option<u64> {
 
 fn check_app_verdict(app_dir: &str) -> std::result::Result<(), String> {
     match run_check_app(Path::new(app_dir), None, false) {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            trace::check_app(true, None, None);
+            Ok(())
+        }
         Err(failure) => {
+            trace::check_app(false, Some(failure.stage.label()), Some(&failure.detail));
             let mut message = format!("{} failed: {}", failure.stage.label(), failure.detail);
             if !failure.fix.is_empty() {
                 message.push_str("\n\nFix: ");
