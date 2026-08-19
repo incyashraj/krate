@@ -5517,15 +5517,84 @@ fn run_provider_author(
     // The agent claims it is done. Confirm with the same oracle it was told to
     // satisfy: if check-app does not pass, say exactly why rather than letting
     // the downstream create pipeline fail with a less specific message.
+    //
+    // And when it does not pass, do not hand the user a failure they have to
+    // read, understand, and retry by hand. The agent got most of the way and
+    // hit something check-app already explains exactly how to fix -- a leaked
+    // wasi import, a build error. Feed that verdict straight back to the agent
+    // as its next task, in the SAME workspace, and let it finish the job. This
+    // is the deep fix for "grok writes an app that panics/leaks and then stops":
+    // the loop closes here, automatically, instead of on a person noticing the
+    // error and running create again.
     if let Err(failure) = check_app_verdict(app_dir) {
-        anyhow::bail!(
-            "the agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
-             The agent's transcript is at {}. Running the command again often gets it \
-             the rest of the way.",
-            transcript.display()
-        );
+        // Only a fresh authoring run drives the automatic repair loop. A
+        // CHANGE_MARKER request IS a repair or an edit already -- auto-repairing
+        // it here would nest run_provider_author inside auto_repair inside
+        // run_provider_author, multiplying the rounds. At this level a failing
+        // change just reports; the outer loop (auto_repair, or the user's own
+        // revise) decides what happens next.
+        if request.starts_with(CHANGE_MARKER) {
+            anyhow::bail!(
+                "the agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
+                 The agent's transcript is at {}.",
+                transcript.display()
+            );
+        }
+        return auto_repair(provider, app_dir, request, &failure, &transcript);
     }
     Ok(0)
+}
+
+/// After the agent stops with a failing check-app, re-invoke it to fix exactly
+/// what failed -- up to a small number of rounds -- rather than making the user
+/// retry by hand.
+///
+/// The verdict check-app produces is already a precise fix instruction (the
+/// no_std remedy for a wasi leak, the compiler error for a build failure), so
+/// the repair task is that verdict verbatim. Bounded rounds, because an agent
+/// that cannot fix it in a few tries will not fix it in twenty, and each round
+/// costs a real model run; the last failure is surfaced with the same honest
+/// message as before so nothing is hidden.
+fn auto_repair(
+    provider: &'static dyn agent_provider::AgentProvider,
+    app_dir: &str,
+    request: &str,
+    first_failure: &str,
+    transcript: &Path,
+) -> Result<u8> {
+    const MAX_REPAIR_ROUNDS: u32 = 2;
+    let mut failure = first_failure.to_string();
+    for round in 1..=MAX_REPAIR_ROUNDS {
+        eprintln!(
+            "    the app did not pass yet -- asking the AI to fix it ({round} of {MAX_REPAIR_ROUNDS})"
+        );
+        let task = format!(
+            "{CHANGE_MARKER}The app you just wrote for \"{request}\" does not pass \
+             `krate check-app` yet. Here is exactly what failed and how to fix it:\n\n\
+             {failure}\n\n\
+             Fix only what this names. Do not rewrite the app or start over -- the code \
+             you already wrote is in src/lib.rs. Make the change, then run check-app \
+             again, and do not stop until it prints OK.",
+        );
+        // A repair is a change to the existing code, carried as a CHANGE_MARKER
+        // task -- run_provider_author dispatches that to the edit prompt, which
+        // says "find the one place, change that, leave the rest alone" rather
+        // than re-deriving the whole app.
+        run_provider_author(provider, app_dir, &task)?;
+        match check_app_verdict(app_dir) {
+            Ok(()) => {
+                eprintln!("    fixed.");
+                return Ok(0);
+            }
+            Err(next) => failure = next,
+        }
+    }
+    anyhow::bail!(
+        "the agent finished, but `check-app` does not pass yet:\n\n{failure}\n\n\
+         The agent's transcript is at {}. Running the command again often gets it \
+         the rest of the way.",
+        transcript.display()
+    );
 }
 
 /// Pull the agent's own error sentence out of its transcript.
