@@ -71,34 +71,35 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
-### K-136 -- A Studio build can freeze on "While I work" with nothing running
+### K-136 -- A build looks frozen when claude's API stalls (it recovers, but silently)
 
-Class: our-code
-Owner: unclaimed
+Class: our-code (UX) / environment (the stall itself)
+Owner: claude (mitigated in 01714def)
 
-Observed during the pipeline study: a to-do build (session s-1787155319467, dev
-Studio) sat on "While I work, I'll open your app..." for 13+ minutes with NO
-engine process, NO workspace dir, and NO trace file. The create engine never
-spawned, or spawned and died before creating anything, and the UI stayed in the
-building state forever with no failure and no way out but Stop.
+RESOLVED as to root cause, caught live with system evidence. The "freeze" the
+founder hit repeatedly -- first attempt of a request appears stuck on
+"Understanding what you asked for", the retry builds -- is claude's API
+connection stalling: the create process alive at 0% CPU for 11 minutes, its
+claude child holding three ESTABLISHED HTTPS connections to the Anthropic API
+with no response streaming back. Then, watched further, it RESUMED on its own
+after ~5-6 min and the build finished. So the stall is transient and self-
+healing; the retry "worked" only because the API answered cleanly next time.
 
-The identical request built fine from the CLI (`krate create "a to-do list I
-can check off, that remembers my items" --agent claude`), so the request is not
-at fault -- it is the Studio's own create_app path wedging between the "While I
-work" message (app.js buildNow, after the buildingSession guard) and the engine
-actually writing anything. The build ran RIGHT AFTER a finished tip-calc build
-(50s gap, no overlap), so a stale watchdog or uncleared buildingSession from the
-prior build is the prime suspect -- the settle-once/watchdog changes touched
-exactly this area.
+Two things made it read as a hard freeze:
+1. claude does its whole pack-read via Bash commands that produce no progress
+   step, so the UI stage list sits on "Understanding" for minutes even when
+   working (measured: up to 5.5 min of legitimate initial silence).
+2. When the API then stalls, the UI shows no sign of it -- a silent screen for
+   up to the 10-minute kill.
 
-Evidence: `~/.krate/studio/builds/` has the tip-calc dir but no
-s-1787155319467 dir at all; ps shows the dev Studio alive but no
-`target/release/krate create` child.
+Mitigation (01714def): warn on the progress channel after 2 min of silence so
+the stall is VISIBLE ("the AI has gone quiet ... still waiting") and a person
+waits instead of giving up. Kill stays at 10 min -- killing sooner would throw
+away a build about to recover.
 
-Repro path: run two builds back-to-back in the Studio; the second can freeze.
-Needs the Studio's build lifecycle (buildingSession set/clear, watchdog
-teardown) audited so a build cannot appear alive while nothing runs.
-
+Not fully closed: the deeper fix is to cut the silent read entirely
+(retrieval-over-dump, per the pipeline study) so there is far less dead time to
+stall inside, and/or to retry the agent automatically on a hard stall.
 
 ### K-135 -- The plan gate only read claude's shape, so grok and codex could never plan
 
