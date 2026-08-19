@@ -192,6 +192,17 @@ impl Readiness {
 /// passes for a tool whose sign-in has expired, which is the single most common
 /// way these fail. The prompt is trivial so the round trip is short, and the
 /// whole thing is bounded by `timeout` so a hung tool cannot freeze a menu.
+/// Read a child pipe to EOF into a String, so a reader thread can keep it
+/// drained. Any read error yields what was gathered so far rather than losing
+/// it; a missing pipe is an empty string.
+fn read_all(pipe: Option<impl std::io::Read>) -> String {
+    let mut buf = Vec::new();
+    if let Some(mut pipe) = pipe {
+        let _ = std::io::Read::read_to_end(&mut pipe, &mut buf);
+    }
+    String::from_utf8_lossy(&buf).into_owned()
+}
+
 pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
     let Some(path) = which_on_path(provider.program()) else {
         return Readiness::Missing;
@@ -218,20 +229,30 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
         }
     };
 
+    // Drain both pipes in their own threads for the whole run.
+    //
+    // The single-threaded poll below reads nothing until the process exits, so
+    // a chatty tool that fills its ~64KB stderr pipe blocks on the write and
+    // never exits -- try_wait returns "still running" forever and even a
+    // timeout kill leaves the wedged children behind. A codex whose sandbox
+    // helper is broken does exactly this, and a probe meant to CATCH that tool
+    // instead hung and piled up processes until the machine bogged down. Two
+    // reader threads keep the pipes empty so the child can always make
+    // progress -- to its answer, or to its own error and exit.
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+    let out_handle = std::thread::spawn(move || read_all(stdout_pipe));
+    let err_handle = std::thread::spawn(move || read_all(stderr_pipe));
+
     // Poll rather than wait, so a tool that never answers is reported as slow
     // instead of hanging the caller forever.
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
-                let output = child.wait_with_output().ok();
-                let stdout = output
-                    .as_ref()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    .unwrap_or_default();
-                let stderr = output
-                    .as_ref()
-                    .map(|o| String::from_utf8_lossy(&o.stderr).trim().to_string())
-                    .unwrap_or_default();
+                let stdout = out_handle.join().unwrap_or_default();
+                let stderr = err_handle.join().unwrap_or_default();
+                let stdout = stdout.trim().to_string();
+                let stderr = stderr.trim().to_string();
                 // Exit 0 with output on *either* stream. Codex reports a
                 // healthy login on stderr, so demanding stdout marked a working
                 // tool as broken. The empty-and-failed case is still caught
@@ -245,10 +266,10 @@ pub fn probe(provider: &dyn AgentProvider, timeout: Duration) -> Readiness {
                 if started.elapsed() >= timeout {
                     // Kill the whole tree, not just the direct child. A hung
                     // codex has spawned a sandbox helper subprocess; killing
-                    // only the parent leaves that child holding the stdout pipe
-                    // open, and a later reader would block on it. On Windows
+                    // only the parent leaves that child running. On Windows
                     // taskkill /T reaches the tree; elsewhere killing the child
-                    // is enough because these tools do not detach.
+                    // is enough because these tools do not detach. The reader
+                    // threads end on their own once the pipes close.
                     #[cfg(windows)]
                     {
                         let _ = ProcessCommand::new("taskkill")
