@@ -55,13 +55,22 @@ def commit():
 
 
 def newest_release():
-    """The newest v-tag, so a page about progress cannot advertise an old one.
+    """The newest published release, so a tag cannot be advertised too early.
 
     This said rc16 while rc21 shipped -- five releases stale on a page whose
     whole subject is what is current. A hard-coded version on a progress page
     is a promise to update it by hand every release, and that promise is
     always broken eventually.
     """
+    try:
+        published = subprocess.run(
+            ["gh", "api", "repos/incyashraj/krate/releases/latest", "--jq", ".tag_name"],
+            cwd=ROOT, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        if published:
+            return published
+    except Exception:
+        pass
     try:
         tags = subprocess.run(
             ["git", "tag", "--list", "v*", "--sort=-v:refname"],
@@ -113,13 +122,13 @@ def main():
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Where Krate is today, measured: every app we have shipped, its size, and whether it is re-tested nightly on Mac, Windows, and Linux." />
+  <meta name="description" content="Krate is not a concept. See the apps, sizes, platform coverage, interfaces and limits measured from the repository today." />
   <link rel="canonical" href="https://krate.tech/progress/" />
-  <meta property="og:title" content="Krate: where we are, measured" />
+  <meta property="og:title" content="Krate: this is what ships today" />
   <meta property="og:description" content="Every app we have shipped, its size, and what still does not work. Generated from the repository, not written by hand." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/progress/" />
-  <title>Krate: where we are, measured</title>
+  <title>Krate: this is what ships today</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="stylesheet" href="/site.css" />
@@ -143,12 +152,13 @@ def main():
   </header>
 
   <main class="page-wide">
-    <p class="page-kicker">MEASURED</p>
-    <h1>Where Krate is today.</h1>
+    <p class="page-kicker">PROOF</p>
+    <h1>This is not a concept. It ships.</h1>
     <p>
       Every app we have shipped, its real size, and whether it is re-tested every
       night on Mac, Windows, and Linux. This page is generated from the
-      repository. If a number here is wrong, the code is wrong.
+      repository. The current release is <code>{NEWEST}</code>, with Krate
+      Studio downloads for Mac, Windows and Linux.
     </p>
     <p class="generated">Generated {today} from commit <code>{commit()}</code>.</p>
 
@@ -175,7 +185,7 @@ def main():
     <h2>What the current public release can run</h2>
     <p>
       All of them. The current release is <code>{NEWEST}</code>. Drawing,
-      animation and sound arrived in <code>v0.1.0-rc5</code>, and each release is
+      animation, audio capture, speech transcription and 3D scenes work, and each release is
       checked by downloading the published binary and running the 2D game, the
       chart and the sandbox escape test with it, not by trusting the build that
       made it. Krate also has <code>krate run app.wasm --shoot frame.png</code>,
@@ -188,7 +198,7 @@ def main():
 
     <h2>How much of the system is real</h2>
     <ul>
-      <li>{interfaces}</li>
+      <li>{interfaces} Two more interfaces are partial.</li>
       <li>{widgets}</li>
     </ul>
     <p>
@@ -199,8 +209,7 @@ def main():
     <h2>What does not work yet</h2>
     <p>We publish this for the same reason we publish the rest.</p>
     <ul>
-      <li><strong>3D graphics.</strong> The interface exists and does nothing.</li>
-      <li><strong>Heavy 3D.</strong> Software 3D works -- triangles with depth
+      <li><strong>GPU 3D.</strong> Software 3D works with triangles, depth
           and lighting, 54 frames a second at 640x480 on a laptop. A modern 3D
           game needs the GPU path, which is planned rather than written.</li>
       <li><strong>Video.</strong> No decoder, no frame clock.</li>

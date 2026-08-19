@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Direct answers about Krate: how one .krate file opens on Mac, Windows, and Linux, what the permission wall actually enforces, and what is not ready yet." />
+  <meta name="description" content="What Krate is, why it is not HTML or Docker, how one tiny app file opens on three operating systems, and how permissions are enforced." />
   <link rel="canonical" href="https://krate.tech/faq.html" />
   <meta property="og:title" content="Krate | Questions" />
   <meta property="og:description" content="Direct answers about Krate. The short answer first, the technical boundary underneath." />
@@ -35,8 +35,8 @@
 <main class="page-wrap">
   <p class="page-kicker">QUESTIONS</p>
   <h1>Direct answers about Krate.</h1>
-  <p class="page-lede">These came from people seeing Krate for the first time.
-  The short answer is first, with the technical boundary underneath.</p>
+  <p class="page-lede">These came from people seeing a 37 KB desktop app open
+  on three operating systems for the first time. The short answer comes first.</p>
 
   <details class="faq-item">
     <summary><span class="faq-index">01</span><span>How can the same .krate file open on Mac, Windows, and Linux?</span></summary>
@@ -55,7 +55,31 @@
   </details>
 
   <details class="faq-item">
-    <summary><span class="faq-index">03</span><span>Can an app hide what it accesses or ignore the permission screen?</span></summary>
+    <summary><span class="faq-index">03</span><span>So is Krate basically Docker?</span></summary>
+    <div class="faq-answer">
+      <p>No. Docker packages server environments and operating-system dependencies into containers. Krate packages a desktop app as one portable WebAssembly component and gives it native windows through a shared host.</p>
+      <p>A <code>.krate</code> file is made to be sent to a person, opened like a document, and stopped from reaching anything the person did not approve.</p>
+    </div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-index">04</span><span>Why can Krate apps be so small?</span></summary>
+    <div class="faq-answer">
+      <p>Every app uses the same Krate runtime instead of carrying another browser engine, renderer, and operating-system wrapper. The app file contains the app, its source, and the access it requests.</p>
+      <p>In published proof, a playable Breakout game is 13 KB and the notes app used in our benchmark is 37 KB. Bigger apps and large media assets will still be bigger. Krate removes duplicated machinery; it does not make data disappear.</p>
+    </div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-index">05</span><span>Does "no installer" mean I never install Krate?</span></summary>
+    <div class="faq-answer">
+      <p>You install Krate once. After that, every <code>.krate</code> app opens like a file. There is no separate installer, dependency setup, or operating-system build for each app.</p>
+      <p>That shared runtime is what keeps app files tiny, makes the same bytes portable, and enforces the permission screen.</p>
+    </div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-index">06</span><span>Can an app hide what it accesses or ignore the permission screen?</span></summary>
     <div class="faq-answer">
       <p>The permission list is not only a label written by the app. Krate checks supported host operations at the runtime boundary. If the app tries an operation that was not granted, the call is denied before the host adapter performs it.</p>
       <p>If a required permission is denied, the current app flow refuses to start and explains what is missing.</p>
@@ -63,23 +87,23 @@
   </details>
 
   <details class="faq-item">
-    <summary><span class="faq-index">04</span><span>Is Krate ready for any untrusted app from the internet?</span></summary>
+    <summary><span class="faq-index">07</span><span>Does Krate really use less memory?</span></summary>
     <div class="faq-answer">
-      <p><strong>Not yet.</strong> The capability boundary is working and useful, but <code>v0.1.7</code> is a first release and the project is not claiming production hardening against hostile third-party code today.</p>
+      <p>On the same 50,000-line notes workload, MarkText 0.17.1 used 2.3 GB across five processes. The Krate notes app used 95 MB in one process. It also opened in about 0.2 seconds instead of 1.8 seconds.</p>
+      <p>That is a measured comparison on an M4 Mac, not a promise for every possible app. The <a href="/reports/">method and raw results are public</a>.</p>
+    </div>
+  </details>
+
+  <details class="faq-item">
+    <summary><span class="faq-index">08</span><span>Is Krate ready for any untrusted app from the internet?</span></summary>
+    <div class="faq-answer">
+      <p><strong>Not yet.</strong> The capability boundary works, but <code>v0.1.50</code> is still beta software and Krate is not yet claiming adversarial hardening against every hostile third-party app.</p>
       <p>Use the published examples or apps you are testing yourself. The current limits and <a href="/docs/phase2/threat-model-v0-2.html">threat model</a> are public.</p>
     </div>
   </details>
 
   <details class="faq-item">
-    <summary><span class="faq-index">05</span><span>Why does the person receiving an app need the Krate runtime?</span></summary>
-    <div class="faq-answer">
-      <p>The runtime is the stable layer that makes one app file portable and enforces its access. Without it, every app would need to bring a separate engine and separate operating-system code.</p>
-      <p>You install Krate once. After that, each <code>.krate</code> file can use the same host, permission model, and opening flow.</p>
-    </div>
-  </details>
-
-  <details class="faq-item">
-    <summary><span class="faq-index">06</span><span>Does the name collide with a Rust "crate"?</span></summary>
+    <summary><span class="faq-index">09</span><span>Does the name collide with a Rust "crate"?</span></summary>
     <div class="faq-answer">
       <p>Rust calls a package a crate, so the similarity is real. Krate uses a different spelling and refers to the portable container that carries an application and its requested access.</p>
       <p>We will keep making the distinction explicit wherever Rust developers could reasonably confuse the two.</p>

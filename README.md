@@ -5,12 +5,12 @@
 <h1 align="center">Krate</h1>
 
 <p align="center">
-  <strong>Make an app. Send the file. It opens anywhere.</strong>
+  <strong>AI can make the app. Krate makes it shippable.</strong>
 </p>
 
 <p align="center">
-  An AI writes it. You get one small file that opens on Mac, Windows, and
-  Linux,<br> shows what it wants before it runs, and can be sent to anyone.
+  One tiny file. No per-app installer. Mac, Windows, Linux.<br>
+  Before it runs, the person opening it chooses what it can touch.
 </p>
 
 <p align="center">
@@ -45,14 +45,30 @@
   </a>
 </p>
 
-## What is Krate?
+## 271 MB became 37 KB
+
+We built the same 50,000-line notes workload in Krate and measured it against
+MarkText 0.17.1 on the same M4 Mac.
+
+| | MarkText | Krate |
+|---|---:|---:|
+| App footprint | 271 MB installed | **37 KB app file** |
+| Memory | 2.3 GB across five processes | **95 MB, one process** |
+| Open time | 1.8 s | **0.2 s** |
+| Idle CPU | 21% of a core | **0.8%** |
+
+Krate does not put another browser inside every app. Install the shared runtime
+once, then every app is one file. The [full method and raw results are
+public](evidence/benchmarks/2026-08-16-notes-battery-macos.md).
+
+## The software file for the AI era
 
 AI can write a useful little app in a minute. Sharing it is still the hard part.
 A web link cannot always reach the local machine. A normal desktop app can, but
 it has to be packaged per operating system, and it can quietly reach far more of
 your computer than you expected.
 
-Krate is a simpler app format:
+Krate turns that app into something a person can actually receive:
 
 1. The app and the access it asks for go into one `.krate` file.
 2. That same file opens on Mac, Windows, and Linux. The bytes do not change.
@@ -60,13 +76,12 @@ Krate is a simpler app format:
 4. The app gets only what you allow, and nothing else.
 
 A Krate app is a WebAssembly component compiled from ordinary Rust. It carries
-no browser and no runtime of its own, so real published apps are **15-40 KB**
--- a playable game on the store is 30 KB, and a markdown editor that matches a
-271 MB Electron app feature-for-feature is 37 KB. You install the runtime
-once; every app after that is kilobytes.
+no browser and no per-app runtime. A playable game is **13 KB** and the notes
+editor used in the benchmark is **37 KB**. You install Krate once; every app
+after that opens like a file.
 
-Krate is open source, and the whole path works end to end: install it, describe an app, an AI writes it, and the file
-it hands you opens on macOS, Windows and Linux.
+Krate Studio creates the app, Krate Runtime opens and controls it, and Krate
+Cloud publishes it. The whole path works today.
 
 ## Krate Studio
 
@@ -74,9 +89,9 @@ it hands you opens on macOS, Windows and Linux.
   <img src="docs/landing/app-shots/studio-home.png" width="900" alt="Krate Studio: describe an app in plain words and watch it being made">
 </p>
 
-Krate Studio is the desktop app around the engine: describe what you want in
-plain words, watch every step as the AI writes and builds it, then open the
-finished app or share it as one file. Change an app by asking -- the file
+Krate Studio detects which AI tools are installed, so you choose one with a
+click, describe what you want, and watch the app being built and checked. No
+terminal and no project setup. Change an app by asking. The file
 carries its own source, so "make the button blue" edits the app you have
 instead of rebuilding it. Your apps, your sessions, and Krate Cloud all live
 in the same window, and you sign in from the browser with GitHub.
@@ -98,9 +113,8 @@ inside it. The terminal tool remains for anyone who prefers a shell.
 
 ## Measured, not promised
 
-The same notes app, built twice: once with Krate, once the way desktop
-apps usually ship (Electron). Same 50,000-line document, same Apple
-silicon Mac, head to head -- August 2026, against MarkText 0.17.1.
+The same 50,000-line notes workload, same Apple silicon Mac, head to head in
+August 2026 against MarkText 0.17.1.
 
 | | Electron build | Krate build |
 |---|---|---|
@@ -377,7 +391,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
 ```
 
-The workspace has 956 tests.
+The workspace has 1,220 Rust tests.
 
 You need the Rust toolchain named in `rust-toolchain.toml`, Git, your platform's
 build tools, and `cargo-component` for building apps. Check your machine with
@@ -401,14 +415,14 @@ sudo dnf install gcc-c++ pkgconf openssl-devel cmake \
 
 What each is for, and what it looks like when it is missing:
 
-- **libasound2-dev** — the microphone capability. Stops in `alsa-sys` with a
+- **libasound2-dev**: the microphone capability. Stops in `alsa-sys` with a
   `pkg-config` error that does not explain itself.
-- **libwayland-dev** — windowing. The worst failure of the five: a *panic
+- **libwayland-dev**: windowing. The worst failure of the five: a *panic
   inside `wayland-sys`'s build script*, which reads as a broken crate rather
   than a missing package.
-- **libxkbcommon-dev** — the keyboard.
-- **libudev-dev** — gamepads.
-- **cmake** — builds whisper.cpp for speech-to-text. Skip the whole thing with
+- **libxkbcommon-dev**: the keyboard.
+- **libudev-dev**: gamepads.
+- **cmake**: builds whisper.cpp for speech-to-text. Skip the whole thing with
   `--no-default-features` if you do not need it.
 
 #### Running an app on Linux, without building anything
@@ -433,7 +447,7 @@ Rust panic quoting a crate path (K-036).
 Visual Studio Build Tools with the "Desktop development with C++" workload.
 Two things beyond that, both of which cost real time to discover:
 
-- **libclang**, for the default feature set — whisper's bindgen needs it.
+- **libclang**, for the default feature set: whisper's bindgen needs it.
   Without it, build with `--no-default-features`.
 - **A pagefile.** With 16 GB of RAM and no pagefile, the release link runs out
   of memory and Windows kills the process **with no message and an empty
@@ -508,9 +522,9 @@ costs about 16 milliseconds and can never change a command's result.
 
 ## Project status
 
-- Stage: first release -- works end to end, API not yet frozen
+- Stage: public beta, works end to end, API not yet frozen
 - Current release:
-  [`v0.1.7`](https://github.com/incyashraj/krate/releases/tag/v0.1.7)
+  [`v0.1.50`](https://github.com/incyashraj/krate/releases/tag/v0.1.50)
 - Company: Krate Labs
 - Maintainer: [Yashraj Pardeshi](https://github.com/incyashraj)
 - License: MIT OR Apache-2.0

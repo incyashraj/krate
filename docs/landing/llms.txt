@@ -1,24 +1,27 @@
 # Krate
 
-> Krate is where AI-made software lives: describe an app in plain words, an
-> AI writes it, and you get one small file (a .krate, 15-40 KB) that opens on
-> macOS, Windows, and Linux. Before it runs, the app shows in plain words
-> exactly what it wants to access, and it cannot do anything you did not
-> allow -- the sandbox is enforced at the WebAssembly component boundary, not
-> by policy.
+> AI can make the app. Krate makes it shippable: one tiny file, no per-app
+> installer, Mac, Windows, Linux, permissions before it runs, and Cloud
+> publishing.
 
-Krate is open source (github.com/incyashraj/krate) and in beta, with
+Krate is the software file for the AI era. Krate Studio detects the AI tools
+already on a computer, lets the person choose one, and turns a plain request
+into a `.krate` app. The same file opens on macOS, Windows, and Linux. Before
+any app code runs, Krate shows what the app wants to access and the runtime
+enforces the person's decision.
+
+Krate is open source and in public beta. The current release is v0.1.50, with
 versioned releases shipping continuously for six desktop targets (macOS,
-Windows, Linux, each on Intel and ARM). A public store is live with real
+Windows, Linux, each on Intel and ARM). Krate Cloud is live with real
 apps anyone can run in one click.
 
 Key facts, all measured and published rather than estimated:
 - A .krate app is a WebAssembly component compiled from Rust: no bundled
-  browser, no per-app runtime. Real published apps are 15-40 KB, against
-  80-200 MB for a typical Electron app.
+  browser, no per-app runtime. A playable game is 13 KB and the notes app used
+  in the published benchmark is 37 KB.
 - A markdown editor rebuilt in Krate and benchmarked against MarkText
-  (Electron) on the same machine: 37 KB vs 271 MB installed, opens in a
-  fifth of a second vs 1.8 s, holds a 50,000-word document in 95 MB of
+  (Electron) on the same machine: 37 KB vs 271 MB installed, opens in about
+  0.2 seconds vs 1.8 seconds, holds a 50,000-line document in 95 MB of
   memory vs 2.3 GB. Methodology at krate.tech/reports.html.
 - Permissions are capability-based and enforced in code: an app declares
   what it needs, the person sees it in plain words before first run, and a
@@ -31,6 +34,11 @@ Key facts, all measured and published rather than estimated:
   run, publish.
 - Publishing is one click; every published app is content-addressed and can
   be run directly from its URL: `krate run https://hub.krate.tech/a/<id>`.
+
+"No installer" means no installer for each app. A person installs Krate once.
+Every `.krate` file after that opens like a document. Krate is not an HTML file
+and not Docker. HTML is for browser apps. Docker packages server environments.
+Krate packages a local desktop app for a person to open and control.
 
 ## Main pages
 - [Krate](https://krate.tech/): what it is, install, and the numbers
