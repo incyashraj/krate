@@ -553,9 +553,18 @@ async fn create_app(
     out_dir: String,
     session: String,
 ) -> Result<CreateResult, String> {
+    // Trace the create lifecycle to stderr. A build has frozen on "While I work"
+    // with no workspace and no error more than once (K-136), always right after
+    // a previous build finished -- so the wedge is somewhere in this command
+    // before the engine spawns, and nothing said where. These eprintln lines,
+    // visible when the Studio is launched from a terminal, name the last step
+    // reached so the next freeze is diagnosable instead of invisible.
+    eprintln!("[create_app] enter: session={session} agent={agent}");
     let notify_app = app.clone();
     let out = tauri::async_runtime::spawn_blocking(move || {
+        eprintln!("[create_app] in spawn_blocking, resolving engine");
         let engine = engine()?;
+        eprintln!("[create_app] engine ok: {}", engine.display());
         let dir = if out_dir.is_empty() {
             PathBuf::from(Settings::default().out_dir)
         } else {
@@ -564,6 +573,7 @@ async fn create_app(
         std::fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
         let out_path = free_path(&dir, &slugify(&request));
         remember_target(&session, &out_path);
+        eprintln!("[create_app] target ready: {}", out_path.display());
 
         let mut cmd = silent_cmd(&engine);
         cmd.arg("create")
@@ -578,6 +588,7 @@ async fn create_app(
         // big game each began from nothing (K-129).
         let session_work = studio_dir().join("builds").join(&session);
         let _ = std::fs::create_dir_all(&session_work);
+        eprintln!("[create_app] workspace: {}", session_work.display());
         cmd.args(["--work-dir"]).arg(&session_work);
         // Every Studio build writes its own trace beside its workspace, so the
         // authoring-pipeline study captures each run automatically -- no CLI
@@ -842,6 +853,7 @@ fn run_author(
     // without a capabilities grant, invokes kept working, and the build
     // screen froze on stage one while the engine worked perfectly.
     let _ = app.emit("engine-line", "==> starting the Krate engine");
+    eprintln!("[run_author] entered, checking the Running slot");
     // One build at a time. Two at once would overwrite each other's pid in
     // `Running`, so Stop could only ever reach the second and the first
     // would keep burning AI quota with nothing able to end it.
@@ -849,6 +861,7 @@ fn run_author(
         let running = app.state::<Running>();
         let mut guard = running.0.lock().map_err(|_| "poisoned")?;
         if let Some(pid) = *guard {
+            eprintln!("[run_author] slot holds pid {pid}, alive={}", pid_alive(pid));
             // A recorded pid is only a live build if the process still
             // exists. A build that died without our code seeing it -- the
             // engine crashing, the machine sleeping, a kill from outside --
