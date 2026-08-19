@@ -579,6 +579,12 @@ async fn create_app(
         let session_work = studio_dir().join("builds").join(&session);
         let _ = std::fs::create_dir_all(&session_work);
         cmd.args(["--work-dir"]).arg(&session_work);
+        // Every Studio build writes its own trace beside its workspace, so the
+        // authoring-pipeline study captures each run automatically -- no CLI
+        // flag to remember. One file per session; a retry appends to it, which
+        // is what we want (the whole session's history in one place). Read it
+        // with `krate study-report <this file>`. Harmless when nothing reads it.
+        cmd.env("KRATE_TRACE", session_work.join("trace.jsonl"));
         for file in &attachments {
             cmd.args(["--attach", file]);
         }
