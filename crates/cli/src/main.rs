@@ -5353,6 +5353,8 @@ fn run_provider_author(
     // the person watching gets to see real work instead of dots.
     let stdout = child.stdout.take();
     let transcript_for_thread = transcript.clone();
+    // The app's own directory, for the trace's outside-workspace check.
+    let app_dir_for_thread = app_dir.to_string();
     let reporter = stdout.map(|stdout| {
         std::thread::spawn(move || {
             use std::io::BufRead;
@@ -5368,15 +5370,32 @@ fn run_provider_author(
                 }
                 // Any line at all is proof of life, tool call or chatter.
                 agent_progress::beat();
-                if let Some(step) = provider.progress_line(&line) {
-                    // Trace EVERY tool call, including repeats, with its
-                    // timestamp: the study needs the real sequence and the gaps
-                    // between calls (think/act time), which repeat-collapsing
-                    // below would hide. The display still collapses; the trace
-                    // does not.
-                    if trace::enabled() {
-                        trace::tool_call(&step, "", None);
+                // Trace the RAW tool call for the study -- every read, write,
+                // and command, including the Bash exploration that never maps
+                // to a progress step. This is what makes "what did it read, and
+                // where did it go outside its workspace" answerable. The gap
+                // before each event is its think/act time. Guarded so it costs
+                // nothing when tracing is off.
+                if trace::enabled() {
+                    if let Some((tool, target)) = provider.raw_tool_call(&line) {
+                        // Flag a target outside the app's own workspace: a read
+                        // of the real repo or the SDK cache is dev-machine
+                        // material a fresh user would not have, and it inflates
+                        // how well a build goes here versus for a real person.
+                        let outside = !target.is_empty()
+                            && !target.contains(app_dir_for_thread.as_str())
+                            && (target.contains("/apps/")
+                                || target.contains("/.cache/krate/")
+                                || target.contains("/layer6x6/"));
+                        let step = if outside {
+                            format!("OUTSIDE-WORKSPACE {tool}")
+                        } else {
+                            tool.clone()
+                        };
+                        trace::tool_call(&step, &tool, Some(&target));
                     }
+                }
+                if let Some(step) = provider.progress_line(&line) {
                     // Collapse repeats: an agent editing one file five times
                     // should not print the same sentence five times.
                     //
@@ -5672,15 +5691,30 @@ fn study_report_command(trace: &Path) -> Result<u8> {
         let at = ms(e);
         let gap = at.saturating_sub(prev);
         let step = field(e, "step");
-        if first_write.is_none() && step.contains("writing the app") {
+        let tool = field(e, "tool");
+        let target = field(e, "detail");
+        if first_write.is_none()
+            && (step.contains("writing the app") || (tool == "Write" && target.ends_with("lib.rs")))
+        {
             first_write = Some(at);
         }
-        let mark = if gap > 20_000 { "  <-- long pause" } else { "" };
+        let mark = if step.starts_with("OUTSIDE-WORKSPACE") {
+            "  <== OUTSIDE workspace"
+        } else if gap > 20_000 {
+            "  <-- long pause"
+        } else {
+            ""
+        };
+        // Show the target (file or command) so the read/explore sequence is
+        // legible, trimmed to keep the row scannable.
+        let target_short: String = target.chars().take(58).collect();
+        let label = if tool.is_empty() { step } else { tool };
         println!(
-            "  {:>7}  +{:<6} {}{}",
+            "  {:>7}  +{:<6} {:<7} {}{}",
             secs(start, at),
             secs(prev, at),
-            step,
+            label,
+            target_short,
             mark
         );
         prev = at;

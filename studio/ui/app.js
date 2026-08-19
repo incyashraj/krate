@@ -2158,17 +2158,30 @@ $("detailCopy").addEventListener("click", async () => {
    the build stage, from the home bar, and from the live chip in the rail.
    All three call this. */
 async function stopBuild() {
+  // Stop must ALWAYS end the build in the UI, even when the engine is already
+  // gone. The old version leaned entirely on the engine's exit landing in the
+  // failure path to move the UI out of "building" -- but if the process had
+  // already died (or never started; see K-136), that exit already happened and
+  // was missed, so the clock ran forever and Stop looked broken. It was: the
+  // founder clicked Stop on a build with no process and nothing changed.
+  //
+  // So kill whatever is there, then settle the build to "stopped" ourselves.
+  // settleBuild is idempotent (buildSettled guards it), so if the engine's real
+  // exit does still arrive it is a no-op rather than a double-settle.
   try {
     await invoke("stop_build");
-    // The engine's exit lands in the normal failure path, which says
-    // "stopped" -- this only covers the gap before that arrives.
-    if (state.buildChip) {
-      const phase = state.buildChip.querySelector("[data-phase]");
-      if (phase) phase.textContent = "stopping…";
-    }
   } catch (err) {
-    say("KRATE", plainWords(err));
+    // Even if the kill call errors, still end the build in the UI -- a Stop
+    // that leaves a spinner running is worse than a Stop that logs an error.
+    console.warn("stop_build failed:", err);
   }
+  if (state.buildChip) {
+    const phase = state.buildChip.querySelector("[data-phase]");
+    if (phase) phase.textContent = "stopping…";
+  }
+  // failBuild with the "stopped" reason renders the stopped screen and settles
+  // the chip once; the settle-once guard makes a later real exit harmless.
+  failBuild("stopped", state.lastRequest || "");
 }
 
 $("stopBtn").addEventListener("click", stopBuild);

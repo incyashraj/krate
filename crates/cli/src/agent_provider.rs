@@ -85,6 +85,21 @@ pub trait AgentProvider: Send + Sync {
     /// nothing, and the raw line still reaches the transcript.
     fn progress_line(&self, line: &str) -> Option<String>;
 
+    /// The RAW tool call in a streamed line, as `(tool, target)`, for the
+    /// pipeline trace -- not the polished progress sentence.
+    ///
+    /// `progress_line` only fires for calls that map to a user-facing step, so
+    /// it misses the agent's own exploration: on the study's first run, claude
+    /// read the pack and the whole example repo with `Bash`/`cat`/`sed`, and
+    /// none of it showed up because those are not progress steps. The study
+    /// needs the full sequence -- every read, every command -- to answer "what
+    /// did it read, and where did it go outside its workspace". This returns the
+    /// tool name and its primary argument (a file path or a command) for exactly
+    /// that. Default finds nothing; each provider overrides for its own shape.
+    fn raw_tool_call(&self, _line: &str) -> Option<(String, String)> {
+        None
+    }
+
     /// Whether this provider streams what it is doing while it works.
     ///
     /// Claude Code emits an event per tool call, so a progress display can
@@ -639,6 +654,39 @@ impl AgentProvider for ClaudeProvider {
                 command.env_remove(key);
             }
         }
+    }
+
+    fn raw_tool_call(&self, line: &str) -> Option<(String, String)> {
+        // claude's stream-json: message.content[] with a tool_use part. The
+        // target is the file path for a read/write, or the command for Bash --
+        // enough to reconstruct the full read/explore/write sequence, including
+        // the Bash `cat`/`sed` exploration progress_line never surfaces.
+        let event: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+        let content = event.get("message")?.get("content")?.as_array()?;
+        for part in content {
+            if part.get("type").and_then(|t| t.as_str()) != Some("tool_use") {
+                continue;
+            }
+            let name = part
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
+            let input = part.get("input");
+            let target = input
+                .and_then(|i| i.get("file_path").or_else(|| i.get("path")))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    input
+                        .and_then(|i| i.get("command").or_else(|| i.get("pattern")))
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.chars().take(200).collect())
+                })
+                .unwrap_or_default();
+            return Some((name, target));
+        }
+        None
     }
 
     fn progress_line(&self, line: &str) -> Option<String> {
