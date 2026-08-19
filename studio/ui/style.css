@@ -1343,10 +1343,23 @@ img.cloud-icon { object-fit: cover; }
    steps as the content, footer pinned to the bottom. */
 .build-card.brail {
   width: min(640px, 90%);
-  height: calc(100% - 56px);
+  /* Was `height: calc(100% - 56px)` + `overflow: hidden`. When the stages, the
+     peek and an open "full log" grew past that fixed height, hidden clipped the
+     bottom of the card -- which is the footer with the Stop button. A real
+     build on a shorter window then showed everything through "the full log" and
+     no Stop, with no way to end the build from the session view. Cap the height
+     but let the card grow to its content up to that cap, and never clip: the
+     footer keeps its space (flex: none below) so Stop is always visible. */
+  max-height: calc(100% - 56px);
   display: flex; flex-direction: column;
-  overflow: hidden;
 }
+/* The log is the one part allowed to shrink-and-scroll when space is tight;
+   flex:1 1 0 + min-height:0 lets it actually give up height (min-content would
+   otherwise keep it tall and push the footer off). Everything else keeps its
+   natural size, and the footer never shrinks away, so Stop is always on screen. */
+.build-card.brail .build-log-wrap { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+.build-card.brail .build-log-wrap[open] .build-log { max-height: none; }
+.build-card.brail .bfoot { flex: none; }
 .build-card.brail .stages { margin: 16px 0 0; }
 /* The peek rides INSIDE the list, tucked under whichever row is current
    (the JS moves it there on every stage change). */
