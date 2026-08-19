@@ -5396,7 +5396,20 @@ fn run_provider_author(
     // while a wedged one produces nothing at all. The reporter stamps this
     // clock on every line it sees; ten quiet minutes ends the run in one,
     // instead of the person watching a spinner to the ceiling (K-127).
-    const STALL_SECS: u64 = 600;
+    // Silence only means "stalled" for a provider that STREAMS. Grok (and any
+    // non-streaming provider) writes one JSON object when the whole run ends,
+    // so it is silent on stdout for its entire, healthy run -- the transcript
+    // arrives at the finish, not along the way. Applying the silence killer to
+    // it kills a working run: a grok request whose single API round-trip took
+    // over ten minutes was stopped mid-flight and reported as hung, on a
+    // machine where nothing was wrong. For those providers the total deadline
+    // is the only honest ceiling; there is no in-run line to time silence from.
+    let stall = if provider.reports_progress() {
+        std::time::Duration::from_secs(600)
+    } else {
+        // Effectively off: the deadline below is the real bound.
+        std::time::Duration::from_secs(u64::MAX / 2)
+    };
     // None means the agent was stopped at the deadline but the app it had
     // already written passes every check -- salvaged, not stalled.
     let status: Option<std::process::ExitStatus> = loop {
@@ -5404,7 +5417,7 @@ fn run_provider_author(
             Ok(Some(status)) => break Some(status),
             Ok(None) => {
                 let quiet = agent_progress::since_last_line();
-                if quiet > std::time::Duration::from_secs(STALL_SECS) {
+                if quiet > stall {
                     let _ = child.kill();
                     let _ = child.wait();
                     if check_app_verdict(app_dir).is_ok() {
