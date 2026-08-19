@@ -5264,6 +5264,42 @@ fn agent_refusal(app_dir: &str) -> Option<String> {
     Some(reason.to_string())
 }
 
+thread_local! {
+    /// The stall-retry budget for the current authoring run, on this thread.
+    /// `None` means "not yet seeded" -- the first read of a fresh run seeds it
+    /// to the starting count; the resume path overwrites it with the decremented
+    /// value. Per-thread so the recursive resume counts down without threading a
+    /// parameter through every call site.
+    static STALL_BUDGET: std::cell::Cell<Option<u32>> = const { std::cell::Cell::new(None) };
+}
+
+/// How many stall-restarts remain, seeding the budget on first use.
+///
+/// Two: a transient API hang usually clears on the first restart; a second
+/// covers a run that stalls twice. Beyond that the agent or the network is
+/// genuinely unwell, and the honest outcome is the stall error, not an endless
+/// restart loop burning the person's quota.
+fn stall_retries_remaining() -> Option<u32> {
+    STALL_BUDGET.with(|b| {
+        if b.get().is_none() {
+            b.set(Some(2));
+        }
+        b.get().filter(|&n| n > 0)
+    })
+}
+
+/// Re-invoke the agent to continue from the code already written after a stall.
+/// The workspace persists, so the same prompt resumes rather than restarts.
+fn run_provider_author_resuming(
+    provider: &'static dyn agent_provider::AgentProvider,
+    app_dir: &str,
+    request: &str,
+    retries_left: u32,
+) -> Result<u8> {
+    STALL_BUDGET.with(|b| b.set(Some(retries_left)));
+    run_provider_author(provider, app_dir, request)
+}
+
 /// Run one provider through Krate's authoring policy.
 ///
 /// Everything here is the same for every provider: the prompt, the transcript,
@@ -5504,6 +5540,32 @@ fn run_provider_author(
                             quiet.as_secs() / 60
                         );
                         break None;
+                    }
+                    // Auto-retry a stalled agent instead of failing the whole
+                    // build. A stall is a transient API hang (caught live: the
+                    // connection sat ESTABLISHED with no response), and the
+                    // workspace persists, so re-invoking the agent RESUMES from
+                    // the code it already wrote rather than starting over. This
+                    // is what makes the FIRST attempt succeed instead of the
+                    // person having to notice the silent screen and retry by
+                    // hand. Bounded, so a genuinely dead agent still fails.
+                    if let Some(retries_left) = stall_retries_remaining() {
+                        eprintln!(
+                            "note: the AI went quiet for {} minutes -- restarting it to continue from the code so far ({retries_left} left).",
+                            quiet.as_secs() / 60
+                        );
+                        report_progress_alive(
+                            "the AI stalled -- restarting it to pick up where it left off",
+                        );
+                        if let Some(reporter) = reporter {
+                            let _ = reporter.join();
+                        }
+                        return run_provider_author_resuming(
+                            provider,
+                            app_dir,
+                            request,
+                            retries_left - 1,
+                        );
                     }
                     return Err(author_stalled_error(app_dir, &transcript, quiet.as_secs()));
                 }
