@@ -359,21 +359,98 @@ fn diagnose(provider: &dyn AgentProvider, stdout: &str, stderr: &str) -> Readine
         )
     } else if blob.contains("rate limit") || blob.contains("quota") {
         ("has hit its usage limit".to_string(), None)
+    } else if blob.contains("requires a newer version")
+        || blob.contains("please upgrade to the latest")
+        || (blob.contains("model") && blob.contains("not found") && blob.contains("upgrade"))
+    {
+        // The tool runs but its own service refuses it as out of date. This is
+        // the exact state a real codex install was in -- CLI 0.142.0 asking for
+        // a model that needs a newer build -- and the old code reported the
+        // harmless "Reading additional input from stdin..." notice instead,
+        // which told nobody anything.
+        (
+            "is installed but out of date -- its service asks for a newer version".to_string(),
+            Some(match provider.name() {
+                "codex" => "npm install -g @openai/codex@latest".to_string(),
+                other => format!("update {other} to the latest version"),
+            }),
+        )
     } else if stdout.is_empty() && stderr.is_empty() {
         ("fails to start, and prints no reason why".to_string(), None)
     } else {
-        let first = stderr
+        // The FIRST line is usually not the reason. Codex opens every run with
+        // "Reading additional input from stdin...", and reporting that as the
+        // verdict hid a perfectly actionable error underneath it. Prefer a line
+        // that actually looks like a failure, and only fall back to the first
+        // line when nothing does.
+        let looks_like_error = |l: &str| {
+            let low = l.to_lowercase();
+            (low.contains("error")
+                || low.contains("failed")
+                || low.contains("cannot")
+                || low.contains("not found")
+                || low.contains("refused")
+                || low.contains("denied"))
+                && !low.contains("reading additional input")
+        };
+        let lines: Vec<&str> = stderr
             .lines()
             .chain(stdout.lines())
-            .find(|line| !line.trim().is_empty())
-            .unwrap_or("failed for an unknown reason")
-            .trim();
-        let clipped: String = first.chars().take(90).collect();
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .collect();
+        let chosen = lines
+            .iter()
+            .copied()
+            .find(|l| looks_like_error(l))
+            .or_else(|| lines.first().copied())
+            .unwrap_or("failed for an unknown reason");
+        // Pull the human sentence out of a JSON error blob when there is one,
+        // so a person reads the message rather than the envelope.
+        let message = extract_json_message(chosen).unwrap_or_else(|| chosen.to_string());
+        let clipped: String = message.chars().take(120).collect();
         (clipped, None)
     };
 
     let _ = name;
     Readiness::NotReady { summary, remedy }
+}
+
+/// Pull the human sentence out of a JSON error line, if it is one.
+///
+/// Codex reports failures as `{"type":"error","message":"{\"error\":{\"message\":
+/// \"...\"}}"}` -- the sentence a person needs, wrapped in one or two layers of
+/// envelope. Showing the raw blob makes a readable error unreadable, so dig for
+/// the innermost `message` and show that. Anything unrecognised returns None
+/// and the caller keeps the original line.
+fn extract_json_message(line: &str) -> Option<String> {
+    fn deepest(value: &serde_json::Value) -> Option<String> {
+        match value {
+            serde_json::Value::Object(map) => {
+                // An inner error object wins over the outer wrapper's message.
+                if let Some(found) = map.get("error").and_then(deepest) {
+                    return Some(found);
+                }
+                if let Some(msg) = map.get("message") {
+                    if let Some(text) = msg.as_str() {
+                        // The message may itself be JSON; unwrap once more.
+                        if let Ok(inner) = serde_json::from_str::<serde_json::Value>(text) {
+                            if let Some(found) = deepest(&inner) {
+                                return Some(found);
+                            }
+                        }
+                        return Some(text.to_string());
+                    }
+                    return deepest(msg);
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+    let start = line.find('{')?;
+    let value: serde_json::Value = serde_json::from_str(line[start..].trim()).ok()?;
+    deepest(&value)
 }
 
 /// The error for a provider whose CLI is not installed.
@@ -912,7 +989,7 @@ impl AgentProvider for CodexProvider {
     }
 
     fn install_hint(&self) -> &'static str {
-        "npm install -g @openai/codex, then run `codex` once to sign in"
+        "npm install -g @openai/codex@latest, then run `codex` once to sign in"
     }
 
     fn install_package(&self) -> Option<&'static str> {
@@ -1039,7 +1116,7 @@ impl AgentProvider for GeminiProvider {
     }
 
     fn install_hint(&self) -> &'static str {
-        "npm install -g @google/gemini-cli, then run `gemini` once to sign in"
+        "npm install -g @google/gemini-cli@latest, then run `gemini` once to sign in"
     }
 
     fn install_package(&self) -> Option<&'static str> {
@@ -1104,7 +1181,7 @@ impl AgentProvider for CopilotProvider {
     }
 
     fn install_hint(&self) -> &'static str {
-        "npm install -g @github/copilot, then run `copilot` once to sign in"
+        "npm install -g @github/copilot@latest, then run `copilot` once to sign in"
     }
 
     fn install_package(&self) -> Option<&'static str> {
@@ -1165,7 +1242,7 @@ impl AgentProvider for GrokProvider {
     }
 
     fn install_hint(&self) -> &'static str {
-        "install the Grok CLI from xAI, then run `agent` once to sign in"
+        "install the Grok CLI from xAI (docs.x.ai), then run `agent login` once to sign in"
     }
 
     fn author_args(&self, prompt: &str) -> Vec<String> {
