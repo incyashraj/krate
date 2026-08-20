@@ -194,12 +194,41 @@ height off on macOS because the input path flipped coordinates against the
 wrong rect. Windows and Linux have their own input paths and could carry the
 same class of bug independently. Nobody has looked.
 
-Blocked on a test machine: the Azure VM `krate-win` exists but its subscription
-is disabled (`state: Disabled`, `spendingLimit: On`), and the friend's PC at
-192.168.1.117 is on another network. Cross-checking from the Mac catches
-compile-level breaks only -- `cargo check --target x86_64-pc-windows-msvc`
-works for pure-Rust crates but cannot link the C dependencies (zstd, sqlite,
-whisper) without an MSVC toolchain.
+**First real Windows run, 2026-08-20.** A Windows 11 24H2 VM was stood up on
+Azure (see [[krate-azure-winvm]] in memory; resource group `krate-parity`) and
+everything below was measured there, not inferred.
+
+What WORKS on Windows, verified:
+
+- `krate.exe` builds (33.4 MB) and runs; `--version` and `doctor` both fine.
+- `krate create` builds a real app end to end -- `tip.krate`, 23036 bytes,
+  packed and permission-wall verified. It correctly fell back to the checklist
+  template with a clear explanation, because no AI agent is installed there.
+- The app RUNS: window opens, `items:5 saved:yes`, and the missing GPU
+  degrades honestly ("Microsoft Basic Render Driver is a software adapter;
+  drawing on the CPU").
+- The whole usability script passes on a real full-bleed canvas app:
+  stay-open, resize and click all `held`.
+- **The design-space mapping is identical to macOS.** Same numbers, same
+  letterbox: `canvas=1140x780 design=920x640 k=1.219 off=(9.4,0.0)`, and the
+  click check answered `difference=0.016182 idle_churn=0.000068` -- a real
+  reaction told apart from the animation. K-140, K-143 and K-147 are
+  genuinely cross-platform, not macOS-shaped fixes that happen to compile.
+
+What is still missing, confirmed by running rather than by grep:
+
+- **camera** -- the webcam app reports `camera:unavailable`, `frames:0`. Honest
+  degradation, no crash, but no camera.
+- **set-full-bleed** -- no implementation; the trait default refuses.
+
+Two blockers found on the way are their own entries: K-150 (main had not
+compiled for Windows since v0.1.51) and K-149 (LLVM and CMake are undocumented
+build prerequisites).
+
+Cross-checking from a Mac is NOT a substitute: `cargo check --target
+x86_64-pc-windows-msvc` works for pure-Rust crates but cannot get past the C
+dependencies (zstd, sqlite, whisper) without an MSVC toolchain, so it never
+reaches the code that was broken.
 
 ### K-144 -- A quick run can print its results as a literal, and nothing notices
 

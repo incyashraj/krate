@@ -9642,7 +9642,15 @@ fn print_windows_native_build_status() {
         }
     }
 
-    match agent_provider::which_on_path("cmake") {
+    // PATH first, then the default install location. The MSI installer does
+    // not add itself to PATH unless asked, so a machine with cmake genuinely
+    // installed was reported as missing -- doctor telling somebody to install
+    // what they already have is how a check loses their trust.
+    let cmake = agent_provider::which_on_path("cmake").or_else(|| {
+        let default = std::path::PathBuf::from(r"C:\Program Files\CMake\bin\cmake.exe");
+        default.exists().then_some(default)
+    });
+    match cmake {
         Some(path) => println!("cmake           found ({})", path.display()),
         None => {
             println!("cmake           missing -- `whisper-rs-sys` builds whisper.cpp with it");
