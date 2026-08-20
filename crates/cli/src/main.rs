@@ -9604,7 +9604,51 @@ fn doctor() -> Result<u8> {
     }
     #[cfg(target_os = "macos")]
     println!("graphics        native macOS pipeline");
+    #[cfg(target_os = "windows")]
+    print_windows_native_build_status();
     Ok(0)
+}
+
+/// The two things a Windows machine needs to build Krate itself, and which
+/// nothing told anyone about.
+///
+/// A clean Windows 11 with rustup and the Visual Studio Build Tools -- exactly
+/// what our own setup asks for -- cannot build Krate. It compiles most of the
+/// workspace and then dies inside `whisper-rs-sys`, first on a missing
+/// `libclang.dll` (bindgen), then on a missing `cmake`. Neither is part of the
+/// VCTools workload, so the toolchain looks complete and is not (K-149).
+///
+/// Only relevant to somebody building the runtime from source. Running apps and
+/// `krate create` need neither, so this is stated as information rather than
+/// printed as a fault.
+#[cfg(target_os = "windows")]
+fn print_windows_native_build_status() {
+    println!();
+    println!("Building Krate itself (not needed to run or make apps)");
+
+    let clang = std::env::var_os("LIBCLANG_PATH")
+        .map(std::path::PathBuf::from)
+        .filter(|dir| dir.join("libclang.dll").exists())
+        .or_else(|| {
+            let default = std::path::PathBuf::from(r"C:\Program Files\LLVM\bin");
+            default.join("libclang.dll").exists().then_some(default)
+        });
+    match clang {
+        Some(dir) => println!("libclang        found ({})", dir.display()),
+        None => {
+            println!("libclang        missing -- `whisper-rs-sys` cannot run bindgen without it");
+            println!("                install LLVM, then set LIBCLANG_PATH to its bin folder:");
+            println!("                  winget install LLVM.LLVM");
+        }
+    }
+
+    match agent_provider::which_on_path("cmake") {
+        Some(path) => println!("cmake           found ({})", path.display()),
+        None => {
+            println!("cmake           missing -- `whisper-rs-sys` builds whisper.cpp with it");
+            println!("                  winget install Kitware.CMake");
+        }
+    }
 }
 
 /// Report which `cargo`/`rustc` a plain build would use, and warn when it is not

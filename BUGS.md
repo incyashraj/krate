@@ -124,14 +124,27 @@ reason arm64 Linux was missing from every release ("whisper.cpp needs a C++17
 compiler; the arm64 Linux cross container reaches only C++14"). One optional
 feature, `speech`, is now the single hardest dependency on two platforms.
 
-Three ways out, in order of how much they help a real person:
+It is TWO missing prerequisites, not one. After installing LLVM the build got
+further and died again, in the same crate:
 
-1. Say it. `krate doctor` should check for `libclang` on Windows and name the
-   fix, the way K-134 taught us to name the linker.
-2. Ship the LLVM requirement in the setup docs and CI images.
-3. Consider whether `speech` should be default-on at all. It is one feature,
-   it is the only thing pulling bindgen and a C++17 toolchain, and it has now
-   cost two platforms. `--no-default-features` builds fine without it.
+    error: failed to run custom build command for `whisper-rs-sys v0.15.0`
+    is `cmake` not installed?
+
+So a clean Windows machine needs LLVM *and* CMake beyond what our setup asks
+for, and finds out one failure at a time, several minutes apart.
+
+Done: `krate doctor` now has a "Building Krate itself" section on Windows that
+checks for `libclang.dll` (honouring `LIBCLANG_PATH`, falling back to the
+default LLVM location) and for `cmake` on PATH, and prints the `winget` command
+for whichever is missing. Stated as information, not a fault -- running apps
+and `krate create` need neither; only building the runtime from source does.
+
+Still open, and the bigger question: **should `speech` be default-on at all?**
+It is one optional feature, it is the only thing pulling bindgen and a C++17
+toolchain, and it has now cost two platforms -- arm64 Linux was missing from
+every release for the same reason. `--no-default-features` builds fine without
+it. Worth deciding deliberately rather than paying this again on the next
+platform.
 
 Found on the Azure parity VM (see K-148). Verified fixed by installing
 LLVM 18.1.8 and setting `LIBCLANG_PATH`; the build then proceeds.
