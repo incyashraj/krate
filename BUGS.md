@@ -71,6 +71,48 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-143 -- A lowered-widget app's buttons do nothing when pressed
+
+Class: our-code (suspected) / example-bug (not yet ruled out)
+Owner: unclaimed
+
+Found while proving the K-139 codex fix. codex authored a countdown timer end
+to end (its first ever successful build), and the app opens correctly -- title,
+"Ready", 05:00, a blue Start and a blue Reset. Pressing Start does nothing.
+
+Unlike the weather apps this one draws with **lowered widgets**
+(`tree::upsert_node`), not a canvas, so it is a different path from K-141 and
+is not fixed by it.
+
+The app's own code looks right:
+
+    const START_ID: u64 = 7;
+    ...
+    Some(types::Event::Pointer(pointer)) if pointer.pressed => {
+        match pointer.widget {
+            Some(START_ID) => timer.start(clock::monotonic_nanos()),
+
+Real `const`s, so the match is by value and not a shadowing binding. That
+leaves the host: either `pointer.widget` arrives as `None`, or it carries an
+id that is not the one the app registered.
+
+Evidence, with the press aimed straight at the button's own rectangle -- so
+this is the confident verdict, not a canvas-centre guess:
+
+    $ KRATE_PRESS_AT=119,398 krate run timer.krate --auto-grant --usability-report r.json
+    krate-check: click difference=0.000000 idle_churn=0.000000 confident=true answered=false
+    click: {"outcome": "broke", "detail": "a press on the middle of the app's
+            own clickable control changed nothing on screen"}
+
+Worth noting: this is the strengthened check from K-140 working exactly as
+intended. Before today a still app with a dead button reported `held` and this
+would have shipped unnoticed.
+
+Next step for whoever takes it: log what `pointer.widget` actually contains
+when a press is routed onto a lowered button, and compare it with the id the
+app passed to `upsert_node`. Check the full-bleed viewport height too -- the
+routing path uses `record.size`, and getting that wrong is what K-141 was.
+
 ### K-142 -- The quiet heartbeat contradicts the step it is shown under
 
 Class: our-code (UX)
