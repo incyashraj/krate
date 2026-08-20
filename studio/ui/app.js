@@ -566,6 +566,22 @@ function startBuildWatchdog() {
 function beginBuild(title, expect) {
   $("buildTitle").textContent = title;
   $("buildExpect").textContent = expect;
+  // Rescue the peek box before wiping the stage list.
+  //
+  // THE SECOND-BUILD FREEZE (K-136). advanceStage MOVES #peekBox inside
+  // #stages, tucked under the current row. So on the next build this
+  // innerHTML wipe deleted the peek -- and with it #nowLine -- and the
+  // "warming up" line below then threw "Cannot set properties of null",
+  // which killed buildNow BEFORE it invoked create_app. The build silently
+  // never started: no engine, no workspace, no error, and a UI stuck on
+  // "building" forever. The first build always worked (peek still in its
+  // original home) and every build after it died, which is exactly the
+  // alternating pattern the founder hit for days.
+  const peek = $("peekBox");
+  const peekHome = $("stateBuilding")?.querySelector(".build-card") || null;
+  if (peek && peekHome && peek.parentElement !== peekHome) {
+    peekHome.appendChild(peek);
+  }
   $("stages").innerHTML = STAGES.map(
     (s) => `<li data-key="${s.key}"><span class="tick"></span>${s.label}</li>`,
   ).join("");
@@ -580,13 +596,22 @@ function beginBuild(title, expect) {
   let thinkIdx = 0;
   state.timer = setInterval(() => {
     const s = Math.floor((Date.now() - state.startedAt) / 1000);
-    $("elapsed").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    const el = $("elapsed");
+    if (el) {
+      el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    }
     if (Date.now() - state.lastLineAt > 18000) {
-      $("nowLine").textContent = THINKING[thinkIdx++ % THINKING.length];
+      // Defensive: a missing peek must never throw inside a timer either --
+      // an exception here would kill the clock for the rest of the build.
+      const now = $("nowLine");
+      if (now) now.textContent = THINKING[thinkIdx++ % THINKING.length];
       state.lastLineAt = Date.now() - 8000; // rotate every ~10s while quiet
     }
   }, 1000);
-  $("nowLine").textContent = "warming up…";
+  // Defensive on purpose: nothing in this function may throw, because a throw
+  // here happens BEFORE the build is invoked and loses it silently.
+  const nowLine = $("nowLine");
+  if (nowLine) nowLine.textContent = "warming up…";
   show("building");
 }
 
@@ -1103,10 +1128,21 @@ async function buildNow(request, files, revising) {
   // the left panel says failed while the right shows a completed app. The
   // founder watched exactly this. First outcome wins; the later one is ignored.
   state.buildSettled = false;
-  beginBuild(
-    revising ? "Making your change" : "Making your app",
-    revising ? "the AI reads your app before it edits" : "usually a few minutes",
-  );
+  // The build must survive a broken screen. Everything above this point is
+  // presentation -- chips, stages, timers -- and none of it is a reason to
+  // lose the person's build. A throw in beginBuild once killed buildNow before
+  // it ever invoked the engine, and the app simply never got made (K-136).
+  // Draw what we can; the invoke below happens either way.
+  try {
+    beginBuild(
+      revising ? "Making your change" : "Making your app",
+      revising ? "the AI reads your app before it edits" : "usually a few minutes",
+    );
+  } catch (err) {
+    console.warn("beginBuild failed, building anyway:", err);
+    invoke("dbg_log", { line: `beginBuild threw: ${err?.message || err}` }).catch(() => {});
+    show("building");
+  }
 
   invoke("dbg_log", { line: `buildNow about to invoke ${revising?"revise_app":"create_app"} for session=${state.session?.id}` }).catch(()=>{});
   try {
