@@ -71,47 +71,29 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
-### K-143 -- A lowered-widget app's buttons do nothing when pressed
+### K-144 -- A quick run can print its results as a literal, and nothing notices
 
-Class: our-code (suspected) / example-bug (not yet ruled out)
+Class: teaching-hole
 Owner: unclaimed
 
-Found while proving the K-139 codex fix. codex authored a countdown timer end
-to end (its first ever successful build), and the app opens correctly -- title,
-"Ready", 05:00, a blue Start and a blue Reset. Pressing Start does nothing.
+codex's countdown timer ends its quick run with:
 
-Unlike the weather apps this one draws with **lowered widgets**
-(`tree::upsert_node`), not a canvas, so it is a different path from K-141 and
-is not fixed by it.
+    let _ = out.write(
+        b"duration:300\nstarted:yes\nreset:yes\nremaining_at_reset:300\nremaining:297\n",
+    );
 
-The app's own code looks right:
+Every number is a constant. The app never reports what actually happened, and
+the quick run passes whatever the app does -- it would print `started:yes`
+with the Start button removed entirely.
 
-    const START_ID: u64 = 7;
-    ...
-    Some(types::Event::Pointer(pointer)) if pointer.pressed => {
-        match pointer.widget {
-            Some(START_ID) => timer.start(clock::monotonic_nanos()),
+This is worse than a missing check, because it is a check that reads as passing
+while measuring nothing. It cost real time here: the hardcoded output was taken
+as proof the timer worked, and the investigation looked at the host for it.
 
-Real `const`s, so the match is by value and not a shadowing binding. That
-leaves the host: either `pointer.widget` arrives as `None`, or it carries an
-id that is not the one the app registered.
-
-Evidence, with the press aimed straight at the button's own rectangle -- so
-this is the confident verdict, not a canvas-centre guess:
-
-    $ KRATE_PRESS_AT=119,398 krate run timer.krate --auto-grant --usability-report r.json
-    krate-check: click difference=0.000000 idle_churn=0.000000 confident=true answered=false
-    click: {"outcome": "broke", "detail": "a press on the middle of the app's
-            own clickable control changed nothing on screen"}
-
-Worth noting: this is the strengthened check from K-140 working exactly as
-intended. Before today a still app with a dead button reported `held` and this
-would have shipped unnoticed.
-
-Next step for whoever takes it: log what `pointer.widget` actually contains
-when a press is routed onto a lowered button, and compare it with the id the
-app passed to `upsert_node`. Check the full-bleed viewport height too -- the
-routing path uses `record.size`, and getting that wrong is what K-141 was.
+The pack asks for quick-run output and gives the format, but never says the
+values have to be read back out of the app's own state at the moment of
+printing. Say that, and say why: a literal here is indistinguishable from a
+working app until somebody clicks the button by hand.
 
 ### K-142 -- The quiet heartbeat contradicts the step it is shown under
 
@@ -4101,6 +4083,48 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
 Status:   fixed
 
 ## Fixed
+
+### K-143 -- The click check judged the frame before the app had redrawn
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+Filed as "a lowered-widget app's buttons do nothing". They do not: **the check
+was looking too early.**
+
+An event-loop app handles a press like this: `wait` hands it over, the app
+matches it, drains the rest of the queue with `poll`, and only then redraws.
+Both `wait` and `poll` step the usability script, so the judging visit arrived
+on that drain -- after the app had matched the press, before it had repainted
+-- and captured the old frame.
+
+Caught by instrumenting the guest itself. Its own trace, in order:
+
+    DBG pointer arm entered
+    DBG widget=7
+    krate-frame: labels=["Countdown", "Ready", "05:00", "Start", "Reset"]   <- judged here
+    DBG rebuild ok running=yes                                              <- app reacts here
+
+The app was working the whole time. The check called it broken.
+
+Fixed by requiring both conditions before judging: the app has had
+`PRESS_SETTLE` (250ms) of wall clock, and the visit comes from `wait` -- the
+point where the app has finished this turn. `PRESS_GIVE_UP` (1.5s) judges
+anyway for a frame-loop app that never calls `wait`; gating on `wait` alone
+stalled the script there and reported a working game as having closed itself,
+which is how that second condition was found.
+
+After the fix, the same press on the same app:
+
+    krate-check: click difference=0.001917 idle_churn=0.000000 confident=true answered=true
+
+Two things worth keeping from this. The strengthened check from K-140 is only
+trustworthy because it now looks at the right moment -- a stricter threshold
+against a stale frame produces confident false failures, which is worse than
+the permissive check it replaced. And a "broke" verdict from this gate now
+carries real weight, so it must never be believed without reproducing what the
+person sees.
 
 ### K-142 -- The quiet heartbeat contradicts the step it is shown under
 

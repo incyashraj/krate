@@ -837,6 +837,18 @@ So drive the verbs in the request and report their result:\n\n\
 This is also the only evidence that clicking works at all: there is no \
 scripted-input path, so an app that cannot exercise its own controls cannot \
 show that they respond.\n\n\
+**Every value you print must be read out of the app's own state, at the \
+moment you print it.** Never write the numbers as literals. A generated \
+countdown timer ended its quick run with:\n\n\
+\u{20}\u{20}\u{20}\u{20}out.write(b\"duration:300\\nstarted:yes\\nreset:yes\\nremaining:297\\n\");\n\n\
+Every line is a constant. That output is identical whether the timer works or \
+whether the Start button is deleted outright -- so it is not a check, it is a \
+picture of one, and it reads as passing while measuring nothing. It cost real \
+debugging time: the hardcoded `started:yes` was taken as proof the button \
+worked, and the hunt went looking in the runtime for a bug that was never \
+there. Format the real fields (`timer.remaining_secs()`, \
+`list.len()`, `if timer.running {...}`) so a broken app prints something \
+different from a working one.\n\n\
 **Do not let the last thing you drive undo the rest.** You print once, at the \
 end, so the final state has to still show the work. A generated countdown \
 timer exercised itself thoroughly -- started, ticked, paused, lengthened, \

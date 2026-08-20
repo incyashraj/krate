@@ -216,6 +216,9 @@ struct UsabilityDriver {
     /// When the script last advanced, so a polling game and an event-loop app
     /// are driven at the same pace.
     last_step: Option<std::time::Instant>,
+    /// When the press was delivered, so the app gets a turn to react before
+    /// the frame is judged. See `PRESS_SETTLE`.
+    press_delivered_at: Option<std::time::Instant>,
     /// How much of the frame changes on its own, with nobody touching the app.
     ///
     /// The click check used to pass on ANY difference, which meant a spinner,
@@ -225,6 +228,22 @@ struct UsabilityDriver {
     /// gives the press something honest to beat.
     idle_churn: Option<f32>,
 }
+
+/// How long the app gets to react to the driven press before it is judged.
+///
+/// The press is handed over from inside `wait`; the guest only handles it,
+/// updates its state and redraws after that `wait` returns. Capturing on the
+/// next visit landed between those two moments and reported working apps as
+/// dead (K-143). A quarter second, once per run, buys a truthful verdict.
+const PRESS_SETTLE: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// When to judge the press even though the app never came back to `wait`.
+///
+/// A frame-loop app (a game) polls and draws forever and never calls `wait`,
+/// so waiting for it would stall the script and report the app as having
+/// closed itself. After this long the app has had every chance to react and
+/// the frame is judged on what is there.
+const PRESS_GIVE_UP: std::time::Duration = std::time::Duration::from_millis(1_500);
 
 /// How long the driver leaves between steps of its script.
 ///
@@ -368,6 +387,7 @@ impl Phase3GuiHost {
             resized_to: None,
             resize_settled: false,
             last_step: None,
+            press_delivered_at: None,
             idle_churn: None,
         });
         self
@@ -500,7 +520,7 @@ impl Phase3GuiHost {
     /// Each step runs one wait apart rather than back to back, so the app has a
     /// turn of its own loop to react to the last action before the next frame
     /// is compared against it.
-    fn drive_usability_step(&mut self) -> Option<ui::types::Event> {
+    fn drive_usability_step(&mut self, from_wait: bool) -> Option<ui::types::Event> {
         let window = self.windows.first().copied();
         let Some(window) = window else {
             // No window yet. A CLI app never opens one and the stage skips on
@@ -588,7 +608,7 @@ impl Phase3GuiHost {
                 None
             }
             DriveStep::Click => {
-                self.drive_click(window);
+                self.drive_click(window, from_wait);
                 None
             }
             DriveStep::Watch => {
@@ -773,7 +793,7 @@ impl Phase3GuiHost {
 
     /// Deliver a pointer press, then judge the next frame against the one
     /// before it. Runs across two visits, like the resize.
-    fn drive_click(&mut self, window: WindowId) {
+    fn drive_click(&mut self, window: WindowId, from_wait: bool) {
         let clicked_already = self.usability.as_ref().is_some_and(|d| d.action_delivered);
         let before = self.usability.as_ref().and_then(|d| d.before.clone());
 
@@ -832,7 +852,41 @@ impl Phase3GuiHost {
             if let Some(driver) = self.usability.as_mut() {
                 driver.action_delivered = true;
                 driver.press_was_confident = confident;
+                driver.press_delivered_at = Some(std::time::Instant::now());
             }
+            return;
+        }
+
+        // Give the app a real turn before judging it.
+        //
+        // An event-loop app handles the press like this: `wait` hands it over,
+        // the app matches it, drains the rest of the queue with `poll`, and
+        // only THEN redraws. Both `wait` and `poll` step this script, so the
+        // second visit arrived on that drain -- after the app had matched the
+        // press but before it had repainted -- and the capture caught the old
+        // frame. A working countdown timer was reported as having a dead Start
+        // button on exactly this: its own trace printed "pointer arm entered /
+        // widget=7", then the capture, then "rebuild ok running=yes" (K-143).
+        //
+        // So the judging visit waits for the app to finish its turn. `wait` is
+        // that point for an event-loop app -- it has handled everything and is
+        // asking for the next event. A frame-loop app (a game) never calls
+        // `wait` at all, so it cannot be the only condition: there, a slice of
+        // wall clock is the best available signal, and one is granted after
+        // `PRESS_SETTLE` regardless. Gating on `wait` alone stalled the script
+        // and reported a working app as having closed itself.
+        let since_press = self
+            .usability
+            .as_ref()
+            .and_then(|d| d.press_delivered_at)
+            .map(|at| at.elapsed())
+            .unwrap_or_default();
+        // Normally: the app has had its slice AND is back at `wait`, meaning
+        // this turn is finished. The second clause is the escape hatch for an
+        // app that never calls `wait` -- gating on `wait` alone stalled the
+        // script there and reported a working app as having closed itself.
+        let ready = (since_press >= PRESS_SETTLE && from_wait) || since_press >= PRESS_GIVE_UP;
+        if !ready {
             return;
         }
 
@@ -856,7 +910,9 @@ impl Phase3GuiHost {
                 if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
                     eprintln!(
                         "krate-check: click difference={difference:.6} idle_churn={idle_churn:.6} \
-                         confident={confident} answered={answered}"
+                         confident={confident} answered={answered} \
+                         before={}x{} after={}x{}",
+                        before.width, before.height, after.width, after.height
                     );
                 }
                 if answered {
@@ -2346,7 +2402,7 @@ impl ui::events::Host for Phase3GuiHost {
         // not have. Stepping here too is what makes the driver work for a
         // frame loop as well as an event loop.
         if self.usability.is_some() {
-            if let Some(event) = self.drive_usability_step() {
+            if let Some(event) = self.drive_usability_step(false) {
                 return Ok(Some(event));
             }
         }
@@ -2435,7 +2491,7 @@ impl ui::events::Host for Phase3GuiHost {
         // seconds, which is before the ten-second self-close the driver exists
         // to catch.
         if self.usability.is_some() {
-            if let Some(event) = self.drive_usability_step() {
+            if let Some(event) = self.drive_usability_step(true) {
                 self.idle_waits.set(0);
                 return Ok(Some(event));
             }
@@ -2471,7 +2527,13 @@ impl ui::events::Host for Phase3GuiHost {
                 }
                 self.idle_waits.set(0);
                 if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
-                    eprintln!("krate-event: {:?}", event.as_ref().map(event_name));
+                    match event.as_ref() {
+                        Some(ui::types::Event::Pointer(p)) => eprintln!(
+                            "krate-event: pointer widget={:?} pressed={} at ({:.1},{:.1})",
+                            p.widget, p.pressed, p.x, p.y
+                        ),
+                        other => eprintln!("krate-event: {:?}", other.map(event_name)),
+                    }
                 }
                 return Ok(event);
             }
@@ -2500,7 +2562,7 @@ impl ui::events::Host for Phase3GuiHost {
                 // what closes that loop: it delivers the script's clicks and
                 // resizes as ordinary events, which is how a person's input
                 // would arrive anyway.
-                if let Some(event) = self.drive_usability_step() {
+                if let Some(event) = self.drive_usability_step(true) {
                     self.idle_waits.set(0);
                     return Ok(Some(event));
                 }

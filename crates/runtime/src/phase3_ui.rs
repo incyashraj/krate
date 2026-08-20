@@ -388,6 +388,14 @@ impl<'a> Phase3UiDispatcher<'a> {
         let layout = compute_layout(&tree, request.viewport)
             .map_err(|err| UiDispatchError::Layout(err.to_string()))?;
         let widget = hit_test(&tree, &layout, point).map(|hit| hit.widget);
+        if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
+            eprintln!(
+                "krate-route: press at ({:.1},{:.1}) -> widget={:?}",
+                request.x,
+                request.y,
+                widget.map(|w| w.get()),
+            );
+        }
 
         self.adapter.queue_pointer_event(PointerEvent {
             window: request.window,
