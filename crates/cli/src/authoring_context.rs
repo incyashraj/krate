@@ -33,6 +33,7 @@ use crate::sdk_reference;
 const UI_WIT: &str = include_str!("../../../wit/krate/phase3/deps/ui/ui.wit");
 const GFX_WIT: &str = include_str!("../../../wit/krate/phase3/deps/gfx/gfx.wit");
 const AUDIO_WIT: &str = include_str!("../../../wit/krate/phase3/deps/audio/audio.wit");
+const CAMERA_WIT: &str = include_str!("../../../wit/krate/phase3/deps/camera/camera.wit");
 const SPEECH_WIT: &str = include_str!("../../../wit/krate/phase3/deps/speech/speech.wit");
 
 /// Generate the full `KRATE_AUTHORING.md` for an app in `app_dir`.
@@ -393,9 +394,15 @@ pub(crate) fn capability_catalog_section() -> String {
          a silent picture of one -- so mark that capability required. Ask: if this one \
          capability were withheld, would the app still be the thing the request asked \
          for? If no, it is required. A drawing app's canvas, a music player's audio, a \
-         recorder's microphone: required. A capability the app only uses for a \
-         nice-to-have corner is genuinely optional; the app's whole reason for \
-         existing is not.\n",
+         recorder's microphone, **a webcam app's camera**: required. A capability the \
+         app only uses for a nice-to-have corner is genuinely optional; the app's whole \
+         reason for existing is not.\n\n\
+         This has real consequences, not just tidiness. The person is only asked about \
+         capabilities marked required -- an optional one is never mentioned and never \
+         granted, so the app opens without it and without a question. A generated \
+         webcam viewer marked `camera.capture` optional and opened to a permanently \
+         empty viewfinder: no camera, no prompt, nothing on screen explaining why. It \
+         looked broken, and from the person's side it was.\n",
     );
     out
 }
@@ -445,6 +452,7 @@ fn capability_note(name: &str) -> &'static str {
         "gfx.gpu" => "GPU drawing (canvas2d present today)",
         "audio.playback" => "play sound",
         "audio.capture" => "record from the microphone",
+        "camera.capture" => "see through the camera",
         _ => "",
     }
 }
@@ -967,12 +975,59 @@ pub(crate) fn gui_world_section() -> String {
         ("gfx", GFX_WIT),
         ("ui", UI_WIT),
         ("audio", AUDIO_WIT),
+        ("camera", CAMERA_WIT),
         ("speech", SPEECH_WIT),
     ] {
         out.push_str(&render_wit_interfaces(package, wit));
     }
     out.push_str(
-        "\n## Never guess how wide text is -- measure it\n\n\
+        "\n## Showing a camera feed\n\n\
+         A live preview is a poll in the event loop, not a callback. Open once, \
+         start once, then read a frame each time round and draw whatever came \
+         back:\n\n\
+         \u{20}\u{20}\u{20}\u{20}let id = camera::capture::open(\"\", &config)?;  // \"\" = default camera\n\
+         \u{20}\u{20}\u{20}\u{20}camera::capture::start(id)?;                  // the indicator light comes on here\n\
+         \u{20}\u{20}\u{20}\u{20}// ... each time round the loop:\n\
+         \u{20}\u{20}\u{20}\u{20}if let Ok(Some(frame)) = camera::capture::read(id) {\n\
+         \u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}last = Some(frame);       // keep it: read() gives each frame once\n\
+         \u{20}\u{20}\u{20}\u{20}}\n\
+         \u{20}\u{20}\u{20}\u{20}if let Some(f) = &last {\n\
+         \u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}// f.width and f.height, NOT the size you asked for.\n\
+         \u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}\u{20}canvas2d::draw_pixels(canvas, area, f.width, f.height, &f.bytes)?;\n\
+         \u{20}\u{20}\u{20}\u{20}}\n\n\
+         Five things that decide whether this works:\n\n\
+         **`read` returns `None` constantly, and that is normal.** It means no \
+         new frame since you last asked, which happens whenever your loop is \
+         faster than the camera. Keep the last frame and redraw it; an app that \
+         draws only when `read` returns `Some` flickers between the picture and \
+         a blank rectangle.\n\n\
+         **Wake up often enough to see frames.** Use \
+         `events::wait(Some(16))` while the camera is running, the same way a \
+         network poll does it. `events::wait(None)` blocks until somebody \
+         clicks, so the preview freezes on the first frame.\n\n\
+         **Draw at `frame.width` and `frame.height`, never at the size you \
+         asked for.** A camera opens at its nearest supported mode: ask a Mac \
+         for 640x480 and you get 1920x1080. Every frame carries its own size \
+         for exactly this reason, so the numbers cannot disagree with the \
+         bytes. Reading a size once at startup and reusing it is the trap -- \
+         the true size is not known until the first frame arrives, so an app \
+         that did that laid 1080p bytes out as 480p and showed a black window \
+         with the camera light on. `info(id)` exists for sizing a viewfinder \
+         before frames start; the frame itself is what you draw with.\n\n\
+         **The bytes are already the format `draw_pixels` takes**: straight- \
+         alpha RGBA, `width * height * 4`, top-left first. No conversion.\n\n\
+         **`stop` when the preview is hidden, and `close` on the way out.** The \
+         indicator light is wired to the hardware, so a person can see whether \
+         an app that says it stopped looking actually did. A photo button is \
+         just the last frame you were already holding -- there is no separate \
+         capture call, and taking a still does not need a second stream.\n\n\
+         Declare `camera.capture` in the manifest, required if the app IS the \
+         camera. It is never granted by default: the person is asked, and on \
+         macOS the system asks a second time on its own. If `open` returns \
+         `system-denied` rather than `permission-denied`, that second wall is \
+         the one blocking -- say so plainly, because the fix is in system \
+         settings and no amount of clicking inside your app will help.\n\n\
+         ## Never guess how wide text is -- measure it\n\n\
          `canvas2d::measure_text(canvas, text, font_size)` returns `width`, \
          `height`, `ascent`, and `descent` for the run `draw_text` is about to \
          draw. Use it any time a position depends on the size of text: \

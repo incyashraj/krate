@@ -36,6 +36,7 @@ world gui {
 
   import krate:audio/playback@0.1.0;
   import krate:audio/capture@0.1.0;
+  import krate:camera/capture@0.1.0;
   import krate:speech/transcription@0.1.0;
 
   export run: func() -> s32;

@@ -29,6 +29,9 @@ pub mod uapi_dispatch;
 mod async_fetch;
 mod audio_capture;
 mod audio_playback;
+pub mod camera_capture;
+#[cfg(target_os = "macos")]
+mod camera_macos;
 mod canvas_raster;
 pub use krate_adapter_common::canvas_list;
 pub mod chosen_files;
@@ -609,7 +612,7 @@ impl Runtime {
         output: OutputMode,
     ) -> Result<RunOutcome> {
         use phase2_bindings::krate::{fs, io, locale, net, random, resources, store, time};
-        use phase3_gui_bindings::krate::{audio, gfx, speech, ui};
+        use phase3_gui_bindings::krate::{audio, camera, gfx, speech, ui};
 
         let mut store = self.new_store(config, output)?;
         let gui_host = phase3_gui_host::Phase3GuiHost::new(
@@ -689,6 +692,8 @@ impl Runtime {
         link_gui!(audio::types);
         link_gui!(audio::playback);
         link_gui!(audio::capture);
+        link_gui!(camera::types);
+        link_gui!(camera::capture);
         link_gui!(speech::transcription);
 
         let bindings =

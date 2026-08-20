@@ -63,6 +63,17 @@ krate-adapter-linux = { path = "../adapter-linux", version = "0.1.0-dev" }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 krate-adapter-macos = { path = "../adapter-macos", version = "0.1.0-dev" }
+# Camera capture. Same objc2 family the macOS window adapter already uses, so
+# there is one Objective-C runtime in the tree rather than two. Only the
+# classes the camera path touches are enabled.
+objc2 = "0.6.4"
+objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["AVCaptureDevice", "AVCaptureInput", "AVCaptureOutput", "AVCaptureOutputBase", "AVCaptureSession", "AVCaptureSessionPreset", "AVCaptureVideoDataOutput", "AVMediaFormat", "block2", "dispatch2", "objc2-core-media"] }
+objc2-core-media = { version = "0.3.2", default-features = false, features = ["CMBase", "CMFormatDescription", "CMSampleBuffer", "CMSync", "CMTime", "objc2-core-video"] }
+objc2-core-video = { version = "0.3.2", default-features = false, features = ["CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVPixelFormatDescription", "CVReturn"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSDictionary", "NSString", "NSValue", "NSObject", "objc2-core-foundation"] }
+dispatch2 = { version = "0.3.0", default-features = false, features = ["std", "objc2"] }
+# The completion block macOS calls with the person's answer to the camera prompt.
+block2 = "0.6.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 krate-adapter-windows = { path = "../adapter-windows", version = "0.1.0-dev" }

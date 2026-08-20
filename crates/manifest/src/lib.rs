@@ -133,6 +133,12 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     // Capturing sound FROM the microphone stays opt-in: that is the person's
     // room, and recording it is exactly the kind of thing consent exists for.
     CapabilitySpec::resource_free(CapabilityPhase::Phase3, "audio", "capture", false),
+    // The camera is the most sensitive door Krate opens: it is the person's
+    // face and their room, and unlike a file pick there is no moment where
+    // they choose what it sees. Opt-in, always asked for, and never granted
+    // by default -- and the host asks the operating system too, so the
+    // machine's own indicator light is the second, unfakeable signal.
+    CapabilitySpec::resource_free(CapabilityPhase::Phase3, "camera", "capture", false),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]

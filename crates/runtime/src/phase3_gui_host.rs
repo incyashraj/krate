@@ -20,13 +20,16 @@ use std::sync::Arc;
 
 use crate::{
     audio_capture::{AudioCaptureRuntime, CaptureConfig, CaptureError, CaptureSampleFormat},
+    camera_capture::{
+        CameraCaptureRuntime, CameraConfig, CameraError, FrameFormat as CameraFrameFormat,
+    },
     audio_playback::{AudioPlaybackRuntime, PlaybackConfig, PlaybackError, PlaybackSampleFormat},
     canvas_raster::{pack_color, CanvasSurface},
-    phase3_gui_bindings::krate::{audio, gfx, speech, ui},
+    phase3_gui_bindings::krate::{audio, camera, gfx, speech, ui},
     phase3_ui::{Phase3HostUiMode, Phase3UiDispatcher, Phase3UiRuntime, UiDispatchError},
     scene3d::Scene,
     speech_transcription::{LocalSpeechRuntime, SpeechError},
-    uapi::{AudioCall, UapiCall, UapiGuard, UiCall},
+    uapi::{AudioCall, CameraCall, UapiCall, UapiGuard, UiCall},
 };
 
 /// How long `events.wait` sleeps between polls.
@@ -160,6 +163,9 @@ pub struct Phase3GuiHost {
     lists_enabled: std::cell::Cell<Option<bool>>,
     /// Native microphone streams owned by this one sandboxed app session.
     audio_capture: AudioCaptureRuntime,
+    /// Open camera streams. Behind `camera.capture`, and idle until an app
+    /// opens one -- constructing this touches no device.
+    cameras: CameraCaptureRuntime,
     /// Native speaker streams owned by this one sandboxed app session.
     audio_playback: AudioPlaybackRuntime,
     /// Local speech model contexts, scoped to this one sandboxed app session.
@@ -342,6 +348,7 @@ impl Phase3GuiHost {
             canvas_lists: Default::default(),
             lists_enabled: std::cell::Cell::new(None),
             audio_capture: AudioCaptureRuntime::default(),
+            cameras: CameraCaptureRuntime::default(),
             audio_playback: AudioPlaybackRuntime::default(),
             speech: LocalSpeechRuntime::default(),
             screenshot: None,
@@ -4174,6 +4181,45 @@ fn capture_config(config: audio::types::StreamConfig) -> CaptureConfig {
     }
 }
 
+impl Phase3GuiHost {
+    /// Whether the camera grant is missing for this run.
+    ///
+    /// Checked on every call rather than once at open, so a policy that
+    /// changes mid-run takes effect on the next frame read rather than at the
+    /// next launch.
+    fn camera_denied(&self) -> bool {
+        self.runtime
+            .guard()
+            .check(&UapiCall::Camera(CameraCall::Capture))
+            .is_err()
+    }
+}
+
+fn camera_config(config: camera::types::StreamConfig) -> CameraConfig {
+    CameraConfig {
+        width: config.width,
+        height: config.height,
+        fps: config.fps,
+        format: match config.format {
+            camera::types::FrameFormat::Rgba8 => CameraFrameFormat::Rgba8,
+        },
+    }
+}
+
+fn camera_error(error: CameraError) -> camera::types::CameraError {
+    match error {
+        CameraError::InvalidStream => camera::types::CameraError::InvalidStream,
+        CameraError::DeviceUnavailable => camera::types::CameraError::DeviceUnavailable,
+        // Kept separate from PermissionDenied all the way to the app: one is
+        // Krate's wall, the other is the operating system's, and only the app
+        // can tell the person which settings screen to open.
+        CameraError::SystemDenied => camera::types::CameraError::SystemDenied,
+        CameraError::InvalidConfig(message) => camera::types::CameraError::Unsupported(message),
+        CameraError::Unsupported(message) => camera::types::CameraError::Unsupported(message),
+        CameraError::Platform(message) => camera::types::CameraError::Platform(message),
+    }
+}
+
 fn capture_error(error: CaptureError) -> audio::types::AudioError {
     match error {
         CaptureError::InvalidStream => audio::types::AudioError::InvalidStream,
@@ -4387,6 +4433,105 @@ impl audio::capture::Host for Phase3GuiHost {
             .audio_capture
             .read(stream_id, max_bytes)
             .map_err(capture_error))
+    }
+}
+
+impl camera::types::Host for Phase3GuiHost {}
+
+impl camera::capture::Host for Phase3GuiHost {
+    fn devices(
+        &mut self,
+    ) -> wasmtime::Result<Result<Vec<camera::types::DeviceInfo>, camera::types::CameraError>> {
+        if self.camera_denied() {
+            return Ok(Err(camera::types::CameraError::PermissionDenied));
+        }
+        Ok(self
+            .cameras
+            .devices()
+            .map(|devices| {
+                devices
+                    .into_iter()
+                    .map(|device| camera::types::DeviceInfo {
+                        id: device.id,
+                        label: device.label,
+                    })
+                    .collect()
+            })
+            .map_err(camera_error))
+    }
+
+    fn open(
+        &mut self,
+        device: String,
+        config: camera::types::StreamConfig,
+    ) -> wasmtime::Result<Result<u64, camera::types::CameraError>> {
+        if self.camera_denied() {
+            return Ok(Err(camera::types::CameraError::PermissionDenied));
+        }
+        Ok(self
+            .cameras
+            .open(&device, camera_config(config))
+            .map_err(camera_error))
+    }
+
+    fn info(
+        &mut self,
+        stream_id: u64,
+    ) -> wasmtime::Result<Result<camera::types::FrameInfo, camera::types::CameraError>> {
+        if self.camera_denied() {
+            return Ok(Err(camera::types::CameraError::PermissionDenied));
+        }
+        Ok(self
+            .cameras
+            .info(stream_id)
+            .map(|info| camera::types::FrameInfo {
+                width: info.width,
+                height: info.height,
+                fps: info.fps,
+                format: camera::types::FrameFormat::Rgba8,
+            })
+            .map_err(camera_error))
+    }
+
+    fn start(&mut self, stream_id: u64) -> wasmtime::Result<Result<(), camera::types::CameraError>> {
+        if self.camera_denied() {
+            return Ok(Err(camera::types::CameraError::PermissionDenied));
+        }
+        Ok(self.cameras.start(stream_id).map_err(camera_error))
+    }
+
+    fn stop(&mut self, stream_id: u64) -> wasmtime::Result<Result<(), camera::types::CameraError>> {
+        // Deliberately NOT behind the grant. Stopping is how an app turns the
+        // camera off, and refusing it because the grant was revoked would
+        // leave the device running with no way to stop it.
+        Ok(self.cameras.stop(stream_id).map_err(camera_error))
+    }
+
+    fn read(
+        &mut self,
+        stream_id: u64,
+    ) -> wasmtime::Result<Result<Option<camera::types::Frame>, camera::types::CameraError>> {
+        if self.camera_denied() {
+            return Ok(Err(camera::types::CameraError::PermissionDenied));
+        }
+        Ok(self
+            .cameras
+            .read(stream_id)
+            .map(|frame| {
+                frame.map(|frame| camera::types::Frame {
+                    bytes: frame.bytes,
+                    width: frame.width,
+                    height: frame.height,
+                    elapsed_millis: frame.elapsed_millis,
+                })
+            })
+            .map_err(camera_error))
+    }
+
+    fn close(&mut self, stream_id: u64) -> wasmtime::Result<Result<(), camera::types::CameraError>> {
+        // Like `stop`, always allowed: releasing the device is never the thing
+        // a person needs protecting from.
+        Ok(self.cameras.close(stream_id).map_err(camera_error))
     }
 }
 

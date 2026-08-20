@@ -1,0 +1,141 @@
+package krate:camera@0.1.0;
+
+/// Shared camera records and errors for Phase 3.
+interface types {
+  /// How a frame's bytes are laid out.
+  enum frame-format {
+    /// Straight-alpha RGBA, four bytes per pixel, row-major from the top
+    /// left. The same layout `krate:gfx/canvas2d.draw-pixels` takes, so a
+    /// frame can be drawn without converting anything.
+    rgba8,
+  }
+
+  /// What the app is asking the camera for.
+  ///
+  /// Every field is a request, not a demand: a camera that cannot do exactly
+  /// this picks its closest supported mode, and `frame-info` reports what was
+  /// actually opened. An app that draws from `frame-info` rather than from
+  /// what it asked for works on every machine.
+  record stream-config {
+    /// Requested frame width in pixels.
+    width: u32,
+    /// Requested frame height in pixels.
+    height: u32,
+    /// Requested frames per second.
+    fps: u32,
+    /// Requested byte layout.
+    format: frame-format,
+  }
+
+  /// What the device actually opened, and the shape of the frames it sends.
+  record frame-info {
+    /// Frame width in pixels.
+    width: u32,
+    /// Frame height in pixels.
+    height: u32,
+    /// Frames per second the device settled on.
+    fps: u32,
+    /// Byte layout of every frame from this stream.
+    format: frame-format,
+  }
+
+  /// One camera the person could pick.
+  record device-info {
+    /// Stable id to pass to `open`.
+    id: string,
+    /// Human-readable name, as the operating system reports it.
+    label: string,
+  }
+
+  /// A frame, its size, and the moment it was captured.
+  ///
+  /// The size travels WITH the bytes, and it is the size to draw at. It is
+  /// here rather than only on `frame-info` because a camera opens at its
+  /// nearest supported mode -- ask for 640x480 and a Mac gives 1920x1080 --
+  /// and the true size is not known until a frame arrives. An app that read
+  /// the size once at startup and drew every later frame at it laid 1080p
+  /// bytes out as though they were 480p: the camera light was on, frames were
+  /// flowing, and the window stayed black (K-147). A field that cannot
+  /// disagree with the bytes beside it removes that mistake instead of
+  /// warning about it.
+  record frame {
+    /// Pixel bytes in the stream's format: `width * height * 4` for rgba8.
+    bytes: list<u8>,
+    /// Width of THIS frame in pixels. Draw with this, not with the width you
+    /// asked for.
+    width: u32,
+    /// Height of THIS frame in pixels.
+    height: u32,
+    /// Milliseconds since the stream started, for pacing and timestamps.
+    elapsed-millis: u64,
+  }
+
+  /// Error shape returned by camera calls.
+  variant camera-error {
+    /// Capability policy or sandbox rules denied the operation.
+    permission-denied,
+    /// The stream id is unknown or already closed.
+    invalid-stream,
+    /// No camera is attached, or the one asked for is gone.
+    device-unavailable,
+    /// The person declined the operating system's own camera prompt.
+    ///
+    /// Separate from `permission-denied`, which is Krate's wall: this one is
+    /// macOS or Windows asking on top of it. An app that tells them apart can
+    /// say "your system settings are blocking the camera", which is the only
+    /// message that helps.
+    system-denied,
+    /// The host cannot support this camera feature yet.
+    unsupported(string),
+    /// Host-specific camera error text.
+    platform(string),
+  }
+}
+
+/// Camera capture calls.
+///
+/// Deliberately shaped like `krate:audio/capture`: open, start, read, stop.
+/// The one difference is that frames are pulled rather than streamed -- an app
+/// draws at its own rate, and a camera that is faster than the drawing would
+/// otherwise pile up frames nobody looks at.
+interface capture {
+  use types.{camera-error, device-info, frame, frame-info, stream-config};
+
+  /// The cameras this machine has.
+  ///
+  /// Empty is a normal answer, not an error: plenty of desktops have no
+  /// camera. An app should say so plainly rather than looking broken.
+  devices: func() -> result<list<device-info>, camera-error>;
+
+  /// Open a camera and return its stream id.
+  ///
+  /// `device` empty means "the default camera". The stream is open but not
+  /// running: nothing is captured, and on macOS the operating system's camera
+  /// indicator light stays off, until `start`.
+  open: func(device: string, config: stream-config) -> result<u64, camera-error>;
+
+  /// What this stream actually opened as. Draw from this, not from the
+  /// config you asked for.
+  info: func(stream-id: u64) -> result<frame-info, camera-error>;
+
+  /// Begin capturing. The camera indicator light comes on here.
+  start: func(stream-id: u64) -> result<_, camera-error>;
+
+  /// Stop capturing without closing the stream, so `start` can resume it.
+  ///
+  /// The indicator light goes off. An app that hides its preview should call
+  /// this rather than quietly keeping the camera running, and a person can
+  /// see the difference.
+  stop: func(stream-id: u64) -> result<_, camera-error>;
+
+  /// The newest frame, or nothing if none has arrived since the last read.
+  ///
+  /// Never blocks. Old frames are dropped rather than queued: an app that
+  /// draws at 30fps from a 60fps camera should show the newest picture, not
+  /// fall further behind. Poll this from the event loop the same way a
+  /// network read is polled.
+  read: func(stream-id: u64) -> result<option<frame>, camera-error>;
+
+  /// Close the stream and release the device.
+  close: func(stream-id: u64) -> result<_, camera-error>;
+}

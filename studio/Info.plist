@@ -2,6 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- macOS refuses camera and microphone access to any process whose bundle
+	     does not declare why it wants them, and it does so by terminating the
+	     process rather than returning an error. The Studio runs the apps it
+	     builds, so an app that asks for the camera needs these here. The
+	     entitlements file already allows both; these are the sentences the
+	     person reads in the system prompt. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Krate uses the camera only for apps that request camera access and only after you allow it.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Krate uses the microphone only for apps that request audio capture and only after you allow it.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

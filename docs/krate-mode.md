@@ -486,10 +486,13 @@ to exactly what the app needs, e.g. `fs.read:notes/**`.
 | `gfx.gpu:compute` | no | GPU drawing (canvas2d present today) |
 | `audio.playback` | yes | play sound |
 | `audio.capture` | no | record from the microphone |
+| `camera.capture` | no | see through the camera |
 
 Mark `required = true` on a capability the app cannot begin without -- the verification run withholds it and the app must refuse to start (exit 5). A saving app marks `fs.write` required. `ui.window:create` is declared `required = true` by convention, but withholding a window just closes the app, so it is not the withheld gate; a GUI app whose only non-default capability is its window has nothing to withhold, which is fine. Do not mark required a capability the `quick` verification path never reaches, or the app fails its own wall test after building cleanly.
 
-"Cannot begin without" means the app it CLAIMS to be, not just a window that opens. A music player without `audio.playback` is not a music player -- it is a silent picture of one -- so mark that capability required. Ask: if this one capability were withheld, would the app still be the thing the request asked for? If no, it is required. A drawing app's canvas, a music player's audio, a recorder's microphone: required. A capability the app only uses for a nice-to-have corner is genuinely optional; the app's whole reason for existing is not.
+"Cannot begin without" means the app it CLAIMS to be, not just a window that opens. A music player without `audio.playback` is not a music player -- it is a silent picture of one -- so mark that capability required. Ask: if this one capability were withheld, would the app still be the thing the request asked for? If no, it is required. A drawing app's canvas, a music player's audio, a recorder's microphone, **a webcam app's camera**: required. A capability the app only uses for a nice-to-have corner is genuinely optional; the app's whole reason for existing is not.
+
+This has real consequences, not just tidiness. The person is only asked about capabilities marked required -- an optional one is never mentioned and never granted, so the app opens without it and without a question. A generated webcam viewer marked `camera.capture` optional and opened to a permanently empty viewfinder: no camera, no prompt, nothing on screen explaining why. It looked broken, and from the person's side it was.
 
 ---
 
@@ -598,12 +601,51 @@ takes the arguments is the function.
 - `capture::stop: func(stream-id: u64) -> result<_, audio-error>`
 - `capture::read: func(stream-id: u64, max-bytes: u32) -> result<list<u8>, audio-error>`
 
+## `camera`
+
+- `capture::devices: func() -> result<list<device-info>, camera-error>`
+- `capture::open: func(device: string, config: stream-config) -> result<u64, camera-error>`
+- `capture::info: func(stream-id: u64) -> result<frame-info, camera-error>`
+- `capture::start: func(stream-id: u64) -> result<_, camera-error>`
+- `capture::stop: func(stream-id: u64) -> result<_, camera-error>`
+- `capture::read: func(stream-id: u64) -> result<option<frame>, camera-error>`
+- `capture::close: func(stream-id: u64) -> result<_, camera-error>`
+
 ## `speech`
 
 - `transcription::transcribe: func( model-asset: string, pcm-s16-le: list<u8>, sample-rate: u32, language: option<string>, ) -> result<transcript, speech-error>`
 - `transcription::match-line: func( model-asset: string, pcm-s16-le: list<u8>, sample-rate: u32, language: option<string>, expected: string, ) -> result<u8, match-error>`
 - `transcription::match-line-stream: func( model-asset: string, pcm-s16-le: list<u8>, sample-rate: u32, language: option<string>, expected: string, finish: bool, ) -> result<option<u8>, match-error>`
 
+
+## Showing a camera feed
+
+A live preview is a poll in the event loop, not a callback. Open once, start once, then read a frame each time round and draw whatever came back:
+
+    let id = camera::capture::open("", &config)?;  // "" = default camera
+    camera::capture::start(id)?;                  // the indicator light comes on here
+    // ... each time round the loop:
+    if let Ok(Some(frame)) = camera::capture::read(id) {
+        last = Some(frame);       // keep it: read() gives each frame once
+    }
+    if let Some(f) = &last {
+        // f.width and f.height, NOT the size you asked for.
+        canvas2d::draw_pixels(canvas, area, f.width, f.height, &f.bytes)?;
+    }
+
+Five things that decide whether this works:
+
+**`read` returns `None` constantly, and that is normal.** It means no new frame since you last asked, which happens whenever your loop is faster than the camera. Keep the last frame and redraw it; an app that draws only when `read` returns `Some` flickers between the picture and a blank rectangle.
+
+**Wake up often enough to see frames.** Use `events::wait(Some(16))` while the camera is running, the same way a network poll does it. `events::wait(None)` blocks until somebody clicks, so the preview freezes on the first frame.
+
+**Draw at `frame.width` and `frame.height`, never at the size you asked for.** A camera opens at its nearest supported mode: ask a Mac for 640x480 and you get 1920x1080. Every frame carries its own size for exactly this reason, so the numbers cannot disagree with the bytes. Reading a size once at startup and reusing it is the trap -- the true size is not known until the first frame arrives, so an app that did that laid 1080p bytes out as 480p and showed a black window with the camera light on. `info(id)` exists for sizing a viewfinder before frames start; the frame itself is what you draw with.
+
+**The bytes are already the format `draw_pixels` takes**: straight- alpha RGBA, `width * height * 4`, top-left first. No conversion.
+
+**`stop` when the preview is hidden, and `close` on the way out.** The indicator light is wired to the hardware, so a person can see whether an app that says it stopped looking actually did. A photo button is just the last frame you were already holding -- there is no separate capture call, and taking a still does not need a second stream.
+
+Declare `camera.capture` in the manifest, required if the app IS the camera. It is never granted by default: the person is asked, and on macOS the system asks a second time on its own. If `open` returns `system-denied` rather than `permission-denied`, that second wall is the one blocking -- say so plainly, because the fix is in system settings and no amount of clicking inside your app will help.
 
 ## Never guess how wide text is -- measure it
 

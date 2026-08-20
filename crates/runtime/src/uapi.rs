@@ -19,6 +19,7 @@ pub enum UapiCall {
     Locale(LocaleCall),
     Ui(UiCall),
     Audio(AudioCall),
+    Camera(CameraCall),
     Store(StoreCall),
     Random(RandomCall),
 }
@@ -37,6 +38,7 @@ impl UapiCall {
             Self::Locale(call) => format!("locale.{call}"),
             Self::Ui(call) => call.to_capability_string(),
             Self::Audio(call) => format!("audio.{call}"),
+            Self::Camera(call) => format!("camera.{call}"),
             Self::Store(call) => format!("store.{call}"),
             Self::Random(call) => format!("random.{call}"),
         }
@@ -90,6 +92,22 @@ impl fmt::Display for AudioCall {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Playback => "playback",
+            Self::Capture => "capture",
+        })
+    }
+}
+
+/// The camera. One call kind, because there is only one thing to ask about:
+/// seeing through it. Listing devices is behind the same grant -- the names of
+/// somebody's cameras are already something they should agree to share.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CameraCall {
+    Capture,
+}
+
+impl fmt::Display for CameraCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
             Self::Capture => "capture",
         })
     }

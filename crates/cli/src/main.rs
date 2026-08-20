@@ -8635,6 +8635,85 @@ fn open_studio() -> bool {
 /// `./notes/**` keeps its data in a folder next to the document — visible,
 /// understandable, and identical to running it from a terminal in that folder.
 #[cfg(target_os = "macos")]
+/// Build (or refresh) the per-app launcher bundle and return its executable.
+///
+/// The dock shows an unbundled process under its executable's file name, which
+/// is why the engine re-execs itself through a link named after the app. Doing
+/// that with a bare file cost the process its Info.plist, and with it every
+/// permission macOS gates on a usage description -- the camera prompt never
+/// appeared and capture silently returned nothing (K-145).
+///
+/// So the link lives inside a minimal `.app` that declares those usages. The
+/// executable is still a hard link to the engine, so this costs no disk and
+/// stays correct when the engine is replaced by an upgrade.
+#[cfg(target_os = "macos")]
+fn macos_launcher_bundle(dir: &Path, name: &str, engine: &Path) -> std::io::Result<PathBuf> {
+    let app = dir.join(format!("{name}.app"));
+    let macos = app.join("Contents/MacOS");
+    let exe = macos.join(name);
+    // Rebuilt every launch: cheap, and it means an upgraded engine is picked
+    // up rather than a stale hard link to a deleted binary being re-run.
+    let _ = fs::remove_dir_all(&app);
+    fs::create_dir_all(&macos)?;
+    if fs::hard_link(engine, &exe).is_err() {
+        fs::copy(engine, &exe)?;
+    }
+
+    // CFBundleIdentifier is per-app on purpose: macOS records camera and
+    // microphone decisions against it, so each app the person opens is asked
+    // about separately and one app's grant is not another's.
+    let id: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let plist = format!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+         <!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \
+         \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n\
+         <plist version=\"1.0\">\n<dict>\n\
+         \u{20}   <key>CFBundleName</key><string>{name}</string>\n\
+         \u{20}   <key>CFBundleDisplayName</key><string>{name}</string>\n\
+         \u{20}   <key>CFBundleIdentifier</key><string>tech.krate.app.{id}</string>\n\
+         \u{20}   <key>CFBundleExecutable</key><string>{name}</string>\n\
+         \u{20}   <key>CFBundlePackageType</key><string>APPL</string>\n\
+         \u{20}   <key>CFBundleVersion</key><string>1.0</string>\n\
+         \u{20}   <key>NSHighResolutionCapable</key><true/>\n\
+         \u{20}   <key>NSCameraUsageDescription</key>\n\
+         \u{20}   <string>{name} asked for the camera, and you allowed it in Krate's \
+         permission window.</string>\n\
+         \u{20}   <key>NSMicrophoneUsageDescription</key>\n\
+         \u{20}   <string>{name} asked for the microphone, and you allowed it in Krate's \
+         permission window.</string>\n\
+         </dict>\n</plist>\n"
+    );
+    fs::write(app.join("Contents/Info.plist"), plist)?;
+
+    // Ad-hoc sign so the bundle has a stable identity for macOS to record its
+    // permission decisions against. Without a signature the decision cannot be
+    // remembered and the person is asked again on every launch.
+    let _ = std::process::Command::new("/usr/bin/codesign")
+        .args(["--force", "--sign", "-"])
+        .arg(&app)
+        .output();
+    Ok(exe)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn macos_launcher_bundle(dir: &Path, name: &str, engine: &Path) -> std::io::Result<PathBuf> {
+    let link = dir.join(name);
+    let _ = fs::remove_file(&link);
+    if fs::hard_link(engine, &link).is_err() {
+        fs::copy(engine, &link)?;
+    }
+    Ok(link)
+}
+
 fn open_app(direct: Option<PathBuf>) -> Result<u8> {
     // A document that arrives while this instance is already running an app
     // (double-click in Finder mid-session) gets its own process, so every
@@ -8667,10 +8746,22 @@ fn open_app(direct: Option<PathBuf>) -> Result<u8> {
                         .map(|h| h.join(".krate/launchers"))
                         .unwrap_or_default();
                     let _ = fs::create_dir_all(&dir);
-                    let link = dir.join(&name);
-                    let _ = fs::remove_file(&link);
                     let engine = exe.unwrap();
-                    if fs::hard_link(&engine, &link).is_ok() || fs::copy(&engine, &link).is_ok() {
+                    // A bundle, not a bare executable. The re-exec is what
+                    // puts the app's own name in the dock, but a bare binary
+                    // outside any bundle has no Info.plist -- and macOS
+                    // refuses camera and microphone access to a process that
+                    // cannot say why it wants them, silently, with no prompt
+                    // ever shown. Measured: the permission request returned
+                    // instantly, the status stayed not-determined forever, and
+                    // no dialog appeared on any run (K-145). Wrapping the same
+                    // hard link in a minimal .app keeps the dock name and
+                    // gives the process the declarations it needs.
+                    let link = match macos_launcher_bundle(&dir, &name, &engine) {
+                        Ok(link) => link,
+                        Err(_) => dir.join(&name),
+                    };
+                    if link.exists() {
                         use std::os::unix::process::CommandExt;
                         let err = std::process::Command::new(&link)
                             .arg("open-app")
@@ -9791,6 +9882,7 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
             "random.bytes" => Some(":random/"),
             "audio.playback" => Some(":audio/playback"),
             "audio.capture" => Some(":audio/capture"),
+            "camera.capture" => Some(":camera/capture"),
             "ui.dialog" => Some(":ui/dialog"),
             "ui.clipboard" => Some(":ui/clipboard"),
             // System and always-on families carry no signal here.
@@ -9802,6 +9894,26 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
                     "the manifest asks for {cap}, but the component never imports the {needle} interface -- it is asking for something the code cannot even attempt"
                 ));
             }
+        }
+
+        // Rule 3: a capability the app cannot work without, marked optional.
+        //
+        // The person is only asked about REQUIRED capabilities. An optional one
+        // is never mentioned and never granted, so an app whose whole purpose
+        // sits behind it opens without it and without a question -- and looks
+        // broken, because from the person's side it is. A generated webcam
+        // viewer marked `camera.capture` optional and opened to a permanently
+        // empty viewfinder with no prompt and no explanation (K-146).
+        //
+        // Deliberately narrow: only capabilities that ARE an app's reason for
+        // existing whenever they appear at all. A file dialog or the clipboard
+        // is genuinely a nice-to-have in most apps; a camera is not something
+        // an app reaches for in passing.
+        let defining = matches!(family, "camera.capture" | "audio.capture");
+        if defining && !request.required {
+            return Some(format!(
+                "the manifest asks for {cap} but marks it optional. The person is only asked about required capabilities, so this one is never granted and never even mentioned -- the app opens without it, with nothing on screen to say why. If the app still makes sense without {cap}, do not declare it; if it does not, mark it required"
+            ));
         }
     }
     None
@@ -10147,11 +10259,20 @@ fn run_check_app(
     //    asking for fs while importing no krate:fs interface means the
     //    manifest asks for something the component cannot even attempt.
     if let Some(problem) = manifest_overreach(&manifest, &imports) {
+        // The fix has to match the rule that fired. One combined paragraph
+        // told an app whose real mistake was an optional camera to go and
+        // rescope its fs globs, which is advice for a different app.
+        let fix = if problem.contains("marks it optional") {
+            "Set `required = true` on that capability, or remove it from the manifest \
+             entirely if the app genuinely works without it. Only required capabilities \
+             are put to the person, so an optional one is never granted."
+        } else {
+            "Scope every fs capability to the narrowest folder the app actually uses (fs.write:./exports/**), or -- for an app that works on a folder the PERSON chooses -- drop the fs capability and use `ui.dialog:open-folder`: the pick is the grant, and files are reached through picked/<token>/... on the ordinary fs calls. Remove any capability whose interface the code never imports."
+        };
         return Err(CheckFailure {
             stage: CheckStage::Manifest,
             detail: problem,
-            fix: "Scope every fs capability to the narrowest folder the app actually uses (fs.write:./exports/**), or -- for an app that works on a folder the PERSON chooses -- drop the fs capability and use `ui.dialog:open-folder`: the pick is the grant, and files are reached through picked/<token>/... on the ordinary fs calls. Remove any capability whose interface the code never imports."
-                .to_string(),
+            fix: fix.to_string(),
         });
     }
 

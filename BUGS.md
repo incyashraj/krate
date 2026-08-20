@@ -4014,22 +4014,6 @@ Update:   2026-08-16, symbolized profile (debug build, macOS M4): with the
           presenter workstation (K-112); interim wins would be caching
           shadow masks and gradient ramps keyed by their parameters.
 
-### K-119 -- No camera capability: apps that need one cannot be built yet
-Status:   open
-Owner:    lead
-Severity: minor
-Class:    runtime-hole
-Found:    2026-08-16, founder asking "is krate ready for sound, camera,
-          mic, etc" -- a capability audit, not a failure.
-Evidence: The WIT tree ships audio (playback), audio.capture (microphone),
-          and speech (on-device transcription); there is no camera
-          interface and no camera capability string. Sound and mic are
-          real today; camera is the one media door that does not exist.
-Fix:      A `camera` WIT interface (frames as the image type the canvas
-          already draws) behind a `camera.capture` capability with the
-          same plain-words consent as the microphone. Do it when the first
-          real app needs it rather than speculatively.
-
 ### K-117 -- Apps cannot paint the title bar area, so full-bleed designs are impossible
 Status:   open
 Owner:    lead
@@ -4083,6 +4067,159 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
 Status:   fixed
 
 ## Fixed
+
+### K-147 -- A camera frame's size was reported once and then wrong forever
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+The webcam app opened, the camera light came on, frames flowed -- and the
+window was black.
+
+`camera::info` reported the size the app REQUESTED, not the size the device
+actually opened at. A Mac asked for 640x480 delivers 1920x1080, so the guest
+laid 1080p bytes out as though they were 480p: it read three rows into the
+first and painted noise, which reads as black. Nothing errored anywhere, and
+the indicator light said the camera was working, because it was.
+
+Two rounds to fix, and the first one was not enough:
+
+1. `info` now prefers the size the device really delivered (a new
+   `PlatformStream::observed_size`, learned from the first frame). Still
+   black -- because the app called `info` **once**, immediately after `open`,
+   before any frame existed. It followed the pack correctly and still got the
+   wrong number.
+
+2. So the size moved onto the frame itself: `frame.width` and `frame.height`
+   travel with the bytes and cannot disagree with them. That is the real fix.
+   An API where the sizes live apart makes this mistake available; one where
+   they arrive together does not.
+
+Verified live: feed on screen, correct aspect, photo button working.
+
+The lesson worth keeping: when a generated app uses an API correctly and still
+breaks, the API is the defect. The first fix was right about the value and
+wrong about the shape, and only the shape change made the mistake unavailable.
+
+### K-146 -- An app's defining capability, marked optional, is never granted or even mentioned
+
+Class: teaching-hole + our-code (check)
+Owner: claude
+Status: fixed
+
+The generated webcam app marked `camera.capture` **optional**. Only required
+capabilities are put to the person, so it was never granted and never even
+mentioned: the app opened to a permanently empty viewfinder, no prompt, and
+nothing on screen explaining why. The same shape as the music player that
+opened silent because `audio.playback` was optional.
+
+The pack already taught this ("Cannot begin without" means the app it CLAIMS to
+be) and the AI still got it wrong, so judgment alone is not enough:
+
+- `manifest_overreach` now REFUSES a manifest that marks `camera.capture` or
+  `audio.capture` optional. Narrow on purpose -- these are never reached for in
+  passing, so their presence at all means the app is about them.
+- The failure carries its own fix text. The combined paragraph told an app
+  whose real mistake was an optional camera to go rescope its fs globs.
+- The pack names the camera in the required-capability list, and says what an
+  optional one actually costs.
+
+Evidence -- the exact app, before the manifest was corrected:
+
+    $ krate check-app .
+    FAILED at manifest
+    the manifest asks for camera.capture but marks it optional. The person is
+    only asked about required capabilities, so this one is never granted and
+    never even mentioned -- the app opens without it, with nothing on screen
+    to say why.
+
+### K-145 -- The dock-name re-exec cost every macOS permission
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+`open_app` re-execs the engine through a hard link named after the app, so the
+dock shows the app's own name rather than "krate". That link was a bare
+executable in `~/.krate/launchers`, outside any bundle -- so the running
+process had no Info.plist, and macOS refuses camera and microphone access to a
+process that cannot say why it wants them. Silently: the permission request
+returned instantly, the status stayed `not-determined` forever, and no dialog
+was ever shown.
+
+The link now lives inside a minimal generated `.app` carrying
+`NSCameraUsageDescription` and `NSMicrophoneUsageDescription`, ad-hoc signed so
+macOS has a stable identity to record the decision against. The executable is
+still a hard link to the engine, so this costs no disk and stays correct across
+upgrades. `CFBundleIdentifier` is per-app, which means each app the person
+opens is asked about separately -- one app's camera grant is not another's.
+
+### K-119 -- No camera capability: apps that need one cannot be built yet
+
+Class: runtime-hole
+Owner: claude
+Status: fixed
+
+Filed 2026-08-16 as a capability audit, with "do it when the first real app
+needs it". That app arrived: "an app that shows my webcam feed with a photo
+button" is the request the whole authoring pipeline was being measured on, and
+it was the one thing Krate could not do at all.
+
+Shipped end to end:
+
+- **`wit/krate/phase3/deps/camera/camera.wit`** -- `devices`, `open`, `info`,
+  `start`, `stop`, `read`, `close`. Shaped like `krate:audio/capture` so there
+  is one media idiom, with one deliberate difference: frames are **pulled**,
+  and only the newest is kept. A queue would mean an app drawing at 30fps from
+  a 60fps camera falls further behind every second.
+- **`camera.capture` capability**, never granted by default. The camera is the
+  most sensitive door Krate opens -- somebody's face and their room, with no
+  moment where they choose what it sees.
+- **`camera_capture.rs`** -- the shared, platform-free half: the newest-frame
+  slot, a 64-stream cap, config validation, and the rule that a stopped stream
+  drops the frame it captured while running (otherwise an app that "stopped
+  looking" still has a picture taken while the light was on).
+- **`camera_macos.rs`** -- AVFoundation behind a `CameraBackend` trait, so a
+  second platform implements only what is genuinely different. BGRA sample
+  buffers convert to the straight-alpha RGBA `canvas2d::draw_pixels` already
+  takes, delivered on a private serial queue that never touches the main
+  thread.
+- **`NSCameraUsageDescription`** in both `scripts/make-macos-app.sh` and
+  `studio/Info.plist`. Without it macOS *terminates the process* the instant
+  capture starts, with no catchable error; the backend checks for the key and
+  returns a sentence instead.
+- **Pack teaching**, plus the WIT itself now rendered into `krate-mode`, so an
+  AI can see the API exists.
+
+Two failures worth recording because both cost time and neither was obvious:
+
+1. **macOS never prompts on its own here.** AVFoundation only shows its dialog
+   implicitly when an input is created on the main thread with a run loop
+   turning, which a Krate app is not doing at that point. Measured: status
+   stayed `not-determined` for ten seconds of polling, session running, zero
+   frames, no error. The fix is to call
+   `requestAccessForMediaType:completionHandler:` explicitly.
+
+2. **Waiting for the answer freezes the app.** The first version blocked
+   `open` on the completion block. That is the same "app looks frozen" failure
+   a blocking network fetch causes (K-101), and worse here -- the thing the
+   person must click sits on top of the window frozen behind it. It now fires
+   the request and returns; AVFoundation delivers nothing until access is
+   granted, then frames simply begin. The app's loop keeps turning, which is
+   why the pack tells it to hold the last frame and paint "waiting for the
+   camera" as a state.
+
+Proof it works, from a probe in a signed bundle, after the prompt was allowed:
+
+    auth status before: "not-determined"
+      waiting 0, status now "authorized"
+    FRAME 8294400 bytes at 780ms
+
+8,294,400 bytes is 1920x1080 RGBA -- a real frame off the MacBook Air camera.
+
+Still open elsewhere: Windows and Linux have no backend, and report
+`unsupported` with a sentence naming the system rather than failing silently.
 
 ### K-143 -- The click check judged the frame before the app had redrawn
 

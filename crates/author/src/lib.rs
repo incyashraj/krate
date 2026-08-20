@@ -1073,6 +1073,7 @@ world = "gui"
 "krate:ui" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/ui" }}
 "krate:gfx" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/gfx" }}
 "krate:audio" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/audio" }}
+"krate:camera" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/camera" }}
 "krate:speech" = {{ path = "{sdk_prefix}/wit/krate/phase3/deps/speech" }}
 
 [profile.release]
