@@ -64,12 +64,31 @@ const invoke = (cmd, args) => (tauri ? tauri.core.invoke(cmd, args) : mockInvoke
   }
 })();
 
+/* The stages, shaped to where the time ACTUALLY goes.
+ *
+ * Measured across every real build (traces in ~/.krate/studio/builds):
+ *
+ *   reading Krate's API before the first line of code   272-696s  (5-11 min)
+ *   writing + checking, the real loop                   the middle
+ *   build + pack + permission wall, all three together    0-55s
+ *
+ * The old five stages lied in both directions. "Writing the code" lit up on the
+ * engine's very first line and then sat there for ten minutes while the AI was
+ * really READING -- so the longest, most opaque part of a build was labelled as
+ * something else, and it read as frozen. Meanwhile three of the five stages
+ * covered the last forty seconds and flickered past together.
+ *
+ * So: name the reading, because it is most of the wait and a person deserves to
+ * know that is what is happening; keep writing and testing separate, because
+ * they alternate and seeing which one is live is the useful signal; and merge
+ * build/pack/wall into one "finishing" step, because to a person they are one
+ * moment at the end.
+ */
 const STAGES = [
-  { key: "think", label: "Understanding what you asked for" },
+  { key: "read",  label: "Reading Krate's API" },
   { key: "write", label: "Writing the code" },
-  { key: "build", label: "Building it" },
-  { key: "pack",  label: "Packing it into one file" },
-  { key: "wall",  label: "Checking it only touches what it declared" },
+  { key: "test",  label: "Testing it" },
+  { key: "done",  label: "Finishing up" },
 ];
 
 const state = {
@@ -589,7 +608,7 @@ function beginBuild(title, expect) {
   const fill0 = $("buildFill");
   if (fill0) fill0.style.width = "4%";
   state.stageIndex = -1;
-  advanceStage("think");
+  advanceStage("read");
   state.startedAt = Date.now();
   clearInterval(state.timer);
   state.lastLineAt = Date.now();
@@ -615,9 +634,12 @@ function beginBuild(title, expect) {
   show("building");
 }
 
+/* One rail line when the work genuinely shifts -- not for every stage, or the
+ * conversation fills with narration. Reading -> writing is the moment the
+ * person has been waiting for, and finishing is the moment it is nearly done. */
 const STAGE_SAID = {
-  build: "The code is written. Building it now.",
-  wall: "Built. Checking it only touches what it declared.",
+  write: "Done reading. Writing your app's code now.",
+  done: "Code is written and tested. Packing it into one file.",
 };
 
 /* Lines that mean "a window is about to appear on your screen". When one of
@@ -676,30 +698,48 @@ function onEngineLine(line) {
 
 function onEngineLineInner(line) {
   const log = $("buildLog");
-  log.textContent += line + "\n";
-  log.scrollTop = log.scrollHeight;
+  if (log) {
+    log.textContent += line + "\n";
+    log.scrollTop = log.scrollHeight;
+  }
   const clean = line.replace(/^=+>\s*/, "").trim();
   if (clean) {
-    $("nowLine").textContent = clean;
+    const now = $("nowLine");
+    if (now) now.textContent = clean;
     state.lastLineAt = Date.now();
     // A window is about to appear (or just did). Mark the card so the flash
     // and the sound have a visible explanation at the moment they happen.
     const card = document.querySelector("#stateBuilding .build-card");
     if (card) card.classList.toggle("flashing", FLASH_WORDS.test(clean));
   }
-  if (/authoring|writing (the|your) app|starter|asking|agent|changing the app/i.test(line)) advanceStage("write");
-  if (/==> building|Compiling|Generating bindings/i.test(line)) advanceStage("build");
-  if (/==> packing/.test(line)) advanceStage("pack");
-  if (/==> verifying/.test(line)) advanceStage("wall");
+  // Drive the stages from what the AI is really doing, in the order it really
+  // does it. The engine's progress vocabulary is the source: "reading ...",
+  // "writing the app's code", "checking it builds ...". Stages only move
+  // forward (advanceStage ignores going back), so the write/check alternation
+  // settles on the furthest point reached rather than flickering.
+  if (/^\s*\d*\.?\s*reading /i.test(clean) || /authoring|starter/i.test(line)) {
+    advanceStage("read");
+  }
+  if (/writing (the app's code|a file)|writing .*\.rs|setting up the build|declaring what the app needs/i.test(clean)) {
+    advanceStage("write");
+  }
+  if (/checking it builds|running your app to test|opening your app to see|looking at how your app/i.test(clean)) {
+    advanceStage("test");
+  }
+  if (/==> building|Compiling|Generating bindings/i.test(line)) advanceStage("test");
+  // Packing and the permission wall are the last seconds of a ten-minute
+  // build; to a person they are one moment, so they share one step.
+  if (/==> packing|==> verifying/.test(line)) advanceStage("done");
 }
 
 /* When the engine goes quiet -- an AI thinking is real silence -- the
  * heartbeat keeps beating with honest words, so quiet never looks dead. */
 const THINKING = [
-  "the AI is reading and thinking - this part is quiet",
-  "still working - the writing shows up here when it starts",
-  "big thoughts take a minute or two",
+  "reading Krate's API reference - this part is quiet",
+  "still reading - this is the longest part of a build",
+  "working through the examples",
   "still at it - nothing is stuck",
+  "the writing starts once it has read enough",
 ];
 
 function fillDone(result, opts) {
