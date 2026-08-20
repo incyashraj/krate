@@ -32,15 +32,15 @@ use objc2_av_foundation::{
 };
 use objc2_core_media::CMSampleBuffer;
 use objc2_core_video::{
-    kCVPixelFormatType_32BGRA, CVPixelBufferGetBaseAddress,
-    CVPixelBufferGetBytesPerRow, CVPixelBufferGetHeight, CVPixelBufferGetWidth,
-    CVPixelBufferLockBaseAddress, CVPixelBufferLockFlags, CVPixelBufferUnlockBaseAddress,
+    kCVPixelFormatType_32BGRA, CVPixelBufferGetBaseAddress, CVPixelBufferGetBytesPerRow,
+    CVPixelBufferGetHeight, CVPixelBufferGetWidth, CVPixelBufferLockBaseAddress,
+    CVPixelBufferLockFlags, CVPixelBufferUnlockBaseAddress,
 };
 use objc2_foundation::{NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSString};
 
 use crate::camera_capture::{
-    CameraBackend, CameraConfig, CameraError, DeviceInfo, Frame, FrameFormat, FrameInfo,
-    FrameSlot, PlatformStream,
+    CameraBackend, CameraConfig, CameraError, DeviceInfo, Frame, FrameFormat, FrameInfo, FrameSlot,
+    PlatformStream,
 };
 
 /// State the delegate needs to turn a sample buffer into a frame.
@@ -355,10 +355,9 @@ impl CameraBackend for MacosCameraBackend {
         // input initialiser reports a failure as an Objective-C error, which
         // objc2 surfaces as Err.
         let session = unsafe { AVCaptureSession::new() };
-        let input = unsafe { AVCaptureDeviceInput::initWithDevice_error(
-            AVCaptureDeviceInput::alloc(),
-            &device,
-        ) }
+        let input = unsafe {
+            AVCaptureDeviceInput::initWithDevice_error(AVCaptureDeviceInput::alloc(), &device)
+        }
         .map_err(|err| CameraError::Platform(err.localizedDescription().to_string()))?;
 
         // SAFETY: adding an input the session accepts; asked first so a
@@ -466,5 +465,3 @@ fn preset_for(width: u32, height: u32) -> &'static AVCaptureSessionPreset {
         }
     }
 }
-
-

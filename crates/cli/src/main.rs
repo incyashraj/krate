@@ -8704,15 +8704,11 @@ fn macos_launcher_bundle(dir: &Path, name: &str, engine: &Path) -> std::io::Resu
     Ok(exe)
 }
 
-#[cfg(not(target_os = "macos"))]
-fn macos_launcher_bundle(dir: &Path, name: &str, engine: &Path) -> std::io::Result<PathBuf> {
-    let link = dir.join(name);
-    let _ = fs::remove_file(&link);
-    if fs::hard_link(engine, &link).is_err() {
-        fs::copy(engine, &link)?;
-    }
-    Ok(link)
-}
+// No non-macOS variant of `macos_launcher_bundle`: its only caller is inside
+// `open_app`, which is macOS-only, so one on other systems is dead code that
+// CI correctly refuses. The dock-name re-exec this supports is a macOS
+// concern -- Windows and Linux name a process from its own executable without
+// the hop.
 
 /// Gated to macOS, and it has to stay that way: the body uses `std::os::unix`,
 /// `Command::exec`, and `krate_adapter_macos`, none of which exist on Windows.

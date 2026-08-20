@@ -9,6 +9,8 @@ const EXPECTED_IMPORTS: &[&str] = &[
     "krate:audio/capture@0.1.0",
     "krate:audio/playback@0.1.0",
     "krate:audio/types@0.1.0",
+    "krate:camera/capture@0.1.0",
+    "krate:camera/types@0.1.0",
     "krate:fs/files@0.1.0",
     "krate:fs/types@0.1.0",
     "krate:gfx/canvas2d@0.1.0",
@@ -50,6 +52,7 @@ const EXPECTED_IMPORTS: &[&str] = &[
 const EXPECTED_PACKAGES: &[&str] = &[
     "krate:app@0.2.0",
     "krate:audio@0.1.0",
+    "krate:camera@0.1.0",
     "krate:fs@0.1.0",
     "krate:gfx@0.1.0",
     "krate:io@0.1.0",
@@ -63,7 +66,7 @@ const EXPECTED_PACKAGES: &[&str] = &[
     "krate:ui@0.1.0",
 ];
 
-const PHASE3_PERMISSION_ERRORS: &[&str] = &["ui-error", "gfx-error", "audio-error"];
+const PHASE3_PERMISSION_ERRORS: &[&str] = &["ui-error", "gfx-error", "audio-error", "camera-error"];
 
 fn main() -> Result<()> {
     let format = OutputFormat::parse(env::args().skip(1))?;

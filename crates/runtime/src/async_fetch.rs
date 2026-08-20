@@ -140,7 +140,6 @@ impl AsyncFetches {
         Ok(handle)
     }
 
-
     /// Ask what happened. Returns immediately, always.
     ///
     /// A terminal answer retires the handle, so a second poll of a finished
@@ -201,11 +200,12 @@ mod tests {
     fn begin_returns_before_the_work_is_done() {
         let mut fetches = AsyncFetches::new();
         let started = std::time::Instant::now();
-        let handle = fetches.begin(|| {
-            std::thread::sleep(std::time::Duration::from_millis(400));
-            Ok(response(200))
-        })
-        .expect("a worker started");
+        let handle = fetches
+            .begin(|| {
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                Ok(response(200))
+            })
+            .expect("a worker started");
         let elapsed = started.elapsed();
 
         assert!(handle > 0, "handles start at 1 so 0 is never valid");
@@ -218,11 +218,12 @@ mod tests {
     #[test]
     fn a_slow_request_reads_as_pending_then_ready() {
         let mut fetches = AsyncFetches::new();
-        let handle = fetches.begin(|| {
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            Ok(response(201))
-        })
-        .expect("a worker started");
+        let handle = fetches
+            .begin(|| {
+                std::thread::sleep(std::time::Duration::from_millis(150));
+                Ok(response(201))
+            })
+            .expect("a worker started");
 
         assert!(
             matches!(fetches.poll(handle), FetchStatus::Pending),
@@ -251,7 +252,9 @@ mod tests {
     #[test]
     fn a_handle_is_retired_once_it_answers() {
         let mut fetches = AsyncFetches::new();
-        let handle = fetches.begin(|| Ok(response(200))).expect("a worker started");
+        let handle = fetches
+            .begin(|| Ok(response(200)))
+            .expect("a worker started");
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while matches!(fetches.poll(handle), FetchStatus::Pending) {
@@ -299,11 +302,12 @@ mod tests {
     #[test]
     fn cancel_retires_the_handle_and_is_safe_to_repeat() {
         let mut fetches = AsyncFetches::new();
-        let handle = fetches.begin(|| {
-            std::thread::sleep(std::time::Duration::from_millis(300));
-            Ok(response(200))
-        })
-        .expect("a worker started");
+        let handle = fetches
+            .begin(|| {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+                Ok(response(200))
+            })
+            .expect("a worker started");
 
         fetches.cancel(handle);
         assert_eq!(fetches.live_count(), 0);
@@ -320,12 +324,15 @@ mod tests {
     #[test]
     fn requests_do_not_get_each_others_answers() {
         let mut fetches = AsyncFetches::new();
-        let slow = fetches.begin(|| {
-            std::thread::sleep(std::time::Duration::from_millis(200));
-            Ok(response(200))
-        })
-        .expect("a worker started");
-        let quick = fetches.begin(|| Ok(response(404))).expect("a worker started");
+        let slow = fetches
+            .begin(|| {
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                Ok(response(200))
+            })
+            .expect("a worker started");
+        let quick = fetches
+            .begin(|| Ok(response(404)))
+            .expect("a worker started");
 
         assert_ne!(slow, quick, "handles must be distinct");
 

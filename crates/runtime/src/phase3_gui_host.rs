@@ -20,10 +20,10 @@ use std::sync::Arc;
 
 use crate::{
     audio_capture::{AudioCaptureRuntime, CaptureConfig, CaptureError, CaptureSampleFormat},
+    audio_playback::{AudioPlaybackRuntime, PlaybackConfig, PlaybackError, PlaybackSampleFormat},
     camera_capture::{
         CameraCaptureRuntime, CameraConfig, CameraError, FrameFormat as CameraFrameFormat,
     },
-    audio_playback::{AudioPlaybackRuntime, PlaybackConfig, PlaybackError, PlaybackSampleFormat},
     canvas_raster::{pack_color, CanvasSurface},
     phase3_gui_bindings::krate::{audio, camera, gfx, speech, ui},
     phase3_ui::{Phase3HostUiMode, Phase3UiDispatcher, Phase3UiRuntime, UiDispatchError},
@@ -4493,7 +4493,10 @@ impl camera::capture::Host for Phase3GuiHost {
             .map_err(camera_error))
     }
 
-    fn start(&mut self, stream_id: u64) -> wasmtime::Result<Result<(), camera::types::CameraError>> {
+    fn start(
+        &mut self,
+        stream_id: u64,
+    ) -> wasmtime::Result<Result<(), camera::types::CameraError>> {
         if self.camera_denied() {
             return Ok(Err(camera::types::CameraError::PermissionDenied));
         }
@@ -4528,7 +4531,10 @@ impl camera::capture::Host for Phase3GuiHost {
             .map_err(camera_error))
     }
 
-    fn close(&mut self, stream_id: u64) -> wasmtime::Result<Result<(), camera::types::CameraError>> {
+    fn close(
+        &mut self,
+        stream_id: u64,
+    ) -> wasmtime::Result<Result<(), camera::types::CameraError>> {
         // Like `stop`, always allowed: releasing the device is never the thing
         // a person needs protecting from.
         Ok(self.cameras.close(stream_id).map_err(camera_error))
