@@ -723,6 +723,33 @@ mod real {
         with_tracked(krate, |tracked| tracked.window.set_title(title)).map(|set| set.is_some())
     }
 
+    /// Turn the window's decorations off (or back on) for a full-bleed app.
+    ///
+    /// On Linux the window manager owns the frame, so this is a request rather
+    /// than a guarantee: most compositors honour it, some tiling ones ignore
+    /// decorations entirely and the app was already full-bleed. Either way the
+    /// app paints the same picture -- it lays out from `canvas_size`, and the
+    /// size it gets back is the truth.
+    ///
+    /// Returns the size afterwards so the caller can report a resize: losing
+    /// the frame changes the client area, and a canvas that does not refit
+    /// leaves stale pixels where the decorations were.
+    pub fn set_native_window_full_bleed(
+        krate: WindowId,
+        enabled: bool,
+    ) -> Result<Option<WindowSize>, UiAdapterError> {
+        with_tracked(krate, |tracked| {
+            tracked.window.set_decorations(!enabled);
+            let size = tracked.window.inner_size();
+            let scale = tracked.window.scale_factor();
+            let logical = size.to_logical::<f64>(scale);
+            WindowSize {
+                width: logical.width.round().max(1.0) as u32,
+                height: logical.height.round().max(1.0) as u32,
+            }
+        })
+    }
+
     /// Ask the native window for a redraw.
     pub fn request_native_redraw(krate: WindowId) -> Result<bool, UiAdapterError> {
         with_tracked(krate, |tracked| tracked.window.request_redraw())
@@ -924,6 +951,13 @@ mod stub {
     }
 
     /// Winit windows are only available in Linux builds.
+    pub fn set_native_window_full_bleed(
+        _krate: WindowId,
+        _enabled: bool,
+    ) -> Result<Option<WindowSize>, UiAdapterError> {
+        unsupported()
+    }
+
     pub fn set_native_window_title(_krate: WindowId, _title: &str) -> Result<bool, UiAdapterError> {
         unsupported()
     }

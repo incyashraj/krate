@@ -60,6 +60,9 @@ krate-adapter-ios = { path = "../adapter-ios", version = "0.1.0-dev" }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 krate-adapter-linux = { path = "../adapter-linux", version = "0.1.0-dev" }
+# Camera capture through V4L2. Needs the kernel headers (libv4l-dev) at build
+# time, which is why this cannot be cross-checked from a Mac.
+nokhwa = { version = "0.10", default-features = false, features = ["input-v4l"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 krate-adapter-macos = { path = "../adapter-macos", version = "0.1.0-dev" }
@@ -77,6 +80,11 @@ block2 = "0.6.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 krate-adapter-windows = { path = "../adapter-windows", version = "0.1.0-dev" }
+# Camera capture through Media Foundation. macOS has its own AVFoundation
+# backend because it needs the platform permission dance; Windows and Linux do
+# not, and nokhwa wraps both their native APIs behind one interface, so one
+# file closes both gaps instead of two bodies of unsafe code.
+nokhwa = { version = "0.10", default-features = false, features = ["input-msmf"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"

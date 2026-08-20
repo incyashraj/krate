@@ -693,6 +693,36 @@ mod real {
         with_tracked(krate, |tracked| tracked.window.set_title(title)).map(|set| set.is_some())
     }
 
+    /// Turn the window's title bar and border off (or back on).
+    ///
+    /// This is what full-bleed means on Windows: an undecorated window whose
+    /// client area is the whole window, so the app paints to every edge. macOS
+    /// keeps its traffic lights and overlays them on the app's own drawing;
+    /// Windows has no equivalent overlay, so the buttons go away with the
+    /// frame. That is a real difference, and the honest one -- the alternative
+    /// is extending the client area into the frame with DwmExtendFrameIntoClientArea
+    /// and hit-testing the caption by hand, which is a lot of surface to get
+    /// wrong for a cosmetic gain.
+    ///
+    /// Returns the window's size afterwards so the caller can report a resize:
+    /// losing the title bar changes the client area, and a canvas that does not
+    /// refit leaves a band of stale pixels where the frame used to be.
+    pub fn set_native_window_full_bleed(
+        krate: WindowId,
+        enabled: bool,
+    ) -> Result<Option<WindowSize>, UiAdapterError> {
+        with_tracked(krate, |tracked| {
+            tracked.window.set_decorations(!enabled);
+            let size = tracked.window.inner_size();
+            let scale = tracked.window.scale_factor();
+            let logical = size.to_logical::<f64>(scale);
+            WindowSize {
+                width: logical.width.round().max(1.0) as u32,
+                height: logical.height.round().max(1.0) as u32,
+            }
+        })
+    }
+
     /// Ask the native window for a redraw.
     pub fn request_native_redraw(krate: WindowId) -> Result<bool, UiAdapterError> {
         with_tracked(krate, |tracked| tracked.window.request_redraw())
@@ -834,6 +864,13 @@ mod stub {
     }
 
     /// Winit windows are only available in Windows builds.
+    pub fn set_native_window_full_bleed(
+        _krate: WindowId,
+        _enabled: bool,
+    ) -> Result<Option<WindowSize>, UiAdapterError> {
+        unsupported()
+    }
+
     pub fn set_native_window_title(_krate: WindowId, _title: &str) -> Result<bool, UiAdapterError> {
         unsupported()
     }

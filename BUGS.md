@@ -215,11 +215,33 @@ What WORKS on Windows, verified:
   reaction told apart from the animation. K-140, K-143 and K-147 are
   genuinely cross-platform, not macOS-shaped fixes that happen to compile.
 
-What is still missing, confirmed by running rather than by grep:
+What was still missing, and is now closed (2026-08-20):
 
-- **camera** -- the webcam app reports `camera:unavailable`, `frames:0`. Honest
-  degradation, no crash, but no camera.
-- **set-full-bleed** -- no implementation; the trait default refuses.
+- **camera** -- a nokhwa backend now serves BOTH Windows (Media Foundation)
+  and Linux (V4L2) behind the same `CameraBackend` trait macOS uses, so one
+  file closes both gaps instead of two bodies of unsafe code. Compiles on the
+  Windows VM (`EXIT=0`). It cannot be proven end to end there -- an Azure VM
+  has no camera hardware, confirmed with `Get-PnpDevice` -- so `unavailable`
+  remains the correct answer on that machine. Pinned instead by
+  `every_desktop_platform_has_a_camera_backend`, which fails if any desktop
+  platform loses its backend.
+- **set-full-bleed** -- implemented for Windows and Linux as an undecorated
+  winit window, returning the new size so the canvas refits rather than
+  leaving stale pixels where the frame was.
+
+  Writing the test found a second, larger hole: `discover_ui_adapter()` returns
+  the DRAFT adapter, which had no `set_full_bleed` at all and so inherited the
+  trait default -- which refuses. The draft leg accepts on macOS, so the
+  refusal was unique to Windows and Linux, and silent, because an app ignores
+  the error and carries on. Both now delegate to the draft explicitly.
+
+One difference is deliberate and worth stating: macOS keeps its traffic lights
+and overlays them on the app's drawing. Windows has no equivalent overlay, so
+an undecorated window loses its buttons; the alternative is extending the
+client area into the frame and hit-testing the caption by hand, which is a lot
+of surface to get wrong for a cosmetic gain. On Linux the window manager owns
+the frame, so this is a request -- most compositors honour it, and a tiling one
+that draws no decorations was already full-bleed.
 
 Two blockers found on the way are their own entries: K-150 (main had not
 compiled for Windows since v0.1.51) and K-149 (LLVM and CMake are undocumented

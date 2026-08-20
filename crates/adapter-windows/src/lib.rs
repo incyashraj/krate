@@ -245,6 +245,14 @@ impl WindowAdapter for WindowsUiAdapter {
         WindowAdapter::set_title(&self.draft, id, title)
     }
 
+    /// Delegated, not inherited. The trait default REFUSES, and inheriting it
+    /// here is how every full-bleed app on this system quietly got standard
+    /// chrome (K-148). The draft leg accepts, exactly as macOS does, so an app
+    /// that asks is never failed for asking.
+    fn set_full_bleed(&self, id: WindowId, enabled: bool) -> Result<(), UiAdapterError> {
+        WindowAdapter::set_full_bleed(&self.draft, id, enabled)
+    }
+
     fn set_size(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {
         WindowAdapter::set_size(&self.draft, id, size)
     }
@@ -396,6 +404,26 @@ impl WindowAdapter for WindowsWinitPrototypeUiAdapter {
 
     fn set_size(&self, id: WindowId, size: WindowSize) -> Result<(), UiAdapterError> {
         WindowAdapter::set_size(&self.headless, id, size)
+    }
+
+    /// Full-bleed on Windows is an undecorated window (K-117, K-148).
+    ///
+    /// The pack encourages full-bleed designs and macOS has shipped them since
+    /// K-117, but Windows had no implementation at all, so the trait default
+    /// refused and every such app got standard chrome instead -- silently,
+    /// because the app ignores the error and carries on.
+    ///
+    /// Losing the title bar changes the client area, so the new size is queued
+    /// as a resize; without that the canvas keeps its old dimensions and leaves
+    /// a stale band where the frame used to be.
+    fn set_full_bleed(&self, id: WindowId, enabled: bool) -> Result<(), UiAdapterError> {
+        if winit_native::has_native_window(id).unwrap_or(false) {
+            if let Some(size) = winit_native::set_native_window_full_bleed(id, enabled)? {
+                let _ = WindowAdapter::queue_host_resize(&self.headless, id, size);
+                return Ok(());
+            }
+        }
+        WindowAdapter::set_full_bleed(&self.headless, id, enabled)
     }
 
     fn request_redraw(&self, id: WindowId) -> Result<(), UiAdapterError> {
@@ -796,6 +824,30 @@ pub fn apply_no_follow_final_symlink(opts: &mut OpenOptions) {
 
 #[cfg(test)]
 mod tests {
+
+    /// An app asking for a full-bleed window must not be refused (K-148).
+    ///
+    /// macOS has honoured this since K-117; Windows had no implementation, so
+    /// the trait default refused and every full-bleed app quietly got standard
+    /// chrome. Apps ignore the error and carry on, which is why nobody noticed.
+    ///
+    /// This runs against the headless leg -- there is no native window in a
+    /// test -- so what it pins is that the ADAPTER accepts the request rather
+    /// than rejecting it as unsupported.
+    #[test]
+    fn a_full_bleed_request_is_accepted_rather_than_refused() {
+        let adapter = discover_ui_adapter();
+        let size = WindowSize::new(640, 480).expect("size");
+        let id = adapter
+            .create_window(WindowOptions::new("Full bleed", size).expect("options"))
+            .expect("create window");
+        adapter
+            .set_full_bleed(id, true)
+            .expect("a full-bleed request must be accepted, not refused");
+        adapter
+            .set_full_bleed(id, false)
+            .expect("turning it back off must work too");
+    }
     use super::*;
 
     #[test]

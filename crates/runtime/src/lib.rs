@@ -32,6 +32,8 @@ mod audio_playback;
 pub mod camera_capture;
 #[cfg(target_os = "macos")]
 mod camera_macos;
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+mod camera_nokhwa;
 mod canvas_raster;
 pub use krate_adapter_common::canvas_list;
 pub mod chosen_files;

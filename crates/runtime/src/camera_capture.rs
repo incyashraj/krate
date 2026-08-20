@@ -355,7 +355,13 @@ fn platform_backend() -> Option<Box<dyn CameraBackend>> {
     {
         Some(Box::new(crate::camera_macos::MacosCameraBackend))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+        Some(Box::new(
+            crate::camera_nokhwa::NokhwaCameraBackend::default(),
+        ))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
         None
     }
@@ -607,6 +613,27 @@ mod tests {
         ));
     }
 
+    /// The parity guarantee, in a form CI can check on every platform.
+    ///
+    /// A camera backend must EXIST on all three desktop systems. It cannot
+    /// prove a camera works -- CI runners and cloud VMs have no camera
+    /// hardware -- but it does prove the platform is wired at all, which is
+    /// the thing that was silently false for Windows and Linux until now: the
+    /// `None` branch meant every webcam app reported `unsupported` forever
+    /// (K-148).
+    ///
+    /// If this fails on a desktop platform, somebody removed a backend or
+    /// added an OS without one, and every camera app there is dead.
+    #[test]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    fn every_desktop_platform_has_a_camera_backend() {
+        assert!(
+            platform_backend().is_some(),
+            "this desktop platform has no camera backend, so every camera app on it \
+             reports unsupported no matter what the person does"
+        );
+    }
+
     /// A system with no backend says so plainly rather than pretending.
     #[test]
     fn a_system_without_a_backend_reports_unsupported() {
@@ -619,6 +646,9 @@ mod tests {
             cameras.open("", config()),
             Err(CameraError::Unsupported(_))
         ));
-        assert!(matches!(cameras.devices(), Err(CameraError::Unsupported(_))));
+        assert!(matches!(
+            cameras.devices(),
+            Err(CameraError::Unsupported(_))
+        ));
     }
 }
