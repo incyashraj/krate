@@ -993,6 +993,20 @@ impl Phase3GuiHost {
     /// lowered control, whose rectangle the host does know, can produce a
     /// confident failure.
     fn usability_press_target(&self, window: WindowId) -> Option<(f32, f32, bool)> {
+        // Aim the driven press at a named point instead of the canvas centre.
+        // A canvas app draws its own controls, so centre-of-canvas is a guess
+        // that lands on empty space as often as not -- and empty space looks
+        // exactly like a dead button. `KRATE_PRESS_AT=x,y` lets a check press
+        // a control it knows the position of and get a real verdict.
+        if let Some(spec) = std::env::var_os("KRATE_PRESS_AT") {
+            let spec = spec.to_string_lossy().to_string();
+            let mut parts = spec.split(',');
+            if let (Some(x), Some(y)) = (parts.next(), parts.next()) {
+                if let (Ok(x), Ok(y)) = (x.trim().parse::<f32>(), y.trim().parse::<f32>()) {
+                    return Some((x, y, true));
+                }
+            }
+        }
         let (size, placements) = self.window_placements(window).ok()??;
         for placement in &placements {
             if placement.clickable && placement.width > 1.0 && placement.height > 1.0 {
@@ -1281,6 +1295,13 @@ impl Phase3GuiHost {
         match event {
             ui::types::Event::Pointer(mut p) => {
                 let (x, y) = back(p.x, p.y);
+                if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
+                    eprintln!(
+                        "krate-event: pointer window=({:.1},{:.1}) -> design=({:.1},{:.1}) \
+                         canvas={cw}x{ch} design={dw}x{dh} k={k:.3} off=({ox:.1},{oy:.1})",
+                        p.x, p.y, x, y
+                    );
+                }
                 p.x = x;
                 p.y = y;
                 ui::types::Event::Pointer(p)

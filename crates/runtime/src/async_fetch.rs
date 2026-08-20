@@ -43,6 +43,25 @@ pub enum FetchStatus {
     UnknownHandle,
 }
 
+/// The most requests that may be in the air at once.
+///
+/// Every in-flight request holds an OS thread, and a process does not get
+/// unlimited ones: measured on this machine, `thread::spawn` starts failing at
+/// 4095. It *panics* on that failure, which takes the whole runtime down --
+/// the app does not misbehave, it disappears, and the person gets a crash
+/// dialog from the operating system.
+///
+/// Reaching the ceiling does not take a hostile app. A cancelled request keeps
+/// its thread until the request's own timeout expires (`cancel` cannot kill a
+/// thread), so an app that starts one request per city and is refreshed
+/// repeatedly stacks threads faster than they retire. This is the cap that
+/// turns that into an honest `too-many-requests` the app can handle, instead
+/// of a crash it cannot.
+///
+/// Sized well above what a real app needs at once -- a dashboard fetching a
+/// dozen cities is nowhere near it -- and far below where the OS gives out.
+pub const MAX_IN_FLIGHT: usize = 64;
+
 /// One request in flight, waiting on its worker.
 struct Pending {
     rx: Receiver<Result<HttpResponse, AdapterError>>,
@@ -80,25 +99,47 @@ impl AsyncFetches {
     /// **The caller must have run the capability check already.** This is the
     /// one invariant that cannot be enforced from inside here, so it is stated
     /// at every call site and pinned by a test in `uapi_dispatch`.
-    pub fn begin<F>(&mut self, work: F) -> u64
+    /// `Err` means the request was not started, and the caller must report
+    /// that to the guest rather than hand back a handle nothing will answer.
+    pub fn begin<F>(&mut self, work: F) -> Result<u64, AdapterError>
     where
         F: FnOnce() -> Result<HttpResponse, AdapterError> + Send + 'static,
     {
+        if self.live.len() >= MAX_IN_FLIGHT {
+            return Err(AdapterError::Network(format!(
+                "{MAX_IN_FLIGHT} requests are already in flight; wait for one to finish \
+                 before starting another"
+            )));
+        }
+
         // Handles start at 1 so that 0 is never valid: a guest that forgets to
         // store the handle gets `unknown-handle` rather than someone's result.
         self.next_handle += 1;
         let handle = self.next_handle;
 
         let (tx, rx) = channel();
-        std::thread::spawn(move || {
-            // A send failure means the handle was cancelled and the receiver
-            // is gone. That is expected, not an error: drop the answer.
-            let _ = tx.send(work());
-        });
+        // `Builder::spawn` rather than `thread::spawn`: the plain one PANICS
+        // when the OS is out of threads, and a panic here kills the runtime
+        // and every app in it. Refusing one request is survivable; the panic
+        // is not.
+        let spawned = std::thread::Builder::new()
+            .name("krate-fetch".to_string())
+            .spawn(move || {
+                // A send failure means the handle was cancelled and the
+                // receiver is gone. That is expected, not an error: drop the
+                // answer.
+                let _ = tx.send(work());
+            });
+        if let Err(err) = spawned {
+            return Err(AdapterError::Network(format!(
+                "could not start a worker for this request: {err}"
+            )));
+        }
 
         self.live.insert(handle, Pending { rx });
-        handle
+        Ok(handle)
     }
+
 
     /// Ask what happened. Returns immediately, always.
     ///
@@ -163,7 +204,8 @@ mod tests {
         let handle = fetches.begin(|| {
             std::thread::sleep(std::time::Duration::from_millis(400));
             Ok(response(200))
-        });
+        })
+        .expect("a worker started");
         let elapsed = started.elapsed();
 
         assert!(handle > 0, "handles start at 1 so 0 is never valid");
@@ -179,7 +221,8 @@ mod tests {
         let handle = fetches.begin(|| {
             std::thread::sleep(std::time::Duration::from_millis(150));
             Ok(response(201))
-        });
+        })
+        .expect("a worker started");
 
         assert!(
             matches!(fetches.poll(handle), FetchStatus::Pending),
@@ -208,7 +251,7 @@ mod tests {
     #[test]
     fn a_handle_is_retired_once_it_answers() {
         let mut fetches = AsyncFetches::new();
-        let handle = fetches.begin(|| Ok(response(200)));
+        let handle = fetches.begin(|| Ok(response(200))).expect("a worker started");
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while matches!(fetches.poll(handle), FetchStatus::Pending) {
@@ -223,7 +266,9 @@ mod tests {
     #[test]
     fn a_failed_request_is_reported_as_failed_not_pending() {
         let mut fetches = AsyncFetches::new();
-        let handle = fetches.begin(|| Err(AdapterError::Network("boom".to_string())));
+        let handle = fetches
+            .begin(|| Err(AdapterError::Network("boom".to_string())))
+            .expect("a worker started");
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
@@ -257,7 +302,8 @@ mod tests {
         let handle = fetches.begin(|| {
             std::thread::sleep(std::time::Duration::from_millis(300));
             Ok(response(200))
-        });
+        })
+        .expect("a worker started");
 
         fetches.cancel(handle);
         assert_eq!(fetches.live_count(), 0);
@@ -277,8 +323,9 @@ mod tests {
         let slow = fetches.begin(|| {
             std::thread::sleep(std::time::Duration::from_millis(200));
             Ok(response(200))
-        });
-        let quick = fetches.begin(|| Ok(response(404)));
+        })
+        .expect("a worker started");
+        let quick = fetches.begin(|| Ok(response(404))).expect("a worker started");
 
         assert_ne!(slow, quick, "handles must be distinct");
 
@@ -299,5 +346,41 @@ mod tests {
 
         // The slow one is untouched by the quick one finishing.
         assert!(matches!(fetches.poll(slow), FetchStatus::Pending));
+    }
+
+    /// The crash this cap exists to prevent (K-137).
+    ///
+    /// Every in-flight request holds an OS thread and `thread::spawn` panics
+    /// once the OS runs out, which kills the runtime rather than the request.
+    /// Past the cap `begin` must refuse in a way the guest can act on, and the
+    /// refusal must not disturb the requests already running.
+    #[test]
+    fn past_the_cap_a_request_is_refused_instead_of_crashing() {
+        let mut fetches = AsyncFetches::new();
+        let mut handles = Vec::new();
+        for _ in 0..MAX_IN_FLIGHT {
+            let handle = fetches
+                .begin(|| {
+                    std::thread::sleep(std::time::Duration::from_secs(30));
+                    Ok(response(200))
+                })
+                .expect("every request up to the cap starts");
+            handles.push(handle);
+        }
+
+        let refused = fetches.begin(|| Ok(response(200)));
+        assert!(
+            refused.is_err(),
+            "the request past the cap must be refused, not started"
+        );
+
+        // The refusal is an answer, not a casualty: what was already running
+        // is still running, and freeing one slot lets the next request in.
+        assert_eq!(fetches.live_count(), MAX_IN_FLIGHT);
+        fetches.cancel(handles[0]);
+        assert!(
+            fetches.begin(|| Ok(response(200))).is_ok(),
+            "a freed slot must accept the next request"
+        );
     }
 }

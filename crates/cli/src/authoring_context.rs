@@ -119,6 +119,21 @@ Two honest choices, and check-app enforces one of them:\n\n\
    coordinates. Best for games and anything whose layout IS its design.\n\n\
 Doing neither is the single commonest way a generated app fails the \
 person using it.\n\n\
+**Pick 1 unless the layout is genuinely a fixed picture.** A design size is \
+right for a game board, a clock face, a diagram -- things where the \
+arrangement is the point and extra room should stay empty. It is the wrong \
+choice for a dashboard, a feed, a list, a settings pane, or anything with \
+cards and rows: those should USE a bigger window, and under a design size \
+they instead sit letterboxed with dead bands around them while the text \
+scales up soft. When in doubt, lay out from `canvas_size`. It is the \
+recoverable mistake; a design size baked into 2000 lines of drawing is not.\n\n\
+**A design size does not excuse you from handling the wheel.** This is the \
+trap it sets, and a real generated weather dashboard fell into it: because \
+the design box never overflows itself, it looks like there is nothing to \
+scroll, so `Event::Wheel` gets left out entirely. But the person is looking \
+at a window, not at your box -- they see cards running to the bottom edge, \
+they scroll, and nothing moves. Handle `Event::Wheel` in any app with a \
+list, a feed, rows, or cards, whichever layout choice you made.\n\n\
 ## Pixel buffers composited over a scene need faded edges\n\n\
 `draw-pixels` puts your buffer on screen as an exact rectangle. If the \
 buffer's border pixels are not fully transparent, that rectangle's edge is \
@@ -743,7 +758,11 @@ position to the same rectangle you filled. Keep the layout in one place so the \
 drawing and the hit-testing cannot disagree.\n\n\
 **Make content taller than the window scroll.** A list that outgrows the window \
 is the normal case, not an edge case, and an app that draws six of thirty-two \
-rows and a \"+ 26 more\" label has lost the other twenty-six for good. The \
+rows and a \"+ 26 more\" label has lost the other twenty-six for good. Judge \
+this by what the app SHOWS -- rows, cards, a feed, a document -- not by \
+whether your own layout maths happens to overflow today: a fixed design size \
+never overflows itself, and skipping the wheel on that reasoning ships an app \
+that ignores every scroll gesture a person makes at it. The \
 runtime sends `Event::Wheel(wheel-event)` for a mouse wheel, a trackpad, or a \
 scroll gesture, with `dx` and `dy` in logical pixels (positive `dy` scrolls \
 down, further into the list) already normalized across all three systems. Keep \

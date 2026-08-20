@@ -71,6 +71,71 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-138 -- Generated apps pick a fixed design size and then cannot be scrolled
+
+Class: teaching-hole
+Owner: unclaimed
+
+`weather-dashboard.krate`, authored by claude on 2026-08-20, handles no wheel
+events at all -- there is no `Event::Wheel` arm anywhere in its 2279 lines. The
+founder's report was "not clickable or scrollable"; the scrolling half is real
+and this is why.
+
+The cause is a decision the pack never covers. The app calls
+`canvas2d::set_design_size(canvas, 920x640)` and lays every control out at fixed
+coordinates inside that box. Having done so, the AI reasoned there was nothing
+to scroll -- the design never overflows itself -- and skipped wheel handling
+entirely. The host then letterboxes 920x640 into whatever window the person
+opened, so on a real screen the content is scaled and a scroll gesture does
+nothing at all.
+
+The pack teaches scrolling well (authoring_context.rs:744-772: offsets in
+pixels, clamp, subtract from hit-testing, clip the region) but conditions the
+whole lesson on "a list that outgrows the window". An app with a fixed design
+size never outgrows its own box, so the lesson reads as not applying. Nothing
+in the pack says what a design size costs, or that a person will still try to
+scroll a window that looks like a dashboard.
+
+Evidence:
+
+    $ grep -n "Wheel" wd-src/source/src/lib.rs
+    (no output)
+
+    $ grep -n "Wheel" ios-src/source/src/lib.rs
+    2997:                    Some(types::Event::Wheel(w)) => {
+
+Two apps, same author, same session, same prompt shape: one handles the wheel
+and one does not. That inconsistency is the teaching hole, not chance.
+
+The fix is pack-side: say when a design size is the right call and when it is
+not, and say that a fixed design size does not excuse an app from handling the
+wheel.
+
+### K-137 -- Concurrent fetches spawn unbounded OS threads, and the host panics when they run out
+
+Class: our-code
+Owner: claude (FIXED, see Fixed)
+
+`AsyncFetches::begin` called `std::thread::spawn` once per in-flight request
+with no cap. `std::thread::spawn` **panics** when the OS refuses a thread, and a
+panic in the host is not a failed request -- it takes the runtime down and the
+person gets an operating-system crash dialog. This is the crash the founder saw
+opening `ios.krate`.
+
+An app does not have to be hostile to reach it. `cancel` cannot kill a running
+thread (there is no safe way to), so a cancelled request keeps its worker until
+its own timeout expires -- 9 seconds in these apps. `ios.krate` starts one
+request per saved city in `refresh_all`, so a list that is refreshed repeatedly
+stacks workers faster than they retire.
+
+Evidence -- the ceiling on this machine, measured:
+
+    $ cat /tmp/thr.rs   # spawn sleeping threads until the OS refuses
+    $ rustc -O -o /tmp/thr /tmp/thr.rs && /tmp/thr
+    failed after 4095 threads: Resource temporarily unavailable (os error 35)
+
+`Builder::spawn` returns that as `Err`. `thread::spawn` unwraps it and panics.
+
 ### K-136 -- A build looks frozen when claude's API stalls (it recovers, but silently)
 
 Class: our-code (UX) / environment (the stall itself)
@@ -3891,6 +3956,52 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
 Status:   fixed
 
 ## Fixed
+
+### K-137 -- Concurrent fetches spawn unbounded OS threads, and the host panics when they run out
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+Found while chasing the founder's report that `ios.krate` "crashed -- a system
+crash message appeared on screen". Both weather apps run fine headless and both
+fetch live data, so the crash was not the app misbehaving: it was the runtime
+dying underneath it.
+
+`AsyncFetches::begin` spawned one OS thread per in-flight request, uncapped,
+via `std::thread::spawn` -- which panics rather than returning an error when
+the OS is out of threads. Measured ceiling on this machine: 4095 threads, then
+`Resource temporarily unavailable (os error 35)`. A panic there kills the whole
+runtime, which is what produces an OS crash dialog instead of a failed request.
+
+Ordinary apps can reach it because `cancel` cannot kill a running worker -- it
+retires the handle and the thread runs on until the request's own timeout.
+`ios.krate` starts one request per saved city on every refresh, so repeated
+refreshes stack workers faster than they retire.
+
+Two changes, both in `crates/runtime/src/async_fetch.rs`:
+
+- `MAX_IN_FLIGHT = 64`. Past it, `begin` returns an error the guest can act on
+  ("wait for one to finish") instead of starting a 65th worker. Well above what
+  a real app needs at once, far below where the OS gives out.
+- `Builder::spawn` instead of `thread::spawn`, so a genuine spawn failure is an
+  `Err` the caller reports, never a panic that takes the runtime with it.
+
+`begin` now returns `Result<u64, AdapterError>`; `phase2_host.rs` maps the
+refusal to a `net-error` the app already knows how to handle.
+
+Pinned by `past_the_cap_a_request_is_refused_instead_of_crashing`, which fills
+the cap, asserts the next request is refused, and asserts that freeing one slot
+lets the next request through -- so the cap cannot regress into either a crash
+or a permanent lockout.
+
+Verified after the fix: both apps still fetch live data.
+
+    $ ./target/release/krate run ~/"Krate Apps"/ios.krate --auto-grant -- quick
+    ... hours:24  days:7  frames:8  saved:yes
+
+    $ ./target/release/krate run ~/"Krate Apps"/weather-dashboard.krate --auto-grant -- quick
+    ... source:live  observed:2026-08-20T12:00
 
 ### K-134 -- No linker is reachable on Windows, and the one that ships is never named
 

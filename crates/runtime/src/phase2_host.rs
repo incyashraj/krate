@@ -837,7 +837,14 @@ impl net::http_client::Host for Phase2Host<'_> {
             }
             Err(err) => return Ok(Err(bridge::net_error_to_wit(err))),
         };
-        Ok(Ok(self.async_fetches.begin(job)))
+        // A refusal here is an ordinary answer, not a failure of the runtime:
+        // too many requests are already in the air. Reporting it lets the app
+        // wait and retry, where the alternative was the host running out of
+        // OS threads and panicking (K-137).
+        Ok(match self.async_fetches.begin(job) {
+            Ok(handle) => Ok(handle),
+            Err(err) => Err(bridge::net_error_to_wit(err.into())),
+        })
     }
 
     fn poll(&mut self, handle: u64) -> wasmtime::Result<net::types::FetchStatus> {
