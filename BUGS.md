@@ -71,6 +71,123 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-150 -- main has not compiled for Windows since v0.1.51, and nothing noticed
+
+Class: our-code
+Owner: claude (FIXED, see Fixed)
+
+`open_app` lost its `#[cfg(target_os = "macos")]` at some point after v0.1.51.
+Its body uses `std::os::unix::process::CommandExt`, `Command::exec`, and
+`krate_adapter_macos` -- none of which exist on Windows -- so `main` stopped
+compiling there entirely. Nine errors:
+
+    error[E0433]: could not find `unix` in `os`
+    error[E0425]: cannot find function `spawn_open_run` in this scope
+    error[E0599]: no method named `exec` found for `&mut std::process::Command`
+    error[E0433]: unresolved module or unlinked crate `krate_adapter_macos`
+    error[E0282]: type annotations needed
+    ... 4 more
+
+v0.1.51 had the gate, and still has it -- so the last RELEASE is fine and this
+never reached a person. Every commit on `main` since is broken.
+
+The real defect is not the missing attribute; it is that six commits landed
+over it without anyone noticing. Windows is only ever compiled during a
+release, so `main` can rot for days and the first sign is a failed release --
+or, as here, somebody finally standing up a VM.
+
+Fix: gate restored, verified compiling on a real Windows 11 machine. What this
+actually argues for is a Windows `cargo check` in ordinary CI, not just in the
+release workflow. Cross-checking from a Mac would not have caught it either:
+`cargo check --target x86_64-pc-windows-msvc` cannot get past the C
+dependencies without an MSVC toolchain, so it never reaches this code.
+
+### K-149 -- Building Krate on Windows needs LLVM, and nothing says so
+
+Class: environment (the machine) / our-code (the silence about it)
+Owner: claude (in progress)
+
+A clean Windows 11 machine with rustup and the Visual Studio Build Tools --
+everything our own docs ask for -- cannot build Krate. The build runs for
+several minutes, compiles most of the workspace, and then dies:
+
+    error: failed to run custom build command for `whisper-rs-sys v0.15.0`
+    Unable to find libclang: "couldn't find any valid shared libraries matching:
+    ['clang.dll', 'libclang.dll'], set the `LIBCLANG_PATH` environment variable"
+
+`whisper-rs-sys` runs `bindgen`, which needs `libclang.dll`. The VS Build Tools
+VCTools workload does not include Clang, so a person following our setup ends
+up with a toolchain that looks complete and is not.
+
+This is the same crate already recorded in `crates/runtime/Cargo.toml` as the
+reason arm64 Linux was missing from every release ("whisper.cpp needs a C++17
+compiler; the arm64 Linux cross container reaches only C++14"). One optional
+feature, `speech`, is now the single hardest dependency on two platforms.
+
+Three ways out, in order of how much they help a real person:
+
+1. Say it. `krate doctor` should check for `libclang` on Windows and name the
+   fix, the way K-134 taught us to name the linker.
+2. Ship the LLVM requirement in the setup docs and CI images.
+3. Consider whether `speech` should be default-on at all. It is one feature,
+   it is the only thing pulling bindgen and a C++17 toolchain, and it has now
+   cost two platforms. `--no-default-features` builds fine without it.
+
+Found on the Azure parity VM (see K-148). Verified fixed by installing
+LLVM 18.1.8 and setting `LIBCLANG_PATH`; the build then proceeds.
+
+### K-148 -- Windows and Linux are behind macOS, and nothing measures the gap
+
+Class: runtime-hole
+Owner: unclaimed
+
+Krate ships six platforms but only macOS is developed against daily. The gap is
+now big enough to be a product risk rather than a backlog item, and no check
+anywhere reports it -- it is found app by app, on a person's machine.
+
+Measured 2026-08-20:
+
+    adapter-macos    5800 lines
+    adapter-linux    2283 lines
+    adapter-windows  2209 lines
+
+Confirmed missing on Windows (each degrades honestly, so nothing "breaks" --
+apps just quietly do less):
+
+- **camera.capture** -- `platform_backend()` returns `None`. Every webcam app
+  reports `unsupported`. macOS got AVFoundation on 2026-08-20 (K-119); Windows
+  needs Media Foundation, Linux needs V4L2 or PipeWire.
+- ~~**ui.clipboard**~~ -- NOT a gap. Corrected 2026-08-20: the Windows adapter
+  implements clipboard through `arboard`; the `Unsupported` arms are the
+  `#[cfg(not(target_os = "windows"))]` fallbacks, which is the opposite of what
+  a grep for "Unsupported" suggests. Counting error messages is not an audit.
+- **set-full-bleed** -- no implementation, so the trait default refuses. Every
+  full-bleed app (the pack encourages them) gets standard chrome instead.
+  Recorded under K-117 as still open for Windows and Linux.
+
+What is NOT platform-split, and should be verified rather than assumed:
+
+- K-146 (check-app refuses an optional defining capability) -- pure Rust in the
+  CLI, applies everywhere.
+- K-147 (a camera frame carries its own width and height) -- a WIT shape
+  change, applies everywhere.
+- K-137 (the in-flight fetch cap) -- platform-free runtime code.
+- K-140/K-143 (the click check's idle-churn threshold and settle timing) --
+  platform-free, but the *input path* it measures is per-adapter, so the check
+  passing on macOS says nothing about Windows.
+
+K-141 is the warning here: a full-bleed window's clicks landed a title-bar
+height off on macOS because the input path flipped coordinates against the
+wrong rect. Windows and Linux have their own input paths and could carry the
+same class of bug independently. Nobody has looked.
+
+Blocked on a test machine: the Azure VM `krate-win` exists but its subscription
+is disabled (`state: Disabled`, `spendingLimit: On`), and the friend's PC at
+192.168.1.117 is on another network. Cross-checking from the Mac catches
+compile-level breaks only -- `cargo check --target x86_64-pc-windows-msvc`
+works for pure-Rust crates but cannot link the C dependencies (zstd, sqlite,
+whisper) without an MSVC toolchain.
+
 ### K-144 -- A quick run can print its results as a literal, and nothing notices
 
 Class: teaching-hole
@@ -4067,6 +4184,38 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
 Status:   fixed
 
 ## Fixed
+
+### K-150 -- main has not compiled for Windows since v0.1.51, and nothing noticed
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+`open_app` lost its `#[cfg(target_os = "macos")]` after v0.1.51. Its body uses
+`std::os::unix::process::CommandExt`, `Command::exec` and `krate_adapter_macos`,
+so `main` stopped compiling for Windows entirely -- nine errors. v0.1.51 still
+has the gate, so no release ever shipped this; every commit on `main` since is
+broken.
+
+**Why nothing caught it, which matters more than the attribute.** CI does run a
+Windows job, and it runs `cargo test --workspace --lib`. `--lib` builds LIBRARY
+targets only, and `krate-cli` has no lib target -- it is a binary. So `main.rs`,
+the largest file in the project, was never compiled on Windows by any ordinary
+CI run. Six commits landed over the break.
+
+Cross-checking from the Mac would not have caught it either: `cargo check
+--target x86_64-pc-windows-msvc` cannot get past the C dependencies (zstd,
+sqlite, whisper) without an MSVC toolchain, so it never reaches this code.
+
+Two fixes:
+
+- The gate is restored, with a comment saying why it must stay.
+- CI's cross-platform job now also runs `cargo check --workspace --all-targets`,
+  which covers binaries, examples, tests and benches. That is the check that
+  would have failed on the first bad commit instead of the sixth.
+
+Verified on a real Windows 11 24H2 machine (the Azure parity VM, K-148):
+`EXIT=0`, `krate.exe` built at 33.4 MB, `--version` and `doctor` both run.
 
 ### K-147 -- A camera frame's size was reported once and then wrong forever
 

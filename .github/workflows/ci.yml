@@ -261,6 +261,19 @@ jobs:
         # the profile that actually links.
         run: cargo test --workspace --lib ${{ matrix.os == 'windows-2022' && '--release' || '' }}
 
+      # `--lib` above builds LIBRARY targets only, and `krate-cli` has no lib
+      # target -- it is a binary. So `main.rs`, the largest file in the
+      # project, was never compiled on Windows by any ordinary CI run, and
+      # `main` sat broken there for six commits: a lost
+      # `#[cfg(target_os = "macos")]` on `open_app` left nine errors that only
+      # turned up when somebody stood up a Windows VM by hand (K-150).
+      #
+      # `--all-targets` covers binaries, examples, tests and benches. It is a
+      # check, not a test run: the point is that every target still COMPILES
+      # on this system, which is exactly the thing `--lib` cannot tell us.
+      - name: Check every target compiles (binaries included)
+        run: cargo check --workspace --all-targets ${{ matrix.os == 'windows-2022' && '--release' || '' }}
+
   # ──────────────────────────────────────────────
   # 5. Rust SDK package dry-run
   # ──────────────────────────────────────────────

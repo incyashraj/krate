@@ -8714,6 +8714,14 @@ fn macos_launcher_bundle(dir: &Path, name: &str, engine: &Path) -> std::io::Resu
     Ok(link)
 }
 
+/// Gated to macOS, and it has to stay that way: the body uses `std::os::unix`,
+/// `Command::exec`, and `krate_adapter_macos`, none of which exist on Windows.
+/// The dispatch arm for `Command::OpenApp` carries the same gate.
+///
+/// This gate was silently dropped after v0.1.51 and `main` stopped compiling
+/// for Windows entirely -- nine errors, none of them caught, because nothing
+/// builds for Windows outside a release (K-150).
+#[cfg(target_os = "macos")]
 fn open_app(direct: Option<PathBuf>) -> Result<u8> {
     // A document that arrives while this instance is already running an app
     // (double-click in Finder mid-session) gets its own process, so every
