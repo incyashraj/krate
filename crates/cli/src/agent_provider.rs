@@ -505,6 +505,31 @@ fn extra_tool_dirs() -> Vec<std::path::PathBuf> {
         dirs.push(home.join(".bun/bin"));
         dirs.push(home.join(".volta/bin"));
         dirs.push(home.join(".deno/bin"));
+        // A desktop app the person already installed often CARRIES the CLI we
+        // need. The ChatGPT app ships a full codex (verified: codex-cli
+        // 0.148.0-alpha.15 with `exec`) in Contents/Resources. Somebody who
+        // installed the desktop app and does not want a separate CLI install
+        // already has everything Krate needs -- we simply were not looking.
+        // Checking these costs one stat each and turns "you must install a CLI"
+        // into "you are already set up".
+        #[cfg(target_os = "macos")]
+        {
+            for app in [
+                "/Applications/ChatGPT.app/Contents/Resources",
+                "/Applications/Codex.app/Contents/Resources",
+                "/Applications/Claude.app/Contents/Resources",
+            ] {
+                dirs.push(std::path::PathBuf::from(app));
+            }
+            // The same apps, installed for one user rather than system-wide.
+            for app in [
+                "Applications/ChatGPT.app/Contents/Resources",
+                "Applications/Codex.app/Contents/Resources",
+                "Applications/Claude.app/Contents/Resources",
+            ] {
+                dirs.push(home.join(app));
+            }
+        }
         // npm globals under a Node version manager, newest version first.
         for (root, tail) in [
             (home.join(".nvm/versions/node"), "bin"),
