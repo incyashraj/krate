@@ -71,6 +71,109 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-142 -- The quiet heartbeat contradicts the step it is shown under
+
+Class: our-code (UX)
+Owner: claude (FIXED, see Fixed)
+
+The build card's quiet-line rotation was one flat list, cycled regardless of
+which step was lit. So "the writing starts once it has read enough" appeared
+underneath a lit **Writing the code**, and "reading Krate's API reference"
+appeared under it too. The founder caught it: the title says one thing and the
+description below says another.
+
+It is small and it is corrosive. The stage list is the only evidence a person
+has that a ten-minute build is progressing; a display that contradicts itself
+teaches them not to trust any of it.
+
+### K-141 -- On macOS, full-bleed apps ignore every click and scroll
+
+Class: our-code
+Owner: claude (FIXED, see Fixed)
+
+**This is the "not clickable, not scrollable" both generated weather apps had,
+and it was ours, not theirs.**
+
+`capture_mouse_event` and `capture_wheel_event` in the macOS adapter flipped
+AppKit's bottom-up coordinates using `self.window.contentLayoutRect()`.
+`contentLayoutRect` is the area *below* the title bar. A full-bleed window owns
+the title-bar band as well, so its content is taller -- and flipping against
+the shorter rect shifted every click and every scroll up by the title bar
+height.
+
+The adapter already had the right answer: `effective_content_rect` exists for
+exactly this and is documented against K-117. The two input paths never called
+it.
+
+What a person sees: the app animates, so it is clearly alive, but nothing
+reacts. The offset lands hardest on the header row -- search fields, buttons,
+tabs, city chips -- which is where a person clicks first.
+
+Evidence:
+
+    $ grep -n "set_full_bleed" wd-src/source/src/lib.rs
+    379:        let _ = window::set_full_bleed(win, true);
+    $ grep -n "set_full_bleed" ios-src/source/src/lib.rs
+    2961:        let _ = window::set_full_bleed(win, true);
+
+Both apps full-bleed, both unclickable. The headless check never touches AppKit,
+which is why it passed them both (see K-140).
+
+### K-140 -- The click check let a spinner answer for a dead button
+
+Class: our-code
+Owner: claude (FIXED, see Fixed)
+
+The usability gate passed both broken weather apps on every stage, including
+`click`, while neither could actually be clicked (K-141). That makes the gate
+worse than no gate: it certified apps that did not work.
+
+Two holes, both now closed:
+
+1. **The verdict was `difference > 0.0`.** Any animation on screen satisfied it.
+   A spinner alone reads as "the app responded" no matter what was pressed --
+   measured on the weather app, the idle churn is 0.007% of the frame, and that
+   was enough to pass.
+2. **The press aimed at the centre of the canvas.** A canvas app draws its own
+   controls, so the host does not know where they are, and centre-of-canvas
+   lands on empty space as often as not.
+
+Fixed by measuring the app's idle churn first and requiring the press to beat
+it by 3x, and by adding `KRATE_PRESS_AT=x,y` so a check can aim at a control
+whose position it knows. Measured after the fix, aiming at a city chip:
+
+    krate-check: click difference=0.028558 idle_churn=0.000068 answered=true
+
+2.86% against a 0.007% baseline -- a real reaction, told apart from the
+animation for the first time.
+
+### K-139 -- codex can never author: the agent is started in the wrong directory
+
+Class: our-code
+Owner: claude (FIXED, see Fixed)
+
+`run_provider_author` never set the child's working directory. The agent
+inherited whatever cwd Krate was launched from, while the prompt told it to
+write into an absolute path somewhere else.
+
+claude does not care -- it writes anywhere it is told. **codex roots its
+`workspace-write` sandbox on its own cwd**, so every write to the app directory
+was "outside of the project" and was refused. codex could therefore never
+author anything, on any machine. This is the answer to "I already have codex
+installed, why does Krate not work with it" -- it was never codex.
+
+Evidence, from the founder's failed webcam build:
+
+    ERROR codex_core::tools::router: error=patch rejected: writing outside of
+    the project; rejected by user approval settings
+
+Second defect in the same failure: the agent had correctly decided the app
+could not be built (Krate has no camera capability -- K-119) and tried to write
+`CANNOT-BUILD.txt` to say so. The sandbox refused that write too, so its clear
+explanation existed only in the transcript, and the person was shown a generic
+"That one didn't come together" with a stack-trace-looking blob. The refusal
+path only ever read the file.
+
 ### K-138 -- Generated apps pick a fixed design size and then cannot be scrolled
 
 Class: teaching-hole
@@ -3956,6 +4059,80 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
 Status:   fixed
 
 ## Fixed
+
+### K-142 -- The quiet heartbeat contradicts the step it is shown under
+
+Class: our-code (UX)
+Owner: claude
+Status: fixed
+
+`THINKING` was one flat array rotated regardless of the lit step, so a person
+watching "Writing the code" was told "the writing starts once it has read
+enough". Now keyed by step, with lines that are true of each: reading, writing,
+testing, packing. `thinkingLine()` reads the lit step and picks from that set.
+
+### K-141 -- On macOS, full-bleed apps ignore every click and scroll
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+The macOS adapter flipped AppKit's bottom-up pointer and wheel coordinates
+against `contentLayoutRect` -- the area below the title bar. A full-bleed
+window's content includes the title-bar band, so every click and scroll landed
+about a title bar too high. The header row is what that offset moves out of
+reach, which is where a person clicks first, so the app read as completely dead
+to input while still animating.
+
+`effective_content_rect` already existed for exactly this question (added for
+K-117) and is what the drawing path uses. `capture_mouse_event` and
+`capture_wheel_event` simply never called it. Both now do.
+
+This was the founder's "not clickable or scrollable" on both generated weather
+apps. Both call `window::set_full_bleed(win, true)`, and the pack encourages
+full-bleed, so this hit a growing share of generated apps -- and it was ours,
+not something those apps did wrong.
+
+### K-140 -- The click check let a spinner answer for a dead button
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+The gate passed both apps of K-141 on every check while neither could be
+clicked. A gate that certifies broken apps is worse than none.
+
+- `usability::press_answered(difference, idle_churn)` replaces the old
+  `difference > 0.0`. The driver spends one extra settle visit measuring how
+  much the app changes with nobody touching it, and the press must beat that by
+  `IDLE_CHURN_MARGIN` (3x). A spinner can no longer answer for a dead button.
+- An animating canvas app that does not visibly react now reports *unobserved*
+  with the animation named as the reason, instead of silently passing.
+- `KRATE_PRESS_AT=x,y` aims the driven press at a control whose position is
+  known, instead of guessing at the canvas centre.
+
+Pinned by `a_spinner_cannot_answer_for_a_dead_button`, which uses the real
+measured numbers: 0.007% idle churn must not pass, and the 2.86% of a real
+chip press must.
+
+### K-139 -- codex can never author: the agent is started in the wrong directory
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+`run_provider_author` now calls `command.current_dir(app_dir)`. A sandboxed
+agent decides what it may write from its own working directory, and codex's
+`workspace-write` roots exactly there; without this every write to the app was
+rejected as "outside of the project", so codex could never author anything.
+
+Also `agent_refusal` now falls back to `agent_refusal_in_transcript` when the
+file is missing. An agent that correctly refuses -- "Krate has no camera API"
+-- but is blocked from writing `CANNOT-BUILD.txt` still said so in its output,
+and throwing that away turned a clear, correct answer into a generic build
+failure. Kept strict: only the explicit `KRATE-CANNOT-BUILD:` marker counts,
+and only its last occurrence, so an agent that muses about impossibility and
+then finds a way is not read as refusing.
 
 ### K-137 -- Concurrent fetches spawn unbounded OS threads, and the host panics when they run out
 

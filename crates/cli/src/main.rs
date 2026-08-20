@@ -5248,7 +5248,11 @@ const AGENT_REFUSAL_FILE: &str = "CANNOT-BUILD.txt";
 /// parse would silently become a wrong app, which is the outcome this whole
 /// path exists to prevent.
 fn agent_refusal(app_dir: &str) -> Option<String> {
-    let text = fs::read_to_string(Path::new(app_dir).join(AGENT_REFUSAL_FILE)).ok()?;
+    let Ok(text) = fs::read_to_string(Path::new(app_dir).join(AGENT_REFUSAL_FILE)) else {
+        // No file. The agent may still have refused and been unable to say so
+        // on disk, so ask the transcript before calling this a build failure.
+        return agent_refusal_in_transcript(app_dir);
+    };
     let reason = text
         .lines()
         .find_map(|line| line.trim().strip_prefix("KRATE-CANNOT-BUILD:"))
@@ -5260,6 +5264,41 @@ fn agent_refusal(app_dir: &str) -> Option<String> {
         return Some(
             "the AI judged this request to be outside what a Krate app can do".to_string(),
         );
+    }
+    Some(reason.to_string())
+}
+
+/// Recover a refusal the agent stated but could not write down.
+///
+/// The file is the contract, but an agent does not always get to honour it: a
+/// sandboxed agent whose write is refused still SAYS why in its output, and
+/// throwing that away turned a clear "Krate has no webcam API" into a generic
+/// "that build didn't come together" with no reason at all (K-139). The
+/// request was genuinely impossible and the agent diagnosed it correctly --
+/// the person deserves to be told that, not shown a failure.
+///
+/// Kept strict on purpose: only the explicit marker counts. An agent musing
+/// that something "cannot be done" mid-run, then finding a way, must not be
+/// read as a refusal -- that would fail apps that were about to succeed.
+fn agent_refusal_in_transcript(app_dir: &str) -> Option<String> {
+    let text = fs::read_to_string(Path::new(app_dir).join(".agent-transcript.txt")).ok()?;
+    let marker = "KRATE-CANNOT-BUILD:";
+    // Last occurrence: an agent that reconsiders states its final position
+    // last, and the earlier mention may be it quoting the instructions.
+    let at = text.rfind(marker)?;
+    let rest = &text[at + marker.len()..];
+    // The transcript is JSON events, so the sentence may be followed by escape
+    // sequences rather than a real newline. Stop at whichever comes first.
+    let end = rest
+        .find(['\n', '\r'])
+        .into_iter()
+        .chain(rest.find("\\n"))
+        .chain(rest.find('"'))
+        .min()
+        .unwrap_or(rest.len());
+    let reason = rest[..end].trim().trim_end_matches(['\\', ',']).trim();
+    if reason.is_empty() {
+        return None;
     }
     Some(reason.to_string())
 }
@@ -5345,6 +5384,14 @@ fn run_provider_author(
         .unwrap_or_else(|| PathBuf::from(provider.program()));
     let mut command = ProcessCommand::new(program);
     agent_provider::with_tool_path(&mut command);
+    // Start the agent IN the app directory. Not a convenience: a sandboxed
+    // agent decides what it may write from its own working directory, and
+    // codex's `workspace-write` roots exactly there. Without this the agent
+    // inherited whatever cwd Krate was launched from (the Studio's, or the
+    // repo), every write to the app landed "outside of the project", and
+    // codex refused all of them -- so codex could never author anything, and
+    // the person saw a generic "that build didn't come together" (K-139).
+    command.current_dir(app_dir);
     command.args(provider.author_args(&prompt));
     // Provider-specific spawn setup: closing stdin so a headless run never
     // blocks on input, plus anything else that provider needs.
@@ -12985,6 +13032,59 @@ mod create_tests {
         // The common case: the agent built the app and left no marker, so
         // nothing here may interrupt it.
         let dir = tempfile::tempdir().expect("temp dir");
+        assert_eq!(super::agent_refusal(&dir.path().to_string_lossy()), None);
+    }
+
+    /// A refusal the agent stated but was not allowed to write down (K-139).
+    ///
+    /// codex's sandbox rejected the write, so a correct "Krate has no camera
+    /// API" reached the person as a generic build failure with no reason.
+    #[test]
+    fn a_refusal_only_in_the_transcript_is_still_a_refusal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            dir.path().join(".agent-transcript.txt"),
+            "{\"type\":\"agent_message\",\"text\":\"KRATE-CANNOT-BUILD: Krate has no webcam \
+             capability yet\\nBlocked: the sandbox is read-only here.\"}\n",
+        )
+        .expect("write");
+        assert_eq!(
+            super::agent_refusal(&dir.path().to_string_lossy()).as_deref(),
+            Some("Krate has no webcam capability yet")
+        );
+    }
+
+    /// The file always wins: it is the contract, and the transcript is only
+    /// the fallback for when the agent could not honour it.
+    #[test]
+    fn the_refusal_file_is_preferred_over_the_transcript() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            dir.path().join(super::AGENT_REFUSAL_FILE),
+            "KRATE-CANNOT-BUILD: the real reason\n",
+        )
+        .expect("write");
+        std::fs::write(
+            dir.path().join(".agent-transcript.txt"),
+            "KRATE-CANNOT-BUILD: an earlier thought\n",
+        )
+        .expect("write");
+        assert_eq!(
+            super::agent_refusal(&dir.path().to_string_lossy()).as_deref(),
+            Some("the real reason")
+        );
+    }
+
+    /// An agent that considers giving up and then builds the app anyway must
+    /// not be read as refusing -- that would fail apps that succeeded.
+    #[test]
+    fn a_transcript_without_the_marker_is_not_a_refusal() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        std::fs::write(
+            dir.path().join(".agent-transcript.txt"),
+            "I wondered whether this cannot be built, then found a way.\n",
+        )
+        .expect("write");
         assert_eq!(super::agent_refusal(&dir.path().to_string_lossy()), None);
     }
 

@@ -216,6 +216,14 @@ struct UsabilityDriver {
     /// When the script last advanced, so a polling game and an event-loop app
     /// are driven at the same pace.
     last_step: Option<std::time::Instant>,
+    /// How much of the frame changes on its own, with nobody touching the app.
+    ///
+    /// The click check used to pass on ANY difference, which meant a spinner,
+    /// a clock, or a game's animation answered for the app: one pixel of
+    /// churn read as "it responded" no matter what was pressed, and a
+    /// genuinely dead button passed (K-140). Measuring the idle churn first
+    /// gives the press something honest to beat.
+    idle_churn: Option<f32>,
 }
 
 /// How long the driver leaves between steps of its script.
@@ -360,6 +368,7 @@ impl Phase3GuiHost {
             resized_to: None,
             resize_settled: false,
             last_step: None,
+            idle_churn: None,
         });
         self
     }
@@ -525,6 +534,24 @@ impl Phase3GuiHost {
                 let frame = self.capture_frame(window);
                 let driver = self.usability.as_mut()?;
                 if frame.as_ref().is_some_and(|f| f.has_content()) {
+                    // Spend one extra visit measuring how much the app changes
+                    // on its own. A spinner or an animation makes every frame
+                    // differ from the last, and without this number the click
+                    // check credits that churn to the press (K-140).
+                    if driver.idle_churn.is_none() {
+                        match (driver.before.as_ref(), frame.as_ref()) {
+                            (Some(previous), Some(current)) => {
+                                driver.idle_churn =
+                                    Some(crate::usability::frame_difference(previous, current));
+                            }
+                            _ => {
+                                // First content frame: hold it and come back a
+                                // step later to see what moved by itself.
+                                driver.before = frame;
+                                return None;
+                            }
+                        }
+                    }
                     driver.before = frame;
                     driver.step = if driver.plan.check_resize {
                         DriveStep::Resize
@@ -815,12 +842,35 @@ impl Phase3GuiHost {
             None => return,
         };
         let confident = driver.press_was_confident;
+        let idle_churn = driver.idle_churn.unwrap_or(0.0);
         driver.action_delivered = false;
         driver.report.click = Some(match (before, after.clone()) {
             (Some(before), Some(after)) => {
                 let difference = crate::usability::frame_difference(&before, &after);
-                if difference > 0.0 {
+                // The press has to move more of the screen than the app moves
+                // on its own, or it has proved nothing: a spinner alone used to
+                // satisfy this, so a dead button passed on the strength of its
+                // own loading animation (K-140). The margin is what separates
+                // "something reacted" from "the animation ticked".
+                let answered = crate::usability::press_answered(difference, idle_churn);
+                if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
+                    eprintln!(
+                        "krate-check: click difference={difference:.6} idle_churn={idle_churn:.6} \
+                         confident={confident} answered={answered}"
+                    );
+                }
+                if answered {
                     crate::usability::Observation::Held
+                } else if idle_churn > 0.0 && !confident {
+                    // An animating canvas app that did not visibly react. The
+                    // press was a guess at where a control might be, so this
+                    // still cannot be called a defect -- but say plainly that
+                    // the animation is why, so nobody reads it as a pass.
+                    crate::usability::Observation::unobserved(
+                        "the app animates on its own, and the press changed no more of the \
+                         screen than that animation does, so whether it reacted could not be \
+                         told apart from the animation",
+                    )
                 } else if confident {
                     // The press landed on a control the host laid out, so the
                     // app was pressed exactly where its own widget is and

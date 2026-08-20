@@ -623,7 +623,7 @@ function beginBuild(title, expect) {
       // Defensive: a missing peek must never throw inside a timer either --
       // an exception here would kill the clock for the rest of the build.
       const now = $("nowLine");
-      if (now) now.textContent = THINKING[thinkIdx++ % THINKING.length];
+      if (now) now.textContent = thinkingLine(thinkIdx++);
       state.lastLineAt = Date.now() - 8000; // rotate every ~10s while quiet
     }
   }, 1000);
@@ -733,14 +733,43 @@ function onEngineLineInner(line) {
 }
 
 /* When the engine goes quiet -- an AI thinking is real silence -- the
- * heartbeat keeps beating with honest words, so quiet never looks dead. */
-const THINKING = [
-  "reading Krate's API reference - this part is quiet",
-  "still reading - this is the longest part of a build",
-  "working through the examples",
-  "still at it - nothing is stuck",
-  "the writing starts once it has read enough",
-];
+ * heartbeat keeps beating with honest words, so quiet never looks dead.
+ *
+ * Keyed by the step that is actually lit. One flat list used to rotate
+ * "the writing starts once it has read enough" underneath a lit "Writing the
+ * code", which reads as the app contradicting itself and makes a person doubt
+ * the whole display. Whatever the heartbeat says has to be true of the step
+ * the person is looking at. */
+const THINKING = {
+  read: [
+    "reading Krate's API reference - this part is quiet",
+    "still reading - this is the longest part of a build",
+    "working through the examples",
+    "the writing starts once it has read enough",
+  ],
+  write: [
+    "writing your app's code - this part is quiet",
+    "still writing - a whole app is a lot of code",
+    "working through the details",
+    "nothing is stuck - long silences are normal here",
+  ],
+  test: [
+    "building and testing your app",
+    "still testing - it fixes what it finds",
+    "compiling takes a minute on its own",
+  ],
+  done: [
+    "packing everything into one file",
+    "nearly there",
+  ],
+};
+
+/* The quiet line for the step that is lit right now. */
+function thinkingLine(index) {
+  const key = (STAGES[state.stageIndex] || STAGES[0]).key;
+  const lines = THINKING[key] || THINKING.read;
+  return lines[index % lines.length];
+}
 
 function fillDone(result, opts) {
   $("doneName").textContent = result.name;

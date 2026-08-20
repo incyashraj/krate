@@ -2436,8 +2436,13 @@ mod platform {
             // locationInWindow is in AppKit's bottom-up window coordinates;
             // Krate logical coordinates run top-down from the content area's
             // top-left, which is the space every app hit-tests in.
+            //
+            // Flipped against `effective_content_rect`, NOT `contentLayoutRect`
+            // -- a full-bleed window owns the title-bar band, so its content is
+            // taller than the layout rect and flipping against the short one
+            // shifts every gesture by the title-bar height (K-141).
             let point = event.locationInWindow();
-            let content_height = self.window.contentLayoutRect().size.height;
+            let content_height = effective_content_rect(&self.window).size.height;
             let x = point.x as f32;
             let y = (content_height - point.y) as f32;
 
@@ -2495,8 +2500,16 @@ mod platform {
             // coordinates run top-down from the content area's top-left, which
             // is the space every app hit-tests in. Getting this wrong would be
             // worse than no clicks: they would land mirrored.
+            //
+            // `effective_content_rect`, not `contentLayoutRect`: a full-bleed
+            // window's content includes the title-bar band, and flipping
+            // against the shorter layout rect put every click about a title
+            // bar too high. The header row of a full-bleed app -- its search
+            // field, its buttons, its tabs -- is exactly what that offset
+            // moves out of reach, so the app read as completely dead to
+            // clicks while still animating happily (K-141).
             let point = event.locationInWindow();
-            let content_height = self.window.contentLayoutRect().size.height;
+            let content_height = effective_content_rect(&self.window).size.height;
             let x = point.x as f32;
             let y = (content_height - point.y) as f32;
 

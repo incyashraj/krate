@@ -171,6 +171,25 @@ pub fn frame_difference(a: &FrameBuffer, b: &FrameBuffer) -> f32 {
     differing as f32 / a.pixels.len() as f32
 }
 
+/// How far a press must beat the app's own animation to count as a reaction.
+///
+/// A press that changes exactly as much of the screen as a spinner does has
+/// proved nothing. Three times clears a spinner, a clock tick, or a blinking
+/// cursor, while a real reaction -- a card repainting, a list changing, a
+/// toggle flipping -- moves far more of the frame than that.
+pub const IDLE_CHURN_MARGIN: f32 = 3.0;
+
+/// Whether a press visibly answered, given how much the app moves on its own.
+///
+/// The check used to be `difference > 0.0`, which handed the verdict to any
+/// animation on screen: one pixel of spinner said "it responded" no matter
+/// what was pressed, so an app whose buttons were entirely unreachable passed
+/// on the strength of its own loading indicator (K-140, found when both
+/// generated weather apps passed every check and neither could be clicked).
+pub fn press_answered(difference: f32, idle_churn: f32) -> bool {
+    difference > (idle_churn * IDLE_CHURN_MARGIN).max(f32::EPSILON)
+}
+
 /// A painted frame held in memory, so frames can be compared without going
 /// through PNG encode and decode.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -308,6 +327,39 @@ mod tests {
         let a = frame(2, 2, 0);
         let b = FrameBuffer::new(2, 2, vec![0, 0, 1, 1]);
         assert!((frame_difference(&a, &b) - 0.5).abs() < f32::EPSILON);
+    }
+
+    /// The hole that let two unclickable apps pass every check (K-140).
+    #[test]
+    fn a_spinner_cannot_answer_for_a_dead_button() {
+        // A weather app's loading spinner, measured: 0.007% of the frame.
+        let spinner = 0.000_068;
+
+        // A press that moved no more than the spinner proves nothing, however
+        // many pixels that is in absolute terms.
+        assert!(
+            !press_answered(spinner, spinner),
+            "a press that changed exactly what the animation changes must not pass"
+        );
+        assert!(
+            !press_answered(spinner * 2.0, spinner),
+            "twice the idle churn is still inside the animation's noise"
+        );
+
+        // A real reaction -- the measured city-chip press was 2.86% -- clears
+        // it by a wide margin.
+        assert!(
+            press_answered(0.028_558, spinner),
+            "a press that repainted a card must read as a reaction"
+        );
+    }
+
+    /// A still app is the easy case, and it must not regress into passing a
+    /// press that did nothing at all.
+    #[test]
+    fn a_still_app_needs_any_real_change_to_pass() {
+        assert!(!press_answered(0.0, 0.0), "nothing changed is not a pass");
+        assert!(press_answered(0.01, 0.0), "a visible change is a pass");
     }
 
     #[test]
