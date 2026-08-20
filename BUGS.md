@@ -74,7 +74,7 @@ Fix:      what needs to happen, or the commit that did it.
 ### K-136 -- A build looks frozen when claude's API stalls (it recovers, but silently)
 
 Class: our-code (UX) / environment (the stall itself)
-Owner: claude (mitigated in 01714def)
+Owner: claude (FIXED in 7850f3df)
 
 RESOLVED as to root cause, caught live with system evidence. The "freeze" the
 founder hit repeatedly -- first attempt of a request appears stuck on
@@ -100,6 +100,24 @@ away a build about to recover.
 Not fully closed: the deeper fix is to cut the silent read entirely
 (retrieval-over-dump, per the pipeline study) so there is far less dead time to
 stall inside, and/or to retry the agent automatically on a hard stall.
+
+ACTUAL ROOT CAUSE, found by reproducing it in a browser rather than reading
+logs: advanceStage MOVES #peekBox inside #stages. On the next build,
+beginBuild wiped $("stages").innerHTML -- destroying the peek and with it
+#nowLine -- and the next line, $("nowLine").textContent = "warming up...",
+threw "Cannot set properties of null". That throw was inside buildNow BEFORE
+the create_app invoke, so the build was silently lost: no engine, no workspace,
+no trace, no error, UI stuck on "building" forever.
+
+That is the whole pattern: the FIRST build of a fresh Studio worked (peek still
+in its original home), every build AFTER it died. Every "the retry worked" was
+really "the relaunch reset the DOM". The API-stall work above was real but a
+different, rarer problem -- this null-deref is what the founder hit for days.
+
+Fixed by rescuing #peekBox before the wipe, making every DOM write in
+beginBuild defensive, and wrapping beginBuild in try/catch inside buildNow so
+presentation can never again lose a build. Verified: three consecutive
+beginBuild calls succeed where the second used to throw.
 
 ### K-135 -- The plan gate only read claude's shape, so grok and codex could never plan
 
