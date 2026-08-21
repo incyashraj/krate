@@ -1405,6 +1405,11 @@ async function buildNow(request, files, revising) {
       failBuild(plainWords(err), request);
     }
   } finally {
+    // Drop this build's progress record. It exists to survive navigation
+    // WHILE a build runs; once the build has settled the session's own
+    // result is what the pane shows, and keeping the record would let a
+    // long sitting accumulate one per app made.
+    if (state.buildingSession) state.builds.delete(state.buildingSession.id);
     state.buildingSession = null;
     renderBuilding();
     $("send").disabled = false;
