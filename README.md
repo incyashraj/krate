@@ -48,7 +48,8 @@
 ## 271 MB became 37 KB
 
 We built the same 50,000-line notes workload in Krate and measured it against
-MarkText 0.17.1 on the same M4 Mac.
+MarkText 0.17.1 on the same M4 Mac. These are historical internal measurements;
+an architecture-matched public reproduction is in progress.
 
 | | MarkText | Krate |
 |---|---:|---:|
@@ -58,8 +59,10 @@ MarkText 0.17.1 on the same M4 Mac.
 | Idle CPU | 21% of a core | **0.8%** |
 
 Krate does not put another browser inside every app. Install the shared runtime
-once, then every app is one file. The [full method and raw results are
-public](evidence/benchmarks/2026-08-16-notes-battery-macos.md).
+once, then every app is one file. Read the [historical lab
+note](evidence/benchmarks/2026-08-16-notes-battery-macos.md) and the new
+[reproducible benchmark kit](evidence/benchmarks/marktext-vs-krate/README.md),
+which retains raw samples and refuses architecture-mismatched runs.
 
 ## The software file for the AI era
 
@@ -114,7 +117,8 @@ inside it. The terminal tool remains for anyone who prefers a shell.
 ## Measured, not promised
 
 The same 50,000-line notes workload, same Apple silicon Mac, head to head in
-August 2026 against MarkText 0.17.1.
+August 2026 against MarkText 0.17.1. These figures are historical internal
+measurements pending a clean run through the public reproduction kit.
 
 | | Electron build | Krate build |
 |---|---|---|
@@ -124,10 +128,11 @@ August 2026 against MarkText 0.17.1.
 | Scrolling | -- | **58 fps, frame jitter under 0.3 ms** |
 | The file itself | 271 MB installed | **37 KB** |
 
-Every number, the exact method, and the losses we found and fixed on the
-way (frame-time instrumentation caught our own renderer at 4.8 fps before
-it caught anyone else's): [the full benchmark
-log](evidence/benchmarks/2026-08-16-notes-battery-macos.md).
+The method and the losses we found and fixed on the way are in the [historical
+benchmark log](evidence/benchmarks/2026-08-16-notes-battery-macos.md). The
+[reproduction kit](evidence/benchmarks/marktext-vs-krate/README.md) adds exact
+fixtures, hashes, ARM64 enforcement, raw samples, median/p95 analysis, and a
+fail-closed publication audit.
 
 ## Make an app
 

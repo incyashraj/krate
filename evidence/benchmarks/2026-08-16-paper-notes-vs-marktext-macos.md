@@ -1,5 +1,12 @@
 # Paper Notes (Krate) vs MarkText (Electron), macOS
 
+> **Evidence status:** historical internal lab note. The original raw samples
+> and `winprobe.swift` were not committed. The 271 MiB installed size below has
+> since been traced to MarkText's x86_64 package, so its Apple-silicon
+> performance numbers must not be presented as an architecture-matched public
+> benchmark. The replacement ARM64 protocol and fail-closed audit live in
+> [`marktext-vs-krate/`](marktext-vs-krate/README.md).
+
 2026-08-16, M-series Mac, macOS 27. First head-to-head against a shipping
 offline cross-platform app. MarkText 0.17.1 chosen because it is free,
 fully offline, ships on Mac/Windows/Linux, and is Electron -- the incumbent

@@ -1,0 +1,5 @@
+config*.env
+build/
+runs/
+fixtures/*.md
+__pycache__/

@@ -1,5 +1,12 @@
 # The notes-app battery: Krate replica vs MarkText, macOS
 
+> **Evidence status:** historical internal lab note, not an independently
+> reproducible result set. It records the method and engineering discoveries,
+> but the original raw samples and harness were not committed. The 271 MiB
+> MarkText package was x86_64. Use the architecture-matched, raw-data-retaining
+> protocol in [`marktext-vs-krate/`](marktext-vs-krate/README.md) for any new
+> public claim.
+
 2026-08-16, M4 Mac, macOS 27. Continuation of
 2026-08-16-paper-notes-vs-marktext-macos.md after the feel work landed
 (Metal canvas presenting, clip-as-bounds text, raster cache, stable
