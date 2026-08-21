@@ -950,8 +950,7 @@ fn read_target(command: &str) -> Option<String> {
     }
     command
         .split_whitespace()
-        .filter(|word| word.contains('.') && !word.starts_with('-'))
-        .next_back()
+        .rfind(|word| word.contains('.') && !word.starts_with('-'))
         .map(|word| {
             let word = word.trim_matches(|c| c == '"' || c == '\'' || c == '\\');
             word.rsplit(['/', '\\']).next().unwrap_or(word).to_string()
