@@ -139,12 +139,32 @@ default LLVM location) and for `cmake` on PATH, and prints the `winget` command
 for whichever is missing. Stated as information, not a fault -- running apps
 and `krate create` need neither; only building the runtime from source does.
 
-Still open, and the bigger question: **should `speech` be default-on at all?**
-It is one optional feature, it is the only thing pulling bindgen and a C++17
-toolchain, and it has now cost two platforms -- arm64 Linux was missing from
-every release for the same reason. `--no-default-features` builds fine without
-it. Worth deciding deliberately rather than paying this again on the next
-platform.
+**Now three platforms.** The aarch64 Linux cross-build in CI fails on the same
+crate for a third reason -- its Ubuntu 16.04 container ships libclang 3.8,
+bindgen needs 9+, and `apt.llvm.org` is unreachable from that image:
+
+    E: Unable to locate package libclang-9-dev
+    FATAL: clang 9 did not install; Ubuntu 16.04 ships libclang 3.8,
+    which bindgen cannot use.
+    ./whisper.cpp/ggml/include/ggml.h:211:10: fatal error: 'stdbool.h' file not found
+
+So `whisper-rs-sys` has now blocked arm64 Linux (C++17), Windows (libclang +
+cmake), and aarch64 Linux cross-builds (libclang version). Every one of those
+is one optional feature that most apps never touch.
+
+**Decided 2026-08-20: speech is now opt-in.** `default = []` for `krate-cli`
+and `default = ["phase2-bindings"]` for `krate-runtime`, so an ordinary build
+needs nothing but rustup -- which is what our setup docs have always promised
+and, until now, was not true on any of those three platforms.
+
+Released binaries are unaffected: the release workflow passes
+`--features speech`, so what a person downloads still transcribes. The logic
+inverted rather than disappeared -- a release ADDS speech where the toolchain
+allows it, instead of a broken platform SUBTRACTING it. Verified both ways:
+`cargo build --release -p krate-cli` and `--features speech` both succeed.
+
+The CI job that built "without speech, the way arm64 Linux ships" now tests
+the DEFAULT configuration rather than an odd one out, and says so.
 
 Found on the Azure parity VM (see K-148). Verified fixed by installing
 LLVM 18.1.8 and setting `LIBCLANG_PATH`; the build then proceeds.

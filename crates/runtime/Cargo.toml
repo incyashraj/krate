@@ -15,12 +15,11 @@ publish = false
 rfd.workspace = true
 
 [features]
-# Speech is on by default so every normal build has it, and can be turned off
-# for a platform whose toolchain cannot compile it. whisper-rs-sys builds
-# whisper.cpp, which needs a C++17 compiler; the arm64 Linux cross container is
-# Ubuntu 16.04 with g++ 5.4, which reaches only C++14, and that one dependency
-# is why that platform has been missing from every release.
-default = ["phase2-bindings", "speech"]
+# Speech is OPT-IN. It is the only thing in the tree that needs a C++
+# toolchain, bindgen and cmake, and it has blocked three platforms on its own
+# (K-149). The release workflow enables it, so shipped binaries transcribe;
+# an ordinary build needs nothing but rustup.
+default = ["phase2-bindings"]
 phase2-bindings = []
 speech = ["dep:whisper-rs"]
 

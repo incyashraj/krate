@@ -21,10 +21,19 @@ name = "krate-open"
 path = "src/bin/krate-open.rs"
 
 [features]
-# Speech is on by default and can be dropped for a platform whose toolchain
-# cannot build whisper.cpp. Kept as a passthrough so `cargo build -p krate-cli
-# --no-default-features` reaches the runtime rather than silently keeping it.
-default = ["speech"]
+# Speech is OPT-IN, and released binaries turn it on explicitly.
+#
+# `whisper-rs-sys` builds whisper.cpp through bindgen and cmake, and that one
+# optional feature has now blocked three platforms: arm64 Linux (needs C++17,
+# its container reaches C++14), Windows (needs LLVM and CMake that the VS Build
+# Tools do not include), and the aarch64 Linux cross-build (needs libclang 9+,
+# its container ships 3.8). See K-149.
+#
+# Default-off means anybody can build Krate on any machine with nothing but
+# rustup -- which is what our own setup docs promise and, until now, was not
+# true. The release workflow passes `--features speech`, so shipped binaries
+# still transcribe; nothing a person downloads loses anything.
+default = []
 speech = ["krate-runtime/speech"]
 
 [dependencies]

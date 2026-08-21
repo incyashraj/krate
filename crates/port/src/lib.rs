@@ -1374,6 +1374,29 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
     );
     detect_pattern(
         analysis,
+        "camera",
+        &[
+            "avcapturedevice",
+            "avcapturesession",
+            "getusermedia({video",
+            "video: true",
+            "mediafoundation",
+            "imfsourcereader",
+            "videocapture",
+            "v4l2",
+            "/dev/video",
+            "webcam",
+            "capturedevice",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "Camera capture",
+        "Route camera frames through Krate camera.capture: open, start, then poll read each time round the event loop. Frames arrive as straight-alpha RGBA carrying their own width and height, which is what canvas2d::draw_pixels takes -- draw at the frame's size, never the size you asked for. Mark camera.capture required: the person is only asked about required capabilities, so an optional one is never granted.",
+        Some("camera.capture"),
+    );
+    detect_pattern(
+        analysis,
         "hardware",
         &[
             "serialport",

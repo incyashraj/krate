@@ -88,12 +88,12 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
-      # --all-features never exercises a feature being absent, and the arm64
-      # Linux release ships exactly that build: no speech, because its cross
-      # container cannot compile whisper.cpp. Without this, a change that only
-      # compiles with the engine present would pass every check here and break
-      # that platform at release time, which is where it is most expensive.
-      - name: Run clippy without speech, the way arm64 Linux ships
+      # --all-features never exercises a feature being ABSENT, and absent is
+      # now the default: speech is opt-in, because whisper.cpp needs bindgen,
+      # cmake and a C++17 compiler and that cost three platforms (K-149).
+      # So this is no longer the odd-one-out configuration -- it is what a
+      # developer gets from a plain `cargo build`, and what arm64 Linux ships.
+      - name: Run clippy without speech, which is now the default build
         run: |
           cargo clippy -p krate-runtime --all-targets \
             --no-default-features --features phase2-bindings -- -D warnings

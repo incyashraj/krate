@@ -131,21 +131,21 @@ jobs:
           # 0.1.0-dev placeholder.
           KRATE_RELEASE_VERSION: ${{ inputs.tag || github.ref_name }}
         run: |
-          # Some targets cannot build every feature. Speech compiles
-          # whisper.cpp, which needs a C++17 compiler, and the arm64 Linux
-          # cross container is Ubuntu 16.04 with g++ 5.4 -- C++14 only. That
-          # single dependency is why that platform has been missing from every
-          # release. Dropping it there ships a Krate that does everything
-          # except transcribe audio, which beats shipping nothing.
-          # krate-cli's only feature is `speech`, so "everything but speech" is
-          # plain --no-default-features. Naming a runtime feature here instead
-          # failed rc7 with "the package 'krate-cli' does not contain this
-          # feature", which is why this is a boolean rather than a feature list.
+          # Speech is opt-in at the crate level, so a RELEASE adds it back
+          # rather than a broken platform subtracting it (K-149).
+          #
+          # It was the other way round, and the default cost three platforms:
+          # whisper.cpp needs bindgen, cmake and a C++17 compiler, so arm64
+          # Linux (C++14 container), Windows (no LLVM or CMake in the VS Build
+          # Tools) and the aarch64 cross-build (libclang 3.8) each failed on
+          # one optional feature most apps never touch. Default-off means
+          # anybody can build Krate with nothing but rustup; this line is what
+          # keeps shipped binaries transcribing.
           if [[ "${{ matrix.no-speech }}" == "true" ]]; then
-            echo "building without speech-to-text"
-            FEATURE_ARGS=(--no-default-features)
-          else
+            echo "building without speech-to-text (this target cannot compile whisper.cpp)"
             FEATURE_ARGS=()
+          else
+            FEATURE_ARGS=(--features speech)
           fi
           if [[ "${{ matrix.cross }}" == "true" ]]; then
             cross build --release --target "${{ matrix.target }}" -p krate-cli "${FEATURE_ARGS[@]}"
