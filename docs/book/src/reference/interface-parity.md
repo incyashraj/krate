@@ -3,7 +3,7 @@
 Generated from the runtime host, not written by hand. Run
 `cargo run -p krate-tools --bin check-interface-parity -- --write` to refresh it.
 
-**11 of 14 declared interfaces are fully implemented. 1 are declared and do nothing yet.**
+**12 of 15 declared interfaces are fully implemented. 1 are declared and do nothing yet.**
 
 An interface that is declared but not implemented refuses every call with
 `Unsupported`. That is the honest failure -- nothing pretends to work -- but a
@@ -19,8 +19,9 @@ not be drawn into. That pair reads `works` on both tables now.
 | --- | --- | --- |
 | `audio.capture` | 4 | **works** |
 | `audio.playback` | 7 | **works** |
+| `camera.capture` | 7 | **works** |
 | `gfx.canvas2d` | 25 | **works** |
-| `gfx.scene3d` | 10 | **works** |
+| `gfx.scene3d` | 11 | **works** |
 | `speech.transcription` | 29 | **works** |
 | `ui.clipboard` | 2 | **works** |
 | `ui.dialog` | 4 | **works** |

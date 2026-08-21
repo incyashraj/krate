@@ -357,9 +357,7 @@ fn platform_backend() -> Option<Box<dyn CameraBackend>> {
     }
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
-        Some(Box::new(
-            crate::camera_nokhwa::NokhwaCameraBackend::default(),
-        ))
+        Some(Box::new(crate::camera_nokhwa::NokhwaCameraBackend))
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     {
