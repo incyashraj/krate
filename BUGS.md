@@ -71,6 +71,42 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-152 -- A live build looks dead after leaving the session and coming back
+
+Class: our-code (UX)
+Owner: claude (FIXED, see Fixed)
+
+Reported from real use: "I'm making an app, I go to the cloud section and come
+back to the main page and I couldn't see the active session. I clicked that
+recent session from history, and I could see the process was active but the
+right side progress was blank -- it said you'll see the app preview here."
+
+Two separate faults, both about state that lived only in the DOM.
+
+**The progress pane.** Everything it shows -- the stage list, the log, the live
+line, the clock -- was written straight into `#stateBuilding` as it happened,
+and nothing kept a copy. `show("building")` only un-hides that pane; it rebuilds
+nothing. So re-entering a session showed whatever was left in the DOM, which
+after a trip elsewhere is nothing.
+
+Worse, `advanceStage` MOVES `#peekBox` inside `#stages`, so any later wipe of
+that list destroys `#peekBox` and `#nowLine` with it -- the same mechanism as
+K-136. Rescuing the element is not enough on this path, because by then it does
+not exist.
+
+**The "making now" bar on home.** It carries `class="reveal"`, and `revealIn()`
+stamps `opacity: 0` on every `.reveal` element when a view appears, then
+animates them back. But the bar is still `hidden` at that moment;
+`renderBuilding()` un-hides it two awaits later, after the animation has
+finished, with the from-state still on it.
+
+**Also answered here: only one build runs at a time.** `run_author` in
+studio/src/main.rs holds a single pid slot and refuses a second with "one app
+is already being made". The UI already handles that honestly -- a request typed
+into the building session queues and says so; one typed into a different
+session says which app is holding the slot. That is a deliberate limit, not a
+defect, but it is worth stating plainly since the report asked.
+
 ### K-151 -- Animating apps hold gigabytes; static ones hold 130 MB
 
 Class: our-code
@@ -104,6 +140,38 @@ present every frame.
 Worth fixing before any performance claim is made in public, and worth knowing
 before a live demo: static apps are safe, an animating one may make the machine
 work hard.
+
+### K-152 -- A live build looks dead after leaving the session and coming back
+
+Class: our-code (UX)
+Owner: claude
+Status: fixed
+
+Build progress now lives in `state.builds`, a Map keyed by session id, holding
+the log lines, the stage index, the live line, the header and the start time.
+`restoreBuild(sessionId)` replays all of it, and `openSession` calls it on the
+branch that reopens a session which is building right now.
+
+Two details that the fix turns on:
+
+- `restoreBuild` RECREATES `#peekBox` when it is missing rather than only
+  rescuing it. On this path the element has usually already been destroyed
+  along with `#stages`, so a rescue finds nothing (K-136's mechanism, reached
+  from a different direction).
+- The log is capped at `BUILD_LOG_LINES` (400). The pane only shows the tail,
+  and a long build prints thousands of lines; keeping them all would grow
+  without bound for no benefit.
+
+`renderBuilding()` clears the reveal from-state off the "making now" bar when
+it un-hides it, so a bar un-hidden after the animation ran cannot come back
+invisible.
+
+Verified in a browser against the reported flow: with the pane wiped, the
+before state is 0 stages and a null `#nowLine`; after the restore it is 4
+stages, "Testing it" lit, the live line back, the log intact and the title
+correct. A build continues correctly through a restore -- new engine lines land
+in the rebuilt DOM, stages still advance, and the peek stays anchored under the
+live row.
 
 ### K-150 -- main has not compiled for Windows since v0.1.51, and nothing noticed
 

@@ -84,6 +84,11 @@ const invoke = (cmd, args) => (tauri ? tauri.core.invoke(cmd, args) : mockInvoke
  * build/pack/wall into one "finishing" step, because to a person they are one
  * moment at the end.
  */
+/* How many log lines a build keeps in state. The pane shows the tail, and a
+ * long build prints thousands, so holding all of them would grow unbounded
+ * for no benefit. */
+const BUILD_LOG_LINES = 400;
+
 const STAGES = [
   { key: "read",  label: "Reading Krate's API" },
   { key: "write", label: "Writing the code" },
@@ -110,7 +115,35 @@ const state = {
   timer: null,
   stageIndex: -1,
   lastFailed: null,     // the message to retry
+  /* The live build's progress, held in STATE and not only in the DOM.
+   *
+   * Leaving the session view (to Cloud, say) and coming back used to show an
+   * empty progress pane: the stage list, the log and the current line were
+   * written straight into #stateBuilding and nothing kept a copy, so
+   * re-entering un-hid a card whose content had been wiped. The build was
+   * still running -- the person could see it was active -- and the right-hand
+   * side said "you'll see the app preview here" (K-152).
+   *
+   * Keyed by session id so more than one build can be in flight at once and
+   * each keeps its own progress. */
+  builds: new Map(),    // sessionId -> { lines, stageIndex, nowLine, title, expect, startedAt }
 };
+
+/* The progress record for a session, created on demand. */
+function buildRecord(id) {
+  if (!id) return null;
+  let rec = state.builds.get(id);
+  if (!rec) {
+    rec = { lines: [], stageIndex: -1, nowLine: "", title: "", expect: "", startedAt: 0 };
+    state.builds.set(id, rec);
+  }
+  return rec;
+}
+
+/* The record for whichever build is running right now. */
+function liveRecord() {
+  return state.buildingSession ? buildRecord(state.buildingSession.id) : null;
+}
 
 /* ---- views ------------------------------------------------------------ */
 
@@ -264,7 +297,20 @@ function renderBuilding() {
   // live build vanish from "making now" while it was still running.
   const live = Boolean(state.buildingSession);
   bar.classList.toggle("hidden", !live);
-  if (live) $("buildingNowTitle").textContent = state.buildingSession.title;
+  if (live) {
+    $("buildingNowTitle").textContent = state.buildingSession.title;
+    // Clear any reveal from-state left on this bar.
+    //
+    // revealIn() snapshots `.reveal` elements when a view appears and sets
+    // opacity:0 on each, then animates them back. But this bar is still
+    // `hidden` at that moment -- renderBuilding un-hides it a couple of
+    // awaits later, after the animation has already run and finished. So it
+    // could come back invisible, or mid-transform: a live build that the
+    // person knows is running, with nothing on the home page to show for it
+    // (K-152). It is un-hidden after the fact, so it restores itself.
+    bar.style.opacity = "1";
+    bar.style.transform = "none";
+  }
 }
 
 function renderAccount() {
@@ -374,6 +420,10 @@ function openSession(s) {
   }
   if (building) {
     show("building");
+    // Put the live progress back: stages, log, current line and clock. Without
+    // this the pane is whatever was left in the DOM, which after a trip to
+    // Cloud is nothing at all (K-152).
+    restoreBuild(state.session.id);
   } else if (state.session.result) {
     fillDone(state.session.result, { reveal: false });
     show("done");
@@ -582,6 +632,89 @@ function startBuildWatchdog() {
   }, 4000);
 }
 
+/* Put a live build's progress back on screen after leaving and returning.
+ *
+ * `show("building")` only un-hides the pane -- it does not rebuild anything,
+ * because everything the pane shows was written directly into the DOM as it
+ * happened. Going to Cloud and back therefore left a running build looking
+ * dead: no stages, no log, and the idle placeholder still reading "you'll see
+ * the app preview here" (K-152). This replays the record kept in state.
+ *
+ * Defensive throughout, for the same reason beginBuild is: this runs while a
+ * build is in flight, and a throw here must never be able to disturb it. */
+function restoreBuild(sessionId) {
+  const rec = state.builds.get(sessionId);
+  if (!rec) return;
+  try {
+    if (rec.title) $("buildTitle").textContent = rec.title;
+    if (rec.expect) $("buildExpect").textContent = rec.expect;
+
+    // Rebuild the stage list, then light it up to where the build has got to.
+    //
+    // The peek box needs more than beginBuild's rescue here. advanceStage
+    // moves #peekBox inside #stages, so by the time a person navigates away
+    // the peek -- and #nowLine inside it -- may already have been destroyed
+    // with an earlier wipe of that list. Recreating it is the only way back:
+    // rescuing assumes it still exists, and on this path it often does not.
+    const peekHome = $("stateBuilding")?.querySelector(".build-card") || null;
+    let peek = $("peekBox");
+    if (!peek && peekHome) {
+      peek = document.createElement("div");
+      peek.className = "bpeek";
+      peek.id = "peekBox";
+      peek.innerHTML = '<span id="nowLine"></span><span class="caret"></span>';
+      const stagesEl = $("stages");
+      // Back where the markup puts it; advanceStage moves it under the live
+      // row again below.
+      if (stagesEl && stagesEl.parentElement === peekHome) {
+        stagesEl.insertAdjacentElement("afterend", peek);
+      } else {
+        peekHome.appendChild(peek);
+      }
+    } else if (peek && peekHome && peek.parentElement !== peekHome) {
+      peekHome.appendChild(peek);
+    }
+    $("stages").innerHTML = STAGES.map(
+      (s) => `<li data-key="${s.key}"><span class="tick"></span>${s.label}</li>`,
+    ).join("");
+    const idx = rec.stageIndex;
+    document.querySelectorAll("#stages li").forEach((li, i) => {
+      li.className = i < idx ? "done" : i === idx ? "now" : "";
+    });
+    if (idx >= 0 && STAGES[idx]) {
+      const current = document.querySelector("#stages li.now");
+      if (peek && current) current.insertAdjacentElement("afterend", peek);
+      const nowStage = $("nowStage");
+      if (nowStage) nowStage.textContent = STAGES[idx].label;
+      const step = $("stepCount");
+      if (step) step.textContent = `step ${idx + 1} of ${STAGES.length}`;
+    }
+
+    const log = $("buildLog");
+    if (log) {
+      log.textContent = rec.lines.join("\n");
+      if (rec.lines.length) log.textContent += "\n";
+      log.scrollTop = log.scrollHeight;
+    }
+    const now = $("nowLine");
+    if (now && rec.nowLine) now.textContent = rec.nowLine;
+
+    // The clock keeps counting from when the build really started, not from
+    // when the person came back to look at it.
+    if (rec.startedAt) {
+      state.startedAt = rec.startedAt;
+      const secs = Math.floor((Date.now() - rec.startedAt) / 1000);
+      const el = $("elapsed");
+      if (el) {
+        el.textContent = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+      }
+    }
+  } catch (err) {
+    // A broken restore must never take the build with it.
+    console.warn("restoreBuild failed:", err);
+  }
+}
+
 function beginBuild(title, expect) {
   $("buildTitle").textContent = title;
   $("buildExpect").textContent = expect;
@@ -608,6 +741,17 @@ function beginBuild(title, expect) {
   const fill0 = $("buildFill");
   if (fill0) fill0.style.width = "4%";
   state.stageIndex = -1;
+  // Start this session's progress record fresh. Everything the pane shows is
+  // mirrored here so re-entering the session can rebuild it (K-152).
+  const rec = state.buildingSession ? buildRecord(state.buildingSession.id) : null;
+  if (rec) {
+    rec.lines = [];
+    rec.stageIndex = -1;
+    rec.nowLine = "";
+    rec.title = title;
+    rec.expect = expect;
+    rec.startedAt = Date.now();
+  }
   advanceStage("read");
   state.startedAt = Date.now();
   clearInterval(state.timer);
@@ -651,6 +795,9 @@ function advanceStage(key) {
   const idx = STAGES.findIndex((s) => s.key === key);
   if (idx <= state.stageIndex) return;
   state.stageIndex = idx;
+  // Remembered per session, so re-entering restores the lit step (K-152).
+  const rec = liveRecord();
+  if (rec) rec.stageIndex = idx;
   // Two milestones worth saying out loud. Not five -- a chat that narrates
   // every step is noise, and the stage list already shows all of them.
   if (STAGE_SAID[key]) sayTo(state.buildingSession || state.session, "KRATE", STAGE_SAID[key]);
@@ -697,6 +844,17 @@ function onEngineLine(line) {
 }
 
 function onEngineLineInner(line) {
+  // Keep the line in state as well as on screen, so re-entering the session
+  // can rebuild the whole log rather than showing an empty pane (K-152).
+  const rec = liveRecord();
+  if (rec) {
+    rec.lines.push(line);
+    // Bounded: a long build can print thousands of lines, and the pane only
+    // ever shows the tail. Holding every line would grow without limit.
+    if (rec.lines.length > BUILD_LOG_LINES) {
+      rec.lines.splice(0, rec.lines.length - BUILD_LOG_LINES);
+    }
+  }
   const log = $("buildLog");
   if (log) {
     log.textContent += line + "\n";
@@ -704,6 +862,7 @@ function onEngineLineInner(line) {
   }
   const clean = line.replace(/^=+>\s*/, "").trim();
   if (clean) {
+    if (rec) rec.nowLine = clean;
     const now = $("nowLine");
     if (now) now.textContent = clean;
     state.lastLineAt = Date.now();
