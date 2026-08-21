@@ -9605,22 +9605,23 @@ fn doctor() -> Result<u8> {
     Ok(0)
 }
 
-/// The two things a Windows machine needs to build Krate itself, and which
-/// nothing told anyone about.
+/// The two things a Windows machine needs to build Krate WITH SPEECH.
 ///
-/// A clean Windows 11 with rustup and the Visual Studio Build Tools -- exactly
-/// what our own setup asks for -- cannot build Krate. It compiles most of the
-/// workspace and then dies inside `whisper-rs-sys`, first on a missing
-/// `libclang.dll` (bindgen), then on a missing `cmake`. Neither is part of the
-/// VCTools workload, so the toolchain looks complete and is not (K-149).
+/// `whisper-rs-sys` compiles whisper.cpp through bindgen and cmake, and neither
+/// tool is part of the Visual Studio Build Tools VCTools workload -- so a clean
+/// Windows 11 with rustup and the Build Tools looked complete, compiled most of
+/// the workspace, and then died first on a missing `libclang.dll` and then on a
+/// missing `cmake` (K-149).
 ///
-/// Only relevant to somebody building the runtime from source. Running apps and
-/// `krate create` need neither, so this is stated as information rather than
-/// printed as a fault.
+/// Since speech became opt-in these are no longer needed for an ordinary build:
+/// `cargo build` works with rustup alone. They are needed for
+/// `--features speech`, which is what released binaries ship, so anyone
+/// building a release still needs both. Stated as information, never as a
+/// fault -- running apps and `krate create` need neither.
 #[cfg(target_os = "windows")]
 fn print_windows_native_build_status() {
     println!();
-    println!("Building Krate itself (not needed to run or make apps)");
+    println!("Building Krate with speech (`--features speech`; a plain build needs neither)");
 
     let clang = std::env::var_os("LIBCLANG_PATH")
         .map(std::path::PathBuf::from)

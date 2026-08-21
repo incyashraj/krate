@@ -43,6 +43,7 @@ world = "gui"
 "krate:ui" = { path = "../../wit/krate/phase3/deps/ui" }
 "krate:gfx" = { path = "../../wit/krate/phase3/deps/gfx" }
 "krate:audio" = { path = "../../wit/krate/phase3/deps/audio" }
+"krate:camera" = { path = "../../wit/krate/phase3/deps/camera" }
 "krate:speech" = { path = "../../wit/krate/phase3/deps/speech" }
 
 [profile.release]
