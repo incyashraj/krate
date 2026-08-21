@@ -169,6 +169,22 @@ the DEFAULT configuration rather than an odd one out, and says so.
 Found on the Azure parity VM (see K-148). Verified fixed by installing
 LLVM 18.1.8 and setting `LIBCLANG_PATH`; the build then proceeds.
 
+**A Mac cannot lint the other platforms, and this is why CI matters.** Two
+defects in the parity work were invisible here and only CI could see them:
+
+- `default_constructed_unit_structs` on the nokhwa backend. The identical lint
+  was fixed on the macOS backend days earlier, but the nokhwa branch sits
+  behind `cfg(windows/linux)`, so local clippy never compiles it.
+- `interface-parity.md` is generated from the WIT and verified with
+  `git diff --exit-code`, so adding `krate:camera` left the committed copy
+  stale.
+
+Cross-checking does not substitute: `cargo clippy --target
+x86_64-pc-windows-msvc` dies on the C dependencies (ring, zstd) long before
+reaching the camera code. So for anything behind a platform `cfg`, CI's runners
+are the only place a lint or a test can fire -- which is the same lesson K-150
+taught about `--lib` never compiling binaries.
+
 ### K-148 -- Windows and Linux are behind macOS, and nothing measures the gap
 
 Class: runtime-hole
@@ -178,11 +194,21 @@ Krate ships six platforms but only macOS is developed against daily. The gap is
 now big enough to be a product risk rather than a backlog item, and no check
 anywhere reports it -- it is found app by app, on a person's machine.
 
-Measured 2026-08-20:
+Measured 2026-08-20, before the work:
 
     adapter-macos    5800 lines
     adapter-linux    2283 lines
     adapter-windows  2209 lines
+
+Line count turned out to be a poor proxy. Counting the UiAdapter/WindowAdapter
+methods each adapter actually implements, after the parity work:
+
+    macos    79 distinct fn
+    windows  80 distinct fn
+    linux    80 distinct fn
+
+macOS is larger because AppKit needs more code per feature, not because it does
+more. The two REAL gaps were camera and full-bleed, and both are now closed.
 
 Confirmed missing on Windows (each degrades honestly, so nothing "breaks" --
 apps just quietly do less):
