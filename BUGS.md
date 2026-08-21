@@ -71,6 +71,36 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-153 -- The launcher bundle a double-click builds had no camera key
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+Shipped in v0.1.52 and found by installing that release and using it, not by
+reading the diff. Double-clicking a webcam app said the camera could not be
+opened; the trace read:
+
+    usage description missing: Unsupported("this app bundle does not declare
+    NSCameraUsageDescription, which macOS requires before any process may
+    open a camera")
+
+**There are two launcher-bundle builders in main.rs, and K-145 fixed the wrong
+one.** `macos_launcher_bundle` (K-145) serves `Command::OpenApp`;
+`install_bundle`, reached through `Command::Launch`, is what a Finder
+double-click actually runs -- and its plist template had `CFBundleName`,
+`CFBundleIdentifier`, `NSHighResolutionCapable` and nothing else. So every app
+opened the ordinary way ran from a bundle that could not ask for the camera.
+
+The give-away was a `Resources` folder in the generated wrapper that the code I
+had written never creates. Two builders producing similar bundles is the
+underlying defect; for now both carry `NSCameraUsageDescription` and
+`NSMicrophoneUsageDescription`, and a follow-up should collapse them into one.
+
+Verified end to end after the fix: the generated `Shows.app` plist carries the
+key, the trace reaches "past permission" instead of failing, macOS shows its
+prompt, and the live feed appears.
+
 ### K-152 -- A live build looks dead after leaving the session and coming back
 
 Class: our-code (UX)

@@ -8427,6 +8427,10 @@ fn install_bundle(bundle_path: &Path, prefix: &Path) -> Result<PathBuf> {
     <string>APPL</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSCameraUsageDescription</key>
+    <string>{name} asked for the camera, and you allowed it in Krate's permission window.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>{name} asked for the microphone, and you allowed it in Krate's permission window.</string>
 {icon_entry}</dict>
 </plist>
 "#,
