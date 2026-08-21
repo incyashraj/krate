@@ -936,6 +936,29 @@ fn truncate_middle(text: &str, max: usize) -> String {
 /// the same handful of actions: wrote a file, read a file, ran a command. The
 /// mapping from those actions to what a waiting person wants to read is the
 /// same regardless of which AI did it, so it lives here once.
+/// The file a read-shaped shell command is pointing at, if it is one.
+///
+/// Only the plainly-reading commands, and only the last path-looking word --
+/// enough to say "reading lib.rs" instead of nothing, without trying to parse
+/// a shell.
+fn read_target(command: &str) -> Option<String> {
+    let reads = [
+        "cat ", "sed ", "head ", "tail ", "less ", "grep ", "rg ", "nl ",
+    ];
+    if !reads.iter().any(|verb| command.contains(verb)) {
+        return None;
+    }
+    command
+        .split_whitespace()
+        .filter(|word| word.contains('.') && !word.starts_with('-'))
+        .next_back()
+        .map(|word| {
+            let word = word.trim_matches(|c| c == '"' || c == '\'' || c == '\\');
+            word.rsplit(['/', '\\']).next().unwrap_or(word).to_string()
+        })
+        .filter(|file| !file.is_empty())
+}
+
 fn describe_tool_use(tool: &str, path: Option<&str>, command: Option<&str>) -> Option<String> {
     let tool = tool.to_ascii_lowercase();
     if tool.contains("write") || tool.contains("edit") || tool.contains("apply") {
@@ -991,6 +1014,25 @@ fn describe_tool_use(tool: &str, path: Option<&str>, command: Option<&str>) -> O
         }
         if command.contains("cargo") {
             return Some("running the Rust toolchain".to_string());
+        }
+        // An agent that reads through a SHELL rather than a read tool -- codex
+        // does its whole pack-read with `cat` and `sed` -- was silent here,
+        // and silence is what the person watches. A build spent twelve minutes
+        // on "Reading Krate's API" with nothing under it because every one of
+        // those commands landed on the `return None` below (K-155).
+        if command.contains("KRATE_AUTHORING") {
+            return Some("reading Krate's API reference".to_string());
+        }
+        if let Some(file) = read_target(command) {
+            return Some(match file.as_str() {
+                "lib.rs" => "reading the app's code".to_string(),
+                "Cargo.toml" => "reading the build setup".to_string(),
+                "manifest.toml" => "reading what the app declares".to_string(),
+                other => format!("reading {}", truncate_middle(other, 40)),
+            });
+        }
+        if command.starts_with("ls") || command.contains(" ls ") {
+            return Some("looking at what is there".to_string());
         }
         return None;
     }
@@ -1101,23 +1143,47 @@ impl AgentProvider for CodexProvider {
 
     fn progress_line(&self, line: &str) -> Option<String> {
         let event: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
-        // Codex reports tool calls under a few shapes across versions; try the
-        // documented one first and fall back to a generic scan rather than
-        // going silent on a version we have not seen.
+        // Only the START of a step. Codex emits `item.started` and then
+        // `item.completed` for the same work, and reporting both made every
+        // line appear twice.
+        if event.get("type").and_then(|v| v.as_str()) == Some("item.completed") {
+            return None;
+        }
+        // Codex's real shape, measured against a build that printed nothing
+        // for twelve minutes: the kind of work is `/item/type` and the command
+        // is `/item/command`. The parser looked for `name`, `tool` and
+        // `/item/name`, none of which codex sends -- so 68 command executions
+        // and 6 file changes were all invisible, the stage list sat on
+        // "Reading Krate's API" for the whole build, and the trace recorded
+        // one unbroken 730-second silence (K-155).
+        //
+        // The older shapes are kept as fallbacks: they cost nothing, and a
+        // codex version that goes back to them should not go silent again.
         let name = event
-            .get("name")
+            .pointer("/item/type")
+            .or_else(|| event.get("name"))
             .or_else(|| event.get("tool"))
             .or_else(|| event.pointer("/item/name"))
             .and_then(|v| v.as_str())?;
         let path = event
-            .pointer("/arguments/path")
+            .pointer("/item/path")
+            .or_else(|| event.pointer("/arguments/path"))
             .or_else(|| event.pointer("/input/path"))
             .or_else(|| event.pointer("/arguments/file_path"))
             .and_then(|v| v.as_str());
         let command = event
-            .pointer("/arguments/command")
+            .pointer("/item/command")
+            .or_else(|| event.pointer("/arguments/command"))
             .or_else(|| event.pointer("/input/command"))
             .and_then(|v| v.as_str());
+        // `command_execution` and `file_change` are codex's own words for
+        // "ran something" and "wrote something"; describe_tool_use matches on
+        // substrings like "write" and "read", so translate first.
+        let name = match name {
+            "command_execution" => "bash",
+            "file_change" => "write",
+            other => other,
+        };
         describe_tool_use(name, path, command)
     }
 }
@@ -1397,6 +1463,56 @@ mod tests {
         let input = serde_json::json!({ "pattern": "Event::Pointer" });
         let line = describe_read("Grep", Some(&input));
         assert!(line.contains("Event::Pointer"), "got {line:?}");
+    }
+
+    /// The twelve minutes of silence (K-155).
+    ///
+    /// These are real events from a build that showed nothing under "Reading
+    /// Krate's API" for its whole 730 seconds. Codex puts the kind of work in
+    /// `/item/type` and the command in `/item/command`; the parser looked for
+    /// `name`, `tool` and `/item/name`, so every one of them fell through.
+    #[test]
+    fn codex_command_events_become_progress_lines() {
+        let codex = super::CodexProvider;
+        let read = r#"{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc 'cat KRATE_AUTHORING.md'"}}"#;
+        assert_eq!(
+            codex.progress_line(read).as_deref(),
+            Some("reading Krate's API reference"),
+            "the pack read is the longest phase of a build and must not be silent"
+        );
+
+        let check = r#"{"type":"item.started","item":{"id":"item_9","type":"command_execution","command":"/bin/zsh -lc 'krate check-app .'"}}"#;
+        assert_eq!(
+            codex.progress_line(check).as_deref(),
+            Some("checking it builds, runs, and only uses what it declared")
+        );
+
+        let write = r#"{"type":"item.started","item":{"id":"item_4","type":"file_change","path":"/tmp/app/src/lib.rs"}}"#;
+        assert_eq!(
+            codex.progress_line(write).as_deref(),
+            Some("writing the app's code")
+        );
+
+        // Only the start of a step. Codex emits started AND completed for the
+        // same work, and reporting both printed every line twice.
+        let done = r#"{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/bin/zsh -lc 'cat KRATE_AUTHORING.md'"}}"#;
+        assert_eq!(codex.progress_line(done), None);
+    }
+
+    /// An agent that reads through a shell rather than a read tool still has
+    /// to show progress -- that is exactly what codex does.
+    #[test]
+    fn a_shell_read_names_the_file_it_is_reading() {
+        assert_eq!(
+            super::read_target("/bin/zsh -lc \"sed -n '1,400p' src/lib.rs\"").as_deref(),
+            Some("lib.rs")
+        );
+        assert_eq!(
+            super::read_target("/bin/zsh -lc 'cat manifest.toml'").as_deref(),
+            Some("manifest.toml")
+        );
+        // Not a read: nothing to say, rather than a wrong guess.
+        assert_eq!(super::read_target("cargo build --release"), None);
     }
 
     #[test]

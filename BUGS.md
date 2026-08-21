@@ -71,6 +71,46 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-155 -- Codex builds show no progress at all: the parser reads the wrong fields
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+Reported from real use: a habit-tracker build sat on "Reading Krate's API --
+still reading, this is the longest part of a build" for eleven minutes with
+nothing under it. It succeeded, but the person had no way to tell it was alive.
+
+The trace says it exactly:
+
+    TOTAL     730.9s
+    AGENT STEPS  (0 tool calls)
+    STALLS  at 0.0s -- 730.9s of silence
+
+And the transcript for the same build holds **155 events**: 68 command
+executions, 37 item starts, 6 file changes. Codex was talking the whole time.
+
+Two faults, both in `CodexProvider::progress_line`:
+
+1. **Wrong fields.** Codex puts the kind of work in `/item/type` and the
+   command in `/item/command`. The parser looked for `name`, `tool` and
+   `/item/name` -- none of which codex sends -- so every event returned `None`.
+   `command_execution` and `file_change` are also codex's own words, and
+   `describe_tool_use` matches on substrings like "write" and "read", so they
+   are translated before the match.
+
+2. **A shell read looked like nothing.** Codex does its whole pack-read with
+   `cat` and `sed`, and the bash branch only recognised `check-app` and
+   `cargo`, returning `None` for everything else. So even with the fields
+   fixed, the longest phase of the build would still have been silent.
+   `read_target` now names the file a reading command points at.
+
+Only `item.started` reports: codex emits started AND completed for the same
+work, and reporting both printed every line twice.
+
+Pinned by tests built from the real events out of that transcript. The same
+build would now report 37 progress lines instead of none.
+
 ### K-154 -- The resize check judged apps before they had redrawn
 
 Class: our-code
