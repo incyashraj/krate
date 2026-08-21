@@ -71,6 +71,40 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-154 -- The resize check judged apps before they had redrawn
+
+Class: our-code
+Owner: claude (improved, not eliminated -- see below)
+
+`ios.krate` failed the resize check on roughly one run in three with "the
+window grew but the app kept drawing at its old size", and passed the other
+two. The app resizes correctly; the check was judging it too early.
+
+The wait was one extra VISIT -- a turn counter, not time -- and a visit can
+land in microseconds. Same defect class as K-143, which was the click check
+judging the frame before the app had repainted.
+
+Now the verdict waits for `RESIZE_SETTLE` (250ms), a visit from `wait` where
+the app's turn is finished, AND for the render surface to have caught up with
+the canvas rect. Two false starts on that last condition are worth recording:
+
+- Comparing the canvas rect to the WINDOW never matches, because a canvas is
+  inset from its window. Every run fell through to the give-up path, which is
+  the race again, just later.
+- Comparing the rect to its own old size passes as soon as the LAYOUT reflows,
+  which happens before the app redraws. The verdict then read the old render
+  size anyway.
+
+Only the render size proves the app itself caught up, because that is the thing
+the verdict actually judges.
+
+**Measured honestly: 29 of 30 runs pass, against roughly 2 in 3 before.** One
+failure in thirty remains and this entry stays open because of it. The
+remaining window is likely between the render surface resizing and the app's
+next present; catching that needs a signal from the present path rather than a
+poll of the surface. No other app regressed -- weather-dashboard, snake,
+nes-game, pulse, mark-replica and the tip calculators all still hold.
+
 ### K-153 -- The launcher bundle a double-click builds had no camera key
 
 Class: our-code

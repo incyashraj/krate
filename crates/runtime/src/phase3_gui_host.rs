@@ -217,6 +217,9 @@ struct UsabilityDriver {
     canvas_before: Option<(f32, f32)>,
     /// The size the window was actually grown to, for the failure message.
     resized_to: Option<(u32, u32)>,
+    /// When the resize was delivered, so the app gets a turn to redraw at the
+    /// new size before it is judged. See `RESIZE_SETTLE`.
+    resized_at: Option<std::time::Instant>,
     /// Whether the app has been given a turn to redraw after the resize.
     resize_settled: bool,
     /// When the script last advanced, so a polling game and an event-loop app
@@ -234,6 +237,17 @@ struct UsabilityDriver {
     /// gives the press something honest to beat.
     idle_churn: Option<f32>,
 }
+
+/// How long the app gets to redraw at the new size before the resize is
+/// judged, and when to judge anyway.
+///
+/// Same reasoning as `PRESS_SETTLE`: a canvas refits only when the app draws,
+/// and a turn-counted wait can elapse in microseconds (K-154).
+const RESIZE_SETTLE: std::time::Duration = std::time::Duration::from_millis(250);
+const RESIZE_GIVE_UP: std::time::Duration = std::time::Duration::from_millis(1_500);
+/// The last word: judge whatever is on screen. An app that has neither caught
+/// up nor come back to `wait` by now genuinely is not following the window.
+const RESIZE_HARD_STOP: std::time::Duration = std::time::Duration::from_millis(4_000);
 
 /// How long the app gets to react to the driven press before it is judged.
 ///
@@ -392,6 +406,7 @@ impl Phase3GuiHost {
             press_was_confident: false,
             canvas_before: None,
             resized_to: None,
+            resized_at: None,
             resize_settled: false,
             last_step: None,
             press_delivered_at: None,
@@ -611,7 +626,7 @@ impl Phase3GuiHost {
                 None
             }
             DriveStep::Resize => {
-                self.drive_resize(window);
+                self.drive_resize(window, from_wait);
                 None
             }
             DriveStep::Click => {
@@ -650,7 +665,7 @@ impl Phase3GuiHost {
     /// put is an app whose drawing surface is nailed to compile-time
     /// constants: exactly the shape where clicks land in the wrong place after
     /// a resize.
-    fn drive_resize(&mut self, window: WindowId) {
+    fn drive_resize(&mut self, window: WindowId, from_wait: bool) {
         let resized_already = self.usability.as_ref().is_some_and(|d| d.action_delivered);
 
         if !resized_already {
@@ -689,21 +704,75 @@ impl Phase3GuiHost {
                 driver.action_delivered = true;
                 driver.canvas_before = before_rect;
                 driver.resized_to = Some((target_w, target_h));
+                driver.resized_at = Some(std::time::Instant::now());
             }
             return;
         }
 
-        // Give the app a second turn before judging it. The first visit
-        // after a resize can arrive before the app has drawn its next frame,
-        // and a canvas is only refitted when it draws -- so judging here
-        // failed apps that were about to do exactly the right thing
-        // (krate-chart and krate-weather both read canvas-size every frame
-        // and were reported as ignoring the window).
+        // Give the app a real turn before judging it.
+        //
+        // A canvas is only refitted when the app DRAWS, so judging before the
+        // next frame fails apps that were about to do exactly the right thing.
+        // This used to be one extra visit -- a turn counter, not time -- and a
+        // visit can land in microseconds. Measured: the same app failed on one
+        // run in three, reporting "the window grew but the app kept drawing at
+        // its old size" for an app that resizes correctly (K-154).
+        //
+        // Wall clock, with the same shape the press check uses (K-143): the
+        // app has had its slice AND the judging visit comes from `wait`, where
+        // this turn is finished. `RESIZE_GIVE_UP` judges anyway for a frame-loop
+        // app that never calls `wait`.
         if let Some(driver) = self.usability.as_mut() {
             if !driver.resize_settled {
                 driver.resize_settled = true;
                 return;
             }
+        }
+        let since_resize = self
+            .usability
+            .as_ref()
+            .and_then(|d| d.resized_at)
+            .map(|at| at.elapsed())
+            .unwrap_or_default();
+        // The give-up path is a floor, not a shortcut: it only judges once the
+        // canvas has ALREADY caught up, or once so long has passed that the app
+        // is clearly not going to redraw. Judging on the clock alone re-created
+        // the very race this is meant to close -- an app whose event loop waits
+        // 220ms between rounds can still be one frame behind at 1.5s, and it
+        // was reported as ignoring the window on one run in five.
+        // "Caught up" has to mean the thing the VERDICT judges, which is the
+        // surface the app is drawing into -- not the layout rect.
+        //
+        // Two false starts here, both worth recording. Comparing the canvas
+        // rect to the window never matches, because a canvas is inset. Then
+        // comparing the rect to its old size passes as soon as the LAYOUT
+        // reflows -- which happens before the app has redrawn, so the verdict
+        // still read the old render size and failed a correct app on about one
+        // run in eight. The layout follows the window on its own; only the
+        // render size proves the app itself caught up (K-154).
+        let caught_up = match (
+            self.canvas_rect(window),
+            self.canvas_pixels_for_window(window),
+        ) {
+            (Some((cw, ch)), Some((rw, rh))) => {
+                (rw as f32 - cw).abs() <= 2.0 && (rh as f32 - ch).abs() <= 2.0
+            }
+            // No canvas2d surface at all (a 3D scene or a widget app): there is
+            // nothing to wait for, and the verdict exempts these anyway.
+            (Some(_), None) => true,
+            _ => false,
+        };
+        if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
+            eprintln!(
+                "krate-resize: since={}ms from_wait={from_wait} caught_up={caught_up}",
+                since_resize.as_millis(),
+            );
+        }
+        let ready = (since_resize >= RESIZE_SETTLE && from_wait && caught_up)
+            || (since_resize >= RESIZE_GIVE_UP && (caught_up || from_wait))
+            || since_resize >= RESIZE_HARD_STOP;
+        if !ready {
+            return;
         }
 
         let after_rect = self.canvas_rect(window);
