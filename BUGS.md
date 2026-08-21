@@ -71,6 +71,40 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-151 -- Animating apps hold gigabytes; static ones hold 130 MB
+
+Class: our-code
+Owner: unclaimed
+
+Not the K-127 runaway (that reached 46 GB and never came back). This one is
+reclaimed -- memory rises and falls -- but the working set is enormous for what
+these apps draw, and a demo machine under it will stutter.
+
+Measured 2026-08-21 on macOS, windowed, through the signed app bundle:
+
+    static apps
+      tip-calculator 3        127 MB
+      todo-list-check-off     131 MB
+
+    continuously animating apps
+      pulse                  2274 MB
+      nes-game               2423 MB
+      snake-game-play        1598-4327 MB, oscillating over 150s
+
+Snake sampled every 15s: 1990, 1765, 1928, 4245, 4327, 3656, 3162, 2434, 2218,
+1598. So it is a sawtooth -- allocation outruns reclamation for a while, then
+the pool drains. Nothing grows without bound, which is why this is a
+performance bug rather than the crash K-127 was.
+
+A snake game holding two gigabytes is wrong on its face. The suspect is the
+per-frame allocation in the canvas present path: static apps draw once and
+settle at 130 MB, and the only difference in the animating ones is that they
+present every frame.
+
+Worth fixing before any performance claim is made in public, and worth knowing
+before a live demo: static apps are safe, an animating one may make the machine
+work hard.
+
 ### K-150 -- main has not compiled for Windows since v0.1.51, and nothing noticed
 
 Class: our-code
