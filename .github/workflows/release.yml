@@ -225,6 +225,20 @@ jobs:
           npm install -g @tauri-apps/cli@^2
           mkdir -p studio/bin
           cp "target/${{ matrix.target }}/release/krate" studio/bin/krate
+          # cargo-component too, not just the engine. Studio needs it to build
+          # an app, and without it the FIRST app somebody makes compiles 378
+          # crates from source before anything happens -- minutes of nothing,
+          # and a hard failure if that compile trips. The CLI archives have
+          # shipped it for ages and the Studio installers never did (K-156).
+          # From tooling/bin, where the cross-built copy for THIS target
+          # lands -- not from ~/.cargo/bin, which holds the runner's host build
+          # and would be the wrong architecture on a cross job.
+          # Tolerant, because the build step above is continue-on-error: a
+          # Studio without cargo-component is worse than one with it, but far
+          # better than no Studio at all. Loud, so a missing one shows up in
+          # the log instead of being discovered by a person's first build.
+          cp tooling/bin/cargo-component studio/bin/cargo-component \
+            || echo "::warning::cargo-component missing; Studio will compile it on first use"
           # Build the .app only. The .dmg is made later, AFTER the real
           # Developer ID signing below, because packaging it here would seal
           # an unsigned bundle inside the thing people download.
@@ -278,6 +292,11 @@ jobs:
           python3 -c 'import json,sys,pathlib; p=pathlib.Path("studio/tauri.conf.json"); d=json.loads(p.read_text()); d["version"]=sys.argv[1]; p.write_text(json.dumps(d,indent=2)+"\n")' "$version"
           mkdir -p studio/bin
           cp "target/${{ matrix.target }}/release/krate.exe" studio/bin/krate.exe
+          # See the note on the macOS build: Studio needs cargo-component to
+          # build an app, and shipping without it makes the first build
+          # compile 378 crates first (K-156).
+          cp tooling/bin/cargo-component.exe studio/bin/cargo-component.exe \
+            || echo "::warning::cargo-component missing; Studio will compile it on first use"
           (cd studio && tauri build --bundles nsis --target ${{ matrix.target }})
           mkdir -p dist
           src=$(find studio/target -name '*-setup.exe' -print -quit)
@@ -301,6 +320,20 @@ jobs:
           python3 -c 'import json,sys,pathlib; p=pathlib.Path("studio/tauri.conf.json"); d=json.loads(p.read_text()); d["version"]=sys.argv[1]; p.write_text(json.dumps(d,indent=2)+"\n")' "$version"
           mkdir -p studio/bin
           cp "target/${{ matrix.target }}/release/krate" studio/bin/krate
+          # cargo-component too, not just the engine. Studio needs it to build
+          # an app, and without it the FIRST app somebody makes compiles 378
+          # crates from source before anything happens -- minutes of nothing,
+          # and a hard failure if that compile trips. The CLI archives have
+          # shipped it for ages and the Studio installers never did (K-156).
+          # From tooling/bin, where the cross-built copy for THIS target
+          # lands -- not from ~/.cargo/bin, which holds the runner's host build
+          # and would be the wrong architecture on a cross job.
+          # Tolerant, because the build step above is continue-on-error: a
+          # Studio without cargo-component is worse than one with it, but far
+          # better than no Studio at all. Loud, so a missing one shows up in
+          # the log instead of being discovered by a person's first build.
+          cp tooling/bin/cargo-component studio/bin/cargo-component \
+            || echo "::warning::cargo-component missing; Studio will compile it on first use"
           (cd studio && tauri build --bundles appimage --target ${{ matrix.target }})
           mkdir -p dist
           src=$(find studio/target -name '*.AppImage' -print -quit)

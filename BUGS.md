@@ -71,6 +71,47 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-156 -- The Studio installers ship without cargo-component
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+Hit on a clean Windows 11 machine with the shipped v0.1.52 installer. Making
+the first app failed with:
+
+    That one didn't come together.
+    The build tools aren't set up yet. Trying again lets Krate install them.
+    error: failed to compile `cargo-component v0.21.1`
+    error: install cargo-component: install command failed
+
+The install directory held `krate-studio.exe`, `uninstall.exe` and
+`bin\krate.exe` -- and no `cargo-component.exe`. So Studio fell back to
+compiling it from source: 378 crates before anything the person asked for
+begins, and a hard failure with a "try again" button if that compile trips.
+
+**The CLI archives have shipped it for ages; the Studio installers never did.**
+The release workflow builds cargo-component per target into `tooling/bin`, and
+a verification step even checks it is in the CLI archive -- with the comment
+"It has silently gone missing on Windows before". But the three Studio
+packaging steps copy only the engine:
+
+    cp "target/${matrix.target}/release/krate.exe" studio/bin/krate.exe
+
+Fixed: all three (macOS, Windows, Linux) now also copy
+`tooling/bin/cargo-component` into `studio/bin`, which `resources: ["bin/*"]`
+carries into the install beside the engine -- exactly where `resolve_tool`
+looks. The copy is tolerant (the build step is `continue-on-error`, and a
+Studio without the tool beats no Studio) but prints a `::warning::`, so a
+missing one shows up in the log rather than in somebody's first build.
+
+Worth noting what made this hard to see: the engine installs to `bin\`, not
+beside `krate-studio.exe`. Dropping cargo-component next to the Studio
+executable did nothing; it has to sit beside `krate.exe`.
+
+Unblocked on the parity VM by hand, and `krate doctor` there now reports
+`cargo-component 0.21.1`.
+
 ### K-155 -- Codex builds show no progress at all: the parser reads the wrong fields
 
 Class: our-code
