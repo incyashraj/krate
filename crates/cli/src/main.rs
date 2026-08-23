@@ -8252,7 +8252,13 @@ fn launch_app(bundle_path: &Path) -> Result<u8> {
     // the engine is a console-subsystem binary on Windows, and spawning it
     // plainly hangs a black terminal behind every app someone opens.
     let mut cmd = std::process::Command::new(std::env::current_exe()?);
-    cmd.arg("run").arg(bundle_path);
+    // `--consent`, exactly as the macOS path passes `consent: true`. Without
+    // it a double-clicked app that declares ANY ask-level capability is
+    // refused outright -- "This app needs permission it was not given, so it
+    // did not run" -- with no window and no way to say yes. Measured on
+    // Windows with a grocery list, whose only ask is `store.kv`: it died
+    // instantly, and ran the moment the flag was added (K-157).
+    cmd.arg("run").arg("--consent").arg(bundle_path);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

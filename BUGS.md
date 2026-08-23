@@ -71,86 +71,40 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
-### K-156 -- The Studio installers ship without cargo-component
+### K-158 -- Nothing registers the .krate file type on Windows
 
 Class: our-code
-Owner: claude
-Status: fixed
+Owner: unclaimed
 
-Hit on a clean Windows 11 machine with the shipped v0.1.52 installer. Making
-the first app failed with:
+On the parity VM, with Studio installed from the shipped v0.1.52 NSIS
+installer, there is no `.krate` association at all:
 
-    That one didn't come together.
-    The build tools aren't set up yet. Trying again lets Krate install them.
-    error: failed to compile `cargo-component v0.21.1`
-    error: install cargo-component: install command failed
+    assoc .krate           -> NO association for .krate
+    HKCU\Software\Classes  -> no .krate class, no Krate* class
+    FileExts\.krate        -> no entry
+    Uninstall entries      -> no Krate entry, HKCU or HKLM
 
-The install directory held `krate-studio.exe`, `uninstall.exe` and
-`bin\krate.exe` -- and no `cargo-component.exe`. So Studio fell back to
-compiling it from source: 378 crates before anything the person asked for
-begins, and a hard failure with a "try again" button if that compile trips.
+So double-clicking a `.krate` does nothing, which is the product's central
+promise ("send the file, it opens anywhere"). `krate` is not on PATH either.
 
-**The CLI archives have shipped it for ages; the Studio installers never did.**
-The release workflow builds cargo-component per target into `tooling/bin`, and
-a verification step even checks it is in the CLI archive -- with the comment
-"It has silently gone missing on Windows before". But the three Studio
-packaging steps copy only the engine:
+`studio/tauri.conf.json` DOES declare `fileAssociations` for `krate`, and the
+Studio code handles a `.krate` on argv correctly (verified by reading it and by
+running the handoff by hand), so the declaration and the handling are both
+right. What is missing is whatever should write the registry -- and the total
+absence of an uninstall entry says the installer's registration step did not
+run at all, not merely the file-type part.
 
-    cp "target/${matrix.target}/release/krate.exe" studio/bin/krate.exe
+macOS covers this in `first_run_setup`: it registers with Launch Services and
+symlinks `krate` onto PATH, and that function is `#[cfg(target_os = "macos")]`
+with no Windows counterpart. A Windows equivalent -- register the class, add
+the install dir to the user PATH -- is the shape of the fix, and it belongs in
+the app rather than only in the installer, so a person who unzips rather than
+installs is not left with a dead file type.
 
-Fixed: all three (macOS, Windows, Linux) now also copy
-`tooling/bin/cargo-component` into `studio/bin`, which `resources: ["bin/*"]`
-carries into the install beside the engine -- exactly where `resolve_tool`
-looks. The copy is tolerant (the build step is `continue-on-error`, and a
-Studio without the tool beats no Studio) but prints a `::warning::`, so a
-missing one shows up in the log rather than in somebody's first build.
+Unblocking a demo by hand, until this is fixed:
 
-Worth noting what made this hard to see: the engine installs to `bin\`, not
-beside `krate-studio.exe`. Dropping cargo-component next to the Studio
-executable did nothing; it has to sit beside `krate.exe`.
-
-Unblocked on the parity VM by hand, and `krate doctor` there now reports
-`cargo-component 0.21.1`.
-
-### K-155 -- Codex builds show no progress at all: the parser reads the wrong fields
-
-Class: our-code
-Owner: claude
-Status: fixed
-
-Reported from real use: a habit-tracker build sat on "Reading Krate's API --
-still reading, this is the longest part of a build" for eleven minutes with
-nothing under it. It succeeded, but the person had no way to tell it was alive.
-
-The trace says it exactly:
-
-    TOTAL     730.9s
-    AGENT STEPS  (0 tool calls)
-    STALLS  at 0.0s -- 730.9s of silence
-
-And the transcript for the same build holds **155 events**: 68 command
-executions, 37 item starts, 6 file changes. Codex was talking the whole time.
-
-Two faults, both in `CodexProvider::progress_line`:
-
-1. **Wrong fields.** Codex puts the kind of work in `/item/type` and the
-   command in `/item/command`. The parser looked for `name`, `tool` and
-   `/item/name` -- none of which codex sends -- so every event returned `None`.
-   `command_execution` and `file_change` are also codex's own words, and
-   `describe_tool_use` matches on substrings like "write" and "read", so they
-   are translated before the match.
-
-2. **A shell read looked like nothing.** Codex does its whole pack-read with
-   `cat` and `sed`, and the bash branch only recognised `check-app` and
-   `cargo`, returning `None` for everything else. So even with the fields
-   fixed, the longest phase of the build would still have been silent.
-   `read_target` now names the file a reading command points at.
-
-Only `item.started` reports: codex emits started AND completed for the same
-work, and reporting both printed every line twice.
-
-Pinned by tests built from the real events out of that transcript. The same
-build would now report 37 progress lines instead of none.
+    cmd /c assoc .krate=KrateApp
+    cmd /c ftype KrateApp="%LOCALAPPDATA%\Krate\bin\krate.exe" launch "%%1"
 
 ### K-154 -- The resize check judged apps before they had redrawn
 
@@ -186,72 +140,6 @@ next present; catching that needs a signal from the present path rather than a
 poll of the surface. No other app regressed -- weather-dashboard, snake,
 nes-game, pulse, mark-replica and the tip calculators all still hold.
 
-### K-153 -- The launcher bundle a double-click builds had no camera key
-
-Class: our-code
-Owner: claude
-Status: fixed
-
-Shipped in v0.1.52 and found by installing that release and using it, not by
-reading the diff. Double-clicking a webcam app said the camera could not be
-opened; the trace read:
-
-    usage description missing: Unsupported("this app bundle does not declare
-    NSCameraUsageDescription, which macOS requires before any process may
-    open a camera")
-
-**There are two launcher-bundle builders in main.rs, and K-145 fixed the wrong
-one.** `macos_launcher_bundle` (K-145) serves `Command::OpenApp`;
-`install_bundle`, reached through `Command::Launch`, is what a Finder
-double-click actually runs -- and its plist template had `CFBundleName`,
-`CFBundleIdentifier`, `NSHighResolutionCapable` and nothing else. So every app
-opened the ordinary way ran from a bundle that could not ask for the camera.
-
-The give-away was a `Resources` folder in the generated wrapper that the code I
-had written never creates. Two builders producing similar bundles is the
-underlying defect; for now both carry `NSCameraUsageDescription` and
-`NSMicrophoneUsageDescription`, and a follow-up should collapse them into one.
-
-Verified end to end after the fix: the generated `Shows.app` plist carries the
-key, the trace reaches "past permission" instead of failing, macOS shows its
-prompt, and the live feed appears.
-
-### K-152 -- A live build looks dead after leaving the session and coming back
-
-Class: our-code (UX)
-Owner: claude (FIXED, see Fixed)
-
-Reported from real use: "I'm making an app, I go to the cloud section and come
-back to the main page and I couldn't see the active session. I clicked that
-recent session from history, and I could see the process was active but the
-right side progress was blank -- it said you'll see the app preview here."
-
-Two separate faults, both about state that lived only in the DOM.
-
-**The progress pane.** Everything it shows -- the stage list, the log, the live
-line, the clock -- was written straight into `#stateBuilding` as it happened,
-and nothing kept a copy. `show("building")` only un-hides that pane; it rebuilds
-nothing. So re-entering a session showed whatever was left in the DOM, which
-after a trip elsewhere is nothing.
-
-Worse, `advanceStage` MOVES `#peekBox` inside `#stages`, so any later wipe of
-that list destroys `#peekBox` and `#nowLine` with it -- the same mechanism as
-K-136. Rescuing the element is not enough on this path, because by then it does
-not exist.
-
-**The "making now" bar on home.** It carries `class="reveal"`, and `revealIn()`
-stamps `opacity: 0` on every `.reveal` element when a view appears, then
-animates them back. But the bar is still `hidden` at that moment;
-`renderBuilding()` un-hides it two awaits later, after the animation has
-finished, with the from-state still on it.
-
-**Also answered here: only one build runs at a time.** `run_author` in
-studio/src/main.rs holds a single pid slot and refuses a second with "one app
-is already being made". The UI already handles that honestly -- a request typed
-into the building session queues and says so; one typed into a different
-session says which app is holding the slot. That is a deliberate limit, not a
-defect, but it is worth stating plainly since the report asked.
-
 ### K-151 -- Animating apps hold gigabytes; static ones hold 130 MB
 
 Class: our-code
@@ -285,69 +173,6 @@ present every frame.
 Worth fixing before any performance claim is made in public, and worth knowing
 before a live demo: static apps are safe, an animating one may make the machine
 work hard.
-
-### K-152 -- A live build looks dead after leaving the session and coming back
-
-Class: our-code (UX)
-Owner: claude
-Status: fixed
-
-Build progress now lives in `state.builds`, a Map keyed by session id, holding
-the log lines, the stage index, the live line, the header and the start time.
-`restoreBuild(sessionId)` replays all of it, and `openSession` calls it on the
-branch that reopens a session which is building right now.
-
-Two details that the fix turns on:
-
-- `restoreBuild` RECREATES `#peekBox` when it is missing rather than only
-  rescuing it. On this path the element has usually already been destroyed
-  along with `#stages`, so a rescue finds nothing (K-136's mechanism, reached
-  from a different direction).
-- The log is capped at `BUILD_LOG_LINES` (400). The pane only shows the tail,
-  and a long build prints thousands of lines; keeping them all would grow
-  without bound for no benefit.
-
-`renderBuilding()` clears the reveal from-state off the "making now" bar when
-it un-hides it, so a bar un-hidden after the animation ran cannot come back
-invisible.
-
-Verified in a browser against the reported flow: with the pane wiped, the
-before state is 0 stages and a null `#nowLine`; after the restore it is 4
-stages, "Testing it" lit, the live line back, the log intact and the title
-correct. A build continues correctly through a restore -- new engine lines land
-in the rebuilt DOM, stages still advance, and the peek stays anchored under the
-live row.
-
-### K-150 -- main has not compiled for Windows since v0.1.51, and nothing noticed
-
-Class: our-code
-Owner: claude (FIXED, see Fixed)
-
-`open_app` lost its `#[cfg(target_os = "macos")]` at some point after v0.1.51.
-Its body uses `std::os::unix::process::CommandExt`, `Command::exec`, and
-`krate_adapter_macos` -- none of which exist on Windows -- so `main` stopped
-compiling there entirely. Nine errors:
-
-    error[E0433]: could not find `unix` in `os`
-    error[E0425]: cannot find function `spawn_open_run` in this scope
-    error[E0599]: no method named `exec` found for `&mut std::process::Command`
-    error[E0433]: unresolved module or unlinked crate `krate_adapter_macos`
-    error[E0282]: type annotations needed
-    ... 4 more
-
-v0.1.51 had the gate, and still has it -- so the last RELEASE is fine and this
-never reached a person. Every commit on `main` since is broken.
-
-The real defect is not the missing attribute; it is that six commits landed
-over it without anyone noticing. Windows is only ever compiled during a
-release, so `main` can rot for days and the first sign is a failed release --
-or, as here, somebody finally standing up a VM.
-
-Fix: gate restored, verified compiling on a real Windows 11 machine. What this
-actually argues for is a Windows `cargo check` in ordinary CI, not just in the
-release workflow. Cross-checking from a Mac would not have caught it either:
-`cargo check --target x86_64-pc-windows-msvc` cannot get past the C
-dependencies without an MSVC toolchain, so it never reaches this code.
 
 ### K-149 -- Building Krate on Windows needs LLVM, and nothing says so
 
@@ -569,109 +394,6 @@ values have to be read back out of the app's own state at the moment of
 printing. Say that, and say why: a literal here is indistinguishable from a
 working app until somebody clicks the button by hand.
 
-### K-142 -- The quiet heartbeat contradicts the step it is shown under
-
-Class: our-code (UX)
-Owner: claude (FIXED, see Fixed)
-
-The build card's quiet-line rotation was one flat list, cycled regardless of
-which step was lit. So "the writing starts once it has read enough" appeared
-underneath a lit **Writing the code**, and "reading Krate's API reference"
-appeared under it too. The founder caught it: the title says one thing and the
-description below says another.
-
-It is small and it is corrosive. The stage list is the only evidence a person
-has that a ten-minute build is progressing; a display that contradicts itself
-teaches them not to trust any of it.
-
-### K-141 -- On macOS, full-bleed apps ignore every click and scroll
-
-Class: our-code
-Owner: claude (FIXED, see Fixed)
-
-**This is the "not clickable, not scrollable" both generated weather apps had,
-and it was ours, not theirs.**
-
-`capture_mouse_event` and `capture_wheel_event` in the macOS adapter flipped
-AppKit's bottom-up coordinates using `self.window.contentLayoutRect()`.
-`contentLayoutRect` is the area *below* the title bar. A full-bleed window owns
-the title-bar band as well, so its content is taller -- and flipping against
-the shorter rect shifted every click and every scroll up by the title bar
-height.
-
-The adapter already had the right answer: `effective_content_rect` exists for
-exactly this and is documented against K-117. The two input paths never called
-it.
-
-What a person sees: the app animates, so it is clearly alive, but nothing
-reacts. The offset lands hardest on the header row -- search fields, buttons,
-tabs, city chips -- which is where a person clicks first.
-
-Evidence:
-
-    $ grep -n "set_full_bleed" wd-src/source/src/lib.rs
-    379:        let _ = window::set_full_bleed(win, true);
-    $ grep -n "set_full_bleed" ios-src/source/src/lib.rs
-    2961:        let _ = window::set_full_bleed(win, true);
-
-Both apps full-bleed, both unclickable. The headless check never touches AppKit,
-which is why it passed them both (see K-140).
-
-### K-140 -- The click check let a spinner answer for a dead button
-
-Class: our-code
-Owner: claude (FIXED, see Fixed)
-
-The usability gate passed both broken weather apps on every stage, including
-`click`, while neither could actually be clicked (K-141). That makes the gate
-worse than no gate: it certified apps that did not work.
-
-Two holes, both now closed:
-
-1. **The verdict was `difference > 0.0`.** Any animation on screen satisfied it.
-   A spinner alone reads as "the app responded" no matter what was pressed --
-   measured on the weather app, the idle churn is 0.007% of the frame, and that
-   was enough to pass.
-2. **The press aimed at the centre of the canvas.** A canvas app draws its own
-   controls, so the host does not know where they are, and centre-of-canvas
-   lands on empty space as often as not.
-
-Fixed by measuring the app's idle churn first and requiring the press to beat
-it by 3x, and by adding `KRATE_PRESS_AT=x,y` so a check can aim at a control
-whose position it knows. Measured after the fix, aiming at a city chip:
-
-    krate-check: click difference=0.028558 idle_churn=0.000068 answered=true
-
-2.86% against a 0.007% baseline -- a real reaction, told apart from the
-animation for the first time.
-
-### K-139 -- codex can never author: the agent is started in the wrong directory
-
-Class: our-code
-Owner: claude (FIXED, see Fixed)
-
-`run_provider_author` never set the child's working directory. The agent
-inherited whatever cwd Krate was launched from, while the prompt told it to
-write into an absolute path somewhere else.
-
-claude does not care -- it writes anywhere it is told. **codex roots its
-`workspace-write` sandbox on its own cwd**, so every write to the app directory
-was "outside of the project" and was refused. codex could therefore never
-author anything, on any machine. This is the answer to "I already have codex
-installed, why does Krate not work with it" -- it was never codex.
-
-Evidence, from the founder's failed webcam build:
-
-    ERROR codex_core::tools::router: error=patch rejected: writing outside of
-    the project; rejected by user approval settings
-
-Second defect in the same failure: the agent had correctly decided the app
-could not be built (Krate has no camera capability -- K-119) and tried to write
-`CANNOT-BUILD.txt` to say so. The sandbox refused that write too, so its clear
-explanation existed only in the transcript, and the person was shown a generic
-"That one didn't come together" with a stack-trace-looking blob. The refusal
-path only ever read the file.
-
 ### K-138 -- Generated apps pick a fixed design size and then cannot be scrolled
 
 Class: teaching-hole
@@ -711,79 +433,6 @@ and one does not. That inconsistency is the teaching hole, not chance.
 The fix is pack-side: say when a design size is the right call and when it is
 not, and say that a fixed design size does not excuse an app from handling the
 wheel.
-
-### K-137 -- Concurrent fetches spawn unbounded OS threads, and the host panics when they run out
-
-Class: our-code
-Owner: claude (FIXED, see Fixed)
-
-`AsyncFetches::begin` called `std::thread::spawn` once per in-flight request
-with no cap. `std::thread::spawn` **panics** when the OS refuses a thread, and a
-panic in the host is not a failed request -- it takes the runtime down and the
-person gets an operating-system crash dialog. This is the crash the founder saw
-opening `ios.krate`.
-
-An app does not have to be hostile to reach it. `cancel` cannot kill a running
-thread (there is no safe way to), so a cancelled request keeps its worker until
-its own timeout expires -- 9 seconds in these apps. `ios.krate` starts one
-request per saved city in `refresh_all`, so a list that is refreshed repeatedly
-stacks workers faster than they retire.
-
-Evidence -- the ceiling on this machine, measured:
-
-    $ cat /tmp/thr.rs   # spawn sleeping threads until the OS refuses
-    $ rustc -O -o /tmp/thr /tmp/thr.rs && /tmp/thr
-    failed after 4095 threads: Resource temporarily unavailable (os error 35)
-
-`Builder::spawn` returns that as `Err`. `thread::spawn` unwraps it and panics.
-
-### K-136 -- A build looks frozen when claude's API stalls (it recovers, but silently)
-
-Class: our-code (UX) / environment (the stall itself)
-Owner: claude (FIXED in 7850f3df)
-
-RESOLVED as to root cause, caught live with system evidence. The "freeze" the
-founder hit repeatedly -- first attempt of a request appears stuck on
-"Understanding what you asked for", the retry builds -- is claude's API
-connection stalling: the create process alive at 0% CPU for 11 minutes, its
-claude child holding three ESTABLISHED HTTPS connections to the Anthropic API
-with no response streaming back. Then, watched further, it RESUMED on its own
-after ~5-6 min and the build finished. So the stall is transient and self-
-healing; the retry "worked" only because the API answered cleanly next time.
-
-Two things made it read as a hard freeze:
-1. claude does its whole pack-read via Bash commands that produce no progress
-   step, so the UI stage list sits on "Understanding" for minutes even when
-   working (measured: up to 5.5 min of legitimate initial silence).
-2. When the API then stalls, the UI shows no sign of it -- a silent screen for
-   up to the 10-minute kill.
-
-Mitigation (01714def): warn on the progress channel after 2 min of silence so
-the stall is VISIBLE ("the AI has gone quiet ... still waiting") and a person
-waits instead of giving up. Kill stays at 10 min -- killing sooner would throw
-away a build about to recover.
-
-Not fully closed: the deeper fix is to cut the silent read entirely
-(retrieval-over-dump, per the pipeline study) so there is far less dead time to
-stall inside, and/or to retry the agent automatically on a hard stall.
-
-ACTUAL ROOT CAUSE, found by reproducing it in a browser rather than reading
-logs: advanceStage MOVES #peekBox inside #stages. On the next build,
-beginBuild wiped $("stages").innerHTML -- destroying the peek and with it
-#nowLine -- and the next line, $("nowLine").textContent = "warming up...",
-threw "Cannot set properties of null". That throw was inside buildNow BEFORE
-the create_app invoke, so the build was silently lost: no engine, no workspace,
-no trace, no error, UI stuck on "building" forever.
-
-That is the whole pattern: the FIRST build of a fresh Studio worked (peek still
-in its original home), every build AFTER it died. Every "the retry worked" was
-really "the relaunch reset the DOM". The API-stall work above was real but a
-different, rarer problem -- this null-deref is what the founder hit for days.
-
-Fixed by rescuing #peekBox before the wipe, making every DOM write in
-beginBuild defensive, and wrapping beginBuild in try/catch inside buildNow so
-presentation can never again lose a build. Verified: three consecutive
-beginBuild calls succeed where the second used to throw.
 
 ### K-135 -- The plan gate only read claude's shape, so grok and codex could never plan
 
@@ -852,170 +501,6 @@ Update:   2026-08-17, live debugging on the founder's Iris Xe PC over
           play parity with the M4 Mac. Publish sync still p50 12-14ms on
           that machine; that remainder is this workstation's real GPU
           presenter work.
-
-### K-106 -- generated apps put text on top of other content
-Status:   fixed 2026-08-13 (4e60477), text-over-text half; see K-107
-Owner:    lead
-Severity: moderate
-Class:    teaching-hole
-Found:    2026-08-13, screenshotting run-3 apps for marketing material. Two
-          of the first two games shot had overlapping text, which is a bad
-          rate for something a person sees immediately.
-Evidence: Both apps pass check-app, and both look wrong at a glance.
-
-          The two failed by different mechanisms, which is the useful part.
-          Tic tac toe reserved nothing -- board to y 512, score card 536-612,
-          and a button at the constant `y: 556` that was correct in isolation
-          and never checked against what came before it. The memory game DID
-          reserve a footer correctly, then drew its hint at
-          `size.height - FOOTER_H - 6.0` ("just above the footer"), which is
-          outside the footer and inside the band already given to the cards.
-
-          That second one matters: the pack's three layout rules are all
-          about deciding regions, and the memory game followed them and still
-          drew outside its own region.
-
-Fix:      2026-08-13, commit 4e60477, in two parts.
-
-          Teaching: pack rule 4, "draw inside the region you were given, and
-          derive every position from it", with both failures as its worked
-          examples and a typed-in coordinate named as the smell.
-
-          Detection: `krate run --shoot X.png --check-layout` reads the
-          recorded draw calls, not the pixels, so the geometry is the app's
-          own numbers. Text against text only -- text over a panel is
-          ordinary design and flagging it would bury the real defect.
-
-              $ krate run req-25/app.krate --shoot ttt.png --check-layout
-              layout: 2 places where text is drawn over other text
-              layout:   "Draws" and "New round" share 30% of the smaller
-                        one, around x 211 y 589
-              layout:   "0" and "New round" share 19%, around x 223 y 577
-
-          Calibrated against seven real apps that do not have the bug
-          (bounce, chart, cubes, eo2, mdview, savings, fa32e9bc): zero false
-          positives, several of them text-heavy.
-
-          Two implementation notes worth keeping. The existing display list
-          is filled only on adapters that consume it (iOS), so a check
-          reading it would find an empty list on desktop and pass everything
-          -- worse than no check, because it looks like it worked. And the
-          buffer resets on clear, or a repainting app stacks frames and
-          appears to collide with itself.
-
-Left open: the memory game reports clean, correctly, because its hint lands
-          on cards rather than on text. That is K-107.
-
-            req 25 tic tac toe (27,539 B)
-              the "New round" pill is drawn on top of the "Draws" label in
-              the score bar. The word Draws is legible through the button.
-
-            req 26 memory game (30,169 B)
-              "Turn over two cards to find a pair" is drawn across the
-              bottom row of cards, so the hint and the cards share pixels.
-
-          Screenshots: scratchpad/shots-marketing/{tictactoe,memory}.png
-Not covered by the existing rule. K-098's follow-up teaches "measure from the
-          outermost edge, not the shape's own size", which is about
-          decorations sticking out past a shape (chairs around a table).
-          This is different: a label or button placed in space that another
-          element already occupies. The app has the room -- both windows
-          have empty space -- it simply did not reserve any.
-Fix:      A layout rule in the pack, roughly: every element gets a rectangle,
-          and no two rectangles overlap. Lay the fixed chrome out first
-          (title, score bar, buttons), subtract it, and give what is left to
-          the content. Say plainly that text drawn over other content is a
-          defect even when both are legible.
-Why it matters: this is the first thing a person sees, and it is the exact
-          complaint that started the visual work -- "not that amazing
-          considering what the world has seen". An app can pass every gate
-          and still look broken in the screenshot someone posts.
-Note:     check-app cannot catch this today. The usability stage measures
-          whether the canvas followed the window, not whether two things
-          were drawn in the same place. Detecting it needs the region
-          measure that K-099 also wants.
-
-### K-110 -- every app after the first opens with no window at all (macOS)
-Status:   fixed 2026-08-13 (9901c16), SHIPPED in v0.1.13 2026-08-14
-Owner:    lead
-Severity: blocker
-Class:    our-code
-Found:    2026-08-13, Yashraj: "double click open is not working here in my pc,
-          and not in windows as well ... this breaks so often".
-Evidence: Open one .krate and it opens. Leave it running, double-click a
-          second, and nothing appears -- no window, no error. Reproduced on
-          the RELEASED v0.1.12 with an app made through the full user path:
-
-              installed build   windows: Cubes,              <- second missing
-              with the fix      windows: Cubes, Tea Timer
-
-          The process is running and the runtime prints
-          `opened window "Tea Timer"`, so from the inside everything worked.
-
-Cause:    The first document arrives through AppKit's open-documents event and
-          runs in the process macOS launched -- a registered GUI application.
-          Every later document went through `spawn_open_run`, a bare
-          `Command::spawn`. That produces a process macOS does not consider a
-          GUI app: no LaunchServices registration, no activation, so AppKit
-          will not put its window on screen however correctly the runtime
-          creates it.
-
-          That is why it read as random. It is not: one app always works, the
-          second never does. Which one somebody hits depends only on whether
-          they already had an app open.
-Fix:      Relaunch through the .app bundle -- `open -n -a Krate.app <file>` --
-          so LaunchServices registers the new instance. Direct spawn stays as
-          the fallback for a plain CLI install with no bundle.
-Windows:  Not affected. Explorer runs `krate-open.exe "%1"`, so each app is
-          its own process with the path as an argument and there is no event
-          to miss. CI checked only that krate-open.exe was PRESENT in the
-          archive, never that it opens anything -- that gap is now closed by a
-          cold-install step that registers the association, reads back the
-          ProgID command, and runs it on a real file.
-Shipped:  v0.1.13, 2026-08-14. Verified the way a person meets it -- a cold
-          install from krate.tech, then Finder's own double-click, three
-          rounds:
-
-              install exit=0, krate v0.1.13
-              round 1: [Cubes, Tea Timer]
-              round 2: [Cubes, Tea Timer]
-              round 3: [Cubes, Tea Timer]
-
-          Against the same two apps on v0.1.12 the second window never
-          appeared at all.
-
-### K-109 -- an app that resets itself last prints a state that looks like it never ran
-Status:   fixed 2026-08-13 (b1104d0), untested until benchmark run 5
-Owner:    lead
-Severity: moderate
-Class:    teaching-hole
-Found:    2026-08-13, benchmark run 4, request 3 (a countdown timer), failing
-          `remaining!=1500` at 2 of 3 asserts.
-Evidence: The app is correct. It drove its whole interface on `quick` and
-          reset last:
-
-              duration:1500
-              remaining:1500
-              elapsed:1
-              ticks:1
-              reset:yes
-
-          `elapsed:1` and `ticks:1` prove it really counted down. But
-          `remaining` is back to the starting value, so the one number a
-          person would check to see a timer counting says it never ran. Its
-          own source comment describes the sequence: "let it count, pause it,
-          adjust the length, reset it -- and print what the".
-Fix:      2026-08-13, commit b1104d0. The pack already said "operate your own
-          controls, do not just print a snapshot", and this app did exactly
-          that. What it never said is that an app prints ONCE, at the end, so
-          an operation that undoes the others must not be last. Added with
-          this failure as the worked example: put reset, clear, cancel and
-          close in the middle, or print the telling value where it is true
-          (`remaining_at_pause`) as well as at the end.
-Not a corpus change, deliberately: `remaining!=1500` is the right assert --
-          an app ending on the full duration has not shown a countdown -- and
-          widening it to accept 1500 would leave it unable to fail. The rule
-          landed after run 4 started, so run 4 cannot test it; run 5 will.
 
 ### K-108 -- dead space cannot tell an editor from an app that stopped short
 Status:   open
@@ -1189,105 +674,6 @@ Update:   2026-08-12, req 34 adds a second shape. A table app measured the
           behave.
           Ten of twenty failures now turn on a key name.
 
-### K-104 -- the benchmark's authoring budget is too small for its own corpus
-Status:   fixed 2026-08-12 (commits b1cdeff, 82e440f) -- a timeout and a
-          dropped connection are `skipped`, not `fail`; per-tier budget open
-Owner:    lead
-Regression: 2026-08-12, same day, caused by the fix above and caught four
-          requests into run 3. The detection matched
-          `KRATE_AUTHOR_TIMEOUT_SECS` and `Raise the budget`, and the agent
-          transcript carries an environment dump containing
-          `KRATE_AUTHOR_TIMEOUT_SECS=1800` on **every** run. So the rule
-          fired on any request that got far enough to write a transcript,
-          and the first one to do so halted the benchmark:
-
-            [5] easy skipped account 406s a click counter
-            note: authoring hit the 1800s budget while still working
-
-          406 seconds against an 1800 second budget cannot both be true, and
-          that contradiction is what prompted the check.
-
-          Now matches only the sentence the CLI prints on a real timeout:
-          `did not finish within N minutes and was stopped`. Verified against
-          a live transcript from the running benchmark -- the env var appears
-          once, the new pattern zero times.
-
-          **The regression was worse than the bug.** The original wrongly
-          failed working apps; this wrongly excused them and stopped the run,
-          which removes data silently rather than visibly. A skip rule needs
-          testing against a healthy run, not only against the failure it was
-          written for -- my test covered four failure texts and no success.
-Severity: serious
-Class:    our-code
-Found:    2026-08-12, request 14 of the re-run (a note-taking app).
-Evidence: The per-request budget is 900 s (`TIMEOUT_SECS`). Request 14 was
-          cut off at 902 s having completed **41 authoring steps** -- read
-          the API reference, read the notes example, wrote code, checked it
-          built, iterated, wrote again. It was working the whole time. No
-          `.krate` was produced, and the row reads `fail / authored`, which
-          is indistinguishable from an app that was written badly.
-
-          The budget is not far above the working range:
-
-            req 1  tip calculator     417 s   pass
-            req 4  temperature conv   543 s   pass
-            req 7  password gen       656 s   fail (naming)
-            req 14 note taking       >900 s   cut off
-
-          Easy-tier apps that succeed already take 7-11 minutes. The margin
-          above the slowest success is 244 s, and **24 medium and hard
-          requests remain**, all of which are larger than the app that just
-          ran out of time.
-Impact:   Any medium or hard request that needs more than fifteen minutes is
-          recorded as a product failure. Run the rest of the corpus at 900 s
-          and the headline number measures the timeout, not the authoring
-          loop. Same category error as counting a rate-limit rejection as a
-          failure, which the harness's own header warns about at length.
-Fix:      Two parts.
-          1. Raise the budget for the tiers that need it -- the header
-             already takes per-tier behaviour for granted elsewhere, so a
-             per-tier `TIMEOUT_SECS` is in keeping.
-          2. **Record a timeout as its own outcome, not as `fail`.** The
-             harness distinguishes `skipped` for quota rejections for
-             exactly this reason: no code was written, so there is nothing
-             to judge. A timeout is the same situation with a different
-             cause.
-Note:     Do not raise the budget mid-run and keep the earlier rows. Either
-             finish this run at 900 s and mark the timeouts, or restart the
-             remaining tiers at a higher budget and say which rows were
-             measured under which. Changing the measure halfway and not
-             saying so is how a number stops meaning anything.
-Correction: 2026-08-12, after the retry. Request 14 passed at the higher
-          budget **in 378 seconds, using 12 authoring steps** -- against 41
-          steps and a 902 s cutoff on the attempt before it. Same request,
-          same corpus, same binary.
-
-          So the original reading was wrong in an important way. A note-taking
-          app does **not** need more than 900 s; the first attempt wandered
-          down a long path and the second went almost straight there.
-          **Authoring time varies by more than 2x on the same request**, and
-          the budget is a ceiling on the variance, not on the work.
-
-          That changes what the fix is for. A per-tier budget is still worth
-          having, but the reason is to stop an unlucky run being recorded as
-          a product failure -- not because larger apps have a higher floor.
-          And it makes the case for the second half stronger, not weaker: a
-          timeout must be its own outcome, because it now clearly measures
-          luck as much as difficulty.
-
-          Worth measuring properly before tuning further: run one request
-          several times and record the spread. A benchmark whose per-request
-          time varies 2.4x is a benchmark whose single-shot pass rate carries
-          more noise than anyone has quantified.
-Also:     A restart clears `WORK_ROOT`, so the per-request `run.log` -- the
-          actual stdout an app printed -- is lost for every row already
-          recorded. The TSV keeps the assert tally and the missing keys,
-          which is enough to classify a failure, but not enough to quote
-          what the app said. That evidence is exactly what turned "six
-          failures" into "six working apps with the wrong key name" (K-103),
-          so it is worth keeping: copy `run.log` beside the results row, or
-          fold its contents into a column.
-
 ### K-103 -- the benchmark scores correct apps as failures over key names
 Status:   half fixed 2026-08-12 -- the teaching half shipped; the corpus and
           the missing operator are still open
@@ -1419,6 +805,1038 @@ Fix:      Not by loosening the bar. Two honest options:
 Note:     Do not quietly rescore the run. The number stands as measured;
           this entry is what it means. Both figures belong in RESULTS.md --
           the raw pass rate, and how much of the gap is vocabulary.
+
+### K-071 -- whisper-rs stopped linking on the windows-latest CI image
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    environment
+Found:    2026-08-07, CI run 31162680943, on a commit touching only a workflow
+          file and BUGS.md -- so the code did not cause it
+Evidence: Library tests (windows-latest) and Test (ubuntu? no -- windows only):
+
+            libwhisper_rs_sys-...rlib(ops.obj) : error LNK2019: unresolved
+              external symbol __imp_fminf ...
+            fatal error LNK1120: 20 unresolved externals
+
+          Twenty unresolved CRT math symbols (__imp_fmaxf, __imp_erff,
+          __imp_lroundf...) linking krate-runtime's test binary against
+          whisper-rs/ggml. The same code linked fine in earlier runs; the
+          runner image updated (MSBuild/MSVC), so this is the machine
+          changing under us, not a regression in Krate. Every push now fails
+          the Windows library-tests job until it is addressed (ggml needs
+          the UCRT import lib the new image stopped providing implicitly, or
+          whisper-rs needs a version bump built against it).
+Fix:      Mitigated 2026-08-07: release and runtime-linking CI jobs pinned
+          to windows-2022, which still links ggml correctly; v0.1.3 built
+          green on it. The real fix (whisper-rs/ggml against the new UCRT
+          arrangement, or an upstream bump) is still open before the pin can
+          come off -- windows-2022 will be retired eventually.
+Update:   2026-08-12. **Two wrong fixes, then the actual cause. Both wrong
+          attempts are recorded because each one looked right and each one
+          cost a CI cycle to disprove.**
+
+          Attempt 1 -- "CMake builds whisper against the dynamic CRT while
+          Rust links static". Wrong: the cmake crate already passes `-MT`,
+          the static runtime, so the two sides agreed all along. The
+          toolchain file also broke the build in a new way, because a bash
+          `$(pwd)` path means nothing to native CMake ("Could not find
+          toolchain file: /d/a/krate/..."). Reverted.
+
+          Attempt 2 -- "the cache restores whisper objects built under the
+          old image". The failing runs really do invoke cmake zero times, so
+          this was plausible. Rotating the cache key on the image label
+          worked as designed -- "Cache not found for input keys" -- and
+          whisper-rs-sys then **compiled from source and failed on the same
+          23 symbols**. So the cache was never the cause. The key change is
+          kept as hygiene, relabelled, because it is what produced the clean
+          rebuild that disproved it.
+
+          What the link line actually shows (run 31562047659):
+
+            /defaultlib:libcmt          <- Rust asks for the static CRT
+            legacy_stdio_definitions.lib
+            (no libucrt.lib anywhere)
+
+          `libcmt` does not itself carry the UCRT stdio and math functions;
+          those live in `libucrt.lib`, and nothing puts it on the line. That
+          is why every unresolved symbol is a UCRT one -- `__imp_fgetc`,
+          `__imp_fmaxf`, `__imp__aligned_malloc` -- and why no cache key or
+          CMake flag can help: the library simply is not being linked.
+
+          The fix therefore belongs in the link arguments, not the workflow:
+          `-C link-arg=/defaultlib:libucrt.lib` for the Windows targets in
+          `.cargo/config.toml`, beside the `+crt-static` that is already
+          there. **Not attempted yet** -- three speculative fixes in a row on
+          a platform I cannot test locally is worse than a red job with an
+          accurate diagnosis, and the next attempt should be made by someone
+          who can reproduce it on Windows.
+
+          Context that has not changed: CI run 31528953170 was **10 of 11
+          jobs green, this the only red one**, and releases ship regardless
+          because the release workflow builds Windows with `no-speech`.
+
+          Why releases keep shipping anyway, which was not written down and
+          should have been: the release workflow builds Windows with
+          `no-speech: true`, so it never links whisper at all. Only this CI
+          job builds the full feature set. That is the whole reason v0.1.12
+          published six platforms green while this stayed red.
+
+          The cost of leaving it: main has been red for five days, and a
+          permanently red board stops being read. The next failure that is a
+          real defect will look exactly like this one. That is the argument
+          for fixing it, not the speech feature itself.
+
+### K-014 — This machine is out of disk, and cargo cannot finish a test run
+Status:   resolved -- rechecked 2026-08-13, the disk is no longer full
+Owner:    lead
+Severity: serious
+Class:    environment
+Found:    2026-08-05, W12, running cargo test at the end of the K-001 work
+Recheck:  2026-08-13. `df -h /` now reports 34Gi available of 460Gi (26%%
+          used). Full workspace test runs complete. Environment class, so
+          nothing to fix in the product -- recorded closed so it is not
+          rediscovered:
+
+              /dev/disk3s1s1   460Gi    12Gi    33Gi    26%    481k  350M    0%   /
+
+Evidence: `df -h /` reports 159Mi available of 460Gi (99%% full). Tool calls
+          start failing with "ENOSPC: no space left on device". The bulk is
+          build output: `/Users/yashrajpardeshi/Projects/layer6x6/target` is
+          87G, and each agent worktree adds its own (mine is 7.8G).
+Fix:      Not a product defect. `cargo clean` the shared checkout and the
+          finished worktrees. Recorded so a later ENOSPC failure is not
+          mistaken for a Krate bug, and because several agents building in
+          parallel worktrees is what fills the disk -- the cost is structural,
+          not a one-off.
+
+### K-028 — Two of this machine's three AI accounts are unusable
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    environment
+Found:    2026-08-05, lead, trying to verify Krate Mode end to end
+Evidence: `claude -p` returns "OAuth session expired and could not be
+          refreshed". `codex exec` returns "The 'gpt-5.6-sol' model requires a
+          newer version of Codex".
+          **Grok works.** `krate create --agent grok` authored a 584-line chess
+          board in 237s and a real tip calculator in 229s, both from scratch --
+          verified by timing and by reading the source. So authoring can still
+          be measured end to end; it was a blocker and is not any more.
+Fix:      Not ours. Yashraj re-authenticates Claude and updates Codex. Recorded
+          because it once turned a 14/14 pass rate into a reported 23% and must
+          not be mistaken for a product failure again.
+
+### K-030 — A debug build shadows the real release on PATH
+Status:   mitigated 2026-08-13 (7a2defa) -- the shadowing is the machine's
+          PATH and stays; the binary now says which one you ran
+Owner:    lead
+Severity: serious
+Class:    environment
+Found:    2026-08-05, W17, checking what `krate` actually resolves to
+Evidence: `which krate` gives
+          `/Users/yashrajpardeshi/Projects/layer6x6/target/debug/krate`
+          (`krate 0.1.0-dev`). The installed release at `~/.local/bin/krate`
+          (rc20) is shadowed. Anything measured through the dev binary is
+          contaminated: it is not the code a user runs.
+Fix:      2026-08-13, commit 7a2defa. Rechecked and still live, and worse than
+          recorded: the debug build reports the SAME version as release, so
+          the version string could not tell them apart at all.
+
+            target/debug/krate      krate 0.1.12
+            target/release/krate    krate 0.1.12
+            ~/.local/bin/krate      krate v0.1.8
+
+          A debug build now appends a warning:
+
+            krate 0.1.12 (debug build -- not what a user runs)
+
+          Release output is unchanged, verified both ways. The suffix
+          deliberately does not reach telemetry -- that version goes into a
+          JSON field and a suffix would make every dev run its own "version".
+
+          The rule still stands: every command in this repo uses an absolute
+          path, and outsider testing uses ~/.local/bin/krate explicitly. This
+          makes breaking that rule visible in one command rather than after an
+          afternoon of confusing results.
+
+### K-020 — Double-clicking a .krate opened a file picker, not the app
+Status:   not reproducible -- closing
+Owner:    lead
+Severity: serious
+Class:    our-code
+Found:    2026-08-05, W17, outsider testing
+Evidence: Double-clicking a `.krate` produced an off-screen file picker rather
+          than opening the app. Double-click is the headline promise on the
+          website and the simplest path we advertise.
+Fix:      Retested by Yashraj on 2026-08-05: double-click works. W17 most
+          likely hit the stale /Applications/Krate.app trap, as suspected.
+          Closing rather than leaving an unreproducible entry on the board.
+
+### K-021 — An absolute path to target/release is the WRONG binary in a worktree
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    environment
+Found:    2026-08-05, W15, after losing significant time to it
+Evidence: CLAUDE.md says to invoke
+          `/Users/yashrajpardeshi/Projects/layer6x6/target/release/krate` by
+          absolute path. From a worktree that is the MAIN repo's binary, built
+          by another workstation before the caller's WIT existed. It reported
+          "this app needs a newer version of Krate", which reads as a broken
+          app rather than a stale tool.
+Fix:      The rule is "absolute path to YOUR OWN worktree's target". CLAUDE.md
+          needs correcting.
+
+### K-023 — Running an app from its source dir writes its data into the repo
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-05, W13, running krate-notes headless while fixing K-003
+Evidence: `krate run apps/krate-notes/target/.../krate_notes.wasm --manifest
+          manifest.toml --auto-grant --headless` created
+          `apps/krate-notes/notes/{first,second,third}.txt` as untracked files
+          in the repo:
+            $ git status --short
+            ?? apps/krate-notes/notes/
+          The app's fs paths are sandbox-relative and the sandbox root is the
+          cwd, so running from the app's own directory drops its save files
+          into the source tree. `.gitignore` has `/notes/` -- anchored at the
+          repo root, so it does not match this path. Harmless but it means
+          anyone verifying a GUI app dirties their working tree and may commit
+          an app's test data by accident.
+Recheck:  2026-08-13. Still reproduces, and the entry above is wrong about
+          what is happening -- which matters, because the fix it proposes
+          cannot work.
+
+          The three files are **tracked in the repository**:
+
+              $ git ls-files apps/krate-notes/notes/
+              apps/krate-notes/notes/first.txt
+              apps/krate-notes/notes/second.txt
+              apps/krate-notes/notes/third.txt
+
+          They are the app's seed notes, committed on purpose in 63e8596 so
+          krate-notes has content to show. So a run from the app's own
+          directory does not create untracked files -- it **overwrites
+          checked-in ones**. `git status` looked clean afterwards only
+          because the app wrote back byte-identical content; appending one
+          character and re-running shows ` M first.txt` immediately.
+
+          That rules out the .gitignore half of the proposed fix outright:
+          gitignore has no effect on tracked files. A rule was written,
+          tested, found to change nothing, and removed rather than committed.
+
+          The trap is real but milder and differently shaped than filed:
+          editing a note in the app while verifying it dirties the working
+          tree, and the diff looks like someone edited the seed data by hand.
+Fix:      The sandbox-root half still stands and is the only one that works:
+          default the sandbox root somewhere outside the source tree, or make
+          `check-app` and the verify path run each app in a scratch cwd. The
+          second is smaller and covers the case that actually bites, since
+          nobody runs an app from its source directory except while verifying
+          it. Still not urgent.
+Left as is deliberately: changing the default sandbox root moves where every
+          app's data lives, which is a bigger change than an annoyance-level
+          bug justifies, and doing it carelessly would break anyone relying on
+          the current cwd behaviour.
+
+### K-025 — Four older apps fail check-app at the run stage
+Status:   superseded by K-092 -- verified 2026-08-11: the real count is
+          thirteen, and seven share one root cause (a round-limited
+          interactive loop). Tracking it there.
+Owner:    unclaimed
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-05, lead, sweeping every app after the W12/W13/W14 merges
+Evidence: After a clean rebuild, 23 of 27 apps pass every stage. These four
+          fail at `run` with "failed to run headless with all grants (exit 1)":
+          krate-hello-gui, krate-curl, krate-nova2, krate-spriteproof.
+          Pre-existing, not caused by the merges -- they were failing before.
+          krate-curl needs a live server, so its failure may be expected rather
+          than a defect.
+Fix:      Diagnose each. None is a reference app the authoring pack recommends,
+          so none blocks a user making an app.
+
+### K-027 — Bundles made by the installed release carry no source
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    environment
+Found:    2026-08-05, lead, while diagnosing K-026
+Evidence: `unzip -l ~/Desktop/a-news-app-giving.krate` lists only
+          manifest.toml and code.wasm. Source shipping landed in 27f4609 but
+          the installed `krate` on PATH is rc20, which predates it. Anyone
+          testing with the public install gets none of today's fixes --
+          scroll, resize, text measurement, self-close -- and reports bugs
+          that are already fixed here.
+Fix:      Cut a release. Until then, say plainly which binary a test used.
+
+### K-120 -- Any continuously animating GUI app burns ~100% of a core
+Status:   open
+Owner:    lead (via K-112: the GPU presenter is the fix's home)
+Severity: serious
+Class:    runtime-hole
+Found:    2026-08-16, building apps/krate-aurora, measured on macOS (M4).
+Evidence: Two animating apps, measured with `ps -o %cpu=` six seconds after
+          launch, both windowed and idle with no input:
+
+              $ krate run Glow.krate --auto-grant     # shipped reference app
+              Glow: 94.3% CPU
+              $ krate run Aurora.krate --auto-grant   # 45,000 px/frame
+              Aurora: 101.8% CPU
+
+          The gap between them is the point. krate-glow draws a handful of
+          vector cards and does almost no per-pixel work; krate-aurora
+          computes 45,000 pixels a frame through three noise fields. Seven
+          points separate them, so the cost is not the guest's drawing --
+          it is a floor that any app paying to animate at all runs into.
+
+          Ruled out inside the guest, in this order, each re-measured:
+          1. `request-redraw` feeding its own event back, so every
+             `events::wait(Some(ms))` returns instantly and the loop spins.
+             The host already documents this at phase3_gui_host.rs:2290
+             ("an animation loop calls request-redraw every frame and
+             immediately receives that redraw back"). Removing the call
+             entirely: still ~101%.
+          2. No frame pacing. Added a monotonic-clock deadline that only
+             draws when a frame is due and blocks in `wait` for the
+             remainder: still ~101%.
+          3. A per-frame `Vec` allocation for the reflection buffer.
+             Hoisted to a reused buffer -- real fix, kept, and it took RSS
+             from 215 MB to ~140 MB -- but CPU unchanged at ~101%.
+
+          So a guest that paces itself correctly, allocates nothing per
+          frame, and never asks for a redraw still cannot idle below a full
+          core. That is the runtime's floor, not the app's.
+Impact:   This is the demo case, not a corner: an animated app is exactly
+          what gets shown to someone. A fan audibly spinning up during a
+          demo, and a laptop draining, reads as "this runtime is heavy"
+          regardless of how good the app looks.
+Fix:      Unknown -- needs a profile of the host's wait/pump path rather
+          than another guest-side change; the three obvious guest causes
+          above are eliminated. Suspect the manual `nextEventMatchingMask`
+          pump (see K-032's diagnosis, which established this runtime turns
+          no CFRunLoop and pumps by hand from poll/wait) never actually
+          parks: a pump that returns immediately whether or not an event is
+          waiting would produce exactly this floor. Worth measuring against
+          the Windows and Linux adapters before assuming it is macOS-only.
+Update:   2026-08-16, symbolized profile (debug build, macOS M4): with the
+          guest spin removed (K-122) glow still holds ~67% of a core, and
+          the top of stack is the CPU rasterizer redrawing the full scene
+          every frame -- linear_gradient_stops (207 samples),
+          drop_shadow_round_rect (172), fill_round_rect (93),
+          publish_canvas (83), stroke_round_rect (45). The floor is
+          full-scene CPU raster at 60fps. The real fix is the GPU
+          presenter workstation (K-112); interim wins would be caching
+          shadow masks and gradient ramps keyed by their parameters.
+
+### K-117 -- Apps cannot paint the title bar area, so full-bleed designs are impossible
+Status:   open
+Owner:    lead
+Severity: major
+Class:    runtime-hole
+Found:    2026-08-16, replicating MarkText pixel-for-pixel as a Krate app
+          for the first head-to-head benchmark.
+Evidence: MarkText's window is one flat #282828 surface to the very top
+          edge, traffic lights overlaid (titleBarStyle overlay). The Krate
+          replica gets a standard macOS title bar band above its content --
+          the one visible difference no app code can remove, because the
+          window API offers no full-bleed or hidden-title style. Every
+          modern editor, terminal and browser uses this style; apps that
+          cannot will always look one generation older.
+Fix:      A window style option in the ui.window interface (full-bleed /
+          hidden title with overlay controls), honored by the macOS
+          adapter (titlebarAppearsTransparent + fullSizeContentView), the
+          Windows adapter (extend client area into the frame), and Linux
+          (CSD). Until then the studio's own chrome does on the shell what
+          apps cannot do for themselves.
+Update:   2026-08-16, e63ef189: shipped on macOS (set-full-bleed in
+          ui.window, additive; transparent titlebar + full-size content +
+          overlaid lights; sizes follow effective_content_rect so the
+          canvas owns the band). Draft accepts so check-app cannot fail an
+          app for asking. Still open for the Windows adapter
+          (extend-client-area into the frame) and Linux (CSD); both
+          currently return honest unsupported and keep standard chrome.
+
+## Fixed
+
+### K-157 -- A double-clicked app on Windows and Linux is refused, not asked
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+On macOS, `open_app` runs the bundle with `consent: true`, so an app that
+declares an ask-level capability gets a consent window and the person says yes.
+The Windows and Linux `launch_app` ran `krate run <path>` with no consent flag
+at all, so the same app was refused outright:
+
+    This app needs permission it was not given, so it did not run.
+    It needs to:
+      - save its own settings and data (store.kv)
+
+No window, no prompt, no way to say yes -- and on a double-click there is no
+console to read that message in either, so the app simply does nothing.
+
+Measured on the parity VM with a grocery list whose only ask is `store.kv`: it
+died instantly, and ran the moment `--consent` was added. `launch_app` now
+passes it, matching what macOS has always done.
+
+Worth noting how narrow the escape was: an app declaring ONLY default-granted
+capabilities (a window, stdout) runs fine, which is most of the sample apps.
+Anything that saves data, reaches the network, or uses the camera was dead on
+arrival.
+
+### K-156 -- The Studio installers ship without cargo-component
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+Hit on a clean Windows 11 machine with the shipped v0.1.52 installer. Making
+the first app failed with:
+
+    That one didn't come together.
+    The build tools aren't set up yet. Trying again lets Krate install them.
+    error: failed to compile `cargo-component v0.21.1`
+    error: install cargo-component: install command failed
+
+The install directory held `krate-studio.exe`, `uninstall.exe` and
+`bin\krate.exe` -- and no `cargo-component.exe`. So Studio fell back to
+compiling it from source: 378 crates before anything the person asked for
+begins, and a hard failure with a "try again" button if that compile trips.
+
+**The CLI archives have shipped it for ages; the Studio installers never did.**
+The release workflow builds cargo-component per target into `tooling/bin`, and
+a verification step even checks it is in the CLI archive -- with the comment
+"It has silently gone missing on Windows before". But the three Studio
+packaging steps copy only the engine:
+
+    cp "target/${matrix.target}/release/krate.exe" studio/bin/krate.exe
+
+Fixed: all three (macOS, Windows, Linux) now also copy
+`tooling/bin/cargo-component` into `studio/bin`, which `resources: ["bin/*"]`
+carries into the install beside the engine -- exactly where `resolve_tool`
+looks. The copy is tolerant (the build step is `continue-on-error`, and a
+Studio without the tool beats no Studio) but prints a `::warning::`, so a
+missing one shows up in the log rather than in somebody's first build.
+
+Worth noting what made this hard to see: the engine installs to `bin\`, not
+beside `krate-studio.exe`. Dropping cargo-component next to the Studio
+executable did nothing; it has to sit beside `krate.exe`.
+
+Unblocked on the parity VM by hand, and `krate doctor` there now reports
+`cargo-component 0.21.1`.
+
+### K-155 -- Codex builds show no progress at all: the parser reads the wrong fields
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+Reported from real use: a habit-tracker build sat on "Reading Krate's API --
+still reading, this is the longest part of a build" for eleven minutes with
+nothing under it. It succeeded, but the person had no way to tell it was alive.
+
+The trace says it exactly:
+
+    TOTAL     730.9s
+    AGENT STEPS  (0 tool calls)
+    STALLS  at 0.0s -- 730.9s of silence
+
+And the transcript for the same build holds **155 events**: 68 command
+executions, 37 item starts, 6 file changes. Codex was talking the whole time.
+
+Two faults, both in `CodexProvider::progress_line`:
+
+1. **Wrong fields.** Codex puts the kind of work in `/item/type` and the
+   command in `/item/command`. The parser looked for `name`, `tool` and
+   `/item/name` -- none of which codex sends -- so every event returned `None`.
+   `command_execution` and `file_change` are also codex's own words, and
+   `describe_tool_use` matches on substrings like "write" and "read", so they
+   are translated before the match.
+
+2. **A shell read looked like nothing.** Codex does its whole pack-read with
+   `cat` and `sed`, and the bash branch only recognised `check-app` and
+   `cargo`, returning `None` for everything else. So even with the fields
+   fixed, the longest phase of the build would still have been silent.
+   `read_target` now names the file a reading command points at.
+
+Only `item.started` reports: codex emits started AND completed for the same
+work, and reporting both printed every line twice.
+
+Pinned by tests built from the real events out of that transcript. The same
+build would now report 37 progress lines instead of none.
+
+### K-153 -- The launcher bundle a double-click builds had no camera key
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+Shipped in v0.1.52 and found by installing that release and using it, not by
+reading the diff. Double-clicking a webcam app said the camera could not be
+opened; the trace read:
+
+    usage description missing: Unsupported("this app bundle does not declare
+    NSCameraUsageDescription, which macOS requires before any process may
+    open a camera")
+
+**There are two launcher-bundle builders in main.rs, and K-145 fixed the wrong
+one.** `macos_launcher_bundle` (K-145) serves `Command::OpenApp`;
+`install_bundle`, reached through `Command::Launch`, is what a Finder
+double-click actually runs -- and its plist template had `CFBundleName`,
+`CFBundleIdentifier`, `NSHighResolutionCapable` and nothing else. So every app
+opened the ordinary way ran from a bundle that could not ask for the camera.
+
+The give-away was a `Resources` folder in the generated wrapper that the code I
+had written never creates. Two builders producing similar bundles is the
+underlying defect; for now both carry `NSCameraUsageDescription` and
+`NSMicrophoneUsageDescription`, and a follow-up should collapse them into one.
+
+Verified end to end after the fix: the generated `Shows.app` plist carries the
+key, the trace reaches "past permission" instead of failing, macOS shows its
+prompt, and the live feed appears.
+
+### K-152 -- A live build looks dead after leaving the session and coming back
+
+Class: our-code (UX)
+Owner: claude (FIXED, see Fixed)
+
+Reported from real use: "I'm making an app, I go to the cloud section and come
+back to the main page and I couldn't see the active session. I clicked that
+recent session from history, and I could see the process was active but the
+right side progress was blank -- it said you'll see the app preview here."
+
+Two separate faults, both about state that lived only in the DOM.
+
+**The progress pane.** Everything it shows -- the stage list, the log, the live
+line, the clock -- was written straight into `#stateBuilding` as it happened,
+and nothing kept a copy. `show("building")` only un-hides that pane; it rebuilds
+nothing. So re-entering a session showed whatever was left in the DOM, which
+after a trip elsewhere is nothing.
+
+Worse, `advanceStage` MOVES `#peekBox` inside `#stages`, so any later wipe of
+that list destroys `#peekBox` and `#nowLine` with it -- the same mechanism as
+K-136. Rescuing the element is not enough on this path, because by then it does
+not exist.
+
+**The "making now" bar on home.** It carries `class="reveal"`, and `revealIn()`
+stamps `opacity: 0` on every `.reveal` element when a view appears, then
+animates them back. But the bar is still `hidden` at that moment;
+`renderBuilding()` un-hides it two awaits later, after the animation has
+finished, with the from-state still on it.
+
+**Also answered here: only one build runs at a time.** `run_author` in
+studio/src/main.rs holds a single pid slot and refuses a second with "one app
+is already being made". The UI already handles that honestly -- a request typed
+into the building session queues and says so; one typed into a different
+session says which app is holding the slot. That is a deliberate limit, not a
+defect, but it is worth stating plainly since the report asked.
+
+### K-152 -- A live build looks dead after leaving the session and coming back
+
+Class: our-code (UX)
+Owner: claude
+Status: fixed
+
+Build progress now lives in `state.builds`, a Map keyed by session id, holding
+the log lines, the stage index, the live line, the header and the start time.
+`restoreBuild(sessionId)` replays all of it, and `openSession` calls it on the
+branch that reopens a session which is building right now.
+
+Two details that the fix turns on:
+
+- `restoreBuild` RECREATES `#peekBox` when it is missing rather than only
+  rescuing it. On this path the element has usually already been destroyed
+  along with `#stages`, so a rescue finds nothing (K-136's mechanism, reached
+  from a different direction).
+- The log is capped at `BUILD_LOG_LINES` (400). The pane only shows the tail,
+  and a long build prints thousands of lines; keeping them all would grow
+  without bound for no benefit.
+
+`renderBuilding()` clears the reveal from-state off the "making now" bar when
+it un-hides it, so a bar un-hidden after the animation ran cannot come back
+invisible.
+
+Verified in a browser against the reported flow: with the pane wiped, the
+before state is 0 stages and a null `#nowLine`; after the restore it is 4
+stages, "Testing it" lit, the live line back, the log intact and the title
+correct. A build continues correctly through a restore -- new engine lines land
+in the rebuilt DOM, stages still advance, and the peek stays anchored under the
+live row.
+
+### K-150 -- main has not compiled for Windows since v0.1.51, and nothing noticed
+
+Class: our-code
+Owner: claude (FIXED, see Fixed)
+
+`open_app` lost its `#[cfg(target_os = "macos")]` at some point after v0.1.51.
+Its body uses `std::os::unix::process::CommandExt`, `Command::exec`, and
+`krate_adapter_macos` -- none of which exist on Windows -- so `main` stopped
+compiling there entirely. Nine errors:
+
+    error[E0433]: could not find `unix` in `os`
+    error[E0425]: cannot find function `spawn_open_run` in this scope
+    error[E0599]: no method named `exec` found for `&mut std::process::Command`
+    error[E0433]: unresolved module or unlinked crate `krate_adapter_macos`
+    error[E0282]: type annotations needed
+    ... 4 more
+
+v0.1.51 had the gate, and still has it -- so the last RELEASE is fine and this
+never reached a person. Every commit on `main` since is broken.
+
+The real defect is not the missing attribute; it is that six commits landed
+over it without anyone noticing. Windows is only ever compiled during a
+release, so `main` can rot for days and the first sign is a failed release --
+or, as here, somebody finally standing up a VM.
+
+Fix: gate restored, verified compiling on a real Windows 11 machine. What this
+actually argues for is a Windows `cargo check` in ordinary CI, not just in the
+release workflow. Cross-checking from a Mac would not have caught it either:
+`cargo check --target x86_64-pc-windows-msvc` cannot get past the C
+dependencies without an MSVC toolchain, so it never reaches this code.
+
+### K-142 -- The quiet heartbeat contradicts the step it is shown under
+
+Class: our-code (UX)
+Owner: claude (FIXED, see Fixed)
+
+The build card's quiet-line rotation was one flat list, cycled regardless of
+which step was lit. So "the writing starts once it has read enough" appeared
+underneath a lit **Writing the code**, and "reading Krate's API reference"
+appeared under it too. The founder caught it: the title says one thing and the
+description below says another.
+
+It is small and it is corrosive. The stage list is the only evidence a person
+has that a ten-minute build is progressing; a display that contradicts itself
+teaches them not to trust any of it.
+
+### K-141 -- On macOS, full-bleed apps ignore every click and scroll
+
+Class: our-code
+Owner: claude (FIXED, see Fixed)
+
+**This is the "not clickable, not scrollable" both generated weather apps had,
+and it was ours, not theirs.**
+
+`capture_mouse_event` and `capture_wheel_event` in the macOS adapter flipped
+AppKit's bottom-up coordinates using `self.window.contentLayoutRect()`.
+`contentLayoutRect` is the area *below* the title bar. A full-bleed window owns
+the title-bar band as well, so its content is taller -- and flipping against
+the shorter rect shifted every click and every scroll up by the title bar
+height.
+
+The adapter already had the right answer: `effective_content_rect` exists for
+exactly this and is documented against K-117. The two input paths never called
+it.
+
+What a person sees: the app animates, so it is clearly alive, but nothing
+reacts. The offset lands hardest on the header row -- search fields, buttons,
+tabs, city chips -- which is where a person clicks first.
+
+Evidence:
+
+    $ grep -n "set_full_bleed" wd-src/source/src/lib.rs
+    379:        let _ = window::set_full_bleed(win, true);
+    $ grep -n "set_full_bleed" ios-src/source/src/lib.rs
+    2961:        let _ = window::set_full_bleed(win, true);
+
+Both apps full-bleed, both unclickable. The headless check never touches AppKit,
+which is why it passed them both (see K-140).
+
+### K-140 -- The click check let a spinner answer for a dead button
+
+Class: our-code
+Owner: claude (FIXED, see Fixed)
+
+The usability gate passed both broken weather apps on every stage, including
+`click`, while neither could actually be clicked (K-141). That makes the gate
+worse than no gate: it certified apps that did not work.
+
+Two holes, both now closed:
+
+1. **The verdict was `difference > 0.0`.** Any animation on screen satisfied it.
+   A spinner alone reads as "the app responded" no matter what was pressed --
+   measured on the weather app, the idle churn is 0.007% of the frame, and that
+   was enough to pass.
+2. **The press aimed at the centre of the canvas.** A canvas app draws its own
+   controls, so the host does not know where they are, and centre-of-canvas
+   lands on empty space as often as not.
+
+Fixed by measuring the app's idle churn first and requiring the press to beat
+it by 3x, and by adding `KRATE_PRESS_AT=x,y` so a check can aim at a control
+whose position it knows. Measured after the fix, aiming at a city chip:
+
+    krate-check: click difference=0.028558 idle_churn=0.000068 answered=true
+
+2.86% against a 0.007% baseline -- a real reaction, told apart from the
+animation for the first time.
+
+### K-139 -- codex can never author: the agent is started in the wrong directory
+
+Class: our-code
+Owner: claude (FIXED, see Fixed)
+
+`run_provider_author` never set the child's working directory. The agent
+inherited whatever cwd Krate was launched from, while the prompt told it to
+write into an absolute path somewhere else.
+
+claude does not care -- it writes anywhere it is told. **codex roots its
+`workspace-write` sandbox on its own cwd**, so every write to the app directory
+was "outside of the project" and was refused. codex could therefore never
+author anything, on any machine. This is the answer to "I already have codex
+installed, why does Krate not work with it" -- it was never codex.
+
+Evidence, from the founder's failed webcam build:
+
+    ERROR codex_core::tools::router: error=patch rejected: writing outside of
+    the project; rejected by user approval settings
+
+Second defect in the same failure: the agent had correctly decided the app
+could not be built (Krate has no camera capability -- K-119) and tried to write
+`CANNOT-BUILD.txt` to say so. The sandbox refused that write too, so its clear
+explanation existed only in the transcript, and the person was shown a generic
+"That one didn't come together" with a stack-trace-looking blob. The refusal
+path only ever read the file.
+
+### K-137 -- Concurrent fetches spawn unbounded OS threads, and the host panics when they run out
+
+Class: our-code
+Owner: claude (FIXED, see Fixed)
+
+`AsyncFetches::begin` called `std::thread::spawn` once per in-flight request
+with no cap. `std::thread::spawn` **panics** when the OS refuses a thread, and a
+panic in the host is not a failed request -- it takes the runtime down and the
+person gets an operating-system crash dialog. This is the crash the founder saw
+opening `ios.krate`.
+
+An app does not have to be hostile to reach it. `cancel` cannot kill a running
+thread (there is no safe way to), so a cancelled request keeps its worker until
+its own timeout expires -- 9 seconds in these apps. `ios.krate` starts one
+request per saved city in `refresh_all`, so a list that is refreshed repeatedly
+stacks workers faster than they retire.
+
+Evidence -- the ceiling on this machine, measured:
+
+    $ cat /tmp/thr.rs   # spawn sleeping threads until the OS refuses
+    $ rustc -O -o /tmp/thr /tmp/thr.rs && /tmp/thr
+    failed after 4095 threads: Resource temporarily unavailable (os error 35)
+
+`Builder::spawn` returns that as `Err`. `thread::spawn` unwraps it and panics.
+
+### K-136 -- A build looks frozen when claude's API stalls (it recovers, but silently)
+
+Class: our-code (UX) / environment (the stall itself)
+Owner: claude (FIXED in 7850f3df)
+
+RESOLVED as to root cause, caught live with system evidence. The "freeze" the
+founder hit repeatedly -- first attempt of a request appears stuck on
+"Understanding what you asked for", the retry builds -- is claude's API
+connection stalling: the create process alive at 0% CPU for 11 minutes, its
+claude child holding three ESTABLISHED HTTPS connections to the Anthropic API
+with no response streaming back. Then, watched further, it RESUMED on its own
+after ~5-6 min and the build finished. So the stall is transient and self-
+healing; the retry "worked" only because the API answered cleanly next time.
+
+Two things made it read as a hard freeze:
+1. claude does its whole pack-read via Bash commands that produce no progress
+   step, so the UI stage list sits on "Understanding" for minutes even when
+   working (measured: up to 5.5 min of legitimate initial silence).
+2. When the API then stalls, the UI shows no sign of it -- a silent screen for
+   up to the 10-minute kill.
+
+Mitigation (01714def): warn on the progress channel after 2 min of silence so
+the stall is VISIBLE ("the AI has gone quiet ... still waiting") and a person
+waits instead of giving up. Kill stays at 10 min -- killing sooner would throw
+away a build about to recover.
+
+Not fully closed: the deeper fix is to cut the silent read entirely
+(retrieval-over-dump, per the pipeline study) so there is far less dead time to
+stall inside, and/or to retry the agent automatically on a hard stall.
+
+ACTUAL ROOT CAUSE, found by reproducing it in a browser rather than reading
+logs: advanceStage MOVES #peekBox inside #stages. On the next build,
+beginBuild wiped $("stages").innerHTML -- destroying the peek and with it
+#nowLine -- and the next line, $("nowLine").textContent = "warming up...",
+threw "Cannot set properties of null". That throw was inside buildNow BEFORE
+the create_app invoke, so the build was silently lost: no engine, no workspace,
+no trace, no error, UI stuck on "building" forever.
+
+That is the whole pattern: the FIRST build of a fresh Studio worked (peek still
+in its original home), every build AFTER it died. Every "the retry worked" was
+really "the relaunch reset the DOM". The API-stall work above was real but a
+different, rarer problem -- this null-deref is what the founder hit for days.
+
+Fixed by rescuing #peekBox before the wipe, making every DOM write in
+beginBuild defensive, and wrapping beginBuild in try/catch inside buildNow so
+presentation can never again lose a build. Verified: three consecutive
+beginBuild calls succeed where the second used to throw.
+
+### K-106 -- generated apps put text on top of other content
+Status:   fixed 2026-08-13 (4e60477), text-over-text half; see K-107
+Owner:    lead
+Severity: moderate
+Class:    teaching-hole
+Found:    2026-08-13, screenshotting run-3 apps for marketing material. Two
+          of the first two games shot had overlapping text, which is a bad
+          rate for something a person sees immediately.
+Evidence: Both apps pass check-app, and both look wrong at a glance.
+
+          The two failed by different mechanisms, which is the useful part.
+          Tic tac toe reserved nothing -- board to y 512, score card 536-612,
+          and a button at the constant `y: 556` that was correct in isolation
+          and never checked against what came before it. The memory game DID
+          reserve a footer correctly, then drew its hint at
+          `size.height - FOOTER_H - 6.0` ("just above the footer"), which is
+          outside the footer and inside the band already given to the cards.
+
+          That second one matters: the pack's three layout rules are all
+          about deciding regions, and the memory game followed them and still
+          drew outside its own region.
+
+Fix:      2026-08-13, commit 4e60477, in two parts.
+
+          Teaching: pack rule 4, "draw inside the region you were given, and
+          derive every position from it", with both failures as its worked
+          examples and a typed-in coordinate named as the smell.
+
+          Detection: `krate run --shoot X.png --check-layout` reads the
+          recorded draw calls, not the pixels, so the geometry is the app's
+          own numbers. Text against text only -- text over a panel is
+          ordinary design and flagging it would bury the real defect.
+
+              $ krate run req-25/app.krate --shoot ttt.png --check-layout
+              layout: 2 places where text is drawn over other text
+              layout:   "Draws" and "New round" share 30% of the smaller
+                        one, around x 211 y 589
+              layout:   "0" and "New round" share 19%, around x 223 y 577
+
+          Calibrated against seven real apps that do not have the bug
+          (bounce, chart, cubes, eo2, mdview, savings, fa32e9bc): zero false
+          positives, several of them text-heavy.
+
+          Two implementation notes worth keeping. The existing display list
+          is filled only on adapters that consume it (iOS), so a check
+          reading it would find an empty list on desktop and pass everything
+          -- worse than no check, because it looks like it worked. And the
+          buffer resets on clear, or a repainting app stacks frames and
+          appears to collide with itself.
+
+Left open: the memory game reports clean, correctly, because its hint lands
+          on cards rather than on text. That is K-107.
+
+            req 25 tic tac toe (27,539 B)
+              the "New round" pill is drawn on top of the "Draws" label in
+              the score bar. The word Draws is legible through the button.
+
+            req 26 memory game (30,169 B)
+              "Turn over two cards to find a pair" is drawn across the
+              bottom row of cards, so the hint and the cards share pixels.
+
+          Screenshots: scratchpad/shots-marketing/{tictactoe,memory}.png
+Not covered by the existing rule. K-098's follow-up teaches "measure from the
+          outermost edge, not the shape's own size", which is about
+          decorations sticking out past a shape (chairs around a table).
+          This is different: a label or button placed in space that another
+          element already occupies. The app has the room -- both windows
+          have empty space -- it simply did not reserve any.
+Fix:      A layout rule in the pack, roughly: every element gets a rectangle,
+          and no two rectangles overlap. Lay the fixed chrome out first
+          (title, score bar, buttons), subtract it, and give what is left to
+          the content. Say plainly that text drawn over other content is a
+          defect even when both are legible.
+Why it matters: this is the first thing a person sees, and it is the exact
+          complaint that started the visual work -- "not that amazing
+          considering what the world has seen". An app can pass every gate
+          and still look broken in the screenshot someone posts.
+Note:     check-app cannot catch this today. The usability stage measures
+          whether the canvas followed the window, not whether two things
+          were drawn in the same place. Detecting it needs the region
+          measure that K-099 also wants.
+
+### K-110 -- every app after the first opens with no window at all (macOS)
+Status:   fixed 2026-08-13 (9901c16), SHIPPED in v0.1.13 2026-08-14
+Owner:    lead
+Severity: blocker
+Class:    our-code
+Found:    2026-08-13, Yashraj: "double click open is not working here in my pc,
+          and not in windows as well ... this breaks so often".
+Evidence: Open one .krate and it opens. Leave it running, double-click a
+          second, and nothing appears -- no window, no error. Reproduced on
+          the RELEASED v0.1.12 with an app made through the full user path:
+
+              installed build   windows: Cubes,              <- second missing
+              with the fix      windows: Cubes, Tea Timer
+
+          The process is running and the runtime prints
+          `opened window "Tea Timer"`, so from the inside everything worked.
+
+Cause:    The first document arrives through AppKit's open-documents event and
+          runs in the process macOS launched -- a registered GUI application.
+          Every later document went through `spawn_open_run`, a bare
+          `Command::spawn`. That produces a process macOS does not consider a
+          GUI app: no LaunchServices registration, no activation, so AppKit
+          will not put its window on screen however correctly the runtime
+          creates it.
+
+          That is why it read as random. It is not: one app always works, the
+          second never does. Which one somebody hits depends only on whether
+          they already had an app open.
+Fix:      Relaunch through the .app bundle -- `open -n -a Krate.app <file>` --
+          so LaunchServices registers the new instance. Direct spawn stays as
+          the fallback for a plain CLI install with no bundle.
+Windows:  Not affected. Explorer runs `krate-open.exe "%1"`, so each app is
+          its own process with the path as an argument and there is no event
+          to miss. CI checked only that krate-open.exe was PRESENT in the
+          archive, never that it opens anything -- that gap is now closed by a
+          cold-install step that registers the association, reads back the
+          ProgID command, and runs it on a real file.
+Shipped:  v0.1.13, 2026-08-14. Verified the way a person meets it -- a cold
+          install from krate.tech, then Finder's own double-click, three
+          rounds:
+
+              install exit=0, krate v0.1.13
+              round 1: [Cubes, Tea Timer]
+              round 2: [Cubes, Tea Timer]
+              round 3: [Cubes, Tea Timer]
+
+          Against the same two apps on v0.1.12 the second window never
+          appeared at all.
+
+### K-109 -- an app that resets itself last prints a state that looks like it never ran
+Status:   fixed 2026-08-13 (b1104d0), untested until benchmark run 5
+Owner:    lead
+Severity: moderate
+Class:    teaching-hole
+Found:    2026-08-13, benchmark run 4, request 3 (a countdown timer), failing
+          `remaining!=1500` at 2 of 3 asserts.
+Evidence: The app is correct. It drove its whole interface on `quick` and
+          reset last:
+
+              duration:1500
+              remaining:1500
+              elapsed:1
+              ticks:1
+              reset:yes
+
+          `elapsed:1` and `ticks:1` prove it really counted down. But
+          `remaining` is back to the starting value, so the one number a
+          person would check to see a timer counting says it never ran. Its
+          own source comment describes the sequence: "let it count, pause it,
+          adjust the length, reset it -- and print what the".
+Fix:      2026-08-13, commit b1104d0. The pack already said "operate your own
+          controls, do not just print a snapshot", and this app did exactly
+          that. What it never said is that an app prints ONCE, at the end, so
+          an operation that undoes the others must not be last. Added with
+          this failure as the worked example: put reset, clear, cancel and
+          close in the middle, or print the telling value where it is true
+          (`remaining_at_pause`) as well as at the end.
+Not a corpus change, deliberately: `remaining!=1500` is the right assert --
+          an app ending on the full duration has not shown a countdown -- and
+          widening it to accept 1500 would leave it unable to fail. The rule
+          landed after run 4 started, so run 4 cannot test it; run 5 will.
+
+### K-104 -- the benchmark's authoring budget is too small for its own corpus
+Status:   fixed 2026-08-12 (commits b1cdeff, 82e440f) -- a timeout and a
+          dropped connection are `skipped`, not `fail`; per-tier budget open
+Owner:    lead
+Regression: 2026-08-12, same day, caused by the fix above and caught four
+          requests into run 3. The detection matched
+          `KRATE_AUTHOR_TIMEOUT_SECS` and `Raise the budget`, and the agent
+          transcript carries an environment dump containing
+          `KRATE_AUTHOR_TIMEOUT_SECS=1800` on **every** run. So the rule
+          fired on any request that got far enough to write a transcript,
+          and the first one to do so halted the benchmark:
+
+            [5] easy skipped account 406s a click counter
+            note: authoring hit the 1800s budget while still working
+
+          406 seconds against an 1800 second budget cannot both be true, and
+          that contradiction is what prompted the check.
+
+          Now matches only the sentence the CLI prints on a real timeout:
+          `did not finish within N minutes and was stopped`. Verified against
+          a live transcript from the running benchmark -- the env var appears
+          once, the new pattern zero times.
+
+          **The regression was worse than the bug.** The original wrongly
+          failed working apps; this wrongly excused them and stopped the run,
+          which removes data silently rather than visibly. A skip rule needs
+          testing against a healthy run, not only against the failure it was
+          written for -- my test covered four failure texts and no success.
+Severity: serious
+Class:    our-code
+Found:    2026-08-12, request 14 of the re-run (a note-taking app).
+Evidence: The per-request budget is 900 s (`TIMEOUT_SECS`). Request 14 was
+          cut off at 902 s having completed **41 authoring steps** -- read
+          the API reference, read the notes example, wrote code, checked it
+          built, iterated, wrote again. It was working the whole time. No
+          `.krate` was produced, and the row reads `fail / authored`, which
+          is indistinguishable from an app that was written badly.
+
+          The budget is not far above the working range:
+
+            req 1  tip calculator     417 s   pass
+            req 4  temperature conv   543 s   pass
+            req 7  password gen       656 s   fail (naming)
+            req 14 note taking       >900 s   cut off
+
+          Easy-tier apps that succeed already take 7-11 minutes. The margin
+          above the slowest success is 244 s, and **24 medium and hard
+          requests remain**, all of which are larger than the app that just
+          ran out of time.
+Impact:   Any medium or hard request that needs more than fifteen minutes is
+          recorded as a product failure. Run the rest of the corpus at 900 s
+          and the headline number measures the timeout, not the authoring
+          loop. Same category error as counting a rate-limit rejection as a
+          failure, which the harness's own header warns about at length.
+Fix:      Two parts.
+          1. Raise the budget for the tiers that need it -- the header
+             already takes per-tier behaviour for granted elsewhere, so a
+             per-tier `TIMEOUT_SECS` is in keeping.
+          2. **Record a timeout as its own outcome, not as `fail`.** The
+             harness distinguishes `skipped` for quota rejections for
+             exactly this reason: no code was written, so there is nothing
+             to judge. A timeout is the same situation with a different
+             cause.
+Note:     Do not raise the budget mid-run and keep the earlier rows. Either
+             finish this run at 900 s and mark the timeouts, or restart the
+             remaining tiers at a higher budget and say which rows were
+             measured under which. Changing the measure halfway and not
+             saying so is how a number stops meaning anything.
+Correction: 2026-08-12, after the retry. Request 14 passed at the higher
+          budget **in 378 seconds, using 12 authoring steps** -- against 41
+          steps and a 902 s cutoff on the attempt before it. Same request,
+          same corpus, same binary.
+
+          So the original reading was wrong in an important way. A note-taking
+          app does **not** need more than 900 s; the first attempt wandered
+          down a long path and the second went almost straight there.
+          **Authoring time varies by more than 2x on the same request**, and
+          the budget is a ceiling on the variance, not on the work.
+
+          That changes what the fix is for. A per-tier budget is still worth
+          having, but the reason is to stop an unlucky run being recorded as
+          a product failure -- not because larger apps have a higher floor.
+          And it makes the case for the second half stronger, not weaker: a
+          timeout must be its own outcome, because it now clearly measures
+          luck as much as difficulty.
+
+          Worth measuring properly before tuning further: run one request
+          several times and record the spread. A benchmark whose per-request
+          time varies 2.4x is a benchmark whose single-shot pass rate carries
+          more noise than anyone has quantified.
+Also:     A restart clears `WORK_ROOT`, so the per-request `run.log` -- the
+          actual stdout an app printed -- is lost for every row already
+          recorded. The TSV keeps the assert tally and the missing keys,
+          which is enough to classify a failure, but not enough to quote
+          what the app said. That evidence is exactly what turned "six
+          failures" into "six working apps with the wrong key name" (K-103),
+          so it is worth keeping: copy `run.log` beside the results row, or
+          fold its contents into a column.
 
 ### K-102 -- krate-mode still says "print something", the exact contract that scored 0/5
 Status:   fixed 2026-08-12
@@ -2516,87 +2934,6 @@ Fix:      The toggle now reads "Windows (PowerShell)", and a cmd.exe line
           "open a new terminal" friction K-069 removed. Naming the shell
           keeps the zero-restart property.
 
-### K-071 -- whisper-rs stopped linking on the windows-latest CI image
-Status:   open
-Owner:    unclaimed
-Severity: serious
-Class:    environment
-Found:    2026-08-07, CI run 31162680943, on a commit touching only a workflow
-          file and BUGS.md -- so the code did not cause it
-Evidence: Library tests (windows-latest) and Test (ubuntu? no -- windows only):
-
-            libwhisper_rs_sys-...rlib(ops.obj) : error LNK2019: unresolved
-              external symbol __imp_fminf ...
-            fatal error LNK1120: 20 unresolved externals
-
-          Twenty unresolved CRT math symbols (__imp_fmaxf, __imp_erff,
-          __imp_lroundf...) linking krate-runtime's test binary against
-          whisper-rs/ggml. The same code linked fine in earlier runs; the
-          runner image updated (MSBuild/MSVC), so this is the machine
-          changing under us, not a regression in Krate. Every push now fails
-          the Windows library-tests job until it is addressed (ggml needs
-          the UCRT import lib the new image stopped providing implicitly, or
-          whisper-rs needs a version bump built against it).
-Fix:      Mitigated 2026-08-07: release and runtime-linking CI jobs pinned
-          to windows-2022, which still links ggml correctly; v0.1.3 built
-          green on it. The real fix (whisper-rs/ggml against the new UCRT
-          arrangement, or an upstream bump) is still open before the pin can
-          come off -- windows-2022 will be retired eventually.
-Update:   2026-08-12. **Two wrong fixes, then the actual cause. Both wrong
-          attempts are recorded because each one looked right and each one
-          cost a CI cycle to disprove.**
-
-          Attempt 1 -- "CMake builds whisper against the dynamic CRT while
-          Rust links static". Wrong: the cmake crate already passes `-MT`,
-          the static runtime, so the two sides agreed all along. The
-          toolchain file also broke the build in a new way, because a bash
-          `$(pwd)` path means nothing to native CMake ("Could not find
-          toolchain file: /d/a/krate/..."). Reverted.
-
-          Attempt 2 -- "the cache restores whisper objects built under the
-          old image". The failing runs really do invoke cmake zero times, so
-          this was plausible. Rotating the cache key on the image label
-          worked as designed -- "Cache not found for input keys" -- and
-          whisper-rs-sys then **compiled from source and failed on the same
-          23 symbols**. So the cache was never the cause. The key change is
-          kept as hygiene, relabelled, because it is what produced the clean
-          rebuild that disproved it.
-
-          What the link line actually shows (run 31562047659):
-
-            /defaultlib:libcmt          <- Rust asks for the static CRT
-            legacy_stdio_definitions.lib
-            (no libucrt.lib anywhere)
-
-          `libcmt` does not itself carry the UCRT stdio and math functions;
-          those live in `libucrt.lib`, and nothing puts it on the line. That
-          is why every unresolved symbol is a UCRT one -- `__imp_fgetc`,
-          `__imp_fmaxf`, `__imp__aligned_malloc` -- and why no cache key or
-          CMake flag can help: the library simply is not being linked.
-
-          The fix therefore belongs in the link arguments, not the workflow:
-          `-C link-arg=/defaultlib:libucrt.lib` for the Windows targets in
-          `.cargo/config.toml`, beside the `+crt-static` that is already
-          there. **Not attempted yet** -- three speculative fixes in a row on
-          a platform I cannot test locally is worse than a red job with an
-          accurate diagnosis, and the next attempt should be made by someone
-          who can reproduce it on Windows.
-
-          Context that has not changed: CI run 31528953170 was **10 of 11
-          jobs green, this the only red one**, and releases ship regardless
-          because the release workflow builds Windows with `no-speech`.
-
-          Why releases keep shipping anyway, which was not written down and
-          should have been: the release workflow builds Windows with
-          `no-speech: true`, so it never links whisper at all. Only this CI
-          job builds the full feature set. That is the whole reason v0.1.12
-          published six platforms green while this stayed red.
-
-          The cost of leaving it: main has been red for five days, and a
-          permanently red board stops being read. The next failure that is a
-          real defect will look exactly like this one. That is the argument
-          for fixing it, not the speech feature itself.
-
 ### K-070 -- typing a request with no AI connected throws the request away
 Status:   fixed, shipped in v0.1.3
 Owner:    lead
@@ -2761,7 +3098,6 @@ Fix:      Stop guessing which side is older. The message now names the actual
           it is one you made a while ago. The wasmtime line is appended as
           Details, so the missing interface is visible rather than swallowed.
 
-
 ### K-063 -- Double-clicking a .krate on macOS killed the app instantly
 Status:   fixed (shipped v0.1.2; verified on the published bundle: entitlements
           present, LaunchServices launch survives, app draws)
@@ -2812,7 +3148,6 @@ Fix:      scripts/krate.entitlements, with allow-jit and
           (~/Applications from an old install, and one in /private/tmp).
           macOS picked among them unpredictably. Removed, and the surviving
           one re-registered.
-
 
 ### K-061 -- A generated app closed itself after thirty seconds, mid-read
 Status:   fixed
@@ -2886,7 +3221,6 @@ Fix:      `krate <file>.krate` now means `krate run <file>.krate`. The binary
           says, so every machine with the old registration is fixed by the
           next update rather than needing the association repaired.
 
-
 ### K-059 -- Opening an app from the menu never said what it could reach
 Status:   fixed
 Owner:    lead
@@ -2950,7 +3284,6 @@ Evidence: krate: opened window "Krate Road Rash" (close it or press Ctrl-C to
 Fix:      KRATE_QUIET_LAUNCH, set by the front door only. A bare `krate run`
           in a terminal still prints it, which is where it is useful.
 
-
 ### K-058 -- v0.1.0 shipped without the Windows document icon
 Status:   fixed (shipped v0.1.1)
 Owner:    lead
@@ -2981,7 +3314,6 @@ Fix:      Pillow is installed before the Package step on Windows targets.
           Needs the next release to reach anyone. v0.1.0's Windows archive
           keeps the blank icon.
 
-
 ### K-057 -- A two-line prompt reprinted itself once per keystroke
 Status:   fixed
 Owner:    lead
@@ -3006,7 +3338,6 @@ Impact:   The publish flow, which is the one thing a .krate exists for, looked
 Fix:      The label is printed once when the prompt opens; only its LAST line
           is repainted while typing. Verified through a pty on both prompts:
           the question now appears zero further times as characters arrive.
-
 
 ### K-053 -- A finished edit was thrown away by the permission-wall check
 Status:   fixed
@@ -3092,7 +3423,6 @@ Fix:      The picker recommends Claude Code and says why. Choosing a provider
           the provider trait carries it, so a new provider declares its own
           behaviour rather than the menu hardcoding names.
 
-
 ### K-052 -- No stroke-circle, so round things got square outlines
 Status:   fixed
 Owner:    lead
@@ -3119,7 +3449,6 @@ Fix:      `canvas2d::stroke-circle(canvas, center, radius, width, stroke)`,
           ring: the edge is drawn, the centre stays empty, and nothing appears
           where a rect's corner would be. The pack now says to use it and not
           to reach for stroke-rect.
-
 
 ### K-051 -- An expired AI sign-in reported nothing useful
 Status:   fixed
@@ -3153,7 +3482,6 @@ Fix:      Read `result` and honour `is_error`. An expired sign-in also gets
 
           Verified against the real transcript from the failed run rather than
           a constructed one.
-
 
 ### K-050 -- Authoring waits on check-app, not on the AI reading or thinking
 Status:   fixed
@@ -3199,7 +3527,6 @@ Fix:      `--no-run` already existed and stops after imports. Both prompts now
           to package an app that fails. The fast loop is the AI's inner loop;
           the gate is still ours.
 
-
 ### K-048 -- .krate files have no icon on Windows, and could not have one
 Status:   fixed
 Owner:    lead
@@ -3239,7 +3566,6 @@ Fix:      The menu says 5-12 minutes. The change flow says it is still a few
           minutes and explains why: the compile is incremental but the AI
           still reads the whole app to find where the edit goes, and that is
           the long part. Also corrected in the MCP docs and source comments.
-
 
 ### K-045 -- The progress display shows nothing for AIs that do not stream
 Status:   fixed
@@ -3313,7 +3639,6 @@ Fix:      krate-open.exe, built for the "windows" subsystem, which is the only
           registered by the association script, which falls back to krate.exe
           when it is missing.
 
-
 ### K-044 -- Building Krate on a clean Linux or Windows machine is undocumented
 Status:   fixed
 Owner:    lead
@@ -3353,7 +3678,6 @@ Fix:      README's "Build from source" now names all of them per platform,
           succeeds: all eight packages present and accounted for. Documenting
           an untested command would have been worse than documenting none.
 
-
 ### K-043 -- Five shipped apps closed their own window after ten seconds
 Status:   fixed
 Owner:    lead
@@ -3381,7 +3705,6 @@ Impact:   Worse than it sounds, because these are the example apps. Every
 Fix:      `if quick && idle_rounds >= MAX_IDLE_ROUNDS`. Four of the five now
           pass all six stages. krate-pulse still fails, on an unrelated resize
           bug that is K-003 -- filed, not detoured into.
-
 
 ### K-042 -- Every 3D scene was mirrored, so steering went the wrong way
 Status:   fixed
@@ -3424,7 +3747,6 @@ Fix:      `up.cross(forward)`, with `up = forward.cross(right)` to match.
           and also asserts up stays up so a future fix cannot trade one axis
           for the other.
 
-
 ### K-041 -- Krate has no memory on Windows: HOME is not set there
 Status:   fixed
 Owner:    lead
@@ -3457,7 +3779,6 @@ Fix:      `home_dir()` is now `pub(crate)` and every site goes through it. It
           presents. A test walks crates/cli/src and fails on any read of HOME
           without a USERPROFILE fallback, so the next one cannot be added
           silently.
-
 
 ### K-039 -- Reading a key destroyed the window's close request
 Status:   fixed
@@ -3506,7 +3827,6 @@ Impact:   Nobody switches AI halfway through changing one game. The probe also
 Fix:      The choice is remembered for the session and shown as a reminder
           ("using grok -- press a to use a different AI"), so it stays visible
           and reversible without being asked again.
-
 
 ### K-036 -- A GUI app panics on stock Ubuntu: libxkbcommon-x11.so is missing
 Status:   fixed 2026-08-13 (836d23b)
@@ -3668,30 +3988,6 @@ Fix:      The child now reports over stdout behind KRATE_PROGRESS_CHANNEL,
           and drives the one real display. cargo's stderr is drained and kept
           for the failure message rather than shown.
 
-
-### K-014 — This machine is out of disk, and cargo cannot finish a test run
-Status:   resolved -- rechecked 2026-08-13, the disk is no longer full
-Owner:    lead
-Severity: serious
-Class:    environment
-Found:    2026-08-05, W12, running cargo test at the end of the K-001 work
-Recheck:  2026-08-13. `df -h /` now reports 34Gi available of 460Gi (26%%
-          used). Full workspace test runs complete. Environment class, so
-          nothing to fix in the product -- recorded closed so it is not
-          rediscovered:
-
-              /dev/disk3s1s1   460Gi    12Gi    33Gi    26%    481k  350M    0%   /
-
-Evidence: `df -h /` reports 159Mi available of 460Gi (99%% full). Tool calls
-          start failing with "ENOSPC: no space left on device". The bulk is
-          build output: `/Users/yashrajpardeshi/Projects/layer6x6/target` is
-          87G, and each agent worktree adds its own (mine is 7.8G).
-Fix:      Not a product defect. `cargo clean` the shared checkout and the
-          finished worktrees. Recorded so a later ENOSPC failure is not
-          mistaken for a Krate bug, and because several agents building in
-          parallel worktrees is what fills the disk -- the cost is structural,
-          not a one-off.
-
 ### K-013 — apps/krate-bigscroll has no manifest, so it is not a runnable app
 Status:   fixed 2026-08-13 (ed42658) -- and it was seven apps, not one
 Owner:    lead
@@ -3814,23 +4110,6 @@ Evidence: check-app has six stages -- layout, manifest, build, imports, run,
 Fix:      A usability stage. Must not produce false failures -- a flaky gate
           gets skipped and then protects nothing.
 
-### K-028 — Two of this machine's three AI accounts are unusable
-Status:   open
-Owner:    unclaimed
-Severity: annoyance
-Class:    environment
-Found:    2026-08-05, lead, trying to verify Krate Mode end to end
-Evidence: `claude -p` returns "OAuth session expired and could not be
-          refreshed". `codex exec` returns "The 'gpt-5.6-sol' model requires a
-          newer version of Codex".
-          **Grok works.** `krate create --agent grok` authored a 584-line chess
-          board in 237s and a real tip calculator in 229s, both from scratch --
-          verified by timing and by reading the source. So authoring can still
-          be measured end to end; it was a blocker and is not any more.
-Fix:      Not ours. Yashraj re-authenticates Claude and updates Codex. Recorded
-          because it once turned a 14/14 pass rate into a reported 23% and must
-          not be mistaken for a product failure again.
-
 ### K-029 — Our development history leaks into every app a user makes
 Status:   fixed 2026-08-13
 Owner:    lead
@@ -3866,39 +4145,6 @@ Why it mattered more than "annoyance" suggests: a tester read these notes in
           pre-built template, then stopped. A comment addressed to us inside
           a stranger's file does not just read oddly, it makes the product
           look like a fake.
-
-### K-030 — A debug build shadows the real release on PATH
-Status:   mitigated 2026-08-13 (7a2defa) -- the shadowing is the machine's
-          PATH and stays; the binary now says which one you ran
-Owner:    lead
-Severity: serious
-Class:    environment
-Found:    2026-08-05, W17, checking what `krate` actually resolves to
-Evidence: `which krate` gives
-          `/Users/yashrajpardeshi/Projects/layer6x6/target/debug/krate`
-          (`krate 0.1.0-dev`). The installed release at `~/.local/bin/krate`
-          (rc20) is shadowed. Anything measured through the dev binary is
-          contaminated: it is not the code a user runs.
-Fix:      2026-08-13, commit 7a2defa. Rechecked and still live, and worse than
-          recorded: the debug build reports the SAME version as release, so
-          the version string could not tell them apart at all.
-
-            target/debug/krate      krate 0.1.12
-            target/release/krate    krate 0.1.12
-            ~/.local/bin/krate      krate v0.1.8
-
-          A debug build now appends a warning:
-
-            krate 0.1.12 (debug build -- not what a user runs)
-
-          Release output is unchanged, verified both ways. The suffix
-          deliberately does not reach telemetry -- that version goes into a
-          JSON field and a suffix would make every dev run its own "version".
-
-          The rule still stands: every command in this repo uses an absolute
-          path, and outsider testing uses ~/.local/bin/krate explicitly. This
-          makes breaking that rule visible in one command rather than after an
-          afternoon of confusing results.
 
 ### K-015 — The `quick` run says "print something", so nothing can read what an app printed
 Status:   fixed (5478426)
@@ -4030,34 +4276,6 @@ Fix:      Fixed by actually running each tool rather than looking at PATH.
           Codex reports a healthy login on *stderr*, so the first version
           demanded stdout and marked a working tool broken.
 
-### K-020 — Double-clicking a .krate opened a file picker, not the app
-Status:   not reproducible -- closing
-Owner:    lead
-Severity: serious
-Class:    our-code
-Found:    2026-08-05, W17, outsider testing
-Evidence: Double-clicking a `.krate` produced an off-screen file picker rather
-          than opening the app. Double-click is the headline promise on the
-          website and the simplest path we advertise.
-Fix:      Retested by Yashraj on 2026-08-05: double-click works. W17 most
-          likely hit the stale /Applications/Krate.app trap, as suspected.
-          Closing rather than leaving an unreproducible entry on the board.
-
-### K-021 — An absolute path to target/release is the WRONG binary in a worktree
-Status:   open
-Owner:    unclaimed
-Severity: annoyance
-Class:    environment
-Found:    2026-08-05, W15, after losing significant time to it
-Evidence: CLAUDE.md says to invoke
-          `/Users/yashrajpardeshi/Projects/layer6x6/target/release/krate` by
-          absolute path. From a worktree that is the MAIN repo's binary, built
-          by another workstation before the caller's WIT existed. It reported
-          "this app needs a newer version of Krate", which reads as a broken
-          app rather than a stale tool.
-Fix:      The rule is "absolute path to YOUR OWN worktree's target". CLAUDE.md
-          needs correcting.
-
 ### K-022 — A bound canvas never learned its window had been resized
 Status:   fixed
 Owner:    W13
@@ -4079,60 +4297,6 @@ Fix:      `CanvasSurface::resize` plus `Phase3GuiHost::refit_canvas`, called
           from `canvas_size` so asking is what re-fits the surface to the
           widget's current rect. Regression test
           `resize_refits_the_buffer_and_reports_the_new_size`.
-
-### K-023 — Running an app from its source dir writes its data into the repo
-Status:   open
-Owner:    unclaimed
-Severity: annoyance
-Class:    our-code
-Found:    2026-08-05, W13, running krate-notes headless while fixing K-003
-Evidence: `krate run apps/krate-notes/target/.../krate_notes.wasm --manifest
-          manifest.toml --auto-grant --headless` created
-          `apps/krate-notes/notes/{first,second,third}.txt` as untracked files
-          in the repo:
-            $ git status --short
-            ?? apps/krate-notes/notes/
-          The app's fs paths are sandbox-relative and the sandbox root is the
-          cwd, so running from the app's own directory drops its save files
-          into the source tree. `.gitignore` has `/notes/` -- anchored at the
-          repo root, so it does not match this path. Harmless but it means
-          anyone verifying a GUI app dirties their working tree and may commit
-          an app's test data by accident.
-Recheck:  2026-08-13. Still reproduces, and the entry above is wrong about
-          what is happening -- which matters, because the fix it proposes
-          cannot work.
-
-          The three files are **tracked in the repository**:
-
-              $ git ls-files apps/krate-notes/notes/
-              apps/krate-notes/notes/first.txt
-              apps/krate-notes/notes/second.txt
-              apps/krate-notes/notes/third.txt
-
-          They are the app's seed notes, committed on purpose in 63e8596 so
-          krate-notes has content to show. So a run from the app's own
-          directory does not create untracked files -- it **overwrites
-          checked-in ones**. `git status` looked clean afterwards only
-          because the app wrote back byte-identical content; appending one
-          character and re-running shows ` M first.txt` immediately.
-
-          That rules out the .gitignore half of the proposed fix outright:
-          gitignore has no effect on tracked files. A rule was written,
-          tested, found to change nothing, and removed rather than committed.
-
-          The trap is real but milder and differently shaped than filed:
-          editing a note in the app while verifying it dirties the working
-          tree, and the diff looks like someone edited the seed data by hand.
-Fix:      The sandbox-root half still stands and is the only one that works:
-          default the sandbox root somewhere outside the source tree, or make
-          `check-app` and the verify path run each app in a scratch cwd. The
-          second is smaller and covers the case that actually bites, since
-          nobody runs an app from its source directory except while verifying
-          it. Still not urgent.
-Left as is deliberately: changing the default sandbox root moves where every
-          app's data lives, which is a bigger change than an annoyance-level
-          bug justifies, and doing it carelessly would break anyone relying on
-          the current cwd behaviour.
 
 ### K-024 — krate-pulse pins its canvas to constants, so it ignores a resize
 Status:   fixed (ee6cfef); board entry was stale, verified 2026-08-13
@@ -4172,23 +4336,6 @@ Original plan: Same shape as K-003: drop the fixed style on the canvas node,
           unclaimed rather than fixed here, because K-003 is W13's and this is
           the same repair on a second app -- it should go with that work.
 
-### K-025 — Four older apps fail check-app at the run stage
-Status:   superseded by K-092 -- verified 2026-08-11: the real count is
-          thirteen, and seven share one root cause (a round-limited
-          interactive loop). Tracking it there.
-Owner:    unclaimed
-Severity: annoyance
-Class:    our-code
-Found:    2026-08-05, lead, sweeping every app after the W12/W13/W14 merges
-Evidence: After a clean rebuild, 23 of 27 apps pass every stage. These four
-          fail at `run` with "failed to run headless with all grants (exit 1)":
-          krate-hello-gui, krate-curl, krate-nova2, krate-spriteproof.
-          Pre-existing, not caused by the merges -- they were failing before.
-          krate-curl needs a live server, so its failure may be expected rather
-          than a defect.
-Fix:      Diagnose each. None is a reference app the authoring pack recommends,
-          so none blocks a user making an app.
-
 ### K-026 — An app's only route to live data is a button, and buttons do not work
 Status:   fixed (c85dec7 + the pack fix here)
 Owner:    lead
@@ -4215,20 +4362,6 @@ Fix:      Two parts. Fix pointer delivery (K-017) so the button works. And
           teach the pack that an app should attempt live data on startup, not
           only behind a control -- sample data is a fallback, never the
           default state.
-
-### K-027 — Bundles made by the installed release carry no source
-Status:   open
-Owner:    unclaimed
-Severity: annoyance
-Class:    environment
-Found:    2026-08-05, lead, while diagnosing K-026
-Evidence: `unzip -l ~/Desktop/a-news-app-giving.krate` lists only
-          manifest.toml and code.wasm. Source shipping landed in 27f4609 but
-          the installed `krate` on PATH is rc20, which predates it. Anyone
-          testing with the public install gets none of today's fixes --
-          scroll, resize, text measurement, self-close -- and reports bugs
-          that are already fixed here.
-Fix:      Cut a release. Until then, say plainly which binary a test used.
 
 ### K-031 — Krate.app shipped with no icons, so every .krate looks corrupt
 Status:   fixed
@@ -4429,93 +4562,6 @@ Fix:      The pack already taught pixel offsets for lists, and the agent
           within = scroll%line_height, draw from list_y - within. A partly
           visible line at top and bottom IS the smoothness.
 
-### K-120 -- Any continuously animating GUI app burns ~100% of a core
-Status:   open
-Owner:    lead (via K-112: the GPU presenter is the fix's home)
-Severity: serious
-Class:    runtime-hole
-Found:    2026-08-16, building apps/krate-aurora, measured on macOS (M4).
-Evidence: Two animating apps, measured with `ps -o %cpu=` six seconds after
-          launch, both windowed and idle with no input:
-
-              $ krate run Glow.krate --auto-grant     # shipped reference app
-              Glow: 94.3% CPU
-              $ krate run Aurora.krate --auto-grant   # 45,000 px/frame
-              Aurora: 101.8% CPU
-
-          The gap between them is the point. krate-glow draws a handful of
-          vector cards and does almost no per-pixel work; krate-aurora
-          computes 45,000 pixels a frame through three noise fields. Seven
-          points separate them, so the cost is not the guest's drawing --
-          it is a floor that any app paying to animate at all runs into.
-
-          Ruled out inside the guest, in this order, each re-measured:
-          1. `request-redraw` feeding its own event back, so every
-             `events::wait(Some(ms))` returns instantly and the loop spins.
-             The host already documents this at phase3_gui_host.rs:2290
-             ("an animation loop calls request-redraw every frame and
-             immediately receives that redraw back"). Removing the call
-             entirely: still ~101%.
-          2. No frame pacing. Added a monotonic-clock deadline that only
-             draws when a frame is due and blocks in `wait` for the
-             remainder: still ~101%.
-          3. A per-frame `Vec` allocation for the reflection buffer.
-             Hoisted to a reused buffer -- real fix, kept, and it took RSS
-             from 215 MB to ~140 MB -- but CPU unchanged at ~101%.
-
-          So a guest that paces itself correctly, allocates nothing per
-          frame, and never asks for a redraw still cannot idle below a full
-          core. That is the runtime's floor, not the app's.
-Impact:   This is the demo case, not a corner: an animated app is exactly
-          what gets shown to someone. A fan audibly spinning up during a
-          demo, and a laptop draining, reads as "this runtime is heavy"
-          regardless of how good the app looks.
-Fix:      Unknown -- needs a profile of the host's wait/pump path rather
-          than another guest-side change; the three obvious guest causes
-          above are eliminated. Suspect the manual `nextEventMatchingMask`
-          pump (see K-032's diagnosis, which established this runtime turns
-          no CFRunLoop and pumps by hand from poll/wait) never actually
-          parks: a pump that returns immediately whether or not an event is
-          waiting would produce exactly this floor. Worth measuring against
-          the Windows and Linux adapters before assuming it is macOS-only.
-Update:   2026-08-16, symbolized profile (debug build, macOS M4): with the
-          guest spin removed (K-122) glow still holds ~67% of a core, and
-          the top of stack is the CPU rasterizer redrawing the full scene
-          every frame -- linear_gradient_stops (207 samples),
-          drop_shadow_round_rect (172), fill_round_rect (93),
-          publish_canvas (83), stroke_round_rect (45). The floor is
-          full-scene CPU raster at 60fps. The real fix is the GPU
-          presenter workstation (K-112); interim wins would be caching
-          shadow masks and gradient ramps keyed by their parameters.
-
-### K-117 -- Apps cannot paint the title bar area, so full-bleed designs are impossible
-Status:   open
-Owner:    lead
-Severity: major
-Class:    runtime-hole
-Found:    2026-08-16, replicating MarkText pixel-for-pixel as a Krate app
-          for the first head-to-head benchmark.
-Evidence: MarkText's window is one flat #282828 surface to the very top
-          edge, traffic lights overlaid (titleBarStyle overlay). The Krate
-          replica gets a standard macOS title bar band above its content --
-          the one visible difference no app code can remove, because the
-          window API offers no full-bleed or hidden-title style. Every
-          modern editor, terminal and browser uses this style; apps that
-          cannot will always look one generation older.
-Fix:      A window style option in the ui.window interface (full-bleed /
-          hidden title with overlay controls), honored by the macOS
-          adapter (titlebarAppearsTransparent + fullSizeContentView), the
-          Windows adapter (extend client area into the frame), and Linux
-          (CSD). Until then the studio's own chrome does on the shell what
-          apps cannot do for themselves.
-Update:   2026-08-16, e63ef189: shipped on macOS (set-full-bleed in
-          ui.window, additive; transparent titlebar + full-size content +
-          overlaid lights; sizes follow effective_content_rect so the
-          canvas owns the band). Draft accepts so check-app cannot fail an
-          app for asking. Still open for the Windows adapter
-          (extend-client-area into the frame) and Linux (CSD); both
-          currently return honest unsupported and keep standard chrome.
-
 ### K-116 -- A machine with no real GPU crashed apps instead of falling back
 Status:   fixed
 Owner:    lead
@@ -4539,8 +4585,6 @@ Fix:      Two layers in presenter-gpu: a software adapter (DeviceType::Cpu)
           aborting, retiring that window to the CPU painter on the next
           frame.
 Status:   fixed
-
-## Fixed
 
 ### K-150 -- main has not compiled for Windows since v0.1.51, and nothing noticed
 
