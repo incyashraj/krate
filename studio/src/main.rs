@@ -1878,6 +1878,43 @@ fn first_run_setup() {
             &open_cmd,
             "/f",
         ]);
+
+        // `krate` on PATH, the way macOS symlinks it into /usr/local/bin.
+        // Without this the terminal tool the docs describe is unreachable on
+        // Windows even after installing the studio, and `krate doctor` --
+        // the first thing anyone is told to run when something looks wrong --
+        // is not a command (K-158).
+        //
+        // HKCU\Environment, so no elevation and no machine-wide change. The
+        // engine lives in `bin` beside the studio executable.
+        if let Some(bin) = std::path::Path::new(&exe)
+            .parent()
+            .map(|dir| dir.join("bin"))
+            .filter(|bin| bin.is_dir())
+        {
+            let bin = bin.display().to_string();
+            let current = std::process::Command::new("reg")
+                .args(["query", r"HKCU\Environment", "/v", "Path"])
+                .output()
+                .ok()
+                .map(|out| String::from_utf8_lossy(&out.stdout).to_string())
+                .unwrap_or_default();
+            // Only append when it is not already there. Appending blindly on
+            // every launch is how a PATH grows to thousands of characters.
+            if !current.contains(&bin) {
+                let existing = current
+                    .lines()
+                    .find_map(|line| line.split("REG_EXPAND_SZ").nth(1).or(line.split("REG_SZ").nth(1)))
+                    .map(str::trim)
+                    .unwrap_or("");
+                let joined = if existing.is_empty() {
+                    bin.clone()
+                } else {
+                    format!("{existing};{bin}")
+                };
+                run(&["add", r"HKCU\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", &joined, "/f"]);
+            }
+        }
     }
     let _ = std::fs::write(&marker, "1");
 }
@@ -2048,6 +2085,24 @@ fn win_close(window: tauri::Window) {
 fn main() {
     let _ = STARTED.set(std::time::Instant::now());
 
+    // Register the file type and the krate:// scheme BEFORE the early
+    // returns below, not after.
+    //
+    // Both of those returns fire when the studio is launched WITH an argument
+    // -- a double-clicked .krate, or the sign-in hop coming back. Setup used
+    // to run only past them, so on a machine where the studio had only ever
+    // been opened that way, nothing was ever registered: no .krate
+    // association, no krate:// handler, no PATH entry (K-158). It is
+    // idempotent and marker-guarded, so running it on every path costs one
+    // file check.
+    //
+    // SYNCHRONOUS on purpose. The returns below leave `main`, which ends the
+    // process -- a background thread would be cut off partway through writing
+    // the registry, which is worse than not starting. It is a handful of
+    // `reg add` calls and only does anything on the very first run.
+    #[cfg(not(target_os = "macos"))]
+    first_run_setup();
+
     // On Windows and Linux a double-clicked .krate arrives as argv, not as a
     // macOS open event. The person asked for their app, not for Krate: hand
     // off to the engine (silently -- no console) and never build a window.
@@ -2078,7 +2133,9 @@ fn main() {
     }
     // Finish the install before the window appears. On a background thread:
     // it touches Launch Services and the filesystem, and none of it should
-    // ever delay the first paint.
+    // ever delay the first paint. Off macOS this already ran above, before
+    // the argv returns; the marker makes the second call a no-op.
+    #[cfg(target_os = "macos")]
     std::thread::spawn(first_run_setup);
 
     tauri::Builder::default()
