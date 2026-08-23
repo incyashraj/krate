@@ -4,13 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0a0a0a" />
-  <meta name="description" content="Krate is not a concept. See the apps, sizes, platform coverage, interfaces and limits measured from the repository today." />
+  <meta name="description" content="Where Krate is today, measured: every app we have shipped, its size, and whether it is re-tested nightly on Mac, Windows, and Linux." />
   <link rel="canonical" href="https://krate.tech/progress/" />
-  <meta property="og:title" content="Krate: this is what ships today" />
+  <meta property="og:title" content="Krate: where we are, measured" />
   <meta property="og:description" content="Every app we have shipped, its size, and what still does not work. Generated from the repository, not written by hand." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://krate.tech/progress/" />
-  <title>Krate: this is what ships today</title>
+  <title>Krate: where we are, measured</title>
   <link rel="icon" href="/krate-favicon.png" />
   <link rel="apple-touch-icon" href="/krate-favicon.png" />
   <link rel="stylesheet" href="/site.css" />
@@ -34,15 +34,14 @@
   </header>
 
   <main class="page-wide">
-    <p class="page-kicker">PROOF</p>
-    <h1>This is not a concept. It ships.</h1>
+    <p class="page-kicker">MEASURED</p>
+    <h1>Where Krate is today.</h1>
     <p>
       Every app we have shipped, its real size, and whether it is re-tested every
       night on Mac, Windows, and Linux. This page is generated from the
-      repository. The current release is <code>v0.1.50</code>, with Krate
-      Studio downloads for Mac, Windows and Linux.
+      repository. If a number here is wrong, the code is wrong.
     </p>
-    <p class="generated">Generated 2026-08-19 from commit <code>f6f2999e</code>.</p>
+    <p class="generated">Generated 2026-08-07 from commit <code>1b8eee2</code>.</p>
 
     <h2>Apps that exist and run</h2>
     <table>
@@ -76,8 +75,8 @@
 
     <h2>What the current public release can run</h2>
     <p>
-      All of them. The current release is <code>v0.1.50</code>. Drawing,
-      animation, audio capture, speech transcription and 3D scenes work, and each release is
+      All of them. The current release is <code>v0.1.2</code>. Drawing,
+      animation and sound arrived in <code>v0.1.0-rc5</code>, and each release is
       checked by downloading the published binary and running the 2D game, the
       chart and the sandbox escape test with it, not by trusting the build that
       made it. Krate also has <code>krate run app.wasm --shoot frame.png</code>,
@@ -90,7 +89,7 @@
 
     <h2>How much of the system is real</h2>
     <ul>
-      <li>11 of 14 declared interfaces are fully implemented. 1 are declared and do nothing yet. Two more interfaces are partial.</li>
+      <li>11 of 14 declared interfaces are fully implemented. 1 are declared and do nothing yet.</li>
       <li>17 of 17 declared widgets work on all three systems.</li>
     </ul>
     <p>
@@ -101,7 +100,8 @@
     <h2>What does not work yet</h2>
     <p>We publish this for the same reason we publish the rest.</p>
     <ul>
-      <li><strong>GPU 3D.</strong> Software 3D works with triangles, depth
+      <li><strong>3D graphics.</strong> The interface exists and does nothing.</li>
+      <li><strong>Heavy 3D.</strong> Software 3D works -- triangles with depth
           and lighting, 54 frames a second at 640x480 on a laptop. A modern 3D
           game needs the GPU path, which is planned rather than written.</li>
       <li><strong>Video.</strong> No decoder, no frame clock.</li>

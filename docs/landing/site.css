@@ -279,25 +279,14 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
   text-align: center;
 }
 
-.home-hero .display { margin: 26px auto 18px; max-width: 22ch; }
+.home-hero .display { margin: 26px auto 18px; max-width: 15ch; }
 
 .home-hero-sub {
   color: var(--muted);
   font-size: 17px;
-  max-width: 48ch;
+  max-width: 52ch;
   margin: 0 auto 34px;
 }
-
-.hero-proof { width: min(820px, 100%); margin: 40px auto 0; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: rgba(255,255,255,0.018); }
-.hero-proof a { padding: 19px 16px 17px; transition: background 0.15s; }
-.hero-proof a + a { border-left: 1px solid var(--line); }
-.hero-proof a:hover { background: rgba(255,255,255,0.035); }
-.hero-proof b { display: block; font-family: var(--mono); font-size: clamp(15px, 2.1vw, 20px); letter-spacing: -0.035em; }
-.hero-proof b i { color: var(--accent); font-style: normal; font-size: 0.62em; letter-spacing: 0.02em; text-transform: uppercase; }
-.hero-proof span { display: block; margin-top: 6px; color: var(--quiet); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.09em; }
-.hero-proof-note { margin: 12px auto 0; color: var(--quiet); font-size: 12.5px; }
-.hero-proof-note a { color: var(--muted); text-decoration: underline; }
-@media (max-width: 640px) { .hero-proof { grid-template-columns: 1fr; } .hero-proof a + a { border-left: 0; border-top: 1px solid var(--line); } }
 
 /* The rotating word and its gradient bar. The bar is a real element under
    the word; its colored band sweeps across by animating background
@@ -1839,9 +1828,7 @@ h1, h2, h3 { font-weight: 500; letter-spacing: -0.02em; }
 
 /* ------------------------------------------------------------------ bento */
 .bento { padding: 96px 0; border-top: 1px solid var(--line); }
-.bento-kicker { text-align: center; }
-.bento-h { text-align: center; margin: 12px auto 14px; max-width: 880px; font-size: clamp(32px, 4.8vw, 54px); line-height: 1.04; }
-.bento-lede { color: var(--muted); text-align: center; max-width: 620px; margin: 0 auto 42px; font-size: 15px; line-height: 1.65; }
+.bento-h { text-align: center; margin-bottom: 42px; font-size: 34px; }
 .bento-grid {
   display: grid; gap: 16px;
   grid-template-columns: repeat(3, 1fr);
