@@ -191,6 +191,7 @@ impl WindowPresenter {
         height: u32,
         surface_width: u32,
         surface_height: u32,
+        overlay_sprite: Option<(&[u8], u32, u32)>,
     ) -> Result<(), String> {
         let started = Instant::now();
         if width == 0
@@ -264,6 +265,52 @@ impl WindowPresenter {
                 depth_or_array_layers: 1,
             },
         );
+        // The full-bleed window controls, composited over the canvas frame's
+        // top-right corner. The canvas is one write_texture; the corner block
+        // is a second, tiny one -- source pixels re-read, sprite blended,
+        // block uploaded -- so the 60fps fast path never pays for a full
+        // extra copy of the frame.
+        if let Some((sprite, sw, sh)) = overlay_sprite {
+            let bw = sw.min(width);
+            let bh = sh.min(height);
+            if bw > 0 && bh > 0 && sprite.len() >= (sw as usize * sh as usize * 4) {
+                let ox = width - bw;
+                let mut block = vec![0u8; (bw * bh * 4) as usize];
+                for y in 0..bh {
+                    for x in 0..bw {
+                        let si = (((y * sw) + x) * 4) as usize;
+                        let di = (((y * width) + ox + x) * 4) as usize;
+                        let bi = (((y * bw) + x) * 4) as usize;
+                        let a = u32::from(sprite[si + 3]);
+                        for c in 0..3 {
+                            let over = u32::from(sprite[si + c]);
+                            let under = u32::from(rgba[di + c]);
+                            block[bi + c] = ((over * a + under * (255 - a)) / 255) as u8;
+                        }
+                        block[bi + 3] = 255;
+                    }
+                }
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture,
+                        mip_level: 0,
+                        origin: wgpu::Origin3d { x: ox, y: 0, z: 0 },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &block,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(bw * 4),
+                        rows_per_image: Some(bh),
+                    },
+                    wgpu::Extent3d {
+                        width: bw,
+                        height: bh,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
         use wgpu::CurrentSurfaceTexture;
         // A failure recorded DURING configure (an invalid surface, a lost
         // device) must stop us HERE: with panic=abort, one more surface call
@@ -316,6 +363,7 @@ impl WindowPresenter {
         placements: &[WidgetPlacement],
         interaction: PaintInteraction,
         input_at: Option<Instant>,
+        overlay_controls: bool,
     ) -> Result<(), String> {
         let started = Instant::now();
         if width == 0 || height == 0 {
@@ -376,7 +424,14 @@ impl WindowPresenter {
                 height,
             ));
         }
-        let scene = build_scene(&mut self.cache, placements, scale, interaction);
+        let mut scene = build_scene(&mut self.cache, placements, scale, interaction);
+        // A full-bleed window has no title bar; these are its close and
+        // minimize buttons, drawn over the app the way macOS overlays its
+        // traffic lights.
+        if overlay_controls {
+            crate::append_overlay_controls(&mut scene, width, scale);
+        }
+        let scene = scene;
         let (target_view, _, _) = self.target.as_ref().expect("target just ensured");
         self.renderer
             .render_to_texture(

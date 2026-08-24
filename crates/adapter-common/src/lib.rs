@@ -7,6 +7,7 @@ pub mod canvas_list;
 pub mod drawtext;
 pub mod locale;
 pub mod net;
+pub mod overlay;
 pub mod painter;
 pub mod path;
 pub mod time;

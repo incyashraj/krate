@@ -202,6 +202,61 @@ fn fill_rounded_clipped(
     }
 }
 
+/// Draw the full-bleed window controls into a scene, physical pixels.
+///
+/// An undecorated window has no close or minimize button; macOS overlays its
+/// traffic lights on the app's drawing, and this is the same courtesy for the
+/// winit platforms. Geometry comes from `overlay::cluster_rect`, the one
+/// source the hit test also reads, so what is drawn is what clicks.
+pub fn append_overlay_controls(scene: &mut vello::Scene, surface_width: u32, scale: f32) {
+    use krate_adapter_common::overlay;
+    use vello::kurbo::{Line, RoundedRect, Stroke};
+    let logical_w = surface_width as f32 / scale;
+    let (cx, cy, _cw, ch) = overlay::cluster_rect(logical_w);
+    let pill = Color::from_rgba8(12, 12, 14, 150);
+    let glyph = Color::from_rgba8(235, 235, 238, 255);
+    let stroke = Stroke::new(f64::from(1.6 * scale));
+    for button in 0..overlay::BUTTONS {
+        let bx = (cx + button as f32 * overlay::BUTTON_W) * scale;
+        let by = cy * scale;
+        let (bw, bh) = (overlay::BUTTON_W * scale, ch * scale);
+        let shape = RoundedRect::new(
+            f64::from(bx),
+            f64::from(by),
+            f64::from(bx + bw),
+            f64::from(by + bh),
+            f64::from(6.0 * scale),
+        );
+        scene.fill(Fill::NonZero, Affine::IDENTITY, pill, None, &shape);
+        let (gx, gy) = (f64::from(bx + bw / 2.0), f64::from(by + bh / 2.0));
+        let reach = f64::from(5.5 * scale);
+        if button == 0 {
+            scene.stroke(
+                &stroke,
+                Affine::IDENTITY,
+                glyph,
+                None,
+                &Line::new((gx - reach, gy), (gx + reach, gy)),
+            );
+        } else {
+            scene.stroke(
+                &stroke,
+                Affine::IDENTITY,
+                glyph,
+                None,
+                &Line::new((gx - reach, gy - reach), (gx + reach, gy + reach)),
+            );
+            scene.stroke(
+                &stroke,
+                Affine::IDENTITY,
+                glyph,
+                None,
+                &Line::new((gx - reach, gy + reach), (gx + reach, gy - reach)),
+            );
+        }
+    }
+}
+
 /// Translate placements into a vello scene at the given scale.
 ///
 /// Logical-to-physical happens here and only here, mirroring the CPU

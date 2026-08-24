@@ -103,6 +103,24 @@ mod real {
         placements: Vec<WidgetPlacement>,
         hovered: Option<krate_adapter_common::ui::WidgetId>,
         pressed_widget: Option<krate_adapter_common::ui::WidgetId>,
+        /// Full-bleed took the title bar away; the adapter owes this window
+        /// its own close and minimize controls (K-168).
+        undecorated: bool,
+        /// The overlay sprite, cached per pixel density (key: density x100).
+        overlay_cache: Option<(u32, Vec<u8>, u32, u32)>,
+    }
+
+    impl TrackedWindow {
+        /// The overlay sprite at a pixel density, rasterized on first use.
+        fn overlay_sprite(&mut self, px_per_logical: f32) -> (&[u8], u32, u32) {
+            let key = (px_per_logical * 100.0).round() as u32;
+            if self.overlay_cache.as_ref().map(|(k, ..)| *k) != Some(key) {
+                let (rgba, w, h) = krate_adapter_common::overlay::sprite(px_per_logical);
+                self.overlay_cache = Some((key, rgba, w, h));
+            }
+            let (_, rgba, w, h) = self.overlay_cache.as_ref().expect("cached above");
+            (rgba, *w, *h)
+        }
     }
 
     /// The shared windowed presenter, wrapped with what only the adapter
@@ -125,6 +143,7 @@ mod real {
             placements: &[WidgetPlacement],
             interaction: krate_adapter_common::painter::PaintInteraction,
             input_at: Option<std::time::Instant>,
+            overlay_sprite: Option<(&[u8], u32, u32)>,
         ) -> Result<(), String> {
             let size = window.inner_size();
             window.pre_present_notify();
@@ -153,6 +172,7 @@ mod real {
                                 pixels.height,
                                 size.width,
                                 size.height,
+                                overlay_sprite,
                             );
                         }
                     }
@@ -165,6 +185,7 @@ mod real {
                 placements,
                 interaction,
                 input_at,
+                overlay_sprite.is_some(),
             )
         }
     }
@@ -315,6 +336,8 @@ mod real {
                             placements: Vec::new(),
                             hovered: None,
                             pressed_widget: None,
+                            undecorated: false,
+                            overlay_cache: None,
                         },
                     );
                 }
@@ -419,6 +442,33 @@ mod real {
                 } => {
                     if let Some((x, y)) = self.cursor.get(&native).copied() {
                         let pressed = state == winit::event::ElementState::Pressed;
+                        // The overlay controls eat their clicks before the
+                        // app can see them (K-168): a press in the cluster is
+                        // ours, and the release is the action.
+                        if let Some(tracked) = self.windows.get(&native) {
+                            if tracked.undecorated {
+                                let scale = tracked.window.scale_factor();
+                                let lw =
+                                    (f64::from(tracked.window.inner_size().width) / scale) as f32;
+                                if let Some(control) = krate_adapter_common::overlay::hit(lw, x, y)
+                                {
+                                    if !pressed {
+                                        match control {
+                                            krate_adapter_common::overlay::ControlHit::Close => {
+                                                self.events.push((
+                                                    krate,
+                                                    WinitWindowNativeEvent::CloseRequested,
+                                                ));
+                                            }
+                                            krate_adapter_common::overlay::ControlHit::Minimize => {
+                                                tracked.window.set_minimized(true);
+                                            }
+                                        }
+                                    }
+                                    return;
+                                }
+                            }
+                        }
                         self.pointer_samples.push(RawPointerSample {
                             window: krate,
                             x,
@@ -529,13 +579,45 @@ mod real {
                     }
                 }
             }
-            if let Some(gpu) = tracked.gpu.as_mut() {
+            if tracked.gpu.is_some() {
                 let interaction = krate_adapter_common::painter::PaintInteraction {
                     hovered: tracked.hovered,
                     pressed: tracked.pressed_widget,
                 };
                 let input_at = tracked.last_input.take();
-                match gpu.render(&tracked.window, &tracked.placements, interaction, input_at) {
+                // The overlay sprite's density: for the canvas fast path the
+                // sprite lands in CANVAS pixels (later scaled to the window),
+                // so its density is canvas-pixels-per-logical; the vector
+                // scene path ignores the sprite and draws at window scale.
+                let overlay = if tracked.undecorated {
+                    let scale = tracked.window.scale_factor();
+                    let logical_w =
+                        (f64::from(tracked.window.inner_size().width) / scale).max(1.0) as f32;
+                    let density = match &tracked.placements[..] {
+                        [only] if only.pixels.is_some() => only
+                            .pixels
+                            .as_ref()
+                            .map(|px| px.width as f32 / logical_w)
+                            .unwrap_or(scale as f32),
+                        _ => scale as f32,
+                    };
+                    let (rgba, w, h) = tracked.overlay_sprite(density);
+                    // Borrow dance: the sprite borrows tracked, and so does
+                    // gpu.render. Clone the small sprite instead of fighting
+                    // the borrow checker with unsafe.
+                    Some((rgba.to_vec(), w, h))
+                } else {
+                    None
+                };
+                let gpu = tracked.gpu.as_mut().expect("checked above");
+                let overlay_ref = overlay.as_ref().map(|(rgba, w, h)| (&rgba[..], *w, *h));
+                match gpu.render(
+                    &tracked.window,
+                    &tracked.placements,
+                    interaction,
+                    input_at,
+                    overlay_ref,
+                ) {
                     Ok(()) => return,
                     Err(why) => {
                         tracked.gpu_dead = true;
@@ -551,6 +633,15 @@ mod real {
             (NonZeroU32::new(size.width), NonZeroU32::new(size.height))
         else {
             return;
+        };
+        // Rasterized before the surface borrow starts; the buffer below holds
+        // a mutable borrow of the window for its whole scope.
+        let cpu_scale = tracked.window.scale_factor() as f32;
+        let cpu_overlay = if tracked.undecorated {
+            let (rgba, w, h) = tracked.overlay_sprite(cpu_scale);
+            Some((rgba.to_vec(), w, h))
+        } else {
+            None
         };
         if tracked.surface.is_none() {
             let context = match softbuffer::Context::new(tracked.window.clone()) {
@@ -572,13 +663,35 @@ mod real {
             &mut buffer,
             width.get(),
             height.get(),
-            tracked.window.scale_factor() as f32,
+            cpu_scale,
             &tracked.placements,
             krate_adapter_common::painter::PaintInteraction {
                 hovered: tracked.hovered,
                 pressed: tracked.pressed_widget,
             },
         );
+        // The full-bleed window controls, blended over the frame's top-right
+        // corner. softbuffer pixels are 0RGB u32s.
+        if let Some((sprite, sw, sh)) = cpu_overlay {
+            let (bw, bh) = (width.get(), height.get());
+            let ox = bw.saturating_sub(sw);
+            for y in 0..sh.min(bh) {
+                for x in 0..sw.min(bw) {
+                    let si = ((y * sw + x) * 4) as usize;
+                    let a = u32::from(sprite[si + 3]);
+                    if a == 0 {
+                        continue;
+                    }
+                    let di = (y * bw + ox + x) as usize;
+                    let under = buffer[di];
+                    let blend = |over: u32, under: u32| (over * a + under * (255 - a)) / 255;
+                    let r = blend(u32::from(sprite[si]), (under >> 16) & 0xff);
+                    let g = blend(u32::from(sprite[si + 1]), (under >> 8) & 0xff);
+                    let b = blend(u32::from(sprite[si + 2]), under & 0xff);
+                    buffer[di] = (r << 16) | (g << 8) | b;
+                }
+            }
+        }
         let _ = buffer.present();
     }
 
@@ -773,15 +886,29 @@ mod real {
         krate: WindowId,
         enabled: bool,
     ) -> Result<Option<WindowSize>, UiAdapterError> {
-        with_tracked(krate, |tracked| {
-            tracked.window.set_decorations(!enabled);
-            let size = tracked.window.inner_size();
-            let scale = tracked.window.scale_factor();
-            let logical = size.to_logical::<f64>(scale);
-            WindowSize {
-                width: logical.width.round().max(1.0) as u32,
-                height: logical.height.round().max(1.0) as u32,
-            }
+        if !host_initialized() {
+            return Ok(None);
+        }
+        with_host(|host| {
+            Ok(host
+                .app
+                .windows
+                .values_mut()
+                .find(|tracked| tracked.krate == krate)
+                .map(|tracked| {
+                    tracked.window.set_decorations(!enabled);
+                    // No title bar means no close or minimize button; the
+                    // draw paths overlay our own and the input path routes
+                    // their clicks (K-168).
+                    tracked.undecorated = enabled;
+                    let size = tracked.window.inner_size();
+                    let scale = tracked.window.scale_factor();
+                    let logical = size.to_logical::<f64>(scale);
+                    WindowSize {
+                        width: logical.width.round().max(1.0) as u32,
+                        height: logical.height.round().max(1.0) as u32,
+                    }
+                }))
         })
     }
 

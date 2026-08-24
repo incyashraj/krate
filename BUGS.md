@@ -71,6 +71,28 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-168 -- A full-bleed app on Windows has no close or minimize button at all
+
+Status:   fixed (pending windowed re-proof on the PC)
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-24, the founder, double-clicking the chess app: "opens without window like close and minimize buttons"
+Evidence: full-bleed on Windows and Linux is an undecorated window
+          (set_decorations(false), the K-117 decision) -- which removes the
+          entire title bar, buttons included. macOS overlays its traffic
+          lights on the app's drawing, so a full-bleed Mac app stays
+          closable; the same app on Windows was a bare rectangle a person
+          could only leave through Alt-F4. The pack teaches full-bleed, so
+          every polished generated app inherits the trap.
+Fix:      the adapters now draw their own minimize and close controls over
+          the top-right corner of any undecorated window, and eat clicks in
+          that cluster before the app sees them (close feeds the normal
+          CloseRequested path, K-121 two-strike included). One geometry
+          source (adapter-common::overlay) feeds the hit test, the CPU
+          painter's sprite blend, the vello scene path, and the canvas
+          fast path's corner composite, so what is drawn is what clicks.
+
 ### K-167 -- Windows creates app windows bigger than the screen, bottom hanging off it
 
 Status:   fixed (pending windowed re-proof on the PC)
