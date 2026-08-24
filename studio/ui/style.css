@@ -434,6 +434,16 @@ body.windows .titlebar { padding-right: 150px; }
 .build-elapsed { color: var(--faint); font-size: 12px; margin: 5px 0 3px; font-variant-numeric: tabular-nums; }
 .build-sweep { width: 100%; margin-bottom: 26px; }
 
+/* The app's own latest test frame, updating as the AI works. Small on
+   purpose -- a preview riding above the stages, not the finished-app stage. */
+.build-shot { position: relative; margin: 10px 0 14px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+.build-shot img { display: block; width: 100%; max-height: 220px; object-fit: cover; object-position: top; }
+.build-shot-tag {
+  position: absolute; left: 8px; bottom: 8px;
+  font-size: 10.5px; letter-spacing: 0.02em; color: #fff;
+  background: rgba(0, 0, 0, 0.55); border-radius: 6px; padding: 3px 8px;
+}
+
 /* 10px apart, not 14: five stages read as one list rather than five
    separate lines drifting down the screen. */
 .stages { list-style: none; display: flex; flex-direction: column; gap: 10px; }

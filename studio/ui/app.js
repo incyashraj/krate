@@ -134,7 +134,7 @@ function buildRecord(id) {
   if (!id) return null;
   let rec = state.builds.get(id);
   if (!rec) {
-    rec = { lines: [], stageIndex: -1, nowLine: "", title: "", expect: "", startedAt: 0 };
+    rec = { lines: [], stageIndex: -1, nowLine: "", title: "", expect: "", startedAt: 0, shot: "" };
     state.builds.set(id, rec);
   }
   return rec;
@@ -215,6 +215,12 @@ async function boot() {
     $("loginBtn").disabled = true;
   }
   showView("gate");
+  // One action on the first screen. The code path is the fallback for a
+  // browser hand-off that is not going to arrive; it appears when the wait
+  // says so, or the moment the browser path errors -- not as a second
+  // button competing with the first before anything has gone wrong.
+  clearTimeout(state.gateFallback);
+  state.gateFallback = setTimeout(() => $("loginBtn").classList.remove("hidden"), 15000);
 }
 
 async function login() {
@@ -269,21 +275,26 @@ function onLoginStep(step) {
 async function enterHome() {
   showView("home");
   renderAccount();
-  // Settings FIRST, then agents -- and await both.
+  // Settings FIRST, then agents.
   //
-  // These two lines were the other way round and refreshAgents() was not
-  // awaited, so two things went wrong at once: a request submitted before the
-  // async agent probe returned used the default "claude", and when the probe
-  // did return, the settings load overwrote its choice. The chip painted
-  // "Codex" from the probe while state.agent still said "claude", and the
-  // build failed in the next second with "the `claude` command is not
-  // installed" on a machine where Codex was installed and working.
+  // These two lines were once the other way round, so a request submitted
+  // before the async agent probe returned used the default "claude", and when
+  // the probe did return, the settings load overwrote its choice. The chip
+  // painted "Codex" while state.agent said "claude", and the build failed
+  // naming an agent the user never picked. Settings load first, always.
   const settings = await invoke("settings_get");
   state.outDir = settings.out_dir;
   state.agent = settings.agent || "claude";
-  await refreshAgents();
+  // The person's apps come from local disk in milliseconds; the agent probe
+  // runs real tools and can take seconds (twenty, on a machine with one
+  // broken provider). Awaiting the probe here meant every launch stared at a
+  // home screen with no apps on it for that long. Paint the apps NOW; the
+  // chip says "checking…" until the probe lands and updates it. A request
+  // submitted before then is safe: runPlan awaits ensureUsableAgent, which
+  // finishes the same probe before any agent is asked to work.
   renderSessions(await invoke("sessions_list"));
   renderBuilding();
+  refreshAgents();
 }
 
 /* A build keeps running while you browse. Without this the home screen looked
@@ -344,8 +355,18 @@ function renderSessions(sessions) {
     const well = card.querySelector(".thumb-well");
     if (hasShot) {
       const img = document.createElement("img");
-      img.src = s.result.shot;
       img.alt = "";
+      // Shots live beside the session as PNG files now; "file" is the
+      // marker. Loaded lazily per card so the grid itself paints in
+      // milliseconds however many apps exist. Old sessions still carry an
+      // inline data URL and use it directly.
+      if (s.result.shot === "file") {
+        invoke("session_shot", { id: s.id })
+          .then((data) => { img.src = data; })
+          .catch(() => { well.classList.add("blank"); });
+      } else {
+        img.src = s.result.shot;
+      }
       well.appendChild(img);
     } else {
       well.textContent = "open to pick up where you left off";
@@ -372,9 +393,10 @@ function renderSessions(sessions) {
 function timeAgo(secs) {
   const d = Math.floor(Date.now() / 1000) - secs;
   if (d < 90) return "just now";
-  if (d < 3600) return `${Math.floor(d / 60)} min ago`;
-  if (d < 86400 * 2) return `${Math.floor(d / 3600)} h ago`;
-  return `${Math.floor(d / 86400)} days ago`;
+  if (d < 3600) return `${Math.max(1, Math.floor(d / 60))} min ago`;
+  if (d < 86400) return `${Math.max(1, Math.floor(d / 3600))} h ago`;
+  const days = Math.round(d / 86400);
+  return days <= 1 ? "yesterday" : `${days} days ago`;
 }
 
 /* ---- sessions --------------------------------------------------------- */
@@ -425,7 +447,17 @@ function openSession(s) {
     // Cloud is nothing at all (K-152).
     restoreBuild(state.session.id);
   } else if (state.session.result) {
-    fillDone(state.session.result, { reveal: false });
+    const r = state.session.result;
+    if (r.shot === "file") {
+      // Draw the card now, pixels a beat later: the shot is on local disk.
+      r.shot = "";
+      fillDone(r, { reveal: false });
+      invoke("session_shot", { id: state.session.id })
+        .then((data) => { r.shot = data; fillDone(r, { reveal: false }); })
+        .catch(() => {});
+    } else {
+      fillDone(r, { reveal: false });
+    }
     show("done");
     setRevisePlaceholders();
   } else {
@@ -699,6 +731,18 @@ function restoreBuild(sessionId) {
     const now = $("nowLine");
     if (now && rec.nowLine) now.textContent = rec.nowLine;
 
+    // The latest frame the AI rendered, if one has appeared.
+    const shotBox = $("buildShotBox");
+    const shotImg = $("buildShot");
+    if (shotBox && shotImg) {
+      if (rec.shot) {
+        shotImg.src = rec.shot;
+        shotBox.classList.remove("hidden");
+      } else {
+        shotBox.classList.add("hidden");
+      }
+    }
+
     // The clock keeps counting from when the build really started, not from
     // when the person came back to look at it.
     if (rec.startedAt) {
@@ -738,8 +782,8 @@ function beginBuild(title, expect) {
     (s) => `<li data-key="${s.key}"><span class="tick"></span>${s.label}</li>`,
   ).join("");
   $("buildLog").textContent = "";
-  const fill0 = $("buildFill");
-  if (fill0) fill0.style.width = "4%";
+  const shotBox = $("buildShotBox");
+  if (shotBox) shotBox.classList.add("hidden");
   state.stageIndex = -1;
   // Start this session's progress record fresh. Everything the pane shows is
   // mirrored here so re-entering the session can rebuild it (K-152).
@@ -751,6 +795,7 @@ function beginBuild(title, expect) {
     rec.title = title;
     rec.expect = expect;
     rec.startedAt = Date.now();
+    rec.shot = "";
   }
   advanceStage("read");
   state.startedAt = Date.now();
@@ -823,14 +868,44 @@ function advanceStage(key) {
   setProgress((idx + 0.5) / STAGES.length);
 }
 
-/* The bar tracks real stages, never a timer pretending to know how long an
- * AI will think. It stops at 92% until the app actually exists, because a
- * bar that sits at 100% while nothing has finished is a lie the person can
- * see through -- and this build genuinely takes minutes. */
+/* Progress lives on the dock icon (macOS) and the taskbar button (Windows),
+ * because the person tabs away from a ten-minute build -- the icon is what
+ * they can still see. It tracks real stages, never a timer pretending to
+ * know how long an AI will think, and it stops at 92% until the app
+ * actually exists: a bar sitting at 100% while nothing has finished is a
+ * lie the person can see through. */
 function setProgress(fraction) {
   const pct = Math.max(4, Math.min(92, Math.round(fraction * 100)));
-  const fill = $("buildFill");
-  if (fill) fill.style.width = pct + "%";
+  invoke("build_progress", { pct }).catch(() => {});
+}
+
+/* Clear the icon's bar -- the build ended, whichever way. */
+function clearProgress(done) {
+  if (done) {
+    invoke("build_progress", { pct: 100 }).catch(() => {});
+    setTimeout(() => invoke("build_progress", { pct: null }).catch(() => {}), 1500);
+  } else {
+    invoke("build_progress", { pct: null }).catch(() => {});
+  }
+}
+
+/* The agent's own latest test frame, painted as it appears: the person
+ * watches their app take shape instead of a static list (see
+ * watch_build_shots in the shell). Kept in the session's build record so
+ * leaving and coming back restores it -- the K-152 lesson. */
+function onBuildShot(dataUrl) {
+  const rec = liveRecord();
+  if (!rec) return;
+  rec.shot = dataUrl;
+  const watching =
+    state.session && state.buildingSession && state.session.id === state.buildingSession.id;
+  if (!watching) return;
+  const box = $("buildShotBox");
+  const img = $("buildShot");
+  if (box && img) {
+    img.src = dataUrl;
+    box.classList.remove("hidden");
+  }
 }
 
 /* Map the engine's own lines onto the stage story. These are our lines,
@@ -979,6 +1054,7 @@ function finishBuild(result) {
   state.buildSettled = true;
   clearInterval(state.timer);
   clearInterval(state.watchdog);
+  clearProgress(true);
   // The result belongs to the session that was building, which is not
   // always the one on screen -- a person can browse other sessions while
   // the AI works. Attaching to state.session put finished apps on the
@@ -1003,9 +1079,6 @@ function finishBuild(result) {
     document.querySelectorAll("#stages li").forEach((li) => {
       li.className = "done";
     });
-    setProgress(1);
-    const fill = $("buildFill");
-    if (fill) fill.style.width = "100%";
     fillDone(result, { reveal: true });
     show("done");
     setRevisePlaceholders();
@@ -1027,6 +1100,7 @@ function failBuild(why, request) {
   if (state.buildSettled) return;
   state.buildSettled = true;
   clearInterval(state.watchdog);
+  clearProgress(false);
   settleChipBad(state.buildChip, state.buildVersion || 1, () => make(request));
   state.buildChip = null;
   clearInterval(state.timer);
@@ -1070,7 +1144,6 @@ function friendlyAsk(cap) {
 /* ---- driving the engine ----------------------------------------------- */
 
 async function make(request) {
-  invoke("dbg_log", { line: `make() request=${JSON.stringify(request).slice(0,40)} buildingSession=${state.buildingSession?.id||"null"} session=${state.session?.id||"null"} hasResult=${!!currentApp()}` }).catch(()=>{});
   // Two builds at once would leave the first unstoppable; the backend
   // refuses it too, but stopping here keeps the UI honest. Keyed on the
   // building session, not the visible phase -- browsing away changes the
@@ -1323,7 +1396,6 @@ function finishPlanningAndBuild() {
 }
 
 async function buildNow(request, files, revising) {
-  invoke("dbg_log", { line: `buildNow() revising=${revising} buildingSession=${state.buildingSession?.id||"null"} session=${state.session?.id||"null"}` }).catch(()=>{});
   if (state.buildingSession) { invoke("dbg_log", { line: "buildNow() BAILED: buildingSession set" }).catch(()=>{}); return; }
   // The composer stays live during a build so a thought can be queued
   // rather than lost.
@@ -1364,15 +1436,16 @@ async function buildNow(request, files, revising) {
   try {
     beginBuild(
       revising ? "Making your change" : "Making your app",
-      revising ? "the AI reads your app before it edits" : "usually a few minutes",
+      // Honest numbers: measured across real builds (traces in
+      // ~/.krate/studio/builds), a fresh app is 5-15 minutes and the
+      // median is ~13. "A few minutes" read as a promise and then as a lie.
+      revising ? "changes are quicker - the AI reads your app first" : "usually 5-15 minutes",
     );
   } catch (err) {
     console.warn("beginBuild failed, building anyway:", err);
-    invoke("dbg_log", { line: `beginBuild threw: ${err?.message || err}` }).catch(() => {});
     show("building");
   }
 
-  invoke("dbg_log", { line: `buildNow about to invoke ${revising?"revise_app":"create_app"} for session=${state.session?.id}` }).catch(()=>{});
   try {
     const result = revising
       ? await invoke("revise_app", {
@@ -1416,7 +1489,6 @@ async function buildNow(request, files, revising) {
     const queued = state.queued;
     state.queued = null;
     if (queued) {
-      invoke("dbg_log", { line: `finally: firing QUEUED build, session-now=${state.session?.id} hasResult=${!!currentApp()}` }).catch(()=>{});
       setRevisePlaceholders();
       setTimeout(() => make(queued), 400);
     }
@@ -1735,14 +1807,7 @@ async function showInfo() {
 
 /* ---- Krate Cloud ------------------------------------------------------- */
 
-function timeAgo(seconds) {
-  const mins = Math.max(1, Math.round((Date.now() / 1000 - seconds) / 60));
-  if (mins < 60) return `${mins} min ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours} h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "yesterday" : `${days} days ago`;
-}
+
 
 /* The shelf an app sits on comes from the hub -- the publisher classified it
    at publish time. The keyword fallback only covers apps published before the
@@ -2392,6 +2457,7 @@ $("loginBrowserBtn").addEventListener("click", async () => {
   } catch (err) {
     $("gateError").textContent = signInWords(err);
     $("gateError").classList.remove("hidden");
+    $("loginBtn").classList.remove("hidden");
   }
 });
 $("attachBtn").addEventListener("click", attach);
@@ -2511,6 +2577,12 @@ $("logoutBtn").addEventListener("click", async () => {
   $("gateStart").classList.remove("hidden");
   $("gateCode").classList.add("hidden");
   showView("gate");
+  // One action on the first screen. The code path is the fallback for a
+  // browser hand-off that is not going to arrive; it appears when the wait
+  // says so, or the moment the browser path errors -- not as a second
+  // button competing with the first before anything has gone wrong.
+  clearTimeout(state.gateFallback);
+  state.gateFallback = setTimeout(() => $("loginBtn").classList.remove("hidden"), 15000);
 });
 document.querySelectorAll(".sheet-close").forEach((b) =>
   b.addEventListener("click", () => $(b.dataset.close).classList.add("hidden")),
@@ -2565,6 +2637,8 @@ if (tauri) {
   tauri.event.listen("engine-line", (e) => onEngineLine(e.payload))
     .catch((err) => onEngineLine(`(!) event channel failed: ${err}`));
   tauri.event.listen("login-step", (e) => onLoginStep(e.payload))
+    .catch(() => {});
+  tauri.event.listen("build-shot", (e) => onBuildShot(e.payload))
     .catch(() => {});
   // Install progress, so a two-minute npm run is not a frozen button. The
   // last line is enough: nobody wants npm's full output, they want to see

@@ -329,7 +329,7 @@ fn sessions_list() -> Vec<Session> {
 }
 
 #[tauri::command]
-fn session_save(session: Session) -> Result<(), String> {
+fn session_save(mut session: Session) -> Result<(), String> {
     // The id is ours (a timestamp), but never trust a path component you did
     // not mint this second.
     if !session
@@ -338,6 +338,26 @@ fn session_save(session: Session) -> Result<(), String> {
         .all(|c| c.is_ascii_alphanumeric() || c == '-')
     {
         return Err("bad session id".to_string());
+    }
+    // The screenshot lives beside the JSON, never inside it. Inlined as a
+    // base64 data URL it made every session file megabytes, and sessions_list
+    // parses every file on every visit to the home screen -- ten apps in,
+    // opening Krate was reading tens of megabytes to draw a grid. The JSON
+    // keeps the marker "file"; session_shot hands the pixels over on demand.
+    // Old sessions with an inline shot migrate the first time they are saved.
+    if let Some(result) = session.result.as_mut() {
+        if let Some(data) = result["shot"].as_str() {
+            if let Some(b64) = data.strip_prefix("data:image/png;base64,") {
+                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) {
+                    let png = studio_dir()
+                        .join("sessions")
+                        .join(format!("{}.shot.png", session.id));
+                    if std::fs::write(png, bytes).is_ok() {
+                        result["shot"] = serde_json::json!("file");
+                    }
+                }
+            }
+        }
     }
     let path = studio_dir()
         .join("sessions")
@@ -349,12 +369,28 @@ fn session_save(session: Session) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
+/// One session's screenshot as a data URL, read on demand. The grid asks for
+/// these lazily, card by card, instead of every visit paying for every shot.
+#[tauri::command]
+fn session_shot(id: String) -> Result<String, String> {
+    if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err("bad session id".to_string());
+    }
+    let png = studio_dir().join("sessions").join(format!("{id}.shot.png"));
+    let bytes = std::fs::read(png).map_err(|_| "no shot for this session".to_string())?;
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    ))
+}
+
 #[tauri::command]
 fn session_delete(id: String) -> Result<(), String> {
     if !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Err("bad session id".to_string());
     }
     let _ = std::fs::remove_file(studio_dir().join("sessions").join(format!("{id}.json")));
+    let _ = std::fs::remove_file(studio_dir().join("sessions").join(format!("{id}.shot.png")));
     Ok(())
 }
 
@@ -607,7 +643,7 @@ async fn create_app(
         for file in &attachments {
             cmd.args(["--attach", file]);
         }
-        run_author(&app, cmd, &engine, &out_path)
+        run_author(&app, cmd, &engine, &out_path, Some(session_work))
     })
     .await
     .map_err(|err| err.to_string())?;
@@ -645,7 +681,7 @@ async fn revise_app(
         for file in &attachments {
             cmd.args(["--attach", file]);
         }
-        run_author(&app, cmd, &engine, &out_path)
+        run_author(&app, cmd, &engine, &out_path, None)
     })
     .await
     .map_err(|err| err.to_string())?
@@ -767,12 +803,88 @@ fn remember_target(session: &str, path: &Path) {
     }
 }
 
+/// Watch a build workspace for the agent's own test frames, and stream each
+/// new one to the UI.
+///
+/// While it works, the agent renders the app headlessly (`check-app --shoot
+/// frame.png`) to look at what it drew. Those PNGs land in the session
+/// workspace -- which means the app's real pixels exist minutes before the
+/// build finishes, and nothing showed them. Polling for them turns a
+/// ten-minute opaque wait into watching the app take shape.
+///
+/// Poll, not a filesystem watcher: two seconds of latency is invisible next
+/// to an AI's pace, and a poller cannot leak platform-specific watcher
+/// handles. A frame is only sent once its size has held still for one tick,
+/// so a half-written PNG never reaches the screen.
+fn watch_build_shots(
+    app: tauri::AppHandle,
+    dir: PathBuf,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) {
+    std::thread::spawn(move || {
+        let mut seen: std::collections::HashMap<PathBuf, (u64, u64, bool)> =
+            std::collections::HashMap::new();
+        while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+            let mut pngs: Vec<PathBuf> = Vec::new();
+            let mut stack = vec![dir.clone()];
+            while let Some(d) = stack.pop() {
+                let Ok(entries) = std::fs::read_dir(&d) else { continue };
+                for entry in entries.filter_map(|e| e.ok()) {
+                    let path = entry.path();
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    if path.is_dir() {
+                        // The build tree holds compile artifacts by the
+                        // thousand; the frames live near the source.
+                        if name != "target" && !name.starts_with('.') {
+                            stack.push(path);
+                        }
+                    } else if name.ends_with(".png") {
+                        pngs.push(path);
+                    }
+                }
+            }
+            for png in pngs {
+                let Ok(meta) = std::fs::metadata(&png) else { continue };
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let size = meta.len();
+                if size == 0 || size > 4 * 1024 * 1024 {
+                    continue;
+                }
+                let entry = seen.entry(png.clone()).or_insert((0, 0, false));
+                if entry.0 == mtime && entry.1 == size {
+                    if !entry.2 {
+                        // Held still for a tick: safe to read and send.
+                        entry.2 = true;
+                        if let Ok(bytes) = std::fs::read(&png) {
+                            let url = format!(
+                                "data:image/png;base64,{}",
+                                base64::engine::general_purpose::STANDARD.encode(bytes)
+                            );
+                            let _ = app.emit("build-shot", url);
+                        }
+                    }
+                } else {
+                    *entry = (mtime, size, false);
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+    });
+}
+
 /// Spawn an authoring child, stream its lines to the UI, read the result.
 fn run_author(
     app: &tauri::AppHandle,
     mut cmd: Command,
     engine: &PathBuf,
     out_path: &Path,
+    watch_dir: Option<PathBuf>,
 ) -> Result<CreateResult, String> {
     // Run the agent from a scratch directory of ours, never from whatever
     // the studio happened to inherit.
@@ -848,14 +960,6 @@ fn run_author(
         }
     }
 
-    // USER, for the same reason the engine sets it: a Finder-launched app does
-    // not reliably have it, and Claude Code needs it to find its credentials.
-    if std::env::var_os("USER").is_none() {
-        if let Some(name) = dirs_home().file_name() {
-            cmd.env("USER", name);
-            cmd.env("LOGNAME", name);
-        }
-    }
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -899,6 +1003,12 @@ fn run_author(
 
     let running = app.state::<Running>();
     *running.0.lock().map_err(|_| "poisoned")? = Some(child.id());
+
+    // The agent's own test frames, streamed to the UI as they appear.
+    let shots_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    if let Some(dir) = watch_dir {
+        watch_build_shots(app.clone(), dir, shots_stop.clone());
+    }
 
     // Stream both pipes as one story. Order between the two is best-effort,
     // which is fine: the UI folds these into a details log and a coarse
@@ -950,6 +1060,7 @@ fn run_author(
     }
     let err_lines = err_thread.join().unwrap_or_default();
     let status = child.wait().map_err(|err| err.to_string())?;
+    shots_stop.store(true, std::sync::atomic::Ordering::Relaxed);
     // Stop takes the pid out before killing; an empty slot on a failed exit
     // means the person asked for this outcome.
     let was_stopped = running.0.lock().map(|g| g.is_none()).unwrap_or(false);
@@ -1668,6 +1779,28 @@ fn reveal(path: String) -> Result<(), String> {
     ok.map_err(|err| err.to_string()).map(|_| ())
 }
 
+/// The build's progress on the dock icon (macOS) and taskbar button
+/// (Windows). A build takes minutes and the person tabs away; the icon
+/// carrying the bar is how the build stays visibly theirs from another app.
+/// `pct` of None clears it.
+#[tauri::command]
+fn build_progress(app: tauri::AppHandle, pct: Option<f64>) {
+    use tauri::window::{ProgressBarState, ProgressBarStatus};
+    if let Some(win) = app.get_webview_window("main") {
+        let state = match pct {
+            Some(p) => ProgressBarState {
+                status: Some(ProgressBarStatus::Normal),
+                progress: Some(p.clamp(0.0, 100.0) as u64),
+            },
+            None => ProgressBarState {
+                status: Some(ProgressBarStatus::None),
+                progress: None,
+            },
+        };
+        let _ = win.set_progress_bar(state);
+    }
+}
+
 /// A request to run the moment the studio opens, for driving a real
 /// end-to-end build in automation without faking anyone's keyboard.
 /// Development and testing only; unset for people.
@@ -2169,27 +2302,80 @@ fn main() {
             }
             Ok(())
         })
-        // Closing the window mid-build must not leave the AI running.
+        // Closing the window mid-build must not SILENTLY do anything.
+        //
+        // The first version killed the engine tree unconditionally here, which
+        // protected against orphaned agents (17 were once found alive after a
+        // close) -- but it also meant a person twelve minutes into a
+        // fourteen-minute build who closed the window to come back later lost
+        // the build and the AI quota it had spent, with no warning. Both
+        // failure modes are real; the person decides which one they mean.
+        //
+        // "Keep building" detaches the engine: the pid leaves the slot so the
+        // exit handlers below do not kill it, the engine finishes writing the
+        // app on its own, and the session's pending_path adopts it the next
+        // time the studio opens. "Stop the build" is the old behavior. A
+        // dismissed dialog cancels the close -- nobody loses a build to a
+        // reflexive Escape.
         //
         // CloseRequested, not just Destroyed: on macOS closing a window does
-        // not quit the app or destroy the window, so a Destroyed-only handler
-        // never fired -- measured, with 17 agent processes still alive after
-        // the close button. The build kept spending the person's quota with
-        // no window left to stop it from.
-        //
-        // ExitRequested covers Cmd-Q and the Dock's Quit, which close no
-        // window at all.
-        .on_window_event(|window, event| {
-            if matches!(
-                event,
-                tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
-            ) {
+        // not quit the app, so a Destroyed-only handler never fired.
+        // Destroyed stays as the backstop for a teardown that skipped the
+        // question; by then a kept build's pid has already left the slot.
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                let state = window.state::<Running>();
+                let live = state
+                    .0
+                    .lock()
+                    .ok()
+                    .and_then(|g| *g)
+                    .filter(|pid| pid_alive(*pid));
+                let Some(pid) = live else {
+                    // Nothing running (or a stale pid): clear and close.
+                    if let Ok(mut guard) = state.0.lock() {
+                        guard.take();
+                    }
+                    return;
+                };
+                let choice = rfd::MessageDialog::new()
+                    .set_title("Krate")
+                    .set_description(
+                        "Your app is still being made.\n\nKeep building in the \
+                         background and it will be in your apps the next time \
+                         you open Krate.",
+                    )
+                    .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
+                        "Keep building".to_string(),
+                        "Stop the build".to_string(),
+                        "Cancel".to_string(),
+                    ))
+                    .show();
+                match choice {
+                    rfd::MessageDialogResult::Custom(label) if label == "Keep building" => {
+                        // Detach: out of the slot, so no later handler kills it.
+                        if let Ok(mut guard) = state.0.lock() {
+                            guard.take();
+                        }
+                    }
+                    rfd::MessageDialogResult::Custom(label) if label == "Stop the build" => {
+                        if let Ok(mut guard) = state.0.lock() {
+                            guard.take();
+                        }
+                        kill_tree(pid);
+                    }
+                    // Cancel, Escape, or a closed dialog: stay open, keep building.
+                    _ => api.prevent_close(),
+                }
+            }
+            tauri::WindowEvent::Destroyed => {
                 let state = window.state::<Running>();
                 let pid = state.0.lock().ok().and_then(|mut g| g.take());
                 if let Some(pid) = pid {
                     kill_tree(pid);
                 }
             }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             agents,
@@ -2209,6 +2395,7 @@ fn main() {
             settings_set,
             sessions_list,
             session_save,
+            session_shot,
             session_delete,
             account_status,
             account_login,
@@ -2224,6 +2411,7 @@ fn main() {
             read_image,
             pick_folder,
             autorun,
+            build_progress,
             studio_version,
             open_external,
             win_minimize,
@@ -2318,11 +2506,46 @@ fn main() {
             }
 
             // Cmd-Q and Dock > Quit close no window, so the window handler
-            // above never sees them.
-            if matches!(
-                event,
-                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
-            ) {
+            // above never sees them. Same question, same three answers.
+            if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+                let state = app.state::<Running>();
+                let live = state
+                    .0
+                    .lock()
+                    .ok()
+                    .and_then(|g| *g)
+                    .filter(|pid| pid_alive(*pid));
+                if let Some(pid) = live {
+                    let choice = rfd::MessageDialog::new()
+                        .set_title("Krate")
+                        .set_description(
+                            "Your app is still being made.\n\nKeep building in \
+                             the background and it will be in your apps the \
+                             next time you open Krate.",
+                        )
+                        .set_buttons(rfd::MessageButtons::YesNoCancelCustom(
+                            "Keep building".to_string(),
+                            "Stop the build".to_string(),
+                            "Cancel".to_string(),
+                        ))
+                        .show();
+                    match choice {
+                        rfd::MessageDialogResult::Custom(label) if label == "Keep building" => {
+                            if let Ok(mut guard) = state.0.lock() {
+                                guard.take();
+                            }
+                        }
+                        rfd::MessageDialogResult::Custom(label) if label == "Stop the build" => {
+                            if let Ok(mut guard) = state.0.lock() {
+                                guard.take();
+                            }
+                            kill_tree(pid);
+                        }
+                        _ => api.prevent_exit(),
+                    }
+                }
+            }
+            if matches!(event, tauri::RunEvent::Exit) {
                 let state = app.state::<Running>();
                 let pid = state.0.lock().ok().and_then(|mut g| g.take());
                 if let Some(pid) = pid {

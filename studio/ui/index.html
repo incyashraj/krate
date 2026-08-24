@@ -36,7 +36,7 @@
 
         <div id="gateStart" class="reveal">
           <button class="btn btn-primary btn-big" id="loginBrowserBtn">Sign in with krate.tech</button>
-          <button class="btn btn-ghost" id="loginBtn">Use a code instead</button>
+          <button class="btn btn-ghost hidden" id="loginBtn">Use a code instead</button>
           <p class="gate-hint">Opens your browser; you're back here signed in.
           Krate never sees your password - GitHub asks you directly.</p>
         </div>
@@ -150,7 +150,14 @@
             <div class="build-head">
               <p class="build-title" id="buildTitle">Making your app</p>
             </div>
-            <p class="build-elapsed"><span id="elapsed">0:00</span> elapsed · <span id="buildExpect">usually a few minutes</span></p>
+            <p class="build-elapsed"><span id="elapsed">0:00</span> elapsed · <span id="buildExpect">usually 5-15 minutes</span></p>
+            <!-- The app's own pixels, as the AI last rendered them while
+                 testing. Hidden until the first frame exists; from then on
+                 the person literally watches their app take shape. -->
+            <div class="build-shot hidden" id="buildShotBox">
+              <img id="buildShot" alt="Your app so far" />
+              <span class="build-shot-tag">your app so far</span>
+            </div>
             <ol class="stages" id="stages"></ol>
             <div class="bpeek" id="peekBox"><span id="nowLine">warming up…</span><span class="caret"></span></div>
             <p class="now-stage hidden" id="nowStage"></p>
