@@ -480,6 +480,15 @@ impl WindowAdapter for LinuxWinitPrototypeUiAdapter {
 }
 
 impl UiAdapter for LinuxWinitPrototypeUiAdapter {
+    /// Physical pixels per logical pixel, from the live winit window. The
+    /// trait default of 1.0 stood in here for months, so every canvas
+    /// rasterized at logical resolution and was stretched across a HiDPI
+    /// window -- visibly soft next to the Mac's native-density raster
+    /// (K-169). Same contract as the macOS/iOS/Android overrides.
+    fn window_scale(&self, id: WindowId) -> f32 {
+        winit_native::native_window_scale(id).unwrap_or(1.0)
+    }
+
     fn drain_raw_pointer_input(&self) -> Vec<RawPointerSample> {
         winit_native::drain_pointer_samples()
     }

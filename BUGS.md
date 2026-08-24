@@ -71,6 +71,47 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-169 -- Windows and Linux rendered every canvas at 1x and stretched it: the "broken low quality pixels"
+
+Status:   fixed (pending visual re-proof on the PC)
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-24, the founder, comparing the same app on both machines: "graphics I see in macos are really good, but these are like broken low quality pixels"
+Evidence: the K-088 contract rasters every canvas at the display's density
+          (window_scale) while apps keep logical units. macOS, iOS and
+          Android override window_scale; the Windows and Linux adapters
+          never did, so the trait default of 1.0 stood in -- every canvas
+          rasterized at logical resolution and was linearly stretched 1.5x
+          across the founder's 150% display. The provider-shape trap again:
+          wired on the platform we develop on, silently defaulted on the
+          twins, and invisible to every headless check because shoots pick
+          their own scale.
+Fix:      both winit adapters override window_scale from the live window's
+          scale_factor (native_window_scale in winit_native). The canvas
+          then rasters at physical resolution and the placement blit is 1:1,
+          exactly as K-088 intended everywhere.
+
+### K-170 -- A full-bleed window on Windows could not be moved or maximized at all
+
+Status:   fixed (pending re-proof on the PC)
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-24, the founder: "I cannot drag that window to full screen"
+Evidence: undecorated windows have no title bar to grab; K-168 restored the
+          close and minimize buttons but the window itself stayed nailed to
+          wherever it opened, at whatever size. macOS full-bleed windows keep
+          a transparent title band that drags and double-clicks to zoom; the
+          winit platforms had nothing.
+Fix:      the top 36 logical pixels of an undecorated window act as the
+          title bar: press starts an OS window drag, double-press toggles
+          maximize, and a consumed press swallows its own release so the app
+          never sees half a click. The overlay control cluster keeps
+          priority. Also: the K-167 size clamp now re-applies on every
+          Resized, because winit's DPI settling regrew the window past the
+          screen edge after the creation-time clamp had fired.
+
 ### K-168 -- A full-bleed app on Windows has no close or minimize button at all
 
 Status:   fixed (proven on the PC's real desktop: the overlay buttons render

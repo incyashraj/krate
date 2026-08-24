@@ -14,6 +14,11 @@
 //! GPU paths draw or upload it -- only WHERE they are and what they look
 //! like, so every path agrees with the hit test by construction.
 
+/// The undecorated window's drag band: the top strip that acts as the
+/// title bar -- press to drag, double-press to maximize. The same height
+/// macOS's transparent title band occupies on a full-bleed window.
+pub const DRAG_BAND_H: f32 = 36.0;
+
 /// One button's logical width.
 pub const BUTTON_W: f32 = 40.0;
 /// One button's logical height.

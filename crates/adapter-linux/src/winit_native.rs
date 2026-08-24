@@ -103,6 +103,10 @@ mod real {
         undecorated: bool,
         /// The overlay sprite, cached per pixel density (key: density x100).
         overlay_cache: Option<(u32, Vec<u8>, u32, u32)>,
+        /// When the drag band was last pressed, for double-press maximize.
+        last_band_press: Option<std::time::Instant>,
+        /// A band press was consumed; its release must not reach the app.
+        band_press_active: bool,
     }
 
     impl TrackedWindow {
@@ -279,6 +283,8 @@ mod real {
                             pressed_widget: None,
                             undecorated: false,
                             overlay_cache: None,
+                            last_band_press: None,
+                            band_press_active: false,
                         },
                     );
                 }
@@ -335,6 +341,28 @@ mod real {
                         (f64::from(size.width) / scale).round() as u32,
                         (f64::from(size.height) / scale).round() as u32,
                     );
+                    // The creation-time clamp is not enough: winit's DPI
+                    // settling re-applies sizes after creation, and one such
+                    // pass regrew the founder's chess window past the right
+                    // edge of the screen. The rule is the window's, not the
+                    // moment's -- any resize that exceeds the monitor gets
+                    // pulled back (guarded by the 1-unit slack so the
+                    // re-request cannot ping-pong).
+                    if let Some(tracked) = self.windows.get(&native) {
+                        if let Some(monitor) = tracked.window.current_monitor() {
+                            let m = monitor.size();
+                            let max_w = ((f64::from(m.width) / scale) - 16.0).max(320.0);
+                            let max_h = ((f64::from(m.height) / scale) - 96.0).max(240.0);
+                            if f64::from(w) > max_w + 1.0 || f64::from(h) > max_h + 1.0 {
+                                let _ = tracked.window.request_inner_size(
+                                    winit::dpi::LogicalSize::new(
+                                        f64::from(w).min(max_w),
+                                        f64::from(h).min(max_h),
+                                    ),
+                                );
+                            }
+                        }
+                    }
                     WindowSize::new(w.max(1), h.max(1))
                         .ok()
                         .map(WinitWindowNativeEvent::Resized)
@@ -395,6 +423,38 @@ mod real {
                                             }
                                         }
                                     }
+                                    return;
+                                }
+                            }
+                        }
+                        // The drag band (K-170): an undecorated window has no
+                        // title bar to grab, so its top strip IS the title
+                        // bar -- press to drag, double-press to maximize --
+                        // the same contract macOS full-bleed windows get from
+                        // their transparent title band. The overlay cluster
+                        // already returned above, so this never fights the
+                        // buttons; a consumed press swallows its own release
+                        // so the app never sees half a click.
+                        if let Some(tracked) = self.windows.get_mut(&native) {
+                            if tracked.undecorated {
+                                if pressed && y < krate_adapter_common::overlay::DRAG_BAND_H {
+                                    let now = std::time::Instant::now();
+                                    let double = tracked.last_band_press.take().is_some_and(|t| {
+                                        now.duration_since(t)
+                                            < std::time::Duration::from_millis(400)
+                                    });
+                                    tracked.band_press_active = true;
+                                    if double {
+                                        let maxed = tracked.window.is_maximized();
+                                        tracked.window.set_maximized(!maxed);
+                                    } else {
+                                        tracked.last_band_press = Some(now);
+                                        let _ = tracked.window.drag_window();
+                                    }
+                                    return;
+                                }
+                                if !pressed && tracked.band_press_active {
+                                    tracked.band_press_active = false;
                                     return;
                                 }
                             }
@@ -890,6 +950,19 @@ mod real {
         })
     }
 
+    /// The window's display scale -- physical pixels per logical pixel.
+    ///
+    /// macOS, iOS and Android wired this from day one; this twin returned
+    /// the trait default of 1.0, so every canvas rasterized at LOGICAL
+    /// resolution and was stretched to fit a HiDPI window -- the founder
+    /// compared it to the Mac as "broken low quality pixels", and that is
+    /// what a 1.5x upscale of a 1x raster looks like (K-169).
+    pub fn native_window_scale(krate: WindowId) -> Option<f32> {
+        with_tracked(krate, |tracked| tracked.window.scale_factor() as f32)
+            .ok()
+            .flatten()
+    }
+
     /// Ask the native window for a redraw.
     pub fn request_native_redraw(krate: WindowId) -> Result<bool, UiAdapterError> {
         with_tracked(krate, |tracked| tracked.window.request_redraw())
@@ -1115,6 +1188,11 @@ mod stub {
     /// Winit windows are only available in Linux builds.
     pub fn pump_native_events() -> Result<CollectedNativeEvents, UiAdapterError> {
         unsupported()
+    }
+
+    /// No native window, no scale to report.
+    pub fn native_window_scale(_krate: WindowId) -> Option<f32> {
+        None
     }
 
     /// Winit windows are only available in Linux builds.
