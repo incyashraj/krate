@@ -953,9 +953,18 @@ jobs:
           # The refusal check above never instantiates the component, so it
           # kept passing while every store download failed with "built against
           # different versions of the app interface" -- the site's bundles had
-          # drifted behind a WIT change (K-164). Run the sample WITH grants:
-          # if this release cannot open what krate.tech serves, the fix is to
-          # repack the samples (scripts/pack-store-apps.sh, plus the
-          # notes-v0.1.0 asset) before shipping.
-          out="$("$bin" run --headless --auto-grant https://krate.tech/notes.krate 2>&1)" \
-            || { echo "::error::this release cannot run the site's sample app -- repack the samples first: $out"; exit 1; }
+          # drifted behind a WIT change (K-164). Run the sample WITH grants and
+          # judge by the drift signature, NOT the exit code: a healthy GUI app
+          # run headless is force-closed by the runtime's five-second budget
+          # and exits nonzero, so the exit code fails healthy releases (it did,
+          # on v0.1.53, with the app's own output proving it ran fine). When
+          # this fires, the fix is to repack the samples
+          # (scripts/pack-store-apps.sh, plus the notes-v0.1.0 asset).
+          set +e
+          out="$("$bin" run --headless --auto-grant https://krate.tech/notes.krate 2>&1)"
+          set -e
+          case "$out" in
+            *"different versions of the app interface"*|*"failed to instantiate"*)
+              echo "::error::this release cannot run the site's sample app -- repack the samples first: $out"; exit 1 ;;
+          esac
+          echo "sample app ran: $out"
