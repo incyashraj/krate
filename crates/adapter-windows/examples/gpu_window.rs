@@ -93,6 +93,7 @@ impl ApplicationHandler for App {
                         pressed: None,
                     },
                     Some(std::time::Instant::now()),
+                    None,
                 )
                 .expect("every frame must present on the GPU");
                 self.frames += 1;

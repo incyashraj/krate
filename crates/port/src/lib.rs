@@ -1297,6 +1297,30 @@ fn inspect_content(path: &str, text: &str, analysis: &mut Analysis) {
         "Krate's `store.secret` capability keeps these encrypted at rest, per app and per machine, so a copied file does not carry usable secrets to another computer. It is separate from `store.kv` because a token is not a setting.",
         Some("store.secret"),
     );
+    // Multi-user or synced state: the program talks about accounts, shared
+    // lists, or a sync backend. Krate's answer is the shared store -- a
+    // bucket synced between the machines holding an invite code, no
+    // accounts and no server to port.
+    detect_pattern(
+        analysis,
+        "shared-state",
+        &[
+            "firebase",
+            "supabase",
+            "realtime sync",
+            "multi-user",
+            "multiplayer state",
+            "shared_list",
+            "family_group",
+            "collaborat",
+        ],
+        path,
+        text,
+        Severity::Change,
+        "State shared between people or devices",
+        "Krate's `store.shared` capability is a key-value bucket synced between every machine holding its invite code, through krate.tech -- no accounts, no backend to run. Ports that lean on a realtime service map their shared documents onto per-item keys there.",
+        Some("store.shared"),
+    );
     detect_pattern(
         analysis,
         "notifications",

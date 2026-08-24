@@ -31,6 +31,7 @@ const EXPECTED_IMPORTS: &[&str] = &[
     "krate:store/kv@0.1.0",
     "krate:store/sql@0.1.0",
     "krate:store/secret@0.1.0",
+    "krate:store/shared@0.1.0",
     "krate:speech/transcription@0.1.0",
     "krate:time/clock@0.1.0",
     "krate:time/sleep@0.1.0",
