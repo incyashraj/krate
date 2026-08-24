@@ -71,6 +71,29 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-171 -- A newer Studio can sit on top of a years-old engine in Krate\bin
+
+Status:   open
+Owner:    unclaimed
+Severity: serious
+Class:    our-code
+Found:    2026-08-24, claude, surveying the Windows PC before updating it to
+          v0.1.54
+Evidence: on the PC, the uninstall registry said `Krate 0.1.53` installed at
+          `C:\Users\user\AppData\Local\Krate`, but
+          `C:\Users\user\AppData\Local\Krate\bin\krate.exe --version` printed
+          `krate 0.1.28`. The Studio resolves its engine by sibling-then-bin,
+          so a 0.1.53 Studio on that machine could have been driving a 0.1.28
+          engine -- the rc18 stale-engine failure shape, but produced by our
+          own installer leaving `bin\krate.exe` behind. Running
+          `irm krate.tech/install.ps1 | iex` printed "Updating krate 0.1.28 ->
+          v0.1.54", confirming bin held the old binary until the CLI installer
+          replaced it.
+Fix:      the Studio installer must overwrite (or version-check and refuse to
+          use) `bin\krate.exe` when it shares the Krate root with the CLI
+          install, so Studio version and engine version cannot drift apart.
+          Unclaimed -- found in passing while updating the PC.
+
 ### K-169 -- Windows and Linux rendered every canvas at 1x and stretched it: the "broken low quality pixels"
 
 Status:   fixed (proven: the desktop screenshot after the fix is visibly

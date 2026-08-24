@@ -5170,6 +5170,7 @@ Do not explain what you did; make the change until the check passes."
     )
 }
 
+#[cfg(test)]
 fn claude_author_prompt(app_dir: &str, request: &str, krate_bin: &str) -> String {
     claude_author_prompt_with(app_dir, request, krate_bin, false)
 }
