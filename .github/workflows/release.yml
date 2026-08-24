@@ -432,8 +432,20 @@ jobs:
           # inner executable gets them rather than maintaining a second list.
           ENTITLEMENTS=scripts/krate.entitlements
           sign_bundle() {
-            local app="$1" app_entitlements="$2" f
+            local app="$1" app_entitlements="$2" f main_exe
+            # The main executable is signed by the bundle signing below, and
+            # ONLY there. Signing it as a file makes codesign treat the whole
+            # bundle as the target, which demands every nested binary be
+            # signed already -- an ordering trap that `find` trips or misses
+            # by runner: the Intel build failed with "In subcomponent:
+            # krate-cli: code object is not signed at all" while the arm
+            # build happened to visit krate-cli first and passed.
+            main_exe="$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" \
+              "$app/Contents/Info.plist" 2>/dev/null || true)"
             while IFS= read -r -d '' f; do
+              if [ -n "$main_exe" ] && [ "$f" = "$app/Contents/MacOS/$main_exe" ]; then
+                continue
+              fi
               if file -b "$f" | grep -q "Mach-O"; then
                 codesign --force --options runtime --timestamp \
                   --entitlements "$ENTITLEMENTS" \
