@@ -71,6 +71,81 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-160 -- A stale mid-run refusal outranks the working app the agent delivered
+
+Status:   fixed (pending re-proof on the PC)
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-24, claude, grok create "a unit converter for cooking measurements" on the Windows PC
+Evidence: C:\krate\grok-test.log ends "error: Krate cannot build that: ...cannot
+          access external data sources like unit conversion tables" while the
+          transcript's final message says the app is finished and "check-app
+          printed **OK**". Grok wrote the KRATE-CANNOT-BUILD marker mid-run,
+          reconsidered, built a passing app -- and the rfind over the
+          transcript still failed the create and threw the app away.
+Fix:      agent_refusal is only honored when there is no delivered app:
+          if src/lib.rs differs from the starter AND check_app_verdict passes,
+          the run keeps the app and prints a note quoting the stale refusal.
+          crates/cli/src/main.rs (create flow, refusal check).
+
+### K-161 -- Codex's broken sandbox helper reads as "the agent explained instead of writing"
+
+Status:   fixed
+Owner:    claude
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-24, claude, codex create on the Windows PC
+Evidence: codex 0.147.0's install has no codex-windows-sandbox-setup.exe, so
+          every tool call fails ("orchestrator_helper_launch_failed ... program
+          not found") and codex exits 0 with nothing written. The probe
+          (`krate ai --json`) diagnoses it correctly ("not-ready ... reinstall
+          the Codex CLI"), but an explicit `--agent codex` create bypasses the
+          probe and died with the generic "byte-identical to the blank
+          skeleton ... the agent explained the app instead of writing it".
+Fix:      when the app comes back untouched, the transcript is scanned with the
+          provider's output_failure first, so the create names the sandbox
+          breakage and the reinstall remedy instead of blaming the agent's
+          prose. crates/cli/src/main.rs.
+
+### K-162 -- The Studio's PATH append could mangle or duplicate the user's PATH
+
+Status:   fixed
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-24, claude, HKCU\Environment on the Windows PC
+Evidence: reg query HKCU\Environment /v Path showed
+          "...\Microsoft\WindowsAppsC:\...\Krate\bin;C:\...\Krate\bin" -- one
+          copy fused onto the previous entry with no semicolon (breaking that
+          entry) and a second appended after it. The check was a raw substring
+          `contains`, wrong in both directions: it sees the dir inside a
+          mangled entry and skips, or misses over a case difference and
+          appends again. The reg query also ran without CREATE_NO_WINDOW
+          (K-159 class).
+Fix:      element-wise, case-insensitive comparison of semicolon-split PATH
+          entries; append joins with an explicit semicolon and trims a
+          trailing one; query goes through silent_cmd. Verified on the PC:
+          clean PATH gains exactly one well-formed entry, a forced second
+          setup run adds nothing. studio/src/main.rs.
+
+### K-163 -- --shoot can only see frame one, so nothing that develops later can be verified
+
+Status:   fixed
+Owner:    claude
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-24, claude, verifying the webcam app on the Windows PC
+Evidence: krate run --shoot of webcam3.krate always captured "WAITING FOR
+          CAMERA" -- the capture fires at the app's first wait(), before the
+          first camera frame can possibly arrive. The same blindness applies
+          to anything fetched, animated, or streamed.
+Fix:      KRATE_SHOOT_AFTER_MS holds the capture back that many milliseconds
+          (close still captures unconditionally so short runs yield their
+          final frame). With 4000, the same app shoots a live webcam frame,
+          which is how camera-on-Windows was finally proven end to end.
+          crates/runtime/src/phase3_gui_host.rs.
+
 ### K-154 -- The resize check judged apps before they had redrawn
 
 Class: our-code
