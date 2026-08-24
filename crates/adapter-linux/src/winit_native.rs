@@ -205,6 +205,52 @@ mod real {
                     attributes = attributes.with_window_icon(Some(icon));
                 }
                 if let Ok(window) = event_loop.create_window(attributes) {
+                    // A window bigger than the screen can be created without
+                    // complaint -- on Windows a 1280x840-logical request at
+                    // 150% scaling produced a window whose bottom hung below
+                    // a 1080p monitor (K-167), and a bare window manager
+                    // here can be just as permissive. Constrain to the
+                    // current monitor less a conservative allowance for
+                    // decorations and panels, then tell the app what
+                    // actually exists through the same Resized event a drag
+                    // produces -- it already knows how to relayout.
+                    let scale = window.scale_factor();
+                    if let Some(monitor) = window.current_monitor() {
+                        let monitor_size = monitor.size();
+                        let (max_w, max_h) = (
+                            ((f64::from(monitor_size.width) / scale) - 16.0).max(320.0),
+                            ((f64::from(monitor_size.height) / scale) - 96.0).max(240.0),
+                        );
+                        let inner = window.inner_size();
+                        let (cur_w, cur_h) = (
+                            f64::from(inner.width) / scale,
+                            f64::from(inner.height) / scale,
+                        );
+                        if cur_w > max_w || cur_h > max_h {
+                            let _ = window.request_inner_size(
+                                winit::dpi::LogicalSize::new(
+                                    cur_w.min(max_w),
+                                    cur_h.min(max_h),
+                                ),
+                            );
+                            window.set_outer_position(
+                                winit::dpi::LogicalPosition::new(16.0, 16.0),
+                            );
+                        }
+                    }
+                    let actual = window.inner_size();
+                    let (lw, lh) = (
+                        (f64::from(actual.width) / scale).round() as u32,
+                        (f64::from(actual.height) / scale).round() as u32,
+                    );
+                    if (lw, lh) != (pending.size.width, pending.size.height) {
+                        if let Ok(size) = WindowSize::new(lw.max(1), lh.max(1)) {
+                            self.events.push((
+                                pending.krate,
+                                WinitWindowNativeEvent::Resized(size),
+                            ));
+                        }
+                    }
                     self.windows.insert(
                         window.id(),
                         TrackedWindow {

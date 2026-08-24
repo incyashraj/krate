@@ -247,6 +247,68 @@ mod real {
                     // see anything at all.
                     .with_visible(true);
                 if let Ok(window) = event_loop.create_window(attributes) {
+                    // Windows will happily create a window BIGGER THAN THE
+                    // SCREEN. A chess app asked for 1280x840 logical on a
+                    // 1080p display at 150% scaling -- 1920x1260 physical --
+                    // and got exactly that: a window whose bottom 240 pixels
+                    // hung below the monitor, board cut off mid-rank, lower
+                    // pieces unreachable. macOS constrains windows to the
+                    // screen's visible frame on its own, which is why the
+                    // same app was fine there and the founder met this only
+                    // on Windows (K-167).
+                    //
+                    // So constrain it ourselves: clamp to the current
+                    // monitor, less a conservative allowance for the title
+                    // bar and taskbar (winit exposes the monitor's full
+                    // size, not the work area), and pull the window to the
+                    // top-left so the clamped size is actually on screen.
+                    let scale = window.scale_factor();
+                    if let Some(monitor) = window.current_monitor() {
+                        let monitor_size = monitor.size();
+                        let (max_w, max_h) = (
+                            ((f64::from(monitor_size.width) / scale) - 16.0).max(320.0),
+                            ((f64::from(monitor_size.height) / scale) - 96.0).max(240.0),
+                        );
+                        let inner = window.inner_size();
+                        let (cur_w, cur_h) = (
+                            f64::from(inner.width) / scale,
+                            f64::from(inner.height) / scale,
+                        );
+                        if cur_w > max_w || cur_h > max_h {
+                            let _ = window.request_inner_size(
+                                winit::dpi::LogicalSize::new(
+                                    cur_w.min(max_w),
+                                    cur_h.min(max_h),
+                                ),
+                            );
+                            window.set_outer_position(
+                                winit::dpi::LogicalPosition::new(16.0, 16.0),
+                            );
+                        }
+                    }
+                    // And read what actually exists now. When it differs
+                    // from the request, say so through the same Resized
+                    // event a drag produces -- the app already knows how to
+                    // relayout; it was only ever missing the truth.
+                    let actual = window.inner_size();
+                    let (lw, lh) = (
+                        (f64::from(actual.width) / scale).round() as u32,
+                        (f64::from(actual.height) / scale).round() as u32,
+                    );
+                    if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
+                        eprintln!(
+                            "krate-window: created physical={}x{} scale={scale} logical={lw}x{lh} requested={}x{}",
+                            actual.width, actual.height, pending.size.width, pending.size.height
+                        );
+                    }
+                    if (lw, lh) != (pending.size.width, pending.size.height) {
+                        if let Ok(size) = WindowSize::new(lw.max(1), lh.max(1)) {
+                            self.events.push((
+                                pending.krate,
+                                WinitWindowNativeEvent::Resized(size),
+                            ));
+                        }
+                    }
                     self.windows.insert(
                         window.id(),
                         TrackedWindow {
@@ -320,6 +382,12 @@ mod real {
                         (f64::from(size.width) / scale).round() as u32,
                         (f64::from(size.height) / scale).round() as u32,
                     );
+                    if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
+                        eprintln!(
+                            "krate-window: resized physical={}x{} logical={w}x{h}",
+                            size.width, size.height
+                        );
+                    }
                     WindowSize::new(w.max(1), h.max(1))
                         .ok()
                         .map(WinitWindowNativeEvent::Resized)

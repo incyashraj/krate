@@ -71,6 +71,34 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-167 -- Windows creates app windows bigger than the screen, bottom hanging off it
+
+Status:   fixed (pending windowed re-proof on the PC)
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-24, the founder's chess app on the Windows PC ("weird aspect ratio, not responding"), reproduced on its real desktop by scheduled-task probe
+Evidence: KRATE_EVENT_TRACE on the desktop:
+          "created physical=1920x1260 scale=1.5 logical=1280x840
+          requested=1280x840" -- the app asked for 1280x840 logical, the
+          display is 1080p at 150%, and Windows created a 1920x1260-physical
+          window without complaint: 240 pixels of it below the bottom of the
+          monitor. The board's lower ranks were literally off screen, which
+          read as a wrong aspect ratio and dead clicks. macOS constrains
+          windows to the screen's visible frame by itself, which is why the
+          same bundle was perfect there; headless never has a screen to
+          overflow. A first diagnosis (silent OS clamp with no Resized) was
+          WRONG -- an early probe's GetWindowRect came back DPI-virtualized
+          from a non-DPI-aware PowerShell and mimicked a clamp. The trace is
+          the authority.
+Fix:      both winit adapters constrain a new window to the current monitor
+          (less a conservative title-bar/taskbar allowance, since winit
+          exposes no work area), pull it to the top-left when clamped, and
+          synthesize the same Resized event a drag produces so the host
+          relayouts and the app refits. crates/adapter-windows and
+          crates/adapter-linux, winit_native.rs. The create/resize trace
+          stays, behind KRATE_EVENT_TRACE.
+
 ### K-165 -- Updating Krate on Windows while an app is open dies with a raw stack trace
 
 Status:   fixed
