@@ -71,6 +71,26 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-174 -- The Studio setup shows NSIS's raw "Error opening file for writing" when the engine is running
+
+Status:   open
+Owner:    unclaimed
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-25, by Yashraj running the v0.1.56 setup on the Windows PC
+          while a build (driven over SSH) had krate.exe open.
+Evidence: screenshot of the PC: "Krate Setup -- Installing... Extract:
+          bin\..." with the dialog "Error opening file for writing:" over
+          bin\krate.exe; tasklist showed two running krate.exe processes
+          holding the file. Windows locks a running exe, so any open Krate
+          app or in-flight build makes the setup fail with NSIS's rawest
+          error and no hint of the fix.
+Fix:      the same lesson K-165 taught the CLI installer, applied to the
+          NSIS setup: before extracting, detect running krate.exe /
+          krate-studio.exe and say in plain words "close your Krate apps
+          first", with a retry -- a Tauri NSIS installer hook can run the
+          check. Unclaimed.
+
 ### K-173 -- A failed session resume killed the whole build instead of falling back
 
 Status:   claimed
