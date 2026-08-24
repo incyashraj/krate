@@ -1,7 +1,12 @@
 [advisories]
 # Path to the advisory database; fetched on first run.
 version = 2
-ignore = []
+ignore = [
+    # paste is archived, not vulnerable. It reaches us only through nokhwa,
+    # the Windows/Linux camera backend, as a proc-macro used at compile time.
+    # Drop this when nokhwa moves off it.
+    "RUSTSEC-2024-0436",
+]
 
 [licenses]
 version = 2
