@@ -5409,7 +5409,35 @@ fn run_provider_author(
     // codex refused all of them -- so codex could never author anything, and
     // the person saw a generic "that build didn't come together" (K-139).
     command.current_dir(app_dir);
-    command.args(provider.author_args(&prompt));
+    // Hot sessions (the last piece of the speed study): a repair round or a
+    // revise RESUMES the session that wrote the app instead of cold-starting
+    // one that must re-read everything -- measured cold, the reading alone
+    // was 4 to 11 minutes of every build. The id lives in two places,
+    // because changes arrive through two doors: beside the code for repair
+    // rounds in this same workspace, and keyed by the app's identity for a
+    // revise, whose workspace is a fresh temp unpack every time. Stored ids
+    // are taken, not peeked: a resume that fails leaves nothing behind, so
+    // the retry cold-starts instead of resuming into the same failure
+    // forever. Fresh creates never resume; a new app deserves a clean slate.
+    let session_files = agent_session_files(app_dir);
+    let resume_args = if request.starts_with(CHANGE_MARKER) {
+        take_agent_session(&session_files, provider.name())
+            .and_then(|id| provider.author_args_resuming(&prompt, &id))
+    } else {
+        None
+    };
+    let resumed = resume_args.is_some();
+    if resumed {
+        eprintln!("    continuing the session that wrote this app");
+    }
+    match resume_args {
+        Some(args) => {
+            command.args(args);
+        }
+        None => {
+            command.args(provider.author_args(&prompt));
+        }
+    }
     // Provider-specific spawn setup: closing stdin so a headless run never
     // blocks on input, plus anything else that provider needs.
     provider.configure(&mut command);
@@ -5692,6 +5720,21 @@ fn run_provider_author(
             );
         }
     }
+    // Remember which session wrote this app, so the next round -- a repair
+    // in this same build, or a person's revise next week -- can resume it
+    // hot instead of paying the cold start again. Tagged with the provider,
+    // because a claude session id handed to grok's --resume is garbage.
+    if !status.map(|s| provider.failed(&s)).unwrap_or(true) {
+        if let Ok(text) = fs::read_to_string(&transcript) {
+            if let Some(id) = provider.session_id_in_transcript(&text) {
+                let tagged = format!("{}:{}", provider.name(), id);
+                for file in &session_files {
+                    let _ = fs::write(file, &tagged);
+                }
+            }
+        }
+    }
+    let _ = resumed;
     if status.map(|s| provider.failed(&s)).unwrap_or(false) {
         // Surface the agent's own error rather than pointing at a file. A
         // failure here is usually about the person's AI account, not their
@@ -10233,7 +10276,35 @@ fn manifest_is_gui(manifest: &krate_manifest::Manifest) -> bool {
 /// -- the rustup-pinned build, the import checker, a headless run -- so a green
 /// verdict here means the same thing a successful `create` does.
 fn check_app(dir: &Path, shoot: Option<&Path>, no_run: bool, json: bool) -> Result<u8> {
+    // The pace note. Measured across ten real builds: agents ran the FULL
+    // ~20-second check 7 to 33 times each and --no-run far less, despite the
+    // prompt teaching the split -- 3 to 10 minutes per build spent
+    // re-proving what had not changed. Prose does not change behavior; the
+    // tool saying it at the moment of the habit does (K-098). Never a
+    // refusal -- an oracle that will not answer is worse than a slow one --
+    // just the arithmetic, printed where the agent reads its results.
+    let pace_note = if !no_run {
+        let stamp = dir.join(".last-full-check");
+        let since = fs::metadata(&stamp)
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok());
+        let _ = fs::write(&stamp, "");
+        match since {
+            Some(gap) if gap.as_secs() < 120 => Some(gap.as_secs()),
+            _ => None,
+        }
+    } else {
+        None
+    };
     let outcome = run_check_app(dir, shoot, no_run);
+    if let Some(secs) = pace_note {
+        if !json {
+            println!(
+                "  pace: this is your second full check in {secs}s. Iterate with                  `check-app . --no-run` (about 2s) and save the full check for when                  you believe the app is done -- full checks this frequent are the                  single biggest time cost in authoring."
+            );
+        }
+    }
     match &outcome {
         Ok(summary) => {
             if json {
@@ -12172,6 +12243,38 @@ fn app_secrets_path(app_id: &str) -> PathBuf {
 /// Where one app's shared-store mirror lives, alongside its other storage.
 fn app_shared_path(app_id: &str) -> PathBuf {
     app_store_path(app_id).with_extension("shared.json")
+}
+
+/// Where the id of the agent session that last wrote this app is kept: beside
+/// the code (found by repair rounds in the same workspace) and beside the
+/// app's other storage (found by a revise, whose workspace is a fresh temp).
+fn agent_session_files(app_dir: &str) -> Vec<PathBuf> {
+    let mut files = vec![Path::new(app_dir).join(".agent-session-id")];
+    if let Ok(manifest) =
+        krate_manifest::Manifest::parse_file(&Path::new(app_dir).join("manifest.toml"))
+    {
+        files.push(app_store_path(&manifest.app.id).with_extension("agent-session"));
+    }
+    files
+}
+
+/// Read-and-remove the stored session id, if one exists FOR THIS PROVIDER.
+/// One shot by design: a resume that fails must not be retried forever.
+fn take_agent_session(files: &[PathBuf], provider: &str) -> Option<String> {
+    let mut found = None;
+    for file in files {
+        if let Ok(text) = fs::read_to_string(file) {
+            let _ = fs::remove_file(file);
+            if found.is_none() {
+                found = text
+                    .trim()
+                    .strip_prefix(&format!("{provider}:"))
+                    .map(str::to_string)
+                    .filter(|id| !id.is_empty());
+            }
+        }
+    }
+    found
 }
 
 /// The hub shared stores sync against. The same override the publisher and

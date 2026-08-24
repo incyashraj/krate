@@ -46,6 +46,24 @@ pub trait AgentProvider: Send + Sync {
     /// The arguments for one headless authoring run of `prompt`.
     fn author_args(&self, prompt: &str) -> Vec<String>;
 
+    /// The session id this provider recorded in a finished transcript, if it
+    /// exposes one. `None` means the provider cannot resume and every run
+    /// cold-starts, which is what every provider did before this existed.
+    fn session_id_in_transcript(&self, _transcript: &str) -> Option<String> {
+        None
+    }
+
+    /// The arguments to RESUME an earlier session with a follow-up prompt.
+    ///
+    /// This is the hot-session lever: a repair round or a revise that resumes
+    /// the session which wrote the app skips the whole cold start -- the
+    /// agent already holds the pack, the example, and its own code in
+    /// context. Measured cold, reading alone was 4 to 11 minutes of every
+    /// build. `None` falls back to a cold run.
+    fn author_args_resuming(&self, _prompt: &str, _session_id: &str) -> Option<Vec<String>> {
+        None
+    }
+
     /// Arguments for a short text-only call: a prompt in, prose out, no
     /// tools, no file edits. Used by `krate plan`, which must answer in
     /// seconds. The default reuses the authoring arguments -- every
@@ -623,6 +641,18 @@ pub fn with_tool_path(command: &mut ProcessCommand) {
 /// Also searches [`extra_tool_dirs`], because a GUI app's PATH does not
 /// include where these tools live. Without that, the studio tells people
 /// their AI is not installed when it is.
+/// The LAST match of `"<key>":"<value>"` in a transcript. Last, because a
+/// resumed run logs the ids of the sessions it came from too, and the final
+/// one is the session this transcript actually is.
+fn last_json_string_field(transcript: &str, key: &str) -> Option<String> {
+    let needle = format!("\"{key}\":\"");
+    let at = transcript.rfind(&needle)?;
+    let rest = &transcript[at + needle.len()..];
+    let end = rest.find('"')?;
+    let value = &rest[..end];
+    (!value.is_empty() && value.len() < 128).then(|| value.to_string())
+}
+
 pub fn which_on_path(program: &str) -> Option<std::path::PathBuf> {
     let path = std::env::var_os("PATH").unwrap_or_default();
     // On Windows a bare name resolves against a list of extensions; on Unix the
@@ -738,6 +768,18 @@ impl AgentProvider for ClaudeProvider {
         // The plan call reads nothing and writes nothing; speed is the
         // feature.
         vec!["-p".to_string(), prompt.to_string()]
+    }
+
+    fn session_id_in_transcript(&self, transcript: &str) -> Option<String> {
+        // Every stream-json event carries the run's session_id.
+        last_json_string_field(transcript, "session_id")
+    }
+
+    fn author_args_resuming(&self, prompt: &str, session_id: &str) -> Option<Vec<String>> {
+        let mut args = self.author_args(prompt);
+        args.push("--resume".to_string());
+        args.push(session_id.to_string());
+        Some(args)
     }
 
     fn configure(&self, command: &mut ProcessCommand) {
@@ -1376,6 +1418,18 @@ impl AgentProvider for GrokProvider {
             "--output-format".to_string(),
             "json".to_string(),
         ]
+    }
+
+    fn session_id_in_transcript(&self, transcript: &str) -> Option<String> {
+        // Grok's final stream event carries the run's sessionId.
+        last_json_string_field(transcript, "sessionId")
+    }
+
+    fn author_args_resuming(&self, prompt: &str, session_id: &str) -> Option<Vec<String>> {
+        let mut args = self.author_args(prompt);
+        args.push("--resume".to_string());
+        args.push(session_id.to_string());
+        Some(args)
     }
 
     fn probe_args(&self) -> Vec<String> {
