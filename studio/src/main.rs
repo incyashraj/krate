@@ -1944,10 +1944,16 @@ fn first_run_setup() {
 /// wins, which is the user's right.
 #[cfg(target_os = "windows")]
 fn first_run_setup() {
-    let marker = studio_dir().join("setup-done");
-    if marker.exists() {
-        return;
-    }
+    // EVERY launch, not first-run-only. A marker used to make this a
+    // one-shot, and a one-shot cannot heal: a later CLI test install
+    // re-pointed .krate at a directory that was then deleted, and every
+    // double-click on the founder's machine ran a dead ProgId's command
+    // forever -- the studio, which knew the right answer, never re-asserted
+    // it because the marker said the work was done. These are a dozen
+    // registry writes of values that rarely change; asserting them each
+    // launch costs milliseconds and makes association drift self-repairing.
+    // A person's own explicit choice (UserChoice) still outranks everything
+    // written here, which is their right.
     if let Ok(exe) = std::env::current_exe() {
         let exe = exe.display().to_string();
         let run = |args: &[&str]| {
@@ -2065,8 +2071,73 @@ fn first_run_setup() {
                 run(&["add", r"HKCU\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", &joined, "/f"]);
             }
         }
+
+        // Repair a DEAD Krate.Bundle. The CLI installer registers that
+        // ProgId for its own opener; when its target binary is gone (a test
+        // install's directory deleted, an uninstall that missed the key),
+        // any shell still routing through it launches nothing. Only a
+        // Bundle whose command points at a missing exe is touched: a live
+        // CLI registration is the CLI's, per the K-166 peace treaty.
+        let bundle_cmd = silent_cmd("reg")
+            .args([
+                "query",
+                r"HKCU\Software\Classes\Krate.Bundle\shell\open\command",
+                "/ve",
+            ])
+            .output()
+            .ok()
+            .map(|out| String::from_utf8_lossy(&out.stdout).to_string())
+            .unwrap_or_default();
+        // The command's exe, whether the value was stored quoted or bare --
+        // installers quote it, but a hand-repair or an older writer may not.
+        let bundle_value = bundle_cmd
+            .lines()
+            .find_map(|line| line.split("REG_SZ").nth(1))
+            .map(str::trim)
+            .unwrap_or("");
+        let target = if bundle_value.starts_with('"') {
+            bundle_value.split('"').nth(1).unwrap_or("")
+        } else {
+            bundle_value
+                .trim_end_matches("\"%1\"")
+                .trim_end_matches("%1")
+                .trim()
+        };
+        if std::env::var_os("KRATE_EVENT_TRACE").is_some() {
+            eprintln!(
+                "krate-setup: bundle_value={bundle_value:?} target={target:?} exists={}",
+                std::path::Path::new(target).exists()
+            );
+        }
+        if target.contains('\\') {
+            if !std::path::Path::new(target).exists() {
+                run(&[
+                    "add",
+                    r"HKCU\Software\Classes\Krate.Bundle\shell\open\command",
+                    "/ve",
+                    "/d",
+                    &open_cmd,
+                    "/f",
+                ]);
+            }
+        }
+
+        // Tell the running shell. Raw registry writes do not reach an
+        // Explorer that has already cached the association -- the founder's
+        // machine kept launching a dead command after the registry was
+        // corrected, until exactly this broadcast.
+        #[link(name = "shell32")]
+        extern "system" {
+            fn SHChangeNotify(
+                event_id: i32,
+                flags: u32,
+                item1: *const std::ffi::c_void,
+                item2: *const std::ffi::c_void,
+            );
+        }
+        // SHCNE_ASSOCCHANGED, SHCNF_IDLIST.
+        unsafe { SHChangeNotify(0x0800_0000, 0, std::ptr::null(), std::ptr::null()) };
     }
-    let _ = std::fs::write(&marker, "1");
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]

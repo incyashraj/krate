@@ -144,7 +144,19 @@ Fix:      the copy catches IOException and says plainly: close any open Krate
 
 ### K-166 -- The CLI installer and the Studio fight over who owns .krate
 
-Status:   fixed
+Status:   fixed (and the damage class is now self-healing: the founder's
+          double-click kept launching a DELETED cold-test install's
+          krate.exe -- oversized window, no studio -- because the studio's
+          registration was marker-gated to run once and could never
+          re-assert. The Windows setup now runs on EVERY launch (a dozen
+          cheap reg writes; UserChoice still outranks it), repairs a
+          Krate.Bundle whose target exe no longer exists, and broadcasts
+          SHChangeNotify so the live Explorer drops its cached association
+          -- without that broadcast the shell kept using the dead command
+          even after the registry was corrected. Proven on the PC: with the
+          extension deliberately hijacked to a dead ProgId, one studio
+          launch healed both keys, and the double-click chain is
+          studio -> bin\krate.exe run --consent again.)
 Owner:    claude
 Severity: serious
 Class:    our-code
