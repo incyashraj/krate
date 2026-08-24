@@ -54,6 +54,7 @@ pub mod phase3_gui_host;
 pub mod random_host;
 pub mod scene3d;
 pub mod secret_host;
+pub mod shared_host;
 mod speech_transcription;
 pub mod sql_host;
 pub mod store_host;
@@ -146,6 +147,9 @@ pub struct Config {
     /// Where this app's secrets live, and the machine key they are encrypted
     /// with. The key is the runtime's, never the app's.
     pub app_secrets: Option<(PathBuf, String, Vec<u8>)>,
+    /// Where this app's shared-store mirror lives, and the hub it syncs
+    /// against, on the same terms as the key-value store.
+    pub app_shared: Option<(PathBuf, String)>,
     /// Host UI backend mode for Phase 3 `gui` world runs.
     pub phase3_ui_mode: phase3_ui::Phase3HostUiMode,
     /// When set, a headless GUI run paints the window to this PNG once the app
@@ -179,6 +183,7 @@ impl Default for Config {
             app_store_path: None,
             app_database_path: None,
             app_secrets: None,
+            app_shared: None,
             phase3_ui_mode: phase3_ui::Phase3HostUiMode::HeadlessDraft,
             check_layout: false,
             screenshot_path: None,
@@ -672,6 +677,7 @@ impl Runtime {
         link_phase2!(store::kv);
         link_phase2!(store::sql);
         link_phase2!(store::secret);
+        link_phase2!(store::shared);
 
         // Declared in the gui world, so a guest may import it. An interface in
         // the world and not in the linker fails at instantiate with "a matching
@@ -823,6 +829,18 @@ impl HostState {
                 config.session_policy.allows(
                     &krate_manifest::Capability::new("store", "secret", None)
                         .expect("store.secret"),
+                ),
+            )
+            .with_shared(
+                config.app_shared.as_ref().map(|(path, _)| path.clone()),
+                config
+                    .app_shared
+                    .as_ref()
+                    .map(|(_, hub)| hub.clone())
+                    .unwrap_or_default(),
+                config.session_policy.allows(
+                    &krate_manifest::Capability::new("store", "shared", None)
+                        .expect("store.shared"),
                 ),
             ),
             #[cfg(feature = "phase2-bindings")]

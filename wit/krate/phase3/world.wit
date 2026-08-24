@@ -19,6 +19,7 @@ world gui {
   import krate:store/kv@0.1.0;
   import krate:store/sql@0.1.0;
   import krate:store/secret@0.1.0;
+  import krate:store/shared@0.1.0;
   import krate:random/bytes@0.1.0;
 
   import krate:ui/window@0.1.0;

@@ -8061,6 +8061,7 @@ fn run_component_inner(request: RunRequest) -> Result<u8> {
                 machine_key(),
             )
         }),
+        app_shared: manifest.map(|manifest| (app_shared_path(&manifest.app.id), shared_hub_url())),
         phase3_ui_mode: request.ui_mode,
         screenshot_path: request.screenshot_path.clone(),
         screenshot_scale: request.screenshot_scale,
@@ -10086,6 +10087,7 @@ fn manifest_overreach(manifest: &krate_manifest::Manifest, imports: &[String]) -
             "store.kv" => Some(":store/kv"),
             "store.sql" => Some(":store/sql"),
             "store.secret" => Some(":store/secret"),
+            "store.shared" => Some(":store/shared"),
             "random.bytes" => Some(":random/"),
             "audio.playback" => Some(":audio/playback"),
             "audio.capture" => Some(":audio/capture"),
@@ -12165,6 +12167,17 @@ fn app_database_path(app_id: &str) -> PathBuf {
 /// Where one app's secrets live, alongside its other storage.
 fn app_secrets_path(app_id: &str) -> PathBuf {
     app_store_path(app_id).with_extension("secrets")
+}
+
+/// Where one app's shared-store mirror lives, alongside its other storage.
+fn app_shared_path(app_id: &str) -> PathBuf {
+    app_store_path(app_id).with_extension("shared.json")
+}
+
+/// The hub shared stores sync against. The same override the publisher and
+/// the studio honour, so a local hub serves everything at once.
+fn shared_hub_url() -> String {
+    std::env::var("KRATE_HUB_URL").unwrap_or_else(|_| "https://hub.krate.tech".to_string())
 }
 
 /// This computer's key, generated once and kept private to the user.

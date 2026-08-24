@@ -1289,6 +1289,7 @@ fn plain_capability(cap: &str) -> Option<String> {
         "fs.mkdir" => "make folders inside its own private folder",
         "store.kv" | "store.sql" => "remember things between runs",
         "store.secret" => "use your keychain for passwords",
+        "store.shared" => "share its data with anyone who has its invite code, through krate.tech",
         "random.bytes" => "use random numbers",
         "net.connect" => {
             return Some(match scope {

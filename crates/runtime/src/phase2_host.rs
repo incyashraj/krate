@@ -36,6 +36,9 @@ pub struct Phase2Host<'a> {
     database: Option<crate::sql_host::AppDatabase>,
     /// The app's own secrets, encrypted at rest.
     secrets: Option<crate::secret_host::AppSecrets>,
+    /// The app's shared store: a bucket synced between the machines that
+    /// hold its invite code. `None` unless the run granted `store.shared`.
+    shared: Option<crate::shared_host::AppShared>,
     /// Files the person chose in a dialog this run.
     ///
     /// Shared with the GUI host, which is what shows the dialog: the picker
@@ -73,6 +76,7 @@ impl<'a> Phase2Host<'a> {
             store: None,
             database: None,
             secrets: None,
+            shared: None,
             chosen_files: Default::default(),
             random_granted: false,
             async_fetches: crate::async_fetch::AsyncFetches::new(),
@@ -149,6 +153,16 @@ impl<'a> Phase2Host<'a> {
     ) -> Self {
         self.secrets = path
             .map(|path| crate::secret_host::AppSecrets::open(path, app_id, machine_key, granted));
+        self
+    }
+
+    /// Give this run its shared store. `granted` resolves the capability
+    /// once, like every other grant; without it every call answers Denied.
+    pub fn with_shared(mut self, path: Option<PathBuf>, hub: String, granted: bool) -> Self {
+        self.shared = match (path, granted) {
+            (Some(path), true) => Some(crate::shared_host::AppShared::open(path, hub)),
+            _ => None,
+        };
         self
     }
 
@@ -389,6 +403,90 @@ impl store::secret::Host for Phase2Host<'_> {
             Some(secrets) => secrets.names().map_err(secret_error_to_wit),
             None => Err(store::secret::SecretError::Denied),
         })
+    }
+}
+
+impl store::shared::Host for Phase2Host<'_> {
+    fn code(&mut self) -> wasmtime::Result<Result<Option<String>, store::shared::SharedError>> {
+        Ok(match self.shared.as_ref() {
+            Some(shared) => Ok(shared.code()),
+            None => Err(store::shared::SharedError::Denied),
+        })
+    }
+
+    fn create(&mut self) -> wasmtime::Result<Result<String, store::shared::SharedError>> {
+        Ok(match self.shared.as_mut() {
+            Some(shared) => shared.create().map_err(shared_error_to_wit),
+            None => Err(store::shared::SharedError::Denied),
+        })
+    }
+
+    fn join(&mut self, code: String) -> wasmtime::Result<Result<(), store::shared::SharedError>> {
+        Ok(match self.shared.as_mut() {
+            Some(shared) => shared.join(&code).map_err(shared_error_to_wit),
+            None => Err(store::shared::SharedError::Denied),
+        })
+    }
+
+    fn leave(&mut self) -> wasmtime::Result<Result<(), store::shared::SharedError>> {
+        Ok(match self.shared.as_mut() {
+            Some(shared) => shared.leave().map_err(shared_error_to_wit),
+            None => Err(store::shared::SharedError::Denied),
+        })
+    }
+
+    fn get(
+        &mut self,
+        key: String,
+    ) -> wasmtime::Result<Result<Option<Vec<u8>>, store::shared::SharedError>> {
+        Ok(match self.shared.as_ref() {
+            Some(shared) => shared.get(&key).map_err(shared_error_to_wit),
+            None => Err(store::shared::SharedError::Denied),
+        })
+    }
+
+    fn set(
+        &mut self,
+        key: String,
+        value: Vec<u8>,
+    ) -> wasmtime::Result<Result<(), store::shared::SharedError>> {
+        Ok(match self.shared.as_mut() {
+            Some(shared) => shared.set(&key, value).map_err(shared_error_to_wit),
+            None => Err(store::shared::SharedError::Denied),
+        })
+    }
+
+    fn delete(&mut self, key: String) -> wasmtime::Result<Result<(), store::shared::SharedError>> {
+        Ok(match self.shared.as_mut() {
+            Some(shared) => shared.delete(&key).map_err(shared_error_to_wit),
+            None => Err(store::shared::SharedError::Denied),
+        })
+    }
+
+    fn keys(&mut self) -> wasmtime::Result<Result<Vec<String>, store::shared::SharedError>> {
+        Ok(match self.shared.as_ref() {
+            Some(shared) => Ok(shared.keys()),
+            None => Err(store::shared::SharedError::Denied),
+        })
+    }
+
+    fn sync(&mut self) -> wasmtime::Result<Result<bool, store::shared::SharedError>> {
+        Ok(match self.shared.as_mut() {
+            Some(shared) => shared.sync().map_err(shared_error_to_wit),
+            None => Err(store::shared::SharedError::Denied),
+        })
+    }
+}
+
+fn shared_error_to_wit(error: crate::shared_host::SharedError) -> store::shared::SharedError {
+    use crate::shared_host::SharedError;
+    match error {
+        SharedError::Denied => store::shared::SharedError::Denied,
+        SharedError::NotJoined => store::shared::SharedError::NotJoined,
+        SharedError::NoSuchShare => store::shared::SharedError::NoSuchShare,
+        SharedError::InvalidName => store::shared::SharedError::InvalidName,
+        SharedError::TooLarge => store::shared::SharedError::TooLarge,
+        SharedError::Io(message) => store::shared::SharedError::Io(message),
     }
 }
 

@@ -38,6 +38,12 @@ const KRATE_CAPABILITY_SPECS: &[CapabilitySpec] = &[
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "store", "sql", false),
     // Sign-in tokens and keys the app keeps for itself, encrypted at rest.
     CapabilitySpec::resource_free(CapabilityPhase::Phase2, "store", "secret", false),
+    // A key-value bucket shared between the machines that hold its invite
+    // code, synced through krate.tech. Resource-free: the app names keys,
+    // never a location. Never default-granted -- data leaving the machine is
+    // exactly what a person must be asked about, and the consent wording
+    // says who can see it (anyone with the code).
+    CapabilitySpec::resource_free(CapabilityPhase::Phase2, "store", "shared", false),
     // Random bytes from the OS. Resource-free because there is nothing to
     // scope -- entropy has no location and reveals nothing about the machine.
     //

@@ -48,6 +48,7 @@ pub fn generate(app_dir: &Path) -> String {
     out.push_str(&sdk_surface_section());
     out.push_str(&capability_catalog_section());
     out.push_str(DESIGN_PATTERNS_SECTION);
+    out.push_str(BACKEND_CLIENT_SECTION);
     out.push_str(NO_STD_SECTION);
     out.push_str(&gui_world_section());
     out.push_str(&example_index_section(app_dir));
@@ -452,10 +453,78 @@ fn capability_note(name: &str) -> &'static str {
         "gfx.gpu" => "GPU drawing (canvas2d present today)",
         "audio.playback" => "play sound",
         "audio.capture" => "record from the microphone",
+        "store.shared" => "share a key-value bucket with everyone holding its invite code",
         "camera.capture" => "see through the camera",
         _ => "",
     }
 }
+
+/// Section 2c: the app as a client of the person's own backend. Authored:
+/// the individual calls are documented in the WIT sections, but the PATTERN
+/// -- token in the secret store, Authorization header on every call, offline
+/// degradation -- is a judgment agents were never taught, and the first
+/// developer who asked ("does your tech support multiple-user accounts?")
+/// already had a backend that made the question easy.
+const BACKEND_CLIENT_SECTION: &str = "\n---\n\n\
+# 2c. Talking to a backend the person already has\n\n\
+Many requests are really \"a client for my existing service\": the person has \
+an API with its own logins (their web app's backend, a home server, a SaaS \
+they use), and wants a small desktop app that talks to it. Krate does not do \
+user accounts itself -- the backend keeps owning identity -- but a Krate app \
+makes a first-class client for one. The pattern:\n\n\
+1. **Declare** `net.http` (to reach the API) and `store.secret` (to keep the \
+sign-in token encrypted at rest). Nothing else; the person sees exactly those \
+two lines and both are justified by the request.\n\n\
+2. **Sign in the simple way**: a text field where the person pastes an API \
+token or key, saved with `store::secret::set(\"api-token\", ...)`. On later \
+launches, `secret::get` restores it silently. Do not build OAuth browser \
+flows unless the request demands one -- most personal backends and home \
+servers hand out tokens, and a paste box ships today.\n\n\
+3. **Send it on every call**: build the `net` request with a header \
+`{ name: \"authorization\", value: \"Bearer <token>\" }`. App-provided \
+headers pass through; only transport headers (host, content-length) are \
+host-controlled. POST/PUT/PATCH bodies are plain `list<u8>` -- serialize \
+JSON with a no_std-friendly approach (build the string by hand for small \
+payloads; that beats pulling a heavy crate through the import check).\n\n\
+4. **Never block the UI on the network**: use the non-blocking form -- \
+`http-client.begin(request)` then poll its `fetch-status` from the event \
+loop (`pending` is a normal answer, not an error). A 401/403 response means \
+the token expired: clear it and show the paste box again, with the app still \
+usable for whatever it keeps locally.\n\n\
+5. **Degrade offline**: cache what the person last saw in `store.kv` and \
+render from the cache when requests fail, with a quiet \"offline -- showing \
+last synced\" line. An app that opens to an error screen because the wifi \
+dropped is worse than the web page it replaced.\n\n\
+`apps/krate-fetch` shows the non-blocking request loop; add the header and \
+the secret on top of its shape.\n\n\
+# 2d. Sharing data between people: the shared store\n\n\
+For \"my wife and I see the same list\", \"a meal plan the family edits\", \
+\"share this with my roommate\" -- declare `store.shared` and use \
+`krate:store/shared`. It is a key-value bucket shared between every machine \
+that holds a ten-character invite code, synced through krate.tech, with no \
+accounts and no backend. The person is told plainly at consent that anyone \
+with the code sees the data.\n\n\
+The shape of a shared app:\n\n\
+1. **Work local-first.** `shared::get`/`set`/`delete`/`keys` always answer \
+from this machine and never block on the network. Store each item as its own \
+key (`item:<id>` holding a small hand-built JSON value), never the whole \
+list under one key -- per-key merging is what lets two people edit at once \
+without eating each other's changes.\n\n\
+2. **Offer the share in the UI.** `shared::code()` returns none until the \
+person creates or joins. Show a small \"Share\" area: a Create button that \
+calls `shared::create()` and displays the returned code big enough to read \
+across a room, and a text field + Join button that calls `shared::join(code)` \
+(it errors with `no-such-share` on a typo -- show that plainly). After \
+either, show the code so it can be given to the next person.\n\n\
+3. **Sync on a rhythm, redraw on change.** Call `shared::sync()` on launch, \
+after each write, and from the event loop every ten seconds or so \
+(`events::wait(Some(10_000))` ticks are perfect). It returns `true` when \
+another machine changed something -- redraw then. Offline it returns `false` \
+and queues; never show an error for being offline, show a quiet \
+\"last synced\" note if anything.\n\n\
+4. **Deletes are real.** `shared::delete(key)` removes the item everywhere; \
+the runtime keeps the tombstone so it cannot come back. Do not implement \
+soft-delete flags on top.\n\n";
 
 /// Section 3: the no_std discipline. Authored, because it is the reasoning
 /// behind the rules, not a list that can be scraped. The concrete facts it
@@ -1655,7 +1724,8 @@ pub const EMBEDDED_EXAMPLES: &[EmbeddedExample] = &[
         shows: "a list app that saves: widget tree, text input, buttons, store.kv persistence",
         keywords: &[
             "list", "todo", "task", "check", "track", "habit", "note", "item", "grocery",
-            "shopping", "journal", "log", "streak", "goal", "plan", "remember", "save",
+            "shopping", "journal", "log", "streak", "goal", "plan", "remember", "save", "share",
+            "family", "wife", "husband", "partner", "roommate", "together",
         ],
         lib: include_str!("../../../apps/krate-checklist/src/lib.rs"),
         manifest: include_str!("../../../apps/krate-checklist/manifest.toml"),

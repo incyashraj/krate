@@ -71,6 +71,22 @@ export default {
       if (request.method === "POST" && pathname === "/usage") {
         return cors(await usage(request, env));
       }
+      // Shared stores: a key-value bucket shared between the machines that
+      // hold its invite code. This is how a generated app becomes a
+      // household app -- a shopping list two people see -- without the app
+      // author running a backend or anyone creating an account. Possession
+      // of the code IS the membership, exactly like a shared album link;
+      // the runtime tells the person that plainly before granting
+      // `store.shared`.
+      if (request.method === "POST" && pathname === "/share/new") {
+        return cors(await shareNew(env));
+      }
+      if (request.method === "GET" && pathname.startsWith("/share/")) {
+        return cors(await shareGet(pathname.slice(7), env));
+      }
+      if (request.method === "PUT" && pathname.startsWith("/share/")) {
+        return cors(await sharePut(request, pathname.slice(7), env));
+      }
       // One pixel-free page view. No cookie, no id, no query string, no
       // referrer: the page name and the day, and nothing else. That is
       // enough to answer "how many people visited krate.tech", which is the
@@ -590,6 +606,93 @@ async function list(env) {
 // How many people use Krate, and nothing about who they are. The CLI sends a
 // random install id, a version, an OS name, and one of three action words.
 // Nothing here reads an IP, sets a cookie, or stores a request body.
+
+/* ---- shared stores ---------------------------------------------------- */
+
+// Bounds that keep a share a household list, not a database: enough for
+// years of shopping lists and meal plans, small enough that one KV value
+// holds the whole bucket and sync is one GET.
+const SHARE_MAX_KEYS = 512;
+const SHARE_MAX_VALUE = 64 * 1024;
+const SHARE_MAX_TOTAL = 512 * 1024;
+
+/// The invite code: 10 characters from an alphabet with no 0/O/1/I, so it
+/// survives being read aloud across a kitchen. 32^10 is ~10^15 -- unguessable
+/// in practice for a rate-limited endpoint, and the code is the only secret.
+function shareCode() {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
+  return [...bytes].map((b) => alphabet[b % alphabet.length]).join("");
+}
+
+function validShareCode(code) {
+  return /^[a-z2-9]{10}$/.test(code);
+}
+
+async function shareNew(env) {
+  const code = shareCode();
+  await env.APPS.put(
+    `share:${code}`,
+    JSON.stringify({ kv: {}, created: Date.now() }),
+  );
+  return json({ code });
+}
+
+async function shareGet(code, env) {
+  if (!validShareCode(code)) return json({ error: "bad code" }, 404);
+  const raw = await env.APPS.get(`share:${code}`);
+  if (!raw) return json({ error: "no such share" }, 404);
+  return new Response(raw, {
+    headers: { "content-type": "application/json" },
+  });
+}
+
+/// Merge one machine's pending writes, last-writer-wins per key by the
+/// writer's timestamp. The whole bucket is one KV value: reads are one GET,
+/// and concurrent PUTs can race -- for a household list the loser is one
+/// item re-added by hand, which is the right price for having no accounts,
+/// no locks and no backend anyone maintains.
+async function sharePut(request, code, env) {
+  if (!validShareCode(code)) return json({ error: "bad code" }, 404);
+  const key = `share:${code}`;
+  const raw = await env.APPS.get(key);
+  if (!raw) return json({ error: "no such share" }, 404);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "bad body" }, 400);
+  }
+  const writes = Array.isArray(body.writes) ? body.writes : [];
+  const share = JSON.parse(raw);
+  share.kv = share.kv || {};
+  for (const w of writes) {
+    if (typeof w.key !== "string" || w.key.length === 0 || w.key.length > 128) continue;
+    const t = Number(w.t) || 0;
+    const existing = share.kv[w.key];
+    if (existing && Number(existing.t) >= t) continue;
+    if (w.v === null || w.v === undefined) {
+      // A delete is a tombstone, not an absence: without one, the other
+      // machine's next push would resurrect every item ever removed.
+      share.kv[w.key] = { v: null, t };
+    } else {
+      if (typeof w.v !== "string" || w.v.length > SHARE_MAX_VALUE * 1.4) continue;
+      share.kv[w.key] = { v: w.v, t };
+    }
+  }
+  const names = Object.keys(share.kv);
+  if (names.length > SHARE_MAX_KEYS) {
+    return json({ error: "too many keys" }, 413);
+  }
+  const out = JSON.stringify(share);
+  if (out.length > SHARE_MAX_TOTAL) {
+    return json({ error: "share too large" }, 413);
+  }
+  await env.APPS.put(key, out);
+  return new Response(out, {
+    headers: { "content-type": "application/json" },
+  });
+}
 
 async function usage(request, env) {
   let event;

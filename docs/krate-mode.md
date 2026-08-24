@@ -455,6 +455,7 @@ to exactly what the app needs, e.g. `fs.read:notes/**`.
 | `store.kv` | no | the app's own key-value store |
 | `store.sql` | no | the app's own SQL database |
 | `store.secret` | no | OS keychain (passwords, tokens) |
+| `store.shared` | no | share a key-value bucket with everyone holding its invite code |
 | `random.bytes` | no | entropy (also what getrandom/rand need) |
 | `fs.remove:<path-glob>` | no | delete under a folder |
 | `fs.mkdir:<path-glob>` | no | make folders |
