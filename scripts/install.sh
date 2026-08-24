@@ -45,49 +45,28 @@ target="${arch_part}-${os_part}"
 
 # ---- work out which version to fetch ---------------------------------------
 
-# Print the highest version tag from stdin (one tag per line).
-#
-# GitHub returns releases newest-created-first, but a re-tag or an out-of-order
-# push can put an older tag ahead -- which shipped rc9 to a machine when rc14
-# was current. So rank by version rather than trust order: a final release
-# outranks its own pre-releases, and a higher rc number outranks a lower one.
-highest_version() {
-  awk '
-    /^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$/ {
-      tag = $0
-      v = tag; sub(/^v/, "", v)
-      rc = 9999
-      if (v ~ /-rc[0-9]+$/) { rc = v; sub(/.*-rc/, "", rc); sub(/-rc[0-9]+$/, "", v) }
-      n = split(v, p, ".")
-      key = p[1] * 1000000 + p[2] * 10000 + p[3] * 100 + rc / 10000
-      if (key > best) { best = key; best_tag = tag }
-    }
-    END { if (best_tag != "") print best_tag }
-  '
-}
-
 version="${KRATE_VERSION:-}"
 if [ -z "$version" ]; then
-  # /releases/latest excludes pre-releases and Krate is pre-release only, so
-  # query the full list directly (newest first) and take the newest tag that
-  # starts with v. Those carry the krate binaries; the notes-* bundle releases
-  # do not. Querying the list avoids a guaranteed 404 on /latest.
-  version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=30" \
-    | grep '"tag_name"' | cut -d '"' -f 4 | highest_version || true)"
+  # /releases/latest is the STABLE CHANNEL. The release pipeline publishes
+  # every build as a pre-release and promotes it to latest only after the
+  # published assets pass verification the way a new user would experience
+  # them (checksums, Gatekeeper, a real app built and run). Resolving
+  # anything newer than latest would hand out an unverified build -- which
+  # is exactly what ranking the whole release list used to do.
+  version="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+    | grep '"tag_name"' | cut -d '"' -f 4 || true)"
 
   # The API is rate limited to 60 requests an hour per address and does not
   # care that you are only reading. Anyone behind a shared address -- an
   # office, a university, a cafe -- can hit that without having run this
   # before, and the raw failure is a 403 that explains nothing.
   #
-  # The releases page itself is plain HTML and is not rate limited the same
-  # way, so fall back to reading a tag out of it.
+  # The /releases/latest redirect carries the same answer without the API:
+  # follow it and read the promoted tag off the final URL.
   if [ -z "$version" ]; then
-    # The API did not answer (usually rate limiting); the releases page is
-    # plain HTML and is not limited the same way.
-    version="$(curl -fsSL "https://github.com/${REPO}/releases" \
-      | grep -o "/${REPO}/releases/tag/v[0-9][^\"]*" \
-      | cut -d / -f 6 | highest_version || true)"
+    version="$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+      "https://github.com/${REPO}/releases/latest" \
+      | grep -o 'tag/v[0-9][^/]*$' | cut -d / -f 2 || true)"
   fi
 
   if [ -z "$version" ]; then

@@ -19,20 +19,6 @@ $binary = 'krate.exe'
 function Write-Say { param([string]$Message) Write-Host $Message }
 function Stop-Install { param([string]$Message) Write-Error "error: $Message"; exit 1 }
 
-# Rank a version tag so the newest sorts highest, regardless of API or page
-# order. A final release outranks any of its own pre-releases (rc), and a
-# higher rc number outranks a lower one. Returns a single sortable number.
-function rc_rank {
-    param([string]$Tag)
-    if ($Tag -match '^v(\d+)\.(\d+)\.(\d+)(?:-rc(\d+))?$') {
-        $base = ([int]$Matches[1]) * 1000000 + ([int]$Matches[2]) * 10000 + ([int]$Matches[3]) * 100
-        # No rc suffix is the final release: rank it above every rc of the same
-        # version by giving it 99, and an rc its own number.
-        if ($Matches[4]) { return $base + [int]$Matches[4] } else { return $base + 99 }
-    }
-    return -1
-}
-
 # Intel and ARM Windows both publish a build. ARM matters more than its share
 # of desktops suggests: a Windows VM on an Apple Silicon Mac is ARM, and that
 # is the ordinary way to try Windows without owning a Windows machine.
@@ -53,20 +39,15 @@ switch ($arch) {
 
 $version = $env:KRATE_VERSION
 if (-not $version) {
-    # /releases/latest excludes pre-releases and Krate is pre-release only, so
-    # query the list and take the newest v-tag instead.
+    # /releases/latest is the STABLE CHANNEL. The release pipeline publishes
+    # every build as a pre-release and promotes it to latest only after the
+    # published assets pass verification the way a new user would experience
+    # them (checksums, Gatekeeper, a real app built and run). Resolving
+    # anything newer than latest would hand out an unverified build -- which
+    # is exactly what ranking the whole release list used to do.
     try {
-        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=30" `
-            -Headers @{ 'User-Agent' = 'krate-installer' }
-        # Sort by version, do not trust the array order. GitHub returns
-        # releases newest-created-first, but a re-tag or an out-of-order push
-        # can put an older tag ahead of a newer one -- which shipped rc9 to a
-        # machine when rc14 was current. Rank by the numeric rc suffix so the
-        # highest always wins.
-        $version = ($releases |
-            Where-Object { $_.tag_name -match '^v\d+\.\d+\.\d+(-rc(\d+))?$' } |
-            Sort-Object -Descending { rc_rank $_.tag_name } |
-            Select-Object -First 1).tag_name
+        $version = (Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" `
+            -Headers @{ 'User-Agent' = 'krate-installer' }).tag_name
     } catch {
         $version = $null
     }
@@ -74,25 +55,21 @@ if (-not $version) {
     # The API is rate limited to 60 requests an hour per address and does not
     # care that you are only reading. Anyone behind a shared address -- an
     # office, a university, a cafe -- can hit that without having run this
-    # before, and the raw failure explains nothing. The releases page is plain
-    # HTML and is not limited the same way, so read a tag out of it instead.
+    # before, and the raw failure explains nothing. The /releases/latest PAGE
+    # carries the same answer in plain HTML and is not limited the same way:
+    # it is the promoted release's own page, so the first tag on it is the
+    # stable one, no ranking needed.
     if (-not $version) {
-        # The API did not answer (usually rate limiting on a shared address);
-        # the releases page is plain HTML and is not limited the same way.
         try {
-            $page = Invoke-WebRequest -Uri "https://github.com/$repo/releases" `
+            $page = Invoke-WebRequest -Uri "https://github.com/$repo/releases/latest" `
                 -Headers @{ 'User-Agent' = 'krate-installer' } -UseBasicParsing
             # Built by concatenation with a single-quoted pattern, so the
             # quote inside the character class needs no backtick escape --
             # that escaping is easy to get wrong and fails as a parse error
             # rather than a wrong answer.
             $pattern = '/' + $repo + '/releases/tag/(v[0-9][^"]*)'
-            $tags = [regex]::Matches($page.Content, $pattern) |
-                ForEach-Object { $_.Groups[1].Value } |
-                Sort-Object -Unique
-            # Highest version among every tag on the page, not the first the
-            # page happened to render.
-            $version = $tags | Sort-Object -Descending { rc_rank $_ } | Select-Object -First 1
+            $m = [regex]::Match($page.Content, $pattern)
+            if ($m.Success) { $version = $m.Groups[1].Value }
         } catch {
             $version = $null
         }

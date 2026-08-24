@@ -699,7 +699,16 @@ jobs:
           # branch, so the release would be created against `main` rather than
           # the tag being published.
           tag_name: ${{ inputs.tag || github.ref_name }}
-          prerelease: ${{ contains(inputs.tag || github.ref_name, '-rc') }}
+          # EVERY release is born a pre-release. GitHub never points
+          # /releases/latest at a pre-release, and the installers and the
+          # website resolve only /releases/latest -- so a fresh build is
+          # invisible to the public until the promote job below has verified
+          # it the way a new user would experience it. A release that fails
+          # verification stays quarantined here forever, and the channel
+          # keeps serving the last promoted one. v0.1.54 is why: it
+          # published a Studio the notary had rejected, and every Mac
+          # downloader got the malware dialog while the pipeline read green.
+          prerelease: true
           files: |
             dist/**/*.tar.gz
             dist/**/*.zip
@@ -1078,3 +1087,32 @@ jobs:
               echo "::error::this release cannot run the site's sample app -- repack the samples first: $out"; exit 1 ;;
           esac
           echo "sample app ran: $out"
+
+  # ------------------------------------------------------------- the channel
+  #
+  # Publishing and being public are different things now. A release is born a
+  # pre-release, so /releases/latest -- the only thing krate.tech and both
+  # installers resolve -- still points at the previous good version while the
+  # verify jobs above try this one exactly as a stranger would: quarantined
+  # download, Gatekeeper's own verdict, a real app built and run, the
+  # permission wall. Only when every one of them passes does this job promote
+  # the release to stable. A broken build therefore cannot reach a new user:
+  # it stays a quarantined pre-release on the releases page, and the channel
+  # keeps serving the last release that earned its place.
+  #
+  # -rc tags are never promoted; they exist to be tried by name.
+  promote:
+    name: Promote to stable
+    runs-on: ubuntu-latest
+    needs: verify
+    if: ${{ !contains(inputs.tag || github.ref_name, '-rc') }}
+    steps:
+      - name: Mark this release as the one the public gets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release edit "$TAG" -R "${{ github.repository }}" \
+            --prerelease=false --latest
+          echo "$TAG is now the stable channel"
