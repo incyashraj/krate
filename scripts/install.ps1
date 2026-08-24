@@ -119,7 +119,8 @@ if ($existing) {
 }
 if ($installed) {
     if ($installed -eq $version -or $installed -eq $version.TrimStart('v')) {
-        Write-Say "krate $installed is up to date."
+        Write-Say "krate $installed is already installed and up to date."
+        Write-Say "Re-running will reinstall the same version."
     } else {
         Write-Say "Updating krate $installed -> $version."
     }
@@ -188,7 +189,15 @@ try {
         $dir = Join-Path $env:LOCALAPPDATA 'Krate\bin'
     }
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    Copy-Item -Path $binaryPath.FullName -Destination (Join-Path $dir $binary) -Force
+    # Windows locks a running exe. Updating while a Krate app (or the Studio's
+    # engine) is open used to die here with a raw IOException stack trace --
+    # the least helpful possible words for "close your Krate apps first"
+    # (K-165). Say that instead.
+    try {
+        Copy-Item -Path $binaryPath.FullName -Destination (Join-Path $dir $binary) -Force -ErrorAction Stop
+    } catch [System.IO.IOException] {
+        Stop-Install "krate.exe is currently running, so it cannot be replaced. Close any open Krate apps (and Krate Studio), then run this installer again."
+    }
 
     Write-Say "  Installed to $dir"
 

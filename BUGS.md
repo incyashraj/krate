@@ -71,6 +71,41 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-165 -- Updating Krate on Windows while an app is open dies with a raw stack trace
+
+Status:   fixed
+Owner:    claude
+Severity: annoyance
+Class:    our-code
+Found:    2026-08-24, claude, running install.ps1 on the Windows PC while a Krate app was open
+Evidence: C:\krate\install-cold.log: "Copy-Item : The process cannot access the
+          file 'C:\...\Krate\bin\krate.exe' because it is being used" plus a
+          PowerShell position stack -- the least helpful possible words for
+          "close your Krate apps first". Windows locks a running exe, so any
+          update attempted while an app (or the Studio's engine) runs hits it.
+Fix:      the copy catches IOException and says plainly: close any open Krate
+          apps and Krate Studio, then run the installer again.
+          scripts/install.ps1.
+
+### K-166 -- The CLI installer and the Studio fight over who owns .krate
+
+Status:   fixed
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-24, claude, cold-installing v0.1.53 on the PC where the Studio was live
+Evidence: after install.ps1, reg query HKCU\...\.krate showed Krate.Bundle
+          pointing at the CLI's krate.exe -- the Studio's Krate.App association
+          silently stolen. The Studio's own first-run does the same theft in
+          reverse (its K-158 comment even celebrates it). A person with both
+          installed gets whichever registered last, and a CLI installed to a
+          temp dir leaves double-click pointing at a path that may be deleted.
+Fix:      install-krate-desktop.ps1 keeps an existing Krate.App association
+          when its opener actually exists on disk (Krate.Bundle still lands in
+          OpenWithProgids so "Open with" always offers it), and uninstall only
+          removes the extension key when it points at Krate.Bundle. The PC's
+          association was restored to the Studio by hand.
+
 ### K-164 -- Every store download failed on the released runtime for days, and nothing said so
 
 Status:   fixed

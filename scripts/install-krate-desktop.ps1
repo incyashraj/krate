@@ -23,7 +23,13 @@ $progKey = "HKCU:\Software\Classes\$progId"
 
 if ($Uninstall) {
   Remove-Item -Path $progKey -Recurse -ErrorAction SilentlyContinue
-  Remove-Item -Path $extKey  -Recurse -ErrorAction SilentlyContinue
+  # Only take the extension down with us when it is OURS. Uninstalling the CLI
+  # from a machine whose .krate belongs to Krate Studio must not break the
+  # Studio's double-click (K-166).
+  $currentProgId = (Get-ItemProperty -Path $extKey -Name "(default)" -ErrorAction SilentlyContinue)."(default)"
+  if ($currentProgId -eq $progId -or -not $currentProgId) {
+    Remove-Item -Path $extKey -Recurse -ErrorAction SilentlyContinue
+  }
   Write-Host "removed the Krate .krate association"
   exit 0
 }
@@ -51,9 +57,25 @@ foreach ($src in @($DocIcon, $besideBinary, "dist\icon\KrateDoc.ico", "docs\land
   if ($src -ne "" -and (Test-Path $src)) { $icon = (Resolve-Path $src).Path; break }
 }
 
-# 1. The .krate extension points at our ProgID.
+# 1. The .krate extension points at our ProgID -- unless Krate Studio already
+# owns it and is really installed. The Studio registers Krate.App with its own
+# opener; a CLI install (or update) that steals the extension away from a
+# working Studio downgrades the person's double-click for no reason, and the
+# Studio's next first-run would steal it back -- two installers fighting over
+# one key (K-166). Ours still lands in OpenWithProgids either way, so
+# "Open with" always offers Krate.
+$currentProgId = (Get-ItemProperty -Path $extKey -Name "(default)" -ErrorAction SilentlyContinue)."(default)"
+$studioOwnsIt = $false
+if ($currentProgId -eq "Krate.App") {
+  $studioCmd = (Get-ItemProperty -Path "HKCU:\Software\Classes\Krate.App\shell\open\command" -Name "(default)" -ErrorAction SilentlyContinue)."(default)"
+  if ($studioCmd -match '"([^"]+)"') { $studioOwnsIt = Test-Path $Matches[1] }
+}
 New-Item -Path $extKey -Force | Out-Null
-Set-ItemProperty -Path $extKey -Name "(default)" -Value $progId
+if ($studioOwnsIt) {
+  Write-Host "keeping the existing Krate Studio association for .krate"
+} else {
+  Set-ItemProperty -Path $extKey -Name "(default)" -Value $progId
+}
 New-Item -Path "$extKey\OpenWithProgids" -Force | Out-Null
 Set-ItemProperty -Path "$extKey\OpenWithProgids" -Name $progId -Value ([byte[]]@()) -Type Binary
 
