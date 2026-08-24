@@ -1903,24 +1903,31 @@ fn first_run_setup() {
             .filter(|bin| bin.is_dir())
         {
             let bin = bin.display().to_string();
-            let current = std::process::Command::new("reg")
+            let current = silent_cmd("reg")
                 .args(["query", r"HKCU\Environment", "/v", "Path"])
                 .output()
                 .ok()
                 .map(|out| String::from_utf8_lossy(&out.stdout).to_string())
                 .unwrap_or_default();
-            // Only append when it is not already there. Appending blindly on
-            // every launch is how a PATH grows to thousands of characters.
-            if !current.contains(&bin) {
-                let existing = current
-                    .lines()
-                    .find_map(|line| line.split("REG_EXPAND_SZ").nth(1).or(line.split("REG_SZ").nth(1)))
-                    .map(str::trim)
-                    .unwrap_or("");
+            let existing = current
+                .lines()
+                .find_map(|line| line.split("REG_EXPAND_SZ").nth(1).or(line.split("REG_SZ").nth(1)))
+                .map(str::trim)
+                .unwrap_or("");
+            // Only append when it is not already there -- as a real
+            // semicolon-delimited ELEMENT, compared case-insensitively the way
+            // Windows paths are. A substring check is wrong in both
+            // directions: it sees the dir inside someone else's mangled entry
+            // and skips, or misses it over nothing but a case difference and
+            // appends the same dir on every launch.
+            let already_there = existing.split(';').any(|element| {
+                element.trim().trim_end_matches('\\').eq_ignore_ascii_case(&bin)
+            });
+            if !already_there {
                 let joined = if existing.is_empty() {
                     bin.clone()
                 } else {
-                    format!("{existing};{bin}")
+                    format!("{};{bin}", existing.trim_end_matches(';'))
                 };
                 run(&["add", r"HKCU\Environment", "/v", "Path", "/t", "REG_EXPAND_SZ", "/d", &joined, "/f"]);
             }
