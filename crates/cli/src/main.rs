@@ -5653,12 +5653,28 @@ fn run_provider_author(
     // refusing agent may well exit non-zero, and a refusal is a clearer answer
     // than "the agent failed".
     if let Some(reason) = agent_refusal(app_dir) {
-        anyhow::bail!(
-            "Krate cannot build that: {reason}\n\n\
-             The AI read the request and Krate's full API reference and stopped rather \
-             than build an app that looks right but cannot do what you asked. If you \
-             think it is wrong, re-run with --force."
-        );
+        // A refusal and a delivered, passing app cannot both be the agent's
+        // final position. Grok wrote the refusal marker mid-run, then found a
+        // way, finished the app, and reported check-app OK -- and the stale
+        // marker still failed the whole create. The artifact outranks the
+        // remark: only honor a refusal when there is no working app to hand
+        // over.
+        let lib_now =
+            fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
+        let delivered = lib_now != starter_lib && check_app_verdict(app_dir).is_ok();
+        if delivered {
+            eprintln!(
+                "note: the AI wondered mid-run whether this was possible (\"{reason}\"), \
+                 then built the app anyway -- and it passes every check. Keeping the app."
+            );
+        } else {
+            anyhow::bail!(
+                "Krate cannot build that: {reason}\n\n\
+                 The AI read the request and Krate's full API reference and stopped rather \
+                 than build an app that looks right but cannot do what you asked. If you \
+                 think it is wrong, re-run with --force."
+            );
+        }
     }
     if status.map(|s| provider.failed(&s)).unwrap_or(false) {
         // Surface the agent's own error rather than pointing at a file. A
@@ -5687,6 +5703,22 @@ fn run_provider_author(
     }
     let lib_after = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
     if lib_after == starter_lib {
+        // An untouched app usually means the agent explained instead of
+        // writing -- but it is also exactly what an agent leaves behind when
+        // every one of its tool calls failed. Codex with a broken Windows
+        // sandbox helper does this: it exits 0, writes nothing, and the only
+        // trace of the real cause is in its transcript. Name that cause
+        // instead of blaming the agent's prose.
+        let blob = fs::read_to_string(&transcript).unwrap_or_default();
+        if let Some((reason, remedy)) = provider.output_failure(&blob, "") {
+            let fix = remedy.map(|r| format!("\n\nFix: {r}.")).unwrap_or_default();
+            anyhow::bail!(
+                "{} {reason}, so it finished without writing any code.{fix}\n\n\
+                 The agent's transcript is at {}.",
+                provider.name(),
+                transcript.display()
+            );
+        }
         anyhow::bail!(
             "the agent finished without changing the app: src/lib.rs is byte-identical \
              to the blank skeleton, so this would package an empty app as if it were \
