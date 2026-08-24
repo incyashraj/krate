@@ -5476,8 +5476,12 @@ fn run_provider_author(
     // forever. Fresh creates never resume; a new app deserves a clean slate.
     let session_files = agent_session_files(app_dir);
     let resume_args = if request.starts_with(CHANGE_MARKER) {
-        take_agent_session(&session_files, provider.name())
-            .and_then(|id| provider.author_args_resuming(&prompt, &id))
+        take_agent_session(&session_files, provider.name()).and_then(|id| {
+            // A revise's workspace is a fresh unpack; the session was made in
+            // the previous build's. Move it within reach first.
+            provider.adopt_session(&id, app_dir);
+            provider.author_args_resuming(&prompt, &id)
+        })
     } else {
         // A fresh create resumes ONLY a session deliberately placed in this
         // workspace -- the planning session, seeded via KRATE_PLAN_SESSION.
@@ -5487,6 +5491,9 @@ fn run_provider_author(
         // prompt can ride stdin it does, resumed; otherwise argv carries it
         // where argv is roomy enough to.
         take_agent_session(&session_files[..1], provider.name()).and_then(|id| {
+            // The planning session was made in `krate plan`'s temp dir, not
+            // this workspace. Move it within reach first.
+            provider.adopt_session(&id, app_dir);
             if prompt_via_stdin {
                 provider.author_args_stdin_resuming(&id)
             } else {
@@ -5824,7 +5831,17 @@ fn run_provider_author(
             }
         }
     }
-    let _ = resumed;
+    // A resume is an optimization and must never cost someone their build.
+    // The first live failure was exactly that: claude answered "No
+    // conversation found with session ID" (a planning session made in
+    // another directory), exited non-zero having done nothing, and the
+    // person saw "that build didn't come together". The session id was
+    // taken, not peeked, so re-entering cannot resume again -- this retry
+    // runs fresh, once.
+    if resumed && status.map(|s| provider.failed(&s)).unwrap_or(false) {
+        eprintln!("    the earlier session could not be continued -- starting fresh instead");
+        return run_provider_author(provider, app_dir, request);
+    }
     if status.map(|s| provider.failed(&s)).unwrap_or(false) {
         // Surface the agent's own error rather than pointing at a file. A
         // failure here is usually about the person's AI account, not their

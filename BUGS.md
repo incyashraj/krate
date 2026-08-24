@@ -71,6 +71,31 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-173 -- A failed session resume killed the whole build instead of falling back
+
+Status:   claimed
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-25, by Yashraj in the Studio: "make a NES Ice Climber game"
+          planned fine, then v1 failed with "that build didn't come together".
+Evidence: ~/.krate/studio/builds/s-1787590860642/nes-ice-climber/
+          .agent-transcript.txt: `No conversation found with session ID:
+          f9985b9f-...` and a result JSON with duration_ms 0, num_turns 0.
+          The planning session's transcript WAS on disk and the same id
+          resumed fine minutes later from a foreign directory -- the Studio
+          fires the build so soon after planning that claude's just-written
+          session was not yet visible to the resuming process. A race, so it
+          will recur; the defect is that the resume failure was FATAL.
+Fix:      a resume is an optimization and must never cost someone their
+          build: run_provider_author now retries fresh, once, when a resumed
+          run fails (the session id was taken, not peeked, so the retry
+          cannot loop). Plus adopt_session(): claude's per-directory session
+          store gets the planning/previous-workspace transcript copied into
+          the new workspace's project dir before the resume, best effort.
+          Proven by a create with a deliberately bogus KRATE_PLAN_SESSION
+          building to completion through the fallback.
+
 ### K-172 -- The Studio dmg shipped carrying an app the notary REJECTED, under a log line saying it was notarized
 
 Status:   claimed

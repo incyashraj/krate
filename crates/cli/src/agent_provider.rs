@@ -90,6 +90,15 @@ pub trait AgentProvider: Send + Sync {
         None
     }
 
+    /// Make a session created in ANOTHER working directory resumable from
+    /// `app_dir`, before the resume is attempted. Claude scopes its session
+    /// store per directory, so a planning session (made in a temp dir) or a
+    /// revise's session (made in the previous build's workspace) is invisible
+    /// to `--resume` from the new workspace -- "No conversation found with
+    /// session ID", live. Best effort: when it cannot help, the resume fails
+    /// and the caller falls back to a fresh run, so nothing here may error.
+    fn adopt_session(&self, _session_id: &str, _app_dir: &str) {}
+
     /// Arguments for a short text-only call: a prompt in, prose out, no
     /// tools, no file edits. Used by `krate plan`, which must answer in
     /// seconds. The default reuses the authoring arguments -- every
@@ -831,6 +840,46 @@ impl AgentProvider for ClaudeProvider {
         args.push("--resume".to_string());
         args.push(session_id.to_string());
         Some(args)
+    }
+
+    fn adopt_session(&self, session_id: &str, app_dir: &str) {
+        // Claude keeps each session's transcript under
+        // ~/.claude/projects/<munged-cwd>/<id>.jsonl, where the munge maps
+        // every non-alphanumeric character of the canonical working
+        // directory to '-'. `--resume` looks ONLY in the directory claude is
+        // started from, so a session made anywhere else -- the plan step's
+        // temp dir, a previous build's workspace -- answers "No conversation
+        // found with session ID", live from the first Studio plan-then-build.
+        // Copy the transcript into this workspace's project directory so the
+        // resume can see it. Every step is best effort: on any miss the
+        // resume fails and the caller falls back to a fresh run.
+        let Some(home) = crate::home_dir() else {
+            return;
+        };
+        let projects = home.join(".claude/projects");
+        let file_name = format!("{session_id}.jsonl");
+        let Some(source) = std::fs::read_dir(&projects).ok().and_then(|entries| {
+            entries
+                .filter_map(|e| e.ok())
+                .map(|e| e.path().join(&file_name))
+                .find(|p| p.is_file())
+        }) else {
+            return;
+        };
+        let canonical =
+            std::fs::canonicalize(app_dir).unwrap_or_else(|_| std::path::PathBuf::from(app_dir));
+        let munged: String = canonical
+            .to_string_lossy()
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+            .collect();
+        let dest_dir = projects.join(munged);
+        let dest = dest_dir.join(&file_name);
+        if dest.is_file() {
+            return;
+        }
+        let _ = std::fs::create_dir_all(&dest_dir);
+        let _ = std::fs::copy(&source, &dest);
     }
 
     fn configure(&self, command: &mut ProcessCommand) {
