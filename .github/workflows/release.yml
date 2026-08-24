@@ -944,3 +944,18 @@ jobs:
             *"needs permission"*) ;;
             *) echo "::error::the refusal did not explain itself: $out"; exit 1 ;;
           esac
+
+      - name: The site's sample app actually runs on this release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd verify
+          # The refusal check above never instantiates the component, so it
+          # kept passing while every store download failed with "built against
+          # different versions of the app interface" -- the site's bundles had
+          # drifted behind a WIT change (K-164). Run the sample WITH grants:
+          # if this release cannot open what krate.tech serves, the fix is to
+          # repack the samples (scripts/pack-store-apps.sh, plus the
+          # notes-v0.1.0 asset) before shipping.
+          out="$("$bin" run --headless --auto-grant https://krate.tech/notes.krate 2>&1)" \
+            || { echo "::error::this release cannot run the site's sample app -- repack the samples first: $out"; exit 1; }

@@ -25,6 +25,12 @@ on:
       - "scripts/fingerprint-css.py"
       - "scripts/install.sh"
       - "scripts/install.ps1"
+      # The bundles the site serves. Without these paths, repacking the store
+      # apps commits new .krate files that never reach the live site -- which
+      # is how every store download spent days failing on the released runtime
+      # with "built against different versions of the app interface" (K-164).
+      - "evidence/ported/**"
+      - "evidence/store/**"
       # The site build runs `krate` to read each bundle's listing, so a change
       # to the CLI can break the deploy without touching a single page. That
       # is not hypothetical: a first-run notice printed into the JSON the

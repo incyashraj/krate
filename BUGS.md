@@ -71,6 +71,31 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-164 -- Every store download failed on the released runtime for days, and nothing said so
+
+Status:   fixed
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-24, claude, chasing the nightly cold-install failure
+Evidence: v0.1.52 run of krate.tech/notes.krate and every evidence/store
+          bundle: "this app and this copy of Krate were built against
+          different versions of the app interface". The bundles were packed
+          before the camera WIT change (08513eb8); the notes-v0.1.0 release
+          asset dated 2026-07-28. The nightly cold-install had been red for
+          five straight days. Three separate holes let it happen and stay:
+          (1) nothing repacks the served bundles when the WIT changes,
+          (2) pages.yml did not list evidence/** in its trigger paths, so even
+          a repack commit would not redeploy the site,
+          (3) the release gate ran notes.krate only WITHOUT grants -- the
+          refusal happens before instantiation, so the gate passed while the
+          app could not actually start.
+Fix:      all bundles repacked with scripts/pack-store-apps.sh and verified to
+          run on the v0.1.52 binary before committing; notes-v0.1.0 asset
+          re-uploaded; evidence/ported/** and evidence/store/** added to the
+          pages triggers; release gate gained a with-grants run of the site
+          sample so drift now fails the release with instructions to repack.
+
 ### K-160 -- A stale mid-run refusal outranks the working app the agent delivered
 
 Status:   fixed (pending re-proof on the PC)
