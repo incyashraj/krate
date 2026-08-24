@@ -59,6 +59,7 @@ pub enum StoreCall {
     Kv,
     Sql,
     Secret,
+    Shared,
 }
 
 impl fmt::Display for StoreCall {
@@ -67,6 +68,7 @@ impl fmt::Display for StoreCall {
             Self::Kv => "kv",
             Self::Sql => "sql",
             Self::Secret => "secret",
+            Self::Shared => "shared",
         })
     }
 }
@@ -536,6 +538,7 @@ mod tests {
             UapiCall::Store(StoreCall::Kv),
             UapiCall::Store(StoreCall::Sql),
             UapiCall::Store(StoreCall::Secret),
+            UapiCall::Store(StoreCall::Shared),
             UapiCall::Random(RandomCall::Bytes),
             UapiCall::Fs(FsCall::Read {
                 path: "./data/input.txt".to_string(),

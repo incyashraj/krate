@@ -107,6 +107,7 @@ impl ApplicationHandler for App {
                         pressed: None,
                     },
                     None,
+                    None,
                 )
                 .expect("present");
                 self.times.push(started.elapsed().as_secs_f32() * 1000.0);
