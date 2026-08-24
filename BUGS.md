@@ -71,6 +71,32 @@ Fix:      what needs to happen, or the commit that did it.
 
 ## Open
 
+### K-172 -- The Studio dmg shipped carrying an app the notary REJECTED, under a log line saying it was notarized
+
+Status:   claimed
+Owner:    claude
+Severity: serious
+Class:    our-code
+Found:    2026-08-24, by Yashraj downloading the Studio on a Mac: Gatekeeper's
+          "Apple could not verify" malware dialog with Move to Bin.
+Evidence: v0.1.55 release job 97487260897: the Player's notarization printed
+          `status: Accepted` and stapled; the Studio's printed
+          `status: Invalid` followed by `The staple and validate action
+          failed! Error 65.` and then, one line later, `studio notarized and
+          stapled` -- and the job concluded success and published the dmg.
+          Two causes stacked: (1) signing is a hand-kept file list, and
+          6a53e3cf added cargo-component into Resources/bin without anyone
+          adding a codesign line, so the notary found an ad-hoc Mach-O;
+          (2) `notarytool submit --wait` exits 0 for a REJECTED submission,
+          and the workflow judged by exit code.
+Fix:      release.yml: sign_bundle() discovers and signs every Mach-O in a
+          bundle (plus everything in Contents/MacOS, where the notary checks
+          scripts too) and re-runs the ad-hoc check over the whole bundle;
+          notarize() judges by the `status:` verdict, prints the notary's own
+          log on a rejection, and a rejected Player zip or Studio bundle now
+          FAILS the release instead of shipping. Verified by re-dispatching
+          the release for v0.1.55.
+
 ### K-171 -- A newer Studio can sit on top of a years-old engine in Krate\bin
 
 Status:   open

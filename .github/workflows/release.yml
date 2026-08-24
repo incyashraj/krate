@@ -406,44 +406,62 @@ jobs:
           fi
           echo "signing with: $IDENTITY"
 
-          # Every executable inside the bundle, innermost first: codesign
-          # refuses to seal a bundle whose contents change afterwards.
+          # Sign every executable a bundle carries, discovered rather than
+          # listed. The hand-kept list is how v0.1.54 shipped a rejected
+          # Studio: cargo-component joined Resources/bin and nobody added it
+          # to the signing lines, so the notary found an ad-hoc Mach-O and
+          # returned Invalid. Discovery means the next binary that joins a
+          # bundle is signed without anyone remembering to say so.
           #
-          # There are two. The launcher `Krate` is a shell script that execs
-          # `krate-cli`, and signing only the latter is why notarization came
-          # back Invalid with "not signed with a valid Developer ID
-          # certificate" -- the notary service checks every Mach-O and script
-          # in Contents/MacOS, not just the one named in the plist.
-          # --entitlements is not optional here. Hardened runtime forbids
+          # Everything in Contents/MacOS is signed whatever it is -- the
+          # notary checks scripts there too (the Player's launcher `Krate` is
+          # a shell script, and skipping it produced "not signed with a valid
+          # Developer ID certificate"). Elsewhere, every Mach-O is signed.
+          #
+          # --entitlements is not optional. Hardened runtime forbids
           # writable-executable memory, and wasmtime JIT-compiles every
-          # component it runs, so a signed-but-unentitled build is killed by
+          # component it runs, so a signed-but-unentitled engine is killed by
           # the kernel the moment somebody opens an app:
           #
           #     SIGKILL (Code Signature Invalid)
           #     CODESIGNING / Invalid Page
           #
           # It passes spctl, passes notarization, and crashes on every launch
-          # -- silently, because a double-clicked app has no terminal.
+          # -- silently, because a double-clicked app has no terminal. The
+          # JIT entitlements are harmless on tools that never JIT, so every
+          # inner executable gets them rather than maintaining a second list.
           ENTITLEMENTS=scripts/krate.entitlements
-          codesign --force --options runtime --timestamp \
-            --entitlements "$ENTITLEMENTS" \
-            --sign "$IDENTITY" "dist/Krate Player.app/Contents/MacOS/krate-cli"
-          codesign --force --options runtime --timestamp \
-            --sign "$IDENTITY" "dist/Krate Player.app/Contents/MacOS/Krate"
-          codesign --force --options runtime --timestamp \
-            --entitlements "$ENTITLEMENTS" \
-            --sign "$IDENTITY" "dist/Krate Player.app"
-          codesign --verify --deep --strict --verbose=2 "dist/Krate Player.app"
-
-          # Fail here rather than after a notarization round trip. An ad-hoc
-          # signature left anywhere inside the bundle is exactly what the
-          # notary service rejects, and it costs minutes to find out that way.
-          for exe in "dist/Krate Player.app/Contents/MacOS/"*; do
-            if codesign -dvvv "$exe" 2>&1 | grep -q "adhoc"; then
-              echo "::error::$exe is still ad-hoc signed; notarization would fail."
-              exit 1
-            fi
-          done
+          sign_bundle() {
+            local app="$1" app_entitlements="$2" f
+            while IFS= read -r -d '' f; do
+              if file -b "$f" | grep -q "Mach-O"; then
+                codesign --force --options runtime --timestamp \
+                  --entitlements "$ENTITLEMENTS" \
+                  --sign "$IDENTITY" "$f"
+              elif [[ "$f" == */Contents/MacOS/* ]]; then
+                # A script here (the Player's launcher) is checked by the
+                # notary too, but entitlements only embed in Mach-Os.
+                codesign --force --options runtime --timestamp \
+                  --sign "$IDENTITY" "$f"
+              fi
+            done < <(find "$app/Contents" -type f -print0)
+            codesign --force --options runtime --timestamp \
+              --entitlements "$app_entitlements" \
+              --sign "$IDENTITY" "$app"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            # Fail here rather than after a notarization round trip. An
+            # ad-hoc signature left anywhere inside the bundle is exactly
+            # what the notary service rejects, and it costs minutes to find
+            # out that way.
+            while IFS= read -r -d '' f; do
+              if file -b "$f" | grep -q "Mach-O" \
+                && codesign -dvvv "$f" 2>&1 | grep -q "adhoc"; then
+                echo "::error::$f is still ad-hoc signed; notarization would fail."
+                exit 1
+              fi
+            done < <(find "$app/Contents" -type f -print0)
+          }
+          sign_bundle "dist/Krate Player.app" "$ENTITLEMENTS"
 
           # Krate Studio, signed with the same Developer ID.
           #
@@ -458,13 +476,7 @@ jobs:
           # the JIT entitlements is what killed double-clicked apps in K-063.
           STUDIO_APP="studio/target/universal-apple-darwin/release/bundle/macos/Krate.app"
           if [ -d "$STUDIO_APP" ]; then
-            codesign --force --options runtime --timestamp \
-              --entitlements "$ENTITLEMENTS" \
-              --sign "$IDENTITY" "$STUDIO_APP/Contents/Resources/bin/krate"
-            codesign --force --options runtime --timestamp \
-              --entitlements studio/Entitlements.plist \
-              --sign "$IDENTITY" "$STUDIO_APP"
-            codesign --verify --deep --strict --verbose=2 "$STUDIO_APP"
+            sign_bundle "$STUDIO_APP" studio/Entitlements.plist
           fi
 
           # The bare CLI is downloaded and run directly, so it needs signing too
@@ -509,11 +521,49 @@ jobs:
           echo "apple-id length: ${#APPLE_ID}, team-id length: ${#APPLE_TEAM_ID}," \
                "password length: ${#APPLE_APP_PASSWORD} (expect 19)"
 
-          if ! xcrun notarytool submit "dist/$zip_name" \
-            --apple-id "$APPLE_ID" \
-            --team-id "$APPLE_TEAM_ID" \
-            --password "$APPLE_APP_PASSWORD" \
-            --wait; then
+          # Submit one artifact and judge it by the notary's verdict, never
+          # by notarytool's exit code -- `submit --wait` exits 0 for a
+          # submission the notary REJECTED, which is how v0.1.54's Studio
+          # shipped with an Invalid verdict under a log line claiming it was
+          # notarized. Returns 0 for Accepted; 1 for a rejection, after
+          # printing the notary's own log so the reason is in the CI log;
+          # 2 when there was no verdict at all (auth or network), so the
+          # caller can keep the credential guidance for that case.
+          notarize() {
+            local out id
+            out="$(xcrun notarytool submit "$1" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --wait 2>&1)" || true
+            printf '%s\n' "$out"
+            if printf '%s' "$out" | grep -q "status: Accepted"; then
+              return 0
+            fi
+            if printf '%s' "$out" | grep -q "status:"; then
+              id="$(printf '%s\n' "$out" | awk '/^  id: /{print $2; exit}')"
+              if [ -n "$id" ]; then
+                echo "--- notary log for $id:"
+                xcrun notarytool log "$id" \
+                  --apple-id "$APPLE_ID" \
+                  --team-id "$APPLE_TEAM_ID" \
+                  --password "$APPLE_APP_PASSWORD" || true
+              fi
+              return 1
+            fi
+            return 2
+          }
+
+          notarize "dist/$zip_name"
+          verdict=$?
+          if [ "$verdict" -eq 1 ]; then
+            echo "::error::The notary service rejected $zip_name. The log"
+            echo "above names the file it objected to. Shipping it anyway"
+            echo "would hand every downloader the malware warning, so this"
+            echo "release stops here."
+            exit 1
+          fi
+          if [ "$verdict" -eq 2 ]; then
             echo "::warning::Notarization failed. The build is signed but not"
             echo "notarized, so Gatekeeper will still warn on download."
             echo ""
@@ -546,16 +596,20 @@ jobs:
           if [ -d "$STUDIO_APP" ]; then
             studio_zip="krate-studio-${version}-universal.zip"
             (cd "$(dirname "$STUDIO_APP")" && zip -qry "/tmp/$studio_zip" "Krate.app")
-            if xcrun notarytool submit "/tmp/$studio_zip" \
-              --apple-id "$APPLE_ID" \
-              --team-id "$APPLE_TEAM_ID" \
-              --password "$APPLE_APP_PASSWORD" \
-              --wait; then
-              xcrun stapler staple "$STUDIO_APP" || true
+            notarize "/tmp/$studio_zip"
+            verdict=$?
+            if [ "$verdict" -eq 0 ]; then
+              xcrun stapler staple "$STUDIO_APP"
               echo "studio notarized and stapled"
+            elif [ "$verdict" -eq 1 ]; then
+              echo "::error::The notary service rejected the Studio bundle."
+              echo "The log above names the file it objected to. The .dmg"
+              echo "most people download must not ship carrying a rejected"
+              echo "app, so this release stops here."
+              exit 1
             else
-              echo "::warning::Studio notarization failed; it is signed but"
-              echo "Gatekeeper will still warn. The runtime is unaffected."
+              echo "::warning::Studio notarization got no verdict (auth or"
+              echo "network); it is signed but Gatekeeper will still warn."
             fi
             # The .dmg, built by hand from the signed and stapled bundle.
             #
@@ -579,11 +633,7 @@ jobs:
             # belt-and-braces: it lets Gatekeeper clear the image before it is
             # even mounted.
             codesign --force --timestamp --sign "$IDENTITY" "$out" || true
-            if xcrun notarytool submit "$out" \
-              --apple-id "$APPLE_ID" \
-              --team-id "$APPLE_TEAM_ID" \
-              --password "$APPLE_APP_PASSWORD" \
-              --wait; then
+            if notarize "$out"; then
               xcrun stapler staple "$out" || true
             else
               echo "::warning::the .dmg itself was not notarized; the app"
