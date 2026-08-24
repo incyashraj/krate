@@ -175,6 +175,14 @@ pub struct Phase3GuiHost {
     /// the first drawn frame is the one captured.
     screenshot: Option<(std::path::PathBuf, f32)>,
     screenshot_taken: std::cell::Cell<bool>,
+    /// `KRATE_SHOOT_AFTER_MS` holds the capture back this long, so the shot is
+    /// the app after it has lived a while rather than its first frame. A
+    /// camera feed, a fetched image, an animation -- none of them exist in
+    /// frame one, so frame one proves nothing about them. The clock starts at
+    /// the first capture opportunity; close still captures unconditionally, so
+    /// a run shorter than the delay yields its final frame instead of nothing.
+    shoot_after: Option<std::time::Duration>,
+    shoot_started: std::cell::Cell<Option<std::time::Instant>>,
     /// Whether to keep a copy of every draw call for a layout check.
     inspect_layout: std::cell::Cell<bool>,
     /// Draw calls recorded for the current frame, newest frame only.
@@ -367,6 +375,11 @@ impl Phase3GuiHost {
             speech: LocalSpeechRuntime::default(),
             screenshot: None,
             screenshot_taken: std::cell::Cell::new(false),
+            shoot_after: std::env::var("KRATE_SHOOT_AFTER_MS")
+                .ok()
+                .and_then(|value| value.trim().parse::<u64>().ok())
+                .map(std::time::Duration::from_millis),
+            shoot_started: std::cell::Cell::new(None),
             inspect_layout: std::cell::Cell::new(false),
             inspected_ops: std::cell::RefCell::new(Vec::new()),
             inspected_canvas_size: std::cell::Cell::new(None),
@@ -440,7 +453,28 @@ impl Phase3GuiHost {
         let Some(window) = self.windows.first().copied() else {
             return;
         };
+        if !self.shoot_delay_elapsed() {
+            return;
+        }
         self.maybe_take_screenshot_for(window);
+    }
+
+    /// Whether `KRATE_SHOOT_AFTER_MS` has passed. Without the knob this is
+    /// always true and the first frame is the one captured, as before. The
+    /// clock starts at the first capture opportunity, not host construction,
+    /// so instantiation time does not eat into the delay.
+    fn shoot_delay_elapsed(&self) -> bool {
+        let Some(delay) = self.shoot_after else {
+            return true;
+        };
+        let now = std::time::Instant::now();
+        match self.shoot_started.get() {
+            None => {
+                self.shoot_started.set(Some(now));
+                delay.is_zero()
+            }
+            Some(started) => now.duration_since(started) >= delay,
+        }
     }
 
     /// Capture a specific window, used on close so an app that never waits for
