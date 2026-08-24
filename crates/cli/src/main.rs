@@ -5659,8 +5659,7 @@ fn run_provider_author(
         // marker still failed the whole create. The artifact outranks the
         // remark: only honor a refusal when there is no working app to hand
         // over.
-        let lib_now =
-            fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
+        let lib_now = fs::read_to_string(Path::new(app_dir).join("src/lib.rs")).unwrap_or_default();
         let delivered = lib_now != starter_lib && check_app_verdict(app_dir).is_ok();
         if delivered {
             eprintln!(
