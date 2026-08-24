@@ -89,10 +89,17 @@ Evidence: on the PC, the uninstall registry said `Krate 0.1.53` installed at
           `irm krate.tech/install.ps1 | iex` printed "Updating krate 0.1.28 ->
           v0.1.54", confirming bin held the old binary until the CLI installer
           replaced it.
-Fix:      the Studio installer must overwrite (or version-check and refuse to
-          use) `bin\krate.exe` when it shares the Krate root with the CLI
-          install, so Studio version and engine version cannot drift apart.
-          Unclaimed -- found in passing while updating the PC.
+Fix:      two candidate truths, both defects. Either (a) the Studio installer
+          left an old engine in `bin\`, or (b) -- more likely -- that
+          `krate.exe` was a SOURCE build copied there during testing: source
+          builds report the workspace placeholder `0.1.28` because only
+          release CI stamps KRATE_RELEASE_VERSION from the tag. Under (b) the
+          bug is that a source-built engine misreports its identity, so
+          nobody -- installer, Studio, or human -- can tell a fresh build
+          from an ancient one by version string. Stamp source builds with
+          the git describe output, and make the Studio refuse or warn when
+          its engine's version does not match its own. Unclaimed -- found in
+          passing while updating the PC.
 
 ### K-169 -- Windows and Linux rendered every canvas at 1x and stretched it: the "broken low quality pixels"
 
