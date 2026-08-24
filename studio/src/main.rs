@@ -701,7 +701,12 @@ fn pid_alive(pid: u32) -> bool {
     }
     #[cfg(windows)]
     {
-        Command::new("tasklist")
+        // silent_cmd, not Command: the studio is a windows-subsystem app, so
+        // a bare console child pops a real console window. This runs on the
+        // liveness watchdog every few seconds of every build -- as a plain
+        // Command it flashed a black box over the person's screen for the
+        // whole time their app was being made (K-159).
+        silent_cmd("tasklist")
             .args(["/FI", &format!("PID eq {pid}"), "/NH"])
             .output()
             .map(|out| String::from_utf8_lossy(&out.stdout).contains(&pid.to_string()))
@@ -722,7 +727,9 @@ fn kill_tree(pid: u32) {
     }
     #[cfg(windows)]
     {
-        let _ = Command::new("taskkill")
+        // silent_cmd for the same reason as pid_alive: pressing Stop must not
+        // flash a console (K-159).
+        let _ = silent_cmd("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
             .status();
     }
@@ -1021,7 +1028,10 @@ fn shoot(engine: &PathBuf, krate_path: &Path) -> Option<String> {
     let png = std::env::temp_dir().join(format!("krate-studio-shot-{}.png", std::process::id()));
     let work = studio_dir().join("work");
     let _ = std::fs::create_dir_all(&work);
-    let ok = Command::new(engine)
+    // silent_cmd: the engine is a console-subsystem binary, and this runs at
+    // the end of every build to photograph the finished app -- as a plain
+    // Command it flashed a console right at the moment of success (K-159).
+    let ok = silent_cmd(engine)
         .current_dir(&work)
         .arg("run")
         .arg(krate_path)

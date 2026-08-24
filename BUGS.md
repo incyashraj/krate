@@ -1127,6 +1127,27 @@ Update:   2026-08-16, e63ef189: shipped on macOS (set-full-bleed in
 
 ## Fixed
 
+### K-159 -- Studio on Windows flashed console windows through every build
+
+Class: our-code
+Owner: claude
+Status: fixed
+
+The studio is a `windows_subsystem = "windows"` app, so any console-subsystem
+child spawned with a bare `Command` pops a real console window. Three call
+sites did:
+
+- `pid_alive` runs `tasklist` on the liveness watchdog, every few seconds of
+  every build -- a black box flashing over the screen for the whole time an
+  app is being made.
+- `kill_tree` runs `taskkill` -- a flash on pressing Stop.
+- `shoot` runs the engine to photograph the finished app -- a flash at the
+  exact moment of success.
+
+All three now use `silent_cmd` (CREATE_NO_WINDOW), which the rest of the file
+already used. Found by auditing every `Command::new` in studio/main.rs while
+setting up Windows verification on the physical PC.
+
 ### K-158 -- Nothing registers the .krate file type on Windows
 
 Class: our-code
